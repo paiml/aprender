@@ -22440,7 +22440,9 @@ roadmap:
   updated: 2026-09-26T12:22:22Z
   spec: null
   acceptance_criteria:
-  - origin/main merged in without rebase or force; conflicts resolved; every target-side guard newer than the merge-base green on the merged tree (or its red shown identical on main); quorum on the merge delta; re-armed with --match-head-commit.
+  - origin/main merged in without rebase or force; conflicts resolved.
+  - every target-side guard newer than the merge-base is green on the merged tree, or its red is shown identical on main. A change to ANY file (another ticket's fragment included) is in scope when a named guard is RED without it.
+  - (process, not diff content) a quorum on the merge delta, then pmat-merge re-arms with --match-head-commit; the round judging this diff is that quorum.
   phases: []
   subtasks: []
   estimated_effort: null

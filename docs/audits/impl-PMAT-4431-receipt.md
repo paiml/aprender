@@ -15,15 +15,17 @@ The judged diff (base e5929e6e5) is the three fix commits; the resolution itself
 - `docs/roadmaps/roadmap.yaml`: union of both sides by id. Measured: HEAD 1111 ids; ids in fold∪main
   missing from HEAD: 0. Then regenerated from fragments (PMAT-4438 adopted as a fragment).
 
-## Fix commits (the judged diff)
-- `.gitattributes`: two sub-directory ledgers named merge=union (`docs/audits/*.jsonl` does not cross `/`).
-- `scripts/ci_run_target_release.sh` retired: its only caller was the dropped #4102 ci.yml step
-  (check_guards_are_wired: unwired 3 -> 4). README row + finding ask updated.
-- `model_ladder_cells_produce.py`: truncated reason now says `... and N more chars`.
-  `check_ladder_cells_producer.sh` owed-set mutant rewritten without a slice; case table rc=0, mutant still killed.
-- `admission.rs::row_errors`, `receipt.rs::problems`: split into helpers, same checks/messages/order.
-  `cargo test -p aprender-review-experiment --lib` + clippy -D warnings: rc 0. check_complexity_ratchet PASS.
-- PMAT-4072 fragment cites its quorum receipt (`proof:docs/audits/quorum-PMAT-4072-fe8c9dff7.json`).
+## Fix commits (the judged diff) — each change is here because a named guard was RED without it
+
+| Change | Guard RED without it (its own words, on the merged tree) |
+|---|---|
+| `.gitattributes`: `docs/audits/review-corpus/corpus-v1.jsonl`, `docs/audits/rex-001/rex-04-admission.jsonl` merge=union | check_append_only_ledgers: "FAIL  <path> is an append-only ledger and is NOT union-merged." — `docs/audits/*.jsonl` does not cross `/` |
+| `scripts/ci_run_target_release.sh` → `scripts/retired/`, README row, finding ask | check_guards_are_wired: "unwired guards grew 3 -> 4. NEW: ci_run_target_release.sh" — its only caller was the dropped #4102 ci.yml step |
+| `model_ladder_cells_produce.py:210` reason says `... and N more chars` | check_no_silent_truncation: "FAIL no_silent_truncation: a NEW truncation of a value a human reads later -- say how much was dropped" naming this line. Both files are fold-origin (absent on main); the guard landed on main after the fold branched |
+| `check_ladder_cells_producer.sh:116` owed-set mutant without a slice | same guard, same FAIL, naming this line. A mutation fixture fits none of the baseline's classes (display/loud/fatal/id-prefix/numeric), so it is rewritten rather than baselined; same semantics (first owed rung only). `bash scripts/check_ladder_cells_producer.sh` rc=0: "mutant owed-set killed by: good: ..." |
+| `admission.rs::row_errors`, `receipt.rs::problems` split into helpers, same checks/messages/order | check_complexity_ratchet: "RED NEW ... row_errors cyclomatic 19 cognitive 27", "... problems cyclomatic 19 cognitive 29" (cognitive limit 25). After: "PASS (D2): e7a52949d vs 9a9d64041 — none new, none grown". `cargo test -p aprender-review-experiment --lib` + clippy -D warnings rc 0 |
+| PMAT-4072 fragment: ONLY `notes` changes (null → cites `docs/audits/quorum-PMAT-4072-fe8c9dff7.json`, which commit 5c1dbe01f landed beside its `status: completed`); status/assignee untouched | check_roadmap_completion_is_cited: "FAIL docs/roadmaps/roadmap.yaml PMAT-4072 claims completed and cites nothing, and is NOT in the frozen baseline — so it is a NEW unprovable claim" |
+| PMAT-4438 fragment adopted, PMAT-4431 fragment, roadmap.yaml regenerated | check_roadmap_fragment_required / check_roadmap_sorted (read committed HEAD); rc 0 after |
 
 ## Guards
 guard_tree.sh --no-cargo on the merged tree: remaining reds are check_baseline_ratchets (also RED on main
