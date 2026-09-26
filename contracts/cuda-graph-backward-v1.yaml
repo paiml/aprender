@@ -59,11 +59,11 @@ equations:
     - Graph boundary contains ONLY GPU kernel launches (no D2H sync)
     - Single sync point after all squared-sum reductions launched
     - Optimizer step is already async (adamw_step_cuda launches kernel, no implicit sync)
-    preconditions:
+    prose_preconditions:
     - cuBLAS workspace pre-allocated (PMAT-063, 32 MB)
     - Forward graph already captured (entrenar@0138b409)
     - All backward buffers pre-allocated (no cudaMalloc inside graph)
-    postconditions:
+    prose_postconditions:
     - Backward graph replays in single cudaGraphLaunch
     - Loss trajectory matches non-graphed backward within tolerance
     - Throughput improvement from eliminating 168 sync points per backward

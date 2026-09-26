@@ -49,9 +49,9 @@ equations:
     invariants:
       - "a corpus whose every typed edge is declared, well-typed, resolved and acyclic is admitted"
       - "a corpus with no typed edge is Unknown, never Pass"
-    preconditions:
+    prose_preconditions:
       - "Σ parses and satisfies its own integrity rules"
-    postconditions:
+    prose_postconditions:
       - "verdict ∈ {Pass, Fail, Unknown}"
       - "legacy_unresolved_depends_on ≤ baseline(legacy_unresolved_depends_on)"
     lean_theorem: none — L4 not declared

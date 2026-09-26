@@ -55,11 +55,11 @@ equations:
       - "aprender (the root facade) is ALWAYS published LAST"
       - "Each publish waits for crates.io index propagation before dependents fetch"
       - "The tier table in scripts/cascade-publish.sh is the single source of truth for order"
-    preconditions:
+    prose_preconditions:
       - "cargo login has been run with a non-stale crates.io token"
       - "cargo check --workspace passes"
       - "the workspace version is GREATER than the published max version of every member"
-    postconditions:
+    prose_postconditions:
       - "cargo install aprender produces a working apr binary from crates.io alone"
       - "no published Cargo.toml contains a [patch.crates-io] section"
 
@@ -76,10 +76,10 @@ equations:
       - "CASCADE_READY: every sibling is live at V; only now is a Gate 5 failure a defect"
       - "A gate whose stage precondition is unstated is indistinguishable from a broken build"
       - "Gate 11 (cargo publish --dry-run) is PRE_BUMP-only: post-bump it self-reports FAILURE"
-    preconditions:
+    prose_preconditions:
       - "sibling_deps(C) counts normal and build dependencies on workspace members, never dev"
       - "the pre-release skill names at least one cargo package -p <crate> command"
-    postconditions:
+    prose_postconditions:
       - "every stage-dependent Gate-5 crate carries a STAGE-PRECONDITION declaration"
       - "a MEANINGFUL declaration is made only for a crate with zero sibling deps"
 

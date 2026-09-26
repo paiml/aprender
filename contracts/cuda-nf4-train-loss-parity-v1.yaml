@@ -117,7 +117,7 @@ equations:
     - 'GPU training loss within 0.5 nats of the NF4-matched causal CPU oracle'
     - 'toy-sample CE far below ln(vocab): a finite-garbage forward cannot hide'
     - 'fused GPU causal CE equals CPU CE on identical logits within 0.05'
-    preconditions:
+    prose_preconditions:
     - 'cuda-nf4-forward-stream-ordering-v1 holds (finite forward)'
 
   gpu_cpu_logits_parity:
@@ -131,7 +131,7 @@ equations:
       correct -> 0.047.
     invariants:
     - 'full-logits relL2 vs the NF4-matched CPU oracle below 0.10'
-    preconditions:
+    prose_preconditions:
     - 'gpu_cpu_loss_parity preconditions hold'
 
   decoder_attention_causality:
@@ -147,7 +147,7 @@ equations:
     - 'CPU decoder forward attends only to j <= i (attention_causal)'
     - 'masked positions carry exactly 0 weight, so the shared softmax backward is unchanged'
     - 'encoder (BERT/RoBERTa) paths keep bidirectional attention'
-    preconditions:
+    prose_preconditions:
     - 'model config architecture is Decoder'
 
 proof_obligations:

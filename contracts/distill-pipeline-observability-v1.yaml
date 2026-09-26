@@ -51,7 +51,7 @@ equations:
       The callback ordering matters for stateful callbacks (e.g., a
       LearningRateScheduler that mutates ctx.lr must run before
       ProgressCallback that logs ctx.lr).
-    preconditions:
+    prose_preconditions:
     - At least one callback is attached when the pipeline is constructed via the run_cuda_backend dispatch (the default ProgressCallback)
     lean_theorem: Theorems.Callback_Lifecycle
 
@@ -69,7 +69,7 @@ equations:
     - 'When APR_DISTILL_LOG_EVERY=0, ProgressCallback emits only epoch boundaries (no per-step)'
     - 'When APR_DISTILL_LOG_EVERY=1, every step logs (verbose mode)'
     - 'Output goes to stdout (not stderr); piping `apr distill ... | grep loss=` captures progress'
-    preconditions:
+    prose_preconditions:
     - ProgressCallback is attached with the parsed log_interval
     lean_theorem: Theorems.Progress_Log_Format
 
@@ -86,7 +86,7 @@ equations:
     - 'APR_DISTILL_LOG_EVERY=N for N >= 1: log every N steps'
     - 'APR_DISTILL_LOG_EVERY=0: attach a no-op callback (or skip attach); only epoch boundaries log'
     - 'Backwards compatible: existing scripts that did NOT set the env var see new per-step output (intentional UX improvement)'
-    preconditions:
+    prose_preconditions:
     - apr-cli depends on aprender-train (for TrainerCallback + ProgressCallback)
     lean_theorem: Theorems.Default_Attachment
 

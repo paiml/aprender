@@ -305,11 +305,11 @@ equations:
     - Residual connections preserve gradient flow
     - Final output shape is [B, S, V] where V = vocab_size
     - All intermediate tensors are finite (no NaN/Inf propagation)
-    preconditions:
+    prose_preconditions:
     - All tokens in [0, vocab_size)
     - All weight tensors loaded and shapes match config
     - config is validated (head_dim * num_heads == hidden_size)
-    postconditions:
+    prose_postconditions:
     - Output logits have shape [batch_size, seq_len, vocab_size]
     - Output logits are finite (no NaN, no Inf)
     lean_theorem: Theorems.Forward_Pass_Completeness
@@ -335,10 +335,10 @@ equations:
     - Softmax output sums to 1.0 per row (within FP tolerance)
     - Output shape matches input shape [B, S, H]
     - Causal mask prevents attending to future positions (decoder-only)
-    preconditions:
+    prose_preconditions:
     - x has shape [B, S, H]
     - W_q, W_k, W_v, W_o shapes match config
-    postconditions:
+    prose_postconditions:
     - Output has same shape as input [B, S, H]
     - All attention weights in [0, 1]
     lean_theorem: Theorems.Attention_Mechanism
@@ -365,10 +365,10 @@ equations:
     - SwiGLU gate and up projections have identical shapes
     - Down projection transposes gate projection shape
     - MoE router selects exactly k experts per token
-    preconditions:
+    prose_preconditions:
     - x has shape [B, S, H]
     - FFN weight shapes match config (gate/up = [I,H], down = [H,I])
-    postconditions:
+    prose_postconditions:
     - Output shape == input shape [B, S, H]
     - MoE output is weighted combination of at most k experts
     lean_theorem: Theorems.FFN_Computation
@@ -384,10 +384,10 @@ equations:
     - Shape is preserved through residual connection
     - Gradient flows unimpeded through identity path
     - No scaling applied to residual (unlike some architectures)
-    preconditions:
+    prose_preconditions:
     - x has shape [B, S, H]
     - layer_fn preserves shape [B, S, H] → [B, S, H]
-    postconditions:
+    prose_postconditions:
     - Output has same shape [B, S, H]
     lean_theorem: Theorems.Residual_Stream
 
@@ -408,9 +408,11 @@ equations:
     - Position tracking is consistent with sequence length
     preconditions:
     - pos + new_len <= max_position_embeddings
+    prose_preconditions:
     - new_k, new_v shapes = [B, num_kv_heads, new_len, head_dim]
     postconditions:
     - cache.len() == pos + new_len
+    prose_postconditions:
     - cache.k[0..pos] unchanged (immutability)
     lean_theorem: Theorems.KV_Cache_Management
 
@@ -437,9 +439,10 @@ equations:
     - Layer index is zero-based and < num_layers
     - GGUF and HuggingFace tensor names resolve to same logical role
     preconditions:
-    - family has tensor_template for requested role
     - layer_idx < config.num_layers
-    postconditions:
+    prose_preconditions:
+    - family has tensor_template for requested role
+    prose_postconditions:
     - Returned name matches exactly one tensor in the model file
     - Shape matches shape_template for that role
     lean_theorem: Theorems.Tensor_Name_Resolution
@@ -470,10 +473,10 @@ equations:
     - Dequantized values within scheme-specific tolerance of original
     - Block structure aligned to scheme requirements (32, 64, 256 elements)
     - Importance-weighted schemes (K-quants) preserve salient weights better
-    preconditions:
+    prose_preconditions:
     - Tensor element count divisible by block size
     - Input tensor has no NaN or Inf values
-    postconditions:
+    prose_postconditions:
     - Output tensor byte size < input by factor of (32 / bits_per_weight)
     - Round-trip error bounded by scheme tolerance
     lean_theorem: Theorems.Quantization_Precision

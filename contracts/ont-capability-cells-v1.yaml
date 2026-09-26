@@ -79,9 +79,9 @@ equations:
     invariants:
       - "expected_hosts is ONT-4c1's function, called, not copied: D and ladder-green quantify over one host axis"
       - "a rung with required: false contributes no cell"
-    preconditions:
+    prose_preconditions:
       - "every receipt version is dotted numerals, else the gate refuses by name (exit 3)"
-    postconditions:
+    prose_postconditions:
       - "|D| = 0 ⇒ the gate declines (exit 2), never Pass"
     lean_theorem: none — L4 not declared
   not_run:
@@ -92,9 +92,9 @@ equations:
       - "a row label mapping to Unknown(_) beats the measurement; an unknown label is refused by name and NotRun"
       - "several V* rows for one cell combine NotRun > Fail > Pass — not the lattice meet"
       - "a row of an older version never measures a cell"
-    preconditions:
+    prose_preconditions:
       - "a witness row is one whose sha256 equals the rung's; no sha256 or another hex is no measurement"
-    postconditions:
+    prose_postconditions:
       - "|not_run| > 0 ⇒ the armed capability-cells shape fails ⇒ exit 1"
     lean_theorem: none — L4 not declared
 

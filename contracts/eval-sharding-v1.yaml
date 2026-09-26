@@ -80,6 +80,7 @@ equations:
     preconditions:
       - "temperature == 0.0"
       - "num_samples == 1"
+    prose_preconditions:
       - "same .apr artifact (matching sha256) on every host"
     lean_theorem: Theorems.EvalShardMergeIdentity
 
@@ -93,7 +94,7 @@ equations:
     invariants:
       - "Byte equality required; tokenizer, kernel, and model must all agree"
       - "Any divergence invalidates merged pass@k (must be ε)"
-    preconditions:
+    prose_preconditions:
       - "Both hosts resolve model_apr to the same sha256"
       - "Both hosts run apr binary built from the same git SHA"
 

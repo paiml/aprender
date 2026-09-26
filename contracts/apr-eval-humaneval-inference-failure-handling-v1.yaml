@@ -72,7 +72,7 @@ equations:
     - 'mode "inference_failed" is unambiguous; downstream tools key off this string'
     - 'exit_code non-zero on inference failure is required for CI gating'
     - 'inference_error is the first error string captured during the multi-sample loop'
-    preconditions:
+    prose_preconditions:
     - run_multisample_loop has completed
     lean_theorem: Theorems.Inference_Failure_Signal
 
@@ -88,7 +88,7 @@ equations:
     - 'No code path increments the pass counter from dataset-side data (canonical_solution presence, problem-validation, etc.)'
     - 'The structural-fallback code that previously did `per_problem_correct[i].2 = 1` on inference failure is removed'
     - 'Dataset pre-flight validity is reported separately as the "N (M valid)" line, not in pass counters'
-    preconditions:
+    prose_preconditions:
     - per_problem_correct initialized to (task_id, entry_point, 0) for every problem
     lean_theorem: Theorems.Per_Problem_Pass_Counter_Invariant
 

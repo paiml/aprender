@@ -61,9 +61,9 @@ equations:
     - An interactive terminal always runs, with or without arguments
     - A pipe or redirected file carrying bytes still runs — it is an instruction
     - The peek is non-consuming, so the REPL/-p read sees the same bytes
-    preconditions:
+    prose_preconditions:
     - the CLI parsed successfully (clap already rejects unknown flags)
-    postconditions:
+    prose_postconditions:
     - wants_help ⟹ zero child processes were created by this run
     - ¬wants_help ⟹ start-up proceeds exactly as before the fix
     - stdin_has_input ⟹ every byte remains queued for the first read
@@ -76,9 +76,9 @@ equations:
     - The tool registry is released BEFORE the last driver handle
     - Dropping only the local Arc leaves the strong count at 1 and reaps nothing
     - release_driver takes both by value, so the ordering is a compile-time obligation
-    preconditions:
+    prose_preconditions:
     - register_task_tool has cloned the driver Arc into the registry
-    postconditions:
+    prose_postconditions:
     - the driver's Drop has run when std::process::exit is reached
     - no `apr serve` process outlives the `apr code` parent
     lean_theorem: Theorems.Apr_Code_Serve_Child_Reaped_Before_Exit

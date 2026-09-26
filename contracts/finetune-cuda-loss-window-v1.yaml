@@ -63,7 +63,7 @@ equations:
     invariants:
     - 'scratch present ⇒ loss window honors scratch capacity (not 512)'
     - 'no scratch ⇒ conservative min(max_position_embeddings, 512) fallback'
-    preconditions:
+    prose_preconditions:
     - 'scratch buffers sized from InstructConfig::max_seq_len (cuda_init.rs)'
 
   zero_token_samples_are_loud:
@@ -75,7 +75,7 @@ equations:
       be visibly skipped, never silently averaged as loss=0.0.
     invariants:
     - 'per-sample skip warning names prompt_len, window, and the --max-seq-len remedy'
-    preconditions:
+    prose_preconditions:
     - 'epoch aggregation is token-weighted (instruct_trainer.rs)'
 
 proof_obligations:

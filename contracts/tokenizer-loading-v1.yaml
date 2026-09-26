@@ -178,7 +178,7 @@ equations:
     - Roundtrip holds for all valid UTF-8 input
     - Token IDs are bounded by vocab_size
     - Encoding is deterministic (same input -> same IDs)
-    preconditions:
+    prose_preconditions:
     - tokenizer is loaded with vocab_size > 0
     - text is valid UTF-8
     lean_theorem: Theorems.RoundtripEncoding
@@ -191,7 +191,7 @@ equations:
     invariants:
     - Exactly 256 entries in byte encoder
     - Mapping is bijective (no duplicate targets)
-    preconditions:
+    prose_preconditions:
     - byte_encoder is initialized
     lean_theorem: Theorems.ByteEncoderCoverage
 

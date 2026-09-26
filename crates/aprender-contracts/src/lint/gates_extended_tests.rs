@@ -57,6 +57,7 @@ fn make_equation(
         float_tolerance: None,
         assumes: None,
         guarantees: None,
+        ..Default::default()
     }
 }
 // ---------------------------------------------------------------------------

@@ -51,9 +51,9 @@ equations:
     invariants:
       - "a corpus saying only what Σ declares is admitted"
       - "a malformed Σ is never a corpus verdict"
-    preconditions:
+    prose_preconditions:
       - "Σ parses and satisfies its own integrity rules"
-    postconditions:
+    prose_postconditions:
       - "verdict ∈ {Pass, Fail, Unknown}"
       - "formal_prose ≤ baseline(formal_prose)"
     lean_theorem: none — L4 not declared

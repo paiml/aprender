@@ -31,9 +31,9 @@ equations:
     - header_size + 8 <= file_size (no OOB read)
     - header_size < MAX_HEADER_SIZE prevents memory exhaustion
     - JSON parsing fails gracefully on malformed input
-    preconditions:
+    prose_preconditions:
     - file is readable and len >= 8
-    postconditions:
+    prose_postconditions:
     - header is valid JSON object
     - header_size matches actual JSON byte length
     lean_theorem: Theorems.Header_Size_Validation
@@ -54,10 +54,10 @@ equations:
     - No tensor region extends beyond file
     - Tensor regions do not overlap (each byte belongs to at most one tensor)
     - Size matches shape * dtype exactly
-    preconditions:
+    prose_preconditions:
     - header parsed successfully
     - file_size known
-    postconditions:
+    prose_postconditions:
     - all tensor data regions within [data_start, file_size)
     - no overlapping regions
     lean_theorem: Theorems.Tensor_Offset_Bounds
@@ -73,9 +73,9 @@ equations:
     - Only known dtype strings accepted (no arbitrary types)
     - Byte count exactly matches shape * size (no trailing/missing bytes)
     - BF16 and F16 distinguished (different bit patterns)
-    preconditions:
+    prose_preconditions:
     - dtype string is non-empty
-    postconditions:
+    prose_postconditions:
     - parsed DType has known size
     lean_theorem: Theorems.DType_Consistency
   mmap_zero_copy:
@@ -91,10 +91,10 @@ equations:
     - mmap region does not extend beyond file
     - Alignment to page boundary for efficient access
     - Multiple tensors can be mmapped simultaneously
-    preconditions:
+    prose_preconditions:
     - offset bounds validated by tensor_offset_bounds
     - file descriptor is valid and readable
-    postconditions:
+    prose_postconditions:
     - returned slice length == end - begin exactly
     lean_theorem: Theorems.Mmap_Zero_Copy
   no_overlap_invariant:
@@ -109,9 +109,9 @@ equations:
     - Sorted check is O(n log n) not O(n^2)
     - Gap bytes between tensors are allowed (padding)
     - Zero-length ranges rejected by offset_bounds
-    preconditions:
+    prose_preconditions:
     - all ranges have begin < end
-    postconditions:
+    prose_postconditions:
     - no overlapping byte ranges
     lean_theorem: Theorems.No_Overlap_Invariant
 proof_obligations:

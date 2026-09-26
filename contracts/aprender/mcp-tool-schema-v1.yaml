@@ -47,7 +47,7 @@ equations:
     - Optional fields in schema are Option<T> in handler
     - Schema type constraints (string, number, array) match Rust types
     - tools/list returns identical schema on every call within a session
-    preconditions:
+    prose_preconditions:
     - Session is in initialized state
     - tool.name is a non-empty string
     lean_theorem: Theorems.Tool_Schema_Fidelity
@@ -68,7 +68,7 @@ equations:
     - initialize after initialized is idempotent (returns same capabilities)
     - shutdown is terminal — no methods accepted after
     - Session state is monotonic (S0 → S1 → S2 → S3, never backwards)
-    preconditions:
+    prose_preconditions:
     - Transport connection is established
     lean_theorem: Theorems.Session_State_Machine
   error_mapping:
@@ -87,7 +87,7 @@ equations:
     - Error message preserves original context (no lossy downcast)
     - Error data field is optional JSON (not required)
     - Parse errors (-32700) only for malformed JSON-RPC envelope
-    preconditions:
+    prose_preconditions:
     - Error is a well-formed HandlerError
     lean_theorem: Theorems.Error_Mapping
   idempotency_classification:
@@ -104,7 +104,7 @@ equations:
     - Mutation tools (run, generate, create) are classified non-idempotent
     - Idempotent tools produce identical results for identical params within a session
     - Classification is declared in tool metadata, not inferred
-    preconditions:
+    prose_preconditions:
     - Tool is registered
     - Params are valid per inputSchema
     lean_theorem: Theorems.Idempotency_Classification

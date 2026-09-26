@@ -102,7 +102,7 @@ equations:
     - Every Commands variant has a dispatch arm (no unreachable_patterns)
     - Unknown subcommand returns non-zero exit code via clap
     - Dispatch is total — no silent no-op for valid subcommands
-    preconditions:
+    prose_preconditions:
     - args.len() >= 2 (binary name + subcommand)
     lean_theorem: Theorems.Dispatch_Completeness
   exit_code_semantics:
@@ -117,7 +117,7 @@ equations:
     - Distinct error classes map to distinct non-zero codes
     - No exit code collision between error variants
     - Exit codes are stable across versions (semver)
-    preconditions:
+    prose_preconditions:
     - CliError variant is well-formed
     lean_theorem: Theorems.Exit_Code_Semantics
   output_format_fidelity:
@@ -134,7 +134,7 @@ equations:
     - CSV output is valid per RFC 4180 (parseable by csv crate)
     - Text output is valid UTF-8 (no partial sequences)
     - --json flag overrides --format for all subcommands
-    preconditions:
+    prose_preconditions:
     - format ∈ {"json", "yaml", "csv", "text", "srt", "vtt"}
     lean_theorem: Theorems.Output_Format_Fidelity
   idempotent_inspection:
@@ -147,7 +147,7 @@ equations:
     - Inspection commands are pure readers — no file mutation
     - Running twice produces identical output for same input
     - No temporary files left behind
-    preconditions:
+    prose_preconditions:
     - Input files exist and are readable
     lean_theorem: Theorems.Idempotent_Inspection
 

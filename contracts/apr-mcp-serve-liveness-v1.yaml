@@ -92,7 +92,7 @@ equations:
     - ready == true <=> url is present
     - attribution == "child" is returned ONLY where socket->pid attribution exists; a
       platform without it returns "unavailable" and never the strong verdict
-    preconditions:
+    prose_preconditions:
     - the port is probed BEFORE the spawn, so a listener that predates the child can
       never be mistaken for it — and a port that cannot be bound is refused rather than
       handed a doomed daemon
@@ -103,7 +103,7 @@ equations:
     - attribution intersects /proc/net/tcp{,6} LISTEN inodes with /proc/<pid>/fd over
       the child and its transitive descendants, and fails CLOSED — an unreadable table
       or a missing LISTEN row yields Foreign, never Child
-    postconditions:
+    prose_postconditions:
     - 'payload.pid is always present: the caller owns the process and must be able to
       kill it, whether or not it ever bound'
     - payload.port is always present as a scalar, so the attempted port is reportable
@@ -121,9 +121,9 @@ equations:
     - p reaches the server launcher unchanged, across the whole u16 range
     - parsing into `serve plan` would also parse and start nothing, so the variant is
       asserted, not merely the absence of an error
-    preconditions:
+    prose_preconditions:
     - apr-cli depends on aprender-mcp, so serve_argv is callable from the parser's crate
-    postconditions:
+    prose_postconditions:
     - the argv the MCP tool spawns is the argv the shipped CLI accepts
 
 falsification_tests:

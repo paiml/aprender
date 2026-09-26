@@ -81,7 +81,7 @@ equations:
     - 'cosine_similarity(cpu_logits, cuda_logits) > 0.95 OR argmax matches'
     - 'cuda_logits std > 0.01 (not constant)'
     - 'cuda_logits peak-to-mean > 1.5 (not uniform)'
-    preconditions:
+    prose_preconditions:
     - 'cpu_transformer was populated via populate_trainer_from_init_tensors'
     - 'cuda_trainer was populated via build_shared_cuda_trainer_with_init'
     - 'init APR is canonical Qwen 0.5B (use_bias=true, tie_word_embeddings=true)'
@@ -97,7 +97,7 @@ equations:
     invariants:
     - 'CudaTransformerBlock fields b_q, b_k, b_v are Some when config.use_bias'
     - 'CudaTransformerBlock fields b_q, b_k, b_v are None when !config.use_bias (Llama)'
-    preconditions:
+    prose_preconditions:
     - 'CudaTransformerBlock::new accepts optional bias slices'
 
   forward_applies_biases_invariant:
@@ -112,7 +112,7 @@ equations:
     invariants:
     - 'forward applies cuda_add(q, b_q_replicated) after gemm_forward(norm1, w_q, q) when b_q.is_some()'
     - 'forward unchanged when b_q.is_none() (Llama path regression-free)'
-    preconditions:
+    prose_preconditions:
     - 'bias_upload_invariant holds'
 
 proof_obligations:

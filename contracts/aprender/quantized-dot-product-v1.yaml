@@ -317,6 +317,7 @@ equations:
     - Formats are not accidentally compatible
     preconditions:
     - F1 != F2
+    prose_preconditions:
     - data is valid for format F1
     lean_theorem: Theorems.FormatIsolation
   bsum_decomposition:
@@ -331,7 +332,7 @@ equations:
     - Bsums depend only on activations, not on weights
     - Integer arithmetic ensures exact equality
     - Precomputation is valid across all weight rows
-    preconditions:
+    prose_preconditions:
     - activations.len() is multiple of ELEMENTS_PER_SUBBLOCK
     lean_theorem: Theorems.BsumDecomposition
 proof_obligations:

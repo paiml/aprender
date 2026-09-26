@@ -45,9 +45,9 @@ equations:
     invariants:
       - "A model this shell cannot have loaded is never admitted to a session"
       - "S.models = {} implies accept(S) — the rule is about models, not about loading"
-    preconditions:
+    prose_preconditions:
       - "the session file parsed as JSON into a SessionState"
-    postconditions:
+    prose_postconditions:
       - "load(path).is_err() || load(path).unwrap().loaded_models().is_empty() || every path exists"
 
   reported_work_was_done:
@@ -58,7 +58,7 @@ equations:
     invariants:
       - "distill has no training loop in this crate, so it never reports training as begun"
       - "describing a configuration (--dry-run) is not reporting execution"
-    preconditions:
+    prose_preconditions:
       - "the command parsed"
     postconditions:
       - "!output.contains(\"Training started\") && !output.contains(\"simulated\")"

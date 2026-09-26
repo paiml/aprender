@@ -34,6 +34,7 @@ equations:
     - alpha = 1 collapses L to pure cross-entropy (teacher ignored)
     preconditions:
     - temperature > 0.0
+    prose_preconditions:
     - alpha in [0.0, 1.0]
   loss_gradient_consistency:
     formula: d/ds_j [ T^2 * KL(p_t || p_s) ] = T * (p_s[j] - p_t[j])

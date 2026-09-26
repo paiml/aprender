@@ -246,7 +246,7 @@ equations:
     - No phantom entries (entry exists without kernel)
     - ACTIVE kernels have valid call sites
     - BLOCKED kernels have complete benchmark data
-    preconditions:
+    prose_preconditions:
     - trueno-gpu crate compiles
     - fusion_decisions is non-empty
     lean_theorem: Theorems.FusionDecisionRegistry

@@ -63,7 +63,7 @@ equations:
     - 'THE SUBJECT REFUSAL IS UNTOUCHED (row 3): `contains a non-positive rate` still fires for a zero subject band.'
     - 'NO TRACEBACK ON ANY FIXTURE (rows 1–4 all assert the absence of `Traceback`).'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'the control fixture still yields a block (row 1, rc 0)'
 
 proof_obligations:

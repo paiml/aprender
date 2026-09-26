@@ -92,7 +92,7 @@ equations:
     - 'bind_cublas_stream(cublas, stream) precedes every cublas.gemm_* launch'
     - 'no cuBLAS launch on the legacy default stream from training paths'
     - 'handle never left bound to a destroyed stream across trainer drops'
-    preconditions:
+    prose_preconditions:
     - 'kernel caches initialized (init_forward_kernel_cache / init_kernel_cache)'
 
   forward_single_stream_ordering:
@@ -110,7 +110,7 @@ equations:
     - 'cuBLAS GEMMs execute on the trainer stream (per-call binding)'
     - 'layer_inputs/blocks_output snapshots use copy_from_buffer_async on the trainer stream, not NULL-stream cuMemcpyDtoD'
     - 'first-step loss is finite at any seq_len that fits the scratch capacity'
-    preconditions:
+    prose_preconditions:
     - 'cublas_per_call_stream_binding holds'
 
 proof_obligations:

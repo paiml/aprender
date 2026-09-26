@@ -71,9 +71,9 @@ equations:
     - 'IDEMPOTENCE IS LOAD-BEARING: `make roadmap-aggregate` runs post-merge on main, so a generator that is not a pure function churns a commit on every merge. The first cut read the LIVE roadmap.yaml as its base and raised `duplicate id` on its own output — it failed on run one.'
     - 'SUPERSESSION IS THE EDIT PATH, NOT A COROLLARY OF IDEMPOTENCE. A fragment supersedes a base entry of the same id. That is what makes docs/roadmaps/entries/ the ONLY way to change an existing PMAT-NNNN entry, which is in turn what lets the gate forbid every PR write to roadmap.yaml. Restoring the duplicate-id refusal would re-open the base as an edit surface and silently undo the gate.'
     - 'DETERMINISM: fragment order on disk (readdir order) must not reach the output.'
-    preconditions:
+    prose_preconditions:
     - 'no two fragments claim one id — the filesystem guarantees this, and the generator still refuses it'
-    postconditions:
+    prose_postconditions:
     - 'zero fragments reproduce the base BYTE FOR BYTE (selftest row 1, and 17,785 lines of real data)'
 
   placement_is_the_sorted_slot:
@@ -86,9 +86,9 @@ equations:
     invariants:
     - 'THE GUARD AND THE GENERATOR SHARE ONE PARSER: parse_id is imported from roadmap_merge.py, never restated, so check_roadmap_sorted.sh and this cannot disagree about which ids are sortable.'
     - 'LEGACY IDS ARE EXEMPT and append; the same rule roadmap_merge.py enforces.'
-    preconditions:
+    prose_preconditions:
     - 'the base already satisfies check_roadmap_sorted.sh'
-    postconditions:
+    prose_postconditions:
     - 'check_roadmap_sorted.sh is rc=0 on the aggregate'
 
   a_fragment_is_self_contained:
@@ -101,7 +101,7 @@ equations:
     - 'ANCHORS DO NOT SURVIVE A SPLIT: roadmap.yaml carries `created: &id001 …` on one entry aliased by 17 LATER ones (roadmap_diff.py names this as real data its block parser cannot resolve). A fragment carrying `*id001` is unparseable YAML, so split() inlines the literal and proves the mapping is unchanged, per entry, before writing anything.'
     - 'THIS IS WHY THE BASE IS NOT REWRITTEN: inlining that anchor in place is a pure re-serialisation and check_roadmap_diff_additive.sh correctly refuses it (measured: reserialised=18, "bytes differ, no field actually changed").'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'split() raises rather than writing a fragment whose mapping differs'
 
 proof_obligations:

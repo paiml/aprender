@@ -83,8 +83,9 @@ equations:
       a remote call fails closed rather than degrading to the cloud.
     preconditions:
     - "len(verifiers) >= 1"
+    prose_preconditions:
     - "every verifier resolves to a local model file"
-    postconditions:
+    prose_postconditions:
     - "exit_code == 0 iff verdict == AGREE"
     - "verdict names every verifier's model id and weight sha256"
 

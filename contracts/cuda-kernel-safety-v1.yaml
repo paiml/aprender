@@ -16,10 +16,10 @@ equations:
     - Pointer parameters become *mut T (raw pointers)
     - Return type preserved (typically void)
     - FFI declaration is inside extern "C" block
-    preconditions:
+    prose_preconditions:
     - Function has __global__ qualifier
     - Function is parseable by clang in C++ mode
-    postconditions:
+    prose_postconditions:
     - 'Output contains extern "C" block'
     - Output contains fn with matching name
   qualifier_preservation:
@@ -31,9 +31,9 @@ equations:
     - Qualifier survives borrow_gen transformation
     - Qualifier survives array_slice transformation
     - Qualifier survives optimize transformation
-    preconditions:
+    prose_preconditions:
     - Source contains __global__, __device__, or __host__ keyword
-    postconditions:
+    prose_postconditions:
     - Codegen receives non-None cuda_qualifier for annotated functions
   host_transpilation:
     formula: 'forall f without CUDA qualifier: transpile(f) = normal Rust function'
@@ -44,9 +44,9 @@ equations:
     - Host functions use normal transpilation pipeline
     - No FFI wrappers for host code
     - Ownership inference applies normally
-    preconditions:
+    prose_preconditions:
     - Function has no CUDA qualifier (or __host__ only)
-    postconditions:
+    prose_postconditions:
     - Output is a regular Rust function (not extern C)
 proof_obligations:
 - id: CKS-INV-001

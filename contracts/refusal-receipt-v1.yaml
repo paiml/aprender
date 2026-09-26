@@ -126,9 +126,9 @@ equations:
       - "a required field with a closed escape cannot be satisfied by inventing a release"
       - "a plausible-but-undeclared sentinel (tbd, soon, n/a, pending) is refused, not tolerated"
       - "a sha is refused: it is precise about the tree and silent about the boundary a user waits for"
-    preconditions:
+    prose_preconditions:
       - "the verb names an entry of contracts/apr-cli-commands-v1.yaml"
-    postconditions:
+    prose_postconditions:
       - "no refusal is silent about its own lifetime"
     lean_theorem: none — L4 not declared
 

@@ -58,7 +58,7 @@ equations:
     - 'NESTED RECORDS COUNT (self-test row 2): a `subtasks:` child record with an id that also exists top-level is a duplicate — the #3028 shape.'
     - 'PROSE DOES NOT COUNT (row 4): an `- id:` line inside a block scalar is not a node.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'exit 0 prints `PASS  <n> ids`; exit 1 names every duplicate id with path and line'
 
   unparsable_is_a_defect_missing_is_env:
@@ -70,7 +70,7 @@ equations:
     invariants:
     - 'A GUARD THAT CANNOT READ ITS INPUT DOES NOT PASS (rows 5, 6).'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'the self-test exercises both exits'
 
   enforcement_is_wired_case_table_then_live:
@@ -82,9 +82,9 @@ equations:
     codomain: 'bool'
     invariants:
     - 'CASE TABLE BEFORE THE LIVE CHECK (Verification Discipline #7).'
-    preconditions:
+    prose_preconditions:
     - 'guard-runner-labels is in gate.needs, so a RED here fails gate transitively'
-    postconditions:
+    prose_postconditions:
     - 'check_guards_are_wired.sh names the guard as wired'
 
 proof_obligations:

@@ -153,7 +153,7 @@ equations:
       - "`apr qa --json` is the measurement; a Skipped gate counts as NOT passed even though the report marks it passed:true"
       - "ran_on(cuda) is proved by the ABSENCE of the `diverges from CPU … falling back to CPU` and `path rejected` lines in `apr run --gpu` output, never by the flag that was passed"
       - "a rung the host does not hold is absent, and absent is FAIL for a required rung: an unmeasured claim is not a passed claim"
-    preconditions:
+    prose_preconditions:
       - "binary pinned via scripts/apr_bin.sh (built from HEAD) or DOGFOOD_ALLOW_UNPINNED=1 for the published-crate mode"
       - "every apr call runs through apr_locked: the fleet GPU lock (flock, bounded wait; a held lock is an ENV decline naming its holder) and choom -n 1000, so a measurement and never a CI job is the OOM victim (#3712; gx10 global OOM 2026-09-21 15:56:08Z killed CI containers)"
   host_receipt:
@@ -164,7 +164,7 @@ equations:
       - "receipt.sha equals the git HEAD the binary was built from"
       - "receipt.executed >= 1 — a receipt that measured nothing is a decline (exit 2), never a pass"
       - "receipt.inventory is MEASURED on the host (every file under inventory.dirs matching inventory.patterns), never copied from the ladder; an empty inventory is FAIL"
-    preconditions:
+    prose_preconditions:
       - "python3 with json on the host (yaml is read by python3 too)"
   gate_verdict:
     formula: "T2_models = ∀ host required: receipt(host) fresh(version) ∧ ∀ rung required: green(rung, host) ∧ ∀ f ∈ receipt(host).inventory: green(f, host, inventory.backends)"
@@ -173,7 +173,7 @@ equations:
       - "the rung list at origin/main is the floor: a PR may add rungs, hosts or backends and may not remove any (same construction as check_multiplatform_dogfood.sh layer 2)"
       - "a missing receipt is FAIL, not DEFER: unlike the multiplatform gate this needs no published crate, a dev build measures it"
       - "a Q4_K rung (file or id matches q4_?k) is required and claims cuda — the key `required: false` on one is refused, not tolerated (#3712)"
-    preconditions:
+    prose_preconditions:
       - "git can read origin/main:contracts/model-capability-ladder-v1.yaml, or the run is the bootstrap"
 
 proof_obligations:

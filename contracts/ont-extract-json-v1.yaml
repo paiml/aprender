@@ -55,9 +55,9 @@ equations:
       - "no blank node: every subject is an IRI derived from the ref and the path to the node"
       - "an unmapped nested key is refused, never typed by guess (EXJ-INV-002)"
       - "null produces no triple; an array of scalars is the predicate repeated"
-    preconditions:
+    prose_preconditions:
       - "the document parses as JSON, or as JSONL where every line that parses is a root"
-    postconditions:
+    prose_postconditions:
       - "two extractions of the same document are byte-identical (EXJ-INV-001)"
       - "a JSONL line that does not parse is a warning naming the line, and the other lines' nodes are emitted (EXJ-INV-003)"
     lean_theorem: none — L4 not declared

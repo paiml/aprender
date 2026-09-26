@@ -74,9 +74,9 @@ equations:
     codomain: 'bool'
     invariants:
     - 'A BLOCKER THAT IS NOT A ROW IS NAMED (selftest row 2): an obligation that waits on nothing the DAG can complete waits forever, invisibly.'
-    preconditions:
+    prose_preconditions:
     - 'rows have unique string ids (a duplicate is a usage error, exit 2)'
-    postconditions:
+    prose_postconditions:
     - 'D1 lines name the row and the missing blocker'
 
   d2_acyclic:
@@ -87,7 +87,7 @@ equations:
     invariants:
     - 'A CYCLE IS PRINTED AS ITS PATH (selftest row 3: I-1 -> T-0 -> I-15 -> I-1; mutation 3 on the real DAG: a self-edge G-4 -> G-4).'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'D2 lines carry the full cycle path'
 
   d3_slack_on_the_066_lane:
@@ -100,9 +100,9 @@ equations:
     invariants:
     - 'ZERO SLACK IS THE REVIEW FINDING (W-H expiring the day of its blocker); selftest row 4 is that pair, row 5 shows the same pair ungated on the 0.67 lane (carried rows carry placeholder expiries until the 0.67 spec dates them).'
     - 'THE FLOOR IS SPEC §2''s, NOT THIS FILE''s: the number is an argument (--min-slack-days) whose default is 6 and whose basis is the spec.'
-    preconditions:
+    prose_preconditions:
     - 'both expiries resolve (else D6 already fired)'
-    postconditions:
+    prose_postconditions:
     - 'D3 lines carry blocker, blockee and the measured slack in days'
 
   d4_host_queues_ordered_by_expiry:
@@ -112,9 +112,9 @@ equations:
     codomain: 'bool'
     invariants:
     - 'A QUEUE INVERSION IS NAMED WITH BOTH DATES (selftest row 6; mutation 2 on the real DAG: gx10 positions 2 and 4 swapped -> T-0 (10-03) before T-1 (09-26)). gx10 is one queue ordered by expiry (spec §2).'
-    preconditions:
+    prose_preconditions:
     - 'every queue entry is a row (else a D4 line names it)'
-    postconditions:
+    prose_postconditions:
     - 'D4 lines name host, both rows and both resolved dates'
 
   d5_owner_present:
@@ -125,7 +125,7 @@ equations:
     invariants:
     - 'AN UNOWNED ROW IS A ROW NOBODY IS ASKED ABOUT WHEN IT EXPIRES (selftest row 7).'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'D5 lines name the row'
 
   d6_exactly_one_expiry_form:
@@ -137,7 +137,7 @@ equations:
     invariants:
     - 'TWO FORMS, NO FORM, A MALFORMED FORM AND A GHOST ANCHOR ARE FOUR RED ROWS (selftest rows 8, 9, 10): an expiry that cannot be resolved is not a late row, it is a row with no deadline, which spec §12 forbids.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'D6 lines name the row and the defect'
 
   past_expiry_is_reported_not_judged:
@@ -149,7 +149,7 @@ equations:
     invariants:
     - 'THE LIST IS MECHANICAL, THE VERDICT IS THE §4 ANDON''s (selftest row 11: a past-expiry row keeps rc 0 here and prints the REPORT line). `today` defaults to the DAG header''s `generated` date so the check is deterministic in CI; --today overrides.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'past_expiry=<n> on the summary line'
 
   enforcement_is_wired_case_table_then_live:
@@ -163,9 +163,9 @@ equations:
     - 'CASE TABLE BEFORE THE LIVE CHECK, EVERY TIME (Verification Discipline #7).'
     - 'A MISSING DAG IS EXIT 2, NEVER A PASS: until the DAG lands on main (PR #2981) this step is RED by design on any branch that lacks the file.'
     - 'render_dag.py --check IS NOT WIRED HERE: it exits 3 (NOT ARMED) until SPEC-1.6 inserts the marker pair, and that PR wires it; wiring a step that cannot pass is a phantom, wiring one that always passes is theater.'
-    preconditions:
+    prose_preconditions:
     - 'guard-runner-labels is in gate.needs, so a RED here fails gate transitively'
-    postconditions:
+    prose_postconditions:
     - 'check_guards_are_wired.sh names the guard as wired'
 
 proof_obligations:

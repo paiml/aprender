@@ -57,7 +57,7 @@ equations:
     - 'lr is non-increasing in rank'
     - 'lr(_, rank) <= 5e-5 for rank >= 128 (convergent band; 2e-4 diverges there)'
     - 'lr(_, rank) == 2e-4 for 0 < rank <= 32 (no regression for typical LoRA)'
-    preconditions:
+    prose_preconditions:
     - 'rank is the planner-selected or user-overridden LoRA rank'
 
 proof_obligations:

@@ -85,12 +85,14 @@ equations:
     preconditions:
     - teacher.is_frozen() == true
     - student.output_dim == teacher.output_dim
-    - T > 0.0 (temperature must be positive)
     - alpha >= 0.0 && alpha <= 1.0
+    prose_preconditions:
+    - T > 0.0 (temperature must be positive)
     postconditions:
+    - result.output_dim == teacher.output_dim
+    prose_postconditions:
     - kl_final < kl_initial (student learned from teacher)
     - teacher.weights == teacher_original.weights (teacher unchanged)
-    - result.output_dim == teacher.output_dim
     lean_theorem: Theorems.DistillKnowledgeTransfer
 
   finetune_lora_rank_correctness:
@@ -112,6 +114,7 @@ equations:
     preconditions:
     - r >= 1 && r <= 256
     - alpha_lora > 0.0
+    prose_preconditions:
     - model has at least one linear layer eligible for LoRA
     postconditions:
     - result.adapters.len() > 0
@@ -134,14 +137,15 @@ equations:
     - Checkpoint contains base model reference (content hash, not filesystem path)
     - Checkpoint contains adapter weights separately from base model
     - Checkpoint includes training metadata (seed, epoch, loss)
-    preconditions:
+    prose_preconditions:
     - seed is explicitly set (no implicit randomness)
     - data iteration order is deterministic for given seed
     - model weights are deterministic (loaded from known checkpoint)
     postconditions:
-    - sha256(ckpt1_bytes) == sha256(ckpt2_bytes) for same inputs
     - ckpt.base_model_ref.is_some()
     - ckpt.adapter_weights.len() > 0
+    prose_postconditions:
+    - sha256(ckpt1_bytes) == sha256(ckpt2_bytes) for same inputs
     lean_theorem: Theorems.FinetuneCheckpointDeterminism
 
 kernel_structure:

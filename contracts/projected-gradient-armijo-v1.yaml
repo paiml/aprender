@@ -33,8 +33,9 @@ equations:
     - Backtracking shrinks alpha geometrically by beta until sufficient decrease
     - On acceptance f(x_{k+1}) <= f(x_k) (monotone non-increase)
     preconditions:
-    - beta in (0.0, 1.0)
     - step_size > 0.0
+    prose_preconditions:
+    - beta in (0.0, 1.0)
     lean_theorem: Theorems.Armijo_Backtracking
   monotone_non_increase:
     formula: f(x_{k+1}) <= f(x_k) for every accepted iterate k

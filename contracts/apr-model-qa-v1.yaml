@@ -118,7 +118,7 @@ equations:
     - Gate order does not affect results (commutative)
     - Disabled gates do not appear in report
     - Aggregate score = passed_gates / enabled_gates
-    preconditions:
+    prose_preconditions:
     - at least one gate enabled
     - path is a valid model file
     postconditions:
@@ -147,9 +147,9 @@ equations:
     - A passed (passed=true, skipped=false) gate is never demoted
     - A failed (passed=false, skipped=false) gate remains failed
     - Function is idempotent — applying it twice yields the same state
-    preconditions:
+    prose_preconditions:
     - gates contains at most one entry with name == "golden_output"
-    postconditions:
+    prose_postconditions:
     - If config.require_golden_output && golden_output.skipped (before)
       then golden_output.passed == false (after)
     - All non-golden_output gates are pointwise unchanged
@@ -168,11 +168,13 @@ equations:
     - Comparison is token-level (not string-level)
     - Baseline is immutable once captured
     preconditions:
-    - model produces output for canary prompts
     - baseline.prompts.len() > 0
+    prose_preconditions:
+    - model produces output for canary prompts
     postconditions:
-    - report.regressions.len() == count of diverged prompts
     - report.pass == (report.regressions.is_empty())
+    prose_postconditions:
+    - report.regressions.len() == count of diverged prompts
     lean_theorem: Theorems.CanaryRegressionDetection
 
   lint_model_conventions:
@@ -190,7 +192,7 @@ equations:
     - "Severity ordering — error > warning > info"
     preconditions:
     - path.exists()
-    postconditions:
+    prose_postconditions:
     - report.findings sorted by severity desc
     - no duplicate findings (same rule + same location)
     lean_theorem: Theorems.LintModelConventions
@@ -210,8 +212,9 @@ equations:
     - Failure of one property does not skip others
     - Random seeds logged for reproducibility
     preconditions:
-    - model loads successfully
     - properties.len() > 0
+    prose_preconditions:
+    - model loads successfully
     postconditions:
     - report.tested == properties.len()
     - report.pass == report.failures.is_empty()

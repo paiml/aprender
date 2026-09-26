@@ -29,9 +29,9 @@ equations:
     - No "### Continue:" prose nudge is injected after a tool-using turn
     - Raw tool-call markup never enters history as a Message::Assistant prose blob
     - Genuine text turns are retained verbatim (behavior unchanged for prose)
-    preconditions:
+    prose_preconditions:
     - the prior assistant turn emitted a valid tool call
-    postconditions:
+    prose_postconditions:
     - prompt contains <tool_call> and <tool_result>
     - prompt does not contain "### Continue:"
     lean_theorem: Theorems.Apr_Code_Toolcall_Structural_Retention
@@ -44,9 +44,9 @@ equations:
     - A bare top-level {"name","input"} JSON object is salvaged
     - JSON without both a string name AND an input field is NEVER salvaged (conservative)
     - A proper <tool_call> envelope is owned by the envelope parser, not salvage
-    preconditions:
+    prose_preconditions:
     - the envelope parser found no tool call
-    postconditions:
+    prose_postconditions:
     - tool-call-shaped JSON yields a non-empty [ToolCall]
     - non-tool-call JSON yields an empty [ToolCall]
     lean_theorem: Theorems.Apr_Code_Toolcall_Salvage_Recovery

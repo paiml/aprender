@@ -675,6 +675,7 @@ equations:
     - Density thresholds enforced (50% for embeddings, 80% for weights)
     preconditions:
     - data.len() > 0
+    prose_preconditions:
     - shape dimensions are positive
     lean_theorem: Theorems.ValidatedTensorConstruction
   transpose_invariant:
@@ -688,7 +689,7 @@ equations:
     - 2D transpose swaps dimensions exactly
     - 1D tensors are identity
     - Byte size preserved across transpose
-    preconditions:
+    prose_preconditions:
     - gguf_shape has 1 or 2 dimensions
     lean_theorem: Theorems.TransposeInvariant
   quant_dispatch_exhaustiveness:
@@ -703,7 +704,7 @@ equations:
     - Exhaustive match — every variant handled
     - No catch-all arm (no _ =>)
     - Each variant maps to exactly one kernel
-    preconditions:
+    prose_preconditions:
     - WeightQuantType is non-empty enum
     lean_theorem: Theorems.QuantDispatchExhaustiveness
 

@@ -123,7 +123,7 @@ equations:
     invariants:
     - 'output(p₁) != output(p₂) WHEN p₁ != p₂ AND tokenize(p₁) != tokenize(p₂)'
     - 'wall time may differ but output text MUST differ'
-    preconditions:
+    prose_preconditions:
     - 'canonical 7B teacher loaded as GGUF'
     - 'three distinct English prompts'
     - 'greedy or low-temperature sampling (deterministic seed)'
@@ -142,7 +142,7 @@ equations:
     - 'Each prefill iteration sees the prompt''s i-th token, not a fixed token'
     - 'KV cache is flushed between distinct apr run invocations'
     - 'Sampler reads logits computed from the actual final hidden state, not a poisoned/fixed buffer'
-    preconditions:
+    prose_preconditions:
     - 'prompt_sensitivity_invariant holds (downstream consequence)'
 
 proof_obligations:

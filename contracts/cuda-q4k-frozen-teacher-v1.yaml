@@ -49,7 +49,7 @@ equations:
     - 'Trainable (student): F32 path unchanged — gradients require F32 anyway'
     - 'q4k_block_bytes(layer) ≈ f32_block_bytes(layer) / 7 (Q4K has ~4.5 bits/param vs 32)'
     - 'Total teacher footprint for 7B Q4K Frozen: ≈ 4 GB (vs 28 GB current)'
-    preconditions:
+    prose_preconditions:
     - teacher_mode is determined at trainer construction (CudaTransformerTrainer::for_inference call site)
     - on_disk_format is read from APR/SafeTensors header at load
     lean_theorem: Theorems.Teacher_Residency_Invariant
@@ -67,8 +67,9 @@ equations:
     - Forward output of CudaBlock::Q4K must match CudaBlock::Fp32 forward output within 0.5% relative error (the dequant precision floor) for the same weights
     - Q4K forward kernels are inference-only; no backward pass attempts to differentiate Q4K weights (frozen invariant)
     preconditions:
-    - x.shape() matches block.hidden_size
     - block.q4k.elements > 0
+    prose_preconditions:
+    - x.shape() matches block.hidden_size
     lean_theorem: Theorems.Forward_Kernel_Dispatch
 
   no_grad_invariant:
@@ -81,7 +82,7 @@ equations:
     - Q4K block weights are immutable — any backward step that attempts to write a Q4K block's grad is a programming error (must be a compile error or runtime panic with a clear message)
     - This invariant is what allows the memory savings — no gradient storage AND no optimizer state for the teacher
     - 'CudaBlock::Q4K is constructible only from CudaTrainerTeacher::for_inference (typestate guard)'
-    preconditions:
+    prose_preconditions:
     - Always (this is a type-level invariant)
     lean_theorem: Theorems.No_Grad_Invariant
 
@@ -95,7 +96,7 @@ equations:
     - 'The Q4K forward kernel used in the cuda training backend MUST be byte-identical (or numerically equivalent within F32 noise) to the realizar inference kernel for the same weight'
     - 'This is what guarantees that `apr distill` teacher logits == `apr run` teacher logits — the falsifier for KD signal correctness'
     - 'Reuse, do not reimplement: link against realizar/aprender-compute fused_q4k_parallel_matvec where possible'
-    preconditions:
+    prose_preconditions:
     - Same Q4K block layout (super_block_size=256, block_size=32, scale/min/quants byte order)
     - Same row-major matrix layout (per LAYOUT-001/002)
     lean_theorem: Theorems.Parity_With_Realizar_Inference

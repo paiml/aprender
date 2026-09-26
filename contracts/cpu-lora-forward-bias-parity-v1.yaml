@@ -56,7 +56,7 @@ equations:
     - 'forward_with_lora applies b_q, b_k, b_v whenever forward() does'
     - 'bias application precedes qk-norm and RoPE (same order as forward())'
     - 'LoRA A/B gradients flow through the bias add (autograd-aware op only)'
-    preconditions:
+    prose_preconditions:
     - 'LoRA B zero-initialized (standard init) for the identity check'
 
 proof_obligations:

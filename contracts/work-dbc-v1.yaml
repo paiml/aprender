@@ -27,10 +27,10 @@ equations:
     - Only forward transitions allowed (no regression)
     - Terminal states cannot be restarted
     - Each transition records timestamp and actor
-    preconditions:
+    prose_preconditions:
     - item.state is a valid WorkState
     - action is valid for current state
-    postconditions:
+    prose_postconditions:
     - new state is a valid successor of old state
     lean_theorem: Theorems.LifecycleStateMachine
 
@@ -46,9 +46,9 @@ equations:
     - All require clauses evaluated before state → InProgress
     - Failed require blocks state transition
     - Require evaluation is idempotent
-    preconditions:
+    prose_preconditions:
     - contract has at least 1 require clause
-    postconditions:
+    prose_postconditions:
     - all clauses pass or error with specific failing clause
     lean_theorem: Theorems.RequireClauseEvaluation
 
@@ -64,10 +64,10 @@ equations:
     - All ensure clauses evaluated before state → Completed
     - Failed ensure blocks completion (falsification)
     - Ensure violations trigger rescue protocol
-    preconditions:
+    prose_preconditions:
     - work item is InProgress
     - contract has at least 1 ensure clause
-    postconditions:
+    prose_postconditions:
     - all clauses pass or error with rescue advice
     lean_theorem: Theorems.EnsureClauseEvaluation
 
@@ -84,9 +84,9 @@ equations:
     - Falsification is non-destructive (read-only check)
     - Override requires accountability ticket
     - Rescue protocol limits retries (default 3)
-    preconditions:
+    prose_preconditions:
     - work item has a contract (contract.json exists)
-    postconditions:
+    prose_postconditions:
     - result categorizes each clause as pass/fail/warning
     lean_theorem: Theorems.FalsificationProtocol
 
@@ -103,9 +103,9 @@ equations:
     - Rescue attempts bounded (max 3 by default)
     - Each attempt recorded with timestamp
     - Override requires --ticket for accountability
-    preconditions:
+    prose_preconditions:
     - falsification failed
-    postconditions:
+    prose_postconditions:
     - rescue record saved
     lean_theorem: Theorems.RescueEscalation
 

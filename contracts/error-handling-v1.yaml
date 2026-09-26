@@ -11,10 +11,10 @@ equations:
     - "Error::source() forms a DAG (no cycles in error chain)"
     - "Display output includes root cause (no silent swallowing)"
     - "downcast_ref recovers original error type"
-    preconditions:
+    prose_preconditions:
     - "E implements std::error::Error"
     - "E implements Display with human-readable message"
-    postconditions:
+    prose_postconditions:
     - "Err(e) preserves full causal chain via source()"
     - "error.to_string() is non-empty and contains context"
     lean_theorem: Theorems.Error_Handling

@@ -82,9 +82,9 @@ equations:
         instead of a pair file.'
       - 'The generator is Philox 4x32-10, a STATISTICAL RNG. It is used only for sampling
         determinism and must never be described or reused as cryptographic randomness.'
-    preconditions:
+    prose_preconditions:
       - 'domain is one of the six strings frozen in rng_domain_strings'
-    postconditions:
+    prose_postconditions:
       - 'generate_at(key, counter) is total — every (key, counter) yields a block'
 
   rng_domain_strings:
@@ -105,7 +105,7 @@ equations:
         collided the streams would become correlated without any test failing.'
     preconditions:
       - 'label < number_of_classes'
-    postconditions:
+    prose_postconditions:
       - 'distinct (domain, root_seed) pairs derive distinct keys with probability 1 - 2^-64'
 
   bounded_draw:
@@ -125,7 +125,7 @@ equations:
       - '`next_f32` draws are FORBIDDEN for index selection. It carries 23 mantissa bits,
         so a float-scaled index cannot address a bucket larger than 2^24 without
         collisions, and float rounding makes the derivation host-fragile.'
-    preconditions:
+    prose_preconditions:
       - 'n > 0 (enforced by the type)'
     postconditions:
       - 'result < n'
@@ -154,9 +154,9 @@ equations:
       - 'HASH-FROM-PARSED-BYTES: the buffer that is hashed is the SAME buffer that was
         parsed and count-checked. Reading a source twice would let the recorded digest
         describe content that never passed validation.'
-    preconditions:
+    prose_preconditions:
       - 's is valid UTF-8'
-    postconditions:
+    prose_postconditions:
       - 'exact_hash(s) == exact_hash(t) implies normalized_hash(s) == normalized_hash(t)'
 
   # ==========================================================================
@@ -186,9 +186,9 @@ equations:
         per-split constructor: a split validated in isolation carries no evidence about
         its siblings, and cross-split exclusion needs all of them at once.'
       - 'NO PATHS. `bytes: &[u8]` in, typed values out. There is no overload taking a path.'
-    preconditions:
+    prose_preconditions:
       - 'decl declares the role, the label map, and the expected per-class counts'
-    postconditions:
+    prose_postconditions:
       - 'on Ok, every row''s embedded source_split equals decl.role'
       - 'on Ok, row ids are unique within the split'
 
@@ -213,9 +213,9 @@ equations:
       - 'The compatibility profile emits NO validation split at all (D-19), which is why
         a compatibility-profile selection run cannot be assembled even by a caller willing
         to ignore every warning.'
-    preconditions:
+    prose_preconditions:
       - 'the attestation re-derives (see dataset_attestation) before any split is exposed'
-    postconditions:
+    prose_postconditions:
       - 'no value of type PreparedDataset<Compatibility> can be passed to selection'
 
   dataset_attestation:
@@ -235,9 +235,9 @@ equations:
       - 'Canonical splits are NOT exposed until every comparison passes. Exposure-then-
         validate would let a caller read rows out of a dataset that is about to be
         rejected.'
-    preconditions:
+    prose_preconditions:
       - 'a buffer is supplied for every split role the attestation names'
-    postconditions:
+    prose_postconditions:
       - 'on Ok, recomputed(field) == attested(field) for every attested field'
 
   # ==========================================================================
@@ -268,9 +268,9 @@ equations:
         pool of some class can no longer supply shots_per_class. That is a real failure.'
       - 'Exclusion order is deterministic (sorted ids), because the excluded set reaches a
         manifest and therefore a hash.'
-    preconditions:
+    prose_preconditions:
       - 'every split of the dataset has been ingested and hashed'
-    postconditions:
+    prose_postconditions:
       - 'no two groups share a row'
       - 'sum over classes of reduced_pool <= |train|'
 
@@ -291,9 +291,9 @@ equations:
         deserialized record can name anything at all. See untrusted_pair_ingest.'
       - 'The error NAMES the offending identifier and where it was found. "Leakage
         detected" is not diagnosable; "endpoint validation:3 is not in the selection" is.'
-    preconditions:
+    prose_preconditions:
       - 'the selection is available to check membership against'
-    postconditions:
+    prose_postconditions:
       - 'no accepted pair has an endpoint outside the selection'
 
   # ==========================================================================
@@ -323,10 +323,10 @@ equations:
         case, which concerns SELECTED class sizes and is handled by singleton_policy.'
       - 'Selection consumes ONLY the canonical training pool. It never reads validation or
         test rows, and the access ledger records that.'
-    preconditions:
+    prose_preconditions:
       - 'shots_per_class in {8, 16, 32, 64}'
       - 'every class''s reduced pool has at least shots_per_class rows'
-    postconditions:
+    prose_postconditions:
       - 'the selection contains exactly shots_per_class rows of every class'
       - 'all selected ids are distinct'
 
@@ -351,7 +351,7 @@ equations:
         consumer must be able to be handed THE identical sampled-ID set, and a shared file
         makes that a fact where two independent regenerations only make it a hash
         comparison.'
-    preconditions:
+    prose_preconditions:
       - 'the selection is complete and the access ledger is closed'
     postconditions:
       - 'SHA256(payload_bytes) == envelope.semantic_hash'
@@ -374,9 +374,9 @@ equations:
       - 'That last clause is what makes the manifest evidence rather than an assertion. A
         manifest whose hash is internally consistent but whose contents no seed could have
         produced is exactly what a hand-edited manifest looks like.'
-    preconditions:
+    prose_preconditions:
       - 'the manifest declares a supported schema_version and algorithm_version'
-    postconditions:
+    prose_postconditions:
       - 'on Ok, the returned Selection equals a fresh selection from the same tuple'
 
   access_ledger_persistence:
@@ -392,9 +392,9 @@ equations:
         artifact it can read after the process that built it has exited.'
       - 'Because the ledger hash is inside the hashed payload, tampering with the ledger
         invalidates the selection''s semantic_hash. The two cannot be desynchronized.'
-    preconditions:
+    prose_preconditions:
       - 'the ledger is closed before the payload is serialized'
-    postconditions:
+    prose_postconditions:
       - 'selection payload contains ledger_hash == SHA256(ledger canonical bytes)'
 
   # ==========================================================================
@@ -414,7 +414,7 @@ equations:
         a poisoned pair claims to be a positive.'
       - 'Structural impossibility, not a scattered `assert!(a != b)` at call sites: the
         latter is a property of the call sites, which grow.'
-    preconditions:
+    prose_preconditions:
       - 'a and b are ordinals of the same Selection'
     postconditions:
       - 'result.lo < result.hi'
@@ -435,9 +435,9 @@ equations:
       - 'The target check is not redundant with membership: a record naming two legitimate
         same-class endpoints while declaring target 0.0 is a semantically poisoned pair
         made entirely of valid parts.'
-    preconditions:
+    prose_preconditions:
       - 'the Selection the record claims membership in is available'
-    postconditions:
+    prose_postconditions:
       - 'every accepted LabeledPair satisfies canonical_pair''s postconditions'
 
   positive_capacity:
@@ -456,9 +456,9 @@ equations:
         This is an Aprender policy (deviation clause 3), not SetFit''s behavior.'
       - 'A singleton class contributes exactly 0, which is what makes singleton_policy''s
         NegativesOnly fall out of the arithmetic instead of needing a special case.'
-    preconditions:
+    prose_preconditions:
       - 'n is the per-class size vector of a completed Selection'
-    postconditions:
+    prose_postconditions:
       - 'result >= 0 and no intermediate wrapped'
 
   negative_capacity:
@@ -472,9 +472,9 @@ equations:
         the first thing to overflow and it does so long before the true capacity would.'
       - 'A single-class Selection has negative_capacity 0, which degenerate-policy handles
         explicitly rather than dividing by it.'
-    preconditions:
+    prose_preconditions:
       - 'n is the per-class size vector of a completed Selection'
-    postconditions:
+    prose_postconditions:
       - 'result == sum over j<k of n_j*n_k, exactly'
 
   default_epoch_budget:
@@ -522,9 +522,9 @@ equations:
         a REQUEST defect (ZeroBudget). They are separate variants because they are fixed in
         different places.'
       - 'Only the None branch clamps, and only that branch records clamp engagement.'
-    preconditions:
+    prose_preconditions:
       - 'the layout''s closed form has been computed without overflow'
-    postconditions:
+    prose_postconditions:
       - 'on Ok, result > 0'
       - 'on Ok, result <= hard_cap'
 
@@ -567,10 +567,10 @@ equations:
         and is documented as such rather than left to be discovered.'
       - 'v1 ships the OVERSAMPLING strategy only, as a versioned one-variant enum, so
         adding `unique` or `undersampling` later is non-breaking.'
-    preconditions:
+    prose_preconditions:
       - 'the effective budget has been resolved (see budget_resolution)'
       - 'at least one of positive_capacity, negative_capacity is non-zero'
-    postconditions:
+    prose_postconditions:
       - 'exactly `budget` pairs are emitted, or the degenerate policy applies'
       - 'retained state never exceeds c * (examples + classes)'
 
@@ -598,9 +598,9 @@ equations:
         not be raised here — conflating them would reject a legal oversampling request.'
       - 'The emitted_kinds field is always recorded, including in the ordinary both-kinds
         case, so its absence cannot be confused with the ordinary case.'
-    preconditions:
+    prose_preconditions:
       - 'capacities were computed without overflow'
-    postconditions:
+    prose_postconditions:
       - 'the replay record states emitted_kinds and degenerate_policy_version'
 
   singleton_policy:
@@ -622,9 +622,9 @@ equations:
         supply shots_per_class. The first is legal, the second is an error.'
       - 'Version-tagged so that adding a second variant later is a detectable, non-breaking
         change rather than a silent behavior swap.'
-    preconditions:
+    prose_preconditions:
       - 'the selection is complete'
-    postconditions:
+    prose_postconditions:
       - 'manifest.singleton_policy and manifest.singleton_policy_version are present'
 
   # ==========================================================================
@@ -645,9 +645,9 @@ equations:
         record, the regenerated stream is identical pair-for-pair, in order.'
       - 'Every field is present even when it is the default — an absent field is
         indistinguishable from a field that was never considered.'
-    preconditions:
+    prose_preconditions:
       - 'the selection referenced by selection_semantic_hash is available'
-    postconditions:
+    prose_postconditions:
       - 'regenerate(record) is pairwise identical to the original stream'
 
   pair_manifest_hash:
@@ -667,9 +667,9 @@ equations:
         the whole design exists to avoid, in the one place nobody would look for it.'
       - 'The 0x1E separator prevents a record/stream boundary ambiguity under
         concatenation.'
-    preconditions:
+    prose_preconditions:
       - 'the replay record is complete before the first pair is emitted'
-    postconditions:
+    prose_postconditions:
       - 'identical (record, stream) pairs hash identically on any host and any worker count'
 
 proof_obligations:

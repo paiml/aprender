@@ -53,9 +53,9 @@ equations:
     - 'argv containing --method, --bits or --group-size is rejected (apr quantize has no such flag)'
     - 'argv = [<FILE>, --scheme, <s>, -o, <path>] is accepted'
     - 'verdict is deterministic: verdict(argv) = verdict(argv) for all argv'
-    postconditions:
+    prose_postconditions:
     - 'verdict is Rejected implies reason is the clap error first line, non-empty'
-    preconditions:
+    prose_preconditions:
     - 'every element of argv is a UTF-8 string'
 
   gate_passes_iff_observation_matches_the_parser:
@@ -68,9 +68,9 @@ equations:
     - 'expected_outcome = accepted (or its alias ok) and verdict = rejected implies gate.passed = false'
     - 'expected_outcome = rejected and verdict = accepted implies gate.passed = false'
     - 'gate.passed = false implies the failure text names the flags apr quantize does accept'
-    postconditions:
+    prose_postconditions:
     - 'gate.failure is Some if and only if gate.passed = false'
-    preconditions:
+    prose_preconditions:
     - 'observation.flags.argv is present and is an array of strings'
     - 'observation.flags.expected_outcome is present'
 
@@ -83,9 +83,9 @@ equations:
     - 'a per-flag label (missing_method, wrong_method, unknown_method, invalid_bits, missing_bits, invalid_group_size) is exit 4, never folded into rejected'
     - 'a missing expected_outcome is exit 4, never defaulted to accepted'
     - 'a missing argv is exit 4, never treated as the empty argv'
-    postconditions:
+    prose_postconditions:
     - 'exit_code 5 implies the observation was usable and the shipped parser disagreed with it'
-    preconditions:
+    prose_preconditions:
     - 'the observation file exists, is non-empty and parses as JSON (otherwise 3/4/7 per lint_error.rs)'
 
   accepted_flag_list_is_read_off_the_shipped_command:
@@ -96,9 +96,9 @@ equations:
     invariants:
     - 'accepts_summary contains <FILE>, --scheme, --output, --format, --batch, --plan and --force'
     - 'accepts_summary never contains --method, --bits or --group-size'
-    postconditions:
+    prose_postconditions:
     - 'accepts_summary is non-empty'
-    preconditions:
+    prose_preconditions:
     - 'the shipped CLI exposes a `quantize` subcommand'
 
 falsification_tests:

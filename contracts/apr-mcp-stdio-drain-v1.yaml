@@ -62,10 +62,10 @@ equations:
     - 'response ORDER is unconstrained: ids may be written in any permutation (workers are concurrent by design)'
     - 'a tool that panics contributes an error response for its id, never silence'
     - 'the session outcome (Ok / Err) is reported only AFTER the drain'
-    preconditions:
+    prose_preconditions:
     - the request carried an `id` (a Notification per JSON-RPC §4.1 must NOT be answered)
     - the request was routed as `tools/call` (the only asynchronously answered method)
-    postconditions:
+    prose_postconditions:
     - 'serve_stream returns only after every worker it spawned has run to completion'
     - '|answered(S)| == |accepted(S)| for every terminating session'
 

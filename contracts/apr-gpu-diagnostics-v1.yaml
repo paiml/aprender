@@ -35,10 +35,10 @@ equations:
     - Register usage per kernel does not exceed arch.max_registers_per_thread (255 for sm_70+)
     - Every kernel entry point has matching .entry declaration with parameter list
     - PTX contains no undefined labels or forward references to nonexistent symbols
-    preconditions:
+    prose_preconditions:
     - model has at least one layer with weight tensors
     - arch is a supported NVIDIA compute capability (sm_70 through sm_90)
-    postconditions:
+    prose_postconditions:
     - returned PtxAssembly contains one entry per kernel type (matmul, softmax, rope)
     - each PTX module is syntactically valid (parseable by ptxas --parse-only)
     lean_theorem: Theorems.Ptx_Code_Generation
@@ -62,10 +62,10 @@ equations:
     - Attention layers produce exactly 5 kernel entries (QKV proj, RoPE, softmax, attn matmul, O proj)
     - FFN layers produce exactly 4 kernel entries (gate, up, activation, down)
     - Occupancy estimates are in range (0.0, 1.0] for all kernels
-    preconditions:
+    prose_preconditions:
     - model.layers is non-empty
     - each layer has a recognized layer_type in {Attention, FFN, Norm, Embedding}
-    postconditions:
+    prose_postconditions:
     - kernel_map.layers.len() == model.layers.len() (one-to-one mapping)
     - total_kernels == sum of per-layer kernel counts
     - all occupancy values in (0.0, 1.0]
@@ -91,10 +91,10 @@ equations:
     - JSON mode emits one valid JSON object per line per tick (NDJSON)
     - TUI mode renders without panic even when GPU is unavailable (graceful fallback)
     - Refresh interval is honored within 10% tolerance (no busy-spin, no missed ticks)
-    preconditions:
+    prose_preconditions:
     - refresh_interval >= 100ms (prevent CPU burn)
     - mode is one of {Tui, Json, Headless(n)} where n > 0
-    postconditions:
+    prose_postconditions:
     - in Headless(n) mode, exactly n JSON lines are emitted before exit
     - in Json mode, every emitted line parses as valid JSON
     - in Tui mode, terminal state is restored on exit (raw mode disabled, cursor visible)
@@ -119,10 +119,10 @@ equations:
     - CPU core count matches /proc/cpuinfo or sysconf(_SC_NPROCESSORS_ONLN)
     - GPU temperature in valid physical range [0, 120] degrees Celsius
     - All utilization percentages in [0.0, 100.0] (no negative, no overflow)
-    preconditions:
+    prose_preconditions:
     - GPU driver is loaded and responding (nvidia-smi returns 0)
     - /proc filesystem is accessible (Linux)
-    postconditions:
+    prose_postconditions:
     - reported GPU memory error <= 5% of actual
     - reported CPU core count is exact match to actual
     lean_theorem: Theorems.Cbtop_Measurement_Accuracy

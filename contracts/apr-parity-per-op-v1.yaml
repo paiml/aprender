@@ -70,9 +70,9 @@ equations:
     invariants:
     - 'THE TABLE CLOSES THE LOOP: the lm_head row reproduces the number the gate refuses on (measured 0.950827 vs 0.9508).'
     - 'A STAGE ONE SIDE NEVER EMITS IS LISTED, NOT COMPARED (qkv_matmul is CPU-only; ffn_up is emitted by neither fused path).'
-    preconditions:
+    prose_preconditions:
     - 'the model loads on CPU and CUDA; the bypass admits it without the one-token gate'
-    postconditions:
+    prose_postconditions:
     - 'exit 0 with the table whether or not a row is red'
 
   first_divergence_is_the_first_row_under_threshold_in_forward_order:
@@ -85,7 +85,7 @@ equations:
     - 'DOWNSTREAM RED IS NOT THE ANSWER: with layer-3 ffn_swigl and lm_head both red, the named op is ffn_swigl@3 (unit test).'
     - 'A LENGTH MISMATCH SCORES COSINE 0, NEVER A PASS.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'a clean table names nothing and says so'
 
   the_bypass_is_internal_and_recorded:
@@ -100,7 +100,7 @@ equations:
     - 'NEVER SILENT: both skips carry a basis string naming their cause; the diagnosis basis names this command.'
     - 'NEVER LEAKS (unit test): arming on another thread does not arm the caller.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'the record is printed by the driver before the first forward'
 
 proof_obligations:

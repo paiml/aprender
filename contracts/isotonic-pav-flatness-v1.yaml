@@ -40,7 +40,7 @@ equations:
     - The fit is FLAT (constant v_b) across the entire x-range of a pooled block
     - Both endpoints x_min(B) and x_max(B) are kept as knots with value v_b
     - A multi-point pooled block emits TWO equal-value knots; a single-point block emits ONE
-    preconditions:
+    prose_preconditions:
     - 'block knots are sorted ascending in x'
   inter_block_interpolation:
     formula: 'f(x) = v_a + (x - x_max(A)) / (x_min(C) - x_max(A)) * (v_c - v_a)'
@@ -49,7 +49,7 @@ equations:
     invariants:
     - Interpolation occurs ONLY between the max-x edge of one block and the min-x edge of the next
     - Degenerate equal-x knots (x_max(A) == x_min(C)) return the left value (no division by zero)
-    preconditions:
+    prose_preconditions:
     - 'x_min(C) - x_max(A) guarded by < 1e-10 threshold'
 proof_obligations:
 - id: IPF-INV-001

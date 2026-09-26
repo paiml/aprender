@@ -42,7 +42,7 @@ equations:
     - num_heads % num_kv_heads == 0 (GQA group size is integer)
     - num_experts_per_tok <= num_experts
     - rms_norm_eps > 0 (prevents division by zero)
-    preconditions:
+    prose_preconditions:
     - config has at least hidden_size, num_layers, num_heads, vocab_size
     postconditions:
     - result.head_dim * result.num_heads == result.hidden_size
@@ -66,8 +66,9 @@ equations:
     - All attention tensors have same dtype
     preconditions:
     - layer_i < config.num_layers
+    prose_preconditions:
     - config is validated (head_dim * num_heads == hidden_size)
-    postconditions:
+    prose_postconditions:
     - all 4 projection tensors exist for each layer
     - shapes match config exactly
     lean_theorem: Theorems.AttentionTensorShapes
@@ -90,7 +91,7 @@ equations:
     preconditions:
     - layer_i < config.num_layers
     - intermediate_size > 0
-    postconditions:
+    prose_postconditions:
     - standard FFN has 3 tensors (gate, up, down) OR 2 tensors (merged gate_up, down)
     - MoE FFN has 3 * num_experts tensors per layer
     lean_theorem: Theorems.FfnTensorShapes
@@ -112,6 +113,7 @@ equations:
     - layer_i < config.num_layers
     postconditions:
     - norm_count_per_layer == 2
+    prose_postconditions:
     - final_norm exists
     lean_theorem: Theorems.NormalizationTensorShapes
 
@@ -131,8 +133,9 @@ equations:
     - vocab_size > 0
     - hidden_size > 0
     postconditions:
-    - embedding_count >= 1 (token embedding)
     - lm_head_exists || tied_embeddings
+    prose_postconditions:
+    - embedding_count >= 1 (token embedding)
     lean_theorem: Theorems.EmbeddingTensorShapes
 
   rope_position_encoding:
@@ -148,10 +151,11 @@ equations:
     - rope_theta > 0
     - rope_type in {0, 2} (CORRECTNESS-011)
     - freq vector length == head_dim / 2
-    preconditions:
+    prose_preconditions:
     - config.rope_theta.is_some() || config uses default 10000.0
     postconditions:
     - freq.len() == head_dim / 2
+    prose_postconditions:
     - all freq values are finite and positive
     lean_theorem: Theorems.RopePositionEncoding
 
@@ -168,7 +172,7 @@ equations:
     invariants:
     - Actual tensor count matches expected (within tolerance for format-specific extras)
     - Tolerance for metadata/vocab tensors (+/- 5 tensors)
-    preconditions:
+    prose_preconditions:
     - config is fully validated
     postconditions:
     - "abs(actual - expected) <= 5"

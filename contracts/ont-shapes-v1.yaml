@@ -63,9 +63,9 @@ equations:
     invariants:
       - "a conforming corpus whose plant fires is admitted"
       - "a corpus with no shape, no focus node, or a dead plant is Unknown, never Pass"
-    preconditions:
+    prose_preconditions:
       - "every shape: block is inside §3.6's subset"
-    postconditions:
+    prose_postconditions:
       - "verdict ∈ {Pass, Fail, Unknown}"
       - "two extractions are byte-identical"
     lean_theorem: none — L4 not declared
