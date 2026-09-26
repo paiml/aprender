@@ -3,8 +3,8 @@
 //! [`DecodeAttention256Kernel`](super::DecodeAttention256Kernel) launches one
 //! block per query head — 16 blocks on Qwen3.5-4B, on a 128-SM 4090 — and each
 //! block walks every cached position serially. Its cost is therefore linear in
-//! the context on 16 SMs: measured on 0.69.3 RC1, apr decode fell from 70 tok/s
-//! at 850 tokens of context to 7.8 tok/s at 32k while llama.cpp held ~150.
+//! the context on 16 SMs. The long-context decode collapse this caused, and
+//! the llama.cpp comparison, are measured in aprender#4273, not restated here.
 //!
 //! This pair splits the positions of every head into slices of `split_len`:
 //!

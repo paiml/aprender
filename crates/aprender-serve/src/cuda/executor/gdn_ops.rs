@@ -440,7 +440,7 @@ impl CudaExecutor {
     /// aprender#4273: [`Self::gdn_decode_attention_into`] split over the sequence —
     /// grid `(num_heads, ceil(seq_len / split_len))` writing per-split partials, then
     /// a per-head reduce. The unsplit kernel runs 16 blocks on Qwen3.5-4B whatever
-    /// the context, so its time grew linearly on 16 of 128 SMs (7.8 tok/s at 32k).
+    /// the context, so its time grew linearly on 16 of 128 SMs (measured in #4273).
     ///
     /// The partials live in `decode_attn_partials`, grown when a longer context
     /// needs more splits. The grid depends on `seq_len`, so this launch must not be
