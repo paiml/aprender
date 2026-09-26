@@ -135,6 +135,10 @@ fn falsify_crux_p_04_001_lineage_answers_run_dataset_base_or_orphan() {
         )
         .expect("orphan")
         .to_string();
+    // It has a parent edge but no producing run: an edge into the model that
+    // is not `produced` (or a `produced` edge upstream) is not its producer.
+    reg.add_lineage_edge(&base, &orphan, "parent", None)
+        .expect("edge");
     let po = provenance(&lineage_in(&c.home, &orphan).expect("orphan"));
     assert!(po.is_orphan(), "{po:?}");
     assert_eq!(po.produced_by, None);
