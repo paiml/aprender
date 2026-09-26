@@ -2996,10 +2996,31 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       CARGO_INCREMENTAL: "0"
+      # ONE HOST GPU LOCK (operator, 2026-09-26). yoga's GPU is shared by CI and by
+      # agents; an agent's test holding it with no lock hung #4429's cuda-unit. Every
+      # GPU user on yoga takes a flock on /run/lock/fleet-gpu/gpu.lock (infra, forjar
+      # gpu-lock-tmpfiles), bind-mounted read-only into this container. cargo runs each
+      # TEST BINARY through this runner, so compiling holds no lock. 175 = the lock
+      # was not free after 10 min.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock
     steps:
       - uses: actions/checkout@v7
       - name: Preflight — the self-hosted toolset this job needs (67-C2)
         run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      - name: Host GPU lock — the host's file, and the runner takes it
+        run: |
+          set -euo pipefail
+          l=/run/lock/fleet-gpu/gpu.lock
+          # Without the bind mount, flock would create a private file in the
+          # container and serialise nothing. So ask for the mount, not the path.
+          mountpoint -q /run/lock/fleet-gpu || { echo "::error::/run/lock/fleet-gpu is not mounted from the host (infra eph-env EXTRA_MOUNTS)"; exit 1; }
+          [ -f "$l" ] || { echo "::error::$l is absent on the host (infra gpu-lock-tmpfiles)"; exit 1; }
+          command -v flock > /dev/null || { echo "::error::no flock in the runner image"; exit 1; }
+          case "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER" in
+            "flock "*" $l") ;;
+            *) echo "::error::cargo's target runner does not take $l: '$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER'"; exit 1 ;;
+          esac
+          echo "GPU lock: $l (host bind mount); test binaries run under: $CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER"
       # No yield-to-training step here, and that is a decision rather than an
       # omission: yoga is a rack-mounted CI box that runs basic CUDA unit tests
       # (operator, 2026-09-09), not a training host. Nothing to yield to. The
