@@ -966,8 +966,11 @@ jobs:
           REASON: ${{ steps.tier.outputs.reason }}
         run: |
           printf 'workspace-test NOT RUN: %s\n' "$REASON"
+      # CI-WIDE: the two static guards run on shards 2 and 3, not 1. Shard 1
+      # already carries the Σ list, and with both guards it was the only shard
+      # cancelled at the 25-minute cap (run 36258937034; shard 2 took 7.3 min).
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
-        if: matrix.shard == 1
+        if: matrix.shards == 1 || matrix.shard == 2
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
         # See scripts/check_build_rs_paths.sh for the full rationale.
@@ -979,7 +982,7 @@ jobs:
             "$IMAGE" \
             bash scripts/check_build_rs_paths.sh
       - name: apr-format leaf sovereignty guard (#2231)
-        if: matrix.shard == 1
+        if: matrix.shards == 1 || matrix.shard == 3
         # Poka-Yoke: prove the extracted `apr-format` leaf pulls no ML/GPU/
         # tokenizer/framework crate (so consumers `cargo add apr-format` without
         # aprender-core + trueno/wgpu). Discriminating: PASSES on apr-format +
