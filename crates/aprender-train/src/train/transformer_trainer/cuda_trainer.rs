@@ -343,6 +343,33 @@ impl CudaTransformerTrainer {
         checkpoint_dir: impl AsRef<std::path::Path>,
         model_config: crate::transformer::TransformerConfig,
     ) -> crate::Result<Self> {
+        Self::from_checkpoint(checkpoint_dir, model_config, |_| {})
+    }
+
+    /// Load a checkpoint for training with an explicit learning rate and seed
+    /// (E8 #4002: a distill recipe's `training.learning_rate` and
+    /// `training.seed` reach the student optimizer instead of its defaults).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if SafeTensors loading or CUDA initialization fails.
+    pub fn for_training(
+        checkpoint_dir: impl AsRef<std::path::Path>,
+        model_config: crate::transformer::TransformerConfig,
+        lr: f32,
+        seed: u64,
+    ) -> crate::Result<Self> {
+        Self::from_checkpoint(checkpoint_dir, model_config, |c| {
+            c.lr = lr;
+            c.seed = seed;
+        })
+    }
+
+    fn from_checkpoint(
+        checkpoint_dir: impl AsRef<std::path::Path>,
+        model_config: crate::transformer::TransformerConfig,
+        tune: impl FnOnce(&mut TransformerTrainConfig),
+    ) -> crate::Result<Self> {
         let dir = checkpoint_dir.as_ref();
 
         // ALB-089: Try APR format first (our native checkpoint format), then SafeTensors
@@ -356,6 +383,7 @@ impl CudaTransformerTrainer {
 
         let mut config = TransformerTrainConfig::new(model_config);
         config.max_seq_len = config.model_config.max_position_embeddings;
+        tune(&mut config);
         Self::with_model(model, config)
     }
 

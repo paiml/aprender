@@ -432,6 +432,15 @@ fn print_distill_header(
     }
 }
 
+/// Seed for a distill run no recipe names (the trainer's own default).
+#[cfg_attr(not(all(feature = "training", feature = "cuda")), allow(dead_code))]
+pub(crate) const DEFAULT_SEED: u64 = 42;
+
+/// Student learning rate for `--backend cuda` when no recipe names one: the
+/// value `CudaTransformerTrainer` used before the rate was threaded (E8 #4002).
+#[cfg_attr(not(all(feature = "training", feature = "cuda")), allow(dead_code))]
+pub(crate) const CUDA_STUDENT_DEFAULT_LR: f64 = 1e-3;
+
 /// Run the distill command — dispatches between file-based and config-driven modes.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -481,6 +490,8 @@ pub(crate) fn run(
                     temperature,
                     alpha,
                     epochs,
+                    CUDA_STUDENT_DEFAULT_LR,
+                    DEFAULT_SEED,
                     plan_only,
                     dataset_dir,
                     json_output,
@@ -647,6 +658,8 @@ fn run_cuda_backend(
     temperature: f64,
     alpha: f64,
     epochs: u32,
+    learning_rate: f64,
+    seed: u64,
     plan_only: bool,
     dataset_dir: Option<&Path>,
     json_output: bool,
@@ -890,8 +903,10 @@ fn run_cuda_backend(
     } else {
         raw_teacher
     };
-    let student_provider = CudaStudentProvider::for_training(student_dir, student_config)
-        .map_err(|e| CliError::ValidationFailed(format!("CudaStudentProvider load: {e}")))?;
+    #[allow(clippy::cast_possible_truncation)]
+    let student_provider =
+        CudaStudentProvider::for_training(student_dir, student_config, learning_rate as f32, seed)
+            .map_err(|e| CliError::ValidationFailed(format!("CudaStudentProvider load: {e}")))?;
 
     // Build minimal DistillConfig pointing at on-disk paths. The pipeline
     // uses these for the file-load passthroughs; the providers we just
@@ -908,6 +923,8 @@ fn run_cuda_backend(
     config.distillation.temperature = temperature as f32;
     config.distillation.alpha = alpha as f32;
     config.training.epochs = epochs;
+    config.training.learning_rate = learning_rate;
+    config.training.seed = seed;
 
     // Wire the providers into the pipeline and execute.
     let mut pipeline = Pipeline::new(&config)
@@ -1906,6 +1923,7 @@ fn translate_to_distill_config(config: &DistillYamlConfig) -> entrenar_distill::
             epochs: u32::try_from(config.training.epochs).unwrap_or(u32::MAX),
             batch_size: u32::try_from(config.training.batch_size).unwrap_or(u32::MAX),
             learning_rate: config.training.learning_rate,
+            seed: config.training.seed,
             ..TrainingConfig::default()
         },
         dataset: entrenar_distill::config::DatasetConfig::default(),

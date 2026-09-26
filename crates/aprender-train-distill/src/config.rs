@@ -225,6 +225,9 @@ pub struct TrainingConfig {
     /// Mixed precision mode
     #[serde(default)]
     pub mixed_precision: MixedPrecision,
+    /// Seed handed to the student trainer (E8 #4002: a recipe's seed is applied, not dropped)
+    #[serde(default = "default_seed")]
+    pub seed: u64,
 }
 
 impl Default for TrainingConfig {
@@ -236,8 +239,13 @@ impl Default for TrainingConfig {
             warmup_steps: 0,
             gradient_accumulation: default_grad_accum(),
             mixed_precision: MixedPrecision::default(),
+            seed: default_seed(),
         }
     }
+}
+
+fn default_seed() -> u64 {
+    42
 }
 
 fn default_epochs() -> u32 {
@@ -352,6 +360,15 @@ fn default_checkpoint_every() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// E8 #4002: an omitted seed keeps the trainer default; a given one is kept.
+    #[test]
+    fn training_seed_defaults_to_42_and_round_trips() {
+        let omitted: TrainingConfig = serde_yaml::from_str("epochs: 1").expect("parse");
+        assert_eq!(omitted.seed, 42);
+        let given: TrainingConfig = serde_yaml::from_str("seed: 9").expect("parse");
+        assert_eq!(given.seed, 9);
+    }
 
     const SAMPLE_YAML: &str = r#"
 teacher:

@@ -555,7 +555,7 @@ mod tests {
         let out = workdir.path().join("run");
 
         let yaml = format!(
-            "teacher:\n  model_id: paiml/teacher-7b\nstudent:\n  model_id: paiml/student-1b\n  lora:\n    rank: 32\n    alpha: 64.0\ndistillation:\n  temperature: 5.5\n  alpha: 0.35\ntraining:\n  epochs: 7\n  batch_size: 24\n  learning_rate: 1.5e-4\ndataset:\n  path: {ds}\noutput:\n  dir: {out}\n",
+            "teacher:\n  model_id: paiml/teacher-7b\nstudent:\n  model_id: paiml/student-1b\n  lora:\n    rank: 32\n    alpha: 64.0\ndistillation:\n  temperature: 5.5\n  alpha: 0.35\ntraining:\n  epochs: 7\n  batch_size: 24\n  learning_rate: 1.5e-4\n  seed: 9\ndataset:\n  path: {ds}\noutput:\n  dir: {out}\n",
             ds = dataset.display(),
             out = out.display()
         );
@@ -579,6 +579,8 @@ mod tests {
             "FALSIFY-APR-DISTILL-TRAIN-010: batch_size dropped: {}", translated.training.batch_size);
         assert!((translated.training.learning_rate - 1.5e-4_f64).abs() < 1e-10,
             "FALSIFY-APR-DISTILL-TRAIN-010: learning_rate dropped: {}", translated.training.learning_rate);
+        assert_eq!(translated.training.seed, 9,
+            "FALSIFY-RECIPE-007: seed dropped in translation: {}", translated.training.seed);
         assert_eq!(translated.output.dir, out.join("student"),
             "FALSIFY-APR-DISTILL-TRAIN-010: output dir misrouted: {}", translated.output.dir.display());
         let lora = translated.student.lora.expect("FALSIFY-APR-DISTILL-TRAIN-010: lora config dropped");

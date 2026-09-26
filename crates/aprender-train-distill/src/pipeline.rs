@@ -100,7 +100,7 @@ impl<'a> Pipeline<'a> {
     pub fn new(config: &'a DistillConfig) -> Self {
         // The fixture vocab size matches the legacy synthetic-logits stub
         // (num_classes = 32) so existing tests behave identically. The
-        // student starts at uniform logits (0.0) with a moderate LR; this
+        // student starts at uniform logits (0.0) at the configured LR; this
         // means without a Phase 2d real backend, the pipeline still does
         // *something* — it nudges the fixture student's logits toward the
         // teacher's distribution. Useful for unit tests of the data flow,
@@ -108,7 +108,13 @@ impl<'a> Pipeline<'a> {
         Self {
             config,
             teacher: Box::new(crate::teacher_provider::FixtureTeacher::new(32)),
-            student: Box::new(crate::student_provider::FixtureStudent::new(32, 0.0, 0.1)),
+            // E8 #4002: the configured learning rate drives the student step.
+            #[allow(clippy::cast_possible_truncation)]
+            student: Box::new(crate::student_provider::FixtureStudent::new(
+                32,
+                0.0,
+                config.training.learning_rate as f32,
+            )),
             batch_source: Box::new(crate::batch_source::SyntheticBatchSource::new(32)),
             callbacks: Vec::new(),
             // PMAT-706: pick up the operator's smoke budget from the env once.
@@ -1384,6 +1390,56 @@ mod tests {
              broken somewhere.",
             result.metrics.initial_loss,
             result.metrics.final_loss
+        );
+    }
+
+    /// FALSIFY-RECIPE-007 (E8 #4002): the configured learning rate drives the
+    /// student step. Two runs that differ only in `training.learning_rate`
+    /// must end at different losses; a student with a hardcoded rate ends at
+    /// the same loss for both.
+    #[test]
+    fn falsify_recipe_007_configured_lr_drives_the_student() {
+        use safetensors::tensor::{Dtype, TensorView};
+
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let dummy: Vec<f32> = (0..32).map(|i| i as f32 * 0.01).collect();
+        let dummy_bytes: Vec<u8> = bytemuck::cast_slice(&dummy).to_vec();
+        for name in ["teacher", "student"] {
+            let views = vec![(
+                "layer.weight",
+                TensorView::new(Dtype::F32, vec![8, 4], &dummy_bytes).expect("safetensors view"),
+            )];
+            std::fs::write(
+                tmp.path().join(format!("{name}.safetensors")),
+                safetensors::serialize(views, None).expect("safetensors serialize"),
+            )
+            .expect("safetensors write");
+        }
+
+        let final_loss = |lr: f64| {
+            let mut config = DistillConfig::minimal(
+                tmp.path().join("teacher.safetensors").to_str().unwrap(),
+                tmp.path().join("student.safetensors").to_str().unwrap(),
+            );
+            config.output.dir = tmp.path().join(format!("out-{lr}"));
+            config.training.epochs = 2;
+            config.training.batch_size = 4;
+            config.training.learning_rate = lr;
+            let result = Pipeline::new(&config)
+                .execute()
+                .expect("pipeline must succeed");
+            (result.metrics.initial_loss, result.metrics.final_loss)
+        };
+        let (init_slow, slow) = final_loss(0.001);
+        let (init_fast, fast) = final_loss(0.1);
+        assert!(
+            (init_slow - init_fast).abs() < 1e-9,
+            "same start expected: {init_slow} vs {init_fast}"
+        );
+        assert!(
+            fast < slow,
+            "FALSIFY-RECIPE-007: lr 0.1 must move the student further than lr 0.001 \
+             (final {fast} vs {slow}); equal losses mean the configured rate is ignored"
         );
     }
 

@@ -92,6 +92,15 @@ falsification_tests:
     cargo test -p apr-cli --lib commands::finetune_recipe::tests
   if_fails: "a recipe field is validated but silently not applied, so the run differs from the recipe that names it"
 
+- id: FALSIFY-RECIPE-007
+  rule: the distill trainers honor the configured learning rate and seed
+  prediction: "the config-mode CPU student steps at training.learning_rate (two rates end at different losses), and training.seed survives translation into the distill pipeline and reaches the cuda student trainer"
+  test: |
+    cargo test -p aprender-train-distill --lib pipeline::tests::falsify_recipe_007_configured_lr_drives_the_student
+    cargo test -p aprender-train-distill --lib config::tests::training_seed_defaults_to_42_and_round_trips
+    cargo test -p apr-cli --lib falsify_apr_distill_train_010_translator_preserves_config
+  if_fails: "the distill student trains at a hardcoded rate or seed, so a recipe's lr/seed change nothing"
+
 proof_obligations:
 - id: RECIPE-INV-001
   type: invariant

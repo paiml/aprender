@@ -267,7 +267,9 @@ mod cuda_backend {
         ///
         /// The checkpoint must contain a `model.safetensors` or
         /// `model.apr` file matching `model_config`. Loads onto GPU
-        /// in train mode (optimizer state allocated).
+        /// in train mode (optimizer state allocated). `learning_rate` and
+        /// `seed` are handed to the trainer, so a recipe's values drive the
+        /// student step and weight init (E8 #4002).
         ///
         /// # Errors
         ///
@@ -276,12 +278,19 @@ mod cuda_backend {
         pub fn for_training(
             checkpoint_dir: impl AsRef<Path>,
             model_config: TransformerConfig,
+            learning_rate: f32,
+            seed: u64,
         ) -> Result<Self> {
             let vocab_size = model_config.vocab_size;
-            let trainer = CudaTransformerTrainer::for_inference(checkpoint_dir, model_config)
-                .map_err(|e| entrenar_common::EntrenarError::Internal {
-                    message: format!("CudaStudentProvider::for_training: {e}"),
-                })?;
+            let trainer = CudaTransformerTrainer::for_training(
+                checkpoint_dir,
+                model_config,
+                learning_rate,
+                seed,
+            )
+            .map_err(|e| entrenar_common::EntrenarError::Internal {
+                message: format!("CudaStudentProvider::for_training: {e}"),
+            })?;
             Ok(Self {
                 trainer,
                 vocab_size,
