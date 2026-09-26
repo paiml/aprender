@@ -40,15 +40,16 @@ fn test_mega_long_context_memory_bound() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
+    // Sized by formula: building this cache would commit every byte of it.
+    let bytes = StreamingKVCache::bytes_for(num_layers, max_positions, num_heads, head_dim);
 
     // Memory calculation:
     // 32 layers * 32768 positions * 32 heads * 128 dim * 2 (K+V) * 4 bytes
     // = 34,359,738,368 bytes = 34.36 GB
     let expected_bytes = num_layers * max_positions * num_heads * head_dim * 2 * 4;
-    assert_eq!(cache.memory_bytes(), expected_bytes);
+    assert_eq!(bytes, expected_bytes);
 
-    let memory_gb = cache.memory_mb() / 1024.0;
+    let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
         memory_gb < 36.0,
         "32768 context KV cache should be < 36 GB, got {:.2} GB",

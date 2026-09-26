@@ -158,12 +158,31 @@ impl StreamingKVCache {
         // Note: We don't zero the memory for performance
     }
 
+    /// Bytes a cache of these dimensions holds, without allocating one.
+    ///
+    /// `new` commits every page (`vec![vec![0.0; n]; L]` clones the inner
+    /// vec), so a test that builds a 32K-context cache only to check this
+    /// formula costs 34 GB of RSS. Such tests call this instead.
+    #[must_use]
+    pub const fn bytes_for(
+        num_layers: usize,
+        max_positions: usize,
+        num_heads: usize,
+        head_dim: usize,
+    ) -> usize {
+        // Keys + Values, f32 = 4 bytes
+        num_layers * max_positions * num_heads * head_dim * 2 * 4
+    }
+
     /// Calculate memory usage in bytes
     #[must_use]
     pub fn memory_bytes(&self) -> usize {
-        let kv_size = self.max_positions * self.num_heads * self.head_dim;
-        // Keys + Values, f32 = 4 bytes
-        self.num_layers * kv_size * 2 * 4
+        Self::bytes_for(
+            self.num_layers,
+            self.max_positions,
+            self.num_heads,
+            self.head_dim,
+        )
     }
 
     /// Calculate memory usage in megabytes

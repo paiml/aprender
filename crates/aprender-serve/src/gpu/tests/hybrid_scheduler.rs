@@ -208,16 +208,22 @@ fn test_streaming_kv_cache_clear() {
 
 #[test]
 fn test_streaming_kv_cache_memory_calculation() {
-    // Simulate 7B model KV cache
-    // 32 layers, 2048 context, 32 heads, 128 head_dim
-    let cache = StreamingKVCache::new(32, 2048, 32, 128);
+    // A built cache reports exactly the formula: 4 * 64 * 8 * 16 * 2 * 4 = 256 KiB
+    let cache = StreamingKVCache::new(4, 64, 8, 16);
+    assert_eq!(cache.memory_bytes(), 4 * 64 * 8 * 16 * 2 * 4);
+    assert_eq!(
+        cache.memory_bytes(),
+        StreamingKVCache::bytes_for(4, 64, 8, 16)
+    );
+    assert!((cache.memory_mb() - 0.25).abs() < f64::EPSILON);
 
+    // Simulate 7B model KV cache by formula (building it commits 2 GB)
     // Expected: 32 * 2048 * 32 * 128 * 2 * 4 = 2,147,483,648 bytes = 2GB
     let expected_bytes = 32 * 2048 * 32 * 128 * 2 * 4;
-    assert_eq!(cache.memory_bytes(), expected_bytes);
-
-    let memory_mb = cache.memory_mb();
-    assert!((memory_mb - 2048.0).abs() < 1.0); // ~2048 MB = 2GB
+    assert_eq!(
+        StreamingKVCache::bytes_for(32, 2048, 32, 128),
+        expected_bytes
+    );
 }
 
 #[test]
@@ -306,15 +312,16 @@ fn test_ultra_long_context_memory_bound() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
+    // Sized by formula: building this cache would commit every byte of it.
+    let bytes = StreamingKVCache::bytes_for(num_layers, max_positions, num_heads, head_dim);
 
     // Memory calculation:
     // 32 layers * 8192 positions * 32 heads * 128 dim * 2 (K+V) * 4 bytes
     // = 8,589,934,592 bytes = 8.59 GB
     let expected_bytes = num_layers * max_positions * num_heads * head_dim * 2 * 4;
-    assert_eq!(cache.memory_bytes(), expected_bytes);
+    assert_eq!(bytes, expected_bytes);
 
-    let memory_gb = cache.memory_mb() / 1024.0;
+    let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
         memory_gb < 9.0,
         "8192 context KV cache should be < 9 GB, got {:.2} GB",
@@ -397,15 +404,16 @@ fn test_super_long_context_memory_bound() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
+    // Sized by formula: building this cache would commit every byte of it.
+    let bytes = StreamingKVCache::bytes_for(num_layers, max_positions, num_heads, head_dim);
 
     // Memory calculation:
     // 32 layers * 16384 positions * 32 heads * 128 dim * 2 (K+V) * 4 bytes
     // = 17,179,869,184 bytes = 17.18 GB
     let expected_bytes = num_layers * max_positions * num_heads * head_dim * 2 * 4;
-    assert_eq!(cache.memory_bytes(), expected_bytes);
+    assert_eq!(bytes, expected_bytes);
 
-    let memory_gb = cache.memory_mb() / 1024.0;
+    let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
         memory_gb < 18.0,
         "16384 context KV cache should be < 18 GB, got {:.2} GB",
