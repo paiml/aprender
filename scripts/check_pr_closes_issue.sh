@@ -583,6 +583,9 @@ STUB
     run_rc_case "rc-close-between-script-closers" $'</script>\n\nCloses #9002\n\n</script>' 0 "PASS: discharges 1"
     run_rc_case "rc-close-after-list-item-fence" $'- item\n\n    ```\n\nCloses #9002\n\n    ```' 0 "PASS: discharges 1"
     run_rc_case "rc-close-after-list-marker-fence" $'* ```\n\nCloses #9002\n\n```' 0 "PASS: discharges 1"
+    # agy round 11 (@a512c6ae2): <details> is a type-6 HTML block, which ends at the blank line;
+    # commonmark.js 0.31.2 -t xml: html_block, paragraph, html_block
+    run_rc_case "rc-close-between-details-tags" $'<details>\n\nCloses #9002\n\n</details>' 0 "PASS: discharges 1"
     run_rc_case "rc-close-trailing-tab" $'Closes #9002\t'                          0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
