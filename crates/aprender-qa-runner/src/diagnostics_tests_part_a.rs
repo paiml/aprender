@@ -30,7 +30,7 @@ fn test_diagnostic_result_serialization() {
         timed_out: false,
     };
 
-    let json = serde_json::to_string(&result).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
     assert!(json.contains("apr check"));
     assert!(json.contains("1234"));
 }
@@ -334,7 +334,7 @@ fn test_run_command_with_timeout_failing_command() {
 
 #[test]
 fn test_save_json_to_tempdir() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let reporter = FailFastReporter::new(tmp.path());
     let data = DiagnosticResult {
         command: "test cmd".to_string(),
@@ -345,12 +345,12 @@ fn test_save_json_to_tempdir() {
         timed_out: false,
     };
     let path = tmp.path().join("test.json");
-    reporter.save_json(&path, &data).unwrap();
-    let contents = std::fs::read_to_string(&path).unwrap();
+    reporter.save_json(&path, &data).expect("save json succeeds");
+    let contents = std::fs::read_to_string(&path).expect("read file");
     assert!(contents.contains("test cmd"));
     assert!(contents.contains("42"));
     // Verify it is valid JSON that round-trips
-    let parsed: DiagnosticResult = serde_json::from_str(&contents).unwrap();
+    let parsed: DiagnosticResult = serde_json::from_str(&contents).expect("parse JSON");
     assert_eq!(parsed.command, "test cmd");
     assert!(parsed.success);
 }
@@ -361,7 +361,7 @@ fn test_run_check_returns_result() {
         FailFastReporter::new(Path::new(".")).with_binary("this_binary_does_not_exist");
     let result = reporter.run_check(Path::new("/nonexistent/model.apr"));
     assert!(result.is_some());
-    let diag = result.unwrap();
+    let diag = result.expect("call under test succeeds");
     assert!(!diag.success);
     assert!(diag.command.contains("check"));
 }
@@ -372,7 +372,7 @@ fn test_run_inspect_returns_result() {
         FailFastReporter::new(Path::new(".")).with_binary("this_binary_does_not_exist");
     let result = reporter.run_inspect(Path::new("/nonexistent/model.apr"));
     assert!(result.is_some());
-    let diag = result.unwrap();
+    let diag = result.expect("call under test succeeds");
     assert!(!diag.success);
     assert!(diag.command.contains("inspect"));
 }
@@ -383,7 +383,7 @@ fn test_run_tensors_returns_result() {
         FailFastReporter::new(Path::new(".")).with_binary("this_binary_does_not_exist");
     let result = reporter.run_tensors(Path::new("/nonexistent/model.apr"));
     assert!(result.is_some());
-    let diag = result.unwrap();
+    let diag = result.expect("call under test succeeds");
     assert!(!diag.success);
     assert!(diag.command.contains("tensors"));
 }
@@ -394,7 +394,7 @@ fn test_run_explain_returns_result() {
         FailFastReporter::new(Path::new(".")).with_binary("this_binary_does_not_exist");
     let result = reporter.run_explain("G3-STABLE");
     assert!(result.is_some());
-    let diag = result.unwrap();
+    let diag = result.expect("call under test succeeds");
     assert!(!diag.success);
     assert!(diag.command.contains("explain"));
     assert!(diag.command.contains("G3-STABLE"));
@@ -407,7 +407,7 @@ fn test_run_trace_for_apr_file() {
     // .apr extension should cause run_trace to actually run the command (not skip)
     let result = reporter.run_trace(Path::new("/nonexistent/model.apr"));
     assert!(result.is_some());
-    let diag = result.unwrap();
+    let diag = result.expect("call under test succeeds");
     assert!(!diag.success);
     assert!(diag.command.contains("trace"));
 }

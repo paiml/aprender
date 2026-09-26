@@ -8,7 +8,7 @@ fn test_get_rustc_version_returns_string() {
 
 #[test]
 fn test_generate_report_creates_files() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let reporter = FailFastReporter::new(tmp.path()).with_binary("this_binary_does_not_exist");
     let evidence = test_evidence();
 
@@ -18,7 +18,7 @@ fn test_generate_report_creates_files() {
             Path::new("/nonexistent/model.apr"),
             Some("test.yaml"),
         )
-        .unwrap();
+        .expect("generate report succeeds");
 
     let report_dir = tmp.path().join("fail-fast-report");
     assert!(report_dir.exists());
@@ -41,19 +41,19 @@ fn test_generate_report_creates_files() {
     assert!(report.diagnostics.tensors.is_some());
 
     // Verify the summary markdown was written
-    let summary = std::fs::read_to_string(report_dir.join("summary.md")).unwrap();
+    let summary = std::fs::read_to_string(report_dir.join("summary.md")).expect("read file");
     assert!(summary.contains("# Fail-Fast Report: G3-STABLE"));
 }
 
 #[test]
 fn test_generate_report_without_playbook() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let reporter = FailFastReporter::new(tmp.path()).with_binary("this_binary_does_not_exist");
     let evidence = test_evidence();
 
     let report = reporter
         .generate_report(&evidence, Path::new("/nonexistent/model.apr"), None)
-        .unwrap();
+        .expect("generate report succeeds");
 
     // When playbook is None, it should use "playbook.yaml" as default
     assert!(report.reproduction.command.contains("playbook.yaml"));
@@ -62,14 +62,14 @@ fn test_generate_report_without_playbook() {
 
 #[test]
 fn test_generate_report_no_stderr_skips_log() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let reporter = FailFastReporter::new(tmp.path()).with_binary("this_binary_does_not_exist");
     let mut evidence = test_evidence();
     evidence.stderr = None;
 
     reporter
         .generate_report(&evidence, Path::new("/nonexistent/model.apr"), None)
-        .unwrap();
+        .expect("generate report succeeds");
 
     let report_dir = tmp.path().join("fail-fast-report");
     // stderr.log should NOT be created when evidence.stderr is None
@@ -276,14 +276,14 @@ fn test_run_command_with_timeout_captures_stderr() {
 
 #[test]
 fn test_generate_report_trace_json_created_for_apr() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let reporter = FailFastReporter::new(tmp.path()).with_binary("this_binary_does_not_exist");
     let evidence = test_evidence();
 
     // model path ends in .apr, so trace should run and trace.json should be saved
     reporter
         .generate_report(&evidence, Path::new("/nonexistent/model.apr"), None)
-        .unwrap();
+        .expect("generate report succeeds");
 
     let report_dir = tmp.path().join("fail-fast-report");
     // trace.json should exist because the model path ends in .apr
@@ -292,7 +292,7 @@ fn test_generate_report_trace_json_created_for_apr() {
 
 #[test]
 fn test_generate_report_no_trace_json_for_non_apr() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let reporter = FailFastReporter::new(tmp.path()).with_binary("this_binary_does_not_exist");
     let mut evidence = test_evidence();
     // Change format but we really just need the path to be non-.apr
@@ -307,7 +307,7 @@ fn test_generate_report_no_trace_json_for_non_apr() {
 
     reporter
         .generate_report(&evidence, Path::new("/nonexistent/model.safetensors"), None)
-        .unwrap();
+        .expect("generate report succeeds");
 
     let report_dir = tmp.path().join("fail-fast-report");
     // trace.json should NOT exist because the model path is .safetensors

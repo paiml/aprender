@@ -1,8 +1,8 @@
 #[test]
 fn test_run_ci_profile_json_with_prefix() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.gguf");
-    std::fs::write(&model, b"fake").unwrap();
+    std::fs::write(&model, b"fake").expect("write file");
 
     let json = r#"{"model":"test","metrics":null,"throughput_tps":55.0,"latency_p50_ms":8.0,"latency_p99_ms":20.0,"assertions":[],"passed":true}"#;
     let mock = create_mock_binary(
@@ -11,7 +11,7 @@ fn test_run_ci_profile_json_with_prefix() {
         &format!("echo 'Loading model...' && echo '{json}' && exit 0"),
     );
 
-    let result = run_profile_ci(mock.to_str().unwrap(), &model, None, None, None, 1, 3);
+    let result = run_profile_ci(mock.to_str().expect("path is UTF-8"), &model, None, None, None, 1, 3);
     if let Ok(r) = result {
         assert!(r.passed);
     }
@@ -19,9 +19,9 @@ fn test_run_ci_profile_json_with_prefix() {
 
 #[test]
 fn test_run_ci_profile_fallback_on_bad_json() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.gguf");
-    std::fs::write(&model, b"fake").unwrap();
+    std::fs::write(&model, b"fake").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -29,7 +29,7 @@ fn test_run_ci_profile_fallback_on_bad_json() {
         "echo 'not json at all' && exit 0",
     );
 
-    let result = run_profile_ci(mock.to_str().unwrap(), &model, None, None, None, 1, 1);
+    let result = run_profile_ci(mock.to_str().expect("path is UTF-8"), &model, None, None, None, 1, 1);
     if let Ok(r) = result {
         // Fallback: passed = exit code success
         assert!(r.passed);
@@ -39,9 +39,9 @@ fn test_run_ci_profile_fallback_on_bad_json() {
 
 #[test]
 fn test_run_ci_profile_fallback_failed_exit() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.gguf");
-    std::fs::write(&model, b"fake").unwrap();
+    std::fs::write(&model, b"fake").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -49,7 +49,7 @@ fn test_run_ci_profile_fallback_failed_exit() {
         "printf 'error\\n'; exit 1",
     );
 
-    let result = run_profile_ci(mock.to_str().unwrap(), &model, None, None, None, 1, 1);
+    let result = run_profile_ci(mock.to_str().expect("path is UTF-8"), &model, None, None, None, 1, 1);
     if let Ok(r) = result {
         assert!(!r.passed);
     }
@@ -61,16 +61,16 @@ fn test_run_ci_profile_fallback_failed_exit() {
 
 #[test]
 fn test_run_diff_benchmark_json_output() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_a = temp_dir.path().join("a.gguf");
     let model_b = temp_dir.path().join("b.gguf");
-    std::fs::write(&model_a, b"model_a").unwrap();
-    std::fs::write(&model_b, b"model_b").unwrap();
+    std::fs::write(&model_a, b"model_a").expect("write file");
+    std::fs::write(&model_b, b"model_b").expect("write file");
 
     // Write JSON to a file to avoid shell quoting issues
     let json_file = temp_dir.path().join("diff_output.json");
     let json = r#"{"model_a":{"path":"a.gguf","throughput_tps":10.0,"latency_p50_ms":50.0,"latency_p99_ms":100.0},"model_b":{"path":"b.gguf","throughput_tps":12.0,"latency_p50_ms":45.0,"latency_p99_ms":90.0},"throughput_delta_pct":20.0,"latency_p50_delta_pct":-10.0,"latency_p99_delta_pct":-10.0,"regression_detected":false,"regression_threshold":5.0}"#;
-    std::fs::write(&json_file, json).unwrap();
+    std::fs::write(&json_file, json).expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -78,7 +78,7 @@ fn test_run_diff_benchmark_json_output() {
         &format!("cat '{}'", json_file.display()),
     );
 
-    let result = run_diff_benchmark(mock.to_str().unwrap(), &model_a, &model_b, 5.0);
+    let result = run_diff_benchmark(mock.to_str().expect("path is UTF-8"), &model_a, &model_b, 5.0);
     // Mock binary execution can be flaky under parallel test runs
     if let Ok(r) = result {
         assert!(!r.regression_detected);
@@ -87,15 +87,15 @@ fn test_run_diff_benchmark_json_output() {
 
 #[test]
 fn test_run_diff_benchmark_bad_json() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_a = temp_dir.path().join("a.gguf");
     let model_b = temp_dir.path().join("b.gguf");
-    std::fs::write(&model_a, b"a").unwrap();
-    std::fs::write(&model_b, b"b").unwrap();
+    std::fs::write(&model_a, b"a").expect("write file");
+    std::fs::write(&model_b, b"b").expect("write file");
 
     let mock = create_mock_binary(temp_dir.path(), "apr_diff_bad", "echo 'not json' && exit 0");
 
-    let result = run_diff_benchmark(mock.to_str().unwrap(), &model_a, &model_b, 5.0);
+    let result = run_diff_benchmark(mock.to_str().expect("path is UTF-8"), &model_a, &model_b, 5.0);
     assert!(result.is_err());
     let err = result.unwrap_err();
     match err {
@@ -112,11 +112,11 @@ fn test_run_diff_benchmark_bad_json() {
 
 #[test]
 fn test_diff_tensors_success() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_a = temp_dir.path().join("a.gguf");
     let model_b = temp_dir.path().join("b.safetensors");
-    std::fs::write(&model_a, b"a").unwrap();
-    std::fs::write(&model_b, b"b").unwrap();
+    std::fs::write(&model_a, b"a").expect("write file");
+    std::fs::write(&model_b, b"b").expect("write file");
 
     let json = r#"{"total_tensors":50,"mismatched_tensors":0,"transposed_tensors":0,"passed":true,"mismatches":[]}"#;
     let mock = create_mock_binary(
@@ -126,7 +126,7 @@ fn test_diff_tensors_success() {
     );
 
     let config = DiffConfig {
-        apr_binary: mock.to_str().unwrap().to_string(),
+        apr_binary: mock.to_str().expect("path is UTF-8").to_string(),
         ..Default::default()
     };
     let executor = DifferentialExecutor::new(config);
@@ -139,11 +139,11 @@ fn test_diff_tensors_success() {
 
 #[test]
 fn test_diff_tensors_failure_nonzero_exit() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_a = temp_dir.path().join("a.gguf");
     let model_b = temp_dir.path().join("b.gguf");
-    std::fs::write(&model_a, b"a").unwrap();
-    std::fs::write(&model_b, b"b").unwrap();
+    std::fs::write(&model_a, b"a").expect("write file");
+    std::fs::write(&model_b, b"b").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -152,7 +152,7 @@ fn test_diff_tensors_failure_nonzero_exit() {
     );
 
     let config = DiffConfig {
-        apr_binary: mock.to_str().unwrap().to_string(),
+        apr_binary: mock.to_str().expect("path is UTF-8").to_string(),
         ..Default::default()
     };
     let executor = DifferentialExecutor::new(config);
@@ -162,11 +162,11 @@ fn test_diff_tensors_failure_nonzero_exit() {
 
 #[test]
 fn test_compare_inference_success() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_a = temp_dir.path().join("a.gguf");
     let model_b = temp_dir.path().join("b.safetensors");
-    std::fs::write(&model_a, b"a").unwrap();
-    std::fs::write(&model_b, b"b").unwrap();
+    std::fs::write(&model_a, b"a").expect("write file");
+    std::fs::write(&model_b, b"b").expect("write file");
 
     let json = r#"{"total_tokens":5,"matching_tokens":5,"max_logit_diff":1e-7,"passed":true,"token_comparisons":[]}"#;
     let mock = create_mock_binary(
@@ -176,7 +176,7 @@ fn test_compare_inference_success() {
     );
 
     let config = DiffConfig {
-        apr_binary: mock.to_str().unwrap().to_string(),
+        apr_binary: mock.to_str().expect("path is UTF-8").to_string(),
         ..Default::default()
     };
     let executor = DifferentialExecutor::new(config);
@@ -190,11 +190,11 @@ fn test_compare_inference_success() {
 
 #[test]
 fn test_compare_inference_fallback() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_a = temp_dir.path().join("a.gguf");
     let model_b = temp_dir.path().join("b.gguf");
-    std::fs::write(&model_a, b"a").unwrap();
-    std::fs::write(&model_b, b"b").unwrap();
+    std::fs::write(&model_a, b"a").expect("write file");
+    std::fs::write(&model_b, b"b").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -203,7 +203,7 @@ fn test_compare_inference_fallback() {
     );
 
     let config = DiffConfig {
-        apr_binary: mock.to_str().unwrap().to_string(),
+        apr_binary: mock.to_str().expect("path is UTF-8").to_string(),
         ..Default::default()
     };
     let executor = DifferentialExecutor::new(config);
@@ -221,20 +221,20 @@ fn test_compare_inference_fallback() {
 
 #[test]
 fn test_run_six_column_profile_basic() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let cache_dir = temp_dir.path().join("cache");
 
     // Create directory structure
     let gguf_dir = cache_dir.join("gguf");
     let apr_dir = cache_dir.join("apr");
     let st_dir = cache_dir.join("safetensors");
-    std::fs::create_dir_all(&gguf_dir).unwrap();
-    std::fs::create_dir_all(&apr_dir).unwrap();
-    std::fs::create_dir_all(&st_dir).unwrap();
+    std::fs::create_dir_all(&gguf_dir).expect("create dir");
+    std::fs::create_dir_all(&apr_dir).expect("create dir");
+    std::fs::create_dir_all(&st_dir).expect("create dir");
 
     // Create model file in gguf dir
     let gguf_model = gguf_dir.join("model.gguf");
-    std::fs::write(&gguf_model, b"fake gguf model data for testing").unwrap();
+    std::fs::write(&gguf_model, b"fake gguf model data for testing").expect("write file");
 
     // Mock binary that handles convert and bench
     let mock = create_mock_binary(
@@ -257,7 +257,7 @@ esac
 "#,
     );
 
-    let result = run_six_column_profile(mock.to_str().unwrap(), &cache_dir, 1, 1);
+    let result = run_six_column_profile(mock.to_str().expect("path is UTF-8"), &cache_dir, 1, 1);
     // May fail if mock binary has issues, but should work on most systems
     if let Ok(r) = result {
         assert_eq!(r.conversions.len(), 2); // APR + SafeTensors
@@ -272,16 +272,16 @@ esac
 fn test_prepare_model_with_provenance_resume_matching_hash() {
     use crate::provenance::{create_source_provenance, save_provenance};
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = temp_dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, b"safetensors content for resume test").unwrap();
+    std::fs::write(&safetensors, b"safetensors content for resume test").expect("write file");
 
     let output_dir = temp_dir.path().join("output");
-    std::fs::create_dir_all(&output_dir).unwrap();
+    std::fs::create_dir_all(&output_dir).expect("create dir");
 
     // Create existing provenance with matching hash
-    let prov = create_source_provenance(&safetensors, "test/model").unwrap();
-    save_provenance(&output_dir, &prov).unwrap();
+    let prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance succeeds");
+    save_provenance(&output_dir, &prov).expect("save provenance succeeds");
 
     // Mock binary that handles conversions
     let mock = create_mock_binary(
@@ -297,7 +297,7 @@ exit 1
     );
 
     let result = prepare_model_with_provenance(
-        mock.to_str().unwrap(),
+        mock.to_str().expect("path is UTF-8"),
         &safetensors,
         "test/model",
         &output_dir,
@@ -315,12 +315,12 @@ exit 1
 fn test_prepare_model_with_provenance_resume_changed_hash() {
     use crate::provenance::{Provenance, SourceProvenance, save_provenance};
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = temp_dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, b"new content different from original").unwrap();
+    std::fs::write(&safetensors, b"new content different from original").expect("write file");
 
     let output_dir = temp_dir.path().join("output");
-    std::fs::create_dir_all(&output_dir).unwrap();
+    std::fs::create_dir_all(&output_dir).expect("create dir");
 
     // Create provenance with different hash (stale)
     let stale_prov = Provenance {
@@ -333,7 +333,7 @@ fn test_prepare_model_with_provenance_resume_changed_hash() {
         },
         derived: vec![],
     };
-    save_provenance(&output_dir, &stale_prov).unwrap();
+    save_provenance(&output_dir, &stale_prov).expect("save provenance succeeds");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -348,7 +348,7 @@ exit 1
     );
 
     let result = prepare_model_with_provenance(
-        mock.to_str().unwrap(),
+        mock.to_str().expect("path is UTF-8"),
         &safetensors,
         "test/model",
         &output_dir,
@@ -365,9 +365,9 @@ exit 1
 
 #[test]
 fn test_prepare_model_with_provenance_with_quantization() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = temp_dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, b"safetensors quantization test").unwrap();
+    std::fs::write(&safetensors, b"safetensors quantization test").expect("write file");
 
     let output_dir = temp_dir.path().join("output");
 
@@ -384,7 +384,7 @@ exit 1
     );
 
     let result = prepare_model_with_provenance(
-        mock.to_str().unwrap(),
+        mock.to_str().expect("path is UTF-8"),
         &safetensors,
         "test/model",
         &output_dir,
@@ -403,9 +403,9 @@ exit 1
 
 #[test]
 fn test_prepare_model_with_provenance_partial_failure() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = temp_dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, b"model content partial fail").unwrap();
+    std::fs::write(&safetensors, b"model content partial fail").expect("write file");
 
     let output_dir = temp_dir.path().join("output");
 
@@ -428,7 +428,7 @@ fi
     );
 
     let result = prepare_model_with_provenance(
-        mock.to_str().unwrap(),
+        mock.to_str().expect("path is UTF-8"),
         &safetensors,
         "test/model",
         &output_dir,

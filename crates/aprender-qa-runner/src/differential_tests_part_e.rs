@@ -110,8 +110,8 @@ fn test_ci_profile_metrics_serialization_roundtrip() {
         latency_p50_ms: 12.3,
         latency_p99_ms: 45.6,
     };
-    let json = serde_json::to_string(&metrics).unwrap();
-    let parsed: CiProfileMetrics = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&metrics).expect("serialise to string");
+    let parsed: CiProfileMetrics = serde_json::from_str(&json).expect("parse JSON");
     assert!((parsed.throughput_tok_s - 55.5).abs() < f64::EPSILON);
     assert!((parsed.latency_p50_ms - 12.3).abs() < f64::EPSILON);
     assert!((parsed.latency_p99_ms - 45.6).abs() < f64::EPSILON);
@@ -133,7 +133,7 @@ fn test_ci_profile_result_with_metrics_serialization() {
         assertions: vec![],
         passed: true,
     };
-    let json = serde_json::to_string(&result).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
     assert!(json.contains("metrics"));
     assert!(json.contains("throughput_tok_s"));
 }
@@ -166,7 +166,7 @@ fn test_format_conversion_result_failure() {
         cached: false,
     };
     assert!(!result.success);
-    assert!(result.error.as_deref().unwrap().contains("Layout"));
+    assert!(result.error.as_deref().expect("error message is set").contains("Layout"));
 }
 
 /// Verify BenchResult stores throughput and backend fields correctly

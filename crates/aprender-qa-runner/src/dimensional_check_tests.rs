@@ -28,18 +28,23 @@ test_matrix:
 
 fn write_config_json(dir: &Path, config: &serde_json::Value) {
     let path = dir.join("config.json");
-    let mut f = std::fs::File::create(path).unwrap();
-    f.write_all(serde_json::to_string(config).unwrap().as_bytes())
-        .unwrap();
+    let mut f = std::fs::File::create(path).expect("create file");
+    f.write_all(
+        serde_json::to_string(config)
+            .expect("serialise to string")
+            .as_bytes(),
+    )
+    .expect("write file");
 }
 
 fn write_minimal_tokenizer(dir: &Path) {
     let path = dir.join("tokenizer.json");
-    let mut f = std::fs::File::create(path).unwrap();
-    f.write_all(b"{}").unwrap();
+    let mut f = std::fs::File::create(path).expect("create file");
+    f.write_all(b"{}").expect("write file");
     let tc_path = dir.join("tokenizer_config.json");
-    let mut f2 = std::fs::File::create(tc_path).unwrap();
-    f2.write_all(br#"{"eos_token":"<|endoftext|>"}"#).unwrap();
+    let mut f2 = std::fs::File::create(tc_path).expect("create file");
+    f2.write_all(br#"{"eos_token":"<|endoftext|>"}"#)
+        .expect("write file");
 }
 
 fn write_minimal_safetensors(dir: &Path, tensors: &[(&str, &[usize])]) {
@@ -51,35 +56,42 @@ fn write_minimal_safetensors(dir: &Path, tensors: &[(&str, &[usize])]) {
     for &(name, shape) in tensors {
         let num_elements: usize = shape.iter().product();
         let byte_size = num_elements * 4;
-        let tensor_info = serde_json::json!({
-            "dtype": "F32",
-            "shape": shape,
-            "data_offsets": [offset, offset + byte_size as u64]
-        });
+        let tensor_info = serde_json::Value::Object(serde_json::Map::from_iter([
+            ("dtype".to_string(), serde_json::Value::from("F32")),
+            ("shape".to_string(), serde_json::Value::from(shape.to_vec())),
+            (
+                "data_offsets".to_string(),
+                serde_json::Value::from(vec![offset, offset + byte_size as u64]),
+            ),
+        ]));
         header_map.insert(name, tensor_info);
         offset += byte_size as u64;
     }
 
-    let header_json = serde_json::to_string(&header_map).unwrap();
+    let header_json = serde_json::to_string(&header_map).expect("serialise to string");
     let header_bytes = header_json.as_bytes();
     let header_len = header_bytes.len() as u64;
 
-    let mut f = std::fs::File::create(path).unwrap();
-    f.write_all(&header_len.to_le_bytes()).unwrap();
-    f.write_all(header_bytes).unwrap();
-    f.write_all(&vec![0u8; offset as usize]).unwrap();
+    let mut f = std::fs::File::create(path).expect("create file");
+    f.write_all(&header_len.to_le_bytes()).expect("write file");
+    f.write_all(header_bytes).expect("write file");
+    f.write_all(&vec![0u8; offset as usize])
+        .expect("write file");
 }
 
 #[test]
 fn test_check_valid_config() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
         "num_attention_heads": 14,
         "num_key_value_heads": 2,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -108,14 +120,17 @@ fn test_check_valid_config() {
 
 #[test]
 fn test_check_mismatched_hidden_size() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 512,
         "num_hidden_layers": 24,
         "num_attention_heads": 14,
         "num_key_value_heads": 2,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
 
     let playbook = make_minimal_playbook("Qwen/Qwen2.5-Coder-0.5B-Instruct");
@@ -126,7 +141,7 @@ fn test_check_mismatched_hidden_size() {
         .checks
         .iter()
         .find(|c| c.name == "hidden_size")
-        .unwrap();
+        .expect("item found");
     assert!(!hidden_check.passed);
     assert_eq!(hidden_check.expected, "896");
     assert_eq!(hidden_check.actual, "512");
@@ -134,7 +149,7 @@ fn test_check_mismatched_hidden_size() {
 
 #[test]
 fn test_check_missing_config() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new().expect("create temp dir");
 
     let playbook = make_minimal_playbook("Qwen/Qwen2.5-Coder-0.5B-Instruct");
     let result = run_dimensional_check(dir.path(), &playbook);
@@ -144,20 +159,23 @@ fn test_check_missing_config() {
         .checks
         .iter()
         .find(|c| c.name == "config_parse")
-        .unwrap();
+        .expect("item found");
     assert!(!config_check.passed);
 }
 
 #[test]
 fn test_check_safetensors_header() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
         "num_attention_heads": 14,
         "num_key_value_heads": 2,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -181,19 +199,22 @@ fn test_check_safetensors_header() {
         .checks
         .iter()
         .find(|c| c.name == "safetensors_header")
-        .unwrap();
+        .expect("item found");
     assert!(header_check.passed);
     assert_eq!(header_check.actual, "3 tensor(s)");
 }
 
 #[test]
 fn test_check_wrong_tensor_shape() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -208,17 +229,20 @@ fn test_check_wrong_tensor_shape() {
         .checks
         .iter()
         .find(|c| c.name == "tensor_embed_tokens")
-        .unwrap();
+        .expect("item found");
     assert!(!tensor_check.passed);
 }
 
 #[test]
 fn test_check_no_safetensors_files() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
 
     let playbook = make_minimal_playbook("Qwen/Qwen2.5-Coder-0.5B-Instruct");
@@ -229,17 +253,20 @@ fn test_check_no_safetensors_files() {
         .checks
         .iter()
         .find(|c| c.name == "safetensors_found")
-        .unwrap();
+        .expect("item found");
     assert!(!st_check.passed);
 }
 
 #[test]
 fn test_check_no_expected_params() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(dir.path(), &[("some.tensor", &[10, 20])]);
     write_minimal_tokenizer(dir.path());
@@ -268,8 +295,9 @@ test_matrix:
 
 #[test]
 fn test_result_model_id() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({"hidden_size": 896});
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(r#"{"hidden_size": 896}"#)
+        .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
 
     let playbook = make_minimal_playbook("Qwen/Qwen2.5-Coder-0.5B-Instruct");
@@ -280,8 +308,9 @@ fn test_result_model_id() {
 /// GH-266: Mamba SSM has no attention heads — dim-smoke should skip head checks
 #[test]
 fn test_mamba_ssm_no_attention_heads() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "model_type": "mamba",
         "hidden_size": 1024,
         "num_hidden_layers": 48,
@@ -289,7 +318,9 @@ fn test_mamba_ssm_no_attention_heads() {
         "state_size": 16,
         "conv_kernel": 4,
         "expand": 2
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -335,15 +366,18 @@ test_matrix:
 /// GH-266: OpenELM has array-valued num_query_heads — should return None, skip check
 #[test]
 fn test_openelm_array_heads_skipped() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "model_type": "openelm",
         "model_dim": 1280,
         "num_transformer_layers": 16,
         "vocab_size": 32000,
         "num_query_heads": [12, 12, 12, 12, 12, 16, 16, 16, 16, 16, 16, 16, 20, 20, 20, 20],
         "num_kv_heads": [3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5]
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -383,12 +417,15 @@ test_matrix:
 /// Verify non-2D tensor is flagged as failure
 #[test]
 fn test_check_non_2d_tensor() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // Write a 3D embed_tokens tensor — should fail check
     write_minimal_safetensors(
@@ -404,7 +441,7 @@ fn test_check_non_2d_tensor() {
         .checks
         .iter()
         .find(|c| c.name == "tensor_embed_tokens")
-        .unwrap();
+        .expect("item found");
     assert!(!tensor_check.passed);
     assert!(tensor_check.actual.contains("3D"));
 }
@@ -412,12 +449,15 @@ fn test_check_non_2d_tensor() {
 /// Verify vocab_size (dim0) mismatch is caught
 #[test]
 fn test_check_vocab_dim0_mismatch() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // Wrong dim0 (vocab_size 32000 instead of 151936) but correct dim1
     write_minimal_safetensors(dir.path(), &[("model.embed_tokens.weight", &[32000, 896])]);
@@ -430,27 +470,30 @@ fn test_check_vocab_dim0_mismatch() {
         .checks
         .iter()
         .find(|c| c.name == "tensor_embed_tokens")
-        .unwrap();
+        .expect("item found");
     assert!(!tensor_check.passed);
 }
 
 /// Verify corrupted safetensors header results in parse error check
 #[test]
 fn test_check_corrupted_safetensors_header() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
 
     // Write a corrupt safetensors file (invalid header)
     let path = dir.path().join("model.safetensors");
-    let mut f = std::fs::File::create(path).unwrap();
+    let mut f = std::fs::File::create(path).expect("create file");
     // Write invalid header length pointing to garbage
-    f.write_all(&999_999_u64.to_le_bytes()).unwrap();
-    f.write_all(b"not valid json").unwrap();
+    f.write_all(&999_999_u64.to_le_bytes()).expect("write file");
+    f.write_all(b"not valid json").expect("write file");
 
     let playbook = make_minimal_playbook("Qwen/Qwen2.5-Coder-0.5B-Instruct");
     let result = run_dimensional_check(dir.path(), &playbook);
@@ -460,7 +503,7 @@ fn test_check_corrupted_safetensors_header() {
         .checks
         .iter()
         .find(|c| c.name == "safetensors_header")
-        .unwrap();
+        .expect("item found");
     assert!(!header_check.passed);
     assert_eq!(header_check.actual, "parse error");
 }
@@ -468,12 +511,15 @@ fn test_check_corrupted_safetensors_header() {
 /// Verify dim1 (hidden_size) mismatch is caught even when vocab_size matches
 #[test]
 fn test_check_hidden_dim1_mismatch() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // Correct dim0 (vocab_size) but wrong dim1 (hidden_size 512 instead of 896)
     write_minimal_safetensors(
@@ -489,7 +535,7 @@ fn test_check_hidden_dim1_mismatch() {
         .checks
         .iter()
         .find(|c| c.name == "tensor_embed_tokens")
-        .unwrap();
+        .expect("item found");
     assert!(!tensor_check.passed);
 }
 
@@ -497,10 +543,13 @@ fn test_check_hidden_dim1_mismatch() {
 /// Popperian: untested hypotheses must not be marked as corroborated.
 #[test]
 fn test_check_tensor_no_expected_dims() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "num_hidden_layers": 24
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(dir.path(), &[("model.embed_tokens.weight", &[1000, 500])]);
     write_minimal_tokenizer(dir.path());
@@ -541,14 +590,17 @@ test_matrix:
 /// GH-270: RWKV7 has explicit null num_heads — dim-smoke should skip head checks
 #[test]
 fn test_rwkv7_null_num_heads() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "model_type": "rwkv7",
         "hidden_size": 768,
         "num_hidden_layers": 12,
         "num_attention_heads": null,
         "vocab_size": 65536
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -587,12 +639,15 @@ test_matrix:
 /// Verify lm_head.weight check triggers when present but with wrong dimensions
 #[test]
 fn test_check_lm_head_dim_mismatch() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // embed_tokens matches, but lm_head has wrong dim0 (vocab_size)
     write_minimal_safetensors(
@@ -610,19 +665,22 @@ fn test_check_lm_head_dim_mismatch() {
         .checks
         .iter()
         .find(|c| c.name == "tensor_lm_head")
-        .unwrap();
+        .expect("item found");
     assert!(!lm_check.passed);
 }
 
 /// Verify check_safetensors reports when no safetensors files exist
 #[test]
 fn test_check_safetensors_zero_files() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // No .safetensors files at all
 
@@ -633,7 +691,7 @@ fn test_check_safetensors_zero_files() {
         .checks
         .iter()
         .find(|c| c.name == "safetensors_found")
-        .unwrap();
+        .expect("item found");
     assert!(!st_found.passed);
     assert!(st_found.actual.contains("0 file"));
 }
@@ -641,11 +699,14 @@ fn test_check_safetensors_zero_files() {
 /// Verify only vocab_size mismatch on dim0 when hidden_size is None
 #[test]
 fn test_check_tensor_only_vocab_expected() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "num_hidden_layers": 24,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // dim0 doesn't match vocab_size, but no hidden_size to check
     write_minimal_safetensors(dir.path(), &[("model.embed_tokens.weight", &[50_000, 512])]);

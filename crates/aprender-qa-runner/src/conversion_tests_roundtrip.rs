@@ -1,8 +1,8 @@
 #[test]
 fn test_round_trip_execute_falsified_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -32,9 +32,9 @@ exit 1"#,
 
 #[test]
 fn test_conversion_executor_execute_all_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -68,9 +68,9 @@ exit 1"#,
 
 #[test]
 fn test_conversion_executor_execute_all_with_errors_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -101,9 +101,9 @@ exit 1"#,
 
 #[test]
 fn test_conversion_executor_round_trip_error_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(dir.path(), r"exit 1");
 
@@ -125,9 +125,9 @@ fn test_conversion_executor_round_trip_error_via_mock() {
 
 #[test]
 fn test_conversion_test_execute_safetensors_target_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -468,12 +468,12 @@ fn structural_only_config() -> ConversionConfig {
 
 #[test]
 fn test_check_cardinality_gate_passes_via_executor() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
     // run_structural_checks looks for model.converted.apr (with_extension)
     let converted_file = dir.path().join("model.converted.apr");
-    std::fs::write(&model_file, "fake source").unwrap();
-    std::fs::write(&converted_file, "fake target").unwrap();
+    std::fs::write(&model_file, "fake source").expect("write file");
+    std::fs::write(&converted_file, "fake target").expect("write file");
 
     // Mock inspect returns same tensor count → cardinality preserved → corroborated
     let mock = create_mock_script(
@@ -486,7 +486,7 @@ fn test_check_cardinality_gate_passes_via_executor() {
     executor.binary = mock.to_string_lossy().to_string();
     let model_id = ModelId::new("test", "model");
 
-    let result = executor.execute_all(&model_file, &model_id).unwrap();
+    let result = executor.execute_all(&model_file, &model_id).expect("execute all succeeds");
     // At least one structural check ran (F-CONV-CARD-001)
     let card_evidence: Vec<_> = result
         .evidence
@@ -504,11 +504,11 @@ fn test_check_cardinality_gate_passes_via_executor() {
 
 #[test]
 fn test_check_cardinality_gate_fails_via_executor() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
     let converted_file = dir.path().join("model.converted.apr");
-    std::fs::write(&model_file, "fake source").unwrap();
-    std::fs::write(&converted_file, "fake target").unwrap();
+    std::fs::write(&model_file, "fake source").expect("write file");
+    std::fs::write(&converted_file, "fake target").expect("write file");
 
     // Mock inspect: source has 338 tensors, converted has 227 → cardinality loss
     let mock = create_conditional_mock_binary(
@@ -521,7 +521,7 @@ fn test_check_cardinality_gate_fails_via_executor() {
     executor.binary = mock.to_string_lossy().to_string();
     let model_id = ModelId::new("test", "model");
 
-    let result = executor.execute_all(&model_file, &model_id).unwrap();
+    let result = executor.execute_all(&model_file, &model_id).expect("execute all succeeds");
     let card_evidence: Vec<_> = result
         .evidence
         .iter()
@@ -535,11 +535,11 @@ fn test_check_cardinality_gate_fails_via_executor() {
 
 #[test]
 fn test_check_cardinality_gate_error_path_via_executor() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
     let converted_file = dir.path().join("model.converted.apr");
-    std::fs::write(&model_file, "fake source").unwrap();
-    std::fs::write(&converted_file, "fake target").unwrap();
+    std::fs::write(&model_file, "fake source").expect("write file");
+    std::fs::write(&converted_file, "fake target").expect("write file");
 
     // Use a nonexistent binary to trigger Err path in check_cardinality
     let mut executor = ConversionExecutor::new(structural_only_config());
@@ -547,7 +547,7 @@ fn test_check_cardinality_gate_error_path_via_executor() {
     let model_id = ModelId::new("test", "model");
 
     // Should still succeed (executor wraps errors as Falsified evidence)
-    let result = executor.execute_all(&model_file, &model_id).unwrap();
+    let result = executor.execute_all(&model_file, &model_id).expect("execute all succeeds");
     // All structural check evidence should be failures (binary not found → Err path)
     let card_evidence: Vec<_> = result
         .evidence
@@ -564,11 +564,11 @@ fn test_check_cardinality_gate_error_path_via_executor() {
 
 #[test]
 fn test_check_tensor_name_gate_passes_via_executor() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
     let converted_file = dir.path().join("model.converted.apr");
-    std::fs::write(&model_file, "fake source").unwrap();
-    std::fs::write(&converted_file, "fake target").unwrap();
+    std::fs::write(&model_file, "fake source").expect("write file");
+    std::fs::write(&converted_file, "fake target").expect("write file");
 
     // Both sides have the same tensor names → names preserved → corroborated
     let mock = create_mock_script(
@@ -581,7 +581,7 @@ fn test_check_tensor_name_gate_passes_via_executor() {
     executor.binary = mock.to_string_lossy().to_string();
     let model_id = ModelId::new("test", "model");
 
-    let result = executor.execute_all(&model_file, &model_id).unwrap();
+    let result = executor.execute_all(&model_file, &model_id).expect("execute all succeeds");
     let name_evidence: Vec<_> = result
         .evidence
         .iter()
@@ -596,11 +596,11 @@ fn test_check_tensor_name_gate_passes_via_executor() {
 
 #[test]
 fn test_check_tensor_name_gate_fails_via_executor() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
     let converted_file = dir.path().join("model.converted.apr");
-    std::fs::write(&model_file, "fake source").unwrap();
-    std::fs::write(&converted_file, "fake target").unwrap();
+    std::fs::write(&model_file, "fake source").expect("write file");
+    std::fs::write(&converted_file, "fake target").expect("write file");
 
     // Source has q_proj, k_proj, v_proj; target renames all → divergence
     let mock = create_conditional_mock_binary(
@@ -613,7 +613,7 @@ fn test_check_tensor_name_gate_fails_via_executor() {
     executor.binary = mock.to_string_lossy().to_string();
     let model_id = ModelId::new("test", "model");
 
-    let result = executor.execute_all(&model_file, &model_id).unwrap();
+    let result = executor.execute_all(&model_file, &model_id).expect("execute all succeeds");
     let name_evidence: Vec<_> = result
         .evidence
         .iter()
@@ -631,9 +631,9 @@ fn test_check_tensor_name_gate_fails_via_executor() {
 #[test]
 fn test_byte_level_round_trip_error_on_wrong_format() {
     // resolve_model_path expects SafeTensors but model is .gguf → error path
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mut brt = ByteLevelRoundTripTest::new(Backend::Cpu, ModelId::new("test", "model"));
     brt.binary = "/nonexistent/apr".to_string();
@@ -645,9 +645,9 @@ fn test_byte_level_round_trip_error_on_wrong_format() {
 #[test]
 fn test_byte_level_round_trip_corroborated_via_mock() {
     // Happy path: mock creates target files and diff-tensors returns pass JSON
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake st").unwrap();
+    std::fs::write(&model_file, "fake st").expect("write file");
 
     // Mock: rosetta convert <src> <dst> → touch dst; rosetta diff-tensors → {"passed":true}
     let mock = create_mock_apr(
@@ -675,9 +675,9 @@ exit 1"#,
 #[test]
 fn test_byte_level_round_trip_falsified_via_mock() {
     // Falsified path: diff-tensors returns JSON containing "passed":false
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake st").unwrap();
+    std::fs::write(&model_file, "fake st").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -702,9 +702,9 @@ exit 1"#,
 #[test]
 fn test_byte_level_round_trip_falsified_mismatched_keyword() {
     // Falsified via "mismatched" keyword (not "passed":false)
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake st").unwrap();
+    std::fs::write(&model_file, "fake st").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -729,9 +729,9 @@ exit 1"#,
 #[test]
 fn test_byte_level_round_trip_convert_failure() {
     // convert failure → Err propagation
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake st").unwrap();
+    std::fs::write(&model_file, "fake st").expect("write file");
 
     let mock = create_mock_apr(dir.path(), "exit 1");
 
@@ -747,9 +747,9 @@ fn test_byte_level_round_trip_convert_failure() {
 #[test]
 fn test_idempotency_execute_error_on_wrong_format() {
     // resolve_model_path expects Gguf but file is .safetensors → Err
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mut idem = IdempotencyTest::new(
         Format::Gguf,
@@ -765,9 +765,9 @@ fn test_idempotency_execute_error_on_wrong_format() {
 
 #[test]
 fn test_idempotency_execute_error_on_conversion_failure() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Mock always exits 1 → conversion fails
     let mock = create_mock_apr(dir.path(), "exit 1");
@@ -787,9 +787,9 @@ fn test_idempotency_execute_error_on_conversion_failure() {
 #[test]
 fn test_idempotency_execute_corroborated_cross_format() {
     // Cross-format (Gguf→Apr): non-garbage output on both runs → Corroborated
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -822,9 +822,9 @@ exit 1"#,
 #[test]
 fn test_idempotency_execute_falsified_cross_format_garbage() {
     // Cross-format: garbage output → Falsified
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Return heavy repetition garbage (high repetition ratio triggers is_garbage)
     let mock = create_mock_apr(
@@ -857,9 +857,9 @@ exit 1"#,
 #[test]
 fn test_idempotency_execute_corroborated_same_format_identical_output() {
     // Same format (Gguf→Gguf): outputs must be identical → Corroborated
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -892,9 +892,9 @@ exit 1"#,
 #[test]
 fn test_idempotency_execute_falsified_same_format_different_output() {
     // Same format: outputs differ → Falsified
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Return different output based on which tagged file is being run (idem1 vs idem2)
     let mock = create_mock_apr(
@@ -933,9 +933,9 @@ exit 1"#,
 #[test]
 fn test_commutativity_execute_error_on_wrong_format() {
     // resolve_model_path expects Gguf but file is .safetensors → Err
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mut com = CommutativityTest::new(Backend::Cpu, ModelId::new("test", "model"));
     com.binary = "/nonexistent/apr".to_string();
@@ -946,9 +946,9 @@ fn test_commutativity_execute_error_on_wrong_format() {
 
 #[test]
 fn test_commutativity_execute_error_on_conversion_failure() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(dir.path(), "exit 1");
 
@@ -962,9 +962,9 @@ fn test_commutativity_execute_error_on_conversion_failure() {
 #[test]
 fn test_commutativity_execute_corroborated() {
     // Both paths produce non-garbage output → Corroborated
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -992,9 +992,9 @@ exit 1"#,
 #[test]
 fn test_commutativity_execute_falsified_indirect_path_garbage() {
     // Indirect path (GGUF→ST→APR) returns garbage output → Falsified
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Direct path (com_direct) → good output; indirect path (com_indirect) → garbage
     let mock = create_mock_apr(

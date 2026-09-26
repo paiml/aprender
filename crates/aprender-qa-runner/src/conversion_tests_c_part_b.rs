@@ -1,25 +1,25 @@
 /// Verify HF repo resolution selects snapshot containing model.safetensors
 #[test]
 fn test_resolve_hf_repo_with_dirs_multiple_snapshots() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let snapshots_dir = tmp.path().join("models--Test--Multi").join("snapshots");
 
     // Create two snapshots, only second has model.safetensors
     let snap1 = snapshots_dir.join("aaa111");
     let snap2 = snapshots_dir.join("bbb222");
-    std::fs::create_dir_all(&snap1).unwrap();
-    std::fs::create_dir_all(&snap2).unwrap();
-    std::fs::write(snap2.join("model.safetensors"), b"fake").unwrap();
+    std::fs::create_dir_all(&snap1).expect("create dir");
+    std::fs::create_dir_all(&snap2).expect("create dir");
+    std::fs::write(snap2.join("model.safetensors"), b"fake").expect("write file");
 
     let result = resolve_hf_repo_with_dirs("Test/Multi", tmp.path(), tmp.path());
     assert!(result.is_ok());
-    assert!(result.unwrap().join("model.safetensors").exists());
+    assert!(result.expect("call under test succeeds").join("model.safetensors").exists());
 }
 
 /// Verify HF cache takes priority over APR cache when both exist
 #[test]
 fn test_resolve_hf_repo_with_dirs_hf_cache_priority() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
 
     // Create both HF and APR cache entries
     let hf_snapshot = tmp
@@ -27,16 +27,16 @@ fn test_resolve_hf_repo_with_dirs_hf_cache_priority() {
         .join("models--Test--Both")
         .join("snapshots")
         .join("hf123");
-    std::fs::create_dir_all(&hf_snapshot).unwrap();
-    std::fs::write(hf_snapshot.join("model.safetensors"), b"hf").unwrap();
+    std::fs::create_dir_all(&hf_snapshot).expect("create dir");
+    std::fs::write(hf_snapshot.join("model.safetensors"), b"hf").expect("write file");
 
     let apr_cache = tmp.path().join(".cache/apr-models/Test/Both");
-    std::fs::create_dir_all(&apr_cache).unwrap();
+    std::fs::create_dir_all(&apr_cache).expect("create dir");
 
     // HF cache should take priority
     let result = resolve_hf_repo_with_dirs("Test/Both", tmp.path(), tmp.path());
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), hf_snapshot);
+    assert_eq!(result.expect("call under test succeeds"), hf_snapshot);
 }
 
 /// Verify get_hf_cache_dir returns a non-empty path
@@ -52,11 +52,11 @@ fn test_get_hf_cache_dir_returns_path() {
 #[test]
 fn test_resolve_hf_repo_to_cache_error_message_format() {
     // Test with nonexistent paths - this tests the error message format
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let hf_cache = tmp.path().join("hf_empty");
     let home = tmp.path().join("home_empty");
-    std::fs::create_dir_all(&hf_cache).unwrap();
-    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&hf_cache).expect("create dir");
+    std::fs::create_dir_all(&home).expect("create dir");
 
     let result = resolve_hf_repo_with_dirs("Org/Repo", &hf_cache, &home);
     assert!(result.is_err());
@@ -95,36 +95,36 @@ fn test_conversion_output_dir_output_path_all_formats() {
     let out_dir = ConversionOutputDir::new(std::path::Path::new("/out"), &model_id);
 
     let gguf_path = out_dir.output_path("basic", "model", "direct", Format::Gguf);
-    assert!(gguf_path.to_str().unwrap().ends_with("model.direct.gguf"));
+    assert!(gguf_path.to_str().expect("path is UTF-8").ends_with("model.direct.gguf"));
 
     let st_path = out_dir.output_path("semantic", "model", "ref", Format::SafeTensors);
-    assert!(st_path.to_str().unwrap().ends_with("model.ref.safetensors"));
+    assert!(st_path.to_str().expect("path is UTF-8").ends_with("model.ref.safetensors"));
 
     let apr_path = out_dir.output_path("round-trip", "model", "rt1", Format::Apr);
-    assert!(apr_path.to_str().unwrap().ends_with("model.rt1.apr"));
+    assert!(apr_path.to_str().expect("path is UTF-8").ends_with("model.rt1.apr"));
 }
 
 /// Verify ensure_dir creates directory and cleanup removes it
 #[test]
 fn test_conversion_output_dir_ensure_dir_and_cleanup() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let model_id = ModelId::new("test-org", "test-repo");
     let out_dir = ConversionOutputDir::new(tmp.path(), &model_id);
 
     // ensure_dir creates the directory
-    let created = out_dir.ensure_dir("basic").unwrap();
+    let created = out_dir.ensure_dir("basic").expect("ensure dir succeeds");
     assert!(created.exists());
     assert!(created.is_dir());
 
     // cleanup removes the model directory
-    out_dir.cleanup().unwrap();
+    out_dir.cleanup().expect("cleanup succeeds");
     assert!(!out_dir.basic_dir().exists());
 }
 
 /// Verify cleanup on nonexistent directory does not error
 #[test]
 fn test_conversion_output_dir_cleanup_nonexistent() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let model_id = ModelId::new("no-such", "model");
     let out_dir = ConversionOutputDir::new(tmp.path(), &model_id);
 
@@ -158,7 +158,7 @@ fn test_conversion_test_with_output_dir() {
     let test = ConversionTest::new(Format::Gguf, Format::Apr, Backend::Cpu, model_id)
         .with_output_dir(out.clone());
     assert!(test.output_dir.is_some());
-    assert_eq!(test.output_dir.unwrap().basic_dir(), out.basic_dir());
+    assert_eq!(test.output_dir.expect("output dir is set").basic_dir(), out.basic_dir());
 }
 
 /// Verify ConversionExecutor accepts and stores output directory
@@ -168,7 +168,7 @@ fn test_conversion_executor_with_output_dir() {
         ConversionExecutor::with_defaults().with_output_dir(std::path::PathBuf::from("/tmp/out"));
     assert!(executor.output_dir.is_some());
     assert_eq!(
-        executor.output_dir.unwrap(),
+        executor.output_dir.expect("output dir is set"),
         std::path::PathBuf::from("/tmp/out")
     );
 }
@@ -242,9 +242,9 @@ fn test_format_extension_all_formats() {
 /// Verify resolve_file_by_format rejects files with wrong extension
 #[test]
 fn test_resolve_file_by_format_no_extension() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let file = tmp.path().join("model");
-    std::fs::write(&file, b"data").unwrap();
+    std::fs::write(&file, b"data").expect("write file");
 
     // File with no extension should fail for any format
     let result = resolve_file_by_format(&file, Format::Gguf);
@@ -260,13 +260,13 @@ fn test_resolve_file_by_format_no_extension() {
 /// Verify resolve_file_by_format accepts files with matching extension
 #[test]
 fn test_resolve_file_by_format_correct_extension() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let file = tmp.path().join("model.apr");
-    std::fs::write(&file, b"data").unwrap();
+    std::fs::write(&file, b"data").expect("write file");
 
     let result = resolve_file_by_format(&file, Format::Apr);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), file);
+    assert_eq!(result.expect("call under test succeeds"), file);
 }
 
 // ── classify_failure additional edge cases ────────────────────────
@@ -431,24 +431,24 @@ fn test_bug_type_description_semantic_drift() {
 /// Verify sharded SafeTensors index.json is resolved correctly
 #[test]
 fn test_resolve_model_path_sharded_safetensors_index() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let st_dir = tmp.path().join("safetensors");
-    std::fs::create_dir_all(&st_dir).unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
     let index_file = st_dir.join("model.safetensors.index.json");
-    std::fs::write(&index_file, b"{}").unwrap();
+    std::fs::write(&index_file, b"{}").expect("write file");
 
     let result = resolve_model_path(tmp.path(), Format::SafeTensors);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), index_file);
+    assert_eq!(result.expect("call under test succeeds"), index_file);
 }
 
 /// Verify sharded index resolution only applies to SafeTensors format
 #[test]
 fn test_resolve_model_path_sharded_not_for_gguf() {
     // Sharded index only applies to safetensors, not gguf
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let gguf_dir = tmp.path().join("gguf");
-    std::fs::create_dir_all(&gguf_dir).unwrap();
+    std::fs::create_dir_all(&gguf_dir).expect("create dir");
     // Even if there's a .index.json, it shouldn't matter for gguf
     let result = resolve_model_path(tmp.path(), Format::Gguf);
     assert!(result.is_err());

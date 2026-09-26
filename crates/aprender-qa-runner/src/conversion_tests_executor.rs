@@ -171,11 +171,11 @@ fn wait_until_spawnable(path: &std::path::Path) {
 
 fn create_mock_apr(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
     let path = dir.join("mock_apr");
-    std::fs::write(&path, format!("#!/bin/bash\n{script}")).unwrap();
+    std::fs::write(&path, format!("#!/bin/bash\n{script}")).expect("write file");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("fs set permissions succeeds");
     }
     // Flush filesystem metadata to avoid ETXTBSY in Docker overlayfs (CI containers)
     let _ = std::fs::File::open(&path).and_then(|f| f.sync_all());
@@ -186,9 +186,9 @@ fn create_mock_apr(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
 
 #[test]
 fn test_conversion_test_execute_corroborated_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -219,9 +219,9 @@ exit 1"#,
 
 #[test]
 fn test_conversion_test_execute_falsified_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -261,9 +261,9 @@ exit 1"#,
 
 #[test]
 fn test_conversion_test_execute_gpu_backend_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -289,9 +289,9 @@ exit 1"#,
 
 #[test]
 fn test_conversion_test_convert_model_failure_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -318,9 +318,9 @@ exit 1"#,
 
 #[test]
 fn test_semantic_test_execute_corroborated_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -354,9 +354,9 @@ exit 1"#,
 
 #[test]
 fn test_semantic_test_execute_embedding_transposition_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -390,9 +390,9 @@ exit 1"#,
 
 #[test]
 fn test_semantic_test_execute_tokenizer_missing_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.safetensors");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -427,9 +427,9 @@ exit 1"#,
 
 #[test]
 fn test_round_trip_execute_corroborated_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),

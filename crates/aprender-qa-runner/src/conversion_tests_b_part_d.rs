@@ -307,9 +307,9 @@ fn test_tolerance_for_q6k() {
 /// ConversionTest::execute: same-format, identical outputs → Corroborated
 #[test]
 fn test_conversion_test_execute_corroborated_same_format() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Mock: `run` always returns "The answer is 4.", `rosetta convert` touches target
     let mock = create_mock_apr(
@@ -340,9 +340,9 @@ exit 1"#,
 /// ConversionTest::execute: cross-format, non-garbage outputs → Corroborated
 #[test]
 fn test_conversion_test_execute_corroborated_cross_format() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -372,9 +372,9 @@ exit 1"#,
 /// ConversionTest::execute: same-format, different outputs → Falsified (diff > epsilon)
 #[test]
 fn test_conversion_test_execute_falsified_same_format_diff() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Source returns "aaa", converted returns "zzz" → large diff
     let mock = create_mock_apr(
@@ -409,9 +409,9 @@ exit 1"#,
 /// ConversionTest::execute: cross-format, converted output is garbage → Falsified
 #[test]
 fn test_conversion_test_execute_falsified_cross_format_garbage() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Source output is valid; converted output is garbage (too short = 1 char)
     let mock = create_mock_apr(
@@ -447,9 +447,9 @@ exit 1"#,
 /// → Falsified with InferenceFailure
 #[test]
 fn test_conversion_test_execute_falsified_cross_format_inference_failure() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     // Source inference succeeds; rosetta convert creates file; converted inference fails
     let mock = create_mock_apr(

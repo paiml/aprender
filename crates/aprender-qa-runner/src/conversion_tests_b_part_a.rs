@@ -20,8 +20,8 @@ fn test_conversion_bug_type_serialization() {
         ConversionBugType::Unknown,
     ];
     for bug_type in bug_types {
-        let json = serde_json::to_string(&bug_type).unwrap();
-        let parsed: ConversionBugType = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&bug_type).expect("serialise to string");
+        let parsed: ConversionBugType = serde_json::from_str(&json).expect("parse JSON");
         assert_eq!(parsed, bug_type);
     }
 }
@@ -39,8 +39,8 @@ fn test_conversion_test_serialization() {
         quant_type: None,
         output_dir: None,
     };
-    let json = serde_json::to_string(&test).unwrap();
-    let parsed: ConversionTest = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&test).expect("serialise to string");
+    let parsed: ConversionTest = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.source_format, Format::Gguf);
     assert_eq!(parsed.target_format, Format::Apr);
 }
@@ -54,8 +54,8 @@ fn test_conversion_result_serialization_corroborated() {
         backend: Backend::Gpu,
         max_diff: 1e-9,
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: ConversionResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: ConversionResult = serde_json::from_str(&json).expect("parse JSON");
     match parsed {
         ConversionResult::Corroborated { max_diff, .. } => {
             assert!(max_diff < EPSILON);
@@ -82,8 +82,8 @@ fn test_conversion_result_serialization_falsified() {
             quant_type: None,
         },
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: ConversionResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: ConversionResult = serde_json::from_str(&json).expect("parse JSON");
     match parsed {
         ConversionResult::Falsified { gate_id, .. } => {
             assert_eq!(gate_id, "F-CONV-G-A");
@@ -106,8 +106,8 @@ fn test_conversion_evidence_serialization() {
         failure_type: None,
         quant_type: None,
     };
-    let json = serde_json::to_string(&evidence).unwrap();
-    let parsed: ConversionEvidence = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&evidence).expect("serialise to string");
+    let parsed: ConversionEvidence = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.source_hash, "hash1");
     assert_eq!(parsed.diff_indices.len(), 3);
 }
@@ -429,9 +429,9 @@ fn test_conversion_result_corroborated_serialization() {
         backend: Backend::Cpu,
         max_diff: 0.001,
     };
-    let json = serde_json::to_string(&result).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
     assert!(json.contains("Corroborated"));
-    let deserialized: ConversionResult = serde_json::from_str(&json).unwrap();
+    let deserialized: ConversionResult = serde_json::from_str(&json).expect("parse JSON");
     if let ConversionResult::Corroborated { max_diff, .. } = deserialized {
         assert!((max_diff - 0.001).abs() < f64::EPSILON);
     } else {
@@ -457,7 +457,7 @@ fn test_conversion_result_falsified_serialization() {
             quant_type: None,
         },
     };
-    let json = serde_json::to_string(&result).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
     assert!(json.contains("Falsified"));
     assert!(json.contains("F-TEST-001"));
 }

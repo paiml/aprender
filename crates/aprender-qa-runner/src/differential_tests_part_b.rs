@@ -33,7 +33,7 @@ fn test_parse_diff_output_empty_json() {
     let executor = DifferentialExecutor::new(config);
     // Text output with no mismatches
     let output = "All tensors match";
-    let result = executor.parse_diff_output(output).unwrap();
+    let result = executor.parse_diff_output(output).expect("parse diff output succeeds");
     assert!(result.passed);
     assert!(result.mismatches.is_empty());
 }
@@ -43,7 +43,7 @@ fn test_parse_diff_output_with_transposed() {
     let config = DiffConfig::default();
     let executor = DifferentialExecutor::new(config);
     let output = "token_embd.weight: [4096, 32000] vs [32000, 4096] ⚠️ TRANSPOSED\n";
-    let result = executor.parse_diff_output(output).unwrap();
+    let result = executor.parse_diff_output(output).expect("parse diff output succeeds");
     assert!(!result.passed);
     assert_eq!(result.transposed_tensors, 1);
 }
@@ -53,7 +53,7 @@ fn test_parse_diff_output_valid_json() {
     let config = DiffConfig::default();
     let executor = DifferentialExecutor::new(config);
     let json = r#"{"total_tensors":100,"mismatched_tensors":0,"transposed_tensors":0,"mismatches":[],"passed":true}"#;
-    let result = executor.parse_diff_output(json).unwrap();
+    let result = executor.parse_diff_output(json).expect("parse diff output succeeds");
     assert!(result.passed);
     assert_eq!(result.total_tensors, 100);
 }
@@ -64,7 +64,7 @@ fn test_parse_inference_output_success() {
     let executor = DifferentialExecutor::new(config);
     let result = executor
         .parse_inference_output("some output", true)
-        .unwrap();
+        .expect("parse inference output succeeds");
     assert!(result.passed);
 }
 
@@ -72,7 +72,7 @@ fn test_parse_inference_output_success() {
 fn test_parse_inference_output_failure() {
     let config = DiffConfig::default();
     let executor = DifferentialExecutor::new(config);
-    let result = executor.parse_inference_output("error", false).unwrap();
+    let result = executor.parse_inference_output("error", false).expect("parse inference output succeeds");
     assert!(!result.passed);
 }
 
@@ -81,7 +81,7 @@ fn test_parse_inference_output_valid_json() {
     let config = DiffConfig::default();
     let executor = DifferentialExecutor::new(config);
     let json = r#"{"total_tokens":10,"matching_tokens":10,"max_logit_diff":0.0,"passed":true,"token_comparisons":[]}"#;
-    let result = executor.parse_inference_output(json, true).unwrap();
+    let result = executor.parse_inference_output(json, true).expect("parse inference output succeeds");
     assert!(result.passed);
     assert_eq!(result.total_tokens, 10);
 }
@@ -188,7 +188,7 @@ fn test_parse_diff_output_multiple_transposed() {
     let output = "tensor1: [100, 200] vs [200, 100] ⚠️ TRANSPOSED\n\
                       tensor2: [50, 100] vs [100, 50] TRANSPOSED\n\
                       tensor3: [32, 64] vs [64, 32] ⚠️";
-    let result = executor.parse_diff_output(output).unwrap();
+    let result = executor.parse_diff_output(output).expect("parse diff output succeeds");
     assert!(!result.passed);
     assert_eq!(result.transposed_tensors, 3);
     assert_eq!(result.mismatched_tensors, 3);
@@ -201,7 +201,7 @@ fn test_parse_diff_output_no_colon() {
     // Line with TRANSPOSED but no colon should be skipped
     let output = "tensor TRANSPOSED without colon\n\
                       valid_tensor: [10, 20] TRANSPOSED";
-    let result = executor.parse_diff_output(output).unwrap();
+    let result = executor.parse_diff_output(output).expect("parse diff output succeeds");
     assert_eq!(result.transposed_tensors, 1);
 }
 
@@ -231,8 +231,8 @@ fn test_tensor_diff_result_serialization() {
         }],
         passed: false,
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: TensorDiffResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: TensorDiffResult = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.total_tensors, 50);
     assert_eq!(parsed.transposed_tensors, 1);
 }
@@ -252,8 +252,8 @@ fn test_inference_comparison_result_serialization() {
             matches: false,
         }],
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: InferenceComparisonResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: InferenceComparisonResult = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.total_tokens, 20);
     assert_eq!(parsed.token_comparisons.len(), 1);
 }
@@ -266,8 +266,8 @@ fn test_benchmark_metrics_serialization() {
         latency_p50_ms: 65.0,
         latency_p99_ms: 130.0,
     };
-    let json = serde_json::to_string(&metrics).unwrap();
-    let parsed: BenchmarkMetrics = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&metrics).expect("serialise to string");
+    let parsed: BenchmarkMetrics = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.path, "/path/to/model.gguf");
 }
 
@@ -280,8 +280,8 @@ fn test_ci_assertion_serialization() {
         passed: true,
         gate_id: "F-CI-001".to_string(),
     };
-    let json = serde_json::to_string(&assertion).unwrap();
-    let parsed: CiAssertion = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&assertion).expect("serialise to string");
+    let parsed: CiAssertion = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.name, "throughput");
     assert!(parsed.passed);
 }
@@ -297,8 +297,8 @@ fn test_ci_profile_result_serialization() {
         assertions: vec![],
         passed: true,
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: CiProfileResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: CiProfileResult = serde_json::from_str(&json).expect("parse JSON");
     assert!(parsed.passed);
 }
 
@@ -323,8 +323,8 @@ fn test_diff_benchmark_result_serialization() {
         regression_detected: false,
         regression_threshold: 5.0,
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: DiffBenchmarkResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: DiffBenchmarkResult = serde_json::from_str(&json).expect("parse JSON");
     assert!(!parsed.regression_detected);
 }
 
@@ -362,8 +362,8 @@ fn test_tensor_mismatch_type_serialization() {
         TensorMismatchType::Missing,
     ];
     for t in types {
-        let json = serde_json::to_string(&t).unwrap();
-        let parsed: TensorMismatchType = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&t).expect("serialise to string");
+        let parsed: TensorMismatchType = serde_json::from_str(&json).expect("parse JSON");
         assert_eq!(parsed, t);
     }
 }
@@ -376,8 +376,8 @@ fn test_tensor_mismatch_serialization() {
         shape_b: vec![3, 2, 1],
         mismatch_type: TensorMismatchType::ShapeMismatch,
     };
-    let json = serde_json::to_string(&mismatch).unwrap();
-    let parsed: TensorMismatch = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&mismatch).expect("serialise to string");
+    let parsed: TensorMismatch = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.name, "layer.weight");
     assert_eq!(parsed.mismatch_type, TensorMismatchType::ShapeMismatch);
 }
@@ -402,7 +402,7 @@ fn test_parse_inference_output_with_token_data() {
                 {"index": 1, "token_a": 2, "token_b": 3, "logit_diff": 0.02, "matches": false}
             ]
         }"#;
-    let result = executor.parse_inference_output(json, true).unwrap();
+    let result = executor.parse_inference_output(json, true).expect("parse inference output succeeds");
     assert_eq!(result.total_tokens, 5);
     assert_eq!(result.token_comparisons.len(), 2);
 }

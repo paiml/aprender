@@ -159,8 +159,8 @@ fn test_profile_assertion_serialization() {
         min_threshold: 40.0,
         passed: true,
     };
-    let json = serde_json::to_string(&assertion).unwrap();
-    let parsed: ProfileAssertion = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&assertion).expect("serialise to string");
+    let parsed: ProfileAssertion = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.format, "gguf");
     assert!(parsed.passed);
 }

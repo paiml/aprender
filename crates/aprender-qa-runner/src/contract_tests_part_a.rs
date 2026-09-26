@@ -210,7 +210,7 @@ fn test_contract_i2_tensor_name_bijection_pass() {
     );
     let i2 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I2-001");
     assert!(i2.is_some(), "I-2 evidence should exist");
-    assert_eq!(i2.unwrap().outcome, Outcome::Corroborated);
+    assert_eq!(i2.expect("invariant 2 evaluated").outcome, Outcome::Corroborated);
 }
 
 /// Verify I-2 tensor name bijection test fails with inspect failure mock
@@ -226,7 +226,7 @@ fn test_contract_i2_tensor_name_bijection_fail() {
     );
     let i2 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I2-001");
     assert!(i2.is_some());
-    assert_eq!(i2.unwrap().outcome, Outcome::Falsified);
+    assert_eq!(i2.expect("invariant 2 evaluated").outcome, Outcome::Falsified);
 }
 
 /// Verify parse_tensor_names extracts names from valid JSON
@@ -313,7 +313,7 @@ fn test_contract_i3_no_silent_fallbacks_pass() {
     );
     let i3 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I3-001");
     assert!(i3.is_some());
-    assert_eq!(i3.unwrap().outcome, Outcome::Corroborated);
+    assert_eq!(i3.expect("invariant 3 evaluated").outcome, Outcome::Corroborated);
 }
 
 /// Verify I-3 no silent fallbacks test fails with check failure mock
@@ -329,7 +329,7 @@ fn test_contract_i3_no_silent_fallbacks_fail() {
     );
     let i3 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I3-001");
     assert!(i3.is_some());
-    assert_eq!(i3.unwrap().outcome, Outcome::Falsified);
+    assert_eq!(i3.expect("invariant 3 evaluated").outcome, Outcome::Falsified);
 }
 
 /// Verify I-4 statistical preservation test passes with mock runner
@@ -344,7 +344,7 @@ fn test_contract_i4_statistical_preservation_pass() {
     );
     let i4 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I4-001");
     assert!(i4.is_some());
-    assert_eq!(i4.unwrap().outcome, Outcome::Corroborated);
+    assert_eq!(i4.expect("invariant 4 evaluated").outcome, Outcome::Corroborated);
 }
 
 /// Verify I-4 statistical preservation test fails with stats failure mock
@@ -360,7 +360,7 @@ fn test_contract_i4_statistical_preservation_fail() {
     );
     let i4 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I4-001");
     assert!(i4.is_some());
-    assert_eq!(i4.unwrap().outcome, Outcome::Falsified);
+    assert_eq!(i4.expect("invariant 4 evaluated").outcome, Outcome::Falsified);
 }
 
 /// Verify I-5 tokenizer roundtrip test passes with mock runner
@@ -375,7 +375,7 @@ fn test_contract_i5_tokenizer_roundtrip_pass() {
     );
     let i5 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I5-001");
     assert!(i5.is_some());
-    assert_eq!(i5.unwrap().outcome, Outcome::Corroborated);
+    assert_eq!(i5.expect("invariant 5 evaluated").outcome, Outcome::Corroborated);
 }
 
 /// Verify I-5 tokenizer roundtrip test fails with inference failure mock
@@ -391,7 +391,7 @@ fn test_contract_i5_tokenizer_roundtrip_fail() {
     );
     let i5 = evidence.iter().find(|e| e.gate_id == "F-CONTRACT-I5-001");
     assert!(i5.is_some());
-    assert_eq!(i5.unwrap().outcome, Outcome::Falsified);
+    assert_eq!(i5.expect("invariant 5 evaluated").outcome, Outcome::Falsified);
 }
 
 /// Verify all default invariants (I-2 through I-5) pass with mock runner

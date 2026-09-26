@@ -49,11 +49,11 @@ fn test_naming_convention() {
 #[test]
 fn test_invariant_catches_fields() {
     let contract = load_format_contract().expect("Failed to load contract");
-    let i1 = contract.invariants.iter().find(|i| i.id == "I-1").unwrap();
+    let i1 = contract.invariants.iter().find(|i| i.id == "I-1").expect("item found");
     assert!(i1.catches.contains(&"GH-190".to_string()));
     assert!(i1.implemented);
 
-    let i2 = contract.invariants.iter().find(|i| i.id == "I-2").unwrap();
+    let i2 = contract.invariants.iter().find(|i| i.id == "I-2").expect("item found");
     assert!(i2.catches.contains(&"GH-190".to_string()));
     assert!(!i2.implemented);
 }
@@ -62,11 +62,11 @@ fn test_invariant_catches_fields() {
 fn test_tolerance_entries_ordered_by_precision() {
     let contract = load_format_contract().expect("Failed to load contract");
     // F32 should have 0 tolerance (exact)
-    let f32_tol = lookup_tolerance("F32", &contract).unwrap();
+    let f32_tol = lookup_tolerance("F32", &contract).expect("lookup tolerance succeeds");
     assert!(f32_tol.0.abs() < f64::EPSILON);
 
     // Q2_K should have the loosest tolerance
-    let q2k_tol = lookup_tolerance("Q2_K", &contract).unwrap();
+    let q2k_tol = lookup_tolerance("Q2_K", &contract).expect("lookup tolerance succeeds");
     assert!(q2k_tol.0 > 0.1);
 }
 

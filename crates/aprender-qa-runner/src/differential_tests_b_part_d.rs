@@ -74,7 +74,7 @@ fn test_inspect_result_from_json() {
             "hidden_size": 896,
             "architecture": "Qwen2ForCausalLM"
         }"#;
-    let result: InspectResult = serde_json::from_str(json).unwrap();
+    let result: InspectResult = serde_json::from_str(json).expect("parse JSON");
     assert_eq!(result.tensor_count, 338);
     assert_eq!(result.tensor_names.len(), 2);
     assert_eq!(result.num_attention_heads, Some(14));
@@ -86,7 +86,7 @@ fn test_inspect_result_from_json() {
 #[test]
 fn test_inspect_result_minimal_json() {
     let json = r#"{"tensor_count": 100}"#;
-    let result: InspectResult = serde_json::from_str(json).unwrap();
+    let result: InspectResult = serde_json::from_str(json).expect("parse JSON");
     assert_eq!(result.tensor_count, 100);
     assert!(result.tensor_names.is_empty());
     assert!(result.num_attention_heads.is_none());
@@ -106,8 +106,8 @@ fn test_inspect_result_serialization_round_trip() {
         hidden_size: Some(4096),
         architecture: Some("LlamaForCausalLM".to_string()),
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: InspectResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: InspectResult = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.tensor_count, 227);
     assert_eq!(parsed.tensor_names.len(), 2);
     assert_eq!(parsed.hidden_size, Some(4096));
@@ -145,7 +145,7 @@ fn test_inspect_result_debug() {
 #[test]
 fn test_parse_inspect_text_with_tensor_count() {
     let output = "Tensors: 338\nmodel.embed_tokens.weight [151936, 896]\nmodel.layers.0.self_attn.q_proj.weight [896, 896]";
-    let result = parse_inspect_text(output).unwrap();
+    let result = parse_inspect_text(output).expect("parse inspect text succeeds");
     assert_eq!(result.tensor_count, 338);
     assert_eq!(result.tensor_names.len(), 2);
     assert!(
@@ -158,7 +158,7 @@ fn test_parse_inspect_text_with_tensor_count() {
 #[test]
 fn test_parse_inspect_text_with_metadata() {
     let output = "Tensors: 100\narchitecture: Qwen2ForCausalLM\nnum_attention_heads: 14\nnum_key_value_heads: 2\nhidden_size: 896";
-    let result = parse_inspect_text(output).unwrap();
+    let result = parse_inspect_text(output).expect("parse inspect text succeeds");
     assert_eq!(result.tensor_count, 100);
     assert_eq!(result.architecture.as_deref(), Some("Qwen2ForCausalLM"));
     assert_eq!(result.num_attention_heads, Some(14));
@@ -169,7 +169,7 @@ fn test_parse_inspect_text_with_metadata() {
 #[test]
 fn test_parse_inspect_text_empty() {
     let output = "";
-    let result = parse_inspect_text(output).unwrap();
+    let result = parse_inspect_text(output).expect("parse inspect text succeeds");
     assert_eq!(result.tensor_count, 0);
     assert!(result.tensor_names.is_empty());
 }
@@ -177,7 +177,7 @@ fn test_parse_inspect_text_empty() {
 #[test]
 fn test_parse_inspect_text_tensor_count_from_names() {
     let output = "model.layers.0.weight [768, 768]\nmodel.layers.1.weight [768, 768]";
-    let result = parse_inspect_text(output).unwrap();
+    let result = parse_inspect_text(output).expect("parse inspect text succeeds");
     assert_eq!(result.tensor_count, 2);
     assert_eq!(result.tensor_names.len(), 2);
 }
@@ -185,7 +185,7 @@ fn test_parse_inspect_text_tensor_count_from_names() {
 #[test]
 fn test_parse_inspect_text_alternate_prefix() {
     let output = "tensor_count: 42";
-    let result = parse_inspect_text(output).unwrap();
+    let result = parse_inspect_text(output).expect("parse inspect text succeeds");
     assert_eq!(result.tensor_count, 42);
 }
 

@@ -6,8 +6,8 @@ fn test_six_column_profile_serialization() {
         total_duration_ms: 1000,
         ..Default::default()
     };
-    let json = serde_json::to_string(&profile).unwrap();
-    let parsed: SixColumnProfile = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&profile).expect("serialise to string");
+    let parsed: SixColumnProfile = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.tps_gguf_cpu, Some(12.0));
 }
 
@@ -62,8 +62,8 @@ fn test_bench_result_serialization() {
         backend: "gpu".to_string(),
         format: "gguf".to_string(),
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: BenchResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: BenchResult = serde_json::from_str(&json).expect("parse JSON");
     assert!((parsed.throughput_tps - 25.5).abs() < 0.01);
     assert!(parsed.passed);
 }
@@ -113,7 +113,7 @@ fn test_format_conversion_result_failure() {
     };
     assert!(!result.success);
     assert!(result.error.is_some());
-    assert!(result.error.as_ref().unwrap().contains("Conversion failed"));
+    assert!(result.error.as_ref().expect("error message is set").contains("Conversion failed"));
 }
 
 #[test]
@@ -155,8 +155,8 @@ fn test_format_conversion_result_serialization() {
         error: Some("Test error".to_string()),
         cached: false,
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let parsed: FormatConversionResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
+    let parsed: FormatConversionResult = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(parsed.source_format, "safetensors");
     assert!(!parsed.success);
 }
@@ -181,7 +181,7 @@ fn test_find_model_file_nonexistent_dir() {
 
 #[test]
 fn test_find_model_file_empty_dir() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let result = find_model_file(temp_dir.path());
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -195,19 +195,19 @@ fn test_find_model_file_empty_dir() {
 
 #[test]
 fn test_find_model_file_with_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_file = temp_dir.path().join("model.gguf");
-    std::fs::write(&model_file, b"fake model data").unwrap();
+    std::fs::write(&model_file, b"fake model data").expect("write file");
     let result = find_model_file(temp_dir.path());
     assert!(result.is_ok());
-    assert!(result.unwrap().exists());
+    assert!(result.expect("call under test succeeds").exists());
 }
 
 #[test]
 fn test_find_model_file_with_subdir_only() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let subdir = temp_dir.path().join("subdir");
-    std::fs::create_dir(&subdir).unwrap();
+    std::fs::create_dir(&subdir).expect("fs create dir succeeds");
     // Directory contains only a subdirectory, no files
     let result = find_model_file(temp_dir.path());
     assert!(result.is_err());
@@ -219,13 +219,13 @@ fn test_find_model_file_with_subdir_only() {
 
 #[test]
 fn test_compute_file_hash_via_cached_conversion() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let source = temp_dir.path().join("source.gguf");
     let target = temp_dir.path().join("target.apr");
     let hash_file = temp_dir.path().join(".hash");
 
     // Write source file
-    std::fs::write(&source, b"test model content").unwrap();
+    std::fs::write(&source, b"test model content").expect("write file");
 
     // Attempt cached conversion (will fail because apr binary doesn't exist,
     // but should still compute hash)
@@ -279,8 +279,8 @@ fn test_ci_profile_metrics_serialization() {
         latency_p50_ms: 12.5,
         latency_p99_ms: 30.0,
     };
-    let json = serde_json::to_string(&metrics).unwrap();
-    let parsed: CiProfileMetrics = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&metrics).expect("serialise to string");
+    let parsed: CiProfileMetrics = serde_json::from_str(&json).expect("parse JSON");
     assert!((parsed.throughput_tok_s - 80.0).abs() < 0.01);
 }
 

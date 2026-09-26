@@ -28,15 +28,19 @@ test_matrix:
 
 fn write_config_json(dir: &Path, config: &serde_json::Value) {
     let path = dir.join("config.json");
-    let mut f = std::fs::File::create(path).unwrap();
-    f.write_all(serde_json::to_string(config).unwrap().as_bytes())
-        .unwrap();
+    let mut f = std::fs::File::create(path).expect("create file");
+    f.write_all(
+        serde_json::to_string(config)
+            .expect("serialise to string")
+            .as_bytes(),
+    )
+    .expect("write file");
 }
 
 fn write_file(dir: &Path, name: &str, content: &str) {
     let path = dir.join(name);
-    let mut f = std::fs::File::create(path).unwrap();
-    f.write_all(content.as_bytes()).unwrap();
+    let mut f = std::fs::File::create(path).expect("create file");
+    f.write_all(content.as_bytes()).expect("write file");
 }
 
 fn write_safetensors_with_dtype(dir: &Path, tensors: &[(&str, &[usize], &str)]) {
@@ -48,23 +52,27 @@ fn write_safetensors_with_dtype(dir: &Path, tensors: &[(&str, &[usize], &str)]) 
     for &(name, shape, dtype) in tensors {
         let num_elements: usize = shape.iter().product();
         let byte_size = num_elements * 4;
-        let tensor_info = serde_json::json!({
-            "dtype": dtype,
-            "shape": shape,
-            "data_offsets": [offset, offset + byte_size as u64]
-        });
+        let tensor_info = serde_json::Value::Object(serde_json::Map::from_iter([
+            ("dtype".to_string(), serde_json::Value::from(dtype)),
+            ("shape".to_string(), serde_json::Value::from(shape.to_vec())),
+            (
+                "data_offsets".to_string(),
+                serde_json::Value::from(vec![offset, offset + byte_size as u64]),
+            ),
+        ]));
         header_map.insert(name, tensor_info);
         offset += byte_size as u64;
     }
 
-    let header_json = serde_json::to_string(&header_map).unwrap();
+    let header_json = serde_json::to_string(&header_map).expect("serialise to string");
     let header_bytes = header_json.as_bytes();
     let header_len = header_bytes.len() as u64;
 
-    let mut f = std::fs::File::create(path).unwrap();
-    f.write_all(&header_len.to_le_bytes()).unwrap();
-    f.write_all(header_bytes).unwrap();
-    f.write_all(&vec![0u8; offset as usize]).unwrap();
+    let mut f = std::fs::File::create(path).expect("create file");
+    f.write_all(&header_len.to_le_bytes()).expect("write file");
+    f.write_all(header_bytes).expect("write file");
+    f.write_all(&vec![0u8; offset as usize])
+        .expect("write file");
 }
 
 fn write_minimal_safetensors(dir: &Path, tensors: &[(&str, &[usize])]) {
@@ -77,10 +85,13 @@ fn write_minimal_safetensors(dir: &Path, tensors: &[(&str, &[usize])]) {
 
 #[test]
 fn test_tokenizer_exists_json() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -97,7 +108,7 @@ fn test_tokenizer_exists_json() {
         .checks
         .iter()
         .find(|c| c.name == "tokenizer_exists")
-        .unwrap();
+        .expect("item found");
     assert!(
         check.passed,
         "tokenizer.json should satisfy tokenizer_exists"
@@ -107,10 +118,13 @@ fn test_tokenizer_exists_json() {
 
 #[test]
 fn test_tokenizer_exists_model() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -128,7 +142,7 @@ fn test_tokenizer_exists_model() {
         .checks
         .iter()
         .find(|c| c.name == "tokenizer_exists")
-        .unwrap();
+        .expect("item found");
     assert!(
         check.passed,
         "tokenizer.model should satisfy tokenizer_exists"
@@ -138,10 +152,13 @@ fn test_tokenizer_exists_model() {
 
 #[test]
 fn test_tokenizer_missing() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -158,16 +175,19 @@ fn test_tokenizer_missing() {
         .checks
         .iter()
         .find(|c| c.name == "tokenizer_exists")
-        .unwrap();
+        .expect("item found");
     assert!(!check.passed, "missing tokenizer should fail");
 }
 
 #[test]
 fn test_tokenizer_config_valid() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -186,16 +206,19 @@ fn test_tokenizer_config_valid() {
         .checks
         .iter()
         .find(|c| c.name == "tokenizer_config_valid")
-        .unwrap();
+        .expect("item found");
     assert!(check.passed, "valid JSON tokenizer_config should pass");
 }
 
 #[test]
 fn test_tokenizer_config_invalid_json() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -210,7 +233,7 @@ fn test_tokenizer_config_invalid_json() {
         .checks
         .iter()
         .find(|c| c.name == "tokenizer_config_valid")
-        .unwrap();
+        .expect("item found");
     assert!(
         !check.passed,
         "broken JSON should fail tokenizer_config_valid"
@@ -219,10 +242,13 @@ fn test_tokenizer_config_invalid_json() {
 
 #[test]
 fn test_eos_token_string() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -241,17 +267,20 @@ fn test_eos_token_string() {
         .checks
         .iter()
         .find(|c| c.name == "eos_token_valid")
-        .unwrap();
+        .expect("item found");
     assert!(check.passed, "string eos_token should pass");
     assert!(check.actual.contains("<|endoftext|>"));
 }
 
 #[test]
 fn test_eos_token_object() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -270,16 +299,19 @@ fn test_eos_token_object() {
         .checks
         .iter()
         .find(|c| c.name == "eos_token_valid")
-        .unwrap();
+        .expect("item found");
     assert!(check.passed, "object-format eos_token (Qwen) should pass");
 }
 
 #[test]
 fn test_eos_token_missing() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -298,16 +330,19 @@ fn test_eos_token_missing() {
         .checks
         .iter()
         .find(|c| c.name == "eos_token_valid")
-        .unwrap();
+        .expect("item found");
     assert!(!check.passed, "missing eos_token should fail");
 }
 
 #[test]
 fn test_bos_token_absent_ok() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -334,10 +369,13 @@ fn test_bos_token_absent_ok() {
 
 #[test]
 fn test_dtype_supported_f32() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -353,16 +391,19 @@ fn test_dtype_supported_f32() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_supported")
-        .unwrap();
+        .expect("item found");
     assert!(check.passed, "F32 should be supported");
 }
 
 #[test]
 fn test_dtype_supported_bf16() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -378,16 +419,19 @@ fn test_dtype_supported_bf16() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_supported")
-        .unwrap();
+        .expect("item found");
     assert!(check.passed, "BF16 should be supported");
 }
 
 #[test]
 fn test_dtype_unsupported() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -400,17 +444,20 @@ fn test_dtype_unsupported() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_supported")
-        .unwrap();
+        .expect("item found");
     assert!(!check.passed, "Q4_0 is not a valid SafeTensors dtype");
     assert!(check.actual.contains("Q4_0"));
 }
 
 #[test]
 fn test_dtype_consistent_all_same() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -433,7 +480,7 @@ fn test_dtype_consistent_all_same() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_consistent")
-        .unwrap();
+        .expect("item found");
     assert!(
         check.passed,
         "all 2D tensors BF16 → consistent (1D F32 excluded)"
@@ -442,10 +489,13 @@ fn test_dtype_consistent_all_same() {
 
 #[test]
 fn test_dtype_consistent_mixed_interior() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // Mix F32 and BF16 in interior weight tensors (not embed/lm_head)
     write_safetensors_with_dtype(
@@ -466,7 +516,7 @@ fn test_dtype_consistent_mixed_interior() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_consistent")
-        .unwrap();
+        .expect("item found");
     assert!(
         !check.passed,
         "mixed F32+BF16 in interior weight tensors should fail"
@@ -475,11 +525,14 @@ fn test_dtype_consistent_mixed_interior() {
 
 #[test]
 fn test_dtype_config_match_bfloat16() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936,
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936,
         "torch_dtype": "bfloat16"
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -495,17 +548,20 @@ fn test_dtype_config_match_bfloat16() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_config_match")
-        .unwrap();
+        .expect("item found");
     assert!(check.passed, "bfloat16 config + BF16 tensors should match");
 }
 
 #[test]
 fn test_dtype_config_match_mismatch() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936,
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936,
         "torch_dtype": "float16"
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -521,7 +577,7 @@ fn test_dtype_config_match_mismatch() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_config_match")
-        .unwrap();
+        .expect("item found");
     assert!(
         !check.passed,
         "float16 config + BF16 tensors should mismatch"
@@ -530,10 +586,13 @@ fn test_dtype_config_match_mismatch() {
 
 #[test]
 fn test_dtype_config_no_torch_dtype() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -556,15 +615,18 @@ fn test_dtype_config_no_torch_dtype() {
 
 #[test]
 fn test_full_dim_check_with_tokenizer_and_dtype() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
         "num_attention_heads": 14,
         "num_key_value_heads": 2,
-        "vocab_size": 151_936,
+        "vocab_size": 151936,
         "torch_dtype": "bfloat16"
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_safetensors_with_dtype(
         dir.path(),
@@ -630,10 +692,13 @@ fn test_full_dim_check_with_tokenizer_and_dtype() {
 
 #[test]
 fn test_tokenizer_json_corrupt() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -648,7 +713,7 @@ fn test_tokenizer_json_corrupt() {
         .checks
         .iter()
         .find(|c| c.name == "tokenizer_exists")
-        .unwrap();
+        .expect("item found");
     assert!(
         !check.passed,
         "corrupt tokenizer.json should fail (invalid JSON)"
@@ -658,10 +723,13 @@ fn test_tokenizer_json_corrupt() {
 
 #[test]
 fn test_tokenizer_model_empty() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -676,7 +744,7 @@ fn test_tokenizer_model_empty() {
         .checks
         .iter()
         .find(|c| c.name == "tokenizer_exists")
-        .unwrap();
+        .expect("item found");
     assert!(!check.passed, "empty tokenizer.model should fail");
 }
 
@@ -684,12 +752,15 @@ fn test_tokenizer_model_empty() {
 
 #[test]
 fn test_eos_token_id_fallback_from_config() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new().expect("create temp dir");
     // config.json has eos_token_id but no eos_token string
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936,
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936,
         "eos_token_id": 50256
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -709,7 +780,7 @@ fn test_eos_token_id_fallback_from_config() {
         .checks
         .iter()
         .find(|c| c.name == "eos_token_valid")
-        .unwrap();
+        .expect("item found");
     assert!(
         check.passed,
         "eos_token_id=50256 in config.json should satisfy fallback"
@@ -719,12 +790,15 @@ fn test_eos_token_id_fallback_from_config() {
 
 #[test]
 fn test_eos_token_id_fallback_no_tokenizer_config() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new().expect("create temp dir");
     // config.json has eos_token_id, no tokenizer_config.json at all
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936,
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936,
         "eos_token_id": 2
-    });
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -739,7 +813,7 @@ fn test_eos_token_id_fallback_no_tokenizer_config() {
         .checks
         .iter()
         .find(|c| c.name == "eos_token_valid")
-        .unwrap();
+        .expect("item found");
     assert!(
         check.passed,
         "eos_token_id in config.json should work without tokenizer_config"
@@ -748,11 +822,14 @@ fn test_eos_token_id_fallback_no_tokenizer_config() {
 
 #[test]
 fn test_eos_token_id_fallback_missing_everywhere() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new().expect("create temp dir");
     // No eos_token in tokenizer_config, no eos_token_id in config.json
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     write_minimal_safetensors(
         dir.path(),
@@ -771,7 +848,7 @@ fn test_eos_token_id_fallback_missing_everywhere() {
         .checks
         .iter()
         .find(|c| c.name == "eos_token_valid")
-        .unwrap();
+        .expect("item found");
     assert!(
         !check.passed,
         "no eos_token or eos_token_id anywhere should fail"
@@ -782,10 +859,13 @@ fn test_eos_token_id_fallback_missing_everywhere() {
 
 #[test]
 fn test_dtype_consistent_embed_f32_weights_bf16() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // F32 embeddings + BF16 interior weights — legitimate pattern (Llama-70B)
     write_safetensors_with_dtype(
@@ -813,7 +893,7 @@ fn test_dtype_consistent_embed_f32_weights_bf16() {
         .checks
         .iter()
         .find(|c| c.name == "dtype_consistent")
-        .unwrap();
+        .expect("item found");
     assert!(
         check.passed,
         "F32 embed + BF16 interior weights should pass (embed layers excluded): {}",
@@ -823,10 +903,13 @@ fn test_dtype_consistent_embed_f32_weights_bf16() {
 
 #[test]
 fn test_dtype_consistent_only_embed_tensors() {
-    let dir = TempDir::new().unwrap();
-    let config = serde_json::json!({
-        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151_936
-    });
+    let dir = TempDir::new().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(
+        r#"{
+        "hidden_size": 896, "num_hidden_layers": 24, "vocab_size": 151936
+    }"#,
+    )
+    .expect("valid JSON literal");
     write_config_json(dir.path(), &config);
     // Only embedding tensors, no interior weights — consistency check still emitted (passes vacuously)
     write_safetensors_with_dtype(

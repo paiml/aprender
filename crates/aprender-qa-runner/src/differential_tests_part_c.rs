@@ -73,7 +73,7 @@ fn test_parse_diff_output_with_text_only() {
                       tensor1: OK\n\
                       tensor2: OK\n\
                       All 100 tensors match.";
-    let result = executor.parse_diff_output(output).unwrap();
+    let result = executor.parse_diff_output(output).expect("parse diff output succeeds");
     assert!(result.passed);
     assert!(result.mismatches.is_empty());
 }
@@ -85,7 +85,7 @@ fn test_parse_inference_output_failure_fallback() {
     let executor = DifferentialExecutor::new(config);
     // Invalid JSON should fallback to basic result
     let output = "not valid json";
-    let result = executor.parse_inference_output(output, false).unwrap();
+    let result = executor.parse_inference_output(output, false).expect("parse inference output succeeds");
     assert!(!result.passed);
     assert_eq!(result.total_tokens, 0);
 }
@@ -411,7 +411,7 @@ fn test_parse_diff_output_with_transposed_marker() {
     let output = "Comparing tensors...\n\
                       TRANSPOSED: token_embd.weight (4096, 32000) vs (32000, 4096)\n\
                       All 100 tensors compared.";
-    let result = executor.parse_diff_output(output).unwrap();
+    let result = executor.parse_diff_output(output).expect("parse diff output succeeds");
     assert!(!result.passed);
     assert_eq!(result.transposed_tensors, 1);
 }
@@ -425,7 +425,7 @@ fn test_parse_diff_output_with_no_mismatch_marker() {
     let output = "Comparing tensors...\n\
                       lm_head.weight: OK\n\
                       Done.";
-    let result = executor.parse_diff_output(output).unwrap();
+    let result = executor.parse_diff_output(output).expect("parse diff output succeeds");
     // No TRANSPOSED markers found, so should pass
     assert!(result.passed);
     assert_eq!(result.mismatched_tensors, 0);
@@ -437,7 +437,7 @@ fn test_parse_inference_output_with_valid_json() {
     let config = DiffConfig::default();
     let executor = DifferentialExecutor::new(config);
     let output = r#"{"total_tokens":10,"matching_tokens":10,"max_logit_diff":0.0001,"passed":true,"token_comparisons":[]}"#;
-    let result = executor.parse_inference_output(output, true).unwrap();
+    let result = executor.parse_inference_output(output, true).expect("parse inference output succeeds");
     assert!(result.passed);
     assert_eq!(result.total_tokens, 10);
 }

@@ -13,14 +13,14 @@ fn test_conversion_config_all_disabled() {
     };
     let executor = ConversionExecutor::new(config);
     let model_id = ModelId::new("test", "model");
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let model_file = tmp.path().join("model.gguf");
-    std::fs::write(&model_file, b"fake").unwrap();
+    std::fs::write(&model_file, b"fake").expect("write file");
 
     // With everything disabled, should still return Ok but with no results
     let result = executor.execute_all(&model_file, &model_id);
     assert!(result.is_ok());
-    let exec_result = result.unwrap();
+    let exec_result = result.expect("call under test succeeds");
     assert_eq!(exec_result.total, 0);
     assert_eq!(exec_result.passed, 0);
     assert_eq!(exec_result.failed, 0);
@@ -35,9 +35,9 @@ fn test_conversion_config_all_disabled() {
 
 #[test]
 fn test_conversion_executor_only_cardinality_no_converted_files() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let model_file = tmp.path().join("model.gguf");
-    std::fs::write(&model_file, b"fake").unwrap();
+    std::fs::write(&model_file, b"fake").expect("write file");
 
     let config = ConversionConfig {
         test_all_pairs: false,
@@ -56,7 +56,7 @@ fn test_conversion_executor_only_cardinality_no_converted_files() {
     // Structural checks skip when no converted files exist
     let result = executor.execute_all(&model_file, &model_id);
     assert!(result.is_ok());
-    let exec_result = result.unwrap();
+    let exec_result = result.expect("call under test succeeds");
     // No converted files means structural checks are skipped
     assert_eq!(exec_result.total, 0);
 }
@@ -120,9 +120,9 @@ fn test_tensor_naming_equality() {
 
 #[test]
 fn test_conversion_test_execute_with_output_dir_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(
         dir.path(),
@@ -151,9 +151,9 @@ exit 1"#,
 
 #[test]
 fn test_conversion_executor_idempotency_error_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(dir.path(), r"exit 1");
 
@@ -180,9 +180,9 @@ fn test_conversion_executor_idempotency_error_via_mock() {
 
 #[test]
 fn test_conversion_executor_commutativity_error_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(dir.path(), r"exit 1");
 
@@ -208,9 +208,9 @@ fn test_conversion_executor_commutativity_error_via_mock() {
 
 #[test]
 fn test_conversion_executor_multi_hop_error_via_mock() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("model.gguf");
-    std::fs::write(&model_file, "fake").unwrap();
+    std::fs::write(&model_file, "fake").expect("write file");
 
     let mock = create_mock_apr(dir.path(), r"exit 1");
 
@@ -250,8 +250,8 @@ fn test_conversion_evidence_full_serde_round_trip() {
         failure_type: Some(ConversionFailureType::DequantizationFailure),
         quant_type: Some(QuantType::Q6K),
     };
-    let json = serde_json::to_string(&evidence).unwrap();
-    let parsed: ConversionEvidence = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&evidence).expect("serialise to string");
+    let parsed: ConversionEvidence = serde_json::from_str(&json).expect("parse JSON");
     assert_eq!(
         parsed.failure_type,
         Some(ConversionFailureType::DequantizationFailure)
@@ -475,11 +475,11 @@ fn test_split_hf_repo_standard() {
 /// Verify resolve_hf_repo_with_dirs returns error when both caches miss
 #[test]
 fn test_resolve_hf_repo_with_dirs_both_miss() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let hf_cache = tmp.path().join("hf_cache");
     let home = tmp.path().join("home");
-    std::fs::create_dir_all(&hf_cache).unwrap();
-    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&hf_cache).expect("create dir");
+    std::fs::create_dir_all(&home).expect("create dir");
 
     let result = resolve_hf_repo_with_dirs("test/model", &hf_cache, &home);
     assert!(result.is_err());
@@ -490,7 +490,7 @@ fn test_resolve_hf_repo_with_dirs_both_miss() {
 /// Verify find_hf_snapshot returns None for non-existent directory
 #[test]
 fn test_find_hf_snapshot_nonexistent() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let result = find_hf_snapshot(tmp.path(), "nonexistent", "model");
     assert!(result.is_none());
 }
@@ -498,15 +498,15 @@ fn test_find_hf_snapshot_nonexistent() {
 /// Verify find_hf_snapshot returns None when snapshots exist but lack model file
 #[test]
 fn test_find_hf_snapshot_no_model_file() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let snapshot_dir = tmp
         .path()
         .join("models--org--model")
         .join("snapshots")
         .join("abc123");
-    std::fs::create_dir_all(&snapshot_dir).unwrap();
+    std::fs::create_dir_all(&snapshot_dir).expect("create dir");
     // Snapshot exists but has no model.safetensors
-    std::fs::write(snapshot_dir.join("config.json"), "{}").unwrap();
+    std::fs::write(snapshot_dir.join("config.json"), "{}").expect("write file");
 
     let result = find_hf_snapshot(tmp.path(), "org", "model");
     assert!(result.is_none());
@@ -515,24 +515,24 @@ fn test_find_hf_snapshot_no_model_file() {
 /// Verify find_hf_snapshot finds snapshot with model.safetensors
 #[test]
 fn test_find_hf_snapshot_with_model_file() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let snapshot_dir = tmp
         .path()
         .join("models--org--model")
         .join("snapshots")
         .join("abc123");
-    std::fs::create_dir_all(&snapshot_dir).unwrap();
-    std::fs::write(snapshot_dir.join("model.safetensors"), "fake").unwrap();
+    std::fs::create_dir_all(&snapshot_dir).expect("create dir");
+    std::fs::write(snapshot_dir.join("model.safetensors"), "fake").expect("write file");
 
     let result = find_hf_snapshot(tmp.path(), "org", "model");
     assert!(result.is_some());
-    assert!(result.unwrap().ends_with("abc123"));
+    assert!(result.expect("call under test succeeds").ends_with("abc123"));
 }
 
 /// Verify find_apr_cache returns None for non-existent path
 #[test]
 fn test_find_apr_cache_nonexistent() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let result = find_apr_cache(tmp.path(), "org", "model");
     assert!(result.is_none());
 }
@@ -540,9 +540,9 @@ fn test_find_apr_cache_nonexistent() {
 /// Verify find_apr_cache finds existing cache directory
 #[test]
 fn test_find_apr_cache_existing_dir() {
-    let tmp = tempfile::TempDir::new().unwrap();
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
     let cache_dir = tmp.path().join(".cache/apr-models/org/model");
-    std::fs::create_dir_all(&cache_dir).unwrap();
+    std::fs::create_dir_all(&cache_dir).expect("create dir");
 
     let result = find_apr_cache(tmp.path(), "org", "model");
     assert!(result.is_some());

@@ -19,14 +19,14 @@ fn test_model_preparation_result_serialization() {
         conversions: vec![],
     };
 
-    let json = serde_json::to_string(&result).unwrap();
+    let json = serde_json::to_string(&result).expect("serialise to string");
     assert!(json.contains("safetensors"));
     assert!(json.contains("test/model"));
 }
 
 #[test]
 fn test_verify_comparison_provenance_missing_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let result = verify_comparison_provenance(temp_dir.path(), "gguf", "apr");
     assert!(result.is_err());
 }
@@ -35,7 +35,7 @@ fn test_verify_comparison_provenance_missing_file() {
 fn test_verify_comparison_provenance_valid() {
     use crate::provenance::{DerivedProvenance, Provenance, SourceProvenance, save_provenance};
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
 
     // Create valid provenance
     let provenance = Provenance {
@@ -67,7 +67,7 @@ fn test_verify_comparison_provenance_valid() {
             },
         ],
     };
-    save_provenance(temp_dir.path(), &provenance).unwrap();
+    save_provenance(temp_dir.path(), &provenance).expect("save provenance succeeds");
 
     let result = verify_comparison_provenance(temp_dir.path(), "gguf", "apr");
     assert!(result.is_ok());
@@ -77,7 +77,7 @@ fn test_verify_comparison_provenance_valid() {
 fn test_verify_comparison_provenance_quantization_mismatch() {
     use crate::provenance::{DerivedProvenance, Provenance, SourceProvenance, save_provenance};
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
 
     // Create provenance with mismatched quantization
     let provenance = Provenance {
@@ -109,7 +109,7 @@ fn test_verify_comparison_provenance_quantization_mismatch() {
             },
         ],
     };
-    save_provenance(temp_dir.path(), &provenance).unwrap();
+    save_provenance(temp_dir.path(), &provenance).expect("save provenance succeeds");
 
     let result = verify_comparison_provenance(temp_dir.path(), "gguf", "apr");
     assert!(result.is_err()); // PROV-005 violation
@@ -117,9 +117,9 @@ fn test_verify_comparison_provenance_quantization_mismatch() {
 
 #[test]
 fn test_prepare_model_fails_without_apr_binary() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = temp_dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, b"fake safetensors content").unwrap();
+    std::fs::write(&safetensors, b"fake safetensors content").expect("write file");
 
     let output_dir = temp_dir.path().join("output");
     let result = prepare_model_with_provenance(
@@ -145,16 +145,16 @@ fn create_mock_binary(dir: &std::path::Path, name: &str, script: &str) -> std::p
     let path = dir.join(name);
     {
         use std::io::Write;
-        let mut f = std::fs::File::create(&path).unwrap();
+        let mut f = std::fs::File::create(&path).expect("create file");
         f.write_all(format!("#!/bin/bash\n{script}").as_bytes())
-            .unwrap();
-        f.sync_all().unwrap();
+            .expect("write file");
+        f.sync_all().expect("sync file");
         drop(f);
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("fs set permissions succeeds");
     }
     std::thread::yield_now();
     path
@@ -166,13 +166,13 @@ fn create_mock_binary(dir: &std::path::Path, name: &str, script: &str) -> std::p
 
 #[test]
 fn test_convert_format_cached_cache_hit() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let source = temp_dir.path().join("source.safetensors");
     let target = temp_dir.path().join("target.gguf");
     let hash_file = temp_dir.path().join(".hash");
 
     // Write source file
-    std::fs::write(&source, b"model content for caching test").unwrap();
+    std::fs::write(&source, b"model content for caching test").expect("write file");
 
     // Mock that creates the target file (arg $4 = target_path)
     let mock = create_mock_binary(
@@ -182,13 +182,13 @@ fn test_convert_format_cached_cache_hit() {
     );
 
     // First call: does actual conversion, writes hash
-    let first = convert_format_cached(mock.to_str().unwrap(), &source, &target, &hash_file);
+    let first = convert_format_cached(mock.to_str().expect("path is UTF-8"), &source, &target, &hash_file);
     if let Ok(r1) = first {
         assert!(r1.success);
         assert!(!r1.cached);
 
         // Second call with same source: should hit cache
-        let second = convert_format_cached(mock.to_str().unwrap(), &source, &target, &hash_file);
+        let second = convert_format_cached(mock.to_str().expect("path is UTF-8"), &source, &target, &hash_file);
         if let Ok(r2) = second {
             assert!(r2.cached);
             assert!(r2.success);
@@ -199,12 +199,12 @@ fn test_convert_format_cached_cache_hit() {
 
 #[test]
 fn test_convert_format_cached_successful_conversion() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let source = temp_dir.path().join("source.safetensors");
     let target = temp_dir.path().join("output").join("target.gguf");
     let hash_file = temp_dir.path().join(".hash");
 
-    std::fs::write(&source, b"model data for conversion").unwrap();
+    std::fs::write(&source, b"model data for conversion").expect("write file");
 
     // Mock binary that creates the target file
     let mock = create_mock_binary(
@@ -213,7 +213,7 @@ fn test_convert_format_cached_successful_conversion() {
         "mkdir -p \"$(dirname \"$3\")\" && echo 'converted' > \"$3\" && exit 0",
     );
 
-    let result = convert_format_cached(mock.to_str().unwrap(), &source, &target, &hash_file);
+    let result = convert_format_cached(mock.to_str().expect("path is UTF-8"), &source, &target, &hash_file);
     if let Ok(r) = result {
         assert!(r.success);
         assert!(!r.cached);
@@ -226,12 +226,12 @@ fn test_convert_format_cached_successful_conversion() {
 
 #[test]
 fn test_convert_format_cached_failed_conversion() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let source = temp_dir.path().join("source.gguf");
     let target = temp_dir.path().join("target.apr");
     let hash_file = temp_dir.path().join(".hash");
 
-    std::fs::write(&source, b"model data").unwrap();
+    std::fs::write(&source, b"model data").expect("write file");
 
     // Mock binary that fails
     let mock = create_mock_binary(
@@ -240,26 +240,26 @@ fn test_convert_format_cached_failed_conversion() {
         "echo 'error: bad format' >&2; exit 1",
     );
 
-    let result = convert_format_cached(mock.to_str().unwrap(), &source, &target, &hash_file);
+    let result = convert_format_cached(mock.to_str().expect("path is UTF-8"), &source, &target, &hash_file);
     if let Ok(r) = result {
         assert!(!r.success);
         assert!(!r.cached);
         assert!(r.error.is_some());
-        assert!(r.error.unwrap().contains("error: bad format"));
+        assert!(r.error.expect("error message is set").contains("error: bad format"));
     }
 }
 
 #[test]
 fn test_convert_format_cached_stale_cache() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let source = temp_dir.path().join("source.safetensors");
     let target = temp_dir.path().join("target.gguf");
     let hash_file = temp_dir.path().join(".hash");
 
-    std::fs::write(&source, b"model data v1").unwrap();
+    std::fs::write(&source, b"model data v1").expect("write file");
     // Pre-populate with wrong hash to simulate stale cache
-    std::fs::write(&target, b"old converted data").unwrap();
-    std::fs::write(&hash_file, "wrong_hash_value").unwrap();
+    std::fs::write(&target, b"old converted data").expect("write file");
+    std::fs::write(&hash_file, "wrong_hash_value").expect("write file");
 
     // Mock binary that creates target
     let mock = create_mock_binary(
@@ -268,7 +268,7 @@ fn test_convert_format_cached_stale_cache() {
         "echo 'reconverted' > \"$3\" && exit 0",
     );
 
-    let result = convert_format_cached(mock.to_str().unwrap(), &source, &target, &hash_file);
+    let result = convert_format_cached(mock.to_str().expect("path is UTF-8"), &source, &target, &hash_file);
     if let Ok(r) = result {
         // Should NOT be cached since hash didn't match
         assert!(!r.cached);
@@ -298,9 +298,9 @@ fn test_compute_file_hash_nonexistent_file() {
 
 #[test]
 fn test_run_bench_throughput_success_cpu() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.gguf");
-    std::fs::write(&model, b"fake model").unwrap();
+    std::fs::write(&model, b"fake model").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -308,7 +308,7 @@ fn test_run_bench_throughput_success_cpu() {
         "echo 'Loading model...\nThroughput: 65.5 tok/s (PASS: >= 10 tok/s)\nDone.' && exit 0",
     );
 
-    let result = run_bench_throughput(mock.to_str().unwrap(), &model, false, 1, 3);
+    let result = run_bench_throughput(mock.to_str().expect("path is UTF-8"), &model, false, 1, 3);
     if let Ok(r) = result {
         assert!((r.throughput_tps - 65.5).abs() < 0.01);
         assert!(r.passed);
@@ -319,9 +319,9 @@ fn test_run_bench_throughput_success_cpu() {
 
 #[test]
 fn test_run_bench_throughput_success_gpu() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.apr");
-    std::fs::write(&model, b"fake model").unwrap();
+    std::fs::write(&model, b"fake model").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -329,7 +329,7 @@ fn test_run_bench_throughput_success_gpu() {
         "echo 'Throughput: 120.3 tok/s' && exit 0",
     );
 
-    let result = run_bench_throughput(mock.to_str().unwrap(), &model, true, 1, 3);
+    let result = run_bench_throughput(mock.to_str().expect("path is UTF-8"), &model, true, 1, 3);
     if let Ok(r) = result {
         assert!((r.throughput_tps - 120.3).abs() < 0.01);
         assert!(r.passed);
@@ -340,9 +340,9 @@ fn test_run_bench_throughput_success_gpu() {
 
 #[test]
 fn test_run_bench_throughput_below_threshold() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.safetensors");
-    std::fs::write(&model, b"fake model").unwrap();
+    std::fs::write(&model, b"fake model").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -350,7 +350,7 @@ fn test_run_bench_throughput_below_threshold() {
         "echo 'Throughput: 5.2 tok/s' && exit 0",
     );
 
-    let result = run_bench_throughput(mock.to_str().unwrap(), &model, false, 1, 1);
+    let result = run_bench_throughput(mock.to_str().expect("path is UTF-8"), &model, false, 1, 1);
     if let Ok(r) = result {
         assert!((r.throughput_tps - 5.2).abs() < 0.01);
         // Below 10.0 threshold
@@ -361,9 +361,9 @@ fn test_run_bench_throughput_below_threshold() {
 
 #[test]
 fn test_run_bench_throughput_no_throughput_line() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.gguf");
-    std::fs::write(&model, b"fake model").unwrap();
+    std::fs::write(&model, b"fake model").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -371,7 +371,7 @@ fn test_run_bench_throughput_no_throughput_line() {
         "echo 'Loading model...\nDone.' && exit 0",
     );
 
-    let result = run_bench_throughput(mock.to_str().unwrap(), &model, false, 1, 1);
+    let result = run_bench_throughput(mock.to_str().expect("path is UTF-8"), &model, false, 1, 1);
     if let Ok(r) = result {
         assert!((r.throughput_tps - 0.0).abs() < 0.01);
         assert!(!r.passed); // 0.0 < 10.0
@@ -380,9 +380,9 @@ fn test_run_bench_throughput_no_throughput_line() {
 
 #[test]
 fn test_run_bench_throughput_failed_exit() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.gguf");
-    std::fs::write(&model, b"fake model").unwrap();
+    std::fs::write(&model, b"fake model").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -390,7 +390,7 @@ fn test_run_bench_throughput_failed_exit() {
         "echo 'Throughput: 50.0 tok/s' && exit 1",
     );
 
-    let result = run_bench_throughput(mock.to_str().unwrap(), &model, false, 1, 1);
+    let result = run_bench_throughput(mock.to_str().expect("path is UTF-8"), &model, false, 1, 1);
     if let Ok(r) = result {
         // exit code non-zero => passed = false even though throughput was high
         assert!(!r.passed);
@@ -399,9 +399,9 @@ fn test_run_bench_throughput_failed_exit() {
 
 #[test]
 fn test_run_bench_throughput_unknown_extension() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model");
-    std::fs::write(&model, b"fake model").unwrap();
+    std::fs::write(&model, b"fake model").expect("write file");
 
     let mock = create_mock_binary(
         temp_dir.path(),
@@ -409,7 +409,7 @@ fn test_run_bench_throughput_unknown_extension() {
         "echo 'Throughput: 15.0 tok/s' && exit 0",
     );
 
-    let result = run_bench_throughput(mock.to_str().unwrap(), &model, false, 1, 1);
+    let result = run_bench_throughput(mock.to_str().expect("path is UTF-8"), &model, false, 1, 1);
     if let Ok(r) = result {
         assert_eq!(r.format, "unknown");
     }
@@ -421,9 +421,9 @@ fn test_run_bench_throughput_unknown_extension() {
 
 #[test]
 fn test_run_ci_profile_json_output() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model = temp_dir.path().join("model.gguf");
-    std::fs::write(&model, b"fake model").unwrap();
+    std::fs::write(&model, b"fake model").expect("write file");
 
     let json = r#"{"model":"test","metrics":null,"throughput_tps":42.0,"latency_p50_ms":10.0,"latency_p99_ms":25.0,"assertions":[],"passed":true}"#;
     let mock = create_mock_binary(
@@ -433,7 +433,7 @@ fn test_run_ci_profile_json_output() {
     );
 
     let result = run_profile_ci(
-        mock.to_str().unwrap(),
+        mock.to_str().expect("path is UTF-8"),
         &model,
         Some(10.0),
         Some(100.0),
