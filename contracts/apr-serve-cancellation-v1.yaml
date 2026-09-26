@@ -204,8 +204,9 @@ falsification_tests:
 - id: FALSIFY-SERVE-CANCEL-009
   name: q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens
   prediction: 'A Q4K request (Session over AprQ4kForward, q4k_generate_config) with
-    max_tokens=64 and CancelToken::with_budget(8) emits 8 tokens, performs exactly 8
-    decode forward passes and polls 9 times; the same call with CancelToken::never()
+    max_tokens=64 and CancelToken::with_budget(8) emits 8 tokens, performs exactly 7
+    decode forward passes (emitted - 1: the first token comes from prefill and the poll
+    precedes each decode forward, #4325) and polls 9 times; the same call with CancelToken::never()
     emits 64 tokens over 63 decode forward passes at contiguous positions, and the
     cancelled output is a prefix of it. (Pre-#4269-M2b q4k_decode emitted 9: it
     returned the prefill token unpolled.)'
@@ -215,7 +216,9 @@ falsification_tests:
     decode loop''s only exit was EOS, so /v1/chat/completions, /v1/completions,
     /generate, /api/chat and /api/generate all ran the GPU to max_tokens for a client
     that had hung up. Mutation-verified (#4269 M2b) by deleting the session''s poll:
-    emitted 64 tokens where 8 were required.'
+    emitted 64 tokens where 8 were required. Also fails (8 passes where 7 are
+    required) if the poll is moved after the decode forward, which costs one forward
+    whose logits are thrown away per cancelled request (#4325).'
 - id: FALSIFY-SERVE-CANCEL-010
   name: q4k_scheduler_decode_cancelled_before_start_does_no_forward_passes
   prediction: 'A Q4K request (Session over AprQ4kForward) with an already-cancelled

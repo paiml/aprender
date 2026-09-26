@@ -326,7 +326,11 @@ impl<F: ArchForward> Session<F> {
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
-            if config.cancel.is_cancelled() {
+            // One poll per token. The prefill's token is polled before it is
+            // emitted (an already-cancelled request returns nothing); every later
+            // token is polled BEFORE the decode forward that would produce it, so
+            // a cancel never pays for logits it throws away (#4325).
+            if generated == 1 && config.cancel.is_cancelled() {
                 break;
             }
             tokens.push(next);
@@ -336,6 +340,9 @@ impl<F: ArchForward> Session<F> {
             }
             if generated == budget {
                 context_capped = context_limited;
+                break;
+            }
+            if config.cancel.is_cancelled() {
                 break;
             }
             next = self.advance_and_choose(&tokens, config, &mut rng)?.0;

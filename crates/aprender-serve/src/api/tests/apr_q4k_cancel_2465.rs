@@ -145,7 +145,8 @@ fn q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens() {
     );
 
     // Cancelled: the token trips after BUDGET polls, and the session polls once
-    // per generated token, so it emits exactly BUDGET.
+    // per generated token (before the forward that would produce it), so it emits
+    // exactly BUDGET.
     let token = CancelToken::with_budget(BUDGET);
     let (cancelled, log) = run(
         PROMPT_LEN,
@@ -163,11 +164,16 @@ fn q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens() {
          max_tokens ({MAX_TOKENS}); it emitted {} tokens",
         cancelled.len()
     );
+    // #4325: the first token comes from prefill and the poll sits BEFORE each
+    // decode forward, so BUDGET tokens cost BUDGET - 1 decode passes. A poll
+    // placed after the forward runs one more whose logits are thrown away.
     assert_eq!(
         decode_steps(&log, PROMPT_LEN).len(),
-        BUDGET,
-        "the cancelled run must perform exactly {BUDGET} decode forward passes (one \
-         after each emitted token); it performed {}",
+        BUDGET - 1,
+        "the cancelled run must perform exactly {} decode forward passes (emitted - 1: \
+         the first token is the prefill's, and no forward runs after the cancel); it \
+         performed {}",
+        BUDGET - 1,
         decode_steps(&log, PROMPT_LEN).len()
     );
     assert_eq!(
