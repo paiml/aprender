@@ -528,6 +528,7 @@ fn load_weights(gguf: &GgufFile, config: &ModelConfig) -> Result<ModelWeights, T
 
 /// Load a tensor as F32, dequantizing if quantized.
 /// For Q4K weights, uses trueno's dequantize_q4k_to_f32.
+#[deny(clippy::wildcard_enum_match_arm)]
 fn load_f32_or_dequant_tensor(
     gguf: &GgufFile,
     name: &str,
@@ -553,7 +554,33 @@ fn load_f32_or_dequant_tensor(
         GgmlType::Q8_0 => Ok(dequantize_q8_0_to_f32(data, info.n_elements() as usize)),
         GgmlType::Q4_0 => Ok(dequantize_q4_0_to_f32(data, info.n_elements() as usize)),
         GgmlType::Q4_1 => Ok(dequantize_q4_1_to_f32(data, info.n_elements() as usize)),
-        _ => {
+        // Named, not `_` (#3431): a new upstream ggml id must fail to compile here.
+        GgmlType::Q5_0
+        | GgmlType::Q5_1
+        | GgmlType::Q8_1
+        | GgmlType::Q2K
+        | GgmlType::Q3K
+        | GgmlType::Q8K
+        | GgmlType::IQ2XXS
+        | GgmlType::IQ2XS
+        | GgmlType::IQ3XXS
+        | GgmlType::IQ1S
+        | GgmlType::IQ4NL
+        | GgmlType::IQ3S
+        | GgmlType::IQ2S
+        | GgmlType::IQ4XS
+        | GgmlType::I8
+        | GgmlType::I16
+        | GgmlType::I32
+        | GgmlType::I64
+        | GgmlType::F64
+        | GgmlType::IQ1M
+        | GgmlType::TQ1_0
+        | GgmlType::TQ2_0
+        | GgmlType::MXFP4
+        | GgmlType::NVFP4
+        | GgmlType::Q1_0
+        | GgmlType::Q2_0 => {
             eprintln!(
                 "  WARNING: tensor '{name}' has unsupported dtype {:?}, using zeros",
                 info.dtype
@@ -589,6 +616,7 @@ fn load_f32_tensor(
 /// Load a weight tensor as a `WeightMatrix`.
 /// Q4K weights are kept as raw bytes for the fused matmul kernel.
 /// All other quantization types are dequantized to F32 at load time.
+#[deny(clippy::wildcard_enum_match_arm)]
 fn load_weight_matrix(
     gguf: &GgufFile,
     name: &str,
@@ -630,7 +658,33 @@ fn load_weight_matrix(
             let f32_data = dequantize_q4_1_to_f32(data, n_elements);
             Ok(WeightMatrix::F32 { data: f32_data, rows: out_dim })
         }
-        _ => {
+        // Named, not `_` (#3431): a new upstream ggml id must fail to compile here.
+        GgmlType::Q5_0
+        | GgmlType::Q5_1
+        | GgmlType::Q8_1
+        | GgmlType::Q2K
+        | GgmlType::Q3K
+        | GgmlType::Q8K
+        | GgmlType::IQ2XXS
+        | GgmlType::IQ2XS
+        | GgmlType::IQ3XXS
+        | GgmlType::IQ1S
+        | GgmlType::IQ4NL
+        | GgmlType::IQ3S
+        | GgmlType::IQ2S
+        | GgmlType::IQ4XS
+        | GgmlType::I8
+        | GgmlType::I16
+        | GgmlType::I32
+        | GgmlType::I64
+        | GgmlType::F64
+        | GgmlType::IQ1M
+        | GgmlType::TQ1_0
+        | GgmlType::TQ2_0
+        | GgmlType::MXFP4
+        | GgmlType::NVFP4
+        | GgmlType::Q1_0
+        | GgmlType::Q2_0 => {
             eprintln!("  WARNING: tensor '{name}' dtype {:?} unsupported, using zeros", info.dtype);
             Ok(WeightMatrix::F32 { data: vec![0.0f32; n_elements], rows: out_dim })
         }
@@ -699,6 +753,7 @@ fn f16_to_f32(bits: u16) -> f32 {
 }
 
 /// Convert tensor bytes to f32, handling F32, F16, BF16.
+#[deny(clippy::wildcard_enum_match_arm)]
 fn to_f32_from_any(data: &[u8], dtype: GgmlType, n_elements: usize) -> Vec<f32> {
     match dtype {
         GgmlType::F32 => {
@@ -731,7 +786,39 @@ fn to_f32_from_any(data: &[u8], dtype: GgmlType, n_elements: usize) -> Vec<f32> 
                 })
                 .collect()
         }
-        _ => {
+        // Named, not `_` (#3431): a new upstream ggml id must fail to compile here.
+        GgmlType::Q4_0
+        | GgmlType::Q4_1
+        | GgmlType::Q5_0
+        | GgmlType::Q5_1
+        | GgmlType::Q8_0
+        | GgmlType::Q8_1
+        | GgmlType::Q2K
+        | GgmlType::Q3K
+        | GgmlType::Q4K
+        | GgmlType::Q5K
+        | GgmlType::Q6K
+        | GgmlType::Q8K
+        | GgmlType::IQ2XXS
+        | GgmlType::IQ2XS
+        | GgmlType::IQ3XXS
+        | GgmlType::IQ1S
+        | GgmlType::IQ4NL
+        | GgmlType::IQ3S
+        | GgmlType::IQ2S
+        | GgmlType::IQ4XS
+        | GgmlType::I8
+        | GgmlType::I16
+        | GgmlType::I32
+        | GgmlType::I64
+        | GgmlType::F64
+        | GgmlType::IQ1M
+        | GgmlType::TQ1_0
+        | GgmlType::TQ2_0
+        | GgmlType::MXFP4
+        | GgmlType::NVFP4
+        | GgmlType::Q1_0
+        | GgmlType::Q2_0 => {
             // For quantized norms (shouldn't happen), return zeros
             vec![0.0f32; n_elements]
         }
