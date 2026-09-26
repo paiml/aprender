@@ -442,13 +442,8 @@ pub(crate) fn run_recipe(
     plan_only: bool,
     json_output: bool,
 ) -> Result<()> {
-    let r = crate::commands::finetune_recipe::load_distill(recipe_path)?;
-    crate::commands::finetune_recipe::refuse_seq_len_override(
-        std::env::var_os(crate::commands::finetune_recipe::DISTILL_SEQ_LEN_ENV).as_deref(),
-    )?;
-    if !json_output {
-        eprintln!("[recipe] {} sha256={}", recipe_path.display(), r.hash);
-    }
+    #[cfg(feature = "training")]
+    let r = load_recipe(recipe_path, json_output)?;
     #[cfg(all(feature = "training", feature = "cuda"))]
     {
         run_cuda_backend(
@@ -469,13 +464,36 @@ pub(crate) fn run_recipe(
     }
     #[cfg(not(all(feature = "training", feature = "cuda")))]
     {
-        let _ = (output_path, alpha, plan_only);
+        #[cfg(feature = "training")]
+        let _ = r;
+        let _ = (recipe_path, output_path, alpha, plan_only, json_output);
         Err(CliError::ValidationFailed(
-            "apr distill --recipe runs the cuda backend and requires apr-cli built with \
-             --features cuda,training"
-                .to_string(),
+            RECIPE_NEEDS_CUDA_TRAINING.to_string(),
         ))
     }
+}
+
+/// The refusal for `apr distill --recipe` in a build that cannot run it.
+#[cfg_attr(all(feature = "training", feature = "cuda"), allow(dead_code))]
+pub(crate) const RECIPE_NEEDS_CUDA_TRAINING: &str =
+    "apr distill --recipe runs the cuda backend and requires apr-cli built with \
+     --features cuda,training";
+
+/// Load a distill recipe and refuse a window-length override, before any
+/// model is opened. Recipe parsing needs the `training` feature.
+#[cfg(feature = "training")]
+fn load_recipe(
+    recipe_path: &Path,
+    json_output: bool,
+) -> Result<crate::commands::finetune_recipe::DistillRecipeArgs> {
+    let r = crate::commands::finetune_recipe::load_distill(recipe_path)?;
+    crate::commands::finetune_recipe::refuse_seq_len_override(
+        std::env::var_os(crate::commands::finetune_recipe::DISTILL_SEQ_LEN_ENV).as_deref(),
+    )?;
+    if !json_output {
+        eprintln!("[recipe] {} sha256={}", recipe_path.display(), r.hash);
+    }
+    Ok(r)
 }
 
 /// Seed for a distill run no recipe names (the trainer's own default).
