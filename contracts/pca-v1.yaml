@@ -1,14 +1,17 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-19'
   author: PAIML Engineering
-  description: Principal Component Analysis — eigendecomposition-based dimensionality reduction
+  description: Principal Component Analysis — SVD of the centered data (no covariance matrix),
+    plus TruncatedSVD (uncentered, for TF-IDF / LSA)
   references:
   - Jolliffe (2002) Principal Component Analysis
   - Bishop (2006) Pattern Recognition and Machine Learning, §12.1
+  - Halko, Martinsson & Tropp (2011) Finding structure with randomness, SIAM Review 53(2)
+  - scikit-learn 1.9 sklearn.decomposition.PCA / TruncatedSVD (svd_solver=auto, svd_flip)
 equations:
   pca_transform:
-    formula: Z = (X - μ) W_k where W_k = [w_1, ..., w_k] (top-k eigenvectors of Cov(X))
+    formula: Z = (X - μ) W_k where W_k = [w_1, ..., w_k] (top-k right singular vectors of X - μ; X - μ = U Σ Vᵀ, W_k = V[:, :k])
     domain: X ∈ ℝ^{n×d}, k ≤ d
     codomain: Z ∈ ℝ^{n×k}
     invariants:
@@ -20,14 +23,14 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Pca_Transform
   explained_variance:
-    formula: explained_ratio_j = λ_j / Σ λ_i
+    formula: explained_ratio_j = λ_j / Σ λ_i, λ_j = σ_j² / (n - 1)
     domain: eigenvalues λ_1 ≥ λ_2 ≥ ... ≥ λ_d ≥ 0
     codomain: ratio_j ∈ [0, 1], Σ ratio_j = 1
     invariants:
     - Each ratio ∈ [0, 1]
     - Ratios sum to 1
     - Ratios are non-increasing (λ sorted descending)
-    - All eigenvalues ≥ 0 (covariance matrix is PSD)
+    - All λ ≥ 0 (they are squared singular values)
     preconditions:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
@@ -66,11 +69,34 @@ proof_obligations:
   applies_to: all
 - id: PCA-INV-005
   type: invariant
-  property: OBLIG-PCA-F64-ACCUM mean and covariance accumulate in f64
-  formal: 'PCA.fit accumulates the per-feature mean and the covariance cross-products in
+  property: OBLIG-PCA-F64-ACCUM mean, centering and factorization are f64
+  formal: 'PCA.fit accumulates the per-feature mean, centers and factors the data in
     float64 (numpy/sklearn semantics) so that on large-magnitude data (|x| ~ 1e6 with
     sub-unit variance) the trace of the covariance matches the float64 reference within
     relative tolerance 5e-2; an f32 accumulator inflates it ~10000x'
+  applies_to: all
+- id: PCA-INV-006
+  type: invariant
+  property: No covariance matrix
+  formal: PCA.fit factors X - μ by SVD and never forms a d×d covariance / Gram matrix, so the
+    condition number is κ(X - μ), not κ(X - μ)²
+  applies_to: all
+- id: PCA-INV-007
+  type: invariant
+  property: Deterministic sign convention
+  formal: in every component row the first entry of largest |value| is positive (sklearn
+    svd_flip, u_based_decision=False); two fits give bit-identical components
+  applies_to: all
+- id: PCA-INV-008
+  type: invariant
+  property: Variance-ratio n_components
+  formal: n_components = r ∈ (0, 1) keeps k = searchsorted(cumsum(ratio), r, side=right) + 1
+  applies_to: all
+- id: PCA-INV-009
+  type: invariant
+  property: TruncatedSVD does not center
+  formal: TruncatedSVD(X, k) = X V_k with X = U Σ Vᵀ uncentered; explained_variance_j =
+    var(Z[:, j]) (ddof 0), ratio_j = explained_variance_j / Σ var(X[:, i])
   applies_to: all
 falsification_tests:
 - id: FALSIFY-PCA-001
@@ -99,6 +125,43 @@ falsification_tests:
     (= trace of covariance) matches the float64 reference 0.19244 within rel tol 5e-2
   test: cargo test -p aprender-core --lib falsify_pca_005_f64_covariance_accumulation
   if_fails: f32 accumulator in mean or covariance causes catastrophic cancellation
+- id: FALSIFY-PCA-SVD-001
+  rule: No covariance matrix
+  prediction: no line of preprocessing/pca.rs builds an eigensolver input, a
+    n_features*n_features buffer or a cov binding (anchored guard with a must-match /
+    must-not-match case table)
+  test: cargo test -p aprender-core --lib falsify_pca_svd_001 covariance_guard_case_table
+  if_fails: the covariance path came back
+- id: FALSIFY-PCA-SVD-002
+  rule: No covariance matrix
+  prediction: singular values 1e0..1e-9 — the first 7 components match the exact SVD
+    (sklearn fixture) within 1e-7, and the old f32 covariance + SymmetricEigen path,
+    kept in the test as a foil, does NOT
+  test: cargo test -p aprender-core --lib falsify_pca_svd_002
+  if_fails: factorization squares the condition number, or the foil no longer discriminates
+- id: FALSIFY-PCA-SVD-003
+  rule: Explained variance sums to 1
+  prediction: at n_components = min(n, d) Σ explained_variance_ratio = 1 within 1e-12
+  test: cargo test -p aprender-core --lib falsify_pca_svd_003
+  if_fails: total variance taken from a truncated spectrum or f32 ratios
+- id: FALSIFY-PCA-SVD-004
+  rule: Deterministic sign convention
+  prediction: two fits (full and randomized) give bit-identical components
+  test: cargo test -p aprender-core --lib falsify_pca_svd_004
+  if_fails: unseeded randomized solver or sign left to the factorization
+- id: FALSIFY-PCA-SVD-005
+  rule: sklearn parity
+  prediction: on 5 pinned fixtures (tests/fixtures/pca_sklearn_v1.json, sklearn 1.9.1)
+    components match up to sign within 1e-8; explained_variance, ratio and
+    singular_values within 1e-10 relative; the variance-ratio case keeps the same k
+  test: cargo test -p aprender-core --lib falsify_pca_svd_005
+  if_fails: wrong centering, normalization (n - 1), or component selection
+- id: FALSIFY-PCA-SVD-006
+  rule: TruncatedSVD does not center
+  prediction: TruncatedSVD(3) of a 60-doc, 3-topic TfidfVectorizer matrix — the cosine
+    nearest neighbour shares the topic at least 0.5 above the random rate 19/59
+  test: cargo test -p aprender-core --lib falsify_pca_svd_006
+  if_fails: LSA projection does not separate topics
 enforcement:
   bounded:
     description: Explained variance ratios must be in [0, 1]
