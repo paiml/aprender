@@ -24,7 +24,7 @@ use super::{
     build_trace_data, clean_chat_output, format_chat_messages,
     format_chat_messages_for_state_thinking_tools, AppState, ChatChoice, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse, FinishReason,
-    OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
+    OpenAIModel, OpenAIModelsResponse, StreamMode, TraceData, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -711,13 +711,48 @@ pub(crate) fn build_chat_response(
     timings: Option<super::Timings>,
     used_gpu: Option<bool>,
 ) -> Response {
-    let (brick_trace, step_trace, layer_trace) = build_trace_data(
+    let traces = build_trace_data(
         trace_level,
         latency.as_micros() as u64,
         prompt_tokens,
         completion_tokens,
         28,
     );
+    build_chat_response_traced(
+        request_id,
+        model,
+        text,
+        prompt_tokens,
+        completion_tokens,
+        max_tokens,
+        stops,
+        traces,
+        tools,
+        tool_choice,
+        timings,
+        used_gpu,
+    )
+}
+
+/// [`build_chat_response`] with the `(brick, step, layer)` traces already
+/// built — by a backend whose tracer ran (APR-OBS-001 OBS-09), where the
+/// wall-clock-only [`build_trace_data`] would throw its measurement away.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_chat_response_traced(
+    request_id: String,
+    model: String,
+    text: String,
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    max_tokens: usize,
+    stops: Option<&[String]>,
+    traces: (Option<TraceData>, Option<TraceData>, Option<TraceData>),
+    tools: Option<&[super::OpenAiTool]>,
+    tool_choice: Option<crate::grammar::ToolChoice>,
+    timings: Option<super::Timings>,
+    used_gpu: Option<bool>,
+) -> Response {
+    let (brick_trace, step_trace, layer_trace) = traces;
     let (text, finish_reason) = finalize_chat_text(text, stops, completion_tokens, max_tokens);
 
     // PMAT-801 no-regression: the tool-calling path is reached ONLY when the
