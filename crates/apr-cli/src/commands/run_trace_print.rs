@@ -20,9 +20,28 @@ fn print_layer_trace(result: &RunResult, max_tokens: usize) -> Result<()> {
     Ok(())
 }
 
-/// Refuse `--trace-level layer` when the GPU ran. (stub: never refuses)
-fn layer_trace_refusal(_result: &RunResult) -> Option<CliError> {
-    None
+/// Refuse `--trace-level layer` when the GPU ran.
+///
+/// Nothing times the steps of a GPU run: [`render_layer_trace`] would print the
+/// same fixed split of one wall-clock total it prints on the CPU, and kernel
+/// launches are asynchronous, so that split says nothing about where the device
+/// spent the time. On the CPU the table is at least labelled ESTIMATED; on the
+/// GPU it is refused by name instead, so no script can read it as a measurement.
+///
+/// Keyed on `used_gpu` — what RAN — never on what was asked for: a GPU request
+/// that fell back to the CPU is traced like any CPU run. An unknown backend
+/// (`None`) keeps the labelled table.
+fn layer_trace_refusal(result: &RunResult) -> Option<CliError> {
+    (result.used_gpu == Some(true)).then(|| {
+        CliError::NotImplemented(
+            "apr run --trace-level layer: per-step layer times are not measured on the \
+             GPU path — nothing times the steps there, and a fixed split of wall clock \
+             says nothing about where asynchronous kernels spent it. Refusing rather \
+             than printing estimates. Re-run with --no-gpu for the CPU table, which is \
+             labelled ESTIMATED."
+                .to_string(),
+        )
+    })
 }
 
 /// Fixed share of per-token wall time attributed to each step of the 8-step
