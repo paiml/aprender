@@ -1057,28 +1057,28 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 }
                 None => None,
             };
-            let (file, method, rank, data, epochs, learning_rate, seed, held_out) = match &recipe {
-                Some(r) => (
-                    Some(r.model.as_path()),
-                    r.method.as_str(),
-                    r.rank,
-                    Some(r.data.as_path()),
-                    r.epochs,
-                    Some(r.learning_rate),
-                    r.seed,
-                    Some(r.held_out.as_path()),
-                ),
-                None => (
-                    file.as_deref(),
-                    method.as_str(),
-                    *rank,
-                    data.as_deref(),
-                    *epochs,
-                    *learning_rate,
-                    finetune::DEFAULT_SEED,
-                    None,
-                ),
-            };
+            let crate::commands::finetune_recipe::FinetuneInputs {
+                model: file,
+                method,
+                rank,
+                data,
+                epochs,
+                learning_rate,
+                seed,
+                held_out,
+            } = crate::commands::finetune_recipe::finetune_inputs(
+                recipe.as_ref(),
+                crate::commands::finetune_recipe::FinetuneInputs {
+                    model: file.as_deref(),
+                    method: method.as_str(),
+                    rank: *rank,
+                    data: data.as_deref(),
+                    epochs: *epochs,
+                    learning_rate: *learning_rate,
+                    seed: finetune::DEFAULT_SEED,
+                    held_out: None,
+                },
+            );
             finetune::run(
                 file,
                 method,

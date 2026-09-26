@@ -279,3 +279,44 @@ fn a_malformed_seq_len_override_is_refused_not_defaulted() {
         }
     }
 }
+
+/// The recipe, not the flags, reaches `finetune::run` — including the seed
+/// and the held-out set, which no flag supplies.
+#[test]
+fn dispatch_takes_every_finetune_input_from_the_recipe() {
+    let (dir, text) = fixture(LORA);
+    let r = load_text(&dir, &text).expect("valid recipe");
+    let flag_model = PathBuf::from("/flag/model.apr");
+    let flag_data = PathBuf::from("/flag/data.jsonl");
+    let flags = FinetuneInputs {
+        model: Some(&flag_model),
+        method: "qlora",
+        rank: Some(64),
+        data: Some(&flag_data),
+        epochs: 9,
+        learning_rate: Some(0.5),
+        seed: 42,
+        held_out: None,
+    };
+
+    let got = finetune_inputs(Some(&r), flags);
+    assert_eq!(got.model, Some(r.model.as_path()));
+    assert_eq!(got.method, "lora");
+    assert_eq!(got.rank, Some(8));
+    assert_eq!(got.data, Some(dir.path().join("train.jsonl").as_path()));
+    assert_eq!(got.epochs, 2);
+    assert_eq!(got.learning_rate, Some(1e-4));
+    assert_eq!(got.seed, 7);
+    assert_eq!(got.held_out, Some(dir.path().join("eval.jsonl").as_path()));
+
+    // Without a recipe the flags pass through, and there is no held-out set.
+    let stray = PathBuf::from("/flag/eval.jsonl");
+    let got = finetune_inputs(
+        None,
+        FinetuneInputs {
+            held_out: Some(&stray),
+            ..flags
+        },
+    );
+    assert_eq!(got, flags);
+}

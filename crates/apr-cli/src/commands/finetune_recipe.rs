@@ -133,6 +133,45 @@ pub(crate) fn load(path: &Path) -> Result<RecipeArgs> {
     })
 }
 
+/// The finetune inputs dispatch hands to `finetune::run`: from the recipe
+/// when one is given, else from the CLI flags.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FinetuneInputs<'a> {
+    pub model: Option<&'a Path>,
+    pub method: &'a str,
+    pub rank: Option<u32>,
+    pub data: Option<&'a Path>,
+    pub epochs: u32,
+    pub learning_rate: Option<f64>,
+    pub seed: u64,
+    /// The validation set. Only a recipe supplies one (`eval.held_out`).
+    pub held_out: Option<&'a Path>,
+}
+
+/// A recipe replaces every flag it conflicts with, including the seed, and
+/// is the only source of a held-out set; without one the flags pass through.
+pub(crate) fn finetune_inputs<'a>(
+    recipe: Option<&'a RecipeArgs>,
+    flags: FinetuneInputs<'a>,
+) -> FinetuneInputs<'a> {
+    match recipe {
+        Some(r) => FinetuneInputs {
+            model: Some(r.model.as_path()),
+            method: r.method.as_str(),
+            rank: r.rank,
+            data: Some(r.data.as_path()),
+            epochs: r.epochs,
+            learning_rate: Some(r.learning_rate),
+            seed: r.seed,
+            held_out: Some(r.held_out.as_path()),
+        },
+        None => FinetuneInputs {
+            held_out: None,
+            ..flags
+        },
+    }
+}
+
 /// Distill temperature when the recipe names none. Equal to the
 /// `apr distill --temperature` default.
 pub(crate) const DISTILL_DEFAULT_TEMPERATURE: f64 = 3.0;
