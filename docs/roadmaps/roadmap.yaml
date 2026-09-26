@@ -21871,3 +21871,25 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4489
+  github_issue: 4489
+  item_type: task
+  title: 'APR-OBS-001 OBS-02: model nightlies ended CANCELLED with no alert - two mechanisms, NIGHTLY-RED counts cancelled runs'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-3d
+  created: 2026-09-26 17:00:00+00:00
+  updated: '2026-09-26T19:00:00Z'
+  spec: handoff/APR-OBS-001-dogfood-observability.md
+  acceptance_criteria:
+  - 'the root cause of each cancelled nightly is written up as a mechanism (contracts/apr-nightly-liveness-v1.yaml five_whys)'
+  - 'NIGHTLY-RED counts cancelled and timed_out scheduled runs, not only failures (scripts/check_nightly_liveness.sh, planted failure-only mutant turns it RED)'
+  - 'mechanism A: the qwen-story pmat hunt is time-bounded so it cannot run the job past its timeout'
+  - 'mechanism B: cuda-nightly ada-yoga is no longer cancelled out of the perf-yoga pending slot; the host GPU lock serialises the GPU by waiting'
+  - 'falsifier apr-nightly-liveness-v1 FALSIFY-NLV-003 goes RED -> GREEN'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Assigned by the cop (aprender-77). Mechanism A + NIGHTLY-RED on branch PMAT-4489-nightly-liveness; mechanism B on PMAT-4489-yoga-pending-slot.'
