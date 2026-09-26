@@ -1,6 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::error::Result;
+use crate::neighbors::{Metric, NeighborAlgorithm, NeighborIndex, SpatialIndex};
 use crate::primitives::Matrix;
 
 impl KNearestNeighbors {
@@ -90,26 +91,12 @@ impl KNearestNeighbors {
         if n_features != n_train_features {
             return Err("Feature dimension mismatch".into());
         }
+        let index = self.neighbor_index(x_train)?;
 
         let mut predictions = Vec::with_capacity(n_samples);
 
         for i in 0..n_samples {
-            // Compute distances to all training samples.
-            // Tuple is (distance, training_index, label): the training index is the
-            // deterministic tie-break key for the partial select below.
-            let mut distances: Vec<(f32, usize, usize)> = Vec::with_capacity(y_train.len());
-
-            for (j, &label) in y_train.iter().enumerate() {
-                let dist = self.compute_distance(x, i, x_train, j, n_features);
-                distances.push((dist, j, label));
-            }
-
-            // Partial-select the k nearest instead of a full sort: O(n_train) vs
-            // O(n_train log n_train). `select_nth_unstable_by` partitions so the k
-            // smallest are in `[..k]`. Ties are broken by training index, which exactly
-            // reproduces the previous stable `sort_by(distance)` k-set (verified by a
-            // 2M-trial property check), so predictions are byte-identical.
-            let k_nearest = select_k_nearest(&mut distances, self.k);
+            let k_nearest = self.nearest_labeled(&index, x, i, y_train);
 
             // Vote for class
             let predicted_class = if self.weights {
@@ -142,6 +129,7 @@ impl KNearestNeighbors {
         if n_features != n_train_features {
             return Err("Feature dimension mismatch".into());
         }
+        let index = self.neighbor_index(x_train)?;
 
         // Find number of classes
         let n_classes = *y_train
@@ -153,20 +141,7 @@ impl KNearestNeighbors {
         let mut probabilities = Vec::with_capacity(n_samples);
 
         for i in 0..n_samples {
-            // Compute distances to all training samples.
-            // Tuple is (distance, training_index, label): training index is the
-            // deterministic tie-break key for the partial select below.
-            let mut distances: Vec<(f32, usize, usize)> = Vec::with_capacity(y_train.len());
-
-            for (j, &label) in y_train.iter().enumerate() {
-                let dist = self.compute_distance(x, i, x_train, j, n_features);
-                distances.push((dist, j, label));
-            }
-
-            // Partial-select the k nearest instead of a full sort (see `predict`):
-            // O(n_train) vs O(n_train log n_train), same k-set as the previous stable
-            // sort, so probabilities are byte-identical.
-            let k_nearest = select_k_nearest(&mut distances, self.k);
+            let k_nearest = self.nearest_labeled(&index, x, i, y_train);
 
             // Compute class probabilities
             let mut class_counts = vec![0.0; n_classes];
@@ -208,7 +183,40 @@ impl KNearestNeighbors {
         Ok(probabilities)
     }
 
+    /// The exact neighbor index over the training rows, in this model's metric.
+    ///
+    /// Built per call rather than in `fit`, so `with_metric` after `fit` can
+    /// never query a stale index.
+    fn neighbor_index(&self, x_train: &Matrix<f32>) -> Result<SpatialIndex> {
+        let metric = match self.metric {
+            DistanceMetric::Euclidean => Metric::Euclidean,
+            DistanceMetric::Manhattan => Metric::Manhattan,
+            DistanceMetric::Minkowski(p) => Metric::Minkowski(p),
+        };
+        SpatialIndex::from_matrix(x_train, metric, NeighborAlgorithm::Auto)
+    }
+
+    /// The `k` nearest training points to row `i` of `x`, as `(distance, label)`.
+    ///
+    /// ONE PATH (#3149): the index returns the same k-set, ties broken by
+    /// training index, that a stable sort by distance selects.
+    fn nearest_labeled(
+        &self,
+        index: &SpatialIndex,
+        x: &Matrix<f32>,
+        i: usize,
+        y_train: &[usize],
+    ) -> Vec<(f32, usize)> {
+        let d = x.shape().1;
+        index
+            .k_nearest(&x.as_slice()[i * d..(i + 1) * d], self.k)
+            .into_iter()
+            .map(|nb| (nb.distance, y_train[nb.index]))
+            .collect()
+    }
+
     /// Computes distance between two samples.
+    #[cfg(test)]
     pub(crate) fn compute_distance(
         &self,
         x1: &Matrix<f32>,
@@ -326,6 +334,7 @@ impl KNearestNeighbors {
 ///
 /// Returns the k nearest as `(distance, label)` pairs (dropping the index used only for
 /// tie-breaking) so the existing voting helpers are untouched.
+#[cfg(test)] // the reference FALSIFY-KNN-005 checks; queries go through `neighbors`
 pub(crate) fn select_k_nearest(
     distances: &mut [(f32, usize, usize)],
     k: usize,

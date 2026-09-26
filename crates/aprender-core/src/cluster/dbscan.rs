@@ -4,6 +4,7 @@
 //! and identify outliers as noise points.
 
 use crate::error::Result;
+use crate::neighbors::{Metric, NeighborAlgorithm, NeighborIndex, SpatialIndex};
 use crate::primitives::Matrix;
 use crate::traits::UnsupervisedEstimator;
 use serde::{Deserialize, Serialize};
@@ -104,33 +105,22 @@ impl DBSCAN {
             .expect("Model not fitted. Call fit() first.")
     }
 
-    /// Finds all neighbors within eps distance of point i.
-    fn region_query(&self, x: &Matrix<f32>, i: usize) -> Vec<usize> {
-        let mut neighbors = Vec::new();
-        let n_samples = x.shape().0;
-
-        for j in 0..n_samples {
-            let dist = self.euclidean_distance(x, i, j);
-            if dist <= self.eps {
-                neighbors.push(j);
-            }
-        }
-
-        neighbors
-    }
-
-    /// ONE PATH: Core computation delegates to `nn::functional::euclidean_distance` (UCBD §4).
-    #[allow(clippy::unused_self)]
-    fn euclidean_distance(&self, x: &Matrix<f32>, i: usize, j: usize) -> f32 {
-        let n_features = x.shape().1;
-        let row_i: Vec<f32> = (0..n_features).map(|k| x.get(i, k)).collect();
-        let row_j: Vec<f32> = (0..n_features).map(|k| x.get(j, k)).collect();
-        crate::nn::functional::euclidean_distance(&row_i, &row_j)
+    /// Finds all neighbors within eps distance of point i, ascending by index.
+    ///
+    /// ONE PATH: queries the exact [`SpatialIndex`] built once in `fit` (#3149).
+    fn region_query(&self, index: &SpatialIndex, x: &Matrix<f32>, i: usize) -> Vec<usize> {
+        let d = x.shape().1;
+        index
+            .within_radius(&x.as_slice()[i * d..(i + 1) * d], self.eps)
+            .into_iter()
+            .map(|nb| nb.index)
+            .collect()
     }
 
     /// Expands a cluster from a core point.
     fn expand_cluster(
         &self,
+        index: &SpatialIndex,
         x: &Matrix<f32>,
         labels: &mut [i32],
         point: usize,
@@ -148,7 +138,7 @@ impl DBSCAN {
                 labels[neighbor] = cluster_id;
 
                 // If core point, add its neighbors to expansion
-                let neighbor_neighbors = self.region_query(x, neighbor);
+                let neighbor_neighbors = self.region_query(index, x, neighbor);
                 if neighbor_neighbors.len() >= self.min_samples {
                     for &nn in &neighbor_neighbors {
                         if !neighbors.contains(&nn) {
@@ -173,6 +163,7 @@ impl UnsupervisedEstimator for DBSCAN {
         let n_samples = x.shape().0;
         let mut labels = vec![-2; n_samples]; // -2 = unlabeled
         let mut cluster_id = 0;
+        let index = SpatialIndex::from_matrix(x, Metric::Euclidean, NeighborAlgorithm::Auto)?;
 
         for i in 0..n_samples {
             // Skip if already processed
@@ -181,7 +172,7 @@ impl UnsupervisedEstimator for DBSCAN {
             }
 
             // Find neighbors
-            let mut neighbors = self.region_query(x, i);
+            let mut neighbors = self.region_query(&index, x, i);
 
             // Not a core point -> mark as noise (for now)
             if neighbors.len() < self.min_samples {
@@ -190,7 +181,7 @@ impl UnsupervisedEstimator for DBSCAN {
             }
 
             // Core point -> expand cluster
-            self.expand_cluster(x, &mut labels, i, &mut neighbors, cluster_id);
+            self.expand_cluster(&index, x, &mut labels, i, &mut neighbors, cluster_id);
             cluster_id += 1;
         }
 

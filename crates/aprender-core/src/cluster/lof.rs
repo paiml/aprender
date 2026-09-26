@@ -5,6 +5,7 @@
 //! density to its neighbors' densities.
 
 use crate::error::Result;
+use crate::neighbors::{Metric, NeighborAlgorithm, NeighborIndex, SpatialIndex};
 use crate::primitives::Matrix;
 use serde::{Deserialize, Serialize};
 
@@ -169,46 +170,27 @@ impl LocalOutlierFactor {
     ) -> (Vec<Vec<f32>>, Vec<Vec<usize>>) {
         let (n_query, n_features) = query.shape();
         let (n_data, _) = data.shape();
+        // ONE PATH: exact neighbor search through the shared index (#3149).
+        // Euclidean under Auto cannot be refused, and a Matrix always holds
+        // rows * cols values, so the build has no error to report.
+        let index = SpatialIndex::from_matrix(data, Metric::Euclidean, NeighborAlgorithm::Auto)
+            .expect("euclidean index over a well-formed matrix");
+        let rows = query.as_slice();
 
         let mut knn_distances = Vec::with_capacity(n_query);
         let mut knn_indices = Vec::with_capacity(n_query);
 
         for i in 0..n_query {
-            // Compute distances to all points
-            let mut distances: Vec<(f32, usize)> = Vec::with_capacity(n_data);
-
-            for j in 0..n_data {
-                let mut dist_sq = 0.0;
-                for k in 0..n_features {
-                    let diff = query.get(i, k) - data.get(j, k);
-                    dist_sq += diff * diff;
-                }
-                let dist = dist_sq.sqrt();
-                distances.push((dist, j));
-            }
-
-            // Sort by distance
-            distances.sort_by(|a, b| {
-                a.0.partial_cmp(&b.0)
-                    .expect("Distances must be valid floats for comparison")
-            });
-
-            // Take k+1 nearest (skip self if query == data)
+            // Take k+1 nearest (skip self if query == data). Ties are ordered
+            // by index, as the stable sort this replaced ordered them.
             let skip_self = i < n_data;
             let k_start = usize::from(skip_self);
             let k_end = k_start + self.n_neighbors;
+            let nearest = index.k_nearest(&rows[i * n_features..(i + 1) * n_features], k_end);
+            let kept = nearest.get(k_start..).unwrap_or(&[]);
 
-            let dists: Vec<f32> = distances[k_start..k_end.min(distances.len())]
-                .iter()
-                .map(|(d, _)| *d)
-                .collect();
-            let indices: Vec<usize> = distances[k_start..k_end.min(distances.len())]
-                .iter()
-                .map(|(_, idx)| *idx)
-                .collect();
-
-            knn_distances.push(dists);
-            knn_indices.push(indices);
+            knn_distances.push(kept.iter().map(|nb| nb.distance).collect());
+            knn_indices.push(kept.iter().map(|nb| nb.index).collect());
         }
 
         (knn_distances, knn_indices)
