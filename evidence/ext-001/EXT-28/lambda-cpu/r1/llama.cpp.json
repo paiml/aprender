@@ -1,0 +1,55 @@
+{
+  "arm": "llama.cpp",
+  "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+  "engine_sha256": "9e3197289109cf23adf6d6805cc6477a639ed2ab17cf3d8360db32348ea2a14c",
+  "model_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+  "file_type": 15,
+  "vision_tensors": 0,
+  "served_model": "ours",
+  "ollama_manifest_digest": null,
+  "conditions": {
+    "cpus": "0-15",
+    "threads": 16,
+    "concurrency": 1,
+    "iterations": 5,
+    "max_tokens": 32,
+    "prompt_sha256": "64d05b7ffbeefa59c020057f4496bf73630e95b06adfaeeb072596a841430597"
+  },
+  "timing": {
+    "load_ms": 5569.1,
+    "ttft_ms": 574.7,
+    "itl_ms": 205.2,
+    "e2e_ms": 6826.9,
+    "decode_tok_s": 4.3048,
+    "peak_rss_kb": 4547592
+  },
+  "comparator": {
+    "command": [
+      "env",
+      "-i",
+      "PATH=/usr/bin:/bin",
+      "HOME=/mnt/nvme-raid0/tmp/cb28/cells/r1/logs/llama.cpp.home",
+      "CUDA_VISIBLE_DEVICES=",
+      "taskset",
+      "-c",
+      "0-15",
+      "/mnt/nvme-raid0/tmp/llama-d1d3-build/bin/llama-server",
+      "-m",
+      "/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf",
+      "-t",
+      "16",
+      "-c",
+      "4096",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "18780"
+    ],
+    "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+    "env_sha256": "dd99738ecd63bda992b7c45813fb268924abf56e2664b8c698fe7b079547a1a7",
+    "artifact_sha256": "98f77e7ebc3b4ba72254a6bed41ce48c20403de3f641af67466e474fade03d37",
+    "log_path": "logs/llama.cpp.server.log",
+    "started_utc": "2026-09-26T07:20:45.490Z",
+    "finished_utc": "2026-09-26T07:33:40.958Z"
+  }
+}

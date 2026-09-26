@@ -1,0 +1,66 @@
+1790411920.015728 data: {"choices":[{"text":"\n\n","index":0,"logprobs":null,"finish_reason":null}],"created":1790411920,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411920.015903 
+1790411920.201147 data: {"choices":[{"text":"###","index":0,"logprobs":null,"finish_reason":null}],"created":1790411920,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411920.201189 
+1790411920.399757 data: {"choices":[{"text":" The","index":0,"logprobs":null,"finish_reason":null}],"created":1790411920,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411920.399818 
+1790411920.569980 data: {"choices":[{"text":" Update","index":0,"logprobs":null,"finish_reason":null}],"created":1790411920,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411920.570022 
+1790411920.753662 data: {"choices":[{"text":" Rule","index":0,"logprobs":null,"finish_reason":null}],"created":1790411920,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411920.753727 
+1790411920.931610 data: {"choices":[{"text":"\n\n","index":0,"logprobs":null,"finish_reason":null}],"created":1790411920,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411920.931653 
+1790411921.203785 data: {"choices":[{"text":"The","index":0,"logprobs":null,"finish_reason":null}],"created":1790411921,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411921.203837 
+1790411921.595582 data: {"choices":[{"text":" parameter","index":0,"logprobs":null,"finish_reason":null}],"created":1790411921,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411921.595626 
+1790411922.019169 data: {"choices":[{"text":" update","index":0,"logprobs":null,"finish_reason":null}],"created":1790411922,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411922.019217 
+1790411922.405256 data: {"choices":[{"text":" at","index":0,"logprobs":null,"finish_reason":null}],"created":1790411922,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411922.405302 
+1790411922.814832 data: {"choices":[{"text":" each","index":0,"logprobs":null,"finish_reason":null}],"created":1790411922,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411922.814879 
+1790411923.224799 data: {"choices":[{"text":" iteration","index":0,"logprobs":null,"finish_reason":null}],"created":1790411923,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411923.224844 
+1790411923.659208 data: {"choices":[{"text":" is","index":0,"logprobs":null,"finish_reason":null}],"created":1790411923,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411923.659272 
+1790411923.988715 data: {"choices":[{"text":":","index":0,"logprobs":null,"finish_reason":null}],"created":1790411923,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411923.988760 
+1790411924.282146 data: {"choices":[{"text":"\n\n","index":0,"logprobs":null,"finish_reason":null}],"created":1790411924,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411924.282191 
+1790411924.571855 data: {"choices":[{"text":"```","index":0,"logprobs":null,"finish_reason":null}],"created":1790411924,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411924.572004 
+1790411924.755541 data: {"choices":[{"text":"\n","index":0,"logprobs":null,"finish_reason":null}],"created":1790411924,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411924.755589 
+1790411924.936178 data: {"choices":[{"text":"θ","index":0,"logprobs":null,"finish_reason":null}],"created":1790411924,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411924.936217 
+1790411925.126326 data: {"choices":[{"text":"(t","index":0,"logprobs":null,"finish_reason":null}],"created":1790411925,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411925.126392 
+1790411925.301877 data: {"choices":[{"text":"+","index":0,"logprobs":null,"finish_reason":null}],"created":1790411925,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411925.301923 
+1790411925.473533 data: {"choices":[{"text":"1","index":0,"logprobs":null,"finish_reason":null}],"created":1790411925,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411925.473575 
+1790411925.637823 data: {"choices":[{"text":")","index":0,"logprobs":null,"finish_reason":null}],"created":1790411925,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411925.637908 
+1790411925.811767 data: {"choices":[{"text":" =","index":0,"logprobs":null,"finish_reason":null}],"created":1790411925,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411925.811810 
+1790411926.002149 data: {"choices":[{"text":" θ","index":0,"logprobs":null,"finish_reason":null}],"created":1790411926,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411926.002191 
+1790411926.187178 data: {"choices":[{"text":"(t","index":0,"logprobs":null,"finish_reason":null}],"created":1790411926,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411926.187225 
+1790411926.358300 data: {"choices":[{"text":")","index":0,"logprobs":null,"finish_reason":null}],"created":1790411926,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411926.358424 
+1790411926.536331 data: {"choices":[{"text":" -","index":0,"logprobs":null,"finish_reason":null}],"created":1790411926,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411926.536458 
+1790411926.711479 data: {"choices":[{"text":" α","index":0,"logprobs":null,"finish_reason":null}],"created":1790411926,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411926.711523 
+1790411927.085810 data: {"choices":[{"text":" ∇","index":0,"logprobs":null,"finish_reason":null}],"created":1790411927,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411927.085857 
+1790411927.279652 data: {"choices":[{"text":"L","index":0,"logprobs":null,"finish_reason":null}],"created":1790411927,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411927.279699 
+1790411927.501826 data: {"choices":[{"text":"(","index":0,"logprobs":null,"finish_reason":null}],"created":1790411927,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR"}
+1790411927.501863 
+1790411927.502146 data: {"choices":[{"text":"","index":0,"logprobs":null,"finish_reason":"length"}],"created":1790411927,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf","system_fingerprint":"b10987-d1d3c3396","object":"text_completion","usage":{"completion_tokens":32,"prompt_tokens":147,"total_tokens":179,"prompt_tokens_details":{"cached_tokens":143}},"id":"chatcmpl-pPELqWu413vio6a5vhAbaCq3gqBlWEfR","timings":{"cache_n":143,"prompt_n":4,"prompt_ms":456.643,"prompt_per_token_ms":114.16075,"prompt_per_second":8.759578051125278,"predicted_n":32,"predicted_ms":7486.197,"predicted_per_token_ms":241.4902258064516,"predicted_per_second":4.14095434571118}}
+1790411927.502180 
+1790411927.502193 data: [DONE]
+1790411927.502201 

@@ -95,7 +95,10 @@ fn a_like_for_like_cell_is_green_and_becomes_one_ledger_row() {
     // T28: no ratio key anywhere in the receipt or the row.
     let text =
         serde_json::to_string(&c).expect("json") + &serde_json::to_string(&row).expect("json");
-    assert!(!text.contains("\"ratio\"") && !text.contains("speedup"), "{text}");
+    assert!(
+        !text.contains("\"ratio\"") && !text.contains("speedup"),
+        "{text}"
+    );
 }
 
 /// S-14: each way an arm can differ from apr's run is refused, never normalised,
