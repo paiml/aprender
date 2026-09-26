@@ -9,7 +9,7 @@
 # --------------------------
 # The count lived in README.md as three hand-written literals in three separate
 # prose sites, and NOTHING regenerated them: `check_readme_claims.sh --regen`
-# only PRINTS numbers "for manual README edit", and `apr-qa-readme-sync` rewrites
+# only PRINTS numbers "for manual README edit", and `aprender-qa-readme-sync` rewrites
 # a certification table between markers README.md does not carry. The literals
 # were measured at 1812 against a filesystem carrying 1814 — two behind, and
 # green, because the guard lets the README lag. A number a human must copy in

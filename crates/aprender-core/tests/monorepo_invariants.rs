@@ -262,14 +262,14 @@ fn test_no_unauthorized_binaries() {
     // grep this check used to do.
     let allowed_bins: HashSet<&str> = [
         // Sanctioned by the contract itself (cgp-monorepo-consolidation-v1.yaml:212).
-        "apr-cli",                // apr, apr-corpus-ingest
+        "apr-cli",                // apr, aprender-corpus-ingest
         "aprender",               // apr (root facade: `cargo install aprender`)
         "aprender-contracts-cli", // pv — explicit contract exception, and
         // `apr pv` + naked `pv` is a settled decision
         // Build/dev tooling, never user-facing ML surface.
         "aprender-compute-xtask", // aprender-compute-xtask
         "aprender-ptx-debug",     // aprender-ptx-debug
-        "aprender-qa-certify",    // apr-qa-readme-sync
+        "aprender-qa-certify",    // aprender-qa-readme-sync
         // Pre-consolidation names still carrying the only access to their
         // capability. These are the migration targets.
         "aprender-data",             // alimentar

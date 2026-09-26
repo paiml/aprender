@@ -1220,9 +1220,9 @@ $ apr pull dataset codeparrot/github-code-clean \
 
 # Convert parquet → JSONL with language filter (Python rows only)
 # This step uses an existing or to-be-built `apr` ingest subcommand;
-# if `apr-corpus-ingest run` covers it, use that; if not, that
+# if `aprender-corpus-ingest run` covers it, use that; if not, that
 # missing capability is its own §26.8 contract+extension cycle
-$ apr-corpus-ingest run \
+$ aprender-corpus-ingest run \
     --input /mnt/nvme-raid0/data/github-code-python-raw \
     --language-filter python \
     --license-allowlist mit,apache-2.0,bsd-2-clause,bsd-3-clause \
@@ -1336,7 +1336,7 @@ recent session. Today's session ended at 33+12; next session
 
 §26 holds to the binding rules from this session:
 
-- **Fix at root, no route-arounds** (`feedback_fix_root_cause_never_route_around.md`): if Stack v2 ingest hits a license-filter or schema bug, fix it via `apr-corpus-ingest`, never via `--skip-license`.
+- **Fix at root, no route-arounds** (`feedback_fix_root_cause_never_route_around.md`): if Stack v2 ingest hits a license-filter or schema bug, fix it via `aprender-corpus-ingest`, never via `--skip-license`.
 - **Pre-authorized compute** (`feedback_compute_pre_authorized.md`): user GO covers all P1/P2/P3 dispatches; per-step approval not required.
 - **Provable contracts** (`feedback_full_problems_pmat_contracts.md`): each binding criterion in §26.1 is falsifiable (Pass/Fail), recorded in evidence, then promoted in the relevant contract YAML on success.
 - **Zero `eprintln!`** (`feedback_apr_trace_not_eprintln.md`): P3 instruments via `apr trace --payload`, not via debug prints.
@@ -1356,7 +1356,7 @@ T+~2hr: P3 PR A complete, opened, auto-merge enabled
 T+~4hr: P3 PR B complete, opened, auto-merge enabled
         → start P3 comparison run, file SHIP-007 bug pin
 T+~4-8hr: P1 download completes
-        → run apr-corpus-ingest license filter
+        → run aprender-corpus-ingest license filter
         → run apr tokenize encode-corpus
         → P1 binding criterion check (manifest validates)
 T+~6-10hr: P1 complete
