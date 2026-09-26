@@ -3,16 +3,16 @@
 # vs Burn WGPU matmul) and fail if trueno's lead over Burn collapses (#3174).
 #
 # usage: scripts/run_train_canary.sh [--out FILE] [--iters N]
-#        scripts/run_train_canary.sh --compare RESULT.json [BASELINE.json]
+#        scripts/run_train_canary.sh --compare RESULT.json [BASELINES_DIR|BASELINE.json]
 #
 # The canary is excluded from the workspace (burn pulls a libsqlite3-sys that
 # conflicts with aprender-rag), so no workspace job builds it. This script is
 # the one place that does: its own target dir, the binary run under the GPU
 # lock (never the build), evidence JSON written to --out.
 #
-# THE FLOOR. crates/aprender-train-canary/baseline.json holds the measured
+# THE FLOOR. crates/aprender-train-canary/baselines/*.json each hold the measured
 # per-size ratio (burn_ms / trueno_ms, median of N) for one named wgpu adapter
-# (the canary pins both backends to the single hardware adapter and records it). A run
+# (the canary pins both backends to the single discrete GPU and records it). A run
 # FAILS when any size's ratio falls below baseline * (1 - tolerance), when a
 # baseline size is missing from the run, or when a ratio is not a positive
 # finite number. A run on an adapter the baseline was not measured on exits 3: no
@@ -25,7 +25,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CRATE="crates/aprender-train-canary"
-BASELINE="$REPO_ROOT/$CRATE/baseline.json"
+BASELINE="$REPO_ROOT/$CRATE/baselines"
 TMP="${TMPDIR:-/tmp}"
 OUT="$TMP/train-canary-$$.json"
 ITERS=10

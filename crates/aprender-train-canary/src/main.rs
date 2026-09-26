@@ -3,7 +3,7 @@
 //! usage: aprender-train-canary [--iters N] [--json PATH]
 //!
 //! Both sides are timed host-to-host: upload A and B, matmul, read C back, on
-//! the one hardware wgpu adapter present (the JSON's `gpu` names it). Burn's
+//! the one discrete GPU present (the JSON's `gpu` names it). Burn's
 //! owned input copies are made outside the clock.
 //! Each size gets one synchronised warmup per side (shader compile, pipeline
 //! cache) and then N timed iterations; the reported time is the MEDIAN, so a
@@ -57,25 +57,44 @@ fn args() -> Result<(usize, Option<String>), String> {
     Ok((iters, json))
 }
 
-/// Software rasterisers wgpu can enumerate; a canary on one of these measures a CPU.
-const SOFTWARE: [&str; 3] = ["llvmpipe", "lavapipe", "swiftshader"];
-
-/// The one hardware adapter both backends run on. More than one distinct hardware
-/// adapter is an error: nothing could then say which one Burn's DiscreteGpu(0) is.
+/// The one discrete GPU both backends run on, as (trueno adapter index, name).
+///
+/// Burn's `WgpuDevice::DiscreteGpu(0)` is the first adapter of type DiscreteGpu, so the
+/// canary requires EXACTLY ONE: then trueno's pick (by name, from its own list) and Burn's
+/// are the same device by construction, on a laptop with an iGPU beside it too. Zero, or
+/// two (even of the same model), is an error: nothing could say which one Burn took.
 fn pick_adapter() -> Result<(u32, String), String> {
-    let all = trueno::backends::gpu::GpuDevice::list_adapters();
-    let hw: Vec<&(u32, String, String)> = all
+    use trueno::backends::gpu::wgpu;
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::PRIMARY,
+        ..Default::default()
+    });
+    let infos: Vec<wgpu::AdapterInfo> = instance
+        .enumerate_adapters(wgpu::Backends::PRIMARY)
         .iter()
-        .filter(|(_, name, _)| !SOFTWARE.iter().any(|s| name.to_lowercase().contains(s)))
+        .map(wgpu::Adapter::get_info)
         .collect();
-    let mut names: Vec<&str> = hw.iter().map(|(_, n, _)| n.as_str()).collect();
-    names.dedup();
-    match (hw.first(), names.len()) {
-        (Some((idx, name, _)), 1) => Ok((*idx, name.clone())),
-        _ => Err(format!(
-            "need exactly one hardware wgpu adapter, found {all:?}"
-        )),
-    }
+    let discrete: Vec<&wgpu::AdapterInfo> = infos
+        .iter()
+        .filter(|i| i.device_type == wgpu::DeviceType::DiscreteGpu)
+        .collect();
+    let [only] = discrete.as_slice() else {
+        let seen: Vec<String> = infos
+            .iter()
+            .map(|i| format!("{} ({:?}, {:?})", i.name, i.device_type, i.backend))
+            .collect();
+        return Err(format!(
+            "need exactly one discrete GPU adapter, found {}: {seen:?}",
+            discrete.len()
+        ));
+    };
+    let listed = trueno::backends::gpu::GpuDevice::list_adapters();
+    let idx = listed
+        .iter()
+        .find(|(_, name, _)| *name == only.name)
+        .map(|(idx, _, _)| *idx)
+        .ok_or_else(|| format!("trueno does not list {:?}: {listed:?}", only.name))?;
+    Ok((idx, only.name.clone()))
 }
 
 fn run() -> Result<(), String> {

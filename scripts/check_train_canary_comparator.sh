@@ -3,9 +3,13 @@
 # trueno-vs-Burn train canary, and its case table (#3174).
 #
 # usage: scripts/check_train_canary_comparator.sh
-#            case table, then validate the committed baseline (what CI runs)
-#        scripts/check_train_canary_comparator.sh --compare RESULT BASELINE
+#            case table, then validate every committed baseline (what CI runs)
+#        scripts/check_train_canary_comparator.sh --compare RESULT BASELINES
 #            case table, then judge one canary run (scripts/run_train_canary.sh)
+#            against the baseline, in the BASELINES dir, whose `gpu` is the run's
+#
+# One baseline per adapter, in crates/aprender-train-canary/baselines/*.json: a
+# ratio measured on one GPU is not a floor for another.
 #
 # A run FAILS (1) when any baseline size's ratio (burn_ms / trueno_ms) is below
 # baseline * (1 - tolerance), is missing, or is not a positive finite number,
@@ -14,8 +18,9 @@
 # of those makes the floor unable to fail). A run on an adapter the baseline was
 # not measured on exits 3: no baseline is not a pass.
 #
-# The CI mode also checks that the baseline's sizes are exactly the canary's
-# SIZES, so a size added to the canary cannot go ungated.
+# The CI mode also checks that each baseline's sizes are exactly the canary's
+# SIZES, so a size added to the canary cannot go ungated, and that no two
+# baselines claim the same adapter.
 #
 # The case table runs first in every mode, so a comparator that stops catching
 # a collapse goes RED here, in CI, without a GPU. Cargo-free (python over text
@@ -26,17 +31,17 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CRATE="$REPO_ROOT/crates/aprender-train-canary"
 case "${1:-}" in
-    "") set -- baseline "$CRATE/baseline.json" "$CRATE/src/main.rs" ;;
+    "") set -- baseline "$CRATE/baselines" "$CRATE/src/main.rs" ;;
     --compare)
-        [ "$#" -eq 3 ] || { echo "usage: $0 --compare RESULT BASELINE" >&2; exit 2; }
+        [ "$#" -eq 3 ] || { echo "usage: $0 --compare RESULT BASELINES" >&2; exit 2; }
         set -- compare "$2" "$3"
         ;;
-    -h | --help) sed -n '2,23p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h | --help) sed -n '2,28p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "check_train_canary_comparator: unknown argument $1" >&2; exit 2 ;;
 esac
 
 exec python3 - "$@" <<'PY'
-import json, math, re, sys
+import glob, json, math, os, re, sys
 
 
 def positive(v):
@@ -86,6 +91,17 @@ def verdict(result, baseline):
         else:
             lines.append(f"ok    {size}: ratio {r:.2f}x >= floor {floor:.2f}x (baseline {base:.2f}x)")
     return (1 if bad else 0), lines
+
+
+def select(result, baselines):
+    """The one baseline measured on the run's adapter, or None (exit 3: no baseline)."""
+    mine = [b for b in baselines if b.get("gpu") == result.get("gpu")]
+    return mine[0] if len(mine) == 1 else None
+
+
+def duplicate_gpus(baselines):
+    gpus = [b.get("gpu") for b in baselines]
+    return sorted({g for g in gpus if gpus.count(g) > 1})
 
 
 def size_errors(baseline, sizes):
@@ -146,6 +162,13 @@ SIZE_CASES = [
     ("commented-out size ignored", SRC.replace("    (32", "    // (1, 1, 1),\n    (32"), ["4x2560x9728", "32x2560x4096"]),
     ("no SIZES const", "fn main() {}\n", None),
 ]
+SELECT_CASES = [
+    # (name, run gpu, baseline gpus, index picked or None)
+    ("picks the run's adapter", "B", ["A", "B"], 1),
+    ("no baseline for this adapter", "C", ["A", "B"], None),
+    ("run names no adapter", None, ["A"], None),
+    ("two baselines claim it", "A", ["A", "A"], None),
+]
 SYNC_CASES = [
     # (name, baseline sizes, canary sizes, must_be_red)
     ("in sync, any order", ["a", "b"], ["b", "a"], False),
@@ -167,12 +190,21 @@ def self_test():
         ok = got == want
         bad += not ok
         print(f"  {'ok  ' if ok else 'FAIL'} sizes {name}" + ("" if ok else f" -> {got}"))
+    for name, gpu, gpus, want in SELECT_CASES:
+        bs = [{"gpu": g} for g in gpus]
+        got = select({"gpu": gpu}, bs)
+        ok = (got is None) if want is None else (got is bs[want])
+        bad += not ok
+        print(f"  {'ok  ' if ok else 'FAIL'} select {name}")
+    ok = duplicate_gpus([{"gpu": "A"}, {"gpu": "A"}, {"gpu": "B"}]) == ["A"] and not duplicate_gpus([{"gpu": "A"}])
+    bad += not ok
+    print(f"  {'ok  ' if ok else 'FAIL'} duplicate adapters are named")
     for name, rows, sizes, must_red in SYNC_CASES:
         got = bool(size_errors({"rows": [{"size": x} for x in rows]}, sizes))
         ok = got == must_red
         bad += not ok
         print(f"  {'ok  ' if ok else 'FAIL'} sync {name}")
-    n = len(CASES) + len(SIZE_CASES) + len(SYNC_CASES)
+    n = len(CASES) + len(SIZE_CASES) + len(SELECT_CASES) + 1 + len(SYNC_CASES)
     print(f"case table: {n - bad}/{n}")
     return bad == 0
 
@@ -181,22 +213,40 @@ mode = sys.argv[1]
 if not self_test():
     print("FAIL  check_train_canary_comparator: the case table does not hold; the comparator cannot be trusted")
     sys.exit(1)
-with open(sys.argv[2]) as f:
-    first = json.load(f)
+def load_dir(d):
+    paths = sorted(glob.glob(os.path.join(d, "*.json")))
+    out = []
+    for p in paths:
+        with open(p) as f:
+            b = json.load(f)
+        b["_path"] = p
+        out.append(b)
+    return out
+
+
 if mode == "baseline":
-    errs = baseline_errors(first)
+    baselines = load_dir(sys.argv[2])
     with open(sys.argv[3]) as f:
         sizes = canary_sizes(f.read())
-    errs += size_errors(first, sizes)
+    errs = [] if baselines else [f"{sys.argv[2]}: no baseline *.json"]
+    errs += [f"two baselines claim adapter {g!r}" for g in duplicate_gpus(baselines)]
+    for b in baselines:
+        errs += [f"{b['_path']}: {e}" for e in baseline_errors(b) + size_errors(b, sizes)]
     for e in errs:
-        print(f"FAIL  {sys.argv[2]}: {e}")
+        print(f"FAIL  {e}")
     if errs:
         sys.exit(1)
-    print(f"PASS  comparator case table holds; baseline gates all {len(sizes)} canary sizes on {first['gpu']}")
+    gpus = ", ".join(b["gpu"] for b in baselines)
+    print(f"PASS  comparator case table holds; {len(baselines)} baseline(s) gate all {len(sizes)} canary sizes on: {gpus}")
     sys.exit(0)
-with open(sys.argv[3]) as f:
-    baseline = json.load(f)
-code, lines = verdict(first, baseline)
+with open(sys.argv[2]) as f:
+    result = json.load(f)
+baselines = load_dir(sys.argv[3]) if os.path.isdir(sys.argv[3]) else [json.load(open(sys.argv[3]))]
+baseline = select(result, baselines)
+if baseline is None:
+    code, lines = 3, [f"NO-BASELINE  no single baseline for {result.get('gpu')!r}; have {[b.get('gpu') for b in baselines]}"]
+else:
+    code, lines = verdict(result, baseline)
 print("\n".join(lines))
 print({0: "PASS  train canary: no size collapsed below its floor",
        1: "FAIL  train canary: collapse or unusable input (#3174)",
