@@ -5,7 +5,7 @@
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. Exactly 14 entries in `falsification_conditions`, with ids
+//! 3. Exactly 14 entries in `falsification_tests`, with ids
 //!    FALSIFY-MCP-001 through FALSIFY-MCP-014 (no gaps, no duplicates).
 //!    010-014 were added 2026-08-10 for the transport and protocol defects
 //!    found by the 0.63.0 crates.io dogfood (#2393).
@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, serde::Deserialize)]
 struct ContractRoot {
     status: String,
-    falsification_conditions: Vec<FalsificationCondition>,
+    falsification_tests: Vec<FalsificationCondition>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -89,10 +89,10 @@ const EXPECTED_GATES: usize = 14;
 fn apr_mcp_server_contract_has_exactly_expected_conditions() {
     let contract = load_contract();
     assert_eq!(
-        contract.falsification_conditions.len(),
+        contract.falsification_tests.len(),
         EXPECTED_GATES,
         "spec defines {EXPECTED_GATES} FALSIFY-MCP gates; contract has {}",
-        contract.falsification_conditions.len()
+        contract.falsification_tests.len()
     );
 }
 
@@ -100,7 +100,7 @@ fn apr_mcp_server_contract_has_exactly_expected_conditions() {
 fn apr_mcp_server_contract_ids_are_contiguous_from_001() {
     let contract = load_contract();
     let actual: Vec<String> = contract
-        .falsification_conditions
+        .falsification_tests
         .iter()
         .map(|c| c.id.clone())
         .collect();
@@ -117,7 +117,7 @@ fn apr_mcp_server_contract_ids_are_contiguous_from_001() {
 fn apr_mcp_server_contract_every_test_file_exists() {
     let contract = load_contract();
     let root = workspace_root();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert!(
             !cond.test_file.is_empty(),
             "{}: test_file must be non-empty",
@@ -137,7 +137,7 @@ fn apr_mcp_server_contract_every_test_file_exists() {
 #[test]
 fn apr_mcp_server_contract_every_condition_is_enforced() {
     let contract = load_contract();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert_eq!(
             cond.status, "ENFORCED",
             "{}: status must be ENFORCED (got {:?})",

@@ -412,7 +412,7 @@ fn self_exempt_and_inert_contracts_only_shrink() {
         paths.len()
     );
     const SELF_EXEMPT_CEILING: usize = 512;
-    const INERT_CEILING: usize = 408;
+    const INERT_CEILING: usize = 402;
     assert!(
         self_exempt.len() <= SELF_EXEMPT_CEILING,
         "kernel contracts self-exempted by `registry: true` rose to {} (ceiling \

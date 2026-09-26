@@ -5,7 +5,7 @@
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. Exactly 3 entries in `falsification_conditions`, with ids
+//! 3. Exactly 3 entries in `falsification_tests`, with ids
 //!    FALSIFY-SNAPSHOT-001..003 (no gaps, no duplicates).
 //! 4. Every entry has a non-empty `test_file` that exists on disk
 //!    relative to the workspace root, plus a non-empty `test_name` and
@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, serde::Deserialize)]
 struct ContractRoot {
     status: String,
-    falsification_conditions: Vec<FalsificationCondition>,
+    falsification_tests: Vec<FalsificationCondition>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -73,10 +73,10 @@ fn apr_registry_snapshot_contract_is_active() {
 fn apr_registry_snapshot_contract_has_exactly_three_conditions() {
     let contract = load_contract();
     assert_eq!(
-        contract.falsification_conditions.len(),
+        contract.falsification_tests.len(),
         3,
         "spec lists 3 FALSIFY-SNAPSHOT gates; contract has {}",
-        contract.falsification_conditions.len()
+        contract.falsification_tests.len()
     );
 }
 
@@ -84,7 +84,7 @@ fn apr_registry_snapshot_contract_has_exactly_three_conditions() {
 fn apr_registry_snapshot_contract_ids_are_falsify_snapshot_001_through_003() {
     let contract = load_contract();
     let actual: Vec<String> = contract
-        .falsification_conditions
+        .falsification_tests
         .iter()
         .map(|c| c.id.clone())
         .collect();
@@ -101,7 +101,7 @@ fn apr_registry_snapshot_contract_ids_are_falsify_snapshot_001_through_003() {
 fn apr_registry_snapshot_contract_every_test_file_exists() {
     let contract = load_contract();
     let root = workspace_root();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert!(
             !cond.test_file.is_empty(),
             "{}: test_file must be non-empty",
@@ -121,7 +121,7 @@ fn apr_registry_snapshot_contract_every_test_file_exists() {
 #[test]
 fn apr_registry_snapshot_contract_every_condition_is_enforced() {
     let contract = load_contract();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert_eq!(
             cond.status, "ENFORCED",
             "{}: status must be ENFORCED (got {:?})",
