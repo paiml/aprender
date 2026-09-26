@@ -77,11 +77,26 @@ phase_counts() { # declared, cli-phase -> 0 when the arm's verdict counts
   esac
 }
 
+arm_phases_all() { # -> "arm<TAB>phase" for every arm perf-matrix.yaml declares
+  python3 - "$MATRIX" <<'PY_PHASES'
+import sys, yaml
+m = yaml.safe_load(open(sys.argv[1])) or {}
+for k, v in ((m.get("arms") or {}).items()):
+    print("%s\t%s" % (k, ((v or {}).get("phase") or "both")))
+PY_PHASES
+}
+
 run_phased() { # arm-key, cli-phase, command...
   local arm="$1" phase="$2"
   shift 2
   local declared out rc=0
-  declared="$(arm_phase "$arm")"
+  # run_gate reads every arm's phase ONCE into ARM_PHASES (one python, not nine:
+  # --selftest ran 2,628 of these). An unloaded map falls back to the per-arm read.
+  if [ "${ARM_PHASES_LOADED:-0}" = 1 ]; then
+    declared="${ARM_PHASES[$arm]:-both}"
+  else
+    declared="$(arm_phase "$arm")"
+  fi
   if phase_counts "$declared" "$phase"; then
     "$@"
     return $?
@@ -1037,6 +1052,14 @@ run_gate() {
   local cell hist
   cell="$(cell_status "$host" "$workload")"
   hist="$(receipt_is_historical "$receipt")"
+  local -A ARM_PHASES=()
+  local ARM_PHASES_LOADED=0 _pl _pk _pv
+  if _pl="$(arm_phases_all 2>/dev/null)"; then
+    while IFS=$'\t' read -r _pk _pv; do
+      [ -n "$_pk" ] && ARM_PHASES[$_pk]="$_pv"
+    done <<< "$_pl"
+    ARM_PHASES_LOADED=1
+  fi
   run_phased C     "$phase" arm_c_integrity     "$receipt" || rc=1
   run_phased L1    "$phase" arm_l1_schema       "$receipt" "$host" || rc=1
   run_phased C_sig "$phase" arm_c_signature     "$receipt" "$host" "$phase" "$commit" "$cell" "$hist" || rc=1
