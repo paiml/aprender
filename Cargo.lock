@@ -1459,6 +1459,7 @@ dependencies = [
  "criterion 0.7.0",
  "proptest",
  "thiserror 2.0.18",
+ "trybuild",
 ]
 
 [[package]]

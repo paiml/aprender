@@ -23,6 +23,15 @@ pub enum TensorError {
         product: usize,
     },
 
+    /// A rank-typed conversion met a tensor of another rank.
+    #[error("rank mismatch: expected rank {expected}, got rank {got}")]
+    RankMismatch {
+        /// Rank the type requires.
+        expected: usize,
+        /// Rank of the tensor.
+        got: usize,
+    },
+
     /// Invalid einsum subscript string.
     #[error("invalid einsum subscript: {0}")]
     InvalidSubscript(String),

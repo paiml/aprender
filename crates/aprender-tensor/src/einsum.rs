@@ -4,6 +4,7 @@
 //! contractions to matrix multiplication.
 
 use crate::error::TensorError;
+use crate::ranked::Matrix;
 use crate::tensor::Tensor;
 use std::collections::HashMap;
 
@@ -406,9 +407,23 @@ fn contract_tensors(
     }
 }
 
-/// Matrix multiply: `"ij,jk->ik"` convenience wrapper.
+/// Matrix multiply, `"ij,jk->ik"`.
+///
+/// The rank is checked once here, at the dynamic boundary; the kernel is
+/// [`Matrix::matmul`], which only accepts rank 2 by type (#3150). The errors
+/// are the ones the einsum route returned.
 pub fn matmul(a: &Tensor, b: &Tensor) -> Result<Tensor, TensorError> {
-    einsum("ij,jk->ik", a, b)
+    for (i, t) in [a, b].into_iter().enumerate() {
+        if t.ndim() != 2 {
+            return Err(TensorError::InvalidSubscript(format!(
+                "input {} has 2 labels but shape has {} dims",
+                i,
+                t.ndim()
+            )));
+        }
+    }
+    let product = Matrix::from_dynamic(a)?.matmul(&Matrix::from_dynamic(b)?)?;
+    Ok(product.into_dynamic())
 }
 
 /// Batch matrix multiply: `"bij,bjk->bik"` convenience wrapper.

@@ -16,11 +16,15 @@
 
 pub mod einsum;
 pub mod error;
+pub mod ranked;
 pub mod tensor;
 
 pub use einsum::{batch_matmul, einsum, einsum_nary, matmul, outer, trace};
 pub use error::TensorError;
+pub use ranked::{ColMajor, Layout, Matrix, RankedTensor, RowMajor};
 pub use tensor::Tensor;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_ranked;

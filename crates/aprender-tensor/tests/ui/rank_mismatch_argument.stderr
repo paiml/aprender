@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/ui/rank_mismatch_argument.rs:7:22
+  |
+7 |     let _ = a.matmul(&b);
+  |               ------ ^^ expected `2`, found `3`
+  |               |
+  |               arguments to this method are incorrect
+  |
+  = note: expected reference `&RankedTensor<2>`
+             found reference `&RankedTensor<3>`
+note: method defined here
+ --> src/ranked.rs
+  |
+  |     pub fn matmul(&self, other: &Matrix) -> Result<Matrix, TensorError> {
+  |            ^^^^^^

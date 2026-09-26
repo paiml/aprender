@@ -1,0 +1,8 @@
+error[E0599]: no method named `matmul` found for struct `RankedTensor<2, ColMajor>` in the current scope
+ --> tests/ui/matmul_needs_row_major.rs:7:15
+  |
+7 |     let _ = a.matmul(&a);
+  |               ^^^^^^ method not found in `RankedTensor<2, ColMajor>`
+  |
+  = note: the method was found for
+          - `RankedTensor<2>`
