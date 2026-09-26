@@ -1,6 +1,6 @@
 # GB10 (sm_121): Qwen3.5 F2 guard falls back to CPU on code prompts. No op is defective; the gate's metric is ill-conditioned
 
-- **Status:** RED on gx10 (false reject: see Bisect). Owner: aprender-98. This is a 0.70.0-final gate item. It does not gate 0.69.5-rc.2 (cop ruling, 2026-09-25).
+- **Status:** fix on `fix/4313-f2-prob-metric` @ `ab31b6d66` (base `stage/0.70.1` @ `f63dace95`), cop-conditional sign-off; see *The metric change* below. Was: RED on gx10 (false reject: see Bisect). Owner: aprender-98. This is a 0.70.0-final gate item. It does not gate 0.69.5-rc.2 (cop ruling, 2026-09-25).
 - **Model:** `Qwen3.5-4B-Q4_K_M.gguf` (sha256 `00fe7986ff5f…`).
 - **Binary:** `apr 0.69.5-rc.1 (5660b0877)`, build `exe-sha256:d39bb0b6…`. The same build ran on both hosts.
 - **Hosts:** gx10 (NVIDIA GB10, sm_121, aarch64) and lambda (RTX 4090, sm_89, x86_64).
@@ -82,11 +82,76 @@ F2 (`f2_multi_position_report`, `infer/inference_result.rs`) rejects when **any 
 - **Fix direction (stage/0.70.1, owner aprender-59; needs cop sign-off since it changes a safety gate):** judge F2 in probability space, e.g. KL or top-k agreement plus p1 delta, or require a spike to persist across ≥2 adjacent positions. A real device defect corrupts state and persists, as the pre-#3596 failures did. A transient does not.
 - **Until then** F2 falling back on these probes is safe but a **false reject**: the gx10 GPU output is as correct as either CPU.
 
+## The metric change (`ab10ffc88` + `ab31b6d66`)
+
+F2 now judges each real position (≥1) in **probability space**. A single position rejects, for any of:
+
+- non-finite logits;
+- **top-1**: the argmaxes differ and the CPU's own gap from its top token to the GPU's pick is > `F2_TOP1_TIE_NATS` = 1.0 (a near-tie may flip);
+- **KL**: top-16 KL(cpu‖gpu) > `F2_KL_MAX` = 0.1, over the union of both top-16 sets plus a remainder bucket, in f64;
+- **shape**: position counts or row lengths differ, or a row is empty. It never truncates to the shorter side.
+
+Whole-vocab cosine is kept as a logged **advisory** only. The cop rejected the ≥2-adjacent-positions rule because it hides single-position defects; this rule keeps single-position sensitivity.
+
+Legitimate differences measured on the failing probes: gx10 CPU vs GPU max KL **0.0147**; lambda CPU vs gx10 CPU **0.0338**. Ceiling 0.1 is ~3× the cross-host max.
+
+### Positive control (cop condition 1)
+
+`f2_positive_control_planted_attn_out_scale_is_red` (`#[ignore]`, `forward/f2_positive_control_tests.rs`) scales the f16 `d` of every block of `blk.19.attn_output.weight` (Q4_K, 5898240 B) by S in a private copy of Qwen3.5-4B-Q4_K_M. It then judges clean vs planted CPU logits with the same `f2_multi_position_report` F2 uses. It asserts that S=1 is accepted at KL < 1e-6, and that every |S−1| ≥ 0.25 is rejected.
+
+Each cell gives the new verdict and max KL; ✗ marks where the old cosine rule disagrees.
+
+| S | prose (49 tok) | Rust (64 tok) | Q&A (43 tok) | biology (41 tok) |
+|---|---|---|---|---|
+| 1.02 | acc 0.0048 | acc 0.0072 (old ✗ REJECT, cos 0.518) | acc 0.0039 | acc 0.0036 |
+| 1.05 | acc 0.0200 | acc 0.0261 (old ✗ REJECT) | acc 0.0193 | acc 0.0236 |
+| 1.1 | acc 0.0765 | acc 0.0767 (old ✗ REJECT) | acc 0.0335 | **REJ 0.1271** (old ✗ accept) |
+| 1.25 | REJ 0.1705 | REJ 0.1465 | REJ 0.2616 | REJ 0.1266 |
+| 1.5 | REJ top-1 | REJ 0.1172 | REJ 0.4899 | REJ 0.1437 |
+| 2 | REJ top-1 | REJ top-1 | REJ 0.6623 | REJ 0.3419 |
+| 0.5 | REJ 0.1175 | REJ 0.1035 | REJ 0.2337 | REJ 0.5079 |
+| 0 | REJ top-1 | REJ 0.1500 | REJ 1.1016 | REJ top-1 |
+
+36 of 36 cells behave as asserted. The Rust rows reproduce the original false reject **without a GPU**: a 2% scale gives an old-rule cosine of 0.518 while the distribution moves by KL 0.007.
+
+**Open margins, for the reviewer:**
+- S=0.5 on Rust clears the ceiling by only 0.0035.
+- S=1.1 is accepted on 3 prompts at KL up to 0.077, which is above the measured cross-host max of 0.034. A 10% mis-scale of one layer's attention output is inside the gate's tolerance. The sweep between 1.1 and 1.25 is not dense.
+
+### Prompt variation on the fixed binary (cop condition 2)
+
+`apr 0.69.3 (ab31b6d66)` built with `--features cuda`, Qwen3.5-4B-Q4_K_M, `APR_F2_REVALIDATE=1`, fresh receipt dir, `--backend cuda`. Each run was checked for `F2 guard: passed` and `"ran": "gpu"`, `"fell_back": false`.
+
+| Prompt | lambda (RTX 4090) | gx10 (GB10) |
+|---|---|---|
+| p850 `--chat` (was FAIL on gx10) | PASS, gpu | PASS, gpu (`63f36159e`) |
+| Rust excerpt `--chat` (was FAIL on gx10) | PASS, gpu | PASS, gpu (`63f36159e`) |
+| BEATS.md `--chat` | PASS, gpu | PASS, gpu (`63f36159e`) |
+| prose `--chat` | PASS, gpu | PASS, gpu (`63f36159e`) |
+| p850 short `--chat` | PASS, gpu | PASS, gpu (`63f36159e`) |
+| t180 raw (the bisect probe) | PASS, gpu | PASS, gpu (`63f36159e`) |
+
+**FP8 retry path (lambda, sm_89).** `qwen2.5-coder-7b-instruct-q4_k_m`, FP8 E4M3 prefill on by default for cc 89: rust, prose, p850 short and md (`--chat`) all pass F2, `ran: gpu`, `fell_back: false`. The new metric does not wave through the FP8 prefill on these inputs, and it does not reject it.
+
+**A second GB10 blocker found while measuring this (not F2).** The first gx10 build (`ab31b6d66`) fell back to CPU on 4/4 prompts with rc=14 **before F2 compared anything**. The cause: `ptxas` on sm_121 reported "Parsing error near '.reg'" in `batched_rmsnorm_vectorized`. 149a66de7 (#4096, on `stage/0.70.1`, not on `main` or rc.1) emits the GH-480 `%p_jw` declaration before the body's opener line. For a multi-line parameter list that line is `) {`, so the declaration landed inside the parameter list. The fix is `63f36159e` on the same branch: never declare on the opener line. Its new test is RED without the guard (13 passed, 1 failed) and GREEN with it (14/14). The gx10 column above is measured on `63f36159e`.
+
+### Quorum (cop condition 3)
+
+| Lane | Model | Sha | Verdict |
+|---|---|---|---|
+| agy | gemini-3.1-pro-high | `ab10ffc88` | APPROVE-WITH-NITS (the truncation nit is fixed by `ab31b6d66`'s Shape reason) |
+| Claude | sonnet-5 | `ab31b6d66` | APPROVE-WITH-NITS, blocking: none (denser 1.1–1.25 sweep; two weak asserts) |
+| Claude | haiku-4-5 | `ab31b6d66` | APPROVE, blocking: none |
+
+The author is Opus 5.5, so the quorum is 3/3 approve and non-degraded.
+
 ## Reproduce
 
 ```
 APR_BISECT_MODEL=~/models/Qwen3.5-4B-Q4_K_M.gguf APR_BISECT_TEXT=t180.txt APR_BISECT_DUMP=out \
   <realizar test bin> --exact gguf::cuda::forward_qwen35_cuda::prefill::prefill_tests::qwen35_bisect_real_probe_per_layer --ignored --nocapture
+APR_PC_MODEL=~/models/Qwen3.5-4B-Q4_K_M.gguf [APR_PC_TEXT=a.txt:b.txt] \
+  <realizar test bin> f2_positive_control --ignored --nocapture --test-threads 1
 # APR_BISECT_CPU_ONLY=1 dumps the CPU oracle only (no GPU); APR_BISECT_CHAT=1 wraps in ChatML; APR_BISECT_ROWS sets chunk rows.
 ```
 
