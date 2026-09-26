@@ -368,6 +368,7 @@ unsafe fn fused_q4k_dot_avx512_vnni(q4k_data: &[u8], activations: &[f32]) -> Res
 }
 
 include!("q4k_dot_avx2.rs");
+include!("q4k_q8k_dot_neon.rs");
 include!("fused_q4k_q8k_dot_avx512vnni.rs");
 include!("horizontal.rs");
 include!("requires.rs");

@@ -82,6 +82,8 @@ pub mod iq3_xxs;
 pub mod iq4_xs;
 pub mod iq_dispatch;
 pub mod iq_grids;
+#[cfg(all(test, target_arch = "aarch64"))]
+mod neon_q4k_q8k_tests;
 pub mod parallel_dequant;
 pub mod parallel_k;
 pub mod simd;
