@@ -467,7 +467,6 @@ crates/aprender-serve/src/gguf/inference/fails.rs::generate_with_cache 17 39
 crates/aprender-serve/src/gguf/inference/fails.rs::generate_with_cache_streaming 14 36
 crates/aprender-serve/src/gguf/inference/fails.rs::sample_advanced 13 29
 crates/aprender-serve/src/gguf/inference/flash_attention_dispatch.rs::flash_attention_tiled 12 35
-crates/aprender-serve/src/gguf/inference/flash_attention_tiled.rs::flash_attention_tiled 12 35
 crates/aprender-serve/src/gguf/inference/forward/attention.rs::tiled_single_head_attention 11 29
 crates/aprender-serve/src/gguf/inference/forward/batch_size.rs::batch_generate 14 40
 crates/aprender-serve/src/gguf/inference/forward/batched.rs::forward_batch_with_cache 15 32

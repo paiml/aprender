@@ -516,3 +516,52 @@ it, because a stale override is RED.
 - `gpu/simd_ops.rs::simd_softmax`: sums with trueno SIMD, so its add order differs.
 - `quantize_rmsnorm_into.rs::softmax_avx2`: the live AVX2 kernel. `_mm256_max_ps`
   handles NaN differently from `f32::max`.
+
+### 9.10 Phase 2 step 5a delivered: tiled attention home and dead copies (2026-09-26)
+
+Step 5 is the attention family, which had 26 baseline rows. A read-only survey split
+them into four groups:
+- **Dead** (4 rows). Nothing compiles these files: no `mod` declares them and no live
+  file `include!`s them.
+- **Family B** (3 rows). Online-softmax tiled attention.
+- **Family A** (11 rows). Scalar one-row attention. These are left for step 5b.
+- **Different operators.** SIMD dot/axpy, trueno, GPU matmul, and the
+  `flash_attention_dispatch.rs` rescale form. These stay as duplicates, each needing a
+  parity receipt.
+
+**Family B home.** `ops::attend_row_online_tiled(q_i, k, v, head_dim, n_keys, scale,
+tile_size, out)` holds the per-row body of `tiled_causal_attention`,
+`tiled_bidirectional_attention` and `tiled_cross_attention`, moved byte for byte. The
+three bodies were identical except for the key count, which is `i + 1`, `seq_len` or
+`encoder_len`. Each method is now a row loop that calls the home. `tile_size.max(1)`
+moved into the home, and `tile_size_zero_is_clamped_to_one_like_the_callers_did` pins
+that.
+
+**Proof of equivalence.** `attend_row_online_tiled_equivalence_tests` keeps a frozen
+copy of the old body and compares it with the home by `to_bits()` over 480 cases:
+- head_dim in {1, 8, 64, 128}
+- n_keys in {0, 1, 3, 17, 64, 130}
+- tile in {1, 4, 16, 64, 256}
+- four magnitudes
+
+**Dead files removed (4 rows):**
+- `gguf/inference/cache.rs`: three rows. It was an older copy of `attention_gqa.rs`,
+  and the only file that referenced it was the next one.
+- `gguf/inference/flash_attention_tiled.rs`: one row. It was the same as
+  `flash_attention_dispatch.rs` apart from its include line.
+- `apr_transformer/compute_attention.rs`: its row was already a byte-identical copy of
+  `cache_attention.rs`. It was not included anywhere.
+
+The build proves the deletion: `cargo clippy` with and without `cuda` still compiles.
+
+**Rows: 36 → 28, all 8 deleted.** Also removed the `complexity_baseline.txt` row for
+the deleted `flash_attention_tiled.rs`.
+
+**Step 5b, next: family A.** It needs `ops::attend_row_scalar` with two enum parameters:
+- the score scale: `* scale` or `/ sqrt(hd)`, for qwen35 `forward_attention`
+- `SoftmaxNorm`
+
+Key access goes through closures, so the four layouts (packed, `&[&[f32]]`, cache plus
+current, head-major) share one body. The dot product must stay a plain `0.0f32` loop:
+`zip().map().sum()` starts from `-0.0` on some toolchains, which changes the sign of an
+all-zero dot. Each migration needs its own frozen-copy test.

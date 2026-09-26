@@ -777,6 +777,187 @@ pub fn softmax_scalar_in_place(x: &mut [f32], form: SoftmaxNorm) {
     softmax_normalize(x, sum, form);
 }
 
+/// Online-softmax attention for ONE query row over the first `n_keys` rows of
+/// `k`/`v` (each `[_, head_dim]`), processed in tiles of `tile_size` keys
+/// (PP-ARCH-001 §9.10, the shared tiled-attention home).
+///
+/// Scores are `dot(q_i, k_j) * scale`, dots summed left to right in scalar
+/// f32. The running output is rescaled only when a tile raises the running
+/// max. `out` (`[head_dim]`) is written with `acc / sum` only when the sum is
+/// positive, so a caller's zeroed row stays zero otherwise. Bit-identical to
+/// the causal, bidirectional and cross copies it replaced; they differ only in
+/// `n_keys` (`i + 1`, `seq_len`, `encoder_len`).
+#[allow(clippy::too_many_arguments)]
+pub fn attend_row_online_tiled(
+    q_i: &[f32],
+    k: &[f32],
+    v: &[f32],
+    head_dim: usize,
+    n_keys: usize,
+    scale: f32,
+    tile_size: usize,
+    out: &mut [f32],
+) {
+    let tile_size = tile_size.max(1);
+    let mut running_max = f32::NEG_INFINITY;
+    let mut running_sum = 0.0f32;
+    let mut running_output = vec![0.0f32; head_dim];
+
+    for tile_start in (0..n_keys).step_by(tile_size) {
+        let tile_end = (tile_start + tile_size).min(n_keys);
+
+        let mut tile_scores = Vec::with_capacity(tile_end - tile_start);
+        for j in tile_start..tile_end {
+            let mut dot = 0.0f32;
+            for d in 0..head_dim {
+                dot += q_i[d] * k[j * head_dim + d];
+            }
+            tile_scores.push(dot * scale);
+        }
+
+        let tile_max = tile_scores
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        let new_max = running_max.max(tile_max);
+        if new_max > running_max && running_sum > 0.0 {
+            let rescale = (running_max - new_max).exp();
+            running_sum *= rescale;
+            for out_val in &mut running_output {
+                *out_val *= rescale;
+            }
+        }
+        running_max = new_max;
+
+        for (idx, &score) in tile_scores.iter().enumerate() {
+            let j = tile_start + idx;
+            let weight = (score - running_max).exp();
+            running_sum += weight;
+            for d in 0..head_dim {
+                running_output[d] += weight * v[j * head_dim + d];
+            }
+        }
+    }
+
+    if running_sum > 0.0 {
+        for d in 0..head_dim {
+            out[d] = running_output[d] / running_sum;
+        }
+    }
+}
+
+#[cfg(test)]
+mod attend_row_online_tiled_equivalence_tests {
+    use super::attend_row_online_tiled;
+
+    // Frozen copy of the per-site body (tiled_causal/bidirectional/cross,
+    // batch_tiled_causal_owned.rs before step 5), for one query row.
+    #[allow(clippy::too_many_arguments)]
+    fn reference(
+        q_i: &[f32],
+        k: &[f32],
+        v: &[f32],
+        head_dim: usize,
+        n_keys: usize,
+        scale: f32,
+        tile_size: usize,
+        out: &mut [f32],
+    ) {
+        let mut running_max = f32::NEG_INFINITY;
+        let mut running_sum = 0.0f32;
+        let mut running_output = vec![0.0f32; head_dim];
+        for tile_start in (0..n_keys).step_by(tile_size) {
+            let tile_end = (tile_start + tile_size).min(n_keys);
+            let mut tile_scores = Vec::with_capacity(tile_end - tile_start);
+            for j in tile_start..tile_end {
+                let mut dot = 0.0f32;
+                for d in 0..head_dim {
+                    dot += q_i[d] * k[j * head_dim + d];
+                }
+                tile_scores.push(dot * scale);
+            }
+            let tile_max = tile_scores
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
+            let new_max = running_max.max(tile_max);
+            if new_max > running_max && running_sum > 0.0 {
+                let rescale = (running_max - new_max).exp();
+                running_sum *= rescale;
+                for out_val in &mut running_output {
+                    *out_val *= rescale;
+                }
+            }
+            running_max = new_max;
+            for (idx, &score) in tile_scores.iter().enumerate() {
+                let j = tile_start + idx;
+                let weight = (score - running_max).exp();
+                running_sum += weight;
+                for d in 0..head_dim {
+                    running_output[d] += weight * v[j * head_dim + d];
+                }
+            }
+        }
+        if running_sum > 0.0 {
+            for d in 0..head_dim {
+                out[d] = running_output[d] / running_sum;
+            }
+        }
+    }
+
+    fn lcg(seed: &mut u64, mag: f32) -> f32 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((*seed >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0) * mag
+    }
+
+    #[test]
+    fn shared_home_is_bit_identical_to_the_per_site_body() {
+        let mut cases = 0;
+        let mut seed = 0x3422_0005_u64;
+        for &head_dim in &[1usize, 8, 64, 128] {
+            for &n_keys in &[0usize, 1, 3, 17, 64, 130] {
+                for &tile in &[1usize, 4, 16, 64, 256] {
+                    for &mag in &[1e-3f32, 1.0, 8.0, 60.0] {
+                        let q: Vec<f32> = (0..head_dim).map(|_| lcg(&mut seed, mag)).collect();
+                        let k: Vec<f32> = (0..n_keys * head_dim)
+                            .map(|_| lcg(&mut seed, mag))
+                            .collect();
+                        let v: Vec<f32> = (0..n_keys * head_dim)
+                            .map(|_| lcg(&mut seed, mag))
+                            .collect();
+                        let scale = 1.0 / (head_dim as f32).sqrt();
+                        let mut want = vec![0.0f32; head_dim];
+                        let mut got = vec![0.0f32; head_dim];
+                        reference(&q, &k, &v, head_dim, n_keys, scale, tile, &mut want);
+                        attend_row_online_tiled(
+                            &q, &k, &v, head_dim, n_keys, scale, tile, &mut got,
+                        );
+                        let wb: Vec<u32> = want.iter().map(|x| x.to_bits()).collect();
+                        let gb: Vec<u32> = got.iter().map(|x| x.to_bits()).collect();
+                        assert_eq!(wb, gb, "hd={head_dim} n={n_keys} tile={tile} mag={mag}");
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 480);
+    }
+
+    #[test]
+    fn tile_size_zero_is_clamped_to_one_like_the_callers_did() {
+        let q = [0.5f32, -1.0];
+        let k = [1.0f32, 2.0, -0.5, 0.25];
+        let v = [3.0f32, 4.0, 5.0, 6.0];
+        let mut a = [0.0f32; 2];
+        let mut b = [0.0f32; 2];
+        attend_row_online_tiled(&q, &k, &v, 2, 2, 0.7, 0, &mut a);
+        attend_row_online_tiled(&q, &k, &v, 2, 2, 0.7, 1, &mut b);
+        assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+    }
+}
+
 #[cfg(test)]
 mod softmax_scalar_equivalence_tests {
     use super::{softmax_exp_in_place, softmax_normalize, softmax_scalar_in_place, SoftmaxNorm};
