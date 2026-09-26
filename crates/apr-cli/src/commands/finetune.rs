@@ -379,6 +379,7 @@ fn execute_training(
     model_size: Option<&str>,
     gpu_backend: &str,
     max_seq_len: Option<usize>,
+    seed: u64,
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
@@ -471,7 +472,7 @@ fn execute_training(
             .parent()
             .unwrap_or(Path::new("."))
             .join("checkpoints"),
-        seed: 42,
+        seed,
         log_interval: 1,
         warmup_fraction: 0.03,
         lr_min: 1e-6,
@@ -1196,6 +1197,7 @@ fn dispatch_finetune_mode(
     task: Option<&str>,
     method: &str,
     vram_gb: f64,
+    seed: u64,
 ) -> Option<Result<()>> {
     contract_pre_vram_estimation_tolerance!();
     if merge_mode {
@@ -1229,6 +1231,7 @@ fn dispatch_finetune_mode(
             coordinator,
             expect_workers,
             json_output,
+            seed,
         ));
     }
 
@@ -1268,6 +1271,9 @@ fn dispatch_finetune_mode(
     None
 }
 
+/// Seed used when no recipe supplies one (the historical hardcoded value).
+pub(crate) const DEFAULT_SEED: u64 = 42;
+
 /// Run the finetune command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -1306,6 +1312,7 @@ pub(crate) fn run(
     json_output: bool,
     experimental_mps: bool,
     gpu_share: u32,
+    seed: u64,
 ) -> Result<()> {
     contract_pre_rank_bounds_safety!();
     contract_pre_alpha_rank_ratio!();
@@ -1353,6 +1360,7 @@ pub(crate) fn run(
         task,
         method,
         vram_gb,
+        seed,
     ) {
         return dispatched;
     }
@@ -1419,6 +1427,7 @@ pub(crate) fn run(
         model_size,
         gpu_backend,
         max_seq_len,
+        seed,
     )
 }
 
@@ -1435,6 +1444,7 @@ fn run_finetune_training(
     model_size: Option<&str>,
     gpu_backend: &str,
     max_seq_len: Option<usize>,
+    seed: u64,
 ) -> Result<()> {
     let data = match data_path {
         Some(d) if d.exists() => d,
@@ -1472,6 +1482,7 @@ fn run_finetune_training(
         model_size,
         gpu_backend,
         max_seq_len,
+        seed,
     )
 }
 
@@ -1741,6 +1752,7 @@ fn run_classify(
     coordinator: Option<&str>,
     expect_workers: Option<usize>,
     json_output: bool,
+    seed: u64,
 ) -> Result<()> {
     use entrenar::finetune::{ClassifyTrainer, TrainingConfig};
 
@@ -1838,7 +1850,7 @@ fn run_classify(
         save_every: 5,
         early_stopping_patience: 10,
         checkpoint_dir: output_dir.clone(),
-        seed: 42,
+        seed,
         log_interval: 1,
         distributed: distributed_config,
         ..TrainingConfig::default()

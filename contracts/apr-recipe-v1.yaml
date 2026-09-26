@@ -6,6 +6,7 @@ metadata:
   references:
   - "crates/aprender-train/src/recipe.rs"
   - "crates/aprender-train/src/recipe_tests.rs"
+  - "crates/apr-cli/src/commands/finetune_recipe.rs"
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
   description: >
     One declarative recipe for apr fine-tune and distill (E8 #4002, row R-1).
@@ -84,6 +85,13 @@ falsification_tests:
     cargo test -p aprender-train --lib recipe::tests::distill_with_distinct_teacher_parses
   if_fails: "the validator refuses valid recipes (a gate that refuses everything proves nothing)"
 
+- id: FALSIFY-RECIPE-006
+  rule: the finetune consumer honors what the recipe declares
+  prediction: "apr finetune --recipe carries training.seed to the trainer and refuses (naming training.batch_size) a batch size the per-sample trainer cannot honor"
+  test: |
+    cargo test -p apr-cli --lib commands::finetune_recipe::tests
+  if_fails: "a recipe field is validated but silently not applied, so the run differs from the recipe that names it"
+
 proof_obligations:
 - id: RECIPE-INV-001
   type: invariant
@@ -97,9 +105,12 @@ proof_obligations:
 - id: RECIPE-INV-004
   type: invariant
   property: "valid lora and distill recipes are accepted"
+- id: RECIPE-INV-005
+  type: invariant
+  property: "every recipe field a consumer accepts is applied by that consumer, or refused by name"
 
 verification_summary:
-  total_obligations: 4
+  total_obligations: 5
   proven: 0
-  tested: 4
+  tested: 5
   status: tested

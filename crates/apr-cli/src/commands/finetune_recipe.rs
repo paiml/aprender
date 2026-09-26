@@ -21,6 +21,7 @@ pub(crate) struct RecipeArgs {
     pub data: PathBuf,
     pub epochs: u32,
     pub learning_rate: f64,
+    pub seed: u64,
     pub hash: String,
 }
 
@@ -90,6 +91,18 @@ pub(crate) fn load(path: &Path) -> Result<RecipeArgs> {
         }
     };
 
+    // The finetune trainer steps one sample at a time; a recipe that asks for
+    // a larger batch would get a run that differs from what it declares.
+    if recipe.training.batch_size != 1 {
+        return Err(refuse_field(
+            "training.batch_size",
+            format!(
+                "apr finetune trains one sample per step; batch_size {} is not honored yet (use 1)",
+                recipe.training.batch_size
+            ),
+        ));
+    }
+
     let data = resolve(dir, &recipe.data.train);
     check_hash("data.sha256", &data, &recipe.data.sha256)?;
     let held_out = resolve(dir, &recipe.eval.held_out);
@@ -102,6 +115,7 @@ pub(crate) fn load(path: &Path) -> Result<RecipeArgs> {
         data,
         epochs: recipe.training.epochs,
         learning_rate: recipe.training.learning_rate,
+        seed: recipe.training.seed,
         hash: recipe.hash(),
     })
 }

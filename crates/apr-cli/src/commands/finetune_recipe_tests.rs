@@ -21,7 +21,7 @@ method:
   metric: loss
 training:
   epochs: 2
-  batch_size: 4
+  batch_size: 1
   learning_rate: 0.0001
   seed: 7
 "
@@ -56,6 +56,7 @@ fn a_valid_recipe_supplies_the_finetune_args() {
     assert_eq!(a.data, dir.path().join("train.jsonl"));
     // The model is never opened: a nonexistent model path still loads.
     assert_eq!(a.model, PathBuf::from("/models/does-not-exist.apr"));
+    assert_eq!(a.seed, 7);
     assert_eq!(a.hash.len(), 64);
 }
 
@@ -86,6 +87,11 @@ fn refusals_name_the_recipe_field() {
             "distill routed to finetune",
             text.replace(LORA, "  kind: distill\n  teacher: /models/t.apr\n"),
             "method.kind",
+        ),
+        (
+            "batch the trainer cannot honor",
+            text.replace("batch_size: 1", "batch_size: 4"),
+            "training.batch_size",
         ),
         (
             "schema refusal passes through",
