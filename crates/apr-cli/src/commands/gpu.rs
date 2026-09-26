@@ -6,6 +6,17 @@
 use crate::error::Result;
 use crate::CliError;
 
+/// What `apr gpu` suggests when the ledger finds no GPU (#2661).
+///
+/// The ledger only sees NVIDIA devices, so "no GPU" here does not mean CPU-only:
+/// wgpu reaches a Metal or Vulkan GPU the ledger cannot see. The old hint named
+/// `apr run --device cpu`, a flag `apr run` does not have; every command quoted
+/// here is parsed by `apr`'s own CLI in the tests.
+pub(crate) const NO_LEDGER_GPU_HINT: [&str; 2] = [
+    "Hint: `apr run --backend wgpu <model>` uses a Metal/Vulkan GPU if present;",
+    "      `apr run --backend cpu <model>` forces CPU inference.",
+];
+
 #[provable_contracts_macros::contract(
     "apr-cli-operations-v1",
     equation = "side_effect_classification"
@@ -60,7 +71,9 @@ pub fn run(json: bool) -> Result<()> {
         // Contract: apr-gpu-presence-v1 F-GPU-PRESENCE-001 (paiml/aprender#624).
         println!("No discrete GPU detected on this host.");
         println!("  (entrenar ledger returned uuid={uuid}, total_mb={total_mb})");
-        println!("  Hint: use `apr run --device cpu <model>` for CPU inference.");
+        for line in NO_LEDGER_GPU_HINT {
+            println!("  {line}");
+        }
     } else {
         println!("GPU: {uuid}");
         println!("Total: {total_mb} MB");
@@ -78,4 +91,60 @@ pub fn run(json: bool) -> Result<()> {
 
     contract_post_json_output_consistency!(&());
     Ok(())
+}
+
+#[cfg(test)]
+mod no_ledger_gpu_hint_tests {
+    use super::NO_LEDGER_GPU_HINT;
+
+    /// Parse argv on a 16 MB stack: clap's recursive destructuring of the full
+    /// `Commands` enum overflows the default 2 MiB test-thread stack in debug builds.
+    fn parse_error(argv: &[&str]) -> Option<String> {
+        let argv: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                crate::Cli::try_parse_from(argv)
+                    .err()
+                    .map(|e| e.to_string())
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("join parse thread")
+    }
+
+    /// Every `apr ...` command quoted in the hint must parse (#2661: the old
+    /// hint quoted `--device cpu`, which `apr run` rejects).
+    #[test]
+    fn every_command_in_the_hint_parses() {
+        let mut checked = 0;
+        for line in NO_LEDGER_GPU_HINT {
+            let quoted = line.split('`').nth(1).expect("hint quotes a command");
+            let argv: Vec<&str> = quoted
+                .split_whitespace()
+                .map(|w| if w == "<model>" { "m.gguf" } else { w })
+                .collect();
+            assert_eq!(argv[0], "apr", "{line}");
+            if let Some(e) = parse_error(&argv) {
+                panic!("`{quoted}` does not parse: {e}");
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 2);
+    }
+
+    /// The pre-#2661 hint must fail the same check (proves the test can go RED).
+    #[test]
+    fn the_old_hint_does_not_parse() {
+        assert!(parse_error(&["apr", "run", "--device", "cpu", "m.gguf"]).is_some());
+    }
+
+    #[test]
+    fn the_hint_offers_the_gpu_backend_the_ledger_cannot_see() {
+        assert!(NO_LEDGER_GPU_HINT
+            .iter()
+            .any(|l| l.contains("--backend wgpu")));
+        assert!(!NO_LEDGER_GPU_HINT.iter().any(|l| l.contains("--device")));
+    }
 }

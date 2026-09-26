@@ -416,7 +416,49 @@ pub fn detect_gpu_uuid() -> String {
                 Some(line[uuid_start..end].to_string())
             })
         })
+        .or_else(|| {
+            // #2661: Apple silicon has no nvidia-smi; its GPU is the SoC's.
+            is_apple_silicon()
+                .then(|| sysctl_value("machdep.cpu.brand_string"))
+                .flatten()
+                .and_then(|brand| apple_gpu_id(&brand))
+        })
         .unwrap_or_else(|| "GPU-unknown".to_string())
+}
+
+/// Is this host Apple silicon, where the GPU shares the SoC's memory? (#2661)
+///
+/// Every Apple-silicon Mac is unified-memory and none has `nvidia-smi`, so
+/// asking `nvidia-smi` — the only question this module used to ask — made
+/// `apr gpu` on an M4 report "No discrete GPU" and steer the user to
+/// `--device cpu`, while the same command on a GB10 reported unified memory.
+fn is_apple_silicon() -> bool {
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
+}
+
+/// Read one `sysctl -n KEY` value (macOS), trimmed; `None` if absent or empty.
+fn sysctl_value(key: &str) -> Option<String> {
+    let out = std::process::Command::new("sysctl").args(["-n", key]).output().ok()?;
+    let value = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !value.is_empty()).then_some(value)
+}
+
+/// Ledger identity for an Apple-silicon GPU from `machdep.cpu.brand_string`
+/// (`"Apple M4"` → `"Apple-M4"`); `None` for a non-Apple or empty brand.
+///
+/// The id keys reservations in the ledger, so it must be stable per host and
+/// contain no whitespace.
+pub fn apple_gpu_id(brand: &str) -> Option<String> {
+    let brand = brand.trim();
+    brand.starts_with("Apple ").then(|| brand.split_whitespace().collect::<Vec<_>>().join("-"))
+}
+
+/// `sysctl -n hw.memsize` (bytes) → MB; 0 when unparseable.
+pub fn parse_hw_memsize_mb(bytes: &str) -> usize {
+    bytes
+        .trim()
+        .parse::<u64>()
+        .map_or(0, |b| usize::try_from(b / (1024 * 1024)).unwrap_or(usize::MAX))
 }
 
 /// Detect total GPU memory in MB via `nvidia-smi`.
@@ -448,8 +490,11 @@ pub fn detect_total_memory_mb() -> usize {
     0
 }
 
-/// Read total system memory from /proc/meminfo (Linux).
+/// Read total system memory: `/proc/meminfo` (Linux), `sysctl hw.memsize` (macOS, #2661).
 fn sys_total_memory_mb() -> usize {
+    if cfg!(target_os = "macos") {
+        return sysctl_value("hw.memsize").map_or(0, |b| parse_hw_memsize_mb(&b));
+    }
     std::fs::read_to_string("/proc/meminfo")
         .ok()
         .and_then(|s| {
@@ -462,6 +507,10 @@ fn sys_total_memory_mb() -> usize {
 
 /// Detect whether GPU has unified memory (Jetson) vs discrete.
 pub fn detect_memory_type() -> MemoryType {
+    // #2661: Apple silicon is unified by construction and has no nvidia-smi to ask.
+    if is_apple_silicon() {
+        return MemoryType::Unified;
+    }
     std::process::Command::new("nvidia-smi")
         .args(["--query-gpu=name", "--format=csv,noheader"])
         .output()
@@ -1110,5 +1159,42 @@ mod tests {
         assert_eq!(restored.budget_mb, 8000);
         assert_eq!(restored.actual_mb, Some(7500));
         assert_eq!(restored.task, "serde-test");
+    }
+
+    // #2661: Apple-silicon detection, seeded with the values read off the M4 mini.
+    #[test]
+    fn apple_gpu_id_case_table() {
+        for (brand, want) in [
+            ("Apple M4", Some("Apple-M4")),
+            ("Apple M4 Pro\n", Some("Apple-M4-Pro")),
+            ("Apple  M2   Ultra", Some("Apple-M2-Ultra")),
+            ("Intel(R) Core(TM) i9-9980HK", None),
+            ("Apple", None),
+            ("", None),
+        ] {
+            assert_eq!(apple_gpu_id(brand).as_deref(), want, "{brand:?}");
+        }
+    }
+
+    #[test]
+    fn parse_hw_memsize_mb_case_table() {
+        for (bytes, want) in [
+            ("17179869184\n", 16384),
+            ("68719476736", 65536),
+            ("1048575", 0),
+            ("", 0),
+            ("16G", 0),
+            ("-1", 0),
+        ] {
+            assert_eq!(parse_hw_memsize_mb(bytes), want, "{bytes:?}");
+        }
+    }
+
+    #[test]
+    fn apple_silicon_is_always_unified() {
+        if is_apple_silicon() {
+            assert_eq!(detect_memory_type(), MemoryType::Unified);
+            assert!(sys_total_memory_mb() > 0, "hw.memsize must be read on macOS");
+        }
     }
 }
