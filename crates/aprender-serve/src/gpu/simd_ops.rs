@@ -75,27 +75,20 @@ pub fn scalar_rope(input: &[f32], seq_len: usize, head_dim: usize, theta: f32) -
     let num_heads = hidden_dim / head_dim;
     let mut output = vec![0.0f32; input.len()];
 
-    // Compute RoPE for each position
     for pos in 0..seq_len {
         for head in 0..num_heads {
             let head_start = pos * hidden_dim + head * head_dim;
-
-            // Apply rotary embedding to pairs of elements
-            for i in 0..head_dim / 2 {
-                let freq = 1.0 / theta.powf((2.0 * i as f32) / head_dim as f32);
-                let angle = pos as f32 * freq;
-                let cos_val = angle.cos();
-                let sin_val = angle.sin();
-
-                let idx0 = head_start + i;
-                let idx1 = head_start + i + head_dim / 2;
-
-                if idx1 < input.len() {
-                    let x0 = input[idx0];
-                    let x1 = input[idx1];
-                    output[idx0] = x0 * cos_val - x1 * sin_val;
-                    output[idx1] = x0 * sin_val + x1 * cos_val;
-                }
+            if head_start + head_dim <= input.len() {
+                let out = &mut output[head_start..head_start + head_dim];
+                out.copy_from_slice(&input[head_start..head_start + head_dim]);
+                crate::gguf::ops::rope_into(
+                    out,
+                    1,
+                    head_dim,
+                    pos,
+                    theta,
+                    crate::gguf::ops::RopeStyle::Neox,
+                );
             }
         }
     }

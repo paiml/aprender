@@ -375,3 +375,44 @@ Folding `standard_softmax` into `ops::softmax` changes numerics: `/ sum`
 becomes `* (1/sum)`. So it belongs to the softmax-family step, with its parity
 receipt.
 
+
+### 9.7 Phase 2 step 2 delivered: RoPE shared home (2026-09-26)
+
+The shared home is `gguf::ops::rope_into(x, num_heads, head_dim, position, theta,
+RopeStyle)`, where `RopeStyle::{Norm, Neox}` and `RopeStyle::from_rope_type(2) == Neox`.
+It builds the sin/cos table once per call instead of once per head.
+
+**Proof of equivalence.** `ops::rope_into_equivalence_tests` keeps the old per-site
+loop frozen and compares `to_bits()` across 360 cases:
+- head_dim {2, 64, 80, 128, 256, 512}
+- heads {1, 3, 8}
+- positions {0, 1, 17, 4095, 131071}
+- theta {1e4, 1e6}
+- both styles
+- a trailing partial head
+
+Every migrated site computed the same `freq = 1/theta^(2i/d)` and `(pos*freq).sin_cos()`,
+so the change is bit-identical and needs no parity receipt.
+
+**Migrated (11 baseline rows deleted, 72 → 61).** Each of these now calls the shared home:
+- `apr/helpers.rs::apply_rope_norm`
+- `apr_transformer/helpers.rs::apply_rope_f32`
+- `apr_transformer/attention_kernels.rs::apply_rope`. Its private
+  `apply_rope_to_head` and `apply_rope_quad` are deleted.
+- both `cuda/executor/*::apply_rope_to_buffer`
+- `gpu/adapters/apr_q4_apply_rope_gpu.rs::apply_rope_inplace`
+- `gpu/scheduler/kv.rs::apply_rope`
+- `gpu/scheduler/ops.rs::apply_rope_inline`. Its contract macros are kept.
+- `gpu/simd_ops.rs::scalar_rope`
+- `inference/norm.rs::apply_rope`
+
+**Behaviour change on malformed input only.** If a head does not fit in `x`, it is now
+skipped. Before, some sites rotated a partial pair and others panicked on the index.
+
+**Deferred, because each one's numerics differ and needs a parity receipt:**
+- `gguf/inference/rope.rs::apply_rope`: NEOX runs the AVX2/AVX-512 FMA kernel. This
+  is the Qwen2.5-Coder parity path.
+- `forward_qwen35.rs::apply_partial_neox_rope`: iterative theta. It is a composition
+  under §9.3.
+- `gpu/adapters/apr_q4k.rs::apply_rope_neox`: computed in f64.
+- `gpu/simd_ops.rs` frequency and trig tables: trueno vectors.

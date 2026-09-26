@@ -336,29 +336,14 @@ impl CudaExecutor {
     /// Rotates Q and K by position-dependent angles to inject positional information.
     /// This is called before attention to enable position-aware attention.
     fn apply_rope_to_buffer(&self, buffer: &mut [f32], num_heads: usize, position: usize) {
-        let head_dim = self.kv_head_dim;
-        let half_dim = head_dim / 2;
-
-        for h in 0..num_heads {
-            let head_start = h * head_dim;
-
-            for i in 0..half_dim {
-                let freq = 1.0 / self.rope_theta.powf(2.0 * i as f32 / head_dim as f32);
-                let angle = position as f32 * freq;
-                let cos_val = angle.cos();
-                let sin_val = angle.sin();
-
-                let idx1 = head_start + i;
-                let idx2 = head_start + i + half_dim;
-
-                if idx2 < buffer.len() {
-                    let x1 = buffer[idx1];
-                    let x2 = buffer[idx2];
-                    buffer[idx1] = x1 * cos_val - x2 * sin_val;
-                    buffer[idx2] = x1 * sin_val + x2 * cos_val;
-                }
-            }
-        }
+        crate::gguf::ops::rope_into(
+            buffer,
+            num_heads,
+            self.kv_head_dim,
+            position,
+            self.rope_theta,
+            crate::gguf::ops::RopeStyle::Neox,
+        );
     }
 
     /// Get current KV cache length for a layer

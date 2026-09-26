@@ -331,37 +331,14 @@ pub(crate) fn apply_rope_f32(
     rope_theta: f32,
     rope_type: u32,
 ) {
-    let half_dim = head_dim / 2;
-    let pos_f32 = position as f32;
-    let head_dim_f32 = head_dim as f32;
-
-    for h in 0..num_heads {
-        let head_start = h * head_dim;
-
-        if head_start + head_dim > x.len() {
-            continue;
-        }
-
-        for i in 0..half_dim {
-            let freq = 1.0 / rope_theta.powf(2.0 * i as f32 / head_dim_f32);
-            let angle = pos_f32 * freq;
-            let (sin_val, cos_val) = angle.sin_cos();
-
-            // NEOX (type 2): pair x[i] with x[i + half_dim] (split halves).
-            // NORM (type 0): pair x[2i] with x[2i+1] (adjacent).
-            let (idx1, idx2) = if rope_type == 2 {
-                (head_start + i, head_start + half_dim + i)
-            } else {
-                (head_start + 2 * i, head_start + 2 * i + 1)
-            };
-
-            let x1 = x[idx1];
-            let x2 = x[idx2];
-
-            x[idx1] = x1 * cos_val - x2 * sin_val;
-            x[idx2] = x1 * sin_val + x2 * cos_val;
-        }
-    }
+    crate::gguf::ops::rope_into(
+        x,
+        num_heads,
+        head_dim,
+        position,
+        rope_theta,
+        crate::gguf::ops::RopeStyle::from_rope_type(rope_type),
+    );
 }
 
 /// RMSNorm (Root Mean Square Layer Normalization)

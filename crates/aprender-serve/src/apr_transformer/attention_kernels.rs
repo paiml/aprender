@@ -213,29 +213,15 @@ impl QuantizedAprTransformerQ4 {
     /// `(x[i], x[i+head_dim/2])`. Matches llama.cpp `ggml_rope`.
     fn apply_rope(&self, x: &mut [f32], position: usize, num_heads_in_x: usize) {
         let head_dim = self.config.hidden_dim / self.config.num_heads;
-        let half_dim = head_dim / 2;
-        let theta = self.config.rope_theta;
-        let pos_f32 = position as f32;
-        let head_dim_f32 = head_dim as f32;
         let rope_type = crate::gguf::infer_rope_type(&self.config.architecture);
-
-        for h in 0..num_heads_in_x {
-            let head_start = h * head_dim;
-
-            if head_start + head_dim > x.len() {
-                continue;
-            }
-
-            apply_rope_to_head(
-                x,
-                head_start,
-                half_dim,
-                theta,
-                pos_f32,
-                head_dim_f32,
-                rope_type,
-            );
-        }
+        crate::gguf::ops::rope_into(
+            x,
+            num_heads_in_x,
+            head_dim,
+            position,
+            self.config.rope_theta,
+            crate::gguf::ops::RopeStyle::from_rope_type(rope_type),
+        );
     }
 
     /// Compute scaled dot-product attention with causal mask and GQA support
@@ -336,97 +322,7 @@ impl QuantizedAprTransformerQ4 {
     }
 }
 
-/// Apply RoPE rotation to a single head's dimensions (PMAT-797).
-///
-/// `rope_type == 2` (NEOX) pairs `x[head_start+i]` with `x[head_start+half_dim+i]`
-/// (split halves); any other value (NORM) pairs adjacent `x[2i]` with `x[2i+1]`.
-/// The NEOX path keeps the 4-wide ILP unroll; NORM is scalar (correctness first).
-fn apply_rope_to_head(
-    x: &mut [f32],
-    head_start: usize,
-    half_dim: usize,
-    theta: f32,
-    pos_f32: f32,
-    head_dim_f32: f32,
-    rope_type: u32,
-) {
-    if rope_type == 2 {
-        // NEOX: split halves. idx2 = head_start + half_dim + i.
-        let idx2_start = head_start + half_dim;
-        let mut i = 0;
-        while i + 4 <= half_dim {
-            apply_rope_quad(x, head_start, idx2_start, i, theta, pos_f32, head_dim_f32);
-            i += 4;
-        }
-        while i < half_dim {
-            let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
-            let (sin_val, cos_val) = (pos_f32 * freq).sin_cos();
 
-            let x1 = x[head_start + i];
-            let x2 = x[idx2_start + i];
-
-            x[head_start + i] = x1 * cos_val - x2 * sin_val;
-            x[idx2_start + i] = x1 * sin_val + x2 * cos_val;
-
-            i += 1;
-        }
-    } else {
-        // NORM: adjacent pairs. (idx1, idx2) = (head_start+2i, head_start+2i+1).
-        for i in 0..half_dim {
-            let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
-            let (sin_val, cos_val) = (pos_f32 * freq).sin_cos();
-
-            let idx1 = head_start + 2 * i;
-            let idx2 = idx1 + 1;
-            let x1 = x[idx1];
-            let x2 = x[idx2];
-
-            x[idx1] = x1 * cos_val - x2 * sin_val;
-            x[idx2] = x1 * sin_val + x2 * cos_val;
-        }
-    }
-}
-
-/// Apply NEOX-style RoPE rotation to 4 consecutive dimension pairs (ILP-friendly).
-fn apply_rope_quad(
-    x: &mut [f32],
-    head_start: usize,
-    idx2_start: usize,
-    i: usize,
-    theta: f32,
-    pos_f32: f32,
-    head_dim_f32: f32,
-) {
-    let freq0 = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
-    let freq1 = 1.0 / theta.powf(2.0 * (i + 1) as f32 / head_dim_f32);
-    let freq2 = 1.0 / theta.powf(2.0 * (i + 2) as f32 / head_dim_f32);
-    let freq3 = 1.0 / theta.powf(2.0 * (i + 3) as f32 / head_dim_f32);
-
-    let (sin0, cos0) = (pos_f32 * freq0).sin_cos();
-    let (sin1, cos1) = (pos_f32 * freq1).sin_cos();
-    let (sin2, cos2) = (pos_f32 * freq2).sin_cos();
-    let (sin3, cos3) = (pos_f32 * freq3).sin_cos();
-
-    let x1_0 = x[head_start + i];
-    let x1_1 = x[head_start + i + 1];
-    let x1_2 = x[head_start + i + 2];
-    let x1_3 = x[head_start + i + 3];
-
-    let x2_0 = x[idx2_start + i];
-    let x2_1 = x[idx2_start + i + 1];
-    let x2_2 = x[idx2_start + i + 2];
-    let x2_3 = x[idx2_start + i + 3];
-
-    x[head_start + i] = x1_0 * cos0 - x2_0 * sin0;
-    x[head_start + i + 1] = x1_1 * cos1 - x2_1 * sin1;
-    x[head_start + i + 2] = x1_2 * cos2 - x2_2 * sin2;
-    x[head_start + i + 3] = x1_3 * cos3 - x2_3 * sin3;
-
-    x[idx2_start + i] = x1_0 * sin0 + x2_0 * cos0;
-    x[idx2_start + i + 1] = x1_1 * sin1 + x2_1 * cos1;
-    x[idx2_start + i + 2] = x1_2 * sin2 + x2_2 * cos2;
-    x[idx2_start + i + 3] = x1_3 * sin3 + x2_3 * cos3;
-}
 
 include!("q4_simd_from_gguf.rs");
 include!("q4_simd_activations_cache.rs");

@@ -261,47 +261,14 @@ pub(crate) fn apply_rope_norm(
     theta: f32,
     rope_type: u32,
 ) {
-    let half_dim = head_dim / 2;
-
-    for h in 0..num_heads {
-        let head_offset = h * head_dim;
-
-        // Pre-compute cos/sin for this position
-        for i in 0..half_dim {
-            let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim as f32);
-            let angle = position as f32 * freq;
-            let cos_val = angle.cos();
-            let sin_val = angle.sin();
-
-            if rope_type == 2 {
-                // NEOX style: split halves (x[0..half], x[half..])
-                // Used by GPT-NeoX, Qwen2.5, and newer models
-                let idx0 = head_offset + i;
-                let idx1 = head_offset + half_dim + i;
-
-                if idx1 < x.len() {
-                    let x0 = x[idx0];
-                    let x1 = x[idx1];
-
-                    x[idx0] = x0 * cos_val - x1 * sin_val;
-                    x[idx1] = x0 * sin_val + x1 * cos_val;
-                }
-            } else {
-                // NORM style (rope_type == 0): adjacent pairs (2*i, 2*i+1)
-                // Default for LLaMA-family models
-                let idx0 = head_offset + 2 * i;
-                let idx1 = head_offset + 2 * i + 1;
-
-                if idx1 < x.len() {
-                    let x0 = x[idx0];
-                    let x1 = x[idx1];
-
-                    x[idx0] = x0 * cos_val - x1 * sin_val;
-                    x[idx1] = x0 * sin_val + x1 * cos_val;
-                }
-            }
-        }
-    }
+    crate::gguf::ops::rope_into(
+        x,
+        num_heads,
+        head_dim,
+        position,
+        theta,
+        crate::gguf::ops::RopeStyle::from_rope_type(rope_type),
+    );
 }
 
 /// Check if a file is a valid .apr v2 file

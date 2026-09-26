@@ -402,6 +402,190 @@ pub fn apply_per_head_rms_norm(qk: &mut [f32], weight: &[f32], num_heads: usize,
     }
 }
 
+/// RoPE pairing convention.
+///
+/// `Norm` rotates adjacent pairs `(2i, 2i + 1)` (LLaMA; GGUF `rope_type` 0).
+/// `Neox` rotates split halves `(i, i + head_dim / 2)` (GPT-NeoX, Qwen; GGUF
+/// `rope_type` 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RopeStyle {
+    /// Adjacent pairs `(2i, 2i + 1)`.
+    Norm,
+    /// Split halves `(i, i + head_dim / 2)`.
+    Neox,
+}
+
+impl RopeStyle {
+    /// GGUF `rope_type` 2 is NeoX; every other value is the adjacent-pair style.
+    #[must_use]
+    pub fn from_rope_type(rope_type: u32) -> Self {
+        if rope_type == 2 {
+            Self::Neox
+        } else {
+            Self::Norm
+        }
+    }
+}
+
+/// Rotary position embedding, in place, over `num_heads` contiguous heads of
+/// `head_dim` elements in `x` (PP-ARCH-001 §9.2, the shared RoPE home).
+///
+/// Pair `i` rotates by `position * theta^(-2i / head_dim)`, computed in scalar
+/// f32 as `1.0 / theta.powf(2.0 * i / head_dim)` with no fused multiply-add, so
+/// the result is bit-identical to the per-site loops this replaced. The
+/// sin/cos table is built once per call and shared by every head. A head that
+/// does not fit in `x` is skipped, never partially rotated.
+pub fn rope_into(
+    x: &mut [f32],
+    num_heads: usize,
+    head_dim: usize,
+    position: usize,
+    theta: f32,
+    style: RopeStyle,
+) {
+    let half_dim = head_dim / 2;
+    if half_dim == 0 {
+        return;
+    }
+    let pos_f32 = position as f32;
+    let head_dim_f32 = head_dim as f32;
+
+    let mut stack = [0.0f32; 256];
+    let mut heap = Vec::new();
+    let table: &mut [f32] = if half_dim <= 128 {
+        &mut stack[..2 * half_dim]
+    } else {
+        heap.resize(2 * half_dim, 0.0);
+        &mut heap
+    };
+    let (sin_t, cos_t) = table.split_at_mut(half_dim);
+    for i in 0..half_dim {
+        let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
+        let (sin_v, cos_v) = (pos_f32 * freq).sin_cos();
+        sin_t[i] = sin_v;
+        cos_t[i] = cos_v;
+    }
+
+    for h in 0..num_heads {
+        let start = h * head_dim;
+        let Some(head) = x.get_mut(start..start + head_dim) else {
+            break;
+        };
+        for i in 0..half_dim {
+            let (a, b) = match style {
+                RopeStyle::Neox => (i, i + half_dim),
+                RopeStyle::Norm => (2 * i, 2 * i + 1),
+            };
+            let x0 = head[a];
+            let x1 = head[b];
+            head[a] = x0 * cos_t[i] - x1 * sin_t[i];
+            head[b] = x0 * sin_t[i] + x1 * cos_t[i];
+        }
+    }
+}
+
+#[cfg(test)]
+mod rope_into_equivalence_tests {
+    use super::{rope_into, RopeStyle};
+
+    /// FROZEN copy of the per-site loop that `rope_into` replaced (#3422): the
+    /// trig recomputed per head per pair, heads that do not fit skipped. Do not
+    /// "improve" it; it is the bit-equality oracle for the migration.
+    fn frozen_reference(
+        x: &mut [f32],
+        num_heads: usize,
+        head_dim: usize,
+        position: usize,
+        theta: f32,
+        rope_type: u32,
+    ) {
+        let half_dim = head_dim / 2;
+        for h in 0..num_heads {
+            let head_start = h * head_dim;
+            if head_start + head_dim > x.len() {
+                continue;
+            }
+            for i in 0..half_dim {
+                let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim as f32);
+                let angle = position as f32 * freq;
+                let cos_val = angle.cos();
+                let sin_val = angle.sin();
+                let (i1, i2) = if rope_type == 2 {
+                    (head_start + i, head_start + half_dim + i)
+                } else {
+                    (head_start + 2 * i, head_start + 2 * i + 1)
+                };
+                let x1 = x[i1];
+                let x2 = x[i2];
+                x[i1] = x1 * cos_val - x2 * sin_val;
+                x[i2] = x1 * sin_val + x2 * cos_val;
+            }
+        }
+    }
+
+    fn input(n: usize, seed: u32) -> Vec<f32> {
+        let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+        (0..n)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state as f32 / u32::MAX as f32) * 8.0 - 4.0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rope_into_is_bit_identical_to_the_frozen_per_site_loop() {
+        let mut cases = 0;
+        for &head_dim in &[2usize, 64, 80, 128, 256, 512] {
+            for &num_heads in &[1usize, 3, 8] {
+                for &position in &[0usize, 1, 17, 4095, 131_071] {
+                    for &theta in &[10_000.0f32, 1_000_000.0] {
+                        for rope_type in [0u32, 2] {
+                            // One extra partial head: it must be left untouched.
+                            let n = num_heads * head_dim + head_dim / 2;
+                            let mut want = input(n, (head_dim * 31 + position) as u32);
+                            let mut got = want.clone();
+                            frozen_reference(
+                                &mut want,
+                                num_heads + 1,
+                                head_dim,
+                                position,
+                                theta,
+                                rope_type,
+                            );
+                            rope_into(
+                                &mut got,
+                                num_heads + 1,
+                                head_dim,
+                                position,
+                                theta,
+                                RopeStyle::from_rope_type(rope_type),
+                            );
+                            let want_bits: Vec<u32> = want.iter().map(|v| v.to_bits()).collect();
+                            let got_bits: Vec<u32> = got.iter().map(|v| v.to_bits()).collect();
+                            assert_eq!(got_bits, want_bits, "head_dim={head_dim} heads={num_heads} pos={position} theta={theta} rope_type={rope_type}");
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 6 * 3 * 5 * 2 * 2);
+    }
+
+    #[test]
+    fn rope_into_rotates_position_zero_to_identity_and_nonzero_away_from_it() {
+        let orig = input(128, 7);
+        let mut x = orig.clone();
+        rope_into(&mut x, 2, 64, 0, 10_000.0, RopeStyle::Neox);
+        assert_eq!(x, orig);
+        rope_into(&mut x, 2, 64, 5, 10_000.0, RopeStyle::Neox);
+        assert_ne!(x, orig);
+    }
+}
+
 include!("ops_gelu_zero_positive.rs");
 
 #[cfg(test)]
