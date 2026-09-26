@@ -292,6 +292,14 @@ fn a_reference_and_its_kernel_share_an_equation() {
     );
     assert!(registry.find_binding("c-v1", "e").is_none());
 
+    let two_references = pair.replace("    kernel: true\n", "");
+    let registry = parse_binding_str(&two_references).expect("parses");
+    let rules = error_rules(&validate_binding_registry(&registry));
+    assert!(
+        rules.iter().any(|r| r.starts_with("BINDING-006")),
+        "{rules:?}"
+    );
+
     // A kernel-only equation resolves to NO reference: the resolver never picks the kernel.
     let kernel_only = "version: 1.0.0\ntarget_crate: aprender\nbindings:\n  - contract: c-v1\n    equation: e\n    function: f\n    module_path: oxide::kernels\n    status: implemented\n    kernel: true\n";
     let registry = parse_binding_str(kernel_only).expect("parses");

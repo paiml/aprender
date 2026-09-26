@@ -3,13 +3,13 @@
   "base": "c074ace09d",
   "base_resolved": "c074ace09d",
   "base_note": "no origin/c074ace09d exists; judged against the local ref",
-  "head": "b757dd99e5026428154277d2cd26f45a438e6292",
-  "diff_sha256": "9ce052091833c3b807958d72c7df29e00577d195ba95812642c1052b943079c6",
+  "head": "8a94f58797dd50a32b85131a8034002d3e6bf475",
+  "diff_sha256": "d72b160aa00bac093130a6f27d44f71d7c36d9884b1a5408048a6897c59a4df8",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 15641,
-  "prompt_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
+  "prompt_bytes": 46367,
+  "prompt_sha256": "ab2e7556f67101f8bdddae7cc057a4ae2d71e6c37df57dbe7f293e2297baafc4",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -20,25 +20,69 @@
     {
       "lane": 1,
       "status": "SUCCESS",
-      "verdict": "FAIL",
-      "summary": "The receipt explicitly claims that 'The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate'. However, the diff reveals unmentioned functional code changes: an update to `KernelBinding` to add `kernel: bool` (along with associated registry and test modifications) and a refactor of the `jq` command in `scripts/contracts_gate.sh` to use a heredoc. These changes are not asked for by the ticket, and their presence directly refutes the receipt's claim of no other changes.",
+      "verdict": "PASS",
+      "summary": "The diff (delta over c074ace09d, commit b757dd99e5) fixes the two CI failures the ONT batch fold introduced: BINDING-006 now keys duplicate detection on (contract, equation, kernel) so a reference and its #[kernel] can share an equation, find_binding correctly filters out kernel entries, the new artifact_tests.rs test exercises all three cases described (ref+kernel passes, two-kernel/two-reference collide, kernel-only resolves to no reference), and the contracts_gate.sh jq invocation is moved into a heredoc for SC2171 with no behavior change. The receipt candidly discloses this fix (superseding the earlier \"only other change is the receipt/roadmap\" claim that round-1 quorum lanes correctly flagged as false on the prior commit), so the substantive FAIL findings from the embedded round-1 quorum JSON no longer apply to this diff. I found no evidence the fix does anything the ticket forbids or weakens a gate in a way not justified by the new kernel-binding pattern the fold introduced. One minor factual slip: the receipt's edit count (18) overstates the actual 16 `kernel: false` struct-literal edits in the diff — cosmetic, does not affect correctness.",
       "findings": [
         {
-          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
-          "file": "crates/aprender-contracts/src/binding.rs",
-          "fix": "The diff introduces an unmentioned functional change, adding `kernel: bool` to `KernelBinding` and modifying `find_binding` and `validate_binding_registry`.",
+          "file": "docs/audits/impl-PMAT-4481-receipt.md",
+          "claim": "Receipt says \"The other 18 edits add `kernel: false` to the test/fixture struct literals\"",
           "grounding": "cited",
-          "line": 49
-        },
-        {
-          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
-          "file": "scripts/contracts_gate.sh",
-          "fix": "The diff refactors the `jq` invocation in `shapes_verdict` to use a heredoc instead of an inline string, which is an unmentioned change.",
-          "grounding": "cited",
-          "line": 57
+          "fix": "Counting the diff hunks in binding.rs (3), explain_tests.rs (6), readme_gen.rs (1), codebase_tests.rs (2), scoring_probe_tests.rs (2) and scoring_tests.rs (2) gives 16 `kernel: false` additions, not 18. Correct the count or state it approximately."
         }
       ],
-      "raw_bytes": 3814,
+      "raw_bytes": 4126,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ab2e7556f67101f8bdddae7cc057a4ae2d71e6c37df57dbe7f293e2297baafc4",
+      "trace": {
+        "input_sha256": "6957557766d665275f714470527ded97b0814c9ef90ebdce82170b11d9d8e950",
+        "output_sha256": "e2d0402780aeaf1a3df510ccddaeae62fdb21b660b36e4c9317e0f0db1703973",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff implements the fixes described in the updated receipt (BINDING-006 and SC2171) and correctly refactors the previous failing receipt text. However, it fails because two specific receipt claims are not backed by the diff: the receipt claims exactly 18 test/fixture edits were made for `kernel: false`, but only 16 are present. Additionally, the receipt claims the newly added test `a_reference_and_its_kernel_share_an_equation` checks that \"two references stay RED\", but the test code only validates three conditions, omitting the check for two references.",
+      "findings": [
+        {
+          "claim": "The other 18 edits add `kernel: false` to the test/fixture struct literals.",
+          "file": "docs/audits/impl-PMAT-4481-receipt.md",
+          "fix": "The diff adds exactly 16 `kernel: false` lines, not 18. Update the receipt to reflect the correct number of edits.",
+          "grounding": "cited",
+          "line": 20
+        },
+        {
+          "claim": "on condition of the tests in `schema/artifact_tests.rs::a_reference_and_its_kernel_share_an_equation`: a reference+kernel pair passes, two kernels are RED, two references stay RED, and a kernel-only equation resolves to no reference.",
+          "file": "docs/audits/impl-PMAT-4481-receipt.md",
+          "fix": "The newly added test `a_reference_and_its_kernel_share_an_equation` does not contain a check for \"two references stay RED\". It only validates three conditions (reference+kernel, two kernels, and kernel-only). Either update the test to include this check or remove it from the receipt claim.",
+          "grounding": "cited",
+          "line": 20
+        }
+      ],
+      "raw_bytes": 4267,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -49,10 +93,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
+      "brief_sha256": "ab2e7556f67101f8bdddae7cc057a4ae2d71e6c37df57dbe7f293e2297baafc4",
       "trace": {
-        "input_sha256": "dffc4953cc500b95d69095128305ca81b19c735f5648d3570a98bf88cdd2dc40",
-        "output_sha256": "381934d1221f261988a78d310b99e96c96ae3dba412a16aeb2278e7a5d43c6d1",
+        "input_sha256": "ad8fe420088e2c1d2be30c7cd5584c42a51ba3277e78f3f239615d63b3a67886",
+        "output_sha256": "e11cd16e1e00df3a96539632bf04a431b310b4cde09e5218e2bf704777fd484d",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -70,76 +114,31 @@
       }
     },
     {
-      "lane": 2,
-      "status": "SUCCESS",
-      "verdict": "FAIL",
-      "summary": "The PR diff fails because it includes commits (`b757dd99e5` and `c074ace09d`) that introduce functional code changes (a fix for BINDING-006) and add quorum files. This directly contradicts the PMAT-4481 ticket's strict acceptance criteria and the receipt's own claim that the original commits are unchanged and \"the only other change is this ticket's roadmap entry and receipt\".",
-      "findings": [
-        {
-          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\"",
-          "file": "crates/aprender-contracts/src/binding.rs",
-          "fix": "Revert commit b757dd99e5 from this batch PR. Functional changes and fixes must be submitted in their own ticket/PR, not folded into a strictly-scoped batch PR that forbids other changes.",
-          "grounding": "cited",
-          "line": 52
-        },
-        {
-          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\" (and the ticket's instruction that quorum is a process, not diff content)",
-          "file": "docs/audits/quorum-PMAT-4481.json",
-          "fix": "Remove the quorum file from this PR diff, as the ticket specifies it should be a process step ('process, not diff content') and explicitly restricts other changes.",
-          "grounding": "measured",
-          "line": 1
-        }
-      ],
-      "raw_bytes": 3797,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "role": "independent",
-      "model": "gemini-3.1-pro-high",
-      "model_measured": "gemini-3.1-pro-high",
-      "model_source": "measured",
-      "family": "gemini",
-      "executor": "agy",
-      "brief_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
-      "trace": {
-        "input_sha256": "21474de4c706fc9d57aac379b7df4f21e9547c0350877c03b56f0b245877bc51",
-        "output_sha256": "bd800dae370b5abace6aa10669a943c02678172955ead9f905bbb854dafc9e56",
-        "store": null,
-        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
-      },
-      "fallback": {
-        "judged_by": "gemini-3.1-pro-high",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "gemini-3.1-pro-high",
-            "family": "gemini",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": [
-          {
-            "model": "claude-opus-4-6-thinking",
-            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
-          }
-        ]
-      }
-    },
-    {
       "lane": 3,
       "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The diff correctly implements ONT-4c4 kernel binding support and BINDING-006 validation. Code quality is sound, tests are comprehensive. Minor discrepancy: receipt understates scope (omits b757dd99e5 fix commit), but the fix is correct and necessary.",
+      "verdict": "FAIL",
+      "summary": "The diff includes the b757dd99e5 commit (BINDING-006 fix to KernelBinding struct) which is functional code not present in either #4480 or #4473, and the receipt's claim that \"The only other change is this receipt and PMAT-4481 roadmap fragment\" is demonstrably false. This violates the ticket scope of a strict fold operation.",
       "findings": [
         {
-          "file": "receipt",
-          "line": 0,
-          "claim": "Receipt claims 'only other change is this receipt and PMAT-4481 roadmap fragment' but diff includes additional b757dd99e5 commit that modifies binding.rs (kernel field filtering)",
+          "file": "crates/aprender-contracts/src/binding.rs",
+          "line": 49,
+          "claim": "The PR adds `kernel: bool` field to KernelBinding and modifies find_binding/validate_binding_registry, which is not present in #4480 or #4473",
+          "grounding": "cited"
+        },
+        {
+          "file": "docs/audits/impl-PMAT-4481-receipt.md",
+          "line": 13,
+          "claim": "Receipt claims 'The only other change is this receipt and the PMAT-4481 roadmap fragment' but immediately documents 'Fix after CI (b757dd99e5)' with significant functional changes",
+          "grounding": "cited"
+        },
+        {
+          "file": "scripts/contracts_gate.sh",
+          "line": 60,
+          "claim": "The jq program refactored into a heredoc is part of the b757dd99e5 fix commit, not requested by the ticket",
           "grounding": "cited"
         }
       ],
-      "raw_bytes": 1949,
+      "raw_bytes": 2984,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -150,10 +149,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
+      "brief_sha256": "ab2e7556f67101f8bdddae7cc057a4ae2d71e6c37df57dbe7f293e2297baafc4",
       "trace": {
-        "input_sha256": "bdf60a7f60585c2a3f91671e94dd186eb502b74ac4db80eacc1f8a88ddb3dd32",
-        "output_sha256": "456f938d7ee977bef7abc1aeb2c00388fc449ec8f76cc9f1174cd149acd03bd8",
+        "input_sha256": "d7fefee58b5bf1eb6a700e6c07d9633bddfd3fd17ab75d343dede5c865f519bf",
+        "output_sha256": "90262c7a81becf5dff670504766dc80f6ec172bfe6ef542cd21596c79efc1c29",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -173,44 +172,48 @@
   ],
   "dissent": [
     {
-      "lane": 1,
+      "lane": 2,
       "verdict": "FAIL",
-      "summary": "The receipt explicitly claims that 'The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate'. However, the diff reveals unmentioned functional code changes: an update to `KernelBinding` to add `kernel: bool` (along with associated registry and test modifications) and a refactor of the `jq` command in `scripts/contracts_gate.sh` to use a heredoc. These changes are not asked for by the ticket, and their presence directly refutes the receipt's claim of no other changes.",
+      "summary": "The diff implements the fixes described in the updated receipt (BINDING-006 and SC2171) and correctly refactors the previous failing receipt text. However, it fails because two specific receipt claims are not backed by the diff: the receipt claims exactly 18 test/fixture edits were made for `kernel: false`, but only 16 are present. Additionally, the receipt claims the newly added test `a_reference_and_its_kernel_share_an_equation` checks that \"two references stay RED\", but the test code only validates three conditions, omitting the check for two references.",
       "findings": [
         {
-          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
-          "file": "crates/aprender-contracts/src/binding.rs",
-          "fix": "The diff introduces an unmentioned functional change, adding `kernel: bool` to `KernelBinding` and modifying `find_binding` and `validate_binding_registry`.",
+          "claim": "The other 18 edits add `kernel: false` to the test/fixture struct literals.",
+          "file": "docs/audits/impl-PMAT-4481-receipt.md",
+          "fix": "The diff adds exactly 16 `kernel: false` lines, not 18. Update the receipt to reflect the correct number of edits.",
           "grounding": "cited",
-          "line": 49
+          "line": 20
         },
         {
-          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
-          "file": "scripts/contracts_gate.sh",
-          "fix": "The diff refactors the `jq` invocation in `shapes_verdict` to use a heredoc instead of an inline string, which is an unmentioned change.",
+          "claim": "on condition of the tests in `schema/artifact_tests.rs::a_reference_and_its_kernel_share_an_equation`: a reference+kernel pair passes, two kernels are RED, two references stay RED, and a kernel-only equation resolves to no reference.",
+          "file": "docs/audits/impl-PMAT-4481-receipt.md",
+          "fix": "The newly added test `a_reference_and_its_kernel_share_an_equation` does not contain a check for \"two references stay RED\". It only validates three conditions (reference+kernel, two kernels, and kernel-only). Either update the test to include this check or remove it from the receipt claim.",
           "grounding": "cited",
-          "line": 57
+          "line": 20
         }
       ]
     },
     {
-      "lane": 2,
+      "lane": 3,
       "verdict": "FAIL",
-      "summary": "The PR diff fails because it includes commits (`b757dd99e5` and `c074ace09d`) that introduce functional code changes (a fix for BINDING-006) and add quorum files. This directly contradicts the PMAT-4481 ticket's strict acceptance criteria and the receipt's own claim that the original commits are unchanged and \"the only other change is this ticket's roadmap entry and receipt\".",
+      "summary": "The diff includes the b757dd99e5 commit (BINDING-006 fix to KernelBinding struct) which is functional code not present in either #4480 or #4473, and the receipt's claim that \"The only other change is this receipt and PMAT-4481 roadmap fragment\" is demonstrably false. This violates the ticket scope of a strict fold operation.",
       "findings": [
         {
-          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\"",
           "file": "crates/aprender-contracts/src/binding.rs",
-          "fix": "Revert commit b757dd99e5 from this batch PR. Functional changes and fixes must be submitted in their own ticket/PR, not folded into a strictly-scoped batch PR that forbids other changes.",
-          "grounding": "cited",
-          "line": 52
+          "line": 49,
+          "claim": "The PR adds `kernel: bool` field to KernelBinding and modifies find_binding/validate_binding_registry, which is not present in #4480 or #4473",
+          "grounding": "cited"
         },
         {
-          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\" (and the ticket's instruction that quorum is a process, not diff content)",
-          "file": "docs/audits/quorum-PMAT-4481.json",
-          "fix": "Remove the quorum file from this PR diff, as the ticket specifies it should be a process step ('process, not diff content') and explicitly restricts other changes.",
-          "grounding": "measured",
-          "line": 1
+          "file": "docs/audits/impl-PMAT-4481-receipt.md",
+          "line": 13,
+          "claim": "Receipt claims 'The only other change is this receipt and the PMAT-4481 roadmap fragment' but immediately documents 'Fix after CI (b757dd99e5)' with significant functional changes",
+          "grounding": "cited"
+        },
+        {
+          "file": "scripts/contracts_gate.sh",
+          "line": 60,
+          "claim": "The jq program refactored into a heredoc is part of the b757dd99e5 fix commit, not requested by the ticket",
+          "grounding": "cited"
         }
       ]
     }
@@ -220,81 +223,74 @@
       "file": "crates/aprender-contracts/src/binding.rs",
       "line": 49,
       "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The PR adds `kernel: bool` field to KernelBinding and modifies find_binding/validate_binding_registry, which is not present in #4480 or #4473"
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-4481-receipt.md",
+      "line": null,
+      "lanes_agreeing": [
         1
       ],
       "claims": [
-        "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate."
+        "Receipt says \"The other 18 edits add `kernel: false` to the test/fixture struct literals\""
       ]
     },
     {
-      "file": "crates/aprender-contracts/src/binding.rs",
-      "line": 52,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\""
-      ]
-    },
-    {
-      "file": "docs/audits/quorum-PMAT-4481.json",
-      "line": 1,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\" (and the ticket's instruction that quorum is a process, not diff content)"
-      ]
-    },
-    {
-      "file": "receipt",
-      "line": 0,
+      "file": "docs/audits/impl-PMAT-4481-receipt.md",
+      "line": 13,
       "lanes_agreeing": [
         3
       ],
       "claims": [
-        "Receipt claims 'only other change is this receipt and PMAT-4481 roadmap fragment' but diff includes additional b757dd99e5 commit that modifies binding.rs (kernel field filtering)"
+        "Receipt claims 'The only other change is this receipt and the PMAT-4481 roadmap fragment' but immediately documents 'Fix after CI (b757dd99e5)' with significant functional changes"
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-4481-receipt.md",
+      "line": 20,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The other 18 edits add `kernel: false` to the test/fixture struct literals.",
+        "on condition of the tests in `schema/artifact_tests.rs::a_reference_and_its_kernel_share_an_equation`: a reference+kernel pair passes, two kernels are RED, two references stay RED, and a kernel-only equation resolves to no reference."
       ]
     },
     {
       "file": "scripts/contracts_gate.sh",
-      "line": 57,
+      "line": 60,
       "lanes_agreeing": [
-        1
+        3
       ],
       "claims": [
-        "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate."
+        "The jq program refactored into a heredoc is part of the b757dd99e5 fix commit, not requested by the ticket"
       ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
-  "partial_reasons": [
-    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, gemini-3.1-pro-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
-    "lane 2: judged by gemini-3.1-pro-high after falling through claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)) (PMAT-321)"
-  ],
+  "partial_reasons": [],
   "fallback": {
     "same_family_width": 2,
     "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
       {
         "model": "gemini-3.1-pro-high",
         "family": "gemini",
         "disposition": "configured"
       },
       {
-        "model": "claude-opus-4-6-thinking",
-        "family": "claude",
-        "disposition": "configured"
-      },
-      {
         "model": "claude-haiku-4-5",
-        "family": "claude",
-        "disposition": "claude-code",
-        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
-      },
-      {
-        "model": "claude-sonnet-5",
         "family": "claude",
         "disposition": "claude-code",
         "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
@@ -318,13 +314,6 @@
         "model": "gemini-3.1-pro-high",
         "probe": 1,
         "outcome": "live"
-      },
-      {
-        "family": "claude",
-        "model": "claude-opus-4-6-thinking",
-        "probe": 1,
-        "outcome": "quota",
-        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 15h23m10s."
       }
     ],
     "degraded": null,
@@ -332,36 +321,40 @@
       "source": "install-receipt",
       "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
     },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "scripts/contracts_gate.sh"
+      ],
+      "paths": 11,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
     "bucket": {
       "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
       "buckets": {
-        "claude-gpt": {
-          "bucket": "claude-gpt",
-          "budget": 0,
-          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
-          "window_start": 1790441585,
-          "window_calls": 3,
-          "window_429": 3,
-          "hour_calls": 1,
-          "share": 1,
-          "want": 2,
-          "state": "empty",
-          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-26T16:53:05Z)"
-        },
         "gemini": {
           "bucket": "gemini",
           "budget": 67,
           "basis": "[U] default 30, raised to the 67 calls a window has made without a 429; no window reached one",
           "window_start": 1790441558,
-          "window_calls": 38,
+          "window_calls": 48,
           "window_429": 0,
-          "hour_calls": 26,
+          "hour_calls": 29,
           "share": 13,
           "want": 2,
           "state": "hour",
-          "reason": "agy bucket gemini: 26 calls in the last hour + 2 this round exceed the hour share 13 (1/5 of the budget 67, [U] default 30, raised to the 67 calls a window has made without a 429; no window reached one)"
+          "reason": "agy bucket gemini: 29 calls in the last hour + 2 this round exceed the hour share 13 (1/5 of the budget 67, [U] default 30, raised to the 67 calls a window has made without a 429; no window reached one)"
         }
       },
       "closed": []
@@ -369,51 +362,39 @@
   },
   "auto_merge": {
     "checked": true,
-    "was_armed": true,
-    "disarmed": true,
-    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "shape": "canary",
-    "max_brief_bytes": 24576,
-    "brief_bytes": 15641
+    "skipped": "brief 46367 bytes > 24576"
   },
   "advisory_lane": {
-    "state": "unavailable",
+    "state": "not-run",
     "counts": false,
     "row": {
-      "NotRun": "Busy"
+      "NotRun": "ContextOverflow"
     },
     "verdict": "unavailable",
-    "why": "no host answered inside the budget",
+    "why": "the brief is 46367 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
     "model": null,
     "model_sha256": null,
-    "rc": 2,
+    "rc": 0,
     "wall_s": 0,
-    "collected_s": 528,
+    "collected_s": 0,
     "budget_s": 300,
     "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
     "brief": {
-      "bytes": 15641,
-      "sent_bytes": 15810,
+      "bytes": 46367,
+      "sent_bytes": 0,
       "max_bytes": 24576
     },
-    "trace": {
-      "input_sha256": "8824261a6ea612d1b64645de6ce14b93b316c23663bce08fc6a179aa87a65b0b",
-      "raw": "advisory.json"
-    },
-    "attempts": [
-      {
-        "host": "gx10",
-        "ok": false,
-        "wall_s": 0,
-        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-25T20:18:53Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)"
-      }
-    ],
+    "trace": null,
+    "attempts": [],
     "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
     "agrees_with_counted": null,
@@ -421,6 +402,6 @@
   },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=1/2"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
   }
 }
