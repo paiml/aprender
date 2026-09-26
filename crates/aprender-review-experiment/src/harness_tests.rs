@@ -188,3 +188,27 @@ fn rfc3339_by_hand() {
     assert_eq!(rfc3339(1_790_337_600), "2026-09-25T12:00:00Z");
     assert_eq!(rfc3339(4_107_542_399), "2100-02-28T23:59:59Z");
 }
+
+/// A bounded read refuses a body past its cap instead of truncating it (#4459
+/// quorum r2, 3/3 lanes): a cut-off reply returned as `Ok` would be scored as
+/// if it were the whole one.
+#[test]
+fn read_bounded_refuses_past_its_cap_and_never_truncates() {
+    let table: &[(&[u8], u64, Result<&str, ()>)] = &[
+        (b"", 4, Ok("")),
+        (b"abc", 4, Ok("abc")),
+        (b"abcd", 4, Ok("abcd")),
+        (b"abcde", 4, Err(())),
+        (b"abcdefgh", 4, Err(())),
+    ];
+    for &(input, cap, ref want) in table {
+        let got = read_bounded(input, cap);
+        match want {
+            Ok(s) => assert_eq!(got.as_deref(), Ok(*s), "input={input:?} cap={cap}"),
+            Err(()) => assert!(
+                got.as_ref().is_err_and(|e| e.contains("cap")),
+                "input={input:?} cap={cap} got={got:?}"
+            ),
+        }
+    }
+}

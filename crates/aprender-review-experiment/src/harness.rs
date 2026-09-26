@@ -115,16 +115,24 @@ pub fn post(url: &str, body: &Value) -> Result<Reply, String> {
     };
     // `into_string` refuses bodies over 10 MB; the /tokenize reply for a large
     // candidate diff exceeds that. Read bounded at MAX_BODY instead.
-    let mut body = String::new();
-    resp.into_reader()
-        .take(MAX_BODY)
-        .read_to_string(&mut body)
-        .map_err(|e| e.to_string())?;
+    let body = read_bounded(resp.into_reader(), MAX_BODY)?;
     Ok(Reply {
         status,
         body,
         wall_ms: t.elapsed().as_secs_f64() * 1e3,
     })
+}
+
+/// Read `r` to a string of at most `cap` bytes.
+///
+/// # Errors
+/// The read failed, or the body ran past `cap`.
+pub fn read_bounded(r: impl Read, cap: u64) -> Result<String, String> {
+    let mut body = String::new();
+    r.take(cap)
+        .read_to_string(&mut body)
+        .map_err(|e| e.to_string())?;
+    Ok(body)
 }
 
 /// The reply's text, token counts, server timings — or why none.
