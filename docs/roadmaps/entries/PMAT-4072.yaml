@@ -15,4 +15,4 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'quorum 3/3 PASS on fe8c9dff7; proof:docs/audits/quorum-PMAT-4072-fe8c9dff7.json'
