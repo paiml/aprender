@@ -1,0 +1,11 @@
+# Guard scripts that ci/sections.yml runs OUTSIDE the guard-* sections, so
+# `scripts/ci_guards.sh` (#4416) cannot reach them. One row each:
+#   <section> <script>  # why it is not in a guard section
+# `bash scripts/ci_guards.sh --check-coverage` fails on a guard script
+# in a non-guard section that has no row here, and on a row whose section no
+# longer runs that script. This list should only shrink.
+workspace-test-shard check_build_rs_paths.sh  # runs against the shard's built tree
+workspace-test-shard check_format_sovereignty.sh  # runs against the shard's built tree
+vendored-schemas check_vendored_schemas.sh  # its own job with its own checkout
+mutants check_cargo_install_private_root.sh  # runs inside the mutants job's install
+cuda-unit check_clippy_cuda.sh  # needs the CUDA toolchain on the GPU host (yoga), which the guard runner does not have

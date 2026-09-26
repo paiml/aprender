@@ -1092,13 +1092,140 @@ jobs:
       # ratchets fall back to the origin/main TIP. That is the STRICTER
       # comparand, and it means the CI path is the tip path: a local run that
       # passes on the merge-base can still red here, and CI is authoritative.
-      - name: Fetch origin/main as the comparand for every ratchet in this job
+      - id: guard-setup
+        name: Fetch origin/main as the comparand for every ratchet in this job
         run: |
           git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
           # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+      # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-tree-steps
+      # below, keeps going past a red one, and reports every failure. GitHub would
+      # stop this job at its first red step, and the others would never be seen.
+      # `make guards-local` and the pre-push hook run this same script and print
+      # the same `ci_guards: sha256` line.
+      - name: Every guard step runs, and every failure is reported (scripts/ci_guards.sh, #4415)
+        if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci_guards.sh guard-tree
+      # APR-RELEASE-001 §6 R-2, WIRED (#3200 shipped the guard; this is its
+      # caller). This step is its ONLY runner: guard_tree.sh skips it as
+      # wired-with-args (it needs a body), so its case table ran in NO job until
+      # this step called `--self-test` beside `--body` (found by aprender-f0,
+      # 2026-09-21; the comment here used to claim guard_tree ran it bare). The
+      # 0.67.0 reconcile found 48 merged PRs since the previous tag of which only
+      # 9 closed anything; that is what this guard exists to stop.
+      #
+      # THE BODY IS NEVER INTERPOLATED INTO THE SCRIPT. `${{ }}` is substituted
+      # textually BEFORE bash sees the line, so a body containing a backtick or
+      # $(...) would execute on the runner -- and this body is attacker-controlled
+      # by construction. Since #3298 it is fetched live by `gh api` straight into
+      # a file (it used to arrive through `env:` from the stale event payload);
+      # either way it is data. scripts/check_workflow_env_defined.sh enforces
+      # the env: side of that rule.
+      #
+      # pull_request only: on merge_group there is no pull_request payload, and
+      # a body is fixed before a PR is ever enqueued.
+      - name: A PR body must close every issue it cites, or say why not (§6 R-2)
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
+        # #3298: the body is read LIVE from the API, not from the event payload.
+        # `github.event.pull_request.body` is frozen when the event is minted and
+        # `gh run rerun` replays that payload, so fixing the body per the guard's
+        # own FAIL message could never be re-graded by a rerun -- only by a push.
+        # Still data, never interpolated: gh writes it straight to the file.
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_pr_closes_issue.sh --self-test
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.body // ""' > "$RUNNER_TEMP/pr-body.txt"
+          setsid --wait bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
+      # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
+      # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
+      # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
+      # not a review comment". A rule whose enforcement is "not a review comment"
+      # and whose only mechanism IS a review comment is this repo's anti-theater
+      # class, one level up from the guard it sits beside.
+      #
+      # Same body-handling rule as the step above: the body is fetched live by
+      # `gh api` into a file as DATA and is never interpolated into the script.
+      # It is attacker-controlled by construction.
+      #
+      # The changed-file list is the other input, and it is what makes the guard
+      # non-trivial: half the sweep surface ("a known-red list anywhere") is
+      # DERIVED from the tree, not typed. Measured on #3277, which touches
+      # scripts/cb200_baseline.txt and no prose sink at all -- a hand-typed sink
+      # list would have passed it.
+      - name: A sweep PR closes with an ontology delta, not a paragraph (§11.1)
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
+        # #3298: body and file list now come from the same place (the live API)
+        # at the same time. The body used to be the event SNAPSHOT while the file
+        # list was live, so a rerun after a body edit re-graded the OLD body.
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.body // ""' > "$RUNNER_TEMP/ont-body.txt"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
+          setsid --wait bash scripts/check_pr_ont_delta.sh \
+            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
+      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
+      # and takes its own final probe first -- without that, a failure at
+      # step K leaves the last recorded boundary BEFORE K and the table
+      # reads clean, which is the whole failure mode being investigated.
+      #
+      # It also pulls the host journal for the job's window into the job
+      # log. That is the decisive evidence and the only evidence that
+      # expires: `_work/*/target` is deleted by HOST automation (a sibling
+      # runner's job-started hook, a systemd timer) which logs under its own
+      # tag and appears in NO GitHub log. See
+      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
+      # this exact signature.
+      #
+      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
+      # here asserts anything. The gate that can fail is the case table
+      # wired above.
+      - name: "target-watch: report (aprender#2822)"
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci_target_watch.sh probe post-job
+          bash scripts/ci_target_watch.sh report
+
+  guard-tree-steps:
+    # MANIFEST, never run by GitHub (`if: false`). These are guard-tree's guard steps,
+    # executed by the single `scripts/ci_guards.sh guard-tree` step of guard-tree above, and by
+    # `make guards-local` (#4415). They live here, verbatim, so every guard that
+    # reads this file for an invocation (check_guards_are_wired.sh, guard_tree.sh,
+    # the contracts' `test:` greps) still finds it. A step here is name/run/env
+    # only; scripts/check_guard_steps_run_all.sh refuses anything else.
+    if: false
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    steps:
       # aprender#2822. Case table FIRST, per the convention above: the probe
       # below is only worth its 0.15s if the classifier it feeds can still turn
       # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
@@ -1512,110 +1639,10 @@ jobs:
       # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
       - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
         run: bash scripts/mutate_pr_review_wiring_guard.sh
-      # APR-RELEASE-001 §6 R-2, WIRED (#3200 shipped the guard; this is its
-      # caller). This step is its ONLY runner: guard_tree.sh skips it as
-      # wired-with-args (it needs a body), so its case table ran in NO job until
-      # this step called `--self-test` beside `--body` (found by aprender-f0,
-      # 2026-09-21; the comment here used to claim guard_tree ran it bare). The
-      # 0.67.0 reconcile found 48 merged PRs since the previous tag of which only
-      # 9 closed anything; that is what this guard exists to stop.
-      #
-      # THE BODY IS NEVER INTERPOLATED INTO THE SCRIPT. `${{ }}` is substituted
-      # textually BEFORE bash sees the line, so a body containing a backtick or
-      # $(...) would execute on the runner -- and this body is attacker-controlled
-      # by construction. Since #3298 it is fetched live by `gh api` straight into
-      # a file (it used to arrive through `env:` from the stale event payload);
-      # either way it is data. scripts/check_workflow_env_defined.sh enforces
-      # the env: side of that rule.
-      #
-      # pull_request only: on merge_group there is no pull_request payload, and
-      # a body is fixed before a PR is ever enqueued.
-      - name: A PR body must close every issue it cites, or say why not (§6 R-2)
-        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
-        # measured on run 34875945193, step 8 went red and 48 of this job's 59
-        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
-        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
-        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
-        # as it was before it had a caller. It reads a PR body and nothing else,
-        # so no guard result can be its precondition. (#3282 classifies the other
-        # 46, which is a judgment call per step rather than one blanket edit.)
-        if: "!cancelled() && github.event_name == 'pull_request'"
-        # #3298: the body is read LIVE from the API, not from the event payload.
-        # `github.event.pull_request.body` is frozen when the event is minted and
-        # `gh run rerun` replays that payload, so fixing the body per the guard's
-        # own FAIL message could never be re-graded by a rerun -- only by a push.
-        # Still data, never interpolated: gh writes it straight to the file.
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
+      - name: "Guard jobs run all: no fail-fast step over baseline, every guard script reachable (#4415)"
         run: |
-          set -euo pipefail
-          setsid --wait bash scripts/check_pr_closes_issue.sh --self-test
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
-            --jq '.body // ""' > "$RUNNER_TEMP/pr-body.txt"
-          setsid --wait bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
-      # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
-      # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
-      # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
-      # not a review comment". A rule whose enforcement is "not a review comment"
-      # and whose only mechanism IS a review comment is this repo's anti-theater
-      # class, one level up from the guard it sits beside.
-      #
-      # Same body-handling rule as the step above: the body is fetched live by
-      # `gh api` into a file as DATA and is never interpolated into the script.
-      # It is attacker-controlled by construction.
-      #
-      # The changed-file list is the other input, and it is what makes the guard
-      # non-trivial: half the sweep surface ("a known-red list anywhere") is
-      # DERIVED from the tree, not typed. Measured on #3277, which touches
-      # scripts/cb200_baseline.txt and no prose sink at all -- a hand-typed sink
-      # list would have passed it.
-      - name: A sweep PR closes with an ontology delta, not a paragraph (§11.1)
-        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
-        # measured on run 34875945193, step 8 went red and 48 of this job's 59
-        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
-        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
-        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
-        # as it was before it had a caller. It reads a PR body and nothing else,
-        # so no guard result can be its precondition. (#3282 classifies the other
-        # 46, which is a judgment call per step rather than one blanket edit.)
-        if: "!cancelled() && github.event_name == 'pull_request'"
-        # #3298: body and file list now come from the same place (the live API)
-        # at the same time. The body used to be the event SNAPSHOT while the file
-        # list was live, so a rerun after a body edit re-graded the OLD body.
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
-            --jq '.body // ""' > "$RUNNER_TEMP/ont-body.txt"
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
-            --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
-          setsid --wait bash scripts/check_pr_ont_delta.sh \
-            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
-      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
-      # and takes its own final probe first -- without that, a failure at
-      # step K leaves the last recorded boundary BEFORE K and the table
-      # reads clean, which is the whole failure mode being investigated.
-      #
-      # It also pulls the host journal for the job's window into the job
-      # log. That is the decisive evidence and the only evidence that
-      # expires: `_work/*/target` is deleted by HOST automation (a sibling
-      # runner's job-started hook, a systemd timer) which logs under its own
-      # tag and appears in NO GitHub log. See
-      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
-      # this exact signature.
-      #
-      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
-      # here asserts anything. The gate that can fail is the case table
-      # wired above.
-      - name: "target-watch: report (aprender#2822)"
-        if: always()
-        continue-on-error: true
-        run: |
-          bash scripts/ci_target_watch.sh probe post-job
-          bash scripts/ci_target_watch.sh report
+          bash scripts/check_guard_steps_run_all.sh --self-test
+          bash scripts/check_guard_steps_run_all.sh
 
   # ── THE CARGO-USING GUARDS, PARALLEL TO workspace-test ────────────────────
   #
@@ -1737,7 +1764,8 @@ jobs:
       # .package-cache-mutate) are created by cargo itself INSIDE this same
       # directory — which is the entire reason the mount is $CARGO_HOME and
       # not $CARGO_HOME/registry.
-      - name: Create this job's own target dir and CARGO_HOME (before any bind mount)
+      - id: guard-setup
+        name: Create this job's own target dir and CARGO_HOME (before any bind mount)
         run: |
           # A root-owned parent (created by the docker daemon for another job's
           # bind mount, #3039) is chowned through the image before the mkdir;
@@ -1775,6 +1803,28 @@ jobs:
           heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
+      # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-cargo-steps
+      # below, keeps going past a red one, and reports every failure. GitHub would
+      # stop this job at its first red step, and the others would never be seen.
+      # `make guards-local` and the pre-push hook run this same script and print
+      # the same `ci_guards: sha256` line.
+      - name: Every guard step runs, and every failure is reported (scripts/ci_guards.sh, #4415)
+        if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci_guards.sh guard-cargo
+
+  guard-cargo-steps:
+    # MANIFEST, never run by GitHub (`if: false`). These are guard-cargo's guard steps,
+    # executed by the single `scripts/ci_guards.sh guard-cargo` step of guard-cargo above, and by
+    # `make guards-local` (#4415). They live here, verbatim, so every guard that
+    # reads this file for an invocation (check_guards_are_wired.sh, guard_tree.sh,
+    # the contracts' `test:` greps) still finds it. A step here is name/run/env
+    # only; scripts/check_guard_steps_run_all.sh refuses anything else.
+    if: false
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    steps:
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
       # counted as enforcement, and proves nothing. The Pillar-4 marquee decode
       # beat sat in ZERO workflows while being quoted as an enforced win (#2319).
