@@ -133,6 +133,75 @@ impl TokenLogits {
     }
 }
 
+/// PRM C11 capture: the `choices[0].logprobs.content` of an `apr serve`
+/// `/v1/chat/completions` body (#4026, `top_logprobs = k`) as one
+/// [`TokenLogits`] per output token, ready for [`encode`].
+///
+/// Refused, never guessed: a body without `logsumexp_full` (a hosted or
+/// foreign server — its tail mass is unknowable, and hosted output never
+/// enters the corpus), fewer than `k` alternatives, an entry without
+/// `token_id`, or logprobs that are not a descending, finite log-softmax.
+pub fn from_chat_completion(body: &serde_json::Value, k: u8) -> Result<Vec<TokenLogits>, String> {
+    let content = body
+        .pointer("/choices/0/logprobs/content")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("no choices[0].logprobs.content: the request did not ask for logprobs")?;
+    content
+        .iter()
+        .enumerate()
+        .map(|(at, entry)| {
+            token_from_serve_entry(entry, usize::from(k)).map_err(|e| format!("token {at}: {e}"))
+        })
+        .collect()
+}
+
+fn serve_id(v: &serde_json::Value) -> Result<u32, String> {
+    v.get("token_id")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|id| u32::try_from(id).ok())
+        .ok_or_else(|| "no u32 token_id".to_string())
+}
+
+fn token_from_serve_entry(entry: &serde_json::Value, k: usize) -> Result<TokenLogits, String> {
+    if k == 0 {
+        return Err("k = 0".into());
+    }
+    let lse = entry
+        .get("logsumexp_full")
+        .and_then(serde_json::Value::as_f64)
+        .filter(|x| x.is_finite())
+        .ok_or("no finite logsumexp_full: not an apr serve #4026 body")?;
+    let top = entry
+        .get("top_logprobs")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("no top_logprobs")?;
+    if top.len() < k {
+        return Err(format!("{} alternatives, k = {k}", top.len()));
+    }
+    let mut ids = Vec::with_capacity(k);
+    let mut lps = Vec::with_capacity(k);
+    for alt in &top[..k] {
+        let lp = alt
+            .get("logprob")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|x| x.is_finite() && *x <= 0.0)
+            .ok_or("an alternative's logprob is not a finite value ≤ 0")?;
+        if lps.last().is_some_and(|&prev: &f64| lp > prev) {
+            return Err("top_logprobs are not descending".into());
+        }
+        ids.push(serve_id(alt)?);
+        lps.push(lp);
+    }
+    let mass: f64 = lps.iter().map(|x| x.exp()).sum();
+    Ok(TokenLogits {
+        token_id_sampled: serve_id(entry)?,
+        ids,
+        logprobs: lps.iter().map(|&x| f16::from_f64(x)).collect(),
+        logsumexp_full: lse as f32,
+        topk_mass: f16::from_f64(mass.min(1.0)),
+    })
+}
+
 fn check_all(h: &Header, tokens: &[TokenLogits]) -> Result<(), String> {
     if h.schema != SCHEME {
         return Err(format!("schema {} is not {SCHEME}", h.schema));

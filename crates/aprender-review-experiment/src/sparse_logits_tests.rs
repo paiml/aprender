@@ -1,3 +1,6 @@
+// `json!` expands to an `unwrap` of an infallible `to_value`.
+#![allow(clippy::disallowed_methods)]
+
 use super::*;
 
 const SHA: &str = "70dffe5625e1849661303b82bb1fdf5254ab1d4560e2fe3eacc147e5d2588bba";
@@ -174,4 +177,132 @@ fn m6_raw_bytes_per_token_at_k20() {
         "encoded {} > raw {raw} + 1 KiB",
         blob.len()
     );
+}
+
+/// A body shaped as `apr serve` writes it for `top_logprobs = k` (#4026):
+/// `logprob = logit − logsumexp_full` over the full row, most likely first.
+fn serve_body(rows: &[Vec<f32>], k: usize, sampled: &[u32]) -> serde_json::Value {
+    let content: Vec<serde_json::Value> = rows
+        .iter()
+        .zip(sampled)
+        .map(|(r, &s)| {
+            let t = TokenLogits::from_full_logits(r, 1, s).expect("finite row");
+            let lse = f64::from(t.logsumexp_full);
+            let mut order: Vec<usize> = (0..r.len()).collect();
+            order.sort_by(|&a, &b| r[b].total_cmp(&r[a]).then(a.cmp(&b)));
+            let top: Vec<serde_json::Value> = order[..k]
+                .iter()
+                .map(|&i| serde_json::json!({"token_id": i, "logprob": f64::from(r[i]) - lse}))
+                .collect();
+            serde_json::json!({
+                "token_id": s,
+                "logprob": f64::from(r[s as usize]) - lse,
+                "top_logprobs": top,
+                "logsumexp_full": lse,
+            })
+        })
+        .collect();
+    serde_json::json!({"choices": [{"logprobs": {"content": content}}]})
+}
+
+/// PRM C11: a serve body captures to the same record the full row gives, and
+/// the capture encodes and decodes.
+#[test]
+fn c11_serve_capture_matches_the_full_row_and_round_trips() {
+    let rows: Vec<Vec<f32>> = (0..3).map(|s| row(s, 70_000)).collect();
+    let sampled = [5_u32, 69_999, 12];
+    let got = from_chat_completion(&serve_body(&rows, 20, &sampled), DEFAULT_K).expect("capture");
+    assert_eq!(got.len(), 3);
+    for ((g, r), &s) in got.iter().zip(&rows).zip(&sampled) {
+        let want = TokenLogits::from_full_logits(r, DEFAULT_K, s).expect("row");
+        assert_eq!(g.token_id_sampled, s);
+        assert_eq!(g.ids, want.ids);
+        for (a, b) in g.logprobs.iter().zip(&want.logprobs) {
+            assert!((a.to_f32() - b.to_f32()).abs() <= 1e-2, "{a} vs {b}");
+        }
+        assert_eq!(g.logsumexp_full, want.logsumexp_full);
+        assert!((g.topk_mass.to_f32() - want.topk_mass.to_f32()).abs() <= MASS_TOLERANCE);
+    }
+    let blob = encode(&header(DEFAULT_K, 3), &got).expect("encode");
+    assert_eq!(decode(&blob).expect("decode").1, got);
+}
+
+/// PRM C11: every body the encoder could not honestly record is refused by name.
+#[test]
+fn c11_serve_capture_refuses_what_it_cannot_record() {
+    let good = serve_body(&[row(1, 64)], 4, &[3]);
+    let entry = "/choices/0/logprobs/content/0";
+    let cases: &[(&str, fn(&mut serde_json::Value), &str)] = &[
+        (
+            "no logprobs",
+            |b| *b = serde_json::json!({"choices": [{}]}),
+            "did not ask",
+        ),
+        (
+            "hosted body",
+            |b| {
+                b.pointer_mut("/choices/0/logprobs/content/0")
+                    .expect("e")
+                    .as_object_mut()
+                    .expect("o")
+                    .remove("logsumexp_full");
+            },
+            "logsumexp_full",
+        ),
+        (
+            "too few",
+            |b| {
+                b.pointer_mut("/choices/0/logprobs/content/0/top_logprobs")
+                    .expect("t")
+                    .as_array_mut()
+                    .expect("a")
+                    .truncate(2);
+            },
+            "2 alternatives, k = 4",
+        ),
+        (
+            "not descending",
+            |b| {
+                b.pointer_mut("/choices/0/logprobs/content/0/top_logprobs")
+                    .expect("t")
+                    .as_array_mut()
+                    .expect("a")
+                    .swap(0, 1);
+            },
+            "descending",
+        ),
+        (
+            "positive logprob",
+            |b| {
+                b["choices"][0]["logprobs"]["content"][0]["top_logprobs"][0]["logprob"] =
+                    serde_json::json!(0.5);
+            },
+            "≤ 0",
+        ),
+        (
+            "no token_id",
+            |b| {
+                b.pointer_mut("/choices/0/logprobs/content/0")
+                    .expect("e")
+                    .as_object_mut()
+                    .expect("o")
+                    .remove("token_id");
+            },
+            "token_id",
+        ),
+    ];
+    assert!(
+        from_chat_completion(&good, 4).is_ok(),
+        "control: the unplanted body captures"
+    );
+    assert!(good.pointer(entry).is_some());
+    for (name, plant, want) in cases {
+        let mut b = good.clone();
+        plant(&mut b);
+        let err = from_chat_completion(&b, 4).expect_err(name);
+        assert!(err.contains(want), "{name}: {err}");
+    }
+    assert!(from_chat_completion(&good, 0)
+        .expect_err("k=0")
+        .contains("k = 0"));
 }
