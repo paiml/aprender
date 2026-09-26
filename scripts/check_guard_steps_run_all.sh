@@ -211,6 +211,14 @@ manifest_rows() {
         'b="$RUNNER_TEMP/b"; mkdir -p "$b"; printf "exit 0\n" > "$b/probe_tool"; chmod +x "$b/probe_tool"; echo "$b" >> "$GITHUB_PATH"; echo FOO=bar >> "$GITHUB_ENV"' \
         'probe_tool' 'test "$FOO" = bar'
     RUNNER_TEMP="$d/rt" mrun "CI: GITHUB_PATH / GITHUB_ENV reach later steps" 0 '^SUMMARY: 0 failed / 4 ran'
+    # shellcheck disable=SC2016 # expanded by the step's bash, not here
+    mfixture "$repo/ci/sections.yml" good 'trap "touch \"$RUNNER_TEMP/restored\"" EXIT; sleep 30'
+    mkdir -p "$d/rt"; rm -f "${d:?}/rt/restored"
+    RUNNER_TEMP="$d/rt" mrun "CI: a timed-out step is TIMEOUT, not a crash" 1 'TIMEOUT' --step-timeout 1
+    n=$((n + 1))
+    if [ -e "$d/rt/restored" ]; then
+        printf 'ok   %-58s\n' "a timed-out step still runs its EXIT trap (restores a mutant)"
+    else printf 'FAIL %-58s\n' "a timed-out step still runs its EXIT trap (restores a mutant)"; bad=1; fi
     # shellcheck disable=SC2016
     mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS

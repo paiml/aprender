@@ -17,7 +17,7 @@
 #   bash scripts/ci_guards.sh                        # every guard section the gate reads
 #   bash scripts/ci_guards.sh guard-tree             # one job
 #   bash scripts/ci_guards.sh --only 'bashrs|pinned' guard-cargo
-#   bash scripts/ci_guards.sh --step-timeout 600     # seconds per step (default 1200)
+#   bash scripts/ci_guards.sh --step-timeout 600     # seconds per step (default 4800)
 #   bash scripts/ci_guards.sh --list | --sha | --check-coverage
 #
 # Exit: 0 all ran steps passed, 1 a step failed or timed out, 2 usage / nothing ran.

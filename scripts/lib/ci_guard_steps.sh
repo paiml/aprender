@@ -282,7 +282,10 @@ apply_github_env() { # apply_github_env <file> -- KEY=VAL and KEY<<DELIM lines, 
 now() { date +%s.%N; }
 
 cmd_run() {
-    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-1200}" root scratch job
+    # 4800 s per step, not 1200: car's whole `guard_tree.sh --no-cargo` universe is
+    # ONE manifest step and took 2481 s on CI (run 36229622731, x86-main, 2026-09-26),
+    # so a 1200 s cap would kill it on every run. ~2x the measured worst step.
+    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job
     local -a names=()
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -399,7 +402,11 @@ cmd_run() {
             # timeout puts the step in its own process group and SIGKILLs the
             # group, so its children (cargo, docker, sleep) die with it.
             local -a tcmd=()
-            [ "$timeout" -gt 0 ] && tcmd=(timeout -s KILL "$timeout")
+            # TERM first, KILL 60 s later: a guard self-test that plants a mutant restores it
+            # from an EXIT trap, and SIGKILL runs no trap -- a KILL-only timeout left
+            # check_clippy_cuda's planted import in a local tree (2026-09-26). timeout(1)
+            # signals its whole process group, so background children still die.
+            [ "$timeout" -gt 0 ] && tcmd=(timeout -s TERM -k 60 "$timeout")
             if [ "$stream" = 1 ]; then
                 (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null 3<&-)
             else
@@ -411,7 +418,7 @@ cmd_run() {
             status=PASS
             if [ "$rc" -ne 0 ]; then
                 status=FAIL
-                if [ "$timeout" -gt 0 ] && [ "$rc" -eq 137 ] && awk -v a="$t0" -v b="$t1" -v t="$timeout" 'BEGIN { exit !(b - a >= t) }'; then
+                if [ "$timeout" -gt 0 ] && { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && awk -v a="$t0" -v b="$t1" -v t="$timeout" 'BEGIN { exit !(b - a >= t) }'; then
                     status=TIMEOUT; rc=124
                 fi
             fi
