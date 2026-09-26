@@ -1,0 +1,67 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    CRUX perf history, G2 (operator plan 2026-09-26; Refs infra#1057, #4354).
+    crates/aprender-review-experiment/src/crux_perf.rs defines crux-perf-receipt-v1. There is one
+    receipt per rc tag per cell. Each receipt is measured on the sha-verified rc binary against a
+    competitor (llama.cpp or ollama) run in the same session, on the same cell and the same GGUF.
+    The workload is PRM-S1 review-replay (set a4910a65).
+    Nightly-on-main receipts are early warning only; receipts of record come from the rc.
+    Tiers run as SEPARATE passes, because a timed pass never has tracing on:
+      - T0 (apr bench plus apr serve TTFT/prefill/decode) is the gate.
+      - T1 (apr profile top-k kernel share) records share drift.
+      - T2 (--trace-level layer) is a content-addressed blob used only for attribution. The blob
+        is private and never enters the repo.
+    Every phase is a TIME, so lower is better:
+      - ttft in ms;
+      - prefill and decode in ms per token.
+    A +x% value is therefore always a regression.
+    The cell_id is derived from all nine cell fields, so any field change starts a new series.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "contracts/review-replay-v1.yaml"
+
+equations:
+  cell_id:
+    formula: "cell_id = sha256(host ‖ gpu ‖ driver_cuda ‖ model ‖ gguf_sha256 ‖ quant ‖ ctx ‖ batch ‖ prompt_set_sha)[0..16], fields NUL-separated"
+  phase_stats:
+    formula: "median, p95 = nearest-rank over n ≥ 5 finite positive samples; [ci_lo, ci_hi] = seeded 2000-resample bootstrap 95% CI of the median"
+  ratio:
+    formula: "ratio_vs_competitor(phase) = median_apr(phase) / median_competitor(phase)"
+  gate:
+    formula: "RED ⇔ ∃ phase: ci_lo_cur / median_prev − 1 > 0.10 ∨ median_cur / median_released − 1 > 0.05 ∨ median_cur / mean(median of last 3) − 1 > 0.03"
+  t2_use:
+    formula: "t2 = Absent if no blob; Refused if trace_overhead_pct is missing or not finite; AttributionOnly if > 5; Diffable otherwise"
+
+falsification_tests:
+  - id: FALSIFY-CRUX-PERF-001
+    name: missing_competitor_version_does_not_hold
+    prediction: "a receipt whose competitor version is absent or blank has holds() = false; a complete one holds"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_crux_perf_001"
+    expected_output: "exit 0"
+    if_fails: "A ratio against an unnamed competitor build could not be reproduced, and the series would silently mix llama.cpp versions."
+  - id: FALSIFY-CRUX-PERF-002
+    name: planted_ten_percent_decode_is_red
+    prediction: "decode planted +10% slower is RED (D_released, D_rolling3), naming decode only; the same numbers are GREEN; faster is GREEN; D_prev fires only when the CI lower bound is past +10%"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_crux_perf_002"
+    expected_output: "exit 0"
+    if_fails: "A 10% decode regression would ship in an rc with a green perf history."
+  - id: FALSIFY-CRUX-PERF-003
+    name: changed_cell_field_under_same_id_is_refused
+    prediction: "every one of the nine cell fields moves the derived id; a receipt that keeps its claimed id after a field changed is refused; a different cell is a new series, never compared"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_crux_perf_003"
+    expected_output: "exit 0"
+    if_fails: "A driver or GGUF change would read as a code regression or a code win."
+  - id: FALSIFY-CRUX-PERF-004
+    name: t2_without_trace_overhead_is_refused
+    prediction: "a T2 blob with no finite trace_overhead_pct is Refused; above 5% it is AttributionOnly; at most 5% it is Diffable; a refused T2 does not void T0"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_crux_perf_004"
+    expected_output: "exit 0"
+    if_fails: "Layer timings distorted by the tracer would be diffed as if they were the shipped speed."
+  - id: FALSIFY-CRUX-PERF-005
+    name: binary_sha_not_the_tag_asset_is_refused
+    prediction: "a receipt whose rc_binary_sha256 differs from the rc tag's asset sha, or a tag with no asset sha, is refused; hex case is not a difference"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_crux_perf_005"
+    expected_output: "exit 0"
+    if_fails: "A local build would be recorded as the rc's speed: the receipt would measure a binary nobody ships."
