@@ -1,0 +1,111 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-26'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §2.2, §3 (SRV-TIM-001 F1–F5), §7 OBS-03'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries'
+  - 'SRV-TIM-001 (branch feat/srv-tim-001-serve-timings, owner 2e) — contracts/apr-serve-timings-v1.yaml
+     holds the RESPONSE-side timings contract; this file is the LEDGER row built from it'
+  - 'aprender#4487 — OBS-00'
+  description: >
+    One row per apr serve request: the structured log line apr serve emits,
+    collected from the journal into the per-host fleet_perf_dir by a
+    forjar-declared unit. §1 G5: `timings` is null on every path except CUDA chat.
+
+    Division of labour: apr-serve-timings-v1 (SRV-TIM-001) says what the HTTP
+    response's timings must contain. This contract says the ledger row is the SAME
+    numbers, plus the identity block, joined to the lane row by request_id. The
+    five falsifiers are SRV-TIM-001's F1–F5, restated here as ledger predicates.
+
+    Server timings are the system describing itself. They are admissible for
+    self-improvement only where OBS-04 shows they agree with the client's wall
+    time (spec §0.4).
+
+equations:
+  serve_row_shape:
+    formula: |
+      row = identity (apr-obs-row-identity-v1, schema = "apr-serve-timing-v1")
+          + { prompt_n, completion_n, prefill_ms, decode_ms, ttft_ms, total_ms, route }
+      REQUIRE: prefill_ms != null AND decode_ms != null   on EVERY backend      (F1)
+      REQUIRE: prompt_n = usage.prompt_tokens AND completion_n = usage.completion_tokens (F2)
+      REQUIRE: prefill_ms + decode_ms <= total_ms                              (F3)
+      REQUIRE: timings != PhaseTimings::default()                              (F4)
+      REQUIRE: log_row.timings = response.timings for the same request_id      (F5)
+    domain: 'one line of the serve ledger and the response it describes'
+    codomain: bool
+    invariants:
+    - 'A zeroed PhaseTimings is a fabricated measurement: all phases 0 ms passes
+       F3 and reads as infinitely fast.'
+    - 'The log line and the response come from ONE timings value; two separately
+       computed copies can disagree without either being wrong-looking.'
+
+falsification_tests:
+- id: FALSIFY-OBS-SRV-001
+  rule: 'F1 timings are filled on every backend'
+  prediction: 'A row with null prefill_ms or decode_ms on any backend (cpu, cuda, wgpu, metal) is REJECTED.'
+  test: 'NOT YET WRITTEN in this ledger — SRV-TIM-001 F1 covers the response; the ledger check lands with OBS-03'
+  if_fails: 'the prefill/decode split, the directed-modification signal, exists on one backend only (§1 G5)'
+  mutation: 'return timings: None on the CPU path; the CPU case must turn RED'
+- id: FALSIFY-OBS-SRV-002
+  rule: 'F2 token counts equal usage'
+  prediction: 'A row whose prompt_n or completion_n differs from the response usage is REJECTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-03'
+  if_fails: 'per-token ms is computed over the wrong denominator'
+  mutation: 'count completion tokens including EOS on one side only; must turn RED'
+- id: FALSIFY-OBS-SRV-003
+  rule: 'F3 phases do not exceed the total'
+  prediction: 'A row with prefill_ms + decode_ms > total_ms is REJECTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-03'
+  if_fails: 'overlapping or double-counted phase clocks read as a real split'
+  mutation: 'start the decode clock before prefill ends; must turn RED'
+- id: FALSIFY-OBS-SRV-004
+  rule: 'F4 no default timings'
+  prediction: 'A row equal to PhaseTimings::default() is REJECTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-03'
+  if_fails: 'a path that never timed anything reports 0 ms and passes every bound'
+  mutation: 'plant PhaseTimings::default() on one route; must turn RED'
+- id: FALSIFY-OBS-SRV-005
+  rule: 'F5 the log line equals the response'
+  prediction: 'For the same request_id, a log row whose timings differ from the response timings is REJECTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-03'
+  if_fails: 'the ledger and the client disagree and OBS-04 cannot tell which is wrong'
+  mutation: 'recompute timings for the log line after the response is sent; must turn RED'
+
+proof_obligations:
+- type: invariant
+  property: 'Timings are non-null on every backend (FALSIFY-OBS-SRV-001)'
+  formal: '∀ r ∈ serve: r.prefill_ms ≠ null ∧ r.decode_ms ≠ null'
+- type: invariant
+  property: 'Token counts equal the response usage (FALSIFY-OBS-SRV-002)'
+  formal: '∀ r: r.prompt_n = usage(r).prompt_tokens ∧ r.completion_n = usage(r).completion_tokens'
+- type: soundness
+  property: 'Phases never exceed the total (FALSIFY-OBS-SRV-003)'
+  formal: '∀ r: r.prefill_ms + r.decode_ms ≤ r.total_ms'
+- type: invariant
+  property: 'No row is a default PhaseTimings (FALSIFY-OBS-SRV-004)'
+  formal: '∀ r: timings(r) ≠ default'
+- type: invariant
+  property: 'The log row equals the response timings (FALSIFY-OBS-SRV-005)'
+  formal: '∀ id: log(id).timings = response(id).timings'
+
+qa_gate:
+  id: F-OBS-SRV-GATE-001
+  name: 'every serve request leaves the same timings in the ledger as in the response'
+  description: 'OBS-03 acceptance: F1–F5 planted RED then GREEN on every backend; lands after the 0.70 publish.'
+  checks:
+  - timings_non_null_every_backend
+  - counts_equal_usage
+  - phases_within_total
+  - no_default_timings
+  - log_equals_response
+  - identity_admissible
+  pass_criteria: 'All checks hold for every row. Report-only through 0.70.'
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: 'Shape only (OBS-00). The response-side F1–F5 tests belong to SRV-TIM-001 (2e); the ledger-side checks land with OBS-03.'

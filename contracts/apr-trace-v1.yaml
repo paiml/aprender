@@ -1,0 +1,90 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-26'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §5.2, §3 falsifiers, §7 OBS-09, OBS-11'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries'
+  - 'crates/aprender-serve/src/inference_trace/mod.rs — the tracer (TraceStep) that must actually run'
+  - 'aprender#4487 — OBS-00'
+  description: >
+    A per-request trace from apr serve under `X-Trace-Level: step|layer`, produced
+    by running the existing inference_trace tracer for that request. §1 G6: today
+    X-Trace-Level returns a single wall-clock total and inference_trace never runs
+    in serve.
+
+    Trace payloads exceed the 4096-byte atomic line, so the ledger row carries the
+    identity block plus {path, sha256} of a side file (append discipline in
+    apr-obs-row-identity-v1). From 0.71, every performance PR carries a before/after
+    apr-trace-v1 diff for the layers it claims to change (OBS-11).
+
+equations:
+  trace_row_shape:
+    formula: |
+      row = identity (apr-obs-row-identity-v1, schema = "apr-trace-v1")
+          + { level in {step, layer}, provenance, wall_ms, payload: {path, sha256} }
+      payload = [ { step | layer, ms } ... ]
+      REQUIRE: sha256(read(payload.path)) = payload.sha256
+    domain: 'one trace row and its side file'
+    codomain: bool
+
+  measured_means_the_tracer_ran:
+    formula: |
+      provenance = Measured  <=>  inference_trace ran for this request_id
+      tracer did not run     =>  provenance != Measured
+    domain: 'the provenance field'
+    codomain: bool
+    invariants:
+    - 'A trace synthesised from a wall-clock total is the G6 state today; labelling it
+       Measured turns an estimate into evidence.'
+
+  layers_fit_inside_the_request:
+    formula: |
+      sum(payload[i].ms) <= wall_ms
+    domain: 'a trace payload and its row'
+    codomain: bool
+    invariants:
+    - 'Per-layer times that sum past the wall are double-counted or come from a
+       different request.'
+
+falsification_tests:
+- id: FALSIFY-OBS-TRACE-001
+  rule: Measured only when the tracer ran
+  prediction: 'A trace whose provenance is Measured while inference_trace did not run for
+    that request is REJECTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-09'
+  if_fails: 'a perf PR cites a per-layer table that no tracer produced'
+  mutation: 'return provenance Measured on the wall-clock-only path; must turn RED'
+- id: FALSIFY-OBS-TRACE-002
+  rule: per-layer sum does not exceed the wall
+  prediction: 'A trace whose per-layer sum exceeds wall_ms is REJECTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-09'
+  if_fails: 'overlapping spans make a layer look like the bottleneck when it is not'
+  mutation: 'record each layer span twice; must turn RED'
+
+proof_obligations:
+- type: invariant
+  property: 'provenance Measured implies the tracer ran (FALSIFY-OBS-TRACE-001)'
+  formal: '∀ t: t.provenance = Measured ⇒ tracer_ran(t.request_id)'
+- type: soundness
+  property: 'Per-layer times fit inside the request (FALSIFY-OBS-TRACE-002)'
+  formal: '∀ t: sum(t.payload.ms) ≤ t.wall_ms'
+
+qa_gate:
+  id: F-OBS-TRACE-GATE-001
+  name: 'a trace is evidence only if the tracer produced it'
+  description: 'OBS-09 acceptance: both falsifiers RED then GREEN; lands before the first 0.71 perf PR merges.'
+  checks:
+  - measured_only_when_tracer_ran
+  - layer_sum_within_wall
+  - payload_sha_matches
+  - identity_admissible
+  pass_criteria: 'All checks hold for every trace row.'
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: 'Shape only (OBS-00). Tests land with OBS-09, the first row of the 0.71 serve epic.'

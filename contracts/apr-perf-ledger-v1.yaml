@@ -1,0 +1,125 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-26'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §2.4 workload, §3 falsifiers, §4 RED rules, §7 OBS-05'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries'
+  - 'paiml/infra#1057 — per-binary perf ledger (OBS-05 closes it)'
+  - 'scripts/llama_pin.toml — the comparator pin (build_commit)'
+  - 'aprender#4487 — OBS-00'
+  description: >
+    The nightly benchmark ledger: one row per host x backend per night, written by
+    a forjar timer running PINNED apr and PINNED llama.cpp on the same GGUF, on the
+    same host, in the same run (§2.4). §1 G4: no such data file exists today.
+
+    This is the ONLY ledger ratios are computed from. The signal is apr divided by
+    llama.cpp on the same host and run, so host, heat and driver drift cancel.
+    Raw apr ms are reported and never used for regression.
+
+equations:
+  perf_row_shape:
+    formula: |
+      row = identity (apr-obs-row-identity-v1, schema = "apr-perf-ledger-v1")
+          + { workload_id, prompt_n, reps,
+              apr:   { load_ms, ttft_ms, pp512_tok_s, tg128_tok_s, wall_ms, median, mad },
+              llama: { build_commit, same fields },
+              ratio: { load, ttft, prefill, decode } }
+      REQUIRE: prompt_n >= 8 AND reps = 5                 (R-3; §2.4)
+      REQUIRE: llama.build_commit = scripts/llama_pin.toml build_commit
+    domain: 'one line of the nightly ledger'
+    codomain: bool
+    invariants:
+    - 'apr_version, apr_tag and binary_sha256 are required (identity); a row without
+       them cannot be placed against a release-tag baseline (OBS-07).'
+
+  every_host_backend_every_night:
+    formula: |
+      forall (host, backend) in DECLARED_SERIES, forall night n:
+        exists admissible row r with r.host = host, r.backend = backend, night(r.ts) = n
+      else Liveness RED
+      |ledger| = 0  =>  RED
+    domain: 'the nightly ledger vs the forjar-declared series'
+    codomain: bool
+    invariants:
+    - 'DECLARED_SERIES comes from the forjar declaration, never from the rows present:
+       a series that stopped writing must still be expected.'
+
+  ratio_only_within_identity:
+    formula: |
+      ratio(apr, llama) computed only when both sides share host, run, model_sha256, backend
+      comparisons across nights require equal crate_tarball_sha256 or are annotated
+    domain: 'the ratio fields'
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-OBS-PERF-001
+  rule: a missing host row is RED
+  prediction: 'A night with rows for every declared series but one is Liveness RED, naming that host x backend.'
+  test: 'NOT YET WRITTEN — lands with OBS-05'
+  if_fails: 'a host that stopped running looks like a host with nothing to report'
+  mutation: 'derive DECLARED_SERIES from the rows present; the missing-host case must turn RED'
+- id: FALSIFY-OBS-PERF-002
+  rule: an empty ledger is RED
+  prediction: 'A ledger with 0 rows is RED, never 0/0.'
+  test: 'NOT YET WRITTEN — lands with OBS-05'
+  if_fails: 'every rule passes vacuously over nothing (R-2)'
+  mutation: 'return GREEN when there are no rows to check; the empty case must turn RED'
+- id: FALSIFY-OBS-PERF-003
+  rule: version and sha are required
+  prediction: 'A row missing apr_version, apr_tag or binary_sha256 is REJECTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-05 (reuses FALSIFY-OBS-ID-001)'
+  if_fails: 'the release-tag baseline compares against an unknown build'
+  mutation: 'drop binary_sha256 from the writer; must turn RED'
+- id: FALSIFY-OBS-PERF-004
+  rule: a GPU row needs gpu_proof
+  prediction: 'A backend=cuda row with gpu_proof null is excluded from the CUDA series as backend_unproven.'
+  test: 'NOT YET WRITTEN — lands with OBS-05 (reuses FALSIFY-OBS-ID-002)'
+  if_fails: 'a CPU fallback on gx10 is filed as a CUDA number'
+  mutation: 'admit cuda rows without reading gpu_proof; must turn RED'
+- id: FALSIFY-OBS-PERF-005
+  rule: no ratio across mismatched identity
+  prediction: 'A ratio over rows with different model_sha256 or crate_tarball_sha256 is FATAL.'
+  test: 'NOT YET WRITTEN — lands with OBS-05 (reuses FALSIFY-OBS-ID-003)'
+  if_fails: 'a model or build change reads as a speed regression'
+  mutation: 'compute the ratio on host alone; the mismatched case must turn RED'
+
+proof_obligations:
+- type: invariant
+  property: 'Every declared host x backend has an admissible row each night (FALSIFY-OBS-PERF-001)'
+  formal: '∀ s ∈ DECLARED_SERIES, n: ∃ r: series(r) = s ∧ night(r) = n'
+- type: invariant
+  property: 'An empty ledger is RED (FALSIFY-OBS-PERF-002)'
+  formal: '|ledger| = 0 ⇒ verdict = RED'
+- type: invariant
+  property: 'Version and sha are present on every row (FALSIFY-OBS-PERF-003)'
+  formal: '∀ r: r.apr_version, r.apr_tag, r.binary_sha256 ≠ null'
+- type: invariant
+  property: 'GPU series admit only proven rows (FALSIFY-OBS-PERF-004)'
+  formal: '∀ r ∈ gpu_series: r.gpu_proof ≠ null'
+- type: soundness
+  property: 'Ratios never cross identity (FALSIFY-OBS-PERF-005)'
+  formal: '∀ ratio(a, b): ident(a) = ident(b)'
+
+qa_gate:
+  id: F-OBS-PERF-GATE-001
+  name: 'every declared host x backend has an admissible, comparable row every night'
+  description: 'OBS-05 acceptance: at least 13 of 14 nights with a row for every host x backend; all falsifiers RED then GREEN.'
+  checks:
+  - every_series_every_night
+  - ledger_non_empty
+  - version_and_sha_present
+  - gpu_rows_proven
+  - ratio_within_identity
+  - comparator_pinned
+  pass_criteria: >
+    All checks hold. RED rules over this ledger (OBS-06/07) are report-only through
+    0.70; blocking at the 0.71 final needs an operator ruling (spec §4, §8 S-7).
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: 'Shape only (OBS-00). The writer is a forjar timer (infra), so OBS-05 is NotRun until the fleet_perf_dir issue lands.'
