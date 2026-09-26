@@ -142,12 +142,22 @@ fn lint_findings_on_failure() {
 fn lint_severity_filter() {
     let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.99);
+    // Non-vacuity: the unfiltered corpus must carry a finding the filter has to drop.
+    let unfiltered = run_lint(&config);
+    assert!(
+        unfiltered
+            .findings
+            .iter()
+            .any(|f| f.severity < RuleSeverity::Error),
+        "knob corpus has no below-Error finding — the filter test is vacuous"
+    );
     config.severity_filter = Some(RuleSeverity::Error);
     let report = run_lint(&config);
     assert!(report
         .findings
         .iter()
         .all(|f| f.severity >= RuleSeverity::Error));
+    assert!(report.findings.len() < unfiltered.findings.len());
 }
 
 #[test]
