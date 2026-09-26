@@ -49,6 +49,11 @@ pub struct KernelBinding {
     /// Free-form notes.
     #[serde(default)]
     pub notes: Option<String>,
+    /// This entry binds a cuda-oxide `#[kernel]` beside the equation's CPU reference (ONT-4c4, #4069): the
+    /// ontology joins the two by the shared equation. BINDING-006 keys on it, so an equation holds at most one
+    /// reference and one kernel, and [`BindingRegistry::find_binding`] never returns the kernel entry.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kernel: bool,
 }
 
 /// Implementation status of a binding.
@@ -119,9 +124,9 @@ impl BindingRegistry {
     /// Find a specific binding by contract + equation (normalizes contract).
     pub fn find_binding(&self, contract_id: &str, equation: &str) -> Option<&KernelBinding> {
         let needle = normalize_contract_id(contract_id);
-        self.bindings
-            .iter()
-            .find(|b| normalize_contract_id(&b.contract) == needle && b.equation == equation)
+        self.bindings.iter().find(|b| {
+            !b.kernel && normalize_contract_id(&b.contract) == needle && b.equation == equation
+        })
     }
 
     /// L5 verification: return a copy of this registry in which every binding
@@ -285,7 +290,8 @@ pub fn validate_binding_registry(registry: &BindingRegistry) -> Vec<Violation> {
         ));
     }
 
-    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(String, String, bool)> =
+        std::collections::HashSet::new();
     for (i, binding) in registry.bindings.iter().enumerate() {
         validate_one_binding(i, binding, &mut seen, &mut violations);
     }
@@ -296,7 +302,7 @@ pub fn validate_binding_registry(registry: &BindingRegistry) -> Vec<Violation> {
 fn validate_one_binding(
     index: usize,
     binding: &KernelBinding,
-    seen: &mut std::collections::HashSet<(String, String)>,
+    seen: &mut std::collections::HashSet<(String, String, bool)>,
     violations: &mut Vec<Violation>,
 ) {
     let at = |field: &str| format!("bindings[{index}].{field}");
@@ -359,9 +365,12 @@ fn validate_one_binding(
 
     // BINDING-006: one equation, one binding. `find_binding` returns the FIRST
     // match, so a duplicate silently decides which implementation is audited.
+    // A `kernel: true` entry is keyed apart: it is the equation's #[kernel], graded
+    // by the kernel shapes against the reference, and `find_binding` skips it.
     let key = (
         normalize_contract_id(&binding.contract).to_string(),
         binding.equation.clone(),
+        binding.kernel,
     );
     if !seen.insert(key) {
         violations.push(err(
@@ -499,6 +508,7 @@ bindings:
             signature: None,
             status: ImplStatus::Implemented,
             notes: None,
+            kernel: false,
         };
         assert!(bound.function_defined_in(&names));
 
@@ -536,6 +546,7 @@ bindings:
                     signature: None,
                     status: ImplStatus::Implemented,
                     notes: None,
+                    kernel: false,
                 },
                 KernelBinding {
                     contract: "c-v1.yaml".into(),
@@ -545,6 +556,7 @@ bindings:
                     signature: None,
                     status: ImplStatus::Implemented,
                     notes: None,
+                    kernel: false,
                 },
             ],
         };

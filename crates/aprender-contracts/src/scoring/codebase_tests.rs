@@ -225,6 +225,7 @@ kani_harnesses:
                 function: None,
                 signature: None,
                 notes: None,
+                kernel: false,
             },
             crate::binding::KernelBinding {
                 contract: "test-v1.yaml".into(),
@@ -234,6 +235,7 @@ kani_harnesses:
                 function: None,
                 signature: None,
                 notes: None,
+                kernel: false,
             },
         ],
     };

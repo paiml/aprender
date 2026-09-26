@@ -21871,3 +21871,24 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4481
+  github_issue: 4481
+  item_type: task
+  title: 'batch(ONT): fold #4480 (contracts gate fails closed, #4475) and #4473 (ONT-4c4 kernel receipts + O-1 gated_rmsnorm receipt, #4069/#3522) onto main as one PR'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-df
+  created: 2026-09-26T16:51:01Z
+  updated: 2026-09-26T16:51:01Z
+  spec: null
+  acceptance_criteria:
+  - the three commits of #4480 (c30936d9d3) and #4473 (91969973aa, 09edd15f28) are cherry-picked with -x onto main, content unchanged; the only other change is this ticket's roadmap entry and receipt.
+  - bash scripts/contracts_gate.sh on the combined tree runs 6 of 6 steps with 0 failed (the regenerated census.json / contracts.nt / shapes.ttl match), and its --self-test passes.
+  - 'CI-fix delta (added after the 3/3 at 367ae45bd6): the combined tree broke BINDING-006 (a #[kernel] and its CPU reference on one equation) and bashrs SC2171 in contracts_gate.sh. Both are fixed here because the fold caused them: KernelBinding.kernel keys the kernel entry apart, and the jq program moves into a heredoc. Tests cover a pair passing, two references RED, two kernels RED, and kernel-only resolving to no reference.'
+  - (process, not diff content) a 3-lane quorum on this diff, then pmat-merge arms with --match-head-commit once CI is green.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'receipt: docs/audits/impl-PMAT-4481-receipt.md. Replaces #4480 and #4473 (closed as superseded, branches kept).'

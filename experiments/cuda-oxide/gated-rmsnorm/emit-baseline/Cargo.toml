@@ -1,0 +1,11 @@
+[package]
+name = "gated_rmsnorm_emit_baseline"
+version = "0.1.0"
+edition = "2021"
+
+# Emits the hand-PTX baseline for the A/B on the stable toolchain; kept out of the oxide crate, whose pinned
+# nightly is not the workspace toolchain.
+[workspace]
+
+[dependencies]
+aprender-gpu = { path = "../../../../crates/aprender-gpu", features = ["cuda"] }
