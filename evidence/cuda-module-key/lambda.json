@@ -1,0 +1,28 @@
+{
+  "commit": "ac1c41558ccefbf33a897d726bdd78cb99fad100",
+  "compute_cap": "8.9",
+  "device_skips": 0,
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "gpu_failed": 0,
+  "gpu_passed": 2669,
+  "host": "lambda",
+  "issue": "#3759",
+  "mutant": {
+    "name": "cuda::executor::rmsnorm_eps_tests_3759::the_module_key_guard_refuses_one_key_for_two_epsilons",
+    "passed": true,
+    "ran": true,
+    "skipped": false
+  },
+  "reason": "",
+  "schema": "cuda-module-key-v1",
+  "serve_cuda_only": 1776,
+  "serve_failed": 0,
+  "serve_ignored": 14,
+  "serve_passed": 1762,
+  "started_utc": "2026-09-26T08:04:09Z",
+  "status": "PASS",
+  "trees": {
+    "crates/aprender-gpu/src": "116be10e071ca37b25f00600d60255583337b5e5",
+    "crates/aprender-serve/src/cuda": "3ac5c16a7b558dc335f9d5ce6cd16fe6a3e7db13"
+  }
+}
