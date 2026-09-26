@@ -115,6 +115,8 @@ pub(crate) mod model_gate_cli;
 pub(crate) mod model_gate_cr;
 pub(crate) mod model_gate_m2;
 #[cfg(feature = "training")]
+pub(crate) mod model_ghcr;
+#[cfg(feature = "training")]
 pub(crate) mod model_pack;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod speed_arms;
