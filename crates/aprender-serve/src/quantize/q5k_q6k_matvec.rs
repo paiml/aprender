@@ -169,7 +169,14 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
 
     let bsums = precompute_q8k_bsums(q8k_quants, super_blocks_per_row).ok();
 
-    // Fallback: original per-block hsum path
+    // Fallback: original per-block hsum path. Every AVX-512 VNNI host also has
+    // AVX2+FMA, so on x86_64 the 4-row VNNI kernel below is reached only when
+    // `use_lean` is false. That order is MEASURED, not an oversight (#2880):
+    // single-threaded row kernels on a Zen 4 Threadripper 7960X, min of 40,
+    // VNNI 4-row is 1.48-1.98x SLOWER than the lean AVX2 kernel at
+    // 2048x2048 / 2048x6144 / 6144x2048 / 4096x4096, outputs equal to 2.4e-7
+    // (`vnni_reach_bench_tests.rs`). Re-measure before reordering on a host
+    // with native 512-bit datapaths.
     const MIDI_TILE_M: usize = 64;
     const MICRO_TILE_M: usize = 4;
 
