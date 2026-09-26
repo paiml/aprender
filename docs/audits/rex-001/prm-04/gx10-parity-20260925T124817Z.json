@@ -1,0 +1,112 @@
+{
+  "host": "gx10-a5b5",
+  "at": "20260925T124817Z",
+  "apr_tag": "v0.69.3",
+  "apr_commit": "ad5d07a182b15e70527d3f33f18ceb1211ba4c80",
+  "binary_sha256": "2f274f477275c578a511fd5fd90e8c9e36e686df88b8eff0529d80ced5e2508c",
+  "weights": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+  "weights_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+  "comparator": "apr-cpu (apr parity: GPU vs CPU; no llama.cpp comparator in this apr, aprender#3576)",
+  "exit": 0,
+  "verdict": "pass",
+  "parity": {
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "tokens": 7,
+    "passed": 7,
+    "failed": 0,
+    "parity": true,
+    "metrics": [
+      {
+        "position": 0,
+        "token_id": 3710,
+        "cpu_argmax": 369,
+        "gpu_argmax": 369,
+        "max_abs_diff": 0.2318652868270874,
+        "mean_abs_diff": 0.03146722540259361,
+        "cosine_similarity": 0.9998131990432739,
+        "kl_divergence": 0.00021212672537373304,
+        "sigma_level": 100.47431010234187,
+        "cpk": 33.22796605385059,
+        "verdict": "Pass"
+      },
+      {
+        "position": 1,
+        "token_id": 369,
+        "cpu_argmax": 279,
+        "gpu_argmax": 279,
+        "max_abs_diff": 0.14195120334625244,
+        "mean_abs_diff": 0.02431115135550499,
+        "cosine_similarity": 0.9999650120735168,
+        "kl_divergence": 0.000028142869161619233,
+        "sigma_level": 131.23602099621212,
+        "cpk": 43.479465434592946,
+        "verdict": "Pass"
+      },
+      {
+        "position": 2,
+        "token_id": 220,
+        "cpu_argmax": 16,
+        "gpu_argmax": 16,
+        "max_abs_diff": 0.24833190441131592,
+        "mean_abs_diff": 0.03066864237189293,
+        "cosine_similarity": 0.999754011631012,
+        "kl_divergence": 0.00010543855908146571,
+        "sigma_level": 103.40762116359619,
+        "cpk": 34.20492610853252,
+        "verdict": "Pass"
+      },
+      {
+        "position": 3,
+        "token_id": 17,
+        "cpu_argmax": 15,
+        "gpu_argmax": 15,
+        "max_abs_diff": 0.20449680089950562,
+        "mean_abs_diff": 0.030058100819587708,
+        "cosine_similarity": 0.9998959898948669,
+        "kl_divergence": 0.00007435307399205818,
+        "sigma_level": 105.21864173972742,
+        "cpk": 34.80932453478307,
+        "verdict": "Pass"
+      },
+      {
+        "position": 4,
+        "token_id": 10,
+        "cpu_argmax": 17,
+        "gpu_argmax": 17,
+        "max_abs_diff": 0.23898255825042725,
+        "mean_abs_diff": 0.03911856189370155,
+        "cosine_similarity": 0.999718189239502,
+        "kl_divergence": 0.0002524354532544672,
+        "sigma_level": 82.05736118788325,
+        "cpk": 27.084956565755913,
+        "verdict": "Pass"
+      },
+      {
+        "position": 5,
+        "token_id": 17,
+        "cpu_argmax": 30,
+        "gpu_argmax": 30,
+        "max_abs_diff": 0.23314523696899414,
+        "mean_abs_diff": 0.03875268995761871,
+        "cosine_similarity": 0.9997207522392273,
+        "kl_divergence": 0.0005191280388814299,
+        "sigma_level": 82.29276982289848,
+        "cpk": 27.165167758074453,
+        "verdict": "Pass"
+      },
+      {
+        "position": 6,
+        "token_id": 30,
+        "cpu_argmax": 271,
+        "gpu_argmax": 271,
+        "max_abs_diff": 0.23418569564819336,
+        "mean_abs_diff": 0.03857100382447243,
+        "cosine_similarity": 0.9997043609619141,
+        "kl_divergence": 0.00028003667922200324,
+        "sigma_level": 82.17311717474466,
+        "cpk": 27.126914090180225,
+        "verdict": "Pass"
+      }
+    ]
+  }
+}

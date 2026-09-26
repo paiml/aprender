@@ -1,0 +1,52 @@
+metadata:
+  version: 3.0.0
+  kind: schema
+  description: |
+    PRM-001 pre-registration lock (rule R-1). Spec §2–§5, the analysis code
+    (crates/aprender-review-experiment/src/stats.rs), the analysis plan and prompt v1
+    are frozen by sha256 in a lock file. The prereg sha is carried by every
+    review-experiment receipt; a tree that no longer matches the lock is a new spec
+    version and its data is exploratory. The contract id keeps its v1 name.
+    - rex-prereg-v1 (REX-00, 5f0ae10ac): docs/audits/rex-001/prereg.lock over
+      review-experiment-protocol.md. SUPERSEDED, never deleted or edited (operator
+      2026-09-25); its spec §2–§5 and plan stay byte-frozen.
+    - rex-prereg-v2 (PRM-00b): docs/audits/prm-001/prereg.lock over PRM-001 v3
+      (docs/specifications/PRM-001-prometheus.md) and analysis plan v2. v1 had 0 data rows.
+      The 17:09Z v2 draft lock (1f4acb3d) over the v2 ruling was a stray draft and is void.
+  references:
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "docs/audits/prm-001/analysis-plan.md"
+    - "docs/specifications/review-experiment-protocol.md"
+    - "https://github.com/paiml/aprender/issues/4355"
+
+equations:
+  prereg_sha:
+    formula: "sha256('rex-prereg-v2\\n' || 'spec_s2_s5 ' || H(spec[§2..§6)) || '\\nstats_rs ' || H(stats.rs) || '\\nanalysis_plan ' || H(plan) || '\\nprompt_v1 ' || H(prompt) || '\\n')"
+  locked:
+    formula: "prereg.lock[k] == H(component_k) for every k, and prereg.lock[prereg_sha] == prereg_sha"
+
+falsification_tests:
+  - id: FALSIFY-REX-PREREG-001
+    name: lock_matches_tree
+    prediction: "the committed v2 lock matches every frozen component"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rex_prereg_001"
+    expected_output: "exit 0"
+    if_fails: "A frozen component changed after PRM-00b. That is a new spec version (R-1): label prior data exploratory and cut v3; never edit the lock to match."
+  - id: FALSIFY-REX-PREREG-002
+    name: planted_section3_edit_is_caught
+    prediction: "an edit to §3 (hypotheses) changes the prereg sha"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rex_prereg_002"
+    expected_output: "exit 0"
+    if_fails: "The §2–§5 span no longer covers §3; the lock is vacuous."
+  - id: FALSIFY-REX-PREREG-003
+    name: out_of_scope_edit_is_not_a_version
+    prediction: "an edit to the header (outside §2–§5) leaves the prereg sha unchanged"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rex_prereg_003"
+    expected_output: "exit 0"
+    if_fails: "The span leaks past §6; routine header edits would invalidate data."
+  - id: FALSIFY-REX-PREREG-004
+    name: v1_lock_is_frozen_and_verifies
+    prediction: "the v1 lock still carries prereg_sha ef51087d… and its spec §2–§5, plan and prompt digests match the in-tree v1 files"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rex_prereg_004"
+    expected_output: "exit 0"
+    if_fails: "A superseded lock or the v1 bytes it froze were edited (operator: never deleted or edited)."

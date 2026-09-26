@@ -1,0 +1,82 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRA-001 T2 (spec docs/specifications/research-design-pr-agent-qwen-3.5.md §7), on top of
+    PRM-001 REX-07. `rex ledger` (crates/aprender-review-experiment: ledger.rs, ledger_v1.rs)
+    writes `review-ledger-v2` rows. v1 kept findings as a count, so each quorum lost its
+    (input, output, findings) triple. v2 keeps each counted lane's findings text verbatim
+    plus its agent-trace-v1 input/output shas. Text never captured is None, never an empty
+    list. The apr shadow row is the typed paiml-implement#436 wire form (Verdict | NotRun |
+    Refused). Outcomes are appended as OutcomeJoin lines and never rewrite a row. v1 rows
+    (both shapes ever written under that name) still parse through read_row, and a
+    typed-shadow v1 row migrates with its count kept and its text None. Supersedes
+    review-ledger-v1 for writing; v1 stays for reading.
+  references:
+    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
+    - "docs/specifications/review-experiment-protocol.md"
+    - "contracts/review-ledger-v1.yaml"
+    - "https://github.com/paiml/aprender/issues/4354"
+    - "https://github.com/paiml/paiml-implement/issues/436"
+
+equations:
+  coverage:
+    formula: "holds ⇔ |Q| > 0 ∧ missing = ∅ ∧ violations = ∅ ∧ identity_gaps = 0 ∧ trace_gaps = 0"
+  shadow:
+    formula: "shadow(q) ∈ {Verdict{verdict ∈ {PASS,FAIL}, cell, backend}, NotRun{NoExecutor|Busy|Timeout|ContextOverflow|TrainActive}, Refused{cell, removed_by ∈ {ladder,gpu-proof,parse}}}; any other value ⇒ violation"
+  trace_gap:
+    formula: "gap(l) ⇔ findings(l) = None ∨ input_sha256(l) = None ∨ output_sha256(l) = None"
+  outcome:
+    formula: "outcome(r, J) = at-max { j ∈ J : j.repo = r.repo ∧ j.head = r.head }.outcome, else r.outcome; r is never rewritten"
+  migration:
+    formula: "migrate(v1) = v2 with findings_count = v1.findings ∧ findings = None ∧ shas = None; shadow(v1) legacy ⇒ Err"
+
+falsification_tests:
+  - id: FALSIFY-RXL-001
+    name: a_quorum_without_a_shadow_row_is_missing
+    prediction: "no advisory_lane, or the lane off, is missing; an empty set never holds"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_001"
+    expected_output: "exit 0"
+    if_fails: "Quorums could run without the shadow lane and REX-07 would still read green."
+  - id: FALSIFY-RXL-002
+    name: gx10_down_is_notrun_and_keeps_the_width
+    prediction: "a lane that did not run is NotRun, never a verdict; the width stays the counted lanes"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_002"
+    expected_output: "exit 0"
+    if_fails: "A gx10 outage would enter the ledger as a verdict."
+  - id: FALSIFY-RXL-003
+    name: a_counted_or_width_changing_shadow_is_a_violation
+    prediction: "counts=true, a missing counts flag, or a width other than the counted lanes fails coverage"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_003"
+    expected_output: "exit 0"
+    if_fails: "The non-voting lane could start voting before promotion."
+  - id: FALSIFY-RXL-004
+    name: a_receipt_without_a_weights_sha_does_not_hold
+    prediction: "a row with no apr tag or weights sha is an identity gap and coverage fails"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_004"
+    expected_output: "exit 0"
+    if_fails: "Shadow rows could not be tied to the weights that produced them."
+  - id: FALSIFY-RXL-005
+    name: a_free_text_reason_fails_to_parse
+    prediction: "an apr row outside the #436 wire form (free text, unknown key or value) is a violation"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_005"
+    expected_output: "exit 0"
+    if_fails: "Free-text reasons would re-enter the ledger and split the spelling from receipt-lint."
+  - id: FALSIFY-RXL-006
+    name: a_counted_lane_without_its_trace_does_not_hold
+    prediction: "a counted lane missing findings text, input_sha256 or output_sha256 is a trace gap; the row is kept and coverage fails"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_006"
+    expected_output: "exit 0"
+    if_fails: "v2 would silently degrade to v1's count-only capture and the training triples would be lost again."
+  - id: FALSIFY-RXL-007
+    name: an_outcome_join_appends_and_never_rewrites
+    prediction: "the latest join by `at` for (repo, head) wins; other heads are ignored; the row is byte-identical after"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_007"
+    expected_output: "exit 0"
+    if_fails: "Outcome labels could overwrite history, and gold labels would lose their provenance."
+  - id: FALSIFY-RXL-008
+    name: v1_rows_parse_and_migrate_without_invented_text
+    prediction: "both v1 shapes parse; a typed v1 row migrates with its count kept and findings None (a trace gap); a legacy shadow is refused; a v1 body under the v2 name, or an unknown schema, is an error"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_008"
+    expected_output: "exit 0"
+    if_fails: "Old rows would stop reading, or migration would invent an empty findings list that trains as 'no issues'."

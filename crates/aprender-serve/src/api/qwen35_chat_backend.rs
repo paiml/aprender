@@ -144,7 +144,16 @@ async fn try_qwen35_backend(
     let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
     // The context-bounded budget, not the request's number: what is decoded and what
     // `finish_reason` is judged against are the same count.
-    let gen_config = gen_config_from_request(request, budget, stop_tokens.clone(), cancel.clone());
+    let mut gen_config =
+        gen_config_from_request(request, budget, stop_tokens.clone(), cancel.clone());
+    // #4026: validated by the handler before any arm ran.
+    let top_logprobs = crate::api::chat_logprobs::requested_top_logprobs(request)
+        .ok()
+        .flatten();
+    if let Some(n) = top_logprobs {
+        // At least one alternative is recorded: `logprobs_top_k` 0 records nothing.
+        gen_config.logprobs_top_k = n.max(1);
+    }
 
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
@@ -209,6 +218,30 @@ async fn try_qwen35_backend(
 
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
+    if let Some(n) = top_logprobs {
+        // One record per generated id; the popped stop token's record goes too.
+        let steps = &turn.steps[..completion_tokens.min(turn.steps.len())];
+        let decode = |id: u32| decode_mapped.model.decode(&[id]);
+        let mut body = serde_json::to_value(chat_response_body(
+            request_id.to_string(),
+            request.model.clone(),
+            response_text,
+            prompt_token_count,
+            completion_tokens,
+            budget,
+            request.stop.as_deref(),
+            None,
+            duration,
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            None,
+            None,
+        ))
+        .unwrap_or_default();
+        body["choices"][0]["logprobs"] =
+            crate::api::chat_logprobs::chat_logprobs_json(steps, n, &decode);
+        return Some(Json(body).into_response());
+    }
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),

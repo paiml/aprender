@@ -1,0 +1,84 @@
+metadata:
+  version: 1.1.0
+  kind: schema
+  description: |
+    PRM-09 (PRM-001 v3 "PROMETHEUS" §5.4, §7, §9): the promotion ladder with the tie-breaker rung.
+    Supersedes rex-promotion-ladder-v1. `rex ladder REPORT_JSON [--current RUNG]`
+    (crates/aprender-review-experiment: ladder.rs, examples/rex.rs) reads only a `prm-001-report-v1`
+    report (the §9 template: spec PRM-001, version 3) whose prereg_sha is the lock and that is not
+    exploratory. Anything else, including the older rex-001-report-v2, is read as no evidence (shadow).
+    Rungs, lowest first: shadow < tripwire < tie-breaker < vote.
+      tripwire    ⇔ H4 ∧ speed.within_budget (replay p95 ≤ the queue budget).
+      tie-breaker ⇔ tripwire ∧ H5 ∧ H7 ∧ H1 ∧ H2 ∧ lane.availability_7d ≥ 0.95. It decides only a 1–1 split.
+      vote        ⇔ tie-breaker ∧ promotion.tie_breaks_decided ≥ 20 ∧
+                    promotion.tie_break_outcome_agreement ≥ promotion.voter_outcome_agreement.
+    H4 and H5 hold on a `holds` verdict with a finite Holm-adjusted p in [0, 0.05]; the CI is report-only.
+    H1 and H2 (count tests) and H7 (δ-free, outside the Holm family) hold on a `holds` verdict.
+    hardware_ruling.rung_eligible caps the rung; a report without a ruling is shadow.
+    A primary cell that is lambda, or is not named, caps the lane at tripwire (R-9, STOP S-4).
+    The ladder is sequential: from the current rung it moves at most one rung up, and a demotion
+    drops exactly one rung. The S-4 cap is the only exception and applies at once.
+    The paiml-implement quorum gate and the arbiter read `.mode`; they never re-derive it.
+  references:
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "contracts/rex-promotion-ladder-v1.yaml"
+
+equations:
+  evidence:
+    formula: "e = H4 ∧ fast ? (H5 ∧ H7 ∧ H1 ∧ H2 ∧ avail ≥ 0.95 ? (n_tb ≥ 20 ∧ agree_tb ≥ agree_voters ? vote : tie-breaker) : tripwire) : shadow"
+  cap:
+    formula: "c = min(e, ruling.rung_eligible, primary is lambda or absent ? tripwire : vote); no ruling ⇒ c = shadow"
+  step:
+    formula: "mode = primary is lambda or absent ∧ current > tripwire ? tripwire : clamp(c, current − 1, current + 1)"
+  holds:
+    formula: "holds(H4|H5) ⇔ verdict = holds ∧ p_holm finite ∧ 0 ≤ p_holm ≤ 0.05; holds(H1|H2|H7) ⇔ verdict = holds"
+
+falsification_tests:
+  - id: FALSIFY-RXG-001
+    name: a_failing_h4_keeps_the_lane_in_shadow
+    prediction: "the planted report with H4 failing, a holds verdict with Holm p > 0.05, NaN, negative or missing, or H4 absent all stay shadow"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_001"
+    expected_output: "exit 0"
+    if_fails: "The lane would enter tripwire without evidence its precision matches the voters."
+  - id: FALSIFY-RXG-002
+    name: h4_alone_is_tripwire_never_vote
+    prediction: "the planted H4-only report is tripwire; H5 failing names H5 and stays tripwire; within_budget false or absent is shadow; rung_eligible caps; a ruling without rung_eligible, or no ruling, is shadow"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_002"
+    expected_output: "exit 0"
+    if_fails: "A lane over the queue budget, or with only H4, would cast deciding votes."
+  - id: FALSIFY-RXG-003
+    name: only_a_locked_confirmatory_report_is_read
+    prediction: "a rex-001-report-v2 report, a version-2 spec, a stale prereg_sha, an exploratory report and non-JSON are all shadow"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_003"
+    expected_output: "exit 0"
+    if_fails: "An unlocked or exploratory analysis could promote the lane."
+  - id: FALSIFY-RXG-004
+    name: the_ci_is_report_only
+    prediction: "a CI crossing 0 with Holm p ≤ 0.05 still holds; a clean CI with Holm p > 0.05 does not"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_004"
+    expected_output: "exit 0"
+    if_fails: "The ladder would decide on a statistic the prereg made report-only."
+  - id: FALSIFY-RXG-005
+    name: tie_breaker_needs_h4_h5_h7_h1_h2_and_availability
+    prediction: "the planted H4+H5+H7 report (H1, H2 holding, availability 0.97) is tie-breaker; without or failing any of H5, H7, H1, H2 it is tripwire and names it (H5 also needs Holm p ≤ 0.05); availability 0.95 is tie-breaker, 0.9499 or absent is tripwire"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_005"
+    expected_output: "exit 0"
+    if_fails: "A lane that is unavailable or nondeterministic would break ties in the quorum."
+  - id: FALSIFY-RXG-006
+    name: lambda_primary_is_refused_above_tripwire
+    prediction: "a report passing every gate with hardware_ruling.primary lambda-cuda is tripwire with an S-4 reason naming the cell as written (lambda-cuda, never a Rust Debug Some(..)); a ruling without a primary is also tripwire and is named (unnamed)"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_006"
+    expected_output: "exit 0"
+    if_fails: "The operator's desktop GPU would sit on the merge path (R-9)."
+  - id: FALSIFY-RXG-007
+    name: vote_needs_twenty_agreeing_tie_breaks
+    prediction: "19 decided tie-breaks, tie-break agreement below the voters', no promotion block, or no voter agreement all stay tie-breaker"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_007"
+    expected_output: "exit 0"
+    if_fails: "The lane would vote on ties it never decided, or decided worse than the voters."
+  - id: FALSIFY-RXG-008
+    name: never_skips_a_rung_and_demotes_one
+    prediction: "full evidence from shadow → tripwire, tripwire → tie-breaker, tie-breaker → vote; no evidence from vote → tie-breaker, tripwire → shadow; a tripwire-only report takes vote to tie-breaker; the lambda cap takes vote or tie-breaker to tripwire at once, never promotes a shadow lane past its evidence"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_008"
+    expected_output: "exit 0"
+    if_fails: "One good report would jump the lane to vote, or one bad report would drop it to shadow."

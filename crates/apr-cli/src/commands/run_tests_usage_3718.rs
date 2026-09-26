@@ -2,6 +2,7 @@
 
 fn result_with(usage: RunUsage) -> RunResult {
     RunResult {
+        logprobs: None,
         text: "4".to_string(),
         duration_secs: 1.0,
         cached: true,

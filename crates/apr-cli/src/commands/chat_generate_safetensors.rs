@@ -72,6 +72,7 @@ impl ChatSession {
                 seed: realizar::apr_transformer::DEFAULT_SEED,
                 repeat_penalty: 1.0,
                 repeat_last_n: 0,
+                logprobs_top_k: 0,
                 // apr_transformer::generation::is_eos_token (GH-330) treated
                 // token 0 as EOS unconditionally; Session has no such builtin,
                 // so it is carried here as an explicit stop token to keep this

@@ -1,0 +1,16 @@
+- id: PMAT-4447
+  github_issue: 4447
+  item_type: task
+  title: PRM-S1 review-replay-v1 benchmark + runner
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T17:46:46Z
+  updated: 2026-09-25T17:46:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
