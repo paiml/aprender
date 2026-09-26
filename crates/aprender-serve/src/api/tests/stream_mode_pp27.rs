@@ -174,12 +174,27 @@ async fn replayed_stream_declares_replayed() {
         !terminal["usage"].is_null(),
         "a replayed stream still owes the client its token counts:\n{terminal}"
     );
-    // §3: no phase split exists on this path — generation was over before the
-    // first byte was written. Absent, not zero.
-    assert!(
-        terminal["timings"].is_null(),
-        "a replayed stream cannot have measured a prefill phase:\n{terminal}"
-    );
+    // SRV-TIM-001: generation was over before the first byte was written, but
+    // the ENGINE measured its split while it ran and the builder hands it in.
+    // `stream_mode: replayed` is what stops a receipt reading wire ttft/itl
+    // from this stream; the timings block is the engine's, and must be real.
+    assert_measured_or_absent(&terminal["timings"], &terminal["usage"]);
+}
+
+/// SRV-TIM-001 (contracts/apr-serve-timings-v1.yaml): a `timings` block is
+/// either absent or MEASURED — prompt_ms > 0, counts equal `usage`, and
+/// predicted_ms is 0 exactly when nothing was generated. Never zero-filled.
+fn assert_measured_or_absent(t: &serde_json::Value, usage: &serde_json::Value) {
+    if t.is_null() {
+        return;
+    }
+    let prompt_ms = t["prompt_ms"].as_f64().expect("prompt_ms");
+    let predicted_ms = t["predicted_ms"].as_f64().expect("predicted_ms");
+    let predicted_n = t["predicted_n"].as_u64().expect("predicted_n");
+    assert!(prompt_ms > 0.0, "a zero prefill is not a measurement:\n{t}");
+    assert_eq!(predicted_n == 0, predicted_ms == 0.0, "decode is measured iff tokens were generated:\n{t}");
+    assert_eq!(t["prompt_n"], usage["prompt_tokens"], "{t}");
+    assert_eq!(t["predicted_n"], usage["completion_tokens"], "{t}");
 }
 
 /// The two modes must be DISTINGUISHABLE on the wire. A declaration that reads
@@ -256,18 +271,16 @@ async fn usage_is_emitted_without_the_opt_in() {
 /// key. `0.0` would enter `prefill_ratio` as a measurement.
 #[cfg(feature = "gpu")]
 #[tokio::test]
-async fn timings_absent_is_null_not_zero() {
+async fn timings_are_measured_or_absent_never_zero_filled() {
     use super::native_routes_2376::quantized_state;
 
     let nonstream = r#"{"model":"default","messages":[{"role":"user","content":"token5 token6"}],"max_tokens":4,"temperature":0.0}"#;
     let (status, body) = post_sse(quantized_state(), "/v1/chat/completions", nonstream).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let parsed: serde_json::Value = serde_json::from_str(&body).expect("json body");
-    assert!(
-        parsed["timings"].is_null(),
-        "the CPU quantized backend does not measure a phase split; it must report \
-         no timings rather than zeros:\n{parsed}"
-    );
+    // SRV-TIM-001: the CPU quantized backend now measures its split. The claim
+    // that survives is the one this test exists for: never a zero-filled block.
+    assert_measured_or_absent(&parsed["timings"], &parsed["usage"]);
     assert!(
         !body.contains("\"prompt_ms\":0"),
         "a zero prefill duration must never reach the wire:\n{body}"
@@ -276,19 +289,17 @@ async fn timings_absent_is_null_not_zero() {
     // Streaming form of the same claim.
     let (_, stream_body) = post_sse(quantized_state(), "/v1/chat/completions", STREAM_BODY).await;
     let frames = sse_frames(&stream_body);
-    assert!(
-        frames.last().expect("terminal chunk")["timings"].is_null(),
-        "an unmeasured phase split must be absent on the terminal chunk too"
-    );
+    let terminal = frames.last().expect("terminal chunk");
+    assert_measured_or_absent(&terminal["timings"], &terminal["usage"]);
 }
 
 /// When a backend DOES measure, the block appears with llama.cpp's key names,
 /// so one client parser serves both lanes.
 ///
 /// Driven through `build_chat_response` — the single function every
-/// non-streaming backend returns through — because no CPU backend in this crate
-/// measures a phase split, and asserting the shape on a fabricated CUDA run
-/// would prove less than nothing.
+/// non-streaming backend returns through — with fixed values, so the exact key
+/// names and rates are asserted rather than whatever a live run happened to
+/// measure.
 #[tokio::test]
 async fn nonstream_response_carries_timings_when_measured() {
     use crate::api::PhaseTimings;
