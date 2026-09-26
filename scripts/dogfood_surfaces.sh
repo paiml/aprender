@@ -703,8 +703,14 @@ for r in sorted(set(d.get("routes",[]))): print(r.strip())
 }
 
 if [ "${1:-}" = "--emit-features" ]; then
-    emit_features
-    exit 0
+    # #4476 ONT-4g: 0 emitted feature rows is a FAILURE. This used to `exit 0`
+    # whatever emit_features printed, so a broken --help parse handed the
+    # reconciler an empty denominator and a green exit. The row count lives in
+    # surface_audit_bins_gate.sh --require-rows, so the case table can drive it.
+    emit_features | bash "$(dirname "${BASH_SOURCE[0]}")/surface_audit_bins_gate.sh" --require-rows
+    ef_rc=("${PIPESTATUS[@]}")
+    [ "${ef_rc[0]}" -eq 0 ] || exit "${ef_rc[0]}"
+    exit "${ef_rc[1]}"
 fi
 
 # --- driver ----------------------------------------------------------------
