@@ -546,6 +546,7 @@ pub async fn openai_completions_handler(
 ) -> Result<axum::response::Response, RErr> {
     use axum::response::IntoResponse;
 
+    let handler_start = std::time::Instant::now();
     let stream = request.stream;
     // #4272: a Qwen3.5 session streams LIVE from its `on_token`; every other
     // backend still buffers and slices (below).
@@ -555,6 +556,21 @@ pub async fn openai_completions_handler(
         }
     }
     let completion = completions_inner(state, request, cancel).await?;
+    crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+        &completion.id,
+        &completion.model,
+        "completions",
+        completion.used_gpu,
+        stream,
+        completion.usage.prompt_tokens,
+        completion.usage.completion_tokens,
+        completion.timings.as_ref(),
+        handler_start.elapsed(),
+        completion
+            .choices
+            .first()
+            .map_or("", |c| c.finish_reason.as_str()),
+    ));
     Ok(if stream {
         completion_sse_response(&completion)
     } else {

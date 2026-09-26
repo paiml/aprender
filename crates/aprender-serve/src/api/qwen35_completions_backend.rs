@@ -334,6 +334,7 @@ pub(crate) fn try_qwen35_completions_stream(
     let created = epoch_secs();
     let model = request.model.clone();
     let metrics = state.metrics.clone();
+    let (log_id, log_model) = (id.clone(), request.model.clone());
     let chunk = move |text: String,
                       finish_reason: Option<String>,
                       usage: Option<Usage>,
@@ -359,6 +360,18 @@ pub(crate) fn try_qwen35_completions_stream(
                 Qwen35StreamMsg::Delta(text) => serde_json::to_string(&chunk(text, None, None, None)),
                 Qwen35StreamMsg::Done { finish_reason, completion_tokens, timings } => {
                     metrics.record_success(completion_tokens, start.elapsed());
+                    crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+                        &log_id,
+                        &log_model,
+                        "completions",
+                        Some(true),
+                        true,
+                        prompt_tokens,
+                        completion_tokens,
+                        timings.as_ref(),
+                        start.elapsed(),
+                        &finish_reason,
+                    ));
                     serde_json::to_string(&chunk(
                         String::new(),
                         Some(finish_reason),

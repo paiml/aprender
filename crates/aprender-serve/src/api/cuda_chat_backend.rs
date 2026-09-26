@@ -567,6 +567,7 @@ fn try_apr_transformer_backend(
             max_tokens,
             prompt_tokens,
             phases.to_timings(prompt_tokens, completion_tokens),
+            start,
         ));
     }
 
@@ -722,6 +723,7 @@ fn registry_fallback(
             request.max_tokens.unwrap_or(256),
             prompt_tokens,
             phases.to_timings(prompt_tokens, completion_tokens),
+            start,
         );
     }
 
@@ -1329,6 +1331,7 @@ fn try_qwen3_moe_backend(
             max_tokens,
             prompt_token_count,
             timings,
+            start,
         ));
     }
 
