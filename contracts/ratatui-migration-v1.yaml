@@ -86,7 +86,7 @@ kani_harnesses:
   bound: 4
 
 verification_summary:
-  total_obligations: 4
+  total_obligations: 2
   proven: 4
   tested: 4
   status: COMPLETE

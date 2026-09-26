@@ -1,0 +1,4 @@
+ℹ [2346/2512] Replayed ProvableContracts.Theorems.AbsolutePosition.Core
+⚠ [2400/2512] Built ProvableContracts.Theorems.Foo (3.1s)
+warning: ././././ProvableContracts/Theorems/Foo.lean:1:8: declaration uses 'sorry'
+Build completed successfully (16435 jobs).

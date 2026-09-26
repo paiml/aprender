@@ -473,3 +473,14 @@ qa_gate:
     - every_inventory_model_measured_and_green_on_cuda
   pass_criteria: "check_model_ladder.sh exits 0 with executed >= 1 and a non-empty measured inventory on every required host"
   falsification: "plant a receipt with cuda.fallback=true → exit 1"
+
+# ONT-8: one evidence block — PROV-O names, one L-enum (ProofLevel). The level is MEASURED, not declared: it is what
+# the cited command printed for this contract at the time below. Checked by `pv lint --gate evidence`.
+evidence:
+  level: L2
+  mark: C
+  provenance:
+    wasGeneratedBy:
+      command: "pv proof-status contracts/ --format json"
+    wasAttributedTo: pv
+    generatedAtTime: "2026-09-24T08:22:07Z"

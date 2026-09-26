@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use provable_contracts::binding::parse_binding;
+use provable_contracts::binding::{parse_binding, BindingRegistry, ImplStatus};
 use provable_contracts::obligation_matrix::{format_obligation_table, obligation_matrix};
 use provable_contracts::proof_status::{format_text, proof_status_report};
 use provable_contracts::schema::ContractKind;
@@ -15,15 +15,20 @@ pub fn run(
     table: bool,
     kind_filter: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let binding = match binding_path {
-        // L5 gate: when --verify-bindings is set, downgrade any `implemented`
-        // binding whose function is absent from source, so L5 requires bindings
-        // that are VERIFIED as implemented rather than merely self-declared.
-        Some(bp) => Some(match verify_root {
-            Some(root) => parse_binding(bp)?.verified(root),
-            None => parse_binding(bp)?,
-        }),
-        None => None,
+    // PVL-001 EV-2 (PVL-2): a binding is RESOLVED, always. `--binding` used to count
+    // entries without resolving them (a binding naming a function that exists
+    // nowhere printed its report and exited 0), and `--verify-bindings` downgraded
+    // silently. Now every `implemented` binding is looked up with the
+    // `pv verify-bindings` resolver; a ghost is downgraded, listed under
+    // `GHOST BINDINGS (n)`, and the command exits 1. `--verify-bindings` is a no-op
+    // alias, kept so existing invocations still parse.
+    let _ = verify_root;
+    let (binding, ghosts) = match binding_path {
+        Some(bp) => {
+            let (reg, ghosts) = resolve_bindings(bp, parse_binding(bp)?);
+            (Some(reg), ghosts)
+        }
+        None => (None, Vec::new()),
     };
 
     let kind = kind_filter.map(parse_kind).transpose()?;
@@ -61,7 +66,72 @@ pub fn run(
         print!("{}", format_obligation_table(&matrices));
     }
 
-    Ok(())
+    if ghosts.is_empty() {
+        return Ok(());
+    }
+    // Text mode prints the block on stdout with the report; JSON mode keeps stdout a
+    // single JSON document and prints the block on stderr.
+    let block = ghost_block(&ghosts);
+    if format == "json" {
+        eprint!("{block}");
+    } else {
+        print!("{block}");
+    }
+    Err(format!(
+        "{} ghost binding(s): claimed implemented, not found in source",
+        ghosts.len()
+    )
+    .into())
+}
+
+/// One binding that claims `implemented` for a function the resolver cannot find.
+struct Ghost {
+    contract: String,
+    equation: String,
+    function: String,
+}
+
+/// Resolve every `implemented` binding against source with the `pv verify-bindings`
+/// resolver (`scan_all_sources`: the binding's derived source root, its `crates/`,
+/// and the local `src/`). A ghost is downgraded to `not_implemented` so the report's
+/// levels are honest, and returned so the caller can name it and reject.
+fn resolve_bindings(binding_path: &Path, reg: BindingRegistry) -> (BindingRegistry, Vec<Ghost>) {
+    use crate::commands::verify_bindings::{scan_all_sources, short_name};
+    let found = scan_all_sources(binding_path, &reg.target_crate);
+    let mut ghosts = Vec::new();
+    let bindings = reg
+        .bindings
+        .into_iter()
+        .map(|mut b| {
+            let unresolved = b.status == ImplStatus::Implemented
+                && b.function
+                    .as_deref()
+                    .and_then(short_name)
+                    .is_some_and(|s| !found.contains(&s));
+            if unresolved {
+                ghosts.push(Ghost {
+                    contract: b.contract.clone(),
+                    equation: b.equation.clone(),
+                    function: b.function.clone().unwrap_or_default(),
+                });
+                b.status = ImplStatus::NotImplemented;
+            }
+            b
+        })
+        .collect();
+    (BindingRegistry { bindings, ..reg }, ghosts)
+}
+
+/// `GHOST BINDINGS (n)`, then one line per ghost: the line PVL-001 EV-2's probe reads.
+fn ghost_block(ghosts: &[Ghost]) -> String {
+    let mut out = format!("\nGHOST BINDINGS ({})\n", ghosts.len());
+    for g in ghosts {
+        out.push_str(&format!(
+            "  {} {}: {}\n",
+            g.contract, g.equation, g.function
+        ));
+    }
+    out
 }
 
 fn print_kind_breakdown(contracts: &[(String, provable_contracts::schema::Contract)]) {

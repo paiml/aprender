@@ -84,6 +84,17 @@ pub enum Commands {
         /// Path to the new contract YAML file
         new: PathBuf,
     },
+    /// What the Lean proofs rest on: axiom subset pins and the compiler-escape allowlist (PVL-001 EV-6a, #4139)
+    Discharge {
+        #[command(subcommand)]
+        action: DischargeAction,
+    },
+    /// Pin each contract-bound theorem's STATEMENT apart from its proof: `<lean>/Challenge/<contract>.lean`
+    /// (PVL-001 EV-7a, #4200)
+    Challenge {
+        #[command(subcommand)]
+        action: ChallengeAction,
+    },
     /// Census the contract corpus: one cardinality, by_anchoring, by_entity_type (ONT-001 ONT-1)
     Census {
         /// Directory containing contract YAML files
@@ -111,6 +122,11 @@ pub enum Commands {
         out: Option<PathBuf>,
         #[command(flatten)]
         release: Box<ReleaseArgs>,
+    },
+    /// Σ as OWL and its advisory TBox (ONT-001 §3.8, ONT-2c)
+    Ontology {
+        #[command(subcommand)]
+        command: OntologyCommand,
     },
     /// Show cross-contract obligation coverage report
     Coverage {
@@ -182,10 +198,10 @@ pub enum Commands {
         /// Path to binding registry YAML (adds binding coverage)
         #[arg(long)]
         binding: Option<PathBuf>,
-        /// L5 gate: before counting a binding as implemented, verify its
-        /// `function` actually exists in source (scanned from the given root,
-        /// default `.`). Phantom "implemented" bindings are downgraded, so L5
-        /// means "verified as implemented", not self-declared.
+        /// No-op alias (PVL-001 EV-2): `--binding` now ALWAYS resolves every
+        /// `implemented` binding against source with the `pv verify-bindings`
+        /// resolver, lists ghosts under `GHOST BINDINGS (n)` and exits 1. Kept so
+        /// existing invocations still parse; its root argument is ignored.
         #[arg(long, num_args = 0..=1, default_missing_value = ".")]
         verify_bindings: Option<PathBuf>,
         /// Output format: text (default) or json
@@ -287,9 +303,11 @@ pub enum Commands {
         /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
         #[arg(long)]
         armed_baseline_ref: Option<String>,
-        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`.
+        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`. Repeatable
+        /// (PVL-001 EV-11): every named gate runs and reports, and the exit is their meet — a refusal over a
+        /// reject over a decline over a pass.
         #[arg(long)]
-        gate: Option<String>,
+        gate: Vec<String>,
         /// With `--gate shapes`: grade only this shape family (the shape and every `<id>.*` shape), armed
         /// whatever `armed_shapes` says (aprender#3715: `--shape release-readiness-v1`).
         #[arg(long)]
@@ -373,6 +391,17 @@ pub enum Commands {
         /// Maximum number of suggestions to show
         #[arg(long, default_value = "20")]
         top: usize,
+    },
+    /// Obligation gate (PVL-001 EV-10): every contract under ROOT/contracts validates, hides no
+    /// test under `falsification:`, and binds each `applies_to` to a `fn` under ROOT/src that
+    /// mentions the contract's `proved_type`. Replaces pmat's `scripts/pv-obligation-gate.py`.
+    Obligations {
+        /// Repository root holding `contracts/` and `src/`
+        #[arg(default_value = ".")]
+        root: PathBuf,
+        /// Exit 1 (`reject:`) when any problem is found; without it the report exits 0
+        #[arg(long)]
+        gate: bool,
     },
     /// Remove enforcement level lock from a contract (requires --reason)
     Unlock {
@@ -473,6 +502,131 @@ pub enum Commands {
     },
 }
 
+/// `pv discharge` actions (PVL-001 EV-6a, #4139).
+#[derive(Subcommand, Clone, Debug)]
+pub enum DischargeAction {
+    /// Generate `<lean-dir>/Axioms.lean`: a subset axiom pin per contract-bound theorem in the root's import cone
+    GenAxioms {
+        /// The Lean dir (holds ProvableContracts.lean)
+        lean_dir: PathBuf,
+        /// Directory of the contracts whose `lean_theorem:` references bind the roots
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+        /// Do not write: rc 1 when the tracked Axioms.lean differs from its regeneration
+        #[arg(long)]
+        check: bool,
+    },
+    /// Judge the tree: escapes vs escape-allowlist.yaml, exact-name roots, the label ratchet, Axioms.lean
+    /// freshness, then `lake env lean Axioms.lean` (after `build.sh`) unless `--no-lake`
+    Check {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+        /// Skip the Lean elaboration of Axioms.lean
+        #[arg(long)]
+        no_lake: bool,
+        /// Allowlist entries still `confirmed_by: pending` are RED
+        #[arg(long)]
+        strict: bool,
+        /// Also judge `<lean-dir>/formalization.yaml`: `main_results` listed by discharge-summary.json,
+        /// `status.axioms` the pinned kernel set, `sorry_count` the measured count; a missing file is RED
+        /// (PVL-001 EV-8b, #4082)
+        #[arg(long)]
+        validate_formalization: bool,
+        /// Also re-check the BUILT tree's .olean files: `timeout <T> lake env leanchecker ProvableContracts`
+        /// (non-fresh; `--fresh`, which replays Mathlib, is the nightly's, PVL-F7). rc != 0 rejects; no
+        /// `leanchecker` in the toolchain declines (PVL-001 EV-6b, #4199)
+        #[arg(long, conflicts_with = "no_lake")]
+        leanchecker: bool,
+        /// `--leanchecker`'s wall-clock limit, seconds
+        #[arg(long, default_value_t = 3600, requires = "leanchecker")]
+        leanchecker_timeout: u64,
+        /// `--leanchecker` under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
+        #[arg(long, requires = "leanchecker")]
+        leanchecker_ulimit_v: Option<u64>,
+        /// `--leanchecker` with at most N Lean worker threads (`LEAN_NUM_THREADS`), 1..=8: the default is also the ceiling. leanchecker replays one full
+        /// environment per concurrent module task, so memory scales with this: 51 threads took 58-67 GB (#4348)
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_THREADS, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_THREADS)), requires = "leanchecker")]
+        leanchecker_threads: u32,
+        /// `--leanchecker` inside `systemd-run --user --scope -p MemoryMax=<N>G -p CPUQuota=<Q>%`: this memory cap,
+        /// GiB, 1..=24: a caller may lower it, never raise it (#4348: the host must stay usable)
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB)), requires = "leanchecker")]
+        leanchecker_memory_max_gib: u32,
+        /// `--leanchecker`'s scope CPU quota, percent of one core, 1..=800
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT)), requires = "leanchecker")]
+        leanchecker_cpu_quota_pct: u32,
+        /// Run `--leanchecker` WITHOUT the systemd scope (a host with no user systemd). The thread cap still applies
+        #[arg(long, requires = "leanchecker")]
+        leanchecker_unscoped: bool,
+        /// Also run the comparator: `lake env lean --run scripts/Comparator.lean Challenge/*.lean` on the BUILT
+        /// tree. Each EV-7a challenge must be closed by a sorry-free solution of the SAME statement (sha256 of
+        /// the canonical type). No Challenge file, or zero rows, declines (PVL-001 EV-7b, #4201)
+        #[arg(long, conflicts_with = "no_lake")]
+        comparator: bool,
+        /// Wall-clock limit on each `lake env lean` call (Axioms.lean, the comparator), seconds. A call that
+        /// exceeds it is killed with its process group and rejects: a hang is RED, not a wait (#4239)
+        #[arg(long, default_value_t = crate::commands::discharge::LAKE_TIMEOUT_S)]
+        lake_timeout: u64,
+    },
+    /// `build.sh`, then `check` with every arm (`--strict`, the comparator, `--leanchecker`), then write the
+    /// untracked full log `<lean-dir>/discharge.json` and the TRACKED `<lean-dir>/../discharge-summary.json` --
+    /// on failure too. The Lean steps run only after `build.sh` exits 0 (PVL-001 EV-8a, #4202)
+    Run {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+        /// The leanchecker arm's wall-clock limit, seconds
+        #[arg(long, default_value_t = 3600)]
+        leanchecker_timeout: u64,
+        /// The leanchecker arm under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
+        #[arg(long)]
+        leanchecker_ulimit_v: Option<u64>,
+        /// the leanchecker arm with at most N Lean worker threads (`LEAN_NUM_THREADS`), 1..=8: the default is also the ceiling. leanchecker replays one full
+        /// environment per concurrent module task, so memory scales with this: 51 threads took 58-67 GB (#4348)
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_THREADS, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_THREADS)))]
+        leanchecker_threads: u32,
+        /// the leanchecker arm inside `systemd-run --user --scope -p MemoryMax=<N>G -p CPUQuota=<Q>%`: this memory cap,
+        /// GiB, 1..=24: a caller may lower it, never raise it (#4348: the host must stay usable)
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB)))]
+        leanchecker_memory_max_gib: u32,
+        /// the leanchecker arm's scope CPU quota, percent of one core, 1..=800
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT)))]
+        leanchecker_cpu_quota_pct: u32,
+        /// Run the leanchecker arm WITHOUT the systemd scope (a host with no user systemd). The thread cap still applies
+        #[arg(long)]
+        leanchecker_unscoped: bool,
+        /// Wall-clock limit on each `lake env` call outside the leanchecker arm, seconds; a timeout rejects (#4239)
+        #[arg(long, default_value_t = crate::commands::discharge::LAKE_TIMEOUT_S)]
+        lake_timeout: u64,
+    },
+    /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
+    /// file is seeded). `check` never writes it.
+    LabelRatchet {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+    },
+}
+
+/// `pv challenge` actions (PVL-001 EV-7a, #4200).
+#[derive(Subcommand, Clone, Debug)]
+pub enum ChallengeAction {
+    /// Write `<lean-dir>/Challenge/<contract>.lean`: every bound theorem restated as `PvlChallenge.<fqn>` with
+    /// its proof replaced by `sorry`. Stale files are removed.
+    Gen {
+        /// Directory of the contracts whose `lean_theorem:` references bind the roots
+        contracts: PathBuf,
+        /// The Lean dir (holds ProvableContracts.lean)
+        lean_dir: PathBuf,
+    },
+    /// Regenerate in memory and compare with `<lean-dir>/Challenge/`: rc 1 on any difference, rc 2 on zero
+    /// challenges
+    Check {
+        contracts: PathBuf,
+        lean_dir: PathBuf,
+    },
+}
+
 /// `pv census` output format (ONT-001 ONT-1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum CensusFormat {
@@ -550,4 +704,30 @@ impl ReleaseArgs {
             .clone_from(&self.tokenizer_receipts);
         Ok(Some(s))
     }
+}
+
+/// `pv ontology …` (ONT-001 §3.8, row ONT-2c).
+#[derive(Subcommand, Clone, Debug)]
+pub enum OntologyCommand {
+    /// Write Σ as OWL 2 EL functional syntax (the in-house writer; byte-deterministic)
+    Export {
+        /// Σ, the ontology declaration
+        #[arg(default_value = "contracts/ontology.yaml")]
+        sigma: PathBuf,
+        /// OWL 2 functional syntax. The only format this command writes; required so the output is named
+        #[arg(long)]
+        owl: bool,
+        /// Write `ontology.ofn` next to Σ instead of printing it
+        #[arg(long)]
+        write: bool,
+    },
+    /// The told-closure TBox report (advisory; `tbox-report.json`). Exit 3 if its precondition fails
+    Tbox {
+        /// Σ, the ontology declaration
+        #[arg(default_value = "contracts/ontology.yaml")]
+        sigma: PathBuf,
+        /// Write `tbox-report.json` next to Σ instead of printing it
+        #[arg(long)]
+        write: bool,
+    },
 }

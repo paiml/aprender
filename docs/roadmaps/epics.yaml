@@ -1,0 +1,21 @@
+# APR-EPIC-001 §2 — the themed epic set. Single writer: the APR-EPIC-001 row owner
+# (delegated by the traffic cop). Read by scripts/check_issue_flow.sh (FALSIFY-FLOW-004/008).
+# budget = max open children; repo-wide cap 100, andon at 95, steady state 90.
+spec: APR-EPIC-001
+cap: {open_issues: 100, andon: 95, steady_state: 90}
+epics:
+  - {id: E0, issue: 3269, name: "Ontology (ONT-001)", train: "0.70", budget: 13, successor: S2,
+     absorbs: [4071, 4072, 4073, 3847, 4069, 3972, 4047, 4070, 4075, 4330, 4074, 4077, 4078, 4079, 3715, 3856, 3559, 3560, 4319, 4379, 4420, 3610, 3611, 3624, 4100]}
+  - {id: E1, issue: 3998, name: "Fast Train", train: "0.70", budget: 10, successor: S1, absorbs: [4033, 4288, 4232, 3081, 3058]}
+  - {id: E2, issue: 3598, name: "Verbs Are Fast", train: "0.71", budget: 7, successor: E6, absorbs: [4249]}  # #4249 children re-parent after 0.69.5 ships
+  - {id: E3, issue: 3994, name: "Don't Leave Behind", train: "0.71", budget: 9, successor: E7, absorbs: [3062, 3597]}
+  - {id: E4, issue: 4381, name: "Dogfood Model Lifecycle", train: "0.71", budget: 9, successor: E8, absorbs: [4354, 4252]}  # #4354 stays a one-level sub-epic
+  - {id: E5, issue: 4000, name: "Agent Ready", train: "0.72", budget: 5, successor: E6, absorbs: []}
+  - {id: E6, issue: 3999, name: "llama.cpp Parity", train: "0.73", budget: 5, successor: E7, absorbs: [2728, 2880, 3144]}
+  - {id: E7, issue: 4001, name: "Any Model", train: "0.74", budget: 3, successor: S3, absorbs: [3421, 3423, 3428]}
+  - {id: E8, issue: 4002, name: "CRUX Fine-Tune/Distill", train: "0.75", budget: 3, successor: E9, absorbs: []}
+  - {id: E9, issue: 4164, name: "Classical ML + AutoML", train: "0.76", budget: 3, successor: S3, absorbs: [3146, 3370]}
+  - {id: S1, issue: 3863, name: "Gates That Cannot Lie", train: standing, budget: 4, successor: null, absorbs: [2876, 2877, 2878, 2879, 2503]}
+  - {id: S2, issue: 2870, name: "Provable Contracts (PVL-001)", train: standing, budget: 3, successor: null,
+     absorbs: [2556, 4080, 4081, 4082, 4083, 4084, 4122, 4139, 4166, 4168, 4197, 4198, 4199, 4200, 4201, 4202, 4238, 4239, 4240, 4241, 4244, 4347, 4351]}
+  - {id: S3, issue: 3997, name: "Debt Ratchet", train: standing, budget: 3, successor: null, absorbs: [4057, 2814, 2582, 2373]}

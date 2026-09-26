@@ -27,6 +27,14 @@ concepts:
   Statement: {doc: "a Lean theorem in the in-tree Theorems tree; the focus node of extract:lean (ONT-4b2: ont:Statement with lean:sorryFree, lean:modelOf)"}
   Model: {doc: "a model file — an .apr container or a GGUF; the ladder's rungs are the ones the release measures (ONT-4c1: model:Model, model:RequiredModel, model:Receipt)"}
   Dataset: {doc: "a CSV or corpus file"}
+  # ONT-4f (aprender#4330): the tracked GitHub snapshots under evidence/github/<type>/, read by extract:json
+  # through the `vocabulary` each entity type below carries. Each is ⊑ Json (see `subsumes`).
+  Json: {doc: "a JSON document extract:json reads — a tool's --json output, or a committed snapshot"}
+  Repo: {doc: "a GitHub repository at one commit, snapshotted under evidence/github/repo/ (repo:ref = <owner>/<repo>@<sha>)"}
+  Issue: {doc: "a GitHub issue at one updatedAt, snapshotted under evidence/github/issue/ (issue:ref = <owner>/<repo>#<n>@<updatedAt>)"}
+  PullRequest: {doc: "a GitHub pull request at one updatedAt, snapshotted under evidence/github/pull-request/ (pr:ref = <owner>/<repo>#<n>@<updatedAt>)"}
+  Milestone: {doc: "a GitHub milestone at one updatedAt, snapshotted under evidence/github/milestone/ (milestone:ref = <owner>/<repo>#<n>@<updatedAt>)"}
+  Example: {doc: "a cargo example target — examples/*.rs or examples/*/main.rs of a workspace member; the focus node of extract:example (#3560 R1: example:file, example:crate, example:name, example:namesModel, example:namesQwen35)"}
 
 roles:
   binds:
@@ -135,6 +143,7 @@ entity_types:
   - {name: json, extractor: json, implemented: true}
   - {name: code, extractor: code, implemented: true}
   - {name: lean, extractor: lean, implemented: true}
+  - {name: example, extractor: example, implemented: true}
   - {name: readme, extractor: readme, implemented: false}
   - {name: llm-context, extractor: llm_context, implemented: false}
   - {name: apr-model, extractor: apr_model, implemented: true}
@@ -147,12 +156,20 @@ entity_types:
   # aprender#3715: a release's receipts (per-host inventory + cells, kernel diffs, context rungs, the dogfood
   # receipt R5 judged), extracted ONLY when a release subject is given — an ordinary PR has no release.
   - {name: release-evidence, extractor: release_evidence, implemented: true}
+  # ONT-4f (aprender#4330): GitHub entities as COMMITTED SNAPSHOTS (evidence/github/<name>/<ref-slug>.json), read by
+  # the json extractor through the vocabulary here — never a live API call. `version` is the snapshot's own field
+  # the ref's `@<version>` slot must equal; a disagreement is refused naming both values.
+  - {name: repo, extractor: json, implemented: true, vocabulary: {prefix: repo, root_class: "ont:Repo", version: sha}}
+  - {name: issue, extractor: json, implemented: true, vocabulary: {prefix: issue, root_class: "ont:Issue", version: updatedAt}}
+  - {name: pull-request, extractor: json, implemented: true, vocabulary: {prefix: pr, root_class: "ont:PullRequest", version: updatedAt}}
+  - {name: milestone, extractor: json, implemented: true, vocabulary: {prefix: milestone, root_class: "ont:Milestone", version: updatedAt}}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
   - {name: json, reader: ontology/extract/json.rs, implemented: true}
   - {name: code, reader: ontology/extract/code.rs, implemented: true}
   - {name: lean, reader: ontology/extract/lean.rs, implemented: true}
+  - {name: example, reader: ontology/extract/example.rs, implemented: true}
   - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
   - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: false}
   - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}
@@ -167,13 +184,35 @@ not_expressible:
   - {key: taste, reader: ontology/sigma.rs}
   - {key: urgency, reader: ontology/sigma.rs}
   - {key: authorship_intent, reader: ontology/sigma.rs}
+  # ONT-2c: Σ content the OWL 2 EL writer (ontology/owl.rs) deliberately does not turn into axioms. Each key's
+  # reason is printed in the header of contracts/ontology.ofn; a populated key missing here refuses the export.
+  - {key: acyclic, reader: ontology/owl.rs}
+  - {key: symbols, reader: ontology/owl.rs}
+  - {key: worlds, reader: ontology/owl.rs}
+  - {key: agents, reader: ontology/owl.rs}
+  - {key: entity_types, reader: ontology/owl.rs}
+  - {key: extractors, reader: ontology/owl.rs}
+
+# ONT-4d (R-19): the subsumption hierarchy. Each edge is read off the two concepts' own `doc` above, never
+# asserted for convenience: `Kernel` is "a contract whose kind is kernel", and `Symbol` is "a Rust symbol … a free
+# fn or an impl method", which is a `Code` item ("a Rust item — a function, type or module"). Shapes on the super
+# apply to every instance of the sub, through the rdf:type closure `pv extract` materializes into contracts.nt.
+subsumes:
+  - {sub: Kernel, sup: Contract}
+  - {sub: Symbol, sup: Code}
+  # ONT-4f: each GitHub snapshot IS a JSON document extract:json reads (the Json doc above names both kinds).
+  - {sub: Repo, sup: Json}
+  - {sub: Issue, sup: Json}
+  - {sub: PullRequest, sup: Json}
+  - {sub: Milestone, sup: Json}
 
 readers:
   concepts: ontology/sigma.rs
+  subsumes: ontology/sigma.rs, ontology/extract/mod.rs, lint/subsumption.rs, ontology/owl.rs
   roles: lint/sigma_gate.rs, lint/relations_gate.rs
   symbols: lint/sigma_symbols.rs
   worlds: ontology/sigma.rs, lint/valid_under_gate.rs
-  agents: ontology/sigma.rs
-  entity_types: lint/sigma_gate.rs
+  agents: ontology/sigma.rs, lint/evidence_gate.rs
+  entity_types: lint/sigma_gate.rs, ontology/extract/json/github.rs
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs

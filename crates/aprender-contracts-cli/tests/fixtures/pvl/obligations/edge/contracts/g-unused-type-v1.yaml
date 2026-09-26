@@ -1,0 +1,25 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  references:
+    - "PVL-001 EV-10 golden fixture"
+  description: "A truthy non-string proved_type that no function target ever reaches: the script never evaluates it"
+  proved_type: 7
+equations:
+  relu:
+    formula: "y_i = max(0, x_i)"
+    invariants:
+      - "y_i >= 0"
+
+proof_obligations:
+  - type: invariant
+    property: "equation, not a function"
+    applies_to: relu
+  - type: invariant
+    property: "everything"
+    applies_to: all
+falsification_tests:
+  - id: FALSIFY-OBL-001
+    rule: "Non-negativity"
+    prediction: "relu(x)_i >= 0"
+    if_fails: "Comparison inverted"

@@ -1,0 +1,144 @@
+{
+  "ticket": "PMAT-4112",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "75f243a971aacf0249457b6f73b7c204909d4747",
+  "diff_sha256": "c8cd06f09f6a3a9bb24489bc8bb9c4b76d7748393cff4801cd7975ca13c0f072",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 27009,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the receipt and the provided diff for PMAT-4112. I could not find any evidence to refute the claims.\n\n1. **`push.branches` gains `'release/**'`**: The diff correctly updates `on.push.branches` to include `'release/**'` at `.github/workflows/ci.yml`, line 21.\n2. **Every non-guard job is excluded on a release push**: `ci`, `workspace-test-shard`, `workspace-test`, `mac-check`, `vendored-schemas`, `determinism`, `determinism-compare`, and `gate` are correctly wrapped with `!(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/'))` (or combined with `always()`). I verified through the script that all jobs accurately evaluate to skip, and that skipped dependencies cause the remaining `always()` jobs (like `gate`) to accurately skip without failing the run.\n3. **Both guard jobs unshallow**: `guard-tree` and `guard-cargo` correctly execute `git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main` on `push:refs/heads/release/*`. I manually confirmed via a simulated repository that `git fetch --unshallow` correctly pulls the missing commit parent lineage alongside `main`, allowing `git merge-base origin/main HEAD` to successfully locate the merge base despite `HEAD` being on a separate branch in a depth-1 clone. \n4. **Guard script validation**: `scripts/check_ci_release_fold_scope.sh` checks for R1-R3, implements the 8-case `self-test` (which I successfully ran and passed 8/8), and correctly produces exactly 11 violations against main's (unpatched) `ci.yml`.\n\nThere are no missing requirements or undocumented behaviors. The PR securely and strictly achieves what the ticket requested.",
+      "findings": [],
+      "raw_bytes": 4682,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Independent review (Lane 2 of 2) of PMAT-4112 diff (origin/main...HEAD):\n\n1. **Ticket & Approval Compliance**:\n   - The diff implements operator-approved Option B: `on.push.branches` gains `'release/**'` in `.github/workflows/ci.yml` (line 21).\n   - Scopes fold push execution strictly to `guard-tree` and `guard-cargo`. All other 8 push-eligible jobs (`ci`, `workspace-test-shard`, `workspace-test`, `mac-check`, `vendored-schemas`, `determinism`, `determinism-compare`, `gate`) carry the exclusion `!(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/'))` (or combined with `always()`).\n   - The remaining jobs (`pr-review-*`, `gpu-*`, `cuda-unit`, `mutants`) were already `pull_request`-only and are unchanged.\n\n2. **Unshallow on Release Push**:\n   - Both `guard-tree` (lines 1068-1070) and `guard-cargo` (lines 1612-1614) run `git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main` when triggered by `push:refs/heads/release/*`.\n   - Verified that `resolve_base.sh` requires history to resolve `merge-base(origin/main, HEAD)` for single-parent fold commits; verified via temporary clone that `git fetch --unshallow` correctly enables `git merge-base` resolution.\n\n3. **Guard & Self-Test Verification**:\n   - `scripts/check_ci_release_fold_scope.sh` enforces rules R1, R2, R3 using an expression evaluator that refuses unrecognized shapes rather than guessing.\n   - Tested `--self-test`: all 8/8 cases pass (6 planted mutants fail with distinct errors, missing file returns rc 2, current `ci.yml` returns rc 0).\n   - Tested against `origin/main`'s `ci.yml`: produces exactly 11 expected violations (R1 x 1, R2 x 8, R3 x 2).\n   - Verified auto-wiring under `guard_tree.sh` with both `[self-test]` and `[run]` rows passing.\n\n4. **Lint and CI Cleanliness**:\n   - `bashrs lint`: 0 errors (clean-room gate PASS, 0 SEC/DET/IDEM errors).\n   - `actionlint`: exactly the same 2 pre-existing shellcheck info messages as main, 0 new findings.\n   - Roadmap entries (`PMAT-4112.yaml` and `roadmap.yaml`) pass roadmap lint.\n\nNo gates were weakened, no receipt claims were unbacked, no tests asserted the opposite of the ticket, and no out-of-scope changes were introduced. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 5896,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}

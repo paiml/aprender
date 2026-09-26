@@ -9,8 +9,8 @@ mod strategies;
 
 use crate::schema::{Contract, KaniHarness, KaniStrategy};
 use strategies::{
-    generate_bounded_int_body, generate_compositional_body, generate_default_body,
-    generate_exhaustive_body, generate_stub_float_body,
+    generate_bounded_float_body, generate_bounded_int_body, generate_compositional_body,
+    generate_default_body, generate_exhaustive_body, generate_stub_float_body,
 };
 
 /// Generate Kani proof harness source code from a contract.
@@ -86,6 +86,9 @@ fn generate_single_harness(out: &mut String, harness: &KaniHarness) {
         }
         Some(KaniStrategy::BoundedInt) => {
             generate_bounded_int_body(out, harness);
+        }
+        Some(KaniStrategy::BoundedFloat) => {
+            generate_bounded_float_body(out, harness);
         }
         None => {
             generate_default_body(out, harness);
@@ -328,5 +331,42 @@ falsification_tests: []
         assert!(code.contains("bounded_int"));
         assert!(code.contains("Vec<i64>"));
         assert!(code.contains("#[kani::unwind(9)]"));
+    }
+
+    /// #2530: rmedia's DSP harnesses (symbolic finite `f32` window, real
+    /// transcendentals) had no strategy name. Before the variant, this YAML
+    /// failed to parse at all, so every harness in the file was invisible.
+    #[test]
+    fn generate_bounded_float_harness() {
+        let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "BoundedFloat"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+kani_harnesses:
+  - id: KANI-007
+    obligation: CLIP-001
+    property: "clip_count <= samples.len()"
+    bound: 8
+    strategy: bounded_float
+    harness: verify_clip_totality
+falsification_tests: []
+"#;
+        let contract = parse_contract_str(yaml).expect("bounded_float must parse");
+        assert_eq!(
+            contract.kani_harnesses[0].strategy,
+            Some(KaniStrategy::BoundedFloat)
+        );
+        let code = generate_kani_harnesses(&contract);
+        assert!(code.contains("fn verify_clip_totality()"));
+        assert!(code.contains("bounded_float"));
+        assert!(code.contains("Vec<f32>"));
+        assert!(code.contains("x.is_finite() && x.abs() <= MAG"));
+        // Real arithmetic: nothing from the stub_float body may appear.
+        assert!(!code.contains("stub transcendentals"));
+        assert!(!code.contains("contract stubs"));
     }
 }

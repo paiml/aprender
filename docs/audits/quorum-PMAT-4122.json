@@ -1,0 +1,178 @@
+{
+  "ticket": "PMAT-4122",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "486bd9ff172a8fd6fdcae3003960f0aa602f8c81",
+  "diff_sha256": "d14f6b77eb51f410d64a2ff5e7ce6bdd1dd307bbe1cf161d72fff094b946c9ef",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 82514,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely and correctly implements the acceptance criteria for PMAT-4122. \n- Mathlib is successfully pinned to a specific commit hash in `lakefile.lean` and `lake-manifest.json`.\n- `build.sh` is introduced with a scoped warning gate that properly checks for Lean warnings only within the `ProvableContracts` tree, fully validated by self-tests and mutants. Cold cache build failures are handled securely without masking the failure.\n- `check-orphans.sh` properly checks for orphans against the root module's import cone and strictly enforces the allowlist structure (`ticket` and `reason`).\n- The duplicate theorem name `alibi_slope_pos` is renamed to `alibi_slope_real_pos`, accurately fixing the root build as specified in the ticket's scope, and dependencies in YAML and NT files are correctly updated.\n- No CI workflow files were edited, complying with the \"No workflow edit\" requirement.",
+      "findings": [],
+      "raw_bytes": 3094,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Independent review for PMAT-4122 (PVL-001 EV-5a: pin Mathlib, scoped Lean warning gate, orphan allowlist) concludes PASS.\n\nKey verifications:\n1. Mathlib Pinning: Verified pinned to SHA `1d042d3e1e93904b24c4fe209c75d2adbb22ee24` in `crates/aprender-contracts-staging/lean/lakefile.lean` and `crates/aprender-contracts-staging/lean/lake-manifest.json`.\n2. Scoped Lean Warning Gate: `crates/aprender-contracts-staging/lean/build.sh` enforces scoped warnings over `ProvableContracts/**` and `ProvableContracts.lean`, unpacks cache oleans, ignores Mathlib-internal warnings, and handles cache misses without masking build failures. Self-test passed (10 fixtures, 8 mutants, 1 crash control; measured rc 0). `--gate` verified on clean log (rc 0), planted warning in tree (rc 1), and Mathlib warning (rc 0).\n3. Orphan Allowlist & Gate: `crates/aprender-contracts-staging/lean/check-orphans.sh` and `orphan-allowlist.yaml` track 59 orphans out of 162 modules with required `ticket` and `reason` metadata. Transitive import resolution handles nested comments and line comments. Self-test passed (10 fixtures, 6 mutants, 1 crash control; measured rc 0). Full repo check passed (162 modules, 103 in-cone, 59 orphans, 59 allowlisted; measured rc 0).\n4. Root Build Collision Fix: Renamed duplicate `alibi_slope_pos` in `Slopes.lean` to `alibi_slope_real_pos`, updating references in `contracts/alibi-slopes-v1.yaml` and `contracts/contracts.nt`.\n5. Rules & Gates: No CI workflow files were touched. Shell scripts pass `bash -n`, `shellcheck -S error`, and `bashrs lint` (0 errors). No gates weakened.",
+      "findings": [],
+      "raw_bytes": 4495,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4122 (PVL-001 EV-5a: pin Mathlib, scoped Lean warning gate, orphan allowlist) verified:\n1. Mathlib pinned to SHA `1d042d3e1e93904b24c4fe209c75d2adbb22ee24` in `lakefile.lean` and `lake-manifest.json`.\n2. Scoped Lean warning gate implemented in `build.sh`, properly scoped to `ProvableContracts/**` and `ProvableContracts.lean`, ignoring upstream Mathlib warnings, unpacking cache oleans, and reporting cache misses. Self-test with 10 fixtures, 8 mutants, and crash control passes cleanly (measured).\n3. Orphan checker `check-orphans.sh` implemented with transitive import cone resolution and comment stripping; `orphan-allowlist.yaml` contains 59 allowlisted modules with issue tickets and reasons. Self-test with 10 fixtures, 6 mutants, and crash control passes cleanly (measured).\n4. Root build collision resolved via theorem rename `alibi_slope_pos` -> `alibi_slope_real_pos` in `Slopes.lean`, with corresponding contract updates in `alibi-slopes-v1.yaml` and RDF triples in `contracts.nt`.\n5. No workflow files modified, bash scripts pass `bash -n` and `shellcheck -S error`.",
+      "findings": [],
+      "raw_bytes": 3476,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

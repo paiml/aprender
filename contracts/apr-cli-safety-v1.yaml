@@ -88,8 +88,8 @@ qa_gate:
   - falsification
   pass_criteria: All 5 falsification tests + 4 proof obligations pass
 verification_summary:
-  total_obligations: 4
-  l2_property_tested: 4
+  total_obligations: 1
+  l2_property_tested: 1
   l3_kani_proved: 0
   l4_lean_proved: 0
   l4_sorry_count: 0

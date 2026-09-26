@@ -14,8 +14,14 @@
 #     gate rc 0 -> tag is cut
 #     gate rc 1 -> no tag, no publish   (the milestone holds open items)
 #     gate rc 2 -> no tag               (Unknown; never a silent pass)
-# --self-test then removes the gate call to build a MUTANT and requires this guard to
-# go RED on it. A guard that cannot fail on the defect it names is theater.
+# #3459 part 2 made the tag path three steps (must-carry gate, carry, STRICT gate), so the
+# stubs answer each call separately and record the ORDER they ran in:
+#     must-carry rc 1/2 -> no tag AND nothing carried (a blocker is never carried around)
+#     carry rc 2        -> no tag
+#     all clean         -> the carry ran BEFORE the strict gate, and the tag is cut
+# --self-test then builds MUTANTS (gate calls removed, verdicts discarded, the carry call
+# removed) and requires this guard to go RED on each. It also runs the carry script's own
+# case table, which lives in scripts/release/ where guard_tree cannot discover it.
 #
 #   check_tag_step_gated.sh              judge scripts/release/autopilot.sh
 #   check_tag_step_gated.sh --self-test  case table + the gate-removed mutant
@@ -27,15 +33,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
 
-# run_cut_tag <autopilot> <gate-rc> -- extract cut_tag(), run it with stubs, print a
-# transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines). Returns 2 if the function is missing.
+# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc>]] -- extract cut_tag(), run
+# it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
+# Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 d fn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} d fn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
-    mkdir -p "$d/scripts"
-    printf '#!/usr/bin/env bash\nexit %s\n' "$grc" > "$d/scripts/check_milestone_cut.sh"
+    mkdir -p "$d/scripts/release"
+    printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo CALL-MUST-CARRY >> %q; exit %s; fi\necho CALL-STRICT >> %q; exit %s\n' \
+        "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
+    printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
     {
         printf 'set -uo pipefail\n'
         printf 'REPO_ROOT=%q\nLOG=%q\n' "$d" "$d/log"
@@ -47,6 +56,7 @@ run_cut_tag() {
     } > "$d/harness.sh"
     bash "$d/harness.sh" 2>&1
     cat "$d/log" 2>/dev/null
+    printf 'ORDER %s\n' "$(tr '\n' ' ' < "$d/calls" 2>/dev/null)"
     rmtree "$d"
 }
 
@@ -70,6 +80,21 @@ judge() {
     if grep -q 'GIT-TAG' <<< "$out"; then
         printf 'FAIL  gate rc=2 (Unknown) -> A TAG WAS CUT ANYWAY\n%s\n' "$out" >&2; bad=1
     else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
+    # #3459 part 2: the must-carry gate, the carry, and their ORDER
+    out=$(run_cut_tag "$ap" 0) || true
+    if grep -q '^ORDER CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
+        printf 'ok    all clean -> must-carry, then the carry, then STRICT, then the tag\n'
+    else printf 'FAIL  all clean did not run must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
+    for m in 1 2; do
+        out=$(run_cut_tag "$ap" 0 "$m") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-CARRY' <<< "$out"; then
+            printf 'FAIL  must-carry rc=%s -> a tag was cut or items were CARRIED around a blocker\n%s\n' "$m" "$out" >&2; bad=1
+        else printf 'ok    must-carry rc=%s -> nothing carried, no tag\n' "$m"; fi
+    done
+    out=$(run_cut_tag "$ap" 0 0 2) || true
+    if grep -q 'GIT-TAG' <<< "$out"; then
+        printf 'FAIL  carry rc=2 -> A TAG WAS CUT over a failed carry\n%s\n' "$out" >&2; bad=1
+    else printf 'ok    carry rc=2 -> no tag\n'; fi
     return "$bad"
 }
 
@@ -106,6 +131,30 @@ if [ "${1:-}" = "--self-test" ]; then
         ok "mutant 2: gate verdict discarded -> RED"
     fi
 
+    # M4: the MUST-CARRY verdict discarded -> items are carried around a blocker and a tag is cut.
+    sed 's#\(bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1\) || rc=$?#\1 || true#' "$SUBJECT" > "$d/m4.sh"
+    if cmp -s "$SUBJECT" "$d/m4.sh"; then
+        nok "MUTANT 4 could not be built -- the must-carry call line did not match; vacuous"
+    elif judge "$d/m4.sh" > "$d/m4.out" 2>&1; then
+        nok "MUTANT 4 (must-carry verdict discarded) PASSED"
+    else
+        ok "mutant 4: must-carry verdict discarded -> RED"
+    fi
+    # M5: the carry call deleted -> a milestone is judged strict without anything having been moved.
+    sed '/carry_milestone_items\.sh" "\$v"/d' "$SUBJECT" > "$d/m5.sh"
+    if cmp -s "$SUBJECT" "$d/m5.sh"; then
+        nok "MUTANT 5 could not be built -- the carry call line did not match; vacuous"
+    elif judge "$d/m5.sh" > "$d/m5.out" 2>&1; then
+        nok "MUTANT 5 (carry call deleted) PASSED"
+    else
+        ok "mutant 5: carry call deleted -> RED"
+    fi
+    # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
+    if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then
+        ok "carry_milestone_items.sh case table ($(grep -c '^ok ' "$d/carry.out") rows)"
+    else
+        nok "carry_milestone_items.sh case table FAILED"; cat "$d/carry.out" >&2
+    fi
     # M3: cut_tag() removed entirely -> ENV (2), never a pass.
     awk '/^cut_tag\(\) \{/,/^\}/ {next} {print}' "$SUBJECT" > "$d/m3.sh"
     judge "$d/m3.sh" > "$d/m3.out" 2>&1; rc=$?

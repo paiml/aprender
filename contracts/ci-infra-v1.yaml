@@ -231,7 +231,7 @@ falsification_tests:
   if_fails: "RUSTFLAGS differ between workflows — code passes one, fails another"
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 0
   proven: 0
   tested: 0
   status: proposed

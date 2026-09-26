@@ -1,0 +1,14 @@
+{
+  "lane": "haiku",
+  "model": "claude-haiku-4-5-20251001",
+  "transport": "cli",
+  "mode": "read-only headless",
+  "run_dir": "/mnt/nvme-raid0/tmp/aprender-98/review2/agy-copy",
+  "command": "cat PROMPT.md | timeout 180 claude --print --model claude-haiku-4-5-20251001 --allowedTools \"Read\"",
+  "command_note": "Prompt piped via stdin, not passed as a trailing positional argument — claude 2.1.282's --print does not reliably accept a positional prompt in this version (exit 1, 'Input must be provided either through stdin or as a prompt argument'). Fixed by stdin.",
+  "scope": "Same scoped diff subset as the agy lane: crates/aprender-contracts/src/lint/evidence_gate.rs, crates/aprender-contracts/src/lint/evidence_gate_tests.rs, crates/aprender-contracts/src/lint/mod.rs, crates/aprender-contracts-cli/src/commands/lint.rs, crates/aprender-contracts-cli/tests/ont8_evidence_gate.rs, contracts/ont-evidence-v1.yaml, plus DIFF.patch (git diff eff71538d fe0acafc7 over those crates/contract).",
+  "exit_code": 0,
+  "raw_stdout": "{\"reviewed\": true, \"findings\": []}",
+  "findings_count": 0,
+  "verification_note": "No findings to independently verify or refute. Not represented in agy-review-v1.schema.json (that schema is agy-specific per skill S3.E) so recorded here rather than in a consultations.agy field, per the precedent set by the prior real receipt at 7af7cc17b45ccb6a7ac2c110fa74b89843e4cace."
+}

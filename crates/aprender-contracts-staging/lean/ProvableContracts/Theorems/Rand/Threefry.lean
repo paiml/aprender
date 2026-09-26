@@ -15,7 +15,7 @@ namespace ProvableContracts.Rand
 
 -- Status: proved
 /-- ThreeFry is deterministic (same inputs → same output). -/
-theorem threefry_deterministic (f : α → β → γ) : deterministic f := by
+theorem threefry_deterministic {α β γ : Type*} (f : α → β → γ) : deterministic f := by
   intro k c; rfl
 
 #check @threefry_deterministic

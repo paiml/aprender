@@ -1,0 +1,21 @@
+- id: PMAT-4139
+  github_issue: 4139
+  item_type: task
+  title: 'PVL-001 EV-6a: pv discharge check -- axiom subset pins; compiler-escape allowlist'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-6a probe (infra spec, amended infra#992): escape-allowlist.yaml and Axioms.lean tracked; `pv discharge gen-axioms $LEAN --check` rc 0; `pv discharge check $LEAN --no-lake` rc 0'
+  - 'accept: `lake env lean Axioms.lean` passes on the built tree; `pv discharge check $LEAN --strict` rc 1 until the 7 pending entries are confirmed; `cargo test -p aprender-contracts-cli --test pvl_discharge_check`'
+  - 'infra#992: MISSING-ROOT rc 1 for exact `ProvableContracts.<...>.<decl>` refs and capstones naming no theorem; labels rc 1 only when NOT in $LEAN/unresolved-labels.json; the gate never writes that file (make label-ratchet does)'
+  - 'mutations: `axiom pvl_mutation : False` in a Theorem file -> scan RED and subset pin RED; `@[implemented_by]` on a def -> allowlist RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-5a (#4122). Scope from #4139 and PVL-001 EV-6a as amended by infra#992 (cop relay, 2026-09-24). Also withdraws a false L4 claim: cooperative-matrix-gemm-v1 cited the AXIOM f16_accumulation_error_bound as its lean_theorem; the reference becomes the `none -- ...` sentinel. MEASURED on lambda: check with lake elaboration rc 0 (164 pinned, 85 ORPHANED-ROOT, 7 PENDING); --strict rc 1; the pvl_mutation mutation turns scan and pin RED.'

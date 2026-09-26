@@ -1,4 +1,5 @@
 import ProvableContracts.Defs.Image
+import Mathlib.Tactic.NormNum
 
 /-!
 # RGB to Grayscale — Coefficient Sum

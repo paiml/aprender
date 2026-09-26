@@ -47,9 +47,27 @@ fn repo_contracts() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts")
 }
 
+struct Corpus {
+    dir: PathBuf,
+    _root: tempfile::TempDir,
+}
+
+impl Corpus {
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
 /// A corpus directory holding the PVL-1 control contract, and optionally a `lint-baseline.json`.
-fn corpus(baseline: Option<&str>) -> tempfile::TempDir {
-    let d = tempfile::tempdir().expect("corpus dir is creatable");
+/// Nested one level inside a private tempdir: `pv lint` takes the dir's PARENT as the
+/// project root, and a bare tempdir's parent is the shared `/tmp` (#4207).
+fn corpus(baseline: Option<&str>) -> Corpus {
+    let root = tempfile::tempdir().expect("corpus dir is creatable");
+    let d = Corpus {
+        dir: root.path().join("contracts"),
+        _root: root,
+    };
+    std::fs::create_dir(d.path()).expect("nested corpus dir is creatable");
     std::fs::copy(
         repo_contracts().join("softmax-kernel-v1.yaml"),
         d.path().join("softmax-kernel-v1.yaml"),
@@ -109,12 +127,9 @@ fn explicit_empty_armed_set_declines_r2() {
 
 #[test]
 fn a_failing_armed_gate_rejects_at_exit_1() {
-    let d = tempfile::tempdir().expect("corpus dir");
-    std::fs::copy(
-        repo_contracts().join("softmax-kernel-v1.yaml"),
-        d.path().join("softmax-kernel-v1.yaml"),
-    )
-    .expect("control copies");
+    // Through `corpus()`, not a bare tempdir: on a host with a stray `/tmp/scripts/`
+    // baseline, PV-DUP-002 would also reject, and this test could pass for the wrong reason.
+    let d = corpus(None);
     std::fs::write(
         d.path().join("broken-v1.yaml"),
         "metadata:\n  version: not-a-contract\n",
@@ -265,6 +280,22 @@ fn json_report_carries_the_lattice() {
             serde_json::Value::String("shapes".into()),
             // ONT-7's gate: same R-8 shape.
             serde_json::Value::String("valid-under".into()),
+            // PVL-001 EV-11's two ratchets: same R-8 shape.
+            serde_json::Value::String("theorem-pairing".into()),
+            serde_json::Value::String("depends-on-present".into()),
+            // PVL-001 EV-8a's ratchet: same R-8 shape.
+            serde_json::Value::String("proved-is-derived".into()),
+            // PVL-001 EV-7b's gate: same R-8 shape.
+            serde_json::Value::String("challenge-fresh".into()),
+            // ONT-5 (gate 19) likewise: computed everywhere, armed by nobody yet.
+            serde_json::Value::String("ont-consistency".into()),
+            // ONT-4e (gate 18) likewise.
+            serde_json::Value::String("refines".into()),
+            // ONT-3a's bindings gate and ONT-3b's refinement gate likewise.
+            serde_json::Value::String("bindings".into()),
+            serde_json::Value::String("refinement".into()),
+            // ONT-8's gate: same R-8 shape.
+            serde_json::Value::String("evidence".into()),
         ]),
         "{}",
         show(&r)
@@ -318,9 +349,11 @@ fn repo_baseline_arms_the_eight_ruled_gates_and_every_later_row_that_armed_one()
             "composition",
             "sigma",
             "relations",
-            "shapes"
+            "shapes",
+            "proved-is-derived"
         ]
         .to_vec(),
-        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma; ONT-4: relations; ONT-4b: shapes)"
+        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma; ONT-4: relations; ONT-4b: shapes; \
+         PVL-001 EV-8a: proved-is-derived)"
     );
 }

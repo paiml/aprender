@@ -56,8 +56,17 @@ pub fn generate_lean_files(contract: &Contract) -> Vec<LeanFile> {
 
 /// Report Lean proof status for a contract.
 ///
-/// Returns a `LeanStatusReport` with counts by status.
+/// Returns a `LeanStatusReport` with counts by status. `proved` is the YAML's own word (self-declared);
+/// `discharged` is what the repo's `discharge-summary.json` grants (EV-8b).
 pub fn lean_status(contract: &Contract) -> LeanStatusReport {
+    lean_status_with(contract, crate::proof_status::discharge_grounding())
+}
+
+/// [`lean_status`] against an explicit discharge grant.
+pub fn lean_status_with(
+    contract: &Contract,
+    discharged: &crate::discharge::summary::Discharged,
+) -> LeanStatusReport {
     let mut report = LeanStatusReport {
         contract_description: contract.metadata.description.clone(),
         #[allow(clippy::cast_possible_truncation)]
@@ -67,6 +76,7 @@ pub fn lean_status(contract: &Contract) -> LeanStatusReport {
         sorry: 0,
         wip: 0,
         not_applicable: 0,
+        discharged: 0,
         obligations: Vec::new(),
     };
 
@@ -78,6 +88,9 @@ pub fn lean_status(contract: &Contract) -> LeanStatusReport {
                 LeanStatus::Sorry => report.sorry += 1,
                 LeanStatus::Wip => report.wip += 1,
                 LeanStatus::NotApplicable => report.not_applicable += 1,
+            }
+            if lean.status != LeanStatus::NotApplicable && discharged.grants(&lean.theorem) {
+                report.discharged += 1;
             }
             report.obligations.push(ObligationStatus {
                 property: ob.property.clone(),
@@ -100,6 +113,8 @@ pub struct LeanStatusReport {
     pub sorry: u32,
     pub wip: u32,
     pub not_applicable: u32,
+    /// Obligations whose theorem the discharge summary grants (EV-8b): the only count L4 totals use.
+    pub discharged: u32,
     pub obligations: Vec<ObligationStatus>,
 }
 
@@ -116,14 +131,15 @@ pub fn format_status_report(reports: &[LeanStatusReport]) -> String {
     let mut out = String::new();
 
     out.push_str(&format!(
-        "{:<30} {:>5} {:>6} {:>5} {:>3} {:>3}\n",
-        "Contract", "Oblgs", "Proved", "Sorry", "WIP", "N/A"
+        "{:<30} {:>5} {:>13} {:>10} {:>5} {:>3} {:>3}\n",
+        "Contract", "Oblgs", "self-declared", "discharged", "Sorry", "WIP", "N/A"
     ));
-    out.push_str(&"─".repeat(60));
+    out.push_str(&"─".repeat(76));
     out.push('\n');
 
     let mut total_ob = 0u32;
     let mut total_proved = 0u32;
+    let mut total_discharged = 0u32;
     let mut total_sorry = 0u32;
     let mut total_wip = 0u32;
     let mut total_na = 0u32;
@@ -142,26 +158,28 @@ pub fn format_status_report(reports: &[LeanStatusReport]) -> String {
             &r.contract_description
         };
         out.push_str(&format!(
-            "{:<30} {:>5} {:>6} {:>5} {:>3} {:>3}\n",
-            name, r.with_lean, r.proved, r.sorry, r.wip, r.not_applicable
+            "{:<30} {:>5} {:>13} {:>10} {:>5} {:>3} {:>3}\n",
+            name, r.with_lean, r.proved, r.discharged, r.sorry, r.wip, r.not_applicable
         ));
         total_ob += r.with_lean;
         total_proved += r.proved;
+        total_discharged += r.discharged;
         total_sorry += r.sorry;
         total_wip += r.wip;
         total_na += r.not_applicable;
     }
 
-    out.push_str(&"─".repeat(60));
+    out.push_str(&"─".repeat(76));
     out.push('\n');
     out.push_str(&format!(
-        "{:<30} {:>5} {:>6} {:>5} {:>3} {:>3}\n",
-        "Total", total_ob, total_proved, total_sorry, total_wip, total_na
+        "{:<30} {:>5} {:>13} {:>10} {:>5} {:>3} {:>3}\n",
+        "Total", total_ob, total_proved, total_discharged, total_sorry, total_wip, total_na
     ));
 
-    if let Some(pct) = (total_proved * 100).checked_div(total_ob) {
+    // EV-8b: coverage counts only what the discharge summary grants; the YAML's `proved` is printed beside it.
+    if let Some(pct) = (total_discharged * 100).checked_div(total_ob) {
         out.push_str(&format!(
-            "L4 Coverage: {pct}% ({total_proved}/{total_ob})   Sorry Debt: {total_sorry}\n"
+            "L4 Coverage: {pct}% ({total_discharged}/{total_ob} discharged; {total_proved} self-declared)   Sorry Debt: {total_sorry}\n"
         ));
     }
 
@@ -416,12 +434,70 @@ falsification_tests: []
             sorry: 1,
             wip: 1,
             not_applicable: 0,
+            discharged: 1,
             obligations: vec![],
         }];
         let table = format_status_report(&reports);
         assert!(table.contains("Softmax kernel"));
         assert!(table.contains("L4 Coverage: 33%"));
         assert!(table.contains("Sorry Debt: 1"));
+    }
+
+    /// EV-8b: a YAML `status: proved` the summary does not grant is printed self-declared and earns no coverage.
+    #[test]
+    fn coverage_counts_discharged_not_self_declared() {
+        let reports = vec![LeanStatusReport {
+            contract_description: "Softmax kernel".to_string(),
+            total_obligations: 2,
+            with_lean: 2,
+            proved: 2,
+            sorry: 0,
+            wip: 0,
+            not_applicable: 0,
+            discharged: 0,
+            obligations: vec![],
+        }];
+        let table = format_status_report(&reports);
+        assert!(table.contains("self-declared") && table.contains("discharged"));
+        assert!(
+            table.contains("L4 Coverage: 0% (0/2 discharged; 2 self-declared)"),
+            "{table}"
+        );
+    }
+
+    #[test]
+    fn lean_status_with_counts_only_granted_theorems() {
+        let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Test"
+  references: []
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "P1"
+    lean:
+      theorem: Test.t1
+      status: proved
+  - type: invariant
+    property: "P2"
+    lean:
+      theorem: Test.t2
+      status: proved
+falsification_tests: []
+"#;
+        let contract = parse_contract_str(yaml).unwrap();
+        let d = crate::discharge::summary::Discharged {
+            theorems: ["ProvableContracts.Test.t1".to_string()]
+                .into_iter()
+                .collect(),
+            withheld: None,
+            ..Default::default()
+        };
+        let r = lean_status_with(&contract, &d);
+        assert_eq!((r.proved, r.discharged), (2, 1));
     }
 
     #[test]

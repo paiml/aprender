@@ -1,0 +1,46 @@
+{
+  "schema": "ont-tbox-report/v1",
+  "advisory": true,
+  "method": "told-closure",
+  "precondition": {
+    "holds": true,
+    "admitted_axiom_kinds": [
+      "Declaration(Class)",
+      "Declaration(ObjectProperty)",
+      "SubClassOf(atomic, atomic)",
+      "ObjectPropertyDomain",
+      "ObjectPropertyRange",
+      "SymmetricObjectProperty"
+    ],
+    "refused": []
+  },
+  "consistent": true,
+  "classes": 17,
+  "entailed_subsumptions": [
+    [
+      "Issue",
+      "Json"
+    ],
+    [
+      "Kernel",
+      "Contract"
+    ],
+    [
+      "Milestone",
+      "Json"
+    ],
+    [
+      "PullRequest",
+      "Json"
+    ],
+    [
+      "Repo",
+      "Json"
+    ],
+    [
+      "Symbol",
+      "Code"
+    ]
+  ],
+  "unintended_subsumptions": []
+}
