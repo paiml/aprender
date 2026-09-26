@@ -384,7 +384,7 @@ fn an_unvouched_release_dir_is_refused() {
         ("bytes differ", |d| {
             std::fs::write(d.join("tuned.apr"), "w9").expect("w")
         }),
-        ("missing", |d| {
+        ("listed in the manifest but missing", |d| {
             std::fs::remove_file(d.join("LICENSE")).expect("rm")
         }),
     ] {
@@ -402,8 +402,8 @@ fn an_unvouched_release_dir_is_refused() {
     }
 }
 
-/// R-7: the token comes from a 0600 file only, prints redacted, and neither module
-/// reads the environment.
+/// R-7: a token file must be 0600, the token prints redacted, and neither publisher
+/// module reads the environment (only `hf_token` does, for the local HF token).
 #[test]
 fn the_token_stays_in_its_file() {
     use std::os::unix::fs::PermissionsExt;
@@ -494,4 +494,113 @@ fn wire_formats() {
     assert_eq!(lines[1]["value"]["oid"], "ab");
     assert_eq!(lines[2]["value"]["content"], "aGk=");
     assert_eq!(lines[3]["key"], "deletedFile");
+}
+
+fn local(t: &TempDir, name: &str, bytes: &[u8]) -> Local {
+    let path = t.path().join(name);
+    std::fs::write(&path, bytes).expect("w");
+    Local {
+        name: name.into(),
+        path,
+        size: bytes.len() as u64,
+        sha256: sha(bytes),
+        git_oid: git_blob_oid(bytes),
+    }
+}
+
+/// An LFS file is the same only when BOTH its sha256 and its size match; a regular
+/// file is compared by git blob id.
+#[test]
+fn same_needs_sha_and_size() {
+    let t = TempDir::new().expect("tmp");
+    let l = local(&t, "tuned.apr", b"weights-1");
+    let mut r = remote_file("tuned.apr", b"weights-1", true);
+    assert!(same(&r, &l));
+    r.lfs_sha256 = Some(sha(b"weights-2"));
+    assert!(!same(&r, &l), "same size, other sha");
+    let mut r = remote_file("tuned.apr", b"weights-1", true);
+    r.size += 1;
+    assert!(!same(&r, &l), "same sha, other size");
+    assert!(same(&remote_file("tuned.apr", b"weights-1", false), &l));
+    assert!(!same(&remote_file("tuned.apr", b"weights-2", false), &l));
+}
+
+/// A remote file the release does not list is deleted; `.gitattributes` never is.
+#[test]
+fn plan_deletes_strays_and_keeps_gitattributes() {
+    let t = TempDir::new().expect("tmp");
+    let l = [local(&t, "README.md", b"# card")];
+    let remote = [
+        remote_file(KEEP, b"*.apr filter=lfs\n", false),
+        remote_file("README.md", b"# card", false),
+        remote_file("stray.bin", b"old", false),
+    ];
+    let p = plan(&remote, &l);
+    assert!(p.put.is_empty());
+    assert_eq!(p.delete, vec!["stray.bin".to_string()]);
+}
+
+/// The preupload sample is the first 512 bytes, or the whole of a shorter file.
+#[test]
+fn sample_is_the_first_512_bytes() {
+    let t = TempDir::new().expect("tmp");
+    let long: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
+    let p = t.path().join("long");
+    std::fs::write(&p, &long).expect("w");
+    assert_eq!(sample(&p).expect("sample"), long[..512].to_vec());
+    let p = t.path().join("short");
+    std::fs::write(&p, b"abc").expect("w");
+    assert_eq!(sample(&p).expect("sample"), b"abc".to_vec());
+}
+
+#[test]
+fn check_repo_wants_owner_slash_name() {
+    for ok in ["paiml/qwen3.5-4b-apr", "a/b", "A_1/x-y.z"] {
+        assert!(check_repo(ok).is_ok(), "{ok}");
+    }
+    for bad in [
+        "", "paiml", "/x", "x/", ".x/y", "x/.y", "x/y/z", "x y/z", "x/y?",
+    ] {
+        assert!(check_repo(bad).is_err(), "{bad}");
+    }
+}
+
+/// A bad repo is refused before any token is resolved or hub contacted.
+#[test]
+fn run_publish_refuses_a_bad_repo_first() {
+    let t = TempDir::new().expect("tmp");
+    let err = run_publish(
+        t.path(),
+        "no-slash",
+        None,
+        t.path(),
+        "http://127.0.0.1:9",
+        false,
+    )
+    .expect_err("bad repo")
+    .to_string();
+    assert!(err.contains("owner/name"), "{err}");
+}
+
+/// A publish that changed something leaves its receipt, naming where the token came
+/// from; a no-op leaves the previous run's receipt alone.
+#[test]
+fn record_writes_only_what_changed() {
+    let t = TempDir::new().expect("tmp");
+    let d = rc(&t, "rel", "w1");
+    let hub = FakeHub::new();
+    let mut r = go(&hub, &d).expect("publish");
+    r.token_source = Some("env:HF_TOKEN".into());
+    let state = t.path().join("state");
+    let path = record(&r, &state).expect("record").expect("written");
+    assert_eq!(path, state.join("0.1.0-rc.1").join(PUBLISH_RECEIPT));
+    let body = std::fs::read_to_string(&path).expect("read");
+    assert!(body.contains(r#""token_source": "env:HF_TOKEN""#), "{body}");
+
+    std::fs::write(&path, "previous").expect("w");
+    let mut again = go(&hub, &d).expect("rerun");
+    assert_eq!(again.action, "noop");
+    again.token_source = Some("env:HF_TOKEN".into());
+    assert_eq!(record(&again, &state).expect("record"), None);
+    assert_eq!(std::fs::read_to_string(&path).expect("read"), "previous");
 }

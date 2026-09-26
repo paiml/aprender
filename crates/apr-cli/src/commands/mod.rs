@@ -101,12 +101,12 @@ pub(crate) mod lint_error;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod comparator;
 // EXT-28 C2 speed arms; their consumer is the EXT-19 speed ledger.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) mod speed_arms;
 #[cfg(feature = "training")]
 pub(crate) mod hf_http;
 #[cfg(feature = "training")]
 pub(crate) mod hf_publish;
+#[cfg(feature = "training")]
+pub(crate) mod hf_token;
 #[cfg(feature = "training")]
 pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
@@ -116,6 +116,8 @@ pub(crate) mod model_gate_cr;
 pub(crate) mod model_gate_m2;
 #[cfg(feature = "training")]
 pub(crate) mod model_pack;
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod speed_arms;
 // Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
 // own source so the class cannot be reintroduced by the next copy-paste.
 #[cfg(test)]

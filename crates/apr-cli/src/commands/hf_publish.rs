@@ -13,9 +13,10 @@
 //! already stored, and the release lands in ONE commit, so an interrupted run
 //! resumes to the same tree with no partial revision in between.
 //!
-//! The token is read from a file only — mode 0600, on the driver host (R-7) — never
-//! from the environment, and it has no `Display`: it can reach an HTTP header and
-//! nothing else (receipt, log, error).
+//! The token comes from `--token-file` (mode 0600, R-7) or, per the operator's ruling
+//! of 2026-09-26, the local HF token (`HF_TOKEN` or the standard token file), resolved
+//! in `hf_token` — this module reads no environment. It has no `Display`: it can reach
+//! an HTTP header and nothing else; the receipt records only where it came from.
 
 use super::model_confirm::{read_manifest, version_dir};
 use super::model_gate::{sha256_file, ReleaseManifest, MANIFEST, RECEIPT};
@@ -61,6 +62,11 @@ impl Token {
         #[cfg(not(unix))]
         let _ = meta;
         let body = std::fs::read_to_string(path).map_err(|e| invalid(format!("{shown}: {e}")))?;
+        Self::parse(&body, &shown.to_string())
+    }
+
+    /// One token from `body`; `shown` names its source in an error, never the value.
+    pub(crate) fn parse(body: &str, shown: &str) -> Result<Self> {
         let t = body.trim();
         if t.is_empty() || t.contains(char::is_whitespace) {
             return Err(invalid(format!("{shown}: does not hold one token")));
@@ -344,6 +350,9 @@ pub(crate) struct PublishReceipt {
     /// LFS objects this run stored (a resumed run lists only what it added).
     pub uploaded: Vec<String>,
     pub files: Vec<PublishedFile>,
+    /// Where the token came from (`env:HF_TOKEN`, `file:<path>`); never its value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_source: Option<String>,
 }
 
 fn remote_manifest<'a>(tree: &'a [RemoteFile]) -> Option<&'a RemoteFile> {
@@ -494,6 +503,7 @@ pub(crate) fn publish(
                 sha256: l.sha256.clone(),
             })
             .collect(),
+        token_source: None,
     })
 }
 
@@ -511,30 +521,42 @@ fn check_repo(repo: &str) -> Result<()> {
     }
 }
 
+/// Write the receipt of a publish that changed something to
+/// `state/<version>/`; a no-op leaves the receipt of the run that did the work.
+/// Returns where it wrote, if anywhere.
+fn record(r: &PublishReceipt, state: &Path) -> Result<Option<PathBuf>> {
+    if r.action == "noop" {
+        return Ok(None);
+    }
+    let vdir = version_dir(state, &r.version)?;
+    std::fs::create_dir_all(&vdir)?;
+    let body = serde_json::to_string_pretty(r).map_err(|e| invalid(e.to_string()))?;
+    let path = vdir.join(PUBLISH_RECEIPT);
+    std::fs::write(&path, format!("{body}\n"))?;
+    Ok(Some(path))
+}
+
 /// `apr model publish`.
 pub(crate) fn run_publish(
     dir: &Path,
     repo: &str,
-    token_file: &Path,
+    token_file: Option<&Path>,
     state: &Path,
     endpoint: &str,
     json: bool,
 ) -> Result<()> {
     check_repo(repo)?;
-    let token = Token::from_file(token_file)?;
+    let (token, source) = super::hf_token::resolve_from_process(token_file)?;
+    eprintln!("token: {source}");
     let hub = super::hf_http::HfHttp::new(endpoint, repo, token);
     let mut log = Vec::new();
     let result = publish(&hub, repo, dir, &mut log);
     for line in &log {
         eprintln!("{line}");
     }
-    let r = result?;
-    if r.action != "noop" {
-        let vdir = version_dir(state, &r.version)?;
-        std::fs::create_dir_all(&vdir)?;
-        let body = serde_json::to_string_pretty(&r).map_err(|e| invalid(e.to_string()))?;
-        std::fs::write(vdir.join(PUBLISH_RECEIPT), format!("{body}\n"))?;
-    }
+    let mut r = result?;
+    r.token_source = Some(source);
+    record(&r, state)?;
     if json {
         let s = serde_json::to_string_pretty(&r).map_err(|e| invalid(e.to_string()))?;
         println!("{s}");

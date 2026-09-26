@@ -926,7 +926,7 @@ fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Re
             state,
             endpoint,
             json,
-        } => commands::hf_publish::run_publish(dir, repo, token_file, state, endpoint, *json || cli.json),
+        } => commands::hf_publish::run_publish(dir, repo, token_file.as_deref(), state, endpoint, *json || cli.json),
         ModelCommands::Yank {
             version,
             dir,
