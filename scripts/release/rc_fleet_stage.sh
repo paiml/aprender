@@ -13,7 +13,7 @@
 # THE NEW ORDER. rc_cut.sh creates the rc as a DRAFT and binary-release.yml attaches the
 # assets to it (a draft is invisible to install.sh and to the fleet poller). This script then,
 # for every host in the fleet (lambda, gx10, yoga, intel, mini; jetson is retired, #4328 C7):
-#   1. copies the host's apr asset (+ .sha256), and pv's on linux, onto the host;
+#   1. copies the apr and pv assets (+ .sha256) the fleet catalogue installs on that host (#4509);
 #   2. installs it: the host's own `fleet-bins install <tag> <dir> <commit>` (infra 620249d8)
 #      when it has one,
 #      otherwise the built-in atomic install below (sha256 checked, rename over the binary
@@ -40,12 +40,44 @@ REPO=${RC_FLEET_REPO:-paiml/aprender}
 SSH=${RC_FLEET_SSH:-ssh}
 SCP=${RC_FLEET_SCP:-scp}
 
-# host  ssh-target(- = this box)  apr asset suffix  pv asset suffix (- = none ships)
-FLEET_DEFAULT='lambda	-	x86_64-unknown-linux-gnu-cuda	x86_64-unknown-linux-gnu
-gx10	gx10	aarch64-unknown-linux-gnu-cuda	aarch64-unknown-linux-gnu
-yoga	yoga	x86_64-unknown-linux-gnu-cuda	x86_64-unknown-linux-gnu
-intel	intel	x86_64-unknown-linux-gnu-cpu	x86_64-unknown-linux-gnu
-mini	mini	aarch64-apple-darwin-cpu	-'
+# host  ssh-target(- = this box)  arch. WHICH asset each host runs is NOT kept here: a hand copy
+# of it said intel ran -cpu while the fleet catalogue installs -wgpu there, and mini ran no pv
+# while the catalogue ships the darwin one (#4509). fleet_table derives both from the catalogue
+# fleet-bins installs from (infra machines/fleet-hosts/fleet-bins/fleet-bins.tsv, deployed at
+#   RC_FLEET_CATALOGUE, default ~/.config/fleet-bins/fleet-bins.tsv),
+# so the rc is staged, verified and floor-measured on the build each host actually runs.
+FLEET_HOSTS='lambda	-	x86_64
+gx10	gx10	aarch64
+yoga	yoga	x86_64
+intel	intel	x86_64
+mini	mini	aarch64'
+
+# catalogue_suffix <catalogue> <bin> <host> <arch> -- pure. The asset suffix (between
+# `<bin>-<tag>-` and `.tar.gz`) of the paiml/aprender <bin> row whose hosts list names <host>;
+# empty when no row does, `?` when that row's asset is not `<bin>-{tag}-<suffix>.tar.gz`.
+catalogue_suffix() {
+    awk -F'\t' -v b="$2" -v h="$3" -v a="$4" '
+        $1 == b && $2 == "paiml/aprender" && index("," $3 ",", "," h ",") {
+            s = $5; p = b "-{tag}-"
+            if (substr(s, 1, length(p)) != p || s !~ /\.tar\.gz$/) { print "?"; exit }
+            s = substr(s, length(p) + 1); s = substr(s, 1, length(s) - 7)
+            while ((i = index(s, "{arch}")) > 0) s = substr(s, 1, i - 1) a substr(s, i + 6)
+            print s; exit
+        }' "$1"
+}
+
+# fleet_table <catalogue> -> the host table `host\tssh-target\tapr suffix\tpv suffix(- = none)`.
+# Fails closed (2): an unreadable catalogue, a host it ships no apr to, a row it cannot parse.
+fleet_table() {
+    local cat=$1 h t a as ps
+    [ -f "$cat" ] && [ -r "$cat" ] || { echo "$PROG: cannot read the fleet catalogue $cat" >&2; return 2; }
+    while IFS=$'\t' read -r h t a; do
+        as=$(catalogue_suffix "$cat" apr "$h" "$a"); ps=$(catalogue_suffix "$cat" pv "$h" "$a")
+        [ -n "$as" ] || { echo "$PROG: the fleet catalogue $cat ships no apr to $h" >&2; return 2; }
+        [ "$as" != '?' ] && [ "$ps" != '?' ] || { echo "$PROG: cannot parse the apr/pv asset of $h in $cat" >&2; return 2; }
+        printf '%s\t%s\t%s\t%s\n' "$h" "$t" "$as" "${ps:--}"
+    done <<< "$FLEET_HOSTS"
+}
 
 # stage_verdict -- pure. stdin: rows `<host>\t<pass|fail|unreachable>`; $1 waivers text; $2 today
 # (YYYY-MM-DD). Prints `publish` or `hold <why; why>`. Returns 0 for both.
@@ -217,13 +249,13 @@ tag_commit() {  # the commit a tag names (annotated tags dereferenced)
 stage() {
     local tag=$1 publish=$2 commit work rows verdict today hosts receipt waivers='' n pass
     [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || { echo "$PROG: $tag is not vX.Y.Z-rc.N" >&2; return 2; }
+    if [ -n "${RC_FLEET_HOSTS_FILE:-}" ]; then hosts=$(grep -vE '^\s*(#|$)' "$RC_FLEET_HOSTS_FILE")
+    else hosts=$(fleet_table "${RC_FLEET_CATALOGUE:-$HOME/.config/fleet-bins/fleet-bins.tsv}") || return 2; fi
     commit=$(tag_commit "$tag") && [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "$PROG: cannot resolve the commit of $tag" >&2; return 2; }
     bash "$HERE/../check_release_assets.sh" "$tag" > /dev/null || { echo "$PROG: $tag does not carry every asset yet (scripts/check_release_assets.sh $tag)" >&2; return 2; }
     work=${RC_FLEET_WORK:-$(mktemp -d)} || return 2
     gh release download "$tag" -R "$REPO" -D "$work" --clobber -p "apr-$tag-*" -p "pv-$tag-*" > /dev/null 2>&1 \
         || { echo "$PROG: cannot download the assets of $tag" >&2; return 2; }
-    hosts=${RC_FLEET_HOSTS_FILE:+$(grep -vE '^\s*(#|$)' "$RC_FLEET_HOSTS_FILE")}
-    hosts=${hosts:-$FLEET_DEFAULT}
     [ -n "${RC_FLEET_WAIVERS:-}" ] && waivers=$(grep -vE '^\s*(#|$)' "$RC_FLEET_WAIVERS")
     rows=$(while IFS=$'\t' read -r h t as ps; do stage_host "$h" "$t" "$as" "$ps" "$tag" "$commit" "$work"; done <<< "$hosts")
     rows+=$'\n'$(decode_floor_row "$tag" "$commit" "$work" "$hosts" "$rows")
@@ -287,6 +319,40 @@ self_test() {
     mutant 'fail arm is a no-op' 's/fail) why+="\$host failed; " ;;/fail) ;;/' 'lambda\tpass\ngx10\tfail\n'
     mutant 'unreachable counts as pass' 's/^            unreachable)$/            unreachable) continue ;; x)/' 'lambda\tpass\nintel\tunreachable\n'
 
+    # THE HOST TABLE IS THE FLEET CATALOGUE'S (#4509): these rows mirror fleet-bins.tsv, where
+    # intel runs the -wgpu apr and mini the darwin pv. A hand table said -cpu and none.
+    local cd cf ft
+    cd=$(mktemp -d) || return 1; cf=$cd/fleet-bins.tsv
+    t() {  # t <want rc> <label> <want table|-> [catalogue] [script]
+        ft=$(bash -c 'source "$1" --source-only; fleet_table "$2"' _ "${5:-${BASH_SOURCE[0]}}" "${4:-$cf}" 2> "$cd/err"); rc=$?
+        if [ "$rc" = "$1" ] && { [ "$3" = - ] || [ "$ft" = "$(printf '%b' "$3")" ]; }; then echo "  ok   $2"
+        else printf '  FAIL %s: rc %s (want %s)\n' "$2" "$rc" "$1"; printf '%s\n' "$ft" | sed 's/^/       /'; sed 's/^/       /' "$cd/err"; fail=1; fi
+    }
+    printf '%b' 'apr\tpaiml/aprender\tlambda,gx10,yoga\t^v\tapr-{tag}-{arch}-unknown-linux-gnu-cuda.tar.gz\t-\n' \
+        'pv\tpaiml/aprender\tlambda,gx10,yoga,intel\t^v\tpv-{tag}-{arch}-unknown-linux-gnu.tar.gz\t-\n' \
+        'apr\tpaiml/aprender\tintel\t^v\tapr-{tag}-x86_64-unknown-linux-gnu-wgpu.tar.gz\t-\n' \
+        'apr\tpaiml/aprender\tmini\t^v\tapr-{tag}-aarch64-apple-darwin-cpu.tar.gz\t-\n' \
+        'pv\tpaiml/aprender\tmini\t^v\tpv-{tag}-aarch64-apple-darwin.tar.gz\t-\n' \
+        'apr\tpaiml/forjar\tintel,mini\t^v\tapr-{tag}-decoy.tar.gz\t-\n' > "$cf"
+    local want='lambda\t-\tx86_64-unknown-linux-gnu-cuda\tx86_64-unknown-linux-gnu\ngx10\tgx10\taarch64-unknown-linux-gnu-cuda\taarch64-unknown-linux-gnu\nyoga\tyoga\tx86_64-unknown-linux-gnu-cuda\tx86_64-unknown-linux-gnu\nintel\tintel\tx86_64-unknown-linux-gnu-wgpu\tx86_64-unknown-linux-gnu\nmini\tmini\taarch64-apple-darwin-cpu\taarch64-apple-darwin'
+    t 0 'catalogue -> intel stages -wgpu, mini stages the darwin pv, {arch} per host' "$want"
+    grep -v 'intel,mini' "$cf" | sed 's/lambda,gx10,yoga,intel/lambda,gx10,yoga/' > "$cd/nopv.tsv"
+    t 0 'a host no pv row covers -> pv "-" (none ships), not a guess' "${want/intel\\tintel\\tx86_64-unknown-linux-gnu-wgpu\\tx86_64-unknown-linux-gnu/intel\\tintel\\tx86_64-unknown-linux-gnu-wgpu\\t-}" "$cd/nopv.tsv"
+    grep -v 'wgpu' "$cf" > "$cd/noapr.tsv"
+    t 2 'a host the catalogue ships no apr to -> refused, never a default' - "$cd/noapr.tsv"
+    sed 's/aarch64-apple-darwin.tar.gz/aarch64-apple-darwin.zip/' "$cf" > "$cd/odd.tsv"
+    t 2 'an asset not <bin>-{tag}-<suffix>.tar.gz -> refused' - "$cd/odd.tsv"
+    t 2 'no catalogue -> refused (fail closed)' - "$cd/absent.tsv"
+    [ "$(RC_FLEET_CATALOGUE=$cd/absent.tsv bash "${BASH_SOURCE[0]}" v9.9.9-rc.3 2>&1)" = "$PROG: cannot read the fleet catalogue $cd/absent.tsv" ] \
+        && echo "  ok   stage() without RC_FLEET_HOSTS_FILE reads the catalogue, and stops before the network" \
+        || { echo "  FAIL stage() does not take its host table from RC_FLEET_CATALOGUE"; fail=1; }
+    # MUTANT: the host match dropped -- the first apr row wins everywhere, intel gets -cuda
+    sed 's/ && index("," $3 ",", "," h ",") {/ {/' "${BASH_SOURCE[0]}" > "$cd/mutant.sh"
+    if cmp -s "$cd/mutant.sh" "${BASH_SOURCE[0]}"; then echo "  FAIL host-match mutant not built: the anchor moved"; fail=1
+    else t 0 'mutant (host match dropped) still yields a table' - "$cf" "$cd/mutant.sh"
+        [ "$ft" != "$(printf '%b' "$want")" ] && echo "  ok   host-match mutant killed" || { echo "  FAIL host-match mutant survived"; fail=1; }
+    fi
+    rm -rf -- "${cd:?}"
     # A FAKE FLEET, end to end: three hosts behind a fake ssh/scp/gh. The operator's
     # acceptance (#4327): "a cut where one host fails verify does NOT publish".
     d=$(mktemp -d) || return 2
