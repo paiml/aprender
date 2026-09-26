@@ -1931,6 +1931,17 @@ jobs:
       # same binary. Nothing extra is compiled by placing it here.
       - name: pv_bin.sh must resolve the HEAD-built pv and refuse a stale one
         run: bash scripts/check_pv_bin_resolution.sh
+      # #4475: the contract gate, blocking. `make contracts` stopped after its first step (an
+      # unconditional `exit` under .ONESHELL) and nothing on a PR ran `extract --check`, so a contract
+      # could land without its census / contracts.nt / shapes.ttl regenerated. The shapes step fails
+      # CLOSED here with the HEAD pv: a decline (pv exit 2: NoShapes / NoFocus), an Unknown verdict,
+      # shapes_n == 0, focus_nodes_n == 0 or a silent planted control is RED, unlike the fleet-pin
+      # andon (check_fleet_pv_shapes_advisory.sh), which reports fleet state and is not this gate.
+      # The self-test runs first so a gate that can no longer refuse is named as such.
+      - name: contracts gate refuses what it cannot measure (self-test + mutant)
+        run: bash scripts/contracts_gate.sh --self-test
+      - name: contracts gate — lint, fail-closed shapes, regenerate + git diff, README, provenance
+        run: bash scripts/contracts_gate.sh
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
       # Poka-yoke (#2551): `cargo test -p aprender-contracts --test

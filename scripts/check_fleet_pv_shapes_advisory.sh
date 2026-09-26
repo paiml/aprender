@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# check_fleet_pv_shapes_gate.sh -- the SHACL shapes gate, run with the FLEET-PINNED pv on
-# the runner this guard is executing on, not the HEAD-built one (PMAT-3567, #3559 row zero).
+# check_fleet_pv_shapes_advisory.sh -- ADVISORY, NOT A GATE. The SHACL shapes check run with the
+# FLEET-PINNED pv on the runner this guard is executing on, not the HEAD-built one (PMAT-3567, #3559 row zero).
+#
+# RENAMED FROM check_fleet_pv_shapes_gate.sh (#4475). It exits 0 on UNMEASURED by design (fleet state a PR
+# cannot fix must not red every PR), so a green from it is NOT evidence the shapes were measured, and a name
+# ending in _gate let that green read as one. THE shapes gate is scripts/contracts_gate.sh (step `shapes`):
+# in-tree, HEAD-built pv via scripts/pv_bin.sh, fail-closed on Unknown / NoShapes / NoFocus / shapes_n == 0.
+# This one stays as the fleet-pin andon: it names which runner and which pinned binary would have answered.
 #
 # THE DEFECT. Every "shapes gate green" receipt before 2026-09-20 was produced with
 # scripts/pv_bin.sh's HEAD-built pv. The fleet-pinned pv was 0.65.2, which has no
@@ -41,8 +47,8 @@
 # planted-violation control (`pc_shape` = fired, `plant_violations` > 0) is required too, so
 # a shape checker that fires on nothing cannot report Pass.
 #
-#   check_fleet_pv_shapes_gate.sh              judge this runner
-#   check_fleet_pv_shapes_gate.sh --self-test  case table with stub pvs and a planted violation
+#   check_fleet_pv_shapes_advisory.sh              judge this runner
+#   check_fleet_pv_shapes_advisory.sh --self-test  case table with stub pvs and a planted violation
 #
 # Overrides, for the self-test only: FLEET_PV_BIN, FLEET_PV_PIN, FLEET_PV_CONTRACTS, FLEET_PV_PYTHON.
 set -uo pipefail
@@ -286,7 +292,7 @@ STUB
     printf 'SELF-TEST FAILED\n' >&2; exit 1
 fi
 
-echo "=== shapes gate on the FLEET-PINNED pv, on this runner (check_fleet_pv_shapes_gate.sh) ==="
+echo "=== ADVISORY (not a gate; THE gate is contracts_gate.sh shapes): shapes on the FLEET-PINNED pv, on this runner (check_fleet_pv_shapes_advisory.sh) ==="
 # The row is the verdict. No trailer may begin with PASS unless the row did: a trailer
 # reading "PASS-OR-UNMEASURED" is exactly what a consumer's grep would misread (the
 # self-test's row 5 refused it).
