@@ -32,3 +32,12 @@ aprender-orchestrate (the 92 HTTP routes) is aprender-1c's.
 S8 is the HTTP + MCP half of apr (apr-cli); S9 holds identity and every CLI command (the split is by kind, see
 S9's header). `apr` is the only binary in S2/S8/S14/S20 whose `--version` carries the sha, so G0.1 is RED on the
 other four.
+
+| slice | file | binary (package) | commands | RED today |
+|---|---|---|---|---|
+| S7 (apr(aprender) 1/2) | binary-aprender-apr-v1.yaml | apr (aprender, the `cargo install aprender` facade) | 264, set-identical to S9; identity + all CLI — S6 takes HTTP + mcp rows | the same 27 paths as S9 (15 feature-gated ledger rows, 12 pv/capability commands unledgered): one ledger fix clears both nodes |
+| S13 (1/2) | binary-simular-v1.yaml | simular (aprender-simulate) | 9, incl. user-defined `help`/`version` | 3 ledger rows (GET /, /health, /ws) are library routes behind feature `web` that no simular command serves |
+| S13 (2/2) | binary-ptop-v1.yaml | ptop (aprender-present-terminal) | 0; 10 long options | none beyond G0.1. Needs `--features ptop` to exist at all, and `bin:option`, which binary-surface-v1 does not declare yet (S15 uses it too) |
+
+S1 (pv) is not staged here: it is the ONT-4g exemplar, `contracts/bin-aprender-contracts-cli--pv-v1.yaml`. G0.1 is
+green on S7 (`apr 0.69.3 (b6cf6d2ede)`) and RED on simular and ptop.
