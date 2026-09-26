@@ -138,6 +138,9 @@ pub mod dense_session;
 #[cfg(feature = "cuda")]
 #[path = "inference/forward/dense_session_borrowed.rs"]
 pub mod dense_session_borrowed;
+/// #3602: that receipt on the dense GGUF path, keyed on the prefill precision too.
+#[path = "inference/forward/f2_dense_receipt.rs"]
+pub mod f2_dense_receipt;
 /// #3604: the F2 hybrid guard's receipt. CUDA-free on purpose, so its decision
 /// table is tested on every build.
 #[path = "inference/forward/f2_receipt.rs"]
