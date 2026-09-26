@@ -207,6 +207,8 @@ pub(crate) mod run;
 #[cfg(feature = "training")]
 pub(crate) mod runs;
 #[cfg(feature = "training")]
+pub(crate) mod runs_export;
+#[cfg(feature = "training")]
 pub(crate) mod runs_import;
 pub(crate) mod search_merge;
 pub(crate) mod serve;
