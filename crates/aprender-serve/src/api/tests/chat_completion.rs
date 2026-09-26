@@ -177,7 +177,7 @@ fn test_build_trace_data_brick_level() {
     assert_eq!(trace.breakdown[0].name, "total_inference");
     assert_eq!(trace.breakdown[0].time_us, 10000);
     let details = trace.breakdown[0].details.as_ref().expect("details present");
-    assert!(details.contains("apr profile"));
+    assert!(details.contains("no phase split"));
     assert!(details.contains("50 prompt"));
     assert!(details.contains("20 completion"));
 }
@@ -198,7 +198,7 @@ fn test_build_trace_data_step_level() {
     assert_eq!(trace.breakdown[0].name, "total_inference");
     assert_eq!(trace.breakdown[0].time_us, 5000);
     let details = trace.breakdown[0].details.as_ref().expect("details present");
-    assert!(details.contains("apr profile"));
+    assert!(details.contains("no phase split"));
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn test_build_trace_data_layer_level() {
     assert_eq!(trace.breakdown[0].time_us, 12000);
     let details = trace.breakdown[0].details.as_ref().expect("details present");
     assert!(details.contains("6 layers"));
-    assert!(details.contains("apr profile"));
+    assert!(details.contains("no phase split"));
 }
 
 #[test]

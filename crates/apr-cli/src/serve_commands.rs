@@ -117,5 +117,10 @@ pub enum ServeCommands {
         /// Enable Ollama compatibility mode (port 11434, added endpoints)
         #[arg(long)]
         ollama_compat: bool,
+        /// SRV-TIM-001: append one JSONL line per chat/completions request
+        /// (the `[request]` log fields plus build and host) to this file.
+        /// Off unless given.
+        #[arg(long, value_name = "PATH")]
+        timings_log: Option<OutputPath>,
     },
 }

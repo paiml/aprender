@@ -67,7 +67,7 @@ fn test_build_trace_data_brick() {
     assert_eq!(brick.breakdown.len(), 1);
     assert_eq!(brick.breakdown[0].name, "total_inference");
     assert_eq!(brick.breakdown[0].time_us, 1000);
-    assert!(brick.breakdown[0].details.as_ref().expect("details").contains("apr profile"));
+    assert!(brick.breakdown[0].details.as_ref().expect("details").contains("no phase split"));
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn test_build_trace_data_step() {
     assert_eq!(step.breakdown.len(), 1);
     assert_eq!(step.breakdown[0].name, "total_inference");
     assert_eq!(step.breakdown[0].time_us, 2000);
-    assert!(step.breakdown[0].details.as_ref().expect("details").contains("apr profile"));
+    assert!(step.breakdown[0].details.as_ref().expect("details").contains("no phase split"));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn test_build_trace_data_layer() {
     assert_eq!(layer.breakdown[0].time_us, 3000);
     let details = layer.breakdown[0].details.as_ref().expect("details present");
     assert!(details.contains("6 layers"));
-    assert!(details.contains("apr profile"));
+    assert!(details.contains("no phase split"));
 }
 
 #[test]

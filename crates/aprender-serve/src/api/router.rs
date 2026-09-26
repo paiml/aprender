@@ -696,7 +696,10 @@ async fn health_ready_handler(State(state): State<AppState>) -> (StatusCode, Jso
 
 /// Metrics handler - returns Prometheus-formatted metrics
 async fn metrics_handler(State(state): State<AppState>) -> String {
-    state.metrics.to_prometheus()
+    // SRV-TIM-001: the prefill/decode/ttft histograms ride next to the counters.
+    let mut out = state.metrics.to_prometheus();
+    out.push_str(&crate::api::request_log::prometheus_histograms());
+    out
 }
 
 /// Response for dispatch metrics endpoint (IMP-127)

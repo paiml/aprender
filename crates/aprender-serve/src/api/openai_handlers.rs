@@ -20,10 +20,9 @@ use axum::{
 use futures::stream::Stream;
 
 use super::{
-    build_trace_data, clean_chat_output, format_chat_messages,
-    format_chat_messages_for_state_thinking, AppState, ChatChoice, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse, FinishReason,
-    OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
+    clean_chat_output, format_chat_messages, format_chat_messages_for_state_thinking, AppState,
+    ChatChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage,
+    ErrorResponse, FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -677,12 +676,13 @@ pub(crate) fn build_chat_response(
     timings: Option<super::Timings>,
     used_gpu: Option<bool>,
 ) -> Response {
-    let (brick_trace, step_trace, layer_trace) = build_trace_data(
+    let (brick_trace, step_trace, layer_trace) = super::build_trace_data_phased(
         trace_level,
         latency.as_micros() as u64,
         prompt_tokens,
         completion_tokens,
         28,
+        timings.as_ref(),
     );
     let (text, finish_reason) = finalize_chat_text(text, stops, completion_tokens, max_tokens);
 
@@ -701,6 +701,18 @@ pub(crate) fn build_chat_response(
         ),
     };
 
+    crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+        &request_id,
+        &model,
+        "chat",
+        used_gpu,
+        false,
+        prompt_tokens,
+        completion_tokens,
+        timings.as_ref(),
+        latency,
+        &finish_reason,
+    ));
     Json(ChatCompletionResponse {
         used_gpu,
         id: request_id,
@@ -815,6 +827,7 @@ fn pregenerated_sse_response(
     max_tokens: usize,
     prompt_tokens: usize,
     timings: Option<super::Timings>,
+    start: Instant,
 ) -> Response {
     let completion_tokens = token_ids.len();
     let StreamedText { deltas, stopped } = streaming_text_deltas(&tokenizer, &token_ids, stops);
@@ -845,6 +858,18 @@ fn pregenerated_sse_response(
 
         // SRV-TIM-001: generation was over when this response was built, but the
         // engine measured its split while it ran; the caller hands it in.
+        crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+            &request_id,
+            &model_name,
+            "chat",
+            None,
+            true,
+            prompt_tokens,
+            completion_tokens,
+            timings.as_ref(),
+            start.elapsed(),
+            finish.as_str(),
+        ));
         if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
             &request_id,
             &model_name,
@@ -976,6 +1001,18 @@ pub(crate) fn true_streaming_sse_response(
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
         };
+        crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+            &request_id,
+            &model_name,
+            "chat",
+            None,
+            true,
+            prompt_tokens,
+            completion_tokens,
+            timings.as_ref(),
+            start.elapsed(),
+            finish.as_str(),
+        ));
         if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
             &request_id,
             &model_name,
@@ -1089,6 +1126,7 @@ fn try_gpu_backend(
             max_tokens,
             prompt_tokens,
             timings,
+            start,
         ));
     }
 
@@ -1191,6 +1229,7 @@ fn try_cached_backend(
             max_tokens,
             prompt_tokens,
             timings,
+            start,
         ));
     }
 

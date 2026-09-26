@@ -336,7 +336,7 @@ fn test_build_trace_data_brick_breakdown_fields() {
     let details = b.breakdown[0].details.as_ref().expect("details present");
     assert!(details.contains("20 prompt"));
     assert!(details.contains("10 completion"));
-    assert!(details.contains("apr profile"));
+    assert!(details.contains("no phase split"));
 }
 
 #[test]
@@ -351,7 +351,7 @@ fn test_build_trace_data_step_breakdown_fields() {
     let details = s.breakdown[0].details.as_ref().expect("details present");
     assert!(details.contains("15 prompt"));
     assert!(details.contains("8 completion"));
-    assert!(details.contains("apr profile"));
+    assert!(details.contains("no phase split"));
 }
 
 #[test]
@@ -365,7 +365,7 @@ fn test_build_trace_data_layer_breakdown_fields() {
     assert_eq!(l.breakdown[0].time_us, 4000);
     let details = l.breakdown[0].details.as_ref().expect("details present");
     assert!(details.contains("4 layers"));
-    assert!(details.contains("apr profile"));
+    assert!(details.contains("no phase split"));
 }
 
 #[test]
