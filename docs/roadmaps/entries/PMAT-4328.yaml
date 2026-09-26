@@ -1,0 +1,16 @@
+- id: PMAT-4328
+  github_issue: 4328
+  item_type: task
+  title: fleet andon: rc cut refuses while a fleet cell is RED (C1 C2 C4)
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-ea
+  created: 2026-09-24T18:11:17Z
+  updated: 2026-09-24T18:11:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

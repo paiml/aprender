@@ -68,12 +68,19 @@ trap 'rm -rf "$WORK"' EXIT
       printf 'pv-%s-%s-unknown-linux-%s.tar.gz.sha256\n' "$TAG" "$t_arch" "$libc"
     done
   done
+  # #4327 mini (darwin apr), #4353 darwin pv + the intel wgpu apr
+  for a in apr-$TAG-aarch64-apple-darwin-cpu apr-$TAG-x86_64-unknown-linux-gnu-wgpu pv-$TAG-aarch64-apple-darwin; do
+    printf '%s.tar.gz\n%s.tar.gz.sha256\n' "$a" "$a"
+  done
 } > "$WORK/complete.txt"
 
 MUTANT_NAME="apr-$TAG-aarch64-unknown-linux-gnu-cpu.tar.gz"
 grep -vx "$MUTANT_NAME" "$WORK/complete.txt" > "$WORK/mutant.txt"
 grep -vx "apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz.sha256" "$WORK/complete.txt" > "$WORK/nosha.txt"
 grep -v '^pv-' "$WORK/complete.txt" > "$WORK/nopv.txt"
+grep -vx "apr-$TAG-aarch64-apple-darwin-cpu.tar.gz" "$WORK/complete.txt" > "$WORK/nodarwin.txt"
+grep -vx "pv-$TAG-aarch64-apple-darwin.tar.gz.sha256" "$WORK/complete.txt" > "$WORK/nopvdarwin.txt"
+grep -vx "apr-$TAG-x86_64-unknown-linux-gnu-wgpu.tar.gz" "$WORK/complete.txt" > "$WORK/nowgpu.txt"
 
 # 1. the guard's own table, and it is not vacuous
 t 0 "$GUARD --selftest is green" bash "$GUARD" --selftest
@@ -86,7 +93,10 @@ t 1 "MUTATION: aarch64 cpu tarball removed -> 1" bash "$GUARD" "$TAG" --assets-f
 t 0 "the mutation is NAMED, not merely counted" \
   bash -c "bash '$GUARD' '$TAG' --assets-from '$WORK/mutant.txt' 2>&1 | grep -q '$MUTANT_NAME'"
 t 1 "a missing .sha256 is as fatal as a missing tarball" bash "$GUARD" "$TAG" --assets-from "$WORK/nosha.txt"
-t 1 "the eight pv assets are required too" bash "$GUARD" "$TAG" --assets-from "$WORK/nopv.txt"
+t 1 "the pv assets are required too" bash "$GUARD" "$TAG" --assets-from "$WORK/nopv.txt"
+t 1 "MUTATION: darwin apr removed -> 1 (mini, #4327)" bash "$GUARD" "$TAG" --assets-from "$WORK/nodarwin.txt"
+t 1 "MUTATION: darwin pv .sha256 removed -> 1 (mini, #4353)" bash "$GUARD" "$TAG" --assets-from "$WORK/nopvdarwin.txt"
+t 1 "MUTATION: x86_64 wgpu apr removed -> 1 (intel, #4353)" bash "$GUARD" "$TAG" --assets-from "$WORK/nowgpu.txt"
 
 # 3. unreadable is ENV (2), never a pass
 t 2 "an unreadable asset list is ENV (2), never 0" bash "$GUARD" "$TAG" --assets-from "$WORK/does-not-exist.txt"
@@ -95,9 +105,12 @@ t 2 "no tag is a usage error (2), never a pass" bash "$GUARD"
 # 4. the wiring: the workflow shares this checker
 t 0 "binary-release.yml calls the shared checker" \
   bash -c "grep -q 'check_release_assets.sh' '$WF'"
-t 0 "the verify job requires all four apr assets (it is no longer cuda-only)" \
+t 0 "the verify job exists (it requires all six apr assets; it is no longer cuda-only)" \
   bash -c "grep -q 'verify-apr-assets:' '$WF'"
 t 0 "a build-apr-cpu lane exists" bash -c "grep -q 'build-apr-cpu:' '$WF'"
+t 0 "a build-pv-darwin lane exists (#4353)" bash -c "grep -q '^  build-pv-darwin:' '$WF'"
+t 0 "build-apr-cpu carries a wgpu flavour built with --features wgpu (#4353)" \
+  bash -c "grep -q 'flavour: wgpu' '$WF' && grep -q 'features: .--features wgpu.' '$WF'"
 t 0 "a smoke-cpu lane exists" bash -c "grep -q 'smoke-cpu:' '$WF'"
 
 printf '%s/%s rows\n' "$((n - red))" "$n"

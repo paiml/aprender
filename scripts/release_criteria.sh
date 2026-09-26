@@ -23,7 +23,7 @@ cmd_of() {
         C8)  echo 'bash scripts/run_clean_room.sh   # clean-room p1 via ../infra (hard gate)' ;;
         C9)  echo 'bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml   # every 0.66 row credited has a receipt whose marker says complete' ;;
         C11) echo 'bash scripts/check_backend_registry.sh --static   # 15 fixtures (FX-1..15) each observed RED once; zero cfg!(feature) reads in apr-cli backend decisions' ;;
-        C13) echo 'bash scripts/check_release_assets.sh "v$(sed -n '"'"'s/^version = "\(.*\)"/\1/p'"'"' Cargo.toml | head -1)"   # the four apr tarballs (cuda,cpu x x86_64,aarch64) + .sha256 + the eight pv assets; the tag is READ from the root manifest, never typed (no cargo: the release box has none). Seam: RELEASE_ASSETS_FIXTURE' ;;
+        C13) echo 'bash scripts/check_release_assets.sh "v$(sed -n '"'"'s/^version = "\(.*\)"/\1/p'"'"' Cargo.toml | head -1)"   # the six apr tarballs (cuda,cpu x x86_64,aarch64 + darwin cpu + x86_64 wgpu) + .sha256 + the ten pv assets (incl. darwin); the tag is READ from the root manifest, never typed (no cargo: the release box has none). Seam: RELEASE_ASSETS_FIXTURE' ;;
         C14) echo 'bash scripts/check_model_parity.sh --manifest   # GPU=CPU per manifest model over >= 64 positions, or the GPU refuses it (L0-1a)' ;;
         C1|C2|C3|C5|C10|C12) echo '0.67 (SPEC-2.0: moved with its track; never credited in 0.66)' ;;
         *) return 1 ;;
@@ -109,7 +109,7 @@ case "${1:-}" in
         C13_TAG="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
         bash scripts/check_release_assets.sh --list "$C13_TAG" > "$C13_WORK/complete.txt"
         grep -vx "apr-$C13_TAG-aarch64-unknown-linux-gnu-cpu.tar.gz" "$C13_WORK/complete.txt" > "$C13_WORK/mutant.txt"
-        t 0 "C13 is credited when the release carries all sixteen assets" \
+        t 0 "C13 is credited when the release carries every required asset" \
             env RELEASE_ASSETS_FIXTURE="$C13_WORK/complete.txt" bash "$0" C13
         t 1 "C13 RED: one apr tarball removed and C13 is NOT credited (it cannot pass vacuously)" \
             env RELEASE_ASSETS_FIXTURE="$C13_WORK/mutant.txt" bash "$0" C13

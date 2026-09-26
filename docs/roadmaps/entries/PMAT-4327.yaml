@@ -1,0 +1,16 @@
+- id: PMAT-4327
+  github_issue: 4327
+  item_type: task
+  title: rc staged on every fleet host before publish, darwin-arm64 asset
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T18:11:17Z
+  updated: 2026-09-24T18:11:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

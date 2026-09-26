@@ -1,0 +1,159 @@
+{
+  "branch": "batch/release-tooling-4314-salvage",
+  "author": "claude-opus-5-5",
+  "origin": "PR #4314 closed as superseded (cop-approved D); salvage via cherry-pick -x",
+  "rounds": [
+    {
+      "round": 1,
+      "range": "origin/main...0edc34a89",
+      "lanes": {
+        "claude-sonnet-5": "PASS",
+        "claude-haiku-4-5": "PASS",
+        "gemini-3.1-pro-high": {
+          "verdict": "FAIL",
+          "agy_status": "SUCCESS",
+          "conversation_id": "2da40e08-59a9-4d5b-8cbd-6296d0c35387",
+          "blocking": [
+            "binary-release.yml draft lookup StopIteration when no release exists",
+            "rc_fleet_stage.sh gh release edit with no draft"
+          ]
+        }
+      },
+      "fix": "de3209315"
+    },
+    {
+      "round": 2,
+      "range": "0edc34a89..de3209315",
+      "lanes": {
+        "claude-sonnet-5": "PASS",
+        "gemini-3.1-pro-high": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "6d704450-06f0-4a3d-9134-ad8963ecef0d"
+        },
+        "claude-haiku-4-5": {
+          "verdict": "FAIL",
+          "blocking": [
+            "asset-id lookups ~881/~959 bare next()"
+          ]
+        }
+      },
+      "fix": "732580218"
+    },
+    {
+      "round": 3,
+      "range": "de3209315..732580218",
+      "lanes": {
+        "claude-sonnet-5": "PASS",
+        "gemini-3.1-pro-high": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "9d79c306-64de-4c9a-827a-58b23c5a53eb"
+        },
+        "claude-haiku-4-5": "PASS"
+      }
+    },
+    {
+      "round": 4,
+      "range": "732580218 full diff",
+      "lanes": {
+        "gemini-3.1-pro-high#a": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "0365ee7f-92dd-4fb5-b16c-0c28480a3ef0",
+          "note": "7 non-blocking notes"
+        },
+        "gemini-3.1-pro-high#b": {
+          "verdict": "FAIL",
+          "agy_status": "SUCCESS",
+          "conversation_id": "8ba6854b-6d18-40f0-a11f-b66e8dbae7ff",
+          "note": "x86_64 wgpu asset built but not smoked; asset counts in prose drift"
+        }
+      },
+      "fixed_in": "d74fe1b73"
+    },
+    {
+      "round": 5,
+      "range": "d74fe1b73 full diff",
+      "lanes": {
+        "gemini-3.1-pro-high#a": {
+          "verdict": "FAIL",
+          "agy_status": "SUCCESS",
+          "conversation_id": "5656f794-cd03-40d7-8876-bdbe50086f05",
+          "note": "darwin asset not smoked on a promoted final"
+        },
+        "gemini-3.1-pro-high#b": {
+          "verdict": "FAIL",
+          "agy_status": "SUCCESS",
+          "conversation_id": "de646ba5-d8b3-445c-8da1-ed1cdaf41b74",
+          "note": "bare next() in check_release_assets.sh and promote_rc.sh"
+        },
+        "gemini-3.1-pro-high#c": {
+          "verdict": "NO_VERDICT",
+          "agy_status": "SUCCESS",
+          "conversation_id": "5da13830-b883-482e-b3f7-c922282f12fb",
+          "note": "no parseable verdict block; not counted"
+        }
+      },
+      "fixed_in": "0a853d1c1"
+    },
+    {
+      "round": 6,
+      "range": "0a853d1c1 full diff",
+      "lanes": {
+        "gemini-3.1-pro-high#a": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "ca2a36a0-c2a8-4f83-a459-fb710586b524"
+        },
+        "gemini-3.1-pro-high#b": {
+          "verdict": "FAIL",
+          "agy_status": "SUCCESS",
+          "conversation_id": "58483f69-9133-42ba-b680-8d8252da1950",
+          "note": "claimed the workflow cannot run for a tag on main; the triggers are unchanged from origin/main and workflow_dispatch -f tag= is the rc tagger's entry. Contract made explicit at on:"
+        },
+        "gemini-3.1-pro-high#c": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "49a78747-9818-4d09-a3db-74900bb095f8"
+        }
+      },
+      "fixed_in": "6f83d92c8"
+    },
+    {
+      "round": 7,
+      "range": "6f83d92c8 full diff (origin/main...6f83d92c8)",
+      "lanes": {
+        "gemini-3.1-pro-high#a": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "df9f9795-c63e-4b9f-92dd-98960543e108"
+        },
+        "gemini-3.1-pro-high#b": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "ef73298e-e30c-4e50-8d3f-e3675e77eeaa"
+        },
+        "gemini-3.1-pro-high#c": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "2e5ac164-12df-4ffc-b869-c0ab36e683ad"
+        }
+      }
+    }
+  ],
+  "result": {
+    "head": "6f83d92c8",
+    "verdict": "PASS 3/3 non-Claude (gemini-3.1-pro-high x3, round 7, full diff)",
+    "secrets": "GITHUB_TOKEN only",
+    "runs_on_targets": "mini macOS (darwin build + smoke-darwin, #4353), yoga cuda + gx10 (smoke-cuda/cpu), clean-room (smoke-cpu incl. wgpu row); all labels pass scripts/check_runner_labels.sh; no runner-host config changed"
+  },
+  "open_by_design": "fleet_cells_gate.sh self-test WIRING row RED (UNWIRED) until the rc tagger calls it (RC_TAGGER); the rc tagger must create the rc as a draft release (#4327)",
+  "local_checks": {
+    "check_release_assets_test": "18/18",
+    "rc_fleet_stage --self-test": "PASS",
+    "promote_rc --self-test": "PASS",
+    "check_apr_bin_pinned": "OK",
+    "cargo test -p apr-cli --lib build_rs_vcs_sha": "2 passed"
+  }
+}

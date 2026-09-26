@@ -1,0 +1,16 @@
+# Fleet-cell waivers for the rc cut (#4328 C4) -- read by scripts/release/fleet_cells_gate.sh.
+# One line per waiver, TAB-separated, dated, with a reason. A waiver expires after `until`.
+#   <host|*>  <binary|*>  <until YYYY-MM-DD>  <reason, who ruled, when>
+# `*  *` also covers MISSING or STALE cells (the C3 monitor down); a host key never does.
+# A retired host is removed from the cells by C3; it is never waived here (C7).
+*	forjar	2026-09-27	forjar#639 no-sha; non-aprender, 48h waiver; cop aprender-77 ruling 2026-09-25 ~21:50Z
+*	bashrs	2026-09-27	bashrs#393 no-sha; non-aprender, 48h waiver; cop aprender-77 ruling 2026-09-25 ~21:50Z
+*	pzsh	2026-09-27	pzsh#34 no-sha; non-aprender, 48h waiver; cop aprender-77 ruling 2026-09-25 ~21:50Z
+*	copia	2026-09-27	copia#73/#74 no-sha/behind; non-aprender, 48h waiver; cop aprender-77 ruling 2026-09-25 ~21:50Z
+*	pmat	2026-09-27	pmat#1428 GLIBC (behind); non-aprender, 48h waiver; cop aprender-77 ruling 2026-09-25 ~21:50Z
+*	apex	2026-09-27	apex#153/#154 mirror-unreachable; non-aprender, 48h waiver; cop aprender-77 ruling 2026-09-25 ~21:50Z
+lambda-labs	llama.cpp	2026-09-27	crux-latest gpu-q 75 misreported, fix awaits merge+deploy (paiml/infra#1155); owner infra-64 fleetbins
+lambda-labs	rmedia	2026-09-27	paiml/rmedia#746 'WAIVED dev' reads RED by design; non-aprender, 48h; cop aprender-77 ruling 2026-09-25
+# pv: the #4219 fix ships inside car/0.70.0, so an unwaived pv deadlocks its own cut. This waiver is for the v0.70.0-rc cut ONLY:
+# DELETE this row at the 0.70.0 fleet install. After that, pv must read GREEN and any later cut refuses on pv. No apr waiver, ever.
+*	pv	2026-09-26	aprender#4219 no-sha; v0.70.0 cut only, remove at the 0.70.0 fleet install; cop aprender-77 ruling 2026-09-25
