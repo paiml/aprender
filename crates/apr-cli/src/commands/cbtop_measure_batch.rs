@@ -345,16 +345,11 @@ fn build_and_output_report(
     let score_sum: f64 = brick_reports.iter().map(|b| b.score as f64).sum();
     let pmat_brick_score = (score_sum / n_bricks as f64) as u32;
 
-    // 1e-9 epsilon: budget derived from same profiler data, so gap ≈ 1.0;
-    // without epsilon, floating-point rounding makes gap 1.0000000000001 → false fail.
-    let all_pass = brick_reports.iter().all(|b| b.gap_factor <= 1.0 + 1e-9);
     // Status reflects brick gaps only — throughput targets are
-    // hardware-dependent and must not be hardcoded.
-    let status = if all_pass { "PASS" } else { "FAIL" };
-    let ci_result = if all_pass { "green" } else { "red" };
-
-    let brick_passed = brick_reports.iter().filter(|b| b.gap_factor <= 1.0 + 1e-9).count() as u32;
-    let brick_failed = (n_bricks as u32).saturating_sub(brick_passed);
+    // hardware-dependent and must not be hardcoded. No bricks is red (#2730).
+    let verdict = brick_verdict(&brick_reports);
+    let status = if verdict.all_pass { "PASS" } else { "FAIL" };
+    let ci_result = if verdict.all_pass { "green" } else { "red" };
 
     let report = HeadlessReport {
         model: model_name.to_string(),
@@ -383,9 +378,9 @@ fn build_and_output_report(
             grade: score_to_grade(pmat_brick_score),
         },
         falsification: FalsificationSummary {
-            total_points: n_bricks as u32,
-            passed: brick_passed,
-            failed: brick_failed,
+            total_points: verdict.total,
+            passed: verdict.passed,
+            failed: verdict.failed,
             blocked: 0,
         },
         status: status.to_string(),
