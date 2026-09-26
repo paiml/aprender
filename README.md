@@ -25,7 +25,7 @@ cargo install aprender --features cuda    # NVIDIA GPU acceleration
 cargo install aprender --features full    # everything (training, visualization, zram)
 apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
 apr list
-apr serve /home/*/.cache/pacha/models/*.safetensors "2+2?"
+apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "2+2?"
 ```
 
 full log of output
@@ -42,43 +42,43 @@ Model: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors
 Downloading (streaming)...
  10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
 ✓ Downloaded successfully
-  Path: /home/*/.cache/pacha/models/*.safetensors
+  Path: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
   Size: 942.3 MB
 ...  
 Usage:
-  apr run /home/*/.cache/pacha/models/*.safetensors
-  apr serve /home/*/.cache/pacha/models/*.safetensors
+  apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors
+  apr serve ~/.cache/pacha/models/1e3be9285aea6923.safetensors
   
 apr list
 === Cached Models ===
 
 NAME                                     SIZE         FORMAT       PATH
 --------------------------------------------------------------------------------------------------------
-1e3be9285aea6923                         942.3 MB     SafeTensors  /home/*/.cache/pacha/models/*.safetensors (orphan)
+1e3be9285aea6923                         942.3 MB     SafeTensors  ~/.cache/pacha/models/1e3be9285aea6923.safetensors (orphan)
 
 Total: 1 models (0 tracked + 1 orphans), 942.3 MB used
-apr run /home/*/.cache/pacha/models/*.safetensors "what is 2+2?"
+apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "what is 2+2?"
 === APR Run ===
 
-Source: /home/*/.cache/pacha/models/*.safetensors
-[GH-189] Loaded tokenizer from /home/*/.cache/pacha/models/*.tokenizer.json: 22 special tokens
+Source: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
+[GH-189] Loaded tokenizer from ~/.cache/pacha/models/1e3be9285aea6923.tokenizer.json: 22 special tokens
 
 Output:
 2 + 2 equals 4.
 
 Completed in 4.82s (cached)
 
-apr run /home/*/.cache/pacha/models/*.safetensors "can you help me summarize quick sort algorithm, in less than 100 words"
+apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "can you help me summarize quick sort algorithm, in less than 100 words"
 === APR Run ===
 
-Source: /home/*/.cache/pacha/models/*.safetensors
-[GH-189] Loaded tokenizer from /home/*/.cache/pacha/models/*.tokenizer.json: 22 special tokens
+Source: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
+[GH-189] Loaded tokenizer from ~/.cache/pacha/models/1e3be9285aea6923.tokenizer.json: 22 special tokens
 
 Output:
 Quick sort is a divide-and-conquer algorithm that sorts an array of elements. It works by selecting a 'pivot' element from the array and partitioning the
 
 Completed in 7.03s (cached)
-brody@brody-Precision-5540:~/workspace/github/paiml/aprender$ 
+$
 ```
 
 </details>
