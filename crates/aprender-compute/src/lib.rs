@@ -99,6 +99,7 @@ pub mod monitor;
 /// Backend discovery: probe → enumerate → print (PP-066 R-0a).
 pub mod registry;
 pub mod simulation;
+pub mod svd;
 pub mod tiling;
 pub mod tuner;
 pub mod vector;
@@ -118,6 +119,7 @@ pub use monitor::{
 };
 #[cfg(feature = "cuda-monitor")]
 pub use monitor::{enumerate_cuda_devices, query_cuda_device_info, query_cuda_memory};
+pub use svd::{RandomizedSvdConfig, Svd};
 pub use vector::Vector;
 
 // ComputeBrick exports
