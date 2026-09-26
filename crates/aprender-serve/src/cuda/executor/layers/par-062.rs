@@ -141,6 +141,24 @@ impl CudaExecutor {
             self.argmax_num_blocks = num_blocks;
         }
 
+        // #4215: load both modules (cached after first use) before borrowing the argmax buffers.
+        let argmax_kernel_type = KernelType::ArgMax { length: vocab_size };
+        let argmax_key = module_key!(self, "argmax_{}", vocab_size);
+        if !self.modules.contains_key(&*argmax_key) {
+            let ptx = self.kernels.generate_ptx(&argmax_kernel_type);
+            let module = self.compile_ptx(&ptx)?;
+            self.modules.insert(argmax_key.to_string(), module);
+        }
+
+        // Load second-pass kernel module (cached after first use)
+        let final_kernel_type = KernelType::ArgMaxFinal { num_blocks };
+        let final_key = module_key!(self, "argmax_final_{}", num_blocks);
+        if !self.modules.contains_key(&*final_key) {
+            let ptx = self.kernels.generate_ptx(&final_kernel_type);
+            let module = self.compile_ptx(&ptx)?;
+            self.modules.insert(final_key.to_string(), module);
+        }
+
         let block_max_vals = self
             .argmax_block_vals
             .as_ref()
@@ -153,24 +171,6 @@ impl CudaExecutor {
             .argmax_result
             .as_ref()
             .expect("argmax_result must be initialized");
-
-        // Load first-pass kernel module (cached after first use)
-        let argmax_kernel_type = KernelType::ArgMax { length: vocab_size };
-        let argmax_key = format!("argmax_{}", vocab_size);
-        if !self.modules.contains_key(&argmax_key) {
-            let ptx = self.kernels.generate_ptx(&argmax_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(argmax_key.clone(), module);
-        }
-
-        // Load second-pass kernel module (cached after first use)
-        let final_kernel_type = KernelType::ArgMaxFinal { num_blocks };
-        let final_key = format!("argmax_final_{}", num_blocks);
-        if !self.modules.contains_key(&final_key) {
-            let ptx = self.kernels.generate_ptx(&final_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(final_key.clone(), module);
-        }
 
         // Prepare kernel arguments
         let kernel_name = self.kernels.kernel_name(&argmax_kernel_type);
@@ -187,7 +187,7 @@ impl CudaExecutor {
         unsafe {
             let module = self
                 .modules
-                .get_mut(&argmax_key)
+                .get_mut(&*argmax_key)
                 .expect("argmax module just inserted");
             self.stream.launch_kernel(
                 module,
@@ -216,7 +216,7 @@ impl CudaExecutor {
         unsafe {
             let final_module = self
                 .modules
-                .get_mut(&final_key)
+                .get_mut(&*final_key)
                 .expect("argmax_final module just inserted");
             self.stream.launch_kernel(
                 final_module,

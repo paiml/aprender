@@ -21852,6 +21852,25 @@ roadmap:
   - P0
   - kind:code
   notes: null
+- id: PMAT-4215
+  github_issue: 4215
+  item_type: task
+  title: 'Qwen3.5 CUDA greedy decode: persistent embedding buffer, GPU argmax, no format!/Vec on the launch path'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T08:28:19Z
+  updated: 2026-09-24T20:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'A steady-state greedy decode token makes 0 host heap allocations, 0 device allocations and downloads exactly the 4-byte token id (counted, not asserted by reading).'
+  - 'Greedy on the device is token-identical to the CPU argmax of the downloaded logits at temperature 0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Scope is #4215 (a)(b)(c) from /mnt/nvme-raid0/tmp/alt0693/REPORT.md §A. Measured +2% at 850 on 4B (78.3 -> 79.9 tok/s); the 0.58x gap to ollama is NOT closed by this slice.'
 - id: PMAT-4219
   github_issue: 4219
   item_type: task
@@ -21903,6 +21922,42 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4258
+  github_issue: 4258
+  item_type: task
+  title: 'Qwen3.5 CUDA: q8_activation_valid is never cleared on the qwen35 path, so DP4A reuses a stale Q8_1 activation'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T10:25:13Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'A DP4A GEMV requantizes its input whenever the input buffer differs from the cached Q8_1 activation or a qwen35 writer kernel (rmsnorm_into, per_head_rmsnorm_into, residual_add_into, fused_swiglu_into, gdn_sigmoid_gate_into) rewrote it; a red-first test covers both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found in /mnt/nvme-raid0/tmp/alt0693/REPORT.md "Extra finding". The DP4A-catastrophic falsifier now passes parity at every position on 0.8B; re-measure the #4030 pin on 2B/4B.'
+- id: PMAT-4259
+  github_issue: 4259
+  item_type: task
+  title: 'GPU argmax kernel keeps the later index on an exact tie; CPU argmax keeps the first — breaks greedy token identity once #4215(b) moves argmax to GPU'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:01:41Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'The GPU argmax returns the FIRST index of an exact maximum, as the CPU argmax does; a red-first tie-break falsifier covers ties within a thread, across threads, and across blocks.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'
 - id: PMAT-4263
   github_issue: 4263
   item_type: task
@@ -22019,3 +22074,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'
+- id: PMAT-4453
+  github_issue: 4453
+  item_type: task
+  title: 'Arm 4 self-test inherits GITHUB_EVENT_NAME: four rows RED inside the merge_group job (FLOW-04 follow-up)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-ont
+  created: 2026-09-25 20:00:00+00:00
+  updated: '2026-09-25T20:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'every self-test row runs with GITHUB_EVENT_NAME, PR_REVIEW_SUBJECT_KIND, PR_REVIEW_NOW and PR_REVIEW_LEGACY_UNTIL unset; a row that needs an event names it'
+  - 'self-test is 23/23 with the ambient event empty, merge_group and pull_request_target, and RED under merge_group without the fix'
+  - 'no change to the verdict logic of Arm 4 itself'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
