@@ -291,13 +291,13 @@ mod tests {
 
     #[test]
     fn test_load_coverage_from_json_array_format() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let path = temp.path().join("coverage.json");
 
         let json = r#"[[{"coverage": 0.5, "hit_count": 5}]]"#;
-        std::fs::write(&path, json).unwrap();
+        std::fs::write(&path, json).expect("write test fixture");
 
-        let cells = load_coverage_from_json(&path).unwrap();
+        let cells = load_coverage_from_json(&path).expect("load coverage fixture JSON");
         assert_eq!(cells.len(), 1);
         assert_eq!(cells[0].len(), 1);
         assert_eq!(cells[0][0].coverage, 0.5);
@@ -305,13 +305,13 @@ mod tests {
 
     #[test]
     fn test_load_coverage_from_json_wrapped_format() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let path = temp.path().join("coverage.json");
 
         let json = r#"{"cells": [[{"coverage": 0.8, "hit_count": 8}]]}"#;
-        std::fs::write(&path, json).unwrap();
+        std::fs::write(&path, json).expect("write test fixture");
 
-        let cells = load_coverage_from_json(&path).unwrap();
+        let cells = load_coverage_from_json(&path).expect("load coverage fixture JSON");
         assert_eq!(cells.len(), 1);
         assert_eq!(cells[0][0].coverage, 0.8);
     }
@@ -324,10 +324,10 @@ mod tests {
 
     #[test]
     fn test_load_coverage_from_json_invalid() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let path = temp.path().join("invalid.json");
 
-        std::fs::write(&path, "not valid json").unwrap();
+        std::fs::write(&path, "not valid json").expect("write test fixture");
 
         let result = load_coverage_from_json(&path);
         assert!(result.is_err());
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_execute_coverage_with_json_output() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let json_path = temp.path().join("output.json");
 
         let config = CliConfig::default();
@@ -375,7 +375,8 @@ mod tests {
         assert!(result.is_ok());
         assert!(json_path.exists());
 
-        let content = std::fs::read_to_string(&json_path).unwrap();
-        let _: PixelCoverageReport = serde_json::from_str(&content).unwrap();
+        let content = std::fs::read_to_string(&json_path).expect("read output file");
+        let _: PixelCoverageReport =
+            serde_json::from_str(&content).expect("deserialize test input");
     }
 }

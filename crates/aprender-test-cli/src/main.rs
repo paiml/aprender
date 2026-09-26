@@ -1153,6 +1153,13 @@ fn parse_mutation_classes(
     })
 }
 
+/// Build a JSON object from `(key, value)` pairs. Used instead of `json!`,
+/// whose expansion unwraps a fallible `to_value` per field; `Value`
+/// conversions here are infallible.
+fn json_object<const N: usize>(pairs: [(&str, serde_json::Value); N]) -> serde_json::Value {
+    serde_json::Value::Object(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+}
+
 fn format_playbook_output(
     args: &probador::PlaybookArgs,
     file: &std::path::Path,
@@ -1161,14 +1168,14 @@ fn format_playbook_output(
 ) {
     match args.format {
         probador::PlaybookOutputFormat::Json => {
-            let result = serde_json::json!({
-                "file": file.display().to_string(),
-                "machine_id": playbook.machine.id,
-                "states": playbook.machine.states.len(),
-                "transitions": playbook.machine.transitions.len(),
-                "valid": validation.is_valid,
-                "issues": validation.issues.len(),
-            });
+            let result = json_object([
+                ("file", file.display().to_string().into()),
+                ("machine_id", playbook.machine.id.clone().into()),
+                ("states", playbook.machine.states.len().into()),
+                ("transitions", playbook.machine.transitions.len().into()),
+                ("valid", validation.is_valid.into()),
+                ("issues", validation.issues.len().into()),
+            ]);
             println!(
                 "{}",
                 serde_json::to_string_pretty(&result).unwrap_or_default()
@@ -1913,19 +1920,29 @@ Summary: {}/{} passed
                 total
             )
         }
-        probador::ComplyReportFormat::Json => serde_json::json!({
-            "project": args.path.display().to_string(),
-            "version": env!("CARGO_PKG_VERSION"),
-            "timestamp": timestamp,
-            "results": results.iter().map(|r| {
-                serde_json::json!({
-                    "id": r.id,
-                    "passed": r.passed,
-                    "details": r.details
-                })
-            }).collect::<Vec<_>>(),
-            "summary": { "passed": passed, "total": total }
-        })
+        probador::ComplyReportFormat::Json => json_object([
+            ("project", args.path.display().to_string().into()),
+            ("version", env!("CARGO_PKG_VERSION").into()),
+            ("timestamp", timestamp.clone().into()),
+            (
+                "results",
+                results
+                    .iter()
+                    .map(|r| {
+                        json_object([
+                            ("id", r.id.clone().into()),
+                            ("passed", r.passed.into()),
+                            ("details", r.details.clone().into()),
+                        ])
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            (
+                "summary",
+                json_object([("passed", passed.into()), ("total", total.into())]),
+            ),
+        ])
         .to_string(),
         probador::ComplyReportFormat::Markdown => {
             format!(
@@ -2389,7 +2406,7 @@ mod tests {
             assert!(json_path.exists());
 
             // Verify JSON content
-            let content = std::fs::read_to_string(&json_path).unwrap();
+            let content = std::fs::read_to_string(&json_path).expect("read output file");
             assert!(content.contains("overall_coverage"));
 
             // Cleanup
@@ -2407,9 +2424,9 @@ mod tests {
 
         #[test]
         fn test_check_c001_with_wasm_and_tests() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("app.wasm"), b"wasm").unwrap();
-            fs::write(temp.path().join("test.rs"), b"#[test]").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("app.wasm"), b"wasm").expect("write test fixture");
+            fs::write(temp.path().join("test.rs"), b"#[test]").expect("write test fixture");
 
             let result = check_c001_code_execution(temp.path());
             assert!(result.passed);
@@ -2417,8 +2434,8 @@ mod tests {
 
         #[test]
         fn test_check_c001_no_wasm() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("test.rs"), b"#[test]").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("test.rs"), b"#[test]").expect("write test fixture");
 
             let result = check_c001_code_execution(temp.path());
             assert!(!result.passed);
@@ -2426,8 +2443,8 @@ mod tests {
 
         #[test]
         fn test_check_c001_no_tests() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("app.wasm"), b"wasm").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("app.wasm"), b"wasm").expect("write test fixture");
 
             let result = check_c001_code_execution(temp.path());
             assert!(!result.passed);
@@ -2441,9 +2458,9 @@ mod tests {
 
         #[test]
         fn test_check_c003_with_custom_elements() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             let html = r#"<html><script>customElements.define('my-el', MyEl)</script></html>"#;
-            fs::write(temp.path().join("index.html"), html).unwrap();
+            fs::write(temp.path().join("index.html"), html).expect("write test fixture");
 
             let result = check_c003_custom_elements(temp.path());
             assert!(result.passed);
@@ -2451,9 +2468,9 @@ mod tests {
 
         #[test]
         fn test_check_c003_with_wasm_element() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             let html = r#"<html><wasm-app></wasm-app></html>"#;
-            fs::write(temp.path().join("index.html"), html).unwrap();
+            fs::write(temp.path().join("index.html"), html).expect("write test fixture");
 
             let result = check_c003_custom_elements(temp.path());
             assert!(result.passed);
@@ -2461,9 +2478,9 @@ mod tests {
 
         #[test]
         fn test_check_c003_no_custom_elements() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             let html = r#"<html><div>Hello</div></html>"#;
-            fs::write(temp.path().join("index.html"), html).unwrap();
+            fs::write(temp.path().join("index.html"), html).expect("write test fixture");
 
             let result = check_c003_custom_elements(temp.path());
             assert!(result.passed); // Still passes, just with different detail
@@ -2483,8 +2500,8 @@ mod tests {
 
         #[test]
         fn test_check_c006_with_htaccess() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join(".htaccess"), "Header set").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join(".htaccess"), "Header set").expect("write test fixture");
 
             let result = check_c006_headers(temp.path());
             assert!(result.passed);
@@ -2492,8 +2509,8 @@ mod tests {
 
         #[test]
         fn test_check_c006_with_vercel() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("vercel.json"), "{}").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("vercel.json"), "{}").expect("write test fixture");
 
             let result = check_c006_headers(temp.path());
             assert!(result.passed);
@@ -2501,8 +2518,8 @@ mod tests {
 
         #[test]
         fn test_check_c006_with_netlify() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("netlify.toml"), "").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("netlify.toml"), "").expect("write test fixture");
 
             let result = check_c006_headers(temp.path());
             assert!(result.passed);
@@ -2510,8 +2527,8 @@ mod tests {
 
         #[test]
         fn test_check_c006_with_headers_file() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("_headers"), "/*\n  COOP").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("_headers"), "/*\n  COOP").expect("write test fixture");
 
             let result = check_c006_headers(temp.path());
             assert!(result.passed);
@@ -2519,12 +2536,12 @@ mod tests {
 
         #[test]
         fn test_check_c006_with_probar_config() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("probar.toml"),
                 "cross_origin_isolated = true",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             let result = check_c006_headers(temp.path());
             assert!(result.passed);
@@ -2532,12 +2549,12 @@ mod tests {
 
         #[test]
         fn test_check_c006_with_makefile() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("Makefile"),
                 "serve:\n\tprobador serve --cross-origin-isolated",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             let result = check_c006_headers(temp.path());
             assert!(result.passed);
@@ -2545,7 +2562,7 @@ mod tests {
 
         #[test]
         fn test_check_c006_no_config() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
 
             let result = check_c006_headers(temp.path());
             assert!(!result.passed);
@@ -2565,8 +2582,8 @@ mod tests {
 
         #[test]
         fn test_check_c009_wasm_size_under_limit() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("small.wasm"), vec![0u8; 1000]).unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("small.wasm"), vec![0u8; 1000]).expect("write test fixture");
 
             let result = check_c009_wasm_size(temp.path(), 10000);
             assert!(result.passed);
@@ -2574,8 +2591,9 @@ mod tests {
 
         #[test]
         fn test_check_c009_wasm_size_over_limit() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("large.wasm"), vec![0u8; 10000]).unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("large.wasm"), vec![0u8; 10000])
+                .expect("write test fixture");
 
             let result = check_c009_wasm_size(temp.path(), 1000);
             assert!(!result.passed);
@@ -2583,7 +2601,7 @@ mod tests {
 
         #[test]
         fn test_check_c009_no_wasm() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
 
             let result = check_c009_wasm_size(temp.path(), 10000);
             assert!(result.passed);
@@ -2591,10 +2609,10 @@ mod tests {
 
         #[test]
         fn test_check_c010_with_panic_abort() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             let cargo = r#"[profile.release]
 panic = "abort""#;
-            fs::write(temp.path().join("Cargo.toml"), cargo).unwrap();
+            fs::write(temp.path().join("Cargo.toml"), cargo).expect("write test fixture");
 
             let result = check_c010_panic_paths(temp.path());
             assert!(result.passed);
@@ -2606,8 +2624,9 @@ panic = "abort""#;
 
         #[test]
         fn test_check_c010_without_panic_abort() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("Cargo.toml"), "[package]\nname = \"test\"")
+                .expect("write test fixture");
 
             let result = check_c010_panic_paths(temp.path());
             assert!(result.passed); // Still passes with different detail
@@ -2623,139 +2642,140 @@ panic = "abort""#;
 
         #[test]
         fn test_check_probar_cross_origin_config_true() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("probar.toml"),
                 "cross_origin_isolated = true",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_probar_cross_origin_config(temp.path()));
         }
 
         #[test]
         fn test_check_probar_cross_origin_config_no_space() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("probar.toml"),
                 "cross_origin_isolated=true",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_probar_cross_origin_config(temp.path()));
         }
 
         #[test]
         fn test_check_probar_cross_origin_config_dot_prefixed() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join(".probar.toml"),
                 "cross_origin_isolated = true",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_probar_cross_origin_config(temp.path()));
         }
 
         #[test]
         fn test_check_probar_cross_origin_config_probador() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("probador.toml"),
                 "cross_origin_isolated = true",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_probar_cross_origin_config(temp.path()));
         }
 
         #[test]
         fn test_check_probar_cross_origin_config_false() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("probar.toml"),
                 "cross_origin_isolated = false",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(!check_probar_cross_origin_config(temp.path()));
         }
 
         #[test]
         fn test_check_probar_cross_origin_config_missing() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
 
             assert!(!check_probar_cross_origin_config(temp.path()));
         }
 
         #[test]
         fn test_check_makefile_cross_origin_probador() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("Makefile"),
                 "serve:\n\tprobador serve --cross-origin-isolated",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_makefile_cross_origin(temp.path()));
         }
 
         #[test]
         fn test_check_makefile_cross_origin_probar() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("Makefile"),
                 "serve:\n\tprobar serve --cross-origin-isolated",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_makefile_cross_origin(temp.path()));
         }
 
         #[test]
         fn test_check_makefile_cross_origin_lowercase() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("makefile"),
                 "serve:\n\tprobador serve --cross-origin-isolated",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_makefile_cross_origin(temp.path()));
         }
 
         #[test]
         fn test_check_makefile_cross_origin_gnu() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             fs::write(
                 temp.path().join("GNUmakefile"),
                 "serve:\n\tprobador serve --cross-origin-isolated",
             )
-            .unwrap();
+            .expect("write test fixture");
 
             assert!(check_makefile_cross_origin(temp.path()));
         }
 
         #[test]
         fn test_check_makefile_cross_origin_package_json() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
             let pkg = r#"{"scripts": {"serve": "probador serve --cross-origin-isolated"}}"#;
-            fs::write(temp.path().join("package.json"), pkg).unwrap();
+            fs::write(temp.path().join("package.json"), pkg).expect("write test fixture");
 
             assert!(check_makefile_cross_origin(temp.path()));
         }
 
         #[test]
         fn test_check_makefile_cross_origin_without_flag() {
-            let temp = TempDir::new().unwrap();
-            fs::write(temp.path().join("Makefile"), "serve:\n\tprobador serve").unwrap();
+            let temp = TempDir::new().expect("create temp dir");
+            fs::write(temp.path().join("Makefile"), "serve:\n\tprobador serve")
+                .expect("write test fixture");
 
             assert!(!check_makefile_cross_origin(temp.path()));
         }
 
         #[test]
         fn test_check_makefile_cross_origin_missing() {
-            let temp = TempDir::new().unwrap();
+            let temp = TempDir::new().expect("create temp dir");
 
             assert!(!check_makefile_cross_origin(temp.path()));
         }

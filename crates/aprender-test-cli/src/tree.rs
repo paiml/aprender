@@ -405,12 +405,13 @@ mod tests {
 
     #[test]
     fn test_build_tree_simple() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("index.html"), "<html></html>").unwrap();
-        std::fs::write(temp.path().join("style.css"), "body {}").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("index.html"), "<html></html>")
+            .expect("write test fixture");
+        std::fs::write(temp.path().join("style.css"), "body {}").expect("write test fixture");
 
         let config = TreeConfig::default();
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         assert!(tree.is_dir);
         assert_eq!(tree.children.len(), 2);
@@ -418,13 +419,13 @@ mod tests {
 
     #[test]
     fn test_build_tree_nested() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let subdir = temp.path().join("pkg");
-        std::fs::create_dir(&subdir).unwrap();
-        std::fs::write(subdir.join("app.js"), "console.log('hi')").unwrap();
+        std::fs::create_dir(&subdir).expect("create test directory");
+        std::fs::write(subdir.join("app.js"), "console.log('hi')").expect("write test fixture");
 
         let config = TreeConfig::default();
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         assert_eq!(tree.children.len(), 1);
         assert!(tree.children[0].is_dir);
@@ -433,13 +434,13 @@ mod tests {
 
     #[test]
     fn test_build_tree_with_depth_limit() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let subdir = temp.path().join("deep");
-        std::fs::create_dir(&subdir).unwrap();
-        std::fs::write(subdir.join("file.txt"), "content").unwrap();
+        std::fs::create_dir(&subdir).expect("create test directory");
+        std::fs::write(subdir.join("file.txt"), "content").expect("write test fixture");
 
         let config = TreeConfig::default().with_depth(Some(0));
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         // Should not recurse into directories
         assert!(tree.children.is_empty() || tree.children.iter().all(|c| c.children.is_empty()));
@@ -447,13 +448,13 @@ mod tests {
 
     #[test]
     fn test_build_tree_with_filter() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("app.js"), "js").unwrap();
-        std::fs::write(temp.path().join("style.css"), "css").unwrap();
-        std::fs::write(temp.path().join("index.html"), "html").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("app.js"), "js").expect("write test fixture");
+        std::fs::write(temp.path().join("style.css"), "css").expect("write test fixture");
+        std::fs::write(temp.path().join("index.html"), "html").expect("write test fixture");
 
         let config = TreeConfig::default().with_filter(Some("*.js"));
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         // Should only include .js files
         assert_eq!(tree.file_count(), 1);
@@ -599,12 +600,12 @@ mod tests {
 
     #[test]
     fn test_build_tree_hidden_files() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join(".hidden"), "secret").unwrap();
-        std::fs::write(temp.path().join("visible.txt"), "public").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join(".hidden"), "secret").expect("write test fixture");
+        std::fs::write(temp.path().join("visible.txt"), "public").expect("write test fixture");
 
         let config = TreeConfig::default();
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         // Hidden files should be excluded
         assert_eq!(tree.file_count(), 1);
@@ -613,14 +614,14 @@ mod tests {
 
     #[test]
     fn test_build_tree_ignores_node_modules() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let nm = temp.path().join("node_modules");
-        std::fs::create_dir(&nm).unwrap();
-        std::fs::write(nm.join("package.json"), "{}").unwrap();
-        std::fs::write(temp.path().join("index.js"), "code").unwrap();
+        std::fs::create_dir(&nm).expect("create test directory");
+        std::fs::write(nm.join("package.json"), "{}").expect("write test fixture");
+        std::fs::write(temp.path().join("index.js"), "code").expect("write test fixture");
 
         let config = TreeConfig::default();
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         // node_modules should be excluded
         assert_eq!(tree.children.len(), 1);
@@ -629,14 +630,14 @@ mod tests {
 
     #[test]
     fn test_build_tree_ignores_target() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let target = temp.path().join("target");
-        std::fs::create_dir(&target).unwrap();
-        std::fs::write(target.join("debug"), "binary").unwrap();
-        std::fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
+        std::fs::create_dir(&target).expect("create test directory");
+        std::fs::write(target.join("debug"), "binary").expect("write test fixture");
+        std::fs::write(temp.path().join("Cargo.toml"), "[package]").expect("write test fixture");
 
         let config = TreeConfig::default();
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         // target should be excluded
         assert_eq!(tree.children.len(), 1);
@@ -652,12 +653,12 @@ mod tests {
 
     #[test]
     fn test_build_tree_file_instead_of_directory() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let file_path = temp.path().join("file.txt");
-        std::fs::write(&file_path, "content").unwrap();
+        std::fs::write(&file_path, "content").expect("write test fixture");
 
         let config = TreeConfig::default();
-        let tree = build_tree(&file_path, &config).unwrap();
+        let tree = build_tree(&file_path, &config).expect("build tree from test dir");
 
         assert!(!tree.is_dir);
         assert_eq!(tree.name, "file.txt");
@@ -680,8 +681,8 @@ mod tests {
 
     #[test]
     fn test_display_tree() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("test.txt"), "content").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("test.txt"), "content").expect("write test fixture");
 
         let config = TreeConfig::default();
         let result = display_tree(temp.path(), &config);
@@ -707,13 +708,13 @@ mod tests {
 
     #[test]
     fn test_tree_directories_sorted_first() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("aaa.txt"), "content").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("aaa.txt"), "content").expect("write test fixture");
         let dir = temp.path().join("bbb");
-        std::fs::create_dir(&dir).unwrap();
+        std::fs::create_dir(&dir).expect("create test directory");
 
         let config = TreeConfig::default();
-        let tree = build_tree(temp.path(), &config).unwrap();
+        let tree = build_tree(temp.path(), &config).expect("build tree from test dir");
 
         // Directory should come before file despite alphabetical order
         assert_eq!(tree.children.len(), 2);

@@ -1373,7 +1373,7 @@ mod tests {
 
     #[test]
     fn test_score_calculator_empty_project() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
 
@@ -1383,10 +1383,11 @@ mod tests {
 
     #[test]
     fn test_score_calculator_with_playbook() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let playbooks_dir = temp.path().join("playbooks");
-        std::fs::create_dir(&playbooks_dir).unwrap();
-        std::fs::write(playbooks_dir.join("test.yaml"), "version: 1.0").unwrap();
+        std::fs::create_dir(&playbooks_dir).expect("create test directory");
+        std::fs::write(playbooks_dir.join("test.yaml"), "version: 1.0")
+            .expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1397,10 +1398,10 @@ mod tests {
 
     #[test]
     fn test_score_calculator_with_snapshots() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let snapshots_dir = temp.path().join("snapshots");
-        std::fs::create_dir(&snapshots_dir).unwrap();
-        std::fs::write(snapshots_dir.join("home.png"), "fake png").unwrap();
+        std::fs::create_dir(&snapshots_dir).expect("create test directory");
+        std::fs::write(snapshots_dir.join("home.png"), "fake png").expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1408,13 +1409,19 @@ mod tests {
         // Should have points for pixel testing
         let pixel_category = score.categories.iter().find(|c| c.name == "Pixel Testing");
         assert!(pixel_category.is_some());
-        assert!(pixel_category.unwrap().score > 0);
+        assert!(
+            pixel_category
+                .expect("pixel_category set in this test")
+                .score
+                > 0
+        );
     }
 
     #[test]
     fn test_score_calculator_with_load_test_config() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("load-test.yaml"), "scenarios: []").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("load-test.yaml"), "scenarios: []")
+            .expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1422,13 +1429,14 @@ mod tests {
         // Should have points for load testing
         let load_category = score.categories.iter().find(|c| c.name == "Load Testing");
         assert!(load_category.is_some());
-        assert!(load_category.unwrap().score > 0);
+        assert!(load_category.expect("load_category set in this test").score > 0);
     }
 
     #[test]
     fn test_score_calculator_with_chaos_config() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("chaos.yaml"), "injections: []").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("chaos.yaml"), "injections: []")
+            .expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1436,28 +1444,35 @@ mod tests {
         let load_category = score.categories.iter().find(|c| c.name == "Load Testing");
         assert!(load_category.is_some());
         // Should have 2 points for chaos config
-        assert_eq!(load_category.unwrap().score, 2);
+        assert_eq!(
+            load_category.expect("load_category set in this test").score,
+            2
+        );
     }
 
     #[test]
     fn test_score_calculator_load_testing_full() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
 
         // Create playbooks dir for SLA points
         let playbooks_dir = temp.path().join("playbooks");
-        std::fs::create_dir(&playbooks_dir).unwrap();
-        std::fs::write(playbooks_dir.join("test.yaml"), "version: 1.0").unwrap();
+        std::fs::create_dir(&playbooks_dir).expect("create test directory");
+        std::fs::write(playbooks_dir.join("test.yaml"), "version: 1.0")
+            .expect("write test fixture");
 
         // Load test config (3 points)
-        std::fs::write(temp.path().join("load-test.yaml"), "scenarios: []").unwrap();
+        std::fs::write(temp.path().join("load-test.yaml"), "scenarios: []")
+            .expect("write test fixture");
 
         // SLA assertions come from playbook + load config (3 points)
 
         // Stats results (2 points)
-        std::fs::write(temp.path().join("load-test-results.json"), "{}").unwrap();
+        std::fs::write(temp.path().join("load-test-results.json"), "{}")
+            .expect("write test fixture");
 
         // Chaos config (2 points)
-        std::fs::write(temp.path().join("chaos.yaml"), "injections: []").unwrap();
+        std::fs::write(temp.path().join("chaos.yaml"), "injections: []")
+            .expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1465,13 +1480,19 @@ mod tests {
         let load_category = score.categories.iter().find(|c| c.name == "Load Testing");
         assert!(load_category.is_some());
         // Should have all 10 points
-        assert_eq!(load_category.unwrap().score, 10);
-        assert_eq!(load_category.unwrap().max, 10);
+        assert_eq!(
+            load_category.expect("load_category set in this test").score,
+            10
+        );
+        assert_eq!(
+            load_category.expect("load_category set in this test").max,
+            10
+        );
     }
 
     #[test]
     fn test_score_total_is_115() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
 
@@ -1506,7 +1527,7 @@ mod tests {
             summary: "Test".to_string(),
         };
 
-        let json = render_score_json(&score).unwrap();
+        let json = render_score_json(&score).expect("render score report as JSON");
         assert!(json.contains("\"total\": 75"));
         assert!(json.contains("\"grade\": \"C\""));
     }
@@ -1615,10 +1636,11 @@ mod tests {
 
     #[test]
     fn test_score_calculator_with_performance() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let benches_dir = temp.path().join("benches");
-        std::fs::create_dir(&benches_dir).unwrap();
-        std::fs::write(benches_dir.join("benchmark.rs"), "fn main() {}").unwrap();
+        std::fs::create_dir(&benches_dir).expect("create test directory");
+        std::fs::write(benches_dir.join("benchmark.rs"), "fn main() {}")
+            .expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1632,10 +1654,10 @@ mod tests {
 
     #[test]
     fn test_score_calculator_with_accessibility() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let a11y_dir = temp.path().join("a11y");
-        std::fs::create_dir(&a11y_dir).unwrap();
-        std::fs::write(a11y_dir.join("config.yaml"), "rules: []").unwrap();
+        std::fs::create_dir(&a11y_dir).expect("create test directory");
+        std::fs::write(a11y_dir.join("config.yaml"), "rules: []").expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1646,12 +1668,12 @@ mod tests {
 
     #[test]
     fn test_score_calculator_with_docs() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("README.md"),
             "# Test\n\n## Testing\n\nWe use tests",
         )
-        .unwrap();
+        .expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();
@@ -1662,8 +1684,8 @@ mod tests {
 
     #[test]
     fn test_score_calculator_with_replay_session() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("session.replay"), "{}").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("session.replay"), "{}").expect("write test fixture");
 
         let calc = ScoreCalculator::new(temp.path());
         let score = calc.calculate();

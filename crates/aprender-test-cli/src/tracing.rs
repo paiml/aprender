@@ -954,8 +954,14 @@ mod tests {
         analysis.record_syscall("write", 300);
         analysis.calculate_syscall_percentages();
 
-        let read_stats = analysis.syscall_breakdown.get("read").unwrap();
-        let write_stats = analysis.syscall_breakdown.get("write").unwrap();
+        let read_stats = analysis
+            .syscall_breakdown
+            .get("read")
+            .expect("entry present in test data");
+        let write_stats = analysis
+            .syscall_breakdown
+            .get("write")
+            .expect("entry present in test data");
 
         assert_eq!(read_stats.percent, 70.0);
         assert_eq!(write_stats.percent, 30.0);

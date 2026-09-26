@@ -243,31 +243,44 @@ fn print_machine_output(args: &ComplyArgs, results: &[ComplianceResult]) {
     }
 }
 
+/// Build a JSON object from `(key, value)` pairs.
+fn json_object<const N: usize>(pairs: [(&str, serde_json::Value); N]) -> serde_json::Value {
+    serde_json::Value::Object(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+}
+
 /// Generate a compliance report in the specified format
 #[must_use]
 pub fn generate_comply_report(results: &[ComplianceResult], format: &ComplyOutputFormat) -> String {
     match format {
         ComplyOutputFormat::Json => {
-            let json_results: Vec<_> = results
+            // Built from `Value` conversions (infallible) rather than `json!`,
+            // whose expansion unwraps a fallible `to_value` per field.
+            let json_results: Vec<serde_json::Value> = results
                 .iter()
                 .map(|r| {
-                    serde_json::json!({
-                        "id": r.id,
-                        "passed": r.passed,
-                        "details": r.details,
-                    })
+                    json_object([
+                        ("id", r.id.clone().into()),
+                        ("passed", r.passed.into()),
+                        ("details", r.details.clone().into()),
+                    ])
                 })
                 .collect();
-            serde_json::json!({
-                "version": "1.0",
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-                "results": json_results,
-                "summary": {
-                    "total": results.len(),
-                    "passed": results.iter().filter(|r| r.passed).count(),
-                    "failed": results.iter().filter(|r| !r.passed).count(),
-                }
-            })
+            json_object([
+                ("version", "1.0".into()),
+                ("timestamp", chrono::Utc::now().to_rfc3339().into()),
+                ("results", json_results.into()),
+                (
+                    "summary",
+                    json_object([
+                        ("total", results.len().into()),
+                        ("passed", results.iter().filter(|r| r.passed).count().into()),
+                        (
+                            "failed",
+                            results.iter().filter(|r| !r.passed).count().into(),
+                        ),
+                    ]),
+                ),
+            ])
             .to_string()
         }
         ComplyOutputFormat::Junit => {
@@ -592,22 +605,24 @@ mod tests {
 
     #[test]
     fn test_check_c001_no_wasm() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let result = check_c001_code_execution(temp.path());
         assert!(!result.passed);
     }
 
     #[test]
     fn test_check_c001_with_wasm_and_tests() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
 
         // Create wasm file
-        std::fs::create_dir_all(temp.path().join("pkg")).unwrap();
-        std::fs::write(temp.path().join("pkg").join("app.wasm"), b"wasm").unwrap();
+        std::fs::create_dir_all(temp.path().join("pkg")).expect("create test directory tree");
+        std::fs::write(temp.path().join("pkg").join("app.wasm"), b"wasm")
+            .expect("write test fixture");
 
         // Create test file
-        std::fs::create_dir_all(temp.path().join("tests")).unwrap();
-        std::fs::write(temp.path().join("tests").join("test_app.rs"), "// test").unwrap();
+        std::fs::create_dir_all(temp.path().join("tests")).expect("create test directory tree");
+        std::fs::write(temp.path().join("tests").join("test_app.rs"), "// test")
+            .expect("write test fixture");
 
         let result = check_c001_code_execution(temp.path());
         assert!(result.passed);
@@ -621,19 +636,19 @@ mod tests {
 
     #[test]
     fn test_check_c003_no_custom_elements() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let result = check_c003_custom_elements(temp.path());
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c003_with_custom_elements() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("index.html"),
             "<html><body><wasm-app></wasm-app></body></html>",
         )
-        .unwrap();
+        .expect("write test fixture");
         let result = check_c003_custom_elements(temp.path());
         assert!(result.passed);
         assert!(result
@@ -656,27 +671,28 @@ mod tests {
 
     #[test]
     fn test_check_c006_no_config() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let result = check_c006_headers(temp.path());
         assert!(!result.passed);
     }
 
     #[test]
     fn test_check_c006_with_htaccess() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join(".htaccess"), "Header set COOP").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join(".htaccess"), "Header set COOP")
+            .expect("write test fixture");
         let result = check_c006_headers(temp.path());
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c006_with_probar_toml() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("probar.toml"),
             "[server]\ncross_origin_isolated = true",
         )
-        .unwrap();
+        .expect("write test fixture");
         let result = check_c006_headers(temp.path());
         assert!(result.passed);
     }
@@ -695,44 +711,46 @@ mod tests {
 
     #[test]
     fn test_check_c009_no_wasm() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let result = check_c009_wasm_size(temp.path(), 5_000_000);
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c009_under_limit() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("small.wasm"), vec![0u8; 1000]).unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("small.wasm"), vec![0u8; 1000])
+            .expect("write test fixture");
         let result = check_c009_wasm_size(temp.path(), 5_000_000);
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c009_over_limit() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("large.wasm"), vec![0u8; 10_000]).unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("large.wasm"), vec![0u8; 10_000])
+            .expect("write test fixture");
         let result = check_c009_wasm_size(temp.path(), 5_000);
         assert!(!result.passed);
     }
 
     #[test]
     fn test_check_c010_no_cargo_toml() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let result = check_c010_panic_paths(temp.path());
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c010_with_panic_abort() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("Cargo.toml"),
             r#"[profile.release]
 panic = "abort"
 "#,
         )
-        .unwrap();
+        .expect("write test fixture");
         let result = check_c010_panic_paths(temp.path());
         assert!(result.passed);
         assert!(result
@@ -743,45 +761,45 @@ panic = "abort"
 
     #[test]
     fn test_check_probar_cross_origin_config_false() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         assert!(!check_probar_cross_origin_config(temp.path()));
     }
 
     #[test]
     fn test_check_probar_cross_origin_config_true() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("probar.toml"),
             "cross_origin_isolated = true",
         )
-        .unwrap();
+        .expect("write test fixture");
         assert!(check_probar_cross_origin_config(temp.path()));
     }
 
     #[test]
     fn test_check_makefile_cross_origin_false() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         assert!(!check_makefile_cross_origin(temp.path()));
     }
 
     #[test]
     fn test_check_makefile_cross_origin_true() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("Makefile"),
             "serve:\n\tprobador serve --cross-origin-isolated",
         )
-        .unwrap();
+        .expect("write test fixture");
         assert!(check_makefile_cross_origin(temp.path()));
     }
 
     #[test]
     fn test_find_files_recursive() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join("sub")).unwrap();
-        std::fs::write(temp.path().join("a.rs"), "").unwrap();
-        std::fs::write(temp.path().join("sub").join("b.rs"), "").unwrap();
-        std::fs::write(temp.path().join("c.txt"), "").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::create_dir_all(temp.path().join("sub")).expect("create test directory tree");
+        std::fs::write(temp.path().join("a.rs"), "").expect("write test fixture");
+        std::fs::write(temp.path().join("sub").join("b.rs"), "").expect("write test fixture");
+        std::fs::write(temp.path().join("c.txt"), "").expect("write test fixture");
 
         let mut files = Vec::new();
         find_files_recursive(temp.path(), "rs", &mut files);
@@ -790,10 +808,10 @@ panic = "abort"
 
     #[test]
     fn test_find_files_recursive_skips_hidden() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join(".hidden")).unwrap();
-        std::fs::write(temp.path().join(".hidden").join("a.rs"), "").unwrap();
-        std::fs::write(temp.path().join("b.rs"), "").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::create_dir_all(temp.path().join(".hidden")).expect("create test directory tree");
+        std::fs::write(temp.path().join(".hidden").join("a.rs"), "").expect("write test fixture");
+        std::fs::write(temp.path().join("b.rs"), "").expect("write test fixture");
 
         let mut files = Vec::new();
         find_files_recursive(temp.path(), "rs", &mut files);
@@ -802,10 +820,10 @@ panic = "abort"
 
     #[test]
     fn test_find_files_recursive_skips_target() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join("target")).unwrap();
-        std::fs::write(temp.path().join("target").join("a.rs"), "").unwrap();
-        std::fs::write(temp.path().join("b.rs"), "").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::create_dir_all(temp.path().join("target")).expect("create test directory tree");
+        std::fs::write(temp.path().join("target").join("a.rs"), "").expect("write test fixture");
+        std::fs::write(temp.path().join("b.rs"), "").expect("write test fixture");
 
         let mut files = Vec::new();
         find_files_recursive(temp.path(), "rs", &mut files);
@@ -848,8 +866,8 @@ panic = "abort"
 
     #[test]
     fn test_check_c001_wasm_only_no_tests() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("app.wasm"), b"wasm").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("app.wasm"), b"wasm").expect("write test fixture");
         let result = check_c001_code_execution(temp.path());
         assert!(!result.passed);
         assert!(result.details.iter().any(|d| d.contains("No test files")));
@@ -857,103 +875,103 @@ panic = "abort"
 
     #[test]
     fn test_check_c006_with_vercel_json() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("vercel.json"), "{}").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("vercel.json"), "{}").expect("write test fixture");
         let result = check_c006_headers(temp.path());
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c006_with_netlify_toml() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("netlify.toml"), "").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("netlify.toml"), "").expect("write test fixture");
         let result = check_c006_headers(temp.path());
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c006_with_headers_file() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("_headers"), "").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("_headers"), "").expect("write test fixture");
         let result = check_c006_headers(temp.path());
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_c006_with_makefile_lowercase() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("makefile"),
             "serve:\n\tprobar serve --cross-origin-isolated",
         )
-        .unwrap();
+        .expect("write test fixture");
         let result = check_c006_headers(temp.path());
         assert!(result.passed);
     }
 
     #[test]
     fn test_check_makefile_cross_origin_gnu_makefile() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("GNUmakefile"),
             "serve:\n\tprobador serve --cross-origin-isolated",
         )
-        .unwrap();
+        .expect("write test fixture");
         assert!(check_makefile_cross_origin(temp.path()));
     }
 
     #[test]
     fn test_check_makefile_cross_origin_package_json() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("package.json"),
             r#"{"scripts": {"serve": "probador serve --cross-origin-isolated"}}"#,
         )
-        .unwrap();
+        .expect("write test fixture");
         assert!(check_makefile_cross_origin(temp.path()));
     }
 
     #[test]
     fn test_check_probar_cross_origin_config_dot_probar() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join(".probar.toml"),
             "cross_origin_isolated = true",
         )
-        .unwrap();
+        .expect("write test fixture");
         assert!(check_probar_cross_origin_config(temp.path()));
     }
 
     #[test]
     fn test_check_probar_cross_origin_config_probador_toml() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("probador.toml"),
             "cross_origin_isolated=true",
         )
-        .unwrap();
+        .expect("write test fixture");
         assert!(check_probar_cross_origin_config(temp.path()));
     }
 
     #[test]
     fn test_check_probar_cross_origin_config_dot_probador() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join(".probador.toml"),
             "cross_origin_isolated = true",
         )
-        .unwrap();
+        .expect("write test fixture");
         assert!(check_probar_cross_origin_config(temp.path()));
     }
 
     #[test]
     fn test_check_c003_with_custom_elements_define() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         std::fs::write(
             temp.path().join("index.html"),
             "<script>customElements.define('my-element', MyElement)</script>",
         )
-        .unwrap();
+        .expect("write test fixture");
         let result = check_c003_custom_elements(temp.path());
         assert!(result.passed);
         assert!(result.details.iter().any(|d| d.contains("Custom elements")));
@@ -961,37 +979,39 @@ panic = "abort"
 
     #[test]
     fn test_find_wasm_files_nested() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join("pkg")).unwrap();
-        std::fs::write(temp.path().join("pkg").join("app.wasm"), b"wasm").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::create_dir_all(temp.path().join("pkg")).expect("create test directory tree");
+        std::fs::write(temp.path().join("pkg").join("app.wasm"), b"wasm")
+            .expect("write test fixture");
         let files = find_wasm_files(temp.path());
         assert!(files.is_some());
-        assert_eq!(files.unwrap().len(), 1);
+        assert_eq!(files.expect("files set in this test").len(), 1);
     }
 
     #[test]
     fn test_find_wasm_files_none() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("create temp dir");
         let files = find_wasm_files(temp.path());
         assert!(files.is_none());
     }
 
     #[test]
     fn test_find_test_files() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join("tests")).unwrap();
-        std::fs::write(temp.path().join("tests").join("test_app.rs"), "").unwrap();
-        std::fs::write(temp.path().join("src.rs"), "").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::create_dir_all(temp.path().join("tests")).expect("create test directory tree");
+        std::fs::write(temp.path().join("tests").join("test_app.rs"), "")
+            .expect("write test fixture");
+        std::fs::write(temp.path().join("src.rs"), "").expect("write test fixture");
         let files = find_test_files(temp.path());
         assert_eq!(files.len(), 1);
     }
 
     #[test]
     fn test_find_html_files_in_dir() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("index.html"), "").unwrap();
-        std::fs::write(temp.path().join("about.html"), "").unwrap();
-        std::fs::write(temp.path().join("style.css"), "").unwrap();
+        let temp = TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("index.html"), "").expect("write test fixture");
+        std::fs::write(temp.path().join("about.html"), "").expect("write test fixture");
+        std::fs::write(temp.path().join("style.css"), "").expect("write test fixture");
         let files = find_html_files_in_dir(temp.path());
         assert_eq!(files.len(), 2);
     }

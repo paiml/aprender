@@ -32,7 +32,9 @@ fn main() {
 
     // Calculate MQS score
     let mqs_calc = MqsCalculator::new();
-    let mqs = mqs_calc.calculate(model_id, &collector).unwrap();
+    let mqs = mqs_calc
+        .calculate(model_id, &collector)
+        .expect("MQS score calculates");
 
     // Calculate Popperian score
     let popperian_calc = PopperianCalculator::new();

@@ -22,7 +22,7 @@ fn test_size_category_huge_roundtrip() {
     let size = SizeCategory::Huge;
     let s = size.to_string();
     assert_eq!(s, "huge");
-    let parsed: SizeCategory = s.parse().unwrap();
+    let parsed: SizeCategory = s.parse().expect("Display output round-trips through SizeCategory::from_str");
     assert_eq!(parsed, SizeCategory::Huge);
 }
 
@@ -32,14 +32,14 @@ fn test_model_status_untested_roundtrip() {
     let status = ModelStatus::Untested;
     let s = status.to_string();
     assert_eq!(s, "UNTESTED");
-    let parsed: ModelStatus = s.parse().unwrap();
+    let parsed: ModelStatus = s.parse().expect("Display output round-trips through ModelStatus::from_str");
     assert_eq!(parsed, ModelStatus::Untested);
 }
 
 /// Verify write_models_csv roundtrip with all TPS fields populated
 #[test]
 fn test_write_csv_all_tps_fields() {
-    let temp = NamedTempFile::new().unwrap();
+    let temp = NamedTempFile::new().expect("create temp file");
     let rows = vec![CertificationRow {
         model_id: "test/all-tps".to_string(),
         family: "test".to_string(),
@@ -63,24 +63,24 @@ fn test_write_csv_all_tps_fields() {
         ..CertificationRow::default()
     }];
 
-    write_models_csv(&rows, temp.path()).unwrap();
-    let read_back = read_models_csv(temp.path()).unwrap();
+    write_models_csv(&rows, temp.path()).expect("write models CSV");
+    let read_back = read_models_csv(temp.path()).expect("read models CSV");
     assert_eq!(read_back.len(), 1);
     let r = &read_back[0];
-    assert!((r.tps_gguf_cpu.unwrap() - 15.5).abs() < 0.1);
-    assert!((r.tps_gguf_gpu.unwrap() - 120.0).abs() < 0.1);
-    assert!((r.tps_apr_cpu.unwrap() - 14.0).abs() < 0.1);
-    assert!((r.tps_apr_gpu.unwrap() - 110.5).abs() < 0.1);
-    assert!((r.tps_st_cpu.unwrap() - 3.2).abs() < 0.1);
-    assert!((r.tps_st_gpu.unwrap() - 25.8).abs() < 0.1);
+    assert!((r.tps_gguf_cpu.expect("tps_gguf_cpu is set") - 15.5).abs() < 0.1);
+    assert!((r.tps_gguf_gpu.expect("tps_gguf_gpu is set") - 120.0).abs() < 0.1);
+    assert!((r.tps_apr_cpu.expect("tps_apr_cpu is set") - 14.0).abs() < 0.1);
+    assert!((r.tps_apr_gpu.expect("tps_apr_gpu is set") - 110.5).abs() < 0.1);
+    assert!((r.tps_st_cpu.expect("tps_st_cpu is set") - 3.2).abs() < 0.1);
+    assert!((r.tps_st_gpu.expect("tps_st_gpu is set") - 25.8).abs() < 0.1);
 }
 
 /// Verify write then read with empty rows produces empty result
 #[test]
 fn test_write_csv_empty_rows() {
-    let temp = NamedTempFile::new().unwrap();
-    write_models_csv(&[], temp.path()).unwrap();
-    let read_back = read_models_csv(temp.path()).unwrap();
+    let temp = NamedTempFile::new().expect("create temp file");
+    write_models_csv(&[], temp.path()).expect("write models CSV");
+    let read_back = read_models_csv(temp.path()).expect("read models CSV");
     assert!(read_back.is_empty());
 }
 
@@ -88,8 +88,8 @@ fn test_write_csv_empty_rows() {
 #[test]
 fn test_csv_missing_required_field() {
     let csv_data = "model_id,family\ntest,test\n";
-    let temp = NamedTempFile::new().unwrap();
-    std::fs::write(temp.path(), csv_data).unwrap();
+    let temp = NamedTempFile::new().expect("create temp file");
+    std::fs::write(temp.path(), csv_data).expect("write temp file");
     let result = read_models_csv(temp.path());
     assert!(result.is_err());
 }

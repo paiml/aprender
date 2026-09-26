@@ -185,7 +185,8 @@ mod tests {
     #[test]
     fn test_observed_event_json_deserialization() {
         let json = r#"[{"name": "land_0", "time_secs": 1.71}]"#;
-        let events: Vec<ObservedEventJson> = serde_json::from_str(json).unwrap();
+        let events: Vec<ObservedEventJson> =
+            serde_json::from_str(json).expect("deserialize test input");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].name, "land_0");
     }

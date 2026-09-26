@@ -557,7 +557,6 @@ fn test_cli_validate_subcommand_exists() {
             assert_eq!(args.generate.expect("test").to_str().expect("test"), "/tmp/golden");
             assert_eq!(args.command, vec!["echo", "test"]);
         }
-        _ => panic!("Expected Validate subcommand"),
     }
 }
 
@@ -581,7 +580,6 @@ fn test_cli_validate_baseline_flag() {
         Commands::Validate(args) => {
             assert_eq!(args.baseline.expect("test").to_str().expect("test"), "/golden/baseline");
         }
-        _ => panic!("Expected Validate subcommand"),
     }
 }
 
@@ -607,7 +605,6 @@ fn test_cli_validate_tolerance_flag() {
         Commands::Validate(args) => {
             assert!((args.tolerance - 15.0).abs() < f32::EPSILON);
         }
-        _ => panic!("Expected Validate subcommand"),
     }
 }
 
@@ -632,7 +629,6 @@ fn test_cli_validate_strict_flag() {
         Commands::Validate(args) => {
             assert!(args.strict);
         }
-        _ => panic!("Expected Validate subcommand"),
     }
 }
 
@@ -659,7 +655,6 @@ fn test_cli_validate_output_format() {
         Commands::Validate(args) => {
             assert_eq!(args.output, ValidationOutputFormat::Json);
         }
-        _ => panic!("Expected Validate subcommand"),
     }
 
     // JUnit format
@@ -679,7 +674,6 @@ fn test_cli_validate_output_format() {
         Commands::Validate(args) => {
             assert_eq!(args.output, ValidationOutputFormat::Junit);
         }
-        _ => panic!("Expected Validate subcommand"),
     }
 }
 
@@ -696,6 +690,5 @@ fn test_cli_validate_tolerance_default() {
         Commands::Validate(args) => {
             assert!((args.tolerance - 10.0).abs() < f32::EPSILON); // Default is 10.0
         }
-        _ => panic!("Expected Validate subcommand"),
     }
 }

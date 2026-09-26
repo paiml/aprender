@@ -431,8 +431,11 @@ impl StressRunner {
             }
 
             // Simulate vsync wait
-            if frame_time < frame_budget {
-                std::thread::sleep(frame_budget.checked_sub(frame_time).unwrap());
+            if let Some(wait) = frame_budget
+                .checked_sub(frame_time)
+                .filter(|w| !w.is_zero())
+            {
+                std::thread::sleep(wait);
             }
         }
 
@@ -675,16 +678,25 @@ mod tests {
     #[test]
     fn test_stress_mode_from_str() {
         assert_eq!(
-            StressMode::from_str("atomics").unwrap(),
+            StressMode::from_str("atomics").expect("deserialize test input"),
             StressMode::Atomics
         );
         assert_eq!(
-            StressMode::from_str("worker-msg").unwrap(),
+            StressMode::from_str("worker-msg").expect("deserialize test input"),
             StressMode::WorkerMsg
         );
-        assert_eq!(StressMode::from_str("render").unwrap(), StressMode::Render);
-        assert_eq!(StressMode::from_str("trace").unwrap(), StressMode::Trace);
-        assert_eq!(StressMode::from_str("full").unwrap(), StressMode::Full);
+        assert_eq!(
+            StressMode::from_str("render").expect("deserialize test input"),
+            StressMode::Render
+        );
+        assert_eq!(
+            StressMode::from_str("trace").expect("deserialize test input"),
+            StressMode::Trace
+        );
+        assert_eq!(
+            StressMode::from_str("full").expect("deserialize test input"),
+            StressMode::Full
+        );
     }
 
     #[test]
@@ -839,24 +851,39 @@ mod tests {
     #[test]
     fn test_stress_mode_from_str_all_variants() {
         assert_eq!(
-            "atomics".parse::<StressMode>().unwrap(),
+            "atomics".parse::<StressMode>().expect("parse test literal"),
             StressMode::Atomics
         );
         assert_eq!(
-            "worker-msg".parse::<StressMode>().unwrap(),
+            "worker-msg"
+                .parse::<StressMode>()
+                .expect("parse test literal"),
             StressMode::WorkerMsg
         );
         assert_eq!(
-            "workermsg".parse::<StressMode>().unwrap(),
+            "workermsg"
+                .parse::<StressMode>()
+                .expect("parse test literal"),
             StressMode::WorkerMsg
         );
         assert_eq!(
-            "worker_msg".parse::<StressMode>().unwrap(),
+            "worker_msg"
+                .parse::<StressMode>()
+                .expect("parse test literal"),
             StressMode::WorkerMsg
         );
-        assert_eq!("render".parse::<StressMode>().unwrap(), StressMode::Render);
-        assert_eq!("trace".parse::<StressMode>().unwrap(), StressMode::Trace);
-        assert_eq!("full".parse::<StressMode>().unwrap(), StressMode::Full);
+        assert_eq!(
+            "render".parse::<StressMode>().expect("parse test literal"),
+            StressMode::Render
+        );
+        assert_eq!(
+            "trace".parse::<StressMode>().expect("parse test literal"),
+            StressMode::Trace
+        );
+        assert_eq!(
+            "full".parse::<StressMode>().expect("parse test literal"),
+            StressMode::Full
+        );
     }
 
     #[test]
@@ -983,11 +1010,11 @@ mod tests {
             time_offset: Duration::from_millis(500),
         };
 
-        let json = serde_json::to_string(&error).unwrap();
+        let json = serde_json::to_string(&error).expect("serialize to JSON string");
         assert!(json.contains("OutOfMemory"));
         assert!(json.contains("Allocation failed"));
 
-        let parsed: StressError = serde_json::from_str(&json).unwrap();
+        let parsed: StressError = serde_json::from_str(&json).expect("deserialize test input");
         assert_eq!(parsed.kind, StressErrorKind::OutOfMemory);
     }
 
@@ -1027,12 +1054,12 @@ mod tests {
     #[test]
     fn test_stress_config_serde() {
         let config = StressConfig::atomics(60, 8);
-        let json = serde_json::to_string(&config).unwrap();
+        let json = serde_json::to_string(&config).expect("serialize to JSON string");
         assert!(json.contains("Atomics"));
         assert!(json.contains("60"));
         assert!(json.contains('8'));
 
-        let parsed: StressConfig = serde_json::from_str(&json).unwrap();
+        let parsed: StressConfig = serde_json::from_str(&json).expect("deserialize test input");
         assert_eq!(parsed.mode, StressMode::Atomics);
         assert_eq!(parsed.duration_secs, 60);
     }

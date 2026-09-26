@@ -968,7 +968,10 @@ mod tests {
         );
 
         assert!(config.parameter_variations.contains_key("latency"));
-        let variation = config.parameter_variations.get("latency").unwrap();
+        let variation = config
+            .parameter_variations
+            .get("latency")
+            .expect("entry present in test data");
         assert_eq!(variation.min, 10.0);
         assert_eq!(variation.max, 100.0);
         assert_eq!(variation.base, 50.0);

@@ -390,16 +390,16 @@ mod tests {
 
     #[test]
     fn test_find_edl_files_empty() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = tempfile::TempDir::new().expect("create temp dir");
         let files = find_edl_files(temp.path());
         assert!(files.is_empty());
     }
 
     #[test]
     fn test_find_edl_files_with_edl() {
-        let temp = tempfile::TempDir::new().unwrap();
-        std::fs::write(temp.path().join("video.edl.json"), "{}").unwrap();
-        std::fs::write(temp.path().join("other.json"), "{}").unwrap();
+        let temp = tempfile::TempDir::new().expect("create temp dir");
+        std::fs::write(temp.path().join("video.edl.json"), "{}").expect("write test fixture");
+        std::fs::write(temp.path().join("other.json"), "{}").expect("write test fixture");
         let files = find_edl_files(temp.path());
         assert_eq!(files.len(), 1);
         assert!(files[0].to_string_lossy().contains("video.edl.json"));
@@ -407,49 +407,50 @@ mod tests {
 
     #[test]
     fn test_find_video_for_edl_mp4() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = tempfile::TempDir::new().expect("create temp dir");
         let edl = temp.path().join("demo.edl.json");
         let video = temp.path().join("demo.mp4");
-        std::fs::write(&edl, "{}").unwrap();
-        std::fs::write(&video, "").unwrap();
+        std::fs::write(&edl, "{}").expect("write test fixture");
+        std::fs::write(&video, "").expect("write test fixture");
         let found = find_video_for_edl(&edl);
         assert_eq!(found, Some(video));
     }
 
     #[test]
     fn test_find_video_for_edl_mov() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = tempfile::TempDir::new().expect("create temp dir");
         let edl = temp.path().join("demo.edl.json");
         let video = temp.path().join("demo.mov");
-        std::fs::write(&edl, "{}").unwrap();
-        std::fs::write(&video, "").unwrap();
+        std::fs::write(&edl, "{}").expect("write test fixture");
+        std::fs::write(&video, "").expect("write test fixture");
         let found = find_video_for_edl(&edl);
         assert_eq!(found, Some(video));
     }
 
     #[test]
     fn test_find_video_for_edl_none() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = tempfile::TempDir::new().expect("create temp dir");
         let edl = temp.path().join("demo.edl.json");
-        std::fs::write(&edl, "{}").unwrap();
+        std::fs::write(&edl, "{}").expect("write test fixture");
         let found = find_video_for_edl(&edl);
         assert!(found.is_none());
     }
 
     #[test]
     fn test_load_edl_valid() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = tempfile::TempDir::new().expect("create temp dir");
         let edl_path = temp.path().join("test.edl.json");
-        std::fs::write(&edl_path, r#"{"video_id":"test","decisions":[]}"#).unwrap();
-        let edl = load_edl(&edl_path).unwrap();
+        std::fs::write(&edl_path, r#"{"video_id":"test","decisions":[]}"#)
+            .expect("write test fixture");
+        let edl = load_edl(&edl_path).expect("load test EDL");
         assert_eq!(edl.video_id, "test");
     }
 
     #[test]
     fn test_load_edl_invalid_json() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = tempfile::TempDir::new().expect("create temp dir");
         let edl_path = temp.path().join("bad.edl.json");
-        std::fs::write(&edl_path, "not json").unwrap();
+        std::fs::write(&edl_path, "not json").expect("write test fixture");
         let result = load_edl(&edl_path);
         assert!(result.is_err());
     }

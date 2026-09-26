@@ -359,7 +359,7 @@ mod tests {
         fn test_run_no_tests() {
             let config = CliConfig::default();
             let mut runner = TestRunner::new(config);
-            let results = runner.run(None).unwrap();
+            let results = runner.run(None).expect("run test suite");
             assert_eq!(results.total(), 0);
         }
 
@@ -368,7 +368,7 @@ mod tests {
         fn test_run_with_filter() {
             let config = CliConfig::default();
             let mut runner = TestRunner::new(config);
-            let results = runner.run(Some("game::*")).unwrap();
+            let results = runner.run(Some("game::*")).expect("run test suite");
             assert_eq!(results.total(), 0);
         }
 
@@ -409,7 +409,7 @@ mod tests {
         #[test]
         fn test_serialize() {
             let result = TestResult::pass("test", Duration::from_millis(10));
-            let json = serde_json::to_string(&result).unwrap();
+            let json = serde_json::to_string(&result).expect("serialize to JSON string");
             assert!(json.contains("test"));
         }
     }
@@ -434,7 +434,7 @@ mod tests {
         fn test_serialize() {
             let mut results = TestResults::new();
             results.add(TestResult::pass("test1", Duration::from_millis(10)));
-            let json = serde_json::to_string(&results).unwrap();
+            let json = serde_json::to_string(&results).expect("serialize to JSON string");
             assert!(json.contains("test1"));
         }
 

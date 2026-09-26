@@ -6,14 +6,49 @@ use super::*;
 
 #[test]
 fn test_cert_tier_from_str() {
-    assert_eq!("smoke".parse::<CertTier>().unwrap(), CertTier::Smoke);
-    assert_eq!("mvp".parse::<CertTier>().unwrap(), CertTier::Mvp);
-    assert_eq!("quick".parse::<CertTier>().unwrap(), CertTier::Quick);
-    assert_eq!("standard".parse::<CertTier>().unwrap(), CertTier::Standard);
-    assert_eq!("deep".parse::<CertTier>().unwrap(), CertTier::Deep);
+    assert_eq!(
+        "smoke"
+            .parse::<CertTier>()
+            .expect("valid CertTier string parses"),
+        CertTier::Smoke
+    );
+    assert_eq!(
+        "mvp"
+            .parse::<CertTier>()
+            .expect("valid CertTier string parses"),
+        CertTier::Mvp
+    );
+    assert_eq!(
+        "quick"
+            .parse::<CertTier>()
+            .expect("valid CertTier string parses"),
+        CertTier::Quick
+    );
+    assert_eq!(
+        "standard"
+            .parse::<CertTier>()
+            .expect("valid CertTier string parses"),
+        CertTier::Standard
+    );
+    assert_eq!(
+        "deep"
+            .parse::<CertTier>()
+            .expect("valid CertTier string parses"),
+        CertTier::Deep
+    );
     // Case insensitive
-    assert_eq!("SMOKE".parse::<CertTier>().unwrap(), CertTier::Smoke);
-    assert_eq!("Quick".parse::<CertTier>().unwrap(), CertTier::Quick);
+    assert_eq!(
+        "SMOKE"
+            .parse::<CertTier>()
+            .expect("valid CertTier string parses"),
+        CertTier::Smoke
+    );
+    assert_eq!(
+        "Quick"
+            .parse::<CertTier>()
+            .expect("valid CertTier string parses"),
+        CertTier::Quick
+    );
 }
 
 #[test]
@@ -95,7 +130,10 @@ fn test_certify_model_nonexistent_playbook() {
     let result = certify_model("nonexistent/model", &config);
     assert!(!result.success);
     assert!(result.error.is_some());
-    assert!(result.error.unwrap().contains("Playbook not found"));
+    assert!(result
+        .error
+        .expect("failed result carries an error")
+        .contains("Playbook not found"));
 }
 
 #[test]
@@ -148,7 +186,7 @@ fn test_parse_evidence_empty_array() {
     let json = "[]";
     let result = parse_evidence(json);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap().len(), 0);
+    assert_eq!(result.expect("empty evidence array parses").len(), 0);
 }
 
 #[test]
@@ -196,7 +234,7 @@ fn test_build_execution_config_with_profile_ci() {
         run_profile_ci: true,
         ..Default::default()
     };
-    let exec = build_execution_config(&config).unwrap();
+    let exec = build_execution_config(&config).expect("execution config builds");
     assert!(exec.run_profile_ci);
 }
 

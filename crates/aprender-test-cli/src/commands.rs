@@ -2511,7 +2511,9 @@ mod tests {
                 if let VideoSubcommand::Check(check_args) = args.subcommand {
                     assert_eq!(check_args.width, Some(1920));
                     assert_eq!(check_args.height, Some(1080));
-                    assert!((check_args.fps.unwrap() - 24.0).abs() < f64::EPSILON);
+                    assert!(
+                        (check_args.fps.expect("fps set in this test") - 24.0).abs() < f64::EPSILON
+                    );
                     assert_eq!(check_args.codec.as_deref(), Some("h264"));
                     assert!(check_args.require_audio);
                 } else {

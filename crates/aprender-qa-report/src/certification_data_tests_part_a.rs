@@ -49,23 +49,23 @@ fn test_falsify_cert_001_roundtrip_integrity() {
 #[test]
 fn test_model_status_from_str() {
     assert_eq!(
-        "CERTIFIED".parse::<ModelStatus>().unwrap(),
+        "CERTIFIED".parse::<ModelStatus>().expect("valid ModelStatus string parses"),
         ModelStatus::Certified
     );
     assert_eq!(
-        "BLOCKED".parse::<ModelStatus>().unwrap(),
+        "BLOCKED".parse::<ModelStatus>().expect("valid ModelStatus string parses"),
         ModelStatus::Blocked
     );
     assert_eq!(
-        "PENDING".parse::<ModelStatus>().unwrap(),
+        "PENDING".parse::<ModelStatus>().expect("valid ModelStatus string parses"),
         ModelStatus::Pending
     );
     assert_eq!(
-        "UNTESTED".parse::<ModelStatus>().unwrap(),
+        "UNTESTED".parse::<ModelStatus>().expect("valid ModelStatus string parses"),
         ModelStatus::Untested
     );
     assert_eq!(
-        "certified".parse::<ModelStatus>().unwrap(),
+        "certified".parse::<ModelStatus>().expect("valid ModelStatus string parses"),
         ModelStatus::Certified
     );
     assert!("INVALID".parse::<ModelStatus>().is_err());
@@ -83,24 +83,24 @@ fn test_model_status_display() {
 /// Verify SizeCategory parses from string including case-insensitive variants
 #[test]
 fn test_size_category_from_str() {
-    assert_eq!("tiny".parse::<SizeCategory>().unwrap(), SizeCategory::Tiny);
+    assert_eq!("tiny".parse::<SizeCategory>().expect("valid SizeCategory string parses"), SizeCategory::Tiny);
     assert_eq!(
-        "SMALL".parse::<SizeCategory>().unwrap(),
+        "SMALL".parse::<SizeCategory>().expect("valid SizeCategory string parses"),
         SizeCategory::Small
     );
     assert_eq!(
-        "Medium".parse::<SizeCategory>().unwrap(),
+        "Medium".parse::<SizeCategory>().expect("valid SizeCategory string parses"),
         SizeCategory::Medium
     );
     assert_eq!(
-        "large".parse::<SizeCategory>().unwrap(),
+        "large".parse::<SizeCategory>().expect("valid SizeCategory string parses"),
         SizeCategory::Large
     );
     assert_eq!(
-        "xlarge".parse::<SizeCategory>().unwrap(),
+        "xlarge".parse::<SizeCategory>().expect("valid SizeCategory string parses"),
         SizeCategory::Xlarge
     );
-    assert_eq!("huge".parse::<SizeCategory>().unwrap(), SizeCategory::Huge);
+    assert_eq!("huge".parse::<SizeCategory>().expect("valid SizeCategory string parses"), SizeCategory::Huge);
     assert!("invalid".parse::<SizeCategory>().is_err());
 }
 
@@ -257,7 +257,7 @@ fn test_lookup_model() {
 
     let found = lookup_model(&rows, "test/model-2");
     assert!(found.is_some());
-    assert_eq!(found.unwrap().family, "family-b");
+    assert_eq!(found.expect("model found in rows").family, "family-b");
 
     let not_found = lookup_model(&rows, "nonexistent");
     assert!(not_found.is_none());
@@ -321,7 +321,7 @@ fn test_optional_tps_fields() {
     // Second row has TPS values
     let second_row = &cert_rows[1];
     assert!(second_row.tps_gguf_cpu.is_some());
-    assert!((second_row.tps_gguf_cpu.unwrap() - 17.9).abs() < 0.1);
+    assert!((second_row.tps_gguf_cpu.expect("tps_gguf_cpu is set") - 17.9).abs() < 0.1);
 }
 
 /// Verify write_models_csv creates readable file with correct data
@@ -358,7 +358,7 @@ fn test_write_models_csv_creates_file() {
     let read_back = read_models_csv(temp_file.path()).expect("read");
     assert_eq!(read_back.len(), 1);
     assert_eq!(read_back[0].model_id, "test/model");
-    assert_eq!(read_back[0].tps_gguf_cpu.unwrap(), 10.5);
+    assert_eq!(read_back[0].tps_gguf_cpu.expect("tps_gguf_cpu is set"), 10.5);
     assert!(read_back[0].provenance_verified);
 }
 

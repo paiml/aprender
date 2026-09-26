@@ -1080,8 +1080,8 @@ mod tests {
             timestamp_ms: 0,
         });
 
-        let json = serde_json::to_string(&recording).unwrap();
-        let parsed: Recording = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&recording).expect("serialize to JSON string");
+        let parsed: Recording = serde_json::from_str(&json).expect("deserialize test input");
 
         assert_eq!(parsed.name, "serde_test");
         assert_eq!(parsed.event_count(), 1);

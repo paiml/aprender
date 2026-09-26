@@ -143,7 +143,7 @@ fn test_bootstrap_success_produces_yaml() {
         dir.path(),
     );
     assert!(result.is_ok(), "Expected Ok but got: {:?}", result.err());
-    let yaml = result.unwrap();
+    let yaml = result.expect("playbook YAML generates");
     // The generated YAML must at minimum be non-empty and reference the model
     assert!(!yaml.is_empty());
     assert!(

@@ -105,8 +105,8 @@ fn test_builder_gates() {
         .build();
 
     assert_eq!(export.gates.len(), 2);
-    assert!(export.gates.get("G1-MODEL-LOADS").unwrap().passed);
-    assert!(!export.gates.get("G2-BASIC-INFERENCE").unwrap().passed);
+    assert!(export.gates.get("G1-MODEL-LOADS").expect("gate G1-MODEL-LOADS present").passed);
+    assert!(!export.gates.get("G2-BASIC-INFERENCE").expect("gate G2-BASIC-INFERENCE present").passed);
 }
 
 #[test]
@@ -204,11 +204,12 @@ fn test_derive_status_untested() {
 fn test_derive_status_blocked_score_zero_with_evidence() {
     let mut export = EvidenceExport::builder().mqs(0, "F", false).build();
     // Add some evidence to simulate a tested-but-failed model
-    export.evidence.push(serde_json::json!({
-        "gate_id": "G1-MODEL-LOADS",
-        "outcome": "Falsified",
-        "output": "failed to load"
-    }));
+    export.evidence.push(
+        serde_json::from_str(
+            r#"{"gate_id": "G1-MODEL-LOADS", "outcome": "Falsified", "output": "failed to load"}"#,
+        )
+        .expect("evidence JSON literal is valid"),
+    );
     assert_eq!(
         export.derive_status(),
         "BLOCKED",
@@ -227,8 +228,10 @@ fn test_to_json_contains_schema() {
 #[test]
 fn test_evidence_array() {
     let evidence = vec![
-        serde_json::json!({"id": "1", "outcome": "Corroborated"}),
-        serde_json::json!({"id": "2", "outcome": "Falsified"}),
+        serde_json::from_str(r#"{"id": "1", "outcome": "Corroborated"}"#)
+            .expect("evidence JSON literal is valid"),
+        serde_json::from_str(r#"{"id": "2", "outcome": "Falsified"}"#)
+            .expect("evidence JSON literal is valid"),
     ];
 
     let export = EvidenceExport::builder().evidence(evidence).build();
@@ -327,11 +330,10 @@ fn test_falsify_mqs_001_conversion_integrity() {
         tier: "mvp".to_string(),
     };
 
-    let evidence = vec![serde_json::json!({
-        "id": "1",
-        "outcome": "Corroborated",
-        "metrics": {"duration_ms": 1000}
-    })];
+    let evidence = vec![serde_json::from_str(
+        r#"{"id": "1", "outcome": "Corroborated", "metrics": {"duration_ms": 1000}}"#,
+    )
+    .expect("evidence JSON literal is valid")];
 
     let export = EvidenceExport::from_mqs_score(&mqs, evidence, model, playbook);
 
@@ -355,8 +357,8 @@ fn test_falsify_mqs_001_conversion_integrity() {
 
     // Verify gates converted
     assert!(export.gates.contains_key("G1-MODEL-LOADS"));
-    assert!(export.gates.get("G1-MODEL-LOADS").unwrap().passed);
-    assert!(!export.gates.get("G4-OUTPUT-QUALITY").unwrap().passed);
+    assert!(export.gates.get("G1-MODEL-LOADS").expect("gate G1-MODEL-LOADS present").passed);
+    assert!(!export.gates.get("G4-OUTPUT-QUALITY").expect("gate G4-OUTPUT-QUALITY present").passed);
 }
 
 #[test]

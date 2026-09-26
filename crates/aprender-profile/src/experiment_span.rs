@@ -656,9 +656,9 @@ mod tests {
 
         let attrs = meta.to_attributes();
         assert_eq!(attrs.get("experiment.model_name"), Some(&"model".to_string()));
-        assert!(attrs.get("experiment.epoch").is_none());
-        assert!(attrs.get("experiment.step").is_none());
-        assert!(attrs.get("experiment.loss").is_none());
+        assert!(!attrs.contains_key("experiment.epoch"));
+        assert!(!attrs.contains_key("experiment.step"));
+        assert!(!attrs.contains_key("experiment.loss"));
     }
 
     #[test]
