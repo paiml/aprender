@@ -2,7 +2,7 @@
 //!
 //! Benchmarks the performance of the direct terminal backend.
 //!
-//! Run with: cargo run -p presentar-terminal --example `direct_benchmark` --release
+//! Run with: cargo run -p aprender-present-terminal --example `direct_benchmark` --release
 
 use presentar_core::Color;
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, Modifiers};

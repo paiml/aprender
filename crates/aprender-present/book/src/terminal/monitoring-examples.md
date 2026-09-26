@@ -8,28 +8,28 @@ The `presentar-terminal` crate includes 11+ monitoring examples demonstrating re
 
 | Example | Description | Command |
 |---------|-------------|---------|
-| `cpu_monitor` | Per-core CPU usage with history graphs | `cargo run -p presentar-terminal --example cpu_monitor` |
-| `memory_monitor` | RAM/Swap with usage breakdown | `cargo run -p presentar-terminal --example memory_monitor` |
-| `network_traffic` | RX/TX per interface with graphs | `cargo run -p presentar-terminal --example network_traffic` |
-| `system_dashboard` | Combined btop-style overview | `cargo run -p presentar-terminal --example system_dashboard` |
+| `cpu_monitor` | Per-core CPU usage with history graphs | `cargo run -p aprender-present-terminal --example cpu_monitor` |
+| `memory_monitor` | RAM/Swap with usage breakdown | `cargo run -p aprender-present-terminal --example memory_monitor` |
+| `network_traffic` | RX/TX per interface with graphs | `cargo run -p aprender-present-terminal --example network_traffic` |
+| `system_dashboard` | Combined btop-style overview | `cargo run -p aprender-present-terminal --example system_dashboard` |
 
 ### ML/Data Science
 
 | Example | Description | Command |
 |---------|-------------|---------|
-| `training_metrics` | Loss/accuracy curves | `cargo run -p presentar-terminal --example training_metrics` |
-| `gpu_compute` | GPU utilization/VRAM/temperature | `cargo run -p presentar-terminal --example gpu_compute` |
-| `inference_server` | Request latency/queue depth | `cargo run -p presentar-terminal --example inference_server` |
-| `batch_progress` | Pipeline job progress tracking | `cargo run -p presentar-terminal --example batch_progress` |
-| `ml_visualization` | Advanced ML widgets (SPEC-024 Section 16) | `cargo run -p presentar-terminal --example ml_visualization` |
+| `training_metrics` | Loss/accuracy curves | `cargo run -p aprender-present-terminal --example training_metrics` |
+| `gpu_compute` | GPU utilization/VRAM/temperature | `cargo run -p aprender-present-terminal --example gpu_compute` |
+| `inference_server` | Request latency/queue depth | `cargo run -p aprender-present-terminal --example inference_server` |
+| `batch_progress` | Pipeline job progress tracking | `cargo run -p aprender-present-terminal --example batch_progress` |
+| `ml_visualization` | Advanced ML widgets (SPEC-024 Section 16) | `cargo run -p aprender-present-terminal --example ml_visualization` |
 
 ### Infrastructure
 
 | Example | Description | Command |
 |---------|-------------|---------|
-| `queue_monitor` | Message queue depth/throughput | `cargo run -p presentar-terminal --example queue_monitor` |
-| `cluster_status` | Kubernetes node/pod status | `cargo run -p presentar-terminal --example cluster_status` |
-| `sensor_dashboard` | IoT sensor readings | `cargo run -p presentar-terminal --example sensor_dashboard` |
+| `queue_monitor` | Message queue depth/throughput | `cargo run -p aprender-present-terminal --example queue_monitor` |
+| `cluster_status` | Kubernetes node/pod status | `cargo run -p aprender-present-terminal --example cluster_status` |
+| `sensor_dashboard` | IoT sensor readings | `cargo run -p aprender-present-terminal --example sensor_dashboard` |
 
 ## Widget Usage Patterns
 
@@ -310,7 +310,7 @@ let treemap = Treemap::new().with_root(root);
 ### Running the Example
 
 ```bash
-cargo run -p presentar-terminal --example ml_visualization
+cargo run -p aprender-present-terminal --example ml_visualization
 ```
 
 This displays all five widgets with sample data, demonstrating distribution visualization, model evaluation curves, training progress, network graphs, and hierarchical treemaps.

@@ -1,6 +1,6 @@
 //! ptop: System monitor using presentar-terminal widget composition
 //!
-//! Run: cargo run -p presentar-terminal --features ptop --bin aprender-ptop
+//! Run: cargo run -p aprender-present-terminal --features ptop --bin aprender-ptop
 
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::unnecessary_debug_formatting)]
