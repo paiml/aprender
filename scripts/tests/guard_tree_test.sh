@@ -232,7 +232,9 @@ fi
 #    SIGPIPEs the producer under pipefail and can read a real match as a
 #    false negative.
 # ---------------------------------------------------------------------------
-CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+# #4433: the job bodies (step text, mounts, target dirs) live in ci/sections.yml,
+# verbatim; ci.yml now holds only the fat jobs that run them as sections.
+CI_YML="$REPO_ROOT/ci/sections.yml"
 ci_text="$(cat "$CI_YML")"
 
 n_together="$(grep -cE 'registry/.*\.package-cache.*\.package-cache-mutate' <<<"$ci_text")"
@@ -353,6 +355,34 @@ if [ "${n_arg_skip:-0}" -eq 1 ] && [ "${n_bare_run:-0}" -eq 1 ]; then
 else
     fail_row "argument-wired skip is derived from the workflows" \
         "with_arg_skip=${n_arg_skip:-0} bare_run=${n_bare_run:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 10s. #4433: ci/sections.yml invocations are ci.yml invocations.
+#
+#     ci.yml's job bodies moved verbatim to ci/sections.yml. Read only
+#     .github/workflows/, the real tree ran 7 arg-only guards bare and hid one
+#     behind wired-elsewhere. (a) an ARG invocation only in sections.yml
+#     skips as wired-with-args in ci.yml; (b) a BARE one there alongside a
+#     nightly bare one still runs -- it is ci.yml's own, not wired-elsewhere.
+# ---------------------------------------------------------------------------
+mkdir -p "$fixture/.github/workflows" "$fixture/ci"
+printf 'jobs:\n  n:\n    steps:\n      - run: bash scripts/check_fail_beta.sh "$LOG"\n' \
+    >"$fixture/ci/sections.yml"
+sect_arg_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_sect_arg="$(grep -c '^skipped: scripts/check_fail_beta\.sh -- wired-with-args in ci\.yml$' <<<"$sect_arg_out")"
+printf 'jobs:\n  n:\n    steps:\n      - run: bash scripts/check_fail_beta.sh\n' \
+    >"$fixture/ci/sections.yml"
+cp "$fixture/ci/sections.yml" "$fixture/.github/workflows/nightly.yml"
+sect_bare_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_sect_bare="$(grep -c '^run: scripts/check_fail_beta\.sh$' <<<"$sect_bare_out")"
+rm -rf "${fixture:?row 10s: refusing to rm -rf an empty path}/.github" "${fixture:?}/ci"
+
+if [ "${n_sect_arg:-0}" -eq 1 ] && [ "${n_sect_bare:-0}" -eq 1 ]; then
+    pass_row "ci/sections.yml invocations count as ci.yml's (arg-wired skips; bare still runs)"
+else
+    fail_row "ci/sections.yml invocations count as ci.yml's" \
+        "sections_arg_skip=${n_sect_arg:-0} sections_bare_run=${n_sect_bare:-0}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -1011,8 +1041,16 @@ done
 printf '#!/usr/bin/env bash\n# guard-tree: serial\n[ "${1:-}" = --help ] && { echo usage; exit 0; }\necho "start l_serial" >> "%s/events"\nsleep 2\necho "end l_serial" >> "%s/events"\nexit 0\n' \
     "$lfix" "$lfix" >"$lfix/scripts/check_l_serial.sh"
 git -C "$lfix" add -A && git -C "$lfix" commit -q -m fixture
-serial_alone() { # -> 0 iff no other event falls between "start l_serial" and "end l_serial"
-    awk '/^start l_serial$/{f=1; next} /^end l_serial$/{f=0; next} f{bad=1} END{exit bad}' "$lfix/events"
+serial_alone() { # -> 0 iff no other guard is running at any point while l_serial runs
+    # An event inside the serial window is not the only overlap: a pool guard that
+    # started BEFORE l_serial and ended AFTER it leaves the window empty. Count the
+    # guards still open when l_serial starts (#4439: a|b|serial-start|serial-end|a|b
+    # read as "alone").
+    awk '/^start l_serial$/{if (open > 0) bad=1; f=1; next}
+         /^end l_serial$/{f=0; next}
+         f{bad=1}
+         /^start /{open++} /^end /{open--}
+         END{exit bad}' "$lfix/events"
 }
 : > "$lfix/events"
 l_out="$(cd "$lfix" && GUARD_TREE_JOBS=8 bash scripts/guard_tree.sh 2>&1)"

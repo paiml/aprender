@@ -80,11 +80,16 @@ BASELINE="${REPO_ROOT}/scripts/unwired_guards_baseline.txt"
 # A `name:` line is documentation whatever it contains; drop it before matching.
 _not_a_name_line() { grep -vE '^[[:space:]]*-?[[:space:]]*name:' || true; }
 
+# #4433: the CI job bodies moved verbatim into ci/sections.yml, which the fat jobs
+# in ci.yml run; a guard invoked there is wired. One path per line.
+_surfaces() { printf '%s\n' "$1/.github/workflows/"; [ ! -f "$1/ci/sections.yml" ] || printf '%s\n' "$1/ci/sections.yml"; }
+
 dispatcher_wired() {
     local root="$1" lines modes mode flag out
+    local surf; mapfile -t surf < <(_surfaces "$root")
     [ -f "$root/scripts/guard_tree.sh" ] || return 0
     lines=$(grep -rh --include='*.yml' --include='*.yaml' -- 'guard_tree.sh' \
-                "$root"/.github/workflows/ 2>/dev/null | sed 's/#.*$//' | _not_a_name_line) || lines=''
+                "${surf[@]}" 2>/dev/null | sed 's/#.*$//' | _not_a_name_line) || lines=''
     # Invocation, not mention -- same test as the scan below.
     lines=$(grep -E "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*guard_tree\\.sh([[:space:]]|$|['\"])" \
                 <<< "$lines") || lines=''
@@ -206,9 +211,10 @@ unwired_in() {
         # rather than by reading it. Erring strict is correct here: a `#` inside
         # a quoted YAML string would make a wired guard look unwired, which is a
         # loud false alarm rather than a silent miss.
-        local mentions
+        local mentions surf
+        mapfile -t surf < <(_surfaces "$root")
         mentions=$(grep -rh --include='*.yml' --include='*.yaml' -- "$base" \
-                "$root"/.github/workflows/ 2>/dev/null \
+                "${surf[@]}" 2>/dev/null \
              | sed 's/#.*$//' | _not_a_name_line) || mentions=''
         if ! grep -qE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*${base}([[:space:]]|$|['\"])" <<< "$mentions" ; then
             printf '%s\n' "$base"
@@ -325,6 +331,19 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    row 7 deleting the nightly workflow brings its guard back as unwired\n'
     else
         printf 'FAIL  row 7 got [%s], expected [check_nightly_only.sh check_nowhere.sh ]\n' "$got7"; fails=1
+    fi
+
+    # Row 7s (#4433): wired ONLY in ci/sections.yml -> wired; delete that file and
+    # the guard is reported again (the control).
+    mkdir -p "$TD3/ci"
+    printf 'jobs:\n  guard-tree:\n    steps:\n      - run: bash scripts/check_nightly_only.sh\n' > "$TD3/ci/sections.yml"
+    got7s=$(unwired_in "$TD3" | tr '\n' ' ')
+    rm -f "$TD3/ci/sections.yml"
+    got7c=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got7s" = "check_nowhere.sh " ] && [ "$got7c" = "check_nightly_only.sh check_nowhere.sh " ]; then
+        printf 'ok    row 7s a guard wired only in ci/sections.yml counts as wired; without the file it does not\n'
+    else
+        printf 'FAIL  row 7s got [%s] / [%s]\n' "$got7s" "$got7c"; fails=1
     fi
 
     # ── Rows 8-10: A STEP NAME IS NOT AN INVOCATION (#3644) ─────────────────
