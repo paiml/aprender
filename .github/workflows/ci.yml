@@ -104,11 +104,11 @@ jobs:
             cargo fmt --all -- --check
           bash scripts/tests/guard_tree_test.sh
           bash scripts/bump-version.sh --self-test
-          bash scripts/check_no_claim_literals.sh --selftest
-          bash scripts/check_hardcoded_paths.sh --self-test
-          bash scripts/check_pr_review_wiring.sh --self-test
-          bash scripts/check_ci_gate_mutants_rule.sh --self-test
-          bash scripts/check_ci_gate_docs_only_rule.sh --self-test
+          setsid --wait bash scripts/check_no_claim_literals.sh --selftest
+          setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
+          setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
+          setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
+          setsid --wait bash scripts/check_ci_gate_docs_only_rule.sh --self-test
       # The driver decides what every section's if:/matrix/needs means and whether
       # the vendored workflow is the upstream one; its case table must go RED on
       # each planted defect before it is trusted to report a section green.

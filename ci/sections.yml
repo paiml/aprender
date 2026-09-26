@@ -1335,13 +1335,13 @@ jobs:
       # They read only ci.yml and invoke no build tool, so they run here -- the job
       # that runs on every PR, including the one that edits the gate (#3668).
       - name: gate accepts a skipped mutants job only when that is its filter (#3676)
-        run: bash scripts/check_ci_gate_mutants_rule.sh
+        run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh
       - name: gate mutants rule can still go RED (#3676)
-        run: bash scripts/check_ci_gate_mutants_rule.sh --self-test
+        run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
       - name: gate accepts a skipped guard-cargo/determinism only on a docs-only PR (#3668)
-        run: bash scripts/check_ci_gate_docs_only_rule.sh
+        run: setsid --wait bash scripts/check_ci_gate_docs_only_rule.sh
       - name: gate docs-only rule can still go RED (#3668)
-        run: bash scripts/check_ci_gate_docs_only_rule.sh --self-test
+        run: setsid --wait bash scripts/check_ci_gate_docs_only_rule.sh --self-test
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
@@ -1647,8 +1647,8 @@ jobs:
         run: bash scripts/mutate_pr_review_wiring_guard.sh
       - name: "Guard jobs run all: no fail-fast step over baseline, every guard script reachable (#4415)"
         run: |
-          bash scripts/check_guard_steps_run_all.sh --self-test
-          bash scripts/check_guard_steps_run_all.sh
+          setsid --wait bash scripts/check_guard_steps_run_all.sh --self-test
+          setsid --wait bash scripts/check_guard_steps_run_all.sh
 
   # ── THE CARGO-USING GUARDS, PARALLEL TO workspace-test ────────────────────
   #
@@ -3241,8 +3241,8 @@ jobs:
       - name: "clippy --features cuda is clean (#3636)"
         run: |
           set -euo pipefail
-          bash scripts/check_clippy_cuda.sh --self-test
-          nice -n 19 bash scripts/check_clippy_cuda.sh
+          setsid --wait bash scripts/check_clippy_cuda.sh --self-test
+          nice -n 19 setsid --wait bash scripts/check_clippy_cuda.sh
 
   # APEX-001 EV-2a: the same figure, rendered on two architectures, must be the same bytes.
   #

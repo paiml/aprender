@@ -100,7 +100,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          bash scripts/check_release_assets.sh "$TAG"; rc=$?
+          setsid --wait bash scripts/check_release_assets.sh "$TAG"; rc=$?
           case "$rc" in
             0) echo "present=true" >> "$GITHUB_OUTPUT"; echo "$TAG already carries every asset: nothing is rebuilt" >> "$GITHUB_STEP_SUMMARY" ;;
             1) echo "present=false" >> "$GITHUB_OUTPUT" ;;
