@@ -57,6 +57,7 @@ fn test_completion_response_serde() {
             completion_tokens: 1,
             total_tokens: 2,
         },
+        timings: None,
     };
     let json = serde_json::to_string(&resp).expect("JSON serialization failed");
     let parsed: CompletionResponse = serde_json::from_str(&json).expect("JSON deserialization failed");

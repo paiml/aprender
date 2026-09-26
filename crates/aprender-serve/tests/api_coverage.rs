@@ -850,6 +850,7 @@ fn test_completion_response_serialization() {
             completion_tokens: 5,
             total_tokens: 9,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -1468,6 +1469,7 @@ fn test_completion_response_multiple_choices() {
             completion_tokens: 10,
             total_tokens: 15,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -3353,6 +3355,7 @@ fn test_completion_response_fields() {
             completion_tokens: 20,
             total_tokens: 30,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -4627,6 +4630,7 @@ fn test_completion_response_with_logprobs() {
             completion_tokens: 2,
             total_tokens: 7,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");

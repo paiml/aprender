@@ -302,6 +302,7 @@ fn test_completion_response_empty_choices() {
             completion_tokens: 0,
             total_tokens: 0,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");

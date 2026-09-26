@@ -80,6 +80,7 @@ fn test_completion_response_serialization() {
             completion_tokens: 10,
             total_tokens: 15,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");
