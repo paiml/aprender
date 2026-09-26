@@ -119,6 +119,9 @@ That is already fixed on car B: decode slope 4.31 → 0.155 ms per 1k ctx.
 
 ## Open (not closed by this data)
 
-- **H2** (short-ctx decode kernel ratio ≥ 1.5x, led by GEMV + recurrence): **not scored.** llama's decode kernels run inside CUDA graphs and nsys kern_sum undercounts them. It needs `nsys --cuda-graph-trace=node`.
+- **H2** (short-ctx decode kernel ratio ≥ 1.5x, led by GEMV + recurrence): **NOT rejected.** Re-measured with `nsys --cuda-graph-trace=node` (llama-bench `-d 2241`, `-n 128` minus `-n 1`, 127 tokens by `gated_delta_net` instance delta, `nsys_llamaG_*`). llama decode kernel time is 4.85 ms/tok against apr B's 10.45, a ratio of 2.15x. Of the 5.60 ms excess:
+  - GEMV: apr 8.17 (q4k 3.22, q5k 2.46, q6k 2.13, q8_0 0.36) vs llama `mul_mat_vec_q` 3.91, an excess of 4.26 ms;
+  - recurrence: 1.09 vs 0.06, an excess of 1.03 ms.
+  Together that is 94% of the excess, against the falsifier's < 50%. By quant type, apr/llama is 1.8x (Q4_K), 3.5x (Q5_K) and 3.0x (Q6_K). The same root cause applies: `pin_float_gemv` is applied at build time to every model of this architecture (its docstring, via `with_max_seq_len`), so decode runs the FLOAT GEMVs, while llama's `mul_mat_vec_q` uses q8_1 activations. Fix #3 is therefore the decode leg of fix #1's precision question.
 - **H3** (host idle share ≥ 15% of decode wall): **not scored.** `apr run` prints no decode-only wall. It needs SRV-TIM-001's per-request split from `apr serve`.
 - **gx10 replica:** fb's PRM-S1 run on car `1ac56f258` and 41's queued `edb076b27` run are the gx10 replicas. GB10 bandwidth and compute differ from the 4090, so the shares above are 4090 shares.
