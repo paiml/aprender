@@ -465,3 +465,54 @@ That is 144 cases.
 **Left as duplicates:**
 - `forward_qwen35.rs::gated_rmsnorm` and `linear_attn.rs::rms_norm_gated`. These are
   compositions under §9.3, and their home is `ops::rms_norm_gated_into` in a later step.
+
+### 9.9 Phase 2 step 4 delivered: scalar softmax shared home (2026-09-26)
+
+**One home, two roundings.** Every scalar softmax site did the same three things: took
+the max with `f32::max` folded from `-inf`, exponentiated in place, and summed left to
+right. `iter().sum()` adds in that same order, and none of the exponentials is `-0.0`,
+so it counts as the same. The sites differ only in the final division, so the home
+splits at that point:
+- `ops::softmax_exp_in_place(x) -> sum`
+- `ops::softmax_normalize(x, sum, SoftmaxNorm)`, where `Divide` is `e / sum` and
+  `MulInv` is `e * (1.0 / sum)`
+- `ops::softmax_scalar_in_place(x, SoftmaxNorm)`, which does both. `ops::softmax` now
+  calls it with `MulInv`, keeping its contract precondition.
+
+Two sites normalised only when `sum > 0.0`. They call the two halves themselves and
+keep that check, because it changes the output when the sum is NaN.
+
+**Proof of equivalence.** `softmax_scalar_equivalence_tests` keeps four frozen copies of
+the old loops: divide, mul-inv, collect-then-`iter().sum()`, and guarded mul-inv. It
+compares them by `to_bits()`:
+- n in {1, 2, 7, 64, 151, 1024, 32000}
+- four magnitudes
+- rows with and without `-inf` causal masks
+
+That is 224 cases. `the_two_forms_are_distinct_so_the_enum_is_load_bearing` proves
+`Divide` and `MulInv` differ in bits.
+
+**Migrated (12 baseline rows deleted, 48 → 36):**
+- `apr/helpers.rs::softmax_causal`
+- `apr_transformer/attention_kernels.rs::softmax_inplace`
+- `gguf/inference/cached/attention.rs::batched_causal_softmax` (guarded; the causal row
+  is copied, then normalised in place)
+- `gguf/inference/forward/acceleration.rs::apply_causal_mask_softmax`
+- `gpu/scheduler/attention.rs`: `apply_causal_softmax` and `softmax_inplace`
+- `gpu/simd_ops.rs::scalar_softmax`
+- `inference/simd.rs::simd_softmax` (guarded, MulInv)
+- `layers/mod.rs::softmax` (per row; its postcondition is unchanged)
+- `quantize/quantize_rmsnorm_into.rs::softmax_scalar` (MulInv)
+
+All of these use `Divide` unless noted.
+
+**Dead file removed.** `quantize/avx2.rs` was compiled nowhere: nothing `include!`s it
+and no `mod` declares it. It is a stale copy of `quantize_rmsnorm_into.rs` from before
+PMAT-780, and it carried two of the softmax rows. Its `OVERRIDES` entry is deleted with
+it, because a stale override is RED.
+
+**Left as duplicates, each needing a parity receipt:**
+- `bench/…itl_metrics.rs::softmax`: computes in f64, so it is a different operator.
+- `gpu/simd_ops.rs::simd_softmax`: sums with trueno SIMD, so its add order differs.
+- `quantize_rmsnorm_into.rs::softmax_avx2`: the live AVX2 kernel. `_mm256_max_ps`
+  handles NaN differently from `f32::max`.

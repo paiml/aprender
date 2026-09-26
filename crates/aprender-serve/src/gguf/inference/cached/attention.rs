@@ -221,25 +221,12 @@ impl OwnedQuantizedModelCached {
             for i in 0..seq_len {
                 let row_start = head_offset + i * seq_len;
 
-                // Find max in causal range (0..=i)
-                let mut max_score = f32::NEG_INFINITY;
-                for j in 0..=i {
-                    max_score = max_score.max(scores[row_start + j]);
-                }
-
-                // Compute exp and sum
-                let mut exp_sum = 0.0f32;
-                for j in 0..=i {
-                    let exp_val = (scores[row_start + j] - max_score).exp();
-                    weights[row_start + j] = exp_val;
-                    exp_sum += exp_val;
-                }
-
-                // Normalize
+                // Softmax over the causal range (0..=i); normalise only a positive sum
+                let row = &mut weights[row_start..=row_start + i];
+                row.copy_from_slice(&scores[row_start..=row_start + i]);
+                let exp_sum = crate::gguf::ops::softmax_exp_in_place(row);
                 if exp_sum > 0.0 {
-                    for j in 0..=i {
-                        weights[row_start + j] /= exp_sum;
-                    }
+                    crate::gguf::ops::softmax_normalize(row, exp_sum, crate::gguf::ops::SoftmaxNorm::Divide);
                 }
 
                 // Causal mask: positions > i are already 0 from initialization

@@ -19,15 +19,9 @@ pub fn scalar_softmax(input: &[f32]) -> Vec<f32> {
         return Vec::new();
     }
 
-    // Find max for numerical stability
-    let max_val = input.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-    // Compute exp(x - max) and sum
-    let exp_vals: Vec<f32> = input.iter().map(|&x| (x - max_val).exp()).collect();
-    let sum: f32 = exp_vals.iter().sum();
-
-    // Normalize
-    exp_vals.iter().map(|&e| e / sum).collect()
+    let mut out = input.to_vec();
+    crate::gguf::ops::softmax_scalar_in_place(&mut out, crate::gguf::ops::SoftmaxNorm::Divide);
+    out
 }
 
 /// SIMD-accelerated softmax implementation (M18 - IMP-038)

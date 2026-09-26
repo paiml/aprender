@@ -240,21 +240,7 @@ pub fn softmax_simd(x: &mut [f32]) {
 /// Exposed as `pub(crate)` for direct testing on AVX2 machines.
 #[inline]
 pub(crate) fn softmax_scalar(x: &mut [f32]) {
-    // Find max for numerical stability
-    let max = x.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-
-    // Compute exp(x - max) and sum
-    let mut sum = 0.0f32;
-    for v in x.iter_mut() {
-        *v = (*v - max).exp();
-        sum += *v;
-    }
-
-    // Normalize
-    let inv_sum = 1.0 / sum;
-    for v in x.iter_mut() {
-        *v *= inv_sum;
-    }
+    crate::gguf::ops::softmax_scalar_in_place(x, crate::gguf::ops::SoftmaxNorm::MulInv);
 }
 
 /// AVX2 SIMD softmax - only SIMD for max-find and normalization

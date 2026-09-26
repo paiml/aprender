@@ -145,22 +145,13 @@ pub fn softmax(input: &Tensor<f32>) -> Result<Tensor<f32>> {
     for group_idx in 0..num_groups {
         let start = group_idx * last_dim;
         let end = start + last_dim;
-        let group = &data[start..end];
-
-        // Find max for numerical stability
-        let max_val = group.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        // Compute exp(x - max) for each element
-        let exp_vals: Vec<f32> = group.iter().map(|&x| (x - max_val).exp()).collect();
-
-        // Sum of exponentials
-        let sum_exp: f32 = exp_vals.iter().sum();
-
         // Normalize to get probabilities — check postcondition per row (contract is 1D)
         let row_start = output.len();
-        for &exp_val in &exp_vals {
-            output.push(exp_val / sum_exp);
-        }
+        output.extend_from_slice(&data[start..end]);
+        crate::gguf::ops::softmax_scalar_in_place(
+            &mut output[row_start..],
+            crate::gguf::ops::SoftmaxNorm::Divide,
+        );
         contract_post_softmax!(&output[row_start..]);
     }
     Tensor::from_vec(shape.to_vec(), output)

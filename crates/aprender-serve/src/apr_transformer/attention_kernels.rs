@@ -25,15 +25,7 @@ fn compute_attention_scores(
 
 /// Apply softmax normalization in-place.
 fn softmax_inplace(scores: &mut [f32]) {
-    let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let mut exp_sum = 0.0f32;
-    for s in scores.iter_mut() {
-        *s = (*s - max_score).exp();
-        exp_sum += *s;
-    }
-    for s in scores.iter_mut() {
-        *s /= exp_sum;
-    }
+    crate::gguf::ops::softmax_scalar_in_place(scores, crate::gguf::ops::SoftmaxNorm::Divide);
 }
 
 /// Accumulate weighted value vectors into the output buffer.

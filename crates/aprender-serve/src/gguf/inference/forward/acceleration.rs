@@ -434,27 +434,10 @@ impl OwnedQuantizedModel {
         let mut weights = vec![0.0f32; seq_len * seq_len];
 
         for i in 0..seq_len {
-            // Apply causal mask: set j > i to -inf
-            let mut max_score = f32::NEG_INFINITY;
-            for j in 0..=i {
-                let idx = i * seq_len + j;
-                max_score = max_score.max(scores[idx]);
-            }
-
-            // Compute softmax for causal positions only
-            let mut exp_sum = 0.0f32;
-            for j in 0..=i {
-                let idx = i * seq_len + j;
-                let exp_val = (scores[idx] - max_score).exp();
-                weights[idx] = exp_val;
-                exp_sum += exp_val;
-            }
-
-            // Normalize
-            for j in 0..=i {
-                let idx = i * seq_len + j;
-                weights[idx] /= exp_sum;
-            }
+            // Softmax over the causal positions 0..=i only
+            let row = &mut weights[i * seq_len..=i * seq_len + i];
+            row.copy_from_slice(&scores[i * seq_len..=i * seq_len + i]);
+            crate::gguf::ops::softmax_scalar_in_place(row, crate::gguf::ops::SoftmaxNorm::Divide);
             // j > i remains 0 (masked out)
         }
 

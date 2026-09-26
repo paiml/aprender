@@ -14,16 +14,7 @@ fn apply_causal_softmax(scores: &[f32], seq_len: usize, scale: f32) -> Vec<f32> 
     for i in 0..seq_len {
         let row_start = i * seq_len;
         let row = &mut attn[row_start..row_start + seq_len];
-        let max_val = row[..=i].iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        let mut sum = 0.0f32;
-        for item in row.iter_mut().take(i + 1) {
-            *item = (*item - max_val).exp();
-            sum += *item;
-        }
-        for item in row.iter_mut().take(i + 1) {
-            *item /= sum;
-        }
+        crate::gguf::ops::softmax_scalar_in_place(&mut row[..=i], crate::gguf::ops::SoftmaxNorm::Divide);
         for item in row.iter_mut().skip(i + 1) {
             *item = 0.0;
         }
@@ -101,15 +92,7 @@ fn compute_causal_scores(
 
 /// Apply softmax in-place to weights
 fn softmax_inplace(weights: &mut [f32]) {
-    let max_score = weights.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let mut sum = 0.0f32;
-    for w in weights.iter_mut() {
-        *w = (*w - max_score).exp();
-        sum += *w;
-    }
-    for w in weights.iter_mut() {
-        *w /= sum;
-    }
+    crate::gguf::ops::softmax_scalar_in_place(weights, crate::gguf::ops::SoftmaxNorm::Divide);
 }
 
 /// Simplified attention (fallback, for M3 benchmarking)

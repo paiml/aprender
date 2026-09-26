@@ -347,21 +347,7 @@ pub fn argmax(logits: &[f32]) -> u32 {
 #[contract("sampling-v1", equation = "softmax_inplace")]
 pub fn softmax(logits: &mut [f32]) {
     contract_pre_softmax!(logits);
-    // Find max for numerical stability
-    let max_val = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-
-    // Compute exp(x - max) and sum
-    let mut sum = 0.0f32;
-    for x in logits.iter_mut() {
-        *x = (*x - max_val).exp();
-        sum += *x;
-    }
-
-    // Normalize
-    let inv_sum = 1.0 / sum;
-    for x in logits.iter_mut() {
-        *x *= inv_sum;
-    }
+    softmax_scalar_in_place(logits, SoftmaxNorm::MulInv);
 }
 
 /// Per-head RMSNorm for QK normalization (GH-279: Qwen3)
@@ -736,6 +722,180 @@ mod rms_norm_scalar_equivalence_tests {
         assert_ne!(a, b);
         assert_ne!(b, c);
         assert_ne!(a, c);
+    }
+}
+
+/// How a scalar softmax divides its exponentials by their sum (PP-ARCH-001
+/// Phase 2 step 4, #3422). The per-site loops this replaced used both, and
+/// `e / sum` and `e * (1.0 / sum)` round differently, so each migrated site
+/// names the form it had and stays bit-identical.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SoftmaxNorm {
+    /// `e / sum`
+    Divide,
+    /// `e * (1.0 / sum)`
+    MulInv,
+}
+
+/// Max-subtracted exponentials, in place, and their sequential sum.
+///
+/// The max is `f32::max` folded from `-inf` (NaN entries are skipped by it);
+/// the sum accumulates left to right from `0.0`, the order of every scalar
+/// site this replaced (including `iter().sum()`, which adds the same way).
+pub fn softmax_exp_in_place(x: &mut [f32]) -> f32 {
+    let max_val = x.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut sum = 0.0f32;
+    for v in x.iter_mut() {
+        *v = (*v - max_val).exp();
+        sum += *v;
+    }
+    sum
+}
+
+/// Divide exponentials by `sum` in the given [`SoftmaxNorm`] form.
+pub fn softmax_normalize(x: &mut [f32], sum: f32, form: SoftmaxNorm) {
+    match form {
+        SoftmaxNorm::Divide => {
+            for v in x.iter_mut() {
+                *v /= sum;
+            }
+        },
+        SoftmaxNorm::MulInv => {
+            let inv_sum = 1.0 / sum;
+            for v in x.iter_mut() {
+                *v *= inv_sum;
+            }
+        },
+    }
+}
+
+/// Scalar softmax in place: [`softmax_exp_in_place`] then [`softmax_normalize`].
+/// Sites that skip normalisation when the sum is not positive call the two
+/// halves themselves.
+pub fn softmax_scalar_in_place(x: &mut [f32], form: SoftmaxNorm) {
+    let sum = softmax_exp_in_place(x);
+    softmax_normalize(x, sum, form);
+}
+
+#[cfg(test)]
+mod softmax_scalar_equivalence_tests {
+    use super::{softmax_exp_in_place, softmax_normalize, softmax_scalar_in_place, SoftmaxNorm};
+
+    // Frozen copies of the per-site loops this step replaced.
+    fn ref_divide(x: &mut [f32]) {
+        let m = x.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let mut s = 0.0f32;
+        for v in x.iter_mut() {
+            *v = (*v - m).exp();
+            s += *v;
+        }
+        for v in x.iter_mut() {
+            *v /= s;
+        }
+    }
+    fn ref_mul_inv(x: &mut [f32]) {
+        let m = x.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let mut s = 0.0f32;
+        for v in x.iter_mut() {
+            *v = (*v - m).exp();
+            s += *v;
+        }
+        let inv = 1.0 / s;
+        for v in x.iter_mut() {
+            *v *= inv;
+        }
+    }
+    fn ref_collect_sum_divide(x: &[f32]) -> Vec<f32> {
+        let m = x.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let e: Vec<f32> = x.iter().map(|&v| (v - m).exp()).collect();
+        let s: f32 = e.iter().sum();
+        e.iter().map(|&v| v / s).collect()
+    }
+    fn ref_guarded_mul_inv(x: &mut [f32]) {
+        let m = x.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut s = 0.0;
+        for v in x.iter_mut() {
+            *v = (*v - m).exp();
+            s += *v;
+        }
+        if s > 0.0 {
+            let inv = 1.0 / s;
+            for v in x.iter_mut() {
+                *v *= inv;
+            }
+        }
+    }
+
+    fn input(n: usize, scale: f32, seed: u32, masked: bool) -> Vec<f32> {
+        let mut st = seed.wrapping_mul(2_654_435_761).wrapping_add(n as u32);
+        (0..n)
+            .map(|i| {
+                st = st.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                if masked && i % 3 == 2 {
+                    f32::NEG_INFINITY
+                } else {
+                    ((st >> 8) as f32 / (1u32 << 24) as f32 - 0.5) * scale
+                }
+            })
+            .collect()
+    }
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    #[test]
+    fn softmax_scalar_is_bit_identical_to_the_frozen_per_site_loops() {
+        let mut cases = 0;
+        for &n in &[1usize, 2, 7, 64, 151, 1024, 32_000] {
+            for &scale in &[1e-3f32, 1.0, 30.0, 300.0] {
+                for &masked in &[false, true] {
+                    let x = input(n, scale, 7, masked);
+
+                    let (mut a, mut b) = (x.clone(), x.clone());
+                    ref_divide(&mut a);
+                    softmax_scalar_in_place(&mut b, SoftmaxNorm::Divide);
+                    assert_eq!(
+                        bits(&a),
+                        bits(&b),
+                        "Divide n={n} scale={scale} masked={masked}"
+                    );
+
+                    let (mut a, mut b) = (x.clone(), x.clone());
+                    ref_mul_inv(&mut a);
+                    softmax_scalar_in_place(&mut b, SoftmaxNorm::MulInv);
+                    assert_eq!(
+                        bits(&a),
+                        bits(&b),
+                        "MulInv n={n} scale={scale} masked={masked}"
+                    );
+
+                    let a = ref_collect_sum_divide(&x);
+                    let mut b = x.clone();
+                    softmax_scalar_in_place(&mut b, SoftmaxNorm::Divide);
+                    assert_eq!(bits(&a), bits(&b), "iter().sum() n={n} scale={scale}");
+
+                    let (mut a, mut b) = (x.clone(), x.clone());
+                    ref_guarded_mul_inv(&mut a);
+                    let s = softmax_exp_in_place(&mut b);
+                    if s > 0.0 {
+                        softmax_normalize(&mut b, s, SoftmaxNorm::MulInv);
+                    }
+                    assert_eq!(bits(&a), bits(&b), "guarded n={n} scale={scale}");
+                    cases += 4;
+                }
+            }
+        }
+        assert_eq!(cases, 224);
+    }
+
+    #[test]
+    fn the_two_forms_are_distinct_so_the_enum_is_load_bearing() {
+        let x = input(1024, 30.0, 11, false);
+        let (mut a, mut b) = (x.clone(), x);
+        softmax_scalar_in_place(&mut a, SoftmaxNorm::Divide);
+        softmax_scalar_in_place(&mut b, SoftmaxNorm::MulInv);
+        assert_ne!(bits(&a), bits(&b));
     }
 }
 

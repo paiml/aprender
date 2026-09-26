@@ -164,18 +164,10 @@ fn compute_attention_score(
 /// Apply softmax normalization to scores in-place (up to position s)
 #[inline]
 fn softmax_causal(scores: &mut [f32], s: usize) {
-    let max_score = scores[..=s]
-        .iter()
-        .cloned()
-        .fold(f32::NEG_INFINITY, f32::max);
-    let mut sum = 0.0;
-    for score in &mut scores[..=s] {
-        *score = (*score - max_score).exp();
-        sum += *score;
-    }
-    for score in &mut scores[..=s] {
-        *score /= sum;
-    }
+    crate::gguf::ops::softmax_scalar_in_place(
+        &mut scores[..=s],
+        crate::gguf::ops::SoftmaxNorm::Divide,
+    );
 }
 
 /// Compute weighted sum of values for a single output dimension

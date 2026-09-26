@@ -210,22 +210,10 @@ pub fn simd_softmax(data: &mut [f32]) {
         return;
     }
 
-    // Find max for numerical stability
-    let max_val = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-    // Compute exp(x - max) and sum
-    let mut sum = 0.0;
-    for x in data.iter_mut() {
-        *x = (*x - max_val).exp();
-        sum += *x;
-    }
-
-    // Normalize
+    // Normalise only a positive sum
+    let sum = crate::gguf::ops::softmax_exp_in_place(data);
     if sum > 0.0 {
-        let inv_sum = 1.0 / sum;
-        for x in data.iter_mut() {
-            *x *= inv_sum;
-        }
+        crate::gguf::ops::softmax_normalize(data, sum, crate::gguf::ops::SoftmaxNorm::MulInv);
     }
 }
 

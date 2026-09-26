@@ -61,7 +61,6 @@ OVERRIDES = {
     ("gguf/config.rs", "attn_scale"): ("wrapper", "config getter returning 1/sqrt(head_dim)"),
     ("quantize/activation.rs", "quantize_rmsnorm_q8_0_scalar"): ("novel", _FUSED_Q8),
     ("quantize/activation.rs", "quantize_rmsnorm_q8_0_avx2"): ("novel", _FUSED_Q8),
-    ("quantize/avx2.rs", "quantize_rmsnorm_q8_0_into"): ("novel", _FUSED_Q8),
     ("quantize/quantize_rmsnorm_into.rs", "quantize_rmsnorm_q8_0_into"): ("novel", _FUSED_Q8),
 }
 
