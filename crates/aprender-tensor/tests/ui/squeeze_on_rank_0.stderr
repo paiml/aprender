@@ -1,0 +1,10 @@
+error[E0599]: no method named `squeeze` found for struct `RankedTensor<0>` in the current scope
+ --> tests/ui/squeeze_on_rank_0.rs:6:15
+  |
+6 |     let _ = s.squeeze(0);
+  |               ^^^^^^^
+  |
+help: there is a method `unsqueeze` with a similar name
+  |
+6 |     let _ = s.unsqueeze(0);
+  |               ++
