@@ -233,8 +233,8 @@ receipt_check() { # <root> -> 0 no receipt / spent / proven, 1 the recorded coun
         return 0
     fi
     # the same field grammar as lib_baseline_ratchet.sh's _br_receipt_field: a trailing # comment is allowed
-    sha=$(sed -nE 's/^sha:[[:space:]]*([0-9a-f]{40})[[:space:]]*(#.*)?$/\1/p' "$root/$RECEIPT_REL" | head -1)
-    measured=$(sed -nE 's/^measured:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$root/$RECEIPT_REL" | head -1)
+    sha=$(sed -nE 's/^sha:[[:space:]]*([0-9a-f]{40})[[:space:]]*(#.*)?$/\1/p' "$root/$RECEIPT_REL" | grep -m1 .)
+    measured=$(sed -nE 's/^measured:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$root/$RECEIPT_REL" | grep -m1 .)
     if [ -z "$sha" ] || [ -z "$measured" ]; then
         printf 'RED   %s carries no 40-hex sha: and integer measured: to re-measure.\n' "$RECEIPT_REL"
         return 1

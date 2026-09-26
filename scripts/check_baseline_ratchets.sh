@@ -410,6 +410,7 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             rb_row 'rebaseline receipt, tool mismatch'     1 "$SR_CNT" 617 "# x\nsha: $SR_CNT\nmeasured: 620\ntool_version: pmat 1.0.0\n"
             rb_row 'rebaseline receipt, short sha'         1 "$SR_CNT" 617 "sha: ${SR_CNT:0:12}\nmeasured: 620\ntool_version: pmat 9.9.9\n"
             rb_row 'rebaseline receipt, no measured'       1 "$SR_CNT" 617 "sha: $SR_CNT\ntool_version: pmat 9.9.9\n"
+            rb_row 'rebaseline receipt, sha unresolvable'  1 "$SR_CNT" 617 "sha: $(printf '%040d' 7)\nmeasured: 620\ntool_version: pmat 9.9.9\n"
             rb_row 'rebaseline receipt, sha not on main'   1 "$SR_CNT" 617 "sha: $SR_ORPHAN\nmeasured: 620\ntool_version: pmat 9.9.9\n"
             # A baseline whose guard does not re-measure the receipt is not listed:
             # the receipt is then a self-declared number and must not open the ratchet.

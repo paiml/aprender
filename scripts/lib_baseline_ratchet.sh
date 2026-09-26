@@ -453,8 +453,10 @@ _br_rebaseline_admit() { # <root> <ref> <baseline-path> -> 0 admitted, 1 refused
         BR_DELTA=$(printf '%s\n        the new value %s is above the count MEASURED at %s (%s): still RED.' "$BR_DELTA" "$new" "${sha:0:12}" "$measured")
         return 1
     fi
-    if git -C "$root" cat-file -e "${sha}^{commit}" 2>/dev/null &&
-        [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = false ] &&
+    # A full clone decides ancestry here, and a sha it cannot resolve is not main history: RED.
+    # A shallow clone cannot decide it; BR_REBASELINE_PATHS lists only baselines whose guard
+    # deepens origin's main and proves it (check_cb200_tdg_grade.sh main_has).
+    if [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = false ] &&
         ! git -C "$root" merge-base --is-ancestor "$sha" "$ref" 2>/dev/null; then
         BR_DELTA=$(printf '%s\n        %s is not an ancestor of %s: the receipt must name a main commit.' "$BR_DELTA" "${sha:0:12}" "$ref")
         return 1
