@@ -309,7 +309,10 @@
         assert!((report.throughput.p50_us - 0.0).abs() < 0.001);
         assert!((report.throughput.p99_us - 0.0).abs() < 0.001);
         assert!((report.throughput.cv_percent - 0.0).abs() < 0.001);
-        assert_eq!(report.status, "PASS"); // Empty bricks -> all pass vacuously
+        // #2730: this line asserted the defect ("all pass vacuously"). Nothing
+        // measured is red, never green over its own grade F.
+        assert_eq!(report.status, "FAIL");
+        assert_eq!(report.ci_result, "red");
     }
 
     // ========================================================================

@@ -426,3 +426,51 @@
                 || json.contains("\"p99_us\": 9.876")
         );
     }
+
+    fn gap_brick(gap_factor: f64) -> BrickScore {
+        BrickScore {
+            name: "b".to_string(),
+            score: 100,
+            grade: "A".to_string(),
+            budget_us: 1.0,
+            actual_us: gap_factor,
+            gap_factor,
+        }
+    }
+
+    /// #2730: no bricks measured is one failed point, never a vacuous pass.
+    #[test]
+    fn test_brick_verdict_empty_set_is_red() {
+        let v = brick_verdict(&[]);
+        assert!(!v.all_pass);
+        assert_eq!((v.total, v.passed, v.failed), (1, 0, 1));
+    }
+
+    #[test]
+    fn test_brick_verdict_counts_each_brick() {
+        let v = brick_verdict(&[gap_brick(1.0), gap_brick(1.0 + 1e-12)]);
+        assert!(v.all_pass);
+        assert_eq!((v.total, v.passed, v.failed), (2, 2, 0));
+
+        let v = brick_verdict(&[gap_brick(0.5), gap_brick(1.5)]);
+        assert!(!v.all_pass);
+        assert_eq!((v.total, v.passed, v.failed), (2, 1, 1));
+    }
+
+    /// #2730 end to end: a report with zero bricks must say FAIL/red and `--ci`
+    /// must fail on it with no explicit numeric threshold.
+    #[test]
+    fn test_empty_brick_report_is_red_and_fails_ci() {
+        let mut pipeline = PipelineState::new();
+        pipeline.bricks.clear();
+        let report = generate_headless_report_simulated("no-bricks", &pipeline, &CbtopConfig::default());
+        assert!(report.brick_scores.is_empty());
+        assert_eq!(report.status, "FAIL");
+        assert_eq!(report.ci_result, "red");
+        assert_eq!(report.falsification.failed, 1);
+        let ci = CbtopConfig {
+            ci: true,
+            ..Default::default()
+        };
+        assert!(!check_ci_thresholds(&report, &ci));
+    }

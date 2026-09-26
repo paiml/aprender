@@ -79,6 +79,31 @@ fn weighted_brick_score(brick_scores: &[BrickScore]) -> u32 {
     { (sum / brick_scores.len() as f64) as u32 }
 }
 
+/// Pass/fail tally over a brick set, shared by every report producer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BrickVerdict {
+    all_pass: bool,
+    total: u32,
+    passed: u32,
+    failed: u32,
+}
+
+/// #2730: an EMPTY brick set measured nothing, so it is one failed point and
+/// FAIL/red. `.all()` is vacuously true on it, and the report used to say
+/// PASS/green over its own grade F and `failed: 1`, so `--ci` exited 0.
+fn brick_verdict(brick_scores: &[BrickScore]) -> BrickVerdict {
+    // 1e-9 epsilon: budget derived from same profiler data, so gap ≈ 1.0;
+    // without epsilon, floating-point rounding makes gap 1.0000000000001 → false fail.
+    let passed = brick_scores.iter().filter(|b| b.gap_factor <= 1.0 + 1e-9).count() as u32;
+    let total = (brick_scores.len() as u32).max(1);
+    BrickVerdict {
+        all_pass: !brick_scores.is_empty() && passed == total,
+        total,
+        passed,
+        failed: total - passed,
+    }
+}
+
 /// Generate headless report from pipeline state (simulated data)
 fn generate_headless_report_simulated(
     model_name: &str,
@@ -100,13 +125,11 @@ fn generate_headless_report_simulated(
     let cv_percent = cv_percent_from_samples(&all_samples);
     let (p50, p99) = pipeline.bricks.first().map_or((0.0, 0.0), percentiles_from_brick);
 
-    let all_pass = brick_scores.iter().all(|b| b.gap_factor <= 1.0 + 1e-9);
     let pmat_brick_score = weighted_brick_score(&brick_scores);
 
     // GH-425 B14-B18: Derive falsification from brick pass/fail, not hardcoded.
-    let n_bricks = brick_scores.len() as u32;
-    let brick_passed = brick_scores.iter().filter(|b| b.gap_factor <= 1.0 + 1e-9).count() as u32;
-    let brick_failed = n_bricks.saturating_sub(brick_passed);
+    let verdict = brick_verdict(&brick_scores);
+    let all_pass = verdict.all_pass;
 
     HeadlessReport {
         model: model_name.to_string(),
@@ -134,9 +157,9 @@ fn generate_headless_report_simulated(
         },
         // GH-425 B17: Real falsification from brick pass/fail.
         falsification: FalsificationSummary {
-            total_points: n_bricks,
-            passed: brick_passed,
-            failed: brick_failed,
+            total_points: verdict.total,
+            passed: verdict.passed,
+            failed: verdict.failed,
             blocked: 0,
         },
         // GH-425 B18: Status from brick pass/fail only — no hardcoded target.
