@@ -7,6 +7,12 @@
       "reason": "apr bench refuses qwen35 outright: the subcommand routes through the dense QuantizedGGUFTransformer loader, which does not carry the Gated-DeltaNet hybrid, so the benchmark verb cannot measure the architecture the last release shipped.",
       "exit_code": 8,
       "removed_by": "unscheduled"
+    },
+    {
+      "verb": "finetune",
+      "reason": "apr finetune refuses a qwen35 GGUF base (\"Fine-tuning requires an APR base model ... Convert first\") and the conversion it prescribes fails: apr import of Qwen3.5 GGUF stops at CONTRACT ENFORCEMENT (hidden_dim 0), so no qwen35 base can reach the LoRA pipeline. Measured on apr 0.69.5-rc.1 (5660b0877), Qwen3.5-0.8B-Q4_K_M, gx10; docs/findings/3597-b2-verbs-qwen35.jsonl.",
+      "exit_code": 5,
+      "removed_by": "unscheduled"
     }
   ]
 }
