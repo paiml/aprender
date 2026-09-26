@@ -115,6 +115,14 @@ pub struct Turn {
     /// `max_tokens` and before a stop token. It is the one reason a reply is
     /// shorter than asked for that the caller did not choose.
     pub context_capped: bool,
+    /// Wall time from entry to the first chosen token: the prompt forward
+    /// (only the suffix the state did not hold) plus that token's choice.
+    /// Token choice reads the logits back to the host, so this boundary is
+    /// real on every backend and costs no extra synchronisation (SRV-TIM-001).
+    pub prefill: std::time::Duration,
+    /// Wall time from the first chosen token to the end of the turn: every
+    /// later forward, choice and `on_token` callback.
+    pub decode: std::time::Duration,
 }
 
 /// A loaded model plus its decode state: the one engine (#4263).
@@ -322,7 +330,10 @@ impl<F: ArchForward> Session<F> {
         self.reserve(prompt.len() + budget)?;
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
+        let started = std::time::Instant::now();
         let (mut next, reused) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let prefill = started.elapsed();
+        let decode_started = std::time::Instant::now();
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
@@ -345,6 +356,8 @@ impl<F: ArchForward> Session<F> {
             reused,
             used_gpu: self.on_gpu(),
             context_capped,
+            prefill,
+            decode: decode_started.elapsed(),
         })
     }
 

@@ -655,6 +655,17 @@ pub struct PhaseTimings {
 }
 
 impl PhaseTimings {
+    /// SRV-TIM-001: both phases of one [`crate::session::Session`] turn. The
+    /// session measures its prefill/decode boundary on every backend it
+    /// drives, so a handler serving a `Turn` always has a split to report.
+    #[must_use]
+    pub fn from_turn(turn: &crate::session::Turn) -> Self {
+        Self {
+            prefill_ms: Some(turn.prefill.as_secs_f64() * 1000.0),
+            decode_ms: Some(turn.decode.as_secs_f64() * 1000.0),
+        }
+    }
+
     /// Pair the measured durations with the token counts the handler knows.
     ///
     /// Returns `None` unless BOTH phases were measured. A `timings` block whose
