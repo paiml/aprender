@@ -1,0 +1,157 @@
+# ──────────────────────────────────────────────
+# binary-surface-v1 — every cargo [[bin]] target as a focus node, and the surface it exposes (ONT-001 §5 ONT-4g;
+# ONT-10 epic aprender#4502)
+#
+# WHAT THIS IS. The shared vocabulary and shapes for the Σ entity type `binary` (extractor `binary`). A node is
+# keyed `binary/<package>/<target>`, NEVER by name alone: `apr` is declared by two packages (apr-cli and the root
+# facade aprender), so 29 bin targets carry 28 names. Each exposed surface — a cli:Command, an http route, an mcp
+# tool — is a sibling Entity reached by the role `bin:exposes`.
+#
+# A SNAPSHOT, NEVER A LIVE BINARY. extract:binary reads the tracked record `scripts/dogfood_surfaces.sh --snapshot`
+# writes (one JSON line per bin target, LC_ALL=C sorted by package,target, no timestamps, `--twice` byte-identical).
+# The gate never execs a binary, so its verdict is a function of the tree.
+#
+# PER-BINARY CONTRACTS. Each bin target ALSO gets one contract of its own, drafted by its ONT-10 slice owner to the
+# exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml (S1). File name: bin-<package>--<target>-v1.yaml;
+# `entity.ref` = binary/<package>/<target>. This file holds what every binary shares; the per-binary file holds
+# only what that binary's surface must do.
+#
+# NOT ARMED YET. Σ `binary` is `implemented: false` until extract:binary lands (aprender-98); until then these
+# shapes have no focus nodes and are not in contracts/lint-baseline.json armed_shapes[].
+#
+# KIND: pattern. Vocabulary, an extractor and shapes over a graph; the proof is the gate's own case table.
+# ──────────────────────────────────────────────
+name: binary-surface-v1
+version: "1.0.0"
+scope: >
+  How a cargo bin target becomes a focus node typed ont:Binary from the tracked surface snapshot, the shapes every
+  binary node and the surface-audit ledger must satisfy, and the dogfood gates (G0.1, G0.5, G1.2–G1.4, G4.1–G4.2)
+  those shapes absorb. Out of scope: building or running a binary (the snapshot writer does that), and what any one
+  binary's surface must do (its per-binary contract).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    Every cargo bin target is a focus node keyed by package and target, read from a tracked, hashed snapshot; its
+    version names the commit it was built from, two targets sharing a name agree on help and version, and every
+    binary has at least one row in the surface-audit ledger.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §5 ONT-4g (a1c73918)'
+    - 'aprender#4476 — the surface_audit ledger gate (scripts/surface_audit_bins_gate.sh)'
+    - 'aprender#4502 — ONT-10 epic batch; gates/ont10-sizing.md slices S1–S20'
+    - 'scripts/dogfood_surfaces.sh — the snapshot writer (--snapshot, --twice)'
+    - 'contracts/ontology.yaml — entity_types binary, extractors binary, role bin:exposes'
+    - 'docs/audits/surface_audit.csv — the ledger, a csv entity'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [ont-shapes-v1, ont-sigma-v1]
+
+shapes:
+  - id: binary-target
+    targetClass: ont:Binary
+    properties:
+      - {path: bin:package, minCount: 1, maxCount: 1}
+      - {path: bin:target, minCount: 1, maxCount: 1}
+      - {path: bin:name, minCount: 1, maxCount: 1}
+      - {path: bin:srcPath, minCount: 1, maxCount: 1}
+      - {path: bin:gitSha, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{40}$"}
+      - {path: bin:version, minCount: 1, maxCount: 1, minLength: 1}
+      - {path: bin:versionSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:binarySha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:exposes, nodeKind: IRI}
+      # G0.1 — the extractor materializes this when bin:version does not contain the first 9 hex of bin:gitSha.
+      - {path: bin:versionLacksSha, maxCount: 0}
+      # G0.5 — materialized on BOTH nodes when two targets share bin:name and differ in helpSha256 or versionSha256.
+      - {path: bin:namePairMismatch, maxCount: 0}
+      # G1.2 — a target whose `--help` exits non-zero or prints nothing.
+      - {path: bin:helpFailed, maxCount: 0}
+      # every binary has ≥1 feature row in docs/audits/surface_audit.csv (resolved by bin:name).
+      - {path: bin:auditRow, minCount: 1}
+
+  - id: surface-audit-ledger
+    targetClass: csv:Dataset
+    properties:
+      - {path: csv:header, minCount: 1, maxCount: 1,
+         in: ["binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence"]}
+      - {path: csv:rows, minCount: 1, maxCount: 1, datatype: xsd:integer}
+      - {path: csv:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: csv:producer, minCount: 1, maxCount: 1, resolves: path}
+
+equations:
+  one_node_per_bin_target:
+    formula: "|nodes(ont:Binary)| = |{t ∈ targets(cargo metadata --no-deps) : bin ∈ kind(t)}|"
+    domain: "the tracked snapshot and `cargo metadata --no-deps --format-version 1` at the same commit"
+    codomain: "by_entity_type.binary, an integer the probe compares to the metadata count"
+    invariants:
+      - "a node's key is binary/<package>/<target>; two packages declaring one name are two nodes"
+    preconditions:
+      - "the snapshot was written by scripts/dogfood_surfaces.sh --snapshot at this commit"
+    postconditions:
+      - "two extractions are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  version_names_its_commit:
+    formula: "∀ b ∈ Binary: sha9(gitSha(b)) ⊑ version(b)"
+    domain: "every ont:Binary node"
+    codomain: "no bin:versionLacksSha triple, or a Fail naming the node"
+    invariants:
+      - "a --version that names no commit cannot be placed against a release (G0.1)"
+    preconditions:
+      - "gitSha is the commit the snapshot writer built"
+    postconditions:
+      - "bin:versionLacksSha has maxCount 0"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-INV-001
+    property: every bin target in cargo metadata has exactly one node, keyed by package and target
+    formal: '∀ t ∈ bin_targets: |{b ∈ Binary : key(b) = (pkg(t), target(t))}| = 1'
+    prose: false
+  - id: BIN-INV-002
+    property: two targets sharing a name agree on help and version (G0.5)
+    formal: 'name(a) = name(b) ⇒ helpSha256(a) = helpSha256(b) ∧ versionSha256(a) = versionSha256(b)'
+    prose: false
+  - id: BIN-INV-003
+    property: every binary has at least one surface-audit row
+    formal: '∀ b ∈ Binary: |{r ∈ surface_audit : r.binary = name(b)}| ≥ 1'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-001
+    rule: 'mutation 1 — drop a bin target from the snapshot'
+    prediction: 'by_entity_type.binary ≠ the cargo metadata bin count, and the ONT-4g probe fails'
+    test: 'NOT YET WRITTEN — lands with extract:binary (aprender-98), fixture tests/fixtures/ont4g/'
+    if_fails: 'a binary nobody snapshots has no surface and no gate'
+    mutation: 'delete one line of the snapshot; the probe must turn RED naming the count'
+  - id: FALSIFY-BIN-002
+    rule: 'mutation 2 — key by name alone'
+    prediction: 'the two apr targets collapse into one node and the count is one short'
+    test: 'NOT YET WRITTEN — lands with extract:binary'
+    if_fails: 'the facade apr and the apr-cli apr can diverge unseen (G0.5)'
+    mutation: 'build the node IRI from bin:name only; must turn RED'
+  - id: FALSIFY-BIN-003
+    rule: 'mutation 3 — a --version without the commit'
+    prediction: 'bin:versionLacksSha fires on that node and binary-target fails naming it'
+    test: 'NOT YET WRITTEN — lands with extract:binary'
+    if_fails: 'a stale binary reads as the one built from HEAD (G0.1)'
+    mutation: 'strip the sha from one snapshot version; must turn RED'
+  - id: FALSIFY-BIN-004
+    rule: 'mutation 4 — the apr pair diverges'
+    prediction: 'bin:namePairMismatch fires on both apr nodes'
+    test: 'NOT YET WRITTEN — lands with extract:binary'
+    if_fails: 'cargo install aprender ships a different apr than the one tested'
+    mutation: 'change one apr helpSha256 in the snapshot; must turn RED'
+  - id: FALSIFY-BIN-005
+    rule: 'mutation 5 — a binary with no ledger row'
+    prediction: 'bin:auditRow minCount 1 fails naming the node; scripts/surface_audit_bins_gate.sh --require-rows exits 1'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'a binary ships with no audited feature'
+    mutation: 'delete every pv row from docs/audits/surface_audit.csv; must turn RED naming pv'

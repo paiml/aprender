@@ -7,6 +7,7 @@
 #   symbols: the `formal:` token vocabulary is a lexicon, not a TBox
 #   worlds: worlds scope contracts; OWL 2 EL has no modal or context construct
 Ontology(<https://ont.paiml.dev/v1alpha1/sigma>
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Binary>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Code>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Contract>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Dataset>))
