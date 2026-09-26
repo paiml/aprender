@@ -23,3 +23,10 @@
 #
 # scripts/check_append_only_ledgers.sh holds that distinction as a case table.
 docs/audits/*.jsonl merge=union
+# rex/001 (#4354): the admission files are appended one row per cell, so they are
+# ledgers. The corpus and the #4026 oracle captures are sealed (sha-checked by the
+# crate); no two branches edit them, so union is inert there and moving them would
+# break their sealed paths.
+docs/audits/rex-001/*.jsonl merge=union
+docs/audits/review-corpus/*.jsonl merge=union
+docs/audits/prm-001/c11-4026-live/*.jsonl merge=union

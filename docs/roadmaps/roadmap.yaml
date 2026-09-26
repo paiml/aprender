@@ -21792,6 +21792,24 @@ roadmap:
   labels:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
+- id: PMAT-4354
+  github_issue: 4354
+  item_type: task
+  kind: code
+  title: 'PRM-L: land PRM-001 v3 (PROMETHEUS) + rex/001 to main'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-84
+  created: 2026-09-25T18:38:33Z
+  updated: 2026-09-25T18:38:33Z
+  spec: docs/specifications/PRM-001-prometheus.md
+  acceptance_criteria:
+  - Refs paiml/aprender#4354. Spec PRM-001 v3 byte-exact, rex-prereg-v2 lock, v1 lock frozen, superseded banners, v3 figure.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4421
   github_issue: 4421
   item_type: task
@@ -21831,6 +21849,38 @@ roadmap:
   labels:
   - kind:code
   notes: 'Collapse the ~20 ci.yml jobs into 5 fat jobs; each runs every section (ci/sections.yml, verbatim old job bodies; vendored sovereign-ci verified against its upstream sha256) to completion on the biggest runner in its class via scripts/ci/fat_driver.py. Required contexts gate / workspace-test / ci / gate keep their names. scripts/ci/sigma_executed.py enforces the executed test-id set == the universe listed independently (by id, not count); a dropped test turns it RED. Train-active priority hook kept as a floor. Item 3 (rc.N = tag on queue-green main) and the #4434/#4436 release-rule docs are a follow-up PR. Scope of the driver: fat_driver.py collapses the MULTI-section Linux jobs (x86-main, gx10, yoga, determinism); mac-check is the ruling''s mac-refusal job, already ONE section on the one macOS runner (no docker there), so it keeps its steps and its context name, and as on main it is not in gate.needs.'
+- id: PMAT-4446
+  github_issue: 4446
+  item_type: task
+  title: PRA-001 T12 terms/provider tagging (P-TERMS)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T17:08:31Z
+  updated: 2026-09-25T17:08:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4447
+  github_issue: 4447
+  item_type: task
+  title: PRM-S1 review-replay-v1 benchmark + runner
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T17:46:46Z
+  updated: 2026-09-25T17:46:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4453
   github_issue: 4453
   item_type: task

@@ -27,7 +27,7 @@ equations:
     formula: "|S(i)| < 32 ⇒ (i ~ j ⇔ tokens(i) = tokens(j))"
   closure:
     formula: "cluster = transitive closure of near ∪ tiny"
-  cluster_id:
+  cluster_id:   # cluster-id-guard allow (a formula name: the id is the earliest member, permutation-invariant, not a k-means label)
     formula: "id(C) = argmin_{m ∈ C} (at(m), id(m)); invariant under permutation of the input"
 
 falsification_tests:
