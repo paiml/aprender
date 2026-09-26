@@ -18,7 +18,8 @@
 # util-linux 2.39.3; measured in #4120's review).
 #
 # Usage: check_guard_steps_isolated.sh [--self-test] [workflow.yml ...]
-#   default workflows: every .github/workflows/*.y{a,}ml and .github/actions/*/action.y{a,}ml
+#   default workflows: every .github/workflows/*.y{a,}ml and .github/actions/*/action.y{a,}ml,
+#   plus ci/*.yml and ci/vendor/*.yml (the fat-job sections since #4441)
 #   (every job that calls a guard runs on a self-hosted Linux runner -- review of #4133
 #   measured the runs-on of all 13 such workflows; ci.yml's mac-check job is self-hosted
 #   macOS and calls no guard)
@@ -107,15 +108,20 @@ self_test() {
     row "bare in a one-line case arm"       1 $'          case x in x) scripts/check_a.sh ;; esac\n'
     row "wrapped after elif"                0 $'          if false; then :; elif setsid --wait bash scripts/check_a.sh; then :; fi\n'
     row "a path argument is not an invocation" 0 $'          cat scripts/check_a.sh && echo scripts/check_b.sh\n'
-    # the MUTANT the ticket names: the real ci.yml with ONE wrapper removed must go RED
-    if [ -f .github/workflows/ci.yml ]; then
-        sed '0,/setsid --wait bash scripts\/check_/s//bash scripts\/check_/' .github/workflows/ci.yml > "$t/ci.yml"
-        if cmp -s .github/workflows/ci.yml "$t/ci.yml"; then
-            printf 'FAIL  mutant: no wrapper to remove in ci.yml (the real file is unisolated)\n'; fails=$((fails + 1))
-        elif check "$t/ci.yml" > /dev/null 2>&1; then
-            printf 'FAIL  mutant: ci.yml with one wrapper removed still passes\n'; fails=$((fails + 1))
+    # the MUTANT the ticket names: the real guard steps with ONE wrapper removed must go RED.
+    # #4441 moved every ci.yml job into ci/sections.yml; ci.yml itself calls no guard now,
+    # so the mutant targets the section file (absent = FAIL, not a silent skip).
+    real=ci/sections.yml
+    if [ ! -f "$real" ]; then
+        printf 'FAIL  mutant: %s is absent (where do the guard steps live now?)\n' "$real"; fails=$((fails + 1))
+    else
+        sed '0,/setsid --wait bash scripts\/check_/s//bash scripts\/check_/' "$real" > "$t/sections.yml"
+        if cmp -s "$real" "$t/sections.yml"; then
+            printf 'FAIL  mutant: no wrapper to remove in %s (the real file is unisolated)\n' "$real"; fails=$((fails + 1))
+        elif check "$t/sections.yml" > /dev/null 2>&1; then
+            printf 'FAIL  mutant: %s with one wrapper removed still passes\n' "$real"; fails=$((fails + 1))
         else
-            printf 'ok    mutant: ci.yml with one wrapper removed is refused\n'
+            printf 'ok    mutant: %s with one wrapper removed is refused\n' "$real"
         fi
     fi
     printf '%s --self-test: %d failed\n' "$PROG" "$fails"
@@ -131,7 +137,8 @@ if [ "$#" -gt 0 ]; then files=("$@")
 else
     files=()
     # workflows in both extensions, and composite actions (#4133 ph2 lane 1: latent today)
-    for f in .github/workflows/*.yml .github/workflows/*.yaml .github/actions/*/action.yml .github/actions/*/action.yaml; do
+    # ... and the fat-job section files scripts/ci/fat_driver.py runs (#4441)
+    for f in .github/workflows/*.yml .github/workflows/*.yaml .github/actions/*/action.yml .github/actions/*/action.yaml ci/*.yml ci/vendor/*.yml; do
         [ -f "$f" ] && files+=("$f")
     done
     [ "${#files[@]}" -gt 0 ] || { printf '%s: ENV - no workflow files found\n' "$PROG" >&2; exit 2; }
