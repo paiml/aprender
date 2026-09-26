@@ -22429,6 +22429,24 @@ roadmap:
   labels:
   - kind:code
   notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'
+- id: PMAT-4431
+  github_issue: 4431
+  item_type: task
+  title: 'fold(B3) onto main: merge origin/main e7a52949d into fold/b3-onto-main and green the target-side guards'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-57
+  created: 2026-09-26T12:22:22Z
+  updated: 2026-09-26T12:22:22Z
+  spec: null
+  acceptance_criteria:
+  - origin/main merged in without rebase or force; conflicts resolved; every target-side guard newer than the merge-base green on the merged tree (or its red shown identical on main); quorum on the merge delta; re-armed with --match-head-commit.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'receipt: docs/audits/impl-PMAT-4431-receipt.md'
 - id: PMAT-4433
   github_issue: 4433
   item_type: task
