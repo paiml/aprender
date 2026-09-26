@@ -607,13 +607,13 @@ coverage-check: coverage
 # fall through to the next step. Hence `|| exit` there as well, which exits
 # with that list's own status (pv's rc through the pipe, via -o pipefail).
 # Case table + mutants: scripts/tests/make_contracts_propagates.sh.
-contracts:
-	@set -e
-	@echo "== provable contracts: pv lint contracts/ =="
 # `| tail -5` alone DISCARDED THE VERDICT (found by aprender-d8, 0.69.1 tail rehearsal):
 # the pipeline's status was tail's. -o pipefail + `|| exit` makes it pv's. The interim
 # `{ ...; exit $$rc; }` fix exited the ONESHELL recipe on SUCCESS too, so census, graph,
 # README and the engine tests below never ran on a green lint.
+contracts:
+	@set -e
+	@echo "== provable contracts: pv lint contracts/ =="
 	@. scripts/pv_bin.sh && "$$PV" lint contracts/ 2>&1 | tail -5 || exit
 	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
 	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
