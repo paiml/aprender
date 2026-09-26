@@ -165,9 +165,12 @@ derive_arm4_rows() {
 derive_signer_rows() {
     local root=$1 n
     [ -f "$root/scripts/pr_review_sign_receipt.sh" ] || return 1
-    # seven `row` calls plus the one hand-rolled residue check the table also counts
+    # the `row` calls plus every hand-rolled check: each bumps pass_n itself, and
+    # one of those bumps is row()'s own, so it is not a check of its own
+    local hand
     n=$(grep -cE "^    row '" "$root/scripts/pr_review_sign_receipt.sh")
-    n=$((n + 1))
+    hand=$(grep -cF 'pass_n=$((pass_n + 1))' "$root/scripts/pr_review_sign_receipt.sh")
+    n=$((n + hand - 1))
     [ "$n" -gt 0 ] || return 1
     printf '%s\n' "$n"
 }
@@ -246,7 +249,7 @@ quorum_bats_tests|.claude/skills/pr-review/SKILL.md|2|@N@ rows
 quorum_rows|tests/pr-review-quorum.bats|1|-eq @N@ ]
 quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
 falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification tests
-shadow_rows|.github/workflows/ci.yml|1|case table: @N@ rows
+shadow_rows|.github/workflows/ci.yml|1|Shadow recorder case table: @N@ rows
 publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
 arm4_rows|.github/workflows/pr-review-quorum.yml|1|Arm 4 case table: @N@ rows
 signer_rows|.github/workflows/ci.yml|1|Signer case table: @N@ rows

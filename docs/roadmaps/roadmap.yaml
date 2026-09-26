@@ -21737,3 +21737,45 @@ roadmap:
   labels:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
+- id: PMAT-4421
+  github_issue: 4421
+  item_type: task
+  title: 'P0: bind the pr-review-sign receipt by diff patch-id (git patch-id --verbatim) so it verifies on the merge-queue sha; fail closed'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-5d
+  created: 2026-09-25 14:00:00+00:00
+  updated: '2026-09-25T16:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'the signer stamps predicate.diff_patch_id (git patch-id --verbatim of the pinned base_sha..head_sha diff, evidence/pr-review/<pr>/ excluded) before signing'
+  - 'Arm 4 recomputes the id from the subject (merge_group: sha^1..sha; else merge-base(origin/main,sha)..sha) and fails closed on empty diff, two parents, missing id, or mismatch'
+  - 'negative arm: a 1-byte change and a trailing-space change to the squash no longer verify (self-test rows)'
+  - 'works on git 2.34 (no --verbatim) via a byte-exact port checked against golden ids and native git'
+  - 'legacy (pre-#4421) receipts are exempt only for PRs < 4427 and only until 2026-09-26T16:00Z (operator ruling via cop, FLOW-04); branch events keep the ancestor rule; each bound has a negative self-test row'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'
+- id: PMAT-4453
+  github_issue: 4453
+  item_type: task
+  title: 'Arm 4 self-test inherits GITHUB_EVENT_NAME: four rows RED inside the merge_group job (FLOW-04 follow-up)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-ont
+  created: 2026-09-25 20:00:00+00:00
+  updated: '2026-09-25T20:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'every self-test row runs with GITHUB_EVENT_NAME, PR_REVIEW_SUBJECT_KIND, PR_REVIEW_NOW and PR_REVIEW_LEGACY_UNTIL unset; a row that needs an event names it'
+  - 'self-test is 23/23 with the ambient event empty, merge_group and pull_request_target, and RED under merge_group without the fix'
+  - 'no change to the verdict logic of Arm 4 itself'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
