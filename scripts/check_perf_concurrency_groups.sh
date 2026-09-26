@@ -56,7 +56,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_DIR="${REPO_ROOT}/.github/workflows"
 DEFAULT_MATRIX="${REPO_ROOT}/scripts/perf-matrix.yaml"
 
-SELFTEST_NAMES="isolation_breach isolation_ok cancel_true_is_red ignored_bench_without_group_is_red ref_scoped_group_is_red na_host_under_lock_ok na_host_without_lock_is_red perf_host_under_lock_is_red na_host_other_lock_is_red na_host_lock_not_flock_is_red na_host_workflow_env_is_red na_host_foreign_triple_is_red na_host_lock_as_trailing_arg_is_red na_and_perf_host_is_red na_host_no_arch_label_is_red na_host_two_arch_labels_is_red na_host_lock_path_prefix_is_red undeclared_host_under_lock_is_red"
+SELFTEST_NAMES="isolation_breach isolation_ok cancel_true_is_red ignored_bench_without_group_is_red ref_scoped_group_is_red na_host_under_lock_ok na_host_without_lock_is_red perf_host_under_lock_is_red na_host_other_lock_is_red na_host_lock_not_flock_is_red na_host_workflow_env_is_red na_host_foreign_triple_is_red na_host_lock_as_trailing_arg_is_red na_and_perf_host_is_red na_host_no_arch_label_is_red na_host_two_arch_labels_is_red na_host_lock_path_prefix_is_red undeclared_host_under_lock_is_red na_host_flock_unlock_is_red na_host_flock_shared_is_red na_host_flock_timeout_passes_is_red na_host_flock_help_exits_0_is_red"
 
 scan() {
     python3 - "$1" "$2" <<'PY'
@@ -83,7 +83,7 @@ try:
         matrix = yaml.safe_load(handle) or {}
     declared = matrix.get("hosts")
     if isinstance(declared, dict) and declared:
-        hosts = tuple(sorted(str(h) for h in declared))
+        hosts = tuple(sorted(str(h).lower() for h in declared))
 except (OSError, yaml.YAMLError):
     hosts = None
 if hosts is None:
@@ -108,11 +108,15 @@ NATIVE_RUNNER_KEY = {
     "x64": "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
     "arm64": "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER",
 }
-# The WHOLE value: flock, its options, then the lock as the last word and the
-# lock operand. `flock … /tmp/x.lock env X=/run/lock/fleet-gpu/gpu.lock` is
-# a different lock with the right path as a trailing argument - RED.
+# The WHOLE value: flock, an ALLOWLIST of options, then the lock as the last
+# word and the lock operand. `flock … /tmp/x.lock env X=/run/lock/fleet-gpu/gpu.lock`
+# is a different lock with the right path as a trailing argument - RED. Only
+# exclusive waiting options pass: -u runs unlocked, -s shares the GPU, -E 0
+# turns a timeout into a pass and -h/-V exit 0 without running the test
+# (each measured on util-linux flock 2.37.2, quorum round 2).
 LOCKED_RUNNER_RE = re.compile(
-    r"^flock(\s+-[A-Za-z](\s+[0-9]+)?)*\s+%s$" % re.escape(HOST_GPU_LOCK))
+    r"^flock(\s+(-x|-e|-w\s+[1-9][0-9]*|-E\s+[1-9][0-9]*))*\s+%s$"
+    % re.escape(HOST_GPU_LOCK))
 
 
 def takes_host_gpu_lock(job, labels):
@@ -391,6 +395,13 @@ selftest() {
     _row na_host_lock_path_prefix_is_red red "$tmp/na_prefix"
     _fixture_host "$tmp/nohost" "w.yml" "[self-hosted, gpu, Linux, X64, cuda]" "$lock" ""
     _row undeclared_host_under_lock_is_red red "$tmp/nohost"
+    # 19-22. flock options that defeat the lock (quorum round 2).
+    local opt
+    for opt in "-u:unlock" "-s:shared" "-E 0:timeout_passes" "-h:help_exits_0"; do
+        _fixture_host "$tmp/na_opt" "w.yml" "$yoga" "    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock ${opt%%:*} -w 600 /run/lock/fleet-gpu/gpu.lock" ""
+        _row "na_host_flock_${opt##*:}_is_red" red "$tmp/na_opt"
+    done
 
     printf '  %d passed, %d broken\n' "$pass" "$fail"
     [ "$fail" = 0 ]
