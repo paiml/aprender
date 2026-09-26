@@ -1,0 +1,80 @@
+1790421632.885854 :
+1790421632.885915 
+1790421642.885558 :
+1790421642.885593 
+1790421652.886684 :
+1790421652.886720 
+1790421662.887611 :
+1790421662.887644 
+1790421672.888683 :
+1790421672.888728 
+1790421682.889707 :
+1790421682.889755 
+1790421692.892442 :
+1790421692.892482 
+1790421700.608226 data: {"id":"5","choices":[{"text":"","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421700.608268 
+1790421703.122338 data: {"id":"5","choices":[{"text":"###","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421703.122389 
+1790421705.459706 data: {"id":"5","choices":[{"text":" The","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421705.459756 
+1790421708.162648 data: {"id":"5","choices":[{"text":" Update","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421708.162691 
+1790421711.068675 data: {"id":"5","choices":[{"text":" Rule","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421711.068716 
+1790421713.362158 data: {"id":"5","choices":[{"text":"\n\n","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421713.362202 
+1790421715.706929 data: {"id":"5","choices":[{"text":"The","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421715.706975 
+1790421718.289016 data: {"id":"5","choices":[{"text":" parameter","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421718.289064 
+1790421720.600445 data: {"id":"5","choices":[{"text":" update","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421720.600490 
+1790421723.224617 data: {"id":"5","choices":[{"text":" at","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421723.224656 
+1790421725.809396 data: {"id":"5","choices":[{"text":" each","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421725.809440 
+1790421728.680651 data: {"id":"5","choices":[{"text":" iteration","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421728.680702 
+1790421731.409296 data: {"id":"5","choices":[{"text":" is","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421731.409334 
+1790421733.880234 data: {"id":"5","choices":[{"text":":","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421733.880281 
+1790421735.722616 data: {"id":"5","choices":[{"text":"\n\n","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421735.722670 
+1790421737.982007 data: {"id":"5","choices":[{"text":"```","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421737.982052 
+1790421740.258578 data: {"id":"5","choices":[{"text":"\n","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421740.258621 
+1790421742.629554 data: {"id":"5","choices":[{"text":"θ","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421742.629605 
+1790421745.068287 data: {"id":"5","choices":[{"text":"(t","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421745.068330 
+1790421747.566420 data: {"id":"5","choices":[{"text":"+","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421747.566464 
+1790421750.312725 data: {"id":"5","choices":[{"text":"1","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421750.312762 
+1790421753.996634 data: {"id":"5","choices":[{"text":")","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421753.996677 
+1790421759.666712 data: {"id":"5","choices":[{"text":" =","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421759.666745 
+1790421763.360279 data: {"id":"5","choices":[{"text":" θ","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421763.360319 
+1790421766.873619 data: {"id":"5","choices":[{"text":"(t","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421766.873655 
+1790421769.618855 data: {"id":"5","choices":[{"text":")","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421769.618883 
+1790421772.700919 data: {"id":"5","choices":[{"text":" -","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421772.700962 
+1790421775.365446 data: {"id":"5","choices":[{"text":" α","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421775.365488 
+1790421777.928915 data: {"id":"5","choices":[{"text":" ","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421777.928953 
+1790421781.610382 data: {"id":"5","choices":[{"text":"∇","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421781.610414 
+1790421784.590906 data: {"id":"5","choices":[{"text":"L","index":0,"logprobs":null,"finish_reason":null}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421784.590944 
+1790421787.321912 data: {"id":"5","choices":[{"text":"(","index":0,"logprobs":null,"finish_reason":"length"}],"created":1790421622,"model":"/mnt/nvme-raid0/tmp/ext-models/ext27","system_fingerprint":"local","object":"text_completion"}
+1790421787.321952 
+1790421787.321964 data: [DONE]
+1790421787.321971 

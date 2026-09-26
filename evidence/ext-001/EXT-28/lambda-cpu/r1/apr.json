@@ -1,0 +1,69 @@
+{
+  "arm": "apr",
+  "version": "apr 0.70.0 (99c6c61b4)",
+  "engine_sha256": "678647001a4928efb5ff0b07f9e8613ec6646467ef7d7b117bfdd3c1d2dd93f6",
+  "model_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+  "file_type": 15,
+  "vision_tensors": 0,
+  "served_model": "ours",
+  "ollama_manifest_digest": null,
+  "conditions": {
+    "cpus": "0-15",
+    "threads": 16,
+    "concurrency": 1,
+    "iterations": 5,
+    "statistic": "best_of_n_decode",
+    "max_tokens": 32,
+    "prompt_sha256": "64d05b7ffbeefa59c020057f4496bf73630e95b06adfaeeb072596a841430597"
+  },
+  "timing": {
+    "load_ms": 118302.7,
+    "ttft_ms": 70654.5,
+    "itl_ms": 873.8,
+    "e2e_ms": 100523.1,
+    "decode_tok_s": 2.4454,
+    "decode_tok_s_iters": [
+      1.2474,
+      2.4454,
+      0.8705,
+      0.6836,
+      2.2764
+    ],
+    "loadavg_1m_iters": [
+      53.72,
+      29.09,
+      45.58,
+      45.68,
+      53.86
+    ],
+    "peak_rss_kb": 8118780
+  },
+  "comparator": {
+    "command": [
+      "env",
+      "-i",
+      "PATH=/usr/bin:/bin",
+      "HOME=/mnt/nvme-raid0/tmp/cb28/cells/r1/logs/apr.home",
+      "CUDA_VISIBLE_DEVICES=",
+      "RAYON_NUM_THREADS=16",
+      "taskset",
+      "-c",
+      "0-15",
+      "/mnt/nvme-raid0/tmp/cb28/apr-0.70.0-99c6c61b4",
+      "serve",
+      "run",
+      "/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "18781",
+      "--no-gpu"
+    ],
+    "version": "apr 0.70.0 (99c6c61b4)",
+    "env_sha256": "47bceb6d1ddc70aecfc2e06ed8cbfe9080551916427cabd12ae529a4d859ba5f",
+    "artifact_sha256": "19feee256e1e722aa649a1131f1052b9e97a8d591bbac24ed5edd39b2d4029c2",
+    "log_path": "logs/apr.server.log",
+    "started_utc": "2026-09-26T09:25:55.023Z",
+    "finished_utc": "2026-09-26T09:39:03.235Z"
+  }
+}

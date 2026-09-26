@@ -1,0 +1,71 @@
+{
+  "arm": "mistral.rs",
+  "version": "mistralrs 0.9.4",
+  "engine_sha256": "799d80e74f34720e6674590cdcf2f5fa7ee6aa4753cff0cc791445be2a898558",
+  "model_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+  "file_type": 15,
+  "vision_tensors": 0,
+  "served_model": "default",
+  "ollama_manifest_digest": null,
+  "conditions": {
+    "cpus": "0-15",
+    "threads": 16,
+    "concurrency": 1,
+    "iterations": 5,
+    "statistic": "best_of_n_decode",
+    "max_tokens": 32,
+    "prompt_sha256": "64d05b7ffbeefa59c020057f4496bf73630e95b06adfaeeb072596a841430597"
+  },
+  "timing": {
+    "load_ms": 38618.4,
+    "ttft_ms": 22035.3,
+    "itl_ms": 531.9,
+    "e2e_ms": 39909.1,
+    "decode_tok_s": 2.6317,
+    "decode_tok_s_iters": [
+      1.5224,
+      0.6436,
+      1.4415,
+      2.6317,
+      2.3018
+    ],
+    "loadavg_1m_iters": [
+      61.24,
+      29.36,
+      43.05,
+      57.95,
+      38.43
+    ],
+    "peak_rss_kb": 8254852
+  },
+  "comparator": {
+    "command": [
+      "env",
+      "-i",
+      "PATH=/usr/bin:/bin",
+      "HOME=/mnt/nvme-raid0/tmp/cb28/cells/r3/logs/mistral.rs.home",
+      "CUDA_VISIBLE_DEVICES=",
+      "RAYON_NUM_THREADS=16",
+      "taskset",
+      "-c",
+      "0-15",
+      "/mnt/nvme-raid0/targets/cb-mistralrs/release/mistralrs",
+      "serve",
+      "--cpu",
+      "-p",
+      "18782",
+      "--format",
+      "gguf",
+      "-m",
+      "/mnt/nvme-raid0/tmp/ext-models/ext27",
+      "-f",
+      "ours-q4k.gguf"
+    ],
+    "version": "mistralrs 0.9.4",
+    "env_sha256": "edc6b42f4fc4fd4e91d7d029d16e6c8c68afa8680f770fc3a6661e6a34b7d455",
+    "artifact_sha256": "d66021031de01134a590bdbafd2d737b3a1ed7581e7078d1e3f026306d868bbb",
+    "log_path": "logs/mistral.rs.server.log",
+    "started_utc": "2026-09-26T10:18:24.718Z",
+    "finished_utc": "2026-09-26T10:33:02.996Z"
+  }
+}

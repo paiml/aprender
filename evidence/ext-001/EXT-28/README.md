@@ -79,3 +79,47 @@ Registered in this commit, before any record under it exists:
   tuned away.
 
 The new records go to `lambda-cpu/{r1,r2,r3,plant,r4}/`.
+
+## lambda-cpu: records under the pre-registered method
+
+Best-of-5 decode tok/s per arm; `samples` is every iteration in run order,
+`load` the 1-minute load average at each iteration's start. The other timings are
+medians. Host shared with other sessions' builds and tests on CPUs 0-15.
+
+| record | arm | load ms | TTFT ms | ITL ms | e2e ms | decode tok/s (best) | samples | load | peak RSS MiB |
+|---|---|---|---|---|---|---|---|---|---|
+| r1 | apr | 118303 | 70655 | 873.8 | 100523 | 2.4454 | 1.25 2.45 0.87 0.68 2.28 | 54 29 46 46 54 | 7928 |
+| r1 | llama.cpp | 12428 | 972 | 281.2 | 8921 | 5.0519 | 2.72 5.05 3.27 3.15 4.73 | 55 35 46 47 36 | 4440 |
+| r1 | mistral.rs | 48080 | 14618 | 376.9 | 29286 | 2.2799 | 1.46 2.28 1.84 1.61 2.03 | 46 31 35 51 44 | 8078 |
+| r2 | apr | 55790 | 54715 | 351.2 | 65060 | 2.8955 | 2.51 2.48 1.76 2.51 2.9 | 40 31 35 39 35 | 7957 |
+| r2 | llama.cpp | 6377 | 522 | 200 | 6475 | 4.5536 | 4.55 4.41 4.25 3.98 4.39 | 40 30 36 39 36 | 4440 |
+| r2 | mistral.rs | 122249 | 10779 | 338 | 20951 | 2.7287 | 2.65 2.64 2.11 2.73 2.72 | 34 30 30 36 31 | 8290 |
+| r3 | apr | 150565 | 189291 | 779.1 | 231325 | 2.3458 | 0.88 1.35 0.87 0.6 2.35 | 57 54 48 57 51 | 8046 |
+| r3 | llama.cpp | 18292 | 1261 | 281.1 | 9110 | 4.9315 | 1.83 2.77 3.73 3.1 4.93 | 51 41 48 60 38 | 4441 |
+| r3 | mistral.rs | 38618 | 22035 | 531.9 | 39909 | 2.6317 | 1.52 0.64 1.44 2.63 2.3 | 61 29 43 58 38 | 8061 |
+| plant | apr | 132889 | 378800 | 3359.6 | 469080 | 0.5261 | 0.53 0.29 0.24 0.24 0.3 | 43 28 122 140 129 | 7926 |
+| plant | llama.cpp | 16859 | 1356 | 373.4 | 12693 | 4.3129 | 4.31 2.36 2.2 2.28 2.58 | 43 26 116 142 63 | 4440 |
+| plant | mistral.rs | 68056 | 51681 | 2417 | 125465 | 0.6848 | 0.68 0.37 0.32 0.37 0.59 | 38 78 33 146 65 | 8069 |
+| r4 | apr | 294106 | 238300 | 1742.3 | 313036 | 0.7930 | 0.79 0.52 0.54 0.42 0.35 | 79 76 79 25 41 | 7903 |
+| r4 | llama.cpp | 13853 | 1806 | 371.2 | 13012 | 2.9239 | 2.34 2.39 2.18 1.71 2.92 | 78 58 80 32 70 | 4440 |
+| r4 | mistral.rs | 124547 | 51610 | 1904.9 | 108196 | 1.1993 | 0.45 0.49 0.44 0.32 1.2 | 23 42 62 76 85 | 7966 |
+
+`plant` and `r4` were re-run (12:00–12:41Z): the first attempt found the mistral.rs
+binary deleted by a disk cleanup during r3 and exited 127. It was rebuilt from the
+same commit 4400935; the build is not bit-reproducible, so r4/plant carry engine
+sha `f79c5b54…` where r1–r3 carry `799d80e7…`. mistral.rs is not in the ratchet ratio.
+
+### FALSIFY-EXT-022 under best-of-5: control still RED — a contention finding
+
+`cargo test -p apr-cli --lib falsify_ext_022_planted_sleep_red`: all five receipts
+pass `check_cell` (statistic, N, samples and the recomputed best). The plant is RED
+(ratio 0.122). **The unpatched control r4 is also RED**: ratio 0.271 against the
+r1–r3 floor 0.484 (`Red { tag: "v0.70.0", ratio: 0.2712, floor: 0.4841 }`).
+
+The plant and r4 ran while the host load average swung 23–146. In r4 no apr
+iteration beat 0.79 tok/s (r1–r3 best 2.35–2.90). Best-of-N only protects a record
+that has at least one uncontended iteration. Under sustained load, every sample is
+contended, and llama.cpp still degrades less than apr (2.92 vs 5.05 best), so the
+ratio falls. The 1-minute load average lags, so a low reading (r4 iteration 4: 25) does
+not mean that iteration ran quiet. Per the ruling this is recorded, not tuned away:
+TOLERANCE and the statistic are unchanged.

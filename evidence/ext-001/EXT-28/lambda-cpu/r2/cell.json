@@ -1,0 +1,227 @@
+{
+  "tag": "v0.70.0-baseline-2",
+  "cell": "lambda-cpu",
+  "arms": {
+    "apr": {
+      "measured": {
+        "arm": "apr",
+        "version": "apr 0.70.0 (99c6c61b4)",
+        "engine_sha256": "678647001a4928efb5ff0b07f9e8613ec6646467ef7d7b117bfdd3c1d2dd93f6",
+        "model_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+        "file_type": 15,
+        "vision_tensors": 0,
+        "served_model": "ours",
+        "ollama_manifest_digest": null,
+        "conditions": {
+          "cpus": "0-15",
+          "threads": 16,
+          "concurrency": 1,
+          "iterations": 5,
+          "statistic": "best_of_n_decode",
+          "max_tokens": 32,
+          "prompt_sha256": "64d05b7ffbeefa59c020057f4496bf73630e95b06adfaeeb072596a841430597"
+        },
+        "timing": {
+          "load_ms": 55790.4,
+          "ttft_ms": 54715.3,
+          "itl_ms": 351.2,
+          "e2e_ms": 65060.4,
+          "decode_tok_s": 2.8955,
+          "decode_tok_s_iters": [
+            2.5133,
+            2.4761,
+            1.7562,
+            2.5116,
+            2.8955
+          ],
+          "loadavg_1m_iters": [
+            39.77,
+            30.81,
+            35.27,
+            39.38,
+            34.81
+          ],
+          "peak_rss_kb": 8147832
+        },
+        "comparator": {
+          "command": [
+            "env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            "HOME=/mnt/nvme-raid0/tmp/cb28/cells/r2/logs/apr.home",
+            "CUDA_VISIBLE_DEVICES=",
+            "RAYON_NUM_THREADS=16",
+            "taskset",
+            "-c",
+            "0-15",
+            "/mnt/nvme-raid0/tmp/cb28/apr-0.70.0-99c6c61b4",
+            "serve",
+            "run",
+            "/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "18781",
+            "--no-gpu"
+          ],
+          "version": "apr 0.70.0 (99c6c61b4)",
+          "env_sha256": "ea9db40d6616a33f0fb9178bfa3b8e971d72063dc6d58f40ada126819a4fa31b",
+          "artifact_sha256": "e02bcd650c4a1a2089f2f33c935e65528da761693f980f7ee5f49b8ffe202f5d",
+          "log_path": "logs/apr.server.log",
+          "started_utc": "2026-09-26T09:45:11.969Z",
+          "finished_utc": "2026-09-26T09:52:49.649Z"
+        }
+      }
+    },
+    "llama.cpp": {
+      "measured": {
+        "arm": "llama.cpp",
+        "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+        "engine_sha256": "9e3197289109cf23adf6d6805cc6477a639ed2ab17cf3d8360db32348ea2a14c",
+        "model_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+        "file_type": 15,
+        "vision_tensors": 0,
+        "served_model": "ours",
+        "ollama_manifest_digest": null,
+        "conditions": {
+          "cpus": "0-15",
+          "threads": 16,
+          "concurrency": 1,
+          "iterations": 5,
+          "statistic": "best_of_n_decode",
+          "max_tokens": 32,
+          "prompt_sha256": "64d05b7ffbeefa59c020057f4496bf73630e95b06adfaeeb072596a841430597"
+        },
+        "timing": {
+          "load_ms": 6377.2,
+          "ttft_ms": 522.0,
+          "itl_ms": 200.0,
+          "e2e_ms": 6474.6,
+          "decode_tok_s": 4.5536,
+          "decode_tok_s_iters": [
+            4.5536,
+            4.4128,
+            4.2482,
+            3.9779,
+            4.3934
+          ],
+          "loadavg_1m_iters": [
+            39.66,
+            30.30,
+            35.64,
+            38.62,
+            36.18
+          ],
+          "peak_rss_kb": 4546684
+        },
+        "comparator": {
+          "command": [
+            "env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            "HOME=/mnt/nvme-raid0/tmp/cb28/cells/r2/logs/llama.cpp.home",
+            "CUDA_VISIBLE_DEVICES=",
+            "taskset",
+            "-c",
+            "0-15",
+            "/mnt/nvme-raid0/tmp/llama-d1d3-build/bin/llama-server",
+            "-m",
+            "/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf",
+            "-t",
+            "16",
+            "-c",
+            "4096",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "18780"
+          ],
+          "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+          "env_sha256": "3ecd94fd2489f305890c47f5dd74ec3c725b58a8974090e0e67fcf7909da8efc",
+          "artifact_sha256": "5d50c2a84f66f193b8aee1c0283cb07a4915a02bd40f2b18bdbf2bc86cf08406",
+          "log_path": "logs/llama.cpp.server.log",
+          "started_utc": "2026-09-26T09:45:05.666Z",
+          "finished_utc": "2026-09-26T09:53:21.375Z"
+        }
+      }
+    },
+    "mistral.rs": {
+      "measured": {
+        "arm": "mistral.rs",
+        "version": "mistralrs 0.9.4",
+        "engine_sha256": "799d80e74f34720e6674590cdcf2f5fa7ee6aa4753cff0cc791445be2a898558",
+        "model_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+        "file_type": 15,
+        "vision_tensors": 0,
+        "served_model": "default",
+        "ollama_manifest_digest": null,
+        "conditions": {
+          "cpus": "0-15",
+          "threads": 16,
+          "concurrency": 1,
+          "iterations": 5,
+          "statistic": "best_of_n_decode",
+          "max_tokens": 32,
+          "prompt_sha256": "64d05b7ffbeefa59c020057f4496bf73630e95b06adfaeeb072596a841430597"
+        },
+        "timing": {
+          "load_ms": 122248.6,
+          "ttft_ms": 10779.2,
+          "itl_ms": 338.0,
+          "e2e_ms": 20950.5,
+          "decode_tok_s": 2.7287,
+          "decode_tok_s_iters": [
+            2.6545,
+            2.6399,
+            2.1056,
+            2.7287,
+            2.7207
+          ],
+          "loadavg_1m_iters": [
+            34.26,
+            29.56,
+            29.71,
+            35.98,
+            30.70
+          ],
+          "peak_rss_kb": 8489036
+        },
+        "comparator": {
+          "command": [
+            "env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            "HOME=/mnt/nvme-raid0/tmp/cb28/cells/r2/logs/mistral.rs.home",
+            "CUDA_VISIBLE_DEVICES=",
+            "RAYON_NUM_THREADS=16",
+            "taskset",
+            "-c",
+            "0-15",
+            "/mnt/nvme-raid0/targets/cb-mistralrs/release/mistralrs",
+            "serve",
+            "--cpu",
+            "-p",
+            "18782",
+            "--format",
+            "gguf",
+            "-m",
+            "/mnt/nvme-raid0/tmp/ext-models/ext27",
+            "-f",
+            "ours-q4k.gguf"
+          ],
+          "version": "mistralrs 0.9.4",
+          "env_sha256": "295dcd4f38b25a4c8b45c2b799010fc65282ceb9457b0c20e51cb088346c711d",
+          "artifact_sha256": "9a73f4bc1fcfcee0ca9b7c36c059851a84f0f14fe5c7f04b5cb68b8e717dd404",
+          "log_path": "logs/mistral.rs.server.log",
+          "started_utc": "2026-09-26T09:46:17.117Z",
+          "finished_utc": "2026-09-26T09:53:14.810Z"
+        }
+      }
+    },
+    "ollama": {
+      "refused": {
+        "reason": "S-14 not like-for-like: the served blob sha256:81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490 carries a vision path (393 of 834 tensors; the server log reads \"clip_model_loader: has vision encoder\"); ours carries 0. Refused, not normalised; see ollama-blob.json"
+      }
+    }
+  }
+}

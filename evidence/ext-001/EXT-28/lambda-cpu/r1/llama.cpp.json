@@ -1,0 +1,70 @@
+{
+  "arm": "llama.cpp",
+  "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+  "engine_sha256": "9e3197289109cf23adf6d6805cc6477a639ed2ab17cf3d8360db32348ea2a14c",
+  "model_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+  "file_type": 15,
+  "vision_tensors": 0,
+  "served_model": "ours",
+  "ollama_manifest_digest": null,
+  "conditions": {
+    "cpus": "0-15",
+    "threads": 16,
+    "concurrency": 1,
+    "iterations": 5,
+    "statistic": "best_of_n_decode",
+    "max_tokens": 32,
+    "prompt_sha256": "64d05b7ffbeefa59c020057f4496bf73630e95b06adfaeeb072596a841430597"
+  },
+  "timing": {
+    "load_ms": 12428.1,
+    "ttft_ms": 972.4,
+    "itl_ms": 281.2,
+    "e2e_ms": 8920.7,
+    "decode_tok_s": 5.0519,
+    "decode_tok_s_iters": [
+      2.7230,
+      5.0519,
+      3.2712,
+      3.1531,
+      4.7316
+    ],
+    "loadavg_1m_iters": [
+      54.81,
+      34.66,
+      45.93,
+      47.47,
+      35.95
+    ],
+    "peak_rss_kb": 4546972
+  },
+  "comparator": {
+    "command": [
+      "env",
+      "-i",
+      "PATH=/usr/bin:/bin",
+      "HOME=/mnt/nvme-raid0/tmp/cb28/cells/r1/logs/llama.cpp.home",
+      "CUDA_VISIBLE_DEVICES=",
+      "taskset",
+      "-c",
+      "0-15",
+      "/mnt/nvme-raid0/tmp/llama-d1d3-build/bin/llama-server",
+      "-m",
+      "/mnt/nvme-raid0/tmp/ext-models/ext27/ours-q4k.gguf",
+      "-t",
+      "16",
+      "-c",
+      "4096",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "18780"
+    ],
+    "version": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+    "env_sha256": "dd99738ecd63bda992b7c45813fb268924abf56e2664b8c698fe7b079547a1a7",
+    "artifact_sha256": "96360f8a212dca49575216fcb3c4fc8150fdef7cd9677392b84f2919b034115e",
+    "log_path": "logs/llama.cpp.server.log",
+    "started_utc": "2026-09-26T09:25:44.222Z",
+    "finished_utc": "2026-09-26T09:39:34.316Z"
+  }
+}
