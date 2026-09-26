@@ -451,7 +451,6 @@ fn successful_batched_prefill_returns_its_logits_unchanged() {
         Err(Step::Fatal(e)) => panic!("an Ok prefill became a fatal error: {e}"),
     }
 }
-}
 
 // #4450: the 9B at --context-length 40960 on a 24 GB RTX 4090 prewarmed 13196 MiB
 // of fp16 prefill weights, and the 32k turn then found 408 MiB free, against a
@@ -575,4 +574,29 @@ fn a_512_row_miss_steps_down_before_it_gives_up_batching() {
     };
     assert_eq!(fit_or_release(&mut d, fit, release), Ok(0));
     assert_eq!(d.fits, [64]);
+}
+
+/// #4450 defect 1: the plan is sized by the tokens being prefilled, not by the end
+/// position. The 23-token turn after the 32k one asked for 512 rows; it asks for 23.
+#[test]
+fn a_short_turn_late_in_the_session_plans_only_its_own_rows() {
+    let cases: [(usize, &[usize]); 7] = [
+        (23, &[23]),
+        (0, &[1]),
+        (1, &[1]),
+        (64, &[64]),
+        (100, &[100, 64]),
+        (300, &[300, 256, 128, 64]),
+        (32_727, &[512, 256, 128, 64]),
+    ];
+    for (new, want) in cases {
+        assert_eq!(
+            rows_for_prompt(&DISCRETE_PREFILL_ROWS, new),
+            want,
+            "rows_for_prompt(DISCRETE, {new})"
+        );
+    }
+    // The unified ladder is clamped the same way, largest first, each rung once.
+    assert_eq!(rows_for_prompt(&[1024, 512], 700), [700, 512]);
+    assert_eq!(rows_for_prompt(&[1024, 512], 23), [23]);
 }

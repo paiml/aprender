@@ -471,7 +471,7 @@ impl Qwen35Forward {
         let end = pos0 + new.len();
         let fit = fit_or_release(
             &mut gpu.model,
-            |model| fit_prefill_plan(qwen, model, end),
+            |model| fit_prefill_plan(qwen, model, end, new.len()),
             crate::gguf::cuda::Qwen35CudaModel::release_prefill_f16,
         );
         if let Ok(freed) = &fit {
@@ -735,16 +735,18 @@ fn fit_prefill_plan(
     qwen: &Qwen35Model<'_>,
     model: &mut crate::gguf::cuda::Qwen35CudaModel<'static>,
     end: usize,
+    new_tokens: usize,
 ) -> std::result::Result<(), String> {
     let memory = crate::capacity::measure_device_memory(model.executor_mut())?;
     let (free, _) = memory.plan_free_total();
-    let rows_to_try: &[usize] = match memory {
+    let ladder: &[usize] = match memory {
         crate::capacity::DeviceMemory::Unified { .. } => &[
             crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS,
             crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
         ],
         crate::capacity::DeviceMemory::Discrete { .. } => &DISCRETE_PREFILL_ROWS,
     };
+    let rows_to_try = rows_for_prompt(ladder, new_tokens);
     let attentions = crate::gguf::cuda::Qwen35CudaModel::prefill_attention_candidates_for(
         qwen,
         model.executor_mut(),
@@ -752,7 +754,7 @@ fn fit_prefill_plan(
     let (attention, rows) = choose_prefill_plan(
         free,
         &attentions,
-        rows_to_try,
+        &rows_to_try,
         |attention, rows| {
             model.set_prefill_attention(attention);
             model.set_prefill_chunk_rows(rows);
@@ -774,6 +776,17 @@ const DISCRETE_PREFILL_ROWS: [usize; 4] = [512, 256, 128, 64];
 // must not leave a first rung the workspace was never sized to.
 #[cfg(feature = "cuda")]
 const _: () = assert!(DISCRETE_PREFILL_ROWS[0] == crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS);
+
+/// The ladder's rows clamped to the `new` tokens being prefilled, largest first, each
+/// once (#4450): a 23-token turn at position 32000 asks for a 23-row workspace, not
+/// 512 rows it would never fill. `chunk_rows_for` clamps only to the END position,
+/// which equals the prompt length only at position 0.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn rows_for_prompt(ladder: &[usize], new: usize) -> Vec<usize> {
+    let mut rows: Vec<usize> = ladder.iter().map(|&r| r.min(new.max(1))).collect();
+    rows.dedup();
+    rows
+}
 
 /// Fit the prefill; when it does not fit, `release` what the model can give back
 /// (the #4313 fp16 weight cache) and fit once more (#4450). `Ok(bytes released)` —
