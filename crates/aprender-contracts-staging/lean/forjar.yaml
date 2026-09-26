@@ -61,6 +61,9 @@ resources:
     tags: [lean, proofs]
     command: |
       export PATH="$HOME/.elan/bin:$PATH"
+      # #4348: at most 8 Lean worker threads (lake and every lean it spawns read LEAN_NUM_THREADS);
+      # uncapped, the Lean tools took 51 threads and 58-67 GB on lambda.
+      export LEAN_NUM_THREADS="${LEAN_NUM_THREADS:-8}"
       lake build
       echo "All Lean proofs type-checked successfully"
 
