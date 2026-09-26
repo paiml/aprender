@@ -2,6 +2,9 @@ metadata:
   version: 1.0.0
   created: '2026-09-26'
   author: PAIML Engineering
+  # The bounds are properties of the committed f64 kernels; no backend, host or feature qualifies them.
+  valid_under:
+    world: committed
   description: Dense f64 singular value decomposition (trueno::Svd) — Golub-Reinsch thin SVD and randomized top-k SVD, the substrate for PCA, TruncatedSVD and least squares (#3147, epic E9 #4164)
   references:
   - Golub & Reinsch (1970) Singular value decomposition and least squares solutions
@@ -65,8 +68,8 @@ proof_obligations:
   applies_to: all
 - id: SVD-BND-006
   type: bound
-  property: Randomized top-k accuracy
-  formal: p = 10 ∧ q = 2 ∧ σ_{k+p+1} / σ_k ≤ 0.5 ⟹ |σ̃_j − σ_j| / σ_j ≤ 0.01 for j ≤ k
+  property: Randomized top-k accuracy, where s_j is the randomized estimate of σ_j
+  formal: p = 10 ∧ q = 2 ∧ σ_{k+p+1} / σ_k ≤ 0.5 ⟹ |s_j − σ_j| / σ_j ≤ 0.01 for j ≤ k
   applies_to: all
 falsification_tests:
 - id: FALSIFY-SVD-001
