@@ -340,13 +340,15 @@ commands:
 
   - name: model
     category: evaluation
-    description: "Model releases: pack (EXT-11), gates M0..M6 (EXT-001 §3.6, EXT-12), M7 confirm + yank (EXT-15)"
+    description: "Model releases: pack (EXT-11), gates M0..M6 (EXT-001 §3.6, EXT-12), M7 confirm + yank (EXT-15), GHCR mirror (EXT-17)"
     requires_model: false
     # pack writes a release dir + model-release-v1.json from pacha lineage;
     # gate writes model-gate-receipt-v1.json into the release dir (or --out);
-    # confirm/yank write only under --state/<version>/ (a yank never deletes).
-    side_effects: [filesystem]
-    subcommands: [gate, pack, confirm, yank]
+    # confirm/yank write only under --state/<version>/ (a yank never deletes);
+    # ghcr-push is the one network write (R-3), token from an owner-only file (R-7);
+    # ghcr-fetch reads a tag back for M7.
+    side_effects: [filesystem, network]
+    subcommands: [gate, pack, confirm, yank, ghcr-push, ghcr-fetch]
 
   - name: canary
     category: evaluation

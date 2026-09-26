@@ -1594,6 +1594,45 @@ pub enum ModelCommands {
         #[arg(long)]
         json: bool,
     },
+    /// EXT-17: push a release dir to GHCR as one OCI artifact (idempotent; token file only)
+    GhcrPush {
+        /// Release directory holding model-release-v1.json and the files it lists
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// Repository without a tag, e.g. ghcr.io/paiml/qwen3.5-4b-apr (tag = manifest version)
+        #[arg(long)]
+        repo: String,
+        /// Owner-only (0600) file holding the push token on the driver host (R-7)
+        #[arg(long, value_name = "FILE")]
+        token_file: PathBuf,
+        /// Registry user name paired with the token
+        #[arg(long, default_value = "apr")]
+        user: String,
+        /// Line state directory: the receipt goes to <version>/model-ghcr-receipt-v1.json
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// EXT-17: fetch a GHCR tag into DIR, re-hashing every blob, for `apr model confirm`
+    GhcrFetch {
+        /// Reference with a tag, e.g. ghcr.io/paiml/qwen3.5-4b-apr:0.1.0
+        #[arg(value_name = "REF")]
+        reference: String,
+        /// Empty or absent directory to write the files into
+        #[arg(long, value_name = "DIR")]
+        to: PathBuf,
+        /// Owner-only token file (omit for a public package)
+        #[arg(long, value_name = "FILE")]
+        token_file: Option<PathBuf>,
+        /// Registry user name paired with the token
+        #[arg(long, default_value = "apr")]
+        user: String,
+        /// Print the OCI manifest as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Build a release dir plus model-release-v1.json from pacha lineage (deterministic)
     Pack {
         /// Registered model: id, content hash, recorded sha256 or model file
