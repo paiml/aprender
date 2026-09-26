@@ -1,0 +1,53 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-26"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "handoff/APR-OBS-001-dogfood-observability.md OBS-09"
+    - "aprender#4496"
+  description: |
+    apr-trace-v1: what an `apr serve` reply may claim about its own timing when a
+    client sends `X-Trace-Level`. A trace is `provenance: measured` only when the
+    inference tracer ran over that request, and its parts never sum past the
+    request's own wall clock.
+name: apr-trace
+version: "1.0.0"
+scope: "crates/aprender-serve/src/api/serve_trace.rs"
+description: |
+  APR-OBS-001 OBS-09 (#4496). Before this contract every serve backend answered a
+  trace header from `build_trace_data`: one wall-clock row, `wall_clock_total`, and a
+  hard-coded 28 layers whatever the model had. The Qwen3.5 path did not pass the
+  header on at all.
+
+  `X-Trace-Level: step|layer` on a non-streaming Qwen3.5 chat request now runs
+  `inference_trace` over the turn: one event per forward (the prompt's, then one per
+  decode) and one per emitted token. At `layer`, the device decode also times each
+  layer, syncing the stream after every one, so a traced turn runs eager, never
+  through the captured decode graph. The reply carries the measured breakdown with
+  `provenance: measured`. Where nothing was measured (a CPU turn asked for layers,
+  a level this path does not trace) the reply keeps the wall-clock row and says
+  `wall_clock_total`.
+equations:
+  C-TRACE-001:
+    description: "A trace claims a measurement only when the tracer produced one for this request."
+    formula: "provenance(trace) = measured ⟹ |events(request)| > 0 ∨ ∃ l: calls(l) > 0"
+  C-TRACE-002:
+    description: "The measured parts of a trace never exceed the request's wall clock."
+    formula: "provenance(trace) = measured ⟹ Σ breakdown.time_us ≤ wall_us(request)"
+proof_obligations:
+  - id: PO-TRACE-001
+    kind: correctness
+    statement: "traces_for returns wall_clock_total, never measured, when the tracer recorded no event and the backend timed no layer."
+    discharged_by: FALSIFY-TRACE-001
+  - id: PO-TRACE-002
+    kind: correctness
+    statement: "traces_for refuses measured when the per-layer (or per-step) sum exceeds the request's wall clock."
+    discharged_by: FALSIFY-TRACE-002
+falsification:
+  - id: FALSIFY-TRACE-001
+    description: "A trace returned with provenance measured when the tracer did not run. Discharges C-TRACE-001 and PO-TRACE-001."
+    test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_trace_001"
+  - id: FALSIFY-TRACE-002
+    description: "A per-layer (or per-step) sum greater than the request's wall clock reported as measured. Discharges C-TRACE-002 and PO-TRACE-002."
+    test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_trace_002"
