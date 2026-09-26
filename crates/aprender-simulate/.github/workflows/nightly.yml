@@ -91,7 +91,7 @@ jobs:
         if: matrix.target != 'x86_64-pc-windows-msvc'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../simular-${{ matrix.target }}.tar.gz simular
+          tar czf ../../../simular-${{ matrix.target }}.tar.gz aprender-simulate
           cd ../../..
 
       - name: Package (windows)
@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../simular-${{ matrix.target }}.zip simular.exe
+          7z a ../../../simular-${{ matrix.target }}.zip aprender-simulate.exe
           cd ../../..
 
       - uses: actions/upload-artifact@v4
