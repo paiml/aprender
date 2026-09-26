@@ -9,12 +9,16 @@
 #                                                   (evidence/kernels/<kernel>/<host>.json, apr-kernel-receipt/v1).
 #   provable_contracts::ontology::extract::code   — sym:unsafeFree / sym:boundsChecked, read off the kernel's body.
 #
-# THE THREE SHAPES, all targetClass ont:KernelSymbol, all REPORTED and NOT ARMED at this row (absent from armed_shapes in
-# lint-baseline.json): `kernel-parity` (every required CUDA host at cos ≥ 0.9999 ∧ max|Δ| < 1e-3 on a witness row of
+# THE THREE SHAPES, all targetClass ont:KernelSymbol, all ARMED (listed in armed_shapes in lint-baseline.json):
+# `kernel-parity` (every required CUDA host at cos ≥ 0.9999 ∧ max|Δ| < 1e-3 on a witness row of
 # the receipt's own build sha; a reference that resolves), `kernel-timing` (oxide_us / ptx_us ≤ 1.2 per required host,
-# or a tracked exemption receipt), `kernel-safety` (no unsafe, no get_unchecked, a register budget measured). The tree
-# holds no #[kernel] fn and no evidence/kernels/ yet — the OXIDE pilot (#3522) lands the first; arming follows its
-# first tracked receipt, and the ratchet keeps it armed.
+# or a tracked exemption receipt), `kernel-safety` (no unsafe, no get_unchecked, a register budget measured). The
+# OXIDE pilot (#3522) landed the first #[kernel] (gated_rmsnorm) and its first tracked receipt
+# (evidence/kernels/gated_rmsnorm/lambda.json); the shapes were armed on it, and the ratchet keeps them armed.
+# The required hosts are stated, not implied: evidence/kernels/REQUIRED_HOSTS (lambda). Adding a host there with
+# no receipt from it turns kernel-parity and kernel-timing RED. kernel-timing alone cannot catch the pc_shape
+# plant (a bare node carries no kernel:missingTimingHost); the plant is caught by the parity and safety shapes
+# armed beside it.
 #
 # THE PLANT. pc_extract.kernel, drawn every run: a #[kernel] whose reference does not resolve must be named
 # kernel:referenceMissing, one whose reference does must not be, and the ladder schema under evidence/kernels/ must
