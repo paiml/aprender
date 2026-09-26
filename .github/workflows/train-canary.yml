@@ -58,8 +58,11 @@ jobs:
         env:
           ITERS: ${{ inputs.iters || '10' }}
         run: |
-          set -uo pipefail
+          # The default run shell is `bash -eo pipefail`: without +e the pipeline's failure
+          # ends the step before rc is read, and the exit-3 branch below is dead code.
+          set +e -uo pipefail
           out="$RUNNER_TEMP/train-canary.json"
+          rm -f "${out:?}"  # a previous run's result must not reach this run's summary
           nice -n 19 bash scripts/run_train_canary.sh --iters "$ITERS" --out "$out" 2>&1 | tee train-canary.log
           rc=${PIPESTATUS[0]}
           [ -f "$out" ] && cat "$out" >> "$GITHUB_STEP_SUMMARY"
