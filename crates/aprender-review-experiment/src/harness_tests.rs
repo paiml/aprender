@@ -212,3 +212,13 @@ fn read_bounded_refuses_past_its_cap_and_never_truncates() {
         }
     }
 }
+
+/// Invalid UTF-8 inside the cap is refused, never returned lossily; a body that
+/// ends exactly at the cap is whole, whatever the cap (#4459 quorum r3).
+#[test]
+fn read_bounded_refuses_invalid_utf8_and_takes_a_body_ending_at_any_cap() {
+    assert!(read_bounded(&[0x61, 0xff][..], 4).is_err());
+    assert_eq!(read_bounded(&b"abcd"[..], u64::MAX).as_deref(), Ok("abcd"));
+    assert_eq!(read_bounded(&b""[..], 0).as_deref(), Ok(""));
+    assert!(read_bounded(&b"a"[..], 0).is_err_and(|e| e.contains("cap")));
+}
