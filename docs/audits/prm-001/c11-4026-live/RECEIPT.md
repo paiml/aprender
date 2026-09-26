@@ -46,7 +46,7 @@ The step-0 prefill logits are not the culprit, because the other five step-0s lo
 
 | control | expected | observed |
 |---|---|---|
-| positive: the comparator on the oracle against itself (p2, p3, p5) | pass, Δ = 0 | pass, max Δ 0 |
+| positive: the comparator on the oracle against itself (p2, p3, p5), `bash positive_control.sh` | pass, Δ = 0 | pass, max Δ 0 on 7/8/8 steps (`p{2,3,5}.posctl.json`). The same comparator on a 0.3-nat plant in one alternative fails (Δ 0.30) |
 | planted: the oracle shifted one step late (p1) | fail | fail |
 | planted: p1's record against p2's oracle | fail | fail |
 | `top_logprobs:21` / `top_logprobs` without `logprobs` / `stream` with logprobs | 400, named | 400 / 400 / 400 |
@@ -61,4 +61,4 @@ The step-0 prefill logits are not the culprit, because the other five step-0s lo
 - That the 0.25 bar is the right bar for #4026. It tests forward parity and the logprobs report together. A report-only oracle, meaning the same session's full logits dumped independently, is not in this receipt.
 - GPU (the lambda 4090 is excluded; gx10 was not run), other quants, streaming, and `/v1/completions`, which are not implemented yet.
 
-Reproduce: `bash c4026_live.sh <apr> <gguf> <out>`. It uses bash, curl and jq only.
+Reproduce: `bash c4026_live.sh <apr> <gguf> <out>`, then `bash positive_control.sh <out>` (offline; it extracts the comparator from `c4026_live.sh`, so it tests the exact pre-registered bar). Both use bash, curl and jq only.
