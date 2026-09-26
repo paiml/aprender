@@ -505,6 +505,7 @@ fn completion_resp(
             total_tokens: prompt_tokens + completion_tokens,
         },
         used_gpu,
+        timings: None,
     }
 }
 
@@ -567,6 +568,10 @@ async fn try_batch_completion(
         // The batch arm's response carries no backend flag.
         None,
     )))
+    // SRV-TIM-001: no `timings` here. `ContinuousBatchResponse` carries only a
+    // whole-batch `latency_ms`; a prefill/decode split for ONE request inside a
+    // shared batch is not measured, and a fabricated one would violate
+    // None-unless-both. Gap recorded in the SRV-TIM-001 receipt.
 }
 
 /// PMAT-754: truncate `text` at the EARLIEST occurrence of any stop string (OpenAI
@@ -739,15 +744,25 @@ async fn try_cached_completions(
     };
 
     // IMP-126: adaptive generation when dispatch_metrics available
+    // SRV-TIM-001: both variants observe each sample, so the first one marks
+    // the prefill boundary.
+    let mut clock = super::PhaseClock::start();
     let generated = if let Some(metrics) = state.dispatch_metrics() {
         cached_model
-            .generate_with_cache_adaptive(&prompt_ids, &q_config, metrics)
+            .generate_with_cache_adaptive_observed(&prompt_ids, &q_config, metrics, &mut || {
+                clock.mark();
+            })
             .map_err(|e| rerr(state, super::generation_error_status(&e), e))?
     } else {
         cached_model
-            .generate_with_cache(&prompt_ids, &q_config)
+            .model()
+            .generate_with_cache_streaming(&prompt_ids, &q_config, |_| {
+                clock.mark();
+                true
+            })
             .map_err(|e| rerr(state, super::generation_error_status(&e), e))?
     };
+    let phases = clock.finish();
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
     let completion_tokens = token_ids.len();
@@ -760,7 +775,7 @@ async fn try_cached_completions(
 
     // PMAT-754 / #2465(2): stops are applied by `completion_resp`, which also gets
     // `finish_reason` right when a stop matched at the token budget.
-    Ok(Some(completion_resp(
+    let mut response = completion_resp(
         "cmpl-cached",
         "cached-q4k".to_string(),
         text,
@@ -772,7 +787,9 @@ async fn try_cached_completions(
         // the model but is a STATE, not a record of what this generation did, so it is
         // deliberately NOT used here (#3894).
         None,
-    )))
+    );
+    response.timings = phases.to_timings(prompt_tokens, completion_tokens);
+    Ok(Some(response))
 }
 
 /// Quantized model (CPU GGUF) backend.
@@ -827,7 +844,7 @@ fn try_quantized_completions(
     });
     // aprender#2376(9): a context-budget rejection is a client error (400), not a
     // server failure — same classification as /generate.
-    let (generated, used_gpu) = if moe_arch.is_some() {
+    let (generated, used_gpu, phases) = if moe_arch.is_some() {
         let mapped = state.mapped_gguf_model().ok_or_else(|| {
             rerr(
                 state,
@@ -835,20 +852,25 @@ fn try_quantized_completions(
                 "qwen3moe needs the retained GGUF map, which this server did not keep (#3987)",
             )
         })?;
-        let (tokens, gpu) = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
-            &mapped,
-            quantized_model,
-            &prompt_ids,
-            &q_config,
-            state.moe_no_gpu(),
-        )
-        .map_err(|e| rerr(state, super::generation_error_status(&e), e))?;
-        (tokens, Some(gpu))
-    } else {
-        let tokens = quantized_model
-            .generate_with_cache(&prompt_ids, &q_config)
+        let (tokens, gpu, split) =
+            crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch_timed(
+                &mapped,
+                quantized_model,
+                &prompt_ids,
+                &q_config,
+                state.moe_no_gpu(),
+            )
             .map_err(|e| rerr(state, super::generation_error_status(&e), e))?;
-        (tokens, None)
+        (tokens, Some(gpu), super::PhaseTimings::from_split(split))
+    } else {
+        let mut clock = super::PhaseClock::start();
+        let tokens = quantized_model
+            .generate_with_cache_streaming(&prompt_ids, &q_config, |_| {
+                clock.mark();
+                true
+            })
+            .map_err(|e| rerr(state, super::generation_error_status(&e), e))?;
+        (tokens, None, clock.finish())
     };
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
     let completion_tokens = token_ids.len();
@@ -860,7 +882,7 @@ fn try_quantized_completions(
         .record_success(completion_tokens, start.elapsed());
 
     // PMAT-754 / #2465(2): stops are applied by `completion_resp`.
-    Ok(Some(completion_resp(
+    let mut response = completion_resp(
         "cmpl-q4k",
         request.model.clone(),
         text,
@@ -871,7 +893,9 @@ fn try_quantized_completions(
         // The dense `generate_with_cache` returns tokens only, so it records no backend
         // (None); the MoE dispatch reports the one that actually ran (#3987).
         used_gpu,
-    )))
+    );
+    response.timings = phases.to_timings(prompt_tokens, completion_tokens);
+    Ok(Some(response))
 }
 
 #[cfg(test)]

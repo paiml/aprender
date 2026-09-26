@@ -187,7 +187,7 @@ pub(crate) async fn try_qwen35_completions(
         .record_success(completion_tokens, start.elapsed());
 
     // Stops are applied by `completion_resp`, as every other arm does.
-    Ok(Some(completion_resp(
+    let mut response = completion_resp(
         "cmpl-qwen35",
         request.model.clone(),
         text,
@@ -200,7 +200,11 @@ pub(crate) async fn try_qwen35_completions(
         state
             .qwen35_session()
             .map(|s| s.on_gpu.load(std::sync::atomic::Ordering::Relaxed)),
-    )))
+    );
+    // SRV-TIM-001: the session measured the split; the counts are the response's.
+    response.timings =
+        super::PhaseTimings::from_turn(&turn).to_timings(prompt_tokens, completion_tokens);
+    Ok(Some(response))
 }
 
 const POISONED: &str =
@@ -214,6 +218,8 @@ enum Qwen35StreamMsg {
     Done {
         finish_reason: String,
         completion_tokens: usize,
+        /// SRV-TIM-001: the turn's measured split, with the counts above.
+        timings: Option<super::Timings>,
     },
     /// The turn failed after the response had started.
     Failed(String),
@@ -299,10 +305,13 @@ pub(crate) fn try_qwen35_completions_stream(
             .on_gpu
             .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
         drop(s);
-        if let Err(e) = result {
-            let _ = tx.send(Qwen35StreamMsg::Failed(format!("Qwen3.5 generation failed: {e}")));
-            return;
-        }
+        let turn = match result {
+            Ok(turn) => turn,
+            Err(e) => {
+                let _ = tx.send(Qwen35StreamMsg::Failed(format!("Qwen3.5 generation failed: {e}")));
+                return;
+            },
+        };
         let completion_tokens = generated.len();
         let (text, finish) = apply_stop_sequences(
             mapped.model.decode(&generated),
@@ -316,6 +325,8 @@ pub(crate) fn try_qwen35_completions_stream(
         let _ = tx.send(Qwen35StreamMsg::Done {
             finish_reason: finish.as_str().to_string(),
             completion_tokens,
+            timings: super::PhaseTimings::from_turn(&turn)
+                .to_timings(prompt_tokens, completion_tokens),
         });
     });
 
@@ -323,7 +334,10 @@ pub(crate) fn try_qwen35_completions_stream(
     let created = epoch_secs();
     let model = request.model.clone();
     let metrics = state.metrics.clone();
-    let chunk = move |text: String, finish_reason: Option<String>, usage: Option<Usage>| {
+    let chunk = move |text: String,
+                      finish_reason: Option<String>,
+                      usage: Option<Usage>,
+                      timings: Option<super::Timings>| {
         CompletionChunk {
             id: id.clone(),
             object: "text_completion".to_string(),
@@ -336,13 +350,14 @@ pub(crate) fn try_qwen35_completions_stream(
                 finish_reason,
             }],
             usage,
+            timings,
         }
     };
     let events = async_stream::stream! {
         while let Some(msg) = rx.recv().await {
             let data = match msg {
-                Qwen35StreamMsg::Delta(text) => serde_json::to_string(&chunk(text, None, None)),
-                Qwen35StreamMsg::Done { finish_reason, completion_tokens } => {
+                Qwen35StreamMsg::Delta(text) => serde_json::to_string(&chunk(text, None, None, None)),
+                Qwen35StreamMsg::Done { finish_reason, completion_tokens, timings } => {
                     metrics.record_success(completion_tokens, start.elapsed());
                     serde_json::to_string(&chunk(
                         String::new(),
@@ -352,6 +367,7 @@ pub(crate) fn try_qwen35_completions_stream(
                             completion_tokens,
                             total_tokens: prompt_tokens + completion_tokens,
                         }),
+                        timings,
                     ))
                 },
                 Qwen35StreamMsg::Failed(e) => {
