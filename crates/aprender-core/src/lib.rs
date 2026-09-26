@@ -51,6 +51,7 @@
 //! - [`text`]: Text processing and NLP (tokenization, stop words, stemming)
 //! - [`time_series`]: Time series analysis and forecasting (ARIMA)
 //! - [`index`]: Approximate nearest neighbor search (HNSW)
+//! - [`neighbors`]: Exact nearest neighbor search (kd-tree, ball tree, brute force)
 //! - [`recommend`]: Recommendation systems (content-based, collaborative filtering)
 //! - [`synthetic`]: Synthetic data generation for `AutoML` (EDA, back-translation, `MixUp`)
 //! - [`bundle`]: Model bundling and memory paging for large models
@@ -141,6 +142,7 @@ pub mod models;
 pub mod monte_carlo;
 /// SIMD-native model format for zero-copy Trueno inference (spec §5)
 pub mod native;
+pub mod neighbors;
 pub mod nn;
 /// Online learning and dynamic retraining infrastructure
 pub mod online;

@@ -1,0 +1,185 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-26'
+  author: PAIML Engineering
+  description: Exact spatial neighbor index — kd-tree, ball tree and brute force return identical neighbor sets (#3149)
+  references:
+  - 'Bentley (1975) Multidimensional Binary Search Trees Used for Associative Searching'
+  - 'Friedman, Bentley & Finkel (1977) An Algorithm for Finding Best Matches in Logarithmic Expected Time'
+  - 'Omohundro (1989) Five Balltree Construction Algorithms'
+  - 'scikit-learn sklearn.neighbors (KDTree, BallTree, algorithm="auto") — the reference API'
+equations:
+  k_nearest:
+    formula: 'knn(q, k) = the first min(k, n) points of X ordered by (dist(q, x_i), i) ascending'
+    domain: X in R^{n x d}, q in R^d, k >= 0, dist a metric from {euclidean, manhattan, minkowski(p), chebyshev, cosine}
+    codomain: sequence of (i, dist(q, x_i)), length min(k, n)
+    invariants:
+    - Ties on distance break toward the lower point index, so the result depends on the data only, never on tree shape
+    - A tree's result equals brute force's bit for bit (same indices, same f32 distances)
+    preconditions:
+    - q.len() == d
+  within_radius:
+    formula: 'rad(q, r) = { (i, dist(q, x_i)) : dist(q, x_i) <= r }, ordered by i ascending'
+    domain: X in R^{n x d}, q in R^d, r in R
+    codomain: sequence of (i, dist(q, x_i))
+    invariants:
+    - The boundary is inclusive
+    - A tree's result equals brute force's bit for bit
+    preconditions:
+    - q.len() == d
+  kd_plane_bound:
+    formula: 'dist(q, x) >= |q_s - v| for every x on the far side of the plane x_s = v'
+    domain: minkowski(p >= 1), manhattan, euclidean, chebyshev
+    codomain: lower bound in R_>=0
+    invariants:
+    - Holds because each of these metrics dominates any single coordinate difference
+    preconditions:
+    - metric.is_tree_compatible()
+  ball_bound:
+    formula: 'dist(q, x) >= dist(q, c) - r for every x in the ball B(c, r)'
+    domain: any metric satisfying the triangle inequality
+    codomain: lower bound in R
+    invariants:
+    - Holds by the triangle inequality; cosine distance and minkowski(p < 1) violate it and are refused
+    preconditions:
+    - metric.is_tree_compatible()
+proof_obligations:
+- id: NBR-EXACT-001
+  type: equivalence
+  property: Tree k-nearest equals brute-force k-nearest
+  formal: 'KdTree.knn(q, k) == BallTree.knn(q, k) == BruteForce.knn(q, k), bitwise, for all X, q, k and every tree-compatible metric'
+  applies_to: all
+- id: NBR-EXACT-002
+  type: equivalence
+  property: Tree radius query equals brute-force radius query
+  formal: 'KdTree.rad(q, r) == BallTree.rad(q, r) == BruteForce.rad(q, r), bitwise, including r equal to an existing neighbor distance'
+  applies_to: all
+- id: NBR-SOUND-003
+  type: invariant
+  property: Pruning never skips an answer
+  formal: 'a subtree is skipped only when its lower bound, less a relative rounding slack of 1e-4, is strictly greater than the current k-th distance (or r); strict, so an equal-distance lower-index tie is still searched'
+  applies_to: all
+- id: NBR-COMPLEXITY-004
+  type: bound
+  property: Query work grows sub-linearly in n for low d
+  formal: 'mean distance evaluations per k=5 query at n=1e5 is < 10x that at n=1e3 (uniform data, d=3); brute force shows 100x'
+  applies_to: all
+- id: NBR-TOTAL-005
+  type: invariant
+  property: Degenerate inputs are answered, never a panic
+  formal: 'n=0, n=1, k=0, k>n, all-identical points, duplicate coordinates, d=1 and d=0 return the brute-force answer'
+  applies_to: all
+- id: NBR-METRIC-006
+  type: invariant
+  property: Metric axioms
+  formal: 'dist >= 0; dist(a,b) == dist(b,a) bitwise; dist(a,a) == 0; dist(a,c) <= dist(a,b) + dist(b,c) within rounding, for every metric except cosine'
+  applies_to: all
+- id: NBR-REWIRE-007
+  type: equivalence
+  property: Consumers unchanged by the rewire
+  formal: 'KNearestNeighbors.predict, uniform predict_proba, DBSCAN labels and LocalOutlierFactor scores/predict are bit-identical before and after querying through the index, on pinned fixtures that select kd and ball trees. Distance-weighted predict_proba sums 1/d in (distance, index) order instead of an undefined partition order, so it is held to |new - legacy| <= 1e-6 against an in-test legacy reference that must itself reproduce the pinned digest'
+  applies_to: all
+kani_harnesses:
+- id: KANI-NBR-001
+  obligation: NBR-EXACT-001
+  property: 'KBest::new(0) keeps exactly the 0 smallest (distance, index) keys, ascending, for all 6 offer orders of 3 points, distances symbolic over {0, 1, 2.5} so every tie pattern occurs — the reason a tree answer does not depend on visit order'
+  bound: 5
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_kbest_k0
+- id: KANI-NBR-002
+  obligation: NBR-EXACT-001
+  property: 'KBest::new(1) keeps exactly the 1 smallest (distance, index) keys, ascending, for all 6 offer orders of 3 points, distances symbolic over {0, 1, 2.5} so every tie pattern occurs — the reason a tree answer does not depend on visit order'
+  bound: 5
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_kbest_k1
+- id: KANI-NBR-003
+  obligation: NBR-EXACT-001
+  property: 'KBest::new(2) keeps exactly the 2 smallest (distance, index) keys, ascending, for all 6 offer orders of 3 points, distances symbolic over {0, 1, 2.5} so every tie pattern occurs — the reason a tree answer does not depend on visit order'
+  bound: 5
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_kbest_k2
+- id: KANI-NBR-004
+  obligation: NBR-EXACT-001
+  property: 'KBest::new(3) keeps exactly the 3 smallest (distance, index) keys, ascending, for all 6 offer orders of 3 points, distances symbolic over {0, 1, 2.5} so every tie pattern occurs — the reason a tree answer does not depend on visit order'
+  bound: 5
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_kbest_k3
+kernel_structure:
+  phases:
+  - name: build
+    description: Median split on the coordinate of largest spread until a leaf holds <= 16 points; a ball node also stores centroid and covering radius
+    invariant: Every point is in exactly one leaf
+  - name: search
+    description: Depth-first, near child first; a child is entered unless its lower bound prunes
+    invariant: The kept candidates are the k smallest (distance, index) pairs seen so far
+  - name: report
+    description: k-nearest sorted by (distance, index); radius results sorted by index
+    invariant: Output order is a function of the data only
+enforcement:
+  exactness:
+    description: Trees must return exactly the brute-force neighbors
+    check: neighbors::tests::falsify_nbr_001_knn_trees_equal_brute
+    severity: ERROR
+  radius_exactness:
+    description: Tree radius queries must return exactly the brute-force set
+    check: neighbors::tests::falsify_nbr_002_radius_trees_equal_brute
+    severity: ERROR
+  sublinear:
+    description: Tree query work must grow sub-linearly
+    check: neighbors::tests::falsify_nbr_003_node_visits_sublinear
+    severity: ERROR
+  rewire:
+    description: KNN, DBSCAN and LOF outputs unchanged by the rewire
+    check: neighbors::tests_rewire::falsify_nbr_007_rewire_changes_no_output
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-NBR-001
+  rule: Exact k-nearest
+  prediction: KdTree and BallTree k_nearest equal BruteForce bitwise for n 10..2000, d 1..30, k 1..40, five tree metrics, grid (tie-heavy) and continuous data, queries on and off the data
+  test: proptest falsify_nbr_001_knn_trees_equal_brute (96 cases)
+  if_fails: A pruning bound is unsound, or ties break by tree order instead of index
+- id: FALSIFY-NBR-002
+  rule: Exact radius query
+  prediction: within_radius equals BruteForce bitwise, with r set to an existing neighbor distance
+  test: proptest falsify_nbr_002_radius_trees_equal_brute (96 cases)
+  if_fails: The radius boundary is exclusive somewhere, or a subtree at exactly r is pruned
+- id: FALSIFY-NBR-003
+  rule: Sub-linear work
+  prediction: tree evaluations(1e5) / evaluations(1e3) < 10, while the brute-force control shows > 99
+  test: falsify_nbr_003_node_visits_sublinear, counting distance evaluations not wall-clock
+  if_fails: Pruning never fires and the tree degenerates to a scan
+- id: FALSIFY-NBR-004
+  rule: Degenerate inputs
+  prediction: n=0, n=1, k=0, k>n, identical points, duplicates, d=1, d=0 all answer without a panic
+  test: falsify_nbr_004_degenerate_inputs
+  if_fails: A split recurses on a zero-spread range or indexes past the data
+- id: FALSIFY-NBR-005
+  rule: Metric axioms
+  prediction: non-negativity, exact symmetry, identity and triangle inequality hold
+  test: proptest falsify_nbr_005_metric_axioms
+  if_fails: A metric formula is wrong, and the tree bounds that rely on it are void
+- id: FALSIFY-NBR-006
+  rule: No tree over a non-metric
+  prediction: KdTree/BallTree refuse cosine and minkowski(0.5); Auto picks BruteForce for them
+  test: falsify_nbr_006_non_metric_distances_refuse_trees
+  if_fails: A tree would prune with a bound the distance does not satisfy
+- id: FALSIFY-NBR-007
+  rule: Consumers unchanged
+  prediction: 180 pinned output digests of KNN, DBSCAN and LOF, captured on the pre-rewire code, still match — 153 bit for bit, and the 27 weighted-proba rows via a legacy reference that reproduces its pin plus a 1e-6 bound
+  test: falsify_nbr_007_rewire_changes_no_output
+  if_fails: The rewire changed a distance, an order, or a tie-break
+qa_gate:
+  id: F-NBR-001
+  name: Neighbor Index Contract
+  description: Exact spatial neighbor search quality gate
+  checks:
+  - exactness
+  - radius_exactness
+  - sublinear
+  - rewire
+  pass_criteria: All 7 falsification tests pass
+  falsification: Perturb the kd-tree splitting plane in the search bound; FALSIFY-NBR-001 must turn RED
