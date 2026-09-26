@@ -1,0 +1,105 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-26"
+  author: PAIML Engineering
+  registry: true
+  references:
+  - "crates/aprender-train/src/recipe.rs"
+  - "crates/aprender-train/src/recipe_tests.rs"
+  - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
+  description: >
+    One declarative recipe for apr fine-tune and distill (E8 #4002, row R-1).
+    A recipe plus a seed plus the binary sha fully determines a run. The recipe
+    is validated before any model or data is loaded, and every refusal names
+    the recipe field it concerns, so a recipe defect is never confused with a
+    CLI flag error. The recipe hash identifies the run in every CRUX receipt.
+
+equations:
+  recipe_schema:
+    formula: |
+      recipe = {
+        recipe_version: 1,
+        base:     { model: non-empty string },
+        data:     { train: non-empty path, sha256: 64 lowercase hex },
+        method:   { kind ∈ {lora, qlora, full, distill}, rank?: u32, alpha?: f64,
+                    teacher?: string, temperature?: f64 },
+        eval:     { held_out: non-empty path, sha256: 64 lowercase hex,
+                    metric ∈ {loss, accuracy} },
+        training: { epochs: u32 > 0, batch_size: u32 > 0,
+                    learning_rate: finite > 0, seed: u64 (required, no default) }
+      }
+    domain: recipe YAML text
+    codomain: Recipe | RecipeError{field, reason}
+    invariants:
+    - "Every section is required; a missing section is refused naming that section"
+    - "Unknown keys are refused at every level (a typo cannot silently default)"
+    - "lora/qlora require rank > 0; full takes no rank/alpha"
+    - "distill requires a teacher distinct from base.model; only distill takes teacher/temperature"
+    - "eval.sha256 != data.sha256 (the eval split is not the train data)"
+    - "seed has no default: two recipes that differ only by an omitted seed are different recipes"
+
+  recipe_hash:
+    formula: |
+      hash(r) = sha256(canonical_json(r))
+    domain: validated Recipe
+    codomain: 64 lowercase hex
+    invariants:
+    - "YAML key order and quoting do not change the hash"
+    - "Any value change (including the seed) changes the hash"
+
+falsification_tests:
+- id: FALSIFY-RECIPE-001
+  rule: a missing section is refused and named
+  prediction: "a recipe without eval is refused with field == eval, before any model load"
+  test: |
+    cargo test -p aprender-train --lib recipe::tests::refusals_name_the_field
+  if_fails: "a recipe missing eval is accepted, or the refusal does not name the field"
+
+- id: FALSIFY-RECIPE-002
+  rule: unknown keys are refused
+  prediction: "a misspelled key (top-level or nested) is refused, never ignored"
+  test: |
+    cargo test -p aprender-train --lib recipe::tests::refusals_name_the_field
+  if_fails: "a typo in a recipe key silently falls back to a default"
+
+- id: FALSIFY-RECIPE-003
+  rule: method constraints
+  prediction: "distill without a teacher, a self-teacher, lora without rank, full with rank are all refused"
+  test: |
+    cargo test -p aprender-train --lib recipe::tests::refusals_name_the_field
+  if_fails: "an ill-formed method block is accepted"
+
+- id: FALSIFY-RECIPE-004
+  rule: hash is canonical
+  prediction: "reordered keys hash equal; a changed seed hashes different"
+  test: |
+    cargo test -p aprender-train --lib recipe::tests::hash_ignores_formatting_and_tracks_values
+  if_fails: "the recipe hash depends on formatting, or misses a value change"
+
+- id: FALSIFY-RECIPE-005
+  rule: positive control
+  prediction: "a well-formed lora recipe and a well-formed distill recipe both parse"
+  test: |
+    cargo test -p aprender-train --lib recipe::tests::good_recipe_parses
+    cargo test -p aprender-train --lib recipe::tests::distill_with_distinct_teacher_parses
+  if_fails: "the validator refuses valid recipes (a gate that refuses everything proves nothing)"
+
+proof_obligations:
+- id: RECIPE-INV-001
+  type: invariant
+  property: "every refusal carries the dotted path of the offending recipe field"
+- id: RECIPE-INV-002
+  type: invariant
+  property: "unknown keys are refused at every level"
+- id: RECIPE-INV-003
+  type: invariant
+  property: "recipe hash is invariant under formatting and sensitive to every value"
+- id: RECIPE-INV-004
+  type: invariant
+  property: "valid lora and distill recipes are accepted"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: tested

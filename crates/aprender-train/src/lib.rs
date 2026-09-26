@@ -114,6 +114,7 @@ pub mod pipeline;
 pub mod prune;
 pub mod quality;
 pub mod quant;
+pub mod recipe;
 pub mod research;
 pub mod run;
 pub mod safety;
