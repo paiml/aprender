@@ -118,6 +118,8 @@ Phase 1 (§3) evaluates both shapes and states which one PP-ARCH-001 adopts, wit
 the plain-function-composition shape as the default hypothesis given how much of
 the target already exists.
 
+**Decided 2026-09-26 (Phase 1, §9): plain-function composition, no graph IR.**
+
 ---
 
 ## §3 Phases
@@ -233,9 +235,118 @@ fn/row/override named, and rc=0 after restore.
 **Known under-count (conservative by design).** An attention fn that calls
 softmax but computes its scale without `sqrt`, for example a precomputed
 `scale` argument, reads as `wrapper`. The ratchet can miss such a new
-duplicate, but it never flags a launcher. Tightening it is Phase 1 work,
-alongside §2.3's decision.
+duplicate, but it never flags a launcher. Tightening it is a Phase 2 entry
+item (§9.5).
 
 **Open for Phase 1:** whether `gated_rmsnorm`/`rms_norm_gated` and
 `apply_partial_neox_rope` are `novel` (§2.2) or compositions of shared ops.
 They stay `duplicate` until that is decided.
+
+---
+
+## §9 Phase 1 — composition decision (2026-09-26, #3422)
+
+Design only; no forward file changes. Phase 2 implements it.
+
+### §9.1 Decision: plain functions, not a graph IR
+
+PP-ARCH-001 adopts **plain-function composition**. It does not adopt a
+`ggml_cgraph`-style builder and executor. The deciding fact comes from the code,
+not from taste. The shared blocks already exist, but they are **inherent methods
+on `OwnedQuantizedModel`**. `attention.rs` and `ffn_block.rs` are each one
+`impl OwnedQuantizedModel` block. Examples are `standard_softmax(&self, ..)`
+and `standard_single_head_attention(&self, ..)`. `forward_qwen35.rs` defines its
+own `Qwen35Model`, and `apr_transformer/` defines another model type again.
+Neither *can* call a method on a type it does not hold. That is why §8 measures
+4 of 33 forward files calling the blocks and Qwen3.5 calling 0. The missing
+reuse is a **type-coupling** defect. It is not a missing-graph defect, and a
+graph IR would not fix it: its nodes would still need a callable,
+model-independent operator underneath.
+
+A graph IR is also rejected on cost:
+- It adds a runtime indirection on the CPU decode hot path, which §BEATS
+  measures at parity.
+- The GPU path already has its own executor (`cuda/executor/`), so a second
+  graph layer would duplicate scheduling.
+- The §2.1 gate is function-granular, which a graph would obscure.
+
+A graph is revisited only if Phase 3 finds an architecture whose forward cannot
+be written as a straight-line sequence of calls. Qwen3.5's hybrid layer schedule
+can be written that way: it is a per-layer `match` on layer kind.
+
+### §9.2 The convention (what Phase 2 migrates to)
+
+1. **A shared op is a free `pub fn` over slices plus a small `Copy` config
+   struct.** It never takes `&self` of a model type. Example:
+   `fn rope_neox_into(x: &mut [f32], shape: HeadShape, n_rot: usize, pos: usize, base: f32)`.
+   A model method may remain as a one-line delegating wrapper. The oracle
+   already classifies that as `wrapper`, not `duplicate`.
+2. **Canonical homes, one per family:**
+
+   | family | home | canonical fn(s) |
+   |---|---|---|
+   | rmsnorm | `gguf/ops.rs` (exists) | `rms_norm[_into]`, `rms_norm_unit_offset[_into]`, `apply_per_head_rms_norm`; **new** `rms_norm_gated_into` (§9.4) |
+   | softmax | `gguf/ops.rs` (exists) | `softmax(&mut [f32])` — `attention.rs::standard_softmax` becomes a wrapper over it |
+   | rope | `gguf/ops.rs` (**new**; today RoPE has no shared home, so §8 counts only 1 shared rope fn against 16 duplicates) | `rope_neox_into`, `rope_normal_into`, both with `n_rot <= head_dim` |
+   | attention | `forward/attention.rs`, hoisted to free fns | `single_head_attention(q, k, v, shape, scale)`, `multihead_attention(..)`, tiled/online variants |
+
+3. **A forward file is config plus calls.** An architecture's forward body
+   contains projections through the quantized-matmul API (PP-QUANT-001's
+   territory), calls into the homes above, and its own control flow: layer
+   schedule, MoE routing, residual wiring. The §2.1 gate enforces the negative
+   half of this rule.
+
+### §9.3 The novel-operator slot (§2.2)
+
+A novel operator lives in **`crates/aprender-serve/src/gguf/novel_ops/<operator>.rs`**.
+Each file holds one operator, as a free fn under the §9.2.1 signature rule, with
+its own unit tests and a contract falsifier. DeltaNet's
+`delta_rule_recurrence`, `causal_conv1d` and `l2_norm`, which today sit inside
+`forward_qwen35.rs`, are the first tenants.
+
+What the slot does **not** grant:
+- Names outside the four §2.1 families need no oracle row at all.
+- A §2.1-family name in `novel_ops/` is **not** exempt by location. It needs an
+  `OVERRIDES` row with a reason, exactly like the four fused RMSNorm+Q8_0
+  quantize kernels. Otherwise the slot becomes the loophole §2.2 forbids.
+- A novel op must call shared ops for any §2.1 sub-step it contains.
+
+### §9.4 Rulings on the three open rows (§8)
+
+- **`gated_rmsnorm` (forward_qwen35.rs) and `rms_norm_gated`
+  (gpu/scheduler/linear_attn.rs): composition, so `duplicate`.**
+  - Both compute per-`head_v_dim` chunk RMSNorm × weight × `silu(gate)`.
+  - They are the *same* op written twice, differing only in allocation (`&mut
+    out` versus returning a `Vec`). Both are `rms_norm_into` per chunk followed by
+    an elementwise `silu` multiply, and `ops.rs` already has both.
+  - Phase 2 adds `ops::rms_norm_gated_into` and turns both sites into calls.
+    That removes 2 baseline rows.
+- **`apply_partial_neox_rope` (forward_qwen35.rs): composition, so
+  `duplicate`.**
+  - It is NeoX RoPE restricted to the first `n_rot` dims of each head.
+    `gguf/inference/rope.rs::apply_rope` is the `n_rot == head_dim` case.
+  - Once `ops::rope_neox_into` takes `n_rot`, both become calls. **Numeric
+    caveat:** the partial variant advances theta iteratively (`theta *=
+    theta_scale`, as `ggml_rope_multi` does), while `apply_rope` precomputes
+    per-pair powers. Those differ in the last ulps.
+  - The shared fn keeps the iterative form, which matches the llama.cpp
+    oracle. Each migrated site must re-pass its own parity receipt. The
+    Qwen2.5-Coder BEATS row is first, per §3 row 2.
+
+### §9.5 Phase 2 entry items
+
+- **Tighten the attention under-count (§8).** Add a rule that treats a `softmax`
+  call plus a `*`-by-`scale` identifier as attention math. Land it with a
+  self-test row and a re-baseline in the same commit, so the ratchet never
+  loosens.
+- **Order of migration**, one commit per family, each deleting its baseline
+  rows:
+  1. Hoist `attention.rs`/`ffn_block.rs` to free fns, with the model methods
+     kept as wrappers. The row count is unchanged, but this unblocks
+     everything after it.
+  2. RoPE home: `ops::rope_*_into` and its 16 rows.
+  3. rmsnorm, including the §9.4 gated pair: 15 rows.
+  4. softmax: 15 rows.
+  5. attention: 26 rows.
+
+  Qwen2.5-Coder sites go first within each family (§3 row 2).
