@@ -21,8 +21,8 @@
 #          on pull_request.
 #   * L2 — case tables, MEASURED 2026-09-25:
 #          check_findings_ledger.sh --self-test has 19 cases, 10/10 mutants
-#          killed; check_pr_closes_issue.sh --self-test has 130 cases (109 of
-#          them rule-18 rows); 42 mutants of the rule-18 path, 38 killed, 4
+#          killed; check_pr_closes_issue.sh --self-test has 132 cases (111 of
+#          them rule-18 rows); 43 mutants of the rule-18 path, 39 killed, 4
 #          equivalent: dropping CLOSE_LINE_RE's or ROW_LINE_RE's end anchor (the
 #          extracting sed re-anchors each), and skipping block lines instead of
 #          printing a placeholder (a skipped run always follows its opener's

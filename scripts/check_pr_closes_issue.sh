@@ -91,12 +91,14 @@ prose_lines() {
         if (/^ {0,3}(`{3,})[^`]*$/ || /^ {0,3}(~{3,})/) {
             $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; print "\x01\n"; next }
         if (/^ {0,3}\$\$(?!.*\$\$)/) { $end = "^ {0,3}\\\$\\\$[ \t]*\$"; print "\x01\n"; next }
-        if (/<!--(?!.*-->)/) { $end = "-->"; print "\x01\n"; next }
         if (/^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)/i) {
             $end = "(?i)</(?:pre|script|style|textarea)>" unless /<\/(?:pre|script|style|textarea)>/i; print "\x01\n"; next }
         if (/^ {0,3}<\?/)         { $end = "\\?>" unless /\?>/;     print "\x01\n"; next }
         if (/^ {0,3}<!\[CDATA\[/) { $end = "\\]\\]>" unless /\]\]>/; print "\x01\n"; next }
         if (/^ {0,3}<![A-Za-z]/)   { $end = ">" unless /^ {0,3}<![A-Za-z][^>]*>/; print "\x01\n"; next }
+        # after the block starts: `<script> <!--` is a type-1 block to </script>, not a comment
+        # that ends at --> (agy round 12). An unanchored <!-- elsewhere errs to RED.
+        if (/<!--(?!.*-->)/) { $end = "-->"; print "\x01\n"; next }
         print "$_\n";'
 }
 # isolated_lines < prose_lines output > the lines that are a PARAGRAPH OF THEIR
@@ -586,6 +588,9 @@ STUB
     # agy round 11 (@a512c6ae2): <details> is a type-6 HTML block, which ends at the blank line;
     # commonmark.js 0.31.2 -t xml: html_block, paragraph, html_block
     run_rc_case "rc-close-between-details-tags" $'<details>\n\nCloses #9002\n\n</details>' 0 "PASS: discharges 1"
+    # agy round 12 (@cbe415e07): a comment opened on a block's start line does not end the block
+    run_rc_case "rc-close-in-script-with-comment" $'<script> <!--\n-->\n\nCloses #9002\n\n</script>' 1 "FAIL no-close"
+    run_rc_case "rc-close-in-pre-with-comment"    $'<pre><!--\n-->\n\nCloses #9002\n\n</pre>'       1 "FAIL no-close"
     run_rc_case "rc-close-trailing-tab" $'Closes #9002\t'                          0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
