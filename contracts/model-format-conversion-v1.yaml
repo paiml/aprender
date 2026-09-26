@@ -31,12 +31,13 @@ equations:
     - Tensor names preserved exactly (no renaming)
     - Tensor shapes preserved exactly (no reshape)
     - Weight values preserved within dtype precision bounds
-    preconditions:
+    prose_preconditions:
     - source model passes format validation
     - source format != destination format
     postconditions:
-    - destination model passes format validation
     - tensor_count(output) == tensor_count(input)
+    prose_postconditions:
+    - destination model passes format validation
     lean_theorem: Theorems.Format_Conversion_Roundtrip
   quantization_bounds:
     formula: |
@@ -52,12 +53,13 @@ equations:
     - Output tensor shape identical to input shape
     - Output size = numel * bits_per_weight / 8 (exact)
     - Dequantized values are finite (no NaN/Inf introduced)
-    preconditions:
+    prose_preconditions:
     - input tensor dtype is F16 or F32 or BF16
     - input values are all finite (no NaN/Inf)
     - dst_dtype is a known quantization type
     postconditions:
     - output.shape == input.shape
+    prose_postconditions:
     - all dequantized values are finite
     lean_theorem: Theorems.Quantization_Bounds
   merge_weight_algebra:
@@ -76,9 +78,10 @@ equations:
     - Merged tensor = weighted average (commutative, associative)
     preconditions:
     - models.len() >= 2
+    prose_preconditions:
     - all weights > 0.0
     - all models have same architecture
-    postconditions:
+    prose_postconditions:
     - output has same tensor names as inputs
     - output tensors have same shapes as inputs
     lean_theorem: Theorems.Merge_Weight_Algebra
@@ -97,10 +100,10 @@ equations:
     - Import does not modify source file (read-only)
     - All tensors loaded and validated before returning Ok
     - Partial load (file truncated mid-tensor) returns ImportError
-    preconditions:
+    prose_preconditions:
     - file exists and is readable
     - file size >= minimum for detected format
-    postconditions:
+    prose_postconditions:
     - all tensors have valid shapes and dtypes
     - tensor data fully loaded (no lazy stubs)
     lean_theorem: Theorems.Import_Integrity
@@ -117,11 +120,11 @@ equations:
     - Exported file passes pv validate for target format
     - Tensor count and names preserved
     - File permissions set correctly (0644)
-    preconditions:
+    prose_preconditions:
     - model has at least one tensor
     - target directory exists and is writable
     - format is a supported export format
-    postconditions:
+    prose_postconditions:
     - file at path passes format validation
     - file size > 0
     lean_theorem: Theorems.Export_Fidelity
@@ -142,9 +145,9 @@ equations:
     - Q4K fallback path — tokenizer from extract_gguf_config() (PMAT-154 fix)
     - Non-Q4K path — tokenizer from save_model_tensors_with_gguf_config_and_tokenizer()
     - SafeTensors path — tokenizer from tokenizer.json if present
-    preconditions:
+    prose_preconditions:
     - source model has tokenizer data (GGUF vocabulary or tokenizer.json)
-    postconditions:
+    prose_postconditions:
     - output APR metadata contains tokenizer.merges or tokenizer.vocabulary
     - realizar can load and encode text without external tokenizer file
     lean_theorem: Theorems.Apr_Tokenizer_Embedding

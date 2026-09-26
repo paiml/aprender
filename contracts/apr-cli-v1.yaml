@@ -43,9 +43,9 @@ equations:
     - Global flags (--json, --verbose, --quiet, --offline, --skip-contract) propagate to all subcommands
     - Conflicting flags (--gpu vs --no-gpu) resolved by clap conflicts_with
     - Alias commands parse identically (list == ls, rm == remove)
-    preconditions:
+    prose_preconditions:
     - argv[0] is the binary name
-    postconditions:
+    prose_postconditions:
     - "On Ok: cli.command is a valid Commands variant"
     - "On Err: exit code 2 (clap convention)"
     lean_theorem: Theorems.Command_Parse_Determinism
@@ -82,9 +82,9 @@ equations:
     - Non-native formats (ONNX, NeMo) bypass rosetta validation
     - Shard index validation is O(1) per file (stat only, no hashing)
     - Plan-mode commands (--plan) bypass contract gate (no model loaded)
-    preconditions:
+    prose_preconditions:
     - cli parsed successfully
-    postconditions:
+    prose_postconditions:
     - "On Ok: model files pass metadata-only validation (ALB-099)"
     - "On Err(ValidationFailed): exit code 5"
     lean_theorem: Theorems.Contract_Gate_Enforcement
@@ -113,10 +113,10 @@ equations:
     - Scout mode (--scout) uses exactly 1 epoch per trial
     - HPO budget is respected (num_trials <= budget)
     - Watch mode restarts on crash with exponential backoff
-    preconditions:
+    prose_preconditions:
     - data file exists and is valid JSONL
     - model_size is recognized ("0.5B", "7B", "9B", "13B")
-    postconditions:
+    prose_postconditions:
     - "plan: serializable to JSON/YAML"
     - "apply: checkpoints exist at output_dir"
     lean_theorem: Theorems.Training_Plan_Apply_Semantics
@@ -145,10 +145,11 @@ equations:
     - max_lines=0 means "read entire corpus" (not "read zero lines")
     - Algorithm selection is exhaustive (invalid algorithm = error, not fallback)
     preconditions:
-    - corpus file exists and is readable
     - vocab_size > 0
+    prose_preconditions:
+    - corpus file exists and is readable
     - algorithm in {"bpe", "wordpiece", "unigram"}
-    postconditions:
+    prose_postconditions:
     - "apply: vocab.json is valid JSON with exactly vocab_size entries"
     lean_theorem: Theorems.Tokenizer_Training_Correctness
 
@@ -187,10 +188,10 @@ equations:
     - Directory resolution priorities are fixed (index.json > safetensors > gguf > apr)
     - Sharded SafeTensors index.json takes priority over individual shard files (PMAT-314)
     - POSIX "-" convention recognized across all stdin/stdout functions
-    preconditions:
+    prose_preconditions:
     - "For stdin: data is being piped (not interactive tty)"
     - "For file: path is valid UTF-8"
-    postconditions:
+    prose_postconditions:
     - Resolved path points to an existing regular file
     - No temporary files remain after command completes
     lean_theorem: Theorems.Pipe_Stdin_Support
@@ -216,9 +217,9 @@ equations:
     - Index.json always takes priority over individual shard files
     - No implicit side effects (stat() calls only)
     - Error messages include the original path for debuggability
-    preconditions:
+    prose_preconditions:
     - path is valid OS path
-    postconditions:
+    prose_postconditions:
     - Ok(p) implies p.exists() && p.is_file()
     - Err(FileNotFound) implies !path.exists()
     lean_theorem: Theorems.Model_Path_Resolution

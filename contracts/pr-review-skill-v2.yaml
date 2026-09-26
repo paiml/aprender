@@ -134,10 +134,10 @@ equations:
       AN `asserted` CLAIM NEVER BLOCKS. That is what keeps judgement admissible
       without letting it stop the line, and it is why precision_class is pinned to
       advisory by the mark itself rather than chosen per finding.
-    preconditions:
+    prose_preconditions:
     - 'the receipt parses as an in-toto Statement v1 against the vendored schema before any mark is read'
     - 'sha256 is computed over the excerpt bytes AS STORED, never over a re-wrapped or re-indented copy'
-    postconditions:
+    prose_postconditions:
     - 'every result in findings.sarif carries a non-empty properties.grounding'
     - 'no result carries a grounding value outside { cited, measured, asserted }'
     - 'every result carries a non-empty failure_scenario (S4.2)'
@@ -193,10 +193,10 @@ equations:
       source must be loud and non-blocking: making it block teaches reviewers to route
       around the skill, and making it silent is the ConnectionRefused-reads-clean
       failure the three-state SARIF encoding exists to prevent.
-    preconditions:
+    prose_preconditions:
     - 'BASE = git merge-base origin/main HEAD, and base_sha in the receipt equals it (S2)'
     - 'the receipt signature verifies against the committed public key before any class is evaluated'
-    postconditions:
+    prose_postconditions:
     - 'a PR blocked by this contract cites exactly one of B1..B6 by name'
     - 'no PR is blocked by a finding whose grounding is asserted'
 
@@ -239,10 +239,10 @@ equations:
       power calculation, and this contract does not dress it up as one. If a power
       calculation is later done, it replaces the thirty and this invariant records that
       it was measured.
-    preconditions:
+    prose_preconditions:
     - 'a sample is one merged PR that carried a schema-valid receipt; a DEGRADED receipt counts as a sample'
     - 'the cost block records input_tokens, output_tokens and wall_seconds for every run, including runs that found nothing'
-    postconditions:
+    prose_postconditions:
     - 'this contract contains no numeric threshold for any of the four instrument-first metrics'
     - 'every one of the four carries the literal severity instrument-only in the enforcement block'
 
@@ -294,10 +294,10 @@ equations:
       recomputed from `git diff` and an emptiness check — and rows 18-21 are the
       fixtures. A metric enforced on one member of a set it quantifies over is not a
       partial gate; it is a gate over one member, reported as if it covered the set.
-    preconditions:
+    prose_preconditions:
     - 'the guard has passed its own positive control (S6.1) before any receipt verdict it emits is believed'
     - 'the mutation set for the guard is committed, so `attempted` is a count of a fixed set and not of whatever happened to run'
-    postconditions:
+    prose_postconditions:
     - 'a receipt with status consulted and attempted 0 yields DEGRADED, never PASS'
     - 'a merged PR without a schema-valid signed receipt is impossible while receipt_presence is armed'
 
@@ -368,10 +368,10 @@ equations:
       COMPARATIVE_RE being a second implementation of check_no_claim_literals.sh's
       RATIO_RE — is NOT caught, because the names differ. Recording the method is what
       keeps that residual visible instead of letting `lexical` be read as coverage.
-    preconditions:
+    prose_preconditions:
     - 'the receipt parses and verifies before any coverage field is read'
     - 'horizon_branches_total is the CANDIDATE set — unmerged into origin/main, and neither an ancestor nor a descendant of head_sha — so a complete sweep does not read as partial'
-    postconditions:
+    prose_postconditions:
     - 'every surface in SURFACE carries a method in every consulted receipt'
     - 'no receipt reads PASS while any surface reads `none` or while the horizon sweep was partial'
     - 'a receipt recording `none` under DEGRADED is ACCEPTED (row 17), so honesty is never punished harder than silence'
@@ -445,11 +445,11 @@ equations:
       deletes .github/pr-review-autonomy.disabled must not thereby turn autonomy back on.
       It is evaluated FIRST in the repository phase, because an off switch consulted only
       after five other checks have passed costs a minute of compute to use.
-    preconditions:
+    prose_preconditions:
     - 'every artifact-only clause is evaluated before every repository clause, so the positive control can fire in any working directory'
     - 'the narrower clause precedes the general one: asserted-and-blocking before blocking, or the specific diagnosis is unreachable and its mutant is a permanent survivor'
     - 'the PR context is an ARTIFACT produced by gh and consumed by one evaluator, so the live path and the test path are the same code'
-    postconditions:
+    prose_postconditions:
     - 'a refused pull request retains every check result it had; nothing is marked failed'
     - 'the arming call is idempotent — an already-armed pull request reports ALREADY-ARMED and invokes nothing'
     - 'autonomous_merge_reverts is recorded as 0/0 and READ AS UNDEFINED, never as clean'
@@ -566,11 +566,11 @@ equations:
       so model_id records what was REQUESTED, not what answered. A silent server-side
       fallback would not appear in the artifact. Closing it needs a field agy does not
       currently emit.
-    preconditions:
+    prose_preconditions:
     - 'the agy binary is resolved with `command -v agy` and the resolved path recorded; a bare invocation and a hardcoded path are both refused by S3.E.1'
     - '--model is passed explicitly and its value recorded as model_id; agy is a harness, not a model, and `agy models` offers two ids in the primary reviewer''s own family'
     - 'a run that timed out, exited non-zero, or produced no parseable structured_output is recorded as unreachable BEFORE any finding of its is read'
-    postconditions:
+    prose_postconditions:
     - 'no result in the antigravity SARIF run carries precision_class blocking while S3.E has fewer than 30 samples'
     - 'antigravity.model_id is outside the primary reviewer''s model family, so the arm is a second vendor in fact and not only in name'
     - 'agreed + agy_only + contradicted equals len(antigravity.findings), so every agy finding is accounted for by exactly one column of the divergence ledger'

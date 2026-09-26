@@ -47,9 +47,9 @@ equations:
     invariants:
       - "a corpus whose every valid_under resolves its world and whose debt did not rise is admitted"
       - "a corpus with no kernel-kind contract and no valid_under is Unknown, never Pass"
-    preconditions:
+    prose_preconditions:
       - "Σ parses and satisfies its own integrity rules"
-    postconditions:
+    prose_postconditions:
       - "verdict ∈ {Pass, Fail, Unknown}"
       - "contracts_without_valid_under ≤ baseline(contracts_without_valid_under)"
     lean_theorem: none — L4 not declared

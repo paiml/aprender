@@ -65,7 +65,7 @@ equations:
     - 'GPU-path val loss differs from the forced-CPU loss (never byte-identical)'
     - 'GPU-path val loss within 0.5 nats of the F32 CPU reference (same model)'
     - 'CPU fallback preserved: forward_logits_gpu None ⇒ CPU path with synced adapters'
-    preconditions:
+    prose_preconditions:
     - 'C-CPU-LORA-FORWARD-BIAS-PARITY holds (CPU reference is the true model)'
 
 proof_obligations:

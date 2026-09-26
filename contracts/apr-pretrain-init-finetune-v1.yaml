@@ -149,7 +149,7 @@ equations:
     invariants:
     - 'process exit code is exactly 0'
     - 'no SIGSEGV / SIGABRT / SIGBUS during run'
-    preconditions:
+    prose_preconditions:
     - 'init APR file exists and validates per FALSIFY-APR-PRETRAIN-INIT-005'
     - 'shards-dir contains ≥1 shard-*.bin file'
     - 'tokenizer dir contains vocab.json + merges.txt'
@@ -165,7 +165,7 @@ equations:
       §56 spec scoping.
     invariants:
     - 'wall clock from process start to exit is ≤ 3600 seconds'
-    preconditions:
+    prose_preconditions:
     - 'exit_status_invariant holds'
 
   init_weights_used_invariant:
@@ -181,7 +181,7 @@ equations:
     invariants:
     - 'first reported training-loss at step 0 is ≤ 8.35'
     - 'first reported training-loss at step 0 is < ln(vocab_size) by margin ≥ 30%'
-    preconditions:
+    prose_preconditions:
     - 'exit_status_invariant holds'
     - 'init APR contains qwen2 architecture metadata per FALSIFY-APR-PRETRAIN-INIT-005'
 
@@ -199,7 +199,7 @@ equations:
     invariants:
     - 'reported val_loss after 500 steps is < 9.38'
     - 'val_loss is finite (not NaN, not Inf)'
-    preconditions:
+    prose_preconditions:
     - 'init_weights_used_invariant holds'
     - 'exit_status_invariant holds'
 
@@ -215,7 +215,7 @@ equations:
     - 'at least one *.apr file exists in checkpoint output dir'
     # See line below for canonical magic bytes (NUL-byte sentinel for v2):
     - 'first 4 bytes are 0x41 0x50 0x52 0x00 (v2) or 0x41 0x50 0x52 0x4E (v1)'
-    preconditions:
+    prose_preconditions:
     - 'exit_status_invariant holds'
 
 proof_obligations:

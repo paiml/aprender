@@ -28,11 +28,11 @@ equations:
     codomain: out ∈ ℝ^{intermediate}
     constants:
       epsilon: 1.0e-5
-    preconditions:
+    prose_preconditions:
       - 'x.shape == [hidden]; gamma.shape == [hidden]'
       - 'W_gate.shape == W_up.shape == [intermediate, hidden]'
       - 'x finite; gamma finite; epsilon > 0'
-    postconditions:
+    prose_postconditions:
       - 'out.shape == [intermediate]; out is finite'
       - '4 kernel launches; 3 intermediate DRAM roundtrips'
     lean_theorem: 'Theorems.Separate_ffn'
@@ -60,11 +60,11 @@ equations:
     - NF4 weights loaded from DRAM once each (gate and up are separate weight matrices)
     - SiLU computed in FP32 registers (no precision loss from intermediate write)
     - No intermediate global memory allocation for gate, up, or normed outputs
-    preconditions:
+    prose_preconditions:
     - hidden divisible by 64 (NF4 block alignment)
     - intermediate divisible by warp_size
     - 'x finite; gamma finite; epsilon > 0'
-    postconditions:
+    prose_postconditions:
     - out element-wise matches separate_ffn within tolerance
     - 'out.shape == [intermediate]; out is finite'
     - 'DRAM reads of x == 1 (vs 3 in separate path)'
@@ -95,6 +95,7 @@ equations:
       - 'hidden > 0 && intermediate > 0'
     postconditions:
       - 'savings == hidden * 8 + intermediate * 12 (bytes)'
+    prose_postconditions:
       - 'savings > 0 (fused path always saves bandwidth vs separate)'
     lean_theorem: 'Theorems.Bandwidth_savings'
     constants:

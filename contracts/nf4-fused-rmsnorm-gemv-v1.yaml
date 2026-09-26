@@ -30,6 +30,7 @@ equations:
     preconditions:
     - x.len() == hidden_size
     - gamma.len() == hidden_size
+    prose_preconditions:
     - W_nf4 block count == ceil(hidden_size * out_dim / 64)
 
   fused_rmsnorm_nf4_gemv:
@@ -54,8 +55,9 @@ equations:
     preconditions:
     - x.len() == hidden_size
     - gamma.len() == hidden_size
+    prose_preconditions:
     - hidden_size divisible by 64 (NF4 block alignment)
-    postconditions:
+    prose_postconditions:
     - y element-wise matches separate_rmsnorm_gemv within tolerance
 
 proof_obligations:

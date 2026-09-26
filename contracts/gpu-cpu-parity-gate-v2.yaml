@@ -86,7 +86,7 @@ equations:
       rejects a model the load-time gate accepted, and degraded HwDp4a / orthogonal
       garbage (cos < 0.95 on any real position) is rejected.
     - Cosine uses f64 accumulators; zero-norm vector → cos 0.0 → rejected.
-    preconditions:
+    prose_preconditions:
     - '`forward_gpu_resident` and `forward_single_with_cache` both return a
       length=vocab_size logit vector at every probe position.'
 

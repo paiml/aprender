@@ -53,6 +53,7 @@ equations:
       between teacher and student, which is out of scope here.
     preconditions:
     - native_t >= 1
+    prose_preconditions:
     - target_s >= 1 (if Some)
     lean_theorem: Theorems.Vocab_Alignment_Dispatch
 
@@ -67,7 +68,7 @@ equations:
     - 'Truncating before softmax (NOT after) is mandatory — post-softmax truncation loses normalization'
     - 'The dropped tail (l_t[N..native_t]) contributes mass only to tokens the student cannot produce, so dropping them aligns the supports correctly'
     - 'No renormalization scaling is applied beyond what softmax provides intrinsically'
-    preconditions:
+    prose_preconditions:
     - student and teacher tokenizers share a prefix of length N
     lean_theorem: Theorems.Kd_Loss_Invariance_Under_Truncation
 
@@ -83,7 +84,7 @@ equations:
     - 'When teacher native_vocab > student_vocab, truncation is automatic; no operator action needed'
     - 'When teacher native_vocab == student_vocab, truncation is a no-op'
     - 'When teacher native_vocab < student_vocab, construction fails (student cannot have MORE vocab than teacher in this design)'
-    preconditions:
+    prose_preconditions:
     - student.apr has stamped vocab_size metadata
     lean_theorem: Theorems.Cli_Dispatch_Passes_Student_Vocab
 

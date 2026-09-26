@@ -59,7 +59,7 @@ equations:
     - 'ABSENCE IS A LINE (REG-11): a document with fewer than five entries does not validate — the defective fixture is the registered mutation.'
     - 'THE SOURCE IS NAMED (REG-12): `source` is "machine" or "fixture(<path>)"; a fixture-built document is never mistaken for the machine.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'the catalogue passes on fixtures and on the machine it runs on'
 
 proof_obligations:

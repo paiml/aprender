@@ -52,7 +52,7 @@ equations:
     - meet(a, Pass) = a (Pass is the identity)
     - meet(a, Fail) = Fail (Fail absorbs)
     - meet(a, b) ≤ a ∧ meet(a, b) ≤ b
-    preconditions:
+    prose_preconditions:
     - a and b are elements of V (the type admits nothing else)
     postconditions:
     - result == std::cmp::min(a, b)
@@ -65,7 +65,7 @@ equations:
     invariants:
     - arm(v) ⇒ v = Pass
     - v = Unknown(r) ⇒ ¬arm(v) for every reason r
-    preconditions:
+    prose_preconditions:
     - v is an element of V
     postconditions:
     - result == (v == Verdict::Pass)
@@ -76,9 +76,9 @@ equations:
     codomain: '{0, 1, 2}'
     invariants:
     - exit(v) = 2 ⇔ decline_line(v) is Some
-    preconditions:
+    prose_preconditions:
     - v is an element of V
-    postconditions:
+    prose_postconditions:
     - result ∈ {0, 1, 2}
     lean_theorem: none — L4 not declared
   armed_meet:
@@ -89,9 +89,9 @@ equations:
     - A = ∅ ⇒ armed_meet = Unknown(NotArmed) (R-2 — zero is a decline, never an accept)
     - a gate outside A never lowers the meet
     - dropping a gate the comparand armed is ArmedGatesShrank (exit 3), never a smaller meet
-    preconditions:
+    prose_preconditions:
     - A is read from <contract_dir>/lint-baseline.json (absent file or key → the default 8)
-    postconditions:
+    prose_postconditions:
     - result ≤ verdict_G(g) for every g ∈ A
     lean_theorem: none — L4 not declared
 proof_obligations:

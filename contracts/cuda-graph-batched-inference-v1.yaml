@@ -46,7 +46,7 @@ equations:
     - Padding slots do not corrupt KV cache of active slots
     - Padding slots do not contribute to attention scores of active slots
     - Graph replay produces same output on consecutive calls with same input
-    preconditions:
+    prose_preconditions:
     - All KV cache slots pre-allocated for M_padded
     - seq_lens buffer correctly zeroed for padding slots
     lean_theorem: Theorems.Graph_Correctness
@@ -61,7 +61,7 @@ equations:
     - Graph launch time independent of num_kernels (O(1) vs O(n))
     - Expected speedup = 647 × 12µs / 3µs ≈ 2,588x dispatch reduction
     - Net decode improvement bounded by Amdahl's law on dispatch fraction
-    preconditions:
+    prose_preconditions:
     - Graph pre-captured (no capture-time overhead at serving time)
     lean_theorem: Theorems.Dispatch_Overhead
 
@@ -89,7 +89,7 @@ equations:
     - c=4 improvement >= 20% (dispatch is ~38% of step at c=4)
     - c=32 improvement >= 10% (dispatch amortized over more tokens)
     - No throughput regression at any concurrency level
-    preconditions:
+    prose_preconditions:
     - Per-batch graphs captured at startup
     lean_theorem: Theorems.Throughput_Scaling
 
@@ -99,7 +99,7 @@ equations:
     invariants:
     - realizr tok/s/GB >= 1.5 × vLLM tok/s/GB at c=4
     - VRAM usage includes all graph memory
-    preconditions:
+    prose_preconditions:
     - vLLM measured on same hardware with same model
     lean_theorem: Theorems.Efficiency_Target
 

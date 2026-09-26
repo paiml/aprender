@@ -145,6 +145,7 @@ equations:
       - "Naïve reference and fast implementation produce IDENTICAL (vocab, merges) when the naïve implementation's tie-breaker is forced to the same lex-min rule."
     preconditions:
       - "corpus.len() > 0"
+    prose_preconditions:
       - "vocab_size > |special_tokens| + 256"
     lean_theorem: "Theorems.Bpe_Train_Priority_Queue"
 

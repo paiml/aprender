@@ -80,9 +80,9 @@ equations:
       - "the retired layout is recognised by ABSENCE of `schema` plus PRESENCE of a top-level
         reading: either half alone is some other document and is not claimed here"
       - a count of zero is asserted, not assumed — the denominator predicate measures it independently
-    preconditions:
+    prose_preconditions:
       - the seven records named in evidence/parity/*/RECORD.md have been migrated
-    postconditions:
+    prose_postconditions:
       - a v1 record reappearing under evidence/parity/ makes this equation false and is visible
     lean_theorem: "none — L4 not declared"
   refused_by_name:
@@ -94,9 +94,9 @@ equations:
         record sat in the tree for months with no comparator and nothing able to say so"
       - "two readers, not one: the extractor and the shell predicate share no code, so a defect in
         either is caught by the other rather than by nobody"
-    preconditions:
+    prose_preconditions:
       - both readers are wired into CI — a refusal nothing runs is not a refusal
-    postconditions:
+    prose_postconditions:
       - removing the planted record makes both pass again, so the pair can return to green
     lean_theorem: "none — L4 not declared"
 

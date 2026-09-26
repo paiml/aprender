@@ -85,7 +85,7 @@ equations:
     invariants:
     - 'canonicalize_hf_aliases removes alias keys from custom after promotion'
     - 'None-valued transformer-config fields are not serialized (no null poison)'
-    preconditions:
+    prose_preconditions:
     - 'base metadata parsed via AprV2Reader (aliases land in custom)'
 
   merge_output_c01_c03_complete:
@@ -101,7 +101,7 @@ equations:
     invariants:
     - 'C-01: architecture present in merged metadata'
     - 'C-03: all required dims present as positive integers'
-    preconditions:
+    prose_preconditions:
     - 'merge_metadata_single_spelling holds'
 
   merge_output_tokenizer_loadable:
@@ -117,7 +117,7 @@ equations:
     invariants:
     - 'tokenizer.* custom keys survive the metadata clone byte-for-byte'
     - 'gate fails when vocabulary or merges/scores are missing or empty'
-    preconditions:
+    prose_preconditions:
     - 'merge_metadata_single_spelling holds (else realizar drops the tokenizer too)'
 
   merge_gate_fail_closed:
@@ -131,7 +131,7 @@ equations:
     invariants:
     - 'no unrunnable merge artifact ever remains on disk'
     - '-o *.safetensors is rejected (APR container must be named .apr)'
-    preconditions:
+    prose_preconditions:
     - 'output path writable'
 
   merge_adapter_actually_merges:
@@ -152,7 +152,7 @@ equations:
     - 'entrenar lora.{layer}.{proj} naming resolves against HF-style base tensors'
     - 'per-tensor rank comes from the lora_a shape, not global metadata'
     - 'merged_count == 0 with lora pairs present ⇒ hard error, no output'
-    preconditions:
+    prose_preconditions:
     - 'adapter parseable by rosetta (APR or safetensors)'
 
 proof_obligations:

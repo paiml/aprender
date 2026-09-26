@@ -75,7 +75,7 @@ equations:
     - 'sync_lora_to_cpu() precedes forward_with_lora in evaluate()'
     - 'a change to the GPU adapters changes the next evaluate() val_loss'
     - 'on non-cuda builds the sync is a no-op (lora_layers already current)'
-    preconditions:
+    prose_preconditions:
     - 'cuda_blocks initialized (quantize_nf4 = true) OR CPU/WGPU path (no-op sync)'
 
 proof_obligations:

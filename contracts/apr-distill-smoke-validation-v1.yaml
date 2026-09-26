@@ -39,7 +39,7 @@ equations:
     - 'When APR_DISTILL_MAX_STEPS = 0, no training steps run (degenerate case; operator gets a "smoke mode: 0 steps requested" error)'
     - 'When APR_DISTILL_MAX_STEPS = N >= 1, training_loop runs at most N steps then breaks'
     - 'The break is INSIDE the inner step loop, after grad application -- partial epochs are valid'
-    preconditions:
+    prose_preconditions:
     - APR_DISTILL_MAX_STEPS env var is parsed as u64 (invalid value -> silent fallback to "unset")
     lean_theorem: Theorems.Early_Break_Condition
 
@@ -55,7 +55,7 @@ equations:
     - 'Summary fires ONLY when the early-break path was taken (not on normal training termination)'
     - 'Projected wall time uses simple linear extrapolation N -> 50000 (or APR_DISTILL_PROJECT_TO_STEPS if set)'
     - 'Loss-trajectory does NOT assert improvement -- smoke mode is a plumbing check, not a quality gate'
-    preconditions:
+    prose_preconditions:
     - 'At least 1 step completed (else smoke-mode-0-steps error path: non-zero exit + "likely teacher or student load failure" message)'
     lean_theorem: Theorems.Smoke_Summary_Format
 
@@ -72,7 +72,7 @@ equations:
     - 'config.output.dir is not written to with the final student-trained.apr in smoke mode'
     - 'apr eval and downstream tools cannot consume a smoke-mode output by accident'
     - 'The PipelineResult returned by execute() has steps_completed = N (not the spec total)'
-    preconditions:
+    prose_preconditions:
     - APR_DISTILL_MAX_STEPS triggered the early-break
     lean_theorem: Theorems.No_Side_Effects
 

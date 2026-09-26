@@ -23,9 +23,9 @@ equations:
     - "Higher quant produces strictly better perplexity than lower"
     - "Top-5 token overlap >= 3 out of 5 for any prompt"
     - "Cosine similarity of first-token logits > 0.95"
-    preconditions:
+    prose_preconditions:
     - "Both quantization levels are from the same base model"
-    postconditions:
+    prose_postconditions:
     - "Divergence is bounded, not arbitrary"
 
   format_roundtrip_fidelity:

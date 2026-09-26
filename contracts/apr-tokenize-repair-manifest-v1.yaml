@@ -59,7 +59,7 @@ equations:
     invariants:
     - 'manifest.shard_count is an unsigned integer'
     - 'manifest.shard_count == |{p ∈ output_dir : matches "shard-*.bin"}|'
-    preconditions:
+    prose_preconditions:
     - 'output_dir exists and is a directory'
     - 'every entry matching "shard-*.bin" is a regular file (not a symlink, socket, dir)'
 
@@ -74,7 +74,7 @@ equations:
     - 'manifest.total_tokens is an unsigned integer'
     - 'for every shard_i: file_size(shard_i) mod 4 == 0'
     - 'manifest.total_tokens == Σ_i (file_size(shard_i) / 4)'
-    preconditions:
+    prose_preconditions:
     - 'shard_count_invariant holds'
     - 'every shard file is byte-aligned to u32 (size % 4 == 0)'
 
@@ -114,7 +114,7 @@ equations:
     invariants:
     - 'ShardBatchIter::new(output_dir, batch=1, seq=4, pad=0, eos=0) returns Ok'
     - 'iterator.next() returns Some(LMBatch) for at least one tick when total_tokens >= 5'
-    preconditions:
+    prose_preconditions:
     - 'output_dir contains at least one shard whose token count >= seq+1 (i.e., ≥ 5 u32)'
 
 proof_obligations:

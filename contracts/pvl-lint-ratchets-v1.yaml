@@ -49,9 +49,9 @@ equations:
     invariants:
       - "no baseline is Unknown(Report) with the count printed, never Pass"
       - "nothing measured (no Lean base, no module, no book page, no kernel contract) is a decline"
-    preconditions:
+    prose_preconditions:
       - "the baseline, when present, is a non-negative integer at the top level"
-    postconditions:
+    prose_postconditions:
       - "verdict ∈ {Pass, Fail, Unknown}"
       - "contracts/lint-baseline.json is byte-identical after the gate"
     lean_theorem: none — L4 not declared

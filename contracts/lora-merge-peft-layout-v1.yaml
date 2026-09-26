@@ -54,7 +54,7 @@ equations:
     - 'B is indexed [d_out, rank]: B[row,k] = lora_b[row*rank + k] (NOT lora_b[k*d_out + row])'
     - 'The indexing is byte-identical to QLoRALayer::merge_to_f32 (the correct in-repo twin)'
     - 'For rank=1 the transposed and PEFT indexings coincide, so legacy rank-1 tests are unaffected'
-    preconditions:
+    prose_preconditions:
     - lora_a.len() == rank * d_in and lora_b.len() == d_out * rank and base.len() == d_out * d_in
     lean_theorem: Theorems.Delta_Weight_Peft
 
@@ -70,7 +70,7 @@ equations:
     invariants:
     - 'The reference forward is computed from the A,B factors, not from W_merged (non-tautological)'
     - 'Measured CPU deterministic max|Δ| ~ 1.5e-8 << 1e-4 threshold'
-    preconditions:
+    prose_preconditions:
     - 'd_out != d_in chosen so the merge path is unambiguous'
     lean_theorem: Theorems.Forward_Equivalence
 

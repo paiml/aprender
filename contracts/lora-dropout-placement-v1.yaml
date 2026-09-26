@@ -19,9 +19,11 @@ equations:
     - Training-mode inverted dropout preserves expectation E[dropout(x)] = x
     preconditions:
     - x.len() == d_in
+    prose_preconditions:
     - p in [0, 1)
     postconditions:
     - y.len() == d_out
+    prose_postconditions:
     - '!training || p == 0 implies y == W x + s B (A x)'
     lean_theorem: Theorems.LoRA_Dropout_Placement
   inverted_dropout:
@@ -31,10 +33,11 @@ equations:
     invariants:
     - Survivors scaled by 1/(1-p) so expectation is preserved
     - Identity when p == 0 or in eval mode
-    preconditions:
+    prose_preconditions:
     - p in [0, 1)
     postconditions:
     - dropout(x).len() == x.len()
+    prose_postconditions:
     - 'E[dropout(x)] == x (expectation preserved)'
     lean_theorem: Theorems.Inverted_Dropout
 proof_obligations:

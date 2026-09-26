@@ -87,7 +87,7 @@ equations:
     invariants:
     - 'kernel_eps == provided_eps for every call (no hardcoded 1e-5)'
     - 'cache_key includes eps_bits (different eps → different cached PTX)'
-    preconditions:
+    prose_preconditions:
     - 'caller passes config.rms_norm_eps (production sites in cuda_block.rs and cuda_trainer.rs)'
 
   cuda_cpu_rmsnorm_pointwise_parity:
@@ -102,7 +102,7 @@ equations:
     invariants:
     - 'max abs diff < 1e-4 on Qwen-magnitude inputs (std~0.02) at eps=1e-6'
     - 'max abs diff < 1e-4 on Llama-magnitude inputs (std~0.04) at eps=1e-5'
-    preconditions:
+    prose_preconditions:
     - 'rmsnorm_eps_argument_threading holds'
 
 proof_obligations:

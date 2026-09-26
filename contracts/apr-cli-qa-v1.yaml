@@ -21,9 +21,9 @@ equations:
     invariants:
     - "No command panics on --help"
     - "Every command has non-empty help text"
-    preconditions:
+    prose_preconditions:
     - "apr binary is installed and on PATH"
-    postconditions:
+    prose_postconditions:
     - "exit code 0 for all 58 commands"
 
   missing_model_graceful:

@@ -11,10 +11,10 @@ equations:
     - "build() returns Err if required fields are unset"
     - "Builder is consumed on build() — no reuse after build"
     - "Partial builder is valid — only build() checks completeness"
-    preconditions:
+    prose_preconditions:
     - "Builder struct has at least one required field"
     - "All field setters return &mut Self or Self (fluent API)"
-    postconditions:
+    prose_postconditions:
     - "Ok(T) implies all required fields are set"
     - "Err(BuilderError) names the missing field(s)"
     lean_theorem: Theorems.Builder_Pattern

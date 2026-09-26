@@ -43,9 +43,9 @@ equations:
       falls is the signature of each request owning the whole device in turn. Any
       verdict must read BOTH, which is why APR-PERF-GATE-001 Arm B requires B1
       and B2 jointly.
-    preconditions:
+    prose_preconditions:
     - "c >= 1 and the server holds exactly one model instance"
-    postconditions:
+    prose_postconditions:
     - "serialization_index(c) < c for every c > 1"
 falsification_tests:
 - id: F-BATCH-001

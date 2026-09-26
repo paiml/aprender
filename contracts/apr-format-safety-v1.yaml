@@ -35,9 +35,9 @@ equations:
     - Never panics on any input (including empty slice)
     - Deterministic (same bytes -> same format)
     - No heap allocation for detection (stack-only)
-    preconditions:
+    prose_preconditions:
     - bytes is a valid slice (may be empty)
-    postconditions:
+    prose_postconditions:
     - result is one of {GGUF, SafeTensors, APR, Err(UnknownFormat)}
     - bytes.len() < 4 => result is Err
     lean_theorem: Theorems.MagicByteValidation
@@ -55,11 +55,12 @@ equations:
     - OOM-safe (bounded allocation based on file size, not header claims)
     - No read past file boundary (all offsets validated against file size)
     - CRC32 checked before trusting any field (APR only)
-    preconditions:
+    prose_preconditions:
     - file has valid magic bytes
     - file is readable
     postconditions:
     - header.tensor_count <= MAX_TENSORS (bounded)
+    prose_postconditions:
     - all tensor data offsets within file bounds
     lean_theorem: Theorems.HeaderIntegrity
 
@@ -77,9 +78,9 @@ equations:
     - Default is enforce (opt-out requires explicit flag)
     - Missing hash is always an error when enforced
     - Hash verification is constant-time (no timing side channel)
-    preconditions:
+    prose_preconditions:
     - model is loaded and header is valid
-    postconditions:
+    prose_postconditions:
     - enforced && no_hash => Err(MissingProvenance)
     - not_enforced => Ok(()) regardless of hash
     lean_theorem: Theorems.ProvenanceEnforcement
@@ -98,9 +99,9 @@ equations:
     invariants:
     - Strict mode never modifies the model (read-only validation)
     - Every failure includes the specific tensor name and expected vs actual
-    preconditions:
+    prose_preconditions:
     - model is loaded
-    postconditions:
+    prose_postconditions:
     - strict && any_nan => Err
     - strict && shape_mismatch => Err
     lean_theorem: Theorems.StrictImportValidation
@@ -120,12 +121,13 @@ equations:
     - Narrowing conversions are lossy but bounded
     - No silent overflow (F32::MAX -> F16 must warn/error)
     - Shape preserved across all conversions
-    preconditions:
+    prose_preconditions:
     - source tensor is finite (no NaN/Inf)
     - target dtype is a supported conversion from source
     postconditions:
     - result.shape == input.shape
     - result.dtype == target
+    prose_postconditions:
     - "widening => result values == input values"
     lean_theorem: Theorems.DtypeCoercionSafety
 
@@ -140,10 +142,10 @@ equations:
     invariants:
     - Detects both truncation (too short) and corruption (too long)
     - Works for all supported formats (GGUF, SafeTensors, APR)
-    preconditions:
+    prose_preconditions:
     - file exists and is readable
     - header is parseable
-    postconditions:
+    prose_postconditions:
     - actual_size == expected_size => Ok
     - actual_size != expected_size => Err with both sizes
     lean_theorem: Theorems.TruncationDetection

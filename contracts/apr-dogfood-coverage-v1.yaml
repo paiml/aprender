@@ -296,10 +296,10 @@ equations:
         already in c on BASE, or are absent from BASE entirely
     domain: "(binary, feature) rows common to the comparand and the working ledger"
     codomain: bool
-    preconditions:
+    prose_preconditions:
     - "BASE and HEAD both parse as 10-column ledgers with >= 100 rows"
     - "every row carries a non-empty cluster_label (enforced by ledger_schema)"
-    postconditions:
+    prose_postconditions:
     - "every observed move appears in the reassignment log with a matching from, to and a non-empty reason"
     - "earned_gates(c) <= gates(c) for every cluster, with equality exactly when no gated feature moved into c"
     invariants:

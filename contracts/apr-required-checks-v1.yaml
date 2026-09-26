@@ -134,9 +134,9 @@ equations:
       invocation twice before this fix — once in a shadow job with no
       `needs:` weight, once in `pr-review-present`, which `gate` depended on
       (row 3).
-    preconditions:
+    prose_preconditions:
     - 'the scan strips trailing `#` comments before matching, so a mention is never mistaken for an invocation'
-    postconditions:
+    prose_postconditions:
     - 'B1_FILE and B1_JOB identify the single invoking (file, job) pair, or B2/B4 are skipped rather than evaluated against a guess'
 
   b2_workflow_trigger_is_base_owned:
@@ -160,9 +160,9 @@ equations:
       pull_request MUST NOT ALSO BE DECLARED. Adding it back reintroduces the
       head-defined reading for the SAME job — the exact regression this
       contract is written to catch (row 8, the registered mutation).
-    preconditions:
+    prose_preconditions:
     - 'a shape this guard cannot evaluate (an opaque scalar `on: "..."`) is REFUSED, never silently accepted (row 10)'
-    postconditions:
+    prose_postconditions:
     - 'the invoking job runs under a definition GitHub resolves from origin/main, on every event it fires for'
 
   b3_gate_needs_no_head_defined_receipt_job:
@@ -187,9 +187,9 @@ equations:
       to `custom-receipt` inside ci.yml and having `gate` depend on it is
       caught the same way `pr-review-present` itself would be (row 12) — the
       rule matches on WHAT THE JOB INVOKES, not on its name alone.
-    preconditions:
+    prose_preconditions:
     - 'ci.yml exists at the expected path; a missing file is a FAIL, never a vacuous pass'
-    postconditions:
+    prose_postconditions:
     - 'a clean gate (row 13) needs only jobs this guard classifies as neither head-defined-receipt jobs nor literally `pr-review-present`'
 
   b4_invoking_job_if_is_exact_two_events:
@@ -216,9 +216,9 @@ equations:
       `github.event_name == '<literal>'`. Extending it to a richer expression
       shape is a case-table row, not a widened regex (same rule
       check_pr_review_wiring.sh's R3/R4 evaluator already applies).
-    preconditions:
+    prose_preconditions:
     - 'B1 identified exactly one (file, job) pair; otherwise this equation is not evaluated against a guess'
-    postconditions:
+    prose_postconditions:
     - 'the invoking job is reachable on pull_request_target and merge_group and unreachable on push and workflow_dispatch'
 
   enforcement_is_wired_self_test_then_check:
@@ -239,9 +239,9 @@ equations:
       YAML; the job carries no cargo build step this equation depends on,
       which is why it can run early in guard-runner-labels rather than after
       workspace-test.
-    preconditions:
+    prose_preconditions:
     - 'guard-runner-labels is itself in gate.needs (.github/workflows/ci.yml), so a failing self-test or a failing live check fails gate transitively'
-    postconditions:
+    prose_postconditions:
     - 'a PR that reverts either step is caught by guard-runner-labels before gate can pass'
 
   c0_2_reusable_workflow_pinned_by_sha:
@@ -269,9 +269,9 @@ equations:
       (local to this repository) is readable. This equation proves pin
       hygiene only, not gate-effect reachability — conflating the two would
       misrepresent what closing CB-2100 actually requires.
-    preconditions:
+    prose_preconditions:
     - 'ci.yml exists and parses; a missing or unparsable workflow is a FAIL, never a vacuous pass'
-    postconditions:
+    prose_postconditions:
     - 'a PR that re-points the ref at @main, @master, or any tag is caught before merge, in CI, by the same guard that proves the current pin (registered mutation)'
 
 proof_obligations:

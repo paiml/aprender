@@ -78,7 +78,7 @@ equations:
     invariants:
     - 'no nested FORWARD_KERNEL_CACHE lock acquisition on the same thread'
     - 'call completes for distinct residual_out buffers (the NF4 block always passes distinct)'
-    preconditions:
+    prose_preconditions:
     - 'kernel cache initialized (init_forward_kernel_cache)'
 
   fused_rmsnorm_batched_row_parity:
@@ -95,7 +95,7 @@ equations:
     - 'rows 1..batch_size written (pre-fix: only row 0)'
     - 'max abs diff vs CPU reference < 1e-4 at threaded eps'
     - 'residual_out == residual + input exactly'
-    preconditions:
+    prose_preconditions:
     - 'fused_rmsnorm_liveness holds'
 
   fused_rmsnorm_eps_threading:
@@ -112,7 +112,7 @@ equations:
     - 'kernel_eps == provided_eps (no hardcoded 1e-5 default)'
     - 'cache_key includes eps_bits'
     - 'pre_warm_for_model warms both Qwen2 and Llama eps variants'
-    preconditions:
+    prose_preconditions:
     - 'caller passes config.rms_norm_eps (cuda_block.rs NF4 post-attn site)'
 
 proof_obligations:

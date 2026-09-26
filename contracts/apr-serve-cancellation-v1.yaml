@@ -53,7 +53,7 @@ equations:
     - cfg.cancel cancelled before entry => tokens_generated == 0
     - the cancelled output is a prefix of the uncancelled output for the same prompt,
       seed and sampling parameters
-    preconditions:
+    prose_preconditions:
     - prompt is non-empty
     - the decode loop calls cfg.cancel.is_cancelled() exactly once per decode step,
       before performing that step's forward pass
@@ -71,10 +71,11 @@ equations:
       observed within one token of being requested'
     - CancelToken::never() allocates nothing and always answers false, so an unwired
       caller pays a null check and no atomic
-    preconditions:
+    prose_preconditions:
     - the token is not shared between concurrent decode loops
     postconditions:
     - cancel.polls() <= tokens_generated + 1
+    prose_postconditions:
     - cancel.polls() == 0 for CancelToken::never()
   disconnect_signal:
     formula: drop(response_future) => cancel.peek_cancelled() == true
@@ -97,10 +98,10 @@ equations:
       broke rather than kept failing to send)'
     - a request that COMPLETES returns a response byte-identical to the same handler
       invoked directly with CancelToken::never()
-    preconditions:
+    prose_preconditions:
     - the router carries the cancel_on_disconnect layer
     - the handler installs the extension token on its generation config
-    postconditions:
+    prose_postconditions:
     - cancel.peek_cancelled() == true after the layer's future is dropped WITHOUT the
       handler having returned
     - cancel.peek_cancelled() == false after a request that ran to completion

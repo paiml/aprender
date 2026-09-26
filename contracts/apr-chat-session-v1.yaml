@@ -32,9 +32,9 @@ equations:
     - KV-cache length matches token count of full history
     - Template applied consistently to every user turn
     - Ctrl-C during generation returns to WaitInput (not Exit)
-    preconditions:
+    prose_preconditions:
     - model is loaded and ready for inference
-    postconditions:
+    prose_postconditions:
     - "on Exit: KV-cache freed, session optionally saved to disk"
     lean_theorem: Theorems.SessionStateMachine
 
@@ -51,10 +51,10 @@ equations:
     - Template markers appear exactly once per turn
     - History is ordered chronologically
     - System prompt (if any) appears only at start, not repeated
-    preconditions:
+    prose_preconditions:
     - prompt is non-empty
     - template is a known format
-    postconditions:
+    prose_postconditions:
     - result contains the original prompt text
     - result starts with template prefix
     lean_theorem: Theorems.ChatTemplateApplication
@@ -75,9 +75,11 @@ equations:
     - Cache is freed on session exit
     preconditions:
     - new_tokens.len() > 0
+    prose_preconditions:
     - cache is in valid state
     postconditions:
     - result.len() <= max_context_length
+    prose_postconditions:
     - "result contains most recent tokens (newest preserved)"
     lean_theorem: Theorems.KvCacheManagement
 
@@ -94,10 +96,10 @@ equations:
     - Roundtrip preserves history messages and config
     - KV-cache rebuilt from history on load (not serialized)
     - Session file is human-readable JSON
-    preconditions:
+    prose_preconditions:
     - "save: path parent directory exists and is writable"
     - "load: path exists and is valid session JSON"
-    postconditions:
+    prose_postconditions:
     - "save: file exists and is valid JSON"
     - "load: session.history == saved session.history"
     lean_theorem: Theorems.SessionPersistence

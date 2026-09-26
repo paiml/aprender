@@ -36,8 +36,9 @@ equations:
     - SIGTERM triggers Draining → Stopped transition
     preconditions:
     - config.model_path.exists()
+    prose_preconditions:
     - config.port is available (not bound by another process)
-    postconditions:
+    prose_postconditions:
     - "Ready state /health returns 200"
     - "Stopped state — TCP port released, GPU memory freed"
     lean_theorem: Theorems.ServerLifecycle
@@ -62,9 +63,9 @@ equations:
       cannot resolve a tokenizer fails with a non-2xx status naming why, and never
       substitutes UTF-8 byte values for token ids
     - Two routes on one server return the same token ids for the same string
-    preconditions:
+    prose_preconditions:
     - server is in Ready state
-    postconditions:
+    prose_postconditions:
     - response has correct Content-Type header
     - response status code semantically correct for the outcome
     lean_theorem: Theorems.RequestRouting
@@ -82,10 +83,10 @@ equations:
     - Result of request A is identical whether B runs concurrently or not
     - KV-cache allocated and freed per-request
     - OOM on one request does not crash the server
-    preconditions:
+    prose_preconditions:
     - server in Ready state
     - at least one request pending
-    postconditions:
+    prose_postconditions:
     - all responses returned (none dropped silently)
     - server still in Ready state after all requests complete
     lean_theorem: Theorems.ConcurrentInferenceIsolation
@@ -104,9 +105,9 @@ equations:
     - In-flight requests get responses (not connection reset)
     - Shutdown timeout bounded (default 30s)
     - No resource leaks (GPU VRAM, file descriptors, TCP sockets)
-    preconditions:
+    prose_preconditions:
     - server is in Ready or Loading state
-    postconditions:
+    prose_postconditions:
     - process exit code 0
     - GPU memory fully released
     - TCP port available for rebinding

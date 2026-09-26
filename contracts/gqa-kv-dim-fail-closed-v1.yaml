@@ -48,6 +48,7 @@ equations:
     - head_dim >= 1
     postconditions:
     - kv_dim == num_kv_heads * head_dim
+    prose_postconditions:
     - validate_gqa_kv_dims returns Ok iff every kv_dim_consistency invariant holds
     lean_theorem: Theorems.Gqa_Kv_Dim_Consistency
 

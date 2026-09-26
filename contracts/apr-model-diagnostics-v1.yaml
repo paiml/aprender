@@ -39,13 +39,15 @@ equations:
     - Display format matches requested dtype interpretation exactly
     - Out-of-bounds offset+len returns error, never reads garbage
     preconditions:
-    - tensor is loaded and byte-accessible
     - offset + len <= tensor.byte_len()
+    prose_preconditions:
+    - tensor is loaded and byte-accessible
     - fmt is a supported DisplayFormat variant
     postconditions:
     - output.lines.len() == ceil(len / bytes_per_line)
-    - concatenating all displayed bytes reconstructs original byte range
     - output.offset_start == offset
+    prose_postconditions:
+    - concatenating all displayed bytes reconstructs original byte range
     lean_theorem: Theorems.Hex_Display_Fidelity
 
   rosetta_fingerprint_determinism:
@@ -67,10 +69,10 @@ equations:
     - Fingerprint depends only on tensor content, not format metadata
     - Tensor sort order is lexicographic by name (deterministic)
     - Statistical comparison uses configurable FP tolerance (default 1e-6)
-    preconditions:
+    prose_preconditions:
     - model is loadable and all tensors are readable
     - tensor names are valid UTF-8
-    postconditions:
+    prose_postconditions:
     - fingerprint is deterministic (same model -> same fingerprint)
     - compare report lists every tensor present in either model
     - identical tensors have byte_hash match = true
@@ -98,9 +100,9 @@ equations:
     - Unknown architectures return FamilyDetection::Unknown, never a wrong family
     - Confidence score is calibrated (>0.9 means metadata match, 0.5-0.9 means pattern match)
     - All three strategies are tried in order; first high-confidence match wins
-    preconditions:
+    prose_preconditions:
     - model is loaded with at least metadata or tensor names accessible
-    postconditions:
+    prose_postconditions:
     - result.family is a valid ModelFamily variant (including Unknown)
     - result.confidence in [0.0, 1.0]
     - result.strategy indicates which strategy matched
@@ -125,12 +127,13 @@ equations:
     - Every check includes specific values (expected vs available)
     - GPU memory check includes KV cache overhead estimate
     - Quantization support is exact (not approximate)
-    preconditions:
+    prose_preconditions:
     - model metadata is complete (size, quant, context, dtype, vocab)
     - runtime environment is queryable (GPU VRAM, supported features)
     postconditions:
     - report.checks.len() >= 5
     - report.pass == report.checks.iter().all(|c| c.passed)
+    prose_postconditions:
     - each failing check includes remediation suggestion
     lean_theorem: Theorems.Oracle_Compatibility_Matrix
 
@@ -154,9 +157,9 @@ equations:
     - Fault detectors are independent (failure of one does not skip others)
     - NaN detection scans ALL tensors, not just a sample
     - False positive rate < 5% across standard model corpus
-    preconditions:
+    prose_preconditions:
     - model file exists and is at least partially readable
-    postconditions:
+    prose_postconditions:
     - report.faults is sorted by severity descending (Critical first)
     - report.faults has no duplicates (same fault_type + tensor_name)
     - every fault has non-empty remediation string

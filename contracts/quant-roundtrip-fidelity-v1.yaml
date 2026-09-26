@@ -59,6 +59,7 @@ equations:
     - Reconstructed values are finite
     preconditions:
     - input.len() == 256
+    prose_preconditions:
     - 'block is not near-constant (R > 0)'
     lean_theorem: Theorems.Quant_Roundtrip_Fidelity
   bitwidth_monotonicity:

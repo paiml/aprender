@@ -88,10 +88,10 @@ equations:
     formula: 'setfit_apr_v1 = AprV2Container(header, typed_metadata{model_type="setfit"}, custom_metadata{"setfit": SetFitArtifactDoc}, tensor_index, tensor_payload) ; tensor_payload = encoder_tensors(canonical names) ++ {setfit.head.weight, setfit.head.bias} ++ {tokenizer.blob}'
     domain: 'a SetFitBundle produced by a run that reached ArtifactReloadedAndVerified'
     codomain: 'a checksummed APR v2 file sufficient to rebuild the encoder, the tokenizer and the head from bytes alone, offline'
-    preconditions:
+    prose_preconditions:
       - 'the run reached ArtifactReloadedAndVerified, so the bundle being serialized is one the train-time round trip already accepted'
       - 'the head reports a fitted feature dimension; a head that never fitted has no coefficients to place in the map'
-    postconditions:
+    prose_postconditions:
       - 'every F32 tensor written is row-major (tensor-layout-v1); the only non-F32 entry is the U8 tokenizer.blob'
       - 'the output carries no timestamp and exactly one custom metadata key, so two writes of the same bundle are byte-identical'
     # THE NORMATIVE STORAGE MAP. One row per APR-01 item. Columns: storage
@@ -163,10 +163,10 @@ equations:
     formula: 'SetFitArtifactDoc = (schema, schema_version, bundle_schema_version, format_id, architecture, tokenizer_sha256, preprocessing, root_seed, head, ordered_labels, requested_config, resolved_config, evidence, provenance, hf_name_map, probes)'
     domain: 'the single value held at custom metadata key "setfit"'
     codomain: 'a deny_unknown_fields struct that parses fail-closed or not at all'
-    preconditions:
+    prose_preconditions:
       - 'aprender-core owns this type and CANNOT name the aprender-train types behind four of the five sub-documents, so each arrives already reduced to a serde_json::Value by the writer'
       - 'no workspace crate enables serde_json''s preserve_order feature, so serde_json::Map is BTreeMap-backed and key order is sorted'
-    postconditions:
+    prose_postconditions:
       - 'an unknown key is a typed parse refusal, never a silently ignored field'
       - 'schema and schema_version are checked before any other field is read, so a future schema cannot be partially interpreted by this build'
     # THE NORMATIVE FIELD LIST, in declaration (= serialized) order. snake_case,
@@ -231,10 +231,10 @@ equations:
     formula: 'write_setfit_apr(doc) fails NonFiniteValue{path} <=> exists p in null_paths(doc) : p not in NULLABLE_PATH_ALLOWLIST ; NULLABLE_PATH_ALLOWLIST = {architecture.vocab_remap, requested_config.pair_config.budget, requested_config.pair_config.hard_cap, evidence.epsilon_used} ; |NULLABLE_PATH_ALLOWLIST| = 4 ; |WALKED_SUBDOCUMENTS| = 5'
     domain: 'the serialized SetFitArtifactDoc, walked over all FIVE embedded sub-documents'
     codomain: 'unit on pass; SetFitArtifactError::NonFiniteValue { path } at write time on fail'
-    preconditions:
+    prose_preconditions:
       - 'none of the five sub-document types carries skip_serializing_if, so every None emits an EXPLICIT null the walk can see; a type that gained one would make this guard silently vacuous'
       - 'the walk runs on the doc PARSED BACK from the emitted bytes, never on a Value used to produce them — routing emission through a Value could reorder keys and invalidate every recorded digest'
-    postconditions:
+    prose_postconditions:
       - 'a refusal names the exact dotted path of the first offending null, so the diagnosis does not require reading this file'
       - 'the four allowlisted paths are read from ONE named constant, so the writer''s walk and the 04-13 completeness gate cannot disagree about the allowlist''s contents'
       - 'all FIVE sub-documents were visited, including the two contributing zero allowlisted paths'
@@ -344,10 +344,10 @@ equations:
     formula: 'serialize(deserialize(bytes)) == bytes at Tolerance::EXACT ; every SetFitArtifactDoc field is either bundle.<field> or f(bundle...) with f deterministic ; every one of SetFitBundle''s 20 fields is recovered by deserialize'
     domain: 'the bytes of a setfit-apr-v1 artifact written by write_setfit_apr'
     codomain: 'a SetFitBundle byte-identical under re-serialization to the one that produced the artifact'
-    preconditions:
+    prose_preconditions:
       - 'the bundle carries all 20 fields INCLUDING provenance (bundle field 20, plan 04-13), so no doc field is written without a recoverable source'
       - 'probes are recomputed rather than carried, so they are a function of the bundle and not a 21st field'
-    postconditions:
+    prose_postconditions:
       - 'the closure check is a BYTE comparison at Tolerance::EXACT; no float tolerance participates in it'
       - 'a closure failure names the first differing byte offset and the doc field that owns it'
     forward_doc_to_bundle:
@@ -434,10 +434,10 @@ equations:
     formula: 'canonical(hf_name) = tensor_names_v1_fallback(role(hf_name)) when role(hf_name) exists and its _fallback is non-empty ; = setfit_owned(hf_name) otherwise ; expected_names(arch) = global_names ++ concat over n in 0..arch.num_layers of layer_names(n) ++ {setfit.head.weight, setfit.head.bias, tokenizer.blob}'
     domain: 'the HF dotted names SetFitMiniLm::named_parameters() emits, verbatim (Ph1 D-18)'
     codomain: 'canonical APR tensor names, pairwise distinct, generic-tooling-visible'
-    preconditions:
+    prose_preconditions:
       - 'the HF side is exactly SetFitMiniLm::named_parameters() output, pinned name-for-name AND in order against the frozen parameter_order array of tests/fixtures/setfit/gradients.json'
       - 'the pooler is excluded from named_parameters(), so no pooler name needs a canonical form'
-    postconditions:
+    prose_postconditions:
       - 'hf_name_map is WRITTEN INTO the artifact, so deserialize inverts a map the artifact carries rather than re-deriving names from a table that may have moved since the write'
       - 'the map is total over the artifact''s tensor set and injective; a missing or colliding entry is a typed writer error, never a dropped or overwritten tensor'
     global_names:
@@ -564,10 +564,10 @@ equations:
     formula: 'expected(arch) = {token_embd.weight, position_embd.weight, token_types.weight, token_embd_norm.weight, token_embd_norm.bias} union {expand(t, n) : t in layer_templates, n in 0..arch.num_layers} union {setfit.head.weight, setfit.head.bias, tokenizer.blob} ; |expected(arch)| = 5 + 16*arch.num_layers + 3 ; VALID <=> tensor_index_names == expected(doc.architecture)'
     domain: 'the artifact''s OWN declared architecture record, read from the doc'
     codomain: 'the exact expected tensor-name set; set inequality is a typed InconsistentArtifact refusal'
-    preconditions:
+    prose_preconditions:
       - 'the doc parsed and its architecture record is available, so num_layers is known BEFORE the expected set is computed — the set is never derived from the tensor index it is meant to judge'
       - 'architecture.num_layers is bounded by the tensor-count limit, so the expansion cannot itself become the allocation attack'
-    postconditions:
+    prose_postconditions:
       - 'a mismatch names the MISSING and the UNEXPECTED tensors, not merely the two counts'
       - 'the same rule judged the fixture and the pinned model; no test-only branch was taken'
     reference_architecture:
@@ -614,10 +614,10 @@ equations:
     formula: 'ACCEPT(file) => file_len <= max_artifact_bytes AND metadata_len <= MAX_METADATA_SIZE AND for all e in tensor_index: e.size == product(e.shape) * dtype_width(e.dtype)'
     domain: 'any byte stream presented as a setfit-apr-v1 artifact, including a hostile one'
     codomain: 'unit on pass; a typed refusal naming the bound and the observed value on fail'
-    preconditions:
+    prose_preconditions:
       - 'the raw length is known before any parse — from the bounded read for a file source, from the slice length for an in-memory source'
       - 'the structural per-entry check runs on the DECLARED shape and dtype, before any payload is decoded into a tensor'
-    postconditions:
+    prose_postconditions:
       - 'a refusal names the bound AND the observed value, so an operator can distinguish a too-large artifact from a malformed one'
       - 'no allocation proportional to the declared size occurred before the bound was applied'
     constants:
@@ -658,9 +658,9 @@ equations:
     formula: 'read_setfit_apr_bytes_bounded(reader, declared_len) = Err(TooLarge) if declared_len > max_artifact_bytes ; else read at most max_artifact_bytes + 1 bytes and Err(TooLarge) if that many were read'
     domain: 'any file-backed or stream-backed source of artifact bytes: apr-cli adapters, aprender-serve startup, the codec'
     codomain: 'at most max_artifact_bytes bytes in memory, or a typed refusal'
-    preconditions:
+    prose_preconditions:
       - 'the source can report a declared length, or the absence of one is itself treated as an over-cap claim rather than as permission to read'
-    postconditions:
+    prose_postconditions:
       - 'at most max_artifact_bytes + 1 bytes are resident when the refusal returns — for EVERY source, including one whose declared length lies'
       - 'when the declared length is already over cap, zero bytes were read'
     invariants:
@@ -691,10 +691,10 @@ equations:
     formula: 'probes = [probe(x) : x in PROBE_INPUTS] ; probe(x) = (input, embedding_hex[], logits_hex[], probabilities_hex[], label) ; |PROBE_INPUTS| = 6 ; a fresh consumer must replay all 6 within tolerance BEFORE it may predict'
     domain: 'a rebuilt SetFit model, at train time (to record) and in every fresh consumer process (to replay)'
     codomain: 'ArtifactReloadedAndVerified on full agreement; a typed ProbeMismatch refusal naming the probe index and the offending component otherwise'
-    preconditions:
+    prose_preconditions:
       - 'the probes were computed at train time through the SAME encode-once path production uses (eval mode, inside no_grad, every result detached), not through a second encode written for verification'
       - 'the rebuild succeeded and the tokenizer hash already matched, so a probe mismatch cannot be a mis-paired tokenizer wearing a math-divergence diagnosis'
-    postconditions:
+    prose_postconditions:
       - 'no probe input is derived from the dataset or the selection, so no corpus text is embedded in any shipped artifact'
       - 'all six replayed before the model became usable; a partial replay is not a pass'
     inputs:
@@ -754,10 +754,10 @@ equations:
     formula: 'within(delta, bound) <=> matches!(delta.partial_cmp(&bound), Some(Less | Equal)) ; PASS <=> within(|observed - expected|, bound) for every compared component AND observed_label == expected_label'
     domain: 'probe replay in a fresh consumer, and pairwise comparison across the three parity surfaces'
     codomain: 'agreement, or a typed mismatch naming the component and both values'
-    preconditions:
+    prose_preconditions:
       - 'both compared values are finite — a non-finite value is a typed refusal at an earlier rung and never reaches a tolerance decision'
       - 'the bound is the contract-resident constant, read from one place; a bound computed at the comparison site is a bound that can be tuned after seeing the result'
-    postconditions:
+    prose_postconditions:
       - 'a NaN reaching the comparator returns false in EVERY argument position, so a diverged run cannot pass by comparing unordered'
       - 'labels compared exactly; a mismatch reports both label strings, never a distance'
     tolerances:
@@ -797,10 +797,10 @@ equations:
     formula: 'ClassifyResponse = (schema_version, artifact_sha256, backend, latency_ms, results[]) ; results[i] = (label, probabilities[], logits?[], margin, token_count, truncated) ; ClassifyRequestDocument = (texts[], include_logits)'
     domain: 'the single core-owned envelope serialized identically by `apr --json` and by POST /v1/classify'
     codomain: 'byte-identical JSON for the same inputs on both surfaces (D-08 field parity by construction)'
-    preconditions:
+    prose_preconditions:
       - 'the model is a VerifiedSetFitModel, so the full ladder including probe replay already ran; no surface constructs a response from an unverified model'
       - 'the request arrived as a ClassifyRequestDocument, so the CLI and HTTP surfaces received the SAME ordered text set'
-    postconditions:
+    prose_postconditions:
       - 'a non-finite value is unrepresentable: no public field exists, the sole constructor validates, and Deserialize routes through that same constructor'
       - 'latency_ms is finite and >= 0.0 and participates in no equality comparison'
       - 'artifact_sha256 is present on every response from every surface'
@@ -850,10 +850,10 @@ equations:
     formula: 'backend = "<device>:<implementation>:<kernel>" ; v1 = "cpu:setfit-core:autograd-trueno-matmul" ; the value is RETURNED BY the encode invocation that ran'
     domain: 'the compute path that actually executed the encode for this request'
     codomain: 'a three-segment identity string naming the kernel entry point that ran'
-    preconditions:
+    prose_preconditions:
       - 'the encode invocation returned to the caller, so an identity exists to report; a failed encode produces a refusal and no response at all'
       - 'resolve_device already passed at startup, so an explicitly requested unavailable device failed closed before any request was served (OPS-06)'
-    postconditions:
+    prose_postconditions:
       - 'the value names the kernel ENTRY POINT the encoder invoked — never the host capability set, never a configured or environment-supplied device'
       - 'the string has exactly three colon-separated segments, so a future GPU identity is comparable to this one'
     invariants:
@@ -888,10 +888,10 @@ equations:
     formula: 'canonical_test_access REQUIRES a durable lock written by a PRIOR validation evaluation ; validation_eval -> write(SelectionLock::to_canonical_bytes()) ; test_eval -> read(lock) -> mint_test_token(run) -> CanonicalTestAccess::grant(token, run, dataset)'
     domain: 'the `apr eval` workflow across two separate processes'
     codomain: 'a grant over the canonical test split, or a typed refusal'
-    preconditions:
+    prose_preconditions:
       - 'a validation evaluation ran in a PRIOR process and wrote the lock; the test command cannot create the lock it consumes'
       - 'the lock file''s recorded lock_hash recomputes over its own bytes, so a corrupted record is refused before its contents are believed'
-    postconditions:
+    prose_postconditions:
       - 'absent, stale and dataset-mismatched locks are three DISTINCT typed refusals with three distinct operator diagnostics'
       - 'the grant is over the dataset''s OWN test split, carrying that dataset''s provenance — never a bare split'
     refusals:
@@ -925,10 +925,10 @@ equations:
     formula: 'typed_keys_written = {model_type = "setfit"} ; {schema, schema_version, ordered_labels, tokenizer_sha256} are FIRST-LEVEL fields of the single "setfit" custom document'
     domain: 'the container metadata section of a setfit-apr-v1 artifact'
     codomain: 'generic inspectability with zero SetFit knowledge, at one typed key plus one JSON object'
-    preconditions:
+    prose_preconditions:
       - 'AprV2Metadata has no typed slot for a schema id, a label list or a tokenizer digest — READ off header_impl.rs:131-299, not assumed'
       - 'adding container fields would touch 39 files across 77 use sites (RESEARCH), so the amendment is cheaper than the alternative AND is recorded rather than silent'
-    postconditions:
+    prose_postconditions:
       - 'a reader with zero SetFit knowledge recovers schema, schema_version, ordered_labels and tokenizer_sha256 from one typed key plus one JSON object'
       - 'the writer sets no provenance typed field, so license/data_source/data_license remain the container''s deterministic explicit nulls and closure is preserved'
     container_typed_fields:
@@ -974,10 +974,10 @@ equations:
     formula: 'load = bounded_read -> raw_length_cap -> header+CRC+row_major -> typed_tag+one_key_doc_parse+schema_version -> structural(tensor_set, per_entry_size, tokenizer_hash) -> non_finite_scan -> rebuild -> probe_replay -> VerifiedSetFitModel'
     domain: 'artifact bytes of unknown provenance, offline'
     codomain: 'VerifiedSetFitModel (the only value with a classify method), or a typed refusal naming the rung'
-    preconditions:
+    prose_preconditions:
       - 'the caller obtained the bytes through read_setfit_apr_bytes_bounded, so rung 1 has already run by the time rung 2 begins'
       - 'the process is offline: no rung consults the network, so a load that succeeds here succeeds on an air-gapped host (APR-02)'
-    postconditions:
+    prose_postconditions:
       - 'VerifiedSetFitModel exists only after all eight rungs passed; its constructor is private and no other path reaches it'
       - 'a refusal names the RUNG and what it observed; "invalid artifact" alone is not an admissible diagnosis'
     rungs:

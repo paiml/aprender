@@ -80,9 +80,9 @@ equations:
       base id(s) missing at head` with the first three ids (row 5). This
       repository records a ticket's end as a lifecycle edit (status:
       completed / cancelled), never as a removed entry.
-    preconditions:
+    prose_preconditions:
     - 'both versions split at `^- id:` into byte-exact blocks; the first occurrence is what the per-id comparison reads. A duplicate id that GROWS at head is a violation (rows 6, 11); a duplicate already in BASE is baselined and reported as `known duplicate-id` (row 10) — main carried PMAT-966 twice on 2026-09-05, minted by two sessions — and removing the later copy is the remedy (row 12)'
-    postconditions:
+    prose_postconditions:
     - 'deleted=<n> is printed on the summary line whether or not n is zero'
 
   r2_existing_entry_unchanged_or_lifecycle_only:
@@ -119,9 +119,9 @@ equations:
       entry is real data in this file); only when the whole-document parse
       does not line up positionally is the isolated parse tried, and a
       failure there is a violation, never a pass.
-    preconditions:
+    prose_preconditions:
     - 'the base parses as YAML (a usage error otherwise — the base is already-merged content, exit 2)'
-    postconditions:
+    prose_postconditions:
     - 'reserialised=<n> first_ids=<a, b, c> is printed whenever n > 0'
 
   r3_added_entries_reported:
@@ -133,7 +133,7 @@ equations:
     invariants:
     - 'ADDITION IS THE ALLOWED SHAPE (row 1: append one entry → PASS, added=1). Where in the file a new entry lands is not gated; the trim appends new entries at the end in head order.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'added=<n> is printed on the summary line'
 
   r4_head_parses_and_keeps_top_level_keys:
@@ -144,7 +144,7 @@ equations:
     invariants:
     - 'A HEAD THAT DOES NOT PARSE IS REFUSED (row 7), never skipped: an unparseable roadmap would silence every other roadmap guard downstream.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'VIOLATION head-unparsable: <first error line> or VIOLATION top-level-keys-changed'
 
   trim_is_the_remedy:
@@ -156,9 +156,9 @@ equations:
     invariants:
     - 'THE REMEDY IS PROVEN BY THE GUARD ITSELF (row 8 on the synthetic fixture, row 9 on the real 6d9ba274a re-serialisation: reserialised=361 → trimmed → PASS).'
     - 'A YAML anchor (`&id001`) defined on one entry and aliased on others is preserved: the definer collapses to base bytes when unchanged, or has its anchor line transplanted onto head''s rendering when only its lifecycle changed; an alias-user is forced to head bytes only when neither is possible, which is content-safe because pmat''s serializer expands aliases to literal values.'
-    preconditions:
+    prose_preconditions:
     - 'base and head both parse'
-    postconditions:
+    prose_postconditions:
     - 'the trimmed file is byte-identical to the base for every unchanged entry'
 
   enforcement_is_wired_self_test_then_check:
@@ -171,9 +171,9 @@ equations:
     invariants:
     - 'SELF-TEST BEFORE CHECK, EVERY TIME (Verification Discipline #7): the case table is re-run on every invocation, not re-read.'
     - 'THE LIVE CHECK READS THE PR DIFF: base = `git merge-base origin/main HEAD`, head = HEAD; a missing origin/main is exit 2 (the box cannot answer), never a pass and never a rule violation.'
-    preconditions:
+    prose_preconditions:
     - 'guard-runner-labels is itself in gate.needs, so a failing self-test or a failing live check fails gate transitively'
-    postconditions:
+    prose_postconditions:
     - 'a PR that reverts either step is caught by check_guards_are_wired.sh (the guard would be named by no workflow)'
 
 proof_obligations:

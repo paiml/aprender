@@ -49,9 +49,10 @@ equations:
     - Heading levels form a valid tree (no orphan H3 under H1)
     - Exactly one H1 per document
     preconditions:
-    - input is valid UTF-8
     - input.len() > 0
-    postconditions:
+    prose_preconditions:
+    - input is valid UTF-8
+    prose_postconditions:
     - result == true implies headings form a proper outline tree
     lean_theorem: Theorems.HeadingHierarchy
 
@@ -64,7 +65,7 @@ equations:
         If relative: target file exists on disk (optional fs check)
     domain: Set of markdown links in a .md file
     codomain: List of violations (empty = valid)
-    preconditions:
+    prose_preconditions:
     - input is valid UTF-8
     postconditions:
     - result.iter().all(|v| !v.url.is_empty())
@@ -77,9 +78,9 @@ equations:
         lang ∈ KNOWN_LANGUAGES ∪ {user-defined}
     domain: Set of fenced code blocks
     codomain: Boolean (all blocks tagged)
-    preconditions:
+    prose_preconditions:
     - input is valid UTF-8
-    postconditions:
+    prose_postconditions:
     - result == true implies no untagged code fences
     lean_theorem: Theorems.CodeFenceLanguage
 
@@ -90,9 +91,9 @@ equations:
         separator matches /^[-:]+$/
     domain: Set of GFM tables in a .md file
     codomain: Boolean (all tables have consistent column counts)
-    preconditions:
+    prose_preconditions:
     - input is valid UTF-8
-    postconditions:
+    prose_postconditions:
     - result == true implies column count invariant holds
     lean_theorem: Theorems.TableColumnParity
 
@@ -105,9 +106,10 @@ equations:
     domain: "Tuple (actual_readme, contracts, binding)"
     codomain: "DriftResult with stale flag and diff_lines count"
     preconditions:
-    - actual_readme is valid UTF-8
     - contracts.len() > 0
-    postconditions:
+    prose_preconditions:
+    - actual_readme is valid UTF-8
+    prose_postconditions:
     - result.stale == false implies actual == generated
     lean_theorem: Theorems.ReadmeDrift
 
@@ -124,9 +126,10 @@ equations:
     domain: SVG file content (UTF-8 string)
     codomain: List of violations (empty = valid)
     preconditions:
-    - input is valid UTF-8
     - input.len() > 0
-    postconditions:
+    prose_preconditions:
+    - input is valid UTF-8
+    prose_postconditions:
     - result.is_empty() implies file is safe to render
     lean_theorem: Theorems.SvgStructuralSafety
 
@@ -142,9 +145,9 @@ equations:
         contains_section("Verification Ladder")
     domain: Markdown document with heading structure
     codomain: List of missing required sections
-    preconditions:
+    prose_preconditions:
     - input is valid UTF-8
-    postconditions:
+    prose_postconditions:
     - result.is_empty() implies all required sections present
     lean_theorem: Theorems.RequiredSections
 
@@ -156,9 +159,9 @@ equations:
         Keys are valid identifiers (no spaces, no special chars)
     domain: Markdown document with optional YAML front matter
     codomain: Option<FrontmatterResult> (None if no front matter)
-    preconditions:
+    prose_preconditions:
     - input is valid UTF-8
-    postconditions:
+    prose_postconditions:
     - result.is_some() implies front matter parses as valid YAML
     lean_theorem: Theorems.YamlFrontmatter
 
@@ -170,9 +173,9 @@ equations:
         alt text is non-empty
     domain: Set of image links in markdown
     codomain: Boolean (all badges well-formed)
-    preconditions:
+    prose_preconditions:
     - input is valid UTF-8
-    postconditions:
+    prose_postconditions:
     - result == true implies all badges have alt text
     lean_theorem: Theorems.BadgeFormat
 
@@ -186,9 +189,10 @@ equations:
     domain: YAML file content (UTF-8 string)
     codomain: List of violations (empty = valid)
     preconditions:
-    - input is valid UTF-8
     - input.len() > 0
-    postconditions:
+    prose_preconditions:
+    - input is valid UTF-8
+    prose_postconditions:
     - result.is_empty() implies file is structurally sound YAML
     lean_theorem: Theorems.YamlStructuralValidity
 
@@ -200,9 +204,9 @@ equations:
         OR k is a well-known exception (e.g., "TOTAL", version fields)
     domain: Set of mapping keys in a YAML document
     codomain: List of non-conforming keys
-    preconditions:
+    prose_preconditions:
     - input parses as valid YAML
-    postconditions:
+    prose_postconditions:
     - result.is_empty() implies all keys follow naming convention
     lean_theorem: Theorems.YamlKeyConvention
 
@@ -221,7 +225,7 @@ equations:
     codomain: Boolean (magic matches extension)
     preconditions:
     - file.len() >= 4
-    postconditions:
+    prose_postconditions:
     - result == true implies extension matches actual file format
     lean_theorem: Theorems.MediaMagicBytes
 
@@ -233,9 +237,9 @@ equations:
       Duration (if applicable): 0 < duration <= max_duration
     domain: Media file with decoded metadata
     codomain: List of missing/invalid metadata fields
-    preconditions:
+    prose_preconditions:
     - file magic bytes valid
-    postconditions:
+    prose_postconditions:
     - result.is_empty() implies all required metadata present
     lean_theorem: Theorems.MediaMetadataPresent
 
@@ -247,9 +251,9 @@ equations:
       File size <= max_size (configurable, default 100MB)
     domain: Decoded media metadata
     codomain: List of out-of-bounds fields
-    preconditions:
+    prose_preconditions:
     - metadata successfully decoded
-    postconditions:
+    prose_postconditions:
     - result.is_empty() implies all dimensions within bounds
     lean_theorem: Theorems.MediaDimensionBounds
 
@@ -261,9 +265,9 @@ equations:
         no infinite loop flag in production assets (GIF loop_count != 0)
     domain: Animated asset with frame metadata
     codomain: List of bound violations
-    preconditions:
+    prose_preconditions:
     - file is a recognized animation format
-    postconditions:
+    prose_postconditions:
     - result.is_empty() implies animation is bounded
     lean_theorem: Theorems.AnimationBounds
 

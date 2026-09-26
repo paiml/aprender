@@ -241,9 +241,9 @@ equations:
       - "an inventory row without sha256 is a named unmeasuredModel, never dropped"
       - "modes(m) = {off} iff the host measured thinking = false; otherwise {on, off}"
       - "owes_long(m) ⇔ long_rungs_for absent ∨ arch(m) ∈ families ∨ representatives[arch(m)] = file(m)"
-    preconditions:
+    prose_preconditions:
       - "a release subject was given: version and a full 40-hex commit"
-    postconditions:
+    prose_postconditions:
       - "two extractions of the same inputs are byte-identical (R-15)"
     lean_theorem: none — L4 not declared
   cell_pass:
@@ -255,9 +255,9 @@ equations:
       - "thinkOk ⇔ thinking = off ∨ think_closed = true"
       - "answered ⇔ answer_chars > 0"
       - "contextMet ⇔ prompt_tokens ≥ tokens(rung), or for declared prompt_tokens + max_tokens ≥ context_length"
-    preconditions:
+    prose_preconditions:
       - "an absent field is never the passing value"
-    postconditions:
+    prose_postconditions:
       - "the gate is Pass only if every cell of every required host passes"
     lean_theorem: none — L4 not declared
   kernel_pass:
@@ -266,9 +266,9 @@ equations:
     codomain: "a violation naming (kernel, host) — the arch that diverges"
     invariants:
       - "a kernel measured on one arch only is a missing row on the other"
-    preconditions:
+    prose_preconditions:
       - "every required host has a kernel-diff receipt listing its dispatch path"
-    postconditions:
+    prose_postconditions:
       - "kernel violations are reported before model-cell violations"
     lean_theorem: none — L4 not declared
 

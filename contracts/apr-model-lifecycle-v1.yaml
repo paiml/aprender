@@ -35,11 +35,12 @@ equations:
     - Cache is content-addressed (same model → same path)
     - Partial downloads never corrupt existing cached models
     - Companion files (tokenizer.json, config.json) present iff model needs them
-    preconditions:
+    prose_preconditions:
     - source is a valid URI or local path
     - disk has sufficient space for model + companions
     postconditions:
     - cached_path.exists() && sha256(cached_path) == manifest.hash
+    prose_postconditions:
     - tokenizer companion present for LLM models
     lean_theorem: Theorems.PullCacheIntegrity
 
@@ -57,9 +58,11 @@ equations:
     - Tensor data preserved bit-for-bit in lossless import
     preconditions:
     - path.exists()
+    prose_preconditions:
     - file has valid magic bytes for a known format
     postconditions:
     - result.tensors.len() > 0
+    prose_postconditions:
     - result.config matches architecture from file metadata
     lean_theorem: Theorems.ImportFormatDetection
 
@@ -77,6 +80,7 @@ equations:
     - Export to same format as import is bit-identical
     preconditions:
     - model.tensors.iter().all(|t| t.is_finite())
+    prose_preconditions:
     - target format supports model's dtype
     postconditions:
     - output_path.exists()
@@ -95,7 +99,7 @@ equations:
     - Quantized model smaller than original
     - Tensor count unchanged (same architecture)
     - Quantization is deterministic (same input → same output)
-    preconditions:
+    prose_preconditions:
     - model.dtype == F32 (quantize from full precision)
     - scheme is a valid QuantScheme variant
     postconditions:
@@ -117,6 +121,7 @@ equations:
     - Linear merge weights sum to 1.0
     preconditions:
     - models.len() >= 2
+    prose_preconditions:
     - models share identical architecture config
     postconditions:
     - result.tensors.len() == models[0].tensors.len()

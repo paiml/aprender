@@ -52,7 +52,7 @@ equations:
     - No `std::fs::write` reachable from the per-token decode body.
     - No `println!`/`eprintln!` except when gated by an env var read at
       session start (OnceLock).
-    preconditions:
+    prose_preconditions:
     - Model uses `forward_gpu_resident_to_token_id` (greedy) or
       `forward_gpu_resident` → argmax (sampled) path.
 

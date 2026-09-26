@@ -27,11 +27,11 @@ equations:
       qwen_hidden: 1536
       qwen_q_dim: 1536
       qwen_kv_dim: 256
-    preconditions:
+    prose_preconditions:
       - 'A.shape == [M, K]; M > 0 && K > 0'
       - 'W_q_nf4.shape == [K, q_dim]; W_k_nf4.shape == [K, kv_dim]; W_v_nf4.shape == [K, kv_dim]'
       - 'A is finite'
-    postconditions:
+    prose_postconditions:
       - 'q.shape == [M, q_dim]; k.shape == [M, kv_dim]; v.shape == [M, kv_dim]'
       - 'q, k, v all finite when A is finite'
       - 'DRAM reads of A == 3 (one per projection)'
@@ -48,11 +48,11 @@ equations:
     invariants:
     - "K and V output dims are identical (GQA: both = num_kv_heads × head_dim)"
     - A loaded from DRAM at most twice (Q path + KV path)
-    preconditions:
+    prose_preconditions:
     - K dim == V dim (required for fused K+V)
     - hidden_size divisible by 64 (NF4 block alignment)
     - 'A.shape == [M, K]; M > 0 && K > 0; A is finite'
-    postconditions:
+    prose_postconditions:
     - q, k, v element-wise match separate within tolerance
     - 'q.shape == [M, q_dim]; k.shape == v.shape == [M, kv_dim]'
     - 'DRAM reads of A == 2 (Q path + KV path; bandwidth saved vs separate path)'
@@ -72,8 +72,9 @@ equations:
     preconditions:
       - 'M > 0 && K > 0'
     postconditions:
-      - 'savings == M × K × 4 bytes (33% reduction in input reads)'
       - 'savings > 0'
+    prose_postconditions:
+      - 'savings == M × K × 4 bytes (33% reduction in input reads)'
     lean_theorem: 'Theorems.Bandwidth_savings'
 
 proof_obligations:

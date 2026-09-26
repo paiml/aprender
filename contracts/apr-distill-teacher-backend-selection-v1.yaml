@@ -64,7 +64,7 @@ equations:
       (1) Memory-constrained dGPUs where the F32 dequant exceeds VRAM, and
       (2) Operators who want byte-identical forward parity with `apr run` for
           KD-signal-vs-inference comparison studies.
-    preconditions:
+    prose_preconditions:
     - device_class is correctly classified per cuda-unified-memory-allocator-v1.yaml
     - teacher_uses_q4k is determined from teacher .apr tensor dtype histogram
     lean_theorem: Theorems.Backend_Dispatch
@@ -81,7 +81,7 @@ equations:
     - 'CudaTrainer GPU utilization > 50% (cuBLAS-backed; nvidia-smi confirms)'
     - 'Realizar GPU utilization ~ 0-5% (CPU-bound, only matmuls dispatch)'
     - 'Latency gap closes only when teacher size is small enough that CPU forward is comparable (sub-1B teachers may show <2× gap)'
-    preconditions:
+    prose_preconditions:
     - PMAT-701 Bug A allocator autodetect in effect
     - cuBLAS available on the device (true for sm >= 70)
     lean_theorem: Theorems.Forward_Latency_Invariant
@@ -101,7 +101,7 @@ equations:
     - 'cuda-q4k-frozen-teacher-v1.yaml FT-Q4K-TEACHER-005 (apr distill --epochs 1 completes) is now satisfied by CudaTrainer instead of Realizar on unified-memory devices'
     - 'The Realizar path remains in the codebase for memory-constrained fallback'
     notes: 'The Bug B contract is not retracted — its math is correct. Its DEFAULT-PATH claim is what changes.'
-    preconditions:
+    prose_preconditions:
     - this contract is in effect
     lean_theorem: Theorems.Bug_B_Demotion
 

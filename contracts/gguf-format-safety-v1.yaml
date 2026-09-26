@@ -27,9 +27,9 @@ equations:
     - Non-GGUF files always rejected (no false positives)
     - Magic check runs before ANY allocation or metadata parsing
     - Rejection is O(1) — no file scanning
-    preconditions:
+    prose_preconditions:
     - file is readable and len >= 4
-    postconditions:
+    prose_postconditions:
     - bytes[0..4] == "GGUF" literal
     lean_theorem: Theorems.Magic_Validation
   version_compatibility:
@@ -44,9 +44,9 @@ equations:
     - Version 1 rejected with upgrade guidance
     - Future versions (>3) rejected to prevent silent misparse
     - Endianness detected from magic bytes, applied to version read
-    preconditions:
+    prose_preconditions:
     - magic validation passed
-    postconditions:
+    prose_postconditions:
     - version in {2, 3}
     lean_theorem: Theorems.Version_Compatibility
   tensor_metadata_integrity:
@@ -69,9 +69,11 @@ equations:
     - dtype is a known GGMLType variant (0..=20)
     preconditions:
     - header.n_tensors > 0
+    prose_preconditions:
     - buffer length >= header.metadata_offset
     postconditions:
     - result.len() == header.n_tensors
+    prose_postconditions:
     - all tensor offsets are within file bounds
     lean_theorem: Theorems.Tensor_Metadata_Integrity
   alignment_enforcement:
@@ -88,8 +90,9 @@ equations:
     - Data region [aligned_offset, aligned_offset + size) within file
     - Padding bytes between metadata and data are not interpreted
     preconditions:
-    - alignment > 0 and is power of 2
     - offset < file_size
+    prose_preconditions:
+    - alignment > 0 and is power of 2
     postconditions:
     - result % alignment == 0
     lean_theorem: Theorems.Alignment_Enforcement
@@ -108,10 +111,11 @@ equations:
     - Array values count-checked before allocation (no 2^64 element arrays)
     - Nested arrays not allowed (flat values only in GGUF v3)
     - Total metadata size bounded by header.metadata_offset
-    preconditions:
+    prose_preconditions:
     - buffer positioned after version/counts header
     postconditions:
     - result.len() == header.n_kv
+    prose_postconditions:
     - no duplicate keys
     lean_theorem: Theorems.Metadata_KV_Safety
 proof_obligations:

@@ -130,9 +130,9 @@ equations:
     invariants:
       - "a file with no v2 schema but a top-level metrics[] or parity is an UNMIGRATED record: refused by name, never skipped"
       - "a file that is neither is skipped and counted — skipping is visible, not silent"
-    preconditions:
+    prose_preconditions:
       - "evidence/parity/EXPECTED_RECEIPTS holds the count the independent predicate measures"
-    postconditions:
+    prose_postconditions:
       - "two extractions are byte-identical (R-15)"
     lean_theorem: none — L4 not declared
   reach:
@@ -142,9 +142,9 @@ equations:
     invariants:
       - "a miss is never Pass and never a fabricated Fail: the gate declines and says which two numbers disagree"
       - "an ABSENT denominator is a different fault from a broken one and is not folded in here"
-    preconditions:
+    prose_preconditions:
       - "the denominator is produced by scripts/parity_receipt_denominator.sh, not by the extractor"
-    postconditions:
+    prose_postconditions:
       - "adding a receipt without updating the denominator declines"
     lean_theorem: none — L4 not declared
 

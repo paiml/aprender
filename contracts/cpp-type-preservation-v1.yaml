@@ -18,10 +18,10 @@ equations:
     - Constructor maps to pub fn new() -> Self
     - Destructor maps to impl Drop
     - Const methods get &self, non-const get &mut self
-    preconditions:
+    prose_preconditions:
     - Class has a non-empty name
     - Class is parseable by clang-sys
-    postconditions:
+    prose_postconditions:
     - Output contains pub struct with matching field count
     - Output compiles with rustc --edition 2021
   namespace_to_mod:
@@ -33,9 +33,9 @@ equations:
     - Namespace name preserved as module name
     - Nested namespaces become nested modules
     - Functions, structs, classes within namespace appear inside mod
-    preconditions:
+    prose_preconditions:
     - Namespace has a non-empty name
-    postconditions:
+    prose_postconditions:
     - Output contains pub mod with correct name
   operator_to_trait:
     formula: 'forall op in overloaded operators: transpile(op) = impl std::ops::Trait'
@@ -47,9 +47,9 @@ equations:
     - operator== maps to impl PartialEq
     - operator+= maps to impl AddAssign
     - Regular methods remain in impl block (not moved to traits)
-    preconditions:
+    prose_preconditions:
     - Operator method has valid operator name (operator+, operator==, etc.)
-    postconditions:
+    prose_postconditions:
     - Output contains impl std::ops::Trait for ClassName
   inheritance_to_composition:
     formula: 'forall derived : base: transpile(derived) = struct { base: Base, ...fields } + Deref'
@@ -60,9 +60,9 @@ equations:
     - Base class embedded as first field named 'base'
     - impl Deref with Target = BaseClass
     - impl DerefMut for mutable base access
-    preconditions:
+    prose_preconditions:
     - Single inheritance only (one base class)
-    postconditions:
+    prose_postconditions:
     - Derived struct has base field of base class type
     - Deref impl exists with correct Target type
 proof_obligations:

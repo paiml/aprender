@@ -79,7 +79,7 @@ equations:
     invariants:
     - 'cache_key includes theta_bits (different theta → different cache slot)'
     - 'pre-warm cache key matches runtime cache key (no orphan warm)'
-    preconditions:
+    prose_preconditions:
     - 'caller passes config.rope_theta'
 
   rope_distinct_theta_distinct_output:
@@ -93,7 +93,7 @@ equations:
       outputs (rotation-frequency shift).
     invariants:
     - 'output differs by at least 1e-3 max-abs at theta_a=10000, theta_b=1000000'
-    preconditions:
+    prose_preconditions:
     - 'rope_theta_cache_key_inclusion holds'
 
 proof_obligations:

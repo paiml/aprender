@@ -19,9 +19,9 @@ equations:
     invariants:
     - "`cargo install aprender` appears in Quick Start section"
     - "apr binary name is documented"
-    preconditions:
+    prose_preconditions:
     - "README.md exists at workspace root"
-    postconditions:
+    prose_postconditions:
     - "New user can install in one command"
 
   readme_crate_count_accuracy:
@@ -31,7 +31,7 @@ equations:
     codomain: bool (counts match)
     invariants:
     - "Crate count is not hardcoded — derived from workspace"
-    preconditions:
+    prose_preconditions:
     - "cargo metadata resolves without errors"
 
   readme_no_stale_references:
@@ -66,9 +66,9 @@ equations:
     - "beat_threshold < 1.0 is a NO-COLLAPSE FLOOR and may never be reported as a win"
     - "A withdrawn claim is retracted with its replacing numbers, never deleted —
        under-claiming is a reporting failure too"
-    preconditions:
+    prose_preconditions:
     - "docs/BEATS.md exists and the referenced beat contract parses"
-    postconditions:
+    prose_postconditions:
     - "A reader of docs/BEATS.md sees the same threshold CI enforces"
 
   claude_md_paths_resolve:
@@ -81,7 +81,7 @@ equations:
     - "Onboarding docs cite paths that exist — APR-MONO moved every crate under crates/"
     - "Scope is narrow (backticked, no glob metacharacters, source extension) so the
        gate cannot cry wolf"
-    preconditions:
+    prose_preconditions:
     - "Both documents exist at the workspace root"
 
 falsification_tests:

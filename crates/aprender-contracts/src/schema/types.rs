@@ -514,6 +514,13 @@ pub struct Equation {
     /// Rust postconditions — compiled to `debug_assert!()` by `build.rs`.
     #[serde(default)]
     pub postconditions: Vec<String>,
+    /// Preconditions stated in prose. No producer emits these, so they need
+    /// not be Rust expressions; `preconditions` must be (#4371).
+    #[serde(default)]
+    pub prose_preconditions: Vec<String>,
+    /// Postconditions stated in prose; never emitted (#4371).
+    #[serde(default)]
+    pub prose_postconditions: Vec<String>,
     /// Lean 4 theorem name that proves this equation correct.
     /// Example: "ProvableContracts.Theorems.Softmax.PartitionOfUnity"
     #[serde(default)]

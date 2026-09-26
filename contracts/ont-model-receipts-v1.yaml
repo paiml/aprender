@@ -77,9 +77,9 @@ equations:
     invariants:
       - "a row without sha256 is neither a witness nor a mismatch: no measurement is not a match"
       - "a row with a different hex is a mismatch naming file and hex, never silently dropped"
-    preconditions:
+    prose_preconditions:
       - "every receipt file under evidence/dogfood/models/ carries schema apr-model-ladder-receipt/v1"
-    postconditions:
+    prose_postconditions:
       - "two extractions are byte-identical (R-15)"
     lean_theorem: none — L4 not declared
   green:
@@ -89,9 +89,9 @@ equations:
     invariants:
       - "a skipped capability gate reports passed: true and is NOT green"
       - "a claimed backend that fell back is NOT green, whatever the tokens said"
-    preconditions:
+    prose_preconditions:
       - "the rung's backends are the release's claim for that architecture"
-    postconditions:
+    prose_postconditions:
       - "ladder-green fires on a required rung iff some listed host is missing"
     lean_theorem: none — L4 not declared
 

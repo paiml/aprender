@@ -11,10 +11,10 @@ equations:
     - "Config is always valid after load() succeeds (no partial state)"
     - "Unknown keys are rejected, not silently ignored"
     - "Serde roundtrip: serialize(deserialize(bytes)) == bytes"
-    preconditions:
+    prose_preconditions:
     - "path.exists() || default config is defined"
     - "file content is valid TOML/YAML (schema-validated)"
-    postconditions:
+    prose_postconditions:
     - "all required fields have values (from defaults or file)"
     - "numeric fields are within documented bounds"
     lean_theorem: Theorems.Configuration

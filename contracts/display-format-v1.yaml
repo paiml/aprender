@@ -11,10 +11,10 @@ equations:
     - "fmt() never panics (returns Err on write failure)"
     - "Output is deterministic for the same input"
     - "Alternate format (#) produces strictly more information"
-    preconditions:
+    prose_preconditions:
     - "self is in a valid state (all fields initialized)"
     - "width > 0 when format specifier includes width"
-    postconditions:
+    prose_postconditions:
     - "output is valid UTF-8"
     - "output.len() <= self.max_display_len() when bounded"
     lean_theorem: Theorems.Display_Format
@@ -24,10 +24,10 @@ equations:
     invariants:
     - "render(data, Json) is valid JSON (serde_json::from_str succeeds)"
     - "render(data, Markdown) contains no raw HTML injection"
-    preconditions:
+    prose_preconditions:
     - "data is Serialize-capable"
     - "format is a recognized OutputFormat variant"
-    postconditions:
+    prose_postconditions:
     - "output is non-empty when data has at least one field"
     lean_theorem: Theorems.Render
 proof_obligations:

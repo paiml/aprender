@@ -68,7 +68,7 @@ equations:
     - 'OPTION-NEUTRAL: sourcing pmat_bin.sh sets no shell option in the caller (check_sourced_libs_option_neutral.sh).'
     - 'THE LOG NAMES THE PIN: every ratchet verdict line carries $PMAT_VERSION.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'pmat_bin_resolve returns 0 iff "$PMAT" --version reports PMAT_PIN; it exports PMAT and PMAT_VERSION and sets nothing else'
 
   stamped_baseline:
@@ -82,7 +82,7 @@ equations:
     - 'INVALID IS NOT A NUMBER (ratchet row R5).'
     - 'A STAMP IS NOT A MEASUREMENT (row R6): pmat_version moves while count: stands => refused.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'the 277 recorded on 2026-09-05 stays INVALID until PMAT-1061 measures it under the pin'
 
   no_absolute_compare_across_instruments:
@@ -100,9 +100,9 @@ equations:
     - 'ONE ADDED PATH IS RED ON BOTH PATHS (rows R2, R4): the registered mutation.'
     - 'THE DIFFERENTIAL NAMES THE PATH (rows R4, R10): LC_ALL=C comm -13 base head, both sides sorted under the same collation.'
     - 'NEVER THE TREE AGAINST ITSELF (rows R9-R11): on a push to main merge-base(origin/main, HEAD) IS HEAD; the base is the first parent, and ci.yml deepens the depth-1 checkout by one so it exists. The G-10 review quorum (3/3, 2026-09-06) named the vacuous HEAD-vs-HEAD pass as its blocking finding.'
-    preconditions:
+    prose_preconditions:
     - 'the base is named by scripts/lib/resolve_base.sh on every CI checkout shape (G-6 case table)'
-    postconditions:
+    prose_postconditions:
     - 'the log carries the pin the verdict was measured under'
 
 proof_obligations:

@@ -64,9 +64,9 @@ equations:
       - "only the files on the walk are parsed: cost is bindings × depth, never the workspace"
       - "a symbol that does not resolve is still a focus node, with sym:resolved false"
       - "a re-export is followed at most 8 hops, so a cycle terminates with a reason"
-    preconditions:
+    prose_preconditions:
       - "the workspace's Cargo.toml files name their crates ([package] name and [lib] name, both indexed)"
-    postconditions:
+    prose_postconditions:
       - "two extractions of the same tree are byte-identical (R-15)"
     lean_theorem: none — L4 not declared
   ground_theorem:
@@ -76,9 +76,9 @@ equations:
     invariants:
       - "a file carrying `sorry` grounds nothing — the same rule ONT-2a's L4 credit uses, from the same scan"
       - "a contract reference that names no theorem, file or domain is counted (lean_refs_unresolved), never guessed"
-    preconditions:
+    prose_preconditions:
       - "the Lean tree is the first of proof_status::LEAN_THEOREM_BASES that exists under the repo root"
-    postconditions:
+    prose_postconditions:
       - "what the graph says about a theorem and what `pv proof-status` credits agree by construction"
     lean_theorem: none — L4 not declared
 

@@ -78,9 +78,9 @@ equations:
     - 'AN ORCHESTRATOR BRANCH IS NOT A ROW (rows 7-8): agent/pp-066-spec names no row; fix/… is not agent/.'
     - 'A SHAPE WITHOUT A HEAD BRANCH SAYS SO (rows 9-10): a REPORT line, never a silent exit 0.'
     - 'A MISSING DAG IS ENV, EXIT 2 (row 11).'
-    preconditions:
+    prose_preconditions:
     - 'base is named by scripts/lib/resolve_base.sh (PR-A, PMAT-1059) or passed as --base'
-    postconditions:
+    prose_postconditions:
     - 'a FAIL names the file or the README line'
 
   status_is_derived:
@@ -95,7 +95,7 @@ equations:
     - 'THE RECEIPT IS THE RECORD (D7 rows 12-15): a typed status is a cache, tolerated only while it agrees.'
     - 'ONE MARKER RULE: receipt_marker() is the same function as scripts/check_receipt_complete.sh (leading front matter, quotes stripped, .tmp is torn).'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'python3 scripts/render_dag.py --check is byte-identical to the committed block without reading any status: key'
 
   readme_counts_ratchet:
@@ -110,7 +110,7 @@ equations:
     - 'LAG IS ALLOWED, OVERSTATEMENT IS NOT (rows 3, 5, 6).'
     - '--exact IS THE ORCHESTRATOR''S CHECK (rows 2, 4), never a CI step on a row PR.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'the PASS line names the lag when there is one'
 
   enforcement_is_wired:
@@ -123,9 +123,9 @@ equations:
     codomain: 'bool'
     invariants:
     - 'CASE TABLE BEFORE THE LIVE CHECK (Verification Discipline #7).'
-    preconditions:
+    prose_preconditions:
     - 'guard-runner-labels is in gate.needs'
-    postconditions:
+    prose_postconditions:
     - 'check_guards_are_wired.sh names check_row_pr_write_set.sh as wired'
 
 proof_obligations:

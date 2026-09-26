@@ -71,7 +71,7 @@ equations:
     - 'THE MARKER IS SET LAST, AND ONLY THE MARKER COUNTS (selftest rows 1–4, 7): a legacy receipt with `partial=false` in its prose resolves to none (row 3) — prose is what a half-written receipt already has.'
     - 'A QUOTED VALUE STILL RESOLVES (row 6): `status: "complete"` is complete; the guard strips quotes and whitespace, never widens the vocabulary.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'check_one exits 0 only for complete; 1 for partial, none and torn'
 
   torn_writes_are_refused:
@@ -83,7 +83,7 @@ equations:
     invariants:
     - 'WRITE .tmp, THEN mv (rows 5, 12): a receipt is wholly present or absent; a tracked .tmp is a torn write that a commit froze.'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - '--dag names every tracked *.tmp receipt'
 
   dag_completion_requires_a_complete_receipt:
@@ -95,9 +95,9 @@ equations:
     invariants:
     - 'THE DAG CLAIMS NOTHING THE RECEIPT DOES NOT (rows 9–11): complete over complete passes; complete over partial is the registered mutation and is RED; complete with no receipt is RED; an open row needs no receipt.'
     - 'A MISSING DAG IS EXIT 2, NEVER A PASS (row 13): until the DAG lands on main (PR #2981) the live step is RED by design on a branch without it.'
-    preconditions:
+    prose_preconditions:
     - 'the DAG parses and every complete row carries a pmat_id (a row without one is reported with UNKNOWN and fails)'
-    postconditions:
+    prose_postconditions:
     - 'the PASS line is printed only when every complete row resolved to complete and no torn receipt is tracked'
 
   enforcement_is_wired_case_table_then_dag:
@@ -109,9 +109,9 @@ equations:
     codomain: 'bool'
     invariants:
     - 'CASE TABLE BEFORE THE LIVE CHECK (Verification Discipline #7).'
-    preconditions:
+    prose_preconditions:
     - 'guard-runner-labels is in gate.needs, so a RED here fails gate transitively'
-    postconditions:
+    prose_postconditions:
     - 'check_guards_are_wired.sh names the guard as wired'
 
 proof_obligations:

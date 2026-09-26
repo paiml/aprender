@@ -49,7 +49,7 @@ equations:
       The README's CLI-command count must match what `apr --help` lists.
     invariants:
     - "the quoted count must match the live `--help` subcommand list"
-    preconditions:
+    prose_preconditions:
     - "apr-cli builds clean on HEAD"
   apr_cookbook_link_present:
     formula: |

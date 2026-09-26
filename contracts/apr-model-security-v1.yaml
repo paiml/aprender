@@ -37,11 +37,12 @@ equations:
     - Roundtrip is byte-exact (decrypt(encrypt(m, k), k) == m for all m, k)
     - Each encryption produces a unique nonce (no nonce reuse)
     - Ciphertext length == plaintext length + 12 (nonce) + 16 (GCM tag)
-    preconditions:
+    prose_preconditions:
     - key is a valid 256-bit key
     - model bytes are non-empty
     postconditions:
     - decrypt(encrypt(model, key), key) == model
+    prose_postconditions:
     - encrypt(model, key1) != encrypt(model, key2) when key1 != key2
     lean_theorem: Theorems.EncryptionRoundtrip
 
@@ -60,10 +61,10 @@ equations:
     - No partial plaintext output on authentication failure
     - GCM tag verification is constant-time (no timing side channel)
     - Wrong key produces AuthenticationError, not garbage plaintext
-    preconditions:
+    prose_preconditions:
     - ciphertext was produced by encrypt() (or is adversarially modified)
     - key is a valid 256-bit key
-    postconditions:
+    prose_postconditions:
     - tampered ciphertext => Err(AuthenticationError)
     - wrong key => Err(AuthenticationError)
     - correct key + unmodified ciphertext => Ok(plaintext)
@@ -86,7 +87,7 @@ equations:
     - Manifest is signed (tampering with manifest itself is detectable)
     - SHA-256 is computed over raw tensor bytes (not metadata)
     - Canonical JSON serialization ensures deterministic hash
-    preconditions:
+    prose_preconditions:
     - model has at least one tensor
     - publisher signing key is available
     postconditions:
@@ -112,11 +113,11 @@ equations:
     - Different salts produce different keys (salt sensitivity)
     - Different passwords produce different keys (password sensitivity)
     - Minimum parameters enforced (m_cost >= 64MB, t_cost >= 3, p_cost >= 1)
-    preconditions:
+    prose_preconditions:
     - password is non-empty UTF-8 string
     - salt is exactly 16 bytes from CSPRNG
     - params meet minimum security thresholds
-    postconditions:
+    prose_postconditions:
     - output is exactly 256 bits (32 bytes)
     - output passes NIST SP 800-22 randomness tests
     lean_theorem: Theorems.KeyDerivationCorrectness

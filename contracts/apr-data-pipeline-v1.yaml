@@ -30,7 +30,7 @@ equations:
     - Empty file returns error (not empty report)
     preconditions:
     - path.exists() && path.is_file()
-    postconditions:
+    prose_postconditions:
     - report.line_count == actual line count of file
     - report.invalid_lines subset of 1..=line_count
     lean_theorem: Theorems.DataValidation
@@ -50,10 +50,12 @@ equations:
     - "len(Train) + len(Val) + len(Test) == N"
     preconditions:
     - ratios.sum() == 1.0
-    - seed is a valid u64
     - data.len() > 0
+    prose_preconditions:
+    - seed is a valid u64
     postconditions:
     - train.len() + val.len() + test.len() == data.len()
+    prose_postconditions:
     - no sample appears in more than one split
     lean_theorem: Theorems.DataSplitDeterminism
 
@@ -73,8 +75,9 @@ equations:
     - batch_size > 0
     - dataset.len() > 0
     postconditions:
-    - sum(batch.len() for batch in iterator) == dataset.len()
     - max(batch.len()) == batch_size
+    prose_postconditions:
+    - sum(batch.len() for batch in iterator) == dataset.len()
     lean_theorem: Theorems.StreamingDataLoader
 
   preprocessing_idempotency:
@@ -90,10 +93,12 @@ equations:
     - Token count <= max_length
     - Preprocessing is deterministic
     preconditions:
-    - text is valid UTF-8
     - max_length > 0
+    prose_preconditions:
+    - text is valid UTF-8
     postconditions:
     - result.token_ids.len() <= max_length
+    prose_postconditions:
     - special tokens appear exactly once
     lean_theorem: Theorems.PreprocessingIdempotency
 

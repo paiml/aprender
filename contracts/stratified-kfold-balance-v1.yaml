@@ -42,6 +42,7 @@ equations:
     - 'class iteration order is stable (sorted labels), not HashMap order'
     preconditions:
     - n_splits >= 2
+    prose_preconditions:
     - 'each class has at least n_splits samples (well-defined stratification)'
     lean_theorem: Theorems.StratifiedKFold_Balance
   C-COVERAGE:

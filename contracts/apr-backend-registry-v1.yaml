@@ -66,7 +66,7 @@ equations:
     - 'SPEC INVARIANT (i) — cpu ∈ Ready always (case-table row 1, on the real machine).'
     - 'SPEC INVARIANT (iii) — every entry carries a source and, if not Ready, a non-empty reason (row 2: a kind without a factory is Unavailable(NotCompiled | NoBackend), never missing).'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'render_block prints a `backend: <kind>` line for all five kinds and a `selected:` line (REG-8, REG-11)'
 
   reserve_and_selection:
@@ -81,7 +81,7 @@ equations:
     - 'A REFUSAL NEVER SLIDES ONTO THE SAME CARD (row 9, found by the catalogue on the one-cuda fixture): the wgpu twin of a memory-refused cuda device is refused too, with the figure the sibling measured.'
     - 'NOTHING PERSISTED (REG-12, row 7): a fixture round-trips through JSON and names its file in `source`; the machine registry says "machine".'
     preconditions: []
-    postconditions:
+    prose_postconditions:
     - 'the printed selection names why (reason non-empty)'
 
 proof_obligations:
