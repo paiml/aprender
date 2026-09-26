@@ -58,7 +58,7 @@ case "$MODE" in
         TARGET="${CANARY_TARGET_DIR:-$REPO_ROOT/target/train-canary}"
         (cd "$REPO_ROOT/$CRATE" && CARGO_TARGET_DIR="$TARGET" cargo build --release --locked)
         BIN="$TARGET/release/aprender-train-canary"
-        flock /tmp/apr-gpu.lock "$BIN" --iters "$ITERS" --json "$OUT"
+        flock -w 3600 /tmp/apr-gpu.lock "$BIN" --iters "$ITERS" --json "$OUT"
         echo "evidence: $OUT"
         bash "$COMPARATOR" --compare "$OUT" "$BASELINE"
         ;;

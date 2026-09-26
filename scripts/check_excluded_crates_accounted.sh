@@ -46,7 +46,7 @@ MODE="${1:-run}"
 case "$MODE" in
     run | --self-test) ;;
     -h | --help)
-        sed -n '2,32p' "${BASH_SOURCE[0]}"
+        sed -n '2,41p' "${BASH_SOURCE[0]}"
         exit 0
         ;;
     *)
@@ -99,8 +99,8 @@ def code(text):
 
 
 def names(text, token):
-    """`token` appears as a whole path: not glued to a longer name on either side."""
-    return re.search(r"(?<![\w./-])" + re.escape(token) + r"(?![\w-])", text) is not None
+    """`token` appears as a whole path: not glued to a longer name (`./x` and `$ROOT/x` count)."""
+    return re.search(r"(?<![\w.-])" + re.escape(token) + r"(?![\w-])", text) is not None
 
 
 def dispatched(root):
@@ -226,6 +226,7 @@ CASES = [
     ("two-part pre-release pin", case(canary="0.22-alpha"), True),
     ("ci script names the path only in a comment",
      case(guard="#!/usr/bin/env bash\n# builds crates/canary\necho hi\n"), True),
+    ("ci script names the path under $ROOT/", case(guard="#!/usr/bin/env bash\nbash \"$ROOT/crates/canary/run.sh\"\n"), False),
     ("ci script names only a longer path", case(guard="#!/usr/bin/env bash\nls crates/canary-old\n"), True),
     ("check_ script guard_tree does not run", case(), True, set()),
     ("workflow names the script only in a comment",

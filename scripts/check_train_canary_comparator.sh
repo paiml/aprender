@@ -88,6 +88,15 @@ def verdict(result, baseline):
     return (1 if bad else 0), lines
 
 
+def size_errors(baseline, sizes):
+    rows = [r.get("size") for r in baseline.get("rows", []) if isinstance(r, dict)]
+    if sizes is None:
+        return ["no `const SIZES` array found in the canary"]
+    if sorted(sizes) != sorted(rows):
+        return [f"baseline sizes {sorted(rows)} != canary SIZES {sorted(sizes)}: a size would go ungated"]
+    return []
+
+
 def canary_sizes(src):
     """The `m x k x n` sizes in the canary's `const SIZES` array."""
     m = re.search(r"const SIZES[^=]*=\s*\[(.*?)\];", src, re.S)
@@ -137,6 +146,13 @@ SIZE_CASES = [
     ("commented-out size ignored", SRC.replace("    (32", "    // (1, 1, 1),\n    (32"), ["4x2560x9728", "32x2560x4096"]),
     ("no SIZES const", "fn main() {}\n", None),
 ]
+SYNC_CASES = [
+    # (name, baseline sizes, canary sizes, must_be_red)
+    ("in sync, any order", ["a", "b"], ["b", "a"], False),
+    ("canary gained a size", ["a"], ["a", "b"], True),
+    ("canary dropped a size", ["a", "b"], ["a"], True),
+    ("no SIZES found", ["a"], None, True),
+]
 
 
 def self_test():
@@ -151,7 +167,12 @@ def self_test():
         ok = got == want
         bad += not ok
         print(f"  {'ok  ' if ok else 'FAIL'} sizes {name}" + ("" if ok else f" -> {got}"))
-    n = len(CASES) + len(SIZE_CASES)
+    for name, rows, sizes, must_red in SYNC_CASES:
+        got = bool(size_errors({"rows": [{"size": x} for x in rows]}, sizes))
+        ok = got == must_red
+        bad += not ok
+        print(f"  {'ok  ' if ok else 'FAIL'} sync {name}")
+    n = len(CASES) + len(SIZE_CASES) + len(SYNC_CASES)
     print(f"case table: {n - bad}/{n}")
     return bad == 0
 
@@ -166,11 +187,7 @@ if mode == "baseline":
     errs = baseline_errors(first)
     with open(sys.argv[3]) as f:
         sizes = canary_sizes(f.read())
-    rows = [r.get("size") for r in first.get("rows", []) if isinstance(r, dict)]
-    if sizes is None:
-        errs.append(f"no `const SIZES` array found in {sys.argv[3]}")
-    elif sorted(sizes) != sorted(rows):
-        errs.append(f"baseline sizes {sorted(rows)} != canary SIZES {sorted(sizes)}: a size would go ungated")
+    errs += size_errors(first, sizes)
     for e in errs:
         print(f"FAIL  {sys.argv[2]}: {e}")
     if errs:
