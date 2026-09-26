@@ -262,31 +262,47 @@ fn cmd_run(f: &Flags) -> Result<(), String> {
     Ok(())
 }
 
+/// Prints `lane seconds` for every `predicate.consultations.<lane>.duration_seconds`
+/// found in one `receipt.intoto.jsonl` file's lines. Returns how many it printed.
+fn print_consultation_latencies(text: &str) -> u64 {
+    let mut n = 0;
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let Some(c) = v["predicate"]["consultations"].as_object() else {
+            continue;
+        };
+        for (lane, body) in c {
+            if let Some(s) = body["duration_seconds"].as_f64() {
+                println!("{lane} {s}");
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// Walks one PR directory's head subdirectories, printing consultation
+/// latencies from each `receipt.intoto.jsonl` found. Returns the total printed.
+fn count_voters_in_pr(pr_path: &std::path::Path) -> u64 {
+    let mut n = 0;
+    for head in std::fs::read_dir(pr_path).into_iter().flatten().flatten() {
+        let Ok(text) = std::fs::read_to_string(head.path().join("receipt.intoto.jsonl")) else {
+            continue;
+        };
+        n += print_consultation_latencies(&text);
+    }
+    n
+}
+
 fn cmd_voters(dir: &str) -> Result<(), String> {
     let mut n = 0;
     for pr in std::fs::read_dir(dir)
         .map_err(|e| format!("{dir}: {e}"))?
         .flatten()
     {
-        for head in std::fs::read_dir(pr.path()).into_iter().flatten().flatten() {
-            let Ok(text) = std::fs::read_to_string(head.path().join("receipt.intoto.jsonl")) else {
-                continue;
-            };
-            for line in text.lines() {
-                let Ok(v) = serde_json::from_str::<Value>(line) else {
-                    continue;
-                };
-                let Some(c) = v["predicate"]["consultations"].as_object() else {
-                    continue;
-                };
-                for (lane, body) in c {
-                    if let Some(s) = body["duration_seconds"].as_f64() {
-                        println!("{lane} {s}");
-                        n += 1;
-                    }
-                }
-            }
-        }
+        n += count_voters_in_pr(&pr.path());
     }
     if n == 0 {
         return Err(format!("{dir}: no consultation latencies"));

@@ -88,7 +88,7 @@ use aprender_review_experiment::pilot::{project, Projection};
 use aprender_review_experiment::prereg;
 use aprender_review_experiment::ratchet;
 use aprender_review_experiment::receipt::{admissible, Arm, Expect, NotRun, Receipt};
-use aprender_review_experiment::score::{collect, score, Scored};
+use aprender_review_experiment::score::{collect, score, Ratio, Scored};
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
@@ -416,6 +416,51 @@ struct Report<'a> {
     pilot: Option<Projection>,
 }
 
+/// The `--pilot` projection for `score_cmd`: warm/cold wall-clock spread and
+/// the §2.2 sample-size rule, or `None` when `--pilot` was not passed.
+fn build_pilot(
+    f: &Flags,
+    recall: Ratio,
+    items: &[Item],
+    cell: &str,
+    arm: Arm,
+    lines: &str,
+    expect: Expect<'_>,
+    rows: &[Scored],
+) -> Result<Option<Projection>, String> {
+    if !f.contains_key("pilot") {
+        return Ok(None);
+    }
+    if split_of(f)? != Split::Dev {
+        return Err("--pilot projects from dev items: pass --split dev".into());
+    }
+    let ran: std::collections::BTreeSet<&str> = rows
+        .iter()
+        .filter(|s| s.verdict.executed())
+        .map(|s| s.id.as_str())
+        .collect();
+    let (mut warm, mut cold) = (Vec::new(), Vec::new());
+    for r in lines.lines().filter_map(|l| admissible(l, expect).ok()) {
+        let mine = r.cell == cell && r.arm == arm && !r.rerun;
+        if let (true, Some(t)) = (mine && ran.contains(r.item_id.as_str()), r.timings) {
+            if r.cold {
+                cold.push(t.wall_ms);
+            } else {
+                warm.push(t.wall_ms);
+            }
+        }
+    }
+    let test: Vec<&Item> = items.iter().filter(|i| i.split == Split::Test).collect();
+    let defects = test.iter().filter(|i| i.class.is_defect()).count() as u64;
+    Ok(Some(project(
+        recall,
+        &warm,
+        &cold,
+        defects,
+        test.len() as u64,
+    )))
+}
+
 fn score_cmd(f: &Flags) -> Result<(), String> {
     let (items, prereg_sha, cv) = corpus()?;
     let path = need(f, "receipts")?;
@@ -449,32 +494,7 @@ fn score_cmd(f: &Flags) -> Result<(), String> {
         |p| std::fs::read_to_string(root.join(p)).ok(),
     );
     let sc = score(&rows);
-    let pilot = if f.contains_key("pilot") {
-        if split_of(f)? != Split::Dev {
-            return Err("--pilot projects from dev items: pass --split dev".into());
-        }
-        let ran: std::collections::BTreeSet<&str> = rows
-            .iter()
-            .filter(|s| s.verdict.executed())
-            .map(|s| s.id.as_str())
-            .collect();
-        let (mut warm, mut cold) = (Vec::new(), Vec::new());
-        for r in lines.lines().filter_map(|l| admissible(l, expect).ok()) {
-            let mine = r.cell == cell && r.arm == arm && !r.rerun;
-            if let (true, Some(t)) = (mine && ran.contains(r.item_id.as_str()), r.timings) {
-                if r.cold {
-                    cold.push(t.wall_ms);
-                } else {
-                    warm.push(t.wall_ms);
-                }
-            }
-        }
-        let test: Vec<&Item> = items.iter().filter(|i| i.split == Split::Test).collect();
-        let defects = test.iter().filter(|i| i.class.is_defect()).count() as u64;
-        Some(project(sc.recall, &warm, &cold, defects, test.len() as u64))
-    } else {
-        None
-    };
+    let pilot = build_pilot(f, sc.recall, &items, &cell, arm, &lines, expect, &rows)?;
     let out = Report {
         cell: &cell,
         arm,
