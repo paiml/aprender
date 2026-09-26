@@ -233,6 +233,8 @@ not_expressible:
   - {key: agents, reader: ontology/owl.rs}
   - {key: entity_types, reader: ontology/owl.rs}
   - {key: extractors, reader: ontology/owl.rs}
+  - {key: entity_type_target_class, reader: ontology/owl.rs}
+  - {key: llm_context_role_synonyms, reader: ontology/owl.rs}
 
 # ONT-4d (R-19): the subsumption hierarchy. Each edge is read off the two concepts' own `doc` above, never
 # asserted for convenience: `Kernel` is "a contract whose kind is kernel", and `Symbol` is "a Rust symbol … a free

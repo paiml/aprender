@@ -110,7 +110,7 @@ impl fmt::Display for OwlError {
 impl std::error::Error for OwlError {}
 
 /// Content keys OWL does not express, with the reason. Each must appear in Σ `not_expressible` when populated.
-const UNEXPRESSED_CONTENT: [(&str, &str); 6] = [
+const UNEXPRESSED_CONTENT: [(&str, &str); 8] = [
     (
         "acyclic",
         "irreflexive ∧ transitive is disallowed in OWL 2 DL; acyclicity is checked in Rust (R-19)",
@@ -132,6 +132,14 @@ const UNEXPRESSED_CONTENT: [(&str, &str); 6] = [
         "entity types name extractors; their classes are concepts, which ARE written",
     ),
     ("extractors", "extractors are readers (code), not ontology"),
+    (
+        "entity_type_target_class",
+        "a shape-targeting default for the SHACL reader, not a class relation",
+    ),
+    (
+        "llm_context_role_synonyms",
+        "heading synonyms are an extractor's lexicon, not a TBox",
+    ),
 ];
 
 /// Σ → axioms. See the module doc for the mapping and the refusal.
@@ -148,6 +156,8 @@ pub fn export(sigma: &Sigma) -> Result<OwlExport, OwlError> {
         extractors,
         not_expressible,
         subsumes, // ONT-4d → SubClassOf, and the intended subsumptions the TBox measures against
+        entity_type_target_class,
+        llm_context_role_synonyms,
         readers: _, // Σ bookkeeping: which reader claims which key
         metadata: _, // Σ bookkeeping: the contract schema's block, opaque to Σ
     } = sigma;
@@ -159,6 +169,14 @@ pub fn export(sigma: &Sigma) -> Result<OwlExport, OwlError> {
         ("agents", !agents.is_empty()),
         ("entity_types", !entity_types.is_empty()),
         ("extractors", !extractors.is_empty()),
+        (
+            "entity_type_target_class",
+            !entity_type_target_class.is_empty(),
+        ),
+        (
+            "llm_context_role_synonyms",
+            !llm_context_role_synonyms.is_empty(),
+        ),
     ];
     let mut not_expressed = BTreeMap::new();
     for ((key, is_populated), (key2, why)) in populated.iter().zip(UNEXPRESSED_CONTENT.iter()) {
