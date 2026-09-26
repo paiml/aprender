@@ -200,6 +200,8 @@ pub fn fused_q4k_dot_simd(q4k_data: &[u8], activations: &[f32]) -> Result<f32> {
         #[cfg(target_arch = "x86_64")]
         // SAFETY: selected only when avx2 + fma were detected; bounds checked inside
         DotKernel::Avx2 => unsafe { fused_q4k_dot_avx2(q4k_data, activations) },
+        #[cfg(target_arch = "aarch64")]
+        DotKernel::Neon => fused_q4k_dot_neon(q4k_data, activations),
         // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_dot)
         _ => fused_q4k_dot(q4k_data, activations),
     }
@@ -363,6 +365,7 @@ unsafe fn fused_q4k_dot_avx512_vnni(q4k_data: &[u8], activations: &[f32]) -> Res
 
 include!("q4k_dot_avx2.rs");
 include!("q4k_q8k_dot_neon.rs");
+include!("q4k_dot_neon.rs");
 include!("fused_q4k_q8k_dot_avx512vnni.rs");
 include!("horizontal.rs");
 include!("requires.rs");

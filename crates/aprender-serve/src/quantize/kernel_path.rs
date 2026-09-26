@@ -65,8 +65,7 @@ pub fn selected_dot_kernel(op: DotOp) -> DotKernel {
     #[cfg(target_arch = "aarch64")]
     {
         match op {
-            DotOp::Q4kQ8k | DotOp::Q5kF32 | DotOp::Q6kF32 => DotKernel::Neon,
-            DotOp::Q4kF32 => DotKernel::Scalar,
+            DotOp::Q4kF32 | DotOp::Q4kQ8k | DotOp::Q5kF32 | DotOp::Q6kF32 => DotKernel::Neon,
         }
     }
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -96,8 +95,7 @@ pub fn host_has_simd() -> bool {
 /// Scalar paths on a SIMD host that are KNOWN and owned: (op, target_arch, owner).
 /// A gap not listed here fails the gate; a listed gap that has been closed
 /// also fails it, so this list cannot go stale.
-pub const KNOWN_SCALAR_GAPS: &[(DotOp, &str, &str)] =
-    &[(DotOp::Q4kF32, "aarch64", "#2880 (no Q4_K×f32 NEON kernel)")];
+pub const KNOWN_SCALAR_GAPS: &[(DotOp, &str, &str)] = &[];
 
 #[cfg(test)]
 mod tests {

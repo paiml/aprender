@@ -6,7 +6,7 @@
   priority: high
   assigned_to: aprender-1c
   created: 2026-09-26T03:00:00Z
-  updated: 2026-09-26T09:40:00Z
+  updated: 2026-09-26T10:30:00Z
   spec: null
   acceptance_criteria:
   - 'Slice 1: measure VNNI 4-row vs lean AVX2 Q4K×Q8K on Zen 4; no dispatch change if VNNI is not faster (ignored bench only)'
@@ -15,7 +15,7 @@
   - 'Slice 4: selected_dot_kernel(op) is what the dispatchers match on; reachability_gate is RED on an undeclared Scalar path on a SIMD host and on a declared gap that has closed'
   - 'Oracle is "not scalar where a SIMD kernel exists", not "widest ISA"'
   - 'Slice 5: Q5_K×f32 SIMD dot for AVX2+FMA (x86_64) and NEON (aarch64) within 1e-5·Σ|w·a| of an f64 reference, reached by fused_q5k_dot_simd via selected_dot_kernel(DotOp::Q5kF32); both Q5kF32 gap rows removed'
-  - 'Remaining declared gap after slice 5: Q4_K×f32 on aarch64, owned by #2880'
+  - 'Slice 6: aarch64 NEON Q4_K×f32 dot within 1e-5·Σ|w·a| of an f64 reference, reached by fused_q4k_dot_simd; KNOWN_SCALAR_GAPS is empty, so no dot op may run Scalar on an x86_64 AVX2+FMA or aarch64 host'
   phases: []
   subtasks: []
   estimated_effort: null
