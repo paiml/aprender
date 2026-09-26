@@ -3,17 +3,21 @@
   item_type: task
   kind: code
   title: 'EXT-22: fleet export (EXT-001 epic #4381)'
-  status: planned
+  status: in_progress
   priority: high
   assigned_to: ext
   created: 2026-09-25T12:28:22Z
-  updated: 2026-09-25T12:28:22Z
+  updated: 2026-09-26T10:40:00Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'I-7: re-export of an unchanged host is byte-identical and leaves the file untouched (cargo test -p apr-cli --lib falsify_ext_010)'
+  - 'FALSIFY-EXT-010: a deleted or extra export row turns `apr runs export --check` RED, naming the row'
+  - 'infra issues filed with checkable acceptance: https://github.com/paiml/infra/issues/1179 (nightly per-host export + generated docs/MODELS.md), https://github.com/paiml/infra/issues/1180 (infra#1057 dogfood-model columns)'
+  - 'FALSIFY-EXT-010 goes live against the ledger once infra#1180 lands'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
   - ext-001
-  notes: null
+  notes: 'apr runs export folded into ext/epic-4381 (3aa7bdc33, 97704eb05). Continuous row: the nightly timer and the ledger columns are infra#1179 / infra#1180.'
