@@ -250,7 +250,7 @@ advertises_self_test() {
 # guards exit 0 on UNMEASURED by design (a runner without the tool must not red
 # every PR), so `PASS  <guard> [run]` meant either "measured and passed" or "not
 # measured here", and the log could not say which -- main run 35561048727 showed
-# check_fleet_pv_shapes_gate.sh as a bare PASS on gx10-build, and #3567's
+# check_fleet_pv_shapes_advisory.sh as a bare PASS on gx10-build, and #3567's
 # criterion (the verdict measured inside a runner) was unobservable anywhere.
 #
 # So under a PASS row, every captured line whose FIRST token is UNMEASURED or
