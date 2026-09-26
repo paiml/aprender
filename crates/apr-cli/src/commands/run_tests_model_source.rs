@@ -31,6 +31,7 @@
     #[test]
     fn test_run_result_debug() {
         let result = RunResult {
+            logprobs: None,
             text: "Hello".to_string(),
             duration_secs: 0.1,
             cached: true,
@@ -141,6 +142,7 @@
     #[test]
     fn test_run_result_clone() {
         let result = RunResult {
+            logprobs: None,
             text: "Test".to_string(),
             duration_secs: 1.0,
             cached: false,

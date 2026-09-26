@@ -4,6 +4,7 @@
 #[test]
 fn stream_output_emits_n_plus_one_json_lines() {
     let result = RunResult {
+        logprobs: None,
         text: "Hello world".to_string(),
         duration_secs: 0.25,
         cached: false,
@@ -74,6 +75,7 @@ fn stream_output_emits_n_plus_one_json_lines() {
 #[test]
 fn stream_token_events_carry_their_own_decoded_text() {
     let result = RunResult {
+        logprobs: None,
         text: "I'm here to help".to_string(),
         duration_secs: 1.0,
         cached: true,
@@ -121,6 +123,7 @@ fn stream_token_events_carry_their_own_decoded_text() {
 #[test]
 fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
     let result = RunResult {
+        logprobs: None,
         text: "abc".to_string(),
         duration_secs: 1.0,
         cached: true,
@@ -148,6 +151,7 @@ fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
 #[test]
 fn stream_output_no_tokens_emits_only_final() {
     let result = RunResult {
+        logprobs: None,
         text: String::new(),
         duration_secs: 0.0,
         cached: true,
@@ -175,6 +179,7 @@ fn stream_output_no_tokens_emits_only_final() {
 #[test]
 fn stream_output_none_tokens_emits_only_final() {
     let result = RunResult {
+        logprobs: None,
         text: String::new(),
         duration_secs: 0.0,
         cached: false,
@@ -201,6 +206,7 @@ fn stream_output_none_tokens_emits_only_final() {
 #[test]
 fn build_final_json_matches_legacy_json_shape() {
     let result = RunResult {
+        logprobs: None,
         text: "abc".to_string(),
         duration_secs: 1.0,
         cached: true,

@@ -175,6 +175,8 @@ pub(crate) struct RunOptions {
     /// #3723: `--thinking on|off`. `None` renders the production default; realizar applies it
     /// to the rendered prompt and refuses `on` for a template with no thinking mode.
     pub thinking: Option<bool>,
+    /// #4026: `--logprobs K`. 0 records nothing.
+    pub logprobs_top_k: usize,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -211,6 +213,7 @@ impl Default for RunOptions {
             split_prompt: false,
             chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
             stream: false,
         }
     }
@@ -273,6 +276,8 @@ pub(crate) struct RunResult {
     pub token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     pub usage: RunUsage,
+    /// #4026: `{top_k, prompt_token_ids, steps}` when `--logprobs K` > 0, else `None`.
+    pub logprobs: Option<serde_json::Value>,
 }
 
 /// Resolve a user-supplied model argument into a [`ModelSource`].
@@ -361,6 +366,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
         usage: output.usage,
+        logprobs: output.logprobs,
     })
 }
 

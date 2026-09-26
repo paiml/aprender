@@ -224,6 +224,12 @@ pub enum Commands {
         /// F-CLIPARITY-01 / PMAT-384 / paiml/aprender#571
         #[arg(long, default_value = "64")]
         repeat_last_n: usize,
+        /// Record the K most likely next tokens (token id, logit, logprob) at every
+        /// generated step, plus the prompt ids actually encoded, in `--json` output
+        /// (#4026). 0 (the default) records nothing. Refused by name on a path that
+        /// cannot record them (`--trace`, APR/SafeTensors, wgpu, qwen3_moe).
+        #[arg(long, value_name = "K", default_value_t = 0)]
+        logprobs: usize,
         /// Process prompt tokens one-by-one instead of batched prefill.
         /// Useful for debugging prefill correctness (comparing per-token attention).
         /// F-CLIPARITY-01 / PMAT-385 / paiml/aprender#572

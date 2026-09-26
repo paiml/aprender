@@ -46,6 +46,8 @@ pub(crate) fn run(
     chat_template: bool,
     // #3723: `--thinking on|off` (None: the production default), applied in realizar.
     thinking: Option<bool>,
+    // #4026: `--logprobs K`: the K most likely tokens at every generated step.
+    logprobs_top_k: usize,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -118,6 +120,7 @@ pub(crate) fn run(
         split_prompt,
         chat_template,
         thinking,
+        logprobs_top_k,
         stream,
     };
 
@@ -634,6 +637,10 @@ fn build_final_json(
         // is the whole window (load, upload, F2, generation), kept for compatibility.
         "generation_ms": result.usage.generation_ms,
         "setup_ms": result.usage.setup_ms,
+        // #4026: present only when `--logprobs K` asked for it: the prompt ids the
+        // model read and, per generated step, the K most likely tokens before any
+        // penalty or sampling. A path that cannot record them refused the run.
+        "logprobs": result.logprobs,
         // #3602: `used_gpu: false` alone collapses two different outcomes — "no
         // accelerator was asked for" and "one was asked for, attempted, and
         // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected
