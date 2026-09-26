@@ -86,6 +86,8 @@ ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
 GUARD_REL=scripts/check_pr_review_receipt.sh
 BATS_REL=tests/pr-review.bats
 SCAN_REL=scripts/pr_review_duplication_scan.sh
+# #4472: the guard's docs tier runs the diff classifier; a tree without it fails closed.
+CLASS_REL=scripts/ci/diff_class.sh
 GUARD="$ROOT/$GUARD_REL"
 
 JOBS=12
@@ -265,6 +267,7 @@ snapshot_source() {
   cp -a "$ROOT/$BATS_REL" "$d/$BATS_REL"
   cp -a "$ROOT/$GUARD_REL" "$d/$GUARD_REL"
   cp -a "$ROOT/$SCAN_REL" "$d/$SCAN_REL"
+  mkdir -p "$d/scripts/ci" && cp -a "$ROOT/$CLASS_REL" "$d/$CLASS_REL"
 }
 
 # ---------------------------------------------------------------------------
@@ -323,6 +326,9 @@ build_tree() {
   # mutant tree missing it would fail the baseline for a reason that has nothing to do
   # with the mutant. That is failure mode 2 at the top of this file, exactly.
   cp -a "$SNAP/$SCAN_REL" "$d/$SCAN_REL"
+  # The diff classifier (#4472) is copied for the same reason: the guard reads it on
+  # every not-triggered antigravity arm, and the fixture rows 34/44-46 exercise that.
+  mkdir -p "$d/scripts/ci" && cp -a "$SNAP/$CLASS_REL" "$d/$CLASS_REL"
 }
 
 # ---------------------------------------------------------------------------

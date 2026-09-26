@@ -21871,3 +21871,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4472
+  github_issue: 4472
+  item_type: task
+  title: 'docs-only PRs pay full CI + full quorum: classify the diff, skip only what it cannot affect'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-49
+  created: 2026-09-26 17:00:00+00:00
+  updated: '2026-09-26T19:05:00Z'
+  spec: null
+  acceptance_criteria:
+  - 'one classifier, scripts/ci/diff_class.sh, read by ci_test_tier.sh and the pr-review receipt guard; a deleted doc, crate README, .claude/, contracts/, evidence/ and config are code'
+  - 'the pr-review quorum takes a docs tier (antigravity not-triggered) only on class=docs with BEATS untouched and no comparative ratio added (fixture rows 44-47)'
+  - 'PR 2: mutants/determinism/sov sections skip on class=docs; readme_contract, the BEATS drift gate and book contracts still run'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator P0 via the cop 2026-09-26. Evidence case #4467. PR 1 #4503 (no workflow files); PR 2 after #4482 (a2 owns the shard hunks).'

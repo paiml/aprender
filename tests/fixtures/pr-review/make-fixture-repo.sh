@@ -242,6 +242,15 @@ printf 'autonomy disabled by the operator, 2026-08-31\n' \
   > "$DEST/.github/pr-review-autonomy.disabled"
 commit "K1 ops: disable autonomous merge"
 
+# --- SB1 (#4472): a docs-only diff that edits the beat scoreboard -------------
+# docs/BEATS.md is class=docs to scripts/ci/diff_class.sh and carries no ratio on the
+# added line, so the ONLY rule standing between it and the docs tier is "BEATS.md is
+# untouched". Added after K1 and forked from C1, so no earlier SHA moves.
+g checkout -q -b beats-pr "$(g rev-parse main~2)"
+mkdir -p "$DEST/docs"
+printf '# Beats\n\nThe scoreboard is regenerated from contracts/.\n' > "$DEST/docs/BEATS.md"
+commit "SB1 docs: note how the beat scoreboard is generated"
+
 g checkout -q main
 
 # --- prove the topology is the one the fixtures assume ------------------------
@@ -258,6 +267,7 @@ H1=$(g rev-parse guard-pr)
 T1=$(g rev-parse tipclean-pr)
 T2=$(g rev-parse tipdirty-pr)
 K1=$(g rev-parse ksmain-pr)
+SB1=$(g rev-parse beats-pr)
 
 [ "$(g merge-base refs/remotes/origin/main "$F1")" = "$C1" ] \
   || { echo "FIXTURE REPO BROKEN: merge-base(origin/main, F1) != C1" >&2; exit 1; }
@@ -321,8 +331,8 @@ fi
   || { echo "FIXTURE REPO BROKEN: merge-base(K1, F1) != C1, so pointing origin/main at K1 would invalidate every committed receipt" >&2; exit 1; }
 
 # --- assert the SHAs are the ones the committed receipts were written against --
-ACTUAL=$(printf 'C1 %s\nC3 %s\nF1 %s\nD1 %s\nG1 %s\nS1 %s\nP1 %s\nE1 %s\nM1 %s\nH1 %s\nT1 %s\nT2 %s\nK1 %s\n' \
-  "$C1" "$C3" "$F1" "$D1" "$G1" "$S1" "$P1" "$E1" "$M1" "$H1" "$T1" "$T2" "$K1")
+ACTUAL=$(printf 'C1 %s\nC3 %s\nF1 %s\nD1 %s\nG1 %s\nS1 %s\nP1 %s\nE1 %s\nM1 %s\nH1 %s\nT1 %s\nT2 %s\nK1 %s\nSB1 %s\n' \
+  "$C1" "$C3" "$F1" "$D1" "$G1" "$S1" "$P1" "$E1" "$M1" "$H1" "$T1" "$T2" "$K1" "$SB1")
 if [ "${PRREV_WRITE_EXPECTED_SHAS:-0}" = "1" ]; then
   printf '%s\n' "$ACTUAL" > "$HERE/expected-shas.txt"
   echo "wrote $HERE/expected-shas.txt" >&2

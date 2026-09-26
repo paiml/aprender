@@ -352,6 +352,14 @@ if [ -z "$REPO" ]; then
   }
 fi
 
+# #4472: the ONE diff classifier CI and this guard share. It comes from the tree this
+# guard runs from, never from $REPO (the fixtures point $REPO at a synthesized repo).
+# Looked up LAZILY: only a not-triggered antigravity arm runs it, and there an absent
+# classifier makes the call fail, which rejects [B1] ("the docs tier fails closed").
+# Not an up-front exit: harnesses that copy this guard alone (mutate_quorum_arm.sh,
+# check_pr_review_arm4.sh) never reach the docs tier and must not break on its input.
+DIFF_CLASS=${PR_REVIEW_DIFF_CLASS:-$(dirname "$(readlink -f "$0")")/ci/diff_class.sh}
+
 VERDICTS='PASS FINDINGS DEGRADED BLOCK'
 PREDICATE_TYPE='https://paiml.dev/attestations/pr-review/v2'
 
@@ -869,8 +877,39 @@ validate_receipt() {
     # on this epic". Cost is instrumented instead (`usage`, below), so a threshold can be
     # DERIVED from 30 samples later rather than guessed now - S10 row 8.4's argument,
     # reused because it is the same argument.
-    [ "$ag_st" != "not-triggered" ] \
-      || reject B1 "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR exactly as S3.A's is; a shape trigger would exempt the small diffs that look obvious, which is every PR in S9's spine" || return 1
+    #
+    # THE DOCS TIER (#4472, operator P0 2026-09-26: "the quorum gets a light tier for
+    # docs-only diffs"). ONE exemption, and it is narrower than "looks like docs":
+    #   (1) scripts/ci/diff_class.sh says class=docs -- every path is root *.md,
+    #       book/**/*.md or docs/**, and present at head (the classifier CI uses);
+    #   (2) docs/BEATS.md is untouched -- the scoreboard IS a claim, whatever its suffix;
+    #   (3) no ADDED line anywhere in the diff matches COMPARATIVE_RE. B4 deliberately
+    #       measured docs/ prose OUT of its scope (2/5 precision); this is the reverse
+    #       trade, and it is the right one here: a false positive costs one agy run, a
+    #       false negative lets a ratio into a README unread by a second vendor;
+    #   (4) trigger_reason names the tier ("docs tier"), so the record says WHICH rule
+    #       exempted the arm -- S3.0's "not-triggered is a distinct, visible state".
+    # pmat stays unconditional (S3.A), and the signature, patch binding and the
+    # cuda/crux/mutation recomputations above all still ran on this receipt.
+    if [ "$ag_st" = "not-triggered" ]; then
+      local dc dc_out ag_why ag_claim='' acf acl
+      dc_out=$(bash "$DIFF_CLASS" --repo "$REPO" --base "$base" --head "$head" 2>&1) \
+        || reject B1 "consultations.antigravity is not-triggered and the diff classifier could not classify $base..$head ($(printf '%s' "$dc_out" | tr '\n' ' ' | cut -c1-160)); the docs tier fails closed" || return 1
+      dc=$(printf '%s\n' "$dc_out" | sed -n 's/^class=//p')
+      [ "$dc" = "docs" ] \
+        || reject B1 "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR except a docs-tier diff, and this one is class=$dc ($(printf '%s\n' "$dc_out" | sed -n 's/^reason=//p' | cut -c1-160))" || return 1
+      ! grep -qx 'docs/BEATS.md' <<<"$changed_files" \
+        || reject B1 "consultations.antigravity is not-triggered, but the diff touches docs/BEATS.md; the beat scoreboard is a published claim, so the docs tier does not cover it" || return 1
+      while IFS=$'\t' read -r acf acl; do
+        [ -n "$acf" ] || continue
+        if match_comparative "$acl"; then ag_claim="$acf"; break; fi
+      done < <(changed_lines "$base" "$head" '+' | grep -Ei -- "$COMPARATIVE_RE" || true)
+      [ -z "$ag_claim" ] \
+        || reject B1 "consultations.antigravity is not-triggered, but an added line in $ag_claim states a comparative ratio; the docs tier does not cover a claim, which is exactly what a second vendor is owed" || return 1
+      ag_why=$(jq -r '.predicate.consultations.antigravity.trigger_reason // ""' "$rcpt")
+      grep -qi 'docs tier' <<<"$ag_why" \
+        || reject B1 "consultations.antigravity is not-triggered on a docs-tier diff, but its trigger_reason ('$ag_why') does not name the docs tier; the record must say which rule exempted the arm (S3.0)" || return 1
+    fi
 
     if [ "$ag_st" = "consulted" ]; then
       local ag_attempted ag_out ag_ident ag_usage ag_div ag_nfind ag_sum
