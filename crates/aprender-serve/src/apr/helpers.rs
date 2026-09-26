@@ -35,12 +35,13 @@ pub(crate) fn rms_norm(x: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
         let mut output = vec![0.0f32; x.len()];
         for t in 0..n_tokens {
             let offset = t * hidden_dim;
-            let slice = &x[offset..offset + hidden_dim];
-            let ss: f32 = slice.iter().map(|v| v * v).sum::<f32>() / hidden_dim as f32;
-            let rms = (ss + eps).sqrt();
-            for i in 0..hidden_dim {
-                output[offset + i] = slice[i] / rms * weight[i];
-            }
+            crate::gguf::ops::rms_norm_scalar_into(
+                &x[offset..offset + hidden_dim],
+                weight,
+                eps,
+                crate::gguf::ops::RmsScale::Divide,
+                &mut output[offset..offset + hidden_dim],
+            );
         }
         output
     }
@@ -261,47 +262,14 @@ pub(crate) fn apply_rope_norm(
     theta: f32,
     rope_type: u32,
 ) {
-    let half_dim = head_dim / 2;
-
-    for h in 0..num_heads {
-        let head_offset = h * head_dim;
-
-        // Pre-compute cos/sin for this position
-        for i in 0..half_dim {
-            let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim as f32);
-            let angle = position as f32 * freq;
-            let cos_val = angle.cos();
-            let sin_val = angle.sin();
-
-            if rope_type == 2 {
-                // NEOX style: split halves (x[0..half], x[half..])
-                // Used by GPT-NeoX, Qwen2.5, and newer models
-                let idx0 = head_offset + i;
-                let idx1 = head_offset + half_dim + i;
-
-                if idx1 < x.len() {
-                    let x0 = x[idx0];
-                    let x1 = x[idx1];
-
-                    x[idx0] = x0 * cos_val - x1 * sin_val;
-                    x[idx1] = x0 * sin_val + x1 * cos_val;
-                }
-            } else {
-                // NORM style (rope_type == 0): adjacent pairs (2*i, 2*i+1)
-                // Default for LLaMA-family models
-                let idx0 = head_offset + 2 * i;
-                let idx1 = head_offset + 2 * i + 1;
-
-                if idx1 < x.len() {
-                    let x0 = x[idx0];
-                    let x1 = x[idx1];
-
-                    x[idx0] = x0 * cos_val - x1 * sin_val;
-                    x[idx1] = x0 * sin_val + x1 * cos_val;
-                }
-            }
-        }
-    }
+    crate::gguf::ops::rope_into(
+        x,
+        num_heads,
+        head_dim,
+        position,
+        theta,
+        crate::gguf::ops::RopeStyle::from_rope_type(rope_type),
+    );
 }
 
 /// Check if a file is a valid .apr v2 file

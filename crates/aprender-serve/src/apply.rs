@@ -207,9 +207,6 @@ impl SafeTensorsCudaModel {
     ///
     /// RMS norm formula: (x / sqrt(mean(x^2) + eps)) * gamma
     fn apply_rms_norm_cpu(&self, x: &[f32]) -> Result<Vec<f32>> {
-        // RMS norm: x / sqrt(mean(x^2) + eps) * gamma
-        let sum_sq: f32 = x.iter().map(|v| v * v).sum();
-        let rms = (sum_sq / x.len() as f32 + self.epsilon).sqrt();
 
         // Get output gamma from cache
         let gamma =
@@ -220,11 +217,10 @@ impl SafeTensorsCudaModel {
                     reason: "Output gamma not found in cache".to_string(),
                 })?;
 
-        // Apply normalization with gamma scaling
-        Ok(x.iter()
-            .zip(gamma.iter())
-            .map(|(xi, gi)| (xi / rms) * gi)
-            .collect())
+        // RMS norm: x / sqrt(mean(x^2) + eps) * gamma
+        let mut out = vec![0.0f32; x.len().min(gamma.len())];
+        crate::gguf::ops::rms_norm_scalar_into(x, gamma, self.epsilon, crate::gguf::ops::RmsScale::Divide, &mut out);
+        Ok(out)
     }
 
     /// Apply RMS normalization for a specific layer with gamma weights.
@@ -236,9 +232,6 @@ impl SafeTensorsCudaModel {
         layer_idx: usize,
         norm_type: &str,
     ) -> Result<Vec<f32>> {
-        // RMS norm: x / sqrt(mean(x^2) + eps) * gamma
-        let sum_sq: f32 = x.iter().map(|v| v * v).sum();
-        let rms = (sum_sq / x.len() as f32 + self.epsilon).sqrt();
 
         // Get layer gamma from cache
         let cache_key = format!("{norm_type}.{layer_idx}");
@@ -249,11 +242,10 @@ impl SafeTensorsCudaModel {
             }
         })?;
 
-        // Apply normalization with gamma scaling
-        Ok(x.iter()
-            .zip(gamma.iter())
-            .map(|(xi, gi)| (xi / rms) * gi)
-            .collect())
+        // RMS norm: x / sqrt(mean(x^2) + eps) * gamma
+        let mut out = vec![0.0f32; x.len().min(gamma.len())];
+        crate::gguf::ops::rms_norm_scalar_into(x, gamma, self.epsilon, crate::gguf::ops::RmsScale::Divide, &mut out);
+        Ok(out)
     }
 }
 

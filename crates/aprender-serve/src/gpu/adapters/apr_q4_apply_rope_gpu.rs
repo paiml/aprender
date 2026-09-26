@@ -57,30 +57,14 @@ impl GpuModelQ4 {
         head_dim: usize,
         theta: f32,
     ) {
-        let half_dim = head_dim / 2;
-        let pos_f32 = position as f32;
-        let head_dim_f32 = head_dim as f32;
-
-        for h in 0..num_heads {
-            let head_start = h * head_dim;
-
-            for i in 0..half_dim {
-                let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
-                let angle = pos_f32 * freq;
-                let (sin_val, cos_val) = angle.sin_cos();
-
-                let idx1 = head_start + i;
-                let idx2 = head_start + half_dim + i;
-
-                if idx2 < x.len() {
-                    let x1 = x[idx1];
-                    let x2 = x[idx2];
-
-                    x[idx1] = x1 * cos_val - x2 * sin_val;
-                    x[idx2] = x1 * sin_val + x2 * cos_val;
-                }
-            }
-        }
+        crate::gguf::ops::rope_into(
+            x,
+            num_heads,
+            head_dim,
+            position,
+            theta,
+            crate::gguf::ops::RopeStyle::Neox,
+        );
     }
 
     /// Simple attention (CPU, single-token)

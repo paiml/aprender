@@ -375,3 +375,93 @@ Folding `standard_softmax` into `ops::softmax` changes numerics: `/ sum`
 becomes `* (1/sum)`. So it belongs to the softmax-family step, with its parity
 receipt.
 
+
+### 9.7 Phase 2 step 2 delivered: RoPE shared home (2026-09-26)
+
+The shared home is `gguf::ops::rope_into(x, num_heads, head_dim, position, theta,
+RopeStyle)`, where `RopeStyle::{Norm, Neox}` and `RopeStyle::from_rope_type(2) == Neox`.
+It builds the sin/cos table once per call instead of once per head.
+
+**Proof of equivalence.** `ops::rope_into_equivalence_tests` keeps the old per-site
+loop frozen and compares `to_bits()` across 360 cases:
+- head_dim {2, 64, 80, 128, 256, 512}
+- heads {1, 3, 8}
+- positions {0, 1, 17, 4095, 131071}
+- theta {1e4, 1e6}
+- both styles
+- a trailing partial head
+
+Every migrated site computed the same `freq = 1/theta^(2i/d)` and `(pos*freq).sin_cos()`,
+so the change is bit-identical and needs no parity receipt.
+
+**Migrated (11 baseline rows deleted, 72 → 61).** Each of these now calls the shared home:
+- `apr/helpers.rs::apply_rope_norm`
+- `apr_transformer/helpers.rs::apply_rope_f32`
+- `apr_transformer/attention_kernels.rs::apply_rope`. Its private
+  `apply_rope_to_head` and `apply_rope_quad` are deleted.
+- both `cuda/executor/*::apply_rope_to_buffer`
+- `gpu/adapters/apr_q4_apply_rope_gpu.rs::apply_rope_inplace`
+- `gpu/scheduler/kv.rs::apply_rope`
+- `gpu/scheduler/ops.rs::apply_rope_inline`. Its contract macros are kept.
+- `gpu/simd_ops.rs::scalar_rope`
+- `inference/norm.rs::apply_rope`
+
+**Behaviour change on malformed input only.** If a head does not fit in `x`, it is now
+skipped. Before, some sites rotated a partial pair and others panicked on the index.
+
+**Deferred, because each one's numerics differ and needs a parity receipt:**
+- `gguf/inference/rope.rs::apply_rope`: NEOX runs the AVX2/AVX-512 FMA kernel. This
+  is the Qwen2.5-Coder parity path.
+- `forward_qwen35.rs::apply_partial_neox_rope`: iterative theta. It is a composition
+  under §9.3.
+- `gpu/adapters/apr_q4k.rs::apply_rope_neox`: computed in f64.
+- `gpu/simd_ops.rs` frequency and trig tables: trueno vectors.
+
+### 9.8 Phase 2 step 3 delivered: scalar RMSNorm shared home (2026-09-26)
+
+**Why a second home.** `ops::rms_norm` / `rms_norm_into` sum with trueno SIMD, which
+reorders the adds. Every duplicate site summed left to right, so moving them onto the
+SIMD home would change numerics. They move instead onto three new scalar functions,
+each bit-identical to the loop it replaces:
+- `ops::rms_scalar(x, eps)` returns `sqrt(sum(x^2)/n + eps)`.
+- `ops::rms_norm_scalar_into(x, w, eps, RmsScale, out)`
+- `ops::rms_norm_scalar_in_place(x, w, eps, RmsScale)`
+
+**`RmsScale` names the rounding each site used:**
+- `Divide`: `(x / rms) * w`
+- `ScaleThenWeight`: `(x * inv) * w`
+- `WeightedScale`: `x * (inv * w)`
+
+`the_three_forms_are_distinct_so_the_enum_is_load_bearing` proves the three forms
+differ in bits. So collapsing them to one form, or onto the SIMD home, needs a parity
+receipt and is a later step.
+
+**Proof of equivalence.** `rms_norm_scalar_equivalence_tests` keeps the old loops frozen
+and compares `to_bits()`, for both the `into` and `in_place` paths:
+- n in {1, 2, 7, 64, 128, 896, 1536, 4096}
+- two eps values
+- three magnitudes
+- all three forms
+
+That is 144 cases.
+
+**Migrated (13 baseline rows deleted, 61 → 48):**
+- `apply.rs` and `gamma.rs`: `apply_rms_norm_cpu` and `apply_rms_norm_layer_cpu` (Divide)
+- `apr/helpers.rs::rms_norm`, the non-gpu branch (Divide)
+- `apr_transformer/helpers.rs::rms_norm` (Divide, then bias)
+- `q4_simd_activations_cache.rs`: `rms_norm_weighted` (Divide), and `rms_norm_batched`,
+  which now calls it per row
+- `cuda/executor/layer_norm_gpu.rs::rmsnorm_into`, the `CPU_RMSNORM=1` diagnostic
+  bypass (Divide)
+- `gpu/adapters/apr_q4k.rs`: `rms_norm` (ScaleThenWeight) and `per_head_rms_norm`
+  (WeightedScale)
+- `gpu/adapters/using.rs::rms_norm_inplace`, via `rms_scalar`. It keeps its
+  weight-fallback-1.0 loop.
+- `inference/norm.rs::simd_rms_norm` (ScaleThenWeight)
+
+**Behaviour change on malformed input only.** Output now covers the shortest of `x`,
+`weight` and `out`. Sites that used to index `weight[i]` past its end no longer panic.
+
+**Left as duplicates:**
+- `forward_qwen35.rs::gated_rmsnorm` and `linear_attn.rs::rms_norm_gated`. These are
+  compositions under §9.3, and their home is `ops::rms_norm_gated_into` in a later step.

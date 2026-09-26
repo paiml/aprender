@@ -402,6 +402,343 @@ pub fn apply_per_head_rms_norm(qk: &mut [f32], weight: &[f32], num_heads: usize,
     }
 }
 
+/// RoPE pairing convention.
+///
+/// `Norm` rotates adjacent pairs `(2i, 2i + 1)` (LLaMA; GGUF `rope_type` 0).
+/// `Neox` rotates split halves `(i, i + head_dim / 2)` (GPT-NeoX, Qwen; GGUF
+/// `rope_type` 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RopeStyle {
+    /// Adjacent pairs `(2i, 2i + 1)`.
+    Norm,
+    /// Split halves `(i, i + head_dim / 2)`.
+    Neox,
+}
+
+impl RopeStyle {
+    /// GGUF `rope_type` 2 is NeoX; every other value is the adjacent-pair style.
+    #[must_use]
+    pub fn from_rope_type(rope_type: u32) -> Self {
+        if rope_type == 2 {
+            Self::Neox
+        } else {
+            Self::Norm
+        }
+    }
+}
+
+/// Rotary position embedding, in place, over `num_heads` contiguous heads of
+/// `head_dim` elements in `x` (PP-ARCH-001 §9.2, the shared RoPE home).
+///
+/// Pair `i` rotates by `position * theta^(-2i / head_dim)`, computed in scalar
+/// f32 as `1.0 / theta.powf(2.0 * i / head_dim)` with no fused multiply-add, so
+/// the result is bit-identical to the per-site loops this replaced. The
+/// sin/cos table is built once per call and shared by every head. A head that
+/// does not fit in `x` is skipped, never partially rotated.
+pub fn rope_into(
+    x: &mut [f32],
+    num_heads: usize,
+    head_dim: usize,
+    position: usize,
+    theta: f32,
+    style: RopeStyle,
+) {
+    let half_dim = head_dim / 2;
+    if half_dim == 0 {
+        return;
+    }
+    let pos_f32 = position as f32;
+    let head_dim_f32 = head_dim as f32;
+
+    let mut stack = [0.0f32; 256];
+    let mut heap = Vec::new();
+    let table: &mut [f32] = if half_dim <= 128 {
+        &mut stack[..2 * half_dim]
+    } else {
+        heap.resize(2 * half_dim, 0.0);
+        &mut heap
+    };
+    let (sin_t, cos_t) = table.split_at_mut(half_dim);
+    for i in 0..half_dim {
+        let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim_f32);
+        let (sin_v, cos_v) = (pos_f32 * freq).sin_cos();
+        sin_t[i] = sin_v;
+        cos_t[i] = cos_v;
+    }
+
+    for h in 0..num_heads {
+        let start = h * head_dim;
+        let Some(head) = x.get_mut(start..start + head_dim) else {
+            break;
+        };
+        for i in 0..half_dim {
+            let (a, b) = match style {
+                RopeStyle::Neox => (i, i + half_dim),
+                RopeStyle::Norm => (2 * i, 2 * i + 1),
+            };
+            let x0 = head[a];
+            let x1 = head[b];
+            head[a] = x0 * cos_t[i] - x1 * sin_t[i];
+            head[b] = x0 * sin_t[i] + x1 * cos_t[i];
+        }
+    }
+}
+
+#[cfg(test)]
+mod rope_into_equivalence_tests {
+    use super::{rope_into, RopeStyle};
+
+    /// FROZEN copy of the per-site loop that `rope_into` replaced (#3422): the
+    /// trig recomputed per head per pair, heads that do not fit skipped. Do not
+    /// "improve" it; it is the bit-equality oracle for the migration.
+    fn frozen_reference(
+        x: &mut [f32],
+        num_heads: usize,
+        head_dim: usize,
+        position: usize,
+        theta: f32,
+        rope_type: u32,
+    ) {
+        let half_dim = head_dim / 2;
+        for h in 0..num_heads {
+            let head_start = h * head_dim;
+            if head_start + head_dim > x.len() {
+                continue;
+            }
+            for i in 0..half_dim {
+                let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim as f32);
+                let angle = position as f32 * freq;
+                let cos_val = angle.cos();
+                let sin_val = angle.sin();
+                let (i1, i2) = if rope_type == 2 {
+                    (head_start + i, head_start + half_dim + i)
+                } else {
+                    (head_start + 2 * i, head_start + 2 * i + 1)
+                };
+                let x1 = x[i1];
+                let x2 = x[i2];
+                x[i1] = x1 * cos_val - x2 * sin_val;
+                x[i2] = x1 * sin_val + x2 * cos_val;
+            }
+        }
+    }
+
+    fn input(n: usize, seed: u32) -> Vec<f32> {
+        let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+        (0..n)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state as f32 / u32::MAX as f32) * 8.0 - 4.0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rope_into_is_bit_identical_to_the_frozen_per_site_loop() {
+        let mut cases = 0;
+        for &head_dim in &[2usize, 64, 80, 128, 256, 512] {
+            for &num_heads in &[1usize, 3, 8] {
+                for &position in &[0usize, 1, 17, 4095, 131_071] {
+                    for &theta in &[10_000.0f32, 1_000_000.0] {
+                        for rope_type in [0u32, 2] {
+                            // One extra partial head: it must be left untouched.
+                            let n = num_heads * head_dim + head_dim / 2;
+                            let mut want = input(n, (head_dim * 31 + position) as u32);
+                            let mut got = want.clone();
+                            frozen_reference(
+                                &mut want,
+                                num_heads + 1,
+                                head_dim,
+                                position,
+                                theta,
+                                rope_type,
+                            );
+                            rope_into(
+                                &mut got,
+                                num_heads + 1,
+                                head_dim,
+                                position,
+                                theta,
+                                RopeStyle::from_rope_type(rope_type),
+                            );
+                            let want_bits: Vec<u32> = want.iter().map(|v| v.to_bits()).collect();
+                            let got_bits: Vec<u32> = got.iter().map(|v| v.to_bits()).collect();
+                            assert_eq!(got_bits, want_bits, "head_dim={head_dim} heads={num_heads} pos={position} theta={theta} rope_type={rope_type}");
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 6 * 3 * 5 * 2 * 2);
+    }
+
+    #[test]
+    fn rope_into_rotates_position_zero_to_identity_and_nonzero_away_from_it() {
+        let orig = input(128, 7);
+        let mut x = orig.clone();
+        rope_into(&mut x, 2, 64, 0, 10_000.0, RopeStyle::Neox);
+        assert_eq!(x, orig);
+        rope_into(&mut x, 2, 64, 5, 10_000.0, RopeStyle::Neox);
+        assert_ne!(x, orig);
+    }
+}
+
+/// How a scalar RMSNorm site applies `rms` and the weight (PP-ARCH-001 §9.8).
+///
+/// The three forms round differently, so each migrated site keeps the one it had.
+/// Merging them into one form changes numerics and needs a parity receipt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RmsScale {
+    /// `(x / rms) * w`
+    Divide,
+    /// `(x * (1 / rms)) * w`
+    ScaleThenWeight,
+    /// `x * ((1 / rms) * w)`
+    WeightedScale,
+}
+
+impl RmsScale {
+    #[inline]
+    fn apply(self, x: f32, rms: f32, inv_rms: f32, w: f32) -> f32 {
+        match self {
+            Self::Divide => x / rms * w,
+            Self::ScaleThenWeight => x * inv_rms * w,
+            Self::WeightedScale => x * (inv_rms * w),
+        }
+    }
+}
+
+/// Scalar RMS with a sequential sum: `sqrt(sum(x^2) / n + eps)`.
+///
+/// Unlike [`rms_norm`], which sums with trueno SIMD, this adds left to right,
+/// so it is bit-identical to the plain `iter().map(|v| v * v).sum()` loops it replaces.
+#[inline]
+pub fn rms_scalar(x: &[f32], eps: f32) -> f32 {
+    let sum_sq: f32 = x.iter().map(|v| v * v).sum();
+    (sum_sq / x.len() as f32 + eps).sqrt()
+}
+
+/// Scalar RMSNorm of one row into `out`.
+///
+/// The RMS is taken over all of `x`. The output covers the shortest of `out`, `x` and `weight`.
+pub fn rms_norm_scalar_into(x: &[f32], weight: &[f32], eps: f32, form: RmsScale, out: &mut [f32]) {
+    let rms = rms_scalar(x, eps);
+    let inv_rms = 1.0 / rms;
+    for ((o, &xi), &wi) in out.iter_mut().zip(x).zip(weight) {
+        *o = form.apply(xi, rms, inv_rms, wi);
+    }
+}
+
+/// Scalar RMSNorm of one row in place. It covers the shorter of `x` and `weight`.
+pub fn rms_norm_scalar_in_place(x: &mut [f32], weight: &[f32], eps: f32, form: RmsScale) {
+    let rms = rms_scalar(x, eps);
+    let inv_rms = 1.0 / rms;
+    for (xi, &wi) in x.iter_mut().zip(weight) {
+        *xi = form.apply(*xi, rms, inv_rms, wi);
+    }
+}
+
+#[cfg(test)]
+mod rms_norm_scalar_equivalence_tests {
+    use super::{rms_norm_scalar_in_place, rms_norm_scalar_into, RmsScale};
+
+    /// The per-site loops, frozen as they were before §9.8 migrated them.
+    fn frozen(x: &[f32], w: &[f32], eps: f32, form: RmsScale) -> Vec<f32> {
+        let n = x.len();
+        match form {
+            RmsScale::Divide => {
+                let sum_sq: f32 = x.iter().map(|v| v * v).sum();
+                let rms = (sum_sq / n as f32 + eps).sqrt();
+                x.iter().zip(w).map(|(xi, wi)| (xi / rms) * wi).collect()
+            },
+            RmsScale::ScaleThenWeight => {
+                let mut sum_sq = 0.0f32;
+                for &v in x {
+                    sum_sq += v * v;
+                }
+                let inv_rms = 1.0 / (sum_sq / n as f32 + eps).sqrt();
+                (0..n).map(|i| x[i] * inv_rms * w[i]).collect()
+            },
+            RmsScale::WeightedScale => {
+                let mut sum_sq = 0.0f32;
+                for &v in x {
+                    sum_sq += v * v;
+                }
+                let inv_rms = 1.0 / (sum_sq / n as f32 + eps).sqrt();
+                let mut d = x.to_vec();
+                for i in 0..n {
+                    d[i] *= inv_rms * w[i];
+                }
+                d
+            },
+        }
+    }
+
+    fn lcg(seed: &mut u64) -> f32 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((*seed >> 40) as f32 / (1u64 << 24) as f32) * 8.0 - 4.0
+    }
+
+    #[test]
+    fn rms_norm_scalar_is_bit_identical_to_the_frozen_per_site_loops() {
+        let mut seed = 0x3422_u64;
+        let mut cases = 0;
+        for n in [1usize, 2, 7, 64, 128, 896, 1536, 4096] {
+            for eps in [1e-5f32, 1e-6] {
+                for scale in [1e-3f32, 1.0, 300.0] {
+                    let x: Vec<f32> = (0..n).map(|_| lcg(&mut seed) * scale).collect();
+                    let w: Vec<f32> = (0..n).map(|_| lcg(&mut seed)).collect();
+                    for form in [
+                        RmsScale::Divide,
+                        RmsScale::ScaleThenWeight,
+                        RmsScale::WeightedScale,
+                    ] {
+                        let want: Vec<u32> = frozen(&x, &w, eps, form)
+                            .iter()
+                            .map(|v| v.to_bits())
+                            .collect();
+                        let mut out = vec![0.0f32; n];
+                        rms_norm_scalar_into(&x, &w, eps, form, &mut out);
+                        let got: Vec<u32> = out.iter().map(|v| v.to_bits()).collect();
+                        assert_eq!(got, want, "into n={n} eps={eps} scale={scale} {form:?}");
+                        let mut inp = x.clone();
+                        rms_norm_scalar_in_place(&mut inp, &w, eps, form);
+                        let got: Vec<u32> = inp.iter().map(|v| v.to_bits()).collect();
+                        assert_eq!(got, want, "in_place n={n} eps={eps} scale={scale} {form:?}");
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 144);
+    }
+
+    #[test]
+    fn the_three_forms_are_distinct_so_the_enum_is_load_bearing() {
+        let mut seed = 7_u64;
+        let x: Vec<f32> = (0..4096).map(|_| lcg(&mut seed)).collect();
+        let w: Vec<f32> = (0..4096).map(|_| lcg(&mut seed)).collect();
+        let run = |form| {
+            let mut o = vec![0.0f32; x.len()];
+            rms_norm_scalar_into(&x, &w, 1e-6, form, &mut o);
+            o.iter().map(|v| v.to_bits()).collect::<Vec<u32>>()
+        };
+        let (a, b, c) = (
+            run(RmsScale::Divide),
+            run(RmsScale::ScaleThenWeight),
+            run(RmsScale::WeightedScale),
+        );
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_ne!(a, c);
+    }
+}
+
 include!("ops_gelu_zero_positive.rs");
 
 #[cfg(test)]

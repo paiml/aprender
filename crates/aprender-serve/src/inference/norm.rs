@@ -91,22 +91,15 @@ pub fn simd_layer_norm(input: &[f32], weight: &[f32], bias: Option<&[f32]>, eps:
 /// ```
 #[must_use]
 pub fn simd_rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
-    let n = input.len();
-    if n == 0 {
-        return Vec::new();
-    }
-
-    // Compute RMS
-    let sum_sq: f32 = input.iter().map(|x| x * x).sum();
-    let rms = (sum_sq / n as f32 + eps).sqrt();
-    let inv_rms = 1.0 / rms;
-
-    // Normalize and scale
-    input
-        .iter()
-        .zip(weight.iter())
-        .map(|(x, w)| x * inv_rms * w)
-        .collect()
+    let mut out = vec![0.0f32; input.len().min(weight.len())];
+    crate::gguf::ops::rms_norm_scalar_into(
+        input,
+        weight,
+        eps,
+        crate::gguf::ops::RmsScale::ScaleThenWeight,
+        &mut out,
+    );
+    out
 }
 
 /// Apply rotary position embeddings (RoPE)
@@ -144,28 +137,14 @@ pub fn simd_rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
 /// assert!((x[0] - 1.0).abs() < 1e-5);
 /// ```
 pub fn apply_rope(x: &mut [f32], hidden_dim: usize, num_heads: usize, position: usize, theta: f32) {
-    let head_dim = hidden_dim / num_heads;
-    let half_dim = head_dim / 2;
-
-    for h in 0..num_heads {
-        let head_offset = h * head_dim;
-
-        for i in 0..half_dim {
-            let freq = 1.0 / theta.powf(2.0 * i as f32 / head_dim as f32);
-            let angle = position as f32 * freq;
-            let cos_val = angle.cos();
-            let sin_val = angle.sin();
-
-            let idx0 = head_offset + i;
-            let idx1 = head_offset + i + half_dim;
-
-            let x0 = x[idx0];
-            let x1 = x[idx1];
-
-            x[idx0] = x0 * cos_val - x1 * sin_val;
-            x[idx1] = x0 * sin_val + x1 * cos_val;
-        }
-    }
+    crate::gguf::ops::rope_into(
+        x,
+        num_heads,
+        hidden_dim / num_heads,
+        position,
+        theta,
+        crate::gguf::ops::RopeStyle::Neox,
+    );
 }
 
 include!("norm_layer.rs");

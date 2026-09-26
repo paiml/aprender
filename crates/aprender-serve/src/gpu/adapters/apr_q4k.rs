@@ -802,17 +802,14 @@ pub fn f32_matmul(weight: &[f32], input: &[f32], out_dim: usize, in_dim: usize) 
 /// RMS norm on CPU.
 #[cfg(feature = "cuda")]
 fn rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
-    let n = input.len();
-    let mut sum_sq = 0.0f32;
-    for &v in input {
-        sum_sq += v * v;
-    }
-    let rms = (sum_sq / n as f32 + eps).sqrt();
-    let inv_rms = 1.0 / rms;
-    let mut output = vec![0.0f32; n];
-    for i in 0..n {
-        output[i] = input[i] * inv_rms * weight[i];
-    }
+    let mut output = vec![0.0f32; input.len()];
+    crate::gguf::ops::rms_norm_scalar_into(
+        input,
+        weight,
+        eps,
+        crate::gguf::ops::RmsScale::ScaleThenWeight,
+        &mut output,
+    );
     output
 }
 
@@ -1108,18 +1105,13 @@ fn per_head_rms_norm(
     weight: &[f32],
     eps: f32,
 ) {
-    for h in 0..num_heads {
-        let offset = h * head_dim;
-        let head = &data[offset..offset + head_dim];
-        let mut sum_sq = 0.0f32;
-        for &v in head {
-            sum_sq += v * v;
-        }
-        let rms = (sum_sq / head_dim as f32 + eps).sqrt();
-        let inv_rms = 1.0 / rms;
-        for i in 0..head_dim {
-            data[offset + i] *= inv_rms * weight[i];
-        }
+    for head in data[..num_heads * head_dim].chunks_exact_mut(head_dim) {
+        crate::gguf::ops::rms_norm_scalar_in_place(
+            head,
+            weight,
+            eps,
+            crate::gguf::ops::RmsScale::WeightedScale,
+        );
     }
 }
 
