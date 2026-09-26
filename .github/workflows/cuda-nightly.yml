@@ -684,16 +684,21 @@ jobs:
     if: >-
       ${{ vars.CUDA_RUNNER_READY == 'true' &&
       (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
-    # PP-19 HOST ISOLATION. scripts/check_perf_concurrency_groups.sh found this
-    # job ungrouped the hour it was written: a GPU job with no job-level group
-    # serialises against nothing, and yoga now has two consumers in this repo
-    # plus infra's own smoke lane. Job level, not workflow level, so a second
-    # workflow can join the same group. `perf-yoga` is only a valid group
-    # because yoga is declared in scripts/perf-matrix.yaml — as an NA host, with
-    # no performance cell (YOGA-NIGHTLY-001 §7, N-4).
-    concurrency:
-      group: perf-yoga
-      cancel-in-progress: false
+    # NO CONCURRENCY GROUP, ON PURPOSE (#4489). This job used to sit in the
+    # cross-workflow `perf-yoga` group (PP-19), and a group holds ONE pending
+    # job: every newer arrival cancels the pending one. ci.yml's pull_request
+    # `yoga` job shares the group, so PR traffic cancelled this nightly while it
+    # waited (run 36201092630, job 108287688073: "Canceling since a higher
+    # priority waiting request for perf-yoga exists"). cancel-in-progress: false
+    # protects only the RUNNING job. The GPU is serialised instead by the host
+    # lock in `env:` below (#4468): every test binary runs under
+    # `flock -w 600 /run/lock/fleet-gpu/gpu.lock`, which WAITS and never
+    # cancels; past 600 s it exits 175, a visible failure NIGHTLY-RED counts.
+    # yoga is an NA host in scripts/perf-matrix.yaml (no performance cell), so
+    # nothing here is a measurement a co-tenant could skew.
+    # scripts/check_perf_concurrency_groups.sh admits exactly this shape: an
+    # NA host, no group, and a job-level CARGO_TARGET_*_RUNNER that is a flock
+    # on the host lock. Drop the lock and the guard goes RED again.
     # LITERAL, for the same reason the job above is: a guard must be able to see
     # these labels. Matches yoga and only yoga — gx10 is ARM64.
     # `yoga` IS IN THIS LIST ON PURPOSE. .github/silicon-coverage.txt declares the
@@ -772,7 +777,10 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+          # Read under the host GPU lock: with no concurrency group a PR test
+          # may hold the GPU right now, and its VRAM is not this pass's (#4489).
+          used=$(flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock \
+            nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
           total=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
           printf 'VRAM after the pass: %s MiB used of %s MiB\n' "$used" "$total"
           {

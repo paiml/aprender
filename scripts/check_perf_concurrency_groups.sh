@@ -32,6 +32,20 @@
 #   `cancel-in-progress: false`. Job level, not workflow level: two workflows
 #   must be able to share one host's group.
 #
+# THE ONE EXCEPTION: AN NA HOST UNDER THE HOST GPU LOCK (#4489)
+#   A concurrency group holds ONE pending job, and a newer arrival CANCELS the
+#   pending one; `cancel-in-progress: false` protects only the RUNNING job. On
+#   yoga that cancelled the nightly: cuda-nightly's ada-yoga waited in
+#   perf-yoga behind a PR's 50-min `yoga` job, and the next gpu-touched PR took
+#   the slot (run 36201092630, "Canceling since a higher priority waiting
+#   request for perf-yoga exists"). A host the matrix marks `status: NA` has no
+#   performance cell, so there is no measurement for PP-19 to protect, only a
+#   GPU to share, and the host GPU lock (#4468: /run/lock/fleet-gpu/gpu.lock,
+#   taken per test binary by cargo's target runner) shares it by WAITING, never
+#   by cancelling. So a job on an NA host may omit the group when its job-level
+#   env sets CARGO_TARGET_<triple>_RUNNER to a flock on that lock. A perf host
+#   (status != NA) never qualifies, lock or not.
+#
 #   bash scripts/check_perf_concurrency_groups.sh              # gate
 #   bash scripts/check_perf_concurrency_groups.sh --dir DIR    # gate a fixture
 #   bash scripts/check_perf_concurrency_groups.sh --selftest   # case table
@@ -42,7 +56,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_DIR="${REPO_ROOT}/.github/workflows"
 DEFAULT_MATRIX="${REPO_ROOT}/scripts/perf-matrix.yaml"
 
-SELFTEST_NAMES="isolation_breach isolation_ok cancel_true_is_red ignored_bench_without_group_is_red ref_scoped_group_is_red"
+SELFTEST_NAMES="isolation_breach isolation_ok cancel_true_is_red ignored_bench_without_group_is_red ref_scoped_group_is_red na_host_under_lock_ok na_host_without_lock_is_red perf_host_under_lock_is_red na_host_other_lock_is_red na_host_lock_not_flock_is_red na_host_workflow_env_is_red"
 
 scan() {
     python3 - "$1" "$2" <<'PY'
@@ -63,6 +77,7 @@ except ImportError:
 # edited (PP-33: the declaration lives in one place).
 FALLBACK_HOSTS = ("gx10", "intel", "lambda", "mini")
 hosts = None
+matrix = {}
 try:
     with open(matrix_path, encoding="utf-8") as handle:
         matrix = yaml.safe_load(handle) or {}
@@ -77,6 +92,30 @@ if hosts is None:
           % (matrix_path, list(FALLBACK_HOSTS)))
 
 GROUP_RE = re.compile(r"^perf-(%s)$" % "|".join(re.escape(h) for h in hosts))
+
+# Hosts with no performance cell (#4489). Unreadable matrix -> none: fail closed.
+na_hosts = set()
+declared = matrix.get("hosts") if isinstance(matrix, dict) else None
+for h, spec in (declared.items() if isinstance(declared, dict) else ()):
+    if isinstance(spec, dict) and str(spec.get("status", "")).upper() == "NA":
+        na_hosts.add(str(h).lower())
+
+HOST_GPU_LOCK = "/run/lock/fleet-gpu/gpu.lock"
+RUNNER_ENV_RE = re.compile(r"^CARGO_TARGET_[A-Z0-9_]+_RUNNER$")
+
+
+def takes_host_gpu_lock(job):
+    """True when the job-level env runs every test binary under the host lock."""
+    env = job.get("env")
+    if not isinstance(env, dict):
+        return False
+    for key, val in env.items():
+        if not RUNNER_ENV_RE.match(str(key)):
+            continue
+        words = str(val).split()
+        if words and words[0] == "flock" and words[-1] == HOST_GPU_LOCK:
+            return True
+    return False
 
 # Same vocabulary as scripts/check_runner_labels.sh DISCRIM, GPU half only.
 GPU_LABELS = {"gpu", "gx10", "cuda", "blackwell", "gb10", "ada", "rtx4090"}
@@ -142,6 +181,12 @@ for path in paths:
             why = "gpu runs-on + --ignored tests"
         where = "%s:%s" % (os.path.basename(path), name)
         group, cancel = concurrency_of(job)
+        na_host = sorted(labels_of(job.get("runs-on")) & na_hosts)
+        if group is None and na_host and takes_host_gpu_lock(job):
+            print("  ok    %s (%s) no group: NA host %s, test binaries run under "
+                  "the host GPU lock %s (waits, never cancels; #4489)"
+                  % (where, why, na_host[0], HOST_GPU_LOCK))
+            continue
         if group is None:
             print("  RED   %s (%s) declares no job-level concurrency.group; "
                   "PP-19 requires perf-<host> so every consumer of that host "
@@ -224,6 +269,17 @@ _fixture_cpu_bench() {  # dir, filename, concurrency-block(may be empty)
     } > "$1/$2"
 }
 
+_fixture_host() {  # dir, filename, runs-on, job-env-block(may be empty), workflow-env(may be empty)
+    mkdir -p "$1"
+    {
+        printf 'name: fixture\non:\n  schedule:\n    - cron: "0 1 * * *"\n'
+        if [ -n "$5" ]; then printf '%s\n' "$5"; fi
+        printf 'jobs:\n  measure:\n    runs-on: %s\n' "$3"
+        if [ -n "$4" ]; then printf '%s\n' "$4"; fi
+        printf '    steps:\n      - run: echo hello\n'
+    } > "$1/$2"
+}
+
 selftest() {
     local tmp pass=0 fail=0 out rc got
     tmp="$(mktemp -d)" || return 2
@@ -278,6 +334,31 @@ selftest() {
       group: bench-${{ github.ref }}
       cancel-in-progress: false' ""
     _row ref_scoped_group_is_red red "$tmp/refscoped"
+
+    # 6-11. THE NA-HOST EXCEPTION (#4489). perf-yoga's single pending slot
+    #    cancelled the yoga nightly; the host GPU lock waits instead. The
+    #    exception holds ONLY for an NA host whose JOB env runs test binaries
+    #    under a flock on the host lock; every row below that breaks one of
+    #    those conditions must stay RED.
+    local yoga='[self-hosted, gpu, yoga, Linux, X64, cuda, ada]'
+    local lock='    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock'
+    _fixture_host "$tmp/na_lock" "w.yml" "$yoga" "$lock" ""
+    _row na_host_under_lock_ok green "$tmp/na_lock"
+    _fixture_host "$tmp/na_nolock" "w.yml" "$yoga" "" ""
+    _row na_host_without_lock_is_red red "$tmp/na_nolock"
+    _fixture_host "$tmp/perf_lock" "w.yml" "[self-hosted, gpu, gx10, cuda, blackwell]" "$lock" ""
+    _row perf_host_under_lock_is_red red "$tmp/perf_lock"
+    _fixture_host "$tmp/na_other" "w.yml" "$yoga" '    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -w 600 /run/lock/other/gpu.lock' ""
+    _row na_host_other_lock_is_red red "$tmp/na_other"
+    _fixture_host "$tmp/na_echo" "w.yml" "$yoga" '    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: echo /run/lock/fleet-gpu/gpu.lock' ""
+    _row na_host_lock_not_flock_is_red red "$tmp/na_echo"
+    # Workflow-level env is not the job's declaration; the exception reads the job.
+    _fixture_host "$tmp/na_wfenv" "w.yml" "$yoga" "" 'env:
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -w 600 /run/lock/fleet-gpu/gpu.lock'
+    _row na_host_workflow_env_is_red red "$tmp/na_wfenv"
 
     printf '  %d passed, %d broken\n' "$pass" "$fail"
     [ "$fail" = 0 ]
