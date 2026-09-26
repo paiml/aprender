@@ -108,27 +108,13 @@ impl OwnedQuantizedModel {
     /// then `gate *= up`. Returns the activated vector.
     fn ffn_activate(
         &self,
-        mut ffn_up: Vec<f32>,
-        mut ffn_gate: Vec<f32>,
+        ffn_up: Vec<f32>,
+        ffn_gate: Vec<f32>,
         up_bias: Option<&[f32]>,
         gate_bias: Option<&[f32]>,
         arch_gate: bool,
     ) -> Vec<f32> {
-        if let Some(bias) = up_bias {
-            ops::add_bias(&mut ffn_up, bias);
-        }
-        if let Some(bias) = gate_bias {
-            ops::add_bias(&mut ffn_gate, bias);
-        }
-        if arch_gate {
-            self.gemma_gate_activation(&mut ffn_gate);
-        } else {
-            ops::silu(&mut ffn_gate);
-        }
-        for i in 0..ffn_gate.len() {
-            ffn_gate[i] *= ffn_up[i];
-        }
-        ffn_gate
+        ffn_gated_activate(ffn_up, ffn_gate, up_bias, gate_bias, arch_gate && self.config.geglu_ffn())
     }
 
     /// Final output computation for single-token cached forward pass
@@ -676,24 +662,14 @@ impl OwnedQuantizedModel {
     /// First token, no cache yet: the attention output is V, expanded from
     /// every KV head to the Q heads it serves (GQA).
     fn first_token_attention(v: &[f32], attn_out_buffer: &mut [f32], head_dim: usize, num_heads: usize, num_kv_heads: usize) {
-        let q_per_kv = num_heads / num_kv_heads;
-        for q_head in 0..num_heads {
-            let kv_head = q_head / q_per_kv;
-            let v_start = kv_head * head_dim;
-            let out_start = q_head * head_dim;
-            attn_out_buffer[out_start..out_start + head_dim]
-                .copy_from_slice(&v[v_start..v_start + head_dim]);
-        }
+        first_token_attention(v, attn_out_buffer, head_dim, num_heads, num_kv_heads);
     }
 
     /// PMAT-810: Gemma2 POST-norm on a block output BEFORE the residual add
     /// (`None` for every other arch → unchanged). GGUF bakes the Gemma `(1+w)`
     /// offset into the weight, so standard rms_norm is correct.
     fn post_norm_in_place(&self, buf: &mut [f32], post_w: Option<&[f32]>) {
-        if let Some(w) = post_w {
-            let normed = ops::rms_norm(buf, w, self.config.eps);
-            buf.copy_from_slice(&normed);
-        }
+        post_norm_in_place(buf, post_w, self.config.eps);
     }
 
     /// 2h-2j: FFN block, down projection into `ffn_down_buffer`, Gemma2
@@ -843,5 +819,56 @@ impl OwnedQuantizedModel {
         let normed = ops::rms_norm(hidden, ffn_norm, self.config.eps);
         let (u, g) = rayon::join(|| self.matvec_honest(&normed, up), || self.matvec_honest(&normed, gate));
         Ok((u?, g?))
+    }
+}
+
+// PP-ARCH-001 §9.2 (#3422 Phase 2 step 1): the model-independent FFN/attention
+// helpers, as free fns any architecture can call. The methods above delegate.
+
+/// Biases, then the gate activation (GeLU when `use_gelu`, SiLU otherwise),
+/// then `gate *= up`. Returns the activated vector.
+pub fn ffn_gated_activate(
+    mut ffn_up: Vec<f32>,
+    mut ffn_gate: Vec<f32>,
+    up_bias: Option<&[f32]>,
+    gate_bias: Option<&[f32]>,
+    use_gelu: bool,
+) -> Vec<f32> {
+    if let Some(bias) = up_bias {
+        ops::add_bias(&mut ffn_up, bias);
+    }
+    if let Some(bias) = gate_bias {
+        ops::add_bias(&mut ffn_gate, bias);
+    }
+    if use_gelu {
+        ops::gelu(&mut ffn_gate);
+    } else {
+        ops::silu(&mut ffn_gate);
+    }
+    for i in 0..ffn_gate.len() {
+        ffn_gate[i] *= ffn_up[i];
+    }
+    ffn_gate
+}
+
+/// First token, no cache yet: the attention output is V, expanded from every
+/// KV head to the Q heads it serves (GQA).
+pub fn first_token_attention(v: &[f32], attn_out_buffer: &mut [f32], head_dim: usize, num_heads: usize, num_kv_heads: usize) {
+    let q_per_kv = num_heads / num_kv_heads;
+    for q_head in 0..num_heads {
+        let kv_head = q_head / q_per_kv;
+        let v_start = kv_head * head_dim;
+        let out_start = q_head * head_dim;
+        attn_out_buffer[out_start..out_start + head_dim]
+            .copy_from_slice(&v[v_start..v_start + head_dim]);
+    }
+}
+
+/// Post-norm on a block output before the residual add: RMSNorm in place when
+/// `post_w` is `Some`, unchanged otherwise.
+pub fn post_norm_in_place(buf: &mut [f32], post_w: Option<&[f32]>, eps: f32) {
+    if let Some(w) = post_w {
+        let normed = ops::rms_norm(buf, w, eps);
+        buf.copy_from_slice(&normed);
     }
 }

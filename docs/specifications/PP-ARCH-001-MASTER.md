@@ -350,3 +350,28 @@ What the slot does **not** grant:
   5. attention: 26 rows.
 
   Qwen2.5-Coder sites go first within each family (§3 row 2).
+
+### §9.6 Step 1 delivered (#3422)
+
+This step preserves behaviour: every hoisted body moved byte for byte, and
+each model method became a one-line delegate.
+- **`forward/attention.rs`** gained free fns: `standard_softmax`,
+  `online_softmax`, `standard_single_head_attention`,
+  `tiled_single_head_attention`, and, under `gpu`, `reshape_for_parallel_heads`
+  and `parallel_batched_qk_scores`.
+- **`forward/ffn_block.rs`** gained free fns: `ffn_gated_activate` (`use_gelu`
+  replaces the `&self` GeGLU lookup), `first_token_attention` and
+  `post_norm_in_place`.
+- All are re-exported `pub(crate)` from `gguf::inference::forward`.
+
+Not hoisted in this step:
+- **`parallel_multihead_attention_gpu`**: it calls
+  `acceleration.rs::apply_causal_mask_softmax`, which is still a method.
+- **The weight-bound `single_cache_*` blocks.** They read `self.layers[i]` and
+  dispatch through the quantized matmul. Their free form needs a borrowed
+  per-layer weight view, and that is PP-QUANT-001's API to shape, not this one.
+
+Folding `standard_softmax` into `ops::softmax` changes numerics: `/ sum`
+becomes `* (1/sum)`. So it belongs to the softmax-family step, with its parity
+receipt.
+

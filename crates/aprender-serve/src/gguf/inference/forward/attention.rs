@@ -26,36 +26,7 @@ impl OwnedQuantizedModel {
         num_heads: usize,
         head_dim: usize,
     ) -> Result<Vec<f32>> {
-        let hidden_dim = num_heads * head_dim;
-        let expected_len = seq_len * hidden_dim;
-
-        if input.len() != expected_len {
-            return Err(RealizarError::InvalidShape {
-                reason: format!(
-                    "Input size {} doesn't match seq_len={} * hidden_dim={}={}",
-                    input.len(),
-                    seq_len,
-                    hidden_dim,
-                    expected_len
-                ),
-            });
-        }
-
-        let mut reshaped = vec![0.0f32; num_heads * seq_len * head_dim];
-
-        // Transform: input[pos * hidden_dim + h * head_dim + d]
-        //         -> reshaped[h * seq_len * head_dim + pos * head_dim + d]
-        for h in 0..num_heads {
-            for pos in 0..seq_len {
-                for d in 0..head_dim {
-                    let orig_idx = pos * hidden_dim + h * head_dim + d;
-                    let new_idx = h * seq_len * head_dim + pos * head_dim + d;
-                    reshaped[new_idx] = input[orig_idx];
-                }
-            }
-        }
-
-        Ok(reshaped)
+        reshape_for_parallel_heads(input, seq_len, num_heads, head_dim)
     }
 
     /// Compute batched Q@K^T scores for all heads in parallel
@@ -84,51 +55,7 @@ impl OwnedQuantizedModel {
         head_dim: usize,
         scale: f32,
     ) -> Result<Vec<f32>> {
-        use crate::gpu::HybridScheduler;
-
-        // Reshape Q and K to [num_heads, seq_len, head_dim]
-        let q_reshaped = self.reshape_for_parallel_heads(q, seq_len, num_heads, head_dim)?;
-        let k_reshaped = self.reshape_for_parallel_heads(k, seq_len, num_heads, head_dim)?;
-
-        let mut scheduler = HybridScheduler::with_threshold(1000).map_err(|e| {
-            RealizarError::UnsupportedOperation {
-                operation: "HybridScheduler::with_threshold".to_string(),
-                reason: format!("GPU scheduler initialization failed: {e}"),
-            }
-        })?;
-
-        // For each head: Q_h @ K_h^T -> [seq_len, seq_len]
-        // Total output: [num_heads, seq_len, seq_len]
-        let mut all_scores = Vec::with_capacity(num_heads * seq_len * seq_len);
-
-        for h in 0..num_heads {
-            let head_start = h * seq_len * head_dim;
-            let q_h = &q_reshaped[head_start..head_start + seq_len * head_dim];
-            let k_h = &k_reshaped[head_start..head_start + seq_len * head_dim];
-
-            // Transpose K_h: [seq_len, head_dim] -> [head_dim, seq_len]
-            let mut k_t = vec![0.0f32; head_dim * seq_len];
-            for i in 0..seq_len {
-                for j in 0..head_dim {
-                    k_t[j * seq_len + i] = k_h[i * head_dim + j];
-                }
-            }
-
-            // Q_h @ K_h^T: [seq_len, head_dim] @ [head_dim, seq_len] -> [seq_len, seq_len]
-            let scores = scheduler
-                .matmul(q_h, &k_t, seq_len, head_dim, seq_len)
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "parallel_batched_qk_scores".to_string(),
-                    reason: format!("GPU matmul failed: {e}"),
-                })?;
-
-            // Apply scale and accumulate
-            for s in &scores {
-                all_scores.push(s * scale);
-            }
-        }
-
-        Ok(all_scores)
+        parallel_batched_qk_scores(q, k, seq_len, num_heads, head_dim, scale)
     }
 
     /// Multi-head attention with parallel head processing
@@ -223,22 +150,7 @@ impl OwnedQuantizedModel {
     /// IMP-111a: Reference implementation for testing online softmax.
     /// Computes softmax in the standard way: exp(x - max) / sum(exp(x - max))
     pub fn standard_softmax(&self, scores: &[f32]) -> Vec<f32> {
-        contract_pre_standard_softmax!();
-        if scores.is_empty() {
-            return Vec::new();
-        }
-
-        // Find max for numerical stability
-        let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-
-        // Compute exp(x - max) and sum
-        let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
-        let sum: f32 = exp_scores.iter().sum();
-
-        // Normalize
-        let result: Vec<f32> = exp_scores.iter().map(|&e| e / sum).collect();
-        contract_post_softmax!(&result);
-        result
+        standard_softmax(scores)
     }
 
     /// Online softmax with tiled processing (O(1) memory per tile)
@@ -258,47 +170,7 @@ impl OwnedQuantizedModel {
     /// # Returns
     /// Softmax probabilities
     pub fn online_softmax(&self, scores: &[f32], tile_size: usize) -> Result<Vec<f32>> {
-        if scores.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let n = scores.len();
-        let tile_size = tile_size.max(1);
-
-        // Running statistics
-        let mut global_max = f32::NEG_INFINITY;
-        let mut global_sum = 0.0f32;
-
-        // First pass: compute global max and sum using online algorithm
-        for tile_start in (0..n).step_by(tile_size) {
-            let tile_end = (tile_start + tile_size).min(n);
-
-            // Find local max in this tile
-            let local_max = scores[tile_start..tile_end]
-                .iter()
-                .cloned()
-                .fold(f32::NEG_INFINITY, f32::max);
-
-            if local_max > global_max {
-                // Rescale previous sum when we find a new max
-                let rescale = (global_max - local_max).exp();
-                global_sum *= rescale;
-                global_max = local_max;
-            }
-
-            // Add this tile's contribution to sum
-            for &s in &scores[tile_start..tile_end] {
-                global_sum += (s - global_max).exp();
-            }
-        }
-
-        // Second pass: compute final softmax values
-        let mut result = Vec::with_capacity(n);
-        for &s in scores {
-            result.push((s - global_max).exp() / global_sum);
-        }
-
-        Ok(result)
+        online_softmax(scores, tile_size)
     }
 
     /// Standard single-head attention (reference implementation)
@@ -322,40 +194,7 @@ impl OwnedQuantizedModel {
         head_dim: usize,
         scale: f32,
     ) -> Result<Vec<f32>> {
-        // Compute attention scores: Q @ K^T -> [seq_len, seq_len]
-        let mut scores = vec![0.0f32; seq_len * seq_len];
-        for i in 0..seq_len {
-            for j in 0..seq_len {
-                let mut dot = 0.0f32;
-                for d in 0..head_dim {
-                    dot += q[i * head_dim + d] * k[j * head_dim + d];
-                }
-                scores[i * seq_len + j] = dot * scale;
-            }
-        }
-
-        // Apply softmax per row
-        let mut weights = vec![0.0f32; seq_len * seq_len];
-        for i in 0..seq_len {
-            let row_start = i * seq_len;
-            let row = &scores[row_start..row_start + seq_len];
-            let softmax = self.standard_softmax(row);
-            weights[row_start..row_start + seq_len].copy_from_slice(&softmax);
-        }
-
-        // Compute output: weights @ V -> [seq_len, head_dim]
-        let mut output = vec![0.0f32; seq_len * head_dim];
-        for i in 0..seq_len {
-            for d in 0..head_dim {
-                let mut acc = 0.0f32;
-                for j in 0..seq_len {
-                    acc += weights[i * seq_len + j] * v[j * head_dim + d];
-                }
-                output[i * head_dim + d] = acc;
-            }
-        }
-
-        Ok(output)
+        standard_single_head_attention(q, k, v, seq_len, head_dim, scale)
     }
 
     /// Tiled single-head attention (non-causal)
@@ -373,68 +212,295 @@ impl OwnedQuantizedModel {
         scale: f32,
         tile_size: usize,
     ) -> Result<Vec<f32>> {
-        let tile_size = tile_size.max(1);
-        let mut output = vec![0.0f32; seq_len * head_dim];
+        tiled_single_head_attention(q, k, v, seq_len, head_dim, scale, tile_size)
+    }
+}
 
-        // Process each query position
-        for i in 0..seq_len {
-            let q_i = &q[i * head_dim..(i + 1) * head_dim];
+// PP-ARCH-001 §9.2 (#3422 Phase 2 step 1): the model-independent attention
+// and softmax math, as free fns any architecture can call. The methods above
+// are one-line delegating wrappers kept for existing callers.
 
-            // Running statistics for online softmax
-            let mut running_max = f32::NEG_INFINITY;
-            let mut running_sum = 0.0f32;
-            let mut running_output = vec![0.0f32; head_dim];
+/// `[seq, heads*head_dim]` → `[heads, seq, head_dim]`; errors on a size mismatch.
+#[cfg(feature = "gpu")]
+pub fn reshape_for_parallel_heads(
+    input: &[f32],
+    seq_len: usize,
+    num_heads: usize,
+    head_dim: usize,
+) -> Result<Vec<f32>> {
+    let hidden_dim = num_heads * head_dim;
+    let expected_len = seq_len * hidden_dim;
 
-            // Process K/V in tiles
-            for tile_start in (0..seq_len).step_by(tile_size) {
-                let tile_end = (tile_start + tile_size).min(seq_len);
+    if input.len() != expected_len {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "Input size {} doesn't match seq_len={} * hidden_dim={}={}",
+                input.len(),
+                seq_len,
+                hidden_dim,
+                expected_len
+            ),
+        });
+    }
 
-                // Compute scores for this tile: q_i @ K_tile^T
-                let mut tile_scores = Vec::with_capacity(tile_end - tile_start);
-                for j in tile_start..tile_end {
-                    let mut dot = 0.0f32;
-                    for d in 0..head_dim {
-                        dot += q_i[d] * k[j * head_dim + d];
-                    }
-                    tile_scores.push(dot * scale);
-                }
+    let mut reshaped = vec![0.0f32; num_heads * seq_len * head_dim];
 
-                // Find tile max
-                let tile_max = tile_scores
-                    .iter()
-                    .cloned()
-                    .fold(f32::NEG_INFINITY, f32::max);
-
-                // Update running statistics
-                let new_max = running_max.max(tile_max);
-
-                // Rescale previous output and sum
-                if new_max > running_max && running_sum > 0.0 {
-                    let rescale = (running_max - new_max).exp();
-                    running_sum *= rescale;
-                    for out_val in &mut running_output {
-                        *out_val *= rescale;
-                    }
-                }
-                running_max = new_max;
-
-                // Accumulate this tile's contribution
-                for (idx, &score) in tile_scores.iter().enumerate() {
-                    let j = tile_start + idx;
-                    let weight = (score - running_max).exp();
-                    running_sum += weight;
-                    for d in 0..head_dim {
-                        running_output[d] += weight * v[j * head_dim + d];
-                    }
-                }
-            }
-
-            // Normalize output
+    // Transform: input[pos * hidden_dim + h * head_dim + d]
+    //         -> reshaped[h * seq_len * head_dim + pos * head_dim + d]
+    for h in 0..num_heads {
+        for pos in 0..seq_len {
             for d in 0..head_dim {
-                output[i * head_dim + d] = running_output[d] / running_sum;
+                let orig_idx = pos * hidden_dim + h * head_dim + d;
+                let new_idx = h * seq_len * head_dim + pos * head_dim + d;
+                reshaped[new_idx] = input[orig_idx];
+            }
+        }
+    }
+
+    Ok(reshaped)
+}
+
+/// Per-head `scale * Q Kᵀ` through the hybrid GPU scheduler, heads concatenated.
+#[cfg(feature = "gpu")]
+pub fn parallel_batched_qk_scores(
+    q: &[f32],
+    k: &[f32],
+    seq_len: usize,
+    num_heads: usize,
+    head_dim: usize,
+    scale: f32,
+) -> Result<Vec<f32>> {
+    use crate::gpu::HybridScheduler;
+
+    // Reshape Q and K to [num_heads, seq_len, head_dim]
+    let q_reshaped = reshape_for_parallel_heads(q, seq_len, num_heads, head_dim)?;
+    let k_reshaped = reshape_for_parallel_heads(k, seq_len, num_heads, head_dim)?;
+
+    let mut scheduler = HybridScheduler::with_threshold(1000).map_err(|e| {
+        RealizarError::UnsupportedOperation {
+            operation: "HybridScheduler::with_threshold".to_string(),
+            reason: format!("GPU scheduler initialization failed: {e}"),
+        }
+    })?;
+
+    // For each head: Q_h @ K_h^T -> [seq_len, seq_len]
+    // Total output: [num_heads, seq_len, seq_len]
+    let mut all_scores = Vec::with_capacity(num_heads * seq_len * seq_len);
+
+    for h in 0..num_heads {
+        let head_start = h * seq_len * head_dim;
+        let q_h = &q_reshaped[head_start..head_start + seq_len * head_dim];
+        let k_h = &k_reshaped[head_start..head_start + seq_len * head_dim];
+
+        // Transpose K_h: [seq_len, head_dim] -> [head_dim, seq_len]
+        let mut k_t = vec![0.0f32; head_dim * seq_len];
+        for i in 0..seq_len {
+            for j in 0..head_dim {
+                k_t[j * seq_len + i] = k_h[i * head_dim + j];
             }
         }
 
-        Ok(output)
+        // Q_h @ K_h^T: [seq_len, head_dim] @ [head_dim, seq_len] -> [seq_len, seq_len]
+        let scores = scheduler
+            .matmul(q_h, &k_t, seq_len, head_dim, seq_len)
+            .map_err(|e| RealizarError::UnsupportedOperation {
+                operation: "parallel_batched_qk_scores".to_string(),
+                reason: format!("GPU matmul failed: {e}"),
+            })?;
+
+        // Apply scale and accumulate
+        for s in &scores {
+            all_scores.push(s * scale);
+        }
     }
+
+    Ok(all_scores)
+}
+
+/// Max-subtracted softmax over one row, returned as a new vector.
+pub fn standard_softmax(
+    scores: &[f32]) -> Vec<f32> {
+    contract_pre_standard_softmax!();
+    if scores.is_empty() {
+        return Vec::new();
+    }
+
+    // Find max for numerical stability
+    let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+
+    // Compute exp(x - max) and sum
+    let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
+    let sum: f32 = exp_scores.iter().sum();
+
+    // Normalize
+    let result: Vec<f32> = exp_scores.iter().map(|&e| e / sum).collect();
+    contract_post_softmax!(&result);
+    result
+}
+
+/// Tiled (online) softmax: one pass for max and sum with rescaling, one to normalize.
+pub fn online_softmax(
+    scores: &[f32], tile_size: usize) -> Result<Vec<f32>> {
+    if scores.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let n = scores.len();
+    let tile_size = tile_size.max(1);
+
+    // Running statistics
+    let mut global_max = f32::NEG_INFINITY;
+    let mut global_sum = 0.0f32;
+
+    // First pass: compute global max and sum using online algorithm
+    for tile_start in (0..n).step_by(tile_size) {
+        let tile_end = (tile_start + tile_size).min(n);
+
+        // Find local max in this tile
+        let local_max = scores[tile_start..tile_end]
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        if local_max > global_max {
+            // Rescale previous sum when we find a new max
+            let rescale = (global_max - local_max).exp();
+            global_sum *= rescale;
+            global_max = local_max;
+        }
+
+        // Add this tile's contribution to sum
+        for &s in &scores[tile_start..tile_end] {
+            global_sum += (s - global_max).exp();
+        }
+    }
+
+    // Second pass: compute final softmax values
+    let mut result = Vec::with_capacity(n);
+    for &s in scores {
+        result.push((s - global_max).exp() / global_sum);
+    }
+
+    Ok(result)
+}
+
+/// One head of `softmax(scale * Q Kᵀ) V` over `seq_len` positions, unmasked.
+pub fn standard_single_head_attention(
+    q: &[f32],
+    k: &[f32],
+    v: &[f32],
+    seq_len: usize,
+    head_dim: usize,
+    scale: f32,
+) -> Result<Vec<f32>> {
+    // Compute attention scores: Q @ K^T -> [seq_len, seq_len]
+    let mut scores = vec![0.0f32; seq_len * seq_len];
+    for i in 0..seq_len {
+        for j in 0..seq_len {
+            let mut dot = 0.0f32;
+            for d in 0..head_dim {
+                dot += q[i * head_dim + d] * k[j * head_dim + d];
+            }
+            scores[i * seq_len + j] = dot * scale;
+        }
+    }
+
+    // Apply softmax per row
+    let mut weights = vec![0.0f32; seq_len * seq_len];
+    for i in 0..seq_len {
+        let row_start = i * seq_len;
+        let row = &scores[row_start..row_start + seq_len];
+        let softmax = standard_softmax(row);
+        weights[row_start..row_start + seq_len].copy_from_slice(&softmax);
+    }
+
+    // Compute output: weights @ V -> [seq_len, head_dim]
+    let mut output = vec![0.0f32; seq_len * head_dim];
+    for i in 0..seq_len {
+        for d in 0..head_dim {
+            let mut acc = 0.0f32;
+            for j in 0..seq_len {
+                acc += weights[i * seq_len + j] * v[j * head_dim + d];
+            }
+            output[i * head_dim + d] = acc;
+        }
+    }
+
+    Ok(output)
+}
+
+/// [`standard_single_head_attention`] computed tile by tile with an online softmax.
+#[allow(clippy::too_many_arguments)]
+pub fn tiled_single_head_attention(
+    q: &[f32],
+    k: &[f32],
+    v: &[f32],
+    seq_len: usize,
+    head_dim: usize,
+    scale: f32,
+    tile_size: usize,
+) -> Result<Vec<f32>> {
+    let tile_size = tile_size.max(1);
+    let mut output = vec![0.0f32; seq_len * head_dim];
+
+    // Process each query position
+    for i in 0..seq_len {
+        let q_i = &q[i * head_dim..(i + 1) * head_dim];
+
+        // Running statistics for online softmax
+        let mut running_max = f32::NEG_INFINITY;
+        let mut running_sum = 0.0f32;
+        let mut running_output = vec![0.0f32; head_dim];
+
+        // Process K/V in tiles
+        for tile_start in (0..seq_len).step_by(tile_size) {
+            let tile_end = (tile_start + tile_size).min(seq_len);
+
+            // Compute scores for this tile: q_i @ K_tile^T
+            let mut tile_scores = Vec::with_capacity(tile_end - tile_start);
+            for j in tile_start..tile_end {
+                let mut dot = 0.0f32;
+                for d in 0..head_dim {
+                    dot += q_i[d] * k[j * head_dim + d];
+                }
+                tile_scores.push(dot * scale);
+            }
+
+            // Find tile max
+            let tile_max = tile_scores
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
+
+            // Update running statistics
+            let new_max = running_max.max(tile_max);
+
+            // Rescale previous output and sum
+            if new_max > running_max && running_sum > 0.0 {
+                let rescale = (running_max - new_max).exp();
+                running_sum *= rescale;
+                for out_val in &mut running_output {
+                    *out_val *= rescale;
+                }
+            }
+            running_max = new_max;
+
+            // Accumulate this tile's contribution
+            for (idx, &score) in tile_scores.iter().enumerate() {
+                let j = tile_start + idx;
+                let weight = (score - running_max).exp();
+                running_sum += weight;
+                for d in 0..head_dim {
+                    running_output[d] += weight * v[j * head_dim + d];
+                }
+            }
+        }
+
+        // Normalize output
+        for d in 0..head_dim {
+            output[i * head_dim + d] = running_output[d] / running_sum;
+        }
+    }
+
+    Ok(output)
 }
