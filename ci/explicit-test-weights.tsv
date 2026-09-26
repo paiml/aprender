@@ -1,0 +1,61 @@
+# Measured seconds per explicit-test fragment (Y2 shard rebalance). Source: mean of the
+# ::group:: -> next ::group:: / RESULT interval in 14 full-tier workspace-test-shard job logs
+# on gx10 + yoga runners, batch/0.70.0 + main, 2026-09-24/25 (intel-clean-room excluded: it runs
+# 2.8-3.3x slower and would skew the mix). A fragment absent from this file is planned at the
+# median weight, so adding a fragment never requires editing this file.
+# <fragment basename><TAB><seconds>
+010-aprender-core-lib-setfit.cmd	83
+020-aprender-core-setfit-conformance.cmd	27
+030-aprender-core-monorepo-invariants.cmd	22
+040-aprender-core-readme-contract.cmd	10
+050-apr-cli-cli-commands.cmd	44
+060-apr-cli-reg15-admission.cmd	34
+070-aprender-train-inspect-falsify-no-fabricated-metadata-2519.cmd	10
+080-aprender-train-bench-falsify-no-fabricated-benchmarks-2519.cmd	14
+090-aprender-train-shell-falsify-no-fabricated-fetch-2519.cmd	35
+100-aprender-core-beat-sklearn-iris.cmd	7
+110-aprender-core-beat-sklearn-nmi.cmd	8
+120-aprender-core-beat-sklearn-metrics-parity.cmd	5
+130-aprender-core-beat-sklearn-gaussiannb-accuracy.cmd	7
+140-aprender-core-beat-sklearn-svc-accuracy.cmd	8
+150-aprender-core-beat-sklearn-pipeline-encoder.cmd	4
+160-aprender-serve-beat-fail-closed-garbage.cmd	14
+170-aprender-compute-lib-beat-nf4-bitsandbytes-equivalence.cmd	24
+180-aprender-core-beat-pytorch-autograd-grad.cmd	4
+190-aprender-train-lora-lib-beat-lora-merge-forward-equivalence.cmd	6
+200-apr-cli-beat-pytorch-deploy-footprint.cmd	120
+210-aprender-serve-beat-fail-closed-structural.cmd	20
+220-aprender-serve-ollama-http-compat.cmd	34
+230-apr-cli-ollama-ndjson-streaming.cmd	9
+240-apr-cli-falsification-chat-http-cli.cmd	11
+250-aprender-contracts-apr-serve-api-key-auth-contract.cmd	6
+260-apr-cli-falsify-auth-001-002-003.cmd	8
+270-apr-cli-beat-apr-data-alimentar-reach.cmd	11
+280-apr-cli-beat-apr-sibling-cli-reach.cmd	41
+290-aprender-contracts-cli-pv-surface-gate.cmd	5
+300-aprender-contracts-cli-pvl-zero-contracts.cmd	6
+310-aprender-contracts-cli-cli-integration.cmd	12
+320-aprender-contracts-cli-ground-truth.cmd	0
+330-aprender-contracts-cli-version-identity.cmd	0
+335-aprender-contracts-cli-ont6-lint-verdict.cmd	1
+336-aprender-contracts-cli-ont2b-sigma-gate.cmd	3
+337-aprender-contracts-cli-ont4-relations-gate.cmd	20
+338-aprender-contracts-cli-ont4b-shapes-gate.cmd	24
+339-aprender-contracts-cli-ont-extract-json.cmd	0
+340-apr-cli-pixel-regression.cmd	10
+341-aprender-contracts-cli-ont-entity-properties.cmd	1
+342-aprender-contracts-cli-ont4c1-model-receipts.cmd	7
+343-aprender-contracts-cli-ont4b2-code-lean-w3c.cmd	0
+344-aprender-contracts-cli-ont6b-kind-default.cmd	0
+350-aprender-quant-ggml-traits-fixture.cmd	1
+360-workspace-check-benches.cmd	90
+370-apr-cli-registry-failure-catalogue.cmd	19
+380-aprender-compute-registry-case-table.cmd	5
+390-aprender-core-contract-tests.cmd	31
+400-apr-cli-backend-refusal-case-table.cmd	19
+410-aprender-test-showcase-probar-tests.cmd	5
+420-aprender-contracts-cli-ont4c3-parity-receipts.cmd	8
+430-aprender-contracts-cli-ont-refusal-receipt.cmd	1
+440-apr-cli-devices-reports-its-own-build.cmd	57
+450-aprender-contracts-cli-ont-release-readiness.cmd	0
+455-aprender-contracts-cli-ont7-valid-under-gate.cmd	34
