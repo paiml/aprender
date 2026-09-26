@@ -151,16 +151,17 @@ def read_set(path):
         # The receiver patterns are all anchored at the END of `before`, and a
         # search over the whole prefix is quadratic in the file (most of this
         # guard's minutes, #4429). Search a tail window; a hit touching the
-        # window's left edge (an identifier it may have cut), or a miss that
-        # would be an error, re-searches the full prefix. A receiver expression
-        # longer than TAIL is the one shape the window does not see.
+        # window's left edge (an identifier it may have cut), or ANY miss in a
+        # cut window, re-searches the full prefix. A miss may be a receiver
+        # expression longer than TAIL, so the window never decides alone
+        # (quorum finding on #4500: 8 s exact vs 1 s windowed, minutes before).
         start = match.start()
         lo = max(0, start - TAIL)
         before = src[lo:start]
 
-        def tail_search(rx, miss_is_error=False):
+        def tail_search(rx):
             hit = rx.search(before)
-            if lo and ((hit is None and miss_is_error) or (hit is not None and hit.start() == 0)):
+            if lo and (hit is None or hit.start() == 0):
                 full = rx.search(src[:start])
                 if full is not None and (hit is None or full.start() < lo):
                     return full
@@ -174,7 +175,7 @@ def read_set(path):
         elif coalesce:
             recv, qualified = coalesce.group(1), name
         else:
-            plain = tail_search(RECV, miss_is_error=True)
+            plain = tail_search(RECV)
             if not plain:
                 line = src.count("\n", 0, match.start()) + 1
                 errors.append(
