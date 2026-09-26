@@ -393,7 +393,10 @@ names_commit_table() {
     for c in "apr 0.69.3 (8cf336c60)|0" "apr 0.69.3 (8cf336c60a)|0" "apr 0.69.3 (8cf336c)|0" \
              "apr 0.69.3 (8cf336)|1" "apr 0.70.0 (817d63361)|1" "apr 0.69.3 (8cf336c61)|1" \
              "apr 0.69.3 (v0.69.3+no-git)|1" "apr 0.61.0 8cf336c60 stale|1" \
-             "apr 0.61.0 8cf336c60 (817d63361)|1" "|1"; do
+             "apr 0.61.0 8cf336c60 (817d63361)|1" "apr 0.69.3 (8cf336c60-dirty)|1" \
+             "apr 0.69.3 (mock-8cf336c60)|1" "apr 0.69.3 (8CF336C60)|1" \
+             "apr 0.69.3 ( 8cf336c60)|1" "apr 0.69.3 (36c60a1b2)|1" \
+             "8cf336c60|1" "|1"; do
         v="${c%|*}"; want="${c##*|}"
         apr_bin_names_commit "$v" "$full"; rc=$?
         if [ "$rc" -eq "$want" ]; then

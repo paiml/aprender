@@ -291,22 +291,18 @@ apr_bin_origin() {
 # while `git rev-parse --short HEAD` now prints `8cf336c60a`, and a substring
 # match called the HEAD build STALE (#3555). Only the parenthesised field is read
 # (`apr --version` is "VERSION (APR_GIT_SHA)", crates/apr-cli/src/lib.rs), so a hex
-# run elsewhere in the string cannot vouch for it; no "(...)" fails closed. Inside
-# it, a hex run of >= 7 characters that prefixes the full sha is the same commit.
-# The unquoted $(...) is split by bash AND zsh (zsh only declines to split
-# parameter expansions); do not "simplify" it into an assignment first.
+# run elsewhere in the string cannot vouch for it; no "(...)" fails closed. The
+# WHOLE field, >= 7 characters, must prefix the full sha (build.rs embeds a bare
+# `git rev-parse --short HEAD`). The match is quoted, so it is literal: a decorated
+# field such as "(8cf336c60-dirty)" or an uppercase one can never prefix a sha,
+# and an empty $2 (no HEAD) has no 7-character prefix, so it fails closed too.
 apr_bin_names_commit() {
-    local reported="$1" full="$2" field tok
-    [ -n "$full" ] || return 1
+    local reported="$1" full="$2" field
     case "$reported" in *"("*")"*) ;; *) return 1 ;; esac
     field="${reported##*"("}"
     field="${field%%")"*}"
-    for tok in $(printf '%s\n' "$field" | tr -c '0-9a-f' ' '); do
-        [ "${#tok}" -ge 7 ] || continue
-        case "$full" in
-            "$tok"*) return 0 ;;
-        esac
-    done
+    [ "${#field}" -ge 7 ] || return 1
+    case "$full" in "$field"*) return 0 ;; esac
     return 1
 }
 
