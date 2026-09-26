@@ -17,13 +17,13 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::MwvQ4KGemv { k, n, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("mwv_q4k_gemv_{}_{}_{}", k, n, num_warps);
+        let cache_key = module_key!(self, "mwv_q4k_gemv_{}_{}_{}", k, n, num_warps);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // num_warps * 32 threads per output element, one block per output
@@ -71,7 +71,7 @@ impl CudaExecutor {
         // was unaffected because it routes Q4K to the (recorded) DP4A variant.
         // Fix: record this GEMV too, mirroring mwv_dp4a_q4k_gemv_into.
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -122,22 +122,19 @@ impl CudaExecutor {
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         // Step 1: Quantize activations to Q8_1 (skip if already valid — PMAT-027)
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, k)?;
 
         // Step 2: Launch DP4A GEMV kernel
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::MwvDp4aQ4KGemv { k, n, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("mwv_dp4a_q4k_gemv_{}_{}_{}", k, n, num_warps);
+        let cache_key = module_key!(self, "mwv_dp4a_q4k_gemv_{}_{}_{}", k, n, num_warps);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -174,7 +171,7 @@ impl CudaExecutor {
         // trueno#243: Record kernel for manual graph construction
         // BUG FIX (realizr#198): MWV DP4A variant was missing recording.
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -223,22 +220,19 @@ impl CudaExecutor {
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         // Step 1: Quantize activations to Q8_1 (skip if already valid — PMAT-027)
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, k)?;
 
         // Step 2: Launch half-warp DP4A GEMV kernel
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::HwDp4aQ4KGemv { k, n, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("hw_dp4a_q4k_gemv_{}_{}_{}", k, n, num_warps);
+        let cache_key = module_key!(self, "hw_dp4a_q4k_gemv_{}_{}_{}", k, n, num_warps);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -269,7 +263,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel AFTER launch (avoids borrow conflict with module)
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -307,13 +301,13 @@ impl CudaExecutor {
         validate_device_ptr(weight_ptr, "dp4a_q4k_gemv_into")?;
         let kernel_type = KernelType::Dp4aQ4KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("dp4a_q4k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "dp4a_q4k_gemv_{}_{}", k, n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // One warp (32 threads) per output element
@@ -387,7 +381,7 @@ impl CudaExecutor {
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // One block per output element, 256 threads per block
@@ -455,21 +449,18 @@ impl CudaExecutor {
         // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, k)?;
 
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_gate_up_swiglu_hw_dp4a_q4k_{}_{}", k, n);
+        let cache_key = module_key!(self, "fused_gate_up_swiglu_hw_dp4a_q4k_{}_{}", k, n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -505,7 +496,7 @@ impl CudaExecutor {
         // kernels per forward pass were never captured. Graph replay used stale
         // ffn_act_buf from the eager pass, causing hidden_buf2 divergence (81.0).
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -616,23 +607,19 @@ impl CudaExecutor {
         // Skip Q8 quantize when the same input buffer was already quantized
         // (e.g., K/V projections share input with Q, up shares with gate).
         // Saves 3 Q8 launches per layer × 28 layers = 84 launches per step.
-        if !self.q8_activation_valid {
-            let total_elements = m * k;
-            self.q8_quantize_into(input, &q8_buf, total_elements)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, m * k)?;
 
         // Step 2: Launch batched HW DP4A kernel
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::BatchedHwDp4aQ4KGemv { k, n, m, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("batched_hw_dp4a_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
+        let cache_key = module_key!(self, "batched_hw_dp4a_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -684,13 +671,13 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::BatchedHwDp4aQ4KGemv { k, n, m, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("batched_hw_dp4a_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
+        let cache_key = module_key!(self, "batched_hw_dp4a_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -742,13 +729,13 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::InlineQ8Dp4aQ4KGemv { k, n, m, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("inline_q8_dp4a_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
+        let cache_key = module_key!(self, "inline_q8_dp4a_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -800,13 +787,13 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::FusedFp32Q4KGemv { k, n, m, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_fp32_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
+        let cache_key = module_key!(self, "fused_fp32_q4k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -1019,13 +1006,13 @@ impl CudaExecutor {
         validate_device_ptr(up_weight_ptr, "fused_gate_up_q4k_gemv_into(up)")?;
         let kernel_type = KernelType::FusedGateUpQ4KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_gate_up_q4k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "fused_gate_up_q4k_gemv_{}_{}", k, n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // One block per output element, 256 threads per block
