@@ -130,9 +130,7 @@ fn bench_find_command() {
     );
 
     let speedup = strace.as_secs_f64() / renacer.as_secs_f64();
-    if speedup < 1.0 {
-        panic!("Renacer should not be slower than strace (got {:.2}x)", speedup);
-    }
+    assert!(speedup >= 1.0, "Renacer should not be slower than strace (got {:.2}x)", speedup);
 }
 
 /// Benchmark: Quick commands (minimal syscalls)
@@ -156,9 +154,7 @@ fn bench_minimal_syscalls() {
     );
 
     let speedup = strace.as_secs_f64() / renacer.as_secs_f64();
-    if speedup < 1.0 {
-        panic!("Renacer should not be slower than strace (got {:.2}x)", speedup);
-    }
+    assert!(speedup >= 1.0, "Renacer should not be slower than strace (got {:.2}x)", speedup);
 }
 
 /// Benchmark: Filtering performance (no output overhead)

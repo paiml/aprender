@@ -27,7 +27,7 @@ fn test_gateway_g1_failure() {
 
     // G1 failed should fail all gateways
     assert!(!score.gateways_passed);
-    let g1 = score.gateways.iter().find(|g| g.id == "G1").unwrap();
+    let g1 = score.gateways.iter().find(|g| g.id == "G1").expect("entry found");
     assert!(!g1.passed);
 }
 
@@ -50,7 +50,7 @@ fn test_gateway_g1_passes_with_mixed_results() {
         .calculate("test/model", &collector)
         .expect("Calculation failed");
 
-    let g1 = score.gateways.iter().find(|g| g.id == "G1").unwrap();
+    let g1 = score.gateways.iter().find(|g| g.id == "G1").expect("entry found");
     assert!(g1.passed);
 }
 
@@ -72,7 +72,7 @@ fn test_gateway_g2_failure() {
         .calculate("test/model", &collector)
         .expect("Calculation failed");
 
-    let g2 = score.gateways.iter().find(|g| g.id == "G2").unwrap();
+    let g2 = score.gateways.iter().find(|g| g.id == "G2").expect("entry found");
     assert!(!g2.passed);
 }
 
@@ -111,7 +111,7 @@ fn test_gateway_g4_failure_garbage_output() {
         .calculate("test/model", &collector)
         .expect("Calculation failed");
 
-    let g4 = score.gateways.iter().find(|g| g.id == "G4").unwrap();
+    let g4 = score.gateways.iter().find(|g| g.id == "G4").expect("entry found");
     assert!(!g4.passed);
 }
 
@@ -141,7 +141,7 @@ fn test_gateway_g4_passes_with_mostly_good_garbage_oracle() {
         .calculate("test/model", &collector)
         .expect("Calculation failed");
 
-    let g4 = score.gateways.iter().find(|g| g.id == "G4").unwrap();
+    let g4 = score.gateways.iter().find(|g| g.id == "G4").expect("entry found");
     assert!(g4.passed);
 }
 
@@ -390,9 +390,9 @@ fn test_gateway_g0_integrity_failure() {
     assert!(!score.gateways_passed);
     assert_eq!(score.raw_score, 0);
     assert_eq!(score.normalized_score, 0.0);
-    let g0 = score.gateways.iter().find(|g| g.id == "G0").unwrap();
+    let g0 = score.gateways.iter().find(|g| g.id == "G0").expect("entry found");
     assert!(!g0.passed);
-    assert!(g0.failure_reason.as_ref().unwrap().contains("1 G0 check"));
+    assert!(g0.failure_reason.as_ref().expect("value present").contains("1 G0 check"));
 }
 
 #[test]
@@ -429,10 +429,10 @@ fn test_gateway_g0_integrity_multiple_failures() {
 
     assert!(!score.gateways_passed);
     assert_eq!(score.raw_score, 0);
-    let g0 = score.gateways.iter().find(|g| g.id == "G0").unwrap();
+    let g0 = score.gateways.iter().find(|g| g.id == "G0").expect("entry found");
     assert!(!g0.passed);
     // Should mention all 3 failures
-    assert!(g0.failure_reason.as_ref().unwrap().contains("3 G0 check"));
+    assert!(g0.failure_reason.as_ref().expect("value present").contains("3 G0 check"));
 }
 
 #[test]
@@ -449,7 +449,7 @@ fn test_gateway_g0_passes_when_no_integrity_failures() {
         .expect("Calculation failed");
 
     assert!(score.gateways_passed);
-    let g0 = score.gateways.iter().find(|g| g.id == "G0").unwrap();
+    let g0 = score.gateways.iter().find(|g| g.id == "G0").expect("entry found");
     assert!(g0.passed);
 }
 
@@ -506,9 +506,9 @@ fn test_gateway_g0_catches_dim_and_format_failures() {
     // All three G0 failures must zero the score
     assert!(!score.gateways_passed);
     assert_eq!(score.raw_score, 0);
-    let g0 = score.gateways.iter().find(|g| g.id == "G0").unwrap();
+    let g0 = score.gateways.iter().find(|g| g.id == "G0").expect("entry found");
     assert!(!g0.passed);
-    assert!(g0.failure_reason.as_ref().unwrap().contains("3 G0 check"));
+    assert!(g0.failure_reason.as_ref().expect("value present").contains("3 G0 check"));
 }
 
 #[test]
@@ -533,7 +533,7 @@ fn test_with_proof_bonus_adds_points() {
     // Raw score should include the 25-point bonus
     assert!(score.raw_score > 200); // QUAL-only max is 200
     assert!(score.proof_bonus.is_some());
-    assert_eq!(score.proof_bonus.as_ref().unwrap().bonus_points, 25);
+    assert_eq!(score.proof_bonus.as_ref().expect("value present").bonus_points, 25);
 }
 
 #[test]
@@ -600,7 +600,7 @@ fn test_proof_bonus_json_omitted_when_none() {
         total_penalty: 0,
         proof_bonus: None,
     };
-    let json = serde_json::to_string(&score).unwrap();
+    let json = serde_json::to_string(&score).expect("serialise");
     // proof_bonus should NOT appear in JSON when None
     assert!(!json.contains("proof_bonus"));
 }

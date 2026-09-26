@@ -109,19 +109,19 @@ fn test_falsify_oracle_004_field_mapping() {
 
     // Verify gateway consistency
     assert_eq!(
-        export.gates.get("G1-MODEL-LOADS").unwrap().passed,
+        export.gates.get("G1-MODEL-LOADS").expect("entry present").passed,
         cert_row.g1
     );
     assert_eq!(
-        export.gates.get("G2-BASIC-INFERENCE").unwrap().passed,
+        export.gates.get("G2-BASIC-INFERENCE").expect("entry present").passed,
         cert_row.g2
     );
     assert_eq!(
-        export.gates.get("G3-NO-CRASHES").unwrap().passed,
+        export.gates.get("G3-NO-CRASHES").expect("entry present").passed,
         cert_row.g3
     );
     assert_eq!(
-        export.gates.get("G4-OUTPUT-QUALITY").unwrap().passed,
+        export.gates.get("G4-OUTPUT-QUALITY").expect("entry present").passed,
         cert_row.g4
     );
 }

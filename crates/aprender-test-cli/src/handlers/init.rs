@@ -91,42 +91,42 @@ mod tests {
 
     #[test]
     fn test_is_valid_init_path_nonexistent() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let nonexistent = temp.path().join("new_project");
         assert!(is_valid_init_path(&nonexistent));
     }
 
     #[test]
     fn test_is_valid_init_path_empty_dir() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         assert!(is_valid_init_path(temp.path()));
     }
 
     #[test]
     fn test_is_valid_init_path_nonempty_dir() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("existing.rs"), "// content").unwrap();
+        let temp = TempDir::new().expect("construct");
+        std::fs::write(temp.path().join("existing.rs"), "// content").expect("write file");
         assert!(!is_valid_init_path(temp.path()));
     }
 
     #[test]
     fn test_is_valid_init_path_dir_with_hidden_files() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join(".gitignore"), "target/").unwrap();
+        let temp = TempDir::new().expect("construct");
+        std::fs::write(temp.path().join(".gitignore"), "target/").expect("write file");
         assert!(is_valid_init_path(temp.path()));
     }
 
     #[test]
     fn test_is_valid_init_path_file() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let file_path = temp.path().join("file.txt");
-        std::fs::write(&file_path, "content").unwrap();
+        std::fs::write(&file_path, "content").expect("write file");
         assert!(!is_valid_init_path(&file_path));
     }
 
     #[test]
     fn test_execute_init_creates_directory() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let project_path = temp.path().join("new_project");
 
         let config = CliConfig::default();
@@ -144,16 +144,16 @@ mod tests {
 
     #[test]
     fn test_execute_init_force_overwrites() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let project_path = temp.path().join("existing_project");
-        std::fs::create_dir_all(project_path.join("tests")).unwrap();
+        std::fs::create_dir_all(project_path.join("tests")).expect("create dir");
 
         let old_content = "// old content";
         std::fs::write(
             project_path.join("tests").join("basic_test.rs"),
             old_content,
         )
-        .unwrap();
+        .expect("write file");
 
         let config = CliConfig::default();
         let args = InitArgs {
@@ -163,24 +163,24 @@ mod tests {
 
         execute_init(&config, &args);
 
-        let content =
-            std::fs::read_to_string(project_path.join("tests").join("basic_test.rs")).unwrap();
+        let content = std::fs::read_to_string(project_path.join("tests").join("basic_test.rs"))
+            .expect("read file");
         assert!(content.contains("jugar_probar"));
         assert!(!content.contains("old content"));
     }
 
     #[test]
     fn test_execute_init_does_not_overwrite_without_force() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let project_path = temp.path().join("existing_project");
-        std::fs::create_dir_all(project_path.join("tests")).unwrap();
+        std::fs::create_dir_all(project_path.join("tests")).expect("create dir");
 
         let old_content = "// old content that should remain";
         std::fs::write(
             project_path.join("tests").join("basic_test.rs"),
             old_content,
         )
-        .unwrap();
+        .expect("write file");
 
         let config = CliConfig::default();
         let args = InitArgs {
@@ -190,8 +190,8 @@ mod tests {
 
         execute_init(&config, &args);
 
-        let content =
-            std::fs::read_to_string(project_path.join("tests").join("basic_test.rs")).unwrap();
+        let content = std::fs::read_to_string(project_path.join("tests").join("basic_test.rs"))
+            .expect("read file");
         assert!(content.contains("old content that should remain"));
     }
 }

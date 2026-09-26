@@ -1471,13 +1471,13 @@ mod tests {
         use tempfile::TempDir;
 
         // Create temp directory with index.html
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("construct");
         let subdir = temp_dir.path().join("subdir");
-        std::fs::create_dir(&subdir).unwrap();
-        std::fs::write(subdir.join("index.html"), "<html>test</html>").unwrap();
+        std::fs::create_dir(&subdir).expect("create dir");
+        std::fs::write(subdir.join("index.html"), "<html>test</html>").expect("write file");
 
         let directory = Arc::new(temp_dir.path().to_path_buf());
-        let uri: axum::http::Uri = "/subdir/".parse().unwrap();
+        let uri: axum::http::Uri = "/subdir/".parse().expect("parse");
 
         let response = serve_static(directory, uri).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -1488,13 +1488,13 @@ mod tests {
         use std::sync::Arc;
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("construct");
         let subdir = temp_dir.path().join("mydir");
-        std::fs::create_dir(&subdir).unwrap();
-        std::fs::write(subdir.join("index.html"), "<html>works</html>").unwrap();
+        std::fs::create_dir(&subdir).expect("create dir");
+        std::fs::write(subdir.join("index.html"), "<html>works</html>").expect("write file");
 
         let directory = Arc::new(temp_dir.path().to_path_buf());
-        let uri: axum::http::Uri = "/mydir".parse().unwrap();
+        let uri: axum::http::Uri = "/mydir".parse().expect("parse");
 
         let response = serve_static(directory, uri).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -1505,13 +1505,13 @@ mod tests {
         use std::sync::Arc;
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("construct");
         let subdir = temp_dir.path().join("empty");
-        std::fs::create_dir(&subdir).unwrap();
+        std::fs::create_dir(&subdir).expect("create dir");
         // No index.html
 
         let directory = Arc::new(temp_dir.path().to_path_buf());
-        let uri: axum::http::Uri = "/empty/".parse().unwrap();
+        let uri: axum::http::Uri = "/empty/".parse().expect("parse");
 
         let response = serve_static(directory, uri).await;
         // Should return error since directory has no index.html
@@ -1878,15 +1878,15 @@ mod tests {
     fn test_module_validator_validates_existing_file() {
         use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let pkg_dir = temp.path().join("pkg");
-        std::fs::create_dir(&pkg_dir).unwrap();
-        std::fs::write(pkg_dir.join("app.js"), "export default {}").unwrap();
+        std::fs::create_dir(&pkg_dir).expect("create dir");
+        std::fs::write(pkg_dir.join("app.js"), "export default {}").expect("write file");
         std::fs::write(
             temp.path().join("index.html"),
             r#"<script type="module">import init from './pkg/app.js';</script>"#,
         )
-        .unwrap();
+        .expect("write file");
 
         let validator = ModuleValidator::new(temp.path());
         let result = validator.validate();
@@ -1900,12 +1900,12 @@ mod tests {
     fn test_module_validator_detects_missing_file() {
         use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         std::fs::write(
             temp.path().join("index.html"),
             r#"<script type="module">import init from './pkg/missing.js';</script>"#,
         )
-        .unwrap();
+        .expect("write file");
 
         let validator = ModuleValidator::new(temp.path());
         let result = validator.validate();

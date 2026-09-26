@@ -10,9 +10,9 @@ fn get_workspace_root() -> std::path::PathBuf {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
         .parent()
-        .unwrap()
+        .expect("parent")
         .parent()
-        .unwrap()
+        .expect("parent")
         .to_path_buf()
 }
 
@@ -96,7 +96,7 @@ gates:
     let config = build_certification_config(CertTier::Mvp, None);
     let result = execute_playbook(&playbook, config);
     assert!(result.is_ok());
-    let exec_result = result.unwrap();
+    let exec_result = result.expect("call under test succeeds");
     assert_eq!(exec_result.playbook_name, "test-playbook");
 }
 
@@ -142,7 +142,7 @@ fn test_load_playbook_with_workspace_path() {
     if playbook_path.exists() {
         let result = load_playbook(&playbook_path);
         assert!(result.is_ok());
-        let playbook = result.unwrap();
+        let playbook = result.expect("call under test succeeds");
         assert!(!playbook.name.is_empty());
     }
 }
@@ -259,10 +259,10 @@ fn test_filter_models_by_size_no_match() {
 fn test_generate_junit_report_basic() {
     let evidence = vec![make_corroborated_evidence()];
     let collector = collect_evidence(evidence);
-    let mqs = calculate_mqs_score("test/model", &collector).unwrap();
+    let mqs = calculate_mqs_score("test/model", &collector).expect("calculate mqs score");
     let junit = generate_junit_report("test/model", &collector, &mqs);
     assert!(junit.is_ok());
-    assert!(junit.unwrap().contains("testsuite"));
+    assert!(junit.expect("junit").contains("testsuite"));
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn test_build_execution_config_with_model_path() {
         model_path: Some("/models/test.gguf".to_string()),
         ..Default::default()
     };
-    let exec = build_execution_config(&config).unwrap();
+    let exec = build_execution_config(&config).expect("build execution config");
     assert_eq!(exec.model_path, Some("/models/test.gguf".to_string()));
 }
 
@@ -281,7 +281,7 @@ fn test_build_execution_config_with_timeout() {
         timeout: 90000,
         ..Default::default()
     };
-    let exec = build_execution_config(&config).unwrap();
+    let exec = build_execution_config(&config).expect("build execution config");
     assert_eq!(exec.default_timeout_ms, 90000);
 }
 
@@ -291,7 +291,7 @@ fn test_build_execution_config_with_workers() {
         workers: 8,
         ..Default::default()
     };
-    let exec = build_execution_config(&config).unwrap();
+    let exec = build_execution_config(&config).expect("build execution config");
     assert_eq!(exec.max_workers, 8);
 }
 

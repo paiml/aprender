@@ -171,7 +171,7 @@ mod tests {
         assert!(json.contains("\"timestamp\""));
 
         // Verify it's valid JSON
-        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(parsed["summary"]["total"], 0);
     }
 
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_execute_report_html() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let output = temp.path().join("report.html");
 
         let config = CliConfig::default();
@@ -215,13 +215,13 @@ mod tests {
         execute_report(&config, &args);
 
         assert!(output.exists());
-        let content = std::fs::read_to_string(&output).unwrap();
+        let content = std::fs::read_to_string(&output).expect("read file");
         assert!(content.contains("<!DOCTYPE html>"));
     }
 
     #[test]
     fn test_execute_report_json() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let output = temp.path().join("report.json");
 
         let config = CliConfig::default();
@@ -234,13 +234,13 @@ mod tests {
         execute_report(&config, &args);
 
         assert!(output.exists());
-        let content = std::fs::read_to_string(&output).unwrap();
-        let _: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let content = std::fs::read_to_string(&output).expect("read file");
+        let _: serde_json::Value = serde_json::from_str(&content).expect("parse");
     }
 
     #[test]
     fn test_execute_report_lcov() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let output = temp.path().join("lcov.info");
 
         let config = CliConfig::default();
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_execute_report_junit() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let output = temp.path().join("junit.xml");
 
         let config = CliConfig::default();
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_execute_report_cobertura() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let output = temp.path().join("cobertura.xml");
 
         let config = CliConfig::default();
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_execute_report_creates_parent_dirs() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let output = temp.path().join("nested").join("dir").join("report.html");
 
         let config = CliConfig::default();

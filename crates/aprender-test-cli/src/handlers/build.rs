@@ -88,17 +88,17 @@ mod tests {
 
     #[test]
     fn test_find_html_files_empty() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let files = find_html_files(temp.path());
         assert!(files.is_empty());
     }
 
     #[test]
     fn test_find_html_files_with_files() {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("index.html"), "<html></html>").unwrap();
-        std::fs::write(temp.path().join("about.html"), "<html></html>").unwrap();
-        std::fs::write(temp.path().join("style.css"), "body {}").unwrap();
+        let temp = TempDir::new().expect("construct");
+        std::fs::write(temp.path().join("index.html"), "<html></html>").expect("write file");
+        std::fs::write(temp.path().join("about.html"), "<html></html>").expect("write file");
+        std::fs::write(temp.path().join("style.css"), "body {}").expect("write file");
 
         let files = find_html_files(temp.path());
         assert_eq!(files.len(), 2);
@@ -106,14 +106,14 @@ mod tests {
 
     #[test]
     fn test_find_html_files_nested() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join("pages")).unwrap();
-        std::fs::write(temp.path().join("index.html"), "<html></html>").unwrap();
+        let temp = TempDir::new().expect("construct");
+        std::fs::create_dir_all(temp.path().join("pages")).expect("create dir");
+        std::fs::write(temp.path().join("index.html"), "<html></html>").expect("write file");
         std::fs::write(
             temp.path().join("pages").join("about.html"),
             "<html></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let files = find_html_files(temp.path());
         assert_eq!(files.len(), 2);
@@ -121,14 +121,14 @@ mod tests {
 
     #[test]
     fn test_find_html_files_skips_node_modules() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join("node_modules")).unwrap();
-        std::fs::write(temp.path().join("index.html"), "<html></html>").unwrap();
+        let temp = TempDir::new().expect("construct");
+        std::fs::create_dir_all(temp.path().join("node_modules")).expect("create dir");
+        std::fs::write(temp.path().join("index.html"), "<html></html>").expect("write file");
         std::fs::write(
             temp.path().join("node_modules").join("lib.html"),
             "<html></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let files = find_html_files(temp.path());
         assert_eq!(files.len(), 1);
@@ -136,14 +136,14 @@ mod tests {
 
     #[test]
     fn test_find_html_files_skips_hidden() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join(".hidden")).unwrap();
-        std::fs::write(temp.path().join("index.html"), "<html></html>").unwrap();
+        let temp = TempDir::new().expect("construct");
+        std::fs::create_dir_all(temp.path().join(".hidden")).expect("create dir");
+        std::fs::write(temp.path().join("index.html"), "<html></html>").expect("write file");
         std::fs::write(
             temp.path().join(".hidden").join("secret.html"),
             "<html></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let files = find_html_files(temp.path());
         assert_eq!(files.len(), 1);
@@ -151,40 +151,41 @@ mod tests {
 
     #[test]
     fn test_html_references_wasm_true() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("index.html");
-        std::fs::write(&html_path, r#"<script src="app.wasm"></script>"#).unwrap();
+        std::fs::write(&html_path, r#"<script src="app.wasm"></script>"#).expect("write file");
 
         assert!(html_references_wasm(&html_path));
     }
 
     #[test]
     fn test_html_references_wasm_webassembly() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("index.html");
-        std::fs::write(&html_path, r"<script>WebAssembly.instantiate()</script>").unwrap();
+        std::fs::write(&html_path, r"<script>WebAssembly.instantiate()</script>")
+            .expect("write file");
 
         assert!(html_references_wasm(&html_path));
     }
 
     #[test]
     fn test_html_references_wasm_bindgen() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("index.html");
         std::fs::write(
             &html_path,
             r"<script>import init from './pkg/wasm_bindgen.js'</script>",
         )
-        .unwrap();
+        .expect("write file");
 
         assert!(html_references_wasm(&html_path));
     }
 
     #[test]
     fn test_html_references_wasm_false() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("index.html");
-        std::fs::write(&html_path, r"<html><body>Hello</body></html>").unwrap();
+        std::fs::write(&html_path, r"<html><body>Hello</body></html>").expect("write file");
 
         assert!(!html_references_wasm(&html_path));
     }
@@ -196,11 +197,11 @@ mod tests {
 
     #[test]
     fn test_find_wasm_pages() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html1 = temp.path().join("wasm.html");
         let html2 = temp.path().join("plain.html");
-        std::fs::write(&html1, r#"<script src="app.wasm"></script>"#).unwrap();
-        std::fs::write(&html2, r"<html></html>").unwrap();
+        std::fs::write(&html1, r#"<script src="app.wasm"></script>"#).expect("write file");
+        std::fs::write(&html2, r"<html></html>").expect("write file");
 
         let files = vec![html1.clone(), html2];
         let wasm_pages = find_wasm_pages(&files);
@@ -235,10 +236,10 @@ mod tests {
 
     #[test]
     fn test_scan_files_recursive_skips_target() {
-        let temp = TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join("target")).unwrap();
-        std::fs::write(temp.path().join("lib.rs"), "fn main() {}").unwrap();
-        std::fs::write(temp.path().join("target").join("output.rs"), "").unwrap();
+        let temp = TempDir::new().expect("construct");
+        std::fs::create_dir_all(temp.path().join("target")).expect("create dir");
+        std::fs::write(temp.path().join("lib.rs"), "fn main() {}").expect("write file");
+        std::fs::write(temp.path().join("target").join("output.rs"), "").expect("write file");
 
         let mut files = Vec::new();
         scan_files_recursive(temp.path(), "rs", &mut files);

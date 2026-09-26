@@ -188,7 +188,7 @@ fn test_generate_lock_file_empty_dir() {
     let output = dir.path().join("playbook.lock.yaml");
     let result = generate_lock_file(dir.path(), &output);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), 0);
+    assert_eq!(result.expect("call under test succeeds"), 0);
 }
 
 #[test]
@@ -210,7 +210,7 @@ test_matrix:
     let output = dir.path().join("playbook.lock.yaml");
     let result = generate_lock_file(dir.path(), &output);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), 1);
+    assert_eq!(result.expect("call under test succeeds"), 1);
     assert!(output.exists());
 }
 
@@ -226,7 +226,7 @@ fn test_generate_lock_file_recursive() {
     let output = dir.path().join("lock.yaml");
     let result = generate_lock_file(dir.path(), &output);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), 1);
+    assert_eq!(result.expect("call under test succeeds"), 1);
 }
 
 #[test]
@@ -265,7 +265,7 @@ fn test_generate_lock_file_nonexistent_dir() {
     let result = generate_lock_file(std::path::Path::new("/nonexistent"), output);
     // Should succeed with 0 entries (no files found)
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), 0);
+    assert_eq!(result.expect("call under test succeeds"), 0);
 }
 
 // =========================================================================
@@ -275,16 +275,16 @@ fn test_generate_lock_file_nonexistent_dir() {
 #[test]
 fn test_cert_tier_dimensional_smoke_from_str() {
     assert_eq!(
-        "dim-smoke".parse::<CertTier>().unwrap(),
+        "dim-smoke".parse::<CertTier>().expect("parse"),
         CertTier::DimensionalSmoke
     );
     assert_eq!(
-        "dimensional-smoke".parse::<CertTier>().unwrap(),
+        "dimensional-smoke".parse::<CertTier>().expect("parse"),
         CertTier::DimensionalSmoke
     );
     // Case insensitive
     assert_eq!(
-        "DIM-SMOKE".parse::<CertTier>().unwrap(),
+        "DIM-SMOKE".parse::<CertTier>().expect("parse"),
         CertTier::DimensionalSmoke
     );
 }

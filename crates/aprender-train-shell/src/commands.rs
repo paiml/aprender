@@ -1010,7 +1010,7 @@ mod tests {
         let state = SessionState::new();
         let path = std::env::temp_dir().join("apr-2519-export-probe.st");
         let _ = std::fs::remove_file(&path);
-        let _ = execute_export("safetensors", path.to_str().unwrap(), &state);
+        let _ = execute_export("safetensors", path.to_str().expect("path is UTF-8"), &state);
         assert!(!path.exists(), "export refused but still created {path:?}");
     }
 

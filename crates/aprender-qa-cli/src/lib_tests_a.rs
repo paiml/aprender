@@ -49,19 +49,19 @@ fn test_playbook_run_config_default() {
 
 #[test]
 fn test_parse_failure_policy_stop_on_first() {
-    let policy = parse_failure_policy("stop-on-first").unwrap();
+    let policy = parse_failure_policy("stop-on-first").expect("parse failure policy");
     assert!(matches!(policy, FailurePolicy::StopOnFirst));
 }
 
 #[test]
 fn test_parse_failure_policy_stop_on_p0() {
-    let policy = parse_failure_policy("stop-on-p0").unwrap();
+    let policy = parse_failure_policy("stop-on-p0").expect("parse failure policy");
     assert!(matches!(policy, FailurePolicy::StopOnP0));
 }
 
 #[test]
 fn test_parse_failure_policy_collect_all() {
-    let policy = parse_failure_policy("collect-all").unwrap();
+    let policy = parse_failure_policy("collect-all").expect("parse failure policy");
     assert!(matches!(policy, FailurePolicy::CollectAll));
 }
 
@@ -74,7 +74,7 @@ fn test_parse_failure_policy_unknown() {
 
 #[test]
 fn test_parse_failure_policy_fail_fast() {
-    let policy = parse_failure_policy("fail-fast").unwrap();
+    let policy = parse_failure_policy("fail-fast").expect("parse failure policy");
     assert!(matches!(policy, FailurePolicy::FailFast));
 }
 
@@ -118,7 +118,7 @@ fn test_scenarios_to_yaml() {
     let scenarios = generate_model_scenarios("test/model", 1);
     let yaml = scenarios_to_yaml(&scenarios);
     assert!(yaml.is_ok());
-    let yaml_str = yaml.unwrap();
+    let yaml_str = yaml.expect("yaml");
     assert!(yaml_str.contains("---"));
 }
 
@@ -127,7 +127,7 @@ fn test_scenarios_to_json() {
     let scenarios = generate_model_scenarios("test/model", 1);
     let json = scenarios_to_json(&scenarios);
     assert!(json.is_ok());
-    let json_str = json.unwrap();
+    let json_str = json.expect("json");
     assert!(json_str.starts_with('['));
 }
 
@@ -165,21 +165,21 @@ fn test_calculate_popperian_score() {
 fn test_generate_html_report() {
     let evidence = vec![make_corroborated_evidence()];
     let collector = collect_evidence(evidence);
-    let mqs = calculate_mqs_score("test/model", &collector).unwrap();
+    let mqs = calculate_mqs_score("test/model", &collector).expect("calculate mqs score");
     let popperian = calculate_popperian_score("test/model", &collector);
     let html = generate_html_report("Test Report", &mqs, &popperian, &collector);
     assert!(html.is_ok());
-    assert!(html.unwrap().contains("<html"));
+    assert!(html.expect("html").contains("<html"));
 }
 
 #[test]
 fn test_generate_junit_report() {
     let evidence = vec![make_corroborated_evidence()];
     let collector = collect_evidence(evidence);
-    let mqs = calculate_mqs_score("test/model", &collector).unwrap();
+    let mqs = calculate_mqs_score("test/model", &collector).expect("calculate mqs score");
     let xml = generate_junit_report("test/model", &collector, &mqs);
     assert!(xml.is_ok());
-    assert!(xml.unwrap().contains("<testsuite"));
+    assert!(xml.expect("xml").contains("<testsuite"));
 }
 
 #[test]
@@ -227,7 +227,7 @@ fn test_build_execution_config() {
     let config = PlaybookRunConfig::default();
     let exec_config = build_execution_config(&config);
     assert!(exec_config.is_ok());
-    let exec = exec_config.unwrap();
+    let exec = exec_config.expect("exec config");
     assert!(!exec.dry_run);
     assert_eq!(exec.max_workers, 4);
 }
@@ -252,7 +252,7 @@ fn test_build_execution_config_with_options() {
         skip_conversion_tests: true,
         ..Default::default()
     };
-    let exec_config = build_execution_config(&config).unwrap();
+    let exec_config = build_execution_config(&config).expect("build execution config");
     assert!(exec_config.dry_run);
     assert_eq!(exec_config.max_workers, 8);
     assert_eq!(exec_config.model_path, Some("/path/to/model".to_string()));
@@ -287,7 +287,7 @@ fn test_format_ticket_for_display() {
 #[test]
 fn test_scenarios_yaml_roundtrip() {
     let scenarios = generate_model_scenarios("test/model", 1);
-    let yaml = scenarios_to_yaml(&scenarios).unwrap();
+    let yaml = scenarios_to_yaml(&scenarios).expect("scenarios to yaml");
     // Should be valid YAML that can be parsed back
     assert!(yaml.contains("model:"));
 }
@@ -295,8 +295,8 @@ fn test_scenarios_yaml_roundtrip() {
 #[test]
 fn test_scenarios_json_roundtrip() {
     let scenarios = generate_model_scenarios("test/model", 1);
-    let json = scenarios_to_json(&scenarios).unwrap();
+    let json = scenarios_to_json(&scenarios).expect("scenarios to json");
     // Should be valid JSON that can be parsed back
-    let parsed: Vec<aprender_qa_gen::QaScenario> = serde_json::from_str(&json).unwrap();
+    let parsed: Vec<aprender_qa_gen::QaScenario> = serde_json::from_str(&json).expect("parse");
     assert_eq!(parsed.len(), scenarios.len());
 }

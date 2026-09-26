@@ -735,8 +735,10 @@ impl LatencyHistogram {
         if bucket < self.buckets.len() {
             self.buckets[bucket] += 1;
         } else {
-            // Overflow bucket (last)
-            *self.buckets.last_mut().unwrap() += 1;
+            // Overflow bucket (last); a histogram with no buckets has nowhere to count it
+            if let Some(last) = self.buckets.last_mut() {
+                *last += 1;
+            }
         }
         self.count += 1;
         self.sum += latency_ms;
@@ -1142,8 +1144,8 @@ mod tests {
         scenario.add_stage(LoadTestStage::steady("warmup", 10, 5));
         scenario.add_request(LoadTestRequest::get("home", "/"));
 
-        let yaml = serde_yaml_ng::to_string(&scenario).unwrap();
-        let parsed: LoadTestScenario = serde_yaml_ng::from_str(&yaml).unwrap();
+        let yaml = serde_yaml_ng::to_string(&scenario).expect("serialise");
+        let parsed: LoadTestScenario = serde_yaml_ng::from_str(&yaml).expect("parse");
 
         assert_eq!(parsed.name, "YAML Test");
         assert_eq!(parsed.stages.len(), 1);

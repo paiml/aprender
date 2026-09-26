@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_validate_imports_empty_dir() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let result = validate_imports(temp.path(), &[]);
         // Empty dir should pass validation
         assert!(result.is_ok());
@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_validate_imports_with_exclude() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let result = validate_imports(temp.path(), &["node_modules".to_string()]);
         assert!(result.is_ok());
     }

@@ -171,7 +171,11 @@ machine:
     fs::write(&playbook_path, yaml).expect("write playbook");
 
     probador()
-        .args(["playbook", playbook_path.to_str().unwrap(), "--validate"])
+        .args([
+            "playbook",
+            playbook_path.to_str().expect("path is UTF-8"),
+            "--validate",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("smoke_test"));
@@ -185,7 +189,11 @@ fn test_playbook_validate_invalid_yaml() {
     fs::write(&playbook_path, "not: valid: yaml: content").expect("write");
 
     probador()
-        .args(["playbook", playbook_path.to_str().unwrap(), "--validate"])
+        .args([
+            "playbook",
+            playbook_path.to_str().expect("path is UTF-8"),
+            "--validate",
+        ])
         .assert()
         .failure();
 }
@@ -228,11 +236,11 @@ machine:
     probador()
         .args([
             "playbook",
-            playbook_path.to_str().unwrap(),
+            playbook_path.to_str().expect("path is UTF-8"),
             "--export",
             "svg",
             "--export-output",
-            output_path.to_str().unwrap(),
+            output_path.to_str().expect("path is UTF-8"),
         ])
         .assert()
         .success();
@@ -272,11 +280,11 @@ machine:
     probador()
         .args([
             "playbook",
-            playbook_path.to_str().unwrap(),
+            playbook_path.to_str().expect("path is UTF-8"),
             "--export",
             "dot",
             "--export-output",
-            output_path.to_str().unwrap(),
+            output_path.to_str().expect("path is UTF-8"),
         ])
         .assert()
         .success();
@@ -313,7 +321,11 @@ machine:
     fs::write(&playbook_path, yaml).expect("write playbook");
 
     probador()
-        .args(["playbook", playbook_path.to_str().unwrap(), "--validate"])
+        .args([
+            "playbook",
+            playbook_path.to_str().expect("path is UTF-8"),
+            "--validate",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("text_test"))
@@ -357,7 +369,11 @@ machine:
     fs::write(&playbook_path, yaml).expect("write playbook");
 
     probador()
-        .args(["playbook", playbook_path.to_str().unwrap(), "--mutate"])
+        .args([
+            "playbook",
+            playbook_path.to_str().expect("path is UTF-8"),
+            "--mutate",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("mutant"));

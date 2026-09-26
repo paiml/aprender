@@ -689,9 +689,9 @@ mod tests {
 
     #[test]
     fn test_lint_html_missing_doctype() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
-        std::fs::write(&html_path, "<html><head></head><body></body></html>").unwrap();
+        std::fs::write(&html_path, "<html><head></head><body></body></html>").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&html_path);
@@ -701,13 +701,13 @@ mod tests {
 
     #[test]
     fn test_lint_html_valid() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
         std::fs::write(
             &html_path,
             "<!DOCTYPE html><html><head></head><body></body></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&html_path);
@@ -717,13 +717,13 @@ mod tests {
 
     #[test]
     fn test_lint_html_missing_alt() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
         std::fs::write(
             &html_path,
             "<!DOCTYPE html><html><head></head><body><img src=\"test.png\"></body></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&html_path);
@@ -733,9 +733,9 @@ mod tests {
 
     #[test]
     fn test_lint_css_mismatched_braces() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let css_path = temp.path().join("test.css");
-        std::fs::write(&css_path, "body { color: red;").unwrap();
+        std::fs::write(&css_path, "body { color: red;").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&css_path);
@@ -745,9 +745,9 @@ mod tests {
 
     #[test]
     fn test_lint_js_debugger() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let js_path = temp.path().join("test.js");
-        std::fs::write(&js_path, "function test() {\n  debugger;\n}").unwrap();
+        std::fs::write(&js_path, "function test() {\n  debugger;\n}").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&js_path);
@@ -757,9 +757,9 @@ mod tests {
 
     #[test]
     fn test_lint_json_invalid() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let json_path = temp.path().join("test.json");
-        std::fs::write(&json_path, "{invalid json}").unwrap();
+        std::fs::write(&json_path, "{invalid json}").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&json_path);
@@ -769,9 +769,9 @@ mod tests {
 
     #[test]
     fn test_lint_json_valid() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let json_path = temp.path().join("test.json");
-        std::fs::write(&json_path, r#"{"key": "value"}"#).unwrap();
+        std::fs::write(&json_path, r#"{"key": "value"}"#).expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&json_path);
@@ -781,9 +781,9 @@ mod tests {
 
     #[test]
     fn test_lint_wasm_invalid_magic() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let wasm_path = temp.path().join("test.wasm");
-        std::fs::write(&wasm_path, b"not wasm data here").unwrap();
+        std::fs::write(&wasm_path, b"not wasm data here").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&wasm_path);
@@ -793,10 +793,11 @@ mod tests {
 
     #[test]
     fn test_lint_wasm_valid() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let wasm_path = temp.path().join("test.wasm");
         // Valid WASM magic + version 1
-        std::fs::write(&wasm_path, [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]).unwrap();
+        std::fs::write(&wasm_path, [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00])
+            .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&wasm_path);
@@ -820,7 +821,7 @@ mod tests {
     #[test]
     fn test_render_lint_json() {
         let report = LintReport::new("./test");
-        let json = render_lint_json(&report).unwrap();
+        let json = render_lint_json(&report).expect("render lint json");
 
         assert!(json.contains("\"root\""));
         assert!(json.contains("\"results\""));
@@ -828,17 +829,17 @@ mod tests {
 
     #[test]
     fn test_lint_directory_full() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
 
         // Create various test files
         std::fs::write(
             temp.path().join("index.html"),
             "<!DOCTYPE html><html><head></head><body></body></html>",
         )
-        .unwrap();
-        std::fs::write(temp.path().join("style.css"), "body { color: red; }").unwrap();
-        std::fs::write(temp.path().join("app.js"), "function test() {}").unwrap();
-        std::fs::write(temp.path().join("data.json"), r#"{"key": "value"}"#).unwrap();
+        .expect("write file");
+        std::fs::write(temp.path().join("style.css"), "body { color: red; }").expect("write file");
+        std::fs::write(temp.path().join("app.js"), "function test() {}").expect("write file");
+        std::fs::write(temp.path().join("data.json"), r#"{"key": "value"}"#).expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let report = linter.lint();
@@ -851,12 +852,13 @@ mod tests {
 
     #[test]
     fn test_lint_directory_with_errors() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
 
         // Create files with issues
-        std::fs::write(temp.path().join("bad.html"), "<html>no doctype</html>").unwrap();
-        std::fs::write(temp.path().join("bad.css"), "body { color: red").unwrap(); // missing }
-        std::fs::write(temp.path().join("bad.json"), "{invalid}").unwrap();
+        std::fs::write(temp.path().join("bad.html"), "<html>no doctype</html>")
+            .expect("write file");
+        std::fs::write(temp.path().join("bad.css"), "body { color: red").expect("write file"); // missing }
+        std::fs::write(temp.path().join("bad.json"), "{invalid}").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let report = linter.lint();
@@ -867,16 +869,16 @@ mod tests {
 
     #[test]
     fn test_lint_directory_nested() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
 
         // Create nested directory structure
         let subdir = temp.path().join("subdir");
-        std::fs::create_dir(&subdir).unwrap();
+        std::fs::create_dir(&subdir).expect("create dir");
         std::fs::write(
             subdir.join("nested.html"),
             "<!DOCTYPE html><html><head></head><body></body></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let report = linter.lint();
@@ -887,19 +889,19 @@ mod tests {
 
     #[test]
     fn test_lint_directory_skips_hidden() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
 
         // Create hidden directory
         let hidden = temp.path().join(".hidden");
-        std::fs::create_dir(&hidden).unwrap();
-        std::fs::write(hidden.join("test.html"), "<html>bad</html>").unwrap();
+        std::fs::create_dir(&hidden).expect("create dir");
+        std::fs::write(hidden.join("test.html"), "<html>bad</html>").expect("write file");
 
         // Create visible file for comparison
         std::fs::write(
             temp.path().join("visible.html"),
             "<!DOCTYPE html><html><head></head><body></body></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let report = linter.lint();
@@ -910,12 +912,12 @@ mod tests {
 
     #[test]
     fn test_lint_directory_skips_node_modules() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
 
         // Create node_modules directory
         let node_modules = temp.path().join("node_modules");
-        std::fs::create_dir(&node_modules).unwrap();
-        std::fs::write(node_modules.join("lib.js"), "console.log('test');").unwrap();
+        std::fs::create_dir(&node_modules).expect("create dir");
+        std::fs::write(node_modules.join("lib.js"), "console.log('test');").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let report = linter.lint();
@@ -926,9 +928,9 @@ mod tests {
 
     #[test]
     fn test_lint_file_unknown_extension() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let txt_path = temp.path().join("test.txt");
-        std::fs::write(&txt_path, "Just some text").unwrap();
+        std::fs::write(&txt_path, "Just some text").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&txt_path);
@@ -939,9 +941,9 @@ mod tests {
 
     #[test]
     fn test_lint_file_mjs_extension() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let mjs_path = temp.path().join("test.mjs");
-        std::fs::write(&mjs_path, "export function test() {}").unwrap();
+        std::fs::write(&mjs_path, "export function test() {}").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&mjs_path);
@@ -952,9 +954,9 @@ mod tests {
 
     #[test]
     fn test_lint_disabled_html() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
-        std::fs::write(&html_path, "<html>no doctype</html>").unwrap();
+        std::fs::write(&html_path, "<html>no doctype</html>").expect("write file");
 
         let mut linter = ContentLinter::new(temp.path());
         linter.lint_html = false;
@@ -965,9 +967,9 @@ mod tests {
 
     #[test]
     fn test_lint_disabled_css() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let css_path = temp.path().join("test.css");
-        std::fs::write(&css_path, "body { color: red").unwrap(); // Missing brace
+        std::fs::write(&css_path, "body { color: red").expect("write file"); // Missing brace
 
         let mut linter = ContentLinter::new(temp.path());
         linter.lint_css = false;
@@ -978,9 +980,9 @@ mod tests {
 
     #[test]
     fn test_lint_disabled_js() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let js_path = temp.path().join("test.js");
-        std::fs::write(&js_path, "console.log('debug');").unwrap();
+        std::fs::write(&js_path, "console.log('debug');").expect("write file");
 
         let mut linter = ContentLinter::new(temp.path());
         linter.lint_js = false;
@@ -991,9 +993,9 @@ mod tests {
 
     #[test]
     fn test_lint_disabled_wasm() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let wasm_path = temp.path().join("test.wasm");
-        std::fs::write(&wasm_path, b"not valid wasm").unwrap();
+        std::fs::write(&wasm_path, b"not valid wasm").expect("write file");
 
         let mut linter = ContentLinter::new(temp.path());
         linter.lint_wasm = false;
@@ -1004,9 +1006,9 @@ mod tests {
 
     #[test]
     fn test_lint_disabled_json() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let json_path = temp.path().join("test.json");
-        std::fs::write(&json_path, "{invalid}").unwrap();
+        std::fs::write(&json_path, "{invalid}").expect("write file");
 
         let mut linter = ContentLinter::new(temp.path());
         linter.lint_json = false;
@@ -1017,9 +1019,9 @@ mod tests {
 
     #[test]
     fn test_lint_wasm_too_small() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let wasm_path = temp.path().join("tiny.wasm");
-        std::fs::write(&wasm_path, b"tiny").unwrap();
+        std::fs::write(&wasm_path, b"tiny").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&wasm_path);
@@ -1029,10 +1031,11 @@ mod tests {
 
     #[test]
     fn test_lint_wasm_wrong_version() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let wasm_path = temp.path().join("oldversion.wasm");
         // Valid magic, but version 2
-        std::fs::write(&wasm_path, [0x00, 0x61, 0x73, 0x6D, 0x02, 0x00, 0x00, 0x00]).unwrap();
+        std::fs::write(&wasm_path, [0x00, 0x61, 0x73, 0x6D, 0x02, 0x00, 0x00, 0x00])
+            .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&wasm_path);
@@ -1042,9 +1045,10 @@ mod tests {
 
     #[test]
     fn test_lint_html_missing_html_tag() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
-        std::fs::write(&html_path, "<!DOCTYPE html><head></head><body></body>").unwrap();
+        std::fs::write(&html_path, "<!DOCTYPE html><head></head><body></body>")
+            .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&html_path);
@@ -1054,9 +1058,10 @@ mod tests {
 
     #[test]
     fn test_lint_html_missing_head() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
-        std::fs::write(&html_path, "<!DOCTYPE html><html><body></body></html>").unwrap();
+        std::fs::write(&html_path, "<!DOCTYPE html><html><body></body></html>")
+            .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&html_path);
@@ -1066,9 +1071,10 @@ mod tests {
 
     #[test]
     fn test_lint_html_missing_body() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
-        std::fs::write(&html_path, "<!DOCTYPE html><html><head></head></html>").unwrap();
+        std::fs::write(&html_path, "<!DOCTYPE html><html><head></head></html>")
+            .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&html_path);
@@ -1078,13 +1084,13 @@ mod tests {
 
     #[test]
     fn test_lint_html_mismatched_divs() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let html_path = temp.path().join("test.html");
         std::fs::write(
             &html_path,
             "<!DOCTYPE html><html><head></head><body><div><div></div></body></html>",
         )
-        .unwrap();
+        .expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&html_path);
@@ -1094,10 +1100,10 @@ mod tests {
 
     #[test]
     fn test_lint_css_empty_rule() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let css_path = temp.path().join("test.css");
         // CSS003 triggers when line is exactly "{}"
-        std::fs::write(&css_path, "body\n{}\n.empty\n{}").unwrap();
+        std::fs::write(&css_path, "body\n{}\n.empty\n{}").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&css_path);
@@ -1107,9 +1113,9 @@ mod tests {
 
     #[test]
     fn test_lint_js_console_log() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let js_path = temp.path().join("test.js");
-        std::fs::write(&js_path, "console.log('debugging');").unwrap();
+        std::fs::write(&js_path, "console.log('debugging');").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&js_path);
@@ -1119,9 +1125,9 @@ mod tests {
 
     #[test]
     fn test_lint_js_mismatched_braces() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let js_path = temp.path().join("test.js");
-        std::fs::write(&js_path, "function test() { return 1;").unwrap();
+        std::fs::write(&js_path, "function test() { return 1;").expect("write file");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&js_path);
@@ -1131,9 +1137,9 @@ mod tests {
 
     #[test]
     fn test_lint_js_mismatched_parens() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let js_path = temp.path().join("test.js");
-        std::fs::write(&js_path, "function test( { return 1; }").unwrap();
+        std::fs::write(&js_path, "function test( { return 1; }").expect("test");
 
         let linter = ContentLinter::new(temp.path());
         let results = linter.lint_file(&js_path);
@@ -1143,7 +1149,7 @@ mod tests {
 
     #[test]
     fn test_is_lintable() {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("construct");
         let linter = ContentLinter::new(temp.path());
 
         assert!(linter.is_lintable(Path::new("test.html")));

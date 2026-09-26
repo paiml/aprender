@@ -377,7 +377,7 @@ mod tests {
         #[test]
         fn test_serialize() {
             let format = OutputFormat::Json;
-            let json = serde_json::to_string(&format).unwrap();
+            let json = serde_json::to_string(&format).expect("serialise");
             assert!(json.contains("Json"));
         }
     }

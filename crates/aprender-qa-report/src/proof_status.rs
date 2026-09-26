@@ -288,8 +288,8 @@ mod tests {
     #[test]
     fn test_json_roundtrip() {
         let report = sample_report();
-        let json = serde_json::to_string(&report).unwrap();
-        let parsed: ExternalProofStatus = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&report).expect("serialise");
+        let parsed: ExternalProofStatus = serde_json::from_str(&json).expect("parse");
         assert_eq!(parsed.contracts.len(), 2);
         assert_eq!(parsed.kernel_classes.len(), 2);
         assert_eq!(parsed.totals.contracts, 2);
@@ -313,12 +313,12 @@ mod tests {
     #[test]
     fn test_read_proof_status_valid_json() {
         let report = sample_report();
-        let json = serde_json::to_string_pretty(&report).unwrap();
+        let json = serde_json::to_string_pretty(&report).expect("serialise");
 
-        let temp = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(temp.path(), &json).unwrap();
+        let temp = tempfile::NamedTempFile::new().expect("construct");
+        std::fs::write(temp.path(), &json).expect("write file");
 
-        let parsed = read_proof_status(Some(temp.path())).unwrap();
+        let parsed = read_proof_status(Some(temp.path())).expect("read proof status");
         assert_eq!(parsed.schema_version, "1.0.0");
         assert_eq!(parsed.contracts.len(), 2);
     }
@@ -351,16 +351,16 @@ mod tests {
             proof_level: Some("L3".to_string()),
             bonus_points: 25,
         };
-        let json = serde_json::to_string(&bonus).unwrap();
+        let json = serde_json::to_string(&bonus).expect("serialise");
         assert!(json.contains("\"bonus_points\":25"));
-        let parsed: ProofBonus = serde_json::from_str(&json).unwrap();
+        let parsed: ProofBonus = serde_json::from_str(&json).expect("parse");
         assert_eq!(parsed.bonus_points, 25);
     }
 
     #[test]
     fn test_read_proof_status_invalid_json() {
-        let temp = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(temp.path(), "not valid json {{").unwrap();
+        let temp = tempfile::NamedTempFile::new().expect("construct");
+        std::fs::write(temp.path(), "not valid json {{").expect("write file");
 
         let result = read_proof_status(Some(temp.path()));
         assert!(result.is_err());
