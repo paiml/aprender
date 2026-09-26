@@ -295,6 +295,8 @@ pub struct Qwen35Forward {
     /// Prompts the GPU prefilled in one batched call — the evidence that `apr
     /// serve` took the batched path, not a speed that merely looks like it.
     batched_prefills: usize,
+    /// F2 guard wall time not yet taken by the session (SRV-TIM-001).
+    guard_time: std::time::Duration,
 }
 
 impl Qwen35Forward {
@@ -416,6 +418,7 @@ impl Qwen35Forward {
             notices,
             per_token_prefill,
             batched_prefills: 0,
+            guard_time: std::time::Duration::ZERO,
         })
     }
 
@@ -509,6 +512,7 @@ impl Qwen35Forward {
         if gpu.validated {
             return Ok(());
         }
+        let guard_start = std::time::Instant::now();
         let outcome = crate::gguf::forward_qwen35::f2_validate_qwen35_receipted_hashed(
             &mut gpu.model,
             qwen,
@@ -516,6 +520,7 @@ impl Qwen35Forward {
             &gpu.hash,
             &gpu.device_name,
         );
+        self.guard_time += guard_start.elapsed();
         if !outcome.accepted {
             return Err(Step::Gpu(
                 "the F2 CPU-parity guard rejected the GPU path".to_string(),
@@ -666,6 +671,10 @@ impl crate::session::ArchForward for Qwen35Forward {
 
     fn batched_prefills(&self) -> usize {
         self.batched_prefills
+    }
+
+    fn take_guard_time(&mut self) -> std::time::Duration {
+        std::mem::take(&mut self.guard_time)
     }
 
     fn notices(&self) -> &[String] {
