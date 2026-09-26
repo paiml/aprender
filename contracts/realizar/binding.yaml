@@ -9,19 +9,19 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-serve/src/gguf/ops.rs:128 had no binding row, and contracts/forward-pass-v1.yaml does not exist in-tree: the annotation cites no contract'
 - contract: gemm-v1.yaml
   equation: flattened_batched_gemm
-  module_path: realizar::gguf::inference::cached::single_flattened_batched_owned
+  module_path: realizar::gguf::inference::cached::single
   function: flattened_batched_gemm
   status: partial
   notes: '#4369: #[contract] site at crates/aprender-serve/src/gguf/inference/cached/single_flattened_batched_owned.rs:19 had no binding row, and contracts/gemm-v1.yaml does not exist in-tree: the annotation cites no contract'
 - contract: gpu-multi-backend-parity-v1.yaml
   equation: multi_backend_parity
-  module_path: realizar::infer::batch_wgpu
+  module_path: realizar::infer
   function: generate
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-serve/src/infer/batch_wgpu.rs:44 had no binding row; row added when the binding moved in-tree'
 - contract: gpu-weight-residency-v1.yaml
   equation: pcie_overhead
-  module_path: realizar::infer::batch_wgpu
+  module_path: realizar::infer
   function: try_init_wgpu_batch
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-serve/src/infer/batch_wgpu.rs:129 had no binding row; row added when the binding moved in-tree'
@@ -455,18 +455,18 @@ bindings:
   notes: 'PMAT-414: Checks all required roles present for arch. Returns missing list'
 - contract: architecture-requirements-v1.yaml
   equation: role_mapping
-  module_path: realizar::arch_requirements_fallback
+  module_path: realizar::arch_requirements
   function: WeightRole::field_name
   signature: 'pub const fn field_name(&self) -> &''static str'
-  status: implemented
-  notes: 'PMAT-414: Injective mapping WeightRole → IndexedLayerWeights field name'
+  status: not_implemented
+  notes: '#4470: real implementation exists at realizar::arch_requirements::WeightRole::field_name (crates/aprender-serve/src/arch_requirements_fallback.rs:48), pulled into arch_requirements.rs only via a build.rs-generated OUT_DIR include! (include!(concat!(env!("OUT_DIR"), "/arch_requirements_generated.rs")))); this is invisible to a static source-only resolver since it requires running the build script. Leaving not_implemented rather than rebinding to an unrelated symbol.'
 - contract: architecture-requirements-v1.yaml
   equation: constraint_matrix_exhaustiveness
-  module_path: realizar::arch_requirements_fallback
+  module_path: realizar::arch_requirements
   function: required_roles
   signature: 'pub fn required_roles(arch: &ArchConstraints) -> &''static [WeightRole]'
-  status: implemented
-  notes: 'PMAT-414: 4 exhaustive arms for (has_qk_norm, has_bias) boolean pairs'
+  status: not_implemented
+  notes: '#4470: real implementation exists at realizar::arch_requirements::required_roles (crates/aprender-serve/src/arch_requirements_fallback.rs:140), pulled into arch_requirements.rs only via a build.rs-generated OUT_DIR include! (include!(concat!(env!("OUT_DIR"), "/arch_requirements_generated.rs")))); this is invisible to a static source-only resolver since it requires running the build script. Leaving not_implemented rather than rebinding to an unrelated symbol.'
 - contract: qwen35-hybrid-forward-v1.yaml
   equation: attention_sublayer
   module_path: realizar::gpu::scheduler::model

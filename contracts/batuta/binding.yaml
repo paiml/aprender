@@ -10,13 +10,15 @@ bindings:
 - contract: builder-pattern-v1.yaml
   equation: transpile
   function: build_transpiler_args
-  module_path: batuta::cli
-  status: implemented
+  module_path: aprender_orchestrate::cli
+  status: not_implemented
+  notes: '#4470: real implementation exists in aprender-orchestrate''s cli module tree (crates/aprender-orchestrate/src/cli/...) but only inside this package''s [[bin]] target (main.rs declares mod cli;); the package''s [lib] target is named `batuta` and has no cli module. The bindings resolver only resolves a crate name to its [lib] target, so this module is unreachable from any module_path. Leaving not_implemented rather than rebinding to an unrelated symbol.'
 - contract: configuration-v1.yaml
   equation: transpile
   function: cmd_transpile
-  module_path: batuta::cli::pipeline_cmds_transpile
-  status: implemented
+  module_path: aprender_orchestrate::cli::pipeline_cmds::transpile
+  status: not_implemented
+  notes: '#4470: real implementation exists in aprender-orchestrate''s cli module tree (crates/aprender-orchestrate/src/cli/...) but only inside this package''s [[bin]] target (main.rs declares mod cli;); the package''s [lib] target is named `batuta` and has no cli module. The bindings resolver only resolves a crate name to its [lib] target, so this module is unreachable from any module_path. Leaving not_implemented rather than rebinding to an unrelated symbol.'
 - contract: configuration-v1.yaml
   equation: transpile
   function: recommend_transpiler
@@ -85,8 +87,9 @@ bindings:
 - contract: configuration-v1.yaml
   equation: analyze
   function: cmd_analyze
-  module_path: batuta::cli::pipeline_cmds
-  status: implemented
+  module_path: aprender_orchestrate::cli::pipeline_cmds
+  status: not_implemented
+  notes: '#4470: real implementation exists in aprender-orchestrate''s cli module tree (crates/aprender-orchestrate/src/cli/...) but only inside this package''s [[bin]] target (main.rs declares mod cli;); the package''s [lib] target is named `batuta` and has no cli module. The bindings resolver only resolves a crate name to its [lib] target, so this module is unreachable from any module_path. Leaving not_implemented rather than rebinding to an unrelated symbol.'
 - contract: gpu-decode-profiling-v1.yaml
   equation: analyze
   function: analyze_code
