@@ -468,20 +468,8 @@ impl CudaExecutor {
         );
         let split_len = split.split_len;
         let (acc_floats, ml_floats) = split.partial_floats(seq_len);
-        let need = acc_floats + ml_floats;
-        if self.decode_attn_partials.as_ref().map_or(0, GpuBuffer::len) < need {
-            // Grow in steps of 64 splits' worth so a decode reallocates rarely; the
-            // old buffer may still be read by an in-flight launch, so drain first.
-            let rows_step = (num_heads * 64) as usize * (head_dim as usize + 2);
-            let grown = need.div_ceil(rows_step) * rows_step;
-            self.stream.synchronize()?;
-            self.decode_attn_partials = Some(GpuBuffer::new(&self.context, grown)?);
-        }
-        let partials = self
-            .decode_attn_partials
-            .as_ref()
-            .expect("allocated just above")
-            .as_ptr();
+        let partials =
+            self.decode_attn_partials_ptr(acc_floats + ml_floats, num_heads, head_dim)?;
         let part_acc = partials;
         let part_ml = partials + (acc_floats * 4) as u64;
 
@@ -527,6 +515,119 @@ impl CudaExecutor {
             &[part_acc, part_ml, output.as_ptr()],
             &[u64::from(seq_len)],
         )
+    }
+
+    /// The split-attention partials buffer, grown to at least `need` floats.
+    ///
+    /// Grows in steps of 64 splits' worth so a decode reallocates rarely; the old
+    /// buffer may still be read by an in-flight launch, so drain first.
+    fn decode_attn_partials_ptr(
+        &mut self,
+        need: usize,
+        num_heads: u32,
+        head_dim: u32,
+    ) -> Result<u64, GpuError> {
+        if self.decode_attn_partials.as_ref().map_or(0, GpuBuffer::len) < need {
+            let rows_step = (num_heads * 64) as usize * (head_dim as usize + 2);
+            let grown = need.div_ceil(rows_step) * rows_step;
+            self.stream.synchronize()?;
+            self.decode_attn_partials = Some(GpuBuffer::new(&self.context, grown)?);
+        }
+        Ok(self
+            .decode_attn_partials
+            .as_ref()
+            .expect("allocated just above")
+            .as_ptr())
+    }
+
+    /// aprender#4486: the graph-safe split attention — [`Self::gdn_decode_attention_split_into`]
+    /// with `seq_len = *pos + 1` read on the device by both kernels.
+    ///
+    /// The grid is sized for `max_seq_len` (the cache capacity), so the launch
+    /// arguments are the same at every token; splits past `*pos + 1` exit at once.
+    /// The partials are laid out for `max_seq_len` too, so they never regrow
+    /// between the capture and a replay. Replaces the unsplit indirect kernel the
+    /// #4233 graph path used, which gave back #4273's long-context speedup.
+    ///
+    /// # Errors
+    /// PTX compilation, allocation or kernel launch failure, or a null pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_decode_attention_split_indirect_into(
+        &mut self,
+        q: &GpuBuffer<f32>,
+        k_cache: &GpuBuffer<f32>,
+        v_cache: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        max_seq_len: u32,
+    ) -> Result<(), GpuError> {
+        let split = trueno_gpu::kernels::gdn::DecodeAttentionSplitKernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        )
+        .indirect();
+        let split_len = split.split_len;
+        let (acc_floats, ml_floats) = split.partial_floats(max_seq_len);
+        let partials =
+            self.decode_attn_partials_ptr(acc_floats + ml_floats, num_heads, head_dim)?;
+        let part_acc = partials;
+        let part_ml = partials + (acc_floats * 4) as u64;
+
+        let split_type = KernelType::GdnDecodeAttentionSplitIndirect {
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            split_len,
+        };
+        let split_key = format!(
+            "gdn_decode_attention_split_indirect_{num_heads}_{num_kv_heads}_{head_dim}_{split_len}"
+        );
+        let split_name = self.gdn_prepare(&split_type, &split_key)?;
+        let (gx, gy, _) = split.grid(max_seq_len);
+        let (bx, _, _) = split.block();
+        self.gdn_launch(
+            &split_key,
+            split_name,
+            LaunchConfig::grid_2d(gx, gy, bx, 1),
+            &[
+                q.as_ptr(),
+                k_cache.as_ptr(),
+                v_cache.as_ptr(),
+                part_acc,
+                part_ml,
+                pos.as_ptr(),
+            ],
+        )?;
+
+        let reduce = split.reduce();
+        let reduce_type = KernelType::GdnDecodeAttentionReduceIndirect {
+            num_heads,
+            head_dim,
+            split_len,
+        };
+        let reduce_key =
+            format!("gdn_decode_attention_reduce_indirect_{num_heads}_{head_dim}_{split_len}");
+        let reduce_name = self.gdn_prepare(&reduce_type, &reduce_key)?;
+        let (rx, _, _) = reduce.grid();
+        let (rbx, _, _) = reduce.block();
+        self.gdn_launch(
+            &reduce_key,
+            reduce_name,
+            LaunchConfig::grid_2d(rx, 1, rbx, 1),
+            &[part_acc, part_ml, output.as_ptr(), pos.as_ptr()],
+        )
+    }
+
+    /// The device pointer of the split-attention partials, if allocated — part of
+    /// the #4486 graph key, so a regrow forces a recapture.
+    pub(crate) fn decode_attn_partials_addr(&self) -> u64 {
+        self.decode_attn_partials
+            .as_ref()
+            .map_or(0, GpuBuffer::as_ptr)
     }
 
     /// Fused causal depthwise conv1d + SiLU for one decode step (`causal_conv1d`

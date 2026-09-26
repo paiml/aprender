@@ -698,4 +698,18 @@ pub enum KernelType {
         head_dim: u32,
         split_len: u32,
     },
+    /// aprender#4486: [`Self::GdnDecodeAttentionSplit`] with `seq_len = *pos + 1`
+    /// read on the device — the graph-safe split.
+    GdnDecodeAttentionSplitIndirect {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
+    /// aprender#4486: [`Self::GdnDecodeAttentionReduce`] reading `*pos` on the device.
+    GdnDecodeAttentionReduceIndirect {
+        num_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
 }

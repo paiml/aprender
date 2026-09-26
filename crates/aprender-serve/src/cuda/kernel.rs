@@ -34,6 +34,8 @@ impl CudaKernels {
             KernelType::GdnKvRowScatterIndirect { .. } => "gdn_kv_row_scatter_indirect",
             KernelType::GdnDecodeAttentionSplit { .. } => "gdn_decode_attention_split",
             KernelType::GdnDecodeAttentionReduce { .. } => "gdn_decode_attention_reduce",
+            KernelType::GdnDecodeAttentionSplitIndirect { .. } => "gdn_decode_attention_split_indirect",
+            KernelType::GdnDecodeAttentionReduceIndirect { .. } => "gdn_decode_attention_reduce_indirect",
             _ => return None,
         };
         Some(name)

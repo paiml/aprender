@@ -48,6 +48,35 @@ fn emit_n_splits(ctx: &mut KernelBuilder<'_>, seq_len: VirtualReg, split_len: u3
     ctx.div_u32(padded, split_len)
 }
 
+/// #4486: the last kernel parameter — `pos_ptr` (device `u32` position) for
+/// the graph variant, `seq_len` otherwise.
+const fn seq_len_param_type(indirect: bool) -> PtxType {
+    if indirect {
+        PtxType::U64
+    } else {
+        PtxType::U32
+    }
+}
+
+const fn seq_len_param_name(indirect: bool) -> &'static str {
+    if indirect {
+        "pos_ptr"
+    } else {
+        "seq_len"
+    }
+}
+
+/// Valid positions: the `seq_len` parameter, or `*pos_ptr + 1` on the device.
+fn emit_seq_len(ctx: &mut KernelBuilder<'_>, indirect: bool) -> VirtualReg {
+    if indirect {
+        let pos_ptr = ctx.load_param_u64("pos_ptr");
+        let position = ctx.ld_global_u32(pos_ptr);
+        ctx.add_u32(position, 1)
+    } else {
+        ctx.load_param_u32("seq_len")
+    }
+}
+
 /// First kernel of the pair: one block per (query head, slice of positions).
 #[derive(Debug, Clone, Copy)]
 pub struct DecodeAttentionSplitKernel {
@@ -59,6 +88,10 @@ pub struct DecodeAttentionSplitKernel {
     pub head_dim: u32,
     /// Positions per split; one pass, so also the shared scores buffer.
     pub split_len: u32,
+    /// #4486: read `position` from a device `u32` (`pos_ptr`), so a captured
+    /// CUDA graph replays at any position. Launch the grid for the cache's
+    /// capacity; splits past `*pos + 1` exit.
+    pub indirect: bool,
 }
 
 impl DecodeAttentionSplitKernel {
@@ -86,7 +119,17 @@ impl DecodeAttentionSplitKernel {
             num_kv_heads,
             head_dim,
             split_len: DEFAULT_SPLIT_LEN,
+            indirect: false,
         }
+    }
+
+    /// #4486: the graph-capturable variant of the pair — `seq_len = *pos_ptr + 1`
+    /// read on the device by both kernels, so the launch arguments are identical
+    /// at every token. Propagates to [`Self::reduce`].
+    #[must_use]
+    pub const fn indirect(mut self) -> Self {
+        self.indirect = true;
+        self
     }
 
     /// Override the positions per split.
@@ -138,13 +181,18 @@ impl DecodeAttentionSplitKernel {
             num_heads: self.num_heads,
             head_dim: self.head_dim,
             split_len: self.split_len,
+            indirect: self.indirect,
         }
     }
 }
 
 impl Kernel for DecodeAttentionSplitKernel {
     fn name(&self) -> &str {
-        "gdn_decode_attention_split"
+        if self.indirect {
+            "gdn_decode_attention_split_indirect"
+        } else {
+            "gdn_decode_attention_split"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
@@ -158,13 +206,15 @@ impl Kernel for DecodeAttentionSplitKernel {
             warp_dot: true,
         };
 
+        let indirect = self.indirect;
+
         PtxKernel::new(self.name())
             .param(PtxType::U64, "q_ptr") // [num_heads * head_dim]
             .param(PtxType::U64, "k_cache_ptr") // [max_len][num_kv_heads * head_dim]
             .param(PtxType::U64, "v_cache_ptr") // [max_len][num_kv_heads * head_dim]
             .param(PtxType::U64, "part_acc_ptr") // [num_heads][n_splits][head_dim]
             .param(PtxType::U64, "part_ml_ptr") // [num_heads][n_splits][2]
-            .param(PtxType::U32, "seq_len") // valid positions, = position + 1
+            .param(seq_len_param_type(indirect), seq_len_param_name(indirect))
             .shared_memory(self.shared_bytes())
             .build(|ctx| {
                 let tid = ctx.special_reg(PtxReg::TidX);
@@ -178,7 +228,7 @@ impl Kernel for DecodeAttentionSplitKernel {
                 let v_ptr = ctx.load_param_u64("v_cache_ptr");
                 let acc_ptr = ctx.load_param_u64("part_acc_ptr");
                 let ml_ptr = ctx.load_param_u64("part_ml_ptr");
-                let seq_len = ctx.load_param_u32("seq_len");
+                let seq_len = emit_seq_len(ctx, indirect);
 
                 // This block's slice; a block past the end has nothing to store.
                 let begin = ctx.mul_u32(split, split_len);
@@ -240,6 +290,9 @@ pub struct DecodeAttentionReduceKernel {
     pub head_dim: u32,
     /// Positions per split — must equal the split kernel's.
     pub split_len: u32,
+    /// #4486: `seq_len = *pos_ptr + 1` read on the device — must equal the
+    /// split kernel's.
+    pub indirect: bool,
 }
 
 impl DecodeAttentionReduceKernel {
@@ -258,18 +311,23 @@ impl DecodeAttentionReduceKernel {
 
 impl Kernel for DecodeAttentionReduceKernel {
     fn name(&self) -> &str {
-        "gdn_decode_attention_reduce"
+        if self.indirect {
+            "gdn_decode_attention_reduce_indirect"
+        } else {
+            "gdn_decode_attention_reduce"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
         let head_dim = self.head_dim;
         let split_len = self.split_len;
+        let indirect = self.indirect;
 
         PtxKernel::new(self.name())
             .param(PtxType::U64, "part_acc_ptr") // [num_heads][n_splits][head_dim]
             .param(PtxType::U64, "part_ml_ptr") // [num_heads][n_splits][2]
             .param(PtxType::U64, "out_ptr") // [num_heads * head_dim]
-            .param(PtxType::U32, "seq_len")
+            .param(seq_len_param_type(indirect), seq_len_param_name(indirect))
             .build(|ctx| {
                 let tid = ctx.special_reg(PtxReg::TidX);
                 let h = ctx.special_reg(PtxReg::CtaIdX);
@@ -277,7 +335,7 @@ impl Kernel for DecodeAttentionReduceKernel {
                 let acc_ptr = ctx.load_param_u64("part_acc_ptr");
                 let ml_ptr = ctx.load_param_u64("part_ml_ptr");
                 let out_ptr = ctx.load_param_u64("out_ptr");
-                let seq_len = ctx.load_param_u32("seq_len");
+                let seq_len = emit_seq_len(ctx, indirect);
 
                 // An empty cache has no softmax: leave the output alone, as the
                 // unsplit kernel does.
@@ -697,6 +755,59 @@ mod gdn_decode_attention_split_device_tests {
             });
             let bw = 2.0 * kv_row_bytes * f64::from(long) / ms / 1e6;
             println!("sweep group=1 split_len={split_len}: {ms:.4} ms  {bw:.0} GB/s");
+        }
+    }
+
+    /// #4486: the graph variant reads `position` from the device, launches the
+    /// grid for the cache's capacity, and must reproduce the direct split bit
+    /// for bit — the out-of-range splits exit and the partial rows are indexed
+    /// by the true split count, not the grid's.
+    #[test]
+    fn gdn_decode_attention_split_indirect_is_bit_identical_to_direct() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!("gdn_decode_attention_split indirect: no CUDA device — SKIPPED.");
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+        let max_len = 64u32;
+        let f = Fixture::new(&ctx, max_len as usize, 8, 0x4486_0001);
+        let mut paths = Paths::new(&ctx, 8);
+        let k = paths.split.0.indirect();
+        assert_eq!(k.name(), "gdn_decode_attention_split_indirect");
+        assert_eq!(k.reduce().name(), "gdn_decode_attention_reduce_indirect");
+        let mut split = Loaded::new(&ctx, &k);
+        let mut reduce = Loaded::new(&ctx, &k.reduce());
+        let mut pos = GpuBuffer::<u32>::new(&ctx, 1).expect("pos");
+        for seq_len in [1u32, 7, 8, 9, 37, 64] {
+            paths.run_split(&stream, &f, seq_len);
+            stream.synchronize().expect("sync");
+            let want = f.download();
+
+            pos.copy_from_host(&[seq_len - 1]).expect("pos upload");
+            let mut a = [
+                f.q.as_ptr(),
+                f.k.as_ptr(),
+                f.v.as_ptr(),
+                f.part_acc.as_ptr(),
+                f.part_ml.as_ptr(),
+                pos.as_ptr(),
+            ];
+            // Same launch at every position: the grid is the capacity's.
+            split.launch(&stream, k.grid(max_len), &mut a);
+            let mut b = [
+                f.part_acc.as_ptr(),
+                f.part_ml.as_ptr(),
+                f.out.as_ptr(),
+                pos.as_ptr(),
+            ];
+            reduce.launch(&stream, k.reduce().grid(), &mut b);
+            stream.synchronize().expect("sync");
+            let got = f.download();
+            assert_eq!(
+                got.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                want.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                "indirect vs direct split, seq_len {seq_len}"
+            );
         }
     }
 }

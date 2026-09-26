@@ -1168,7 +1168,10 @@ impl<'a> Qwen35CudaModel<'a> {
             )?;
             ex.gdn_kv_row_scatter_indirect_into(k_row, k_cache, &g.pos, kv_dim)?;
             ex.gdn_kv_row_scatter_indirect_into(v_row, v_cache, &g.pos, kv_dim)?;
-            ex.gdn_decode_attention_indirect_into(
+            // #4486: split over the cache's capacity, not the unsplit kernel —
+            // the graph path must keep #4273's long-context speedup.
+            let max_seq_len = u32::try_from(k_cache.len() / kv_dim as usize).unwrap_or(u32::MAX);
+            ex.gdn_decode_attention_split_indirect_into(
                 &a.q_normed,
                 k_cache,
                 v_cache,
@@ -1177,6 +1180,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 d.num_heads,
                 d.num_kv_heads,
                 d.attn_head_dim,
+                max_seq_len,
             )?;
         } else {
             ex.gdn_partial_neox_rope_into(

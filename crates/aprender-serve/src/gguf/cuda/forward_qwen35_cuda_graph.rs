@@ -61,13 +61,16 @@ pub(super) struct Qwen35DecodeGraph {
 
 impl Qwen35CudaModel<'_> {
     /// The device address of every buffer a decode step mutates in `state`.
-    fn graph_state_key(state: &Qwen35CudaState) -> Vec<u64> {
+    fn graph_state_key(&self, state: &Qwen35CudaState) -> Vec<u64> {
         let mut key: Vec<u64> = state.conv.iter().map(GpuBuffer::as_ptr).collect();
         key.extend(state.ssm.iter().map(GpuBuffer::as_ptr));
         for (k, v) in state.kv.iter().flatten() {
             key.push(k.as_ptr());
             key.push(v.as_ptr());
         }
+        // #4486: the split attention's partials are baked into the recorded
+        // launches; a regrow must force a recapture.
+        key.push(self.executor.decode_attn_partials_addr());
         key
     }
 
@@ -118,7 +121,7 @@ impl Qwen35CudaModel<'_> {
         position: usize,
     ) -> Result<Vec<f32>> {
         let pos = [u32::try_from(position).unwrap_or(u32::MAX)];
-        let key = Self::graph_state_key(state);
+        let key = self.graph_state_key(state);
         self.executor
             .upload_on_stream(&mut graph.io.hidden, row)
             .and_then(|()| self.executor.upload_on_stream(&mut graph.io.pos, &pos))
@@ -137,7 +140,7 @@ impl Qwen35CudaModel<'_> {
                 }
                 graph.replays += 1;
             },
-            None => self.graph_capture(graph, key, state, position)?,
+            None => self.graph_capture(graph, state, position)?,
         }
 
         // The ONE sync of the whole token, in front of the ONE download. It also
@@ -157,7 +160,6 @@ impl Qwen35CudaModel<'_> {
     fn graph_capture(
         &mut self,
         graph: &mut Qwen35DecodeGraph,
-        key: Vec<u64>,
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<()> {
@@ -170,7 +172,8 @@ impl Qwen35CudaModel<'_> {
         body.map_err(|e| gpu_err("qwen35_cuda_graph_capture", &e))?;
         graph.kernels = built.map_err(|e| gpu_err("qwen35_cuda_graph_build", &e))?;
         graph.exec = self.executor.take_decode_graph();
-        graph.key = key;
+        // Keyed AFTER the body: the capture token may allocate the partials.
+        graph.key = self.graph_state_key(state);
         graph.replays = 0;
         eprintln!(
             "[aprender#4233] qwen35 decode graph: captured {} kernels at position {position}",

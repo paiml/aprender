@@ -367,8 +367,28 @@ impl CudaKernels {
                     .emit_ptx_for_target(target)
             },
             KernelType::GdnDecodeAttentionReduce { num_heads, head_dim, split_len } => {
-                DecodeAttentionReduceKernel { num_heads: *num_heads, head_dim: *head_dim, split_len: *split_len }
+                DecodeAttentionReduceKernel {
+                    num_heads: *num_heads,
+                    head_dim: *head_dim,
+                    split_len: *split_len,
+                    indirect: false,
+                }
+                .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttentionSplitIndirect { num_heads, num_kv_heads, head_dim, split_len } => {
+                DecodeAttentionSplitKernel::new(*num_heads, *num_kv_heads, *head_dim)
+                    .with_split_len(*split_len)
+                    .indirect()
                     .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttentionReduceIndirect { num_heads, head_dim, split_len } => {
+                DecodeAttentionReduceKernel {
+                    num_heads: *num_heads,
+                    head_dim: *head_dim,
+                    split_len: *split_len,
+                    indirect: true,
+                }
+                .emit_ptx_for_target(target)
             },
             _ => return None,
         };
