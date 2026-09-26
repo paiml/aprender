@@ -416,3 +416,52 @@ skipped. Before, some sites rotated a partial pair and others panicked on the in
   under §9.3.
 - `gpu/adapters/apr_q4k.rs::apply_rope_neox`: computed in f64.
 - `gpu/simd_ops.rs` frequency and trig tables: trueno vectors.
+
+### 9.8 Phase 2 step 3 delivered: scalar RMSNorm shared home (2026-09-26)
+
+**Why a second home.** `ops::rms_norm` / `rms_norm_into` sum with trueno SIMD, which
+reorders the adds. Every duplicate site summed left to right, so moving them onto the
+SIMD home would change numerics. They move instead onto three new scalar functions,
+each bit-identical to the loop it replaces:
+- `ops::rms_scalar(x, eps)` returns `sqrt(sum(x^2)/n + eps)`.
+- `ops::rms_norm_scalar_into(x, w, eps, RmsScale, out)`
+- `ops::rms_norm_scalar_in_place(x, w, eps, RmsScale)`
+
+**`RmsScale` names the rounding each site used:**
+- `Divide`: `(x / rms) * w`
+- `ScaleThenWeight`: `(x * inv) * w`
+- `WeightedScale`: `x * (inv * w)`
+
+`the_three_forms_are_distinct_so_the_enum_is_load_bearing` proves the three forms
+differ in bits. So collapsing them to one form, or onto the SIMD home, needs a parity
+receipt and is a later step.
+
+**Proof of equivalence.** `rms_norm_scalar_equivalence_tests` keeps the old loops frozen
+and compares `to_bits()`, for both the `into` and `in_place` paths:
+- n in {1, 2, 7, 64, 128, 896, 1536, 4096}
+- two eps values
+- three magnitudes
+- all three forms
+
+That is 144 cases.
+
+**Migrated (13 baseline rows deleted, 61 → 48):**
+- `apply.rs` and `gamma.rs`: `apply_rms_norm_cpu` and `apply_rms_norm_layer_cpu` (Divide)
+- `apr/helpers.rs::rms_norm`, the non-gpu branch (Divide)
+- `apr_transformer/helpers.rs::rms_norm` (Divide, then bias)
+- `q4_simd_activations_cache.rs`: `rms_norm_weighted` (Divide), and `rms_norm_batched`,
+  which now calls it per row
+- `cuda/executor/layer_norm_gpu.rs::rmsnorm_into`, the `CPU_RMSNORM=1` diagnostic
+  bypass (Divide)
+- `gpu/adapters/apr_q4k.rs`: `rms_norm` (ScaleThenWeight) and `per_head_rms_norm`
+  (WeightedScale)
+- `gpu/adapters/using.rs::rms_norm_inplace`, via `rms_scalar`. It keeps its
+  weight-fallback-1.0 loop.
+- `inference/norm.rs::simd_rms_norm` (ScaleThenWeight)
+
+**Behaviour change on malformed input only.** Output now covers the shortest of `x`,
+`weight` and `out`. Sites that used to index `weight[i]` past its end no longer panic.
+
+**Left as duplicates:**
+- `forward_qwen35.rs::gated_rmsnorm` and `linear_attn.rs::rms_norm_gated`. These are
+  compositions under §9.3, and their home is `ops::rms_norm_gated_into` in a later step.

@@ -443,12 +443,7 @@ impl GpuModelQ4 {
     /// RMSNorm in place
     pub(crate) fn rms_norm_inplace(&self, x: &mut [f32], weight: &[f32]) {
         let eps = self.config.eps;
-        let n = x.len();
-
-        // Calculate RMS
-        let sum_sq: f32 = x.iter().map(|&v| v * v).sum();
-        let rms = (sum_sq / n as f32 + eps).sqrt();
-        let scale = 1.0 / rms;
+        let scale = 1.0 / crate::gguf::ops::rms_scalar(x, eps);
 
         // Normalize and apply weight
         for (i, v) in x.iter_mut().enumerate() {

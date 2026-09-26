@@ -173,12 +173,14 @@ impl CudaExecutor {
             let mut gamma_host = vec![0.0f32; n];
             input.copy_to_host(&mut input_host)?;
             gamma.copy_to_host(&mut gamma_host)?;
-            let sq_sum: f32 = input_host.iter().map(|x| x * x).sum();
-            let rms = (sq_sum / n as f32 + epsilon).sqrt();
             let mut output_host = vec![0.0f32; n];
-            for i in 0..n {
-                output_host[i] = (input_host[i] / rms) * gamma_host[i];
-            }
+            crate::gguf::ops::rms_norm_scalar_into(
+                &input_host,
+                &gamma_host,
+                epsilon,
+                crate::gguf::ops::RmsScale::Divide,
+                &mut output_host,
+            );
             // Copy result to GPU output buffer
             let temp = GpuBuffer::from_host(&self.context, &output_host)?;
             let zeros = GpuBuffer::<f32>::new(&self.context, n)?;

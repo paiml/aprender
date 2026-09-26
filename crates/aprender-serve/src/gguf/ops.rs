@@ -586,6 +586,159 @@ mod rope_into_equivalence_tests {
     }
 }
 
+/// How a scalar RMSNorm site applies `rms` and the weight (PP-ARCH-001 §9.8).
+///
+/// The three forms round differently, so each migrated site keeps the one it had.
+/// Merging them into one form changes numerics and needs a parity receipt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RmsScale {
+    /// `(x / rms) * w`
+    Divide,
+    /// `(x * (1 / rms)) * w`
+    ScaleThenWeight,
+    /// `x * ((1 / rms) * w)`
+    WeightedScale,
+}
+
+impl RmsScale {
+    #[inline]
+    fn apply(self, x: f32, rms: f32, inv_rms: f32, w: f32) -> f32 {
+        match self {
+            Self::Divide => x / rms * w,
+            Self::ScaleThenWeight => x * inv_rms * w,
+            Self::WeightedScale => x * (inv_rms * w),
+        }
+    }
+}
+
+/// Scalar RMS with a sequential sum: `sqrt(sum(x^2) / n + eps)`.
+///
+/// Unlike [`rms_norm`], which sums with trueno SIMD, this adds left to right,
+/// so it is bit-identical to the plain `iter().map(|v| v * v).sum()` loops it replaces.
+#[inline]
+pub fn rms_scalar(x: &[f32], eps: f32) -> f32 {
+    let sum_sq: f32 = x.iter().map(|v| v * v).sum();
+    (sum_sq / x.len() as f32 + eps).sqrt()
+}
+
+/// Scalar RMSNorm of one row into `out`.
+///
+/// The RMS is taken over all of `x`. The output covers the shortest of `out`, `x` and `weight`.
+pub fn rms_norm_scalar_into(x: &[f32], weight: &[f32], eps: f32, form: RmsScale, out: &mut [f32]) {
+    let rms = rms_scalar(x, eps);
+    let inv_rms = 1.0 / rms;
+    for ((o, &xi), &wi) in out.iter_mut().zip(x).zip(weight) {
+        *o = form.apply(xi, rms, inv_rms, wi);
+    }
+}
+
+/// Scalar RMSNorm of one row in place. It covers the shorter of `x` and `weight`.
+pub fn rms_norm_scalar_in_place(x: &mut [f32], weight: &[f32], eps: f32, form: RmsScale) {
+    let rms = rms_scalar(x, eps);
+    let inv_rms = 1.0 / rms;
+    for (xi, &wi) in x.iter_mut().zip(weight) {
+        *xi = form.apply(*xi, rms, inv_rms, wi);
+    }
+}
+
+#[cfg(test)]
+mod rms_norm_scalar_equivalence_tests {
+    use super::{rms_norm_scalar_in_place, rms_norm_scalar_into, RmsScale};
+
+    /// The per-site loops, frozen as they were before §9.8 migrated them.
+    fn frozen(x: &[f32], w: &[f32], eps: f32, form: RmsScale) -> Vec<f32> {
+        let n = x.len();
+        match form {
+            RmsScale::Divide => {
+                let sum_sq: f32 = x.iter().map(|v| v * v).sum();
+                let rms = (sum_sq / n as f32 + eps).sqrt();
+                x.iter().zip(w).map(|(xi, wi)| (xi / rms) * wi).collect()
+            },
+            RmsScale::ScaleThenWeight => {
+                let mut sum_sq = 0.0f32;
+                for &v in x {
+                    sum_sq += v * v;
+                }
+                let inv_rms = 1.0 / (sum_sq / n as f32 + eps).sqrt();
+                (0..n).map(|i| x[i] * inv_rms * w[i]).collect()
+            },
+            RmsScale::WeightedScale => {
+                let mut sum_sq = 0.0f32;
+                for &v in x {
+                    sum_sq += v * v;
+                }
+                let inv_rms = 1.0 / (sum_sq / n as f32 + eps).sqrt();
+                let mut d = x.to_vec();
+                for i in 0..n {
+                    d[i] *= inv_rms * w[i];
+                }
+                d
+            },
+        }
+    }
+
+    fn lcg(seed: &mut u64) -> f32 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((*seed >> 40) as f32 / (1u64 << 24) as f32) * 8.0 - 4.0
+    }
+
+    #[test]
+    fn rms_norm_scalar_is_bit_identical_to_the_frozen_per_site_loops() {
+        let mut seed = 0x3422_u64;
+        let mut cases = 0;
+        for n in [1usize, 2, 7, 64, 128, 896, 1536, 4096] {
+            for eps in [1e-5f32, 1e-6] {
+                for scale in [1e-3f32, 1.0, 300.0] {
+                    let x: Vec<f32> = (0..n).map(|_| lcg(&mut seed) * scale).collect();
+                    let w: Vec<f32> = (0..n).map(|_| lcg(&mut seed)).collect();
+                    for form in [
+                        RmsScale::Divide,
+                        RmsScale::ScaleThenWeight,
+                        RmsScale::WeightedScale,
+                    ] {
+                        let want: Vec<u32> = frozen(&x, &w, eps, form)
+                            .iter()
+                            .map(|v| v.to_bits())
+                            .collect();
+                        let mut out = vec![0.0f32; n];
+                        rms_norm_scalar_into(&x, &w, eps, form, &mut out);
+                        let got: Vec<u32> = out.iter().map(|v| v.to_bits()).collect();
+                        assert_eq!(got, want, "into n={n} eps={eps} scale={scale} {form:?}");
+                        let mut inp = x.clone();
+                        rms_norm_scalar_in_place(&mut inp, &w, eps, form);
+                        let got: Vec<u32> = inp.iter().map(|v| v.to_bits()).collect();
+                        assert_eq!(got, want, "in_place n={n} eps={eps} scale={scale} {form:?}");
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 144);
+    }
+
+    #[test]
+    fn the_three_forms_are_distinct_so_the_enum_is_load_bearing() {
+        let mut seed = 7_u64;
+        let x: Vec<f32> = (0..4096).map(|_| lcg(&mut seed)).collect();
+        let w: Vec<f32> = (0..4096).map(|_| lcg(&mut seed)).collect();
+        let run = |form| {
+            let mut o = vec![0.0f32; x.len()];
+            rms_norm_scalar_into(&x, &w, 1e-6, form, &mut o);
+            o.iter().map(|v| v.to_bits()).collect::<Vec<u32>>()
+        };
+        let (a, b, c) = (
+            run(RmsScale::Divide),
+            run(RmsScale::ScaleThenWeight),
+            run(RmsScale::WeightedScale),
+        );
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_ne!(a, c);
+    }
+}
+
 include!("ops_gelu_zero_positive.rs");
 
 #[cfg(test)]

@@ -354,24 +354,23 @@ pub(crate) fn rms_norm(
     eps: f32,
 ) -> Vec<f32> {
     let seq_len = input.len() / hidden_dim;
-    let mut output = Vec::with_capacity(input.len());
+    let mut output = vec![0.0f32; seq_len * hidden_dim];
 
-    for s in 0..seq_len {
-        let start = s * hidden_dim;
-        let slice = &input[start..start + hidden_dim];
-
-        let sum_sq: f32 = slice.iter().map(|x| x * x).sum();
-        let rms = (sum_sq / hidden_dim as f32 + eps).sqrt();
-
-        for (i, &x) in slice.iter().enumerate() {
-            let normalized = x / rms;
-            let scaled = normalized * weight[i];
-            let shifted = if let Some(b) = bias {
-                scaled + b[i]
-            } else {
-                scaled
-            };
-            output.push(shifted);
+    for (slice, out) in input
+        .chunks_exact(hidden_dim)
+        .zip(output.chunks_exact_mut(hidden_dim))
+    {
+        crate::gguf::ops::rms_norm_scalar_into(
+            slice,
+            weight,
+            eps,
+            crate::gguf::ops::RmsScale::Divide,
+            out,
+        );
+        if let Some(b) = bias {
+            for (o, &bi) in out.iter_mut().zip(b) {
+                *o += bi;
+            }
         }
     }
 

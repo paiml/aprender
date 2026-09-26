@@ -1,24 +1,14 @@
 /// Apply RMS norm in-place from `src` into `dst`, weighted by `gamma`.
 fn rms_norm_weighted(src: &[f32], gamma: &[f32], dst: &mut [f32], eps: f32) {
-    let n = src.len();
-    let sq_sum: f32 = src.iter().map(|x| x * x).sum();
-    let rms = (sq_sum / n as f32 + eps).sqrt();
-    for i in 0..n {
-        dst[i] = src[i] / rms * gamma[i];
-    }
+    crate::gguf::ops::rms_norm_scalar_into(src, gamma, eps, crate::gguf::ops::RmsScale::Divide, dst);
 }
 
 /// Apply RMS norm to a multi-token hidden state, returning normalized output.
 fn rms_norm_batched(hidden: &[f32], gamma: &[f32], hidden_dim: usize, eps: f32) -> Vec<f32> {
     let seq_len = hidden.len() / hidden_dim;
-    let mut out = Vec::with_capacity(hidden.len());
-    for s in 0..seq_len {
-        let slice = &hidden[s * hidden_dim..(s + 1) * hidden_dim];
-        let sq_sum: f32 = slice.iter().map(|x| x * x).sum();
-        let rms = (sq_sum / hidden_dim as f32 + eps).sqrt();
-        for (i, &x) in slice.iter().enumerate() {
-            out.push(x / rms * gamma[i]);
-        }
+    let mut out = vec![0.0f32; seq_len * hidden_dim];
+    for (row, o) in hidden.chunks_exact(hidden_dim).zip(out.chunks_exact_mut(hidden_dim)) {
+        rms_norm_weighted(row, gamma, o, eps);
     }
     out
 }

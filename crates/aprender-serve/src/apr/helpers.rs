@@ -35,12 +35,13 @@ pub(crate) fn rms_norm(x: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
         let mut output = vec![0.0f32; x.len()];
         for t in 0..n_tokens {
             let offset = t * hidden_dim;
-            let slice = &x[offset..offset + hidden_dim];
-            let ss: f32 = slice.iter().map(|v| v * v).sum::<f32>() / hidden_dim as f32;
-            let rms = (ss + eps).sqrt();
-            for i in 0..hidden_dim {
-                output[offset + i] = slice[i] / rms * weight[i];
-            }
+            crate::gguf::ops::rms_norm_scalar_into(
+                &x[offset..offset + hidden_dim],
+                weight,
+                eps,
+                crate::gguf::ops::RmsScale::Divide,
+                &mut output[offset..offset + hidden_dim],
+            );
         }
         output
     }

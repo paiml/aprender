@@ -91,22 +91,15 @@ pub fn simd_layer_norm(input: &[f32], weight: &[f32], bias: Option<&[f32]>, eps:
 /// ```
 #[must_use]
 pub fn simd_rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
-    let n = input.len();
-    if n == 0 {
-        return Vec::new();
-    }
-
-    // Compute RMS
-    let sum_sq: f32 = input.iter().map(|x| x * x).sum();
-    let rms = (sum_sq / n as f32 + eps).sqrt();
-    let inv_rms = 1.0 / rms;
-
-    // Normalize and scale
-    input
-        .iter()
-        .zip(weight.iter())
-        .map(|(x, w)| x * inv_rms * w)
-        .collect()
+    let mut out = vec![0.0f32; input.len().min(weight.len())];
+    crate::gguf::ops::rms_norm_scalar_into(
+        input,
+        weight,
+        eps,
+        crate::gguf::ops::RmsScale::ScaleThenWeight,
+        &mut out,
+    );
+    out
 }
 
 /// Apply rotary position embeddings (RoPE)
