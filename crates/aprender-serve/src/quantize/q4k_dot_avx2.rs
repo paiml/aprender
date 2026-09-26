@@ -340,26 +340,21 @@ pub fn fused_q4k_q8k_dot_simd(
     q8k_scales: &[f32],
     q8k_quants: &[i8],
 ) -> Result<f32> {
-    #[cfg(target_arch = "x86_64")]
-    {
-        // PAR-126: Use V2 optimized AVX-512 VNNI kernel (deferred horizontal sums)
-        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni") {
-            // SAFETY: Memory safety ensured by bounds checking and alignment
-            return unsafe { fused_q4k_q8k_dot_avx512vnni_v2(q4k_data, q8k_scales, q8k_quants) };
-        }
-        // pmat-ignore: hardware-path (AVX2 fallback never reached when AVX-512 VNNI available)
-        // Fallback to AVX2 (layout issue resolved)
-        if is_x86_feature_detected!("avx2") {
-            // SAFETY: Memory safety ensured by bounds checking and alignment
-            return unsafe { fused_q4k_q8k_dot_avx2(q4k_data, q8k_scales, q8k_quants) };
-        }
+    use super::kernel_path::{selected_dot_kernel, DotKernel, DotOp};
+    // #2880: dispatch through the one selection the reachability gate reads.
+    match selected_dot_kernel(DotOp::Q4kQ8k) {
+        // PAR-126: V2 AVX-512 VNNI kernel (deferred horizontal sums)
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: selected only when avx512f + avx512vnni were detected; bounds checked inside
+        DotKernel::Avx512Vnni => unsafe {
+            fused_q4k_q8k_dot_avx512vnni_v2(q4k_data, q8k_scales, q8k_quants)
+        },
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: selected only when avx2 was detected; bounds checked inside
+        DotKernel::Avx2 => unsafe { fused_q4k_q8k_dot_avx2(q4k_data, q8k_scales, q8k_quants) },
+        #[cfg(target_arch = "aarch64")]
+        DotKernel::Neon => fused_q4k_q8k_dot_neon(q4k_data, q8k_scales, q8k_quants),
+        // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_q8k_dot)
+        _ => fused_q4k_q8k_dot(q4k_data, q8k_scales, q8k_quants),
     }
-
-    // #2880: NEON is mandatory on aarch64, so no detection is needed.
-    #[cfg(target_arch = "aarch64")]
-    return fused_q4k_q8k_dot_neon(q4k_data, q8k_scales, q8k_quants);
-
-    // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_q8k_dot)
-    #[cfg(not(target_arch = "aarch64"))]
-    fused_q4k_q8k_dot(q4k_data, q8k_scales, q8k_quants)
 }
