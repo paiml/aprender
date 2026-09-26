@@ -33,6 +33,43 @@ use trueno_gpu::kernels::{
     Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel, Q8_0DequantKernel,
 };
 
+/// Which GEMM the Qwen3.5 batched prefill's weight projections run (SERVE-FIX).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefillGemm {
+    /// cuBLAS SGEMM, f32 in and out under `CUBLAS_PEDANTIC_MATH`, over the weight
+    /// dequantized again for every chunk — the default (see the module docs for why).
+    F32,
+    /// cuBLAS HGEMM on the tensor cores: FP16 weight cached once, FP16 activations,
+    /// f32 accumulation and output. Opt-in with `APR_QWEN35_PREFILL_GEMM=f16` until
+    /// its logit parity against [`Self::F32`] is measured.
+    F16Cached,
+}
+
+/// The environment variable that selects [`PrefillGemm`].
+pub const PREFILL_GEMM_ENV: &str = "APR_QWEN35_PREFILL_GEMM";
+
+/// Parse a [`PREFILL_GEMM_ENV`] value. Unset is the default; an unrecognised value is
+/// printed and read as the default, never silently as something else.
+#[must_use]
+pub fn parse_prefill_gemm(value: Option<&str>) -> PrefillGemm {
+    match value {
+        None | Some("f32") => PrefillGemm::F32,
+        Some("f16") => PrefillGemm::F16Cached,
+        Some(other) => {
+            eprintln!(
+                "warning: {PREFILL_GEMM_ENV}={other:?} is not one of \"f32\" / \"f16\"; using f32"
+            );
+            PrefillGemm::F32
+        },
+    }
+}
+
+/// [`PREFILL_GEMM_ENV`], read once per process.
+fn prefill_gemm() -> PrefillGemm {
+    static CHOICE: std::sync::OnceLock<PrefillGemm> = std::sync::OnceLock::new();
+    *CHOICE.get_or_init(|| parse_prefill_gemm(std::env::var(PREFILL_GEMM_ENV).ok().as_deref()))
+}
+
 impl CudaExecutor {
     /// Compile `kernel` for this device's target once, cached under `key`.
     fn qp_prepare<K: Kernel>(&mut self, key: &str, kernel: &K) -> Result<(), GpuError> {
@@ -142,6 +179,11 @@ impl CudaExecutor {
     /// row-major; `Y`'s rows are `ldc` floats apart (`ldc >= n`), so the result can land
     /// in a strided destination such as the KV cache.
     ///
+    /// The GEMM runs as [`prefill_gemm`] selects: f32 SGEMM over a weight dequantized
+    /// again for every chunk (the default), or, under `APR_QWEN35_PREFILL_GEMM=f16`,
+    /// tensor-core HGEMM over a weight dequantized to FP16 once and cached, with FP16
+    /// activations and f32 accumulation and output (SERVE-FIX, RCA-SRV-001).
+    ///
     /// # Errors
     /// See [`Self::qwen35_dequant_f32`]; also a cuBLAS failure.
     #[allow(clippy::too_many_arguments)]
@@ -158,6 +200,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         validate_device_ptr(x_ptr, "qwen35_project_rows x")?;
         validate_device_ptr(y_ptr, "qwen35_project_rows y")?;
+        if prefill_gemm() == PrefillGemm::F16Cached {
+            return self.qwen35_project_rows_f16(qtype, w_ptr, x_ptr, y_ptr, rows, n, k, ldc);
+        }
         let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
         self.ensure_cublas()?;
         let handle = self.cublas_handle.as_ref().expect("cublas initialized");
@@ -172,6 +217,60 @@ impl CudaExecutor {
             w_f32,
             k as i32,
             x_ptr,
+            k as i32,
+            0.0,
+            y_ptr,
+            ldc as i32,
+        )
+    }
+
+    /// The FP16 twin of [`Self::qwen35_project_rows`]: the weight is dequantized to f32
+    /// and converted to FP16 on first use and cached under its device pointer (the same
+    /// `fp16_weight_cache` the dense HGEMM prefill uses, so one weight is one entry), and
+    /// the activations are converted to FP16 per call.
+    #[allow(clippy::too_many_arguments)]
+    fn qwen35_project_rows_f16(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        x_ptr: u64,
+        y_ptr: u64,
+        rows: u32,
+        n: u32,
+        k: u32,
+        ldc: u32,
+    ) -> Result<(), GpuError> {
+        let w_f16 = if let Some(buf) = self.fp16_weight_cache.get(&w_ptr) {
+            buf.as_ptr()
+        } else {
+            let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
+            let count = n as usize * k as usize;
+            let buf = GpuBuffer::<u16>::new(&self.context, count)?;
+            let ptr = buf.as_ptr();
+            self.convert_f32_to_f16(w_f32, ptr, count as u32)?;
+            self.fp16_weight_cache.insert(w_ptr, buf);
+            ptr
+        };
+        let x_count = rows as usize * k as usize;
+        self.ensure_fp16_activation_scratch(x_count)?;
+        let x_f16 = self
+            .fp16_activation_scratch
+            .as_ref()
+            .expect("fp16 activation scratch just ensured")
+            .as_ptr();
+        self.convert_f32_to_f16(x_ptr, x_f16, x_count as u32)?;
+        self.ensure_cublas()?;
+        let handle = self.cublas_handle.as_ref().expect("cublas initialized");
+        handle.gemm_f16_to_f32(
+            trueno_gpu::driver::GemmOp::Trans,
+            trueno_gpu::driver::GemmOp::NoTrans,
+            n as i32,
+            rows as i32,
+            k as i32,
+            1.0,
+            w_f16,
+            k as i32,
+            x_f16,
             k as i32,
             0.0,
             y_ptr,
@@ -568,5 +667,28 @@ impl CudaExecutor {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod prefill_gemm_tests {
+    use super::{parse_prefill_gemm, PrefillGemm};
+
+    #[test]
+    fn unset_and_f32_are_the_f32_default() {
+        assert_eq!(parse_prefill_gemm(None), PrefillGemm::F32);
+        assert_eq!(parse_prefill_gemm(Some("f32")), PrefillGemm::F32);
+    }
+
+    #[test]
+    fn f16_opts_in_to_the_cached_hgemm() {
+        assert_eq!(parse_prefill_gemm(Some("f16")), PrefillGemm::F16Cached);
+    }
+
+    #[test]
+    fn an_unrecognised_value_is_never_read_as_f16() {
+        for v in ["F16", "fp16", "bf16", "", "flash"] {
+            assert_eq!(parse_prefill_gemm(Some(v)), PrefillGemm::F32, "{v:?}");
+        }
     }
 }
