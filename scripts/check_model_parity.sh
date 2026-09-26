@@ -79,17 +79,20 @@ PY
 # for (c): two staggered requests are two m=1 batches, and calling that a serving
 # shape is the vacuous pass this mode exists to refuse.
 judge_serving() {
-    python3 - "$1" "$2" <<'PY'
-import sys, json
-f, model = sys.argv[1:3]
+    python3 - "$1" "$2" "${3:-}" <<'PY'
+import sys, json, re
+f, model, want_file = sys.argv[1:4]
 try: w = json.load(open(f, encoding="utf-8"))
 except Exception as e: print(f"FAIL {model}: unreadable serving witness ({e})"); sys.exit(1)
 if not isinstance(w, dict) or w.get("probe") != "perf041" or not isinstance(w.get("bands"), list):
     print(f"FAIL {model}: not a perf041 serving witness (probe={w.get('probe') if isinstance(w, dict) else None!r})"); sys.exit(1)
 path = str((w.get("model") or {}).get("path") or "")
 base = path.rsplit("/", 1)[-1].lower()
-if not base.startswith(model.lower()):
-    print(f"FAIL {model}: the witness measured {path or '<no model>'!r}, not {model} — a receipt for another model"); sys.exit(1)
+# The model name must be followed by the quant or the extension, so a sibling such as
+# `<model>-instruct-q4_k_m.gguf` is not evidence for `<model>`; --blessed also names the file.
+named = re.match(re.escape(model.lower()) + r"[-._]((i?q\d|b?f16|f32)|(gguf|apr|safetensors)$)", base)
+if not named or (want_file and base != want_file.lower()):
+    print(f"FAIL {model}: the witness measured {path or '<no model>'!r}, not {want_file or model} — a receipt for another model"); sys.exit(1)
 if not w.get("commit") or not (w.get("binary_sha256") or ""):
     print(f"FAIL {model}: the witness carries no commit/binary_sha256 — an unattributed run is not a receipt"); sys.exit(1)
 bands = [b for b in w["bands"] if isinstance(b, dict)]
@@ -118,24 +121,24 @@ PY
 # Until #2753 lands the serving row is expected RED; the file says so, the exit does not hide it.
 BLESSED="${PARITY_BLESSED:-"$ROOT/evidence/parity/blessed.yaml"}"
 blessed() {
-    local f="${1:-$BLESSED}" rc=0 model host m1 serving
+    local f="${1:-$BLESSED}" rc=0 model host m1 serving file
     [ -f "$f" ] || { printf 'FAIL blessed: %s missing — no model is named\n' "$f"; return 1; }
-    while IFS=$'\t' read -r model host m1 serving; do
+    while IFS=$'\t' read -r model host m1 serving file; do
         [ "$model" = "ERR" ] && { printf 'FAIL blessed: %s\n' "$host"; return 1; }
         printf -- '--- %s @ %s\n' "$model" "$host"
         case "$m1" in /*) ;; *) m1="$ROOT/$m1" ;; esac
         case "$serving" in /*) ;; *) serving="$ROOT/$serving" ;; esac
         if [ -f "$m1" ]; then judge "$m1" "$model" || rc=1; else printf 'FAIL %s: no m=1 record %s\n' "$model" "${m1#"$ROOT"/}"; rc=1; fi
-        if [ -f "$serving" ]; then judge_serving "$serving" "$model" || rc=1; else printf 'FAIL %s: no serving-shape receipt %s\n' "$model" "${serving#"$ROOT"/}"; rc=1; fi
+        if [ -f "$serving" ]; then judge_serving "$serving" "$model" "$file" || rc=1; else printf 'FAIL %s: no serving-shape receipt %s\n' "$model" "${serving#"$ROOT"/}"; rc=1; fi
     done < <(python3 - "$f" <<'BY'
 import sys, yaml
 try: b = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
 except Exception as e: print(f"ERR\tunreadable {sys.argv[1]} ({e})"); sys.exit(0)
-m, hosts, rec = b.get("model"), b.get("hosts") or [], b.get("receipts") or {}
-if not m or not hosts: print("ERR\tblessed.yaml names no model or no hosts"); sys.exit(0)
+m, hosts, rec, fn = b.get("model"), b.get("hosts") or [], b.get("receipts") or {}, b.get("file")
+if not m or not hosts or not fn: print("ERR\tblessed.yaml names no model, no file or no hosts"); sys.exit(0)
 for h in hosts:
     r = rec.get(h) or {}
-    print(f"{m}\t{h}\t{r.get('m1', '-')}\t{r.get('serving', '-')}")
+    print(f"{m}\t{h}\t{r.get('m1', '-')}\t{r.get('serving', '-')}\t{fn}")
 BY
 )
     return "$rc"
@@ -360,13 +363,19 @@ SV
     row 1 "a cosine record CLAIMING batch=4 is refused — apr parity is single-stream"           judge "$TD/c7-b4.json" qwen2.5-coder-7b-instruct
     row 0 "an explicit shape batch=1 concurrency=1 on the 7B record still PASSes"               judge "$TD/c7-b1.json" qwen2.5-coder-7b-instruct
     row 1 "a bool batch is malformed, never read as 1"                                         judge "$TD/c7-bool.json" qwen2.5-coder-7b-instruct
-    printf 'model: qwen2.5-coder-7b-instruct\nhosts: [lambda]\nreceipts:\n  lambda: {m1: %s, serving: %s}\n' "$C7" "$TD/w-7b.json" > "$TD/bl-ok.yaml"
-    printf 'model: qwen2.5-coder-7b-instruct\nhosts: [lambda, gx10]\nreceipts:\n  lambda: {m1: %s, serving: %s}\n' "$C7" "$TD/w-7b.json" > "$TD/bl-nogx10.yaml"
-    printf 'model: qwen2.5-coder-7b-instruct\nhosts: [lambda]\nreceipts:\n  lambda: {m1: %s}\n' "$C7" > "$TD/bl-noserve.yaml"
+    printf 'model: qwen2.5-coder-7b-instruct\nfile: qwen2.5-coder-7b-instruct-q4_k_m.gguf\nhosts: [lambda]\nreceipts:\n  lambda: {m1: %s, serving: %s}\n' "$C7" "$TD/w-7b.json" > "$TD/bl-ok.yaml"
+    printf 'model: qwen2.5-coder-7b-instruct\nfile: qwen2.5-coder-7b-instruct-q4_k_m.gguf\nhosts: [lambda, gx10]\nreceipts:\n  lambda: {m1: %s, serving: %s}\n' "$C7" "$TD/w-7b.json" > "$TD/bl-nogx10.yaml"
+    printf 'model: qwen2.5-coder-7b-instruct\nfile: qwen2.5-coder-7b-instruct-q4_k_m.gguf\nhosts: [lambda]\nreceipts:\n  lambda: {m1: %s}\n' "$C7" > "$TD/bl-noserve.yaml"
     row 0 "blessed: m=1 PASS + serving PASS on the one declared host is GREEN"                  blessed "$TD/bl-ok.yaml"
     row 1 "blessed: a declared host with no receipts is RED, never skipped"                     blessed "$TD/bl-nogx10.yaml"
     row 1 "blessed: an m=1 record alone (no serving-shape receipt) is RED — the #3555 gap"       blessed "$TD/bl-noserve.yaml"
-    row 0 "the shipped blessed.yaml names a model and both GPU hosts"                           python3 -c "import yaml,sys; b=yaml.safe_load(open('$ROOT/evidence/parity/blessed.yaml')); sys.exit(0 if b.get('model') and {'lambda','gx10'} <= set(b.get('hosts') or []) else 1)"
+    sed 's/^file: .*/file: qwen2.5-coder-7b-instruct-q8_0.gguf/' "$TD/bl-ok.yaml" > "$TD/bl-otherfile.yaml"
+    sed '/^file: /d' "$TD/bl-ok.yaml" > "$TD/bl-nofile.yaml"
+    row 1 "blessed: a serving witness of another FILE of the model (q4 vs the named q8) is RED"   blessed "$TD/bl-otherfile.yaml"
+    row 1 "blessed: a blessed.yaml that names no file is RED"                                     blessed "$TD/bl-nofile.yaml"
+    row 1 "a sibling's witness (<model>-instruct-...) is not evidence for <model>"                judge_serving "$TD/w-7b.json" qwen2.5-coder-7b
+    row 0 "...and it says which model it measured"                                                says "a receipt for another model" judge_serving "$TD/w-7b.json" qwen2.5-coder-7b
+    row 0 "the shipped blessed.yaml names a model, its file and both GPU hosts"                           python3 -c "import yaml,sys; b=yaml.safe_load(open('$ROOT/evidence/parity/blessed.yaml')); sys.exit(0 if b.get('model') and b.get('file') and {'lambda','gx10'} <= set(b.get('hosts') or []) else 1)"
 
     printf '%s/%s rows\n' "$((n - red))" "$n"; [ "$red" = 0 ] || exit 1; exit 0
 fi

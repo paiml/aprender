@@ -132,7 +132,8 @@ stage_binary() {
     [ "$want" = "none" ] && return 0
     # Built in two steps, and the sha kept off any line that also holds a
     # `[ ]` test: bashrs reads the parens of "apr 0.63.0 (sha)" as unescaped
-    # parens inside a test expression (SC1028) when they share a line.
+    # parens inside a test expression (SC1028) when they share a line. The parens
+    # are real: apr_bin_names_commit reads only the "(...)" field of --version.
     local ver sha
     sha="deadbeef"
     if [ "$want" = "fresh" ]; then
@@ -141,7 +142,7 @@ stage_binary() {
     else
         ver="apr 0.60.0"
     fi
-    ver="$ver ${sha}"
+    ver="$ver (${sha})"
     printf '#!/usr/bin/env bash\necho "%s"\n' "$ver" > "$path"
     chmod +x "$path"
 
@@ -324,7 +325,7 @@ row_cargo_install() {
     head=$(git -C "$dir" rev-parse --short HEAD)
     ch="$dir/cargo-home"
     mkdir -p "$ch/bin"
-    printf '#!/usr/bin/env bash\necho "apr 0.63.0 %s"\n' "$head" > "$ch/bin/apr"
+    printf '#!/usr/bin/env bash\necho "apr 0.63.0 (%s)"\n' "$head" > "$ch/bin/apr"
     chmod +x "$ch/bin/apr"
     # Real .crates2.json shape, including a second installed binary, so the
     # `bins` membership test is exercised rather than a whole-string compare.
@@ -356,7 +357,7 @@ row_cargo_install_from_self() {
     head=$(git -C "$dir" rev-parse --short HEAD)
     ch="$dir/cargo-home"
     mkdir -p "$ch/bin"
-    printf '#!/usr/bin/env bash\necho "apr 0.63.0 %s"\n' "$head" > "$ch/bin/apr"
+    printf '#!/usr/bin/env bash\necho "apr 0.63.0 (%s)"\n' "$head" > "$ch/bin/apr"
     chmod +x "$ch/bin/apr"
     write_crates2 "$ch/.crates2.json" "$dir/crates/apr-cli"
     local got rc errlog
@@ -387,7 +388,8 @@ names_commit_table() {
     fi
     for c in "apr 0.69.3 (8cf336c60)|0" "apr 0.69.3 (8cf336c60a)|0" "apr 0.69.3 (8cf336c)|0" \
              "apr 0.69.3 (8cf336)|1" "apr 0.70.0 (817d63361)|1" "apr 0.69.3 (8cf336c61)|1" \
-             "apr 0.69.3 (v0.69.3+no-git)|1" "|1"; do
+             "apr 0.69.3 (v0.69.3+no-git)|1" "apr 0.61.0 8cf336c60 stale|1" \
+             "apr 0.61.0 8cf336c60 (817d63361)|1" "|1"; do
         v="${c%|*}"; want="${c##*|}"
         apr_bin_names_commit "$v" "$full"; rc=$?
         if [ "$rc" -eq "$want" ]; then

@@ -289,12 +289,19 @@ apr_bin_origin() {
 # Never compare two `--short` abbreviations: git lengthens the abbreviation as the
 # object count grows, so a binary built minutes ago from HEAD embeds `8cf336c60`
 # while `git rev-parse --short HEAD` now prints `8cf336c60a`, and a substring
-# match called the HEAD build STALE (#3555). Any hex run of >= 7 characters in
-# the version string that is a prefix of the full sha is the same commit.
+# match called the HEAD build STALE (#3555). Only the parenthesised field is read
+# (`apr --version` is "VERSION (APR_GIT_SHA)", crates/apr-cli/src/lib.rs), so a hex
+# run elsewhere in the string cannot vouch for it; no "(...)" fails closed. Inside
+# it, a hex run of >= 7 characters that prefixes the full sha is the same commit.
+# The unquoted $(...) is split by bash AND zsh (zsh only declines to split
+# parameter expansions); do not "simplify" it into an assignment first.
 apr_bin_names_commit() {
-    local reported="$1" full="$2" tok
+    local reported="$1" full="$2" field tok
     [ -n "$full" ] || return 1
-    for tok in $(printf '%s\n' "$reported" | tr -c '0-9a-f' ' '); do
+    case "$reported" in *"("*")"*) ;; *) return 1 ;; esac
+    field="${reported##*"("}"
+    field="${field%%")"*}"
+    for tok in $(printf '%s\n' "$field" | tr -c '0-9a-f' ' '); do
         [ "${#tok}" -ge 7 ] || continue
         case "$full" in
             "$tok"*) return 0 ;;
