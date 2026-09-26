@@ -1,9 +1,9 @@
-# measured 2026-09-26T09:17:29Z
+# measured 2026-09-26T09:32:30Z
 lambda-labs	apr	RED	behind (installed v0.69.5-rc.1@5660b08, target nightly@cbf623e)
 lambda-labs	pv	RED	no-sha (installed v0.69.5-rc.1@5660b08, target v0.69.5-rc.1@5660b08)
 lambda-labs	forjar	RED	no-sha (installed v1.32.0@b12a839, target v1.32.0@b12a839)
-lambda-labs	bashrs	RED	behind (installed nightly@19b2a12, target nightly@1241570)
-lambda-labs	pmat	RED	behind (installed v3.41.1@516305e, target nightly@350f1ad)
+lambda-labs	bashrs	RED	no-sha (installed nightly@1241570, target nightly@1241570)
+lambda-labs	pmat	GREEN	ok (installed nightly@350f1ad, target nightly@350f1ad)
 lambda-labs	pzsh	RED	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 lambda-labs	copia	RED	no-sha (installed nightly@ce1909f, target nightly@ce1909f)
 lambda-labs	rmedia	RED	WAIVED dev (installed -, target -)
