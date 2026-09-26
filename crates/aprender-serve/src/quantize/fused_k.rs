@@ -192,23 +192,17 @@ pub fn fused_q4k_dot(q4k_data: &[u8], activations: &[f32]) -> Result<f32> {
 /// - Combined potential: Up to 64x improvement for memory-bound operations
 pub fn fused_q4k_dot_simd(q4k_data: &[u8], activations: &[f32]) -> Result<f32> {
     contract_pre_simd_only_threshold!();
-    // Runtime feature detection with fallback (per RustBelt pattern)
-    #[cfg(target_arch = "x86_64")]
-    {
-        // PAR-126: AVX-512 VNNI requires pre-quantized activations (Q4K×Q8K format)
-        // For now, use AVX2 which works with f32 activations directly.
-        // Future optimization: pre-quantize activations to Q8_0 format once per matmul.
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: We've verified AVX2 and FMA are available at runtime
-            // The unsafe function performs the same logical operation as scalar
-            // SAFETY: Memory safety ensured by bounds checking and alignment
-            return unsafe { fused_q4k_dot_avx2(q4k_data, activations) };
-        }
+    use super::kernel_path::{selected_dot_kernel, DotKernel, DotOp};
+    // #2880: dispatch through the one selection the reachability gate reads.
+    // PAR-126: AVX-512 VNNI needs pre-quantized activations (the Q4kQ8k op);
+    // with f32 activations AVX2 is the widest kernel.
+    match selected_dot_kernel(DotOp::Q4kF32) {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: selected only when avx2 + fma were detected; bounds checked inside
+        DotKernel::Avx2 => unsafe { fused_q4k_dot_avx2(q4k_data, activations) },
+        // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_dot)
+        _ => fused_q4k_dot(q4k_data, activations),
     }
-
-    // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_dot)
-    // Fallback to scalar implementation
-    fused_q4k_dot(q4k_data, activations)
 }
 
 /// Quantize f32 activations to i8 and compute integer dot product with q_nibbles.

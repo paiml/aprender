@@ -116,23 +116,18 @@ pub fn fused_q6k_dot(q6k_data: &[u8], activations: &[f32]) -> Result<f32> {
 ///
 /// Returns error if data sizes don't match or are malformed
 pub fn fused_q6k_dot_simd(q6k_data: &[u8], activations: &[f32]) -> Result<f32> {
-    // PAR-126: AVX2 SIMD implementation for Q6_K
-    // Critical optimization: Q6_K scalar was 9x slower than Q4_K SIMD
-    #[cfg(target_arch = "x86_64")]
-    {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: We've verified AVX2 and FMA are available at runtime
-            return unsafe { fused_q6k_dot_avx2(q6k_data, activations) };
-        }
+    use super::kernel_path::{selected_dot_kernel, DotKernel, DotOp};
+    // #2880: dispatch through the one selection the reachability gate reads.
+    // PAR-126: Q6_K scalar was 9x slower than Q4_K SIMD.
+    match selected_dot_kernel(DotOp::Q6kF32) {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: selected only when avx2 + fma were detected; bounds checked inside
+        DotKernel::Avx2 => unsafe { fused_q6k_dot_avx2(q6k_data, activations) },
+        #[cfg(target_arch = "aarch64")]
+        DotKernel::Neon => fused_q6k_dot_neon(q6k_data, activations),
+        // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q6k_dot)
+        _ => fused_q6k_dot(q6k_data, activations),
     }
-    // #2880: NEON is mandatory on aarch64, so no detection is needed.
-    #[cfg(target_arch = "aarch64")]
-    return fused_q6k_dot_neon(q6k_data, activations);
-
-    // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q6k_dot)
-    // Fallback to scalar implementation
-    #[cfg(not(target_arch = "aarch64"))]
-    fused_q6k_dot(q6k_data, activations)
 }
 
 /// PAR-126: AVX2 SIMD implementation for Q6_K dot product
@@ -391,7 +386,10 @@ pub fn fused_q5k_dot(q5k_data: &[u8], activations: &[f32]) -> Result<f32> {
 /// Returns error if data sizes don't match or are malformed.
 /// See [`fused_q5k_dot`] for details.
 pub fn fused_q5k_dot_simd(q5k_data: &[u8], activations: &[f32]) -> Result<f32> {
-    // Q5_K SIMD optimization deferred to Phase 2
+    // #2880: no Q5_K SIMD kernel exists. The gap is declared in
+    // kernel_path::KNOWN_SCALAR_GAPS; a kernel added here must be dispatched
+    // through selected_dot_kernel(DotOp::Q5kF32), which then fails the gate
+    // until the gap row is removed.
     fused_q5k_dot(q5k_data, activations)
 }
 
