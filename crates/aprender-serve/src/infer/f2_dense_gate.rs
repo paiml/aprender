@@ -29,8 +29,7 @@ pub(crate) fn validate_dense_f2_receipted(
     };
     use crate::gguf::f2_receipt::{
         apr_version, model_sha256_file, read_receipt, receipt_dir, receipt_path,
-        revalidate_requested, unix_now, write_receipt, F2Receipt, F2ReceiptKey,
-        F2_RECEIPT_SCHEMA,
+        revalidate_requested, unix_now, write_receipt, F2Receipt, F2ReceiptKey, F2_RECEIPT_SCHEMA,
     };
 
     let sha_start = std::time::Instant::now();
@@ -41,7 +40,11 @@ pub(crate) fn validate_dense_f2_receipted(
                 "F2 guard: cannot hash {} ({e}), so no receipt applies — validating [source=fresh]",
                 model_path.display()
             );
-            return DenseF2::Fresh(validate_gpu_first_token(cuda_model, gen_config, input_tokens));
+            return DenseF2::Fresh(validate_gpu_first_token(
+                cuda_model,
+                gen_config,
+                input_tokens,
+            ));
         },
     };
     let sha256_ms = sha_start.elapsed().as_secs_f64() * 1000.0;
@@ -55,7 +58,14 @@ pub(crate) fn validate_dense_f2_receipted(
         None => Ok(None),
     };
 
-    match decide_dense(found, &sha256, &apr, &device, fp8_before, revalidate_requested()) {
+    match decide_dense(
+        found,
+        &sha256,
+        &apr,
+        &device,
+        fp8_before,
+        revalidate_requested(),
+    ) {
         DenseDecision::Skip {
             receipt,
             force_fp16,
@@ -92,9 +102,11 @@ pub(crate) fn validate_dense_f2_receipted(
             fp8_before,
             cuda_model.executor.gpu_profile.fp8_prefill,
         );
-        // The real positions of the probe the guard judged (pos0 is excluded as a BOS near-tie).
-        let positions_judged = gpu_probe(cuda_model.model(), input_tokens)
-            .map_or(0, |(_, _, probe)| probe.len().saturating_sub(1));
+        // The count the guard itself passed to `f2_accept_or_reject`: its CPU
+        // reference holds probe.len() + 1 logits (the probe plus one decode step)
+        // and judges all but pos0, i.e. probe.len().
+        let positions_judged =
+            gpu_probe(cuda_model.model(), input_tokens).map_or(0, |(_, _, probe)| probe.len());
         match path.as_deref() {
             Some(p) => {
                 let receipt = F2Receipt {
