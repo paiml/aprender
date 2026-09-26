@@ -144,6 +144,69 @@ stage_host() {
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$h" "$arch" "$tag" "${commit:0:9}" "${path:--}" "$([ "$ok" = 1 ] && echo pass || echo fail)" "${detail%; }"
 }
 
+# ---- the decode floor (#4273): the rc vs the previous release line, on one host -----------
+# Run on the floor host AFTER the rc is installed there. args: <dir, relative to $HOME>
+# <prev asset> <model> <n> <max tokens> <gpu wait s>. Prints `rc|prev<TAB><bench JSON on one
+# line>` per run, interleaved under ONE gpu-q ticket, or one `ERR <why>` line.
+DECODE_SH=$(cat <<'EOF'
+set -u
+d=$HOME/$1 asset=$2 model=$3 n=$4 mt=$5 w=$6
+# bashrs disable-next-line=SEC010
+cd "$d" || { echo "ERR no dir $d"; exit 0; }
+want=$(cut -d" " -f1 "$asset.sha256" 2>/dev/null)
+if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$asset" | cut -d" " -f1); else got=$(shasum -a 256 "$asset" | cut -d" " -f1); fi
+[ -n "$want" ] && [ "$got" = "$want" ] || { echo "ERR SHA-MISMATCH $asset"; exit 0; }
+# bashrs disable-next-line=SEC010
+rm -rf -- "${d:?}/x" && mkdir x && tar -xzf "$asset" -C x || { echo "ERR UNTAR $asset"; exit 0; }
+prev=$(find "$d/x" -type f -name apr | head -n 1); cur=$(command -v apr)
+[ -n "$prev" ] && [ -n "$cur" ] || { echo "ERR no apr binary (prev='$prev' rc='$cur')"; exit 0; }
+chmod 0755 "$prev"
+case "$model" in "~/"*) model=$HOME/${model#"~/"} ;; esac
+[ -f "$model" ] || { echo "ERR no model $model on this host"; exit 0; }
+command -v gpu-q > /dev/null 2>&1 || { echo "ERR no gpu-q on this host"; exit 0; }
+loop='for i in $(seq "$1"); do for s in rc prev; do b=$2; [ "$s" = prev ] && b=$3
+o=$("$b" bench "$4" --json --max-tokens "$5" --warmup 1 --iterations 3 2>/dev/null)
+printf "%s\t%s\n" "$s" "$(printf %s "$o" | tr -d "\n")"; done; done'
+GPUQ_WAIT=$w gpu-q --prio 1 -- bash -c "$loop" _ "$n" "$cur" "$prev" "$model" "$mt"
+q=$?
+[ "$q" = 75 ] && echo "ERR the GPU lock stayed held for ${w}s (gpu-q 75)"
+exit 0
+EOF
+)
+
+# decode_floor_row <tag> <commit> <assets dir> <hosts table> <stage rows> -> one receipt row,
+# host `decode-floor`: pass | fail (never waivable) | unreachable (not measured; only a dated
+# `decode-floor` waiver covers it). Thresholds and the model live in scripts/perf-matrix.yaml.
+decode_floor_row() {
+    local tag=$1 commit=$2 ad=$3 hosts=$4 rows=$5 df="$HERE/decode_floor.py" fh t as prev asset rdir out err state detail
+    fh=${RC_FLEET_FLOOR_HOST:-$(python3 "$df" get host 2>/dev/null)}
+    row() { printf 'decode-floor\ton %s\t%s\t%s\t-\t%s\t%s\n' "${fh:-?}" "$tag" "${commit:0:9}" "$1" "$2"; }
+    [ -n "$fh" ] || { row unreachable "no release_gates.decode_floor.host in scripts/perf-matrix.yaml"; return 0; }
+    IFS=$'\t' read -r _ t as _ < <(printf '%s\n' "$hosts" | awk -F'\t' -v h="$fh" '$1==h')
+    [ -n "${t:-}" ] || { row unreachable "floor host $fh is not in the fleet table"; return 0; }
+    [ "$(printf '%s\n' "$rows" | awk -F'\t' -v h="$fh" '$1==h {print $6}')" = pass ] \
+        || { row unreachable "$fh did not stage $tag, so its decode was not measured"; return 0; }
+    prev=$(gh release list -R "$REPO" --exclude-drafts --limit 200 --json tagName -q '.[].tagName' 2>/dev/null \
+        | python3 "$df" prev-tag "$tag") || { row unreachable "no previous release line to measure against"; return 0; }
+    asset="apr-$prev-$as.tar.gz"
+    mkdir -p "$ad/prev"
+    gh release download "$prev" -R "$REPO" -D "$ad/prev" --clobber -p "$asset" -p "$asset.sha256" > /dev/null 2>&1
+    [ -f "$ad/prev/$asset" ] && [ -f "$ad/prev/$asset.sha256" ] || { row unreachable "cannot download $asset"; return 0; }
+    rdir=.cache/rc-stage/$tag/prev
+    put "$t" "$rdir" "$ad/prev/$asset" "$ad/prev/$asset.sha256" || { row unreachable "copy of $asset to $fh failed"; return 0; }
+    out=$(rx_script "$t" "$rdir" "$asset" "$(python3 "$df" get model)" "$(python3 "$df" get n)" \
+        "$(python3 "$df" get max_tokens)" "$(python3 "$df" get gpu_wait)" <<< "$DECODE_SH" 2>/dev/null)
+    err=$(printf '%s\n' "$out" | sed -n 's/^ERR //p' | head -n 1)
+    [ -z "$err" ] || { row unreachable "$err"; return 0; }
+    IFS=$'\t' read -r state detail < <(printf '%s\n' "$out" | python3 "$df" verdict --commit "$commit")
+    case "$state" in
+        pass|fail) ;;
+        unmeasured) state=unreachable ;;
+        *) detail="decode_floor.py said '$state'"; state=fail ;;
+    esac
+    row "$state" "vs $prev: $detail"
+}
+
 tag_commit() {  # the commit a tag names (annotated tags dereferenced)
     [ -n "${RC_FLEET_COMMIT:-}" ] && { echo "$RC_FLEET_COMMIT"; return 0; }
     local refs
@@ -163,6 +226,7 @@ stage() {
     hosts=${hosts:-$FLEET_DEFAULT}
     [ -n "${RC_FLEET_WAIVERS:-}" ] && waivers=$(grep -vE '^\s*(#|$)' "$RC_FLEET_WAIVERS")
     rows=$(while IFS=$'\t' read -r h t as ps; do stage_host "$h" "$t" "$as" "$ps" "$tag" "$commit" "$work"; done <<< "$hosts")
+    rows+=$'\n'$(decode_floor_row "$tag" "$commit" "$work" "$hosts" "$rows")
     today=${RC_FLEET_TODAY:-$(date -u +%F)}
     verdict=$(printf '%s\n' "$rows" | awk -F'\t' '{print $1 "\t" $6}' | stage_verdict "$waivers" "$today")
     n=$(printf '%s\n' "$rows" | grep -c .); pass=$(printf '%s\n' "$rows" | awk -F'\t' '$6=="pass"' | grep -c .)
@@ -230,15 +294,22 @@ self_test() {
     mkdir -p "$d/bin" "$d/assets" "$d/pkg"
     # bashrs disable-next-line=SEC010
     for h in good1 good2 bad; do mkdir -p "$d/hosts/$h/.cargo/bin"; done
-    fake_bin() {  # fake_bin <name> <version line> -> a tarball + .sha256 in $d/assets
-        local n=$1 a
-        a="$n-$tag-x86_64-unknown-linux-gnu-${3:-cpu}.tar.gz"; [ "$n" = pv ] && a="pv-$tag-x86_64-unknown-linux-gnu.tar.gz"
+    fake_bin() {  # fake_bin <name> <version line> [tok/s for `apr bench`] [tag] -> a tarball + .sha256 in $d/assets
+        local n=$1 a t=${4:-$tag}
+        a="$n-$t-x86_64-unknown-linux-gnu-cpu.tar.gz"; [ "$n" = pv ] && a="pv-$t-x86_64-unknown-linux-gnu.tar.gz"
         rm -rf -- "${d:?}/pkg/x"; mkdir -p "$d/pkg/x"
-        printf '#!/bin/sh\necho "%s"\n' "$2" > "$d/pkg/x/$n"; chmod +x "$d/pkg/x/$n"
+        # `apr bench` answers with a CUDA receipt whose build_commit is its version line's sha
+        printf '#!/bin/sh\n[ "$1" = bench ] && { echo '"'"'{"tokens_per_second": %s,\n "provenance": {"compute_class": "cuda", "build_commit": "%s"}}'"'"'; exit 0; }\necho "%s"\n' \
+            "${3:-100}" "$(printf '%s' "$2" | sed -n 's/.*(\([0-9a-f]*\)).*/\1/p')" "$2" > "$d/pkg/x/$n"; chmod +x "$d/pkg/x/$n"
         tar -czf "$d/assets/$a" -C "$d/pkg" x
         (cd "$d/assets" && sha256sum "$a" > "$a.sha256")
     }
     fake_bin apr "apr 9.9.9-rc.3 (123456789)"
+    fake_bin apr "apr 9.8.0 (abcdef123)" 100 v9.8.0  # the previous release line the floor measures against
+    # the floor host (good1) has the matrix's model and a gpu-q that just runs the command
+    mkdir -p "$d/hosts/good1/shadow" "$d/hosts/good1/models"
+    : > "$d/hosts/good1/$(python3 "$HERE/decode_floor.py" get model | sed 's|^~/||')"
+    printf '#!/bin/sh\nshift 3; exec "$@"\n' > "$d/hosts/good1/shadow/gpu-q"; chmod +x "$d/hosts/good1/shadow/gpu-q"
     fake_bin pv "pv 9.9.9-rc.3 (aprender provable-contracts verifier)"
     # the bad host runs an old apr and a fleet-bins that SAYS installed and swaps nothing:
     # only verifying what PATH serves afterwards can see it (the installer is not trusted)
@@ -268,6 +339,7 @@ EOF
 echo "gh \$*" >> "$log"
 case "\$1 \$2" in
   "release download") while [ \$# -gt 0 ]; do [ "\$1" = -D ] && dst=\$2; shift; done; cp "$d/assets/"* "\$dst/" ;;
+  "release list") printf 'v9.9.9-rc.2\nv9.8.0\nv9.7.1\n' ;;
   "release view") echo "notes" ;;
   "release edit") ;;
 esac
@@ -279,7 +351,7 @@ EOF
         for h in "$@"; do printf '%s\t%s\tx86_64-unknown-linux-gnu-cpu\tx86_64-unknown-linux-gnu\n' "$h" "$h" >> "$d/hosts.tsv"; done
         PATH="$d/bin:$PATH" RC_FLEET_COMMIT=$sha RC_FLEET_HOSTS_FILE="$d/hosts.tsv" RC_FLEET_WORK="$d/work" \
             RELEASE_ASSETS_FIXTURE="$d/complete.txt" RC_FLEET_TODAY=2026-09-24 \
-            RC_FLEET_HERE=$HERE bash "$self" "$tag" --publish > "$d/out.txt" 2>&1
+            RC_FLEET_FLOOR_HOST=good1 RC_FLEET_HERE=$HERE bash "$self" "$tag" --publish > "$d/out.txt" 2>&1
     }
     bash "$HERE/../check_release_assets.sh" --list "$tag" > "$d/complete.txt"
     mkdir -p "$d/work"
@@ -296,9 +368,25 @@ EOF
     e2e 0 1 'every host installs and verifies -> the draft is published' good1 good2
     grep -q -- '--draft=false' "$log" || { echo "  FAIL publish did not flip --draft=false"; fail=1; }
     grep -q '| good2 | .* | PASS |' "$d/work/receipt.md" || { echo "  FAIL receipt has no PASS row for good2"; fail=1; }
+    grep -q '| decode-floor | on good1 | .* | PASS | vs v9.8.0: rc 100.0 tok/s vs prev 100.0' "$d/work/receipt.md" \
+        || { echo "  FAIL receipt has no measured decode-floor PASS row"; sed 's/^/       /' "$d/work/receipt.md"; fail=1; }
     e2e 1 0 'ONE host whose PATH resolves an old apr -> NOT published (operator acceptance, #4327)' good1 bad good2
     grep -q 'bad.*FAIL.*wants 9.9.9-rc.3' "$d/work/receipt.md" || { echo "  FAIL the bad host's row does not name the version it served"; fail=1; }
     e2e 1 0 'an unreachable host -> NOT published (#4328 C7)' good1 gone
+    e2e 1 0 'the floor host absent from the fleet -> NOT published (never skipped)' good2
+    grep -q '| decode-floor | .* | UNREACHABLE | floor host good1 is not in the fleet table' "$d/work/receipt.md" \
+        || { echo "  FAIL the absent floor host is not named"; fail=1; }
+    fake_bin apr "apr 9.9.9-rc.3 (123456789)" 5  # the #4273 shape: the rc decodes 20x slower
+    e2e 1 0 'an rc decoding 20x slower than the previous line -> NOT published (#4273)' good1 good2
+    grep -q '| decode-floor | .* | FAIL | vs v9.8.0: rc 5.0 tok/s vs prev 100.0 tok/s = 0.050x' "$d/work/receipt.md" \
+        || { echo "  FAIL the slow rc's floor row does not say why"; sed 's/^/       /' "$d/work/receipt.md"; fail=1; }
+    # MUTANT: the floor row dropped from the verdict -- the slow rc must now get published
+    self=$d/mutant-floor.sh
+    sed 's/^    rows+=$.\\n.$(decode_floor_row /    : $(decode_floor_row /' "${BASH_SOURCE[0]}" > "$self"
+    if cmp -s "$self" "${BASH_SOURCE[0]}"; then echo "  FAIL floor mutant not built: the anchor moved"; fail=1
+    else e2e 0 1 'mutant (floor row not in the verdict) publishes the slow rc: the row is what holds it' good1 good2; fi
+    self=${BASH_SOURCE[0]}
+    fake_bin apr "apr 9.9.9-rc.3 (123456789)"
     # MUTANT: the per-host verify deleted -- the lying installer's host must now get published
     self=$d/mutant.sh
     sed 's/if ! out=$(bash "$HERE\/asset_version_check.sh"/if false \&\& out=$(bash "$HERE\/asset_version_check.sh"/' "${BASH_SOURCE[0]}" > "$self"

@@ -122,6 +122,23 @@ derivation:
   # `STRETCH = 1.50` that gated nothing at all.
   sanity_ceiling: {value: 1.50, threshold_class: policy, author: perf-gate}
 
+# Release-time gates (PARITY-004: timing is never a REQUIRED PR check). Read by
+# scripts/release/decode_floor.py, run from scripts/release/rc_fleet_stage.sh on gx10
+# after the rc is installed there and before the draft is flipped visible.
+release_gates:
+  decode_floor:
+    host: gx10
+    # rc/prev median tokens_per_second, interleaved under one gpu-q ticket. The same
+    # no-collapse bar as contracts/beat-ollama-decode-throughput-speed-v1.yaml
+    # beat_threshold; it exists to catch a #4273-class ~20x loss, not a 3% drift.
+    floor: {value: 0.90, threshold_class: policy, author: aprender-e6}
+    model: ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    n: 3
+    max_tokens: 128
+    # seconds gpu-q may wait for the GPU lock before the floor is `unmeasured` (held;
+    # only a dated `decode-floor` waiver row covers it)
+    gpu_wait: 1800
+
 hosts:
   lambda:
     accelerator: rtx-4090
