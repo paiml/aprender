@@ -1,0 +1,21 @@
+- id: PMAT-4348
+  github_issue: 4348
+  item_type: task
+  title: 'P0: Lean/leanchecker must not overload lambda — car/0.70.0 half (imports, thread cap, scoped-leanchecker guard)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-1c
+  created: 2026-09-26T13:50:00Z
+  updated: 2026-09-26T14:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'No bare `import Mathlib` in crates/aprender-contracts-staging/lean; each narrowed file compiles, with wall and max RSS before/after in the receipt'
+  - 'forjar lean-build (`lake build`) runs with LEAN_NUM_THREADS capped at 8 unless the caller sets it'
+  - 'scripts/check_leanchecker_scoped.sh is RED on a tracked leanchecker invocation outside `systemd-run ... MemoryMax=` or on --leanchecker-unscoped, in .github/workflows, ci/ (sections.yml + .cmd fragments), forjar*.yaml, Makefile, *.mk and *.sh; a planted line in ci/sections.yml turns it RED'
+  - 'The guard runs in CI through guard_tree.sh --no-cargo (auto-discovered, self-test + run)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'The pv discharge caps from c2efb7fa1/0a79b45f8 are out of scope: car/0.70.0 has no pv discharge command. Original fix lives on GH-4347-dpo-on-nf4.'
