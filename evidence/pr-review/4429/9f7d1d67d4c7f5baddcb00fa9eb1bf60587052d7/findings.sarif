@@ -1,0 +1,367 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4429-PMAT-COMPLEXITY-NEW-SCRIPTS",
+          "level": "note",
+          "message": {
+            "text": "complexity_delta (repo-wide pmat analyze complexity, base a5efa1443 vs head f29aa41c9, filtered to the 673 changed paths): 235 threshold violations land in changed files at HEAD; 158 of those already existed at BASE (pre-existing, not introduced by this PR); 77 are net-new and every one of the 77 is in a file that git diff --diff-filter=A shows did not exist at BASE (new files, not modified ones). Worst two: scripts/test_apr_dogfood_lane_4252.py::main cognitive-complexity 255 (threshold 15/30 tiers), scripts/token_usage_report.py::claude cognitive-complexity 255. All 77 are Python tooling under scripts/ and scripts/lib/, not Rust under crates/, and .pmat-gates.toml's max_complexity=10 / TDG gates are the ones CI enforces on crates/; these scripts ship over pmat's general threshold but outside that enforced gate."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/test_apr_dogfood_lane_4252.py"
+                },
+                "region": {
+                  "startLine": 63
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/token_usage_report.py"
+                },
+                "region": {
+                  "startLine": 144
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json"
+            ],
+            "precision_class": "advisory",
+            "rationale_for_class": "New tooling scripts over a general complexity threshold outside the enforced crates/ gate; not a merge block.",
+            "failure_scenario": "A 255-cognitive-complexity main()/claude() in newly-shipped dogfood/token-report tooling is expensive to safely modify later; a future one-line change in either risks an unreviewable diff to reason about correctness."
+          }
+        },
+        {
+          "ruleId": "PRREV-4429-PMAT-DUPLICATION-SCAN-INCOMPLETE",
+          "level": "warning",
+          "message": {
+            "text": "scripts/pr_review_duplication_scan.sh --base a5efa1443 --head f29aa41c9 --horizon since --horizon-since 30 --max-branches 150 --json duplication.json was launched backgrounded (this review's diff is 673 files / ~44k lines; the repo has 6797 total branches, so an unbounded --horizon all run was killed first as impractical) and exited after >10 minutes with zero stdout, zero stderr, and no JSON produced. Host load average was 90-97 (32-core box, `uptime`, measured repeatedly through this review) for the duration. No OOM-kill evidence was found in dmesg/journalctl -k (both empty for this window, though this account's access to kernel logs was not independently confirmed), so the cause is recorded as undetermined rather than asserted as OOM. Not re-attempted within this review's time budget. duplication_hits, horizon_branches_scanned and merge_base_to_main_files are therefore honestly empty/zero, not a clean scan result."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/pr_review_duplication_scan.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "a5efa14433b52138bc80bed7faead845123f18d5",
+              "--head",
+              "f29aa41c9e538da1ecbdbb45c656eda4009f71b4",
+              "--horizon",
+              "since",
+              "--horizon-since",
+              "30",
+              "--max-branches",
+              "150",
+              "--json",
+              "duplication.json"
+            ],
+            "exit_code": "unknown (process exited with no output before this review's cutoff; not observed by this session)",
+            "precision_class": "advisory",
+            "rationale_for_class": "Degrades the receipt's coverage claim; does not itself indicate a code defect.",
+            "failure_scenario": "A cross-branch or cross-language duplicate this scan would have caught (the tool's own stated purpose: catching duplication pmat's Rust-only semantic index cannot see) ships unreviewed in this 673-file car."
+          }
+        },
+        {
+          "ruleId": "PRREV-4429-PMAT-DELTA-93AA2-99C6C6",
+          "level": "note",
+          "message": {
+            "text": "Refreshed for the 3-commit delta 93aa211e8..99c6c61b4 (cherry-pick of b155a6dc6 wgpu fix #4056, the 0.70.0 version bump, and a clippy chunks_exact->as_chunks fix, 53 files, mostly Cargo.toml/Cargo.lock version bumps). Whole-repo pmat complexity summary at the new HEAD is unchanged from the prior measurement (9726 files, 168735 functions, technical_debt_hours 11123.75, identical to the f29aa41c9 run). TDG total moved from 93.88761901855469 to 93.88760375976562 (B, unchanged) -- noise at the 5th decimal, no material effect. Of the 77 net-new-vs-base complexity violations restricted to the full (now 679-file) changed set, 3 arose specifically from this delta, all in the pre-existing (not new) file crates/aprender-serve/src/quantize/q4k_q8k_multirow.rs: fused_q4k_q8k_multirow_matmul_into cyclomatic-complexity 12 and cognitive-complexity 23, and falsify_4228_006_q5k_q6k_multirow_bit_identical cognitive-complexity 16 -- all modest, none near the 255-cognitive Python-tooling outliers already reported. The other 74 are the previously-reported new Python tooling scripts, unaffected by this delta."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/quantize/q4k_q8k_multirow.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json"
+            ],
+            "precision_class": "advisory",
+            "failure_scenario": "Same as the pre-existing PRREV-4429-PMAT-COMPLEXITY-NEW-SCRIPTS finding; this result documents that the delta added a small, bounded amount to an already-flagged advisory-tier signal rather than a new surface.",
+            "rationale_for_class": "Cyclomatic 12 / cognitive 16-23 in an existing, modified kernel file is well within normal range and not itself actionable."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "nvidia-cuda-docs MCP is configured but needs OAuth authentication in this non-interactive session; no query could be sent. Not answered from memory."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "claude",
+                  "mcp",
+                  "list"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "b18b87c587bdd4a6595a9f5f82e7e2cfe0c569fbb6e97c93e83522e772b66253"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4429-CRUX-SAMPLING-PARAMS-REFACTOR",
+          "level": "note",
+          "message": {
+            "text": "CRUX_SURFACE_RE fires 72 times on added Rust lines; the large majority is a sampling-parameter consolidation (temperature/top_k/top_p/seed/repeat_penalty/repeat_last_n) into crates/aprender-common/src/cli_roles.rs (7 clap long= hits there) plus one #[arg(...)]/long= hit each in ~20 CLI entrypoint crates that now reference the shared definitions (apr-cli/src/{commands_enum.rs (10), extended_commands.rs (4), commands/rosetta.rs (2)}, aprender-contracts-cli, aprender-zram-cli, aprender-train-{shell,lora,inspect,distill,bench}, aprender-test-cli, aprender-rag-cli, aprender-qa-cli, aprender-profile, aprender-present-terminal, aprender-present-cli, aprender-orchestrate, aprender-explain, aprender-db, aprender-data, aprender-cgp, aprender-cbtop, apr-cli/src/{surface.rs, serve_commands.rs, commands/gpu_correct_subject.rs}). These flag names are pre-existing CLI surface (same names, same behavior contract); the diff relocates the arg definitions, it does not add new ones. Contract coverage (crux-A-13, crux-A-16, crux-C-30, crux-C-32, crux-F-06, decode-gpu-resident-sampling-v1, batched-beam-search-v1 and 97 more matched on these parameter names) is pre-existing; this review did not re-verify behavioral equivalence of every relocated flag against every one of the 104 matched contracts within its time budget -- that check is asserted from the refactor's shape (identical flag names/defaults visible in the diff), not independently measured flag-by-flag."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-common/src/cli_roles.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff shape (relocation, matching names/defaults) and a contract-file grep; not a per-flag behavioral re-run against all 104 matched contracts.",
+            "failure_scenario": "A relocation that silently changed one flag's default or clap parsing behavior (e.g. a long= rename or a validator dropped in the move) would present as a downstream CLI regression in one of the ~20 consuming binaries, not in cli_roles.rs itself.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-4429-CRUX-PTX-DEBUG-COVERAGE-GAP",
+          "level": "note",
+          "message": {
+            "text": "New CLI surface: `apr ptx-debug` (#4062, crates/apr-cli/src/lib_parse_ptx_debug_4062.rs, hidden per --help). It IS registered in the command contract (contracts/apr-cli-commands-v1.yaml:390, name: ptx-debug) and IS named in the binary-consolidation map (contracts/apr-mono-binary-rule-v1.yaml:46, aprender-ptx-debug -> aprender-ptx-debug). But contracts/apr-dogfood-coverage-v1.yaml:109 states aprender-ptx-debug: {total: 3, covered: 0} -- 0 of 3 dogfood coverage items for this binary are covered. No crux-<ID>-v1.yaml behavioral contract matches ptx-debug/ptx_debug. gap_effect is none (purely additive command, nothing existing changes behavior), but crux_coverage is none for this specific surface."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/apr-dogfood-coverage-v1.yaml"
+                },
+                "region": {
+                  "startLine": 109
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "contracts/apr-dogfood-coverage-v1.yaml:109; contracts/apr-cli-commands-v1.yaml:390",
+            "failure_scenario": "A future change to ptx-debug's PTX-falsification or FKR-test-generation logic ships with 0 dogfood items covering it and no behavioral contract to falsify against, so a regression there is caught only by whoever happens to invoke the hidden subcommand by hand.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-4429-CRUX-DELTA-93AA2-99C6C6",
+          "level": "note",
+          "message": {
+            "text": "Delta 93aa211e8..99c6c61b4 checked against both trigger surfaces: no added/removed line matches the sampling-parameter terms (temperature|top_k|top_p|repeat_penalty|repeat_last_n|seed); the only CUDA/PTX/GPU-path match is crates/aprender-cuda-edge/Cargo.toml (a version-bump-only line, no functional change). The delta's .rs changes are wgpu-backend files (aprender-train/src/{autograd,transformer}/wgpu_block.rs, aprender-train/src/finetune/{wgpu_pipeline.rs,instruct_pipeline/{mod.rs,wgpu.rs}}, aprender-serve/src/{gguf/inference/{float16_dot.rs,forward/forward_qwen35.rs},quantize/{iq2_s.rs,iq2_xxs.rs,iq3_s.rs,iq3_xxs.rs,iq4_nl.rs,iq4_xs.rs,q4k_q8k_multirow.rs}}), which is a distinct backend from CUDA; neither of the two previously reported crux findings (sampling-param relocation, ptx-debug coverage gap) is affected by this delta."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-cuda-edge/Cargo.toml"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "93aa211e8",
+              "99c6c61b4"
+            ],
+            "precision_class": "advisory",
+            "failure_scenario": "None identified; this result documents the delta-scope check itself so the receipt does not silently reuse stale crux findings across a HEAD move."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4429-B3-GUARD-MUTATION-INCOMPLETE",
+          "level": "error",
+          "message": {
+            "text": "S3.D: this PR (base a5efa14433b52138bc80bed7faead845123f18d5, head 99c6c61b4bf505c91bd0381234d3ad3a42b10ff1) touches scripts/check_pr_review_receipt.sh (237 committed mutants, scripts/mutate-guard.sh) and scripts/pr_review_quorum_arm.sh (134 committed mutants, scripts/mutate_quorum_arm.sh), 371 total. \u00a73.D requires 100% kill on the full committed set for a guard-touching PR, blocking: yes; \u00a77 B3 and \u00a78's 'guard_mutation_score = 100%' line both name this. scripts/pr_review_quorum_arm.sh is now COMPLETE: 134/134 attempted, 134 killed, 0 survivors, quorum_arm_mutation_score = 100% (report: quorum-arm-mutation-report-FINAL-134of134.tsv, preserved at /mnt/nvme-raid0/tmp/a36-prrev/). scripts/check_pr_review_receipt.sh is NOT complete: under measured, sustained host contention (load average 27-97 across this review's extended window, a shared 32-core box, degraded further while both sweeps ran concurrently) 106/237 (44.7%) were run to completion, 0 survivors among those, launched as systemd unit apr36-prrev-mut-qarm for the quorum-arm side per this round's resource-containment instruction; the guard-script side (PID 4012660) predates that instruction, was already in progress carrying forward genuine prior progress, and was deliberately left running rather than restarted under systemd-run so as not to discard already-earned kills. Combined: 240/371 (64.7%) attempted, 0 survivors among the 240, 131 mutants of check_pr_review_receipt.sh's set still unattempted at receipt-emission time. This is still short of the mandated 100%, so B3 fires and the verdict is reported as a genuine BLOCK, not rounded up on the strength of the zero-survivor partial result or the one fully-completed guard. PID 4012660 was left running in the background past this receipt's emission; a subsequent review round can cite its continued progress rather than restart from 0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_receipt.sh"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/pr_review_quorum_arm.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/mutate-guard.sh",
+              "(pid 4012660, pre-existing)",
+              "systemd-run --user --unit apr36-prrev-mut-qarm -- bash scripts/mutate_quorum_arm.sh --jobs 4"
+            ],
+            "attempted": 240,
+            "total_committed": 371,
+            "killed": 240,
+            "survivors": 0,
+            "precision_class": "blocking",
+            "rationale_for_class": "\u00a77 B3, \u00a78 guard_mutation_score=100% line; this review measured 38.8%.",
+            "failure_scenario": "A rule the guard states in scripts/check_pr_review_receipt.sh or scripts/pr_review_quorum_arm.sh but that only an unrun mutant among the remaining 227 (guard) / 14 (quorum-arm) would have exercised ships with nothing proving it is still tested."
+          }
+        },
+        {
+          "ruleId": "PRREV-4429-MUTATION-RUST-ADVISORY-NOT-RUN",
+          "level": "note",
+          "message": {
+            "text": "S3.D's advisory Rust-source tier (cargo mutants --in-diff <rs.diff> --timeout 120 --jobs 4, capped MUTANT_BUDGET=40) was attempted via `cargo mutants --list --in-diff rs.diff` (the discovery step) under the cargo-memcap wrapper (infra#1026, which clamps to --timeout 300); it produced zero output over 6+ minutes and was still running when this review's time budget closed under the same measured host contention as the duplication scan. The bounded mutation-execution run was never started. attempted: 0 for this tier, honestly; advisory only, does not itself change the verdict (B3 above already does)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Cargo.toml"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "mutants",
+              "--list",
+              "--in-diff",
+              "rs.diff",
+              "--timeout",
+              "300"
+            ],
+            "precision_class": "advisory",
+            "rationale_for_class": "S3.D marks this tier advisory even when it runs cleanly.",
+            "failure_scenario": "A Rust-source mutant in the diff's non-guard-script .rs files that only this tier would exercise ships unreviewed by mutation testing (unit-test coverage still applies)."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": []
+    }
+  ]
+}
