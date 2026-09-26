@@ -9,7 +9,7 @@
   updated: 2026-09-26T12:00:00+00:00
   spec: null
   acceptance_criteria:
-  - 'each guard section (guard-tree, guard-cargo) in ci/sections.yml runs ONE step, bash scripts/ci_guards.sh <job>, under if: !cancelled() && steps.guard-setup.outcome == success; every other guard step lives in the <job>-steps manifest (if: false) and the runner executes all of them past a red step, one ::error per failure and one SUMMARY'
+  - 'each guard section (guard-tree, guard-cargo) in ci/sections.yml runs its guards through ONE step, bash scripts/ci_guards.sh <job>, under if: !cancelled() && steps.guard-setup.outcome == success; every guard step that can run outside a pull_request event lives in the <job>-steps manifest (if: false) and the runner executes all of them past a red step, one ::error per failure and one SUMMARY. The only steps left in the section are the ones that need the pull_request payload (both already !cancelled()) and the always() target-watch report — the same three #4457 kept — and check_guard_steps_run_all.sh refuses any other fail-fast step over the baseline'
   - 'make guards-local and .githooks/pre-push run the same script and print the same ci_guards: sha256 line CI prints'
   - 'the guard jobs are the guard-* sections the gate in .github/workflows/ci.yml reads; a gate that reads none, or an unreadable file, fails closed (rc 2)'
   - 'scripts/guard_fail_fast_baseline.txt (shrink-only) and scripts/ci_guards_uncovered.txt name real car sections; check_guard_steps_run_all.sh --self-test goes RED on each planted mutant and is itself wired into CI'

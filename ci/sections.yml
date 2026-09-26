@@ -1127,6 +1127,12 @@ jobs:
       # either way it is data. scripts/check_workflow_env_defined.sh enforces
       # the env: side of that rule.
       #
+      # WHY THIS STEP AND ITS TWO NEIGHBOURS ARE NOT IN guard-tree-steps (#4415):
+      # they read the pull_request payload (PR_NUMBER), which ci_guards.sh cannot
+      # supply to a local run, so they stay here. They still run all: both carry
+      # !cancelled(), the report is always(), and check_guard_steps_run_all.sh
+      # refuses any other fail-fast step in a guard section over the baseline.
+      #
       # pull_request only: on merge_group there is no pull_request payload, and
       # a body is fixed before a PR is ever enqueued.
       - name: A PR body must close every issue it cites, or say why not (§6 R-2)
