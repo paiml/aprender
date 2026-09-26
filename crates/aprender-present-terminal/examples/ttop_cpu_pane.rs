@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::disallowed_methods)]
 //! Real-time ttop-style CPU pane demo.
 //!
-//! Run with: cargo run -p presentar-terminal --example `ttop_cpu_pane`
+//! Run with: cargo run -p aprender-present-terminal --example `ttop_cpu_pane`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

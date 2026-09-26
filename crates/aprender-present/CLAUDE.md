@@ -79,12 +79,12 @@ Layer 6: Trueno             - SIMD/GPU tensor ops, backend dispatch, memory mana
 
 ```bash
 # Development
-cargo build -p presentar-terminal --features ptop
-cargo run -p presentar-terminal --features ptop --bin ptop
+cargo build -p aprender-present-terminal --features ptop
+cargo run -p aprender-present-terminal --features ptop --bin aprender-ptop
 
 # Testing (MANDATORY before any implementation)
-cargo test -p presentar-terminal --features ptop
-cargo test -p presentar-terminal --features ptop --test cpu_exploded_async  # Interface tests
+cargo test -p aprender-present-terminal --features ptop
+cargo test -p aprender-present-terminal --features ptop --test cpu_exploded_async  # Interface tests
 
 # Install git hooks (run once after clone)
 ./scripts/install-hooks.sh

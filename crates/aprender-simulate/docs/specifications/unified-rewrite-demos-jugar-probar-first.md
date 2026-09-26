@@ -39,7 +39,7 @@ The following falsifiability requirements can be automatically verified:
 
 **F-5:** The CI pipeline SHOULD run `cargo test --doc` for documentation tests.
 
-**F-6:** The CI pipeline SHOULD run `cargo build --bin simular`.
+**F-6:** The CI pipeline SHOULD run `cargo build --bin aprender-simulate`.
 
 **F-7:** The CI SHOULD trigger on pull_request events.
 

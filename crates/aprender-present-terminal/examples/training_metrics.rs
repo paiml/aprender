@@ -4,7 +4,7 @@
 //! Demonstrates real-time training loss/accuracy visualization.
 //! Similar to `TensorBoard` but in the terminal.
 //!
-//! Run with: cargo run -p presentar-terminal --example `training_metrics`
+//! Run with: cargo run -p aprender-present-terminal --example `training_metrics`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

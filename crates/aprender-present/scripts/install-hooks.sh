@@ -78,7 +78,7 @@ done
 # Run interface tests for ptop changes
 if grep -q 'crates/presentar-terminal/src/ptop/' <<< "$STAGED" ; then
     echo "Running interface tests for ptop changes..."
-    if ! cargo test -p presentar-terminal --features ptop --test cpu_exploded_async --quiet 2>/dev/null; then
+    if ! cargo test -p aprender-present-terminal --features ptop --test cpu_exploded_async --quiet 2>/dev/null; then
         echo ""
         echo "╔══════════════════════════════════════════════════════════════════════════════╗"
         echo "║  SPEC-024 ENFORCEMENT: INTERFACE TESTS FAILED                                ║"
@@ -113,7 +113,7 @@ set -e
 echo "SPEC-024: Running full test suite before push..."
 
 # Build with enforcement (triggers build.rs checks)
-if ! cargo build -p presentar-terminal --features ptop 2>/dev/null; then
+if ! cargo build -p aprender-present-terminal --features ptop 2>/dev/null; then
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════════════════╗"
     echo "║  SPEC-024 ENFORCEMENT: BUILD FAILED                                          ║"
@@ -127,7 +127,7 @@ if ! cargo build -p presentar-terminal --features ptop 2>/dev/null; then
 fi
 
 # Run interface tests
-if ! cargo test -p presentar-terminal --features ptop --test cpu_exploded_async; then
+if ! cargo test -p aprender-present-terminal --features ptop --test cpu_exploded_async; then
     echo "Interface tests failed. Push blocked."
     exit 1
 fi

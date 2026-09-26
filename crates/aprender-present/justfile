@@ -20,7 +20,7 @@ build-release:
 
 # Build ptop binary
 build-ptop:
-    cargo build -p presentar-terminal --bin aprender-ptop --features ptop --release
+    cargo build -p aprender-present-terminal --bin aprender-ptop --features ptop --release
 
 # Run all tests with fixed seed
 test:

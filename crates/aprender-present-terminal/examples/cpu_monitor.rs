@@ -4,7 +4,7 @@
 //! Demonstrates real-time CPU usage monitoring with braille graphs.
 //! Similar to btop/htop CPU visualization.
 //!
-//! Run with: cargo run -p presentar-terminal --example `cpu_monitor`
+//! Run with: cargo run -p aprender-present-terminal --example `cpu_monitor`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

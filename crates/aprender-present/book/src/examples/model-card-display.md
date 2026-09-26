@@ -6,7 +6,7 @@ Visualize ML model metadata and metrics from `.apr` (Aprender) model files.
 
 ```bash
 # Run the demo
-cargo run -p presentar --example apr_ald_display
+cargo run -p aprender-present-lib --example apr_ald_display
 ```
 
 ## Loading .apr Files

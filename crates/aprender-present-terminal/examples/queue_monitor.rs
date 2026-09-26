@@ -4,7 +4,7 @@
 //! Demonstrates real-time monitoring of message queues with
 //! depth, throughput, and latency visualization.
 //!
-//! Run with: cargo run -p presentar-terminal --example `queue_monitor`
+//! Run with: cargo run -p aprender-present-terminal --example `queue_monitor`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

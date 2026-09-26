@@ -1,6 +1,6 @@
 //! Visual Demo - Exports UI to SVG for browser viewing.
 //!
-//! Run with: `cargo run --example visual_demo -p presentar`
+//! Run with: `cargo run --example visual_demo -p aprender-present-lib`
 //! Then open: `demo_output.svg` in your browser
 
 #![allow(
