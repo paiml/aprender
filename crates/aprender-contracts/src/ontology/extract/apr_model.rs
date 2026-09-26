@@ -146,8 +146,6 @@ pub fn emit_file(g: &mut Graph, stem: &str, rel: &str, bytes: &[u8]) -> Result<(
     let sha = hex(&Sha256::digest(bytes));
     let s = iri("model", &sha);
     g.insert(s.clone(), RDF_TYPE, Term::iri(model("Model")));
-    // v4.16 D-T2 (qd4c4): disjoint from a ladder rung's `model:LadderRung`, so B.6 and `ladder-measured` never collide.
-    g.insert(s.clone(), RDF_TYPE, Term::iri(model("AprModel")));
     g.insert(s.clone(), model("sha256"), Term::string(&sha));
     g.insert(s.clone(), model("format"), Term::string("apr"));
     g.insert(s.clone(), model("file"), Term::string(rel));

@@ -3,8 +3,7 @@
 #
 # WHAT IT GOVERNS
 #   provable_contracts::ontology::extract::gguf       — the model-capability ladder's rungs (and any GGUF file a
-#                                                       contract names) as `model:Model` nodes keyed by sha256;
-#                                                       ladder rungs are ALSO typed `model:LadderRung` (v4.16 D-T2, ONT-4c).
+#                                                       contract names) as `model:Model` nodes keyed by sha256.
 #   provable_contracts::ontology::extract::apr_model  — an `.apr` v2 container as a `model:Model` node; a header whose
 #                                                       tensor count disagrees with its index is refused, naming the file.
 #   provable_contracts::ontology::receipts            — `resolves: receipt`: the tracked ladder receipts
@@ -22,7 +21,7 @@
 # (`armed_shapes shrank` → exit 3) keeps it armed. Both quantifications live in receipts.rs, which the fixtures
 # under tests/fixtures/ont/ladder-* falsify; the shapes stay inside §3.6's subset (minCount, maxCount, in, node).
 #
-# THE PLANT. A bare `model:LadderRung` node (the targetClass since ONT-4c) drawn every run violates `ladder-measured`'s `model:parityReceipt minCount 1`
+# THE PLANT. A bare `model:Model` node drawn every run violates `ladder-measured`'s `model:parityReceipt minCount 1`
 # and `model:sha256 minCount 1`: the positive control, drawn from an ARMED shape. Two more every run:
 # `pc_extract.gguf` (a corrupt magic is refused) and `pc_extract["apr-model"]` (a lying header is refused).
 #
@@ -43,7 +42,7 @@ metadata:
   last_modified: '2026-09-19'
   author: PAIML Engineering
   description: >
-    The model-capability ladder's rungs are model:LadderRung focus nodes (ONT-4c retarget); resolves: receipt joins the tracked ladder
+    The model-capability ladder's rungs are model:Model focus nodes; resolves: receipt joins the tracked ladder
     receipts to them by measured sha256; ladder-measured is armed, ladder-green is reported until the 0.68.2 bump
     arms it; arming is per shape and monotone.
   references:
@@ -59,7 +58,7 @@ relations:
 
 shapes:
   - id: ladder-measured
-    targetClass: model:LadderRung
+    targetClass: model:Model
     properties:
       - {path: model:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
       - {path: model:parityReceipt, minCount: 1, nodeKind: IRI, class: model:Receipt, resolves: receipt}

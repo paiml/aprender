@@ -146,8 +146,6 @@ pub enum GateDetail {
 /// not, and it is `#[non_exhaustive]` from birth so the *next* post-0.3.1 gate does
 /// not have to repeat this exercise.
 #[derive(Debug, Clone, Serialize)]
-// One value per `pv lint` run, built once and serialised: the Shapes variant's size is not a hot-path cost.
-#[allow(clippy::large_enum_variant)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub enum GateExtra {
@@ -270,34 +268,7 @@ pub enum GateExtra {
         /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
         #[serde(skip_serializing_if = "Option::is_none")]
         release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,
-        /// ONT-4c (v4.14): the README claim commands a merge-path workflow runs — the MEASURED set F-33 compares.
-        readme: MeasuredSet,
-        /// ONT-4c (v4.14): the same for `CLAUDE.md` (`extract:llm-context`).
-        claude_md: MeasuredSet,
-        /// ONT-4c (v4.14): whether the measured-set ratchets (F-33 and F-34) were checked this run.
-        ratchets: Ratchets,
     },
-}
-
-/// ONT-4c: one measured claim set, sorted.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub struct MeasuredSet {
-    pub verified_commands: Vec<String>,
-}
-
-/// ONT-4c: `measured_sets` is `checked` only when F-34 ran against a comparand (the CLI resolves it from git);
-/// outside a work tree it is `not-checked`, which a probe must read as RED, never as a pass.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Ratchets {
-    pub measured_sets: String,
-}
-
-impl Default for Ratchets {
-    fn default() -> Self {
-        Self {
-            measured_sets: "not-checked".into(),
-        }
-    }
 }
 
 /// Overall lint report.

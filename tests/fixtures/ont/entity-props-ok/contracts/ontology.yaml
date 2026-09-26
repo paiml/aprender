@@ -12,13 +12,10 @@ concepts:
   Contract: {doc: a pv contract file}
 entity_types:
   - {name: study, extractor: pv_contract, implemented: true}
-entity_type_target_class:
-  study: ~
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
 readers:
   concepts: ontology/sigma.rs
   entity_types: lint/sigma_gate.rs
-  entity_type_target_class: ontology/shapes.rs
   extractors: ontology/sigma.rs
   metadata: schema/types.rs (the contract schema, not Σ)

@@ -161,6 +161,3 @@ readers:
   entity_types: lint/sigma_gate.rs
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs
-
-entity_type_target_class:
-  pv-contract: ont:Contract

@@ -2,107 +2,6 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ont: <https://ont.paiml.dev/v1alpha1/> .
 
-<https://ont.paiml.dev/v1alpha1/shape/claude-md> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/llm/LlmContext> ;
-    sh:closed true ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/section> ;
-        sh:minCount 0 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/purposeSection> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/rulesSection> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/commandsSection> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/layoutSection> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/referencedPath> ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/command> ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/declaredTool> ;
-        sh:in ( "pmat" "pv" "forjar" "bashrs" "cargo" "gh" ) ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/llm/neverRule> ;
-        sh:minCount 1 ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/csv-train> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/Dataset> ;
-    sh:closed true ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/column> ;
-        sh:minCount 3 ;
-        sh:maxCount 3 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/header> ;
-        sh:in ( "feature1,feature2,label" ) ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/rows> ;
-        sh:minCount 1 ;
-        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/dtype> ;
-        sh:in ( "string" "float" "int" ) ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/sha256> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/model-setfit-slice> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/AprModel> ;
-    sh:closed true ;
-    sh:ignoredProperties ( <https://ont.paiml.dev/v1alpha1/model/file> <https://ont.paiml.dev/v1alpha1/model/contract> ) ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/model/format> ;
-        sh:in ( "apr" ) ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/model/aprVersion> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:pattern "^[0-9]+\\.[0-9]+$" ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/model/tensorCount> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/model/sha256> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:in ( "4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e" ) ;
-        sh:pattern "^[0-9a-f]{64}$" ;
-    ] ;
-.
-
 <https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
     sh:property [
@@ -161,7 +60,7 @@
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/ladder-measured> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/LadderRung> ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/Model> ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/model/sha256> ;
         sh:minCount 1 ;
@@ -316,37 +215,6 @@
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/comparatorSha> ;
         sh:minCount 1 ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/readme-root> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/readme/Readme> ;
-    sh:closed true ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/readme/schemaVersion> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:pattern "^[0-9]+\\.[0-9]+$" ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/readme/kind> ;
-        sh:in ( "library" "cli" "service" "spec" ) ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/readme/entrypoint> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/readme/section> ;
-        sh:minCount 3 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/readme/contractCount> ;
-        sh:maxCount 1 ;
     ] ;
 .
 

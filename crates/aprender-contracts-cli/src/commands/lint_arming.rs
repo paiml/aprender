@@ -14,7 +14,6 @@
 //! A committed `lint-baseline.json` that does not parse is an error on both paths: the committed value
 //! exists, it just cannot be read, and skipping it would disarm the check for exactly that commit.
 
-use std::collections::BTreeSet;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,7 +21,6 @@ use std::process::Command;
 use provable_contracts::ontology::arming::{
     check_monotone, check_shapes_monotone, ArmedGates, ArmedShapes,
 };
-use provable_contracts::ontology::measured_sets;
 
 const BASELINE: &str = "lint-baseline.json";
 const NO_COMPARAND: &str = "NOT CHECKED (no comparand)";
@@ -43,7 +41,7 @@ pub fn resolve(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Arming
     let declared = ArmedGates::from_baseline(baseline.as_deref())?;
     let declared_shapes = ArmedShapes::from_baseline(baseline.as_deref())?;
     let (monotone, shapes_monotone) = match comparand(contract_dir, explicit_ref)? {
-        Comparand::Absent(_, why) => (
+        Comparand::Absent(why) => (
             format!("{NO_COMPARAND} — {why}"),
             format!("{NO_COMPARAND} — {why}"),
         ),
@@ -129,62 +127,6 @@ pub fn declared(contract_dir: &Path) -> Result<ArmedGates, Box<dyn Error>> {
     )?)
 }
 
-/// ONT-4c (v4.14) F-34: the measured-set withdrawal ratchet's answer for one run.
-pub struct MeasuredRatchet {
-    /// `checked` when F-34 was computed against a comparand; `not-checked` outside a git work tree.
-    pub status: &'static str,
-    /// One RED message per violation (a drop with no `withdrawn[]` entry, an entry with no drop, no comparand
-    /// ref in a work tree, a set that cannot be read).
-    pub violations: Vec<String>,
-}
-
-/// F-34 against the comparand `resolve` uses: `withdrawn(HEAD) \ withdrawn(comparand) == set(comparand) \
-/// set(live)` for each key of [`measured_sets::KEYS`], `live` in the same order. The three no-comparand cases
-/// are NOT the arming monotone's single `NOT CHECKED`: outside a work tree there is nothing to ask
-/// (`not-checked`, which a probe reads as not green); a work tree whose comparand ref does not resolve is RED —
-/// on a CI checkout that is a fetch misconfiguration, and answering "not checked" there would disarm the
-/// ratchet on exactly the runs that gate; a corpus untracked at the comparand has every set ∅ there.
-pub fn measured_ratchet(
-    contract_dir: &Path,
-    explicit_ref: Option<&str>,
-    live: [&BTreeSet<String>; 2],
-) -> Result<MeasuredRatchet, Box<dyn Error>> {
-    let comparand_text = match comparand(contract_dir, explicit_ref)? {
-        Comparand::Absent(Missing::WorkTree, _) => {
-            return Ok(MeasuredRatchet {
-                status: "not-checked",
-                violations: Vec::new(),
-            })
-        }
-        Comparand::Absent(Missing::Ref, why) => {
-            return Ok(MeasuredRatchet {
-                status: "checked",
-                violations: vec![format!(
-                    "F-34: no comparand in a git work tree ({why}) — fetch origin/main; {}",
-                    measured_sets::REMEDY
-                )],
-            })
-        }
-        Comparand::Absent(Missing::Untracked, _) => None,
-        Comparand::At { text, .. } => text,
-    };
-    let head_text = read_baseline(contract_dir)?;
-    let mut violations = Vec::new();
-    for (key, live) in measured_sets::KEYS.iter().zip(live) {
-        let head = measured_sets::read(head_text.as_deref(), key);
-        let cmp = measured_sets::read(comparand_text.as_deref(), key);
-        match (head, cmp) {
-            (Ok(h), Ok(c)) => violations.extend(measured_sets::withdrawal(key, &h, &c, live)),
-            (Err(e), _) => violations.push(format!("F-34: {e}")),
-            (_, Err(e)) => violations.push(format!("F-34: comparand {e}")),
-        }
-    }
-    Ok(MeasuredRatchet {
-        status: "checked",
-        violations,
-    })
-}
-
 /// `<contract_dir>/lint-baseline.json`, or `None` when the corpus has none (a single-file corpus never does).
 fn read_baseline(contract_dir: &Path) -> Result<Option<String>, Box<dyn Error>> {
     if !contract_dir.is_dir() {
@@ -198,21 +140,9 @@ fn read_baseline(contract_dir: &Path) -> Result<Option<String>, Box<dyn Error>> 
     }
 }
 
-/// Why the default path has no comparand. ONT-4c (v4.14) splits the three: the measured-set ratchet (F-34)
-/// answers each differently, where the arming monotone prints `NOT CHECKED` for all of them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Missing {
-    /// The corpus is not in a git work tree: nothing to ask.
-    WorkTree,
-    /// A work tree with neither merge-base(HEAD, origin/main) nor origin/main.
-    Ref,
-    /// A comparand commit at which the corpus is not tracked: every committed set there is ∅.
-    Untracked,
-}
-
 enum Comparand {
-    /// Default path only: nothing committed to compare against, which case, and why.
-    Absent(Missing, String),
+    /// Default path only: nothing committed to compare against, and why.
+    Absent(String),
     /// The committed baseline text at `label` (`None`: the corpus is tracked there without a baseline,
     /// which arms the default set).
     At {
@@ -234,7 +164,7 @@ fn comparand(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Comparan
         );
         return match explicit_ref {
             Some(r) => Err(format!("--armed-baseline-ref {r}: {why}").into()),
-            None => Ok(Comparand::Absent(Missing::WorkTree, why)),
+            None => Ok(Comparand::Absent(why)),
         };
     };
     let (commit, label) = match explicit_ref {
@@ -254,7 +184,6 @@ fn comparand(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Comparan
             Some(found) => found,
             None => {
                 return Ok(Comparand::Absent(
-                    Missing::Ref,
                     "neither merge-base(HEAD, origin/main) nor origin/main resolves".into(),
                 ))
             }
@@ -264,7 +193,7 @@ fn comparand(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Comparan
         let why = format!("{rel} is not tracked at {label}");
         return match explicit_ref {
             Some(r) => Err(format!("--armed-baseline-ref {r}: {why}").into()),
-            None => Ok(Comparand::Absent(Missing::Untracked, why)),
+            None => Ok(Comparand::Absent(why)),
         };
     }
     let path = if rel.is_empty() {
