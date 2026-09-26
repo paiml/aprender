@@ -8,7 +8,5 @@
 //!
 //! FALSIFICATION: If measurement is unreliable, optimization is impossible.
 
-use std::process::Command;
-
 include!("includes/falsification_measurement.rs");
 include!("includes/falsification_measurement_scoring.rs");

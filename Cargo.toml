@@ -834,6 +834,21 @@ path = "src/lib.rs"
 debug = "line-tables-only"
 
 # ----------------------------------------------------------------------------
+# x86-main SLOW tests: sha2 at opt-level 0 hashes ~11 MB/s
+# ----------------------------------------------------------------------------
+# `apr test llm --band` provenance hashes `current_exe()` (PP-25), and in a test
+# that is the whole apr-cli lib test binary -- 472 MB. Every test_llm_band test
+# that builds provenance paid a full debug-mode SHA-256 of it: x86-main reported
+# 18 of them SLOW, one past 180 s. Optimizing only sha2 keeps the hash REAL (the
+# test still proves the running binary is what gets hashed) and every other crate
+# debuggable. Interleaved A/B on lambda, 3 rounds (aprender-49, 2026-09-26):
+# a_blank_join_key 37.2-39.8s -> 0.93-0.95s, cuda_without_the_server_feature
+# 75.0-82.0s -> 1.80-2.20s, provenance_hashes_the_running_binary 37.9-42.0s ->
+# 0.89-1.00s; the whole module, 65 tests, 3.6s wall.
+[profile.dev.package.sha2]
+opt-level = 3
+
+# ----------------------------------------------------------------------------
 # proptest debug-assertion workaround (Toyota Way: root-cause flaky-test fix)
 # ----------------------------------------------------------------------------
 # proptest 1.11.0 (latest published) has an OVER-STRICT, buggy `debug_assert!`
