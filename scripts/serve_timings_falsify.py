@@ -7,7 +7,8 @@ every response against contracts/apr-serve-timings-v1.yaml:
 
   F1  the response (or the SSE terminal chunk) carries a non-null `timings`
   F2  timings.prompt_n / predicted_n == usage.prompt_tokens / completion_tokens
-  F3  prompt_ms > 0, predicted_ms > 0, prompt_ms + predicted_ms <= wall_ms + 1
+  F3  prompt_ms > 0, predicted_ms > 0 (unless predicted_n == 0),
+      prompt_ms + predicted_ms <= wall_ms + 1
   F5  the server's `[request] {json}` stderr line for that request id carries
       the same prefill_ms / decode_ms / prompt_n / predicted_n
   F6  the --timings-log JSONL line for that request id carries the same values,
@@ -171,7 +172,8 @@ def main():
         f1 = t is not None
         f2 = f1 and u is not None and (t["prompt_n"], t["predicted_n"]) == (
             u["prompt_tokens"], u["completion_tokens"])
-        f3 = f1 and t["prompt_ms"] > 0 and t["predicted_ms"] > 0 and (
+        f3 = f1 and t["prompt_ms"] > 0 and (
+            t["predicted_ms"] > 0 or t["predicted_n"] == 0) and (
             t["prompt_ms"] + t["predicted_ms"] <= wall + 1)
         f5 = same(logged.get(rid), t)
         frec = filed.get(rid)
