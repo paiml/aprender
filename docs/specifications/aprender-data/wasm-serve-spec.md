@@ -770,19 +770,19 @@ declare module 'alimentar-wasm' {
 
 ```bash
 # Serve content locally
-alimentar serve ./data --port 8080
+aprender-data serve ./data --port 8080
 
 # Serve course content
-alimentar serve ./courses/rust-fundamentals --type course
+aprender-data serve ./courses/rust-fundamentals --type course
 
 # Generate sharing code
-alimentar share ./data/train.parquet
+aprender-data share ./data/train.parquet
 
 # Start P2P sharing server
-alimentar serve --p2p --signaling wss://signal.example.com
+aprender-data serve --p2p --signaling wss://signal.example.com
 
 # Convert course for WASM serving
-alimentar convert-course ./course-dir --output ./serve/course.bin
+aprender-data convert-course ./course-dir --output ./serve/course.bin
 ```
 
 ## Quality Standards

@@ -136,7 +136,7 @@ fn test_ALIM_REPL_006_repl_exports_history() {
         .assert()
         .success()
         .stdout(predicate::str::contains("#!/usr/bin/env bash"))
-        .stdout(predicate::str::contains("alimentar session export"));
+        .stdout(predicate::str::contains("aprender-data session export"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

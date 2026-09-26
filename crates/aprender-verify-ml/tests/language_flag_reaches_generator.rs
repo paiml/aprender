@@ -1,4 +1,4 @@
-//! `verificar generate --language` must actually select the grammar.
+//! `aprender-verify generate --language` must actually select the grammar.
 //!
 //! The binary maps an unrecognised `--language` onto `Language::Python` with
 //! only a warning (see `parse_language` in `src/bin/verificar.rs`), so a
@@ -10,7 +10,7 @@
 
 use std::process::Command;
 
-/// Run `verificar generate` for `language` with a fixed seed and depth.
+/// Run `aprender-verify generate` for `language` with a fixed seed and depth.
 fn generate(language: &str) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_aprender-verify"))
         .args([
@@ -29,7 +29,7 @@ fn generate(language: &str) -> String {
 
     assert!(
         out.status.success(),
-        "verificar generate --language {language} exited nonzero: {}",
+        "aprender-verify generate --language {language} exited nonzero: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).expect("utf-8 stdout")

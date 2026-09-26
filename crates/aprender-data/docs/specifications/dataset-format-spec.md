@@ -706,25 +706,25 @@ Watermarks survive common piracy attempts:
 
 ```bash
 # Check if dataset appears watermarked (no key needed)
-alimentar piracy detect suspected.ald
+aprender-data piracy detect suspected.ald
 # Output: LIKELY WATERMARKED (confidence: 94.2%)
 #         Suspicious columns: price, quantity, score
 
 # Analyze entropy distribution
-alimentar piracy entropy data.ald --output report.json
+aprender-data piracy entropy data.ald --output report.json
 
 # Extract buyer identity (requires seller key)
-alimentar piracy extract leaked.ald --seller-key ~/.alimentar/seller.key
+aprender-data piracy extract leaked.ald --seller-key ~/.alimentar/seller.key
 # Output: Buyer: hash=a3f2...c891 (confidence: 97.1%)
 
 # Generate legal evidence package
-alimentar piracy prove leaked.ald \
+aprender-data piracy prove leaked.ald \
     --buyer-hash a3f2...c891 \
     --seller-key ~/.alimentar/seller.key \
     --output evidence.json
 
 # Batch scan directory for stolen datasets
-alimentar piracy scan ./suspects/ --seller-key ~/.alimentar/seller.key
+aprender-data piracy scan ./suspects/ --seller-key ~/.alimentar/seller.key
 ```
 
 #### 9.3.6 Evidence Generation
@@ -975,32 +975,32 @@ save_trueno(
 - **Distribution:** Compression (smaller download)
 - **Processing:** trueno-native (faster iteration)
 
-Conversion: `alimentar convert dataset.ald --trueno-native` decompresses once for deployment.
+Conversion: `aprender-data convert dataset.ald --trueno-native` decompresses once for deployment.
 
 ## 11. CLI Interface
 
 ```bash
 # Dataset operations
-alimentar convert data.csv data.ald
-alimentar convert data.ald data.parquet
-alimentar info data.ald
-alimentar head data.ald --rows 10
-alimentar schema data.ald
+aprender-data convert data.csv data.ald
+aprender-data convert data.ald data.parquet
+aprender-data info data.ald
+aprender-data head data.ald --rows 10
+aprender-data schema data.ald
 
 # Format options
-alimentar convert data.csv data.ald --compression zstd-l3
-alimentar convert data.csv data.ald --trueno-native
+aprender-data convert data.csv data.ald --compression zstd-l3
+aprender-data convert data.csv data.ald --trueno-native
 
 # Security
-alimentar keygen -o ~/.alimentar/key.enc
-alimentar sign data.ald --key ~/.alimentar/key.enc
-alimentar verify data.ald --trusted-keys ./publishers/
-alimentar encrypt data.ald --password
-alimentar encrypt data.ald --recipient alice.pub
+aprender-data keygen -o ~/.alimentar/key.enc
+aprender-data sign data.ald --key ~/.alimentar/key.enc
+aprender-data verify data.ald --trusted-keys ./publishers/
+aprender-data encrypt data.ald --password
+aprender-data encrypt data.ald --recipient alice.pub
 
 # Commercial
-alimentar license data.ald --licensee "Acme Corp" --expires 2026-01-01
-alimentar watermark data.ald --buyer "buyer123"
+aprender-data license data.ald --licensee "Acme Corp" --expires 2026-01-01
+aprender-data watermark data.ald --buyer "buyer123"
 ```
 
 ## 12. Bibliography

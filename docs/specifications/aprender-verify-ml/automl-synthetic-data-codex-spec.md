@@ -260,7 +260,7 @@ pub enum DefectCategory {
 │                                                                         │
 │  Stage 1: GENERATION                                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  verificar generate --strategy coverage --count 100000           │   │
+│  │  aprender-verify generate --strategy coverage --count 100000     │   │
 │  │      ↓                                                           │   │
 │  │  Raw Programs: (python_code, generation_metadata)                │   │
 │  │  Output: data/raw/*.py (100K files)                             │   │
@@ -287,7 +287,7 @@ pub enum DefectCategory {
 │                                 ▼                                       │
 │  Stage 4: VERIFICATION                                                  │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  verificar verify --input data/transpiled/ --oracle io+ast      │   │
+│  │  aprender-verify verify --input data/transpiled/ --oracle io+ast│   │
 │  │      ↓                                                           │   │
 │  │  Labeled Tuples: (python, rust, verdict, defect_category)        │   │
 │  │  Output: data/verified/*.parquet                                 │   │
@@ -707,7 +707,7 @@ impl EnsembleDistiller {
 
 ```bash
 # Single teacher distillation
-verificar distill \
+aprender-verify distill \
   --input teacher_logits/ \
   --output distilled_model/ \
   --temperature 3.0 \
@@ -715,7 +715,7 @@ verificar distill \
   --epochs 10
 
 # Multi-teacher ensemble
-verificar distill \
+aprender-verify distill \
   --input teacher_logits/ \
   --output distilled_model/ \
   --num-teachers 3 \

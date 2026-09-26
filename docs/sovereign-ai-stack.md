@@ -147,7 +147,7 @@ The stack supports fully sovereign deployments:
 
 ```bash
 # All components work fully offline
-alimentar registry init ./local-datasets
+aprender-data registry init ./local-datasets
 trueno-db create ./local-db
 aprender train --data ./local-datasets/train.parquet
 ```

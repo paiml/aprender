@@ -95,7 +95,7 @@ let data = backend.get("datasets/train.parquet").await?;
 ```bash
 # S3 via CLI
 AWS_ACCESS_KEY_ID=xxx AWS_SECRET_ACCESS_KEY=yyy \
-    alimentar info s3://my-bucket/data.parquet
+    aprender-data info s3://my-bucket/data.parquet
 ```
 
 ## Example 100: Golden Run (All Features)

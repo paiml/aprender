@@ -65,8 +65,8 @@ fn main() {
         println!("║      --balance-classes --normalize                               ║");
         println!("║                                                                  ║");
         println!("║  Recipe 3: Manual inspection                                     ║");
-        println!("║    $ alimentar head input.parquet --rows 100                     ║");
-        println!("║    $ alimentar quality score input.parquet --verbose             ║");
+        println!("║    $ aprender-data head input.parquet --rows 100                 ║");
+        println!("║    $ aprender-data quality score input.parquet --verbose         ║");
         println!("╚══════════════════════════════════════════════════════════════════╝");
 
         std::process::exit(1);
@@ -243,7 +243,7 @@ fn print_upload_command(parquet_path: &str, repo_id: &str) {
     println!("  export HF_TOKEN=\"hf_xxxxx\"");
     println!();
     println!("  # Upload with quality-validated README");
-    println!("  alimentar hub push {parquet_path} {repo_id} \\");
+    println!("  aprender-data hub push {parquet_path} {repo_id} \\");
     println!("    --readme README.md \\");
     println!("    --message \"Quality-validated upload\"");
 }
@@ -273,17 +273,17 @@ fn print_quality_recipes() {
     println!("│                                                                  │");
     println!("│  RECIPE 3: Full Pipeline                                         │");
     println!("│  ────────────────────────                                        │");
-    println!("│  $ alimentar quality score input.parquet                         │");
+    println!("│  $ aprender-data quality score input.parquet                     │");
     println!("│  $ aprender clean input.parquet -o /tmp/cleaned.parquet          │");
     println!("│  $ entrenar augment /tmp/cleaned.parquet -o output.parquet       │");
-    println!("│  $ alimentar quality score output.parquet                        │");
-    println!("│  $ alimentar hub push output.parquet org/dataset                 │");
+    println!("│  $ aprender-data quality score output.parquet                    │");
+    println!("│  $ aprender-data hub push output.parquet org/dataset             │");
     println!("│                                                                  │");
     println!("│  RECIPE 4: Quality Profile Validation                            │");
     println!("│  ───────────────────────────────────                             │");
-    println!("│  $ alimentar quality score data.parquet \\                       │");
+    println!("│  $ aprender-data quality score data.parquet \\                   │");
     println!("│      --profile ml-training                                       │");
-    println!("│  $ alimentar quality score data.parquet \\                       │");
+    println!("│  $ aprender-data quality score data.parquet \\                   │");
     println!("│      --profile doctest-corpus                                    │");
     println!("│                                                                  │");
     println!("└──────────────────────────────────────────────────────────────────┘");

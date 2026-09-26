@@ -147,7 +147,7 @@ fn print_quality_warning() {
     eprintln!("Publishing low-quality data harms the ML community.");
     eprintln!();
     eprintln!("Before publishing, verify quality with:");
-    eprintln!("  alimentar quality score <file.parquet>");
+    eprintln!("  aprender-data quality score <file.parquet>");
     eprintln!();
     eprintln!("Minimum recommended: Grade B (85%)");
     eprintln!();

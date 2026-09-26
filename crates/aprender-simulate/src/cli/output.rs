@@ -16,7 +16,7 @@ pub fn print_help() {
         r"simular - Unified Simulation Engine for the Sovereign AI Stack
 
 USAGE:
-    simular <COMMAND> [OPTIONS]
+    aprender-simulate <COMMAND> [OPTIONS]
 
 COMMANDS:
     run <experiment.yaml>       Run an experiment
@@ -36,10 +36,10 @@ COMMANDS:
     version                     Show version information
 
 EXAMPLES:
-    simular run experiments/harmonic_oscillator.yaml
-    simular run experiments/harmonic_oscillator.yaml --seed 12345
-    simular verify experiments/harmonic_oscillator.yaml --runs 5
-    simular emc-check experiments/littles_law.yaml
+    aprender-simulate run experiments/harmonic_oscillator.yaml
+    aprender-simulate run experiments/harmonic_oscillator.yaml --seed 12345
+    aprender-simulate verify experiments/harmonic_oscillator.yaml --runs 5
+    aprender-simulate emc-check experiments/littles_law.yaml
 
 EDD COMPLIANCE:
     All experiments are validated against the four pillars of EDD:

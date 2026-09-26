@@ -22,7 +22,7 @@ Before uploading ANY dataset to HuggingFace, verify:
 
 ```bash
 # Check quality score - MINIMUM Grade B (85%) required
-alimentar quality score my_dataset.parquet
+aprender-data quality score my_dataset.parquet
 
 # Example output:
 # Quality Score: 92.3% (Grade A)
@@ -45,9 +45,9 @@ alimentar quality score my_dataset.parquet
 
 ```bash
 # Apply domain-specific quality rules
-alimentar quality score --profile ml-training data.parquet
-alimentar quality score --profile doctest-corpus doctests.parquet
-alimentar quality score --profile code-translation code.parquet
+aprender-data quality score --profile ml-training data.parquet
+aprender-data quality score --profile doctest-corpus doctests.parquet
+aprender-data quality score --profile code-translation code.parquet
 ```
 
 ## Improving Data Quality
@@ -68,7 +68,7 @@ aprender clean input.parquet --output cleaned.parquet \
     --normalize-text
 
 # Verify improvement
-alimentar quality score cleaned.parquet
+aprender-data quality score cleaned.parquet
 ```
 
 ### Recipe 2: Augment with entrenar
@@ -86,7 +86,7 @@ entrenar augment input.parquet --output augmented.parquet \
     --synthetic-samples 1000
 
 # Verify quality maintained
-alimentar quality score augmented.parquet
+aprender-data quality score augmented.parquet
 ```
 
 ### Recipe 3: Full Pipeline
@@ -102,7 +102,7 @@ OUTPUT="$2"
 REPO="$3"
 
 echo "=== Step 1: Initial Quality Check ==="
-INITIAL=$(alimentar quality score "$INPUT" --json | jq '.score')
+INITIAL=$(aprender-data quality score "$INPUT" --json | jq '.score')
 echo "Initial quality: $INITIAL%"
 
 if (( $(echo "$INITIAL < 70" | bc -l) )); then
@@ -112,14 +112,14 @@ if (( $(echo "$INITIAL < 70" | bc -l) )); then
     aprender clean "$INPUT" --output /tmp/cleaned.parquet
 
     echo "=== Step 3: Validate cleaning ==="
-    CLEANED=$(alimentar quality score /tmp/cleaned.parquet --json | jq '.score')
+    CLEANED=$(aprender-data quality score /tmp/cleaned.parquet --json | jq '.score')
     echo "After cleaning: $CLEANED%"
 
     INPUT="/tmp/cleaned.parquet"
 fi
 
 echo "=== Step 4: Final Quality Gate ==="
-FINAL=$(alimentar quality score "$INPUT" --json | jq '.score')
+FINAL=$(aprender-data quality score "$INPUT" --json | jq '.score')
 
 if (( $(echo "$FINAL < 85" | bc -l) )); then
     echo "FATAL: Quality score $FINAL% below 85% threshold"
@@ -128,7 +128,7 @@ if (( $(echo "$FINAL < 85" | bc -l) )); then
 fi
 
 echo "=== Step 5: Publish to HuggingFace ==="
-alimentar hub push "$INPUT" "$REPO" \
+aprender-data hub push "$INPUT" "$REPO" \
     --readme /tmp/readme.md \
     --message "Quality-validated upload (score: $FINAL%)"
 
@@ -144,14 +144,14 @@ echo "SUCCESS: Published with quality score $FINAL%"
 export HF_TOKEN="hf_xxxxx"
 
 # Upload parquet file
-alimentar hub push data.parquet paiml/my-dataset
+aprender-data hub push data.parquet paiml/my-dataset
 
 # Upload with custom path
-alimentar hub push train.parquet paiml/my-dataset \
+aprender-data hub push train.parquet paiml/my-dataset \
     --path-in-repo data/train.parquet
 
 # Upload with README
-alimentar hub push data.parquet paiml/my-dataset \
+aprender-data hub push data.parquet paiml/my-dataset \
     --readme README.md \
     --message "Initial upload with doctest corpus"
 ```
@@ -160,8 +160,8 @@ alimentar hub push data.parquet paiml/my-dataset \
 
 ```bash
 # Recommended: Check quality before publishing
-alimentar quality score data.parquet && \
-alimentar hub push data.parquet paiml/my-dataset
+aprender-data quality score data.parquet && \
+aprender-data hub push data.parquet paiml/my-dataset
 ```
 
 ## API Usage

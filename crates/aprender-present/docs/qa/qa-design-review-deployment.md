@@ -20,7 +20,7 @@ To surpass existing tools like Streamlit or Gradio, we must leverage WASM's uniq
 | **Cost** | $/hour (EC2/Heroku) | $0 (Static Hosting) |
 | **Latency** | Network Roundtrip | < 16ms (Local Inference) |
 | **Privacy** | Data sent to server | Data stays on device |
-| **Deployment** | `pip install` + `docker` | `presentar build` -> `index.html` |
+| **Deployment** | `pip install` + `docker` | `aprender-present build` -> `index.html` |
 | **Configuration**| Python Scripts | Declarative YAML |
 
 ## 3. Implementation Gaps & Guidelines

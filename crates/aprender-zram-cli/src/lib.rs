@@ -4,7 +4,7 @@
 //! other than the `trueno-zram` binary can reach it. A command enum declared in
 //! a binary target is importable by nothing: the standalone binary was the only
 //! way to run any of this, which is exactly what the APR-MONO consolidation is
-//! meant to end. `apr zram <cmd>` and `trueno-zram <cmd>` now call the SAME
+//! meant to end. `apr zram <cmd>` and `aprender-zram <cmd>` now call the SAME
 //! [`dispatch`], so the two surfaces cannot drift.
 
 #![deny(missing_docs)]
@@ -19,7 +19,7 @@ use std::process::ExitCode;
 
 /// trueno-zram: SIMD-accelerated zram management
 #[derive(Parser)]
-#[command(name = "trueno-zram")]
+#[command(name = "aprender-zram")]
 #[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
 pub struct Cli {
     /// Output format

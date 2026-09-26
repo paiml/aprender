@@ -14,7 +14,7 @@ pub struct BenchmarkArgs {
     ///
     /// Short form is `-n`, not `-p`: `pattern` below explicitly claims `-p`,
     /// and a derived `short` here claimed it too. clap catches that in a
-    /// `debug_assert`, so EVERY `trueno-zram benchmark` invocation -- including
+    /// `debug_assert`, so EVERY `aprender-zram benchmark` invocation -- including
     /// `--help` -- panicked before reaching this code. Nothing ever ran the
     /// command, so nothing noticed.
     #[arg(short = 'n', long, default_value = "10000")]
