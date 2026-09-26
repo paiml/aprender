@@ -65,6 +65,7 @@ case "${STUB_MODE:-rows}" in
   empty) printf '[]\n'; exit 0 ;;
   docs)  printf '{"documents":[{"path":"a.rs"},{"path":"b.rs"}]}\n'; exit 0 ;;
   slow)  sleep 5 ;;  # then answers with rows, too late
+  deaf)  trap '' TERM; exec sleep 30 ;;  # ignores SIGTERM: only -k's SIGKILL ends it
 esac
 [ -z "${STUB_CALLS:-}" ] || printf 'call\n' >> "$STUB_CALLS"
 shift  # drop the `query` subcommand
@@ -212,6 +213,18 @@ if [ "$took" -lt 12 ]; then
   ok "3 slow queries were each cut at the timeout (${took}s, not 15s)"
 else
   bad "3 slow queries were each cut at the timeout" "< 12s" "${took}s"
+fi
+
+# A query that ignores SIGTERM must still end: `timeout -k 5` SIGKILLs it (exit
+# 137), and that is a timeout too. Without -k, `timeout` waits on it forever.
+start=$SECONDS
+got=$(PMAT_QUERY_TIMEOUT_S=1 STUB_MODE=deaf pmat_rows "$PMAT_FILTER_GAP" --coverage-gaps --path x.rs)
+took=$((SECONDS - start))
+want "a SIGTERM-deaf query is reported as timed out" "$PMAT_TIMEOUT_MARK 1s" "$got"
+if [ "$took" -lt 15 ]; then
+  ok "a SIGTERM-deaf query was SIGKILLed after the grace (${took}s, not 30s)"
+else
+  bad "a SIGTERM-deaf query was SIGKILLed after the grace" "< 15s" "${took}s"
 fi
 
 # Budget: the clock spans every beat. A spent budget runs NO query and says so.
