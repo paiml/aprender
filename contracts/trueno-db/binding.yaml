@@ -7,10 +7,10 @@ bindings:
 - contract: configuration-v1.yaml
   equation: query
   function: query
-  module_path: trueno_db::src::wasm::query
+  module_path: trueno_db::wasm
   status: implemented
 - contract: configuration-v1.yaml
   equation: insert
   function: get_or_insert
-  module_path: trueno_db::src::gpu::jit::get_or_insert
+  module_path: trueno_db::gpu::jit
   status: implemented

@@ -16,7 +16,7 @@ bindings:
   notes: APR v1.2.0 format with adapter + training state
 - contract: apr-checkpoint-v1.yaml
   equation: load_checkpoint
-  module_path: entrenar::finetune::classify_trainer
+  module_path: entrenar::train::transformer_trainer::wgpu_trainer
   function: load_checkpoint
   signature: 'fn load_checkpoint(&mut self, path: &Path) -> Result<()>'
   status: implemented
@@ -31,7 +31,7 @@ bindings:
 - contract: apr-checkpoint-v1.yaml
   equation: apr_reader
   module_path: aprender::serialization::apr
-  function: AprReader::read
+  function: AprReader::open
   signature: 'fn read(path: &Path) -> Result<Vec<(String, Array1<f32>)>>'
   status: implemented
   notes: Cross-crate; aprender provides APR format I/O
@@ -52,7 +52,7 @@ bindings:
 - contract: cuda-classify-training-v1.yaml
   equation: gpu_forward
   module_path: entrenar::transformer::cuda_block
-  function: CudaTransformerBlock::gpu_forward
+  function: CudaTransformerBlock::forward
   signature: 'fn gpu_forward(&self, hidden: &CudaBuffer) -> CudaBuffer'
   status: implemented
   notes: GPU forward pass; parity within 1e-3 of CPU
@@ -65,7 +65,7 @@ bindings:
   notes: function not found in source
 - contract: cuda-classify-training-v1.yaml
   equation: device_dispatch
-  module_path: entrenar::autograd::cuda_training
+  module_path: entrenar::finetune::device
   function: ComputeDevice::auto_detect
   signature: fn auto_detect() -> ComputeDevice
   status: implemented
@@ -75,15 +75,15 @@ bindings:
   module_path: entrenar::finetune::data_parallel
   function: DataParallelCoordinator::allreduce
   signature: 'fn allreduce(&self, grads: &mut [Tensor]) -> Result<()>'
-  status: implemented
-  notes: Phase 1 complete (multi-GPU); Phase 2 in progress (multi-node)
+  status: not_implemented
+  notes: "#4379: no `DataParallelCoordinator` in `entrenar`"
 - contract: distributed-training-v1.yaml
   equation: sharding
   module_path: entrenar::finetune::data_parallel
   function: DataParallelCoordinator::shard_data
   signature: 'fn shard_data(&self, dataset: &[Sample]) -> Vec<Vec<Sample>>'
-  status: implemented
-  notes: function not found in source
+  status: not_implemented
+  notes: "#4379: no `DataParallelCoordinator` in `entrenar`"
 - contract: distributed-training-v1.yaml
   equation: weighted_loss
   module_path: entrenar::finetune::data_parallel
@@ -96,8 +96,8 @@ bindings:
   module_path: entrenar::transformer::cuda_block
   function: CudaTransformerBlock::swiglu_ffn
   signature: 'fn swiglu_ffn(&self, hidden: &CudaBuffer) -> CudaBuffer'
-  status: implemented
-  notes: function not found in source
+  status: not_implemented
+  notes: "#4379: `CudaTransformerBlock` has no separate SwiGLU FFN method"
 - contract: distributed-training-v1.yaml
   equation: lora_gradient_size
   module_path: entrenar::finetune::data_parallel
@@ -125,54 +125,54 @@ bindings:
   module_path: entrenar::finetune::qlora_config
   function: QLoraConfig::learning_rate
   signature: fn learning_rate(&self) -> f32
-  status: implemented
-  notes: HP design pending; contract specifies constraints
+  status: not_implemented
+  notes: "#4379: no `QLoraConfig` in `entrenar`"
 - contract: qlora-hyperparameters-v1.yaml
   equation: effective_batch_size
   module_path: entrenar::finetune::qlora_config
   function: QLoraConfig::effective_batch_size
   signature: fn effective_batch_size(&self) -> usize
-  status: implemented
-  notes: function not found in source
+  status: not_implemented
+  notes: "#4379: no `QLoraConfig` in `entrenar`"
 - contract: qlora-hyperparameters-v1.yaml
   equation: lora_alpha_ratio
   module_path: entrenar::finetune::qlora_config
   function: QLoraConfig::lora_alpha
   signature: fn lora_alpha(&self) -> f32
-  status: implemented
-  notes: function not found in source
+  status: not_implemented
+  notes: "#4379: no `QLoraConfig` in `entrenar`"
 - contract: qlora-hyperparameters-v1.yaml
   equation: seq_len_from_data
   module_path: entrenar::finetune::qlora_config
   function: QLoraConfig::max_seq_len
   signature: fn max_seq_len(&self) -> usize
-  status: implemented
-  notes: Derived from P99 of training data lengths
+  status: not_implemented
+  notes: "#4379: no `QLoraConfig` in `entrenar`"
 - contract: qlora-hyperparameters-v1.yaml
   equation: warmup_fraction
   module_path: entrenar::finetune::qlora_config
   function: QLoraConfig::warmup_steps
   signature: fn warmup_steps(&self) -> usize
-  status: implemented
-  notes: function not found in source
+  status: not_implemented
+  notes: "#4379: no `QLoraConfig` in `entrenar`"
 - contract: qlora-hyperparameters-v1.yaml
   equation: gradient_clip_bound
   module_path: entrenar::finetune::qlora_config
   function: QLoraConfig::gradient_clip_norm
   signature: fn gradient_clip_norm(&self) -> f32
-  status: implemented
-  notes: function not found in source
+  status: not_implemented
+  notes: "#4379: no `QLoraConfig` in `entrenar`"
 - contract: qlora-hyperparameters-v1.yaml
   equation: epoch_count_imbalanced
   module_path: entrenar::finetune::qlora_config
   function: QLoraConfig::epochs
   signature: fn epochs(&self) -> usize
-  status: implemented
-  notes: 3-10 epochs; more for imbalanced datasets
+  status: not_implemented
+  notes: "#4379: no `QLoraConfig` in `entrenar`"
 - contract: tensor-rc-data-v1.yaml
   equation: tensor_clone
   module_path: entrenar::autograd::tensor
-  function: Tensor::clone
+  function: Tensor
   signature: fn clone(&self) -> Tensor
   status: implemented
   notes: 'KAIZEN-019: Rc bump (O(1)) instead of 16GB deep copies'
@@ -209,17 +209,17 @@ bindings:
   module_path: entrenar::finetune::classify_pipeline
   function: estimate_wgpu_vram
   signature: 'fn estimate_wgpu_vram(model_params: usize) -> usize'
-  status: implemented
-  notes: function not found in source
+  status: not_implemented
+  notes: "#4379: no `estimate_wgpu_vram` in `entrenar`"
 - contract: cma-es-kernel-v1.yaml
   equation: sample
   module_path: entrenar
   function: sample
-  status: implemented
-  notes: Auto-inferred by pv infer
+  status: not_implemented
+  notes: "#4379: no item in `entrenar` implements this equation; the pre-monorepo row bound the bare name `sample`, which matches only unrelated items"
 - contract: sampling-algorithms-v1.yaml
   equation: temperature
-  module_path: entrenar
+  module_path: entrenar::hf_pipeline::trainer::config
   function: temperature
   status: implemented
   notes: Auto-inferred by pv infer
@@ -227,41 +227,41 @@ bindings:
   equation: sigmoid
   module_path: entrenar
   function: sigmoid
-  status: implemented
-  notes: Auto-inferred by pv infer
+  status: not_implemented
+  notes: "#4379: no item in `entrenar` implements this equation; the pre-monorepo row bound the bare name `sigmoid`, which matches only unrelated items"
 - contract: random-forest-v1.yaml
   equation: predict
   module_path: entrenar
   function: predict
-  status: implemented
-  notes: Auto-inferred by pv infer
+  status: not_implemented
+  notes: "#4379: no item in `entrenar` implements this equation; the pre-monorepo row bound the bare name `predict`, which matches only unrelated items"
 - contract: metrics-classification-v1.yaml
   equation: accuracy
-  module_path: entrenar
+  module_path: entrenar::eval::classification::confusion
   function: accuracy
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: greedy
-  module_path: entrenar
+  module_path: entrenar::finetune::instruct_pipeline::generate
   function: greedy
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-classification-v1.yaml
   equation: confusion_matrix
-  module_path: entrenar
+  module_path: entrenar::eval::classification::report
   function: confusion_matrix
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-ranking-v1.yaml
   equation: ndcg_at_k
-  module_path: entrenar
+  module_path: entrenar::eval::generative::retrieval
   function: ndcg_at_k
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: layernorm-kernel-v1.yaml
   equation: statistics
-  module_path: entrenar
+  module_path: entrenar::efficiency::benchmark::collection
   function: statistics
   status: implemented
   notes: Auto-inferred by pv infer
@@ -269,71 +269,71 @@ bindings:
   equation: update
   module_path: entrenar
   function: update
-  status: implemented
-  notes: Auto-inferred by pv infer
+  status: not_implemented
+  notes: "#4379: no item in `entrenar` implements this equation; the pre-monorepo row bound the bare name `update`, which matches only unrelated items"
 - contract: sampling-algorithms-v1.yaml
   equation: top_k
-  module_path: entrenar
+  module_path: entrenar::train::callback::explainability
   function: top_k
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-regression-v1.yaml
   equation: rmse
-  module_path: entrenar
+  module_path: entrenar::quant::error_analysis
   function: rmse
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: int8-symmetric-quant-v1.yaml
   equation: quantize
-  module_path: entrenar
+  module_path: entrenar::quant::gguf_quant::q8_0
   function: quantize
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: model-config-algebra-v1.yaml
   equation: bounds
-  module_path: entrenar
+  module_path: entrenar::monitor::tui::render::charts
   function: bounds
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: gated-delta-net-v1.yaml
   equation: output
-  module_path: entrenar
+  module_path: entrenar::autograd::checkpoint
   function: output
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: q4k-q6k-superblock-v1.yaml
   equation: total_bytes
-  module_path: entrenar
+  module_path: entrenar::autograd::checkpoint
   function: total_bytes
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: attention-kernel-v1.yaml
   equation: attention
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::attention
   function: attention
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: transpose-kernel-v1.yaml
   equation: transpose
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::matmul
   function: transpose
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: matmul-kernel-v1.yaml
   equation: matmul
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::matmul
   function: matmul
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: relu
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::activations
   function: relu
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: gelu
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::activations
   function: gelu
   status: implemented
   notes: Auto-inferred by pv infer

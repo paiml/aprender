@@ -9,100 +9,100 @@ bindings:
 - contract: embedding-algebra-v1.yaml
   equation: embed
   function: insert
-  module_path: trueno_rag::src::multivector::index::insert
+  module_path: aprender_rag::multivector::index
   status: implemented
 - contract: embedding-algebra-v1.yaml
   equation: embed
   function: find_nearest_centroid
-  module_path: trueno_rag::src::multivector::codec::find_nearest_centroid
+  module_path: aprender_rag::multivector::codec
   status: implemented
 - contract: embedding-algebra-v1.yaml
   equation: embed
   function: compress
-  module_path: trueno_rag::src::multivector::codec::compress
+  module_path: aprender_rag::multivector::codec
   status: implemented
 - contract: embedding-algebra-v1.yaml
   equation: embed
   function: train
-  module_path: trueno_rag::src::multivector::codec::train
+  module_path: aprender_rag::multivector::codec
   status: implemented
 - contract: embedding-algebra-v1.yaml
   equation: embed
   function: new
-  module_path: trueno_rag::src::multivector::types::new
+  module_path: aprender_rag::multivector::types
   status: implemented
 - contract: embedding-algebra-v1.yaml
   equation: embed
   function: embedder
-  module_path: trueno_rag::src::retrieve::embedder
+  module_path: aprender_rag::retrieve
   status: implemented
 - contract: embedding-algebra-v1.yaml
   equation: embed
   function: set_embedding
-  module_path: trueno_rag::src::chunk::mod::set_embedding
+  module_path: aprender_rag::chunk
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
-  function: retrieve
-  module_path: trueno_rag::src::retrieve::retrieve
+  function: HybridRetriever::retrieve
+  module_path: aprender_rag::retrieve
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: retrieve_dense
-  module_path: trueno_rag::src::retrieve::retrieve_dense
+  module_path: aprender_rag::retrieve
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: retrieve_sparse
-  module_path: trueno_rag::src::retrieve::retrieve_sparse
+  module_path: aprender_rag::retrieve
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: compute
-  module_path: trueno_rag::src::metrics::compute
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: recall_at_k
-  module_path: trueno_rag::src::metrics::recall_at_k
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: precision_at_k
-  module_path: trueno_rag::src::metrics::precision_at_k
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: pagerank-kernel-v1.yaml
   equation: retrieve
   function: mean_reciprocal_rank
-  module_path: trueno_rag::src::metrics::mean_reciprocal_rank
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: ndcg_at_k
-  module_path: trueno_rag::src::metrics::ndcg_at_k
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: average_precision
-  module_path: trueno_rag::src::metrics::average_precision
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: f1_at_k
-  module_path: trueno_rag::src::metrics::f1_at_k
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: configuration-v1.yaml
   equation: retrieve
   function: hit_rate_at_k
-  module_path: trueno_rag::src::metrics::hit_rate_at_k
+  module_path: aprender_rag::metrics
   status: implemented
 - contract: configuration-v1.yaml
   equation: chunk
   function: chunk_count
-  module_path: trueno_rag::src::sqlite::mod::chunk_count
+  module_path: aprender_rag::sqlite
   status: implemented
 - contract: configuration-v1.yaml
   equation: chunk
   function: get_chunk
-  module_path: trueno_rag::src::sqlite::mod::get_chunk
+  module_path: aprender_rag::sqlite
   status: implemented
