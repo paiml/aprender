@@ -22142,11 +22142,11 @@ roadmap:
   github_issue: 4199
   item_type: task
   title: 'PVL-001 EV-6b: pv discharge check --leanchecker -- non-fresh kernel re-check, bounded'
-  status: in_progress
+  status: completed
   priority: high
-  assigned_to: aprender-dd
+  assigned_to: aprender-5d
   created: 2026-09-24T00:00:00Z
-  updated: 2026-09-24T00:00:00Z
+  updated: 2026-09-26T19:10:00Z
   spec: null
   acceptance_criteria:
   - 'PVL-001 EV-6b probe (amended as EV-7b A-7b.1: the target is wired through ci/explicit-test-commands.d, so the literal can never appear in ci.yml): `cd "$WT" && tracked crates/aprender-contracts-cli/tests/pvl_discharge_leanchecker.rs && present -- ''ci_run_explicit_test_commands\.sh --run ci/explicit-test-commands\.d'' .github/workflows/ci.yml && bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d | present -- ''--test pvl_discharge_leanchecker( |$)'' && merged EV-6b`'
@@ -22155,6 +22155,10 @@ roadmap:
   - '`timeout <T> lake env leanchecker ProvableContracts` (--leanchecker-timeout, default 3600 s; --leanchecker-ulimit-v KiB when set); a timeout rejects; timeout/ulimit/lake start failures (rc 125-127) decline'
   - 'formalization.yaml `scope` states the non-fresh limitation: --fresh replays Mathlib and is the nightly''s (PVL-F7)'
   - 'accept on lambda: `timeout 60m "$PV" discharge check "$LEAN" --leanchecker`'
+  - 'probe amended A-7b.2 (the runner moved from ci.yml to ci/sections.yml with the five fat jobs, so the A-7b.1 ci.yml arm now reads RED on a wired tree): `present -- ''ci_run_explicit_test_commands\.sh --run ci/explicit-test-commands\.d'' ci/sections.yml`; the .cmd is 471-*, renumbered from 470'
+  - 'A-7b.2 arms MEASURED on b1cd8c0b08 (lambda, 2026-09-26): GREEN rc 0; 471-*.cmd removed rc 1; sections.yml runner repointed rc 1; restored rc 0'
+  - 'MEASURED on b1cd8c0b08 (lambda, 2026-09-26): tests/pvl_discharge_leanchecker.rs 6/6 pass (accept, reject, no-lake decline, no-checker decline, --no-lake conflict, non-fresh scope); aprender-contracts --lib discharge 105/105'
+  - 'accept MEASURED on lambda 2026-09-26, pv built at b1cd8c0b08, after `lake build` (6877 jobs, rc 0, 74 s): `timeout 60m pv discharge check crates/aprender-contracts-staging/lean --leanchecker` from the repo root -> rc 0 in 289 s (ROOTS 250 pinned; leanchecker ok, 8 threads, MemoryMax=24G CPUQuota=800%)'
   phases: []
   subtasks: []
   estimated_effort: null
