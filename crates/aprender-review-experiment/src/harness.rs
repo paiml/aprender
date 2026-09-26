@@ -133,8 +133,15 @@ pub fn read_bounded(r: impl Read, cap: u64) -> Result<String, String> {
     limited.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
     // Probe the reader itself, not a cap + 1 limit: Ok means it hit EOF, for
     // every cap, u64::MAX included.
-    if let Some(b) = limited.into_inner().bytes().next() {
-        b.map_err(|e| e.to_string())?;
+    let mut probe = [0u8; 1];
+    let more = loop {
+        match limited.get_mut().read(&mut probe) {
+            Ok(n) => break n > 0,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+    if more {
         return Err(format!("reply body ran past the {cap}-byte cap"));
     }
     String::from_utf8(bytes).map_err(|e| e.to_string())
