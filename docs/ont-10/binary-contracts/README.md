@@ -16,6 +16,8 @@ and re-run `pv lint contracts/ --gate shapes`. Each header records what was meas
 | S10 | binary-alimentar-v1.yaml | alimentar (aprender-data) | 31 | 4 ledger rows name feature-gated commands the default build lacks |
 | S16 (1/2) | binary-apr-qa-v1.yaml | apr-qa (aprender-qa-cli) | 15 | none beyond G0.1 |
 | S16 (2/2) | binary-aprender-train-lora-v1.yaml | aprender-train-lora | 4 | `--version` says "entrenar-lora" |
+| S15 (1/2) | binary-aprender-profile-v1.yaml | aprender-profile | 1 leaf + 46 options; ledger is option rows | `--version` says "renacer" |
+| S15 (2/2) | binary-aprender-zram-generator-v1.yaml | aprender-zram-generator | 0; 3 generator positionals | `--version` says "trueno-zram-generator" |
 
 G0.1 (git sha in `--version`) is a warning on all four and RED on every current build. The S3 half of
 aprender-orchestrate (the 92 HTTP routes) is aprender-1c's.

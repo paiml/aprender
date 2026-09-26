@@ -1,0 +1,113 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-aprender-profile-v1 — ONT-10 slice S15 (1/2): the `aprender-profile` binary as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features, private CARGO_TARGET_DIR):
+# the --help walk gives 1 leaf command (`validate`; `help` excluded) and 46 long options (--help/--version
+# excluded). surface_audit.csv holds 16 rows for this binary: 1 command row (validate), 1 trace-mode row
+# (`-- <COMMAND>`) and 14 option rows. Every option a row names is in --help. `aprender-profile --version`
+# prints "renacer 0.69.3": the pre-monorepo name. The identity shape requires the version string to start with
+# the target name, so it is RED today. G0.1 (git sha in --version) is a warning and RED today.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98), beyond S4's: this binary's surface is
+# mostly OPTIONS, not commands. A ledger row whose feature (after the binary name) starts with `-` joins
+# bin:option (its long form, e.g. `-p <PID>` → --pid, `-s/--source` → --source); a row starting `-- ` is the
+# trace-a-command mode and joins bin:positional "COMMAND". Joined only against bin:command, 15 of the 16 rows
+# would read as ledgerOrphan.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-aprender-profile
+version: "0.1.0"
+scope: >
+  The built `aprender-profile` target of package `aprender-profile` (default features) as the focus node
+  binary/aprender-profile/aprender-profile: its identity, its command set, the long options the ledger names,
+  and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice (aprender-profile). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender-profile/aprender-profile. DRAFT: binary-surface-v1 (the bin: vocabulary) and
+    extract:binary do not exist on this branch yet, so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-profile)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: aprender-profile-identity
+    targetClass: bin:target/aprender-profile/aprender-profile
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-profile"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-profile"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-profile [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: aprender-profile-commands
+    targetClass: bin:target/aprender-profile/aprender-profile
+    properties:
+      - path: bin:command
+        minCount: 1
+        maxCount: 1
+        in:
+          - "validate"
+      - {path: bin:positional, minCount: 1, in: ["COMMAND"]}
+  - id: aprender-profile-ledgered-options
+    targetClass: bin:target/aprender-profile/aprender-profile
+    properties:
+      # All 46 long options, counted exactly. The ledger names 14 of them; the other 32 are tuning knobs of a
+      # ledgered mode (e.g. --dl-epochs under --dl-anomaly), so no bin:unledgeredCommand-style check applies to
+      # options. The ledger join below is what refuses a ledgered option the binary lost.
+      - path: bin:option
+        minCount: 46
+        maxCount: 46
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-profile/aprender-profile) = {validate}; options = O, |O| = 46, where O = the long options of the top-level --help of the default-feature build, --help and --version excluded"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per leaf command; one bin:option literal per long option; bin:positional COMMAND for the trailing `-- <COMMAND>...`"
+    invariants:
+      - "in + minCount 1 + maxCount 1 is set equality on commands: a new or renamed subcommand is a violation naming it"
+      - "|O| = 46 exactly: an added or dropped option is RED until this contract is re-measured"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = aprender-profile ∧ key(r) ∉ C ∪ O ∪ {COMMAND} }, key(r) = the command, the long form of the first option, or COMMAND for a `-- ` row"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is aprender-profile (16 on 2026-09-26)"
+    codomain: "literals on the focus node, one per orphan row"
+    invariants:
+      - "a ledger row for an option or command the built binary does not accept is a violation, never a silent skip"
+      - "`--save-model / --load-model` keys on --save-model; both are in O"
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER_PROFILE-001
+    name: ledgered_option_removed_is_red
+    prediction: "deleting --chaos from the snapshot's option list makes aprender-profile-ledgered-options RED twice: |O| = 45 and the `--chaos <PRESET>` row becomes a bin:ledgerOrphan"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with --chaos removed"
+    expected_output: "verdict Fail, results on binary/aprender-profile/aprender-profile paths bin:option and bin:ledgerOrphan"
+    if_fails: "A ledgered profiling mode could vanish from the shipped binary with the ontology green."
+  - id: FALSIFY-BIN-APRENDER_PROFILE-002
+    name: validate_dropped_is_red
+    prediction: "deleting `validate` from the snapshot's command list makes aprender-profile-commands RED (minCount 1) and the validate ledger row an orphan"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with validate removed"
+    expected_output: "verdict Fail naming validate"
+    if_fails: "Golden-baseline validation could disappear from the binary with the ontology green."
+  - id: FALSIFY-BIN-APRENDER_PROFILE-003
+    name: legacy_version_name_is_red
+    prediction: "on today's build (--version = \"renacer 0.69.3\") aprender-profile-identity is RED on bin:versionString; a build printing \"aprender-profile 0.69.3\" clears the violation shape"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the b1cd8c0b0 snapshot"
+    expected_output: "verdict Fail, one result on path bin:versionString"
+    if_fails: "A user running aprender-profile --version would be told another program's name, unflagged."
