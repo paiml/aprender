@@ -90,43 +90,43 @@ bindings:
     have tiled_unrolled constructors.'
 - contract: activation-kernel-v1.yaml
   equation: relu
-  module_path: trueno
+  module_path: trueno::vector::ops::activations
   function: relu
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: silu-kernel-v1.yaml
   equation: sigmoid
-  module_path: trueno
+  module_path: trueno::vector::ops::activations
   function: sigmoid
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: gelu
-  module_path: trueno
+  module_path: trueno::vector::ops::activations::advanced::smooth
   function: gelu
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: softmax-kernel-v1.yaml
   equation: softmax
-  module_path: trueno
+  module_path: trueno::vector::ops::activations
   function: softmax
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: cross-entropy-kernel-v1.yaml
   equation: log_softmax
-  module_path: trueno
+  module_path: trueno::vector::ops::activations
   function: log_softmax
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: matmul-kernel-v1.yaml
   equation: matmul
-  module_path: trueno
+  module_path: trueno::matrix::ops::arithmetic
   function: matmul
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: gated-delta-net-v1.yaml
   equation: read
-  module_path: trueno
+  module_path: trueno::backends::gpu::batch::execute
   function: read
   status: implemented
   notes: Auto-inferred by pv infer
@@ -134,17 +134,17 @@ bindings:
   equation: write
   module_path: trueno
   function: write
-  status: implemented
-  notes: Auto-inferred by pv infer
+  status: not_implemented
+  notes: "#4379: no item in `trueno` implements this equation; the pre-monorepo row bound the bare name `write`, which matches only unrelated items"
 - contract: model-config-algebra-v1.yaml
   equation: bounds
-  module_path: trueno
+  module_path: trueno::brick::types
   function: bounds
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: silu
-  module_path: trueno
+  module_path: trueno::brick::fused_ops
   function: silu
   status: implemented
   notes: Auto-inferred by pv infer
@@ -152,49 +152,49 @@ bindings:
   equation: predict
   module_path: trueno
   function: predict
-  status: implemented
-  notes: Auto-inferred by pv infer
+  status: not_implemented
+  notes: "#4379: no item in `trueno` implements this equation; the pre-monorepo row bound the bare name `predict`, which matches only unrelated items"
 - contract: kmeans-kernel-v1.yaml
   equation: update
-  module_path: trueno
+  module_path: trueno::tuner::evolution::bandit
   function: update
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: quantization-ordering-v1.yaml
   equation: bytes_per_param
-  module_path: trueno
+  module_path: trueno::tuner::types
   function: bytes_per_param
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: embedding-lookup-v1.yaml
   equation: embedding_lookup
-  module_path: trueno
+  module_path: trueno::matrix::ops::ml_ops
   function: embedding_lookup
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: graph-centrality-v1.yaml
   equation: eigenvector
-  module_path: trueno
+  module_path: trueno::eigen::methods
   function: eigenvector
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: tensor-inventory-v1.yaml
   equation: tensor_count
-  module_path: trueno::cbtop::quantize::gguf
-  function: GgufReader::tensor_count
+  module_path: cbtop::quantize::gguf
+  function: GgufLoader::tensor_count
   signature: 'pub fn tensor_count(&self) -> u64'
   status: implemented
   notes: 'In crates/cbtop/src/quantize/gguf.rs. Counts tensors in GGUF model files.'
 - contract: metrics-classification-v1.yaml
   equation: precision
-  module_path: trueno::cbtop::adaptive_ml::types
+  module_path: cbtop::adaptive_ml::types
   function: ClassificationMetrics::precision
   signature: 'pub fn precision(&self) -> f64'
   status: implemented
   notes: 'In crates/cbtop/src/adaptive_ml/types.rs. TP / (TP + FP).'
 - contract: metrics-classification-v1.yaml
   equation: recall
-  module_path: trueno::cbtop::adaptive_ml::types
+  module_path: cbtop::adaptive_ml::types
   function: ClassificationMetrics::recall
   signature: 'pub fn recall(&self) -> f64'
   status: implemented
@@ -209,7 +209,7 @@ bindings:
     (incremental) + MultiWarp + FlashDecoding variants.'
 - contract: int8-symmetric-quant-v1.yaml
   equation: quantize
-  module_path: trueno::crates::trueno_quant::quantize
+  module_path: trueno_quant::quantize
   function: quantize_q4_k
   signature: 'pub fn quantize_q4_k(data: &[f32]) -> Vec<u8>'
   status: implemented
@@ -225,7 +225,7 @@ bindings:
     HardwareProfile::peak_bandwidth_gbps.'
 - contract: roofline-model-v1.yaml
   equation: throughput_bound
-  module_path: trueno::cbtop::roofline
+  module_path: cbtop::roofline
   function: HardwareProfile::theoretical_peak_at_oi
   signature: 'pub fn theoretical_peak_at_oi(&self, operational_intensity: f64) -> f64'
   status: implemented
