@@ -1,0 +1,41 @@
+{
+  "ticket": "PR-4482 Arm4 merge_group neutral",
+  "base": "0accefcabd81e0d2c8defc5d035b38b6305649ad",
+  "head": "f28fff64e0dc4a921dacd35f92859e2a56f1edf2",
+  "diff_sha256": "9e2408c001de6ac6df00cfe9400b1e0af0caeae935eefcc698369552de63ea1e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_sha256": "5061e2527c004bbcee507f56837dbe3c1db6f594ac462cfe3bf9a6d25bc5f7f0",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "conversation_id": "3fdd81dd-5cb2-4a33-a24e-00673d3ac861",
+      "summary": "REVIEW_VERDICT=approve | Q1=ok Q2=ok Q3=ok Q4=ok | The logic is sound and introduces no fail-open vulnerabilities. \n(Q1) An invalid receipt still fails because its directory exists, bypassing the new missing-directory check. Two-parent or empty-diff cars fail closed earlier in A2 prior to this check. The event name cannot be spoofed by a PR author on pull_request_target, and the PR number resolution on merge_group is safely executed via regex and explicitly checked for validity (exiting 2 if not matched).\n(Q2) The PR-event path is unchanged because the added condition strictly requires GITHUB_EVENT_NAME=merge_group. Branch events fall through to the existing [ ! -d \"$root/$pr\" ] check and return 1 (RED) exactly as before.\n(Q3) The three new test rows strictly exercise both polarities: dropping the event test causes 3 existing rows asserting RED on branch events to incorrectly return 0 (turning them RED/failing in test); dropping the return 0 causes the new neutral row to fall through and return 1 (turning it RED). The row-count derivation script (check_pr_review_counts.sh) runs successfully and correctly parses the 26 rows.\n(Q4) No other defects or syntax errors were found. The outputs correctly flow to stdout for a successful/neutral validation.",
+      "findings": 0
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "conversation_id": "bd716e47-6bf5-41cd-aa1d-d37a47188233",
+      "summary": "REVIEW_VERDICT=approve | Q1=ok Q2=ok Q3=ok Q4=ok | Commit f28fff64 cleanly and safely introduces NEUTRAL handling on merge_group cars when a PR has no receipt directory, eliminating spurious queue failures while remaining strictly fail-closed.\n- Q1 (Fail-open): ok. A PR with an existing receipt directory is unaffected and still fully validated against patch-id, legacy, A3 corruption control, and A4 signature verification. Multi-parent and empty-diff queue subjects fail closed (A2 parent count and patch-id checks) prior to reaching the neutral branch. GITHUB_EVENT_NAME is runner-controlled in pull_request_target (evaluated from the base repository) and cannot be spoofed by a PR author, nor can setting PR_REVIEW_SUBJECT_KIND=queue trigger neutral. On merge_group, PR number resolution is validated against regex; if absent, receipt presence was already required and enforced on the PR event.\n- Q2 (PR-event path unchanged): ok. On pull_request_target, GITHUB_EVENT_NAME != merge_group, bypassing the neutral return and falling through directly to the preexisting `[ ! -d \"$root/$pr\" ]` check which returns 1 (RED).\n- Q3 (Test rows and count consistency): ok. The 3 new fixture rows (queue-no-receipt-neutral, no-receipt-kind-queue, queue-no-receipt-merge) test both polarities of the event condition and queue commit structure. Dropping the event check, dropping the parent check, or dropping the return statement causes self-test rows to fail. The row count derivation in check_pr_review_counts.sh (derive_arm4_rows) matches the updated 26-row step name in .github/workflows/pr-review-quorum.yml.\n- Q4 (Other defects): ok. No defects identified; bash syntax, safe variable expansions (${GITHUB_EVENT_NAME:-} under set -u), and diagnostic outputs are clean and correct.",
+      "findings": 0
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "conversation_id": "78c6598c-cd17-4757-a309-b318cad19947",
+      "summary": "REVIEW_VERDICT=approve | Q1=ok Q2=ok Q3=ok Q4=ok | Commit f28fff64 cleanly implements NEUTRAL exit on merge_group queue cars when no receipt directory is present on the PR. The PR-event path remains strictly RED on missing receipts. All four questions (Q1-Q4) verified ok with no fail-open defects, robust polarities, and consistent count derivations.",
+      "findings": 0
+    }
+  ]
+}
