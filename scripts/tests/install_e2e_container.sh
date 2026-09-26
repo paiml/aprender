@@ -183,7 +183,7 @@ apt-get -qq install -y --no-install-recommends curl ca-certificates >/dev/null
 cat > /opt/install.sh
 chmod 644 /opt/install.sh
 useradd -m -s /bin/bash tester
-su tester -c "set -o pipefail; export PATH=\$HOME/.local/bin:\$PATH; curl -fsSL \"$FETCH\" | bash -s -- --channel $CHANNEL --cpu && echo APR_PATH=\$(command -v apr) && echo APR_VERSION=\$(apr --version) && echo APR_BIN_SHA=\$(sha256sum \$(command -v apr))" # bashrs disable-line=SEC008,SEC015 (curl | bash IS the path under test, in a throwaway container)
+su tester -c "set -o pipefail; export PATH=\$HOME/.local/bin:\$PATH; curl -fsSL \"$FETCH\" | bash -s -- --channel $CHANNEL --cpu && APR=\$(IFS=:; for d in \$PATH; do [ -x \"\$d/apr\" ] && { echo \"\$d/apr\"; break; }; done) && echo APR_PATH=\$APR && echo APR_VERSION=\$(\"\$APR\" --version) && echo APR_BIN_SHA=\$(sha256sum \"\$APR\")" # bashrs disable-line=SEC008,SEC015 (curl | bash IS the path under test, in a throwaway container)
 ' <"$SRC" >"$WORK/run.log" 2>&1 || RC=$? # bashrs disable-line=SEC008,SEC015 (the script above; see its comment)
 sed 's/^/      | /' "$WORK/run.log" | tail -n 25
 check "$RC" "curl-pipe-bash -s -- --channel $CHANNEL --cpu exits 0 in a clean $IMAGE (rc=$RC)"
@@ -192,7 +192,8 @@ st=0
 grep -q "sha256 ${PUBLISHED}" "$WORK/run.log" || st=1
 check "$st" "install.sh reported verifying the published digest"
 st=0
-[ "$(field APR_PATH)" = /home/tester/.local/bin/apr ] || st=1
+TESTER_BIN=/home/tester/.local/bin  # where install.sh puts it for user `tester`
+[ "$(field APR_PATH)" = "$TESTER_BIN/apr" ] || st=1
 check "$st" "apr on PATH is the fresh install ($(field APR_PATH))"
 st=0
 [ "$(field APR_BIN_SHA | awk '{print $1}')" = "$BIN_SHA" ] || st=1
