@@ -855,43 +855,27 @@ fn gqa_attention(
     let scale = 1.0 / (head_dim as f32).sqrt();
 
     let mut output = vec![0.0f32; num_heads * head_dim];
+    let mut scores = Vec::with_capacity(kv_len);
 
     for h in 0..num_heads {
         let kv_h = h / q_per_kv;
         let q_offset = h * head_dim;
         let q_head = &q[q_offset..q_offset + head_dim];
 
-        // Compute attention scores
-        let mut scores = vec![0.0f32; kv_len];
-        for pos in 0..kv_len {
-            let k_offset = pos * kv_dim + kv_h * head_dim;
-            let mut dot = 0.0f32;
-            for d in 0..head_dim {
-                dot += q_head[d] * full_k[k_offset + d];
-            }
-            scores[pos] = dot * scale;
-        }
-
-        // Softmax
-        let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let mut exp_sum = 0.0f32;
-        for s in &mut scores {
-            *s = (*s - max_score).exp();
-            exp_sum += *s;
-        }
-        for s in &mut scores {
-            *s /= exp_sum;
-        }
-
-        // Weighted sum of V
-        let out_offset = h * head_dim;
-        for pos in 0..kv_len {
-            let v_offset = pos * kv_dim + kv_h * head_dim;
-            let w = scores[pos];
-            for d in 0..head_dim {
-                output[out_offset + d] += w * full_v[v_offset + d];
-            }
-        }
+        let kv_row = |pos: usize| pos * kv_dim + kv_h * head_dim;
+        crate::gguf::ops::attend_row_scalar(
+            q_head,
+            kv_len,
+            |pos| &full_k[kv_row(pos)..][..head_dim],
+            |pos| &full_v[kv_row(pos)..][..head_dim],
+            scale,
+            crate::gguf::ops::RowSoftmax {
+                norm: crate::gguf::ops::SoftmaxNorm::Divide,
+                guard_positive_sum: false,
+            },
+            &mut scores,
+            &mut output[q_offset..q_offset + head_dim],
+        );
     }
 
     output

@@ -1,4 +1,3 @@
-
 /// Apply causal softmax to attention scores
 fn apply_causal_softmax(scores: &[f32], seq_len: usize, scale: f32) -> Vec<f32> {
     let mut attn = vec![f32::NEG_INFINITY; seq_len * seq_len];
@@ -14,7 +13,10 @@ fn apply_causal_softmax(scores: &[f32], seq_len: usize, scale: f32) -> Vec<f32> 
     for i in 0..seq_len {
         let row_start = i * seq_len;
         let row = &mut attn[row_start..row_start + seq_len];
-        crate::gguf::ops::softmax_scalar_in_place(&mut row[..=i], crate::gguf::ops::SoftmaxNorm::Divide);
+        crate::gguf::ops::softmax_scalar_in_place(
+            &mut row[..=i],
+            crate::gguf::ops::SoftmaxNorm::Divide,
+        );
         for item in row.iter_mut().skip(i + 1) {
             *item = 0.0;
         }
@@ -67,34 +69,6 @@ pub fn optimized_gqa_attention(
     Ok(output)
 }
 
-/// Compute attention scores for a single position (causal)
-fn compute_causal_scores(
-    q: &[f32],
-    k: &[f32],
-    i: usize,
-    head: usize,
-    hidden_dim: usize,
-    head_dim: usize,
-    scale: f32,
-) -> Vec<f32> {
-    let mut weights = Vec::with_capacity(i + 1);
-    for j in 0..=i {
-        let mut score = 0.0f32;
-        for d in 0..head_dim {
-            let q_idx = i * hidden_dim + head * head_dim + d;
-            let k_idx = j * hidden_dim + head * head_dim + d;
-            score += q[q_idx] * k[k_idx];
-        }
-        weights.push(score * scale);
-    }
-    weights
-}
-
-/// Apply softmax in-place to weights
-fn softmax_inplace(weights: &mut [f32]) {
-    crate::gguf::ops::softmax_scalar_in_place(weights, crate::gguf::ops::SoftmaxNorm::Divide);
-}
-
 /// Simplified attention (fallback, for M3 benchmarking)
 #[allow(dead_code, clippy::unnecessary_wraps)]
 pub fn simplified_attention(
@@ -112,19 +86,23 @@ pub fn simplified_attention(
     let scale = 1.0 / (head_dim as f32).sqrt();
     let mut output = vec![0.0f32; seq_len * hidden_dim];
 
+    let mut weights = Vec::with_capacity(seq_len);
     for head in 0..config.num_heads {
+        let row = |j: usize| j * hidden_dim + head * head_dim;
         for i in 0..seq_len {
-            let mut weights = compute_causal_scores(q, k, i, head, hidden_dim, head_dim, scale);
-            softmax_inplace(&mut weights);
-
-            // Weighted sum of values
-            for d in 0..head_dim {
-                let out_idx = i * hidden_dim + head * head_dim + d;
-                for (j, &w) in weights.iter().enumerate() {
-                    let v_idx = j * hidden_dim + head * head_dim + d;
-                    output[out_idx] += w * v[v_idx];
-                }
-            }
+            crate::gguf::ops::attend_row_scalar(
+                &q[row(i)..][..head_dim],
+                i + 1,
+                |j| &k[row(j)..][..head_dim],
+                |j| &v[row(j)..][..head_dim],
+                scale,
+                crate::gguf::ops::RowSoftmax {
+                    norm: crate::gguf::ops::SoftmaxNorm::Divide,
+                    guard_positive_sum: false,
+                },
+                &mut weights,
+                &mut output[row(i)..][..head_dim],
+            );
         }
     }
 

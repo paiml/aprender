@@ -1,51 +1,35 @@
-/// Compute scaled dot-product scores between a query vector and key vectors.
-///
-/// For each key position `j` in `0..num_keys`, computes `dot(q, k[j]) * scale`.
-fn compute_attention_scores(
+/// Attend one query head row (`q[q_start..][..head_dim]`) over the first
+/// `num_keys` key/value rows, accumulating into `output[out_start..][..head_dim]`
+/// (PP-ARCH-001 §9.11: the shared `ops::attend_row_scalar` home, unguarded
+/// Divide softmax).
+#[allow(clippy::too_many_arguments)]
+fn attend_row(
+    output: &mut [f32],
+    out_start: usize,
     q: &[f32],
     q_start: usize,
     keys: &[f32],
+    values: &[f32],
     kv_dim: usize,
     kv_head_offset: usize,
     head_dim: usize,
     num_keys: usize,
     scale: f32,
-) -> Vec<f32> {
-    let mut scores = Vec::with_capacity(num_keys);
-    for j in 0..num_keys {
-        let k_start = j * kv_dim + kv_head_offset;
-        let mut score = 0.0f32;
-        for d in 0..head_dim {
-            score += q[q_start + d] * keys[k_start + d];
-        }
-        scores.push(score * scale);
-    }
-    scores
-}
-
-/// Apply softmax normalization in-place.
-fn softmax_inplace(scores: &mut [f32]) {
-    crate::gguf::ops::softmax_scalar_in_place(scores, crate::gguf::ops::SoftmaxNorm::Divide);
-}
-
-/// Accumulate weighted value vectors into the output buffer.
-///
-/// For each position `j`, adds `weight[j] * v[j]` element-wise into `output[out_start..]`.
-fn accumulate_weighted_values(
-    output: &mut [f32],
-    out_start: usize,
-    scores: &[f32],
-    values: &[f32],
-    kv_dim: usize,
-    kv_head_offset: usize,
-    head_dim: usize,
 ) {
-    for (j, &weight) in scores.iter().enumerate() {
-        let v_start = j * kv_dim + kv_head_offset;
-        for d in 0..head_dim {
-            output[out_start + d] += weight * values[v_start + d];
-        }
-    }
+    let kv_row = |j: usize| j * kv_dim + kv_head_offset;
+    crate::gguf::ops::attend_row_scalar(
+        &q[q_start..q_start + head_dim],
+        num_keys,
+        |j| &keys[kv_row(j)..][..head_dim],
+        |j| &values[kv_row(j)..][..head_dim],
+        scale,
+        crate::gguf::ops::RowSoftmax {
+            norm: crate::gguf::ops::SoftmaxNorm::Divide,
+            guard_positive_sum: false,
+        },
+        &mut Vec::with_capacity(num_keys),
+        &mut output[out_start..out_start + head_dim],
+    );
 }
 
 /// Merge per-head output buffers into a single interleaved output tensor.
@@ -88,12 +72,10 @@ fn attend_position_per_head(
     num_keys: usize,
     scale: f32,
 ) {
-    let mut scores = compute_attention_scores(
-        q, q_start, keys, kv_dim, kv_head_offset, head_dim, num_keys, scale,
+    attend_row(
+        head_out, i * head_dim, q, q_start, keys, values, kv_dim, kv_head_offset, head_dim,
+        num_keys, scale,
     );
-    softmax_inplace(&mut scores);
-    let out_start = i * head_dim;
-    accumulate_weighted_values(head_out, out_start, &scores, values, kv_dim, kv_head_offset, head_dim);
 }
 
 impl QuantizedAprTransformerQ4 {
@@ -134,12 +116,9 @@ impl QuantizedAprTransformerQ4 {
                     let pos = cache_len + i;
                     let q_start = i * q_dim + q_head_offset;
                     let out_start = i * q_dim + q_head_offset;
-                    let mut scores = compute_attention_scores(
-                        new_q, q_start, full_k, kv_dim, kv_head_offset, head_dim, pos + 1, scale,
-                    );
-                    softmax_inplace(&mut scores);
-                    accumulate_weighted_values(
-                        &mut output, out_start, &scores, full_v, kv_dim, kv_head_offset, head_dim,
+                    attend_row(
+                        &mut output, out_start, new_q, q_start, full_k, full_v, kv_dim,
+                        kv_head_offset, head_dim, pos + 1, scale,
                     );
                 }
             }
@@ -305,11 +284,10 @@ impl QuantizedAprTransformerQ4 {
         for i in 0..seq_len {
             let q_start = i * q_dim + q_head_offset;
             let out_start = i * q_dim + q_head_offset;
-            let mut scores = compute_attention_scores(
-                q, q_start, k, kv_dim, kv_head_offset, head_dim, i + 1, scale,
+            attend_row(
+                output, out_start, q, q_start, k, v, kv_dim, kv_head_offset, head_dim, i + 1,
+                scale,
             );
-            softmax_inplace(&mut scores);
-            accumulate_weighted_values(output, out_start, &scores, v, kv_dim, kv_head_offset, head_dim);
         }
     }
 }

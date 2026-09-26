@@ -1,5 +1,4 @@
 impl AprTransformer {
-
     /// Sequential Q4K matmul across sequence positions (PMAT-260)
     fn seq_matmul_q4k(
         q4k_bytes: &[u8],
@@ -52,45 +51,28 @@ impl AprTransformer {
         let group_size = num_heads / num_kv_heads;
         let kv_dim = num_kv_heads * head_dim;
         let mut attn_out = vec![0.0f32; seq_len * hidden_dim];
+        let mut scores = Vec::with_capacity(seq_len);
         for head in 0..num_heads {
             let kv_head = head / group_size;
             let q_head_offset = head * head_dim;
             let kv_head_offset = kv_head * head_dim;
 
             for i in 0..seq_len {
-                let mut scores = Vec::with_capacity(i + 1);
                 let q_start = i * hidden_dim + q_head_offset;
-
-                for j in 0..=i {
-                    let k_start = j * kv_dim + kv_head_offset;
-                    let mut score = 0.0f32;
-                    for d in 0..head_dim {
-                        score += q_all[q_start + d] * k_all[k_start + d];
-                    }
-                    scores.push(score * scale);
-                }
-
-                // Softmax
-                let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-                let mut exp_sum = 0.0f32;
-                for s in &mut scores {
-                    *s = (*s - max_score).exp();
-                    exp_sum += *s;
-                }
-                if exp_sum > 0.0 {
-                    for s in &mut scores {
-                        *s /= exp_sum;
-                    }
-                }
-
-                // Weighted sum of V
-                let out_start = i * hidden_dim + q_head_offset;
-                for (j, &weight) in scores.iter().enumerate() {
-                    let v_start = j * kv_dim + kv_head_offset;
-                    for d in 0..head_dim {
-                        attn_out[out_start + d] += weight * v_all[v_start + d];
-                    }
-                }
+                let kv_row = |j: usize| j * kv_dim + kv_head_offset;
+                crate::gguf::ops::attend_row_scalar(
+                    &q_all[q_start..q_start + head_dim],
+                    i + 1,
+                    |j| &k_all[kv_row(j)..][..head_dim],
+                    |j| &v_all[kv_row(j)..][..head_dim],
+                    scale,
+                    crate::gguf::ops::RowSoftmax {
+                        norm: crate::gguf::ops::SoftmaxNorm::Divide,
+                        guard_positive_sum: true,
+                    },
+                    &mut scores,
+                    &mut attn_out[q_start..q_start + head_dim],
+                );
             }
         }
         attn_out
@@ -157,16 +139,33 @@ impl AprTransformer {
         let (gate_result, up_result) = rayon::join(
             || -> Result<Vec<f32>> {
                 if let Some(q4k_bytes) = q4k_gate {
-                    Self::seq_matmul_q4k(q4k_bytes, ffn_input, seq_len, intermediate_dim, hidden_dim)
+                    Self::seq_matmul_q4k(
+                        q4k_bytes,
+                        ffn_input,
+                        seq_len,
+                        intermediate_dim,
+                        hidden_dim,
+                    )
                 } else {
                     Ok(self.matmul(ffn_input, gate_weight, hidden_dim, intermediate_dim))
                 }
             },
             || -> Result<Vec<f32>> {
                 if let Some(q4k_bytes) = q4k_up {
-                    Self::seq_matmul_q4k(q4k_bytes, ffn_input, seq_len, intermediate_dim, hidden_dim)
+                    Self::seq_matmul_q4k(
+                        q4k_bytes,
+                        ffn_input,
+                        seq_len,
+                        intermediate_dim,
+                        hidden_dim,
+                    )
                 } else {
-                    Ok(self.matmul(ffn_input, &layer.ffn_up_weight, hidden_dim, intermediate_dim))
+                    Ok(self.matmul(
+                        ffn_input,
+                        &layer.ffn_up_weight,
+                        hidden_dim,
+                        intermediate_dim,
+                    ))
                 }
             },
         );
@@ -187,11 +186,28 @@ impl AprTransformer {
 
         // Down projection with Q4K/Q6K/F32 dispatch
         let mut out = if let Some(q4k_bytes) = q4k_layer.and_then(|q| q.ffn_down_weight.as_ref()) {
-            Self::seq_matmul_q4k(q4k_bytes, &ffn_hidden, seq_len, hidden_dim, intermediate_dim)?
+            Self::seq_matmul_q4k(
+                q4k_bytes,
+                &ffn_hidden,
+                seq_len,
+                hidden_dim,
+                intermediate_dim,
+            )?
         } else if let Some(q6k_bytes) = q4k_layer.and_then(|q| q.ffn_down_weight_q6k.as_ref()) {
-            Self::seq_matmul_q6k(q6k_bytes, &ffn_hidden, seq_len, hidden_dim, intermediate_dim)?
+            Self::seq_matmul_q6k(
+                q6k_bytes,
+                &ffn_hidden,
+                seq_len,
+                hidden_dim,
+                intermediate_dim,
+            )?
         } else {
-            self.matmul(&ffn_hidden, &layer.ffn_down_weight, intermediate_dim, hidden_dim)
+            self.matmul(
+                &ffn_hidden,
+                &layer.ffn_down_weight,
+                intermediate_dim,
+                hidden_dim,
+            )
         };
         if let Some(ref bias) = layer.ffn_down_bias {
             self.add_bias(&mut out, bias);
@@ -231,12 +247,8 @@ impl AprTransformer {
                     let input_slice = &ffn_input[s * hidden_dim..(s + 1) * hidden_dim];
                     // PMAT-103 FIX: Q4K kernel expects (ne0=output_dim, ne1=input_dim)
                     // ffn_up: [intermediate_dim, hidden_dim] maps hidden[1536] -> intermediate[8960]
-                    let pos_out = matmul_q4k_rowmajor(
-                        q4k_bytes,
-                        input_slice,
-                        intermediate_dim,
-                        hidden_dim,
-                    )?;
+                    let pos_out =
+                        matmul_q4k_rowmajor(q4k_bytes, input_slice, intermediate_dim, hidden_dim)?;
                     output.extend(pos_out);
                 }
                 output
@@ -254,29 +266,23 @@ impl AprTransformer {
         self.gelu(&mut ffn_hidden);
 
         // PMAT-103: Check for Q4K down weight
-        let mut out =
-            if let Some(q4k_bytes) = q4k_layer.and_then(|q| q.ffn_down_weight.as_ref()) {
-                let mut output = Vec::with_capacity(seq_len * hidden_dim);
-                for s in 0..seq_len {
-                    let input_slice =
-                        &ffn_hidden[s * intermediate_dim..(s + 1) * intermediate_dim];
-                    let pos_out = matmul_q4k_rowmajor(
-                        q4k_bytes,
-                        input_slice,
-                        hidden_dim,
-                        intermediate_dim,
-                    )?;
-                    output.extend(pos_out);
-                }
-                output
-            } else {
-                self.matmul(
-                    &ffn_hidden,
-                    &layer.ffn_down_weight,
-                    intermediate_dim,
-                    hidden_dim,
-                )
-            };
+        let mut out = if let Some(q4k_bytes) = q4k_layer.and_then(|q| q.ffn_down_weight.as_ref()) {
+            let mut output = Vec::with_capacity(seq_len * hidden_dim);
+            for s in 0..seq_len {
+                let input_slice = &ffn_hidden[s * intermediate_dim..(s + 1) * intermediate_dim];
+                let pos_out =
+                    matmul_q4k_rowmajor(q4k_bytes, input_slice, hidden_dim, intermediate_dim)?;
+                output.extend(pos_out);
+            }
+            output
+        } else {
+            self.matmul(
+                &ffn_hidden,
+                &layer.ffn_down_weight,
+                intermediate_dim,
+                hidden_dim,
+            )
+        };
         if let Some(ref bias) = layer.ffn_down_bias {
             self.add_bias(&mut out, bias);
         }
@@ -399,12 +405,26 @@ impl AprTransformer {
 
             // Compute scaled dot-product attention with causal mask
             let attn_out = Self::compute_causal_gqa_attention(
-                &q_all, &k_all, &v_all, seq_len, self.config.num_heads, num_kv_heads, head_dim, hidden_dim, scale,
+                &q_all,
+                &k_all,
+                &v_all,
+                seq_len,
+                self.config.num_heads,
+                num_kv_heads,
+                head_dim,
+                hidden_dim,
+                scale,
             );
 
             // 2d. Attention output projection
             let mut attn_output = self.apr_attn_output_projection(
-                &attn_out, q4k_layer, layer, seq_len, hidden_dim, layer_idx, trace_enabled,
+                &attn_out,
+                q4k_layer,
+                layer,
+                seq_len,
+                hidden_dim,
+                layer_idx,
+                trace_enabled,
             )?;
             if let Some(ref bias) = layer.attn_output_bias {
                 self.add_bias(&mut attn_output, bias);

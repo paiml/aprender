@@ -777,6 +777,206 @@ pub fn softmax_scalar_in_place(x: &mut [f32], form: SoftmaxNorm) {
     softmax_normalize(x, sum, form);
 }
 
+/// Softmax flavour of one [`attend_row_scalar`] site: the final division form,
+/// and whether normalisation is skipped when the sum is not positive. The max
+/// term always contributes `exp(0) = 1`, so the sum is `>= 1` or NaN and the
+/// guard is kept only to mirror each site's source faithfully.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RowSoftmax {
+    /// `e / sum` or `e * (1.0 / sum)`.
+    pub norm: SoftmaxNorm,
+    /// Normalise only when `sum > 0.0`.
+    pub guard_positive_sum: bool,
+}
+
+/// Scalar attention for ONE query head row over `n_keys` keys (PP-ARCH-001
+/// §9.11, the shared one-row attention home).
+///
+/// `score_j = dot(q, key(j)) * scale`, each dot summed left to right from
+/// `0.0` in scalar f32; a full [`softmax_exp_in_place`] +
+/// [`softmax_normalize`] over the scores; then `out[d] += w_j * value(j)[d]`
+/// in key order. `out` (`[q.len()]`) is accumulated into, so callers pass a
+/// zeroed row. `scores` is scratch, reused across calls. The closures carry
+/// each site's layout and GQA mapping; `key(j)`/`value(j)` must be at least
+/// `q.len()` long.
+#[allow(clippy::too_many_arguments)]
+pub fn attend_row_scalar<'a>(
+    q: &[f32],
+    n_keys: usize,
+    key: impl Fn(usize) -> &'a [f32],
+    value: impl Fn(usize) -> &'a [f32],
+    scale: f32,
+    softmax: RowSoftmax,
+    scores: &mut Vec<f32>,
+    out: &mut [f32],
+) {
+    let head_dim = q.len();
+    scores.clear();
+    for j in 0..n_keys {
+        let k = key(j);
+        let mut dot = 0.0f32;
+        for d in 0..head_dim {
+            dot += q[d] * k[d];
+        }
+        scores.push(dot * scale);
+    }
+    let sum = softmax_exp_in_place(scores);
+    if !softmax.guard_positive_sum || sum > 0.0 {
+        softmax_normalize(scores, sum, softmax.norm);
+    }
+    for (j, &w) in scores.iter().enumerate() {
+        let v = value(j);
+        for d in 0..head_dim {
+            out[d] += w * v[d];
+        }
+    }
+}
+
+#[cfg(test)]
+mod attend_row_scalar_equivalence_tests {
+    use super::{attend_row_scalar, RowSoftmax, SoftmaxNorm};
+
+    // Frozen per-site bodies (before step 5b), one query row each. Layout:
+    // k/v rows of `head_dim`, key j at `j * head_dim`.
+
+    // apr_transformer/pmat-260.rs::compute_causal_gqa_attention (guarded Divide).
+    fn ref_pmat260(q: &[f32], k: &[f32], v: &[f32], n: usize, scale: f32, out: &mut [f32]) {
+        let hd = q.len();
+        let mut scores = Vec::with_capacity(n);
+        for j in 0..n {
+            let mut score = 0.0f32;
+            for d in 0..hd {
+                score += q[d] * k[j * hd + d];
+            }
+            scores.push(score * scale);
+        }
+        let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let mut exp_sum = 0.0f32;
+        for s in &mut scores {
+            *s = (*s - max_score).exp();
+            exp_sum += *s;
+        }
+        if exp_sum > 0.0 {
+            for s in &mut scores {
+                *s /= exp_sum;
+            }
+        }
+        for (j, &weight) in scores.iter().enumerate() {
+            for d in 0..hd {
+                out[d] += weight * v[j * hd + d];
+            }
+        }
+    }
+
+    // gpu/adapters/apr_q4k.rs::gqa_attention (unguarded Divide).
+    fn ref_apr_q4k(q: &[f32], k: &[f32], v: &[f32], n: usize, scale: f32, out: &mut [f32]) {
+        let hd = q.len();
+        let mut scores = vec![0.0f32; n];
+        for pos in 0..n {
+            let mut dot = 0.0f32;
+            for d in 0..hd {
+                dot += q[d] * k[pos * hd + d];
+            }
+            scores[pos] = dot * scale;
+        }
+        let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut exp_sum = 0.0f32;
+        for s in &mut scores {
+            *s = (*s - max_score).exp();
+            exp_sum += *s;
+        }
+        for s in &mut scores {
+            *s /= exp_sum;
+        }
+        for pos in 0..n {
+            let w = scores[pos];
+            for d in 0..hd {
+                out[d] += w * v[pos * hd + d];
+            }
+        }
+    }
+
+    // gpu/scheduler/kv_forward_block.rs::gqa_attention_with_kv and
+    // gqa_incremental_attention (iterator dot and sum, unguarded Divide).
+    fn ref_kv_forward(q: &[f32], k: &[f32], v: &[f32], n: usize, scale: f32, out: &mut [f32]) {
+        let hd = q.len();
+        let mut scores = Vec::with_capacity(n);
+        for kpos in 0..n {
+            let k_slice = &k[kpos * hd..kpos * hd + hd];
+            let score: f32 = q.iter().zip(k_slice.iter()).map(|(&a, &b)| a * b).sum();
+            scores.push(score * scale);
+        }
+        let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
+        let sum: f32 = exp_scores.iter().sum();
+        let weights: Vec<f32> = exp_scores.iter().map(|&e| e / sum).collect();
+        for (kpos, &weight) in weights.iter().enumerate() {
+            for d in 0..hd {
+                out[d] += weight * v[kpos * hd + d];
+            }
+        }
+    }
+
+    fn lcg(seed: &mut u64, mag: f32) -> f32 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((*seed >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0) * mag
+    }
+
+    type Ref = fn(&[f32], &[f32], &[f32], usize, f32, &mut [f32]);
+
+    #[test]
+    fn shared_home_is_bit_identical_to_each_per_site_body() {
+        let divide = |guard| RowSoftmax {
+            norm: SoftmaxNorm::Divide,
+            guard_positive_sum: guard,
+        };
+        let sites: [(&str, Ref, RowSoftmax); 3] = [
+            ("pmat260", ref_pmat260, divide(true)),
+            ("apr_q4k", ref_apr_q4k, divide(false)),
+            ("kv_forward", ref_kv_forward, divide(false)),
+        ];
+        let mut cases = 0;
+        let mut seed = 0x3422_005b_u64;
+        let mut scratch = Vec::new();
+        for (name, reference, sm) in sites {
+            for &hd in &[1usize, 8, 64, 128] {
+                for &n in &[1usize, 2, 7, 64, 300] {
+                    // mag 0.0 makes every dot an exact zero (the iterator-sum
+                    // sign case); 60.0 drives most weights to underflow.
+                    for &mag in &[0.0f32, 1e-3, 1.0, 8.0, 60.0] {
+                        let q: Vec<f32> = (0..hd).map(|_| lcg(&mut seed, mag)).collect();
+                        let k: Vec<f32> = (0..n * hd).map(|_| lcg(&mut seed, 1.0)).collect();
+                        let v: Vec<f32> = (0..n * hd).map(|_| lcg(&mut seed, 4.0)).collect();
+                        let scale = 1.0 / (hd as f32).sqrt();
+                        let mut want = vec![0.0f32; hd];
+                        let mut got = vec![0.0f32; hd];
+                        reference(&q, &k, &v, n, scale, &mut want);
+                        attend_row_scalar(
+                            &q,
+                            n,
+                            |j| &k[j * hd..(j + 1) * hd],
+                            |j| &v[j * hd..(j + 1) * hd],
+                            scale,
+                            sm,
+                            &mut scratch,
+                            &mut got,
+                        );
+                        assert_eq!(
+                            want.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                            got.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                            "{name} hd={hd} n={n} mag={mag}"
+                        );
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 300);
+    }
+}
+
 /// Online-softmax attention for ONE query row over the first `n_keys` rows of
 /// `k`/`v` (each `[_, head_dim]`), processed in tiles of `tile_size` keys
 /// (PP-ARCH-001 §9.10, the shared tiled-attention home).

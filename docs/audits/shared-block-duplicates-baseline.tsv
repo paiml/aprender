@@ -4,9 +4,7 @@
 # only SHRINK: a migration deletes rows; a new row is a new duplicate.
 # family	path (under crates/aprender-serve/src)	fn
 attention	apr/helpers.rs	simple_attention
-attention	apr_transformer/attention_kernels.rs	causal_attention_cached
 attention	apr_transformer/cache_attention.rs	compute_attention_with_cache
-attention	apr_transformer/pmat-260.rs	compute_causal_gqa_attention
 attention	cuda/executor/flash_attention_cached.rs	flash_attention_cached
 attention	gguf/inference/attention_gqa.rs	gpu_attention_with_cache
 attention	gguf/inference/cached/single_true_batched_owned.rs	gpu_fused_causal_attention
@@ -16,10 +14,6 @@ attention	gguf/inference/forward/batched.rs	compute_attention_output
 attention	gguf/inference/forward/forward_qwen35.rs	forward_attention
 attention	gguf/inference/rope.rs	attention_with_cache
 attention	gguf/inference/rope.rs	causal_attention
-attention	gpu/adapters/apr_q4k.rs	gqa_attention
-attention	gpu/scheduler/attention.rs	simplified_attention
-attention	gpu/scheduler/kv_forward_block.rs	gqa_attention_with_kv
-attention	gpu/scheduler/kv_forward_block.rs	gqa_incremental_attention
 attention	gpu/scheduler/ops.rs	gqa_multihead_attention
 rmsnorm	gguf/inference/forward/forward_qwen35.rs	gated_rmsnorm
 rmsnorm	gpu/scheduler/linear_attn.rs	rms_norm_gated

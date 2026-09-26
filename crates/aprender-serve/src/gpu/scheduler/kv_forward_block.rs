@@ -1,4 +1,3 @@
-
 /// Incremental forward pass through a single block using cached KV
 fn forward_block_incremental(
     model: &mut GpuModel,
@@ -120,49 +119,51 @@ fn forward_block_incremental(
         }
     } else {
         // Dense FFN: SwiGLU when gate weight exists, otherwise GELU
-        let activated: Vec<f32> = if let Some(ref gate_weight) =
-            model.block_weights[block_idx].ffn_gate_weight
-        {
-            let up_out = model.scheduler.matmul(
-                &ffn_normed,
-                &model.block_weights[block_idx].ffn_fc1_weight,
-                1,
-                hidden_dim,
-                intermediate_dim,
-            )?;
-            let gate_out =
-                model
-                    .scheduler
-                    .matmul(&ffn_normed, gate_weight, 1, hidden_dim, intermediate_dim)?;
-            up_out
-                .iter()
-                .zip(gate_out.iter())
-                .map(|(&u, &g)| {
-                    let silu_g = g / (1.0 + (-g).exp());
-                    silu_g * u
-                })
-                .collect()
-        } else {
-            let fc1_out = model.scheduler.matmul(
-                &ffn_normed,
-                &model.block_weights[block_idx].ffn_fc1_weight,
-                1,
-                hidden_dim,
-                intermediate_dim,
-            )?;
-            fc1_out
-                .iter()
-                .enumerate()
-                .map(|(i, &x)| {
-                    let x = x + model.block_weights[block_idx].ffn_fc1_bias[i];
-                    0.5 * x
-                        * (1.0
-                            + ((2.0f32 / std::f32::consts::PI).sqrt()
-                                * (x + 0.044_715 * x.powi(3)))
-                            .tanh())
-                })
-                .collect()
-        };
+        let activated: Vec<f32> =
+            if let Some(ref gate_weight) = model.block_weights[block_idx].ffn_gate_weight {
+                let up_out = model.scheduler.matmul(
+                    &ffn_normed,
+                    &model.block_weights[block_idx].ffn_fc1_weight,
+                    1,
+                    hidden_dim,
+                    intermediate_dim,
+                )?;
+                let gate_out = model.scheduler.matmul(
+                    &ffn_normed,
+                    gate_weight,
+                    1,
+                    hidden_dim,
+                    intermediate_dim,
+                )?;
+                up_out
+                    .iter()
+                    .zip(gate_out.iter())
+                    .map(|(&u, &g)| {
+                        let silu_g = g / (1.0 + (-g).exp());
+                        silu_g * u
+                    })
+                    .collect()
+            } else {
+                let fc1_out = model.scheduler.matmul(
+                    &ffn_normed,
+                    &model.block_weights[block_idx].ffn_fc1_weight,
+                    1,
+                    hidden_dim,
+                    intermediate_dim,
+                )?;
+                fc1_out
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &x)| {
+                        let x = x + model.block_weights[block_idx].ffn_fc1_bias[i];
+                        0.5 * x
+                            * (1.0
+                                + ((2.0f32 / std::f32::consts::PI).sqrt()
+                                    * (x + 0.044_715 * x.powi(3)))
+                                .tanh())
+                    })
+                    .collect()
+            };
 
         let fc2_out = model.scheduler.matmul(
             &activated,
@@ -197,6 +198,7 @@ fn gqa_attention_with_kv(
 
     let mut output = vec![0.0f32; seq_len * hidden_dim];
     let scale = 1.0 / (head_dim as f32).sqrt();
+    let mut scores = Vec::with_capacity(seq_len);
 
     for pos in 0..seq_len {
         for head in 0..num_heads {
@@ -206,34 +208,20 @@ fn gqa_attention_with_kv(
             let q_start = pos * hidden_dim + head * head_dim;
             let q_slice = &q[q_start..q_start + head_dim];
 
-            // Compute attention scores for all positions up to current
-            let mut scores = Vec::with_capacity(pos + 1);
-            for kpos in 0..=pos {
-                let k_start = kpos * kv_dim + kv_head * head_dim;
-                let k_slice = &k[k_start..k_start + head_dim];
-
-                let score: f32 = q_slice
-                    .iter()
-                    .zip(k_slice.iter())
-                    .map(|(&a, &b)| a * b)
-                    .sum();
-                scores.push(score * scale);
-            }
-
-            // Softmax
-            let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
-            let sum: f32 = exp_scores.iter().sum();
-            let weights: Vec<f32> = exp_scores.iter().map(|&e| e / sum).collect();
-
-            // Weighted sum of values
-            let out_start = pos * hidden_dim + head * head_dim;
-            for (kpos, &weight) in weights.iter().enumerate() {
-                let v_start = kpos * kv_dim + kv_head * head_dim;
-                for d in 0..head_dim {
-                    output[out_start + d] += weight * v[v_start + d];
-                }
-            }
+            let kv_row = |kpos: usize| kpos * kv_dim + kv_head * head_dim;
+            crate::gguf::ops::attend_row_scalar(
+                q_slice,
+                pos + 1,
+                |kpos| &k[kv_row(kpos)..][..head_dim],
+                |kpos| &v[kv_row(kpos)..][..head_dim],
+                scale,
+                crate::gguf::ops::RowSoftmax {
+                    norm: crate::gguf::ops::SoftmaxNorm::Divide,
+                    guard_positive_sum: false,
+                },
+                &mut scores,
+                &mut output[q_start..q_start + head_dim],
+            );
         }
     }
 
@@ -258,6 +246,7 @@ fn gqa_incremental_attention(
 
     let mut output = vec![0.0f32; hidden_dim];
     let scale = 1.0 / (head_dim as f32).sqrt();
+    let mut scores = Vec::with_capacity(cache_len);
 
     for head in 0..num_heads {
         let kv_head = head / heads_per_kv;
@@ -265,34 +254,20 @@ fn gqa_incremental_attention(
         let q_start = head * head_dim;
         let q_slice = &q[q_start..q_start + head_dim];
 
-        // Attention scores for all cached positions
-        let mut scores = Vec::with_capacity(cache_len);
-        for kpos in 0..cache_len {
-            let k_start = kpos * kv_dim + kv_head * head_dim;
-            let k_slice = &all_k[k_start..k_start + head_dim];
-
-            let score: f32 = q_slice
-                .iter()
-                .zip(k_slice.iter())
-                .map(|(&a, &b)| a * b)
-                .sum();
-            scores.push(score * scale);
-        }
-
-        // Softmax
-        let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
-        let sum: f32 = exp_scores.iter().sum();
-        let weights: Vec<f32> = exp_scores.iter().map(|&e| e / sum).collect();
-
-        // Weighted sum
-        let out_start = head * head_dim;
-        for (kpos, &weight) in weights.iter().enumerate() {
-            let v_start = kpos * kv_dim + kv_head * head_dim;
-            for d in 0..head_dim {
-                output[out_start + d] += weight * all_v[v_start + d];
-            }
-        }
+        let kv_row = |kpos: usize| kpos * kv_dim + kv_head * head_dim;
+        crate::gguf::ops::attend_row_scalar(
+            q_slice,
+            cache_len,
+            |kpos| &all_k[kv_row(kpos)..][..head_dim],
+            |kpos| &all_v[kv_row(kpos)..][..head_dim],
+            scale,
+            crate::gguf::ops::RowSoftmax {
+                norm: crate::gguf::ops::SoftmaxNorm::Divide,
+                guard_positive_sum: false,
+            },
+            &mut scores,
+            &mut output[q_start..q_start + head_dim],
+        );
     }
 
     Ok(output)
