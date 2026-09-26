@@ -35,6 +35,30 @@ pub const PER_STRATUM: usize = 50;
 /// Bootstrap resamples for the p95 interval.
 pub const BOOTSTRAP: usize = 2000;
 
+/// The first set version that pins the prompt (PRM-S1 v2): both engines are sent
+/// `chat_template_kwargs.enable_thinking = false`, and a run is summarized only when
+/// every item's prompt ids hash the same on both engines. v1 pinned neither;
+/// llama.cpp `d1d3c3396` then decoded Qwen3.5 in thinking mode and apr did not, so v1
+/// runs are not comparable.
+pub const V2: &str = "review-replay-v2";
+
+/// Whether set `version` pins the prompt (see [`V2`]).
+#[must_use]
+pub fn pins_prompt(version: &str) -> bool {
+    version == V2
+}
+
+/// The chat request replayed for one item under set `version`: the REX-03 body,
+/// plus `enable_thinking: false` when the version pins the prompt.
+#[must_use]
+pub fn replay_request(version: &str, model: &str, prompt: &str, diff: &str) -> serde_json::Value {
+    let mut body = crate::harness::request_body(model, prompt, diff);
+    if pins_prompt(version) {
+        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": false });
+    }
+    body
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Stratum {
     #[serde(rename = "2k")]
@@ -296,6 +320,10 @@ pub struct Row {
     pub output_tokens: Option<u64>,
     pub peak_rss_mb: Option<f64>,
     pub verdict: Verdict,
+    /// sha256 of the prompt ids this engine prefilled for the item (the ids as
+    /// decimal, comma-separated). Required from [`V2`] on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_ids_sha256: Option<String>,
 }
 
 /// Engine A over engine B (`apr / llama_cpp`). `ratio` is null when either
@@ -342,6 +370,10 @@ pub struct Speed {
     pub peak_rss_mb: Ratio,
     pub parse_rate: f64,
     pub verdict_identity_vs_prev_tag: Option<f64>,
+    /// sha256 over the per-item prompt-ids shas in item order: the ids both
+    /// engines prefilled. `None` for a set version that pins no prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_ids_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -349,12 +381,27 @@ pub enum SummaryError {
     NoRows,
     MixedSet,
     Mismatch(&'static str),
-    DuplicateRow { engine: Engine, diff_sha256: String },
+    DuplicateRow {
+        engine: Engine,
+        diff_sha256: String,
+    },
     CoverageDiffers,
-    NotRun { engine: Engine, diff_sha256: String },
+    NotRun {
+        engine: Engine,
+        diff_sha256: String,
+    },
     NoVoterLatency,
     PrevSetDiffers,
     PrevCoverageDiffers,
+    /// A prompt-pinning set whose row carries no prompt-ids sha.
+    NoPromptIds {
+        engine: Engine,
+        diff_sha256: String,
+    },
+    /// The engines prefilled different ids for this item.
+    PromptIdsDiffer {
+        diff_sha256: String,
+    },
 }
 
 /// Per-engine rows keyed by diff sha.
@@ -378,6 +425,46 @@ fn index(rows: &[Row]) -> Result<[ByItem<'_>; 2], SummaryError> {
         }
     }
     Ok(out)
+}
+
+/// For a prompt-pinning set: every row carries its prompt-ids sha and the two
+/// engines agree on every item. Returns the sha over the per-item shas.
+fn prompt_ids_sha(
+    version: &str,
+    apr: &ByItem<'_>,
+    llama: &ByItem<'_>,
+) -> Result<Option<String>, SummaryError> {
+    if !pins_prompt(version) {
+        return Ok(None);
+    }
+    let sha_of = |r: &Row| {
+        r.prompt_ids_sha256
+            .clone()
+            .ok_or_else(|| SummaryError::NoPromptIds {
+                engine: r.engine,
+                diff_sha256: r.diff_sha256.clone(),
+            })
+    };
+    let mut all = String::new();
+    for (a, l) in apr.values().zip(llama.values()) {
+        let (sa, sl) = (sha_of(a)?, sha_of(l)?);
+        if sa != sl {
+            return Err(SummaryError::PromptIdsDiffer {
+                diff_sha256: a.diff_sha256.clone(),
+            });
+        }
+        all.push_str(&sa);
+        all.push('\n');
+    }
+    Ok(Some(sha256_hex(all.as_bytes())))
+}
+
+/// The sha a row records for prompt ids: sha256 of the ids as decimal,
+/// comma-separated.
+#[must_use]
+pub fn ids_sha256(ids: &[u64]) -> String {
+    let text: Vec<String> = ids.iter().map(u64::to_string).collect();
+    sha256_hex(text.join(",").as_bytes())
 }
 
 fn median(xs: impl Iterator<Item = Option<f64>>) -> Option<f64> {
@@ -436,6 +523,7 @@ pub fn summarize(
     if apr.is_empty() || !apr.keys().eq(llama.keys()) {
         return Err(SummaryError::CoverageDiffers);
     }
+    let prompt_ids_sha = prompt_ids_sha(&first.replay_version, &apr, &llama)?;
     if voters.is_empty() || voters.iter().any(|(_, v)| v.is_empty()) {
         return Err(SummaryError::NoVoterLatency);
     }
@@ -508,6 +596,7 @@ pub fn summarize(
         peak_rss_mb: Ratio::of(peak(&apr), peak(&llama)),
         parse_rate: parsed as f64 / apr.len() as f64,
         verdict_identity_vs_prev_tag,
+        prompt_ids_sha,
     })
 }
 

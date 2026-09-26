@@ -836,3 +836,47 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     let usage = usage.expect("the terminal chunk carries usage (#4272)");
     assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
 }
+
+/// PRM-S1 v2 (#4354): `POST /v1/chat/prompt-ids` reports the ids the chat path
+/// prefills — the same count the chat reply bills as `prompt_tokens`, and the same
+/// ids as rendering and encoding directly — in both thinking modes.
+#[tokio::test(flavor = "multi_thread")]
+async fn prompt_ids_are_the_ids_the_chat_path_prefills_4354() {
+    let Some((state, mapped)) = state_or_skip(true) else {
+        return;
+    };
+    let msgs = [crate::chat_template::ChatMessage::new("user", QUESTION)];
+    let app = create_router(state);
+    let mut seen = Vec::new();
+    for thinking in [false, true] {
+        let mut body = chat_body(false, 1);
+        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": thinking });
+        let (status, reply) = post(app.clone(), "/v1/chat/prompt-ids", body.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{reply}");
+        let json: serde_json::Value = serde_json::from_str(&reply).expect("JSON");
+        let ids: Vec<u32> = serde_json::from_value(json["prompt_ids"].clone()).expect("ids");
+        let direct = crate::chat_template::render_official_for_model(&mapped.model, &msgs, Some(thinking))
+            .expect("renders");
+        assert_eq!(json["prompt"].as_str(), Some(direct.as_str()), "thinking={thinking}");
+        assert_eq!(Some(ids.clone()), mapped.model.encode(&direct), "thinking={thinking}");
+
+        let (status, chat) = post(app.clone(), "/v1/chat/completions", body).await;
+        assert_eq!(status, StatusCode::OK, "{chat}");
+        let chat: serde_json::Value = serde_json::from_str(&chat).expect("JSON");
+        assert_eq!(chat["usage"]["prompt_tokens"].as_u64(), Some(ids.len() as u64));
+        seen.push(ids);
+    }
+    assert_ne!(seen[0], seen[1], "the probe must distinguish the ON and OFF prompts");
+}
+
+/// #3991 applied to the new route: it is mounted and listed only where a Qwen3.5
+/// session can answer it.
+#[test]
+fn prompt_ids_route_is_listed_only_with_a_qwen35_session_4354() {
+    let config = crate::api::RouterConfig::default();
+    let mut caps = crate::api::RouteCapabilities::all();
+    let listed = |c| crate::api::advertised_routes_for(&config, c);
+    assert!(listed(caps).iter().any(|r| r == "POST /v1/chat/prompt-ids"));
+    caps.qwen35_prompt_ids = false;
+    assert!(!listed(caps).iter().any(|r| r.contains("/v1/chat/prompt-ids")));
+}

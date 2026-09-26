@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: schema
   description: |
     PRM-S1 (PRM-001 v3 "PROMETHEUS" §2.4 review-replay-v1, §9 speed block; Refs #4354, #4447).
@@ -64,3 +64,9 @@ falsification_tests:
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_006"
     expected_output: "exit 0"
     if_fails: "A tag could change review verdicts while the speed block reported only faster wall-clock."
+  - id: FALSIFY-REPLAY-007
+    name: v2_pins_the_prompt_both_engines_prefill
+    prediction: "a review-replay-v2 request sends chat_template_kwargs.enable_thinking=false and a v1 request is unchanged; a v2 summary refuses any row without a prompt-ids sha and any item whose apr and llama_cpp prompt-ids shas differ; the ids sha is order-sensitive"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_007"
+    expected_output: "exit 0"
+    if_fails: "Set b8a58011 (v1) compared llama.cpp decoding Qwen3.5 in thinking mode against apr answering directly: two different prompts, reported as one speed ratio."

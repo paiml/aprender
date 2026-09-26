@@ -66,6 +66,58 @@ fn gen_config_from_request(
     }
 }
 
+/// The Qwen3.5 hybrid's prompt for a chat request: the model's own template in the
+/// request's thinking mode (#3723), encoded by the model.
+///
+/// The chat path and `POST /v1/chat/prompt-ids` both call this, so the ids that
+/// endpoint reports are the ids this path prefills (PRM-S1 v2, #4354).
+fn qwen35_prompt(
+    model: &crate::gguf::GGUFModel,
+    request: &ChatCompletionRequest,
+    architecture: Option<&str>,
+) -> Result<(String, Vec<u32>), String> {
+    let text = crate::api::realize_handlers::format_chat_messages_official_thinking(
+        Some(model),
+        &request.messages,
+        architecture,
+        request.thinking(),
+    )
+    .map_err(|e| e.to_string())?;
+    let ids = model.encode(&text).unwrap_or_default();
+    Ok((text, ids))
+}
+
+/// `POST /v1/chat/prompt-ids`: the rendered prompt and its ids for a chat request
+/// body, without generating (PRM-S1 v2, #4354).
+///
+/// A cross-engine replay must show both engines prefill the same ids before it
+/// compares their speed. llama.cpp answers that with `/apply-template` + `/tokenize`;
+/// apr's `/tokenize` is not the chat path's encoder, so this answers from the chat
+/// path itself. Only the Qwen3.5 hybrid path is covered; any other backend is 501,
+/// never ids some other path might have built.
+pub async fn chat_prompt_ids_handler(
+    State(state): State<AppState>,
+    Json(request): Json<ChatCompletionRequest>,
+) -> Response {
+    let (Some(_), Some(mapped)) = (state.qwen35_session(), state.mapped_gguf_model()) else {
+        return fail_response(
+            &state,
+            StatusCode::NOT_IMPLEMENTED,
+            "prompt ids are reported only for the Qwen3.5 hybrid chat path (#4354)",
+        );
+    };
+    let architecture = state.model_architecture();
+    match qwen35_prompt(&mapped.model, &request, architecture.as_deref()) {
+        Ok((prompt, ids)) => Json(serde_json::json!({
+            "path": "qwen35",
+            "prompt": prompt,
+            "num_tokens": ids.len(),
+            "prompt_ids": ids,
+        }))
+        .into_response(),
+        Err(e) => fail_response(&state, StatusCode::BAD_REQUEST, e),
+    }
+}
 
 /// The Qwen3.5 arm of the chat backend chain (#3571).
 ///
@@ -106,17 +158,10 @@ async fn try_qwen35_backend(
     };
 
     let architecture = state.model_architecture();
-    // #3723: the request's thinking mode, rendered by the model's own template.
-    let prompt_text = match crate::api::realize_handlers::format_chat_messages_official_thinking(
-        Some(&mapped.model),
-        &request.messages,
-        architecture.as_deref(),
-        request.thinking(),
-    ) {
-        Ok(p) => p,
-        Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
+    let input_ids = match qwen35_prompt(&mapped.model, request, architecture.as_deref()) {
+        Ok((_, ids)) => ids,
+        Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e)),
     };
-    let input_ids = mapped.model.encode(&prompt_text).unwrap_or_default();
     if input_ids.is_empty() {
         return Some(fail_response(
             state,

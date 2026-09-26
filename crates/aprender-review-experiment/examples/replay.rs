@@ -15,7 +15,15 @@
 //!   --apr-tag T --cell C --gguf-sha G --model M --out ROWS [--server-pid P]`
 //!   replays every item once through the chat-completions endpoint `U` and
 //!   appends one `review-replay-receipt-v1` row per item. `--server-pid` adds
-//!   the serve's VmHWM (peak RSS so far) to each row.
+//!   the serve's VmHWM (peak RSS so far) to each row. `--ids F` (a `prompt-ids`
+//!   file for this engine) records each item's prompt-ids sha; a `review-replay-v2`
+//!   set requires it, and sends `enable_thinking: false` to both engines.
+//! - `prompt-ids --set SET --diffs DIR --url BASE --engine E --model M --out F`
+//!   the ids engine `E` prefills for every item's replay request (llama.cpp:
+//!   `/apply-template` + `/tokenize`; apr: `/v1/chat/prompt-ids`), one JSONL row
+//!   per item. Prints the sha over the per-item shas.
+//! - `ids-diff A B` the pre-run gate: exit 0 only when two `prompt-ids` files
+//!   hold identical ids for the same items; else prints the first difference.
 //! - `sketch --items DIR` writes `test-sketch-v1.txt` (the near-dup sketches
 //!   `build` needs) from the corpus items in DIR, e.g. the unpacked
 //!   `items-v1.tar`. Every test-split diff must hash to its corpus
@@ -34,10 +42,11 @@ use std::process::ExitCode;
 use aprender_review_experiment::cluster::{parse_sketches, render_sketches, sketch};
 use aprender_review_experiment::contamination::Index;
 use aprender_review_experiment::corpus::{parse_manifest, sha256_hex, Item, Split};
-use aprender_review_experiment::harness::{classify, compose, post, request_body};
+use aprender_review_experiment::harness::{classify, compose, post};
 use aprender_review_experiment::prereg::PROMPT_V1;
 use aprender_review_experiment::replay::{
-    build, summarize, BuildError, Candidate, Engine, Row, Set, PER_STRATUM, ROW_SCHEMA,
+    build, ids_sha256, pins_prompt, replay_request, summarize, BuildError, Candidate, Engine, Row,
+    Set, PER_STRATUM, ROW_SCHEMA,
 };
 use serde_json::Value;
 
@@ -57,7 +66,12 @@ fn main() -> ExitCode {
             .ok_or_else(|| "voters DIR".to_string())
             .and_then(|d| cmd_voters(d)),
         Some("summary") => flags(&a[1..]).and_then(|f| cmd_summary(&f)),
-        _ => Err("usage: replay build|run|sketch|voters|summary (see the example's docs)".into()),
+        Some("prompt-ids") => flags(&a[1..]).and_then(|f| cmd_prompt_ids(&f)),
+        Some("ids-diff") => match (a.get(1), a.get(2)) {
+            (Some(x), Some(y)) => cmd_ids_diff(x, y),
+            _ => Err("ids-diff A B".into()),
+        },
+        _ => Err("usage: replay build|run|prompt-ids|ids-diff|sketch|voters|summary (see the example's docs)".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,
@@ -219,6 +233,26 @@ fn cmd_run(f: &Flags) -> Result<(), String> {
     };
     let (url, model, dir) = (need(f, "url")?, need(f, "model")?, need(f, "diffs")?);
     let pid = f.get("server-pid").and_then(|v| v.last());
+    // A prompt-pinning set runs only on ids this engine was shown to prefill.
+    let ids = match f.get("ids") {
+        Some(_) => ids_by_item(need(f, "ids")?, engine)?,
+        None if pins_prompt(&set.version) => {
+            return Err(format!(
+                "{}: --ids (from prompt-ids) is required",
+                set.version
+            ))
+        }
+        None => BTreeMap::new(),
+    };
+    if pins_prompt(&set.version) {
+        if let Some(it) = set
+            .items
+            .iter()
+            .find(|it| !ids.contains_key(&it.diff_sha256))
+        {
+            return Err(format!("--ids has no row for {}", it.diff_sha256));
+        }
+    }
     let out_path = need(f, "out")?;
     let mut out = std::fs::OpenOptions::new()
         .create(true)
@@ -233,7 +267,7 @@ fn cmd_run(f: &Flags) -> Result<(), String> {
                 it.diff_sha256
             ));
         }
-        let reply = post(url, &request_body(model, PROMPT_V1, &diff))?;
+        let reply = post(url, &replay_request(&set.version, model, PROMPT_V1, &diff))?;
         let p = classify(&reply);
         let row = Row {
             schema: ROW_SCHEMA.into(),
@@ -254,12 +288,171 @@ fn cmd_run(f: &Flags) -> Result<(), String> {
             output_tokens: p.tokens.map(|t| t.completion),
             peak_rss_mb: pid.and_then(|p| vm_hwm_mb(p)),
             verdict: p.verdict,
+            prompt_ids_sha256: ids.get(it.diff_sha256.as_str()).cloned(),
         };
         let line = serde_json::to_string(&row).map_err(|e| e.to_string())?;
         writeln!(out, "{line}").map_err(|e| format!("{out_path}: {e}"))?;
     }
     println!("{{\"rows\":{},\"set_sha\":\"{set_sha}\"}}", set.items.len());
     Ok(())
+}
+
+/// The ids `engine` prefills for one item's replay request.
+///
+/// llama.cpp: `/apply-template` renders the request (it honours
+/// `chat_template_kwargs`), and `/tokenize` encodes the result with specials,
+/// as its chat path does. apr: `/v1/chat/prompt-ids` answers from the chat path.
+// `json!` expands to an `unwrap` of an infallible `to_value` (as in `harness::request_body`).
+#[allow(clippy::disallowed_methods)]
+fn prompt_ids(base: &str, engine: Engine, body: &Value) -> Result<Vec<u64>, String> {
+    let (reply, key) = match engine {
+        Engine::Apr => (
+            post_json(&format!("{base}/v1/chat/prompt-ids"), body)?,
+            "prompt_ids",
+        ),
+        Engine::LlamaCpp => {
+            let templated = post_json(&format!("{base}/apply-template"), body)?;
+            let prompt = templated["prompt"]
+                .as_str()
+                .ok_or("apply-template: no prompt")?;
+            let tok = serde_json::json!({ "content": prompt, "add_special": true });
+            (post_json(&format!("{base}/tokenize"), &tok)?, "tokens")
+        }
+    };
+    reply[key]
+        .as_array()
+        .ok_or_else(|| format!("{base}: no {key}"))?
+        .iter()
+        .map(|t| {
+            t.as_u64()
+                .ok_or_else(|| format!("{base}: {key} holds a non-id"))
+        })
+        .collect()
+}
+
+fn engine_of(s: &str) -> Result<Engine, String> {
+    match s {
+        "apr" => Ok(Engine::Apr),
+        "llama_cpp" => Ok(Engine::LlamaCpp),
+        e => Err(format!("--engine {e}: want apr|llama_cpp")),
+    }
+}
+
+/// `prompt-ids --set SET --diffs DIR --url BASE --engine E --model M --out F`:
+/// one JSONL row per item with the ids `E` prefills for its replay request and
+/// their sha. Prints the item count and the sha over the per-item shas.
+#[allow(clippy::disallowed_methods)] // `json!`, as above.
+fn cmd_prompt_ids(f: &Flags) -> Result<(), String> {
+    let set = Set::parse(&read(need(f, "set")?)?)?;
+    let engine = engine_of(need(f, "engine")?)?;
+    let (base, model, dir) = (
+        need(f, "url")?.trim_end_matches('/'),
+        need(f, "model")?,
+        need(f, "diffs")?,
+    );
+    let out_path = need(f, "out")?;
+    let mut out = std::fs::File::create(out_path).map_err(|e| format!("{out_path}: {e}"))?;
+    let mut all = String::new();
+    for it in &set.items {
+        let diff = read(&format!("{dir}/{}.diff", it.diff_sha256))?;
+        let body = replay_request(&set.version, model, PROMPT_V1, &diff);
+        let ids = prompt_ids(base, engine, &body)?;
+        let sha = ids_sha256(&ids);
+        let row = serde_json::json!({
+            "diff_sha256": it.diff_sha256, "engine": engine,
+            "n_tokens": ids.len(), "ids_sha256": sha, "ids": ids,
+        });
+        writeln!(out, "{row}").map_err(|e| format!("{out_path}: {e}"))?;
+        all.push_str(&sha);
+        all.push('\n');
+    }
+    println!(
+        "{{\"items\":{},\"ids_sha\":\"{}\"}}",
+        set.items.len(),
+        sha256_hex(all.as_bytes())
+    );
+    Ok(())
+}
+
+/// A `prompt-ids` file as `diff_sha256 -> (ids_sha256, ids)`.
+fn ids_file(path: &str) -> Result<BTreeMap<String, (Engine, String, Vec<u64>)>, String> {
+    let mut m = BTreeMap::new();
+    for (n, line) in read(path)?.lines().enumerate() {
+        let v: Value = serde_json::from_str(line).map_err(|e| format!("{path}:{}: {e}", n + 1))?;
+        let bad = || format!("{path}:{}: not a prompt-ids row", n + 1);
+        let engine = engine_of(v["engine"].as_str().ok_or_else(bad)?)?;
+        let ids: Vec<u64> = v["ids"]
+            .as_array()
+            .ok_or_else(bad)?
+            .iter()
+            .filter_map(Value::as_u64)
+            .collect();
+        let sha = v["ids_sha256"].as_str().ok_or_else(bad)?.to_string();
+        if ids_sha256(&ids) != sha {
+            return Err(format!("{path}:{}: ids do not hash to ids_sha256", n + 1));
+        }
+        let key = v["diff_sha256"].as_str().ok_or_else(bad)?.to_string();
+        m.insert(key, (engine, sha, ids));
+    }
+    Ok(m)
+}
+
+fn ids_by_item(path: &str, engine: Engine) -> Result<BTreeMap<String, String>, String> {
+    ids_file(path)?
+        .into_iter()
+        .map(|(k, (e, sha, _))| {
+            if e == engine {
+                Ok((k, sha))
+            } else {
+                Err(format!(
+                    "{path}: ids are from {e:?}, this run is {engine:?}"
+                ))
+            }
+        })
+        .collect()
+}
+
+/// `ids-diff A B`: the pre-run gate. Exit 0 only when both files cover the
+/// same items and every item's ids are identical; otherwise print the first
+/// differing item, position and a few ids either side.
+#[allow(clippy::disallowed_methods)] // `json!`, as above.
+fn cmd_ids_diff(a: &str, b: &str) -> Result<(), String> {
+    let (ma, mb) = (ids_file(a)?, ids_file(b)?);
+    if !ma.keys().eq(mb.keys()) {
+        return Err(format!("{a} and {b} cover different items"));
+    }
+    let mut differ = Vec::new();
+    for (k, (_, sa, ia)) in &ma {
+        let (_, sb, ib) = &mb[k];
+        if sa != sb {
+            let pos = ia
+                .iter()
+                .zip(ib)
+                .position(|(x, y)| x != y)
+                .unwrap_or(ia.len().min(ib.len()));
+            let win = |v: &[u64]| v[pos.saturating_sub(3)..(pos + 4).min(v.len())].to_vec();
+            differ.push(serde_json::json!({
+                "diff_sha256": k, "at": pos, "n": [ia.len(), ib.len()],
+                "a": win(ia), "b": win(ib),
+            }));
+        }
+    }
+    println!(
+        "{}",
+        serde_json::json!({
+            "items": ma.len(), "differ": differ.len(),
+            "first": differ.first(),
+        })
+    );
+    if differ.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} of {} items prefill different ids",
+            differ.len(),
+            ma.len()
+        ))
+    }
 }
 
 fn cmd_voters(dir: &str) -> Result<(), String> {
