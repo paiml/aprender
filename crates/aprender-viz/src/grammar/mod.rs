@@ -37,6 +37,7 @@ mod data;
 mod facet;
 mod geom;
 mod ggplot;
+mod labels;
 mod stat;
 mod theme;
 
