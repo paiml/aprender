@@ -194,7 +194,7 @@ fn hex_lower(b: &[u8]) -> String {
         })
 }
 
-fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
+pub(crate) fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
     if findings.is_empty() {
         GateRow {
             gate,
@@ -457,7 +457,7 @@ fn m5(m: &ReleaseManifest) -> GateRow {
 }
 
 /// A card line's receipt markers: `[receipt:<id>]`.
-fn receipt_markers(line: &str) -> (String, Vec<&str>) {
+pub(crate) fn receipt_markers(line: &str) -> (String, Vec<&str>) {
     let mut ids = Vec::new();
     let mut rest = String::with_capacity(line.len());
     let mut s = line;
@@ -481,7 +481,7 @@ fn receipt_markers(line: &str) -> (String, Vec<&str>) {
 
 /// Whether a line states a figure: a digit that is not part of an identifier (the
 /// `3.5` in `Qwen3.5-4B`, the `0` in `v0.1.0`) and not an ordered-list marker.
-fn states_a_figure(text: &str) -> bool {
+pub(crate) fn states_a_figure(text: &str) -> bool {
     let body = text.trim_start();
     let body = match body.find(". ") {
         Some(i) if i > 0 && body[..i].bytes().all(|b| b.is_ascii_digit()) => &body[i + 2..],
