@@ -86,6 +86,8 @@ pub mod parallel_dequant;
 pub mod parallel_k;
 pub mod simd;
 pub mod types;
+#[cfg(all(test, target_arch = "x86_64"))]
+mod vnni_reach_bench_tests;
 
 // Re-export types from submodules (PMAT-802)
 pub use types::{
