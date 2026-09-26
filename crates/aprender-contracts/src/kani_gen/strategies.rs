@@ -162,6 +162,44 @@ pub(super) fn generate_bounded_int_body(out: &mut String, harness: &KaniHarness)
     out.push_str("        unimplemented!(\"Wire up kernel under test\")\n");
 }
 
+pub(super) fn generate_bounded_float_body(out: &mut String, harness: &KaniHarness) {
+    let bound = harness.bound.unwrap_or(16);
+    out.push_str(
+        "        // Strategy: bounded_float — real IEEE-754 arithmetic \
+         over a bounded f32 window.\n",
+    );
+    out.push_str(
+        "        // Inputs are finite and magnitude-bounded; transcendentals \
+         run unmodified.\n\n",
+    );
+
+    out.push_str(
+        "        // Domain bound the proof discharges — set it to the \
+         kernel's input range.\n",
+    );
+    out.push_str("        const MAGNITUDE: f32 = 1.0;\n\n");
+
+    out.push_str("        let n: usize = kani::any();\n");
+    out.push_str(&format!(
+        "        kani::assume(n >= 1 && n <= {bound});\n\n"
+    ));
+
+    out.push_str(
+        "        let input: Vec<f32> = (0..n)\
+         .map(|_| kani::any()).collect();\n",
+    );
+    out.push_str(
+        "        kani::assume(input.iter()\
+         .all(|x| x.is_finite() && x.abs() <= MAGNITUDE));\n\n",
+    );
+
+    if let Some(ref property) = harness.property {
+        out.push_str(&format!("        // Verify: {property}\n"));
+    }
+    out.push_str(&format!("        // Obligation: {}\n", harness.obligation));
+    out.push_str("        unimplemented!(\"Wire up kernel under test\")\n");
+}
+
 pub(super) fn generate_default_body(out: &mut String, harness: &KaniHarness) {
     let bound = harness.bound.unwrap_or(16);
     out.push_str(

@@ -406,6 +406,31 @@ kani_harnesses:
     assert!(score.kani_coverage < 0.85);
 }
 
+/// #2530: bounded_float discharges real float arithmetic over a bounded domain,
+/// the float analogue of bounded_int — it weighs the same, above stub_float.
+#[test]
+fn kani_strategy_weight_bounded_float() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Test"
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "p1"
+kani_harnesses:
+  - id: K1
+    obligation: "p1"
+    bound: 8
+    strategy: bounded_float
+"#;
+    let contract = parse_contract_str(yaml).unwrap();
+    let score = score_contract(&contract, None, "test-v1");
+    assert!((score.kani_coverage - 0.9).abs() < 1e-9, "{}", score.kani_coverage);
+}
+
 #[test]
 fn registry_scoring_full_binding_credit() {
     let yaml = r#"
