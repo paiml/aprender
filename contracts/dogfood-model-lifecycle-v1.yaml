@@ -262,8 +262,8 @@ falsification_tests:
 - id: FALSIFY-EXT-020
   obligation: EXT-INV-010
   rule: Comparator arms are complete
-  prediction: an arm missing any of command, version, env_sha256, artifact_sha256, log_path blocks
-  test: cargo test -p apr-cli --lib falsify_ext_020_incomplete_arm_blocks
+  prediction: an arm missing any of command, version, env_sha256, artifact_sha256, log_path blocks, in the harness and as an M2 arm in apr model gate
+  test: cargo test -p apr-cli --lib falsify_ext_020
   if_fails: 'a competitor number is unreproducible: a block lacks a field, hashes a stale artifact, inherits the host env, or runs an image not pinned by digest with the network up (determinism: cargo test -p apr-cli --lib two_identical_runs_give_identical_blocks_except_timestamps)'
 - id: FALSIFY-EXT-021
   obligation: EXT-INV-009
