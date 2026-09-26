@@ -110,6 +110,14 @@ pub struct Summary {
 }
 
 fn row_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
+    let mut e = identity_errors(r);
+    e.extend(provenance_errors(r, prereg_sha));
+    e.extend(status_errors(r));
+    e
+}
+
+/// The schema, and the cell against its §2.1 declaration.
+fn identity_errors(r: &Row) -> Vec<String> {
     let mut e = Vec::new();
     let id = &r.cell;
     if r.schema != SCHEME {
@@ -123,28 +131,40 @@ fn row_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
         )),
         Some(_) => {}
     }
-    for (k, v) in [
+    e
+}
+
+/// The binary, the weights and the pre-registration the row was measured on.
+fn provenance_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
+    let id = &r.cell;
+    let missing = [
         ("apr_tag", &r.apr_tag),
         ("model_id", &r.model_id),
         ("at", &r.at),
-    ] {
-        if v.trim().is_empty() || v == "unknown" {
-            e.push(format!("{id}: {k} missing"));
-        }
-    }
-    for (k, v) in [
+    ]
+    .into_iter()
+    .filter(|(_, v)| v.trim().is_empty() || *v == "unknown")
+    .map(|(k, _)| format!("{id}: {k} missing"));
+    let not_sha = [
         ("apr_sha256", &r.apr_sha256),
         ("weights_sha256", &r.weights_sha256),
-    ] {
-        if !is_hex64(v) {
-            e.push(format!("{id}: {k} is not a sha256"));
-        }
-    }
+    ]
+    .into_iter()
+    .filter(|(_, v)| !is_hex64(v))
+    .map(|(k, _)| format!("{id}: {k} is not a sha256"));
+    let mut e: Vec<String> = missing.chain(not_sha).collect();
     if r.prereg_sha != prereg_sha {
         e.push(format!("{id}: prereg_sha differs from the lock"));
     }
+    e
+}
+
+/// What an Admitted or Refused status must carry.
+fn status_errors(r: &Row) -> Vec<String> {
+    let id = &r.cell;
     match &r.status {
         Status::Admitted { parity: p } => {
+            let mut e = Vec::new();
             if p.oracle.trim().is_empty() || p.threshold_basis.trim().is_empty() {
                 e.push(format!("{id}: Admitted without oracle or threshold basis"));
             }
@@ -157,13 +177,13 @@ fn row_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
                     p.cosine, p.threshold
                 ));
             }
+            e
         }
         Status::Refused { removed_by } if removed_by.trim().is_empty() => {
-            e.push(format!("{id}: Refused without removed_by"));
+            vec![format!("{id}: Refused without removed_by")]
         }
-        _ => {}
+        _ => Vec::new(),
     }
-    e
 }
 
 /// Check an admission file (JSON lines). Every §2.1 cell must appear exactly
