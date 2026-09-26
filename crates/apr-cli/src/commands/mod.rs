@@ -100,6 +100,9 @@ pub(crate) mod lint_error;
 // EXT-26 comparator harness; its consumers are the EXT-27/28 competitor arms.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod comparator;
+// EXT-28 C2 speed arms; their consumer is the EXT-19 speed ledger.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod speed_arms;
 #[cfg(feature = "training")]
 pub(crate) mod hf_http;
 #[cfg(feature = "training")]
