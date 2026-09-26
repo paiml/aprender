@@ -469,3 +469,162 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
         );
     }
 }
+
+/// #4313 GB10 bisect (diagnostic, `--ignored`): prefill a REAL probe through the
+/// batched path and per-token, then print per-position logit cosine and every
+/// layer's state divergence. The first layer whose state leaves the f32 noise
+/// floor names where the batched prefill goes wrong. Probe: `APR_BISECT_IDS`
+/// (comma-separated ids) or the last `APR_BISECT_N` (64) ids of `APR_BISECT_TEXT`.
+#[test]
+#[ignore = "diagnostic: needs APR_BISECT_MODEL and a probe"]
+#[serial_test::serial]
+fn qwen35_bisect_real_probe_per_layer() {
+    let Ok(model_path) = std::env::var("APR_BISECT_MODEL") else {
+        eprintln!("SKIP: APR_BISECT_MODEL unset");
+        return;
+    };
+    super::ATTENTION_OVERRIDE.with(|c| c.set(Some(super::PrefillAttention::CublasF32)));
+    crate::cuda::QWEN35_PREFILL_GEMM_OVERRIDE
+        .with(|c| c.set(Some(crate::cuda::Qwen35PrefillGemm::F32)));
+    let mapped = crate::gguf::MappedGGUFModel::from_path(&model_path).expect("map the GGUF");
+    let probe: Vec<u32> = if let Ok(ids) = std::env::var("APR_BISECT_IDS") {
+        ids.split(',')
+            .map(|s| s.trim().parse().expect("id"))
+            .collect()
+    } else {
+        let path = std::env::var("APR_BISECT_TEXT").expect("APR_BISECT_TEXT or APR_BISECT_IDS");
+        let text = std::fs::read_to_string(&path).expect("read the probe text");
+        let text = if std::env::var("APR_BISECT_CHAT").is_ok_and(|v| v == "1") {
+            format!("<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n")
+        } else {
+            text
+        };
+        let all = mapped.model.encode(&text).expect("encode");
+        println!(
+            "[4313] encoded {} ids, tail {:?}",
+            all.len(),
+            &all[all.len().saturating_sub(12)..]
+        );
+        let n: usize = std::env::var("APR_BISECT_N").map_or(64, |v| v.parse().expect("N"));
+        all[all.len().saturating_sub(n)..].to_vec()
+    };
+    let n = probe.len();
+    println!("[4313] probe n={n} ids={probe:?}");
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut cpu_state = qwen.new_state(n + 2);
+    let cpu: Vec<Vec<f32>> = probe
+        .iter()
+        .enumerate()
+        .map(|(pos, &t)| {
+            qwen.forward_single_qwen35(t, &mut cpu_state, pos)
+                .expect("cpu")
+        })
+        .collect();
+    if std::env::var("APR_BISECT_CPU_ONLY").is_ok_and(|v| v == "1") {
+        let dir = std::env::var("APR_BISECT_DUMP").expect("APR_BISECT_DUMP");
+        std::fs::create_dir_all(&dir).expect("dump dir");
+        let bytes: Vec<u8> = cpu.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
+        std::fs::write(format!("{dir}/cpu.f32"), bytes).expect("dump");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    // The F2 shape: a model sized for the probe (QWEN35_F2_PROBE_MAX + 2), a state
+    // sized for probe + 1 decode step, and the session's planned chunk rows.
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, 66).expect("gpu model");
+    if let Ok(rows) = std::env::var("APR_BISECT_ROWS") {
+        gpu.set_prefill_chunk_rows(rows.parse().expect("rows"));
+    }
+    gpu.set_prefill_attention(super::PrefillAttention::CublasF32);
+    println!("[4313] chunk rows {}", gpu.prefill_chunk_rows(n));
+
+    let mut per_token = gpu.new_state_with_len(n + 1).expect("state");
+    let mut want = Vec::with_capacity(n);
+    for (pos, &t) in probe.iter().enumerate() {
+        want.push(
+            gpu.forward_single(t, &mut per_token, pos)
+                .expect("forward_single"),
+        );
+    }
+    let mut batched = gpu.new_state_with_len(n + 1).expect("state");
+    let every: Vec<usize> = (0..n).collect();
+    let got = gpu
+        .prefill_logits_at(&probe, &mut batched, 0, &every)
+        .expect("prefill_logits_at");
+    let mut first_bad = None;
+    for (pos, ((g, w), c)) in got.iter().zip(&want).zip(&cpu).enumerate() {
+        let cos = cosine(g, w);
+        println!(
+            "[4313] pos {pos:3} batched~per_token {cos:.6} batched~cpu {:.6} per_token~cpu {:.6} argmax b{} p{} c{}",
+            cosine(g, c),
+            cosine(w, c),
+            argmax(g),
+            argmax(w),
+            argmax(c)
+        );
+        if (cos < 0.99 || cosine(g, c) < 0.99) && first_bad.is_none() {
+            first_bad = Some(pos);
+        }
+    }
+    println!("[4313] first position with cos < 0.99: {first_bad:?}");
+    if let Ok(dir) = std::env::var("APR_BISECT_DUMP") {
+        std::fs::create_dir_all(&dir).expect("dump dir");
+        for (tag, rows) in [
+            ("cpu", &cpu),
+            ("gpu_batched", &got),
+            ("gpu_per_token", &want),
+        ] {
+            let bytes: Vec<u8> = rows
+                .iter()
+                .flatten()
+                .flat_map(|v| v.to_le_bytes())
+                .collect();
+            std::fs::write(format!("{dir}/{tag}.f32"), bytes).expect("dump");
+        }
+    }
+
+    gpu.executor_mut().sync_stream().expect("sync");
+    for il in 0..batched.conv.len() {
+        let mut pairs = Vec::new();
+        if let (Some((kb, vb)), Some((kp, vp))) = (&batched.kv[il], &per_token.kv[il]) {
+            let len = per_token.kv_len * per_token.kv_row;
+            pairs.push(("k", download(kb, len), download(kp, len)));
+            pairs.push(("v", download(vb, len), download(vp, len)));
+        } else {
+            pairs.push((
+                "conv",
+                download(&batched.conv[il], batched.conv_len),
+                download(&per_token.conv[il], per_token.conv_len),
+            ));
+            pairs.push((
+                "ssm",
+                download(&batched.ssm[il], batched.ssm_len),
+                download(&per_token.ssm[il], per_token.ssm_len),
+            ));
+        }
+        for (kind, b, p) in pairs {
+            let scale = p.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            let (arg, diff) = b
+                .iter()
+                .zip(&p)
+                .enumerate()
+                .fold((0, 0.0f32), |acc, (i, (x, y))| {
+                    let d = (x - y).abs();
+                    if d > acc.1 {
+                        (i, d)
+                    } else {
+                        acc
+                    }
+                });
+            let nonfinite = b.iter().filter(|v| !v.is_finite()).count();
+            println!(
+                "[4313] layer {il:2} {kind:4} rel L∞ {:.3e} (abs {diff:.3e} at {arg}, scale {scale:.3e}, cos {:.6}, nonfinite {nonfinite})",
+                if scale > 0.0 { diff / scale } else { diff },
+                cosine(&b, &p)
+            );
+        }
+    }
+    super::ATTENTION_OVERRIDE.with(|c| c.set(None));
+    crate::cuda::QWEN35_PREFILL_GEMM_OVERRIDE.with(|c| c.set(None));
+}
