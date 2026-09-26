@@ -40,6 +40,8 @@ CHANNEL=''
 # allocates one at all (this is also how install_test.sh gets deterministic
 # color-rendering coverage, rather than depending on `script`'s pty
 # allocation, which is not guaranteed on every self-hosted runner).
+FORCE_COLOR="${FORCE_COLOR:-}"
+CLICOLOR_FORCE="${CLICOLOR_FORCE:-}"
 force_color=0
 if [ -n "${FORCE_COLOR:-}" ] && [ "${FORCE_COLOR}" != "0" ]; then force_color=1; fi
 if [ -n "${CLICOLOR_FORCE:-}" ] && [ "${CLICOLOR_FORCE}" != "0" ]; then force_color=1; fi
@@ -187,7 +189,7 @@ get_rc_version() {
         | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$' \
         | head -n 1) || true
-    [ -n "$version" ] || error "Could not determine the newest release candidate from the GitHub API. Pass --version <tag> to skip this lookup."
+    [ -n "$version" ] || error "Could not determine the newest release candidate from the GitHub API. Pass --version vX.Y.Z to skip this lookup."
     echo "$version"
 }
 
@@ -195,7 +197,7 @@ get_latest_version() {
     version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
         | grep '"tag_name":' \
         | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
-    [ -n "$version" ] || error "Could not determine the latest release from the GitHub API. Pass --version <tag> to skip this lookup."
+    [ -n "$version" ] || error "Could not determine the latest release from the GitHub API. Pass --version vX.Y.Z to skip this lookup."
     echo "$version"
 }
 
@@ -287,8 +289,8 @@ install() {
     [ -f "$extracted" ] || error "Binary '${BINARY_NAME}' not found in archive (expected at ${asset}/${BINARY_NAME})"
 
     mkdir -p "$INSTALL_DIR"
-    mv "$extracted" "$INSTALL_DIR/${BINARY_NAME}"
-    chmod +x "$INSTALL_DIR/${BINARY_NAME}"
+    mv "$extracted" "$INSTALL_DIR/${BINARY_NAME}"  # bashrs disable-line=SEC014 (parse_args rejects a `..` INSTALL_DIR)
+    chmod +x "$INSTALL_DIR/${BINARY_NAME}"  # bashrs disable-line=SEC014 (parse_args rejects a `..` INSTALL_DIR)
     ok "${INSTALL_DIR}/${BINARY_NAME}"
 
     step "Verifying install"
@@ -322,7 +324,7 @@ install() {
 }
 
 show_help() {
-    cat <<EOF
+    cat <<'EOF'
 Installer for the apr CLI
 
 Usage: install.sh [OPTIONS]
@@ -339,8 +341,8 @@ Options:
                        (CPU only; rebuilt daily from main, less stable)
   --cpu               Force the CPU build even if an NVIDIA GPU is detected
   --cuda              Force the CUDA build
-  --install-dir <dir> Install location (default: \$HOME/.local/bin,
-                       same as \$INSTALL_DIR)
+  --install-dir <dir> Install location (default: $HOME/.local/bin,
+                       same as $INSTALL_DIR)
   --help, -h          Show this help message
 
 Environment variables (flags above take precedence):
@@ -423,6 +425,12 @@ parse_args() {
             ;;
         nightly) NIGHTLY=1 ;;
         *) error "channel must be stable, rc or nightly (got '${CHANNEL}')" ;;
+    esac
+
+    # A `..` component makes the destination something other than what the logo prints.
+    case "$INSTALL_DIR" in
+        *..*) error "--install-dir must not contain '..': ${INSTALL_DIR}" ;;
+        *) ;;
     esac
 
     if [ "$NIGHTLY" -eq 1 ] && [ -n "$TAG" ]; then
