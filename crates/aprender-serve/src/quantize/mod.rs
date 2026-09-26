@@ -99,6 +99,8 @@ pub mod iq_grids;
 #[path = "ptx_codebook_tests_3931.rs"]
 mod ptx_codebook_tests_3931;
 
+#[cfg(all(test, target_arch = "aarch64"))]
+mod neon_q4k_q8k_tests;
 pub mod parallel_dequant;
 pub mod parallel_k;
 pub mod simd;

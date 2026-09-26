@@ -355,6 +355,11 @@ pub fn fused_q4k_q8k_dot_simd(
         }
     }
 
+    // #2880: NEON is mandatory on aarch64, so no detection is needed.
+    #[cfg(target_arch = "aarch64")]
+    return fused_q4k_q8k_dot_neon(q4k_data, q8k_scales, q8k_quants);
+
     // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_q8k_dot)
+    #[cfg(not(target_arch = "aarch64"))]
     fused_q4k_q8k_dot(q4k_data, q8k_scales, q8k_quants)
 }
