@@ -51,3 +51,9 @@ workspace = true
 [[example]]
 name = "calculator_tui"
 required-features = ["tui"]
+
+# Examples that cannot pass on a clean CI host, and the line each one must print
+# to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
+# example that stops printing its line, or that exits 0, is no longer excused.
+[package.metadata.dogfood-examples]
+calculator_tui = { class = "needs-tty", expect = "No such device or address", reason = "raw mode needs a terminal" }

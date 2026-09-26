@@ -125,3 +125,9 @@ replace = "## [{{version}}] - {{date}}"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--generate-link-to-definition"]
+
+# Examples that cannot pass on a clean CI host, and the line each one must print
+# to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
+# example that stops printing its line, or that exits 0, is no longer excused.
+[package.metadata.dogfood-examples]
+test_mac_worker = { class = "needs-net", expect = "Failed to connect to worker at", reason = "drives a remote worker on the mac" }

@@ -377,3 +377,10 @@ replace = "## [{{version}}] - {{date}}"
 # GH-344: Sibling patches (realizar, trueno, etc.) moved to .cargo/config.toml.dev-overrides
 # so that `git clone && cargo check` works without sibling repos.
 # See .cargo/config.toml.dev-overrides for full-stack development setup.
+
+# Examples that cannot pass on a clean CI host, and the line each one must print
+# to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
+# example that stops printing its line, or that exits 0, is no longer excused.
+[package.metadata.dogfood-examples]
+publish_shell_safety = { class = "needs-data", expect = "Missing model artifacts", reason = "checks a published model's artifacts" }
+qa_verify = { class = "long-running", reason = "runs the workspace's cargo test, clippy and doc inside itself" }

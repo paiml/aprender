@@ -53,3 +53,9 @@ crate-type = ["cdylib", "rlib"]
 
 [lints]
 workspace = true
+
+# Examples that cannot pass on a clean CI host, and the line each one must print
+# to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
+# example that stops printing its line, or that exits 0, is no longer excused.
+[package.metadata.dogfood-examples]
+brick_computer = { class = "long-running", reason = "an interactive app; runs until killed" }

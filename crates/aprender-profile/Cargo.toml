@@ -235,3 +235,9 @@ shared-version = true
 file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
+
+# Examples that cannot pass on a clean CI host, and the line each one must print
+# to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
+# example that stops printing its line, or that exits 0, is no longer excused.
+[package.metadata.dogfood-examples]
+buggy_server = { class = "long-running", reason = "a server to profile; serves until killed" }

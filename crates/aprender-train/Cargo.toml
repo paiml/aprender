@@ -346,3 +346,13 @@ file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
 
+
+# Examples that cannot pass on a clean CI host, and the line each one must print
+# to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
+# example that stops printing its line, or that exits 0, is no longer excused.
+[package.metadata.dogfood-examples]
+finetune_real = { class = "needs-data", expect = "Failed to get model path", reason = "downloads a model from the hub" }
+llama2-train = { class = "long-running", reason = "trains 10 epochs of the 124m config" }
+profile_cuda_trainer = { class = "needs-feature", expect = "requires --features cuda", reason = "profiles the CUDA trainer" }
+ssc_eval = { class = "needs-args", expect = "--model-dir required", reason = "evaluates a model directory it is given" }
+ssc_preflight = { class = "needs-args", expect = "--model-dir required", reason = "checks a model directory it is given" }

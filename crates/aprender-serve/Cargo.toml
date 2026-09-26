@@ -727,3 +727,25 @@ replace = "## [{{version}}] - {{date}}"
 # cheaper than a crate.
 [target.'cfg(windows)'.dependencies]
 sysinfo = { workspace = true }
+
+# Examples that cannot pass on a clean CI host, and the line each one must print
+# to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
+# example that stops printing its line, or that exits 0, is no longer excused.
+[package.metadata.dogfood-examples]
+api_server = { class = "long-running", reason = "an HTTP server; serves until killed" }
+bench_gemv = { class = "needs-hardware", expect = "CUDA init", reason = "benchmarks GPU GEMV" }
+check_layer4 = { class = "needs-args", expect = "usage: check_layer4", reason = "inspects a GGUF it is given" }
+constrain_mask_overhead = { class = "needs-args", expect = "usage: constrain_mask_overhead", reason = "measures a model it is given" }
+debug_q4k_controlled = { class = "needs-hardware", expect = "CUDA driver not found", reason = "compares CPU and GPU Q4K" }
+debug_q6k_controlled = { class = "needs-hardware", expect = "CUDA driver not found", reason = "compares CPU and GPU Q6K" }
+parity_035_m4_verification = { class = "needs-net", expect = "localhost:11434", reason = "compares against a running ollama" }
+parity_036_gpu_attention = { class = "needs-hardware", expect = "Failed to initialize CUDA", reason = "GPU attention parity" }
+parity_038_async_streams = { class = "needs-hardware", expect = "Failed to initialize CUDA", reason = "CUDA stream parity" }
+parity_039_flash_attention = { class = "needs-hardware", expect = "Failed to initialize CUDA", reason = "flash attention parity" }
+parity_040_fp16_attention = { class = "needs-hardware", expect = "Failed to initialize CUDA", reason = "fp16 attention parity" }
+qwen35_parity = { class = "needs-args", expect = "usage: qwen35_parity", reason = "compares a model it is given" }
+qwen35_prefill_parity = { class = "needs-args", expect = "usage: qwen35_prefill_parity", reason = "compares a model it is given" }
+test_gemv_correctness = { class = "needs-hardware", expect = "CUDA driver not found", reason = "checks GPU GEMV against the CPU" }
+test_tc_attention = { class = "needs-hardware", expect = "CUDA init failed", reason = "tensor-core attention" }
+think_ab = { class = "needs-args", expect = "usage: think_ab", reason = "A/B-tests a model it is given" }
+verify_attention_kernel = { class = "needs-hardware", expect = "CUDA driver not found", reason = "runs the attention kernel on a GPU" }
