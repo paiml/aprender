@@ -379,6 +379,51 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             e2e_row 'end-to-end swap at equal count' 1 '# header\na\nc\n'
             e2e_row 'end-to-end one entry deleted' 0 '# header\na\n'
 
+            # -- the ONE-TIME re-baseline of a count (car #4429, cop ruling B).
+            #    It admits a rise only up to a MEASURED value, only while its
+            #    receipt is new, and every refusal branch is a row.
+            C='scripts/probe_count.txt'; R='scripts/probe_count.rebaseline'
+            printf '# tool_version=pmat 9.9.9\n599\n' > "$SR/$C"
+            git -C "$SR" add -A >/dev/null 2>&1
+            git -C "$SR" -c commit.gpgsign=false commit -qm 'count base' >/dev/null 2>&1
+            SR_CNT=$(git -C "$SR" rev-parse HEAD)
+            SR_ORPHAN=$(git -C "$SR" rev-parse unrelated 2>/dev/null || printf '%040d' 0)
+            rb_row() { # rb_row <label> <want-rc> <comparand> <count> [<receipt-content>]
+                local got
+                printf '# tool_version=pmat 9.9.9\n%s\n' "$4" > "$SR/$C"
+                rm -f "${SR:?}/$R"
+                if [ -n "${5:-}" ]; then printf '%b' "$5" > "$SR/$R"; fi
+                ( BASELINE_RATCHET_BASE_REF="$3" \
+                  baseline_ratchet_check "$SR" "$C" count ) >/dev/null 2>&1
+                got=$?
+                rows=$((rows + 1))
+                if [ "$got" != "$2" ]; then
+                    printf 'FAIL  %-46s want rc=%s got rc=%s\n' "$1" "$2" "$got"
+                    bad=1
+                fi
+            }
+            RB_OK="# one-time\nsha: $SR_CNT\nmeasured: 620\ntool_version: pmat 9.9.9\n"
+            rb_row 'rebaseline no receipt, rise'           1 "$SR_CNT" 617
+            rb_row 'rebaseline receipt, rise <= measured'  0 "$SR_CNT" 617 "$RB_OK"
+            rb_row 'rebaseline receipt, rise == measured'  0 "$SR_CNT" 620 "$RB_OK"
+            rb_row 'rebaseline receipt, rise > measured'   1 "$SR_CNT" 621 "$RB_OK"
+            rb_row 'rebaseline receipt, tool mismatch'     1 "$SR_CNT" 617 "# x\nsha: $SR_CNT\nmeasured: 620\ntool_version: pmat 1.0.0\n"
+            rb_row 'rebaseline receipt, short sha'         1 "$SR_CNT" 617 "sha: ${SR_CNT:0:12}\nmeasured: 620\ntool_version: pmat 9.9.9\n"
+            rb_row 'rebaseline receipt, no measured'       1 "$SR_CNT" 617 "sha: $SR_CNT\ntool_version: pmat 9.9.9\n"
+            rb_row 'rebaseline receipt, sha not on main'   1 "$SR_CNT" 617 "sha: $SR_ORPHAN\nmeasured: 620\ntool_version: pmat 9.9.9\n"
+            # The NEXT pull request: the receipt is on the comparand now, so it is
+            # SPENT -- any rise is RED again, even one still under its measurement.
+            printf '# tool_version=pmat 9.9.9\n617\n' > "$SR/$C"
+            printf '%b' "$RB_OK" > "$SR/$R"
+            git -C "$SR" add -A >/dev/null 2>&1
+            git -C "$SR" -c commit.gpgsign=false commit -qm 'rebaselined' >/dev/null 2>&1
+            SR_SPENT=$(git -C "$SR" rev-parse HEAD)
+            rb_row 'rebaseline spent, rise under measured' 1 "$SR_SPENT" 618 "$RB_OK"
+            rb_row 'rebaseline spent, unchanged'           0 "$SR_SPENT" 617 "$RB_OK"
+            rb_row 'rebaseline spent, shrink'              0 "$SR_SPENT" 616 "$RB_OK"
+            git -C "$SR" rm -q -f "$C" "$R" >/dev/null 2>&1
+            git -C "$SR" -c commit.gpgsign=false commit -qm 'count probe done' >/dev/null 2>&1
+
             # -- set-aperture (PERF-049). The admission is narrow and every
             # branch of it must be shown to REFUSE, not just to admit. A rule
             # exercised only on its happy path is a rule nobody has tested.

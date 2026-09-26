@@ -100,7 +100,13 @@ exclude = [
 # the count did not. Between those readings #3004 added one B- definition
 # (registry/wgpu_probe.rs entry, 603) and merged, because no required job runs
 # `pmat comply`; it was split into four graded tables in the pin-bump PR, back to 602.
-baseline = 598
+baseline = 617
+# 617 = the ONE-TIME re-baseline of car #4429 (cop ruling B, 2026-09-26), receipt
+# scripts/cb200_baseline.rebaseline. main recorded 599 and MEASURED 620 at merge-base 00058476c323
+# (pmat 3.41.1, cold index): check_cb200_tdg_grade.sh never ran on main, so the number was never
+# held against the tree. The car measures 624 before its fixes and 617 after (7 of its own
+# regressions fixed, 0 new; net -3 vs main). 617 <= 620, and from the next PR it only falls.
+# The 19 main definitions over 598 are docs/findings/cb200-main-below-b-0701.jsonl (0.70.1).
 # 598 re-measured 2026-09-25 under pmat 3.41.1 from a COLD index (XDG_CACHE_HOME in a fresh temp dir)
 # on batch/0.70.0 + #4101: 603 there before #4101 split token_usage_report.main, shapes.parse_property,
 # shapes.well_formed, crux_inference_judge.collect and model_ladder_cells.judge. Lowered, never raised.

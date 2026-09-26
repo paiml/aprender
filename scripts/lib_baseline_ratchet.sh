@@ -391,6 +391,66 @@ _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
     return 0
 }
 
+# A ONE-TIME RE-BASELINE, PINNED TO A RECEIPT (car #4429, cop ruling B)
+# ---------------------------------------------------------------------
+# A count baseline may RISE exactly once, when the comparand's number was never
+# measured against the tree it guards. Car #4429 wired check_cb200_tdg_grade.sh
+# in for the first time: main recorded 599 and MEASURED 620 at the merge-base,
+# because nothing on main ever ran the guard. A number the tree already exceeds
+# is not a ratchet, and holding a car to it blocks the car for main's debt.
+#
+# The exception is admitted only when <baseline>.rebaseline:
+#   * is NEW on this branch -- absent at the comparand. Once it lands, the
+#     comparand carries it and the NEXT pull request is shrink-only again;
+#   * names a full sha and the count MEASURED there (`sha:` / `measured:`), and
+#     the new value is <= that measurement. A rise past main's own measured
+#     count is still RED;
+#   * carries the same `tool_version` as the baseline, so the two numbers come
+#     from one analyser;
+#   * names a sha that is an ancestor of the comparand, when the history can
+#     say so. A shallow clone cannot; the count at that sha is then proven by
+#     the guard that owns the number (check_cb200_tdg_grade.sh re-measures it).
+_br_receipt_field() { # _br_receipt_field <file> <key> -> the value, rc 1 when absent
+    sed -nE "s/^$2:[[:space:]]*([^[:space:]#][^#]*[^[:space:]#]|[^[:space:]#])[[:space:]]*(#.*)?\$/\\1/p" "$1" | grep -m1 .
+}
+_br_tool_version() { # _br_tool_version <baseline-file> -> the `# tool_version=` header value
+    sed -nE 's/^#[[:space:]]*tool_version=(.*[^[:space:]])[[:space:]]*$/\1/p' "$1" | grep -m1 .
+}
+_br_rebaseline_admit() { # <root> <ref> <baseline-path> -> 0 admitted, 1 refused; appends why to BR_DELTA
+    local root="$1" ref="$2" path="$3" rc_path sha measured tv btv new
+    rc_path="${path%.txt}.rebaseline"
+    [ -f "$root/$rc_path" ] || return 1
+    if git -C "$root" cat-file -e "${ref}:${rc_path}" 2>/dev/null; then
+        BR_DELTA=$(printf '%s\n        %s is already on the comparand: the one-time re-baseline is\n        SPENT, and this baseline is shrink-only again.' "$BR_DELTA" "$rc_path")
+        return 1
+    fi
+    sha=$(_br_receipt_field "$root/$rc_path" sha) || sha=""
+    measured=$(_br_receipt_field "$root/$rc_path" measured) || measured=""
+    tv=$(_br_receipt_field "$root/$rc_path" tool_version) || tv=""
+    btv=$(_br_tool_version "$root/$path") || btv=""
+    new=$(_br_stamped_count "$root/$path" || _br_number "$root/$path") || new=""
+    if ! printf '%s' "$sha" | grep -qxE '[0-9a-f]{40}' || ! printf '%s' "$measured" | grep -qxE '[0-9]+'; then
+        BR_DELTA=$(printf '%s\n        %s needs a full 40-hex `sha:` and an integer `measured:`.' "$BR_DELTA" "$rc_path")
+        return 1
+    fi
+    if [ -z "$tv" ] || [ "$tv" != "$btv" ]; then
+        BR_DELTA=$(printf '%s\n        %s tool_version <%s> is not the baseline'"'"'s <%s>.' "$BR_DELTA" "$rc_path" "$tv" "$btv")
+        return 1
+    fi
+    if [ -z "$new" ] || [ "$new" -gt "$measured" ]; then
+        BR_DELTA=$(printf '%s\n        the new value %s is above the count MEASURED at %s (%s): still RED.' "$BR_DELTA" "$new" "${sha:0:12}" "$measured")
+        return 1
+    fi
+    if git -C "$root" cat-file -e "${sha}^{commit}" 2>/dev/null &&
+        [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = false ] &&
+        ! git -C "$root" merge-base --is-ancestor "$sha" "$ref" 2>/dev/null; then
+        BR_DELTA=$(printf '%s\n        %s is not an ancestor of %s: the receipt must name a main commit.' "$BR_DELTA" "${sha:0:12}" "$ref")
+        return 1
+    fi
+    BR_ADMITTED=$(printf '        ~ ONE-TIME RE-BASELINE via %s: %s <= %s measured at %s (%s)' "$rc_path" "$new" "$measured" "${sha:0:12}" "$tv")
+    return 0
+}
+
 # Comment stripping happens in grep, NOT in awk. An awk program carrying
 # `/^[ \t]*#/` reads to a shell linter as a `[ ` test with parentheses inside
 # it: bashrs reports SC1028/SC2104 errors against a line that is awk source,
@@ -572,7 +632,8 @@ baseline_ratchet_check() {
     # capture is the difference between a RED and a crash.
     case "$kind" in
         set)   if _br_cmp_set   "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
-        count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
+        count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi
+            if [ "$cmp_rc" -eq 1 ] && _br_rebaseline_admit "$root" "$ref" "$path"; then cmp_rc=0; fi ;;
         keyed) if _br_cmp_keyed "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed2) if _br_cmp_keyed2 "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         set-aperture)
@@ -599,7 +660,12 @@ baseline_ratchet_check() {
     fi
 
     if [ "$cmp_rc" -eq 0 ]; then
-        if [ -n "$BR_ADMITTED" ]; then
+        if [ -n "$BR_ADMITTED" ] && [ "$kind" = count ]; then
+            printf 'ok    ratchet  %s ROSE, once, against a measurement:\n' "$path"
+            printf '%s\n' "$BR_ADMITTED"
+            printf '               the receipt is new on this branch; once it is on %s, the\n' "$BASELINE_RATCHET_BASE_REF"
+            printf '               next pull request is shrink-only again.\n'
+        elif [ -n "$BR_ADMITTED" ]; then
             printf 'ok    ratchet  %s grew by %s APERTURE REVEAL(s) vs %s\n' \
                 "$path" "$(printf '%s\n' "$BR_ADMITTED" | grep -c . || true)" \
                 "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
