@@ -7,6 +7,8 @@ metadata:
   - "crates/aprender-train/src/recipe.rs"
   - "crates/aprender-train/src/recipe_tests.rs"
   - "crates/apr-cli/src/commands/finetune_recipe.rs"
+  - "crates/apr-cli/src/commands/distill.rs"
+  - "crates/aprender-train/src/train/shard_reader.rs"
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
   description: >
     One declarative recipe for apr fine-tune and distill (E8 #4002, row R-1).
@@ -100,6 +102,15 @@ falsification_tests:
     cargo test -p aprender-train-distill --lib config::tests::training_seed_defaults_to_42_and_round_trips
     cargo test -p apr-cli --lib falsify_apr_distill_train_010_translator_preserves_config
   if_fails: "the distill student trains at a hardcoded rate or seed, so a recipe's lr/seed change nothing"
+
+- id: FALSIFY-RECIPE-008
+  rule: the distill consumer honors what the recipe declares
+  prediction: "apr distill --recipe maps student, teacher, the hashed .bin shard, temperature, epochs, batch_size, learning_rate and seed onto the cuda backend, refuses by name a non-distill kind, an adapter rank/alpha and a non-shard data.train, and the shard reader reads exactly the hashed file"
+  test: |
+    cargo test -p apr-cli --lib commands::finetune_recipe::tests::a_valid_distill_recipe_supplies_the_distill_args
+    cargo test -p apr-cli --lib commands::finetune_recipe::tests::distill_refusals_name_the_recipe_field
+    cargo test -p aprender-train --lib train::shard_reader::tests::a_single_shard_file_reads_only_that_file
+  if_fails: "a distill recipe field is validated but not applied, or the run reads data other than the bytes the recipe hashed"
 
 proof_obligations:
 - id: RECIPE-INV-001

@@ -206,5 +206,19 @@ pub enum ModelOpsCommands {
         /// corpus directory.
         #[arg(long, value_name = "DIR")]
         dataset: Option<PathBuf>,
+        /// Declarative distill recipe (contracts/apr-recipe-v1.yaml, E8 #4002).
+        /// Validated and hashed before any model load; runs the cuda backend
+        /// with the recipe's student, teacher, one-shard corpus, temperature,
+        /// epochs, batch size, learning rate and seed, so it conflicts with
+        /// the flags that would set those.
+        #[arg(
+            long,
+            value_name = "FILE",
+            conflicts_with_all = [
+                "teacher", "student", "data", "strategy", "temperature", "epochs",
+                "config", "stage", "backend", "dataset"
+            ]
+        )]
+        recipe: Option<PathBuf>,
     },
 }

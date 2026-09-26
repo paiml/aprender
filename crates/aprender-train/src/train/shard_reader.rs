@@ -41,7 +41,12 @@ impl ShardBatchIter {
     /// Build an iterator that yields `LMBatch` with `batch_size` sequences
     /// of length `seq_length + 1` (for causal shift).
     ///
-    /// Returns `Err` if `dataset_dir` is missing or contains no `.bin` shards.
+    /// `dataset_dir` is a directory of `.bin` shards, or one `.bin` shard
+    /// file — the form a recipe's hashed `data.train` takes (E8 #4002), so
+    /// exactly the hashed bytes are read and no sibling shard is.
+    ///
+    /// Returns `Err` if `dataset_dir` is missing, is a file without the
+    /// `.bin` extension, or is a directory with no `.bin` shards.
     pub fn new(
         dataset_dir: &Path,
         batch_size: usize,
@@ -49,11 +54,22 @@ impl ShardBatchIter {
         pad_id: u32,
         eos_id: u32,
     ) -> io::Result<Self> {
-        let mut shards: Vec<PathBuf> = std::fs::read_dir(dataset_dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|ext| ext == "bin"))
-            .collect();
+        let is_bin = |p: &Path| p.extension().is_some_and(|ext| ext == "bin");
+        let mut shards: Vec<PathBuf> = if dataset_dir.is_file() {
+            if !is_bin(dataset_dir) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{} is not a .bin shard", dataset_dir.display()),
+                ));
+            }
+            vec![dataset_dir.to_path_buf()]
+        } else {
+            std::fs::read_dir(dataset_dir)?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| is_bin(p))
+                .collect()
+        };
         shards.sort();
         if shards.is_empty() {
             return Err(io::Error::new(
@@ -314,5 +330,18 @@ mod tests {
         let mut iter = ShardBatchIter::new(tmp.path(), 1, 4, 0, 0).expect("iter");
         let first = iter.next().expect("first batch");
         assert_eq!(first.get_input(0).expect("input0")[0], 0, "shard-0 first");
+    }
+
+    /// E8 #4002: a single shard file reads that file and never a sibling.
+    #[test]
+    fn a_single_shard_file_reads_only_that_file() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_shard(tmp.path(), "a.bin", &(0u32..10).collect::<Vec<_>>());
+        write_shard(tmp.path(), "b.bin", &(100u32..110).collect::<Vec<_>>());
+        let mut iter = ShardBatchIter::new(&tmp.path().join("b.bin"), 1, 4, 0, 0).expect("iter");
+        let first = iter.next().expect("first batch");
+        assert_eq!(first.get_input(0).expect("input0")[0], 100, "reads b.bin, not a.bin");
+        std::fs::write(tmp.path().join("c.jsonl"), b"{}").expect("write");
+        assert!(ShardBatchIter::new(&tmp.path().join("c.jsonl"), 1, 4, 0, 0).is_err());
     }
 }

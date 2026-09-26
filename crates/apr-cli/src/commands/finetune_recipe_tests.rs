@@ -37,7 +37,7 @@ fn load_text(dir: &tempfile::TempDir, text: &str) -> Result<RecipeArgs> {
     load(&p)
 }
 
-fn refused_field(r: Result<RecipeArgs>) -> String {
+fn refused_field<T: std::fmt::Debug>(r: Result<T>) -> String {
     match r {
         Err(CliError::ValidationFailed(msg)) => msg,
         other => panic!("expected a recipe refusal, got {other:?}"),
@@ -110,4 +110,102 @@ fn an_unreadable_recipe_file_is_refused() {
     let dir = tempfile::tempdir().expect("tempdir");
     let msg = refused_field(load(&dir.path().join("absent.yaml")));
     assert!(msg.contains("`<file>`"), "{msg}");
+}
+
+/// A distill recipe over a one-shard corpus; returns (dir, recipe text).
+fn distill_fixture() -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let shard: Vec<u8> = (0u32..64).flat_map(u32::to_le_bytes).collect();
+    std::fs::write(dir.path().join("train.bin"), shard).expect("train");
+    std::fs::write(dir.path().join("eval.jsonl"), b"{\"x\":2}\n").expect("eval");
+    let train = sha256_file(&dir.path().join("train.bin")).expect("hash");
+    let eval = sha256_file(&dir.path().join("eval.jsonl")).expect("hash");
+    let text = format!(
+        "recipe_version: 1
+base:
+  model: /models/student.apr
+data:
+  train: train.bin
+  sha256: {train}
+method:
+  kind: distill
+  teacher: /models/teacher.apr
+  temperature: 2.5
+eval:
+  held_out: eval.jsonl
+  sha256: {eval}
+  metric: loss
+training:
+  epochs: 3
+  batch_size: 8
+  learning_rate: 0.0005
+  seed: 11
+"
+    );
+    (dir, text)
+}
+
+fn load_distill_text(dir: &tempfile::TempDir, text: &str) -> Result<DistillRecipeArgs> {
+    let p = dir.path().join("r.yaml");
+    std::fs::write(&p, text).expect("write recipe");
+    load_distill(&p)
+}
+
+/// FALSIFY-RECIPE-008: every field a distill recipe declares reaches the
+/// cuda distill arguments.
+#[test]
+fn a_valid_distill_recipe_supplies_the_distill_args() {
+    let (dir, text) = distill_fixture();
+    let a = load_distill_text(&dir, &text).expect("valid distill recipe");
+    assert_eq!(a.student, PathBuf::from("/models/student.apr"));
+    assert_eq!(a.teacher, PathBuf::from("/models/teacher.apr"));
+    assert_eq!(a.data, dir.path().join("train.bin"));
+    assert!((a.temperature - 2.5).abs() < f64::EPSILON);
+    assert_eq!((a.epochs, a.batch_size, a.seed), (3, 8, 11));
+    assert!((a.learning_rate - 5e-4).abs() < f64::EPSILON);
+    assert_eq!(a.hash.len(), 64);
+
+    let no_t = text.replace("  temperature: 2.5\n", "");
+    let a = load_distill_text(&dir, &no_t).expect("temperature is optional");
+    assert!((a.temperature - DISTILL_DEFAULT_TEMPERATURE).abs() < f64::EPSILON);
+}
+
+/// (case, edit, field the refusal must name)
+#[test]
+fn distill_refusals_name_the_recipe_field() {
+    let (dir, text) = distill_fixture();
+    let zeros = "0".repeat(64);
+    let train_sha = sha256_file(&dir.path().join("train.bin")).expect("hash");
+    std::fs::write(dir.path().join("train.jsonl"), b"{}").expect("jsonl");
+    let jsonl_sha = sha256_file(&dir.path().join("train.jsonl")).expect("hash");
+    let cases: Vec<(&str, String, &str)> = vec![
+        (
+            "train shard changed",
+            text.replace(&train_sha, &zeros),
+            "data.sha256",
+        ),
+        (
+            "train is not a shard",
+            text.replace("train: train.bin", "train: train.jsonl")
+                .replace(&train_sha, &jsonl_sha),
+            "data.train",
+        ),
+        (
+            "lora routed to distill",
+            text.replace(
+                "  kind: distill\n  teacher: /models/teacher.apr\n  temperature: 2.5\n",
+                "  kind: lora\n  rank: 8\n",
+            ),
+            "method.kind",
+        ),
+        (
+            "adapter alpha not honored",
+            text.replace("  temperature: 2.5\n", "  temperature: 2.5\n  alpha: 16\n"),
+            "method.alpha",
+        ),
+    ];
+    for (name, yaml, field) in cases {
+        let msg = refused_field(load_distill_text(&dir, &yaml));
+        assert!(msg.contains(&format!("`{field}`")), "case {name}: {msg}");
+    }
 }

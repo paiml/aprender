@@ -1,4 +1,5 @@
-//! `apr finetune --recipe FILE` (E8 #4002 row R-1b, `contracts/apr-recipe-v1.yaml`).
+//! `apr finetune --recipe FILE` (E8 #4002 row R-1b) and `apr distill --recipe
+//! FILE` (row R-2c), both against `contracts/apr-recipe-v1.yaml`.
 //!
 //! The recipe is parsed, and the data and eval files are hashed against it,
 //! before any model is opened. Every refusal names the recipe field, so a
@@ -114,6 +115,87 @@ pub(crate) fn load(path: &Path) -> Result<RecipeArgs> {
         rank: recipe.method.rank,
         data,
         epochs: recipe.training.epochs,
+        learning_rate: recipe.training.learning_rate,
+        seed: recipe.training.seed,
+        hash: recipe.hash(),
+    })
+}
+
+/// Distill temperature when the recipe names none. Equal to the
+/// `apr distill --temperature` default.
+pub(crate) const DISTILL_DEFAULT_TEMPERATURE: f64 = 3.0;
+
+/// The `apr distill` (cuda backend) arguments a distill recipe supplies.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DistillRecipeArgs {
+    pub student: PathBuf,
+    pub teacher: PathBuf,
+    /// One `.bin` token shard, hashed against `data.sha256`.
+    pub data: PathBuf,
+    pub temperature: f64,
+    pub epochs: u32,
+    pub batch_size: u32,
+    pub learning_rate: f64,
+    pub seed: u64,
+    pub hash: String,
+}
+
+/// Parse and check a distill recipe file. Opens no model.
+pub(crate) fn load_distill(path: &Path) -> Result<DistillRecipeArgs> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| refuse_field("<file>", format!("cannot read {}: {e}", path.display())))?;
+    let recipe = Recipe::parse(&text).map_err(refuse)?;
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+
+    if recipe.method.kind != MethodKind::Distill {
+        return Err(refuse_field(
+            "method.kind",
+            "only distill recipes run through `apr distill`; use `apr finetune --recipe`"
+                .to_string(),
+        ));
+    }
+    // The distill student trains in full; an adapter rank/alpha would not be
+    // applied, so a recipe naming one is refused rather than ignored.
+    if recipe.method.rank.is_some() {
+        return Err(refuse_field(
+            "method.rank",
+            "apr distill trains the full student; an adapter rank is not honored".to_string(),
+        ));
+    }
+    if recipe.method.alpha.is_some() {
+        return Err(refuse_field(
+            "method.alpha",
+            "apr distill trains the full student; an adapter alpha is not honored".to_string(),
+        ));
+    }
+
+    let data = resolve(dir, &recipe.data.train);
+    // The shard reader reads u32 LE `.bin` token shards; any other file would
+    // hash fine and then fail (or be misread) at the first batch.
+    if data.extension().is_none_or(|e| e != "bin") {
+        return Err(refuse_field(
+            "data.train",
+            format!(
+                "{} is not a .bin token shard (apr tokenize encode-corpus writes one)",
+                data.display()
+            ),
+        ));
+    }
+    check_hash("data.sha256", &data, &recipe.data.sha256)?;
+    let held_out = resolve(dir, &recipe.eval.held_out);
+    check_hash("eval.sha256", &held_out, &recipe.eval.sha256)?;
+
+    Ok(DistillRecipeArgs {
+        student: PathBuf::from(&recipe.base.model),
+        // parse() guarantees a distill recipe names a teacher.
+        teacher: PathBuf::from(recipe.method.teacher.clone().unwrap_or_default()),
+        data,
+        temperature: recipe
+            .method
+            .temperature
+            .unwrap_or(DISTILL_DEFAULT_TEMPERATURE),
+        epochs: recipe.training.epochs,
+        batch_size: recipe.training.batch_size,
         learning_rate: recipe.training.learning_rate,
         seed: recipe.training.seed,
         hash: recipe.hash(),

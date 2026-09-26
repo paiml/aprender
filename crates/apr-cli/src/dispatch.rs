@@ -1136,6 +1136,13 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             )
         }),
         Commands::ModelOps(ModelOpsCommands::Distill {
+            output,
+            alpha,
+            plan,
+            recipe: Some(recipe),
+            ..
+        }) => distill::run_recipe(recipe, output.as_deref(), *alpha, *plan, cli.json),
+        Commands::ModelOps(ModelOpsCommands::Distill {
             teacher,
             student,
             data,
@@ -1149,6 +1156,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stage,
             backend,
             dataset,
+            recipe: None,
         }) => distill::run(
             teacher.as_deref(),
             student.as_deref(),

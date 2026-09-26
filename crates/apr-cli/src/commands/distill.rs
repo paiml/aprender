@@ -432,6 +432,48 @@ fn print_distill_header(
     }
 }
 
+/// `apr distill --recipe FILE` (E8 #4002 R-2c): a distill recipe drives the
+/// cuda backend. The recipe is loaded and hashed before any model is opened;
+/// every field it declares is applied, or refused by name in `load_distill`.
+pub(crate) fn run_recipe(
+    recipe_path: &Path,
+    output_path: Option<&Path>,
+    alpha: f64,
+    plan_only: bool,
+    json_output: bool,
+) -> Result<()> {
+    let r = crate::commands::finetune_recipe::load_distill(recipe_path)?;
+    if !json_output {
+        eprintln!("[recipe] {} sha256={}", recipe_path.display(), r.hash);
+    }
+    #[cfg(all(feature = "training", feature = "cuda"))]
+    {
+        run_cuda_backend(
+            &r.teacher,
+            Some(&r.student),
+            output_path,
+            r.temperature,
+            alpha,
+            r.epochs,
+            r.learning_rate,
+            r.seed,
+            Some(r.batch_size),
+            plan_only,
+            Some(&r.data),
+            json_output,
+        )
+    }
+    #[cfg(not(all(feature = "training", feature = "cuda")))]
+    {
+        let _ = (output_path, alpha, plan_only);
+        Err(CliError::ValidationFailed(
+            "apr distill --recipe runs the cuda backend and requires apr-cli built with \
+             --features cuda,training"
+                .to_string(),
+        ))
+    }
+}
+
 /// Seed for a distill run no recipe names (the trainer's own default).
 #[cfg_attr(not(all(feature = "training", feature = "cuda")), allow(dead_code))]
 pub(crate) const DEFAULT_SEED: u64 = 42;
@@ -492,6 +534,7 @@ pub(crate) fn run(
                     epochs,
                     CUDA_STUDENT_DEFAULT_LR,
                     DEFAULT_SEED,
+                    None,
                     plan_only,
                     dataset_dir,
                     json_output,
@@ -660,6 +703,7 @@ fn run_cuda_backend(
     epochs: u32,
     learning_rate: f64,
     seed: u64,
+    batch_size: Option<u32>,
     plan_only: bool,
     dataset_dir: Option<&Path>,
     json_output: bool,
@@ -925,6 +969,9 @@ fn run_cuda_backend(
     config.training.epochs = epochs;
     config.training.learning_rate = learning_rate;
     config.training.seed = seed;
+    if let Some(bs) = batch_size {
+        config.training.batch_size = bs;
+    }
 
     // Wire the providers into the pipeline and execute.
     let mut pipeline = Pipeline::new(&config)
