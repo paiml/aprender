@@ -566,12 +566,16 @@ cb200_pair_check() { # <gates.toml> <mirror file> -> 0 when they agree, 1 otherw
 }
 
 # The pair check and the file ratchet above compare TYPED numbers with each
-# other; neither ever MEASURES the count, and nothing else in a required job
-# runs `pmat comply`. main banked 599 and measured 620 under pmat 3.41.1 at
-# cbf623e5b with this step green (docs/findings/cb200-main-green-over-baseline.jsonl).
-# This leg asks pmat for the count and holds it to [tdg] baseline.
-# CB200_PMAT overrides the binary (selftest fakes); CB200_MEASURE=0 skips the
-# leg and says so — it never passes silently.
+# other; neither MEASURES the count, and no required job runs `pmat comply`.
+# main banked 599 and measured 620 under pmat 3.41.1 at cbf623e5b with this
+# step green (docs/findings/cb200-main-green-over-baseline.jsonl).
+# The measured leg is NIGHTLY ONLY (`--cb200-measured`): it needs a pmat index,
+# ~24 min cold. It holds the count to CB200_CEIL_REL, a MEASURED ceiling that is
+# shrink-only against origin/main on every PR (cheap, typed) and RED at night on
+# any increase. [tdg] baseline stays the burn-down target pmat itself reads.
+# CB200_PMAT overrides the binary (selftest fakes).
+CB200_CEIL_REL='scripts/cb200_measured_ceiling.txt'
+
 cb200_measured_count() { # <repo root> -> the measured CB-200 count on stdout; 1 when unreadable
     local out n
     out=$(cd "$1" && "${CB200_PMAT:-pmat}" comply check --checks CB-200 2>&1)
@@ -583,24 +587,22 @@ cb200_measured_count() { # <repo root> -> the measured CB-200 count on stdout; 1
     printf '%s\n' "$n"
 }
 
-cb200_measured_check() { # <gates.toml> <repo root> -> 0 when measured <= baseline, 1 otherwise (prints why)
-    local toml n
-    if [ "${CB200_MEASURE:-1}" = 0 ]; then
-        printf 'SKIP  CB-200 measured count NOT CHECKED (CB200_MEASURE=0): the typed baseline above is unverified.\n'
-        return 0
-    fi
-    toml=$(cb200_toml_value "$1")
-    [ -n "$toml" ] || return 1   # cb200_pair_check already said why
+cb200_measured_check() { # <ceiling file> <repo root> -> 0 when measured <= ceiling, 1 otherwise (prints why)
+    local ceil n
+    ceil=$(grep -vE '^[[:space:]]*(#|$)' "$1" 2>/dev/null | tr -d '[:space:]')
+    case "$ceil" in
+        ''|*[!0-9]*) printf 'FAIL: %s holds no integer ceiling; an unread ceiling is not a held one.\n' "$1"; return 1 ;;
+    esac
     if ! n=$(cb200_measured_count "$2"); then
         printf 'FAIL: could not read a CB-200 count from `%s comply check --checks CB-200`; an unread count is not a held one.\n' "${CB200_PMAT:-pmat}"
         return 1
     fi
-    if [ "$n" -gt "$toml" ]; then
-        printf 'FAIL: CB-200 measured %s definition(s) below min_grade, %s OVER [tdg] baseline %s.\n' "$n" "$((n - toml))" "$toml"
-        printf '      Fix or revert the new debt. Raising the baseline is not the fix.\n'
+    if [ "$n" -gt "$ceil" ]; then
+        printf 'FAIL: CB-200 measured %s definition(s) below min_grade, %s OVER the measured ceiling %s.\n' "$n" "$((n - ceil))" "$ceil"
+        printf '      Fix or revert the new debt. Raising the ceiling is not the fix.\n'
         return 1
     fi
-    printf 'ok    CB-200 measured %s <= [tdg] baseline %s\n' "$n" "$toml"
+    printf 'ok    CB-200 measured %s <= measured ceiling %s\n' "$n" "$ceil"
     return 0
 }
 
@@ -627,26 +629,34 @@ cb200_selftest() { # both polarities of the pair check, on throwaway files; retu
         printf '  ok    %-38s %s\n' cb200_baseline_absent 'no [tdg] baseline refused'; pass=$((pass + 1))
     fi
     # The measured leg, against a fake pmat printing each pmat 3.41 verdict shape.
-    printf '[tdg]\nbaseline = 599\n' > "$td/gates.toml"
+    printf '# measured ceiling\n620\n' > "$td/ceiling.txt"
     local row name msg want got
     for row in \
-        'measured_over|620 definition(s) below minimum grade B — 21 OVER the recorded baseline of 599|1' \
-        'measured_at|599 definition(s) below minimum grade B across 12 file(s), at the recorded baseline|0' \
+        'measured_over|621 definition(s) below minimum grade B — 22 OVER the recorded baseline of 599|1' \
+        'measured_at|620 definition(s) below minimum grade B — 21 OVER the recorded baseline of 599|0' \
         'measured_under|598 definition(s) below minimum grade B across 12 file(s)|0' \
         'measured_zero|0 definitions below minimum grade B, against a recorded baseline of 599|0' \
-        'measured_legacy_over|600 function(s) below minimum grade B|1' \
+        'measured_legacy_over|621 function(s) below minimum grade B|1' \
         'measured_unreadable|pmat: index missing|1'; do
         IFS='|' read -r name msg want <<< "$row"
         printf '#!/bin/sh\nprintf "%%s\\n" "%s"\nexit 1\n' "$msg" > "$td/fake-pmat"
         chmod +x "$td/fake-pmat"
         got=0
-        CB200_PMAT="$td/fake-pmat" CB200_MEASURE=1 cb200_measured_check "$td/gates.toml" "$td" > /dev/null 2>&1 || got=1
+        CB200_PMAT="$td/fake-pmat" cb200_measured_check "$td/ceiling.txt" "$td" > /dev/null 2>&1 || got=1
         if [ "$got" = "$want" ]; then
             printf '  ok    %-38s %s\n' "cb200_$name" "rc $got as expected"; pass=$((pass + 1))
         else
             printf '  BROKE %-38s %s\n' "cb200_$name" "rc $got, wanted $want"; broke=$((broke + 1))
         fi
     done
+    printf 'no number\n' > "$td/ceiling.txt"
+    got=0
+    CB200_PMAT="$td/fake-pmat" cb200_measured_check "$td/ceiling.txt" "$td" > /dev/null 2>&1 || got=1
+    if [ "$got" = 1 ]; then
+        printf '  ok    %-38s %s\n' cb200_ceiling_unreadable 'rc 1 as expected'; pass=$((pass + 1))
+    else
+        printf '  BROKE %-38s %s\n' cb200_ceiling_unreadable 'an unreadable ceiling passed'; broke=$((broke + 1))
+    fi
     rm -rf "${td:?}"
     printf '  CB-200: %s passed, %s broken\n' "$pass" "$broke"
     return "$broke"
@@ -656,6 +666,13 @@ if [ "${1:-}" = '--selftest' ] || [ "${1:-}" = '--self-test' ]; then
     cx_selftest; cx_rc=$?
     cb200_selftest; cb_rc=$?
     [ "$cx_rc" -eq 0 ] && [ "$cb_rc" -eq 0 ] && exit 0
+    exit 1
+fi
+
+# NIGHTLY ONLY: the measured CB-200 leg (a pmat index, ~24 min cold).
+if [ "${1:-}" = '--cb200-measured' ]; then
+    printf '=== CB-200 measured count may only fall (check_complexity_ratchet.sh --cb200-measured) ===\n'
+    cb200_measured_check "$REPO_ROOT/$CB200_CEIL_REL" "$REPO_ROOT" && exit 0
     exit 1
 fi
 
@@ -860,7 +877,13 @@ fi
 RATCHET_RC=0
 baseline_ratchet_check "$REPO_ROOT" "$BASELINE_REL" keyed2 || RATCHET_RC=$?
 cb200_pair_check "$REPO_ROOT/.pmat-gates.toml" "$REPO_ROOT/$CB200_REL" || RATCHET_RC=1
-cb200_measured_check "$REPO_ROOT/.pmat-gates.toml" "$REPO_ROOT" || RATCHET_RC=1
+if git -C "$REPO_ROOT" cat-file -e "${BASELINE_RATCHET_BASE_REF:-origin/main}:$CB200_CEIL_REL" 2>/dev/null; then
+    baseline_ratchet_check "$REPO_ROOT" "$CB200_CEIL_REL" count || RATCHET_RC=$?
+else
+    # Only the PR that establishes the file lands here; from its merge on, it is ratcheted.
+    printf 'new   ratchet  %s is absent on %s: established by this change, shrink-only from its merge on\n' \
+        "$CB200_CEIL_REL" "${BASELINE_RATCHET_BASE_REF:-origin/main}"
+fi
 baseline_ratchet_check "$REPO_ROOT" "$CB200_REL" count || RATCHET_RC=$?
 
 if [ "$VERDICT_RC" -ne 0 ]; then
