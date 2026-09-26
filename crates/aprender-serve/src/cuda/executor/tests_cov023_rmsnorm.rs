@@ -117,6 +117,52 @@ fn test_cov024_q5k_matvec_dimension_basic() {
     );
 }
 
+/// #3111: q5k_matvec on random Q5_K weights agrees with the CPU dequantizer. The
+/// all-zero test above passes whatever the kernel reads.
+#[test]
+#[serial]
+fn test_3111_q5k_matvec_matches_cpu_dequant() {
+    if !CudaExecutor::is_available() {
+        return;
+    }
+    let mut executor = crate::cuda_executor_or_skip!(0);
+
+    let (m, k) = (5u32, 512u32);
+    let mut state = 0x3111_0002u64;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) as u32
+    };
+    let mut weights: Vec<u8> = (0..(m * k / 256 * 176)).map(|_| next() as u8).collect();
+    // Finite, moderate d and dmin (f16 0x2c00.. / 0x2800..), so no block is inf or NaN.
+    for sb in weights.chunks_mut(176) {
+        let d = 0x2c00u16 + (next() & 0x3ff) as u16;
+        let dmin = 0x2800u16 + (next() & 0x3ff) as u16;
+        sb[0..2].copy_from_slice(&d.to_le_bytes());
+        sb[2..4].copy_from_slice(&dmin.to_le_bytes());
+    }
+    let input: Vec<f32> = (0..k)
+        .map(|_| (next() % 2001) as f32 / 1000.0 - 1.0)
+        .collect();
+    let mut output = vec![0.0f32; m as usize];
+    executor
+        .q5k_matvec(&weights, &input, &mut output, m, k)
+        .expect("q5k_matvec");
+
+    let deq = crate::quantize::dequantize_q5_k(&weights).expect("cpu dequant");
+    for (row, got) in output.iter().enumerate() {
+        let w = &deq[row * k as usize..(row + 1) * k as usize];
+        let want: f64 = w.iter().zip(&input).map(|(a, b)| f64::from(*a) * f64::from(*b)).sum();
+        let scale: f64 = w.iter().zip(&input).map(|(a, b)| f64::from((a * b).abs())).sum();
+        assert!(
+            (f64::from(*got) - want).abs() <= 1e-5 * scale + 1e-6,
+            "row {row}: gpu {got} vs cpu {want} (#3111)"
+        );
+    }
+}
+
 #[test]
 #[serial]
 fn test_cov024_q6k_matvec_dimension_basic() {

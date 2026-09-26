@@ -156,9 +156,11 @@ impl CudaExecutor {
         m: u32,
         k: u32,
     ) -> Result<(), GpuError> {
-        let kernel_type = KernelType::Q5KQuantizedGemm { m, n: 1, k };
+        // #3111: the kernel computes C[rows × cols] = A · Wᵀ with W indexed by output
+        // column, so a matvec is one row of A (the input) against m weight rows.
+        let kernel_type = KernelType::Q5KQuantizedGemm { m: 1, n: m, k };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q5k_{}_{}", m, k);
+        let cache_key = format!("q5k_gemm_1x{}_{}", m, k);
 
         // Load module if not cached
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
@@ -174,13 +176,18 @@ impl CudaExecutor {
         let buf_output = GpuBuffer::<f32>::new(&self.context, m as usize)?;
 
         // Launch configuration
-        let config = LaunchConfig::linear(m, 256);
+        let gemm = Q5KKernel::new(1, m, k);
+        let config = LaunchConfig {
+            grid: gemm.grid(),
+            block: gemm.block(),
+            shared_mem: 0,
+        };
 
         let mut ptr_input = buf_input.as_ptr();
         let mut ptr_weights = buf_weights.as_ptr();
         let mut ptr_output = buf_output.as_ptr();
-        let mut m_val = m;
-        let mut n_val = 1u32;
+        let mut m_val = 1u32;
+        let mut n_val = m;
         let mut k_val = k;
 
         // SAFETY: Memory safety ensured by bounds checking and alignment
