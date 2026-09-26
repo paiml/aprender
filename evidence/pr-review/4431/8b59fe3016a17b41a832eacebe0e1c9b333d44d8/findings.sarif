@@ -1,0 +1,143 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "pmat" } },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": { "text": "pmat query/index probe (bounded 90s, systemd-run unit a57-pmat-1790429918) did not complete; host load average measured at 78.17/66.73/62.76 (uptime), many competing sessions holding the shared cargo-wrapper flock and active cargo build jobs (ps aux). Unit stopped rather than left queued." },
+              "properties": { "grounding": "measured", "command": ["pmat", "query", "row errors", "--limit", "3"], "exit_code": 143 }
+            },
+            {
+              "level": "error",
+              "message": { "text": "cargo test -p aprender-review-experiment --lib (systemd-run unit a57-rv3-1790428731) queued 14+ minutes on the shared cargo wrapper flock under the same measured host contention; stopped rather than forced through. Refactor soundness for admission.rs and receipt.rs was instead confirmed by manual diff review (see PRREV-4431-RESTAMP-REFACTOR-SOUND)." },
+              "properties": { "grounding": "measured", "command": ["cargo", "test", "-p", "aprender-review-experiment", "--lib"] }
+            }
+          ],
+          "properties": { "transport": "cli", "transport_unavailable": ["cli: query/index probe timed out under host contention"] }
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4431-GHOST-BINDING-MSE-SPLIT",
+          "level": "warning",
+          "message": { "text": "Carried forward unchanged from the prior receipt: contracts/aprender/binding.yaml:188 names an mse_split obligation with no corresponding implementation found by citation. Unchanged by 0644f9c08..8b59fe301 (file not in this delta diff)." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 188 } } } ],
+          "properties": { "grounding": "cited", "precision_class": "advisory", "carried_forward_from": "evidence/pr-review/4431/0644f9c083264f86a4201cd122e64498fa90af22/findings.sarif" }
+        },
+        {
+          "ruleId": "PRREV-4431-GHOST-BINDING-PAGERANK",
+          "level": "warning",
+          "message": { "text": "Carried forward unchanged from the prior receipt: contracts/aprender/binding.yaml:32 names a pagerank obligation with no corresponding implementation found by citation. Unchanged by 0644f9c08..8b59fe301 (file not in this delta diff)." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 32 } } } ],
+          "properties": { "grounding": "cited", "precision_class": "advisory", "carried_forward_from": "evidence/pr-review/4431/0644f9c083264f86a4201cd122e64498fa90af22/findings.sarif" }
+        },
+        {
+          "ruleId": "PRREV-4431-RESTAMP-REFACTOR-SOUND",
+          "level": "note",
+          "message": { "text": "admission.rs row_errors() and receipt.rs problems() were split into cell_errors/field_errors/status_errors and named_problems/sha_problems/execution_problems respectively; git diff confirms call order and all message text are byte-identical to the pre-refactor functions (pure extract-function, complexity-ratchet motivated)." },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-review-experiment/src/admission.rs" }, "region": { "startLine": 1 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-review-experiment/src/receipt.rs" }, "region": { "startLine": 1 } } }
+          ],
+          "properties": { "grounding": "measured", "command": ["git", "diff", "0644f9c083264f86a4201cd122e64498fa90af22", "8b59fe3016a17b41a832eacebe0e1c9b333d44d8", "--", "crates/aprender-review-experiment/src/admission.rs", "crates/aprender-review-experiment/src/receipt.rs"], "exit_code": 0, "precision_class": "advisory" }
+        },
+        {
+          "ruleId": "PRREV-4431-RESTAMP-RETIRED-SCRIPT-NO-DANGLING-REF",
+          "level": "note",
+          "message": { "text": "scripts/ci_run_target_release.sh was renamed to scripts/retired/ci_run_target_release.sh (0 diff lines, byte-identical move, sha256 6e8f49c0... on both sides). A live-surface grep of .github/, scripts/guard_tree.sh, scripts/check_*.sh, and ci/ (excluding scripts/retired) finds zero remaining references. Remaining hits are documentation and history files only." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/retired/ci_run_target_release.sh" }, "region": { "startLine": 1 } } } ],
+          "properties": { "grounding": "measured", "command": ["git", "grep", "-n", "ci_run_target_release", "--", ".", ":!scripts/retired/*"], "exit_code": 0, "precision_class": "advisory" }
+        },
+        {
+          "ruleId": "PRREV-4431-RESTAMP-GUARD-ADAPTATIONS-PASS",
+          "level": "note",
+          "message": { "text": "The 4 pr-review guard scripts adapted for the #4433 ci.yml to ci/sections.yml fat-jobs split each pass their own --self-test in full: check_pr_review_arm4.sh 23/23, check_pr_review_counts.sh 16/16, check_pr_review_wiring.sh 13/13, check_guards_are_wired.sh 14/14." },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_pr_review_arm4.sh" }, "region": { "startLine": 1 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_pr_review_counts.sh" }, "region": { "startLine": 1 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_pr_review_wiring.sh" }, "region": { "startLine": 1 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_guards_are_wired.sh" }, "region": { "startLine": 1 } } }
+          ],
+          "properties": { "grounding": "measured", "command": ["bash", "scripts/check_pr_review_arm4.sh", "--self-test"], "exit_code": 0, "precision_class": "advisory" }
+        },
+        {
+          "ruleId": "PRREV-4431-RESTAMP-LADDER-MUTANTS-PASS",
+          "level": "note",
+          "message": { "text": "check_ladder_cells_producer.sh owed-set mutant line changed from list(J.owed_rungs(...))[:1] to zip(J.owed_rungs(...), range(1)) (behaviorally equivalent). --self-test confirms all 8 cases and all 6 mutants (needle, fallback, retry, owed-set, refusal, think) still pass and kill correctly." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_ladder_cells_producer.sh" }, "region": { "startLine": 1 } } } ],
+          "properties": { "grounding": "measured", "command": ["bash", "scripts/check_ladder_cells_producer.sh", "--self-test"], "exit_code": 0, "precision_class": "advisory" }
+        },
+        {
+          "ruleId": "PRREV-4431-VS-COUNT-TESTED-EXCEEDS-TOTAL",
+          "level": "error",
+          "message": { "text": "Carried forward unchanged from the prior receipt (0644f9c08): 8 contracts under contracts/ report a verification_summary tested or proven count exceeding total_obligations. None of these files were changed in 0644f9c08..8b59fe301 (git diff --stat over the exact 8 paths is empty), so the finding stands as-is." },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-cli-qa-v1.yaml" }, "region": { "startLine": 256 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-docs-v1.yaml" }, "region": { "startLine": 161 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-dogfood-coverage-v1.yaml" }, "region": { "startLine": 851 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/crate-hygiene-v1.yaml" }, "region": { "startLine": 128 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/crate-readme-v1.yaml" }, "region": { "startLine": 60 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/hero-svg-v1.yaml" }, "region": { "startLine": 67 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/ratatui-migration-v1.yaml" }, "region": { "startLine": 88 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/unified-specs-v1.yaml" }, "region": { "startLine": 82 } } }
+          ],
+          "properties": { "grounding": "measured", "precision_class": "advisory", "carried_forward_from": "evidence/pr-review/4431/0644f9c083264f86a4201cd122e64498fa90af22/findings.sarif" }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "nvidia-cuda-docs" } },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": { "text": "Carried forward unchanged from the prior receipt: agent cuda-docs-reviewer not available and mcp nvidia-cuda-docs needs OAuth the non-interactive session cannot run. This delta's only cuda-path-matching files (crates/aprender-serve/src/cuda/executor/*, gguf/cuda/forward_qwen35_cuda*.rs) were confirmed byte-identical to origin/main via git diff --stat (carried over verbatim by the merge commit e5929e6e5, not authored by this fold branch) -- no new device-behaviour claim to check." }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": { "driver": { "name": "crux" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+      "results": [
+        {
+          "ruleId": "PRREV-4431-BUILD-VERIFY-RESOLVED",
+          "level": "note",
+          "message": { "text": "Carried forward unchanged: the prior receipt's DEGRADED build-verification gap was resolved by a subsequent cargo test run per the prior receipt. No new user-facing CLI or output surface is introduced by 0644f9c08..8b59fe301 (guard scripts, internal refactors, docs and roadmap fragments only) -- crux has nothing new to review." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-review-experiment/src/admission.rs" }, "region": { "startLine": 1 } } } ],
+          "properties": { "grounding": "cited", "precision_class": "advisory", "carried_forward_from": "evidence/pr-review/4431/0644f9c083264f86a4201cd122e64498fa90af22/findings.sarif" }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "mutation" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+      "results": []
+    },
+    {
+      "tool": { "driver": { "name": "antigravity" } },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": { "text": "Not dispatched in this restamp: the parent task instructions did not include an agy/antigravity round, and the host was under severe measured contention throughout this session (see pmat run notifications). attempted: 0." }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
