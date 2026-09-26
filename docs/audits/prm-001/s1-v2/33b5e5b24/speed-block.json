@@ -1,0 +1,57 @@
+{
+  "replay_version": "review-replay-v2",
+  "set_sha": "a4910a65ea53e520841b164876d34dead653771226f8a740e6d3408b08b30632",
+  "apr_tag": "untagged-33b5e5b24",
+  "cell": "gx10-cuda",
+  "gguf_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+  "n_items": 200,
+  "p50_s": 26.978345700000002,
+  "p95_s": 68.833684447,
+  "p95_ci": [
+    60.908583259,
+    85.635564659
+  ],
+  "queue_budget_p95_s": 601.590268351,
+  "queue_budget_lane": "antigravity",
+  "within_budget": true,
+  "ttft_ms": {
+    "apr": 8470.244637,
+    "llama_cpp": 1923.354,
+    "ratio": 4.403892698380017
+  },
+  "prefill_tps": {
+    "2k": {
+      "apr": 942.2090502154527,
+      "llama_cpp": 3671.976446078548,
+      "ratio": 0.2565945245159935
+    },
+    "8k": {
+      "apr": 967.8218970121728,
+      "llama_cpp": 4065.914180370514,
+      "ratio": 0.23803303613358073
+    },
+    "16k": {
+      "apr": 900.2771390552361,
+      "llama_cpp": 4032.293697971591,
+      "ratio": 0.2232667574557162
+    },
+    "32k": {
+      "apr": 776.0930557050291,
+      "llama_cpp": 3749.767543077537,
+      "ratio": 0.2069709780110978
+    }
+  },
+  "decode_tps": {
+    "apr": 13.69316477765186,
+    "llama_cpp": 63.32071870964065,
+    "ratio": 0.21625093739763665
+  },
+  "peak_rss_mb": {
+    "apr": 8388.87890625,
+    "llama_cpp": 9565.828125,
+    "ratio": 0.8769631647808851
+  },
+  "parse_rate": 1.0,
+  "verdict_identity_vs_prev_tag": null,
+  "prompt_ids_sha": "f3c201362a6287c9c665509b8e8832e437131eddb206e0202010debe131dc0fa"
+}
