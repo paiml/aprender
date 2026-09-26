@@ -21376,6 +21376,14 @@ roadmap:
   assigned_to: null
   created: 2026-09-22T15:13:29Z
   updated: 2026-09-22T15:13:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
 - id: PMAT-4002
   github_issue: 4002
   item_type: task
