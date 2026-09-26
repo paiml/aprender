@@ -608,6 +608,11 @@ pub struct CompletionResponse {
     /// that does not report, so no existing client sees a change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub used_gpu: Option<bool>,
+    /// SRV-TIM-001: the measured prefill/decode split in llama.cpp's wire
+    /// shape, `None` when the arm that answered did not measure both phases —
+    /// never zeros. Omitted from the JSON when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timings: Option<super::Timings>,
 }
 
 /// Completion choice
@@ -645,6 +650,11 @@ pub struct CompletionChunk {
     /// Token counts — on the terminal chunk only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
+    /// SRV-TIM-001, on the terminal chunk only: the measured prefill/decode split in llama.cpp's wire
+    /// shape, `None` when the arm that answered did not measure both phases —
+    /// never zeros. Omitted from the JSON when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timings: Option<super::Timings>,
 }
 
 /// One choice inside a [`CompletionChunk`].

@@ -359,6 +359,7 @@ fn test_deep_apicov_completion_response_structure() {
             completion_tokens: 20,
             total_tokens: 30,
         },
+        timings: None,
     };
     let json = serde_json::to_string(&resp).expect("serialize");
     assert!(json.contains("cmpl-123"));

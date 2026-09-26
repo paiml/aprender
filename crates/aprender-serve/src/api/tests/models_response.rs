@@ -267,6 +267,7 @@ fn test_completion_response_cov() {
             completion_tokens: 2,
             total_tokens: 7,
         },
+        timings: None,
     };
     let json = serde_json::to_string(&resp).expect("serialize");
     assert!(json.contains("cmpl-123"));

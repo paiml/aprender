@@ -233,6 +233,19 @@ impl OwnedQuantizedModelCachedSync {
             .generate_with_cache_adaptive(prompt, config, metrics)
     }
 
+    /// SRV-TIM-001: `generate_with_cache_adaptive` with a per-sample observer.
+    #[cfg(feature = "gpu")]
+    pub fn generate_with_cache_adaptive_observed(
+        &self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        metrics: &std::sync::Arc<DispatchMetrics>,
+        on_token: &mut dyn FnMut(),
+    ) -> Result<Vec<u32>> {
+        self.model
+            .generate_with_cache_adaptive_observed(prompt, config, metrics, on_token)
+    }
+
     /// Forward pass with cached scheduler (thread-safe)
     ///
     /// Uses the cached HybridScheduler for GPU operations.

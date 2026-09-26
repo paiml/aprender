@@ -612,6 +612,7 @@ fn test_completion_response_multiple_choices() {
             completion_tokens: 20,
             total_tokens: 30,
         },
+        timings: None,
     };
     assert_eq!(response.choices.len(), 2);
 }

@@ -97,6 +97,7 @@
                 completion_tokens: 10,
                 total_tokens: 15,
             },
+            timings: None,
         };
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].text, "generated text");
@@ -122,6 +123,7 @@
                 completion_tokens: 7,
                 total_tokens: 10,
             },
+            timings: None,
         };
         let json = serde_json::to_string(&response).expect("serialize");
         assert!(json.contains("text_completion"));
@@ -143,6 +145,7 @@
                 completion_tokens: 0,
                 total_tokens: 0,
             },
+            timings: None,
         };
         let cloned = response.clone();
         assert_eq!(cloned.id, "test");
@@ -162,6 +165,7 @@
                 completion_tokens: 0,
                 total_tokens: 0,
             },
+            timings: None,
         };
         let debug = format!("{:?}", response);
         assert!(debug.contains("CompletionResponse"));

@@ -154,6 +154,20 @@ impl OwnedQuantizedModel {
         config: &QuantizedGenerateConfig,
         metrics: &std::sync::Arc<DispatchMetrics>,
     ) -> Result<Vec<u32>> {
+        self.generate_with_cache_adaptive_observed(prompt, config, metrics, &mut || {})
+    }
+
+    /// SRV-TIM-001: `generate_with_cache_adaptive`, calling `on_token` after every
+    /// sample (the first one included, before the stop check) so a server can mark
+    /// the prefill→first-token boundary without a second clock inside the loop.
+    #[cfg(feature = "gpu")]
+    pub fn generate_with_cache_adaptive_observed(
+        &self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        metrics: &std::sync::Arc<DispatchMetrics>,
+        on_token: &mut dyn FnMut(),
+    ) -> Result<Vec<u32>> {
         if prompt.is_empty() {
             return Err(RealizarError::InvalidShape {
                 reason: "Prompt cannot be empty".to_string(),
@@ -218,6 +232,7 @@ impl OwnedQuantizedModel {
                     config.top_k,
                 )
             };
+            on_token();
 
             // Check stop condition
             if config.stop_tokens.contains(&next_token) {
