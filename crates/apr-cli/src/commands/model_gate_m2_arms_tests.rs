@@ -232,9 +232,12 @@ fn ext_30_underpowered_against_stock_is_not_a_pass() {
     };
     let patch = ReleaseClass::PatchTensorIdentical;
     assert!(matches!(
-        verdict(patch, &inc, &[arm(noisy)]),
+        verdict(patch, &inc, &[arm(noisy.clone())]),
         Verdict::Underpowered { ref suite, n_req } if suite == "judge" && n_req > N as u64
     ));
+    // The receipt records a scored arm's level as its mean (50 x 3.0 + 50 x 7.0) / 100.
+    let r = gate(&PRE, patch, &inc, &[arm(noisy)]).expect("comparable inputs");
+    assert!((r.arms[0].suites[0].arm_level - 5.0).abs() < 1e-12);
     assert_eq!(verdict(patch, &inc, &[arm(vec![5.0; N])]), Verdict::Promote);
 }
 
