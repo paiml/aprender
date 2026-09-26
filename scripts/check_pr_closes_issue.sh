@@ -62,51 +62,47 @@ usage() {
 CLOSE_RE='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:?[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 REF_RE='#[0-9]+'
 
-# prose_lines < body > the lines GitHub renders as prose, each as written: a
+# prose_lines < body > one output line per input line: the line as written if
+# GitHub renders it as prose, a blank line for a blank line, and a \x01
+# placeholder (non-blank, matches nothing) for every line inside a block. It is a
 # line-state pass, so an UNCLOSED block runs to the end of the body exactly as
-# GitHub renders it. Dropped: ``` / ~~~ fences (closed by the opening
-# character, at least as long; a backtick fence whose info string holds a
-# backtick is not a fence), every line that touches a <!-- --> comment, HTML
-# blocks (<pre|script|style|textarea> to the closing tag, <? to ?>, <![CDATA[
-# to ]]>, <!X to >, any other tag line to the next blank line), blockquote
-# lines and their lazy continuations, and a line that starts inside a code span,
-# tag or link reference definition opened earlier in its paragraph. Rule 18 then accepts only a WHOLE LINE at
-# column 0 in one strict form, so indented code, inline code of any backtick
-# count and mid-sentence keywords never discharge anything. This replaces a
-# regex race against a Markdown parser (agy quorum @afc250626, @1d16e6caa,
-# @4fe1eb7b1). Where it is unsure it drops the line: a false RED is a reworded
-# PR body, a false GREEN is a PR that closes nothing.
+# GitHub renders it. Blocks: ``` / ~~~ fences (closed by the opening character,
+# at least as long; a backtick fence whose info string holds a backtick is not a
+# fence), a <!-- comment left open on its line (to -->), and the HTML blocks
+# that may span a blank line (<pre|script|style|textarea> to the closing tag,
+# <? to ?>, <![CDATA[ to ]]>, <!X to >) and a $$ math block. Nothing that ends at a blank line is
+# tracked -- inline code spans, tags, link reference definitions, blockquote
+# lazy continuations, the other HTML blocks: a line inside one always has a
+# non-blank neighbour, so the paragraph rule in isolated_lines() excludes it by
+# construction, and a blockquote or tag line cannot match at column 0 anyway. Tracking
+# them line by line was a race against a Markdown parser that lost six agy
+# quorum rounds (@afc250626 .. @b91da50e1).
 prose_lines() {
     perl -ne '
-        BEGIN { $end = ""; $quote = 0; $tick = 0; $tag = 0; $tq = ""; $lrd = 0 }
+        BEGIN { $end = "" }
         s/\r?\n\z//;
-        if ($end ne "") { $end = "" if ($end eq "BLANK" ? /^[ \t]*$/ : /$end/); next }
-        if (/^[ \t]*$/) { $quote = $tick = $tag = $lrd = 0; $tq = ""; print "\n"; next }
+        if ($end ne "") { $end = "" if /$end/; print "\x01\n"; next }
+        if (/^[ \t]*$/) { print "\n"; next }
         if (/^ {0,3}(`{3,})[^`]*$/ || /^ {0,3}(~{3,})/) {
-            $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; $quote = 0; next }
-        # inline state across the lines of one paragraph: an open code span (a
-        # backtick run closes only on one of equal length), an open tag (a > in
-        # a quoted attribute value does not close it), or a link reference
-        # definition. A line that starts inside one is not prose.
-        $drop = $tick || $tag || $lrd;
-        $lrd = 1 if /^ {0,3}\[[^\]]+\]:/;
-        for $t (/(`+|<[A-Za-z\/]|>|"|\x27)/g) {
-            if ($tick) { $tick = 0 if substr($t, 0, 1) eq "`" && length($t) == $tick }
-            elsif ($tag) { if ($tq ne "") { $tq = "" if $t eq $tq } elsif ($t eq "\"" || $t eq "\x27") { $tq = $t } elsif ($t eq ">") { $tag = 0 } }
-            elsif (substr($t, 0, 1) eq "`") { $tick = length($t) }
-            elsif (substr($t, 0, 1) eq "<") { $tag = 1 }
-        }
-        next if $drop;
-        if (/<!--/) { $end = "-->" if /<!--(?!.*-->)/; next }
+            $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; print "\x01\n"; next }
+        if (/^ {0,3}\$\$[ \t]*$/) { $end = "^ {0,3}\\\$\\\$[ \t]*\$"; print "\x01\n"; next }
+        if (/<!--(?!.*-->)/) { $end = "-->"; print "\x01\n"; next }
         if (/^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)/i) {
-            $end = "(?i)</(?:pre|script|style|textarea)>" unless /<\/(?:pre|script|style|textarea)>/i; $quote = 0; next }
-        if (/^ {0,3}<\?/)         { $end = "\\?>" unless /\?>/;     $quote = 0; next }
-        if (/^ {0,3}<!\[CDATA\[/) { $end = "\\]\\]>" unless /\]\]>/; $quote = 0; next }
-        if (/^ {0,3}<![A-Za-z]/)   { $end = ">" unless /^ {0,3}<![A-Za-z][^>]*>/; $quote = 0; next }
-        if (/^ {0,3}<\/?[A-Za-z]/) { $end = "BLANK"; $quote = 0; next }
-        if (/^ {0,3}>/) { $quote = 1; next }
-        next if $quote;
+            $end = "(?i)</(?:pre|script|style|textarea)>" unless /<\/(?:pre|script|style|textarea)>/i; print "\x01\n"; next }
+        if (/^ {0,3}<\?/)         { $end = "\\?>" unless /\?>/;     print "\x01\n"; next }
+        if (/^ {0,3}<!\[CDATA\[/) { $end = "\\]\\]>" unless /\]\]>/; print "\x01\n"; next }
+        if (/^ {0,3}<![A-Za-z]/)   { $end = ">" unless /^ {0,3}<![A-Za-z][^>]*>/; print "\x01\n"; next }
         print "$_\n";'
+}
+# isolated_lines < prose_lines output > the lines that are a PARAGRAPH OF THEIR
+# OWN: a blank line (or the body's edge) before AND after. CommonMark parses
+# inlines within one paragraph and a paragraph ends at a blank line, so no code
+# span, tag, link reference definition or lazy continuation opened on another
+# line can reach an isolated line. prose_lines prints every blank line as "",
+# and awk reads the unset l[0] and l[NR+1] as "", so the body's edges count as
+# blank. Rule 18 reads discharge lines only from here.
+isolated_lines() {
+    awk '{ l[NR] = $0 } END { for (i = 1; i <= NR; i++) if (l[i-1] == "" && l[i+1] == "") print l[i] }'
 }
 # The three discharge forms, each a whole line at column 0 (trailing period allowed):
 #   Closes #N | Fixes owner/repo#N | Resolves: #N     (any GitHub closing keyword)
@@ -292,7 +288,7 @@ check_body_text() {
 # with this flag goes RED -- which is why check_reconcile.sh (merged PRs) does not
 # pass it, and ci.yml's pull_request step does.
 check_require_close() {
-    body="$(printf '%s\n' "$1" | prose_lines)"
+    body="$(printf '%s\n' "$1" | prose_lines | isolated_lines)"
     repo_lc="$(printf '%s' "${PR_CLOSES_REPO:-paiml/aprender}" | tr '[:upper:]' '[:lower:]')"
     targets="$(printf '%s\n' "$body" | grep -iE "$CLOSE_LINE_RE" | tr '[:upper:]' '[:lower:]' \
         | sed -nE "s@^[a-z]+:?[[:space:]]+(${repo_lc}|)#([0-9]+)[[:space:].]*\$@\\2@p" || true)"
@@ -341,7 +337,7 @@ check_require_close() {
         printf 'FAIL close-target-unverified: %s close target(s) could not be resolved; a guess is not a close.\n' "$unverified"
         return 1
     fi
-    printf 'FAIL no-close: the body closes no open issue of %s and has no `no-issue: <reason>` line (APR-EPIC-001 rule 18). `Refs #N` does not close; use `Closes #N`, `Refs #P row <id>` for a rule-20 checklist row, or `no-issue: <reason>`.\n' "$repo_lc"
+    printf 'FAIL no-close: the body closes no open issue of %s and has no `no-issue: <reason>` line (APR-EPIC-001 rule 18). `Refs #N` does not close; use `Closes #N`, `Refs #P row <id>` for a rule-20 checklist row, or `no-issue: <reason>`, each at column 0 as a paragraph of its own (a blank line before and after it).\n' "$repo_lc"
     return 1
 }
 
@@ -487,86 +483,101 @@ STUB
     }
     run_rc_case "rc-closes-open"      "Closes #9002"                                 0 "PASS: discharges 1"
     run_rc_case "rc-own-repo-prefix"  "Fixes paiml/aprender#9002"                    0 "PASS: discharges 1"
-    run_rc_case "rc-closed-plus-open" $'Closes #9004\nFixes #9002'                   0 "PASS: discharges 1"
-    run_rc_case "rc-row-ref"          $'Refs #9002 row A8\nkeep-open: parent checklist' 0 "PASS: discharges 1"
-    run_rc_case "rc-no-issue"         $'Docs only.\nno-issue: typo in a comment'    0 "PASS: no-issue"
+    run_rc_case "rc-closed-plus-open" $'Closes #9004\n\nFixes #9002'                   0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref"          $'Refs #9002 row A8\n\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-no-issue"         $'Docs only.\n\nno-issue: typo in a comment'    0 "PASS: no-issue"
     # GitHub closes only on a whole keyword and a whole number, in prose: not mid-word,
     # not `#Na`, not inside a code fence, an inline code span or an HTML comment.
     run_rc_case "rc-close-mid-word"   "aclose #9002"                                 1 "FAIL no-close"
     run_rc_case "rc-close-suffix"     "Closes #9002a"                                1 "FAIL no-close"
-    run_rc_case "rc-close-fenced"     $'```\nCloses #9002\n```'                     1 "FAIL no-close"
-    run_rc_case "rc-close-tilde-fence" $'~~~\nCloses #9002\n~~~'                    1 "FAIL no-close"
+    run_rc_case "rc-close-fenced"     $'```\n\nCloses #9002\n\n```'                     1 "FAIL no-close"
+    run_rc_case "rc-close-tilde-fence" $'~~~\n\nCloses #9002\n\n~~~'                    1 "FAIL no-close"
     run_rc_case "rc-close-backticked" 'Write `Closes #9002` to close it.'            1 "FAIL no-close"
     run_rc_case "rc-close-html-comment" '<!-- Closes #9002 -->'                      1 "FAIL no-close"
-    run_rc_case "rc-row-ref-fenced"   $'```\nRefs #9002 row A8\n```\nkeep-open: parent checklist'                1 "FAIL no-close"
-    run_rc_case "rc-no-issue-fenced"  $'```\nno-issue: example line\n```'          1 "FAIL no-close"
-    run_rc_case "rc-two-close-lines"  $'Closes #9004.\nCloses #9002.'              0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-fenced"   $'```\n\nRefs #9002 row A8\n\n```\n\nkeep-open: parent checklist'                1 "FAIL no-close"
+    run_rc_case "rc-no-issue-fenced"  $'```\n\nno-issue: example line\n\n```'          1 "FAIL no-close"
+    run_rc_case "rc-two-close-lines"  $'Closes #9004.\n\nCloses #9002.'              0 "PASS: discharges 1"
     run_rc_case "rc-close-in-sentence" "This closes #9002 today."                    1 "FAIL no-close"
     run_rc_case "rc-close-indented"   "    Closes #9002"                             1 "FAIL no-close"
     run_rc_case "rc-close-blockquote" "> Closes #9002"                               1 "FAIL no-close"
     run_rc_case "rc-close-double-tick" '``Closes #9002``'                            1 "FAIL no-close"
-    run_rc_case "rc-close-unclosed-fence" $'```\nCloses #9002'                      1 "FAIL no-close"
-    run_rc_case "rc-close-unclosed-comment" $'<!--\nCloses #9002'                   1 "FAIL no-close"
-    run_rc_case "rc-close-after-comment" $'<!--\nnote\n-->\nCloses #9002'           0 "PASS: discharges 1"
-    run_rc_case "rc-mixed-fences"     $'```\n~~~\n```\nCloses #9002'               0 "PASS: discharges 1"
-    run_rc_case "rc-comment-opened-in-fence" $'```\n<!--\n```\nCloses #9002'       0 "PASS: discharges 1"
-    run_rc_case "rc-crlf-fence-closes" $'```\r\nx\r\n```\r\nCloses #9002\r\n'      0 "PASS: discharges 1"
-    run_rc_case "rc-close-after-inline-comment" $'<!-- note -->\nCloses #9002'     0 "PASS: discharges 1"
+    run_rc_case "rc-close-unclosed-fence" $'```\n\nCloses #9002'                      1 "FAIL no-close"
+    run_rc_case "rc-close-unclosed-comment" $'<!--\n\nCloses #9002'                   1 "FAIL no-close"
+    run_rc_case "rc-close-after-comment" $'<!--\nnote\n-->\n\nCloses #9002'           0 "PASS: discharges 1"
+    run_rc_case "rc-mixed-fences"     $'```\n~~~\n```\n\nCloses #9002'               0 "PASS: discharges 1"
+    run_rc_case "rc-comment-opened-in-fence" $'```\n<!--\n```\n\nCloses #9002'       0 "PASS: discharges 1"
+    run_rc_case "rc-crlf-fence-closes" $'```\r\nx\r\n```\r\n\r\nCloses #9002\r\n'      0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-inline-comment" $'<!-- note -->\n\nCloses #9002'     0 "PASS: discharges 1"
     # agy round 3 (@4fe1eb7b1): HTML blocks, same-line comments, lazy quotes, NBSP, fenced parent rows
-    run_rc_case "rc-close-in-pre"      $'<pre>\nCloses #9002\n</pre>'                 1 "FAIL no-close"
+    run_rc_case "rc-close-in-pre"      $'<pre>\n\nCloses #9002\n\n</pre>'                 1 "FAIL no-close"
     run_rc_case "rc-close-after-comment-same-line" $'<!-- -->Closes #9002'           1 "FAIL no-close"
     run_rc_case "rc-close-in-html-block" $'<div>\nCloses #9002'                      1 "FAIL no-close"
-    run_rc_case "rc-close-in-pi"       $'<?x\n\nCloses #9002\n?>'                     1 "FAIL no-close"
+    run_rc_case "rc-close-in-pi"       $'<?x\n\nCloses #9002\n\n?>'                     1 "FAIL no-close"
     run_rc_case "rc-close-lazy-quote"  $'> quote\nCloses #9002'                       1 "FAIL no-close"
-    run_rc_case "rc-fence-after-quote" $'> q\n```\nCloses #9002\n```'                 1 "FAIL no-close"
+    run_rc_case "rc-fence-after-quote" $'> q\n```\n\nCloses #9002\n\n```'                 1 "FAIL no-close"
     run_rc_case "rc-no-issue-nbsp"     $'no-issue: \xc2\xa0'                          1 "FAIL no-close"
-    run_rc_case "rc-row-ref-parent-fenced" $'Refs #9007 row F1\nkeep-open: parent' 1 "FAIL no-close"
-    run_rc_case "rc-close-after-pre"   $'<pre>\nx\n</pre>\nCloses #9002'              0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-parent-fenced" $'Refs #9007 row F1\n\nkeep-open: parent' 1 "FAIL no-close"
+    run_rc_case "rc-close-after-pre"   $'<pre>\nx\n</pre>\n\nCloses #9002'              0 "PASS: discharges 1"
     run_rc_case "rc-close-after-html-blank" $'<details>\n<summary>s</summary>\n\nCloses #9002' 0 "PASS: discharges 1"
     run_rc_case "rc-close-after-quote-blank" $'> quote\n\nCloses #9002'              0 "PASS: discharges 1"
-    run_rc_case "rc-close-in-cdata"    $'<![CDATA[\n\nCloses #9002\n]]>'             1 "FAIL no-close"
-    run_rc_case "rc-close-in-declaration" $'<!X\n\nCloses #9002\n>'                  1 "FAIL no-close"
-    run_rc_case "rc-close-after-quote-then-fence" $'> q\n```\nx\n```\nCloses #9002'  0 "PASS: discharges 1"
+    run_rc_case "rc-close-in-cdata"    $'<![CDATA[\n\nCloses #9002\n\n]]>'             1 "FAIL no-close"
+    run_rc_case "rc-close-in-declaration" $'<!X\n\nCloses #9002\n\n>'                  1 "FAIL no-close"
+    run_rc_case "rc-close-after-quote-then-fence" $'> q\n```\nx\n```\n\nCloses #9002'  0 "PASS: discharges 1"
     # agy round 4 (@6f9582631): inline constructs spanning lines
     run_rc_case "rc-close-in-multiline-code" $'`\nCloses #9002\n`'                  1 "FAIL no-close"
     run_rc_case "rc-close-in-multiline-tag" $'text <a href="\nCloses #9002\n">'     1 "FAIL no-close"
     run_rc_case "rc-close-after-linkref" $'[foo]:\nCloses #9002'                    1 "FAIL no-close"
     run_rc_case "rc-close-in-code-after-comment" $'x `<!-- -->\nCloses #9002\n`'    1 "FAIL no-close"
-    run_rc_case "rc-close-after-balanced-code" $'Fix `a` and ``b`c``\nCloses #9002' 0 "PASS: discharges 1"
-    run_rc_case "rc-close-after-closed-tag" $'See <b>this</b>\nCloses #9002'        0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-balanced-code" $'Fix `a` and ``b`c``\n\nCloses #9002' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-closed-tag" $'See <b>this</b>\n\nCloses #9002'        0 "PASS: discharges 1"
     run_rc_case "rc-close-after-open-code-para" $'`open\n\nCloses #9002'            0 "PASS: discharges 1"
     # agy round 5 (@25b0cb80d): a > inside a quoted attribute does not close the tag
     run_rc_case "rc-close-in-tag-quoted-gt" $'Text <a title=">"\nCloses #9002\n>'   1 "FAIL no-close"
     run_rc_case "rc-close-in-tag-squoted-gt" $'Text <a title=\'>\'\nCloses #9002\n>' 1 "FAIL no-close"
-    run_rc_case "rc-close-after-tag-quoted-gt" $'See <a title=">">x</a>\nCloses #9002' 0 "PASS: discharges 1"
-    run_rc_case "rc-close-after-tag-quote-new-para" $'x <a title="\n\nx <b>\nCloses #9002' 0 "PASS: discharges 1"
-    run_rc_case "rc-close-after-quote-char-prose" $'It\'s "quoted"\nCloses #9002'     0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-tag-quoted-gt" $'See <a title=">">x</a>\n\nCloses #9002' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-tag-quote-new-para" $'x <a title="\n\nx <b>\n\nCloses #9002' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-quote-char-prose" $'It\'s "quoted"\n\nCloses #9002'     0 "PASS: discharges 1"
     run_rc_case "rc-backtick-info-not-fence" $'``` a`b\n\nCloses #9002'               0 "PASS: discharges 1"
+    # agy round 6 (@b91da50e1): inline tracking kept losing to the parser, so a
+    # discharge must be a paragraph of its own; these bodies are refused by that
+    run_rc_case "rc-close-in-tag-backtick-attr" $'x <a href=foo `>\nCloses #9002\n`' 1 "FAIL no-close"
+    run_rc_case "rc-close-in-code-escaped-tick" $'a \\` `\nCloses #9002\n`'   1 "FAIL no-close"
+    run_rc_case "rc-close-not-isolated-before" $'Closes #9002\ntrailing prose'     1 "FAIL no-close"
+    run_rc_case "rc-close-in-comment-isolated" $'<!--\n\nCloses #9002\n\n-->'   1 "FAIL no-close"
+    run_rc_case "rc-close-between-html-paras" $'<div>\n\nCloses #9002\n\n</div>' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-blank-ws-lines" $'Intro.\n \t\nCloses #9002\n  '     0 "PASS: discharges 1"
+    run_rc_case "rc-close-in-math-block" $'$$\n\nCloses #9002\n\n$$'        1 "FAIL no-close"
+    run_rc_case "rc-close-after-math-block" $'$$\nx\n$$\n\nCloses #9002'       0 "PASS: discharges 1"
+    run_rc_case "rc-close-touching-fence" $'```\nx\n```\nCloses #9002'          1 "FAIL no-close"
+    run_rc_case "rc-close-before-fence" $'Closes #9002\n```\nx\n```'          1 "FAIL no-close"
+    run_rc_case "rc-close-in-long-fence" $'````\n```\n\nCloses #9002\n\n````'  1 "FAIL no-close"
+    run_rc_case "rc-close-fence-info-not-closer" $'```\n```x\n\nCloses #9002\n\n```' 1 "FAIL no-close"
+    run_rc_case "rc-close-after-oneline-pre" $'<pre>x</pre>\n\nCloses #9002'    0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
-    run_rc_case "rc-close-after-fence" $'```\nexample\n```\nCloses #9002'           0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-fence" $'```\nexample\n```\n\nCloses #9002'           0 "PASS: discharges 1"
     # a row ref starts at a word: "Xrefs #N row X" is prose, not `Refs #N row X`
-    run_rc_case "rc-row-ref-mid-word" $'Refs #9002\nXrefs #9002 row A8\nkeep-open: parent checklist' 1 "FAIL no-close"
+    run_rc_case "rc-row-ref-mid-word" $'Refs #9002\n\nXrefs #9002 row A8\n\nkeep-open: parent checklist' 1 "FAIL no-close"
     # FALSIFY-FLOW-012: a body with only `Refs #N` (R-2 satisfied by keep-open) and no trailer.
     run_rc_case "rc-flow-012-refs-only" $'Refs #9002\nkeep-open: tracked by the epic' 1 "FAIL no-close"
     run_rc_case "rc-no-refs"          "Bumps dependency versions."                   1 "FAIL no-close"
-    run_rc_case "rc-no-issue-empty"   $'Docs only.\nno-issue:'                       1 "FAIL no-close"
+    run_rc_case "rc-no-issue-empty"   $'Docs only.\n\nno-issue:'                       1 "FAIL no-close"
     run_rc_case "rc-no-issue-midline" "this line mentions no-issue: inline"          1 "FAIL no-close"
     run_rc_case "rc-closes-closed"    "Closes #9004"                                 1 "FAIL no-close"
     run_rc_case "rc-closes-pr"        "Closes #9001"                                 1 "FAIL no-close"
     run_rc_case "rc-cross-repo"       "Fixes paiml/infra#9002"                       1 "FAIL no-close"
     run_rc_case "rc-row-ref-closed"   $'Refs #9004 row A8'                           1 "FAIL no-close"
     # The row must be a real, unticked line of the parent (Sonnet-5 review of #4455).
-    run_rc_case "rc-row-ref-fabricated" $'Refs #9002 row x\nkeep-open: parent checklist' 1 "FAIL no-close"
-    run_rc_case "rc-row-ref-ticked"   $'Refs #9002 row A7\nkeep-open: parent checklist' 1 "FAIL no-close"
-    run_rc_case "rc-row-ref-prefix"   $'Refs #9002 row A\nkeep-open: parent checklist'  1 "FAIL no-close"
-    run_rc_case "rc-row-ref-dotted"   $'Refs #9002 row A8b.1\nkeep-open: parent checklist' 0 "PASS: discharges 1"
-    run_rc_case "rc-row-ref-period"   $'Refs #9002 row A8.\nkeep-open: parent checklist' 0 "PASS: discharges 1"
-    run_rc_case "rc-row-ref-in-sentence" $'Ticks Refs #9002 row A8.\nkeep-open: parent checklist' 1 "FAIL no-close"
-    run_rc_case "rc-row-ref-no-body"  $'Refs #9006 row A8\nkeep-open: parent checklist' 1 "FAIL close-target-unverified"
+    run_rc_case "rc-row-ref-fabricated" $'Refs #9002 row x\n\nkeep-open: parent checklist' 1 "FAIL no-close"
+    run_rc_case "rc-row-ref-ticked"   $'Refs #9002 row A7\n\nkeep-open: parent checklist' 1 "FAIL no-close"
+    run_rc_case "rc-row-ref-prefix"   $'Refs #9002 row A\n\nkeep-open: parent checklist'  1 "FAIL no-close"
+    run_rc_case "rc-row-ref-dotted"   $'Refs #9002 row A8b.1\n\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-period"   $'Refs #9002 row A8.\n\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-in-sentence" $'Ticks Refs #9002 row A8.\n\nkeep-open: parent checklist' 1 "FAIL no-close"
+    run_rc_case "rc-row-ref-no-body"  $'Refs #9006 row A8\n\nkeep-open: parent checklist' 1 "FAIL close-target-unverified"
     run_rc_case "rc-unresolvable"     "Closes #9003"                                 1 "FAIL close-target-unverified"
     # R-2 still runs first under the flag: a discharge does not excuse an un-closed citation.
-    run_rc_case "rc-r2-still-applies" $'Closes #9002\nsee #9005'                     1 "non-closing ref"
+    run_rc_case "rc-r2-still-applies" $'Closes #9002\n\nsee #9005'                     1 "non-closing ref"
     # A GitHub App (login ending in `[bot]`: dependabot, renovate) cannot write a
     # trailer, so rule 18 exempts it. R-2 still applies, and a human login that
     # merely looks like a bot is not exempt.
