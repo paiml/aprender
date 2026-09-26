@@ -21871,3 +21871,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4478
+  github_issue: 4478
+  item_type: task
+  title: 'ci: pr-review-sign receives an empty signing key — secret name misspelled (…_B vs …_B64), every PR''s present check RED'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-57
+  created: 2026-09-26 16:00:00+00:00
+  updated: '2026-09-26T16:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'ci.yml passes FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64, the name ci/sections.yml pr-review-sign reads'
+  - 'scripts/check_fat_secrets_passed.sh: every secrets.NAME on a non-comment line of ci/sections.yml (except GITHUB_TOKEN) has FAT_SECRET_NAME from secrets.NAME in ci.yml, and every FAT_SECRET_KEY reads secrets.KEY; 6-row case table carrying the #4441 shape verbatim as FAIL; RED on main''s ci.yml, GREEN on this tree'
+  - 'the guard is wired in ci/sections.yml (case table, then tree) and check_guards_are_wired.sh is GREEN'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found on #4431 CI run 36246483181: "carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty". #4441 (fat jobs) hand-wrote the env line with the trailing 64 dropped.'
