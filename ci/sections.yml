@@ -26,14 +26,17 @@ sovereign-ci:
     coverage_on: 'tag'
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
-# runs as ONE shard (SHARD=1 SHARDS=1: nextest's hash partition 1/1 is every test,
-# and the explicit-command runner's shard 1/1 is every fragment); `any: 1` makes
-# `matrix.shard == 1` AND `matrix.shard == 3` both true, so the once-only steps
-# gated on either still run exactly once. determinism keeps both arches; x86-main
-# runs [X64], the determinism fat job runs [ARM64] + the compare.
+# runs as THREE shards, each its own ci.yml job on its own runner: as one shard
+# it took 5358 s of x86-main and was the release critical path. nextest's hash
+# partition N/3 and the explicit runner's round-robin N/3 each cover their list
+# exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
+# verdict job checks that by id. determinism keeps both arches; x86-main runs
+# [X64], the determinism fat job runs [ARM64] + the compare.
 matrix-pins:
   workspace-test-shard:
-    - {shard: {any: 1}, shards: 1}
+    - {shard: 1, shards: 3}
+    - {shard: 2, shards: 3}
+    - {shard: 3, shards: 3}
   determinism:
     - {arch: X64}
     - {arch: ARM64}
@@ -578,14 +581,17 @@ jobs:
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
       - name: "Σ-executed: the tests this job ran are exactly the tests it owes (#4433)"
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1 && matrix.shards == 1
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         # #4433, the cop's condition on the 5-fat-job PR: "The test-id set across
         # the 5 jobs must equal today's set (by id, not by count), and a mutation
         # that drops one test must turn it RED." The UNIVERSE is listed HERE, with
         # the filters of today's jobs written out again, never read back from the
         # step that ran the tests -- so an added --exclude, a --partition or a
         # dropped fragment in a run step cannot narrow its own yardstick.
-        # Only on the unsharded full tier: a shard owes a partition, not the set.
+        # Sharded, a shard owes a partition, not the set: this step (shard 1)
+        # lists the universes and checks the shard-1-only GPU and compute steps;
+        # the lib and explicit universes go to the workspace-test verdict job,
+        # which compares them with the UNION of the three shards' executed ids.
         shell: bash
         run: |
           set -euo pipefail
@@ -613,11 +619,39 @@ jobs:
               cargo test -p aprender-compute --lib -- --list --ignored > /sigma/compute.ignored.txt'
           bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d > "$sig/explicit.list.txt"
           rc=0
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib" --junit "$sig/lib.junit.xml" --list-json "$sig/lib.list.json" || rc=1
+          if [ "$SHARDS" = 1 ]; then
+            python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib" --junit "$sig/lib.junit.xml" --list-json "$sig/lib.list.json" || rc=1
+            python3 scripts/ci/sigma_executed.py explicit --kind "explicit" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Integration tests" --list "$sig/explicit.list.txt" || rc=1
+          fi
           python3 scripts/ci/sigma_executed.py nextest --kind "nextest gpu" --junit "$sig/gpu.junit.xml" --list-json "$sig/gpu.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py cargo --kind "compute" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Compute tests" --list "$sig/compute.list.txt" --ignored "$sig/compute.ignored.txt" || rc=1
-          python3 scripts/ci/sigma_executed.py explicit --kind "explicit" --log "$FAT_SECTION_LOG" --step "Integration tests" --list "$sig/explicit.list.txt" || rc=1
           exit "$rc"
+      # The shard's half of the cross-shard Σ (#4433). The tier file is written
+      # on every tier, so the verdict job can tell "not a full run" from "a
+      # shard's ids never arrived" -- a missing file there is RED, not a skip.
+      - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
+        if: matrix.shards != 1
+        shell: bash
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          mkdir -p sigma-shard
+          printf '%s\n' "$TIER" > sigma-shard/tier
+          if [ "$TIER" = full ]; then
+            cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
+            cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
+            if [ "$SHARD" = 1 ]; then
+              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
+            fi
+          fi
+      - uses: actions/upload-artifact@v7
+        if: matrix.shards != 1
+        with:
+          name: sigma-shard-${{ matrix.shard }}
+          path: sigma-shard/
+          if-no-files-found: error
       # PACK-001: the examples build used to be fragment 350 of the explicit
       # list. Measured on the first sharded full-tier run (35361149112, shard 1
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE

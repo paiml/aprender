@@ -61,11 +61,12 @@ jobs:
   # (and the pinned sovereign-ci reusable workflow to ci/vendor/). Each fat job
   # below runs a set of them as SECTIONS on one runner through
   # scripts/ci/fat_driver.py, which honours each section's if/needs/matrix/
-  # container/outputs exactly as the Actions runner did. The shard matrix is
-  # pinned to ONE shard (shard 1 of 1) in ci/sections.yml `matrix-pins`, so the
-  # full workspace runs in one nextest pool on the fat host instead of three
-  # partitions on three runners, and the Σ-executed step in that section
-  # compares the executed test ids with the owed universe, by id.
+  # container/outputs exactly as the Actions runner did. The workspace tests
+  # are the exception: as one shard inside x86-main they took 5358 s of it and
+  # were the release critical path, so ci/sections.yml `matrix-pins` splits
+  # them into three shards and each runs as its own `workspace-test-shard` job
+  # below, in parallel. The `workspace-test` verdict job compares the UNION of
+  # the shards' executed test ids with the owed universe, by id (#4433).
   #
   # The required contexts are produced by three verdict jobs at the end:
   # `workspace-test`, `ci / gate` and `gate`, each reading the fat jobs' results
@@ -98,7 +99,8 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,workspace-test-shard*,workspace-test,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64]'
+          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64]'
+          --external-job workspace-test
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
       # Published mid-run: the determinism job's compare section is waiting for it.
@@ -313,20 +315,84 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
+  # The workspace tests, one shard per job (nextest hash partition N/3 plus the
+  # explicit runner's round-robin N/3), in parallel on the intel clean-room pool.
+  # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  workspace-test-shard:
+    runs-on: [self-hosted, Linux, X64, clean-room, intel]
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    outputs:
+      results: ${{ steps.run.outputs.results }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: fat_driver case table must still turn RED
+        run: python3 scripts/ci/fat_driver.py self-test
+      # `?` for the brackets and the comma: --sections splits on commas.
+      - name: Sections
+        id: run
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'workspace-test-shard?${{ matrix.shard }}?3?'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sigma-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/fat/artifacts/sigma-shard-${{ matrix.shard }}/
+          if-no-files-found: ignore
+
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [x86-main]
+    needs: [workspace-test-shard]
     if: always()
     steps:
-      - name: The workspace-test section's result
+      - name: Every shard passed
         env:
-          RESULTS: ${{ needs.x86-main.outputs.results }}
+          SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
         run: |
           set -euo pipefail
-          r=$(printf '%s' "${RESULTS:-null}" | jq -r '(. // {})."workspace-test".result // "missing"')
-          echo "workspace-test section: $r"
-          [ "$r" = success ] || { echo "::error::workspace-test: section result is '$r'"; exit 1; }
+          echo "workspace-test-shard matrix result: $SHARD_RESULT"
+          [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sigma-shard-*
+          path: ${{ runner.temp }}/sigma
+      # #4433, the cop's condition: the test-id set across the jobs equals the
+      # owed set, by id. Each shard ran a partition; the UNION of their executed
+      # ids is compared with the universe shard 1 listed. A shard whose ids did
+      # not arrive is RED, never a smaller universe.
+      - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/sigma"
+          python3 scripts/ci/sigma_executed.py --self-test
+          tiers=""
+          for n in 1 2 3; do
+            [ -f "$d/sigma-shard-$n/tier" ] || { echo "::error::Σ: shard $n staged no tier file"; exit 1; }
+            tiers="$tiers $(cat "$d/sigma-shard-$n/tier")"
+          done
+          echo "shard tiers:$tiers"
+          [ "$tiers" = " full full full" ] || { echo "not a full-tier run on every shard: the lib/explicit Σ is not owed"; exit 0; }
+          j=() l=()
+          for n in 1 2 3; do
+            j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
+            l+=(--log "$d/sigma-shard-$n/section.log")
+          done
+          rc=0
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
+          exit "$rc"
 
   ci-gate:
     name: ci / gate
@@ -347,13 +413,14 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
-    needs: [x86-main, determinism]   # as on main: the GPU jobs are advisory (68-C3 / 68-D2)
+    needs: [x86-main, workspace-test, determinism]   # as on main: the GPU jobs are advisory (68-C3 / 68-D2)
     if: always()
     steps:
       - name: Check required sections
         env:
           X86: ${{ needs.x86-main.outputs.results }}
           DET: ${{ needs.determinism.outputs.results }}
+          WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
         run: |
           set -euo pipefail
@@ -361,7 +428,9 @@ jobs:
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
           # cuda-unit were never in the gate; they still are not.
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate X86:workspace-test DET:determinism-compare; do
+          # workspace-test is its own job now (three shard jobs + the Σ fan-in).
+          [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
+          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
             job="${pair%%:*}" sec="${pair#*:}"
             r=$(res "${!job}" "$sec")
             if [ "$r" != success ]; then
