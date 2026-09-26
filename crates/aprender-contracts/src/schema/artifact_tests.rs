@@ -269,3 +269,32 @@ fn the_external_corpora_fixtures_are_refused_through_validate_artifact() {
         );
     }
 }
+
+/// ONT-4c4 (#4069): an equation's CPU reference and its `#[kernel]` share the
+/// equation, and the kernel shapes join them on it. `kernel: true` keys the
+/// kernel entry apart from BINDING-006, and `find_binding` never returns it.
+/// Two kernel entries on one equation are still a duplicate.
+#[test]
+fn a_reference_and_its_kernel_share_an_equation() {
+    let pair = "version: 1.0.0\ntarget_crate: aprender\nbindings:\n  - contract: c-v1.yaml\n    equation: e\n    function: f\n    module_path: cpu\n    status: implemented\n  - contract: c-v1\n    equation: e\n    function: f\n    module_path: oxide::kernels\n    status: implemented\n    kernel: true\n";
+    let registry = parse_binding_str(pair).expect("parses");
+    let rules = error_rules(&validate_binding_registry(&registry));
+    assert!(rules.is_empty(), "{rules:?}");
+    let found = registry.find_binding("c-v1", "e").expect("reference bound");
+    assert_eq!(found.module_path.as_deref(), Some("cpu"));
+
+    let two_kernels = pair.replace("module_path: cpu\n", "module_path: cpu\n    kernel: true\n");
+    let registry = parse_binding_str(&two_kernels).expect("parses");
+    let rules = error_rules(&validate_binding_registry(&registry));
+    assert!(
+        rules.iter().any(|r| r.starts_with("BINDING-006")),
+        "{rules:?}"
+    );
+    assert!(registry.find_binding("c-v1", "e").is_none());
+
+    // A kernel-only equation resolves to NO reference: the resolver never picks the kernel.
+    let kernel_only = "version: 1.0.0\ntarget_crate: aprender\nbindings:\n  - contract: c-v1\n    equation: e\n    function: f\n    module_path: oxide::kernels\n    status: implemented\n    kernel: true\n";
+    let registry = parse_binding_str(kernel_only).expect("parses");
+    assert!(error_rules(&validate_binding_registry(&registry)).is_empty());
+    assert!(registry.find_binding("c-v1", "e").is_none());
+}

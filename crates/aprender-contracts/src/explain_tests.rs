@@ -999,6 +999,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::Implemented,
                 notes: None,
+                kernel: false,
             },
             crate::binding::KernelBinding {
                 contract: "bind-md-v1.yaml".to_string(),
@@ -1008,6 +1009,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::Partial,
                 notes: None,
+                kernel: false,
             },
         ],
     };
@@ -1045,6 +1047,7 @@ falsification_tests: []
             signature: None,
             status: crate::binding::ImplStatus::Implemented,
             notes: None,
+            kernel: false,
         }],
     };
 
@@ -1142,6 +1145,7 @@ falsification_tests: []
             signature: None,
             status: crate::binding::ImplStatus::Implemented,
             notes: None,
+            kernel: false,
         }],
     };
 
@@ -1235,6 +1239,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::Implemented,
                 notes: None,
+                kernel: false,
             },
             crate::binding::KernelBinding {
                 contract: "bind-status-v1.yaml".to_string(),
@@ -1244,6 +1249,7 @@ falsification_tests: []
                 signature: None,
                 status: crate::binding::ImplStatus::NotImplemented,
                 notes: None,
+                kernel: false,
             },
         ],
     };

@@ -144,6 +144,7 @@ equations:
                 signature: None,
                 status: ImplStatus::Implemented,
                 notes: None,
+                kernel: false,
             },
             crate::binding::KernelBinding {
                 contract: "test-v1".into(),
@@ -153,6 +154,7 @@ equations:
                 signature: None,
                 status: ImplStatus::Partial,
                 notes: None,
+                kernel: false,
             },
         ],
     };

@@ -57,13 +57,15 @@ shapes_verdict() {
         *) echo "SHAPES ERROR rc=$rc (pv neither passed, rejected nor declined)"; return 3 ;;
     esac
     jq -e . "$json" >/dev/null 2>&1 || { echo "SHAPES ERROR rc=0 but no JSON verdict"; return 3; }
-    why=$(jq -r '
+    why=$(jq -r -f /dev/stdin "$json" <<'JQ'
         [ (if .verdict != "Pass" then "verdict=\(.verdict|tostring)" else empty end),
           (if ((.extra.shapes_n // .shapes_n // 0) <= 0) then "shapes_n=0" else empty end),         # probe:shapes_n
           (if ((.extra.focus_nodes_n // .focus_nodes_n // 0) <= 0) then "focus_nodes_n=0" else empty end),
           (if ((.extra.pc_shape // .pc_shape) != "fired") then "pc_shape=\((.extra.pc_shape // .pc_shape)|tostring)" else empty end),
           ((.extra.pc_extract // .pc_extract // {}) | to_entries[] | select(.value != "fired") | "pc_extract.\(.key)=\(.value)")
-        ] | join(" ")' "$json")
+        ] | join(" ")
+JQ
+)
     if [ -n "$why" ]; then
         echo "SHAPES FAIL rc=0 but not a pass: $why"
         return 1

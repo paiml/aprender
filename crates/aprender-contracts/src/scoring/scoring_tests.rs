@@ -297,6 +297,7 @@ equations:
             signature: None,
             status: ImplStatus::Partial,
             notes: None,
+            kernel: false,
         }],
     };
     let score = score_contract(&contract, Some(&binding), "test-v1");
@@ -330,6 +331,7 @@ equations:
             signature: None,
             status: ImplStatus::Implemented,
             notes: None,
+            kernel: false,
         }],
     };
     let score = score_contract(&contract, Some(&binding), "test-v1");
