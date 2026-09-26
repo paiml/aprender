@@ -6,6 +6,7 @@
 # keyed `binary/<package>/<target>`, NEVER by name alone: `apr` is declared by two packages (apr-cli and the root
 # facade aprender), so 29 bin targets carry 28 names. Each exposed surface — a cli:Command, an http route, an mcp
 # tool — is a sibling Entity reached by the role `bin:exposes`.
+# Each node is ALSO typed `bin:target/<package>/<target>`, the class a per-binary contract's shapes target.
 #
 # A SNAPSHOT, NEVER A LIVE BINARY. extract:binary reads the tracked record `scripts/dogfood_surfaces.sh --snapshot`
 # writes (one JSON line per bin target, LC_ALL=C sorted by package,target, no timestamps, `--twice` byte-identical).
@@ -63,12 +64,23 @@ shapes:
       - {path: bin:name, minCount: 1, maxCount: 1}
       - {path: bin:srcPath, minCount: 1, maxCount: 1}
       - {path: bin:gitSha, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{40}$"}
-      - {path: bin:version, minCount: 1, maxCount: 1, minLength: 1}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, minLength: 1}
       - {path: bin:versionSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
-      - {path: bin:binarySha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
       - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      # the surface, as sorted literals (the slices' per-binary shapes pin these with in: + min/maxCount) and as
+      # bin:exposes IRI edges to the sibling cli:Command / http-route / mcp-tool entities
+      - {path: bin:command}
+      - {path: bin:route}
+      - {path: bin:mcpTool}
       - {path: bin:exposes, nodeKind: IRI}
-      # G0.1 — the extractor materializes this when bin:version does not contain the first 9 hex of bin:gitSha.
+      # ledger reconciliation, materialized by the extractor against docs/audits/surface_audit.csv
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:unledgeredRoute, maxCount: 0}
+      - {path: bin:unledgeredTool, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:ledgerOrphanRoute, maxCount: 0}
+      # G0.1 — the extractor materializes this when bin:versionString does not contain the first 9 hex of bin:gitSha.
       - {path: bin:versionLacksSha, maxCount: 0}
       # G0.5 — materialized on BOTH nodes when two targets share bin:name and differ in helpSha256 or versionSha256.
       - {path: bin:namePairMismatch, maxCount: 0}
