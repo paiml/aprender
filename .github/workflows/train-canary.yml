@@ -1,0 +1,70 @@
+# train-canary — trueno WGPU vs Burn WGPU matmul on real hardware, nightly (#3174).
+#
+# WHY A JOB OF ITS OWN
+# --------------------
+# crates/aprender-train-canary is excluded from the workspace (burn pulls a
+# libsqlite3-sys that conflicts with aprender-rag), so no workspace job builds it and
+# it went dark: the canary's own baseline could not be reproduced by anything CI ran.
+# scripts/run_train_canary.sh is the one place that builds it (own target dir, own
+# lockfile) and runs it under the GPU lock.
+#
+# WHAT IT ASSERTS
+#   1. a GPU is visible (mechanism, not intent).
+#   2. the comparator's case table passes (run_train_canary.sh runs it first), so a
+#      comparator that stopped catching a collapse cannot pass vacuously.
+#   3. every size's burn_ms / trueno_ms ratio is >= baseline * (1 - tolerance) for the
+#      baseline measured on THIS adapter (crates/aprender-train-canary/baselines/).
+#      An adapter with no baseline exits 3 and is RED: no baseline is not a pass.
+#
+# Nightly + dispatch. Not a required check; nothing here gates a pull request.
+name: train-canary
+
+on:
+  schedule:
+    - cron: '15 3 * * *'
+  workflow_dispatch:
+    inputs:
+      iters:
+        description: 'Timed iterations per size (median reported)'
+        default: '10'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  train-canary:
+    name: train-canary (trueno vs Burn WGPU, yoga RTX 4060)
+    # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
+    runs-on: [self-hosted, gpu, yoga, Linux, X64, cuda, ada]
+    timeout-minutes: 60
+    # PP-19 (scripts/check_perf_concurrency_groups.sh): every consumer of yoga's GPU
+    # serialises on perf-yoga, across workflows.
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: A GPU is visible
+        run: |
+          set -euo pipefail
+          nvidia-smi -L || { echo "::error::ENV: no GPU visible on $(hostname)"; exit 1; }
+          echo "tested-sha: $(git rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Canary vs baseline
+        env:
+          ITERS: ${{ inputs.iters || '10' }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/train-canary.json"
+          nice -n 19 bash scripts/run_train_canary.sh --iters "$ITERS" --out "$out" 2>&1 | tee train-canary.log
+          rc=${PIPESTATUS[0]}
+          [ -f "$out" ] && cat "$out" >> "$GITHUB_STEP_SUMMARY"
+          case "$rc" in
+            0) echo "train-canary: PASS" | tee -a "$GITHUB_STEP_SUMMARY" ;;
+            3) echo "::error::no baseline for this adapter (exit 3) — no baseline is not a pass"; exit 1 ;;
+            *) echo "::error::train-canary failed (exit $rc)"; exit 1 ;;
+          esac

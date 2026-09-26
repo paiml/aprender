@@ -1,0 +1,29 @@
+{
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "host": "yoga",
+  "tolerance": 0.5,
+  "measured": "2026-09-26 on fix/3174-canary-not-dark @ 62b3d0cd2, burn 0.21.0; each run = median of 10 per size; ratio here = MIN over 3 runs (1-min load avg ~4-9, laptop GPU). Floor = ratio * (1 - tolerance).",
+  "evidence": "evidence/section-3174/yoga.json",
+  "rows": [
+    {
+      "size": "4x2560x9728",
+      "ratio": 4.42
+    },
+    {
+      "size": "32x2560x9728",
+      "ratio": 3.76
+    },
+    {
+      "size": "128x2560x9728",
+      "ratio": 2.09
+    },
+    {
+      "size": "4x2560x151936",
+      "ratio": 1.87
+    },
+    {
+      "size": "32x2560x4096",
+      "ratio": 2.23
+    }
+  ]
+}

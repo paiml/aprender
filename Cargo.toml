@@ -153,7 +153,7 @@ resolver = "2"
 # from `exclude` itself, and it is RED on a missing row, a stale row, or an
 # excluded crate pinned to a pre-release.
 [workspace.metadata.excluded]
-"crates/aprender-train-canary" = { unbuilt = "trueno-vs-Burn WGPU matmul canary; burn's libsqlite3-sys cannot share a graph with aprender-rag's. No CI job runs it yet: the job needs a WGPU runner and is pending (#3174). Run it by hand: `scripts/run_train_canary.sh`", issue = 3174 }
+"crates/aprender-train-canary" = { ci = "scripts/run_train_canary.sh", issue = 3174 }  # nightly on yoga: .github/workflows/train-canary.yml
 "crates/aprender-zram/bins/trueno-ublk" = { unbuilt = "does not compile (renacer has no `visualize`); never built by anything", issue = 2470 }
 "tools/ccpa-sft-export" = { unbuilt = "standalone CCPA -> SFT JSONL export tool with its own [workspace] (#2243); built by hand when exporting" }
 "fuzz" = { unbuilt = "cargo-fuzz harness: nightly toolchain, own [workspace]; run by hand via `make fuzz`" }

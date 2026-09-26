@@ -1,0 +1,117 @@
+{
+ "issue": 3174,
+ "host": "yoga",
+ "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+ "burn": "0.21.0",
+ "iters": 10,
+ "statistic": "median",
+ "commit": "62b3d0cd2 (git archive HEAD shipped to yoga; built there, never on gx10)",
+ "adapters": "yoga has an Intel Arc iGPU (Meteor Lake) beside the RTX 4060 Laptop; the canary requires exactly one DiscreteGpu adapter and pins trueno to it by name, and Burn's WgpuDevice::DiscreteGpu(0) is that same adapter",
+ "mechanism": "nvidia-smi --query-compute-apps 4 s into a run: aprender-train-canary, 593 MiB on the RTX 4060 Laptop GPU; banner: 'on NVIDIA GeForce RTX 4060 Laptop GPU'",
+ "lock": "every run under flock /tmp/apr-gpu.lock",
+ "runs": [
+  [
+   {
+    "size": "4x2560x9728",
+    "trueno_ms": 24.212,
+    "burn_ms": 106.916,
+    "ratio": 4.4158
+   },
+   {
+    "size": "32x2560x9728",
+    "trueno_ms": 28.675,
+    "burn_ms": 107.718,
+    "ratio": 3.7566
+   },
+   {
+    "size": "128x2560x9728",
+    "trueno_ms": 52.863,
+    "burn_ms": 110.467,
+    "ratio": 2.0897
+   },
+   {
+    "size": "4x2560x151936",
+    "trueno_ms": 831.178,
+    "burn_ms": 1719.158,
+    "ratio": 2.0683
+   },
+   {
+    "size": "32x2560x4096",
+    "trueno_ms": 16.244,
+    "burn_ms": 44.953,
+    "ratio": 2.7674
+   }
+  ],
+  [
+   {
+    "size": "4x2560x9728",
+    "trueno_ms": 24.697,
+    "burn_ms": 111.037,
+    "ratio": 4.4959
+   },
+   {
+    "size": "32x2560x9728",
+    "trueno_ms": 28.454,
+    "burn_ms": 110.678,
+    "ratio": 3.8897
+   },
+   {
+    "size": "128x2560x9728",
+    "trueno_ms": 49.85,
+    "burn_ms": 112.351,
+    "ratio": 2.2538
+   },
+   {
+    "size": "4x2560x151936",
+    "trueno_ms": 858.557,
+    "burn_ms": 1697.606,
+    "ratio": 1.9773
+   },
+   {
+    "size": "32x2560x4096",
+    "trueno_ms": 17.992,
+    "burn_ms": 47.683,
+    "ratio": 2.6503
+   }
+  ],
+  [
+   {
+    "size": "4x2560x9728",
+    "trueno_ms": 23.991,
+    "burn_ms": 107.982,
+    "ratio": 4.5009
+   },
+   {
+    "size": "32x2560x9728",
+    "trueno_ms": 26.972,
+    "burn_ms": 110.262,
+    "ratio": 4.088
+   },
+   {
+    "size": "128x2560x9728",
+    "trueno_ms": 47.259,
+    "burn_ms": 111.424,
+    "ratio": 2.3577
+   },
+   {
+    "size": "4x2560x151936",
+    "trueno_ms": 859.995,
+    "burn_ms": 1610.612,
+    "ratio": 1.8728
+   },
+   {
+    "size": "32x2560x4096",
+    "trueno_ms": 18.704,
+    "burn_ms": 41.629,
+    "ratio": 2.2257
+   }
+  ]
+ ],
+ "baseline_min_ratio": {
+  "4x2560x9728": 4.4158,
+  "32x2560x9728": 3.7566,
+  "128x2560x9728": 2.0897,
+  "4x2560x151936": 1.8728,
+  "32x2560x4096": 2.2257
+ }
+}
