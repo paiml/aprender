@@ -316,16 +316,18 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
-  # The workspace tests, one shard per job (nextest hash partition N/3 plus the
-  # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
+  # The workspace tests, one shard per job (nextest hash partition N/8 plus the
+  # explicit runner's round-robin N/8), in parallel on the X64 clean-room pool.
+  # CI-WIDE: eight shards, so every idle X64 runner takes a slice, and every job
+  # here is capped at 15 minutes of wall time.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
     runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
-    timeout-minutes: 180
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
@@ -342,7 +344,7 @@ jobs:
         id: run
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'workspace-test-shard?${{ matrix.shard }}?3?'
+          --sections 'workspace-test-shard?${{ matrix.shard }}?8?'
           --results "$RUNNER_TEMP/fat/results.json"
       - uses: actions/upload-artifact@v7
         if: always()
@@ -378,26 +380,45 @@ jobs:
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
+          shards=8
           tiers=""
-          for n in 1 2 3; do
+          for n in $(seq 1 "$shards"); do
             [ -f "$d/sigma-shard-$n/tier" ] || { echo "::error::Σ: shard $n staged no tier file"; exit 1; }
             tiers="$tiers $(cat "$d/sigma-shard-$n/tier")"
           done
           echo "shard tiers:$tiers"
-          # Each shard decides its tier on its own. Only an AGREED non-full tier
-          # skips the lib/explicit Σ; a split (full full quick) is RED, since
-          # the full shards' partitions would otherwise go unchecked.
+          # Each shard decides its tier on its own. A split (full full quick ...) is
+          # RED, since the other shards' partitions would otherwise go unchecked.
           set -- $tiers
-          [ "$1" = "$2" ] && [ "$2" = "$3" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }
-          [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
-          j=() l=()
-          for n in 1 2 3; do
-            j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
-            l+=(--log "$d/sigma-shard-$n/section.log")
-          done
+          tier=$1
+          for x in "$@"; do [ "$x" = "$tier" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }; done
           rc=0
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
-          python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
+          case "$tier" in
+            full)
+              j=() l=()
+              for n in $(seq 1 "$shards"); do
+                j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
+                l+=(--log "$d/sigma-shard-$n/section.log")
+              done
+              python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib ($shards shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
+              python3 scripts/ci/sigma_executed.py explicit --kind "explicit ($shards shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
+              ;;
+            quick)
+              # CI-WIDE: the quick tier is partitioned as well; shard 1 listed the
+              # owed set before its runs. A shard whose hash partition owned no test
+              # stages no junit; the union of the rest must still equal the list, and
+              # no junit at all is RED in sigma_executed, never a skip.
+              j=()
+              for n in $(seq 1 "$shards"); do f="$d/sigma-shard-$n/quick-tree.junit.xml"; if [ -f "$f" ]; then j+=(--junit "$f"); fi; done
+              python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers ($shards shards)" "${j[@]}" --list-json "$d/sigma-shard-1/quick-tree.list.json" || rc=1
+              if [ -f "$d/sigma-shard-1/quick-sel.list.json" ]; then
+                j=()
+                for n in $(seq 1 "$shards"); do f="$d/sigma-shard-$n/quick-sel.junit.xml"; if [ -f "$f" ]; then j+=(--junit "$f"); fi; done
+                python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates ($shards shards)" "${j[@]}" --list-json "$d/sigma-shard-1/quick-sel.list.json" || rc=1
+              fi
+              ;;
+            *) echo "every shard ran tier '$tier': no Σ is owed" ;;
+          esac
           exit "$rc"
 
   ci-gate:
