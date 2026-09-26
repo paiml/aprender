@@ -1,85 +1,44 @@
 {
   "ticket": "PMAT-4481",
-  "base": "origin/main",
-  "base_resolved": "origin/main",
-  "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "367ae45bd6c4481da3a4a86874a78639fe48581d",
-  "diff_sha256": "468c26e0c2b98e004ee54aab50f7a7537dc85ac40a040b6e30aad7325878ade0",
+  "base": "c074ace09d",
+  "base_resolved": "c074ace09d",
+  "base_note": "no origin/c074ace09d exists; judged against the local ref",
+  "head": "b757dd99e5026428154277d2cd26f45a438e6292",
+  "diff_sha256": "9ce052091833c3b807958d72c7df29e00577d195ba95812642c1052b943079c6",
   "width": 3,
   "executor": "agy",
-  "prompt_mode": "file",
-  "prompt_bytes": 178180,
-  "prompt_sha256": "fabb295cd809695a850c0a532d84dc8a7fbb77aa05a9cc4d6de682d6b657aa92",
+  "prompt_mode": "inline",
+  "prompt_bytes": 15641,
+  "prompt_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
     "source": "flag"
   },
-  "agreed": true,
+  "agreed": false,
   "lanes": [
     {
       "lane": 1,
       "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The diff does what PMAT-4481 says: three cherry-picks (#4480 contracts gate, #4473 ONT-4c4 kernel receipts, O-1 gated_rmsnorm receipt) plus this ticket's receipt and roadmap fragment. I found nothing that refutes it. I judged the diff from the brief; I ran no builds. The recorded gate result (6 of 6 steps ran, 0 failed, self-test 16 passed) is the build's evidence, and I did not re-run it.\n\n- **Gate strengthened, not weakened.** `scripts/contracts_gate.sh` runs every step, exits non-zero if any failed, and prints how many steps ran. The shapes step fails closed on a pv decline (rc 2), an Unknown verdict, `shapes_n=0`, `focus_nodes_n=0`, or any control that did not fire. The self-test includes a mutant that deletes the `shapes_n` probe and checks the gate then goes green, so the probe is load-bearing.\n- **The rename left no live references.** `check_fleet_pv_shapes_gate.sh` became `check_fleet_pv_shapes_advisory.sh`. Under `ci/`, `scripts/`, `Makefile`, `crates/` and `contracts/`, the old name no longer appears; the only hits are the new name and one comment in `ci/sections.yml`. The remaining old-name hits are historical roadmap and audit records.\n- **New kernel shapes are consistent.** `kernel-parity`, `kernel-timing` and `kernel-safety` are reported, not armed. `refuse_vacuous_kernels` counts zero `#[kernel]` symbols as a violation. The `shapes_n` test moved 18 → 21, which matches the three added shapes. Census, `contracts.nt`, `shapes.ttl` and the README count all move to 1838 together.\n- **Minor, not a refutation.** The header of `ont-kernel-receipts-v1.yaml` still says the tree holds no `#[kernel]` fn and no `evidence/kernels/`, but this diff adds both. It is text carried over unchanged from the origin PR.",
+      "verdict": "FAIL",
+      "summary": "The receipt explicitly claims that 'The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate'. However, the diff reveals unmentioned functional code changes: an update to `KernelBinding` to add `kernel: bool` (along with associated registry and test modifications) and a refactor of the `jq` command in `scripts/contracts_gate.sh` to use a heredoc. These changes are not asked for by the ticket, and their presence directly refutes the receipt's claim of no other changes.",
       "findings": [
         {
-          "file": "contracts/ont-kernel-receipts-v1.yaml",
-          "line": 364,
-          "claim": "The contract header says 'The tree holds no #[kernel] fn and no evidence/kernels/ yet', which this same diff makes false by adding experiments/cuda-oxide/gated-rmsnorm and evidence/kernels/gated_rmsnorm/lambda.json. Byte-identical to the origin PR, so it is not a blocker.",
+          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
+          "file": "crates/aprender-contracts/src/binding.rs",
+          "fix": "The diff introduces an unmentioned functional change, adding `kernel: bool` to `KernelBinding` and modifying `find_binding` and `validate_binding_registry`.",
           "grounding": "cited",
-          "fix": "Update the comment when the shapes are armed."
-        }
-      ],
-      "raw_bytes": 5263,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "executor": "claude-code",
-      "grounding_check": "parity",
-      "role": "counted",
-      "model": "claude-sonnet-5",
-      "model_measured": "claude-sonnet-5",
-      "model_source": "flag",
-      "family": "claude",
-      "brief_sha256": "fabb295cd809695a850c0a532d84dc8a7fbb77aa05a9cc4d6de682d6b657aa92",
-      "trace": {
-        "input_sha256": "94d764648d4272d897643f10560dcb08098d4e0ec71fd1fdb62b68ed45cbabc3",
-        "output_sha256": "5d059da735d424f58e827b224625a80c195c8b69823673a00b3ebb9b72c7bee4",
-        "store": null,
-        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
-      },
-      "fallback": {
-        "judged_by": "claude-sonnet-5",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "claude-sonnet-5",
-            "family": "claude",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": []
-      }
-    },
-    {
-      "lane": 2,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The diff correctly cherry-picks the three requested commits from #4480 and #4473 using the `-x` flag. The only other changes introduced in the diff are the required roadmap entry updates (`docs/roadmaps/entries/PMAT-4481.yaml` and `docs/roadmaps/roadmap.yaml`) and the implementation receipt (`docs/audits/impl-PMAT-4481-receipt.md`), perfectly aligning with the ticket's constraints. A review of `scripts/contracts_gate.sh` confirms the gate logic and `--self-test` functionality have been correctly added, effectively strengthening the gate as requested. The ticket requirements are strictly met, and the diff introduces nothing forbidden or contradictory.",
-      "findings": [
-        {
-          "claim": "Diff only contains the three cherry-picked commits plus the ticket's roadmap entry and receipt",
-          "file": "docs/audits/impl-PMAT-4481-receipt.md",
-          "grounding": "cited"
+          "line": 49
         },
         {
-          "claim": "scripts/contracts_gate.sh fails closed on shapes and regenerates census/contracts/shapes correctly",
+          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
           "file": "scripts/contracts_gate.sh",
-          "grounding": "asserted"
+          "fix": "The diff refactors the `jq` invocation in `shapes_verdict` to use a heredoc instead of an inline string, which is an unmentioned change.",
+          "grounding": "cited",
+          "line": 57
         }
       ],
-      "raw_bytes": 3284,
+      "raw_bytes": 3814,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -90,10 +49,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "fabb295cd809695a850c0a532d84dc8a7fbb77aa05a9cc4d6de682d6b657aa92",
+      "brief_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
       "trace": {
-        "input_sha256": "dce69fd6a8ae014e2761e1ce477851a619942cedcc98eeb6873d1507dc316e19",
-        "output_sha256": "b29833a6f4b86803e0d10fa10c28d2b7c4425cd64f08c851c8553ed651cb7b72",
+        "input_sha256": "dffc4953cc500b95d69095128305ca81b19c735f5648d3570a98bf88cdd2dc40",
+        "output_sha256": "381934d1221f261988a78d310b99e96c96ae3dba412a16aeb2278e7a5d43c6d1",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -111,12 +70,76 @@
       }
     },
     {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The PR diff fails because it includes commits (`b757dd99e5` and `c074ace09d`) that introduce functional code changes (a fix for BINDING-006) and add quorum files. This directly contradicts the PMAT-4481 ticket's strict acceptance criteria and the receipt's own claim that the original commits are unchanged and \"the only other change is this ticket's roadmap entry and receipt\".",
+      "findings": [
+        {
+          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\"",
+          "file": "crates/aprender-contracts/src/binding.rs",
+          "fix": "Revert commit b757dd99e5 from this batch PR. Functional changes and fixes must be submitted in their own ticket/PR, not folded into a strictly-scoped batch PR that forbids other changes.",
+          "grounding": "cited",
+          "line": 52
+        },
+        {
+          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\" (and the ticket's instruction that quorum is a process, not diff content)",
+          "file": "docs/audits/quorum-PMAT-4481.json",
+          "fix": "Remove the quorum file from this PR diff, as the ticket specifies it should be a process step ('process, not diff content') and explicitly restricts other changes.",
+          "grounding": "measured",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 3797,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
+      "trace": {
+        "input_sha256": "21474de4c706fc9d57aac379b7df4f21e9547c0350877c03b56f0b245877bc51",
+        "output_sha256": "bd800dae370b5abace6aa10669a943c02678172955ead9f905bbb854dafc9e56",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    },
+    {
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "PMAT-4481 batch PR (folding #4480 contracts-gate fix + #4473 kernel-receipts + O-1 gated_rmsnorm receipt) passes quorum review. All three cherry-picks applied cleanly. Core changes verified: Makefile delegates to scripts/contracts_gate.sh (fixes #4475 fail-closed issue), kernel.rs extractor properly implemented with controls, binding.yaml entries present for gated_rmsnorm CPU ref + oxide kernel, contract count increased 1837→1838, shapes count 18→21, CI updated, all generated files regenerated. No refutations found.",
-      "findings": [],
-      "raw_bytes": 2064,
+      "summary": "The diff correctly implements ONT-4c4 kernel binding support and BINDING-006 validation. Code quality is sound, tests are comprehensive. Minor discrepancy: receipt understates scope (omits b757dd99e5 fix commit), but the fix is correct and necessary.",
+      "findings": [
+        {
+          "file": "receipt",
+          "line": 0,
+          "claim": "Receipt claims 'only other change is this receipt and PMAT-4481 roadmap fragment' but diff includes additional b757dd99e5 commit that modifies binding.rs (kernel field filtering)",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 1949,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -127,10 +150,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "fabb295cd809695a850c0a532d84dc8a7fbb77aa05a9cc4d6de682d6b657aa92",
+      "brief_sha256": "694abbdae9dbb95cc950164c16e415f5ac2d68e46cc04e4edcfdfc158ba0a28d",
       "trace": {
-        "input_sha256": "b7acf261f9a1c5b205a5030d8c0dec6a67391061b41c52b24dc559046d7855e5",
-        "output_sha256": "4c20141dd4aa0354820ca574cbf3dc3448d931138f701314fa8e939a8c3fbbce",
+        "input_sha256": "bdf60a7f60585c2a3f91671e94dd186eb502b74ac4db80eacc1f8a88ddb3dd32",
+        "output_sha256": "456f938d7ee977bef7abc1aeb2c00388fc449ec8f76cc9f1174cd149acd03bd8",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -148,59 +171,130 @@
       }
     }
   ],
-  "dissent": [],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The receipt explicitly claims that 'The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate'. However, the diff reveals unmentioned functional code changes: an update to `KernelBinding` to add `kernel: bool` (along with associated registry and test modifications) and a refactor of the `jq` command in `scripts/contracts_gate.sh` to use a heredoc. These changes are not asked for by the ticket, and their presence directly refutes the receipt's claim of no other changes.",
+      "findings": [
+        {
+          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
+          "file": "crates/aprender-contracts/src/binding.rs",
+          "fix": "The diff introduces an unmentioned functional change, adding `kernel: bool` to `KernelBinding` and modifying `find_binding` and `validate_binding_registry`.",
+          "grounding": "cited",
+          "line": 49
+        },
+        {
+          "claim": "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.",
+          "file": "scripts/contracts_gate.sh",
+          "fix": "The diff refactors the `jq` invocation in `shapes_verdict` to use a heredoc instead of an inline string, which is an unmentioned change.",
+          "grounding": "cited",
+          "line": 57
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "The PR diff fails because it includes commits (`b757dd99e5` and `c074ace09d`) that introduce functional code changes (a fix for BINDING-006) and add quorum files. This directly contradicts the PMAT-4481 ticket's strict acceptance criteria and the receipt's own claim that the original commits are unchanged and \"the only other change is this ticket's roadmap entry and receipt\".",
+      "findings": [
+        {
+          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\"",
+          "file": "crates/aprender-contracts/src/binding.rs",
+          "fix": "Revert commit b757dd99e5 from this batch PR. Functional changes and fixes must be submitted in their own ticket/PR, not folded into a strictly-scoped batch PR that forbids other changes.",
+          "grounding": "cited",
+          "line": 52
+        },
+        {
+          "claim": "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\" (and the ticket's instruction that quorum is a process, not diff content)",
+          "file": "docs/audits/quorum-PMAT-4481.json",
+          "fix": "Remove the quorum file from this PR diff, as the ticket specifies it should be a process step ('process, not diff content') and explicitly restricts other changes.",
+          "grounding": "measured",
+          "line": 1
+        }
+      ]
+    }
+  ],
   "dedup": [
     {
-      "file": "contracts/ont-kernel-receipts-v1.yaml",
-      "line": 364,
+      "file": "crates/aprender-contracts/src/binding.rs",
+      "line": 49,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "The contract header says 'The tree holds no #[kernel] fn and no evidence/kernels/ yet', which this same diff makes false by adding experiments/cuda-oxide/gated-rmsnorm and evidence/kernels/gated_rmsnorm/lambda.json. Byte-identical to the origin PR, so it is not a blocker."
+        "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate."
       ]
     },
     {
-      "file": "docs/audits/impl-PMAT-4481-receipt.md",
-      "line": null,
+      "file": "crates/aprender-contracts/src/binding.rs",
+      "line": 52,
       "lanes_agreeing": [
         2
       ],
       "claims": [
-        "Diff only contains the three cherry-picked commits plus the ticket's roadmap entry and receipt"
+        "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\""
+      ]
+    },
+    {
+      "file": "docs/audits/quorum-PMAT-4481.json",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "\"The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate.\" (and the ticket's instruction that quorum is a process, not diff content)"
+      ]
+    },
+    {
+      "file": "receipt",
+      "line": 0,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Receipt claims 'only other change is this receipt and PMAT-4481 roadmap fragment' but diff includes additional b757dd99e5 commit that modifies binding.rs (kernel field filtering)"
       ]
     },
     {
       "file": "scripts/contracts_gate.sh",
-      "line": null,
+      "line": 57,
       "lanes_agreeing": [
-        2
+        1
       ],
       "claims": [
-        "scripts/contracts_gate.sh fails closed on shapes and regenerates census/contracts/shapes correctly"
+        "The only other change is this receipt and the PMAT-4481 roadmap fragment plus its regenerated aggregate."
       ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
-  "partial_reasons": [],
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, gemini-3.1-pro-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)) (PMAT-321)"
+  ],
   "fallback": {
     "same_family_width": 2,
     "chain": [
-      {
-        "model": "claude-sonnet-5",
-        "family": "claude",
-        "disposition": "claude-code",
-        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
-      },
       {
         "model": "gemini-3.1-pro-high",
         "family": "gemini",
         "disposition": "configured"
       },
       {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
         "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
         "family": "claude",
         "disposition": "claude-code",
         "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
@@ -224,6 +318,13 @@
         "model": "gemini-3.1-pro-high",
         "probe": 1,
         "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 15h23m10s."
       }
     ],
     "degraded": null,
@@ -231,59 +332,36 @@
       "source": "install-receipt",
       "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
     },
-    "tier1": {
-      "agy_tier1_only": true,
-      "tier1": true,
-      "matched": [
-        "contracts/ont-kernel-receipts-v1.yaml",
-        "crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs",
-        "crates/aprender-contracts/src/lint/shapes_gate.rs",
-        "crates/aprender-contracts/src/ontology/extract/kernel.rs",
-        "crates/aprender-contracts/src/ontology/extract/kernel_tests.rs",
-        "evidence/kernels/gated_rmsnorm/lambda.ab.log",
-        "evidence/kernels/gated_rmsnorm/lambda.json",
-        "experiments/cuda-oxide/gated-rmsnorm/.gitignore",
-        "experiments/cuda-oxide/gated-rmsnorm/cargo.lock",
-        "experiments/cuda-oxide/gated-rmsnorm/cargo.toml",
-        "experiments/cuda-oxide/gated-rmsnorm/baseline-ptx/gdn_gated_rmsnorm_h128_n16.sm89.ptx",
-        "experiments/cuda-oxide/gated-rmsnorm/baseline-ptx/gdn_gated_rmsnorm_h128_n32.sm89.ptx",
-        "experiments/cuda-oxide/gated-rmsnorm/baseline-ptx/gdn_gated_rmsnorm_h128_n48.sm89.ptx",
-        "experiments/cuda-oxide/gated-rmsnorm/baseline-ptx/gdn_gated_rmsnorm_h128_n64.sm89.ptx",
-        "experiments/cuda-oxide/gated-rmsnorm/emit-baseline/cargo.lock",
-        "experiments/cuda-oxide/gated-rmsnorm/emit-baseline/cargo.toml",
-        "experiments/cuda-oxide/gated-rmsnorm/emit-baseline/src/main.rs",
-        "experiments/cuda-oxide/gated-rmsnorm/gated_rmsnorm_oxide.ptx",
-        "experiments/cuda-oxide/gated-rmsnorm/rust-toolchain.toml",
-        "experiments/cuda-oxide/gated-rmsnorm/src/lib.rs"
-      ],
-      "paths": 39,
-      "patterns": [
-        "^\\.github/workflows/",
-        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
-        "cuda|kernel|\\.cu$|\\.ptx$",
-        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
-        "security|secret|credential|(^|/)deny\\.toml$",
-        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
-      ],
-      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
-    },
     "bucket": {
       "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
       "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790441585,
+          "window_calls": 3,
+          "window_429": 3,
+          "hour_calls": 1,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-26T16:53:05Z)"
+        },
         "gemini": {
           "bucket": "gemini",
           "budget": 67,
           "basis": "[U] default 30, raised to the 67 calls a window has made without a 429; no window reached one",
-          "window_start": null,
-          "window_calls": 0,
+          "window_start": 1790441558,
+          "window_calls": 38,
           "window_429": 0,
-          "hour_calls": 23,
+          "hour_calls": 26,
           "share": 13,
           "want": 2,
           "state": "hour",
-          "reason": "agy bucket gemini: 23 calls in the last hour + 2 this round exceed the hour share 13 (1/5 of the budget 67, [U] default 30, raised to the 67 calls a window has made without a 429; no window reached one)"
+          "reason": "agy bucket gemini: 26 calls in the last hour + 2 this round exceed the hour share 13 (1/5 of the budget 67, [U] default 30, raised to the 67 calls a window has made without a 429; no window reached one)"
         }
       },
       "closed": []
@@ -291,46 +369,58 @@
   },
   "auto_merge": {
     "checked": true,
-    "was_armed": false,
-    "disarmed": false,
-    "note": "auto-merge not armed"
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 178180 bytes > 24576"
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 15641
   },
   "advisory_lane": {
-    "state": "not-run",
+    "state": "unavailable",
     "counts": false,
     "row": {
-      "NotRun": "ContextOverflow"
+      "NotRun": "Busy"
     },
     "verdict": "unavailable",
-    "why": "the brief is 178180 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "why": "no host answered inside the budget",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
     "model": null,
     "model_sha256": null,
-    "rc": 0,
+    "rc": 2,
     "wall_s": 0,
-    "collected_s": 0,
+    "collected_s": 528,
     "budget_s": 300,
     "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
     "brief": {
-      "bytes": 178180,
-      "sent_bytes": 0,
+      "bytes": 15641,
+      "sent_bytes": 15810,
       "max_bytes": 24576
     },
-    "trace": null,
-    "attempts": [],
+    "trace": {
+      "input_sha256": "8824261a6ea612d1b64645de6ce14b93b316c23663bce08fc6a179aa87a65b0b",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-25T20:18:53Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)"
+      }
+    ],
     "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
     "agrees_with_counted": null,
-    "counted": "PASS"
+    "counted": "NOT-AGREED"
   },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=1/2"
   }
 }
