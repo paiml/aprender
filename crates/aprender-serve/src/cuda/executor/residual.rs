@@ -311,7 +311,7 @@ impl CudaExecutor {
 
         let module = self
             .modules
-            .get_mut(&*cache_key)
+            .get_mut(cache_key)
             .expect("module just inserted");
 
         let threads_per_block = 256u32;
@@ -340,7 +340,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&*cache_key).expect("module exists");
+            let module = self.modules.get_mut(cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
