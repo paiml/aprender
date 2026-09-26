@@ -170,11 +170,20 @@ fn falsify_ext_014_pack_byte_identical() {
         sha256_hex(b"upstream notice")
     );
     assert_eq!(v["gates"], json!({}));
-    let names: Vec<&str> = first.files.iter().map(|f| f.name.as_str()).collect();
+    let names: Vec<(&str, &str)> = first
+        .files
+        .iter()
+        .map(|f| (f.name.as_str(), f.format.as_str()))
+        .collect();
     assert_eq!(
         names,
-        ["LICENSE", "NOTICE", "README.md", "tuned.apr"],
-        "sorted"
+        [
+            ("LICENSE", "file"),
+            ("NOTICE", "file"),
+            ("README.md", "md"),
+            ("tuned.apr", "apr")
+        ],
+        "sorted, each with its format"
     );
 
     let gate: ReleaseManifest = serde_json::from_slice(&a[MANIFEST]).expect("gate reads it");
@@ -253,7 +262,10 @@ fn pack_refuses_what_pacha_cannot_vouch_for() {
             a.out.display()
         );
     };
-    refused(&|a| a.datasets.clear(), "no --dataset manifest");
+    refused(
+        &|a| a.datasets.clear(),
+        "lineage records 1 dataset input(s) but no --dataset manifest",
+    );
     refused(&|a| a.datasets = vec!["cd".repeat(32)], "not registered");
     refused(
         &|a| a.base_sha256 = "ef".repeat(32),
@@ -266,6 +278,14 @@ fn pack_refuses_what_pacha_cannot_vouch_for() {
         "No such file",
     );
     refused(&|a| a.base_revision = " ".into(), "must not be empty");
+    refused(
+        &|a| a.line = " ".into(),
+        "--line and --license must not be empty",
+    );
+    refused(
+        &|a| a.license = " ".into(),
+        "--line and --license must not be empty",
+    );
     refused(&|a| a.version = "0.1.0".into(), "does not match");
 
     std::fs::write(f.dir.path().join("LICENSE"), "dup").expect("write");
@@ -293,4 +313,45 @@ fn an_orphan_model_is_not_packed() {
     a.model = orphan;
     let err = pack(&f.home, &a).expect_err("orphan").to_string();
     assert!(err.contains("no run recorded as producing it"), "{err}");
+}
+
+/// Every recognised extension names its format; anything else is a plain file.
+#[test]
+fn format_of_names_each_known_extension() {
+    for (name, want) in [
+        ("m.apr", "apr"),
+        ("m.gguf", "gguf"),
+        ("m.safetensors", "safetensors"),
+        ("config.json", "json"),
+        ("README.md", "md"),
+        ("LICENSE", "file"),
+        ("m.bin", "file"),
+    ] {
+        assert_eq!(format_of(name), want, "{name}");
+    }
+}
+
+/// The producer is the run whose edge into the model is `produced`, not whatever
+/// edge happens to point at the model first.
+#[test]
+fn the_producer_is_the_produced_edge_not_any_edge_into_the_model() {
+    let f = fixture();
+    // Lineage is read in insertion order, so move the produced edge behind a
+    // non-producing edge into the same model.
+    let db = rusqlite::Connection::open(f.home.join("registry.db")).expect("db");
+    let n = db
+        .execute(
+            "DELETE FROM lineage WHERE to_id = ?1 AND edge_type = 'produced'",
+            [&f.model],
+        )
+        .expect("delete");
+    assert_eq!(n, 1);
+    drop(db);
+    let reg = Registry::open(RegistryConfig::new(&f.home)).expect("registry");
+    reg.add_lineage_edge("not-a-run", &f.model, "evaluated", None)
+        .expect("decoy");
+    reg.add_lineage_edge(&f.run, &f.model, "produced", None)
+        .expect("produced");
+    let m = pack(&f.home, &f.args("rel")).expect("the produced edge still wins");
+    assert_eq!(m.lineage, vec![f.run.clone()]);
 }
