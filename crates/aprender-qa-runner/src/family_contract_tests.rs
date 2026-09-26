@@ -250,19 +250,19 @@ fn test_falsify_fam_001_size_category_alignment() {
 
 #[test]
 fn test_registry_load_all_with_yaml_dir() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("qwen2.yaml"), SAMPLE_YAML).unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(dir.path().join("qwen2.yaml"), SAMPLE_YAML).expect("write file");
     std::fs::write(
         dir.path().join("minimal.yaml"),
         "family: minimal\nsize_variants:\n  1b:\n    parameters: \"1B\"\n    hidden_dim: 1024\n    num_layers: 12\n    num_heads: 16\n",
-    ).unwrap();
+    ).expect("write file");
     // Non-YAML files should be skipped
-    std::fs::write(dir.path().join("readme.txt"), "not yaml").unwrap();
+    std::fs::write(dir.path().join("readme.txt"), "not yaml").expect("write file");
     // Underscore-prefixed files should be skipped
-    std::fs::write(dir.path().join("_schema.yaml"), "not a contract").unwrap();
+    std::fs::write(dir.path().join("_schema.yaml"), "not a contract").expect("write file");
 
     let mut registry = FamilyRegistry::with_path(dir.path());
-    let count = registry.load_all().unwrap();
+    let count = registry.load_all().expect("load all");
     assert_eq!(count, 2);
     assert!(registry.has_family("qwen2"));
     assert!(registry.has_family("minimal"));
@@ -272,21 +272,21 @@ fn test_registry_load_all_with_yaml_dir() {
 
 #[test]
 fn test_registry_load_family() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("qwen2.yaml"), SAMPLE_YAML).unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(dir.path().join("qwen2.yaml"), SAMPLE_YAML).expect("write file");
 
     let mut registry = FamilyRegistry::with_path(dir.path());
-    let contract = registry.load_family("qwen2").unwrap();
+    let contract = registry.load_family("qwen2").expect("load family");
     assert_eq!(contract.family, "qwen2");
 
     // Second call should return cached version
-    let contract2 = registry.load_family("qwen2").unwrap();
+    let contract2 = registry.load_family("qwen2").expect("load family");
     assert_eq!(contract2.family, "qwen2");
 }
 
 #[test]
 fn test_registry_load_family_missing() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let mut registry = FamilyRegistry::with_path(dir.path());
     let result = registry.load_family("nonexistent");
     assert!(result.is_err());
@@ -294,31 +294,31 @@ fn test_registry_load_family_missing() {
 
 #[test]
 fn test_registry_get() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("qwen2.yaml"), SAMPLE_YAML).unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(dir.path().join("qwen2.yaml"), SAMPLE_YAML).expect("write file");
 
     let mut registry = FamilyRegistry::with_path(dir.path());
     assert!(registry.get("qwen2").is_none());
-    registry.load_all().unwrap();
+    registry.load_all().expect("load all");
     assert!(registry.get("qwen2").is_some());
-    assert_eq!(registry.get("qwen2").unwrap().family, "qwen2");
+    assert_eq!(registry.get("qwen2").expect("get").family, "qwen2");
 }
 
 #[test]
 fn test_registry_load_all_nonexistent_dir() {
     let mut registry = FamilyRegistry::with_path("/nonexistent/path");
-    let count = registry.load_all().unwrap();
+    let count = registry.load_all().expect("load all");
     assert_eq!(count, 0);
 }
 
 #[test]
 fn test_registry_load_all_with_invalid_yaml() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("good.yaml"), SAMPLE_YAML).unwrap();
-    std::fs::write(dir.path().join("bad.yaml"), "invalid: [[[").unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(dir.path().join("good.yaml"), SAMPLE_YAML).expect("write file");
+    std::fs::write(dir.path().join("bad.yaml"), "invalid: [[[").expect("write file");
 
     let mut registry = FamilyRegistry::with_path(dir.path());
-    let count = registry.load_all().unwrap();
+    let count = registry.load_all().expect("load all");
     // Only valid YAML should be loaded
     assert_eq!(count, 1);
     assert!(registry.has_family("qwen2"));

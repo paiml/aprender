@@ -44,10 +44,10 @@ fn test_executor_with_mock_runner_trace_failure_case() {
 
 #[test]
 fn test_resolve_model_path_apr_format() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let apr_dir = tmp.path().join("apr");
-    std::fs::create_dir_all(&apr_dir).unwrap();
-    std::fs::write(apr_dir.join("model.apr"), b"fake apr").unwrap();
+    std::fs::create_dir_all(&apr_dir).expect("create dir");
+    std::fs::write(apr_dir.join("model.apr"), b"fake apr").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(tmp.path().to_string_lossy().to_string()),
@@ -64,15 +64,15 @@ fn test_resolve_model_path_apr_format() {
     );
     let path = executor.resolve_model_path(&scenario);
     assert!(path.is_some());
-    assert!(path.unwrap().contains("apr"));
+    assert!(path.expect("path").contains("apr"));
 }
 
 #[test]
 fn test_resolve_model_path_safetensors_format() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let st_dir = tmp.path().join("safetensors");
-    std::fs::create_dir_all(&st_dir).unwrap();
-    std::fs::write(st_dir.join("model.safetensors"), b"fake st").unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
+    std::fs::write(st_dir.join("model.safetensors"), b"fake st").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(tmp.path().to_string_lossy().to_string()),
@@ -89,15 +89,15 @@ fn test_resolve_model_path_safetensors_format() {
     );
     let path = executor.resolve_model_path(&scenario);
     assert!(path.is_some());
-    assert!(path.unwrap().contains("safetensors"));
+    assert!(path.expect("path").contains("safetensors"));
 }
 
 #[test]
 fn test_resolve_model_path_gguf_format() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let gguf_dir = tmp.path().join("gguf");
-    std::fs::create_dir_all(&gguf_dir).unwrap();
-    std::fs::write(gguf_dir.join("model.gguf"), b"fake gguf").unwrap();
+    std::fs::create_dir_all(&gguf_dir).expect("create dir");
+    std::fs::write(gguf_dir.join("model.gguf"), b"fake gguf").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(tmp.path().to_string_lossy().to_string()),
@@ -114,7 +114,7 @@ fn test_resolve_model_path_gguf_format() {
     );
     let path = executor.resolve_model_path(&scenario);
     assert!(path.is_some());
-    assert!(path.unwrap().contains("gguf"));
+    assert!(path.expect("path").contains("gguf"));
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_execute_scenario_with_exit_code_failure() {
     // Non-zero exit code should result in failed evidence
     assert!(evidence.outcome.is_fail());
     assert!(evidence.exit_code.is_some());
-    assert_eq!(evidence.exit_code.unwrap(), 5);
+    assert_eq!(evidence.exit_code.expect("exit code"), 5);
 }
 
 #[test]

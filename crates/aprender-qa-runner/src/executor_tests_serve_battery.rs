@@ -117,7 +117,7 @@ fn test_serve_battery_chat_format() {
     let chat = results.iter().find(|e| e.gate_id == "F-A5-CHAT-001");
     assert!(chat.is_some(), "Chat evidence should exist");
     assert!(
-        chat.unwrap().outcome.is_pass(),
+        chat.expect("chat").outcome.is_pass(),
         "Chat check should pass with valid response"
     );
 }
@@ -164,7 +164,7 @@ fn test_serve_battery_malformed_accepted_is_failure() {
     assert!(malformed.is_some(), "Malformed check evidence should exist");
     // Mock accepts malformed input (http_post succeeds) → fails the check
     assert!(
-        malformed.unwrap().outcome.is_fail(),
+        malformed.expect("evidence recorded").outcome.is_fail(),
         "Server that accepts malformed input should fail ERR check"
     );
 }

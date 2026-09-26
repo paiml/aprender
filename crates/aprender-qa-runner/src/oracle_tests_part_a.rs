@@ -273,7 +273,7 @@ fn test_generate_checklist_inference_gate() {
     let inf_item = checklist
         .iter()
         .find(|c| c.gate_id == "F-CONV-INF-EQ")
-        .unwrap();
+        .expect("entry found");
     assert!(inf_item.hypothesis.contains("Inference output identical"));
     assert!(matches!(inf_item.status, CheckStatus::Pending));
     assert_eq!(inf_item.confidence, Confidence::Medium);
@@ -299,7 +299,7 @@ fn test_generate_checklist_conv_transpose() {
     let transpose_item = checklist
         .iter()
         .find(|c| c.gate_id == "F-CONV-TRANSPOSE")
-        .unwrap();
+        .expect("entry found");
     assert!(transpose_item.hypothesis.contains("Q4K tensor transpose"));
     assert!(matches!(transpose_item.status, CheckStatus::Pending));
     assert_eq!(transpose_item.confidence, Confidence::Medium);
@@ -368,7 +368,7 @@ fn test_generate_hypotheses_diff_in_reason() {
         hypotheses.iter().any(|h| h.id == "H2"),
         "Should generate LAYOUT-002 hypothesis when diff in reason"
     );
-    let h2 = hypotheses.iter().find(|h| h.id == "H2").unwrap();
+    let h2 = hypotheses.iter().find(|h| h.id == "H2").expect("entry found");
     assert!(h2.description.contains("LAYOUT-002"));
     assert_eq!(h2.confidence, Confidence::Medium);
     assert!(!h2.evidence_for.is_empty());
@@ -392,7 +392,7 @@ fn test_generate_hypotheses_conv_gate() {
         hypotheses.iter().any(|h| h.id == "H3"),
         "Should generate quantization mismatch hypothesis for CONV gate"
     );
-    let h3 = hypotheses.iter().find(|h| h.id == "H3").unwrap();
+    let h3 = hypotheses.iter().find(|h| h.id == "H3").expect("entry found");
     assert!(h3.description.contains("Quantization mismatch"));
     assert_eq!(h3.confidence, Confidence::Low);
 }

@@ -15,7 +15,7 @@ fn test_executor_subprocess_with_tps_parsing() {
 
     // tps should be parsed from output
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 42.5).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 42.5).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn test_parse_tps_from_output_multiple_colons() {
     let output = "Info: tok/s: 88.8 more info";
     let tps = Executor::parse_tps_from_output(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 88.8).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 88.8).abs() < f64::EPSILON);
 }
 
 #[test]

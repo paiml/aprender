@@ -1,10 +1,10 @@
 #[test]
 fn test_setup_source_links_single_file() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let source = tmp.path().join("model.safetensors");
-    std::fs::write(&source, b"fake model data").unwrap();
+    std::fs::write(&source, b"fake model data").expect("write file");
     let st_dir = tmp.path().join("workspace_st");
-    std::fs::create_dir_all(&st_dir).unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
 
     let err = Executor::setup_source_links(&source, &st_dir, false);
     assert!(err.is_none(), "Expected no error, got: {err:?}");
@@ -14,24 +14,24 @@ fn test_setup_source_links_single_file() {
 
 #[test]
 fn test_setup_source_links_sharded() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let source_dir = tmp.path().join("source");
-    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::create_dir_all(&source_dir).expect("create dir");
     let index_file = source_dir.join("model.safetensors.index.json");
-    std::fs::write(&index_file, b"{}").unwrap();
+    std::fs::write(&index_file, b"{}").expect("write file");
     std::fs::write(
         source_dir.join("model-00001-of-00002.safetensors"),
         b"shard1",
     )
-    .unwrap();
+    .expect("write file");
     std::fs::write(
         source_dir.join("model-00002-of-00002.safetensors"),
         b"shard2",
     )
-    .unwrap();
+    .expect("write file");
 
     let st_dir = tmp.path().join("workspace_st");
-    std::fs::create_dir_all(&st_dir).unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
 
     let err = Executor::setup_source_links(&index_file, &st_dir, true);
     assert!(err.is_none(), "Expected no error, got: {err:?}");
@@ -62,11 +62,11 @@ fn test_resolve_sharded_index_safetensors_format() {
 
 #[test]
 fn test_resolve_sharded_index_gguf_format() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let index = tmp.path().join("model.safetensors.index.json");
-    std::fs::write(&index, b"{}").unwrap();
+    std::fs::write(&index, b"{}").expect("write file");
     // Put a gguf file in the same directory
-    std::fs::write(tmp.path().join("model.gguf"), b"fake gguf").unwrap();
+    std::fs::write(tmp.path().join("model.gguf"), b"fake gguf").expect("write file");
 
     let scenario = QaScenario::new(
         ModelId::new("test", "model"),
@@ -79,7 +79,7 @@ fn test_resolve_sharded_index_gguf_format() {
     let result = Executor::resolve_sharded_index(&index, &index.to_string_lossy(), &scenario);
     // Should find sibling .gguf file
     assert!(result.is_some());
-    assert!(result.unwrap().contains("gguf"));
+    assert!(result.expect("call under test succeeds").contains("gguf"));
 }
 
 // ── resolve_file_model ──────────────────────────────────────────────
@@ -143,11 +143,11 @@ fn test_resolve_file_model_apr_match() {
 
 #[test]
 fn test_resolve_file_model_mismatch_with_sibling() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let gguf_file = tmp.path().join("model.gguf");
     let apr_file = tmp.path().join("model.apr");
-    std::fs::write(&gguf_file, b"fake gguf").unwrap();
-    std::fs::write(&apr_file, b"fake apr").unwrap();
+    std::fs::write(&gguf_file, b"fake gguf").expect("write file");
+    std::fs::write(&apr_file, b"fake apr").expect("write file");
 
     let scenario = QaScenario::new(
         ModelId::new("test", "model"),
@@ -161,17 +161,17 @@ fn test_resolve_file_model_mismatch_with_sibling() {
         Executor::resolve_file_model(&gguf_file, &gguf_file.to_string_lossy(), "gguf", &scenario);
     // Should find sibling .apr file
     assert!(result.is_some());
-    assert!(result.unwrap().contains("apr"));
+    assert!(result.expect("call under test succeeds").contains("apr"));
 }
 
 // ── resolve_directory_model ─────────────────────────────────────────
 
 #[test]
 fn test_resolve_directory_model_apr_cache_structure() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let gguf_dir = tmp.path().join("gguf");
-    std::fs::create_dir_all(&gguf_dir).unwrap();
-    std::fs::write(gguf_dir.join("model.gguf"), b"fake").unwrap();
+    std::fs::create_dir_all(&gguf_dir).expect("create dir");
+    std::fs::write(gguf_dir.join("model.gguf"), b"fake").expect("write file");
 
     let scenario = QaScenario::new(
         ModelId::new("test", "model"),
@@ -183,13 +183,13 @@ fn test_resolve_directory_model_apr_cache_structure() {
     );
     let result = Executor::resolve_directory_model(tmp.path(), &scenario);
     assert!(result.is_some());
-    assert!(result.unwrap().contains("gguf"));
+    assert!(result.expect("call under test succeeds").contains("gguf"));
 }
 
 #[test]
 fn test_resolve_directory_model_flat_hf_structure() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("model.safetensors"), b"fake").unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(tmp.path().join("model.safetensors"), b"fake").expect("write file");
 
     let scenario = QaScenario::new(
         ModelId::new("test", "model"),
@@ -201,15 +201,15 @@ fn test_resolve_directory_model_flat_hf_structure() {
     );
     let result = Executor::resolve_directory_model(tmp.path(), &scenario);
     assert!(result.is_some());
-    assert!(result.unwrap().contains("model.safetensors"));
+    assert!(result.expect("call under test succeeds").contains("model.safetensors"));
 }
 
 #[test]
 fn test_resolve_directory_model_sharded_safetensors() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let st_dir = tmp.path().join("safetensors");
-    std::fs::create_dir_all(&st_dir).unwrap();
-    std::fs::write(st_dir.join("model.safetensors.index.json"), b"{}").unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
+    std::fs::write(st_dir.join("model.safetensors.index.json"), b"{}").expect("write file");
 
     let scenario = QaScenario::new(
         ModelId::new("test", "model"),
@@ -221,12 +221,12 @@ fn test_resolve_directory_model_sharded_safetensors() {
     );
     let result = Executor::resolve_directory_model(tmp.path(), &scenario);
     assert!(result.is_some());
-    assert!(result.unwrap().contains("model.safetensors.index.json"));
+    assert!(result.expect("call under test succeeds").contains("model.safetensors.index.json"));
 }
 
 #[test]
 fn test_resolve_directory_model_nothing_found() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     // Empty directory - nothing to find
     let scenario = QaScenario::new(
         ModelId::new("test", "model"),
@@ -244,16 +244,16 @@ fn test_resolve_directory_model_nothing_found() {
 
 #[test]
 fn test_find_clean_model_file_skips_artifacts() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("model-converted.gguf"), b"artifact").unwrap();
-    std::fs::write(tmp.path().join("model.idem.gguf"), b"artifact").unwrap();
-    std::fs::write(tmp.path().join("model.com_q4k.gguf"), b"artifact").unwrap();
-    std::fs::write(tmp.path().join("model.rt_q6k.gguf"), b"artifact").unwrap();
-    std::fs::write(tmp.path().join("model.gguf"), b"clean").unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(tmp.path().join("model-converted.gguf"), b"artifact").expect("write file");
+    std::fs::write(tmp.path().join("model.idem.gguf"), b"artifact").expect("write file");
+    std::fs::write(tmp.path().join("model.com_q4k.gguf"), b"artifact").expect("write file");
+    std::fs::write(tmp.path().join("model.rt_q6k.gguf"), b"artifact").expect("write file");
+    std::fs::write(tmp.path().join("model.gguf"), b"clean").expect("write file");
 
     let result = Executor::find_clean_model_file(tmp.path(), "gguf");
     assert!(result.is_some());
-    let found = result.unwrap();
+    let found = result.expect("call under test succeeds");
     assert!(found.contains("model.gguf"));
     assert!(!found.contains("converted"));
     assert!(!found.contains("idem"));
@@ -263,7 +263,7 @@ fn test_find_clean_model_file_skips_artifacts() {
 
 #[test]
 fn test_find_clean_model_file_no_files() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let result = Executor::find_clean_model_file(tmp.path(), "gguf");
     assert!(result.is_none());
 }
@@ -278,12 +278,12 @@ fn test_find_clean_model_file_nonexistent_dir() {
 
 #[test]
 fn test_find_sibling_model_files_pacha_cache() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let model_file = tmp.path().join("abc123.safetensors");
-    std::fs::write(&model_file, b"model data").unwrap();
-    std::fs::write(tmp.path().join("abc123.config.json"), b"config").unwrap();
-    std::fs::write(tmp.path().join("abc123.tokenizer.json"), b"tokenizer").unwrap();
-    std::fs::write(tmp.path().join("other_file.txt"), b"unrelated").unwrap();
+    std::fs::write(&model_file, b"model data").expect("write file");
+    std::fs::write(tmp.path().join("abc123.config.json"), b"config").expect("write file");
+    std::fs::write(tmp.path().join("abc123.tokenizer.json"), b"tokenizer").expect("write file");
+    std::fs::write(tmp.path().join("other_file.txt"), b"unrelated").expect("write file");
 
     let siblings = Executor::find_sibling_model_files(&model_file);
     assert_eq!(siblings.len(), 2);
@@ -294,12 +294,12 @@ fn test_find_sibling_model_files_pacha_cache() {
 
 #[test]
 fn test_find_sibling_model_files_flat_hf_dir() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let model_file = tmp.path().join("model.safetensors");
-    std::fs::write(&model_file, b"model data").unwrap();
-    std::fs::write(tmp.path().join("config.json"), b"config").unwrap();
-    std::fs::write(tmp.path().join("tokenizer.json"), b"tokenizer").unwrap();
-    std::fs::write(tmp.path().join("random.txt"), b"unrelated").unwrap();
+    std::fs::write(&model_file, b"model data").expect("write file");
+    std::fs::write(tmp.path().join("config.json"), b"config").expect("write file");
+    std::fs::write(tmp.path().join("tokenizer.json"), b"tokenizer").expect("write file");
+    std::fs::write(tmp.path().join("random.txt"), b"unrelated").expect("write file");
 
     let siblings = Executor::find_sibling_model_files(&model_file);
     assert!(siblings.len() >= 2);
@@ -386,10 +386,10 @@ fn test_hf_parity_scenario_truncates_long_prompt() {
 
 #[test]
 fn test_has_safetensors_files_with_st_among_others() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("model.safetensors"), b"data").unwrap();
-    std::fs::write(tmp.path().join("config.json"), b"{}").unwrap();
-    std::fs::write(tmp.path().join("model.gguf"), b"gguf").unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(tmp.path().join("model.safetensors"), b"data").expect("write file");
+    std::fs::write(tmp.path().join("config.json"), b"{}").expect("write file");
+    std::fs::write(tmp.path().join("model.gguf"), b"gguf").expect("write file");
     assert!(Executor::has_safetensors_files(tmp.path()));
 }
 
@@ -397,24 +397,24 @@ fn test_has_safetensors_files_with_st_among_others() {
 
 #[test]
 fn test_find_safetensors_dir_prefers_subdir() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     // Create both a subdir with safetensors and direct safetensors
     let st_dir = tmp.path().join("safetensors");
-    std::fs::create_dir_all(&st_dir).unwrap();
-    std::fs::write(st_dir.join("model.safetensors"), b"subdir").unwrap();
-    std::fs::write(tmp.path().join("model.safetensors"), b"direct").unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
+    std::fs::write(st_dir.join("model.safetensors"), b"subdir").expect("write file");
+    std::fs::write(tmp.path().join("model.safetensors"), b"direct").expect("write file");
     let result = Executor::find_safetensors_dir(tmp.path());
     assert!(result.is_some());
     // Should prefer the subdir
-    assert!(result.unwrap().to_string_lossy().contains("safetensors"));
+    assert!(result.expect("call under test succeeds").to_string_lossy().contains("safetensors"));
 }
 
 // ── find_model_by_prefix (unique) ───────────────────────────────────
 
 #[test]
 fn test_find_model_by_prefix_case_insensitive() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("Qwen2.5-Coder-7b-q4k.gguf"), b"data").unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(tmp.path().join("Qwen2.5-Coder-7b-q4k.gguf"), b"data").expect("write file");
     let result = Executor::find_model_by_prefix(tmp.path(), "qwen2.5-coder-7b", "gguf");
     assert!(result.is_some());
 }

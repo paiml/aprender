@@ -34,7 +34,7 @@ test_matrix:
         result
             .gateway_failed
             .as_ref()
-            .unwrap()
+            .expect("value present")
             .contains("G0-PULL-001")
     );
 
@@ -182,7 +182,7 @@ test_matrix:
         result
             .gateway_failed
             .as_ref()
-            .unwrap()
+            .expect("value present")
             .contains("G0-VALIDATE-001")
     );
 

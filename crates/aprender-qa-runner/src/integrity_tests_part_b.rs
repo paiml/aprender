@@ -36,7 +36,7 @@ fn test_file_integrity_ignores_other_models_in_shared_dir() {
         result.errors
     );
     assert_eq!(
-        result.tensor_values.as_ref().unwrap().layer_count,
+        result.tensor_values.as_ref().expect("value present").layer_count,
         Some(24),
         "Should see 24 layers from aaa111, not 28 from bbb222"
     );
@@ -103,11 +103,11 @@ fn test_find_config_for_model_file_hash_prefix() {
     assert!(result.is_some());
     assert!(
         result
-            .unwrap()
+            .expect("call under test succeeds")
             .file_name()
-            .unwrap()
+            .expect("file name")
             .to_str()
-            .unwrap()
+            .expect("path is UTF-8")
             .contains("d71534cb.config.json")
     );
 }
@@ -203,11 +203,11 @@ fn test_find_config_non_safetensors_extension() {
     assert!(result.is_some(), "Should fall back to config.json for non-.safetensors");
     assert!(
         result
-            .unwrap()
+            .expect("call under test succeeds")
             .file_name()
-            .unwrap()
+            .expect("file name")
             .to_str()
-            .unwrap()
+            .expect("path is UTF-8")
             == "config.json"
     );
 }
@@ -234,6 +234,6 @@ fn test_find_config_prefers_hash_prefix_over_plain() {
 
     let result = find_config_for_model_file(&dir.path().join("xyz.safetensors"));
     assert!(result.is_some());
-    let name = result.unwrap().file_name().unwrap().to_str().unwrap().to_string();
+    let name = result.expect("call under test succeeds").file_name().expect("file name").to_str().expect("path is UTF-8").to_string();
     assert_eq!(name, "xyz.config.json", "Should prefer hash-prefix over plain config.json");
 }

@@ -26,7 +26,7 @@ fn test_validate_1d_tensor_shape_0d() {
 
 #[test]
 fn test_load_contract_from_valid_yaml() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let yaml_path = dir.path().join("contract.yaml");
     let yaml_content = r#"
 metadata:
@@ -55,9 +55,9 @@ validation_rules:
     severity: "P0"
     critical: true
 "#;
-    std::fs::write(&yaml_path, yaml_content).unwrap();
+    std::fs::write(&yaml_path, yaml_content).expect("write file");
 
-    let contract = load_contract_from(&yaml_path).unwrap();
+    let contract = load_contract_from(&yaml_path).expect("load contract from");
     assert_eq!(contract.metadata.version, "1.0");
     assert_eq!(contract.metadata.author, "test");
     assert_eq!(contract.kernel.qk_k, 256);
@@ -67,9 +67,9 @@ validation_rules:
 
 #[test]
 fn test_load_contract_from_invalid_yaml() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let yaml_path = dir.path().join("bad.yaml");
-    std::fs::write(&yaml_path, "this: is: not: valid: yaml: [[[").unwrap();
+    std::fs::write(&yaml_path, "this: is: not: valid: yaml: [[[").expect("write file");
 
     let result = load_contract_from(&yaml_path);
     assert!(result.is_err());
@@ -84,15 +84,15 @@ fn test_load_contract_from_invalid_yaml() {
 #[test]
 fn test_read_safetensors_metadata_invalid_utf8() {
     use std::io::Write;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let file_path = dir.path().join("badutf8.safetensors");
 
     // Write invalid UTF-8 bytes as header
     let bad_bytes: &[u8] = &[0xFF, 0xFE, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85];
     let header_len = bad_bytes.len() as u64;
-    let mut file = std::fs::File::create(&file_path).unwrap();
-    file.write_all(&header_len.to_le_bytes()).unwrap();
-    file.write_all(bad_bytes).unwrap();
+    let mut file = std::fs::File::create(&file_path).expect("create file");
+    file.write_all(&header_len.to_le_bytes()).expect("write");
+    file.write_all(bad_bytes).expect("write");
 
     let result = read_safetensors_metadata(&file_path);
     assert!(result.is_err());

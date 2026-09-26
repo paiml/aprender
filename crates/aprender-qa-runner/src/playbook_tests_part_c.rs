@@ -63,7 +63,7 @@ test_matrix:
 fn test_validate_playbook_name_basic() {
     let result = validate_playbook_name("qwen2.5-coder-0.5b-mvp.playbook.yaml");
     assert!(result.is_ok());
-    let parts = result.unwrap();
+    let parts = result.expect("call under test succeeds");
     assert_eq!(parts.family, "qwen2.5-coder");
     assert_eq!(parts.size, "0.5b");
     assert_eq!(parts.tier, Some("mvp".to_string()));
@@ -73,7 +73,7 @@ fn test_validate_playbook_name_basic() {
 fn test_validate_playbook_name_no_tier() {
     let result = validate_playbook_name("llama3.2-7b.playbook.yaml");
     assert!(result.is_ok());
-    let parts = result.unwrap();
+    let parts = result.expect("call under test succeeds");
     assert_eq!(parts.family, "llama3.2");
     assert_eq!(parts.size, "7b");
     assert_eq!(parts.tier, None);
@@ -83,7 +83,7 @@ fn test_validate_playbook_name_no_tier() {
 fn test_validate_playbook_name_large_model() {
     let result = validate_playbook_name("deepseek-coder-v2-16b-full.playbook.yaml");
     assert!(result.is_ok());
-    let parts = result.unwrap();
+    let parts = result.expect("call under test succeeds");
     assert_eq!(parts.family, "deepseek-coder-v2");
     assert_eq!(parts.size, "16b");
     assert_eq!(parts.tier, Some("full".to_string()));
@@ -95,7 +95,7 @@ fn test_validate_playbook_name_various_tiers() {
         let filename = format!("model-1b-{tier}.playbook.yaml");
         let result = validate_playbook_name(&filename);
         assert!(result.is_ok(), "Failed for tier: {tier}");
-        assert_eq!(result.unwrap().tier, Some((*tier).to_string()));
+        assert_eq!(result.expect("call under test succeeds").tier, Some((*tier).to_string()));
     }
 }
 
@@ -106,7 +106,7 @@ fn test_validate_playbook_name_various_sizes() {
         let filename = format!("model-{size}.playbook.yaml");
         let result = validate_playbook_name(&filename);
         assert!(result.is_ok(), "Failed for size: {size}");
-        assert_eq!(result.unwrap().size, size);
+        assert_eq!(result.expect("call under test succeeds").size, size);
     }
 }
 
@@ -150,7 +150,7 @@ fn test_validate_playbook_path() {
     let path = std::path::Path::new("/some/path/qwen2.5-coder-1.5b-mvp.playbook.yaml");
     let result = validate_playbook_path(path);
     assert!(result.is_ok());
-    let parts = result.unwrap();
+    let parts = result.expect("call under test succeeds");
     assert_eq!(parts.family, "qwen2.5-coder");
     assert_eq!(parts.size, "1.5b");
     assert_eq!(parts.tier, Some("mvp".to_string()));
@@ -205,7 +205,7 @@ fn test_valid_tiers_constant() {
 fn test_validate_playbook_name_dim_smoke() {
     let result = validate_playbook_name("qwen2.5-coder-0.5b-dim-smoke.playbook.yaml");
     assert!(result.is_ok());
-    let parts = result.unwrap();
+    let parts = result.expect("call under test succeeds");
     assert_eq!(parts.family, "qwen2.5-coder");
     assert_eq!(parts.size, "0.5b");
     assert_eq!(parts.tier, Some("dim-smoke".to_string()));

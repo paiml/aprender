@@ -361,7 +361,7 @@ fn test_run_integrity_analysis_nonexistent_path() {
 
 #[test]
 fn test_run_integrity_analysis_empty_dir() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let result = Executor::run_integrity_analysis(tmp.path());
     // Empty dir => no safetensors files => None
     assert!(result.is_none());
@@ -377,28 +377,28 @@ fn test_clean_stale_artifacts_nonexistent_workspace() {
 
 #[test]
 fn test_clean_stale_artifacts_empty_workspace() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let workspace = tmp.path();
     // Create empty subdirs
-    std::fs::create_dir_all(workspace.join("safetensors")).unwrap();
-    std::fs::create_dir_all(workspace.join("apr")).unwrap();
-    std::fs::create_dir_all(workspace.join("gguf")).unwrap();
+    std::fs::create_dir_all(workspace.join("safetensors")).expect("create dir");
+    std::fs::create_dir_all(workspace.join("apr")).expect("create dir");
+    std::fs::create_dir_all(workspace.join("gguf")).expect("create dir");
     // Should not panic on empty dirs
     Executor::clean_stale_artifacts(workspace);
 }
 
 #[test]
 fn test_clean_stale_artifacts_removes_artifacts() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     let workspace = tmp.path();
     let apr_dir = workspace.join("apr");
-    std::fs::create_dir_all(&apr_dir).unwrap();
+    std::fs::create_dir_all(&apr_dir).expect("create dir");
 
     // Create a clean file and an artifact
-    std::fs::write(apr_dir.join("model.apr"), b"clean").unwrap();
-    std::fs::write(apr_dir.join("model-converted.apr"), b"artifact").unwrap();
-    std::fs::write(apr_dir.join("model.idem.apr"), b"artifact").unwrap();
-    std::fs::write(apr_dir.join("model.byte_rt.apr"), b"artifact").unwrap();
+    std::fs::write(apr_dir.join("model.apr"), b"clean").expect("write file");
+    std::fs::write(apr_dir.join("model-converted.apr"), b"artifact").expect("write file");
+    std::fs::write(apr_dir.join("model.idem.apr"), b"artifact").expect("write file");
+    std::fs::write(apr_dir.join("model.byte_rt.apr"), b"artifact").expect("write file");
 
     Executor::clean_stale_artifacts(workspace);
 

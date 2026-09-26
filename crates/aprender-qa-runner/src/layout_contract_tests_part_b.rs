@@ -99,7 +99,7 @@ fn test_validate_1d_tensor_shape_no_config() {
 
 #[test]
 fn test_find_safetensors_files_single_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let file_path = dir.path().join("model.safetensors");
     create_test_safetensors(&file_path, &[("x", &[2, 3])]);
 
@@ -110,7 +110,7 @@ fn test_find_safetensors_files_single_file() {
 
 #[test]
 fn test_find_safetensors_files_directory() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     create_test_safetensors(
         &dir.path().join("model-00001-of-00002.safetensors"),
         &[("a", &[2, 3])],
@@ -126,9 +126,9 @@ fn test_find_safetensors_files_directory() {
 
 #[test]
 fn test_find_safetensors_files_subdir() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let st_dir = dir.path().join("safetensors");
-    std::fs::create_dir_all(&st_dir).unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
     create_test_safetensors(&st_dir.join("model.safetensors"), &[("x", &[2])]);
 
     let files = find_safetensors_files(dir.path());
@@ -137,16 +137,16 @@ fn test_find_safetensors_files_subdir() {
 
 #[test]
 fn test_find_safetensors_files_no_files() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let files = find_safetensors_files(dir.path());
     assert!(files.is_empty());
 }
 
 #[test]
 fn test_find_safetensors_files_non_safetensors_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let not_st = dir.path().join("model.gguf");
-    std::fs::write(&not_st, b"not a safetensors file").unwrap();
+    std::fs::write(&not_st, b"not a safetensors file").expect("write file");
 
     // Passed as file path
     let files = find_safetensors_files(&not_st);
@@ -163,7 +163,7 @@ fn test_find_safetensors_files_non_safetensors_file() {
 
 #[test]
 fn test_read_safetensors_metadata_valid() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let file_path = dir.path().join("model.safetensors");
     create_test_safetensors(
         &file_path,
@@ -173,7 +173,7 @@ fn test_read_safetensors_metadata_valid() {
         ],
     );
 
-    let metadata = read_safetensors_metadata(&file_path).unwrap();
+    let metadata = read_safetensors_metadata(&file_path).expect("read safetensors metadata");
     assert_eq!(metadata.len(), 2);
     assert_eq!(metadata["lm_head.weight"], vec![32000, 4096]);
     assert_eq!(metadata["embed_tokens.weight"], vec![32000, 4096]);
@@ -182,14 +182,14 @@ fn test_read_safetensors_metadata_valid() {
 #[test]
 fn test_read_safetensors_metadata_invalid_json() {
     use std::io::Write;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let file_path = dir.path().join("bad.safetensors");
 
     let bad_header = b"this is not json{{{{";
     let header_len = bad_header.len() as u64;
-    let mut file = std::fs::File::create(&file_path).unwrap();
-    file.write_all(&header_len.to_le_bytes()).unwrap();
-    file.write_all(bad_header).unwrap();
+    let mut file = std::fs::File::create(&file_path).expect("create file");
+    file.write_all(&header_len.to_le_bytes()).expect("write");
+    file.write_all(bad_header).expect("write");
 
     let result = read_safetensors_metadata(&file_path);
     assert!(result.is_err());
@@ -199,13 +199,13 @@ fn test_read_safetensors_metadata_invalid_json() {
 #[test]
 fn test_read_safetensors_metadata_header_too_large() {
     use std::io::Write;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let file_path = dir.path().join("huge.safetensors");
 
     // Write a header_len that exceeds MAX_HEADER_SIZE
     let huge_len: u64 = (MAX_HEADER_SIZE as u64) + 1;
-    let mut file = std::fs::File::create(&file_path).unwrap();
-    file.write_all(&huge_len.to_le_bytes()).unwrap();
+    let mut file = std::fs::File::create(&file_path).expect("create file");
+    file.write_all(&huge_len.to_le_bytes()).expect("write");
 
     let result = read_safetensors_metadata(&file_path);
     assert!(result.is_err());
@@ -214,12 +214,12 @@ fn test_read_safetensors_metadata_header_too_large() {
 
 #[test]
 fn test_read_safetensors_metadata_skips_metadata_key() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let file_path = dir.path().join("model.safetensors");
     // Our helper inserts __metadata__ automatically
     create_test_safetensors(&file_path, &[("weight", &[10, 20])]);
 
-    let metadata = read_safetensors_metadata(&file_path).unwrap();
+    let metadata = read_safetensors_metadata(&file_path).expect("read safetensors metadata");
     // __metadata__ should not appear
     assert!(!metadata.contains_key("__metadata__"));
     assert_eq!(metadata.len(), 1);
@@ -231,20 +231,21 @@ fn test_read_safetensors_metadata_skips_metadata_key() {
 
 #[test]
 fn test_find_and_load_config_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = serde_json::json!({
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let config = serde_json::from_str::<serde_json::Value>(r#"{
         "vocab_size": 32000,
         "hidden_size": 4096,
         "intermediate_size": 11008,
         "num_attention_heads": 32,
         "num_key_value_heads": 8,
         "num_hidden_layers": 24
-    });
+    }"#)
+        .expect("literal fixture is valid JSON");
     std::fs::write(
         dir.path().join("config.json"),
-        serde_json::to_string(&config).unwrap(),
+        serde_json::to_string(&config).expect("serialise"),
     )
-    .unwrap();
+    .expect("write file");
 
     let mc = find_and_load_config(dir.path());
     assert_eq!(mc.vocab_size, Some(32000));
@@ -257,20 +258,21 @@ fn test_find_and_load_config_directory() {
 
 #[test]
 fn test_find_and_load_config_file_mode() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     // Simulate file mode: model file is "model.safetensors", config is "config.json" in same dir
     let model_file = dir.path().join("model.safetensors");
     create_test_safetensors(&model_file, &[("x", &[2, 3])]);
 
-    let config = serde_json::json!({
+    let config = serde_json::from_str::<serde_json::Value>(r#"{
         "vocab_size": 50000,
         "hidden_size": 2048
-    });
+    }"#)
+        .expect("literal fixture is valid JSON");
     std::fs::write(
         dir.path().join("config.json"),
-        serde_json::to_string(&config).unwrap(),
+        serde_json::to_string(&config).expect("serialise"),
     )
-    .unwrap();
+    .expect("write file");
 
     let mc = find_and_load_config(&model_file);
     assert_eq!(mc.vocab_size, Some(50000));
@@ -279,17 +281,18 @@ fn test_find_and_load_config_file_mode() {
 
 #[test]
 fn test_find_and_load_config_file_mode_stem_prefix() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let model_file = dir.path().join("mymodel.safetensors");
     create_test_safetensors(&model_file, &[("x", &[2])]);
 
-    let config = serde_json::json!({"vocab_size": 12345});
+    let config = serde_json::from_str::<serde_json::Value>(r#"{"vocab_size": 12345}"#)
+        .expect("literal fixture is valid JSON");
     // Write stem-prefixed config: "mymodel.config.json"
     std::fs::write(
         dir.path().join("mymodel.config.json"),
-        serde_json::to_string(&config).unwrap(),
+        serde_json::to_string(&config).expect("serialise"),
     )
-    .unwrap();
+    .expect("write file");
 
     let mc = find_and_load_config(&model_file);
     assert_eq!(mc.vocab_size, Some(12345));
@@ -297,7 +300,7 @@ fn test_find_and_load_config_file_mode_stem_prefix() {
 
 #[test]
 fn test_find_and_load_config_missing() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let mc = find_and_load_config(dir.path());
     assert_eq!(mc.vocab_size, None);
     assert_eq!(mc.hidden_size, None);
@@ -305,16 +308,17 @@ fn test_find_and_load_config_missing() {
 
 #[test]
 fn test_find_and_load_config_safetensors_subdir() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let st_dir = dir.path().join("safetensors");
-    std::fs::create_dir_all(&st_dir).unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
 
-    let config = serde_json::json!({"vocab_size": 99999});
+    let config = serde_json::from_str::<serde_json::Value>(r#"{"vocab_size": 99999}"#)
+        .expect("literal fixture is valid JSON");
     std::fs::write(
         st_dir.join("config.json"),
-        serde_json::to_string(&config).unwrap(),
+        serde_json::to_string(&config).expect("serialise"),
     )
-    .unwrap();
+    .expect("write file");
 
     let mc = find_and_load_config(dir.path());
     assert_eq!(mc.vocab_size, Some(99999));
@@ -326,10 +330,10 @@ fn test_find_and_load_config_safetensors_subdir() {
 
 #[test]
 fn test_validate_model_empty_dir() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let contract = make_contract();
 
-    let result = validate_model(dir.path(), &contract).unwrap();
+    let result = validate_model(dir.path(), &contract).expect("validate model");
     // No safetensors -> fail (Popper: untested ≠ validated)
     assert!(!result.passed);
     assert_eq!(result.rules_failed, 1);

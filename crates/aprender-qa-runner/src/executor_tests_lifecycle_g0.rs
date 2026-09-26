@@ -41,7 +41,7 @@ test_matrix:
     // metadata_only branch executed — scenarios NOT run (total != 2)
     // Empty dir: config.json missing → at least config_parse fails
     assert!(result.gateway_failed.is_some(), "Expected gateway_failed for empty dir");
-    let gf = result.gateway_failed.as_ref().unwrap();
+    let gf = result.gateway_failed.as_ref().expect("value present");
     assert!(gf.contains("G0-DIM"), "Expected G0-DIM in gateway_failed, got: {gf}");
 
     // Falsified evidence generated for failing checks
@@ -93,7 +93,7 @@ test_matrix:
         .find(|e| e.gate_id == "G0-DIM-CONFIG_PARSE");
     assert!(config_check.is_some(), "Expected G0-DIM-CONFIG_PARSE evidence");
     assert!(
-        config_check.unwrap().outcome.is_pass(),
+        config_check.expect("config check").outcome.is_pass(),
         "config_parse should be corroborated when config.json is valid"
     );
 
@@ -148,7 +148,7 @@ test_matrix:
         result.gateway_failed.is_some(),
         "Expected gateway_failed for format failure"
     );
-    let gf = result.gateway_failed.as_ref().unwrap();
+    let gf = result.gateway_failed.as_ref().expect("value present");
     assert!(
         gf.contains("G0-FORMAT"),
         "Expected G0-FORMAT in gateway_failed, got: {gf}"
@@ -186,7 +186,7 @@ test_matrix:
         result.gateway_failed.is_some(),
         "Expected gateway_failed when pull fails"
     );
-    let gf = result.gateway_failed.as_ref().unwrap();
+    let gf = result.gateway_failed.as_ref().expect("value present");
     assert!(
         gf.contains("G0-PULL-001"),
         "Expected G0-PULL-001 gateway, got: {gf}"
@@ -224,7 +224,7 @@ test_matrix:
         result.gateway_failed.is_some(),
         "Expected gateway_failed when pull returns empty path"
     );
-    let gf = result.gateway_failed.as_ref().unwrap();
+    let gf = result.gateway_failed.as_ref().expect("value present");
     assert!(
         gf.contains("G0-PULL-001"),
         "Expected G0-PULL-001 gateway for empty path, got: {gf}"
@@ -277,7 +277,7 @@ test_matrix:
         result.gateway_failed.is_some(),
         "Expected gateway_failed for integrity failure"
     );
-    let gf = result.gateway_failed.as_ref().unwrap();
+    let gf = result.gateway_failed.as_ref().expect("value present");
     assert!(
         gf.contains("G0-INTEGRITY"),
         "Expected G0-INTEGRITY in gateway_failed, got: {gf}"

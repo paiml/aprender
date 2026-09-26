@@ -305,17 +305,20 @@ fn test_read_safetensors_with_metadata_key() {
     // Add __metadata__ key (should be skipped)
     header_obj.insert(
         "__metadata__".to_string(),
-        serde_json::json!({"format": "pt"}),
+        serde_json::from_str::<serde_json::Value>(r#"{"format": "pt"}"#)
+            .expect("literal fixture is valid JSON"),
     );
 
     // Add a real tensor
     let mut tensor_info = serde_json::Map::new();
-    tensor_info.insert("shape".to_string(), serde_json::json!([100, 50]));
+    tensor_info.insert("shape".to_string(), serde_json::from_str::<serde_json::Value>(r#"[100, 50]"#)
+        .expect("literal fixture is valid JSON"));
     tensor_info.insert(
         "dtype".to_string(),
         serde_json::Value::String("F32".to_string()),
     );
-    tensor_info.insert("data_offsets".to_string(), serde_json::json!([0, 20000]));
+    tensor_info.insert("data_offsets".to_string(), serde_json::from_str::<serde_json::Value>(r#"[0, 20000]"#)
+        .expect("literal fixture is valid JSON"));
     header_obj.insert(
         "model.weight".to_string(),
         serde_json::Value::Object(tensor_info),
@@ -448,14 +451,14 @@ fn create_named_safetensors(
     let mut header_obj = serde_json::Map::new();
 
     let mut embed_info = serde_json::Map::new();
-    embed_info.insert("shape".to_string(), serde_json::json!([vocab, hidden]));
+    embed_info.insert("shape".to_string(), serde_json::Value::from(vec![vocab, hidden]));
     embed_info.insert(
         "dtype".to_string(),
         serde_json::Value::String("F32".to_string()),
     );
     embed_info.insert(
         "data_offsets".to_string(),
-        serde_json::json!([0, vocab * hidden * 4]),
+        serde_json::Value::from(vec![0, vocab * hidden * 4]),
     );
     header_obj.insert(
         "model.embed_tokens.weight".to_string(),
@@ -464,12 +467,13 @@ fn create_named_safetensors(
 
     for i in 0..layers {
         let mut layer_info = serde_json::Map::new();
-        layer_info.insert("shape".to_string(), serde_json::json!([hidden, hidden]));
+        layer_info.insert("shape".to_string(), serde_json::Value::from(vec![hidden, hidden]));
         layer_info.insert(
             "dtype".to_string(),
             serde_json::Value::String("F32".to_string()),
         );
-        layer_info.insert("data_offsets".to_string(), serde_json::json!([0, 0]));
+        layer_info.insert("data_offsets".to_string(), serde_json::from_str::<serde_json::Value>(r#"[0, 0]"#)
+            .expect("literal fixture is valid JSON"));
         header_obj.insert(
             format!("model.layers.{i}.self_attn.q_proj.weight"),
             serde_json::Value::Object(layer_info),

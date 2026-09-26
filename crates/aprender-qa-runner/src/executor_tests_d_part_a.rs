@@ -8,7 +8,7 @@ fn test_execute_profile_flamegraph_unsupported() {
         5000,
         Arc::new(mock_runner),
     );
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let result = executor.execute_profile_flamegraph(temp_dir.path());
     assert!(!result.passed);
 }
@@ -301,7 +301,7 @@ fn test_find_safetensors_dir_with_subdir() {
 
     let result = Executor::find_safetensors_dir(dir.path());
     assert!(result.is_some());
-    assert_eq!(result.unwrap(), st_dir);
+    assert_eq!(result.expect("call under test succeeds"), st_dir);
 }
 
 /// Verify find_safetensors_dir locates safetensors in the root directory
@@ -313,7 +313,7 @@ fn test_find_safetensors_dir_direct() {
 
     let result = Executor::find_safetensors_dir(dir.path());
     assert!(result.is_some());
-    assert_eq!(result.unwrap(), dir.path());
+    assert_eq!(result.expect("call under test succeeds"), dir.path());
 }
 
 /// Verify find_safetensors_dir returns None when no safetensors files exist

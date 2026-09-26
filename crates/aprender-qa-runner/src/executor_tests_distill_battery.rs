@@ -89,7 +89,7 @@ fn test_distill_battery_validation_failure() {
 
     assert_eq!(results.len(), 5);
 
-    let load_result = results.iter().find(|e| e.gate_id == "T4-DISTILL-LOAD-001").unwrap();
+    let load_result = results.iter().find(|e| e.gate_id == "T4-DISTILL-LOAD-001").expect("entry found");
     assert!(load_result.outcome.is_fail(), "Load validation should fail");
 }
 

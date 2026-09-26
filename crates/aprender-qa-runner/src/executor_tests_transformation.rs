@@ -152,14 +152,14 @@ fn test_execute_transformation_no_model_path_produces_skipped_evidence() {
         "Expected F-TRANSFORM-SKIP-001 skipped evidence, got: {:?}",
         evidence.iter().map(|e| &e.gate_id).collect::<Vec<_>>()
     );
-    assert_eq!(transform_skip.unwrap().outcome, Outcome::Skipped);
+    assert_eq!(transform_skip.expect("transform skip").outcome, Outcome::Skipped);
 }
 
 #[test]
 fn test_execute_transformation_quantize_dispatches_battery() {
     // With quantize: config and model_path set, the quantize battery must be invoked
     let runner = MockCommandRunner::default();
-    let dir = tempfile::TempDir::new().unwrap();
+    let dir = tempfile::TempDir::new().expect("construct");
     let config = ExecutionConfig {
         model_path: Some(dir.path().to_string_lossy().to_string()),
         ..Default::default()
@@ -180,7 +180,7 @@ fn test_execute_transformation_quantize_dispatches_battery() {
 #[test]
 fn test_execute_transformation_import_dispatches_battery() {
     let runner = MockCommandRunner::default();
-    let dir = tempfile::TempDir::new().unwrap();
+    let dir = tempfile::TempDir::new().expect("construct");
     let config = ExecutionConfig {
         model_path: Some(dir.path().to_string_lossy().to_string()),
         ..Default::default()
@@ -202,7 +202,7 @@ fn test_execute_transformation_import_dispatches_battery() {
 #[test]
 fn test_execute_transformation_prune_dispatches_battery() {
     let runner = MockCommandRunner::default();
-    let dir = tempfile::TempDir::new().unwrap();
+    let dir = tempfile::TempDir::new().expect("construct");
     let config = ExecutionConfig {
         model_path: Some(dir.path().to_string_lossy().to_string()),
         ..Default::default()
@@ -224,7 +224,7 @@ fn test_execute_transformation_prune_dispatches_battery() {
 #[test]
 fn test_execute_transformation_distill_dispatches_battery() {
     let runner = MockCommandRunner::default();
-    let dir = tempfile::TempDir::new().unwrap();
+    let dir = tempfile::TempDir::new().expect("construct");
     let config = ExecutionConfig {
         model_path: Some(dir.path().to_string_lossy().to_string()),
         ..Default::default()

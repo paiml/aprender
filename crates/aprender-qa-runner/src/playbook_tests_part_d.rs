@@ -91,37 +91,37 @@ certification:
 #[test]
 fn test_size_category_from_str_lowercase() {
     assert_eq!(
-        SizeCategory::from_str_lowercase("tiny").unwrap(),
+        SizeCategory::from_str_lowercase("tiny").expect("from str lowercase"),
         SizeCategory::Tiny
     );
     assert_eq!(
-        SizeCategory::from_str_lowercase("small").unwrap(),
+        SizeCategory::from_str_lowercase("small").expect("from str lowercase"),
         SizeCategory::Small
     );
     assert_eq!(
-        SizeCategory::from_str_lowercase("medium").unwrap(),
+        SizeCategory::from_str_lowercase("medium").expect("from str lowercase"),
         SizeCategory::Medium
     );
     assert_eq!(
-        SizeCategory::from_str_lowercase("large").unwrap(),
+        SizeCategory::from_str_lowercase("large").expect("from str lowercase"),
         SizeCategory::Large
     );
     assert_eq!(
-        SizeCategory::from_str_lowercase("xlarge").unwrap(),
+        SizeCategory::from_str_lowercase("xlarge").expect("from str lowercase"),
         SizeCategory::Xlarge
     );
     assert_eq!(
-        SizeCategory::from_str_lowercase("huge").unwrap(),
+        SizeCategory::from_str_lowercase("huge").expect("from str lowercase"),
         SizeCategory::Huge
     );
 
     // Case insensitive
     assert_eq!(
-        SizeCategory::from_str_lowercase("TINY").unwrap(),
+        SizeCategory::from_str_lowercase("TINY").expect("from str lowercase"),
         SizeCategory::Tiny
     );
     assert_eq!(
-        SizeCategory::from_str_lowercase("Medium").unwrap(),
+        SizeCategory::from_str_lowercase("Medium").expect("from str lowercase"),
         SizeCategory::Medium
     );
 

@@ -33,7 +33,7 @@ test_matrix:
         .iter()
         .find(|e| e.stderr.is_some())
         .expect("should have evidence with stderr");
-    assert!(ev.stderr.as_ref().unwrap().contains("Warning"));
+    assert!(ev.stderr.as_ref().expect("value present").contains("Warning"));
 }
 
 // =========================================================================
@@ -89,7 +89,7 @@ test_matrix:
 #[test]
 fn test_execute_profile_flamegraph_no_apr() {
     let executor = ToolExecutor::new("test-model.gguf".to_string(), true, 5000);
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let result = executor.execute_profile_flamegraph(temp_dir.path());
     // apr binary not found => stderr contains error
     assert!(!result.passed);
@@ -106,7 +106,7 @@ fn test_execute_profile_flamegraph_with_mock_success() {
         5000,
         Arc::new(mock_runner),
     );
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let result = executor.execute_profile_flamegraph(temp_dir.path());
     // Mock returns success but no SVG file is created
     assert_eq!(result.tool, "profile-flamegraph");
@@ -123,10 +123,10 @@ fn test_execute_profile_flamegraph_with_svg_file() {
         5000,
         Arc::new(mock_runner),
     );
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     // Pre-create a valid SVG file
     let svg_path = temp_dir.path().join("profile_flamegraph.svg");
-    std::fs::write(&svg_path, "<svg><rect/></svg>").unwrap();
+    std::fs::write(&svg_path, "<svg><rect/></svg>").expect("write file");
     let result = executor.execute_profile_flamegraph(temp_dir.path());
     assert!(result.passed);
     assert!(result.stdout.contains("valid: true"));
@@ -141,10 +141,10 @@ fn test_execute_profile_flamegraph_with_invalid_svg() {
         5000,
         Arc::new(mock_runner),
     );
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     // Pre-create an invalid SVG file
     let svg_path = temp_dir.path().join("profile_flamegraph.svg");
-    std::fs::write(&svg_path, "not a valid svg at all").unwrap();
+    std::fs::write(&svg_path, "not a valid svg at all").expect("write file");
     let result = executor.execute_profile_flamegraph(temp_dir.path());
     assert!(!result.passed);
     assert!(result.stdout.contains("valid: false"));

@@ -97,11 +97,11 @@ fn test_source_mismatch_error_display() {
 
 #[test]
 fn test_compute_sha256() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let test_file = dir.path().join("test.txt");
-    std::fs::write(&test_file, "hello world\n").unwrap();
+    std::fs::write(&test_file, "hello world\n").expect("write file");
 
-    let hash = compute_sha256(&test_file).unwrap();
+    let hash = compute_sha256(&test_file).expect("compute sha256");
     // SHA256 of "hello world\n"
     assert_eq!(
         hash,
@@ -111,11 +111,11 @@ fn test_compute_sha256() {
 
 #[test]
 fn test_compute_sha256_empty_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let test_file = dir.path().join("empty.txt");
-    std::fs::write(&test_file, "").unwrap();
+    std::fs::write(&test_file, "").expect("write file");
 
-    let hash = compute_sha256(&test_file).unwrap();
+    let hash = compute_sha256(&test_file).expect("compute sha256");
     // SHA256 of empty string
     assert_eq!(
         hash,
@@ -131,12 +131,12 @@ fn test_compute_sha256_missing_file() {
 
 #[test]
 fn test_create_source_provenance() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, "fake safetensors content").unwrap();
+    std::fs::write(&safetensors, "fake safetensors content").expect("write file");
 
     let prov =
-        create_source_provenance(&safetensors, "Qwen/Qwen2.5-Coder-0.5B-Instruct").unwrap();
+        create_source_provenance(&safetensors, "Qwen/Qwen2.5-Coder-0.5B-Instruct").expect("create source provenance");
 
     assert_eq!(prov.source.format, "safetensors");
     assert_eq!(prov.source.path, "model.safetensors");
@@ -148,14 +148,14 @@ fn test_create_source_provenance() {
 
 #[test]
 fn test_add_derived() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = dir.path().join("model.safetensors");
     let gguf = dir.path().join("model.gguf");
-    std::fs::write(&safetensors, "safetensors content").unwrap();
-    std::fs::write(&gguf, "gguf content").unwrap();
+    std::fs::write(&safetensors, "safetensors content").expect("write file");
+    std::fs::write(&gguf, "gguf content").expect("write file");
 
-    let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
-    add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
+    let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+    add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
 
     assert_eq!(prov.derived.len(), 1);
     assert_eq!(prov.derived[0].format, "gguf");
@@ -167,68 +167,68 @@ fn test_add_derived() {
 
 #[test]
 fn test_add_derived_with_quantization() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = dir.path().join("model.safetensors");
     let gguf_q4 = dir.path().join("model-q4_k_m.gguf");
-    std::fs::write(&safetensors, "safetensors content").unwrap();
-    std::fs::write(&gguf_q4, "quantized gguf content").unwrap();
+    std::fs::write(&safetensors, "safetensors content").expect("write file");
+    std::fs::write(&gguf_q4, "quantized gguf content").expect("write file");
 
-    let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
-    add_derived(&mut prov, "gguf", &gguf_q4, Some("q4_k_m"), "0.2.12").unwrap();
+    let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+    add_derived(&mut prov, "gguf", &gguf_q4, Some("q4_k_m"), "0.2.12").expect("add derived");
 
     assert_eq!(prov.derived[0].quantization, Some("q4_k_m".to_string()));
 }
 
 #[test]
 fn test_save_and_load_provenance() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, "content").unwrap();
+    std::fs::write(&safetensors, "content").expect("write file");
 
-    let prov = create_source_provenance(&safetensors, "test/model").unwrap();
-    save_provenance(dir.path(), &prov).unwrap();
+    let prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+    save_provenance(dir.path(), &prov).expect("save provenance");
 
-    let loaded = load_provenance(dir.path()).unwrap();
+    let loaded = load_provenance(dir.path()).expect("load provenance");
     assert_eq!(loaded.source.hf_repo, "test/model");
     assert_eq!(loaded.source.sha256, prov.source.sha256);
 }
 
 #[test]
 fn test_save_provenance_creates_json() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     let safetensors = dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, "content").unwrap();
+    std::fs::write(&safetensors, "content").expect("write file");
 
-    let prov = create_source_provenance(&safetensors, "test/model").unwrap();
-    save_provenance(dir.path(), &prov).unwrap();
+    let prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+    save_provenance(dir.path(), &prov).expect("save provenance");
 
     let prov_path = dir.path().join(".provenance.json");
     assert!(prov_path.exists());
 
-    let content = std::fs::read_to_string(&prov_path).unwrap();
+    let content = std::fs::read_to_string(&prov_path).expect("read file");
     assert!(content.contains("\"format\": \"safetensors\""));
     assert!(content.contains("test/model"));
 }
 
 #[test]
 fn test_full_provenance_workflow() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
 
     // Create source
     let safetensors = dir.path().join("model.safetensors");
-    std::fs::write(&safetensors, "source content").unwrap();
+    std::fs::write(&safetensors, "source content").expect("write file");
 
     // Create derived formats
     let gguf = dir.path().join("model.gguf");
     let apr = dir.path().join("model.apr");
-    std::fs::write(&gguf, "gguf content").unwrap();
-    std::fs::write(&apr, "apr content").unwrap();
+    std::fs::write(&gguf, "gguf content").expect("write file");
+    std::fs::write(&apr, "apr content").expect("write file");
 
     // Build provenance
     let mut prov =
-        create_source_provenance(&safetensors, "Qwen/Qwen2.5-Coder-0.5B-Instruct").unwrap();
-    add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
-    add_derived(&mut prov, "apr", &apr, None, "0.2.12").unwrap();
+        create_source_provenance(&safetensors, "Qwen/Qwen2.5-Coder-0.5B-Instruct").expect("create source provenance");
+    add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
+    add_derived(&mut prov, "apr", &apr, None, "0.2.12").expect("add derived");
 
     // Validate provenance
     assert!(validate_provenance(&prov).is_ok());
@@ -237,8 +237,8 @@ fn test_full_provenance_workflow() {
     assert!(validate_comparison(&prov, "gguf", "apr").is_ok());
 
     // Save and reload
-    save_provenance(dir.path(), &prov).unwrap();
-    let loaded = load_provenance(dir.path()).unwrap();
+    save_provenance(dir.path(), &prov).expect("save provenance");
+    let loaded = load_provenance(dir.path()).expect("load provenance");
 
     // Revalidate after reload
     assert!(validate_provenance(&loaded).is_ok());
@@ -268,22 +268,22 @@ mod falsification {
     /// Expected: verify_provenance_integrity() MUST detect mismatch (PROV-006)
     #[test]
     fn f_prov_io_001_bit_flip_hash() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
 
         // Create real files and valid provenance
         let safetensors = dir.path().join("model.safetensors");
-        std::fs::write(&safetensors, "source content").unwrap();
-        let prov = create_source_provenance(&safetensors, "test/model").unwrap();
-        save_provenance(dir.path(), &prov).unwrap();
+        std::fs::write(&safetensors, "source content").expect("write file");
+        let prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+        save_provenance(dir.path(), &prov).expect("save provenance");
 
         // Manually corrupt the hash in the file
         let prov_path = dir.path().join(".provenance.json");
-        let content = std::fs::read_to_string(&prov_path).unwrap();
+        let content = std::fs::read_to_string(&prov_path).expect("read file");
         let corrupted = content.replace(&prov.source.sha256, "CORRUPTED_HASH");
-        std::fs::write(&prov_path, corrupted).unwrap();
+        std::fs::write(&prov_path, corrupted).expect("write file");
 
         // Load provenance (JSON is valid, just hash is wrong)
-        let loaded = load_provenance(dir.path()).unwrap();
+        let loaded = load_provenance(dir.path()).expect("load provenance");
 
         // Basic validation still passes (format/converter checks)
         assert!(validate_provenance(&loaded).is_ok());
@@ -301,11 +301,11 @@ mod falsification {
     /// Expected: load_provenance() returns robust error, no panic
     #[test]
     fn f_prov_io_002_truncated_json() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let prov_path = dir.path().join(".provenance.json");
 
         // Write truncated JSON (simulate power loss)
-        std::fs::write(&prov_path, r#"{"source": {"format": "safetens"#).unwrap();
+        std::fs::write(&prov_path, r#"{"source": {"format": "safetens"#).expect("write file");
 
         let result = load_provenance(dir.path());
 
@@ -320,19 +320,19 @@ mod falsification {
     /// Expected: verify_files_exist() detects missing file (PROV-007)
     #[test]
     fn f_prov_io_003_ghost_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
 
         // Create source file and provenance
         let safetensors = dir.path().join("model.safetensors");
-        std::fs::write(&safetensors, "content").unwrap();
-        let prov = create_source_provenance(&safetensors, "test/model").unwrap();
-        save_provenance(dir.path(), &prov).unwrap();
+        std::fs::write(&safetensors, "content").expect("write file");
+        let prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+        save_provenance(dir.path(), &prov).expect("save provenance");
 
         // Delete the model file (ghost it)
-        std::fs::remove_file(&safetensors).unwrap();
+        std::fs::remove_file(&safetensors).expect("remove file");
 
         // Load provenance - still works (JSON exists)
-        let loaded = load_provenance(dir.path()).unwrap();
+        let loaded = load_provenance(dir.path()).expect("load provenance");
 
         // Basic validation still passes (format/converter checks)
         assert!(validate_provenance(&loaded).is_ok());
@@ -358,11 +358,11 @@ mod falsification {
     /// Expected: Correct hash for empty file, no panic
     #[test]
     fn f_prov_io_004_empty_file_hash() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let empty_file = dir.path().join("empty.bin");
-        std::fs::write(&empty_file, "").unwrap();
+        std::fs::write(&empty_file, "").expect("write file");
 
-        let hash = compute_sha256(&empty_file).unwrap();
+        let hash = compute_sha256(&empty_file).expect("compute sha256");
 
         // CORROBORATED: Returns correct SHA256 for empty file
         assert_eq!(

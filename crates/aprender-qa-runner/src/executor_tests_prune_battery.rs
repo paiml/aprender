@@ -75,7 +75,7 @@ fn test_prune_battery_validation_failure() {
 
     assert_eq!(results.len(), 6);
 
-    let load_result = results.iter().find(|e| e.gate_id == "T3-PRUNE-LOAD-001").unwrap();
+    let load_result = results.iter().find(|e| e.gate_id == "T3-PRUNE-LOAD-001").expect("entry found");
     assert!(load_result.outcome.is_fail(), "Load validation should fail");
 }
 
@@ -93,7 +93,7 @@ fn test_prune_battery_inference_failure() {
 
     assert_eq!(results.len(), 6);
 
-    let infer_result = results.iter().find(|e| e.gate_id == "T3-PRUNE-INFER-001").unwrap();
+    let infer_result = results.iter().find(|e| e.gate_id == "T3-PRUNE-INFER-001").expect("entry found");
     assert!(infer_result.outcome.is_fail(), "Inference should fail");
 }
 

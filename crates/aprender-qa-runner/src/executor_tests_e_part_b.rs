@@ -116,7 +116,7 @@ tensor_template:
 #[test]
 fn test_parse_timing_ms_standard() {
     let output = "Output:\nHello\nCompleted in 1.5s\ntok/s: 25.0";
-    assert!((parse_timing_ms(output).unwrap() - 1500.0).abs() < 0.1);
+    assert!((parse_timing_ms(output).expect("parse timing ms") - 1500.0).abs() < 0.1);
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn test_parse_timing_ms_no_timing() {
 #[test]
 fn test_parse_timing_ms_zero() {
     let output = "Completed in 0.0s";
-    assert!((parse_timing_ms(output).unwrap()).abs() < 0.1);
+    assert!((parse_timing_ms(output).expect("parse timing ms")).abs() < 0.1);
 }
 
 // ── parse_throughput tests ──────────────────────────────────────────
@@ -136,7 +136,7 @@ fn test_parse_timing_ms_zero() {
 #[test]
 fn test_parse_throughput_json() {
     let output = r#"{"throughput_tps":25.0,"latency_p50_ms":78.2}"#;
-    assert!((parse_throughput(output).unwrap() - 25.0).abs() < 0.1);
+    assert!((parse_throughput(output).expect("parse throughput") - 25.0).abs() < 0.1);
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn test_parse_throughput_no_match() {
 #[test]
 fn test_parse_throughput_integer() {
     let output = r#"{"throughput_tps":100,"other":0}"#;
-    assert!((parse_throughput(output).unwrap() - 100.0).abs() < 0.1);
+    assert!((parse_throughput(output).expect("parse throughput") - 100.0).abs() < 0.1);
 }
 
 // ── F-OLLAMA-003 TTFT comparison test ──────────────────────────────
@@ -180,7 +180,7 @@ ollama_parity:
   prompts: ["What is 2+2?"]
   temperature: 0.0
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let (passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     // F-OLLAMA-001 + F-OLLAMA-003 (TTFT) + F-OLLAMA-005 + F-OLLAMA-004
     assert!(
@@ -214,7 +214,7 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let (passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     // F-OLLAMA-001 (output match), F-OLLAMA-005 (GGUF loadability), F-OLLAMA-004 (API)
     // F-OLLAMA-001 may now FAIL if APR and Ollama produce different text (Bug #32 fix)
@@ -222,9 +222,9 @@ ollama_parity:
     let evidence = executor.evidence().all();
     assert!(evidence.iter().any(|e| e.gate_id == "F-OLLAMA-005"));
     // F-OLLAMA-005 and F-OLLAMA-004 should still pass (ecosystem gates)
-    let gguf_ev = evidence.iter().find(|e| e.gate_id == "F-OLLAMA-005").unwrap();
+    let gguf_ev = evidence.iter().find(|e| e.gate_id == "F-OLLAMA-005").expect("entry found");
     assert!(gguf_ev.outcome.is_pass());
-    let api_ev = evidence.iter().find(|e| e.gate_id == "F-OLLAMA-004").unwrap();
+    let api_ev = evidence.iter().find(|e| e.gate_id == "F-OLLAMA-004").expect("entry found");
     assert!(api_ev.outcome.is_pass());
 }
 
@@ -251,7 +251,7 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let (_passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert!(
         failed >= 1,
@@ -261,7 +261,7 @@ ollama_parity:
     let gguf_ev = evidence
         .iter()
         .find(|e| e.gate_id == "F-OLLAMA-005")
-        .unwrap();
+        .expect("entry found");
     assert!(!gguf_ev.outcome.is_pass());
 }
 
@@ -290,7 +290,7 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let (passed, _failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert!(passed >= 1);
     let evidence = executor.evidence().all();
@@ -320,14 +320,14 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let (_passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert!(failed >= 1);
     let evidence = executor.evidence().all();
     let api_ev = evidence
         .iter()
         .find(|e| e.gate_id == "F-OLLAMA-004")
-        .unwrap();
+        .expect("entry found");
     assert!(!api_ev.outcome.is_pass());
 }
 
@@ -360,7 +360,7 @@ profile_ci:
   formats: [safetensors]
   backends: [cpu, gpu]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let model_id = playbook.model_id();
     let (passed, _failed) = executor.run_perf_gates(Path::new("/mock/model"), &model_id, &playbook);
     // F-PERF-006 (GPU/CPU ratio) + F-PERF-005 (memory profiling)
@@ -397,12 +397,12 @@ profile_ci:
   measure: 2
   backends: [cpu]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let model_id = playbook.model_id();
     let (_passed, failed) = executor.run_perf_gates(Path::new("/mock/model"), &model_id, &playbook);
     assert!(failed >= 1);
     let evidence = executor.evidence().all();
-    let mem_ev = evidence.iter().find(|e| e.gate_id == "F-PERF-005").unwrap();
+    let mem_ev = evidence.iter().find(|e| e.gate_id == "F-PERF-005").expect("entry found");
     assert!(!mem_ev.outcome.is_pass());
 }
 
@@ -484,9 +484,9 @@ fn test_ollama_prompt_gates_ollama_inference_failure() {
         .find(|e| e.gate_id == "F-OLLAMA-001" && e.outcome.is_fail());
     assert!(ol_ev.is_some(), "Expected F-OLLAMA-001 falsified evidence");
     assert!(
-        ol_ev.unwrap().reason.contains("Ollama inference failed"),
+        ol_ev.expect("evidence recorded").reason.contains("Ollama inference failed"),
         "Expected 'Ollama inference failed' reason, got: {}",
-        ol_ev.unwrap().reason
+        ol_ev.expect("evidence recorded").reason
     );
 }
 
@@ -511,9 +511,9 @@ fn test_ollama_prompt_gates_apr_inference_failure() {
         .find(|e| e.gate_id == "F-OLLAMA-001" && e.outcome.is_fail());
     assert!(ol_ev.is_some(), "Expected F-OLLAMA-001 falsified evidence");
     assert!(
-        ol_ev.unwrap().reason.contains("APR inference failed"),
+        ol_ev.expect("evidence recorded").reason.contains("APR inference failed"),
         "Expected 'APR inference failed' reason, got: {}",
-        ol_ev.unwrap().reason
+        ol_ev.expect("evidence recorded").reason
     );
 }
 
@@ -654,9 +654,9 @@ fn test_ollama_prompt_gates_ttft_ratio_exceeded() {
         evidence.iter().map(|e| &e.gate_id).collect::<Vec<_>>()
     );
     assert!(
-        ttft_ev.unwrap().reason.contains("ratio"),
+        ttft_ev.expect("evidence recorded").reason.contains("ratio"),
         "Expected ratio in reason, got: {}",
-        ttft_ev.unwrap().reason
+        ttft_ev.expect("evidence recorded").reason
     );
 }
 
@@ -688,7 +688,7 @@ ollama_parity:
   model_tag: "test:latest"
   prompts: ["What is 2+2?"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let (passed, failed) =
         executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert_eq!(passed, 0, "Expected 0 passed when pull fails");
@@ -727,7 +727,7 @@ test_matrix:
   backends: [cpu]
   scenario_count: 1
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_yaml::from_str(yaml).expect("parse");
     let (passed, failed) =
         executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert_eq!(passed, 0);

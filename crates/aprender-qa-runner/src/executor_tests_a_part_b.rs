@@ -14,7 +14,7 @@ fn test_parse_tps_from_output_valid() {
     let output = "Some text tok/s: 12.34 more text";
     let tps = Executor::parse_tps_from_output(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 12.34).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 12.34).abs() < f64::EPSILON);
 }
 
 /// Verify parse_tps_from_output handles extra whitespace after colon
@@ -23,7 +23,7 @@ fn test_parse_tps_from_output_with_whitespace() {
     let output = "tok/s:   45.67";
     let tps = Executor::parse_tps_from_output(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 45.67).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 45.67).abs() < f64::EPSILON);
 }
 
 /// Verify parse_tps_from_output handles integer values
@@ -32,7 +32,7 @@ fn test_parse_tps_from_output_integer() {
     let output = "tok/s: 100";
     let tps = Executor::parse_tps_from_output(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 100.0).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 100.0).abs() < f64::EPSILON);
 }
 
 /// Verify parse_tps_from_output returns None when no tok/s marker found

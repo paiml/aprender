@@ -198,13 +198,13 @@ test_matrix:
 
 #[test]
 fn test_resolve_model_path_fallback_to_extension() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let gguf_dir = temp_dir.path().join("gguf");
-    std::fs::create_dir_all(&gguf_dir).unwrap();
+    std::fs::create_dir_all(&gguf_dir).expect("create dir");
 
     // Create a file with .gguf extension but NOT named "model.gguf"
     let alt_model = gguf_dir.join("custom-name.gguf");
-    std::fs::write(&alt_model, b"fake model").unwrap();
+    std::fs::write(&alt_model, b"fake model").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -223,18 +223,18 @@ fn test_resolve_model_path_fallback_to_extension() {
 
     let path = executor.resolve_model_path(&scenario);
     // Should find the custom-name.gguf via extension fallback
-    assert!(path.unwrap().contains("custom-name.gguf"));
+    assert!(path.expect("path").contains("custom-name.gguf"));
 }
 
 #[test]
 fn test_resolve_model_path_prefers_model_dot_ext() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let apr_dir = temp_dir.path().join("apr");
-    std::fs::create_dir_all(&apr_dir).unwrap();
+    std::fs::create_dir_all(&apr_dir).expect("create dir");
 
     // Create the canonical model.apr
     let model_file = apr_dir.join("model.apr");
-    std::fs::write(&model_file, b"fake model").unwrap();
+    std::fs::write(&model_file, b"fake model").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -252,7 +252,7 @@ fn test_resolve_model_path_prefers_model_dot_ext() {
     );
 
     let path = executor.resolve_model_path(&scenario);
-    assert!(path.unwrap().contains("model.apr"));
+    assert!(path.expect("path").contains("model.apr"));
 }
 
 // =========================================================================
@@ -261,9 +261,9 @@ fn test_resolve_model_path_prefers_model_dot_ext() {
 
 #[test]
 fn test_resolve_model_path_file_matching_format() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_file = temp_dir.path().join("abc123.safetensors");
-    std::fs::write(&model_file, b"fake model data").unwrap();
+    std::fs::write(&model_file, b"fake model data").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(model_file.to_string_lossy().to_string()),
@@ -282,14 +282,14 @@ fn test_resolve_model_path_file_matching_format() {
     );
     let path = executor.resolve_model_path(&scenario);
     assert!(path.is_some());
-    assert!(path.unwrap().contains("abc123.safetensors"));
+    assert!(path.expect("path").contains("abc123.safetensors"));
 }
 
 #[test]
 fn test_resolve_model_path_file_nonmatching_format() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_file = temp_dir.path().join("abc123.safetensors");
-    std::fs::write(&model_file, b"fake model data").unwrap();
+    std::fs::write(&model_file, b"fake model data").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(model_file.to_string_lossy().to_string()),
@@ -322,9 +322,9 @@ fn test_resolve_model_path_file_nonmatching_format() {
 
 #[test]
 fn test_resolve_model_path_file_gguf() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_file = temp_dir.path().join("hash123.gguf");
-    std::fs::write(&model_file, b"fake gguf").unwrap();
+    std::fs::write(&model_file, b"fake gguf").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(model_file.to_string_lossy().to_string()),
@@ -342,14 +342,14 @@ fn test_resolve_model_path_file_gguf() {
     );
     let path = executor.resolve_model_path(&scenario);
     assert!(path.is_some());
-    assert!(path.unwrap().contains("hash123.gguf"));
+    assert!(path.expect("path").contains("hash123.gguf"));
 }
 
 #[test]
 fn test_execute_scenario_skips_nonmatching_format() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_file = temp_dir.path().join("abc123.safetensors");
-    std::fs::write(&model_file, b"fake model").unwrap();
+    std::fs::write(&model_file, b"fake model").expect("write file");
 
     let mock_runner = MockCommandRunner::new().with_inference_response("The answer is 4.");
 
@@ -375,27 +375,27 @@ fn test_execute_scenario_skips_nonmatching_format() {
 
 #[test]
 fn test_find_safetensors_dir_file_mode() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
 
     // File with .safetensors extension → returns parent dir
     let st_file = temp_dir.path().join("model.safetensors");
-    std::fs::write(&st_file, b"fake").unwrap();
+    std::fs::write(&st_file, b"fake").expect("write file");
     let result = Executor::find_safetensors_dir(&st_file);
     assert!(result.is_some());
-    assert_eq!(result.unwrap(), temp_dir.path());
+    assert_eq!(result.expect("call under test succeeds"), temp_dir.path());
 
     // File with non-safetensors extension → returns None
     let gguf_file = temp_dir.path().join("model.gguf");
-    std::fs::write(&gguf_file, b"fake").unwrap();
+    std::fs::write(&gguf_file, b"fake").expect("write file");
     let result = Executor::find_safetensors_dir(&gguf_file);
     assert!(result.is_none());
 }
 
 #[test]
 fn test_subprocess_execution_skip_flag() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let model_file = temp_dir.path().join("abc.safetensors");
-    std::fs::write(&model_file, b"fake").unwrap();
+    std::fs::write(&model_file, b"fake").expect("write file");
 
     let mock_runner = MockCommandRunner::new().with_inference_response("The answer is 4.");
 

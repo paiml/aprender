@@ -110,7 +110,7 @@ fn test_int_determinism_different_output() {
     assert!(!result.passed);
     assert!(result.description.contains("Non-deterministic"));
     assert!(result.evidence.is_some());
-    let evidence = result.evidence.unwrap();
+    let evidence = result.evidence.expect("evidence recorded");
     assert!(evidence.contains("position"));
 }
 

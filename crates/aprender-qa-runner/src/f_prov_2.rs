@@ -48,7 +48,7 @@ mod falsification_b {
         use std::sync::Arc;
         use std::thread;
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let dir_path = Arc::new(dir.path().to_path_buf());
 
         let mut handles = vec![];
@@ -58,16 +58,16 @@ mod falsification_b {
             handles.push(thread::spawn(move || {
                 let mut prov = sample_provenance();
                 prov.source.sha256 = format!("hash_{i}");
-                save_provenance(&path, &prov).unwrap();
+                save_provenance(&path, &prov).expect("save provenance");
             }));
         }
 
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("thread joins");
         }
 
         // Load and verify - should have ONE consistent state
-        let loaded = load_provenance(&dir_path).unwrap();
+        let loaded = load_provenance(&dir_path).expect("load provenance");
 
         // OBSERVATION: No file locking, last writer wins
         // Result is non-deterministic but at least valid JSON
@@ -80,16 +80,16 @@ mod falsification_b {
     /// F-PROV-FLOW-003: The "Version Spoof" - empty version
     #[test]
     fn f_prov_flow_003_empty_version() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
         let derived = dir.path().join("model.gguf");
-        std::fs::write(&safetensors, "source").unwrap();
-        std::fs::write(&derived, "derived").unwrap();
+        std::fs::write(&safetensors, "source").expect("write file");
+        std::fs::write(&derived, "derived").expect("write file");
 
-        let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
+        let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
 
         // Add derived with empty version
-        add_derived(&mut prov, "gguf", &derived, None, "").unwrap();
+        add_derived(&mut prov, "gguf", &derived, None, "").expect("add derived");
 
         // OBSERVATION: Empty version string is accepted
         assert!(validate_provenance(&prov).is_ok());
@@ -107,16 +107,16 @@ mod falsification_b {
     /// Expected: add_derived() rejects duplicate (PROV-008)
     #[test]
     fn f_prov_code_001_duplicate_derived() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
         let gguf = dir.path().join("model.gguf");
-        std::fs::write(&safetensors, "source").unwrap();
-        std::fs::write(&gguf, "derived").unwrap();
+        std::fs::write(&safetensors, "source").expect("write file");
+        std::fs::write(&gguf, "derived").expect("write file");
 
-        let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
+        let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
 
         // Add GGUF first time - succeeds
-        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
+        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
         assert_eq!(prov.derived.len(), 1);
 
         // FIX VERIFIED: Second add fails with DuplicateDerived error
@@ -134,21 +134,21 @@ mod falsification_b {
     /// F-PROV-CODE-001b: Different quantization = not a duplicate
     #[test]
     fn f_prov_code_001b_different_quantization_allowed() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
         let gguf = dir.path().join("model.gguf");
         let gguf_q4 = dir.path().join("model-q4.gguf");
-        std::fs::write(&safetensors, "source").unwrap();
-        std::fs::write(&gguf, "derived").unwrap();
-        std::fs::write(&gguf_q4, "derived q4").unwrap();
+        std::fs::write(&safetensors, "source").expect("write file");
+        std::fs::write(&gguf, "derived").expect("write file");
+        std::fs::write(&gguf_q4, "derived q4").expect("write file");
 
-        let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
+        let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
 
         // Add unquantized GGUF
-        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
+        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
 
         // Add quantized GGUF - different quantization = allowed
-        add_derived(&mut prov, "gguf", &gguf_q4, Some("q4_k_m"), "0.2.12").unwrap();
+        add_derived(&mut prov, "gguf", &gguf_q4, Some("q4_k_m"), "0.2.12").expect("add derived");
 
         // Both entries exist
         assert_eq!(prov.derived.len(), 2);
@@ -157,11 +157,11 @@ mod falsification_b {
     /// F-PROV-CODE-002: Feed non-provenance JSON
     #[test]
     fn f_prov_code_002_wrong_json_schema() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let prov_path = dir.path().join(".provenance.json");
 
         // Write valid JSON but wrong schema
-        std::fs::write(&prov_path, r#"{"hello": "world"}"#).unwrap();
+        std::fs::write(&prov_path, r#"{"hello": "world"}"#).expect("write file");
 
         let result = load_provenance(dir.path());
 
@@ -182,8 +182,8 @@ mod falsification_b {
         assert!(result.is_ok());
 
         // Serialize and deserialize
-        let json = serde_json::to_string(&prov).unwrap();
-        let loaded: Provenance = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&prov).expect("serialise");
+        let loaded: Provenance = serde_json::from_str(&json).expect("parse");
         assert_eq!(loaded.source.hf_repo, "test/模型");
 
         // CORROBORATED: Unicode handled correctly
@@ -280,8 +280,8 @@ mod falsification_b {
         let result = validate_provenance(&prov);
         assert!(result.is_ok());
 
-        let json = serde_json::to_string(&prov).unwrap();
-        let loaded: Provenance = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&prov).expect("serialise");
+        let loaded: Provenance = serde_json::from_str(&json).expect("parse");
         assert!(loaded.source.path.contains('\0'));
 
         // CORROBORATED: Null bytes preserved (could be path traversal risk)
@@ -331,14 +331,14 @@ mod falsification_b {
     /// Test verify_provenance_integrity with valid files
     #[test]
     fn test_verify_integrity_valid() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
         let gguf = dir.path().join("model.gguf");
-        std::fs::write(&safetensors, "source content").unwrap();
-        std::fs::write(&gguf, "gguf content").unwrap();
+        std::fs::write(&safetensors, "source content").expect("write file");
+        std::fs::write(&gguf, "gguf content").expect("write file");
 
-        let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
-        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
+        let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
 
         // All files exist and hashes match
         let result = verify_provenance_integrity(&prov, dir.path());
@@ -348,14 +348,14 @@ mod falsification_b {
     /// Test verify_provenance_integrity detects modified source
     #[test]
     fn test_verify_integrity_modified_source() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
-        std::fs::write(&safetensors, "original content").unwrap();
+        std::fs::write(&safetensors, "original content").expect("write file");
 
-        let prov = create_source_provenance(&safetensors, "test/model").unwrap();
+        let prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
 
         // Modify the source file after provenance creation
-        std::fs::write(&safetensors, "MODIFIED content").unwrap();
+        std::fs::write(&safetensors, "MODIFIED content").expect("write file");
 
         // Integrity check fails
         let result = verify_provenance_integrity(&prov, dir.path());
@@ -369,17 +369,17 @@ mod falsification_b {
     /// Test verify_provenance_integrity detects modified derived file
     #[test]
     fn test_verify_integrity_modified_derived() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
         let gguf = dir.path().join("model.gguf");
-        std::fs::write(&safetensors, "source").unwrap();
-        std::fs::write(&gguf, "original gguf").unwrap();
+        std::fs::write(&safetensors, "source").expect("write file");
+        std::fs::write(&gguf, "original gguf").expect("write file");
 
-        let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
-        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
+        let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
 
         // Modify derived file
-        std::fs::write(&gguf, "TAMPERED gguf").unwrap();
+        std::fs::write(&gguf, "TAMPERED gguf").expect("write file");
 
         let result = verify_provenance_integrity(&prov, dir.path());
         assert!(result.is_err());
@@ -392,14 +392,14 @@ mod falsification_b {
     /// Test verify_files_exist with all files present
     #[test]
     fn test_verify_files_exist_valid() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
         let gguf = dir.path().join("model.gguf");
-        std::fs::write(&safetensors, "source").unwrap();
-        std::fs::write(&gguf, "gguf").unwrap();
+        std::fs::write(&safetensors, "source").expect("write file");
+        std::fs::write(&gguf, "gguf").expect("write file");
 
-        let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
-        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
+        let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
 
         assert!(verify_files_exist(&prov, dir.path()).is_ok());
     }
@@ -407,17 +407,17 @@ mod falsification_b {
     /// Test verify_files_exist detects missing derived file
     #[test]
     fn test_verify_files_exist_missing_derived() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create temp dir");
         let safetensors = dir.path().join("model.safetensors");
         let gguf = dir.path().join("model.gguf");
-        std::fs::write(&safetensors, "source").unwrap();
-        std::fs::write(&gguf, "gguf").unwrap();
+        std::fs::write(&safetensors, "source").expect("write file");
+        std::fs::write(&gguf, "gguf").expect("write file");
 
-        let mut prov = create_source_provenance(&safetensors, "test/model").unwrap();
-        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").unwrap();
+        let mut prov = create_source_provenance(&safetensors, "test/model").expect("create source provenance");
+        add_derived(&mut prov, "gguf", &gguf, None, "0.2.12").expect("add derived");
 
         // Delete derived file
-        std::fs::remove_file(&gguf).unwrap();
+        std::fs::remove_file(&gguf).expect("remove file");
 
         let result = verify_files_exist(&prov, dir.path());
         assert!(result.is_err());

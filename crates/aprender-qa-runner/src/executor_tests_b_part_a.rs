@@ -53,7 +53,7 @@ fn test_parse_tps_from_output_at_end() {
     let output = "All output finished tok/s: 99.9";
     let tps = Executor::parse_tps_from_output(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 99.9).abs() < 0.01);
+    assert!((tps.expect("throughput parsed") - 99.9).abs() < 0.01);
 }
 
 /// Verify parse_tps_from_output finds tok/s in multiline output
@@ -62,7 +62,7 @@ fn test_parse_tps_from_output_multiline() {
     let output = "Line 1\nLine 2\ntok/s: 25.5\nLine 4";
     let tps = Executor::parse_tps_from_output(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 25.5).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 25.5).abs() < f64::EPSILON);
 }
 
 /// Verify extract_output_text captures final answer at end of output
@@ -88,7 +88,7 @@ fn test_execution_result_with_gateway_failure() {
     };
     assert!(!result.is_success());
     assert!(result.gateway_failed.is_some());
-    assert!(result.gateway_failed.as_ref().unwrap().contains("G1"));
+    assert!(result.gateway_failed.as_ref().expect("value present").contains("G1"));
 }
 
 /// Verify ExecutionConfig accepts all configuration fields

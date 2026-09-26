@@ -40,11 +40,11 @@ profile_ci:
 #[test]
 fn test_resolve_model_path_file_sibling_gguf() {
     // Given a .safetensors file, resolve_model_path should find sibling .gguf
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let st_file = temp_dir.path().join("model.safetensors");
     let gguf_file = temp_dir.path().join("model.gguf");
-    std::fs::write(&st_file, b"fake safetensors").unwrap();
-    std::fs::write(&gguf_file, b"fake gguf").unwrap();
+    std::fs::write(&st_file, b"fake safetensors").expect("write file");
+    std::fs::write(&gguf_file, b"fake gguf").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(st_file.to_string_lossy().to_string()),
@@ -62,17 +62,17 @@ fn test_resolve_model_path_file_sibling_gguf() {
     );
     let path = executor.resolve_model_path(&scenario);
     assert!(path.is_some(), "Should find sibling .gguf file");
-    assert!(path.unwrap().contains("model.gguf"));
+    assert!(path.expect("path").contains("model.gguf"));
 }
 
 #[test]
 fn test_resolve_model_path_file_sibling_apr() {
     // Given a .gguf file, resolve_model_path should find sibling .apr
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let gguf_file = temp_dir.path().join("model.gguf");
     let apr_file = temp_dir.path().join("model.apr");
-    std::fs::write(&gguf_file, b"fake gguf").unwrap();
-    std::fs::write(&apr_file, b"fake apr").unwrap();
+    std::fs::write(&gguf_file, b"fake gguf").expect("write file");
+    std::fs::write(&apr_file, b"fake apr").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(gguf_file.to_string_lossy().to_string()),
@@ -90,15 +90,15 @@ fn test_resolve_model_path_file_sibling_apr() {
     );
     let path = executor.resolve_model_path(&scenario);
     assert!(path.is_some(), "Should find sibling .apr file");
-    assert!(path.unwrap().contains("model.apr"));
+    assert!(path.expect("path").contains("model.apr"));
 }
 
 #[test]
 fn test_resolve_model_path_file_sibling_not_found() {
     // Given a .safetensors file with no sibling .gguf, should return None
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let st_file = temp_dir.path().join("model.safetensors");
-    std::fs::write(&st_file, b"fake safetensors").unwrap();
+    std::fs::write(&st_file, b"fake safetensors").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(st_file.to_string_lossy().to_string()),
@@ -124,11 +124,11 @@ fn test_resolve_model_path_file_sibling_not_found() {
 fn test_resolve_model_path_file_sibling_fallback_different_stem() {
     // Given a .safetensors file with a DIFFERENT-FAMILY .gguf file in same dir,
     // prefix matching should NOT return it (avoids cross-model confusion).
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let st_file = temp_dir.path().join("abc123.safetensors");
     let gguf_file = temp_dir.path().join("other-name.gguf");
-    std::fs::write(&st_file, b"fake safetensors").unwrap();
-    std::fs::write(&gguf_file, b"fake gguf").unwrap();
+    std::fs::write(&st_file, b"fake safetensors").expect("write file");
+    std::fs::write(&gguf_file, b"fake gguf").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(st_file.to_string_lossy().to_string()),
@@ -151,11 +151,11 @@ fn test_resolve_model_path_file_sibling_fallback_different_stem() {
 #[test]
 fn test_resolve_model_path_file_sibling_prefix_match() {
     // Given a GGUF with quantization suffix, should find APR with same family prefix
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let gguf_file = temp_dir.path().join("qwen2.5-coder-7b-instruct-q4k.gguf");
     let apr_file = temp_dir.path().join("qwen2.5-coder-7b-instruct.apr");
-    std::fs::write(&gguf_file, b"fake gguf").unwrap();
-    std::fs::write(&apr_file, b"fake apr").unwrap();
+    std::fs::write(&gguf_file, b"fake gguf").expect("write file");
+    std::fs::write(&apr_file, b"fake apr").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(gguf_file.to_string_lossy().to_string()),
@@ -176,7 +176,7 @@ fn test_resolve_model_path_file_sibling_prefix_match() {
         path.is_some(),
         "Should find APR via model family prefix match"
     );
-    assert!(path.unwrap().contains("qwen2.5-coder-7b-instruct.apr"));
+    assert!(path.expect("path").contains("qwen2.5-coder-7b-instruct.apr"));
 }
 
 // ── Bug 200: Modality-aware dispatch ─────────────────────────────────
@@ -269,7 +269,7 @@ fn test_parse_timing_ms_valid() {
     let output = "Loading model...\nCompleted in 1.5s\nDone";
     let ms = parse_timing_ms(output);
     assert!(ms.is_some());
-    assert!((ms.unwrap() - 1500.0).abs() < f64::EPSILON);
+    assert!((ms.expect("latency parsed") - 1500.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn test_parse_timing_ms_integer_seconds() {
     let output = "Completed in 3s";
     let ms = parse_timing_ms(output);
     assert!(ms.is_some());
-    assert!((ms.unwrap() - 3000.0).abs() < f64::EPSILON);
+    assert!((ms.expect("latency parsed") - 3000.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn test_parse_timing_ms_case_insensitive() {
     let output = "COMPLETED IN 2.0s";
     let ms = parse_timing_ms(output);
     assert!(ms.is_some());
-    assert!((ms.unwrap() - 2000.0).abs() < f64::EPSILON);
+    assert!((ms.expect("latency parsed") - 2000.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn test_parse_throughput_valid_decimal() {
     let output = r#"{"throughput_tps":25.5,"other":1}"#;
     let tps = parse_throughput(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 25.5).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 25.5).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn test_parse_throughput_at_end_of_json() {
     let tps = parse_throughput(output);
     // "100}" - the "}" terminates it
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 100.0).abs() < f64::EPSILON);
+    assert!((tps.expect("throughput parsed") - 100.0).abs() < f64::EPSILON);
 }
 
 #[test]

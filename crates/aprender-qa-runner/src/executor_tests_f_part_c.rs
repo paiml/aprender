@@ -8,8 +8,8 @@ fn test_find_model_by_prefix_nonexistent_dir() {
 
 #[test]
 fn test_find_clean_model_file_wrong_extension() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("model.safetensors"), b"data").unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(tmp.path().join("model.safetensors"), b"data").expect("write file");
     let result = Executor::find_clean_model_file(tmp.path(), "gguf");
     assert!(result.is_none());
 }
@@ -18,17 +18,18 @@ fn test_find_clean_model_file_wrong_extension() {
 
 #[test]
 fn test_metadata_only_skips_inference() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     // Write config.json with matching dimensions
-    let config = serde_json::json!({
+    let config = serde_json::from_str::<serde_json::Value>(r#"{
         "hidden_size": 896,
         "num_hidden_layers": 24,
         "num_attention_heads": 14,
         "num_key_value_heads": 2,
-        "vocab_size": 151_936
-    });
+        "vocab_size": 151936
+    }"#)
+        .expect("literal fixture is valid JSON");
     let config_path = tmp.path().join("config.json");
-    std::fs::write(&config_path, serde_json::to_string(&config).unwrap()).unwrap();
+    std::fs::write(&config_path, serde_json::to_string(&config).expect("serialise")).expect("write file");
 
     // Write minimal safetensors with correct shapes
     {
@@ -37,30 +38,32 @@ fn test_metadata_only_skips_inference() {
         let mut header_map: HashMap<&str, serde_json::Value> = HashMap::new();
         header_map.insert(
             "model.embed_tokens.weight",
-            serde_json::json!({"dtype": "F32", "shape": [151_936, 896], "data_offsets": [0, 8]}),
+            serde_json::from_str::<serde_json::Value>(r#"{"dtype": "F32", "shape": [151936, 896], "data_offsets": [0, 8]}"#)
+                .expect("literal fixture is valid JSON"),
         );
         header_map.insert(
             "lm_head.weight",
-            serde_json::json!({"dtype": "F32", "shape": [151_936, 896], "data_offsets": [8, 16]}),
+            serde_json::from_str::<serde_json::Value>(r#"{"dtype": "F32", "shape": [151936, 896], "data_offsets": [8, 16]}"#)
+                .expect("literal fixture is valid JSON"),
         );
-        let header_json = serde_json::to_string(&header_map).unwrap();
+        let header_json = serde_json::to_string(&header_map).expect("serialise");
         let header_bytes = header_json.as_bytes();
         let header_len = header_bytes.len() as u64;
 
         let st_path = tmp.path().join("model.safetensors");
-        let mut f = std::fs::File::create(st_path).unwrap();
-        f.write_all(&header_len.to_le_bytes()).unwrap();
-        f.write_all(header_bytes).unwrap();
-        f.write_all(&[0u8; 16]).unwrap();
+        let mut f = std::fs::File::create(st_path).expect("create file");
+        f.write_all(&header_len.to_le_bytes()).expect("write");
+        f.write_all(header_bytes).expect("write");
+        f.write_all(&[0u8; 16]).expect("write");
     }
 
     // Write tokenizer files for G0-TOKENIZER checks
-    std::fs::write(tmp.path().join("tokenizer.json"), b"{}").unwrap();
+    std::fs::write(tmp.path().join("tokenizer.json"), b"{}").expect("write file");
     std::fs::write(
         tmp.path().join("tokenizer_config.json"),
         br#"{"eos_token":"<|endoftext|>"}"#,
     )
-    .unwrap();
+    .expect("write file");
 
     let playbook_yaml = r#"
 name: test-dim-smoke
@@ -101,17 +104,18 @@ test_matrix:
 
 #[test]
 fn test_metadata_only_detects_mismatch() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().expect("create temp dir");
     // Write config.json with WRONG hidden_size
-    let model_config = serde_json::json!({
+    let model_config = serde_json::from_str::<serde_json::Value>(r#"{
         "hidden_size": 512,
         "num_hidden_layers": 24
-    });
+    }"#)
+        .expect("literal fixture is valid JSON");
     std::fs::write(
         tmp.path().join("config.json"),
-        serde_json::to_string(&model_config).unwrap(),
+        serde_json::to_string(&model_config).expect("serialise"),
     )
-    .unwrap();
+    .expect("write file");
 
     let playbook_yaml = r#"
 name: test-dim-smoke-fail

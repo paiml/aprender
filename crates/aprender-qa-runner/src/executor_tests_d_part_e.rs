@@ -8,14 +8,12 @@
 fn write_golden_safetensors(path: &Path, logit_values: &[f32]) {
     use std::io::Write;
     let byte_size = logit_values.len() * 4;
-    let header = serde_json::json!({
-        "__metadata__": {"format": "pt"},
-        "logits": {
-            "dtype": "F32",
-            "shape": [1usize, logit_values.len()],
-            "data_offsets": [0usize, byte_size]
-        }
-    });
+    let mut header = serde_json::from_str::<serde_json::Value>(
+        r#"{"__metadata__": {"format": "pt"}, "logits": {"dtype": "F32"}}"#,
+    )
+    .expect("literal fixture is valid JSON");
+    header["logits"]["shape"] = serde_json::Value::from(vec![1usize, logit_values.len()]);
+    header["logits"]["data_offsets"] = serde_json::Value::from(vec![0usize, byte_size]);
     let header_json = serde_json::to_string(&header).expect("serialize header");
     let header_bytes = header_json.as_bytes();
     let header_len = header_bytes.len() as u64;
@@ -65,11 +63,11 @@ fn setup_complete_hf_parity_corpus(
 
     // Optional metadata JSON with expected text output (field name is "generated_text")
     if let Some(text) = expected_text {
-        let meta = serde_json::json!({
-            "generated_text": text,
-            "model": "test/model",
-            "transformers_version": "4.40.0"
-        });
+        let mut meta = serde_json::from_str::<serde_json::Value>(
+            r#"{"model": "test/model", "transformers_version": "4.40.0"}"#,
+        )
+        .expect("literal fixture is valid JSON");
+        meta["generated_text"] = serde_json::Value::from(text);
         std::fs::write(
             family_dir.join("52cb6b5e4a038af1.json"),
             serde_json::to_string(&meta).expect("serialize meta"),

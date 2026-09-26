@@ -103,15 +103,15 @@ fn test_get_validation_rules_empty() {
 #[test]
 fn test_collect_tensor_metadata_with_parse_error() {
     use std::io::Write;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
 
     // Create a corrupt safetensors file
     let bad_file = dir.path().join("corrupt.safetensors");
     let bad_header = b"not valid json at all";
     let header_len = bad_header.len() as u64;
-    let mut file = std::fs::File::create(&bad_file).unwrap();
-    file.write_all(&header_len.to_le_bytes()).unwrap();
-    file.write_all(bad_header).unwrap();
+    let mut file = std::fs::File::create(&bad_file).expect("create file");
+    file.write_all(&header_len.to_le_bytes()).expect("write");
+    file.write_all(bad_header).expect("write");
 
     let mut results = Vec::new();
     let tensors = collect_tensor_metadata(dir.path(), &mut results);
@@ -124,7 +124,7 @@ fn test_collect_tensor_metadata_with_parse_error() {
 
 #[test]
 fn test_collect_tensor_metadata_valid() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create temp dir");
     create_test_safetensors(
         &dir.path().join("model.safetensors"),
         &[("weight.a", &[10, 20]), ("weight.b", &[30])],

@@ -132,10 +132,10 @@ fn test_tool_executor_execute_trace_levels() {
 
 #[test]
 fn test_resolve_model_path_gguf() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let gguf_dir = temp_dir.path().join("gguf");
-    std::fs::create_dir_all(&gguf_dir).unwrap();
-    std::fs::write(gguf_dir.join("model.gguf"), b"fake").unwrap();
+    std::fs::create_dir_all(&gguf_dir).expect("create dir");
+    std::fs::write(gguf_dir.join("model.gguf"), b"fake").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -153,15 +153,15 @@ fn test_resolve_model_path_gguf() {
     );
 
     let path = executor.resolve_model_path(&scenario);
-    assert!(path.unwrap().contains("gguf"));
+    assert!(path.expect("path").contains("gguf"));
 }
 
 #[test]
 fn test_resolve_model_path_apr() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let apr_dir = temp_dir.path().join("apr");
-    std::fs::create_dir_all(&apr_dir).unwrap();
-    std::fs::write(apr_dir.join("model.apr"), b"fake").unwrap();
+    std::fs::create_dir_all(&apr_dir).expect("create dir");
+    std::fs::write(apr_dir.join("model.apr"), b"fake").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -179,15 +179,15 @@ fn test_resolve_model_path_apr() {
     );
 
     let path = executor.resolve_model_path(&scenario);
-    assert!(path.unwrap().contains("apr"));
+    assert!(path.expect("path").contains("apr"));
 }
 
 #[test]
 fn test_resolve_model_path_safetensors() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
     let st_dir = temp_dir.path().join("safetensors");
-    std::fs::create_dir_all(&st_dir).unwrap();
-    std::fs::write(st_dir.join("model.safetensors"), b"fake").unwrap();
+    std::fs::create_dir_all(&st_dir).expect("create dir");
+    std::fs::write(st_dir.join("model.safetensors"), b"fake").expect("write file");
 
     let config = ExecutionConfig {
         model_path: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -205,7 +205,7 @@ fn test_resolve_model_path_safetensors() {
     );
 
     let path = executor.resolve_model_path(&scenario);
-    assert!(path.unwrap().contains("safetensors"));
+    assert!(path.expect("path").contains("safetensors"));
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn test_parse_tps_from_output_with_tps() {
     let output = "Info: Loading model\ntok/s: 42.5\nDone";
     let tps = Executor::parse_tps_from_output(output);
     assert!(tps.is_some());
-    assert!((tps.unwrap() - 42.5).abs() < 0.01);
+    assert!((tps.expect("throughput parsed") - 42.5).abs() < 0.01);
 }
 
 #[test]

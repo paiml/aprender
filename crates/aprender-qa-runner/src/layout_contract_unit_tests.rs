@@ -52,7 +52,7 @@ fn test_validate_model_missing_file() {
 
     let result = validate_model(Path::new("/nonexistent/model.apr"), &contract);
     assert!(result.is_ok());
-    let result = result.unwrap();
+    let result = result.expect("call under test succeeds");
     assert!(!result.passed);
     assert!(!result.critical_failures.is_empty());
 }
@@ -186,29 +186,27 @@ fn create_test_safetensors(path: &Path, tensors: &[(&str, &[usize])]) {
     let mut header = serde_json::Map::new();
     header.insert(
         "__metadata__".to_string(),
-        serde_json::json!({"format": "pt"}),
+        serde_json::from_str::<serde_json::Value>(r#"{"format": "pt"}"#)
+            .expect("literal fixture is valid JSON"),
     );
     let mut offset = 0usize;
     for (name, shape) in tensors {
         let num_elements: usize = shape.iter().product();
         let byte_size = num_elements * 4; // f32
-        header.insert(
-            name.to_string(),
-            serde_json::json!({
-                "dtype": "F32",
-                "shape": shape,
-                "data_offsets": [offset, offset + byte_size]
-            }),
-        );
+        let mut entry = serde_json::from_str::<serde_json::Value>(r#"{"dtype": "F32"}"#)
+            .expect("literal fixture is valid JSON");
+        entry["shape"] = serde_json::Value::from(shape.to_vec());
+        entry["data_offsets"] = serde_json::Value::from(vec![offset, offset + byte_size]);
+        header.insert(name.to_string(), entry);
         offset += byte_size;
     }
-    let header_json = serde_json::to_string(&header).unwrap();
+    let header_json = serde_json::to_string(&header).expect("serialise");
     let header_bytes = header_json.as_bytes();
     let header_len = header_bytes.len() as u64;
-    let mut file = std::fs::File::create(path).unwrap();
-    file.write_all(&header_len.to_le_bytes()).unwrap();
-    file.write_all(header_bytes).unwrap();
-    file.write_all(&vec![0u8; offset]).unwrap();
+    let mut file = std::fs::File::create(path).expect("create file");
+    file.write_all(&header_len.to_le_bytes()).expect("write");
+    file.write_all(header_bytes).expect("write");
+    file.write_all(&vec![0u8; offset]).expect("write");
 }
 
 // ========================================================================
@@ -218,21 +216,24 @@ fn create_test_safetensors(path: &Path, tensors: &[(&str, &[usize])]) {
 /// Verify get_usize extracts a valid usize from JSON
 #[test]
 fn test_get_usize_valid() {
-    let json = serde_json::json!({"vocab_size": 32000});
+    let json = serde_json::from_str::<serde_json::Value>(r#"{"vocab_size": 32000}"#)
+        .expect("literal fixture is valid JSON");
     assert_eq!(get_usize(&json, "vocab_size"), Some(32000));
 }
 
 /// Verify get_usize returns None for a missing JSON key
 #[test]
 fn test_get_usize_missing() {
-    let json = serde_json::json!({"vocab_size": 32000});
+    let json = serde_json::from_str::<serde_json::Value>(r#"{"vocab_size": 32000}"#)
+        .expect("literal fixture is valid JSON");
     assert_eq!(get_usize(&json, "hidden_size"), None);
 }
 
 /// Verify get_usize returns None when the JSON value is a string, not a number
 #[test]
 fn test_get_usize_not_number() {
-    let json = serde_json::json!({"vocab_size": "not_a_number"});
+    let json = serde_json::from_str::<serde_json::Value>(r#"{"vocab_size": "not_a_number"}"#)
+        .expect("literal fixture is valid JSON");
     assert_eq!(get_usize(&json, "vocab_size"), None);
 }
 
