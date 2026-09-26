@@ -9,7 +9,7 @@
 //! rule every GPU path is held to), and a GPU that cannot serve says why —
 //! unconditionally, not only under `--verbose` — before the CPU runs.
 
-use super::qwen3_moe_generate::run_qwen3_moe_generate;
+use super::qwen3_moe_generate::run_qwen3_moe_generate_observed;
 use crate::error::Result;
 use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
@@ -28,10 +28,34 @@ pub fn run_qwen3_moe_generate_dispatch(
     gen_config: &QuantizedGenerateConfig,
     no_gpu: bool,
 ) -> Result<(Vec<u32>, bool)> {
+    run_qwen3_moe_generate_dispatch_timed(mapped, model, input_tokens, gen_config, no_gpu)
+        .map(|(tokens, used_gpu, _)| (tokens, used_gpu))
+}
+
+/// The measured (prefill, decode) split of one attempt: prefill ends when the
+/// first token is chosen. `None` when no token was chosen — never a zero.
+pub type PhaseSplit = Option<(std::time::Duration, std::time::Duration)>;
+
+/// [`run_qwen3_moe_generate_dispatch`] plus the (prefill, decode) split of the
+/// attempt that SERVED (SRV-TIM-001). A GPU attempt that falls back does not
+/// leak its clock into the CPU run's split: each attempt times itself.
+///
+/// # Errors
+/// Only the CPU forward's own failure: a GPU failure is a printed fallback.
+pub fn run_qwen3_moe_generate_dispatch_timed(
+    mapped: &MappedGGUFModel,
+    model: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &QuantizedGenerateConfig,
+    no_gpu: bool,
+) -> Result<(Vec<u32>, bool, PhaseSplit)> {
     #[cfg(feature = "cuda")]
     if !no_gpu {
-        match gpu::run_qwen3_moe_generate_gpu(mapped, model, input_tokens, gen_config) {
-            Ok(tokens) => return Ok((tokens, true)),
+        let mut clock = SplitClock::start();
+        match gpu::run_qwen3_moe_generate_gpu(mapped, model, input_tokens, gen_config, &mut || {
+            clock.mark();
+        }) {
+            Ok(tokens) => return Ok((tokens, true, clock.finish())),
             Err(reason) => {
                 eprintln!("{QWEN3MOE_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
             },
@@ -39,8 +63,38 @@ pub fn run_qwen3_moe_generate_dispatch(
     }
     #[cfg(not(feature = "cuda"))]
     let _ = no_gpu;
-    let tokens = run_qwen3_moe_generate(mapped, model, input_tokens, gen_config)?;
-    Ok((tokens, false))
+    let mut clock = SplitClock::start();
+    let tokens =
+        run_qwen3_moe_generate_observed(mapped, model, input_tokens, gen_config, &mut || {
+            clock.mark();
+        })?;
+    Ok((tokens, false, clock.finish()))
+}
+
+/// Start instant plus the instant the first token was chosen.
+struct SplitClock {
+    start: std::time::Instant,
+    first: Option<std::time::Instant>,
+}
+
+impl SplitClock {
+    fn start() -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            first: None,
+        }
+    }
+
+    fn mark(&mut self) {
+        if self.first.is_none() {
+            self.first = Some(std::time::Instant::now());
+        }
+    }
+
+    fn finish(&self) -> PhaseSplit {
+        self.first
+            .map(|first| (first.duration_since(self.start), first.elapsed()))
+    }
 }
 
 /// The MoE shape the GGUF metadata declares, or the key that is missing.
@@ -102,6 +156,7 @@ pub(crate) mod gpu {
         model: &OwnedQuantizedModel,
         input_tokens: &[u32],
         gen_config: &QuantizedGenerateConfig,
+        on_token: &mut dyn FnMut(),
     ) -> std::result::Result<Vec<u32>, String> {
         if input_tokens.is_empty() {
             return Err("the prompt is empty".to_string());
@@ -141,7 +196,7 @@ pub(crate) mod gpu {
         )?;
         let decode_start = std::time::Instant::now();
         crate::infer::mark_generation_start(); // #3981: upload + F2 end here
-        let tokens = decode(&mut gpu, input_tokens, gen_config)?;
+        let tokens = decode(&mut gpu, input_tokens, gen_config, on_token)?;
         let generated = tokens.len().saturating_sub(input_tokens.len());
         let decode_s = decode_start.elapsed().as_secs_f64();
         eprintln!(
@@ -159,6 +214,7 @@ pub(crate) mod gpu {
         gpu: &mut Qwen3MoeCudaModel<'_>,
         input_tokens: &[u32],
         gen_config: &QuantizedGenerateConfig,
+        on_token: &mut dyn FnMut(),
     ) -> std::result::Result<Vec<u32>, String> {
         use rand::SeedableRng;
         let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
@@ -178,6 +234,7 @@ pub(crate) mod gpu {
             let next = sample_from_logits(&logits, gen_config, &mut rng, &tokens)
                 .map_err(|e| format!("sampling failed: {e}"))?;
             tokens.push(next);
+            on_token();
             if gen_config.stop_tokens.contains(&next) || tokens.len() >= max_seq_len {
                 break;
             }

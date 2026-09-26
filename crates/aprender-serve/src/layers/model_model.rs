@@ -150,6 +150,22 @@ impl Model {
     /// let generated = model.generate(&[1, 2, 3], &GenerationConfig::greedy())?;
     /// ```
     pub fn generate(&self, prompt: &[usize], config: &GenerationConfig) -> Result<Vec<usize>> {
+        self.generate_observed(prompt, config, &mut |_| {})
+    }
+
+    /// [`Model::generate`] that calls `on_token` with each generated token as
+    /// it is chosen (SRV-TIM-001: the server times its prefill/decode split
+    /// from the first call). The tokens are the ones `generate` returns.
+    ///
+    /// # Errors
+    ///
+    /// As [`Model::generate`].
+    pub fn generate_observed(
+        &self,
+        prompt: &[usize],
+        config: &GenerationConfig,
+        on_token: &mut dyn FnMut(usize),
+    ) -> Result<Vec<usize>> {
         if prompt.is_empty() {
             return Err(RealizarError::InvalidShape {
                 reason: "Prompt cannot be empty".to_string(),
@@ -195,6 +211,7 @@ impl Model {
             }
 
             tokens.push(next_token);
+            on_token(next_token);
         }
 
         Ok(tokens)
