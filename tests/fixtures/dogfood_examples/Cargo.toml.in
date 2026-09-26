@@ -12,3 +12,16 @@ publish = false
 # Detach from any enclosing workspace: the fixture must resolve standalone
 # wherever it is copied.
 [workspace]
+
+# Declared classes (#3560 R5). This table must stay LAST: the selftest appends
+# one invalid entry per refusal form and expects exit 2 before anything runs.
+[package.metadata.dogfood-examples]
+server = { class = "long-running", reason = "fixture server; stays up until killed" }
+server_crash = { class = "long-running", reason = "fixture server that cannot stay up" }
+decl_args = { class = "needs-args", expect = "usage: decl_args", reason = "wants a model path and a budget" }
+decl_drift = { class = "needs-hardware", expect = "CUDA init failed", reason = "claims CUDA; really an assertion" }
+decl_ok = { class = "needs-data", expect = "Model not found", reason = "claims data; exits 0" }
+decl_net = { class = "needs-net", expect = "Failed to connect to worker at", reason = "needs a remote worker" }
+decl_tty = { class = "needs-tty", expect = "No such device or address", reason = "raw mode needs a terminal" }
+decl_hang = { class = "needs-data", expect = "Model not found", reason = "claims data; hangs" }
+decl_build = { class = "needs-data", expect = "Model not found", reason = "claims data; does not compile" }

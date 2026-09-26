@@ -47,6 +47,34 @@
 #                   the example needs a FILE the repository does not ship.
 #                   Those are not runnable bare, but are not broken.
 #
+# DECLARED CLASSES (Added 2026-09-26, #3560 R5 / #3182)
+# ----------------------------------------------------
+# Nightly run 36205982770 (985 targets) had 36 non-pass rows. 34 of them were
+# examples that print a usage line, a CUDA-init failure or a missing-model
+# message in THEIR OWN words ("usage: think_ab ...", "CUDA init failed",
+# "No model found"), or that serve until killed. Widening the patterns above to
+# match every example's own wording would make them match defects too. So a
+# crate DECLARES the class next to the example, in its Cargo.toml:
+#
+#   [package.metadata.dogfood-examples]
+#   think_ab = { class = "needs-args", expect = "usage: think_ab", reason = "..." }
+#   api_server = { class = "long-running", reason = "axum server; serves until killed" }
+#
+# A declaration is a CLAIM, and it is checked on every run:
+#   - `expect` is a fixed string that must appear in the run's output. If it does
+#     not, the row is `fail` and says so, so an example whose failure changed
+#     shape goes red instead of staying skipped.
+#   - A declared example that exits 0 is `pass`. A build failure is never
+#     excused. A declared example that hangs is still `timeout`.
+#   - `long-running` (a server, a TUI, a training loop) is run for
+#     --long-running-secs (default 20). If it is still alive then, it is
+#     `long-running`. If it exits non-zero before then, it is `fail`.
+#   - A declaration naming a target the package does not have, an unknown class,
+#     or a missing `expect`/`reason` exits 2 before anything runs. A stale
+#     declaration is refused, not ignored.
+# Classes only a declaration can produce: needs-net (a peer or service that CI
+# does not have), needs-tty (a terminal; stdin is /dev/null), long-running.
+#
 # Exit 1 if any row is `fail` or `timeout`. Exit 2 if the enumeration is EMPTY —
 # a gate that finds nothing to run and exits 0 is the vacuity defect this repo
 # names most often. No row is ever written without a class.
@@ -65,6 +93,7 @@ FIXTURE_DIR="${REPO_ROOT}/tests/fixtures/dogfood_examples"
 
 CARGO_BIN="${CARGO:-cargo}"
 TIMEOUT_SECS=120
+LONG_RUNNING_SECS=20
 FILTER=''
 OUT=''
 MANIFEST=''
@@ -100,7 +129,8 @@ die() {
 
 usage() {
     printf 'usage: dogfood_examples.sh [--timeout-secs N] [--filter REGEX]\n'
-    printf '                           [--out TSV] [--manifest-path P] [--selftest]\n'
+    printf '                           [--long-running-secs N] [--out TSV]\n'
+    printf '                           [--manifest-path P] [--selftest]\n'
 }
 
 # oneline TEXT -- a TSV cell: no tab, no newline, bounded length.
@@ -131,12 +161,40 @@ cargo_meta() {
 # The `{p: .name, t: .targets[]}` product keeps the OWNING PACKAGE attached to
 # every target; `required-features` is joined with commas so the row is one
 # line and the caller can hand it straight to --features.
+#
+# Every cell is non-empty ('-' stands for none). `read` with IFS=$'\t' treats
+# tab as whitespace and would collapse an empty middle cell, shifting every
+# later field one column left. The declaration rides in the last three cells:
+# class, expect, reason.
 enumerate_examples() {
-    jq -r '[.packages[] | {p: .name, t: .targets[]}]
+    jq -r 'def cell: if . == null or . == "" then "-" else gsub("[\t\n\r]"; " ") end;
+           [.packages[] | {p: .name, d: (.metadata["dogfood-examples"] // {}), t: .targets[]}]
            | map(select(.t.kind == ["example"]))
            | .[]
-           | [.p, .t.name, .t.src_path, ((.t["required-features"] // []) | join(","))]
+           | (.d[.t.name] // {}) as $decl
+           | [.p, .t.name, .t.src_path,
+              ((.t["required-features"] // []) | join(",") | cell),
+              ($decl.class | cell), ($decl.expect | cell), ($decl.reason | cell)]
            | @tsv' "$1"
+}
+
+# check_declarations META_FILE -- one line per invalid declaration; empty if all
+# are valid. A declaration for a target the package does not have is stale, and
+# a stale skip is exactly the kind of claim nobody re-reads.
+check_declarations() {
+    jq -r '.packages[]
+           | .name as $p
+           | ([.targets[] | select(.kind == ["example"]) | .name]) as $ex
+           | (.metadata["dogfood-examples"] // {}) | to_entries[]
+           | .key as $k | .value as $v
+           | if ($v | type) != "object" then "\($p)::\($k): not a table"
+             elif ($ex | index($k)) == null then "\($p)::\($k): no example target of that name"
+             elif (if ($v.class | type) == "string" then (["needs-args","needs-hardware","needs-data","needs-feature","needs-net","needs-tty","long-running"] | index($v.class)) else null end) == null
+               then "\($p)::\($k): unknown class \($v.class | tojson)"
+             elif (($v.reason // "") | length) == 0 then "\($p)::\($k): no reason"
+             elif $v.class != "long-running" and (($v.expect // "") | length) == 0
+               then "\($p)::\($k): no expect (every class but long-running names a line it must print)"
+             else empty end' "$1"
 }
 
 # workspace_version META_FILE -- the version the evidence directory is named for.
@@ -215,17 +273,54 @@ classify() {
     printf 'fail\t%s: %s\n' "${stage}" "$(oneline "${line:-no output}")"
 }
 
+# classify_declared RC LOG STAGE SECS CLASS EXPECT REASON -- prints CLASS \t CITE
+#
+# The declaration only ever speaks about a RUN that did not succeed. rc 0 is
+# `pass` whatever was declared, a build failure goes to classify(), and a
+# declared example that hangs is `timeout` unless it was declared long-running.
+classify_declared() {
+    local rc="$1" log="$2" stage="$3" secs="$4" class="$5" expect="$6" reason="$7" line
+    if [ "${rc}" -eq 0 ] || [ "${stage}" != 'run' ]; then
+        classify "${rc}" "${log}" "${stage}"
+        return 0
+    fi
+    if [ "${rc}" -eq 124 ] || [ "${rc}" -eq 137 ]; then
+        if [ "${class}" = 'long-running' ]; then
+            printf 'long-running\talive after %ss (declared: %s)\n' "${secs}" "$(oneline "${reason}")"
+        else
+            printf 'timeout\trun killed after %ss (declared %s)\n' "${secs}" "${class}"
+        fi
+        return 0
+    fi
+    if [ "${class}" = 'long-running' ]; then
+        # It was meant to stay up and it died: that is the defect a server smoke
+        # test exists to catch, so it is `fail` even when the line names a file.
+        line=$(grep -m1 -E '[^[:space:]]' "${log}" 2> /dev/null) || line=''
+        printf 'fail\tdeclared long-running, exited rc=%s before %ss: %s\n' \
+            "${rc}" "${secs}" "$(oneline "${line:-no output}")"
+        return 0
+    fi
+    line=$(grep -m1 -F -- "${expect}" "${log}" 2> /dev/null) || line=''
+    if [ -n "${line}" ]; then
+        printf '%s\tdeclared: %s\n' "${class}" "$(oneline "${line}")"
+        return 0
+    fi
+    line=$(grep -m1 -E '[^[:space:]]' "${log}" 2> /dev/null) || line=''
+    printf 'fail\tdeclared %s, but no line contains "%s": %s\n' \
+        "${class}" "$(oneline "${expect}")" "$(oneline "${line:-no output}")"
+}
+
 # ---------------------------------------------------------------------------
 # one example
 
-# build_then_run PKG NAME FEATS LOG -- rc of the first stage that failed,
+# build_then_run PKG NAME FEATS LOG SECS -- rc of the first stage that failed,
 # printing the stage name on stdout.
 #
 # The build is NOT wrapped: a build that hangs is cargo's lock or the host, a
 # different defect with a different remedy, and wrapping it would let a slow
 # cold build be reported as an example that hangs. Only the RUN is bounded.
 build_then_run() {
-    local pkg="$1" name="$2" feats="$3" log="$4" rc=0
+    local pkg="$1" name="$2" feats="$3" log="$4" secs="$5" rc=0
     local -a cargs=()
     if [ -n "${feats}" ]; then
         cargs+=(--features "${feats}")
@@ -245,7 +340,7 @@ build_then_run() {
         printf 'build\n'
         return "${rc}"
     fi
-    run_bounded "${TIMEOUT_SECS}" \
+    run_bounded "${secs}" \
         "${CARGO_BIN}" run -q --example "${name}" -p "${pkg}" "${cargs[@]}" \
         < /dev/null > "${log}" 2>&1 || rc=$?
     printf 'run\n'
@@ -258,7 +353,10 @@ build_then_run() {
 main_run() {
     local meta_file rows count out ver ws_root
     local td pkg name feats stage rc secs t0 class cite row note
-    local n_pass=0 n_fail=0 n_timeout=0 n_args=0 n_hw=0 n_data=0
+    local -A n=()
+    local -a classes=(pass fail timeout needs-args needs-hardware needs-data
+                      needs-feature needs-net needs-tty long-running)
+    local k summary dclass dexpect dreason bad bound
 
     require_tools
     td=$(mktemp -d)
@@ -269,6 +367,12 @@ main_run() {
     cargo_meta > "${meta_file}" || die 'cargo metadata failed; the universe is unknown' 2
     ws_root=$(jq -r '.workspace_root' "${meta_file}")
     ver=$(workspace_version "${meta_file}")
+
+    bad=$(check_declarations "${meta_file}") || die 'cannot read the dogfood-examples declarations' 2
+    if [ -n "${bad}" ]; then
+        printf 'FAIL (declaration): %s\n' "${bad}" >&2
+        die 'invalid [package.metadata.dogfood-examples] entry; nothing was run' 2
+    fi
 
     rows=$(enumerate_examples "${meta_file}")
     if [ -n "${FILTER}" ]; then
@@ -298,14 +402,23 @@ main_run() {
     printf '=== every example builds and runs (dogfood_examples.sh) ===\n'
     printf '%s example target(s), version %s, timeout %ss\n' "${count}" "${ver}" "${TIMEOUT_SECS}"
 
-    while IFS=$'\t' read -r pkg name _src feats; do
+    while IFS=$'\t' read -r pkg name _src feats dclass dexpect dreason; do
         [ -n "${pkg}" ] || continue
+        [ "${feats}" != '-' ] || feats=''
+        bound=${TIMEOUT_SECS}
+        [ "${dclass}" != 'long-running' ] || bound=${LONG_RUNNING_SECS}
         t0=${SECONDS}
         rc=0
-        stage=$(build_then_run "${pkg}" "${name}" "${feats}" "${td}/example.log") || rc=$?
+        stage=$(build_then_run "${pkg}" "${name}" "${feats}" "${td}/example.log" "${bound}") || rc=$?
         secs=$((SECONDS - t0))
-        IFS=$'\t' read -r class cite \
-            < <(classify "${rc}" "${td}/example.log" "${stage}") || true
+        if [ "${dclass}" = '-' ]; then
+            IFS=$'\t' read -r class cite \
+                < <(classify "${rc}" "${td}/example.log" "${stage}") || true
+        else
+            IFS=$'\t' read -r class cite \
+                < <(classify_declared "${rc}" "${td}/example.log" "${stage}" "${bound}" \
+                      "${dclass}" "${dexpect}" "${dreason}") || true
+        fi
         [ -n "${class}" ] || { class='fail'; cite='unclassified outcome'; }
         row=$(printf '%s\t%s\t%s\t%s\t%s\t%s' \
                 "${pkg}" "${name}" "${class}" "${rc}" "${secs}" "${cite}")
@@ -313,24 +426,21 @@ main_run() {
         note=''
         [ -z "${cite}" ] || note=" -- ${cite}"
         printf '%-14s %s::%s%s\n' "${class}" "${pkg}" "${name}" "${note}"
-        case "${class}" in
-            pass) n_pass=$((n_pass + 1)) ;;
-            fail) n_fail=$((n_fail + 1)) ;;
-            timeout) n_timeout=$((n_timeout + 1)) ;;
-            needs-args) n_args=$((n_args + 1)) ;;
-            needs-hardware) n_hw=$((n_hw + 1)) ;;
-            needs-data) n_data=$((n_data + 1)) ;;
-        esac
+        n[${class}]=$((${n[${class}]:-0} + 1))
     done < <(printf '%s\n' "${rows}")
 
-    printf '# summary pass=%s fail=%s timeout=%s needs-args=%s needs-hardware=%s needs-data=%s\n' \
-        "${n_pass}" "${n_fail}" "${n_timeout}" "${n_args}" "${n_hw}" "${n_data}" >> "${out}"
+    # Every class, in a fixed order, zeros included. The old trailer named six
+    # classes by hand, so needs-feature rows (added 2026-09-14) were never counted.
+    summary='summary'
+    for k in "${classes[@]}"; do
+        summary+=" ${k}=${n[${k}]:-0}"
+    done
+    printf '# %s\n' "${summary}" >> "${out}"
     printf 'wrote %s\n' "${out}"
-    printf 'summary pass=%s fail=%s timeout=%s needs-args=%s needs-hardware=%s needs-data=%s\n' \
-        "${n_pass}" "${n_fail}" "${n_timeout}" "${n_args}" "${n_hw}" "${n_data}"
+    printf '%s\n' "${summary}"
 
-    if [ "${n_fail}" -gt 0 ] || [ "${n_timeout}" -gt 0 ]; then
-        printf 'FAIL: %s example(s) failed, %s timed out.\n' "${n_fail}" "${n_timeout}"
+    if [ "${n[fail]:-0}" -gt 0 ] || [ "${n[timeout]:-0}" -gt 0 ]; then
+        printf 'FAIL: %s example(s) failed, %s timed out.\n' "${n[fail]:-0}" "${n[timeout]:-0}"
         exit 1
     fi
     printf 'PASS\n'
@@ -400,7 +510,8 @@ selftest() {
     out="${td}/examples.tsv"
     rc=0
     env CARGO_TARGET_DIR="${td}/target" \
-        bash "${SELF}" --manifest-path "${ws}/Cargo.toml" --timeout-secs 3 --out "${out}" \
+        bash "${SELF}" --manifest-path "${ws}/Cargo.toml" --timeout-secs 3 \
+        --long-running-secs 2 --out "${out}" \
         > "${td}/run.log" 2>&1 || rc=$?
 
     if [ ! -f "${out}" ]; then
@@ -418,6 +529,23 @@ selftest() {
     st_expect 'class: nohw -> needs-hardware' "${out}" "${p}" nohw needs-hardware
     st_expect 'class: nodata -> needs-data' "${out}" "${p}" nodata needs-data
     st_expect 'class: nofeature -> needs-feature' "${out}" "${p}" nofeature needs-feature
+    # Declared classes (#3560 R5): one row per form a declaration can take, and
+    # one per way a declaration must NOT excuse a run.
+    st_expect 'declared: server (long-running, stays up) -> long-running' "${out}" "${p}" server long-running
+    st_expect 'declared: server_crash (long-running, dies) -> fail' "${out}" "${p}" server_crash fail
+    st_expect 'declared: decl_args (expect present) -> needs-args' "${out}" "${p}" decl_args needs-args
+    st_expect 'declared: decl_drift (expect ABSENT) -> fail' "${out}" "${p}" decl_drift fail
+    st_expect 'declared: decl_ok (rc 0) -> pass' "${out}" "${p}" decl_ok pass
+    st_expect 'declared: decl_net -> needs-net' "${out}" "${p}" decl_net needs-net
+    st_expect 'declared: decl_tty -> needs-tty' "${out}" "${p}" decl_tty needs-tty
+    st_expect 'declared: decl_hang (not long-running) -> timeout' "${out}" "${p}" decl_hang timeout
+    st_expect 'declared: decl_build (does not compile) -> fail' "${out}" "${p}" decl_build fail
+    if awk -F'\t' '$2 == "decl_drift" && $6 ~ /no line contains "CUDA init failed"/ { f = 1 } END { exit !f }' "${out}"; then
+        st_row PASS 'declared: a missing expect line is named in the cite'
+    else
+        st_row FAIL 'declared: a missing expect line is named in the cite' \
+            "$(oneline "$(awk -F'\t' '$2 == "decl_drift" { print }' "${out}")")"
+    fi
 
     # NEEDS_FEATURE_RE, both polarities. A skip class is the dangerous kind of
     # addition -- it can only ever turn a `fail` into a non-failure -- so the
@@ -454,15 +582,15 @@ selftest() {
     fi
 
     # Every citing class cites a LINE, not an empty cell.
-    if awk -F'\t' '$3 == "needs-args" || $3 == "needs-hardware" || $3 == "needs-data" || $3 == "needs-feature" { if ($6 == "") bad = 1 } END { exit bad }' \
+    if awk -F'\t' '/^#/ { next } $3 != "pass" { if ($6 == "") bad = 1 } END { exit bad }' \
             "${out}"; then
-        st_row PASS 'cite: the four skip classes cite a line'
+        st_row PASS 'cite: every non-pass class cites a line'
     else
-        st_row FAIL 'cite: the four skip classes cite a line'
+        st_row FAIL 'cite: every non-pass class cites a line'
     fi
 
-    # Trailer counts.
-    if grep -qxF '# summary pass=1 fail=1 timeout=1 needs-args=1 needs-hardware=1 needs-data=1' "${out}"; then
+    # Trailer counts: every class, zeros included.
+    if grep -qxF '# summary pass=2 fail=4 timeout=2 needs-args=2 needs-hardware=1 needs-data=1 needs-feature=1 needs-net=1 needs-tty=1 long-running=1' "${out}"; then
         st_row PASS 'trailer: summary counts'
     else
         st_row FAIL 'trailer: summary counts' "$(oneline "$(grep '^# summary' "${out}" || true)")"
@@ -476,14 +604,15 @@ selftest() {
     fi
 
     # No unclassified row.
-    if awk -F'\t' '/^#/ { next } { if ($3 !~ /^(pass|fail|timeout|needs-args|needs-hardware|needs-data|needs-feature)$/) bad = 1 } END { exit bad }' \
+    if awk -F'\t' '/^#/ { next } { if ($3 !~ /^(pass|fail|timeout|needs-args|needs-hardware|needs-data|needs-feature|needs-net|needs-tty|long-running)$/) bad = 1 } END { exit bad }' \
             "${out}"; then
-        st_row PASS 'rows: every row carries one of the seven classes'
+        st_row PASS 'rows: every row carries one of the ten classes'
     else
-        st_row FAIL 'rows: every row carries one of the seven classes'
+        st_row FAIL 'rows: every row carries one of the ten classes'
     fi
 
     st_mutation_row "${td}" "${ws}" "${p}"
+    st_declaration_rows "${td}" "${ws}"
     st_vacuity_row "${td}" "${ws}"
 
     if [ "${ST_FAILED}" -gt 0 ]; then
@@ -515,7 +644,7 @@ st_mutation_row() {
             DOGFOOD_EXAMPLES_SELFTEST=1 DOGFOOD_EXAMPLES_MUTATE_NO_TIMEOUT=1 \
             timeout --signal=KILL 25 \
             bash "${SELF}" --manifest-path "${ws}/Cargo.toml" --timeout-secs 3 \
-            --filter 'hang' --out "${mout}" > "${td}/mutant.log" 2>&1 || irc=$?
+            --filter '::hang$' --out "${mout}" > "${td}/mutant.log" 2>&1 || irc=$?
         exit "${irc}"
     ) 2> /dev/null || mrc=$?
     got=''
@@ -538,7 +667,7 @@ st_mutation_row() {
     env CARGO_TARGET_DIR="${td}/target" DOGFOOD_EXAMPLES_MUTATE_NO_TIMEOUT=1 \
         timeout --signal=KILL 60 \
         bash "${SELF}" --manifest-path "${ws}/Cargo.toml" --timeout-secs 3 \
-        --filter 'hang' --out "${td}/refused.tsv" > "${td}/refused.log" 2>&1 || grc=$?
+        --filter '::hang$' --out "${td}/refused.tsv" > "${td}/refused.log" 2>&1 || grc=$?
     if [ "${grc}" -eq 2 ] && grep -q 'selftest-only mutation arm' "${td}/refused.log"; then
         st_row PASS 'mutation: the arm is refused outside the selftest (rc=2)'
     else
@@ -547,12 +676,49 @@ st_mutation_row() {
     fi
 }
 
+# st_declaration_rows TD WS -- one refusal row per way a declaration is invalid.
+#
+# Each variant is appended to the LAST table of the fixture manifest, so it is a
+# key of [package.metadata.dogfood-examples]. The run must exit 2 and name the
+# entry before building anything; a declaration that is silently ignored is a
+# skip nobody asked for.
+st_declaration_rows() {
+    local td="$1" ws="$2" i=0 drc entry want dws
+    while IFS='|' read -r entry want; do
+        i=$((i + 1))
+        dws="${td}/decl${i}"
+        mkdir -p "${dws}"
+        cp -R "${ws}/src" "${ws}/examples" "${dws}/"
+        cp "${ws}/Cargo.toml" "${dws}/Cargo.toml"
+        printf '%s\n' "${entry}" >> "${dws}/Cargo.toml"
+        drc=0
+        env CARGO_TARGET_DIR="${td}/target" \
+            bash "${SELF}" --manifest-path "${dws}/Cargo.toml" --timeout-secs 3 \
+            --filter '::ok$' --out "${td}/decl${i}.tsv" > "${td}/decl${i}.log" 2>&1 || drc=$?
+        if [ "${drc}" -eq 2 ] && grep -qF "${want}" "${td}/decl${i}.log" \
+                && [ ! -f "${td}/decl${i}.tsv" ]; then
+            st_row PASS "declaration refused: ${want}"
+        else
+            st_row FAIL "declaration refused: ${want}" \
+                "rc=${drc} tsv=$([ -f "${td}/decl${i}.tsv" ] && echo written || echo none) $(oneline "$(tail -3 "${td}/decl${i}.log")")"
+        fi
+    done << 'EOF'
+ghost = { class = "needs-data", expect = "x", reason = "a target that does not exist" }|ghost: no example target of that name
+ok = { class = "needs", expect = "x", reason = "a prefix of a real class" }|ok: unknown class "needs"
+ok = { class = "needs-data", reason = "no expect line" }|ok: no expect
+ok = { class = "long-running" }|ok: no reason
+ok = "needs-data"|ok: not a table
+EOF
+}
+
 # st_vacuity_row TD WS -- a package with no examples must exit 2, never 0.
 st_vacuity_row() {
     local td="$1" ws="$2" vrc=0 vac="$1/vac"
     mkdir -p "${vac}"
     cp -R "${ws}/src" "${vac}/"
-    cp "${ws}/Cargo.toml" "${vac}/Cargo.toml"
+    # Without the declarations: they name examples this package no longer has,
+    # and a stale declaration is refused (exit 2) before vacuity is reached.
+    sed '/^\[package\.metadata\.dogfood-examples\]/,$d' "${ws}/Cargo.toml" > "${vac}/Cargo.toml"
     env CARGO_TARGET_DIR="${td}/target" \
         bash "${SELF}" --manifest-path "${vac}/Cargo.toml" --timeout-secs 3 \
         --out "${td}/vac.tsv" > "${td}/vac.log" 2>&1 || vrc=$?
@@ -583,6 +749,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --timeout-secs)
             TIMEOUT_SECS="${2:-}"
+            shift 2
+            ;;
+        --long-running-secs)
+            LONG_RUNNING_SECS="${2:-}"
             shift 2
             ;;
         --filter)
@@ -627,6 +797,10 @@ case "${TIMEOUT_SECS}" in
     '' | *[!0-9]*) die "--timeout-secs wants a positive integer, got '${TIMEOUT_SECS}'" ;;
 esac
 [ "${TIMEOUT_SECS}" -gt 0 ] || die '--timeout-secs must be > 0'
+case "${LONG_RUNNING_SECS}" in
+    '' | *[!0-9]*) die "--long-running-secs wants a positive integer, got '${LONG_RUNNING_SECS}'" ;;
+esac
+[ "${LONG_RUNNING_SECS}" -gt 0 ] || die '--long-running-secs must be > 0'
 
 if [ "${SELFTEST}" -eq 1 ]; then
     # NOT exported: the refusal row below runs a child WITHOUT the marker, and an

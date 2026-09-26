@@ -482,20 +482,33 @@ fn bench_batch_prefill() -> BenchResult {
     }
 }
 
+// Block layouts as the GGUF readers define them. The fixture used to say "Q4_0:
+// 20 bytes" and "Q8_0: 36 bytes", which no reader accepts, so the example
+// panicked before it measured anything (#3181).
+const Q4_0_BLOCK_BYTES: usize = 2 + 16; // f16 scale + 32 packed nibbles
+const Q8_0_BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 int8 quants
+const FIXTURE_BLOCKS: usize = 32;
+
+fn q4_0_fixture() -> Vec<u8> {
+    vec![0u8; Q4_0_BLOCK_BYTES * FIXTURE_BLOCKS]
+}
+
+fn q8_0_fixture() -> Vec<u8> {
+    vec![0u8; Q8_0_BLOCK_BYTES * FIXTURE_BLOCKS]
+}
+
 /// Quantization format comparison (Q4_0, Q8_0, Q4_K)
 fn bench_quantization_formats() -> BenchResult {
     let iterations = 100;
 
-    // Q4_0: 20 bytes per 32 values
-    let q4_0_data = vec![0u8; 20 * 32];
+    let q4_0_data = q4_0_fixture();
     let start = Instant::now();
     for _ in 0..iterations {
         let _ = dequantize_q4_0(&q4_0_data).expect("test");
     }
     let _q4_0_time = start.elapsed();
 
-    // Q8_0: 36 bytes per 32 values
-    let q8_0_data = vec![0u8; 36 * 32];
+    let q8_0_data = q8_0_fixture();
     let start = Instant::now();
     for _ in 0..iterations {
         let _ = dequantize_q8_0(&q8_0_data).expect("test");
@@ -3306,7 +3319,42 @@ fn print_summary(cpu_results: &[BenchResult], gpu_results: &[BenchResult], gpu_a
         );
     }
 
-    // M3: GPU Token Generation
+    print_m3_wgpu_parity(gpu_results, gpu_available);
+    println!(
+        "    {} M4: Full Parity   - 230+ tok/s (90% llama.cpp)",
+        style("⏳").dim()
+    );
+
+    println!();
+    println!(
+        "  {}",
+        style("Toyota Way: Kaizen - Continuous Improvement")
+            .yellow()
+            .italic()
+    );
+    println!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #3181: every block of each fixture is a whole block to the reader,
+    /// 32 values per block.
+    #[test]
+    fn quant_fixtures_are_whole_blocks() {
+        assert_eq!(Q4_0_BLOCK_BYTES, 18);
+        assert_eq!(Q8_0_BLOCK_BYTES, 34);
+        let q4 = dequantize_q4_0(&q4_0_fixture()).expect("Q4_0 fixture");
+        assert_eq!(q4.len(), 32 * FIXTURE_BLOCKS);
+        let q8 = dequantize_q8_0(&q8_0_fixture()).expect("Q8_0 fixture");
+        assert_eq!(q8.len(), 32 * FIXTURE_BLOCKS);
+    }
+}
+
+/// M3 row of the summary, split out of `print_summary` to keep it under the
+/// complexity gate.
+fn print_m3_wgpu_parity(gpu_results: &[BenchResult], gpu_available: bool) {
     if gpu_available && !gpu_results.is_empty() {
         let gpu_token_gen = gpu_results.iter().find(|r| r.name.contains("Token Gen"));
         if let Some(gt) = gpu_token_gen {
@@ -3330,17 +3378,4 @@ fn print_summary(cpu_results: &[BenchResult], gpu_results: &[BenchResult], gpu_a
             style("⏳").dim()
         );
     }
-    println!(
-        "    {} M4: Full Parity   - 230+ tok/s (90% llama.cpp)",
-        style("⏳").dim()
-    );
-
-    println!();
-    println!(
-        "  {}",
-        style("Toyota Way: Kaizen - Continuous Improvement")
-            .yellow()
-            .italic()
-    );
-    println!();
 }

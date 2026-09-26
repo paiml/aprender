@@ -230,7 +230,9 @@ fn main() {
     let config_path = if args.len() > 2 && args[1] == "--config" {
         &args[2]
     } else {
-        "examples/llama2/configs/124m.toml"
+        // Anchored to the crate, not the cwd: `cargo run -p aprender-train` from
+        // the workspace root panicked on a config the repo ships (#3180).
+        concat!(env!("CARGO_MANIFEST_DIR"), "/examples/llama2/configs/124m.toml")
     };
 
     println!("📋 Loading config from {config_path}");
