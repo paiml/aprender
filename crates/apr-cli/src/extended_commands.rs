@@ -1594,6 +1594,27 @@ pub enum ModelCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Publish a release dir to the HF Hub: rc to its branch, released to main + tag (idempotent)
+    Publish {
+        /// Release directory holding model-release-v1.json
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// HF model repo, owner/name
+        #[arg(long)]
+        repo: String,
+        /// File holding the HF token, mode 0600, on the driver host (never an env var)
+        #[arg(long, value_name = "FILE")]
+        token_file: PathBuf,
+        /// Line state directory: <version>/model-publish-receipt-v1.json
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Hub endpoint
+        #[arg(long, default_value = "https://huggingface.co")]
+        endpoint: String,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Build a release dir plus model-release-v1.json from pacha lineage (deterministic)
     Pack {
         /// Registered model: id, content hash, recorded sha256 or model file

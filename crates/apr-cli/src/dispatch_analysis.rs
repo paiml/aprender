@@ -917,6 +917,14 @@ fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Re
             state,
             json,
         } => commands::model_confirm::run_confirm(dir, fetched, source, state, *json || cli.json),
+        ModelCommands::Publish {
+            dir,
+            repo,
+            token_file,
+            state,
+            endpoint,
+            json,
+        } => commands::hf_publish::run_publish(dir, repo, token_file, state, endpoint, *json || cli.json),
         ModelCommands::Yank {
             version,
             dir,

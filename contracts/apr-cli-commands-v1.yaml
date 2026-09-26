@@ -346,7 +346,7 @@ commands:
     # gate writes model-gate-receipt-v1.json into the release dir (or --out);
     # confirm/yank write only under --state/<version>/ (a yank never deletes).
     side_effects: [filesystem]
-    subcommands: [gate, pack, confirm, yank]
+    subcommands: [gate, pack, confirm, yank, publish]
 
   - name: canary
     category: evaluation

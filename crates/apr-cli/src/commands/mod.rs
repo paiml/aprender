@@ -101,6 +101,10 @@ pub(crate) mod lint_error;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod comparator;
 #[cfg(feature = "training")]
+pub(crate) mod hf_http;
+#[cfg(feature = "training")]
+pub(crate) mod hf_publish;
+#[cfg(feature = "training")]
 pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
 #[cfg(feature = "training")]
