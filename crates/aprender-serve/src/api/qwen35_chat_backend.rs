@@ -16,6 +16,7 @@ fn spawn_streaming_generate(
     stop_tokens: Vec<u32>,
     tx: tokio::sync::mpsc::Sender<Result<u32, String>>,
     sink_metrics: Arc<crate::metrics::MetricsCollector>,
+    timing_tx: tokio::sync::oneshot::Sender<crate::api::PhaseTimings>,
 ) {
     tokio::task::spawn_blocking(move || {
         let mut sink = crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
@@ -28,7 +29,12 @@ fn spawn_streaming_generate(
                 session
                     .on_gpu
                     .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
-                r.map(|_| ()).map_err(|e| e.to_string())
+                // SRV-TIM-001: sent before `tx` drops, so the terminal chunk
+                // finds the split already waiting.
+                r.map(|turn| {
+                    let _ = timing_tx.send(crate::api::PhaseTimings::from_turn(&turn));
+                })
+                .map_err(|e| e.to_string())
             },
             Err(_) => Err(POISONED.to_string()),
         };
@@ -149,6 +155,7 @@ async fn try_qwen35_backend(
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
         let sink_metrics = state.metrics.clone();
+        let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
         spawn_streaming_generate(
             session,
             input_ids,
@@ -156,6 +163,7 @@ async fn try_qwen35_backend(
             stop_tokens,
             tx,
             sink_metrics,
+            timing_tx,
         );
         return Some(crate::api::openai_handlers::true_streaming_sse_response(
             rx,
@@ -166,7 +174,7 @@ async fn try_qwen35_backend(
             start,
             budget,
             prompt_token_count,
-            None,
+            Some(timing_rx),
             request.stop.as_deref(),
         ));
     }
@@ -207,6 +215,8 @@ async fn try_qwen35_backend(
     }
     let completion_tokens = generated_ids.len();
     let response_text = clean_chat_output(&decode_mapped.model.decode(&generated_ids));
+    let timings =
+        crate::api::PhaseTimings::from_turn(&turn).to_timings(prompt_token_count, completion_tokens);
 
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
@@ -222,8 +232,8 @@ async fn try_qwen35_backend(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
-        None,
-        None,
+        timings,
+        Some(turn.used_gpu),
     ))
 }
 

@@ -20,10 +20,9 @@ use axum::{
 use futures::stream::Stream;
 
 use super::{
-    build_trace_data, clean_chat_output, format_chat_messages,
-    format_chat_messages_for_state_thinking, AppState, ChatChoice, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse, FinishReason,
-    OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
+    clean_chat_output, format_chat_messages, format_chat_messages_for_state_thinking, AppState,
+    ChatChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage,
+    ErrorResponse, FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -677,12 +676,13 @@ pub(crate) fn build_chat_response(
     timings: Option<super::Timings>,
     used_gpu: Option<bool>,
 ) -> Response {
-    let (brick_trace, step_trace, layer_trace) = build_trace_data(
+    let (brick_trace, step_trace, layer_trace) = super::build_trace_data_phased(
         trace_level,
         latency.as_micros() as u64,
         prompt_tokens,
         completion_tokens,
         28,
+        timings.as_ref(),
     );
     let (text, finish_reason) = finalize_chat_text(text, stops, completion_tokens, max_tokens);
 
@@ -701,6 +701,18 @@ pub(crate) fn build_chat_response(
         ),
     };
 
+    crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+        &request_id,
+        &model,
+        "chat",
+        used_gpu,
+        false,
+        prompt_tokens,
+        completion_tokens,
+        timings.as_ref(),
+        latency,
+        &finish_reason,
+    ));
     Json(ChatCompletionResponse {
         used_gpu,
         id: request_id,
@@ -814,6 +826,8 @@ fn pregenerated_sse_response(
     stops: Option<&[String]>,
     max_tokens: usize,
     prompt_tokens: usize,
+    timings: Option<super::Timings>,
+    start: Instant,
 ) -> Response {
     let completion_tokens = token_ids.len();
     // aprender#4340: the chat stop markers `clean_chat_output` truncates the
@@ -850,14 +864,26 @@ fn pregenerated_sse_response(
             }
         }
 
-        // PP-27: no `timings` here. This path has no prefill/decode split to
-        // report — generation was already over when the response was built.
+        // SRV-TIM-001: generation was over when this response was built, but the
+        // engine measured its split while it ran; the caller hands it in.
+        crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+            &request_id,
+            &model_name,
+            "chat",
+            None,
+            true,
+            prompt_tokens,
+            completion_tokens,
+            timings.as_ref(),
+            start.elapsed(),
+            finish.as_str(),
+        ));
         if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
             &request_id,
             &model_name,
             finish,
             usage,
-            None,
+            timings,
         )) {
             yield evt;
         }
@@ -1001,6 +1027,18 @@ pub(crate) fn true_streaming_sse_response(
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
         };
+        crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+            &request_id,
+            &model_name,
+            "chat",
+            None,
+            true,
+            prompt_tokens,
+            completion_tokens,
+            timings.as_ref(),
+            start.elapsed(),
+            finish.as_str(),
+        ));
         if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
             &request_id,
             &model_name,
@@ -1086,7 +1124,9 @@ fn try_gpu_backend(
             ));
         },
     };
-    let generated = match model.generate(&prompt_usize, &gpu_config) {
+    let mut clock = super::PhaseClock::start();
+    let generated = match model.generate_observed(&prompt_usize, &gpu_config, &mut || clock.mark())
+    {
         Ok(g) => g,
         Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
     };
@@ -1097,6 +1137,7 @@ fn try_gpu_backend(
         .map(|&x| x as u32)
         .collect();
     let completion_tokens = token_ids.len();
+    let timings = clock.finish().to_timings(prompt_tokens, completion_tokens);
 
     if request.stream {
         state
@@ -1110,6 +1151,8 @@ fn try_gpu_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            timings,
+            start,
         ));
     }
 
@@ -1132,9 +1175,7 @@ fn try_gpu_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
-        // This backend does not separate prefill from decode; §3 timings are
-        // absent rather than zero.
-        None,
+        timings,
         None,
     ))
 }
@@ -1182,17 +1223,24 @@ fn try_cached_backend(
         ..Default::default()
     };
 
-    let generated = match cached_model
-        .model()
-        .generate_with_cache(&prompt_ids, &q_config)
-    {
-        Ok(g) => g,
-        // aprender#2376(9): context-budget rejections are 400, not 500.
-        Err(e) => return Some(fail_response(state, super::generation_error_status(&e), e)),
-    };
+    // SRV-TIM-001: the streaming variant is the same seeded loop; its callback
+    // marks the prefill boundary.
+    let mut clock = super::PhaseClock::start();
+    let generated =
+        match cached_model
+            .model()
+            .generate_with_cache_streaming(&prompt_ids, &q_config, |_| {
+                clock.mark();
+                true
+            }) {
+            Ok(g) => g,
+            // aprender#2376(9): context-budget rejections are 400, not 500.
+            Err(e) => return Some(fail_response(state, super::generation_error_status(&e), e)),
+        };
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
     let completion_tokens = token_ids.len();
+    let timings = clock.finish().to_timings(prompt_tokens, completion_tokens);
 
     if request.stream {
         state
@@ -1206,6 +1254,8 @@ fn try_cached_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            timings,
+            start,
         ));
     }
 
@@ -1228,9 +1278,7 @@ fn try_cached_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
-        // This backend does not separate prefill from decode; §3 timings are
-        // absent rather than zero.
-        None,
+        timings,
         None,
     ))
 }

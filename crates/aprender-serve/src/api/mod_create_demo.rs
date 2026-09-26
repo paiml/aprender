@@ -473,11 +473,11 @@ pub struct TraceOperation {
     pub details: Option<String>,
 }
 
-/// Build trace data based on X-Trace-Level header
+/// Build trace data based on X-Trace-Level header, without a phase split.
 ///
 /// Returns (brick_trace, step_trace, layer_trace) tuple based on requested level.
-/// Only reports wall-clock totals — per-operation breakdown requires `apr profile`
-/// with BrickProfiler instrumentation. We refuse to fabricate per-op estimates.
+/// Same as [`build_trace_data_phased`] with no measured split: the single entry
+/// is the wall-clock total. We refuse to fabricate per-op estimates.
 #[must_use]
 pub fn build_trace_data(
     trace_level: Option<&str>,
@@ -486,71 +486,89 @@ pub fn build_trace_data(
     completion_tokens: usize,
     num_layers: usize,
 ) -> (Option<TraceData>, Option<TraceData>, Option<TraceData>) {
-    match trace_level {
-        Some("brick") => (
-            Some(TraceData {
-                level: "brick".to_string(),
-                operations: completion_tokens,
-                total_time_us: latency_us,
-                breakdown: vec![
-                    TraceOperation {
-                        name: "total_inference".to_string(),
-                        time_us: latency_us,
-                        details: Some(format!(
-                            "{} prompt + {} completion tokens, {} layers. \
-                             Per-op breakdown not available — use `apr profile` for real brick-level telemetry",
-                            prompt_tokens, completion_tokens, num_layers
-                        )),
-                    },
-                ],
-                provenance: TraceProvenance::WallClockTotal,
-            }),
-            None,
-            None,
+    build_trace_data_phased(
+        trace_level,
+        latency_us,
+        prompt_tokens,
+        completion_tokens,
+        num_layers,
+        None,
+    )
+}
+
+/// SRV-TIM-001: X-Trace-Level wired to the response's measured phase split.
+///
+/// With `timings`, every level's breakdown is the two measured phases —
+/// `prefill` (`timings.prompt_ms`) and `decode` (`timings.predicted_ms`) —
+/// with provenance `Measured`: the same numbers the response's `timings`
+/// carries. The server records nothing finer (no per-brick, per-step or
+/// per-layer clock), so no level claims finer. Without `timings` the one entry
+/// is the wall-clock total, provenance `WallClockTotal`.
+#[must_use]
+pub fn build_trace_data_phased(
+    trace_level: Option<&str>,
+    latency_us: u64,
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    num_layers: usize,
+    timings: Option<&Timings>,
+) -> (Option<TraceData>, Option<TraceData>, Option<TraceData>) {
+    let (level, operations) = match trace_level {
+        Some("brick") => ("brick", completion_tokens),
+        Some("step") => ("step", completion_tokens),
+        Some("layer") => ("layer", num_layers),
+        _ => return (None, None, None),
+    };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let us = |ms: f64| (ms.max(0.0) * 1000.0) as u64;
+    let (breakdown, provenance) = match timings {
+        Some(t) => (
+            vec![
+                TraceOperation {
+                    name: "prefill".to_string(),
+                    time_us: us(t.prompt_ms),
+                    details: Some(format!(
+                        "{} prompt tokens, measured ({}). Finer than prefill/decode is \
+                         not recorded by the server",
+                        t.prompt_n, t.clock
+                    )),
+                },
+                TraceOperation {
+                    name: "decode".to_string(),
+                    time_us: us(t.predicted_ms),
+                    details: Some(format!(
+                        "{} generated tokens, measured ({})",
+                        t.predicted_n, t.clock
+                    )),
+                },
+            ],
+            TraceProvenance::Measured,
         ),
-        Some("step") => (
-            None,
-            Some(TraceData {
-                level: "step".to_string(),
-                operations: completion_tokens,
-                total_time_us: latency_us,
-                breakdown: vec![
-                    TraceOperation {
-                        name: "total_inference".to_string(),
-                        time_us: latency_us,
-                        details: Some(format!(
-                            "{} prompt + {} completion tokens, {} layers. \
-                             Step-level breakdown not instrumented — use `apr profile` for real timing",
-                            prompt_tokens, completion_tokens, num_layers
-                        )),
-                    },
-                ],
-                provenance: TraceProvenance::WallClockTotal,
-            }),
-            None,
+        None => (
+            vec![TraceOperation {
+                name: "total_inference".to_string(),
+                time_us: latency_us,
+                details: Some(format!(
+                    "{prompt_tokens} prompt + {completion_tokens} completion tokens, \
+                     {num_layers} layers. This backend reported no phase split, so only \
+                     the wall-clock total is real"
+                )),
+            }],
+            TraceProvenance::WallClockTotal,
         ),
-        Some("layer") => (
-            None,
-            None,
-            Some(TraceData {
-                level: "layer".to_string(),
-                operations: num_layers,
-                total_time_us: latency_us,
-                breakdown: vec![
-                    TraceOperation {
-                        name: "total_inference".to_string(),
-                        time_us: latency_us,
-                        details: Some(format!(
-                            "{} layers, {} tokens. \
-                             Per-layer breakdown not instrumented — use `apr profile --granular` for real per-layer timing",
-                            num_layers, prompt_tokens + completion_tokens
-                        )),
-                    },
-                ],
-                provenance: TraceProvenance::WallClockTotal,
-            }),
-        ),
-        _ => (None, None, None),
+    };
+    let trace = Some(TraceData {
+        level: level.to_string(),
+        // Measured: the entries ARE the operations; nothing else was clocked.
+        operations: if timings.is_some() { breakdown.len() } else { operations },
+        total_time_us: latency_us,
+        breakdown,
+        provenance,
+    });
+    match level {
+        "brick" => (trace, None, None),
+        "step" => (None, trace, None),
+        _ => (None, None, trace),
     }
 }
 
@@ -637,6 +655,52 @@ pub struct Timings {
 /// The clock [`Timings`] is measured on.
 pub const TIMINGS_CLOCK: &str = "server std::time::Instant (CLOCK_MONOTONIC)";
 
+/// SRV-TIM-001: the prefill/decode split for an engine that reports each
+/// chosen token through a callback. The first `mark` is the boundary — the
+/// prompt has been forwarded and the first token chosen (a host read-back on
+/// every backend), so timing it adds no synchronisation. A turn whose first
+/// sampled token was a stop token never calls `mark` (the engines check stop
+/// before the callback): it generated nothing, so the whole call was prefill
+/// and its decode is a measured 0 ms over 0 tokens — not an absent split.
+#[derive(Debug, Clone, Copy)]
+pub struct PhaseClock {
+    start: std::time::Instant,
+    first_token: Option<std::time::Instant>,
+}
+
+impl PhaseClock {
+    /// Start timing a turn; call immediately before the engine runs.
+    #[must_use]
+    pub fn start() -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            first_token: None,
+        }
+    }
+
+    /// Record a chosen token. Only the first call moves the boundary.
+    pub fn mark(&mut self) {
+        if self.first_token.is_none() {
+            self.first_token = Some(std::time::Instant::now());
+        }
+    }
+
+    /// The split, as of now.
+    #[must_use]
+    pub fn finish(&self) -> PhaseTimings {
+        let Some(first) = self.first_token else {
+            return PhaseTimings {
+                prefill_ms: Some(self.start.elapsed().as_secs_f64() * 1000.0),
+                decode_ms: Some(0.0),
+            };
+        };
+        PhaseTimings {
+            prefill_ms: Some(first.duration_since(self.start).as_secs_f64() * 1000.0),
+            decode_ms: Some(first.elapsed().as_secs_f64() * 1000.0),
+        }
+    }
+}
+
 /// What an engine measured for one request, on its way to the handler.
 ///
 /// [`Timings`] is the wire shape and needs token COUNTS the handler owns; this
@@ -655,6 +719,26 @@ pub struct PhaseTimings {
 }
 
 impl PhaseTimings {
+    /// From a measured (prefill, decode) split; `None` stays unmeasured.
+    #[must_use]
+    pub fn from_split(split: Option<(std::time::Duration, std::time::Duration)>) -> Self {
+        split.map_or_else(Self::default, |(prefill, decode)| Self {
+            prefill_ms: Some(prefill.as_secs_f64() * 1000.0),
+            decode_ms: Some(decode.as_secs_f64() * 1000.0),
+        })
+    }
+
+    /// SRV-TIM-001: both phases of one [`crate::session::Session`] turn. The
+    /// session measures its prefill/decode boundary on every backend it
+    /// drives, so a handler serving a `Turn` always has a split to report.
+    #[must_use]
+    pub fn from_turn(turn: &crate::session::Turn) -> Self {
+        Self {
+            prefill_ms: Some(turn.prefill.as_secs_f64() * 1000.0),
+            decode_ms: Some(turn.decode.as_secs_f64() * 1000.0),
+        }
+    }
+
     /// Pair the measured durations with the token counts the handler knows.
     ///
     /// Returns `None` unless BOTH phases were measured. A `timings` block whose

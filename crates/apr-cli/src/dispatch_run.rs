@@ -194,6 +194,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             context_length,
             no_fp8_cache,
             ollama_compat,
+            timings_log,
         } => {
             // PERF-021: answer "what can this BUILD dispatch to" without needing
             // a model or a port — the question a user hitting #2696 had no way
@@ -208,6 +209,19 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                     "serve run needs a model file".to_string(),
                 ));
             };
+            if let Some(log_path) = timings_log.as_deref() {
+                #[cfg(feature = "inference")]
+                realizar::api::request_log::set_timings_log(
+                    log_path,
+                    concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
+                )
+                .map_err(CliError::InvalidInput)?;
+                #[cfg(not(feature = "inference"))]
+                return Err(CliError::InvalidInput(format!(
+                    "--timings-log {}: this build has no inference feature",
+                    log_path.display()
+                )));
+            }
             crate::error::resolve_model_path(file).and_then(|r| {
             dispatch_serve(
                 &r,

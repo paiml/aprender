@@ -383,11 +383,17 @@ fn try_quantized_backend(
         let prompt_ids_clone = prompt_ids.clone();
         let q_config_clone = q_config.clone();
         let sink_metrics = state.metrics.clone();
+        let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
 
         tokio::task::spawn_blocking(move || {
             // Stops when the client goes away — see `streaming_token_sink`.
-            let mut sink =
+            let mut client_sink =
                 crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
+            let mut clock = crate::api::PhaseClock::start();
+            let mut sink = |t: u32| {
+                clock.mark();
+                client_sink(t)
+            };
             let result = if q_config_clone.trace {
                 quantized_model_clone
                     .generate_with_cache_streaming(&prompt_ids_clone, &q_config_clone, sink)
@@ -402,6 +408,14 @@ fn try_quantized_backend(
                 )
                 .map(drop)
             };
+            // SRV-TIM-001: sent before `tx` drops, so the terminal chunk finds it.
+            // A failed engine has no split: the unmarked-clock rule (decode
+            // 0 ms over 0 tokens) is for a turn that ran and stopped.
+            let _ = timing_tx.send(if result.is_ok() {
+                clock.finish()
+            } else {
+                crate::api::PhaseTimings::default()
+            });
             if let Err(e) = result {
                 let _ = tx.blocking_send(Err(e.to_string()));
             }
@@ -416,9 +430,7 @@ fn try_quantized_backend(
             start,
             max_tokens,
             prompt_tokens,
-            // The CPU quantized decode loop does not separate prefill from
-            // decode, so §3 timings are absent rather than zero.
-            None,
+            Some(timing_rx),
             request.stop.as_deref(),
         ));
     }
@@ -426,16 +438,23 @@ fn try_quantized_backend(
     // Non-streaming quantized
     // #4268: the dense CPU turn runs on the one engine; `--trace` keeps the
     // instrumented loop.
+    let mut clock = crate::api::PhaseClock::start();
+    let mut mark = |_: u32| {
+        clock.mark();
+        true
+    };
     let generated = if q_config.trace {
-        quantized_model.generate_with_cache(&prompt_ids, &q_config)
+        quantized_model.generate_with_cache_streaming(&prompt_ids, &q_config, &mut mark)
     } else {
-        crate::gguf::dense_session::dense_turn(
+        crate::gguf::dense_session::dense_stream(
             &mut dense_cpu_session(quantized_model),
             &prompt_ids,
             &q_config,
+            &mut mark,
         )
         .map(|(tokens, _)| tokens)
     };
+    let phases = clock.finish();
     let generated = match generated {
         Ok(g) => g,
         Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
@@ -462,7 +481,7 @@ fn try_quantized_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
-        None,
+        phases.to_timings(prompt_tokens, completion_tokens),
         None,
     ))
 }
@@ -523,7 +542,13 @@ fn try_apr_transformer_backend(
         ..Default::default()
     };
 
-    let generated = match apr_transformer.generate_with_cache(&prompt_ids, &gen_config) {
+    let mut clock = crate::api::PhaseClock::start();
+    let generated = apr_transformer.generate_with_cache_streaming(&prompt_ids, &gen_config, |_| {
+        clock.mark();
+        true
+    });
+    let phases = clock.finish();
+    let generated = match generated {
         Ok(g) => g,
         Err(e) => {
             return Some(fail_response(
@@ -549,6 +574,8 @@ fn try_apr_transformer_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            phases.to_timings(prompt_tokens, completion_tokens),
+            start,
         ));
     }
 
@@ -571,7 +598,7 @@ fn try_apr_transformer_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
-        None,
+        phases.to_timings(prompt_tokens, completion_tokens),
         None,
     ))
 }
@@ -680,7 +707,10 @@ fn registry_fallback(
     let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
     let config = build_gen_config(request).with_cancel(cancel.clone());
 
-    let token_ids: Vec<u32> = match registry_token_ids(state, model.generate(&prompt, &config)) {
+    let mut clock = crate::api::PhaseClock::start();
+    let generated = model.generate_observed(&prompt, &config, &mut |_| clock.mark());
+    let phases = clock.finish();
+    let token_ids: Vec<u32> = match registry_token_ids(state, generated) {
         Ok(ids) => ids,
         Err(r) => return r,
     };
@@ -700,6 +730,8 @@ fn registry_fallback(
             request.stop.as_deref(),
             request.max_tokens.unwrap_or(256),
             prompt_tokens,
+            phases.to_timings(prompt_tokens, completion_tokens),
+            start,
         );
     }
 
@@ -724,7 +756,7 @@ fn registry_fallback(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
-        None,
+        phases.to_timings(prompt_tokens, completion_tokens),
         None,
     )
 }
@@ -883,6 +915,7 @@ async fn try_apr_q4k_chat_backend(
         }
     };
     let completion_tokens = resp.tokens_generated;
+    let phases = resp.phases;
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
@@ -899,7 +932,7 @@ async fn try_apr_q4k_chat_backend(
         start.elapsed(),
         request.tools.as_deref(),
         request_tool_choice(request),
-        None,
+        phases.to_timings(prompt_tokens, completion_tokens),
         None,
     ))
 }
@@ -1164,16 +1197,30 @@ fn moe_stream_cpu(
     let input_ids_clone = input_ids.to_vec();
     let gen_config_clone = gen_config.clone();
     let sink_metrics = state.metrics.clone();
+    let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
 
     tokio::task::spawn_blocking(move || {
+        // Stops when the client goes away — see `streaming_token_sink`.
+        let mut client_sink =
+            crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
+        let mut clock = crate::api::PhaseClock::start();
         let result = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate_streaming(
             &mapped_clone,
             &quantized_clone,
             &input_ids_clone,
             &gen_config_clone,
-            // Stops when the client goes away — see `streaming_token_sink`.
-            crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
+            |t| {
+                clock.mark();
+                client_sink(t)
+            },
         );
+        // SRV-TIM-001: sent before `tx` drops, so the terminal chunk finds it.
+        // A failed engine has no split (see the dense arm above).
+        let _ = timing_tx.send(if result.is_ok() {
+            clock.finish()
+        } else {
+            crate::api::PhaseTimings::default()
+        });
         if let Err(e) = result {
             let _ = tx.blocking_send(Err(e.to_string()));
         }
@@ -1188,8 +1235,7 @@ fn moe_stream_cpu(
         start,
         max_tokens,
         prompt_token_count,
-        // The MoE generator reports no phase split; §3 timings are absent.
-        None,
+        Some(timing_rx),
         request.stop.as_deref(),
     )
 }
@@ -1266,7 +1312,7 @@ fn try_qwen3_moe_backend(
     // #3987: the ONE dispatch `apr run` uses (#3714), not the CPU-only generator this
     // used to call directly. On a CUDA server (`with_moe_gpu`) it serves on the GPU; a GPU
     // that cannot serve prints its reason and the CPU chain runs, and `used_gpu` says so.
-    let (tokens, used_gpu) = match crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
+    let (tokens, used_gpu, split) = match crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch_timed(
         &mapped,
         &quantized,
         &input_ids,
@@ -1286,6 +1332,7 @@ fn try_qwen3_moe_backend(
 
     let generated_ids: Vec<u32> = tokens[input_ids.len()..].to_vec();
     let completion_tokens = generated_ids.len();
+    let timings = crate::api::PhaseTimings::from_split(split).to_timings(prompt_token_count, completion_tokens);
 
     if request.stream {
         state.metrics.record_success(completion_tokens, start.elapsed());
@@ -1297,6 +1344,8 @@ fn try_qwen3_moe_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_token_count,
+            timings,
+            start,
         ));
     }
 
@@ -1327,7 +1376,7 @@ fn try_qwen3_moe_backend(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
-        None,
+        timings,
         Some(used_gpu),
     ))
 }

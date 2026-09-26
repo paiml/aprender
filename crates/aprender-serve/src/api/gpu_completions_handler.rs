@@ -65,9 +65,11 @@ fn try_gpu_completions(
             format!("GPU lock: {e}"),
         )
     })?;
+    let mut clock = super::PhaseClock::start();
     let generated = gpu_model
-        .generate(&prompt, &gpu_config)
+        .generate_observed(&prompt, &gpu_config, &mut || clock.mark())
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let phases = clock.finish();
 
     let token_ids: Vec<u32> = generated
         .iter()
@@ -110,6 +112,7 @@ fn try_gpu_completions(
         },
         // This arm records no backend (#3894).
         used_gpu: None,
+        timings: phases.to_timings(prompt_tokens, completion_tokens),
     }))
 }
 
@@ -170,8 +173,12 @@ fn try_apr_transformer_completions(
     // aprender#2376 finding 9 / #2609: a caller-supplied prompt longer than the
     // context window is fully determined by the request, so it is 400 — not the
     // 500 that invites a retry of the identical body.
+    let mut clock = super::PhaseClock::start();
     let generated = apr_transformer
-        .generate_with_cache(&prompt_ids, &gen_config)
+        .generate_with_cache_streaming(&prompt_ids, &gen_config, |_| {
+            clock.mark();
+            true
+        })
         .map_err(|e| {
             rerr(
                 state,
@@ -179,6 +186,7 @@ fn try_apr_transformer_completions(
                 format!("APR generation failed: {e}"),
             )
         })?;
+    let phases = clock.finish();
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
     let completion_tokens = token_ids.len();
@@ -191,7 +199,7 @@ fn try_apr_transformer_completions(
 
     // #2465(2): stops and finish_reason come from the shared `apply_stop_sequences`
     // inside `completion_resp`, so this backend cannot drift from the others.
-    Ok(Some(completion_resp(
+    let mut response = completion_resp(
         "cmpl",
         request.model.clone(),
         text,
@@ -202,7 +210,9 @@ fn try_apr_transformer_completions(
         // The APR transformer arm reports no backend: nothing in its path records
         // whether the generation ran on the accelerator (#3894).
         None,
-    )))
+    );
+    response.timings = phases.to_timings(prompt_tokens, completion_tokens);
+    Ok(Some(response))
 }
 
 /// CPU model fallback.
@@ -249,9 +259,11 @@ fn registry_completions(
     )
     .with_cancel(cancel.clone());
 
+    let mut clock = super::PhaseClock::start();
     let generated = model
-        .generate(&prompt, &config)
+        .generate_observed(&prompt, &config, &mut |_| clock.mark())
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let phases = clock.finish();
     let token_ids: Vec<u32> = generated
         .iter()
         .skip(prompt_tokens)
@@ -270,7 +282,7 @@ fn registry_completions(
     // looked at `request.stop`. `{"stop":["\n"]}` was accepted, the generation ran the
     // full `max_tokens` past it, and the stop string came back inside `choices[0].text`
     // with `finish_reason: "length"`. `completion_resp` now applies the stops.
-    Ok(completion_resp(
+    let mut response = completion_resp(
         "cmpl",
         request.model.clone(),
         text,
@@ -280,7 +292,9 @@ fn registry_completions(
         request.stop.as_deref(),
         // The registry arm is the CPU fallback of last resort and records nothing.
         None,
-    ))
+    );
+    response.timings = phases.to_timings(prompt_tokens, completion_tokens);
+    Ok(response)
 }
 
 /// ALB-098: Q4K GPU completions via dedicated inference thread.
@@ -345,7 +359,7 @@ async fn try_apr_q4k_completions(
     state.metrics.record_success(completion_tokens, start.elapsed());
 
     // PMAT-755 / #2465(2): stops are applied by `completion_resp`.
-    Ok(Some(completion_resp(
+    let mut response = completion_resp(
         "cmpl",
         request.model.clone(),
         text,
@@ -356,7 +370,9 @@ async fn try_apr_q4k_completions(
         // `AprQ4kResponse` carries output_tokens/tokens_generated/timings and NO
         // backend flag, so this arm cannot report what ran (#3894).
         None,
-    )))
+    );
+    response.timings = resp.phases.to_timings(prompt_tokens, completion_tokens);
+    Ok(Some(response))
 }
 
 /// realizar#184 / ALB-136: CUDA GGUF completions via batch scheduler.
@@ -402,16 +418,16 @@ async fn try_cuda_gguf_completions(
     // realizr#212: non_streaming flag tells scheduler to accumulate + bulk-send.
     let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(max_tokens + 1);
 
+    let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<super::PhaseTimings>();
     let batch_req = CudaBatchRequest {
         prompt_ids,
         config: q_config,
         token_tx,
         non_streaming: true,
         enqueue_time: std::time::Instant::now(),
-        // §3: `/v1/completions` has no `timings` field on its response shape,
-        // so there is nothing for the engine's measurement to reach. Dropped
-        // rather than measured-and-discarded.
-        timing_tx: None,
+        // SRV-TIM-001: `/v1/completions` now carries `timings`, so the
+        // engine's split is received like the chat path's.
+        timing_tx: Some(timing_tx),
     };
 
     batch_tx.try_send(batch_req).map_err(|_| {
@@ -444,7 +460,7 @@ async fn try_cuda_gguf_completions(
     // inline loop cut at the first-LISTED stop that matched, not the earliest-position one —
     // e.g. stop=["world","hello"] on "hello world" wrongly kept "hello ". #2465(2) moved the
     // call into `completion_resp`, which every completion backend already goes through.
-    Ok(Some(completion_resp(
+    let mut response = completion_resp(
         "cmpl",
         request.model.clone(),
         text,
@@ -454,7 +470,9 @@ async fn try_cuda_gguf_completions(
         request.stop.as_deref(),
         // The CUDA GGUF batch arm records no backend flag on its response.
         None,
-    )))
+    );
+    response.timings = timing_rx.await.unwrap_or_default().to_timings(prompt_tokens, completion_tokens);
+    Ok(Some(response))
 }
 
 /// Turn a finished completion into the SSE frames an OpenAI streaming client reads.
@@ -476,7 +494,10 @@ pub(crate) fn completion_sse_response(response: &CompletionResponse) -> axum::re
         |c| c.finish_reason.clone(),
     );
 
-    let envelope = |text: String, finish_reason: Option<String>, usage: Option<Usage>| CompletionChunk {
+    let envelope = |text: String,
+                    finish_reason: Option<String>,
+                    usage: Option<Usage>,
+                    timings: Option<super::Timings>| CompletionChunk {
         id: response.id.clone(),
         object: response.object.clone(),
         created: response.created,
@@ -488,17 +509,20 @@ pub(crate) fn completion_sse_response(response: &CompletionResponse) -> axum::re
             finish_reason,
         }],
         usage,
+        timings,
     };
 
     let mut chunks: Vec<CompletionChunk> = crate::api::ollama_handlers::content_fragments(text)
         .into_iter()
-        .map(|fragment| envelope(fragment, None, None))
+        .map(|fragment| envelope(fragment, None, None, None))
         .collect();
-    // #4272: the terminal chunk carries the usage the body carries.
+    // #4272: the terminal chunk carries the usage the body carries; SRV-TIM-001:
+    // and the timings.
     chunks.push(envelope(
         String::new(),
         Some(finish_reason),
         Some(response.usage.clone()),
+        response.timings.clone(),
     ));
 
     let stream = tokio_stream::iter(
@@ -529,6 +553,7 @@ pub async fn openai_completions_handler(
 ) -> Result<axum::response::Response, RErr> {
     use axum::response::IntoResponse;
 
+    let handler_start = std::time::Instant::now();
     let stream = request.stream;
     // #4272: a Qwen3.5 session streams LIVE from its `on_token`; every other
     // backend still buffers and slices (below).
@@ -538,6 +563,21 @@ pub async fn openai_completions_handler(
         }
     }
     let completion = completions_inner(state, request, cancel).await?;
+    crate::api::request_log::emit(&crate::api::request_log::RequestRecord::new(
+        &completion.id,
+        &completion.model,
+        "completions",
+        completion.used_gpu,
+        stream,
+        completion.usage.prompt_tokens,
+        completion.usage.completion_tokens,
+        completion.timings.as_ref(),
+        handler_start.elapsed(),
+        completion
+            .choices
+            .first()
+            .map_or("", |c| c.finish_reason.as_str()),
+    ));
     Ok(if stream {
         completion_sse_response(&completion)
     } else {
@@ -612,13 +652,21 @@ async fn completions_inner(
             stop_tokens: crate::api::realize_handlers::completion_stop_tokens(&tokenizer, Some(eos)), // aprender#4345
             ..Default::default()
         };
-        let result = {
+        let (result, mut phases, generate_start) = {
             let mut model = cuda_lock.write().expect("CUDA model lock");
-            model.generate_gpu_resident_logprobs(
+            // After the lock: waiting for another request is not decode.
+            let generate_start = std::time::Instant::now();
+            let result = model.generate_gpu_resident_logprobs(
                 &prompt_ids.iter().map(|&id| id as u32).collect::<Vec<_>>(),
                 &config,
-            ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+            ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+            (result, model.take_phase_timings(), generate_start)
         };
+        // SRV-TIM-001: the model records prefill; decode is the rest of the call.
+        if let Some(prefill_ms) = phases.prefill_ms {
+            let total_ms = generate_start.elapsed().as_secs_f64() * 1000.0;
+            phases.decode_ms = Some((total_ms - prefill_ms).max(0.0));
+        }
         let prompt_len = prompt_ids.len();
         let gen_tokens: Vec<u32> = result.tokens[prompt_len..].to_vec();
         let text: String = gen_tokens.iter()
@@ -650,6 +698,7 @@ async fn completions_inner(
             },
             // The inline CUDA block records no backend flag either (#3894).
             used_gpu: None,
+            timings: phases.to_timings(prompt_ids.len(), completion_tokens),
         });
     }
 

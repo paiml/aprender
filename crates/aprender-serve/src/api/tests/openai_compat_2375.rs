@@ -157,6 +157,7 @@ async fn completion_sse_frames_reassemble_to_the_completion_text() {
             completion_tokens: 9,
             total_tokens: 10,
         },
+        timings: None,
     };
 
     let body = body_text(completion_sse_response(&response)).await;
