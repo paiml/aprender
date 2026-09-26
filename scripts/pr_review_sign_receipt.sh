@@ -139,6 +139,16 @@ sign_receipt() {
     [ -f "$rcpt" ]  || fail "no receipt.intoto.jsonl in $dir; the signer attaches a signature, it does not invent the document"
     [ -f "$PUBKEY" ] || fail "public key $PUBKEY is absent; signing without being able to verify the result is how an unverifiable signature ships"
 
+    # #4462: an L2-maintainer-attest receipt is minted ONLY by the fork-attest job
+    # (.github/workflows/pr-review-fork-attest.yml), which sets PR_REVIEW_ALLOW_ATTEST=1
+    # after checking the labeler's permission server-side. Any other caller - the
+    # pr-review-sign job signing whatever a same-repo branch committed - is refused, so
+    # an attest cannot be hand-written and pushed through the ordinary signer.
+    if [ "$(jq -r '.predicate.attestation_level // ""' "$rcpt" 2>/dev/null)" = L2-maintainer-attest ] \
+       && [ "${PR_REVIEW_ALLOW_ATTEST:-}" != 1 ]; then
+        fail "$rcpt declares attestation_level L2-maintainer-attest; only the fork-attest job signs those (PR_REVIEW_ALLOW_ATTEST is not 1)"
+    fi
+
     [ -n "${PR_REVIEW_SIGNING_KEY_B64:-}" ] \
       || fail "PR_REVIEW_SIGNING_KEY_B64 is unset or empty. It is a repository secret; this runs where that secret is available, and NOT on a reviewer's box (§4.3: the secret half is not in this repository and never will be)"
 
@@ -264,6 +274,24 @@ self_test() {
             printf 'FAIL %s\n' "refused receipt $d was signed anyway"; fails=$((fails + 1))
         fi
     done
+
+    # #4462 - an L2 attest is signed only when the fork-attest job says so.
+    mk_rcpt "$td/l2" "$base" "$head"
+    jq -c '.predicate.attestation_level = "L2-maintainer-attest"' "$td/l2/receipt.intoto.jsonl" > "$td/l2.tmp" \
+      && mv "$td/l2.tmp" "$td/l2/receipt.intoto.jsonl"
+    row 'an L2-maintainer-attest receipt is refused outside the attest job' FAIL "$b64" "$td/a.pub" "$td/l2"
+    if [ -f "$td/l2/receipt.intoto.jsonl.minisig" ]; then
+        printf 'FAIL %s\n' "refused L2 receipt was signed anyway"; fails=$((fails + 1))
+    fi
+    local l2rc=0
+    PR_REVIEW_ALLOW_ATTEST=1 PR_REVIEW_SIGNING_KEY_B64="$b64" PR_REVIEW_PUBKEY="$td/a.pub" \
+      bash "$HERE/$PROG" "$td/l2" >/dev/null 2>&1 || l2rc=$?
+    if [ "$l2rc" -eq 0 ] && [ -f "$td/l2/receipt.intoto.jsonl.minisig" ]; then
+        printf 'ok   %s\n' 'an L2-maintainer-attest receipt is signed when PR_REVIEW_ALLOW_ATTEST=1'; pass_n=$((pass_n + 1))
+    else
+        printf 'FAIL %s (rc=%s)\n' 'an L2-maintainer-attest receipt is signed when PR_REVIEW_ALLOW_ATTEST=1' "$l2rc"
+        fails=$((fails + 1))
+    fi
 
     # The mismatch row must also LEAVE NO SIGNATURE behind: a bad artifact on disk is
     # what a later run would read as success.
