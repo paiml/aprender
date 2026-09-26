@@ -411,6 +411,7 @@ use crate::LlmSubcommand;
 ///
 /// # Errors
 /// Propagates whichever mode ran.
+#[cfg(feature = "inference")]
 pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
@@ -418,6 +419,18 @@ pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
         LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
         LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
     }
+}
+
+/// #4041: the benchmark drives its server through tokio, which only the `inference` feature brings. A minimal
+/// build (`--no-default-features`) names the missing feature instead of failing to compile.
+///
+/// # Errors
+/// Always: this build cannot run the benchmark.
+#[cfg(not(feature = "inference"))]
+pub fn dispatch(_command: &LlmSubcommand) -> Result<()> {
+    Err(CliError::InferenceFailed(
+        "`apr test llm` needs the `inference` feature (this apr was built without it)".to_string(),
+    ))
 }
 
 /// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.

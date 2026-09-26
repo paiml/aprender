@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [],
+          "properties": {
+            "transport": "cli",
+            "index_probe": {
+              "grounding": "measured",
+              "command": [
+                "pmat",
+                "query",
+                "fused decode attention split kernel",
+                "--limit",
+                "10"
+              ],
+              "exit_code": 0,
+              "stdout_sha256": "8108960b8afea9a93247fcdeb073932dc5736d173072c39e0b7fd9962f64931a"
+            }
+          }
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat/complexity-delta",
+          "level": "warning",
+          "message": {
+            "text": "run_entry::build_final_json cyclomatic 2 -> 11 and cognitive 1 -> 25; run_entry::run cyclomatic 14 -> 18, cognitive 14 -> 24. Both exceed .pmat-gates.toml max_complexity = 10."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/apr-cli/src/commands/run_entry.rs"
+                },
+                "region": {
+                  "startLine": 598
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--file",
+              "crates/apr-cli/src/commands/run_entry.rs",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "acb89edb37c83a26f8bc2429a8a87f24db5aaa9925e45a0b9458432e330c5b83",
+            "failure_scenario": "build_final_json now branches 11 ways assembling the --json run report; a future field added on one branch but not another ships a JSON shape that differs by code path, and no single test pins every branch."
+          }
+        },
+        {
+          "ruleId": "pmat/tdg-delta",
+          "level": "note",
+          "message": {
+            "text": "TDG of crates/aprender-gpu/src/kernels/gdn/decode_attention.rs fell 97.1 (A+) -> 91.5 (A) at head."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-gpu/src/kernels/gdn/decode_attention.rs"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "tdg",
+              "-p",
+              "crates/aprender-gpu/src/kernels/gdn/decode_attention.rs",
+              "-f",
+              "json",
+              "-q"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "6f58f302fac38872916f879bfb064c387049f69647557dbf5c172637099abe02",
+            "failure_scenario": "the non-split decode kernel accretes duplicated emission with the new split kernel; a fix applied to one PTX emitter and not the other diverges the two decode paths silently."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://api.copilot.nsight.ngc.nvidia.com/mcp/cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "nvidia-cuda-docs MCP endpoint answered HTTP 401 invalid_token to tools/list; search_cuda_docs is not exposed in this session and the cuda-docs-reviewer agent could not be dispatched (no Agent tool). S3.B could not be consulted."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "curl",
+                  "-sS",
+                  "-m",
+                  "20",
+                  "-o",
+                  "<body>",
+                  "-w",
+                  "%{http_code}\\n",
+                  "-X",
+                  "POST",
+                  "-H",
+                  "Content-Type: application/json",
+                  "-H",
+                  "Accept: application/json, text/event-stream",
+                  "--data",
+                  "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}",
+                  "https://api.copilot.nsight.ngc.nvidia.com/mcp/cuda-docs"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "5d94ef1d04a57469912deb42e29ecee5168b983c775efa906cb9268596ba9f84"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [],
+          "properties": {
+            "method": "13 hand-derived sed mutants over the guard hunks this diff adds (scripts/check_clippy_member_ratchet.sh, check_ont_ratchet.sh, check_tree_reader_tests.sh); killed = the guard own --self-test exits non-zero. cargo-mutants itself was not run on the in-diff Rust; driver name is the guard-allowed label for the mutation consultation."
+          }
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutation/survivor",
+          "level": "warning",
+          "message": {
+            "text": "Mutant C7 survived: check_clippy_member_ratchet.sh:51 `return frag.split(\"@\", 1)[0]` -> `return frag` keeps --self-test green (SELF-TEST OK: 11 rows)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_clippy_member_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 51
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/check_clippy_member_ratchet.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "199536bc3471e9dab8f01de24fe66f4400cdd63d61ce12b85a5ad8c389280275",
+            "stdout_note": "digest over combined stdout+stderr of the mutated copy",
+            "failure_scenario": "a package id `path+file:///.../crates/<dir>#<name>@<ver>` (package name differs from its directory) is keyed `<name>@<ver>` instead of `<name>`; base and current then disagree on key the day the version bumps, so a crate reads as added+removed and its ratchet row is lost or double-counted, and no self-test row notices."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

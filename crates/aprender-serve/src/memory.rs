@@ -339,8 +339,11 @@ mod tests {
         };
         let d1 = vec![1u8; 512];
         let d2 = vec![2u8; 256];
-        // SAFETY: data is valid
+        // SAFETY: `PinnedRegion::new` needs `ptr` valid for `len` bytes. `d1` is a live, initialised
+        // Vec and `(as_ptr, len)` is exactly its buffer. It is declared before `r1`, so it is
+        // dropped after it and outlives the region.
         let (r1, res1) = unsafe { PinnedRegion::new(d1.as_ptr(), d1.len(), &config) };
+        // SAFETY: as above, for `d2` and `r2`.
         let (r2, res2) = unsafe { PinnedRegion::new(d2.as_ptr(), d2.len(), &config) };
         assert_eq!(res1, MlockResult::Disabled);
         assert_eq!(res2, MlockResult::Disabled);

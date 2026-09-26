@@ -81,6 +81,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
+        clippy_member_baseline.txt)              printf 'keyed\n' ;;   # #4152: <crate>|<kind>|<lint><TAB><count>, shrink-only (scripts/check_clippy_member_ratchet.sh)
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
         hand_rolled_parsers_baseline.txt)        printf 'set\n' ;;
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;

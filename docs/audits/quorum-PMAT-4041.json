@@ -1,0 +1,67 @@
+{
+  "ticket": "PMAT-4041",
+  "executor": "claude-code-agent",
+  "width": 3,
+  "head": "b85240fa90bc25494c129bf24a5a5e5f913c8d0d",
+  "base": "fix/3837-cuda-feature-lint-gate @ 51b253b55 (PR #4091) \u2014 stacked; retarget after #4091 lands",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "degraded": "same-family",
+  "fallback": {
+    "reason": "agy round 1 BLIND on all 3 lanes: 429 quota exhausted (shared pool, resets ~08:32 +0200), 0 tokens, no verdict; operator fall-back-fast rule -> Claude Code lanes on a non-author id (claude-sonnet-5)",
+    "agy_round": {
+      "conversations": [
+        "41939d6a-c692-44bd-b7df-0bb9c34f0928",
+        "09387482-816a-496a-bc76-75cd6fa63ae7",
+        "8b6b066d-d33a-4581-8132-64ff25b92cf2"
+      ],
+      "counted": 0
+    }
+  },
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "focus": "the 8 site fixes",
+      "note": "rebuilt both configurations clean; gated bodies byte-identical under inference"
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "focus": "gate + self-test mutant hunt",
+      "note": "5 mutants all caught; SIGTERM mid-self-test left both plants restored; lib.rs allow-list verified pre-existing (ea78239b7)"
+    },
+    {
+      "lane": 3,
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "focus": "decision, scope, honesty, CI",
+      "note": "SUPPORTED corroborated (manifest comment, crates.io publication, APR-RELEASE-001 T-1 lists the check); --bins also builds; no workflow edit; 7 guards rc 0"
+    }
+  ],
+  "agreed": true,
+  "verdict": "PASS",
+  "dissent": [],
+  "gate": {
+    "cmd": "bash scripts/check_clippy_feature_matrix.sh",
+    "exit": 0,
+    "log_sha256": "e21c77f24bffdf063ae31e89c53cc121cb429739fbb15dea1812760671494a72",
+    "axes": "default cuda full dev dhat-heap no-default \u2014 all 0 findings"
+  },
+  "self_test": {
+    "result": "PASS",
+    "mutant_no_default_flags_dropped": "FAIL (RED as required)"
+  },
+  "out_of_scope": {
+    "#4138": "no-default TEST targets, 72 errors (lib and bins are clean)"
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "note": "stop at the receipt; never arm"
+  }
+}

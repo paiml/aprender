@@ -178,8 +178,8 @@ metadata:
 
     hardware_provenance:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"
-      unknown: 427
-      direction: "may only DECREASE -- 427 is a ceiling"
+      unknown: 425
+      direction: "may only DECREASE -- 425 is a ceiling"
       note: >
         Hardware is never inferred from a feature's name. A CUDA kernel with no
         job that runs it is UNKNOWN.
@@ -238,13 +238,13 @@ equations:
 
   hardware_provenance:
     formula: |
-      REQUIRE: |{ r : r.verified_hardware == "UNKNOWN" }| <= 427
+      REQUIRE: |{ r : r.verified_hardware == "UNKNOWN" }| <= 425
       forall r : r.verified_hardware != "UNKNOWN" =>
         exists a CI job that RAN r on that target, or a cargo feature gate that compiles it
     domain: "the verified_hardware column"
     codomain: bool
     invariants:
-    - "Baseline 427 UNKNOWN of 830; may never increase"
+    - "Baseline 425 UNKNOWN of 830; may never increase"
     - "Hardware is NEVER inferred from a feature's name — a CUDA kernel with no job that runs it is UNKNOWN"
 
   per_cluster_floor:
@@ -404,13 +404,13 @@ falsification_tests:
 
 - id: F-DOGCOV-004
   rule: hardware provenance never inferred
-  prediction: "UNKNOWN count <= 427 and every non-UNKNOWN claim names a job or a feature gate"
+  prediction: "UNKNOWN count <= 425 and every non-UNKNOWN claim names a job or a feature gate"
   test: |
     python3 - <<'EOF'
     import csv
     rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
     unk = sum(1 for r in rows if r['verified_hardware'].strip().upper() == 'UNKNOWN')
-    assert unk <= 427, f"UNKNOWN grew to {unk}"
+    assert unk <= 425, f"UNKNOWN grew to {unk}"
     EOF
   if_fails: "hardware verification regressed, or a claim was inferred from a feature name rather than a job that ran"
   mutation: "claim nvidia-cuda for a feature no CI job runs; the provenance check must turn RED"
@@ -782,8 +782,8 @@ proof_obligations:
   formal: "|{r : quality(r) <= 4 and not gated(r)}| <= 44"
 - id: ADC-BND-004
   type: bound
-  property: "verified_hardware UNKNOWN never exceeds the 427 baseline, and is never inferred from a name (F-DOGCOV-004)"
-  formal: "|{r : hw(r) == UNKNOWN}| <= 427 and forall r : hw(r) != UNKNOWN -> ran_on(r, hw(r))"
+  property: "verified_hardware UNKNOWN never exceeds the 425 baseline, and is never inferred from a name (F-DOGCOV-004)"
+  formal: "|{r : hw(r) == UNKNOWN}| <= 425 and forall r : hw(r) != UNKNOWN -> ran_on(r, hw(r))"
 - id: ADC-INV-005
   type: invariant
   property: "Every ledger row has 10 columns, a non-empty evidence_path and a non-empty cluster_label; id<->label is a bijection (F-DOGCOV-005)"

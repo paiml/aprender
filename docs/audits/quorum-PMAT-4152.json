@@ -1,0 +1,122 @@
+{
+  "ticket": "PMAT-4152",
+  "pr": 4170,
+  "round": 2,
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "head": "477cb3ea07b2e0757bc89544ca4cf7436643b5a5",
+  "diff_sha256": "29fa5165dc8a1ad4b9e6e120ed73a6f9b18333331c4db0ce06def2ecdd9e7681",
+  "brief_sha256": "8321a5e86db2fa7cae3f9016f5a3c6cdedb6f03f364c9e579d229f51a6048d1b",
+  "prompt_bytes": 62581,
+  "prompt_mode": "file",
+  "width": 3,
+  "executor": "mixed: 1 agy + 2 claude-sequential",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "lane_rule": "cop ruling 2026-09-24 on OPERATOR verbatim \"we need to switch default to sonnet, agy, haiku\": claude-sonnet-5 + one agy lane (gemini-3.1-pro-high) + claude-haiku-4-5, one brief",
+  "degraded": "same-family",
+  "agreed": true,
+  "verdict_counts": {
+    "PASS": 3,
+    "FAIL": 0
+  },
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Re-verified all three round-1 fixes at 477cb3ea0: missing_members is a genuine set comparison (comm -23), --self-test 11/11 live; excessive_precision allow scoped to exactly the five IQ*_EXPECTED consts, lib.rs has zero diff vs origin/main; dot_avx_vnni SAFETY comments true (every call inside has_avx_vnni(), CPUID 7.1 EAX bit 4). No .github/workflows, Cargo.toml or .clippy.toml edits; GPU-trio exclude list matches ci.yml; baseline sums to 3262 across 49 keys; chunks_mut refactor sound; ENV_SAFETY claim accurate (12 tests serial); PinnedRegion SAFETY matches its contract. No vacuous passes, no unsound unsafe, no weakened gates.",
+      "findings": [],
+      "model": "claude-sonnet-5",
+      "model_measured": null,
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
+      "executor": "claude-subagent",
+      "verdict_source": "structured_output",
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the requested workspace-wide shrink-only ratchet for clippy, and makes `aprender-serve` clippy-clean without resorting to crate-wide allowances. The vacuity check is now correctly implemented using a set difference on member names (`comm -23`). The `excessive_precision` allowance is accurately localized to the 5 IQ test consts. The AVX-VNNI check is now properly documented in `dot_avx_vnni`. The 5 `unsafe` blocks identified in the ticket have either been documented with precise `// SAFETY:` comments or safely refactored (e.g., using `chunks_mut` in `bench_manual_threads.rs` instead of `from_raw_parts_mut`). The ratchet script incorporates a thorough `--self-test` mechanism. I find nothing that refutes the ticket.",
+      "findings": [],
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "executor": "agy",
+      "verdict_source": "structured_output",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Implementation complete and correct. All ticket requirements met: aprender-serve passes clippy -D warnings with scoped excessive_precision allows and SAFETY comments on unsafe blocks; member-wide ratchet implemented with working self-test and proper baseline; quorum lane 1 findings (vacuity check, precision scoping, VNNI comments) all integrated and verified.",
+      "findings": [],
+      "model": "claude-haiku-4-5",
+      "model_measured": null,
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
+      "executor": "claude-subagent",
+      "verdict_source": "structured_output",
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "prior_rounds": [
+    {
+      "round": 1,
+      "head": "8f42f50e1",
+      "lanes_run": 1,
+      "verdict": "FAIL",
+      "model": "claude-sonnet-5",
+      "findings": 3,
+      "resolution": "all three verified and fixed in 6fb583ee4 (set-based vacuity, precision allow scoped to 5 test consts, VNNI SAFETY names its guard); receipt updated 477cb3ea0"
+    }
+  ],
+  "partial_reasons": [
+    "degraded: same-family — lanes 1 and 3 are claude family (author claude-opus-5-5, never the author id); receipt-lint refuses author-family lanes, so arming needs the cop override",
+    "lanes 1 and 3: model_source flag (Agent-tool subagents write no agy log); lane 2 measured from its agy log",
+    "lane 2 tree_witness: missing (run outside agy-lane.sh)"
+  ]
+}

@@ -360,16 +360,31 @@ impl GpuModel {
     /// let tokens = model.generate(&[1, 2, 3], &config)?;
     /// ```
     pub fn generate(&mut self, prompt: &[usize], config: &GpuGenerateConfig) -> Result<Vec<usize>> {
+        self.generate_observed(prompt, config, &mut || {})
+    }
+
+    /// [`Self::generate`] with `on_token()` fired as each token is chosen, so
+    /// a caller can time the prefill boundary (SRV-TIM-001).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::generate`].
+    pub fn generate_observed(
+        &mut self,
+        prompt: &[usize],
+        config: &GpuGenerateConfig,
+        on_token: &mut dyn FnMut(),
+    ) -> Result<Vec<usize>> {
         // IMP-1009: Use zero-clone RefCell path when CUDA is available
         // This provides ~7x speedup by eliminating weight cloning
         #[cfg(feature = "cuda")]
         if self.cuda_scheduler.is_some() {
-            return self.generate_refcell(prompt, config);
+            return self.generate_refcell_observed(prompt, config, on_token);
         }
 
         // Fallback to clone-based path for non-CUDA or HybridScheduler
         // IMP-091: Uses KV cache for O(n) generation
-        self.generate_optimized(prompt, config)
+        self.generate_optimized_observed(prompt, config, on_token)
     }
 
     // =========================================================================

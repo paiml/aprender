@@ -18210,6 +18210,46 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'
+- id: GH-4149
+  github_issue: 4149
+  item_type: task
+  kind: code
+  title: 'apr-cli tests reading workspace files fail out of tree (packaged tarball) — skip by name out of tree, FAIL in tree'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
+- id: GH-4175
+  github_issue: 4175
+  item_type: task
+  title: 'clean-room B2: packaged-tarball test gate, all crates'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T07:51:58.558709285+00:00
+  updated: 2026-09-24T07:51:58.558709285+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] `scripts/package_tarball_build.sh` gains the run step. Its case table covers a planted run-time panic (RED) and a clean crate (GREEN).'
+  - '[ ] `mode_b_tarball` in infra is wired nightly.'
+  - '[ ] RED measured on v0.69.1. The receipt lists the failing crates and tests, wall time and peak RSS.'
+  - '[ ] GREEN measured on the fix stack.'
+  - '[ ] Both-directions proof for the shared helper: out of tree it skips; in tree with the file removed it FAILs.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -21537,6 +21577,26 @@ roadmap:
   labels:
   - kind:docs
   notes: 'Assigned by aprender-cf (planning/triage cop), 2026-09-23, relaying the operator: "quorum decide. now use quorum and claud plan for each epic". Scope: plan + quorum receipt + one summary comment on #3998. No child issues and no milestone moves until operator review.'
+- id: PMAT-4041
+  github_issue: 4041
+  item_type: task
+  title: 'apr-cli --no-default-features compiles and lints clean: gate the inference-only sites; add the axis to the feature-matrix lint'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --no-default-features -- -D warnings exits 0 (was 8 compile errors on main@49fe19c28)'
+  - 'supported, not dark: crates/apr-cli/Cargo.toml documents the minimal crates.io install; a gate runs the axis so it cannot rot again'
+  - 'the other single-feature axes are measured and each is green or ticketed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4067
   github_issue: 4067
   item_type: task
@@ -21605,6 +21665,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4152
+  github_issue: 4152
+  item_type: task
+  title: '#4152: clippy over every workspace member — shrink-only ratchet; aprender-serve clippy-clean'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:55:27Z
+  updated: 2026-09-24T06:55:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4160
   github_issue: 4160
   item_type: task
@@ -21626,6 +21703,24 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4193
+  github_issue: 4193
+  item_type: task
+  title: 'aprender-serve published tarball: tokenizer_tests_unk_3609 include_bytes! tests/fixtures, which Cargo.toml excludes (/tests/)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #4193 done_when, verbatim: "`cargo build -p aprender-serve --lib --tests` from the unpacked tarball has no error at tokenizer_tests_unk_3609.rs, and the #3609 rows still pass in tree."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Option (a) from the ticket: the two header slices, MANIFEST.json and generate.py move from tests/fixtures/gguf-header-slices/ to src/fixtures/gguf-header-slices/ (the src/fixtures/chat_template_3990/ pattern), so they ship and the test runs for crates.io users. MEASURED: in tree, cargo test -p aprender-serve --lib tokenizer_tests_unk_3609 gives 9/9 pass. Tarball: the commit cherry-picked onto v0.69.1, packaged, and swapped into aprender-3a''s #4114 tarball workspace; cargo test -p aprender-serve --lib --no-run has 0 errors at tokenizer_tests_unk_3609.rs (it was 2). The one remaining error in that target is contracts/kernel-fusion-v1.yaml in fusion_call_site_guard_3985.rs, which is #4048 and out of scope. .crate is 8,224,489 bytes (under the 10 MB crates.io limit).'
 - id: PMAT-4215
   github_issue: 4215
   item_type: task
@@ -21775,6 +21870,22 @@ roadmap:
   labels:
   - kind:code
   notes: 'V2b: the dense qa gates (golden CPU, output_verification GPU golden, gpu_isolation, speedup parity and CPU/GPU, golden GGUF throughput) drive realizar::gguf::dense_session::dense_turn through apr-cli commands/qa_dense_session.rs; a GPU gate refuses a turn with used_gpu=false. Witnesses: qa_dense_session_tests (2, release mode; the require_gpu mutant kills one).'
+- id: PMAT-4273
+  github_issue: 4273
+  item_type: task
+  title: 'qwen35 decode attention: split over sequence + f16 KV (decode collapses 70->7.8 tok/s at 32k)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T10:58:23Z
+  updated: 2026-09-24T10:58:28.746720556+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4280
   github_issue: 4280
   item_type: task

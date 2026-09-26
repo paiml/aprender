@@ -276,6 +276,7 @@ fn test_completion_response_serialization() {
             completion_tokens: 10,
             total_tokens: 15,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");
@@ -316,6 +317,7 @@ fn test_completion_response_multiple_choices() {
             completion_tokens: 6,
             total_tokens: 9,
         },
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");
@@ -340,6 +342,7 @@ fn test_completion_response_clone() {
             completion_tokens: 0,
             total_tokens: 0,
         },
+        timings: None,
     };
 
     let cloned = response.clone();
@@ -361,6 +364,7 @@ fn test_completion_response_debug() {
             completion_tokens: 0,
             total_tokens: 0,
         },
+        timings: None,
     };
 
     let debug_str = format!("{:?}", response);

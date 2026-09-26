@@ -874,7 +874,7 @@ impl CudaExecutor {
     ///
     /// No FP16 dequantization. 3.56x memory bandwidth reduction vs HGEMM.
     #[allow(clippy::too_many_arguments)]
-    fn launch_dp4a_q4k_gemm(
+    pub(crate) fn launch_dp4a_q4k_gemm(
         &mut self,
         weight_ptr: u64,
         packed_input_ptr: u64,

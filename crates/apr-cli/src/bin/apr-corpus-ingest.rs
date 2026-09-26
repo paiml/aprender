@@ -436,21 +436,22 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
 mod tests {
     use super::*;
 
-    /// Resolve the real corpus contract path relative to the workspace root.
-    /// Tests run with `CARGO_MANIFEST_DIR = .../crates/apr-cli`, so we walk
-    /// up two levels to reach the contracts directory.
-    fn real_contract_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("workspace root resolvable from CARGO_MANIFEST_DIR")
-            .join("contracts/dataset-thestack-python-v1.yaml")
+    /// The real corpus contract, a workspace file: `None` (a named SKIP) out of tree — the
+    /// published tarball does not carry `contracts/` — and a FAIL in tree when it is missing
+    /// (#4149).
+    fn real_contract_path(test: &str) -> Option<PathBuf> {
+        provable_contracts::workspace_path_or_skip!(
+            test,
+            "contracts/dataset-thestack-python-v1.yaml"
+        )
     }
 
     #[test]
     fn parses_real_contract_with_structural_invariants() {
-        let path = real_contract_path();
-        assert!(path.exists(), "real contract missing at {}", path.display());
+        let Some(path) = real_contract_path("parses_real_contract_with_structural_invariants")
+        else {
+            return;
+        };
         let yaml = fs::read_to_string(&path).expect("read real contract");
         let contract: CorpusContract = serde_yaml::from_str(&yaml).expect("contract deserializes");
         assert_structural_minimums(&contract).expect("structural minimums hold");
@@ -496,7 +497,11 @@ mod tests {
 
     #[test]
     fn validate_contract_passes_on_real_contract_and_reports_top_keys() {
-        let path = real_contract_path();
+        let Some(path) =
+            real_contract_path("validate_contract_passes_on_real_contract_and_reports_top_keys")
+        else {
+            return;
+        };
         let report = validate_contract(&path).expect("validation passes");
         assert_eq!(report.contract_id, "C-DATA-THESTACK-PYTHON");
         assert_eq!(report.invariants, 7);

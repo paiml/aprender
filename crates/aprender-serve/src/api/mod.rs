@@ -64,6 +64,8 @@ pub use cancel_scope::request_cancel_token;
 // loop in the crate outside every CI test job.
 pub mod apr_q4k_forward;
 pub mod apr_q4k_scheduler;
+// SRV-TIM-001: per-request structured line, phase histograms, --timings-log.
+pub mod request_log;
 // PERF-041: NOT `#[cfg(feature = "cuda")]`, on purpose. It holds the admission
 // predicate of contracts/batch-admission-v1.yaml and its exhaustive table test,
 // which `cargo test -p aprender-serve --lib batch_admission` must be able to

@@ -79,6 +79,15 @@ pub trait ArchForward {
         Ok(())
     }
 
+    /// Wall time spent in the F2 guard since the last call, then zero. A
+    /// backend that judges itself lazily, inside its first forward, reports
+    /// it here so the session keeps it out of the turn's prefill: the guard is
+    /// a one-time proof of the backend, not prompt processing (SRV-TIM-001).
+    /// The default judged nothing.
+    fn take_guard_time(&mut self) -> std::time::Duration {
+        std::time::Duration::ZERO
+    }
+
     /// The state holds `tokens[..start]` (`start == 0`: reset it). Advance it
     /// to hold all of `tokens` and return the logits after the last one.
     ///
@@ -115,6 +124,17 @@ pub struct Turn {
     /// `max_tokens` and before a stop token. It is the one reason a reply is
     /// shorter than asked for that the caller did not choose.
     pub context_capped: bool,
+    /// Wall time from entry to the first chosen token: the prompt forward
+    /// (only the suffix the state did not hold) plus that token's choice.
+    /// Token choice reads the logits back to the host, so this boundary is
+    /// real on every backend and costs no extra synchronisation (SRV-TIM-001).
+    pub prefill: std::time::Duration,
+    /// Wall time from the first chosen token to the end of the turn: every
+    /// later forward, choice and `on_token` callback.
+    pub decode: std::time::Duration,
+    /// Wall time the backend's one-time F2 guard took inside this turn, kept
+    /// OUT of `prefill` and `decode` ([`ArchForward::take_guard_time`]).
+    pub guard: std::time::Duration,
 }
 
 /// A loaded model plus its decode state: the one engine (#4263).
@@ -322,7 +342,12 @@ impl<F: ArchForward> Session<F> {
         self.reserve(prompt.len() + budget)?;
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
+        let _ = self.forward.take_guard_time();
+        let started = std::time::Instant::now();
         let (mut next, reused) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let mut guard = self.forward.take_guard_time();
+        let prefill = started.elapsed().saturating_sub(guard);
+        let decode_started = std::time::Instant::now();
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
@@ -340,11 +365,16 @@ impl<F: ArchForward> Session<F> {
             }
             next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
         }
+        let late_guard = self.forward.take_guard_time();
+        guard += late_guard;
         Ok(Turn {
             tokens,
             reused,
             used_gpu: self.on_gpu(),
             context_capped,
+            prefill,
+            decode: decode_started.elapsed().saturating_sub(late_guard),
+            guard,
         })
     }
 

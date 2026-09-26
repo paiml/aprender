@@ -15,18 +15,22 @@
 #   full        --features full     pulls in cuda-batch, training-gpu, code, xet and trueno-explain
 #   dev         --features dev
 #   dhat-heap   --features dhat-heap
+#   no-default  --no-default-features   the minimal crates.io build apr-cli's manifest promises (#4041: SUPPORTED;
+#               it had 8 compile errors because nothing in-tree builds it — the facade pins default-features)
 #
 # EXCLUDED, by name and ticket, never by omission:
 #   wgpu         --features wgpu does not COMPILE (5 errors) — #4056 (P1)
-#   no-default   --no-default-features does not COMPILE (8 errors) — #4041 decides whether it is a supported
-#                configuration; it joins this list when it is.
 #
 # THE UNIVERSE IS DERIVED (#3837's "enumerate the other feature axes"). apr-cli's feature table is read from
 # `cargo metadata`, and every feature must be linted by some axis — directly, or because an axis's feature set
 # (plus `default` unless the axis disables it) implies it — or be EXCLUDED with a ticket. A new feature that no axis
 # reaches is a refusal naming it, before any clippy runs. --self-test plants one to prove it.
 #
-# --self-test plants `x as u32` on a u32 inside cuda-only code and requires: cuda axis RED, default axis GREEN.
+# --self-test plants `x as u32` on a u32 inside cuda-only code AND a type error inside code compiled only WITHOUT
+# `inference` (a lint would not do: apr-cli's lib.rs allows clippy::all and more),
+# and requires: cuda and full RED (the cuda plant), no-default RED (the no-inference plant), default, dev and
+# dhat-heap GREEN. The second plant is what proves the no-default axis really builds without defaults: an axis
+# whose flags were dropped would lint the default build and stay green.
 # The restore is trapped BEFORE the plant and uses `git checkout --`, so an interrupted run leaves no planted file.
 #
 # Exit: 0 every axis clean · 1 an axis has findings · 2 could not check.
@@ -35,7 +39,7 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 cd "$ROOT" || exit 2
 PROG=check_clippy_feature_matrix
-AXES=(default cuda full dev dhat-heap)
+AXES=(default cuda full dev dhat-heap no-default)
 flags_for() { # prints nothing; fills the global array F for axis $1
   case "$1" in
     default)   F=() ;;
@@ -43,12 +47,13 @@ flags_for() { # prints nothing; fills the global array F for axis $1
     full)      F=(--features full) ;;
     dev)       F=(--features dev) ;;
     dhat-heap) F=(--features dhat-heap) ;;
+    no-default) F=(--no-default-features) ;;
     *) echo "$PROG: unknown axis $1" >&2; return 2 ;;
   esac
 }
 # Features no axis may claim, each with its ticket (the no-default MODE is excluded above, not a feature).
 EXCLUDED_FEATURES="wgpu=#4056"
-EXCLUDED="wgpu (#4056: does not compile), no-default (#4041: does not compile)"
+EXCLUDED="wgpu (#4056: does not compile)"
 
 # Every apr-cli feature must be reached by an axis or excluded with a ticket: derived from cargo metadata.
 coverage() { # -> 0 every feature accounted for; 1 names each unreached feature; 2 metadata unreadable
@@ -110,9 +115,10 @@ check() { # -> 0 all clean, 1 findings; prints one line per axis
 
 TMP=$(mktemp -d) || exit 2
 PLANT_FILE=crates/aprender-train/src/autograd/cuda_forward/matmul_f16.rs
+PLANT_ND_FILE=crates/apr-cli/src/commands/explain.rs   # #4041: any apr-cli file; the plant carries its own cfg
 MANIFEST=crates/apr-cli/Cargo.toml
 cleanup() {
-  [ -n "${PLANTED:-}" ] && git checkout -- "$PLANT_FILE" 2>/dev/null
+  [ -n "${PLANTED:-}" ] && git checkout -- "$PLANT_FILE" "$PLANT_ND_FILE" 2>/dev/null
   [ -n "${PLANTED_FEATURE:-}" ] && git checkout -- "$MANIFEST" 2>/dev/null
   rm -rf "$TMP"
 }
@@ -132,18 +138,24 @@ if [ "${1:-}" = "--self-test" ]; then
   fi
   echo "  ok    an unreached feature is refused by name, before any clippy"
   # Plant 2: a cuda-only finding reddens ONLY the cuda-reaching axes.
-  git diff --quiet -- "$PLANT_FILE" || { echo "$PROG: $PLANT_FILE has local edits; the self-test will not plant over them" >&2; exit 2; }
+  git diff --quiet -- "$PLANT_FILE" "$PLANT_ND_FILE" || { echo "$PROG: a plant file has local edits; the self-test will not plant over them" >&2; exit 2; }
   grep -q '#!\[cfg(feature = "cuda")\]\|^#\[cfg(feature = "cuda")\]' "$PLANT_FILE" || { echo "$PROG: $PLANT_FILE is no longer cuda-gated; move the plant" >&2; exit 2; }
   PLANTED=1
   printf '\n#[cfg(feature = "cuda")]\n#[allow(dead_code)]\nfn planted_3837_self_test(x: u32) -> u32 {\n    x as u32\n}\n' >> "$PLANT_FILE"
+  # #4041's plant is a TYPE ERROR, not a lint: apr-cli's lib.rs opens with #![allow(clippy::all, clippy::pedantic,
+  # clippy::disallowed_methods)] and more, so a lint planted in apr-cli stays green on every axis (measured: a cast,
+  # an Option::unwrap, an unused variable). The property this plant proves is that the no-default axis really
+  # compiles with `inference` off, and only a build without it compiles this function.
+  printf '\n#[cfg(not(feature = "inference"))]\n#[allow(dead_code)]\nfn planted_4041_self_test() -> u32 {\n    "compiled only without inference"\n}\n' >> "$PLANT_ND_FILE"
   out=$(check); rc=$?
   printf '%s\n' "$out"
-  git checkout -- "$PLANT_FILE"; PLANTED=
+  git checkout -- "$PLANT_FILE" "$PLANT_ND_FILE"; PLANTED=
   if grep -q '^  FAIL  cuda' <<< "$out" && grep -q '^  FAIL  full' <<< "$out" && grep -q '^  ok    default' <<< "$out" \
-     && grep -q '^  ok    dev' <<< "$out" && grep -q '^  ok    dhat-heap' <<< "$out"; then
-    echo "$PROG --self-test: PASS — the planted cuda-only finding turned exactly the cuda-reaching axes (cuda, full) red"; exit 0
+     && grep -q '^  ok    dev' <<< "$out" && grep -q '^  ok    dhat-heap' <<< "$out" \
+     && grep -q '^  FAIL  no-default' <<< "$out"; then
+    echo "$PROG --self-test: PASS — the cuda plant turned exactly cuda and full red, and the no-inference plant turned exactly no-default red"; exit 0
   fi
-  echo "$PROG --self-test: FAIL (rc $rc) — want cuda and full RED, default/dev/dhat-heap GREEN"; exit 1
+  echo "$PROG --self-test: FAIL (rc $rc) — want cuda, full and no-default RED; default, dev and dhat-heap GREEN"; exit 1
 fi
 
 echo "$PROG: axes ${AXES[*]}; excluded: $EXCLUDED"

@@ -1,0 +1,57 @@
+# tool_version=none (versioned by the clippy_version line below, which check_clippy_member_ratchet.sh checks itself: the library's probe runs '<tool> --version' and cargo-clippy prints 'clippy ...')
+# clippy_version=clippy 0.1.93 (254b59607d 2026-01-19)
+# clippy_member_baseline.txt — #4152. <crate>|<target kind>|<lint><TAB><count>, shrink-only.
+# Measured by: cargo clippy --workspace --all-targets --no-deps --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --keep-going --message-format=json
+# (no -D warnings: a warning must not stop its dependents from being checked; every warn-level lint is counted)
+# First measurement, main aa7c6ef03 (2026-09-24): 3807 diagnostics under -D warnings across 87 failing targets.
+# The biggest bucket, clippy::disallowed_methods (the .clippy.toml unwrap ban: 2137 unique sites), is swept by #4161.
+# This census: 3262 finding(s). Regenerate with: bash scripts/check_clippy_member_ratchet.sh --update-baseline
+apr-cli|lib|unused_mut	2
+apr-cli|test|clippy::disallowed_methods	717
+apr-cli|test|clippy::doc_lazy_continuation	1
+apr-cli|test|clippy::large_stack_arrays	1
+apr-cli|test|clippy::manual_let_else	2
+apr-cli|test|clippy::map_unwrap_or	1
+apr-cli|test|clippy::needless_pass_by_value	1
+apr-cli|test|clippy::redundant_closure_for_method_calls	1
+aprender-core|bench|deprecated	73
+aprender-core|lib|clippy::doc_lazy_continuation	4
+aprender-core|lib|clippy::manual_repeat_n	8
+aprender-core|lib|clippy::needless_borrow	1
+aprender-core|lib|clippy::unnecessary_cast	2
+aprender-core|lib|trivial_numeric_casts	2
+aprender-core|lib|unused_imports	1
+aprender-core|lib|unused_must_use	1
+aprender-core|test|clippy::disallowed_methods	44
+aprender-core|test|clippy::doc_lazy_continuation	3
+aprender-core|test|clippy::expect_fun_call	73
+aprender-core|test|dead_code	1
+aprender-core|test|unused_imports	5
+aprender-graph|bench|clippy::disallowed_methods	20
+aprender-graph|example|clippy::disallowed_methods	1
+aprender-graph|example|clippy::type_complexity	1
+aprender-graph|lib|clippy::disallowed_methods	171
+aprender-graph|lib|clippy::float_cmp	4
+aprender-graph|lib|clippy::similar_names	3
+aprender-graph|lib|clippy::unnecessary_get_then_check	2
+aprender-graph|test|clippy::disallowed_methods	43
+aprender-profile|lib|clippy::unnecessary_get_then_check	3
+aprender-profile|test|clippy::manual_assert	2
+aprender-profile|test|unreachable_patterns	7
+aprender-qa-cli|lib|clippy::disallowed_methods	42
+aprender-qa-report|example|clippy::disallowed_methods	1
+aprender-qa-report|lib|clippy::disallowed_methods	87
+aprender-qa-runner|lib|clippy::disallowed_methods	1310
+aprender-rag|test|clippy::disallowed_methods	24
+aprender-rag|test|clippy::manual_clamp	1
+aprender-registry|lib|clippy::module_inception	1
+aprender-test-cli|bin|clippy::disallowed_methods	90
+aprender-test-cli|lib|clippy::disallowed_methods	397
+aprender-test-cli|test|clippy::disallowed_methods	8
+aprender-test-showcase|test|clippy::disallowed_methods	13
+aprender-train-shell|lib|clippy::disallowed_methods	1
+aprender-tsp|bench|deprecated	9
+aprender-tsp|lib|clippy::disallowed_methods	14
+aprender-tsp|test|clippy::disallowed_methods	60
+aprender-tsp|test|clippy::redundant_closure	1
+aprender-zram-core|lib|unexpected_cfgs	2

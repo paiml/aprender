@@ -1,0 +1,16 @@
+{
+  "ticket": "PMAT-4193",
+  "head": "adefc2538",
+  "base": "origin/main",
+  "shape": "operator 2026-09-24 default: sonnet + agy + haiku (the agy lane is quorum-PMAT-4193-agy.json, gemini-3.1-pro-high, PASS)",
+  "brief_sha256": "8408dcd7735c3027eb75f16765c84df4a1e53ee3f279f8bcad745ab0b47f10c0",
+  "brief_note": "quorum-review.sh deletes its brief on exit, so the Claude lanes' brief was rebuilt from the same parts: the script's doctrine line, pmat work status PMAT-4193 plus the issue body, and git diff origin/main...adefc2538.",
+  "lanes": [
+    {"model": "claude-sonnet-5", "family": "claude", "agent_id": "a7a4f732165e8aedd", "verdict": "PASS", "findings": [],
+     "summary": "Does exactly what PMAT-4193 option (a) asks. Measured: in-tree tokenizer_tests_unk_3609 9/9 pass; cargo package --list shows all four fixtures under src/fixtures/gguf-header-slices/; the packaged .gguf-header files are sha256-identical to the tree at the include_bytes! paths; no other file references the old path; files tracked, not gitignored; fmt and clippy -D warnings clean on the touched file; roadmap parses with no duplicate id."},
+    {"model": "claude-haiku-4-5-20251001", "family": "claude", "agent_id": "a3605fa116f062b64", "verdict": "PASS", "findings": [],
+     "summary": "Correctly implements option (a): fixtures moved from tests/ to src/fixtures/ so they ship. 9 #3609 tests pass in tree; fixtures in the package; no dangling references; crate within the 10 MB limit."}
+  ],
+  "author": {"model": "claude-opus-5-5", "family": "claude"},
+  "note": "Both Claude lanes are the author's family (degraded: same-family, per the operator's quorum rule); neither is the author's own id. Combined with the agy lane: 3/3 PASS at adefc2538."
+}

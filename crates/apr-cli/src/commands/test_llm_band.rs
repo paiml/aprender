@@ -1770,7 +1770,12 @@ async fn cool(first_lane: &mut bool, cooldown: std::time::Duration, interleaved:
         *first_lane = false;
         return;
     }
+    #[cfg(feature = "inference")]
     tokio::time::sleep(cooldown).await;
+    // #4041: no tokio in a minimal build. Nothing reaches this there (`dispatch` refuses first); if it did, the
+    // cooldown would still be honoured, blocking.
+    #[cfg(not(feature = "inference"))]
+    std::thread::sleep(cooldown);
 }
 
 /// Run the §5.1 protocol over every requested band and write the receipts.

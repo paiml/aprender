@@ -70,8 +70,10 @@ pub mod model_pull {
 // reaching into the private `commands` tree.
 pub mod serve_auth {
     #[cfg(feature = "inference")]
+    pub use crate::commands::serve::auth::apply;
+    #[cfg(feature = "inference")]
     pub use crate::commands::serve::auth::layer;
-    pub use crate::commands::serve::auth::{apply, AuthGate};
+    pub use crate::commands::serve::auth::AuthGate;
 }
 
 // PMAT-923: e2e seam so `tests/ollama_api_serve_compat.rs` can build the REAL

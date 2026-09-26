@@ -165,9 +165,27 @@ pub fn run_qwen3_moe_generate(
     input_tokens: &[u32],
     gen_config: &QuantizedGenerateConfig,
 ) -> Result<Vec<u32>> {
+    run_qwen3_moe_generate_observed(mapped, model, input_tokens, gen_config, &mut || {})
+}
+
+/// [`run_qwen3_moe_generate`] with `on_token()` fired as each token is chosen,
+/// so a caller can time the prefill boundary (SRV-TIM-001).
+///
+/// # Errors
+/// As [`run_qwen3_moe_generate`].
+pub fn run_qwen3_moe_generate_observed(
+    mapped: &MappedGGUFModel,
+    model: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &QuantizedGenerateConfig,
+    on_token: &mut dyn FnMut(),
+) -> Result<Vec<u32>> {
     let mut session = Qwen3MoeSession::new(Qwen3MoeForward::cpu(mapped, model)?);
     Ok(session
-        .generate(input_tokens, gen_config, &mut |_| true)?
+        .generate(input_tokens, gen_config, &mut |_| {
+            on_token();
+            true
+        })?
         .tokens)
 }
 

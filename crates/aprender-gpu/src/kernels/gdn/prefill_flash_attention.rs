@@ -160,6 +160,91 @@ fn quad_reduce(
     acc
 }
 
+/// The registers the Q-staging prologue reads.
+struct QStage {
+    q_ptr: VirtualReg,
+    rows: VirtualReg,
+    q0: VirtualReg,
+    lane: VirtualReg,
+    lane16: VirtualReg,
+    lane_hi: VirtualReg,
+    q_warp_base: VirtualReg,
+    head_col: VirtualReg,
+    q_stride: u32,
+}
+
+/// Stage each 128-wide half of the warp's Q rows as f16 in shared memory and
+/// lift it into the 16 A-fragments (8 k-steps per half) the QK^T MMAs consume.
+fn stage_q_fragments(
+    ctx: &mut crate::ptx::builder::KernelBuilder<'_>,
+    q: &QStage,
+) -> Vec<[VirtualReg; 4]> {
+    let QStage {
+        q_ptr,
+        rows,
+        q0,
+        lane,
+        lane16,
+        lane_hi,
+        q_warp_base,
+        head_col,
+        q_stride,
+    } = *q;
+    let mut qfrag: Vec<[VirtualReg; 4]> = Vec::with_capacity(16);
+    for half in 0..2u32 {
+        ctx.bar_sync(0);
+        let it = ctx.mov_u32_imm(0);
+        let lbl = format!("fa_qstage_{half}");
+        let end = format!("fa_qstage_end_{half}");
+        ctx.label(&lbl);
+        let n = ctx.mov_u32_imm(BR * 128 / 32);
+        let more = ctx.setp_lt_u32(it, n);
+        ctx.branch_if_not(more, &end);
+        let it32 = ctx.mul_u32(it, 32);
+        let idx = ctx.add_u32_reg(it32, lane);
+        let seven = ctx.mov_u32_imm(7);
+        let r = ctx.shr_u32(idx, seven); // / 128
+        let m127 = ctx.mov_u32_imm(127);
+        let c = ctx.and_u32(idx, m127);
+        let qrow = ctx.add_u32_reg(q0, r);
+        let val = ctx.mov_f32_imm(0.0);
+        let in_rows = ctx.setp_lt_u32(qrow, rows);
+        let skip = format!("fa_qload_skip_{half}");
+        ctx.branch_if_not(in_rows, &skip);
+        let rowel = ctx.mul_u32(qrow, q_stride);
+        let col = ctx.add_u32(c, half * 128);
+        let colh = ctx.add_u32_reg(head_col, col);
+        let el = ctx.add_u32_reg(rowel, colh);
+        let off = ctx.mul_wide_u32(el, 4);
+        let addr = ctx.add_u64(q_ptr, off);
+        let x = ctx.ld_global_f32(addr);
+        ctx.mov_f32_reg(val, x);
+        ctx.label(&skip);
+        let h = ctx.cvt_f16_f32(val);
+        let srow = ctx.mul_u32(r, Q_ROW_H);
+        let sel = ctx.add_u32_reg(srow, c);
+        let sb = ctx.mul_u32(sel, 2);
+        let sa = ctx.add_u32_reg(q_warp_base, sb);
+        let sa64 = ctx.cvt_u64_u32(sa);
+        ctx.st_shared_f16(sa64, h);
+        ctx.add_u32_inplace(it, 1);
+        ctx.branch(&lbl);
+        ctx.label(&end);
+        ctx.bar_sync(0);
+        // A-fragment of k-step kk: lane reads row lane%16, cols kk*16 + (lane/16)*8.
+        let lrow = ctx.mul_u32(lane16, Q_ROW_H);
+        let lcol = ctx.mul_u32(lane_hi, 8);
+        let lel = ctx.add_u32_reg(lrow, lcol);
+        let lb = ctx.mul_u32(lel, 2);
+        let lbase = ctx.add_u32_reg(q_warp_base, lb);
+        for kk in 0..8u32 {
+            let a = ctx.add_u32(lbase, kk * 16 * 2);
+            qfrag.push(ctx.ldmatrix_x4(a));
+        }
+    }
+    qfrag
+}
+
 impl Kernel for PrefillFlashAttention256Kernel {
     fn name(&self) -> &str {
         "gdn_prefill_flash_attention_256"
@@ -217,58 +302,20 @@ impl Kernel for PrefillFlashAttention256Kernel {
                 let q_warp_off = ctx.mul_u32(warp, Q_TILE_BYTES);
                 let q_warp_base = ctx.add_u32(q_warp_off, q_off);
                 let head_col = ctx.mul_u32(head, FLASH_HEAD_DIM);
-                let mut qfrag: Vec<[VirtualReg; 4]> = Vec::with_capacity(16);
-                for half in 0..2u32 {
-                    ctx.bar_sync(0);
-                    let it = ctx.mov_u32_imm(0);
-                    let lbl = format!("fa_qstage_{half}");
-                    let end = format!("fa_qstage_end_{half}");
-                    ctx.label(&lbl);
-                    let n = ctx.mov_u32_imm(BR * 128 / 32);
-                    let more = ctx.setp_lt_u32(it, n);
-                    ctx.branch_if_not(more, &end);
-                    let it32 = ctx.mul_u32(it, 32);
-                    let idx = ctx.add_u32_reg(it32, lane);
-                    let seven = ctx.mov_u32_imm(7);
-                    let r = ctx.shr_u32(idx, seven); // / 128
-                    let m127 = ctx.mov_u32_imm(127);
-                    let c = ctx.and_u32(idx, m127);
-                    let qrow = ctx.add_u32_reg(q0, r);
-                    let val = ctx.mov_f32_imm(0.0);
-                    let in_rows = ctx.setp_lt_u32(qrow, rows);
-                    let skip = format!("fa_qload_skip_{half}");
-                    ctx.branch_if_not(in_rows, &skip);
-                    let rowel = ctx.mul_u32(qrow, q_stride);
-                    let col = ctx.add_u32(c, half * 128);
-                    let colh = ctx.add_u32_reg(head_col, col);
-                    let el = ctx.add_u32_reg(rowel, colh);
-                    let off = ctx.mul_wide_u32(el, 4);
-                    let addr = ctx.add_u64(q_ptr, off);
-                    let x = ctx.ld_global_f32(addr);
-                    ctx.mov_f32_reg(val, x);
-                    ctx.label(&skip);
-                    let h = ctx.cvt_f16_f32(val);
-                    let srow = ctx.mul_u32(r, Q_ROW_H);
-                    let sel = ctx.add_u32_reg(srow, c);
-                    let sb = ctx.mul_u32(sel, 2);
-                    let sa = ctx.add_u32_reg(q_warp_base, sb);
-                    let sa64 = ctx.cvt_u64_u32(sa);
-                    ctx.st_shared_f16(sa64, h);
-                    ctx.add_u32_inplace(it, 1);
-                    ctx.branch(&lbl);
-                    ctx.label(&end);
-                    ctx.bar_sync(0);
-                    // A-fragment of k-step kk: lane reads row lane%16, cols kk*16 + (lane/16)*8.
-                    let lrow = ctx.mul_u32(lane16, Q_ROW_H);
-                    let lcol = ctx.mul_u32(lane_hi, 8);
-                    let lel = ctx.add_u32_reg(lrow, lcol);
-                    let lb = ctx.mul_u32(lel, 2);
-                    let lbase = ctx.add_u32_reg(q_warp_base, lb);
-                    for kk in 0..8u32 {
-                        let a = ctx.add_u32(lbase, kk * 16 * 2);
-                        qfrag.push(ctx.ldmatrix_x4(a));
-                    }
-                }
+                let qfrag = stage_q_fragments(
+                    ctx,
+                    &QStage {
+                        q_ptr,
+                        rows,
+                        q0,
+                        lane,
+                        lane16,
+                        lane_hi,
+                        q_warp_base,
+                        head_col,
+                        q_stride,
+                    },
+                );
 
                 // ---- Per-row running state (rows g and g + 8) and the O accumulator.
                 let m = [ctx.mov_f32_imm(f32::NEG_INFINITY), ctx.mov_f32_imm(f32::NEG_INFINITY)];
