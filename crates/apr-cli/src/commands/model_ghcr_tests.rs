@@ -345,6 +345,12 @@ fn auth_registry(
                 if auth == expected && line.contains("scope=repository%3Apaiml%2Fm%3Apull%2Cpush") {
                     let body = r#"{"token":"EXCHANGED-registry-token"}"#;
                     format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+                } else if auth.is_empty()
+                    && line.contains("scope=repository%3Apaiml%2Fm%3Apull")
+                    && !line.contains("%2Cpush")
+                {
+                    let body = r#"{"token":"ANON-pull-token"}"#;
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
                 } else {
                     "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                         .to_string()
@@ -613,5 +619,44 @@ fn ghcr_http_roundtrip_against_a_live_registry() {
     eprintln!(
         "LIVE OCI roundtrip ok: {reference}:0.1.0 = {}",
         again.manifest_digest
+    );
+}
+
+#[test]
+fn falsify_ext_017_ghcr_public_package_is_fetched_anonymously() {
+    let (base, seen) = auth_registry(
+        r#"Bearer realm="http://{addr}/token",service="ghcr.io""#,
+        "Bearer ANON-pull-token",
+    );
+    let mut reg = HttpRegistry::new(base, "paiml/m".into(), "apr".into(), None);
+    assert_eq!(
+        reg.tag_digest("0.1.0").expect("anonymous pull"),
+        Some("sha256:abc".into())
+    );
+    let seen = seen.lock().expect("lock").clone();
+    assert_eq!(
+        seen,
+        ["", "", "Bearer ANON-pull-token"],
+        "no credential is invented"
+    );
+}
+
+#[test]
+fn ghcr_exchanged_token_is_redacted_when_the_registry_echoes_it() {
+    let (base, _) = auth_registry(
+        r#"Bearer realm="http://{addr}/token",service="ghcr.io""#,
+        "Bearer never-accepted",
+    );
+    let mut reg = HttpRegistry::new(
+        base,
+        "paiml/m".into(),
+        "apr".into(),
+        Some(Token(TOKEN.into())),
+    );
+    let err = reg.get_manifest("0.1.0").expect_err("rejected").to_string();
+    assert!(err.contains("401") && err.contains("<redacted>"), "{err}");
+    assert!(
+        !err.contains("EXCHANGED-registry-token"),
+        "exchanged token leaked: {err}"
     );
 }

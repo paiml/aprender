@@ -572,13 +572,16 @@ impl HttpRegistry {
         })
     }
 
-    /// Answer a 401 challenge; `Ok(false)` when there is nothing to answer with.
+    /// Answer a 401 challenge; `Ok(false)` when there is nothing to answer with. A
+    /// Bearer realm is asked for a token even without a file token: that is how a
+    /// public package is pulled anonymously.
     fn authenticate(&mut self, challenge: &str) -> Result<bool> {
-        let Some(basic) = self.basic() else {
-            return Ok(false);
-        };
+        let basic = self.basic();
         let lower = challenge.to_ascii_lowercase();
         if lower.starts_with("basic") {
+            let Some(basic) = basic else {
+                return Ok(false);
+            };
             self.auth = Some(basic);
             return Ok(true);
         }
@@ -592,9 +595,12 @@ impl HttpRegistry {
         };
         let realm =
             param("realm").ok_or_else(|| self.fail("auth", "Bearer challenge without realm"))?;
-        let mut req = ureq::get(&realm)
-            .query("scope", &format!("repository:{}:pull,push", self.repo))
-            .set("Authorization", &basic);
+        let scope = if basic.is_some() { "pull,push" } else { "pull" };
+        let mut req =
+            ureq::get(&realm).query("scope", &format!("repository:{}:{scope}", self.repo));
+        if let Some(basic) = &basic {
+            req = req.set("Authorization", basic);
+        }
         if let Some(service) = param("service") {
             req = req.query("service", &service);
         }
@@ -620,14 +626,16 @@ impl HttpRegistry {
         make: &dyn Fn() -> ureq::Request,
         body: &dyn Fn(ureq::Request) -> std::result::Result<ureq::Response, ureq::Error>,
     ) -> Result<ureq::Response> {
-        for attempt in 0..2 {
+        let mut answered = false;
+        loop {
             let mut req = make();
             if let Some(a) = &self.auth {
                 req = req.set("Authorization", a);
             }
             match body(req) {
                 Ok(r) => return Ok(r),
-                Err(ureq::Error::Status(401, r)) if attempt == 0 => {
+                Err(ureq::Error::Status(401, r)) if !answered => {
+                    answered = true;
                     let challenge = r.header("WWW-Authenticate").unwrap_or("").to_string();
                     if !self.authenticate(&challenge)? {
                         return Err(self.fail(what, "401 and no usable credential"));
@@ -640,8 +648,6 @@ impl HttpRegistry {
                 Err(e) => return Err(self.fail(what, e)),
             }
         }
-        // Only reachable if the loop bound changes: the second 401 returns above.
-        Err(self.fail(what, "401 after authenticating"))
     }
 
     /// Like [`Self::send`] but a 404 is `Ok(None)`.
