@@ -123,9 +123,10 @@ fn distill_fixture() -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().expect("tempdir");
     let shard: Vec<u8> = (0u32..64).flat_map(u32::to_le_bytes).collect();
     std::fs::write(dir.path().join("train.bin"), shard).expect("train");
-    std::fs::write(dir.path().join("eval.jsonl"), b"{\"x\":2}\n").expect("eval");
+    let eval: Vec<u8> = (100u32..132).flat_map(u32::to_le_bytes).collect();
+    std::fs::write(dir.path().join("eval.bin"), eval).expect("eval");
     let train = sha256_file(&dir.path().join("train.bin")).expect("hash");
-    let eval = sha256_file(&dir.path().join("eval.jsonl")).expect("hash");
+    let eval = sha256_file(&dir.path().join("eval.bin")).expect("hash");
     let text = format!(
         "recipe_version: 1
 base:
@@ -138,7 +139,7 @@ method:
   teacher: /models/teacher.apr
   temperature: 2.5
 eval:
-  held_out: eval.jsonl
+  held_out: eval.bin
   sha256: {eval}
   metric: loss
 training:
@@ -166,6 +167,7 @@ fn a_valid_distill_recipe_supplies_the_distill_args() {
     assert_eq!(a.student, PathBuf::from("/models/student.apr"));
     assert_eq!(a.teacher, PathBuf::from("/models/teacher.apr"));
     assert_eq!(a.data, dir.path().join("train.bin"));
+    assert_eq!(a.held_out, dir.path().join("eval.bin"));
     assert!((a.temperature - 2.5).abs() < f64::EPSILON);
     assert_eq!((a.epochs, a.batch_size, a.seed), (3, 8, 11));
     assert!((a.learning_rate - 5e-4).abs() < f64::EPSILON);
@@ -182,6 +184,7 @@ fn distill_refusals_name_the_recipe_field() {
     let (dir, text) = distill_fixture();
     let zeros = "0".repeat(64);
     let train_sha = sha256_file(&dir.path().join("train.bin")).expect("hash");
+    let eval_sha = sha256_file(&dir.path().join("eval.bin")).expect("hash");
     std::fs::write(dir.path().join("train.jsonl"), b"{}").expect("jsonl");
     let jsonl_sha = sha256_file(&dir.path().join("train.jsonl")).expect("hash");
     let cases: Vec<(&str, String, &str)> = vec![
@@ -205,6 +208,22 @@ fn distill_refusals_name_the_recipe_field() {
             "method.kind",
         ),
         (
+            "held-out set is not a shard",
+            text.replace("held_out: eval.bin", "held_out: train.jsonl")
+                .replace(&eval_sha, &jsonl_sha),
+            "eval.held_out",
+        ),
+        (
+            "held-out shard changed",
+            text.replace(&eval_sha, &zeros),
+            "eval.sha256",
+        ),
+        (
+            "metric the pipeline does not report",
+            text.replace("metric: loss", "metric: accuracy"),
+            "eval.metric",
+        ),
+        (
             "adapter alpha not honored",
             text.replace("  temperature: 2.5\n", "  temperature: 2.5\n  alpha: 16\n"),
             "method.alpha",
@@ -214,4 +233,18 @@ fn distill_refusals_name_the_recipe_field() {
         let msg = refused_field(load_distill_text(&dir, &yaml));
         assert!(msg.contains(&format!("`{field}`")), "case {name}: {msg}");
     }
+}
+
+/// One pass over the held-out shard: whole `seq_len + 1` windows, whole
+/// batches, never a wrapped-around partial one.
+#[test]
+fn held_out_batches_counts_whole_batches_in_one_pass() {
+    // 64 tokens, windows of 8 → 8 windows → 2 batches of 4.
+    assert_eq!(held_out_batches(64 * 4, 4, 7), 2);
+    // 63 tokens → 7 windows → 1 whole batch of 4 (the partial one is dropped).
+    assert_eq!(held_out_batches(63 * 4, 4, 7), 1);
+    // Fewer tokens than one batch → 0 (the caller refuses the shard).
+    assert_eq!(held_out_batches(31 * 4, 4, 7), 0);
+    // A trailing partial token is not a token.
+    assert_eq!(held_out_batches(64 * 4 + 3, 4, 7), 2);
 }

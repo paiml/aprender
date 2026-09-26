@@ -11,6 +11,7 @@ metadata:
   - "crates/apr-cli/src/commands/finetune.rs"
   - "crates/aprender-train/src/finetune/instruct_trainer.rs"
   - "crates/aprender-train/src/train/shard_reader.rs"
+  - "crates/aprender-train-distill/src/pipeline.rs"
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
   description: >
     One declarative recipe for apr fine-tune and distill (E8 #4002, row R-1).
@@ -122,6 +123,15 @@ falsification_tests:
     cargo test -p apr-cli --lib commands::finetune_recipe::tests
     cargo test -p apr-cli --lib test_parse_finetune_recipe_conflicts_with_modes_that_drop_eval
   if_fails: "a recipe's eval split is hashed but never evaluated, so the reported validation loss is measured on a slice of the training data"
+
+- id: FALSIFY-RECIPE-010
+  rule: the distill consumer evaluates the recipe's held-out set
+  prediction: "apr distill --recipe measures KD loss on eval.held_out after training, forward only, over exactly one pass of whole batches, reports it as val_loss, and refuses by name a held-out set that is not a .bin shard and eval.metric accuracy"
+  test: |
+    cargo test -p aprender-train-distill --lib pipeline::tests::falsify_recipe_010_held_out_is_evaluated_not_trained
+    cargo test -p apr-cli --lib commands::finetune_recipe::tests::held_out_batches_counts_whole_batches_in_one_pass
+    cargo test -p apr-cli --lib commands::finetune_recipe::tests::distill_refusals_name_the_recipe_field
+  if_fails: "a distill recipe's eval split is hashed but never evaluated, or eval trains the student on the held-out set"
 
 proof_obligations:
 - id: RECIPE-INV-001

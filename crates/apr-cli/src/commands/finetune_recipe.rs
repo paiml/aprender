@@ -144,6 +144,9 @@ pub(crate) struct DistillRecipeArgs {
     pub teacher: PathBuf,
     /// One `.bin` token shard, hashed against `data.sha256`.
     pub data: PathBuf,
+    /// The held-out `.bin` shard (`eval.held_out`), hashed against
+    /// `eval.sha256`; its KD loss is measured after training.
+    pub held_out: PathBuf,
     pub temperature: f64,
     pub epochs: u32,
     pub batch_size: u32,
@@ -194,14 +197,33 @@ pub(crate) fn load_distill(path: &Path) -> Result<DistillRecipeArgs> {
         ));
     }
     check_hash("data.sha256", &data, &recipe.data.sha256)?;
+    // The held-out set is evaluated through the same shard reader.
     let held_out = resolve(dir, &recipe.eval.held_out);
+    if held_out.extension().is_none_or(|e| e != "bin") {
+        return Err(refuse_field(
+            "eval.held_out",
+            format!(
+                "{} is not a .bin token shard (apr distill evaluates the held-out set as one)",
+                held_out.display()
+            ),
+        ));
+    }
     check_hash("eval.sha256", &held_out, &recipe.eval.sha256)?;
+    // The distill pipeline measures held-out KD loss only.
+    if recipe.eval.metric != EvalMetric::Loss {
+        return Err(refuse_field(
+            "eval.metric",
+            "apr distill reports held-out KD loss; metric accuracy is not honored yet (use loss)"
+                .to_string(),
+        ));
+    }
 
     Ok(DistillRecipeArgs {
         student: PathBuf::from(&recipe.base.model),
         // parse() guarantees a distill recipe names a teacher.
         teacher: PathBuf::from(recipe.method.teacher.clone().unwrap_or_default()),
         data,
+        held_out,
         temperature: recipe
             .method
             .temperature
@@ -212,6 +234,15 @@ pub(crate) fn load_distill(path: &Path) -> Result<DistillRecipeArgs> {
         seed: recipe.training.seed,
         hash: recipe.hash(),
     })
+}
+
+/// Full batches in one pass over a `.bin` shard of `shard_bytes` bytes: the
+/// reader cuts u32 tokens into `seq_len + 1` windows and groups `batch_size`
+/// windows per batch. Evaluating exactly this many never wraps around.
+#[cfg_attr(not(all(feature = "training", feature = "cuda")), allow(dead_code))]
+pub(crate) fn held_out_batches(shard_bytes: u64, batch_size: usize, seq_len: usize) -> usize {
+    let tokens = usize::try_from(shard_bytes / 4).unwrap_or(usize::MAX);
+    tokens / (seq_len + 1) / batch_size.max(1)
 }
 
 #[cfg(test)]

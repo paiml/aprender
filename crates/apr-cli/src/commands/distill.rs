@@ -460,6 +460,7 @@ pub(crate) fn run_recipe(
             Some(r.batch_size),
             plan_only,
             Some(&r.data),
+            Some(&r.held_out),
             json_output,
         )
     }
@@ -537,6 +538,7 @@ pub(crate) fn run(
                     None,
                     plan_only,
                     dataset_dir,
+                    None,
                     json_output,
                 );
             }
@@ -706,6 +708,7 @@ fn run_cuda_backend(
     batch_size: Option<u32>,
     plan_only: bool,
     dataset_dir: Option<&Path>,
+    held_out: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
     use aprender::format::v2::AprV2Reader;
@@ -1007,14 +1010,14 @@ fn run_cuda_backend(
     // pipeline keeps its default SyntheticBatchSource for smoke tests.
     // Requires the `shard-batch-source` feature on aprender-train-distill
     // (enabled by default in apr-cli's `training` feature).
+    let smoke_seq_len: usize = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256);
     if let Some(dir) = dataset_dir {
         #[cfg(feature = "training")]
         {
             use entrenar_distill::batch_source::ShardBatchSource;
-            let smoke_seq_len: usize = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(256);
             let bs = config.training.batch_size as usize;
             let pad_id: u32 = 0;
             let eos_id: u32 = 0;
@@ -1035,6 +1038,36 @@ fn run_cuda_backend(
             ));
         }
     }
+    // E8 #4002: a recipe's held-out shard is evaluated after training, one
+    // pass, forward only, and reported as val_loss.
+    if let Some(path) = held_out {
+        use entrenar_distill::batch_source::ShardBatchSource;
+        let bs = config.training.batch_size as usize;
+        let bytes = std::fs::metadata(path)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "recipe field `eval.held_out`: {}: {e}",
+                    path.display()
+                ))
+            })?
+            .len();
+        let batches = crate::commands::finetune_recipe::held_out_batches(bytes, bs, smoke_seq_len);
+        if batches == 0 {
+            return Err(CliError::ValidationFailed(format!(
+                "recipe field `eval.held_out`: {} holds fewer than one batch \
+                 ({bs} windows of {} tokens)",
+                path.display(),
+                smoke_seq_len + 1
+            )));
+        }
+        let source = ShardBatchSource::from_dir(path, bs, smoke_seq_len, 0, 0).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "recipe field `eval.held_out`: ShardBatchSource::from_dir({}): {e}",
+                path.display()
+            ))
+        })?;
+        pipeline = pipeline.with_eval_source(Box::new(source), batches);
+    }
     let result = pipeline
         .execute()
         .map_err(|e| CliError::ValidationFailed(format!("cuda pipeline.execute failed: {e}")))?;
@@ -1053,6 +1086,7 @@ fn run_cuda_backend(
                 "initial_loss": result.metrics.initial_loss,
                 "final_loss": result.metrics.final_loss,
                 "best_loss": result.metrics.best_loss,
+                "val_loss": result.metrics.val_loss,
                 "steps_completed": result.metrics.steps_completed,
                 "duration_seconds": result.duration_seconds,
                 "status": "completed",
@@ -1066,6 +1100,9 @@ fn run_cuda_backend(
             result.metrics.steps_completed,
             result.duration_seconds
         );
+        if let Some(v) = result.metrics.val_loss {
+            println!("  Held-out KD loss: {v:.4}");
+        }
         println!("  Output: {}", result.output_path.display());
     }
     Ok(())

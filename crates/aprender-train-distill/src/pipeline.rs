@@ -36,6 +36,9 @@ pub struct TrainingMetrics {
     pub steps_completed: u64,
     /// Average throughput (samples/second)
     pub throughput: f32,
+    /// Mean KD loss over the held-out batches, measured after training with
+    /// no gradient applied (E8 #4002). `None` when no eval source is set.
+    pub val_loss: Option<f32>,
 }
 
 impl TrainingMetrics {
@@ -89,6 +92,9 @@ pub struct Pipeline<'a> {
     /// tests via [`Self::with_per_position`]. Default `false` keeps the
     /// production loop byte-identical. Contract: `contracts/distill-per-position-kd-v1.yaml`.
     per_position: bool,
+    /// E8 #4002: held-out batch source and the number of batches one pass
+    /// over it holds. Evaluated once after training, forward only.
+    eval_source: Option<(Box<dyn crate::batch_source::BatchSource>, usize)>,
 }
 
 impl<'a> Pipeline<'a> {
@@ -121,7 +127,23 @@ impl<'a> Pipeline<'a> {
             smoke_max_steps: parse_max_steps(),
             // PMAT-PERPOS: full-sequence KD opt-in from the env once.
             per_position: parse_per_position(),
+            eval_source: None,
         }
+    }
+
+    /// E8 #4002: evaluate the trained student on a held-out source.
+    ///
+    /// After the last step, `batches` batches are drawn from `source` and the
+    /// KD loss is measured with no gradient applied; the mean is reported as
+    /// [`TrainingMetrics::val_loss`]. The source is never trained on.
+    #[must_use]
+    pub fn with_eval_source(
+        mut self,
+        source: Box<dyn crate::batch_source::BatchSource>,
+        batches: usize,
+    ) -> Self {
+        self.eval_source = Some((source, batches));
+        self
     }
 
     /// PMAT-PERPOS: enable/disable full-sequence (per-position) KD.
@@ -673,6 +695,29 @@ impl<'a> Pipeline<'a> {
         metrics.steps_completed = step;
         metrics.throughput = (step as f32 * batch_size as f32) / elapsed;
 
+        // E8 #4002: held-out loss, forward only (no apply_kd_gradient).
+        if let Some((source, batches)) = self.eval_source.as_mut() {
+            let mut total = 0.0_f32;
+            for _ in 0..*batches {
+                let (inputs, labels) = source.next_batch(batch_size, smoke_seq_len)?;
+                total += kd_step_loss_for_pipeline(
+                    &mut *self.teacher,
+                    &mut *self.student,
+                    &inputs,
+                    &labels,
+                    temperature,
+                    alpha,
+                )?;
+            }
+            #[allow(clippy::cast_precision_loss)]
+            let mean = if *batches == 0 {
+                None
+            } else {
+                Some(total / *batches as f32)
+            };
+            metrics.val_loss = mean;
+        }
+
         // PMAT-706: smoke-validation degenerate-run guard + summary.
         if max_steps.is_some() && step == 0 {
             // Smoke mode was requested but the loop ran nothing (e.g. epochs=0
@@ -1176,6 +1221,7 @@ mod tests {
             best_loss: 0.9,
             steps_completed: 1000,
             throughput: 100.0,
+            val_loss: None,
         };
 
         assert!((metrics.improvement_ratio() - 0.5).abs() < 0.01);
@@ -1440,6 +1486,81 @@ mod tests {
             fast < slow,
             "FALSIFY-RECIPE-007: lr 0.1 must move the student further than lr 0.001 \
              (final {fast} vs {slow}); equal losses mean the configured rate is ignored"
+        );
+    }
+
+    /// A source that serves one fixed batch and counts how often it is asked.
+    struct CountingSource {
+        served: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl crate::batch_source::BatchSource for CountingSource {
+        fn next_batch(
+            &mut self,
+            batch_size: usize,
+            _seq_len: usize,
+        ) -> Result<(Vec<Vec<u32>>, Vec<usize>)> {
+            self.served.set(self.served.get() + 1);
+            Ok((vec![vec![1, 2, 3]; batch_size], vec![5; batch_size]))
+        }
+    }
+
+    /// FALSIFY-RECIPE-010 (E8 #4002): the held-out source is evaluated after
+    /// training, exactly `batches` times, and never trained on. The source
+    /// serves one fixed batch, so if eval applied gradients the mean over 4
+    /// batches would differ from the loss of 1.
+    #[test]
+    fn falsify_recipe_010_held_out_is_evaluated_not_trained() {
+        use safetensors::tensor::{Dtype, TensorView};
+
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let dummy: Vec<f32> = (0..32).map(|i| i as f32 * 0.01).collect();
+        let dummy_bytes: Vec<u8> = bytemuck::cast_slice(&dummy).to_vec();
+        for name in ["teacher", "student"] {
+            let views = vec![(
+                "layer.weight",
+                TensorView::new(Dtype::F32, vec![8, 4], &dummy_bytes).expect("safetensors view"),
+            )];
+            std::fs::write(
+                tmp.path().join(format!("{name}.safetensors")),
+                safetensors::serialize(views, None).expect("safetensors serialize"),
+            )
+            .expect("safetensors write");
+        }
+        let mut config = DistillConfig::minimal(
+            tmp.path().join("teacher.safetensors").to_str().unwrap(),
+            tmp.path().join("student.safetensors").to_str().unwrap(),
+        );
+        config.training.epochs = 1;
+        config.training.batch_size = 4;
+        config.training.learning_rate = 0.1;
+
+        let mut run = |batches: Option<usize>| {
+            let served = std::rc::Rc::new(std::cell::Cell::new(0));
+            config.output.dir = tmp.path().join(format!("out-{batches:?}"));
+            let mut p = Pipeline::new(&config).with_max_steps(None);
+            if let Some(n) = batches {
+                p = p.with_eval_source(
+                    Box::new(CountingSource {
+                        served: served.clone(),
+                    }),
+                    n,
+                );
+            }
+            let m = p.execute().expect("pipeline must succeed").metrics;
+            (m.val_loss, served.get())
+        };
+
+        assert_eq!(run(None), (None, 0), "no eval source, no val_loss");
+        let (one, n1) = run(Some(1));
+        let (four, n4) = run(Some(4));
+        assert_eq!((n1, n4), (1, 4), "eval draws exactly the declared batches");
+        let (one, four) = (one.expect("val_loss"), four.expect("val_loss"));
+        assert!(one.is_finite() && one > 0.0, "val_loss {one}");
+        assert!(
+            (one - four).abs() < 1e-6,
+            "FALSIFY-RECIPE-010: held-out loss moved across eval batches \
+             ({one} vs {four}) — eval is training the student"
         );
     }
 
