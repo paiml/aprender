@@ -133,6 +133,13 @@ falsification_tests:
     cargo test -p apr-cli --lib commands::finetune_recipe::tests::distill_refusals_name_the_recipe_field
   if_fails: "a distill recipe's eval split is hashed but never evaluated, or eval trains the student on the held-out set"
 
+- id: FALSIFY-RECIPE-011
+  rule: nothing outside the recipe changes a distill recipe run
+  prediction: "apr distill --recipe refuses, before any model load and naming <env>, an APR_DISTILL_SMOKE_SEQ_LEN override (even one equal to the default); a recipe run always uses seq_len 256"
+  test: |
+    cargo test -p apr-cli --lib commands::finetune_recipe::tests::a_seq_len_override_is_refused_under_a_recipe
+  if_fails: "an environment variable changes the distill window length while the recipe hash, the run's identity, stays the same"
+
 proof_obligations:
 - id: RECIPE-INV-001
   type: invariant

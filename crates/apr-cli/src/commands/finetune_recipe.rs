@@ -236,6 +236,31 @@ pub(crate) fn load_distill(path: &Path) -> Result<DistillRecipeArgs> {
     })
 }
 
+/// Distill window length (tokens per sample, before the +1 label shift) when
+/// no override is set. A recipe run always uses this value.
+pub(crate) const DISTILL_SEQ_LEN: usize = 256;
+
+/// The environment override for the distill window length. Outside a recipe
+/// it is honored; under `--recipe` it is refused, because the recipe hash is
+/// the run's identity and an env var would change the run without changing it.
+pub(crate) const DISTILL_SEQ_LEN_ENV: &str = "APR_DISTILL_SMOKE_SEQ_LEN";
+
+/// Refuse a window-length override under `apr distill --recipe`. `env` is the
+/// value of [`DISTILL_SEQ_LEN_ENV`], if set.
+pub(crate) fn refuse_seq_len_override(env: Option<&std::ffi::OsStr>) -> Result<()> {
+    match env {
+        None => Ok(()),
+        Some(v) => Err(refuse_field(
+            "<env>",
+            format!(
+                "{DISTILL_SEQ_LEN_ENV}={} would change the run without changing the recipe hash; \
+                 a recipe run uses seq_len {DISTILL_SEQ_LEN} (unset it)",
+                v.to_string_lossy()
+            ),
+        )),
+    }
+}
+
 /// Full batches in one pass over a `.bin` shard of `shard_bytes` bytes: the
 /// reader cuts u32 tokens into `seq_len + 1` windows and groups `batch_size`
 /// windows per batch. Evaluating exactly this many never wraps around.

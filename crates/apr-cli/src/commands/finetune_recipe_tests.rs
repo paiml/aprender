@@ -248,3 +248,17 @@ fn held_out_batches_counts_whole_batches_in_one_pass() {
     // A trailing partial token is not a token.
     assert_eq!(held_out_batches(64 * 4 + 3, 4, 7), 2);
 }
+
+/// A recipe run's window length is fixed: an env override is refused by name
+/// instead of silently changing a run the recipe hash still identifies.
+#[test]
+fn a_seq_len_override_is_refused_under_a_recipe() {
+    assert!(refuse_seq_len_override(None).is_ok());
+    let msg = refused_field(refuse_seq_len_override(Some(std::ffi::OsStr::new("64"))));
+    assert!(msg.contains("`<env>`"), "{msg}");
+    assert!(msg.contains(DISTILL_SEQ_LEN_ENV), "{msg}");
+    assert!(msg.contains("=64"), "{msg}");
+    // Even a value equal to the default is refused: set is not unset.
+    let same = DISTILL_SEQ_LEN.to_string();
+    let _ = refused_field(refuse_seq_len_override(Some(std::ffi::OsStr::new(&same))));
+}

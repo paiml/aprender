@@ -443,6 +443,9 @@ pub(crate) fn run_recipe(
     json_output: bool,
 ) -> Result<()> {
     let r = crate::commands::finetune_recipe::load_distill(recipe_path)?;
+    crate::commands::finetune_recipe::refuse_seq_len_override(
+        std::env::var_os(crate::commands::finetune_recipe::DISTILL_SEQ_LEN_ENV).as_deref(),
+    )?;
     if !json_output {
         eprintln!("[recipe] {} sha256={}", recipe_path.display(), r.hash);
     }
@@ -1010,10 +1013,10 @@ fn run_cuda_backend(
     // pipeline keeps its default SyntheticBatchSource for smoke tests.
     // Requires the `shard-batch-source` feature on aprender-train-distill
     // (enabled by default in apr-cli's `training` feature).
-    let smoke_seq_len: usize = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
+    let smoke_seq_len: usize = std::env::var(crate::commands::finetune_recipe::DISTILL_SEQ_LEN_ENV)
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(256);
+        .unwrap_or(crate::commands::finetune_recipe::DISTILL_SEQ_LEN);
     if let Some(dir) = dataset_dir {
         #[cfg(feature = "training")]
         {
