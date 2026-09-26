@@ -13,6 +13,8 @@ every response against contracts/apr-serve-timings-v1.yaml:
       the same prefill_ms / decode_ms / prompt_n / predicted_n
   F6  the --timings-log JSONL line for that request id carries the same values,
       plus `build` and `host`
+  F7  (APR-OBS-001 OBS-03) the X-Request-ID the client sent is echoed on the
+      response and as `client_request_id` in both the stderr and JSONL lines
 
 Exit 0 iff every cell is GREEN. A cell is never skipped: a missing line is RED.
 
@@ -30,23 +32,25 @@ import subprocess
 import sys
 import time
 import urllib.request
+import uuid
 
 LOG_PREFIX = "[request] "
 CHAT_PROMPT = "Explain in two sentences why the sky is blue."
 COMPLETION_PROMPT = "The sky is blue because"
 
 
-def post(port, route, body):
-    """POST `body`; return (raw text, wall ms)."""
+def post(port, route, body, client_id):
+    """POST `body` with X-Request-ID; return (raw text, wall ms, echoed id)."""
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}{route}",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "X-Request-ID": client_id},
     )
     t0 = time.monotonic()
     with urllib.request.urlopen(req, timeout=600) as resp:
         raw = resp.read().decode()
-    return raw, (time.monotonic() - t0) * 1000.0
+        echoed = resp.headers.get("X-Request-ID")
+    return raw, (time.monotonic() - t0) * 1000.0, echoed
 
 
 def parse(raw):
@@ -152,10 +156,11 @@ def main():
             return 1
         results = []
         for name, route, body in cases():
-            raw, wall = post(a.port, route, body)
+            client_id = str(uuid.uuid4())
+            raw, wall, echoed = post(a.port, route, body, client_id)
             with open(os.path.join(a.out, f"{name}.resp"), "w") as f:
                 f.write(raw)
-            results.append((name, wall) + parse(raw))
+            results.append((name, wall, client_id, echoed) + parse(raw))
         time.sleep(0.5)  # the terminal-chunk emit precedes the client's EOF
     finally:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -167,8 +172,8 @@ def main():
         filed = records(f, strip_prefix=False)
 
     red = 0
-    print(f"{'case':<20} {'F1':<5} {'F2':<5} {'F3':<5} {'F5':<5} {'F6':<5} prompt_ms/predicted_ms/wall_ms")
-    for name, wall, rid, t, u in results:
+    print(f"{'case':<20} {'F1':<5} {'F2':<5} {'F3':<5} {'F5':<5} {'F6':<5} {'F7':<5} prompt_ms/predicted_ms/wall_ms")
+    for name, wall, client_id, echoed, rid, t, u in results:
         f1 = t is not None
         f2 = f1 and u is not None and (t["prompt_n"], t["predicted_n"]) == (
             u["prompt_tokens"], u["completion_tokens"])
@@ -178,7 +183,10 @@ def main():
         f5 = same(logged.get(rid), t)
         frec = filed.get(rid)
         f6 = same(frec, t) and bool(frec.get("build")) and bool(frec.get("host"))
-        cells = [f1, f2, f3, f5, f6]
+        f7 = echoed == client_id and all(
+            r is not None and r.get("client_request_id") == client_id
+            for r in (logged.get(rid), frec))
+        cells = [f1, f2, f3, f5, f6, f7]
         red += cells.count(False)
         ms = "-" if not f1 else f"{t['prompt_ms']:.1f}/{t['predicted_ms']:.1f}/{wall:.1f}"
         print(f"{name:<20} " + " ".join(f"{'ok' if c else 'RED':<5}" for c in cells) + f" {ms}")

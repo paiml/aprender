@@ -13,6 +13,12 @@
 //! to the first chosen token, plus the (sub-millisecond) response assembly
 //! after the last one, so it is an upper bound, never an estimate. It is absent
 //! whenever the split is.
+//!
+//! APR-OBS-001 OBS-03: a client that sends `X-Request-ID` gets it back in
+//! `client_request_id`, so OBS-04 can join its own lane row to this line.
+//! [`client_request_id_scope`] holds it in a task-local around the handler AND
+//! around the SSE body's polls, because a stream's terminal emit runs while
+//! the body is being written, after the handler future has returned.
 
 use std::io::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,6 +31,9 @@ use super::Timings;
 pub struct RequestRecord {
     /// The response id the client saw.
     pub request_id: String,
+    /// The client's `X-Request-ID` header (OBS-03 join key), `null` when the
+    /// client sent none or one that was not a short printable token.
+    pub client_request_id: Option<String>,
     /// The `model` field of the response.
     pub model: String,
     /// `chat` or `completions`.
@@ -70,6 +79,7 @@ impl RequestRecord {
         let decode_ms = timings.map(|t| t.predicted_ms);
         Self {
             request_id: request_id.to_string(),
+            client_request_id: current_client_request_id(),
             model: model.to_string(),
             endpoint,
             backend: match used_gpu {
@@ -87,6 +97,71 @@ impl RequestRecord {
             finish_reason: finish_reason.to_string(),
         }
     }
+}
+
+/// The header OBS-01 clients send and this server echoes.
+pub const CLIENT_REQUEST_ID_HEADER: &str = "x-request-id";
+
+/// Longest `X-Request-ID` accepted; a UUIDv7 is 36.
+const MAX_CLIENT_REQUEST_ID: usize = 128;
+
+tokio::task_local! {
+    static CLIENT_REQUEST_ID: Option<std::sync::Arc<str>>;
+}
+
+/// The current request's `X-Request-ID`, if one is in scope.
+fn current_client_request_id() -> Option<String> {
+    CLIENT_REQUEST_ID
+        .try_with(|id| id.as_deref().map(str::to_string))
+        .ok()
+        .flatten()
+}
+
+/// Accept a header value only if it is a short token of visible ASCII.
+fn accept_client_request_id(value: &axum::http::HeaderValue) -> Option<std::sync::Arc<str>> {
+    let s = value.to_str().ok()?;
+    let ok = !s.is_empty()
+        && s.len() <= MAX_CLIENT_REQUEST_ID
+        && s.bytes().all(|b| b.is_ascii_graphic());
+    ok.then(|| std::sync::Arc::from(s))
+}
+
+/// Middleware: scope the client's `X-Request-ID` over the handler and, for an
+/// SSE response, over every poll of its body; echo it on the response.
+/// Mounted INSIDE `cancel_on_disconnect`, whose `tokio::spawn` a task-local
+/// does not cross.
+pub(crate) async fn client_request_id_scope(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use futures::StreamExt as _;
+    let Some(id) = request
+        .headers()
+        .get(CLIENT_REQUEST_ID_HEADER)
+        .and_then(accept_client_request_id)
+    else {
+        return next.run(request).await;
+    };
+    let mut response = CLIENT_REQUEST_ID
+        .scope(Some(id.clone()), next.run(request))
+        .await;
+    if let Ok(v) = axum::http::HeaderValue::from_str(&id) {
+        response.headers_mut().insert(CLIENT_REQUEST_ID_HEADER, v);
+    }
+    let is_sse = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/event-stream"));
+    if !is_sse {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let mut inner = body.into_data_stream();
+    let scoped = futures::stream::poll_fn(move |cx| {
+        CLIENT_REQUEST_ID.sync_scope(Some(id.clone()), || inner.poll_next_unpin(cx))
+    });
+    axum::response::Response::from_parts(parts, axum::body::Body::from_stream(scoped))
 }
 
 /// Prefix of the stderr line; everything after it is one JSON object.
@@ -280,6 +355,7 @@ mod tests {
         assert!((v["ttft_ms"].as_f64().expect("ttft") - 19.75).abs() < 1e-9);
         for k in [
             "request_id",
+            "client_request_id",
             "model",
             "endpoint",
             "backend",
@@ -314,6 +390,88 @@ mod tests {
         assert_eq!(r.decode_ms, None);
         assert_eq!(r.ttft_ms, None);
         assert_eq!(r.backend, "unreported");
+    }
+
+    fn record_now() -> RequestRecord {
+        RequestRecord::new(
+            "chatcmpl-x",
+            "m",
+            "chat",
+            None,
+            true,
+            1,
+            1,
+            None,
+            std::time::Duration::from_millis(1),
+            "stop",
+        )
+    }
+
+    #[test]
+    fn obs03_client_request_id_is_null_outside_a_request() {
+        assert_eq!(record_now().client_request_id, None);
+    }
+
+    #[test]
+    fn obs03_header_filter_takes_uuids_and_refuses_junk() {
+        use axum::http::HeaderValue;
+        let uuid = "01927c3e-8f2a-7b3c-9d4e-5f6a7b8c9d0e";
+        assert_eq!(
+            accept_client_request_id(&HeaderValue::from_static(uuid)).as_deref(),
+            Some(uuid)
+        );
+        for bad in ["", "has space", &"x".repeat(MAX_CLIENT_REQUEST_ID + 1)] {
+            let v = HeaderValue::from_str(bad).expect("header");
+            assert_eq!(accept_client_request_id(&v), None, "{bad:?}");
+        }
+    }
+
+    /// OBS-03: the id reaches a record built in the handler AND one built
+    /// while the SSE body is polled, after the handler returned — and the
+    /// response echoes the header.
+    #[tokio::test]
+    async fn obs03_client_request_id_reaches_handler_and_sse_body_records() {
+        use axum::response::sse::{Event, Sse};
+        use axum::response::IntoResponse as _;
+        use tower::ServiceExt as _;
+        let seen = std::sync::Arc::new(Mutex::new(Vec::<Option<String>>::new()));
+        let (s1, s2) = (seen.clone(), seen.clone());
+        let app = axum::Router::new()
+            .route(
+                "/json",
+                axum::routing::get(move || async move {
+                    s1.lock()
+                        .expect("lock")
+                        .push(record_now().client_request_id);
+                    "ok"
+                }),
+            )
+            .route(
+                "/sse",
+                axum::routing::get(move || async move {
+                    let s2 = s2.clone();
+                    let events = async_stream::stream! {
+                        s2.lock().expect("lock").push(record_now().client_request_id);
+                        yield Ok::<_, std::convert::Infallible>(Event::default().data("x"));
+                    };
+                    Sse::new(events).into_response()
+                }),
+            )
+            .layer(axum::middleware::from_fn(client_request_id_scope));
+        let id = "01927c3e-8f2a-7b3c-9d4e-5f6a7b8c9d0e";
+        for route in ["/json", "/sse"] {
+            let req = axum::http::Request::get(route)
+                .header(CLIENT_REQUEST_ID_HEADER, id)
+                .body(axum::body::Body::empty())
+                .expect("req");
+            let resp = app.clone().oneshot(req).await.expect("resp");
+            assert_eq!(resp.headers()[CLIENT_REQUEST_ID_HEADER], id, "{route}");
+            axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .expect("body");
+        }
+        let seen = seen.lock().expect("lock").clone();
+        assert_eq!(seen, vec![Some(id.to_string()), Some(id.to_string())]);
     }
 
     #[test]

@@ -14,7 +14,7 @@ metadata:
   references:
   - 'crates/aprender-serve/src/api/mod_create_demo.rs — Timings, PhaseTimings, PhaseClock, build_trace_data_phased'
   - 'crates/aprender-serve/src/api/request_log.rs — RequestRecord, emit, prometheus_histograms, set_timings_log'
-  - 'scripts/serve_timings_falsify.py — the live falsifier (F1, F2, F3, F5, F6)'
+  - 'scripts/serve_timings_falsify.py — the live falsifier (F1, F2, F3, F5, F6, F7)'
 equations:
   phase_split:
     formula: >-
@@ -64,7 +64,7 @@ equations:
     - "a new dispatch arm is RED until it sets timings"
   request_log_line:
     formula: >-
-      stderr line = "[request] " ++ json{ request_id, model, endpoint, backend,
+      stderr line = "[request] " ++ json{ request_id, client_request_id, model, endpoint, backend,
       stream, prompt_n, predicted_n, prefill_ms, decode_ms, ttft_ms, total_ms,
       finish_reason }; ttft_ms = total_ms - decode_ms (an upper bound)
     domain: "one completed request"
@@ -72,6 +72,12 @@ equations:
     invariants:
     - "queue_ms and tokenize_ms are not separately measured; they are inside ttft_ms, which is labelled an upper bound"
     - "the line is always JSON: the server has no tracing subscriber and no --log-format flag"
+    - >-
+      APR-OBS-001 OBS-03: client_request_id is the request's X-Request-ID
+      header (a printable token of at most 128 bytes, else null); the response
+      echoes the header. It is the key OBS-04 joins the client's OBS-01 lane
+      row on, and it is set for SSE terminal records too, which are emitted
+      while the body is polled
     preconditions:
     - "--timings-log is off unless given"
     postconditions:
@@ -124,3 +130,11 @@ falsification_tests:
   prediction: "the JSONL line for the response id carries the same four values plus non-empty build and host"
   test: "python3 scripts/serve_timings_falsify.py ... (column F6)"
   if_fails: the NAS ledger records numbers the client never saw, or cannot say which binary produced them
+- id: FALSIFY-SRV-TIM-007
+  rule: the client's X-Request-ID is echoed into every sink (APR-OBS-001 OBS-03)
+  prediction: >-
+    a request sent with X-Request-ID gets it back as a response header, and its
+    `[request] ` stderr line and --timings-log line carry it as
+    client_request_id, stream and non-stream.
+  test: "python3 scripts/serve_timings_falsify.py ... (column F7); cargo test -p aprender-serve --lib obs03"
+  if_fails: OBS-04 cannot join client lane rows to server rows; self-report agreement is unmeasurable
