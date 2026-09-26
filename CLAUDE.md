@@ -62,8 +62,8 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 - **Never run `gh issue create`.** Only the cop creates issues, and only when the target epic has budget.
   A defect goes to `docs/findings/` (above); the cop mints from the ledger.
 - **Every PR discharges one open issue**: `Closes #N`, a rule-20 `Refs #P row <id>`, or a
-  `no-issue: <reason>` line, each as a line of its own at column 0 (not in a sentence, a code
-  block or a comment). CI enforces it with `scripts/check_pr_closes_issue.sh --require-close`.
+  `no-issue: <reason>` line, each at column 0 as a paragraph of its own: a blank line before
+  and after it, not in a sentence, a code block or a comment. CI enforces it with `scripts/check_pr_closes_issue.sh --require-close`.
 
 ### Check in BEFORE acting (real escalations only)
 - Compute spend > 1hr on non-lambda-vector hosts (lambda-vector is pre-authorized per `feedback_compute_pre_authorized.md`)
