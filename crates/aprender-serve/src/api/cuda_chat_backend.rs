@@ -408,7 +408,13 @@ fn try_quantized_backend(
                 .map(drop)
             };
             // SRV-TIM-001: sent before `tx` drops, so the terminal chunk finds it.
-            let _ = timing_tx.send(clock.finish());
+            // A failed engine has no split: the unmarked-clock rule (decode
+            // 0 ms over 0 tokens) is for a turn that ran and stopped.
+            let _ = timing_tx.send(if result.is_ok() {
+                clock.finish()
+            } else {
+                crate::api::PhaseTimings::default()
+            });
             if let Err(e) = result {
                 let _ = tx.blocking_send(Err(e.to_string()));
             }
@@ -1207,7 +1213,12 @@ fn moe_stream_cpu(
             },
         );
         // SRV-TIM-001: sent before `tx` drops, so the terminal chunk finds it.
-        let _ = timing_tx.send(clock.finish());
+        // A failed engine has no split (see the dense arm above).
+        let _ = timing_tx.send(if result.is_ok() {
+            clock.finish()
+        } else {
+            crate::api::PhaseTimings::default()
+        });
         if let Err(e) = result {
             let _ = tx.blocking_send(Err(e.to_string()));
         }
