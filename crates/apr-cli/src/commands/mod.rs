@@ -109,6 +109,7 @@ pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;
+pub(crate) mod model_gate_cr;
 pub(crate) mod model_gate_m2;
 #[cfg(feature = "training")]
 pub(crate) mod model_pack;

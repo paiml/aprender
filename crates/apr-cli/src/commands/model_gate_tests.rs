@@ -1,5 +1,7 @@
-//! EXT-12 (aprender#4394): `apr model gate` M0..M6 — each gate RED on its own plant.
+//! EXT-12 (aprender#4394) and EXT-13 (aprender#4393): `apr model gate` M-CR and M0..M6 —
+//! each gate RED on its own plant.
 
+use super::super::model_gate_cr::{CrContainer, CrEngine, CrEvidence, CrFetch};
 use super::super::model_gate_m2::arms::{Arm, ArmIdentity, ArmRole};
 use super::super::model_gate_m2::{ReleaseClass, Suite, SuiteData};
 use super::*;
@@ -42,6 +44,8 @@ const CARD: &str = "# paiml/qwen3.5-4b-apr v0.1.0-rc.1\n\n\
 /// A release dir whose every gate is green, plus what it was gated with.
 pub(crate) struct Fixture {
     pub(crate) dir: TempDir,
+    /// The rc as the clean-room job fetched it: a copy of the release files.
+    pub(crate) fetched: TempDir,
     pub(crate) _tar: TempDir,
     pub(crate) tarball: PathBuf,
     pub(crate) manifest: serde_json::Value,
@@ -66,8 +70,10 @@ pub(crate) fn fixture() -> Fixture {
         ("NOTICE", "notice", b"Qwen3.5 NOTICE\n"),
         ("README.md", "card", CARD.as_bytes()),
     ];
+    let fetched = TempDir::new().unwrap();
     for (n, _, b) in files {
         std::fs::write(dir.path().join(n), b).unwrap();
+        std::fs::write(fetched.path().join(n), b).unwrap();
     }
     let tar = TempDir::new().unwrap();
     let tarball = tar.path().join("aprender-0.71.0.crate");
@@ -101,12 +107,42 @@ pub(crate) fn fixture() -> Fixture {
         "license": {"spdx_or_name": "Apache-2.0", "upstream_notice_sha256": sha_of(b"Qwen3.5 NOTICE\n")},
         "recipe": {"prompt_sha256": item(8), "decoding": "greedy"},
     });
+    let m1 = M1Evidence {
+        cosine: 0.9993,
+        llama_cpp_commit: "d1d3c3396".into(),
+        greedy_token_agreement: Some(0.97),
+    };
+    let m3 = M3Evidence {
+        probes: ["hello", "code", "review"]
+            .map(|id| Probe {
+                id: id.into(),
+                run_answered: true,
+                serve_answered: true,
+            })
+            .to_vec(),
+        parse_rate: Some(0.95),
+    };
     let evidence = GateEvidence {
-        m1: Some(M1Evidence {
-            cosine: 0.9993,
-            llama_cpp_commit: "d1d3c3396".into(),
-            greedy_token_agreement: Some(0.97),
+        cr: Some(CrEvidence {
+            container: CrContainer {
+                image: format!("ghcr.io/paiml/clean-room@sha256:{}", item(5)),
+                fresh: true,
+            },
+            engine: CrEngine {
+                apr_version: "0.71.0".into(),
+                tag: "v0.71.0".into(),
+                tag_commit: "c".repeat(40),
+                head: "c".repeat(40),
+                artifact_sha256: item(6),
+            },
+            fetch: CrFetch {
+                hf_id: "paiml/qwen3.5-4b-apr".into(),
+                revision: "b".repeat(40),
+            },
+            m1: m1.clone(),
+            m3: m3.clone(),
         }),
+        m1: Some(m1),
         m2: Some(M2Evidence {
             class: ReleaseClass::First,
             suites: vec![Suite {
@@ -131,20 +167,12 @@ pub(crate) fn fixture() -> Fixture {
                 }],
             }],
         }),
-        m3: Some(M3Evidence {
-            probes: ["hello", "code", "review"]
-                .map(|id| Probe {
-                    id: id.into(),
-                    run_answered: true,
-                    serve_answered: true,
-                })
-                .to_vec(),
-            parse_rate: Some(0.95),
-        }),
+        m3: Some(m3),
         receipt_ids: vec!["m1-parity".into(), "m2-sealed".into()],
     };
     let mut f = Fixture {
         dir,
+        fetched,
         _tar: tar,
         tarball,
         manifest,
@@ -173,6 +201,7 @@ impl Fixture {
                 evidence: &self.evidence,
                 sealed: &self.sealed,
                 engine_tarball: Some(&self.tarball),
+                fetched: Some(self.fetched.path()),
                 env: &self.env,
             },
         )
@@ -188,9 +217,11 @@ impl Fixture {
             .collect()
     }
 
-    /// Replace a release file's bytes and re-hash it in the manifest.
+    /// Replace a release file's bytes and re-hash it in the manifest; the rc on HF (the
+    /// fetched copy) is the same release, so it gets the same bytes.
     fn rewrite(&mut self, name: &str, bytes: &[u8]) {
         std::fs::write(self.dir.path().join(name), bytes).unwrap();
+        std::fs::write(self.fetched.path().join(name), bytes).unwrap();
         let files = self.manifest["files"].as_array_mut().unwrap();
         let f = files.iter_mut().find(|f| f["name"] == name).unwrap();
         f["bytes"] = bytes.len().into();
@@ -204,7 +235,7 @@ fn ext_12_green_release_passes_every_gate_deterministically() {
     let f = fixture();
     let r = f.gate();
     let names: Vec<_> = r.gates.iter().map(|g| g.gate).collect();
-    assert_eq!(names, ["M0", "M1", "M2", "M3", "M4", "M5", "M6"]);
+    assert_eq!(names, ["M-CR", "M0", "M1", "M2", "M3", "M4", "M5", "M6"]);
     assert!(r.all_green, "{:#?}", r.gates);
     assert_eq!(r.schema, "model-gate-receipt-v1");
     assert_eq!(r.sealed_items_checked, 1);
@@ -221,7 +252,7 @@ type Plant = (&'static str, &'static str, fn(&mut Fixture));
 
 #[test]
 fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
-    let plants: [Plant; 23] = [
+    let plants: [Plant; 22] = [
         ("M0", "one byte of the model flipped", |f| {
             std::fs::write(
                 f.dir.path().join("model.gguf"),
@@ -240,10 +271,6 @@ fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
         }),
         ("M0", "no lineage at all", |f| {
             f.manifest["lineage"] = serde_json::json!([]);
-            f.write_manifest();
-        }),
-        ("M0", "a path-escaping file name", |f| {
-            f.manifest["files"][0]["name"] = "../model.gguf".into();
             f.write_manifest();
         }),
         ("M1", "cosine below 0.98", |f| {
@@ -306,6 +333,11 @@ fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
             );
         }),
     ];
+    only_its_gate_turns_red(&plants);
+}
+
+/// Each plant, on a fresh green fixture, turns exactly its own gate RED.
+fn only_its_gate_turns_red(plants: &[Plant]) {
     for (gate, what, plant) in plants {
         let mut f = fixture();
         assert!(f.red().is_empty(), "control for {what}");
@@ -317,9 +349,142 @@ fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
             .filter(|g| !g.green)
             .map(|g| g.gate)
             .collect();
-        assert_eq!(red, [gate], "{what}: {:#?}", r.gates);
+        assert_eq!(red, [*gate], "{what}: {:#?}", r.gates);
         assert!(!r.all_green, "{what}");
     }
+}
+
+#[test]
+fn ext_13_a_path_escaping_name_is_red_in_both_hashing_gates() {
+    // M0 and M-CR each hash files by manifest name; neither may follow `..` out of its dir
+    // (M-CR once hashed the file one level above the fetched dir).
+    let mut f = fixture();
+    f.manifest["files"][0]["name"] = "../model.gguf".into();
+    f.write_manifest();
+    let r = f.gate();
+    assert_eq!(f.red(), ["M-CR", "M0"]);
+    assert!(
+        r.gates[0]
+            .findings
+            .iter()
+            .any(|x| x.contains("not a plain file name")),
+        "{:?}",
+        r.gates[0]
+    );
+}
+
+fn cr(f: &mut Fixture) -> &mut CrEvidence {
+    f.evidence.cr.as_mut().unwrap()
+}
+
+#[test]
+fn falsify_ext_016_rc_corruption_fails_mcr() {
+    // The release dir is untouched, so M0 stays green: only the clean-room copy is bad.
+    let mut f = fixture();
+    std::fs::write(
+        f.fetched.path().join("model.gguf"),
+        b"GGUF\x03\x00\x00\x00tensorz",
+    )
+    .unwrap();
+    let r = f.gate();
+    assert_eq!(f.red(), ["M-CR"]);
+    assert!(
+        r.gates[0]
+            .findings
+            .iter()
+            .any(|x| x.starts_with("fetched model.gguf")),
+        "{:?}",
+        r.gates[0]
+    );
+    // HEAD == tag is asserted for the engine.
+    let mut f = fixture();
+    cr(&mut f).engine.head = "d".repeat(40);
+    let r = f.gate();
+    assert!(
+        r.gates[0]
+            .findings
+            .iter()
+            .any(|x| x.contains("FALSIFY-EXT-016")),
+        "{:?}",
+        r.gates[0]
+    );
+}
+
+#[test]
+fn ext_13_each_clean_room_plant_turns_only_mcr_red() {
+    let plants: [Plant; 13] = [
+        ("M-CR", "one byte of the fetched model flipped", |f| {
+            std::fs::write(
+                f.fetched.path().join("model.gguf"),
+                b"GGUF\x03\x00\x00\x00tensorz",
+            )
+            .unwrap();
+        }),
+        ("M-CR", "a manifest file missing from the fetch", |f| {
+            std::fs::remove_file(f.fetched.path().join("NOTICE")).unwrap();
+        }),
+        ("M-CR", "the engine HEAD is not its tag", |f| {
+            cr(f).engine.head = "d".repeat(40)
+        }),
+        (
+            "M-CR",
+            "a clean-room apr that is not the pinned release",
+            |f| {
+                let e = &mut cr(f).engine;
+                e.apr_version = "0.70.0".into();
+                e.tag = "v0.70.0".into();
+            },
+        ),
+        ("M-CR", "a tag that is not v<apr_version>", |f| {
+            cr(f).engine.tag = "v0.71.0-rc.1".into()
+        }),
+        ("M-CR", "an artifact with no sha", |f| {
+            cr(f).engine.artifact_sha256 = String::new()
+        }),
+        ("M-CR", "fetched by branch, not by revision", |f| {
+            cr(f).fetch.revision = "rc/v0.1.0-rc.1".into()
+        }),
+        ("M-CR", "fetched from another repo", |f| {
+            cr(f).fetch.hf_id = "someone/qwen3.5-4b".into()
+        }),
+        ("M-CR", "a reused container", |f| {
+            cr(f).container.fresh = false
+        }),
+        ("M-CR", "a container image pinned by tag", |f| {
+            cr(f).container.image = "ghcr.io/paiml/clean-room:latest".into()
+        }),
+        ("M-CR", "clean-room parity below 0.98", |f| {
+            cr(f).m1.cosine = 0.97
+        }),
+        ("M-CR", "clean-room apr serve misses a probe", |f| {
+            cr(f).m3.probes[0].serve_answered = false
+        }),
+        ("M-CR", "no clean-room evidence", |f| f.evidence.cr = None),
+    ];
+    only_its_gate_turns_red(&plants);
+}
+
+#[test]
+fn ext_13_mcr_needs_the_fetched_bytes() {
+    let f = fixture();
+    let r = run(
+        &PRE,
+        &GateInputs {
+            dir: f.dir.path(),
+            evidence: &f.evidence,
+            sealed: &f.sealed,
+            engine_tarball: Some(&f.tarball),
+            fetched: None,
+            env: &f.env,
+        },
+    )
+    .unwrap();
+    assert_eq!(r.gates[0].gate, "M-CR");
+    assert!(
+        !r.gates[0].green && r.gates[0].findings[0].contains("unverified"),
+        "{:?}",
+        r.gates[0]
+    );
 }
 
 #[test]
@@ -332,14 +497,15 @@ fn ext_12_m0_needs_the_engine_tarball() {
             evidence: &f.evidence,
             sealed: &f.sealed,
             engine_tarball: None,
+            fetched: Some(f.fetched.path()),
             env: &f.env,
         },
     )
     .unwrap();
     assert!(
-        !r.gates[0].green && r.gates[0].findings[0].contains("unverified"),
+        !r.gates[1].green && r.gates[1].findings[0].contains("unverified"),
         "{:?}",
-        r.gates[0]
+        r.gates[1]
     );
 }
 
@@ -381,7 +547,7 @@ fn ext_12_evidence_file_round_trips_and_refuses_unknown_fields() {
     let red = f.red();
     assert_eq!(
         red,
-        ["M1", "M2", "M3", "M6"],
+        ["M-CR", "M1", "M2", "M3", "M6"],
         "M6: the card cites receipts nobody vouched for"
     );
 }
@@ -397,6 +563,7 @@ fn ext_12_unreadable_manifest_is_an_error_not_a_receipt() {
             evidence: &f.evidence,
             sealed: &f.sealed,
             engine_tarball: Some(&f.tarball),
+            fetched: Some(f.fetched.path()),
             env: &f.env,
         },
     );

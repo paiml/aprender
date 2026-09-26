@@ -1,4 +1,5 @@
-//! `apr model gate`: the M0..M6 gates against pacha (EXT-001 §3.6, row EXT-12, aprender#4394).
+//! `apr model gate`: the M-CR and M0..M6 gates against pacha (EXT-001 §3.6, rows EXT-12
+//! aprender#4394 and EXT-13 aprender#4393).
 //!
 //! The gates live in `model_gate`; this file is only the pacha lookups and the CLI surface.
 
@@ -55,6 +56,7 @@ pub(crate) struct GateArgs<'a> {
     pub evidence: &'a Path,
     pub sealed: &'a Path,
     pub engine_tarball: Option<&'a Path>,
+    pub fetched: Option<&'a Path>,
     pub pacha_home: Option<&'a Path>,
     pub out: Option<&'a Path>,
     pub json: bool,
@@ -71,7 +73,7 @@ fn print_table(r: &GateReceipt) {
     println!("all_green: {}", r.all_green);
 }
 
-/// Run every gate, write the receipt, and fail unless all seven are green.
+/// Run every gate, write the receipt, and fail unless all eight are green.
 ///
 /// # Errors
 ///
@@ -99,6 +101,7 @@ pub(crate) fn run_gate(a: &GateArgs<'_>) -> Result<()> {
             evidence: &evidence,
             sealed: &sealed,
             engine_tarball: a.engine_tarball,
+            fetched: a.fetched,
             env: &env,
         },
     )
