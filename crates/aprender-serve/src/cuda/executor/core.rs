@@ -52,6 +52,7 @@ impl CudaExecutor {
             #[cfg(any(debug_assertions, test))]
             module_key_ledger: Default::default(),
             weight_cache: HashMap::new(),
+            module_keys: Default::default(),
             named_fp16_weight_cache: HashMap::new(), // GH-174: SafeTensors F16
             quantized_weight_cache: HashMap::new(),  // PAR-005: quantized weight cache
             quantized_weight_types: HashMap::new(),  // PAR-058: weight quant types
@@ -188,6 +189,7 @@ impl CudaExecutor {
             num_sms: context.multiprocessor_count().unwrap_or(8) as u32,
             // PMAT-027: Q8 activation cache starts invalid
             q8_activation_valid: false,
+            q8_activation_src: Default::default(),
             fp8_act_cache: Default::default(),
             fp8_weight_row_absmax: HashMap::new(),
             fp8_act_scale_buf: None,

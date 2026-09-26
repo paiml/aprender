@@ -128,8 +128,8 @@ pub use cublaslt::CublasLtHandle;
 pub use graph::{CaptureMode, CudaGraph, CudaGraphExec};
 #[cfg(feature = "cuda")]
 pub use memory::{
-    classify_device_memory, device_bytes_outstanding, device_memory_exclusive, DeviceMemoryClass,
-    DeviceMemoryExclusive, GpuBuffer,
+    classify_device_memory, device_allocs_total, device_bytes_outstanding, device_memory_exclusive,
+    device_to_host_bytes_total, DeviceMemoryClass, DeviceMemoryExclusive, GpuBuffer,
 };
 pub use module::CudaModule;
 #[cfg(feature = "cuda")]
