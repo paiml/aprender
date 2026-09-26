@@ -614,8 +614,7 @@ class Section:
             self.result = "failure" if self.failed else "success"
 
     def setup_workspace(self):
-        if self.dir.exists():
-            shutil.rmtree(self.dir, ignore_errors=True)
+        clear_section_dir(self.dir)
         self.temp.mkdir(parents=True)
         (self.dir / "home").mkdir()
         self.workspace.parent.mkdir(parents=True)
@@ -1508,12 +1507,48 @@ def cmd_self_test(a):
     row("external need: past the deadline and still absent -> failure", x.need_result("workspace-test"), "failure")
     x.external = {}
     row("no --external-job: the need is absent (schedule refuses)", x.members("workspace-test"), [])
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td) / "sec"
+        (d / "ws" / "locked").mkdir(parents=True)
+        (d / "ws" / "locked" / "f").write_text("x")
+        os.chmod(d / "ws" / "locked", 0o500)  # stands in for a root-owned file
+        try:
+            clear_section_dir(d)
+            (d / "ws").mkdir(parents=True)
+            got = (d.exists(), len(list(Path(td).glob("sec.stale-*"))))
+        except Exception as e:  # noqa: BLE001 -- the row reports it
+            got = repr(e)
+        for s_ in Path(td).glob("sec*/ws/locked"):
+            os.chmod(s_, 0o700)
+        row("an undeletable leftover is moved aside, not a FileExistsError", got, (True, 1))
     bad = 0
     for label, good, got, want in rows:
         bad += not good
         print(f"{'ok  ' if good else 'BAD '} {label}" + ("" if good else f"  got={got!r} want={want!r}"))
     print(f"fat_driver self-test: {len(rows) - bad}/{len(rows)} rows as expected")
     return 1 if bad else 0
+
+
+def clear_section_dir(d: Path) -> None:
+    """Leave `d` absent, whatever an earlier run left in it.
+
+    rmtree(ignore_errors=True) alone is not enough: a section that ran
+    `docker run -v $GITHUB_WORKSPACE:...` leaves root-owned files the runner
+    user cannot delete, rmtree swallows that, and the mkdir that follows raised
+    FileExistsError on every later run of that section on that runner
+    (framework16-2, workspace-test-shard[1,3], PR #4479, 2026-09-26). Renaming
+    needs write access to the PARENT only, so the leftover is moved aside and
+    named on the log; it never blocks the next run.
+    """
+    if not d.exists():
+        return
+    shutil.rmtree(d, ignore_errors=True)
+    if not d.exists():
+        return
+    aside = d.with_name(f"{d.name}.stale-{os.getpid()}-{time.time_ns()}")
+    d.rename(aside)
+    print(f"::warning::fat_driver: {d} held files the runner user cannot delete; moved aside to {aside}",
+          flush=True)
 
 
 def main(argv=None):
