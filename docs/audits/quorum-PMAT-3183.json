@@ -1,0 +1,260 @@
+{
+  "ticket": "PMAT-3183",
+  "base": "e7a52949d10141e177ca680bc8b95b0fb3792e2b",
+  "base_resolved": "e7a52949d10141e177ca680bc8b95b0fb3792e2b",
+  "base_note": "no origin/e7a52949d10141e177ca680bc8b95b0fb3792e2b exists; judged against the local ref",
+  "head": "503f5113d54a9214393310fc78df961ec42c9810",
+  "diff_sha256": "81a45865ee984a835de0cd908946dbf8c6ebcbeea452a70ab75a82baad652de6",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 17282,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the receipt and all acceptance criteria for PMAT-3183. The implementation cleanly covers the requirements, correctly guarding against absent, incomplete, and falsely-cited changelog entries, with robust test automation included. I could not refute any of the claims.",
+      "findings": [
+        {
+          "claim": "AC 1: `check_changelog_covers_merged.sh` implemented and correctly identifies uncited PRs using both PR number and PR issue reference.",
+          "file": "scripts/check_changelog_covers_merged.sh",
+          "grounding": "cited",
+          "line": 58
+        },
+        {
+          "claim": "AC 2: False row detection correctly identifies if a cited PR's merge commit was already an ancestor of LAST_TAG.",
+          "file": "scripts/check_changelog_covers_merged.sh",
+          "grounding": "cited",
+          "line": 67
+        },
+        {
+          "claim": "AC 3: `--notes` parameter applies the same coverage predicate to an entire release notes file.",
+          "file": "scripts/check_changelog_covers_merged.sh",
+          "grounding": "cited",
+          "line": 122
+        },
+        {
+          "claim": "AC 4: Self-test table covers all required cases (covered, deleted row, uncited PR, false row, absent section, bare heading) and is wired to `make tier3`.",
+          "file": "scripts/check_changelog_covers_merged.sh",
+          "grounding": "cited",
+          "line": 84
+        },
+        {
+          "claim": "AC 5: `dogfood.sh` delegates to the coverage guard. FAILS when exit code > 0 unless PHASE is full (which WARNs with count). Fallback logic accurately defaults to heading search if no guard or last tag exists.",
+          "file": "scripts/dogfood.sh",
+          "grounding": "cited",
+          "line": 655
+        }
+      ],
+      "raw_bytes": 4268,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-3183 completely and faithfully without refutation. All 6 acceptance criteria are met: (1) scripts/check_changelog_covers_merged.sh implements the bidirectional coverage predicate over git log --first-parent LAST_TAG..CUT for PR merges ending in (#PR) and issue references (#N) in the subject, exiting 1 on missing coverage; (2) it detects and exits 1 on FALSE-ROW citations of PRs that shipped in ancestors of LAST_TAG; (3) --notes FILE applies the coverage predicate to release notes; (4) a 6-row self-test table tests valid coverage, deleted rows, uncited PRs, false rows, missing sections, and bare headings, and is wired into Makefile tier3; (5) scripts/dogfood.sh calls the guard, failing on pre/post-publish and warning with row count on full runs, with robust tag fallback and heading fallback only when tags or guard are missing; (6) self-test mutants for false-row and covered=1 turn RED as designed. No gates are weakened and no extraneous changes were introduced.",
+      "findings": [],
+      "raw_bytes": 3287,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-3183 (#3183) fulfills all ticket requirements and acceptance criteria without weakening any gates or introducing out-of-scope changes:\n1. `scripts/check_changelog_covers_merged.sh` correctly implements the bidirectional predicate over `git log --first-parent LAST_TAG..CUT` to detect MISSING merged PRs and FALSE-ROW previously-shipped PRs, supports `--notes`, and provides a robust 6-case `--self-test` matching exit codes and error reasons.\n2. `scripts/dogfood.sh` row 3 is updated to call `check_changelog_covers_merged.sh`, failing in `pre-publish`/`post-publish` phases and warning with missing row counts in `full` mode, with fallback to heading presence if no previous tag or guard is available.\n3. `Makefile` wires the `--self-test` into `tier3`.\n4. All receipt claims match the diff and roadmap specifications. No refuting findings found.",
+      "findings": [],
+      "raw_bytes": 3065,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_changelog_covers_merged.sh",
+      "line": 58,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "AC 1: `check_changelog_covers_merged.sh` implemented and correctly identifies uncited PRs using both PR number and PR issue reference."
+      ]
+    },
+    {
+      "file": "scripts/check_changelog_covers_merged.sh",
+      "line": 67,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "AC 2: False row detection correctly identifies if a cited PR's merge commit was already an ancestor of LAST_TAG."
+      ]
+    },
+    {
+      "file": "scripts/check_changelog_covers_merged.sh",
+      "line": 84,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "AC 4: Self-test table covers all required cases (covered, deleted row, uncited PR, false row, absent section, bare heading) and is wired to `make tier3`."
+      ]
+    },
+    {
+      "file": "scripts/check_changelog_covers_merged.sh",
+      "line": 122,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "AC 3: `--notes` parameter applies the same coverage predicate to an entire release notes file."
+      ]
+    },
+    {
+      "file": "scripts/dogfood.sh",
+      "line": 655,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "AC 5: `dogfood.sh` delegates to the coverage guard. FAILS when exit code > 0 unless PHASE is full (which WARNs with count). Fallback logic accurately defaults to heading search if no guard or last tag exists."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
