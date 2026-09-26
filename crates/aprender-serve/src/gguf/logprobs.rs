@@ -57,29 +57,47 @@ pub struct StepLogprobs {
     pub chosen: u32,
     /// The `K` most likely tokens, most likely first
     pub top: Vec<TopLogprob>,
+    /// ln(softmax(logits)[chosen]) on the same forward logits as `top`, so it
+    /// is defined when a sampled `chosen` is outside the top `K` (#4026, PRM C11)
+    pub chosen_logprob: f32,
+    /// Full-vocab log-sum-exp of those logits at T = 1.0: `top` plus this gives
+    /// the retained mass and the residual tail `sparse-logits-v1` stores
+    pub logsumexp_full: f32,
+}
+
+/// Full-vocab log-sum-exp of `logits`, NaNs skipped, accumulated in f64 so a
+/// 150k-entry vocab does not lose the tail to f32 rounding (#4026).
+#[must_use]
+pub fn logsumexp_full(logits: &[f32]) -> f32 {
+    let max = logits
+        .iter()
+        .copied()
+        .filter(|x| !x.is_nan())
+        .fold(f32::NEG_INFINITY, f32::max);
+    if !max.is_finite() {
+        return max;
+    }
+    let sum: f64 = logits
+        .iter()
+        .filter(|x| !x.is_nan())
+        .map(|&x| f64::from(x - max).exp())
+        .sum();
+    (f64::from(max) + sum.ln()) as f32
 }
 
 /// The `k` most likely tokens in `logits`, most likely first (#4026).
 ///
 /// Ties go to the lower token id, as [`crate::gguf::ops::argmax`] breaks them,
 /// so with no penalty the first entry IS the greedy choice. NaN logits are
-/// never ranked. `logprob` uses the same log-sum-exp as [`logprob_of`].
+/// never ranked. `logprob` is `logit` minus [`logsumexp_full`].
 #[must_use]
 pub fn top_k_logprobs(logits: &[f32], k: usize) -> Vec<TopLogprob> {
     if k == 0 {
         return Vec::new();
     }
-    let max_logit = logits
-        .iter()
-        .copied()
-        .filter(|x| !x.is_nan())
-        .fold(f32::NEG_INFINITY, f32::max);
-    let log_sum_exp: f32 = logits
-        .iter()
-        .filter(|x| !x.is_nan())
-        .map(|&x| (x - max_logit).exp())
-        .sum::<f32>()
-        .ln();
+    // The step record's `logsumexp_full`, so Σexp(top) and the tail a reader
+    // derives from the two agree exactly (PRM C11).
+    let lse = logsumexp_full(logits);
     let mut ranked: Vec<(u32, f32)> = logits
         .iter()
         .enumerate()
@@ -98,7 +116,7 @@ pub fn top_k_logprobs(logits: &[f32], k: usize) -> Vec<TopLogprob> {
         .map(|(token_id, logit)| TopLogprob {
             token_id,
             logit,
-            logprob: logit - max_logit - log_sum_exp,
+            logprob: logit - lse,
         })
         .collect()
 }

@@ -942,9 +942,24 @@ pub async fn openai_chat_completions_handler(
         return fail_response(&state, StatusCode::BAD_REQUEST, reason);
     }
 
+    // #4026: a logprobs request that cannot be answered as asked is refused here.
+    let wants_logprobs = match super::chat_logprobs::requested_top_logprobs(&request) {
+        Ok(n) => n.is_some(),
+        Err(reason) => return fail_response(&state, StatusCode::BAD_REQUEST, reason),
+    };
+
     // #3571: a Qwen3.5 hybrid is answered from its resident session or not at all.
     if let Some(r) = try_qwen35_backend(&state, &request, &request_id, start, &cancel).await {
         return r;
+    }
+
+    // #4026: no arm below records logprobs.
+    if wants_logprobs {
+        return fail_response(
+            &state,
+            StatusCode::BAD_REQUEST,
+            super::chat_logprobs::unsupported_backend_reason(state.model_architecture().as_deref()),
+        );
     }
 
     if let Some(r) = try_qwen3_moe_backend(&state, &request, &request_id, start, &cancel) {

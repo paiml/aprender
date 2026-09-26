@@ -122,6 +122,15 @@ pub struct ChatCompletionRequest {
     /// Stream responses
     #[serde(default)]
     pub stream: bool,
+    /// OpenAI `logprobs`: return per-token log-probabilities (#4026).
+    ///
+    /// Only the session engine records them. A backend that cannot refuses the
+    /// request by name rather than answering without them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logprobs: Option<bool>,
+    /// OpenAI `top_logprobs`: how many alternatives per token, 0..=20.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_logprobs: Option<usize>,
     /// OpenAI `stream_options`, accepted so a client that sends
     /// `{"include_usage": true}` is not rejected as malformed.
     ///

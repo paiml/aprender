@@ -305,6 +305,21 @@ fn logprobs_rank_what_the_model_said_not_what_the_penalty_left() {
     let turn = s.generate(&[3], &cfg, &mut |_| true).expect("turn");
     assert_eq!(turn.steps[0].chosen, 0, "the penalty moved the choice");
     assert_eq!(turn.steps[0].top[0].token_id, 3, "the record did not move");
+    // PRM C11: the chosen token's logprob and the log-sum-exp come from the
+    // same unpenalised logits as `top` (3 → 1.0, the other 7 of the 8 → 0.0).
+    let lse = (1.0_f64.exp() + 7.0).ln();
+    let s0 = &turn.steps[0];
+    assert!(
+        (f64::from(s0.logsumexp_full) - lse).abs() < 1e-5,
+        "{}",
+        s0.logsumexp_full
+    );
+    assert!(
+        (f64::from(s0.chosen_logprob) + lse).abs() < 1e-5,
+        "{}",
+        s0.chosen_logprob
+    );
+    assert!((f64::from(s0.top[0].logprob) - (1.0 - lse)).abs() < 1e-5);
 }
 
 #[test]

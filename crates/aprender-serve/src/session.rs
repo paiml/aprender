@@ -38,7 +38,9 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use crate::error::{RealizarError, Result};
-use crate::gguf::{top_k_logprobs, OwnedQuantizedModel, QuantizedGenerateConfig, StepLogprobs};
+use crate::gguf::{
+    logsumexp_full, top_k_logprobs, OwnedQuantizedModel, QuantizedGenerateConfig, StepLogprobs,
+};
 
 /// One architecture's forward on one backend: the only per-arch code a verb
 /// reaches, and only through a [`Session`].
@@ -281,7 +283,9 @@ impl<F: ArchForward> Session<F> {
             }
         }
         let (mut logits, reused) = self.advance_to(tokens)?;
-        let top = recording.then(|| top_k_logprobs(&logits, config.logprobs_top_k));
+        // The forward's logits, before the penalty edits them in place: the
+        // chosen token's logprob is read from these, not the penalised row.
+        let raw = recording.then(|| logits.clone());
         OwnedQuantizedModel::apply_repeat_penalty(
             &mut logits,
             tokens,
@@ -289,11 +293,14 @@ impl<F: ArchForward> Session<F> {
             config.repeat_last_n,
         );
         let chosen = choose_token(&logits, config, rng);
-        if let Some(top) = top {
+        if let Some(raw) = raw {
+            let lse = logsumexp_full(&raw);
             steps.push(StepLogprobs {
                 step: steps.len(),
                 chosen,
-                top,
+                top: top_k_logprobs(&raw, config.logprobs_top_k),
+                chosen_logprob: raw.get(chosen as usize).map_or(f32::NAN, |&x| x - lse),
+                logsumexp_full: lse,
             });
         }
         Ok((chosen, reused))

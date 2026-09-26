@@ -524,6 +524,8 @@ mod tests_4026 {
                 logit: 4.0,
                 logprob: -0.25,
             }],
+            chosen_logprob: -0.25,
+            logsumexp_full: 4.25,
         }];
         let v = run_logprobs(1, "GGUF", &[5, 6], Some(steps))
             .expect("ok")
