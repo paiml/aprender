@@ -13,6 +13,9 @@
 //!   3. `git rev-parse --short HEAD` (dev builds from worktree or primary checkout; retried with
 //!      the enclosing checkout marked safe.directory when git refuses a checkout owned by another
 //!      user — binary-release.yml builds as root in a container over the runner's checkout)
+//!   3b. the SHA read straight from `.git` when there is no git binary to ask (#4254: the
+//!      v0.69.1 asset said `+no-git` because `git` fails inside the sibling build container over
+//!      a bind-mounted checkout, while the checkout's `.git` is right there)
 //!   4. committed `.git-sha` file
 //!   5. `v{CARGO_PKG_VERSION}+no-git` (informative fallback — never bare "unknown")
 //!
@@ -118,6 +121,7 @@ fn resolve_git_sha() -> String {
     // runner-owned checkout, where git refuses the repo as "dubious ownership" (#4110)
     let head = ["rev-parse", "--short", "HEAD"];
     let git_head = run_git(&head).or_else(|| trusted_git_retry(&head));
+    let git_head = git_head.or_else(read_head_sha_from_dot_git);
     let sha_file = match git_head {
         Some(_) => None,
         None => std::fs::read_to_string(".git-sha").ok(),
@@ -180,6 +184,65 @@ fn trusted_git_retry(args: &[&str]) -> Option<String> {
         .ok()?;
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
     (out.status.success() && !s.is_empty()).then_some(s)
+}
+
+/// #4254: the commit HEAD names, read from `.git` without the git binary.
+///
+/// Walks up from `CARGO_MANIFEST_DIR` to the first `.git` (stopping, as git does, before any
+/// `GIT_CEILING_DIRECTORIES` entry), which is either the git directory or, in a worktree, a file
+/// `gitdir: <path>` whose `commondir` holds the shared refs. HEAD is a bare SHA when detached (a
+/// tag checkout) or `ref: <name>`, resolved as a loose ref, then through `packed-refs`. Short
+/// form, 9 hex digits.
+fn read_head_sha_from_dot_git() -> Option<String> {
+    use std::path::{Path, PathBuf};
+    let start = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").ok()?);
+    let ceilings: Vec<PathBuf> = std::env::var_os("GIT_CEILING_DIRECTORIES")
+        .map(|v| std::env::split_paths(&v).collect())
+        .unwrap_or_default();
+    let dot_git = start
+        .ancestors()
+        .take_while(|d| !ceilings.iter().any(|c| c == d))
+        .map(|d| d.join(".git"))
+        .find(|p| p.exists())?;
+    let relative_to = |base: &Path, p: &str| {
+        let p = Path::new(p);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            base.join(p)
+        }
+    };
+    let git_dir: PathBuf = if dot_git.is_file() {
+        let text = std::fs::read_to_string(&dot_git).ok()?;
+        let rel = text.trim().strip_prefix("gitdir:")?.trim();
+        relative_to(dot_git.parent()?, rel)
+    } else {
+        dot_git
+    };
+    let common_dir = std::fs::read_to_string(git_dir.join("commondir"))
+        .map(|c| relative_to(&git_dir, c.trim()))
+        .unwrap_or_else(|_| git_dir.clone());
+    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let head = head.trim();
+    let full = match head.strip_prefix("ref:") {
+        None => head.to_string(),
+        Some(name) => {
+            let name = name.trim();
+            [&git_dir, &common_dir]
+                .iter()
+                .find_map(|d| std::fs::read_to_string(d.join(name)).ok())
+                .map(|s| s.trim().to_string())
+                .or_else(|| {
+                    let packed = std::fs::read_to_string(common_dir.join("packed-refs")).ok()?;
+                    packed.lines().find_map(|l| {
+                        let (sha, r) = l.split_once(' ')?;
+                        (r.trim() == name).then(|| sha.to_string())
+                    })
+                })?
+        }
+    };
+    let is_sha = full.len() >= 40 && full.bytes().all(|b| b.is_ascii_hexdigit());
+    is_sha.then(|| full[..9].to_string())
 }
 
 #[cfg(test)]

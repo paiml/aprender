@@ -10,7 +10,9 @@
 //! the runner-owned checkout, and git refuses it ("dubious ownership"); row `foreign-owner`.
 //! `planted_regressions_turn_red` re-runs the table on three planted copies of `lib.rs` — the vcs
 //! rung removed (the pre-#4110 script), the vcs rung behind `git rev-parse`, and the safe.directory
-//! retry removed — and requires each to fail, so the table cannot pass vacuously.
+//! retry removed — and requires each to fail, so the table cannot pass vacuously. Rows
+//! `no-git-binary` / `no-git-worktree-packed` (#4254) run with no git on PATH; their plant drops
+//! the `.git` read (the no-retry plant drops it too, or the `.git` read would rescue that row).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -175,6 +177,42 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
         "cannot simulate a checkout owned by another user: this git ignores GIT_TEST_ASSUME_DIFFERENT_OWNER"
     );
     expect("foreign-owner", run(&bin, &dev, None, &other_owner), &head);
+    // #4254: no git binary at all (the sibling build container). An empty PATH hides git from the
+    // build script; the SHA must come from `.git` itself — a loose ref in a primary checkout, and
+    // a worktree (`.git` is a `gitdir:` file) whose branch lives only in `packed-refs`
+    let no_git = pkgs.join("empty-path");
+    std::fs::create_dir_all(&no_git).expect("mkdir empty PATH dir");
+    let no_git_env = [("PATH", no_git.to_str().expect("utf-8 temp path"))];
+    let full = git(&dev, &["rev-parse", "HEAD"]);
+    expect(
+        "no-git-binary",
+        run(&bin, &dev, None, &no_git_env),
+        &full[..9],
+    );
+    git(&dev, &["commit", "-q", "--allow-empty", "-m", "wt"]);
+    let wt = pkgs.join("wt");
+    git(
+        &dev,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "wt-branch",
+            wt.to_str().expect("utf-8"),
+        ],
+    );
+    git(&dev, &["pack-refs", "--all"]);
+    let wt_full = git(&wt, &["rev-parse", "HEAD"]);
+    assert!(
+        !dev.join(".git/refs/heads/wt-branch").exists(),
+        "pack-refs left the loose ref: the packed-refs row would not test packed-refs"
+    );
+    expect(
+        "no-git-worktree-packed",
+        run(&bin, &wt, None, &no_git_env),
+        &wt_full[..9],
+    );
     wrong
 }
 
@@ -211,7 +249,23 @@ fn planted_regressions_turn_red() {
         1,
         "the git retry call site moved; re-anchor the plant"
     );
-    let w3 = table(&shipped.replace(retry, "run_git(&head)"), "plant_no_retry");
+    let dot_git = "    let git_head = git_head.or_else(read_head_sha_from_dot_git);\n";
+    assert_eq!(
+        shipped.matches(dot_git).count(),
+        1,
+        "the .git read call site moved; re-anchor the plant"
+    );
+    let no_dot_git = shipped.replace(dot_git, "");
+    let w4 = table(&no_dot_git, "plant_no_dot_git");
+    assert!(
+        w4.iter().any(|r| r.starts_with("no-git-binary:"))
+            && w4.iter().any(|r| r.starts_with("no-git-worktree-packed:")),
+        "no-.git-read plant survived: {w4:#?}"
+    );
+    let w3 = table(
+        &no_dot_git.replace(retry, "run_git(&head)"),
+        "plant_no_retry",
+    );
     assert!(
         w3.iter().any(|r| r.starts_with("foreign-owner:")),
         "no-retry plant survived: {w3:#?}"
