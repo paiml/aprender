@@ -33,10 +33,11 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
+use crate::ontology::capability_cells;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
-    ExtractFailure,
+    self, apr_model, cli_surface, code, gguf, json, lean, parity_receipt, pv_contract,
+    release_evidence, ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -44,6 +45,7 @@ use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
 use crate::ontology::verdict::Reason;
 use crate::ontology::w3c;
 
+use super::capability_cells_gate as cells_gate;
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
 use super::{GateDetail, GateExtra, GateResult, Verdict};
@@ -76,6 +78,9 @@ pub enum ShapesOutcome {
         found: usize,
         refused: Vec<String>,
     },
+    /// ONT-4c5: a contract declares `capability-cells` and its required-cell domain D is empty — R-2's decline
+    /// (exit 2 with a `decline:` line), never Pass and never RED.
+    EmptyDomain { shapes_n: usize },
     /// A positive control did not fire.
     PositiveControlFailed {
         shapes_n: usize,
@@ -91,6 +96,9 @@ pub enum ShapesOutcome {
         n: usize,
         failed: Vec<String>,
     },
+    /// #3739: the CRUX harness measured itself, not apr — a model's positive-control prompt came back ALL_WRONG,
+    /// or a model owing CRUX cells has no measured control. Declined (exit 2), each model and cause named.
+    HarnessBroken { causes: Vec<String> },
     /// Shapes ran over the corpus, and the controls fired.
     Ran {
         result: Box<GateResult>,
@@ -243,60 +251,84 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
 /// [`run_shapes_gate`] with `--shape` / `--release-*` (aprender#3715).
 #[must_use]
 pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> ShapesOutcome {
-    let start = Instant::now();
-    let (shapes, arming, checked) = match prepare(contract_dir, opts) {
-        Ok(x) => x,
-        Err(answer) => return answer,
-    };
-
-    // ONE walk (R-18): every extractor, the json documents, the ladder receipts joined to the rungs — the same
-    // graph `pv extract` writes — plus, when a release subject is given, the release evidence (#3715).
-    let extraction = match extract::all_with(contract_dir, opts.release.as_ref()) {
-        Ok(x) => x,
-        Err(e) => return ShapesOutcome::ExtractFailed(e),
-    };
-    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
-    if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
-        return refusal;
+    match run_or_answer(contract_dir, opts) {
+        Ok(ran) | Err(ran) => ran,
     }
-    let graph = &extraction.graph;
+}
 
+/// The gate's body: `Err` is an early answer (a refusal or a decline), `Ok` the outcome it ran to.
+fn run_or_answer(
+    contract_dir: &Path,
+    opts: &ShapesOptions,
+) -> Result<ShapesOutcome, ShapesOutcome> {
+    let start = Instant::now();
+    let (shapes, arming, checked) = prepare(contract_dir, opts)?;
+
+    let extraction = extract_gradeable(contract_dir, opts, shapes.len())?;
+    // ONT-4c5: the validator's half runs on the gate's own copy — `pv extract` keeps writing what was found
+    let mut owned = extraction.graph.clone();
+    let cells = cells_corpus(&mut owned, &shapes, &extraction)?;
+    let graph = &owned;
+
+    // #3610: the per-shape reach, computed BEFORE any verdict — did this shape grade anything at all?
+    let focus_of = focus_of(graph, &shapes);
+    let (vacuous_any, armed_vacuity) = vacuities(&focus_of, &shapes, &arming);
     let (mut report, plant_violations) = validate_with_plant(graph, &shapes, &arming);
     if opts.only.is_some() {
         order_by_family(&mut report, &shapes);
     }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
+    let pc_shapes = cells_controls(
+        &shapes,
+        &arming,
+        &report,
+        &extraction.gguf.rungs,
+        cells.as_ref(),
+    )?;
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
+    // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
+    let all_allow_empty = shapes.iter().all(|s| s.allow_empty.is_some());
     if let Some(d) = decline(
         shapes.len(),
         &report,
+        all_allow_empty,
         unmeasured,
         plant_violations,
         &pc_extract,
     ) {
-        return d;
+        return Err(d);
     }
-    let w3c_run = match w3c_checked(shapes.len(), report.focus_nodes_n) {
-        Ok(run) => run,
-        Err(differential) => return differential,
-    };
+    let w3c_run = w3c_checked(shapes.len(), report.focus_nodes_n)?;
 
-    let counted = findings_of(
+    let mut counted = findings_of(
         &report,
         &arming,
         graph,
         &extraction.gguf,
         &extraction.apr_model,
     );
+    // PV-ONT-013 NAMES the NotRun cells; it deliberately does not add to `counted.violations`. The verdict comes
+    // from the armed shape's own `maxCount 0` violation on the same edges, and `cells_controls` declines when the
+    // two disagree (wiring_holds), so the named list and the verdict cannot drift apart silently.
+    counted.findings.extend(
+        cells
+            .iter()
+            .flat_map(|cc| cells_gate::findings(cc, &arming)),
+    );
     let passed = counted.violations == 0;
-    let verdict = verdict_of(&counted);
-    let by_shape = by_shape(graph, &shapes);
+    let verdict = verdict_of(&counted, armed_vacuity);
+    let by_shape = by_shape(&focus_of);
+    // A shape that graded nothing appears in NEITHER list: `armed_shapes` is the tool's claim about
+    // what it MEASURED, and `not_armed_shapes` means "not armed by policy". Filing a vacuity as a
+    // policy choice is how this defect hid, so it is named in `declines` only.
     let (armed_names, not_armed): (Vec<String>, Vec<String>) = shapes
         .iter()
         .map(|s| s.id.clone())
+        .filter(|id| !vacuous_any.contains(id))
         .partition(|id| arming.is_armed(id));
-    let by_entity_type = by_entity_type(&extraction);
+    let by_entity_type = by_entity_type(&extraction, &sigma_implemented(contract_dir))
+        .map_err(ShapesOutcome::Unsupported)?;
     let duration = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let result = GateResult {
         name: "shapes".into(),
@@ -326,9 +358,20 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             triples: graph.len(),
             armed_shapes: armed_names,
             not_armed_shapes: not_armed,
+            // Every shape that graded NOTHING, armed or not — this is the ONLY list a
+            // vacuity appears in. An armed vacuity also drove the verdict to
+            // `Unknown(NoFocus)` above (nothing returns early there; the verdict is set
+            // and the run continues, so both armed and unarmed vacuities reach here).
+            // A field that can only ever be empty is decoration, which is the defect one
+            // layer up from this one.
+            declines: vacuous_any.clone(),
             unarmed_violations: counted.unarmed_violations,
             by_entity_type,
-            pc_extract,
+            controls: Box::new(super::ShapesControls {
+                pc_extract,
+                pc_shapes,
+                capability_cells: cells.as_ref().map(cells_gate::CapabilityCellsReport::from),
+            }),
             receipts: extraction.resolve.receipts,
             witnesses: extraction.resolve.witnesses,
             hex_mismatches: extraction.resolve.hex_mismatches,
@@ -342,10 +385,87 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             release: extraction.release.clone().map(Box::new),
         }),
     };
-    ShapesOutcome::Ran {
+    Ok(ShapesOutcome::Ran {
         result: Box::new(result),
         findings: counted.findings,
+    })
+}
+
+/// The ONE walk (R-18) and the refusals that must answer before anything is graded: every extractor, the json
+/// documents, the ladder receipts joined to the rungs — the same graph `pv extract` writes — plus, when a release
+/// subject is given, the release evidence (#3715).
+fn extract_gradeable(
+    contract_dir: &Path,
+    opts: &ShapesOptions,
+    shapes_n: usize,
+) -> Result<extract::Extraction, ShapesOutcome> {
+    let extraction = extract::all_with(contract_dir, opts.release.as_ref())
+        .map_err(ShapesOutcome::ExtractFailed)?;
+    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
+    if let Some(refusal) = parity_refusal(&extraction.parity, shapes_n) {
+        return Err(refusal);
     }
+    // #3739 / cop: a broken CRUX harness is not a verdict about the release — decline, naming the model
+    match harness_broken(&extraction) {
+        Some(broken) => Err(broken),
+        None => Ok(extraction),
+    }
+}
+
+/// ONT-4c5, before validation: `apply` on the gate's own graph when a contract declares `capability-cells`. A
+/// non-numeral receipt version is the declaration's fault (exit 3); |D| = 0 is R-2's decline, never Pass.
+fn cells_corpus(
+    owned: &mut Graph,
+    shapes: &[NodeShape],
+    extraction: &extract::Extraction,
+) -> Result<Option<capability_cells::CapabilityCells>, ShapesOutcome> {
+    let cells = cells_gate::corpus(owned, shapes, &extraction.gguf.rungs, &extraction.receipts)
+        .map_err(|e| {
+            ShapesOutcome::ExtractFailed(ExtractFailure::Receipt(receipts::ReceiptError {
+                file: e.file(),
+                what: e.to_string(),
+            }))
+        })?;
+    if cells.as_ref().is_some_and(|c| c.domain.is_empty()) {
+        return Err(ShapesOutcome::EmptyDomain {
+            shapes_n: shapes.len(),
+        });
+    }
+    Ok(cells)
+}
+
+/// ONT-4c5, after validation: every per-shape positive control fired, and the corpus went through `apply` (the
+/// rungs the shape flagged are the rungs owning a NotRun cell). Either miss is a decline, never a verdict.
+fn cells_controls(
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+    report: &Report,
+    rungs: &[extract::gguf::Rung],
+    cells: Option<&capability_cells::CapabilityCells>,
+) -> Result<BTreeMap<String, String>, ShapesOutcome> {
+    let pc_shapes = cells_gate::pc_shapes(shapes, arming);
+    if let Some((which, _)) = pc_shapes.iter().find(|(_, v)| v.as_str() != "fired") {
+        return Err(ShapesOutcome::PositiveControlFailed {
+            shapes_n: shapes.len(),
+            focus_nodes_n: report.focus_nodes_n,
+            which: format!("pc_shapes.{which}"),
+        });
+    }
+    if let Some(cc) = cells {
+        if !cells_gate::wiring_holds(report, rungs, cc) {
+            return Err(ShapesOutcome::Differential {
+                shapes_n: shapes.len(),
+                focus_nodes_n: report.focus_nodes_n,
+                passed: 0,
+                n: 1,
+                failed: vec![format!(
+                    "capability-cells wiring: the rungs the shape flagged differ from the rungs owning the {} NotRun cell(s)",
+                    cc.not_run.len()
+                )],
+            });
+        }
+    }
+    Ok(pc_shapes)
 }
 
 /// The shape set this run grades and its arming, or the answer that stands in for a verdict (unsupported or
@@ -389,10 +509,59 @@ fn needs_receipts(shapes: &[NodeShape]) -> bool {
     })
 }
 
-/// Violations fail; warnings alone are `Unknown{Warn}`, never a pass; nothing is `Pass`.
-fn verdict_of(counted: &Counted) -> Verdict {
+/// #3610: each shape's focus-node count, in declaration order.
+fn focus_of(graph: &Graph, shapes: &[NodeShape]) -> Vec<(String, usize)> {
+    shapes
+        .iter()
+        .map(|s| {
+            (
+                s.id.clone(),
+                shapes::instances_closed(graph, &s.target_class).len(),
+            )
+        })
+        .collect()
+}
+
+/// #3610: every shape that graded ZERO focus nodes, and whether any of them is ARMED.
+///
+/// TWO answers, because they are two questions and conflating them was the defect a quorum lane
+/// caught (#3610 round 1, two lanes independently). The list decides where a vacuity is REPORTED —
+/// `declines` only, never `not_armed_shapes`, or an unarmed vacuity is filed as a policy choice,
+/// which is how the original defect hid. The flag decides the VERDICT: only an armed shape fed it, and a
+/// shape that declares `allowEmpty: "<why>"` (a target class empty by design) is named but does not refuse.
+fn vacuities(
+    focus_of: &[(String, usize)],
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+) -> (Vec<String>, bool) {
+    let vacuous: Vec<String> = focus_of
+        .iter()
+        .filter(|(_, n)| *n == 0)
+        .map(|(id, _)| id.clone())
+        .collect();
+    let may_be_empty = |id: &str| shapes.iter().any(|s| s.id == id && s.allow_empty.is_some());
+    let armed = vacuous
+        .iter()
+        .any(|id| arming.is_armed(id) && !may_be_empty(id));
+    (vacuous, armed)
+}
+
+/// Violations fail; an ARMED shape that graded nothing is `Unknown{NoFocus}` (#3610); warnings alone are
+/// `Unknown{Warn}`, never a pass; nothing is `Pass`.
+///
+/// THE REFUSAL IS THE EXIT CODE; THE REPORT IS THE EVIDENCE. A vacuity declines through the ordinary
+/// result path rather than short-circuiting, so stdout still carries the full JSON (`by_shape` naming the
+/// zero-focus shape, `declines`) and `meet_exit` turns Unknown into exit 2 — downstream consumers (infra's
+/// SLK gate) parse stdout regardless of the exit code.
+///
+/// A MEASURED violation outranks a vacuity (#3622 re-review, all three lanes): violations and vacuities
+/// range over DISJOINT shapes, so checking vacuity first would turn a real Fail from one shape into exit 2
+/// because a DIFFERENT shape graded nothing.
+fn verdict_of(counted: &Counted, armed_vacuity: bool) -> Verdict {
     if counted.violations > 0 {
         Verdict::Fail
+    } else if armed_vacuity {
+        Verdict::Unknown(Reason::NoFocus)
     } else if counted.warnings > 0 {
         Verdict::Unknown(Reason::Warn)
     } else {
@@ -401,56 +570,136 @@ fn verdict_of(counted: &Counted) -> Verdict {
 }
 
 /// `shape=focus-count` per shape, sorted.
-fn by_shape(graph: &Graph, shapes: &[NodeShape]) -> Vec<String> {
-    let mut out: Vec<String> = shapes
-        .iter()
-        .map(|s| {
-            let n = shapes::instances_closed(graph, &s.target_class).len();
-            format!("{}={}", s.id, n)
-        })
-        .collect();
+fn by_shape(focus_of: &[(String, usize)]) -> Vec<String> {
+    let mut out: Vec<String> = focus_of.iter().map(|(id, n)| format!("{id}={n}")).collect();
     out.sort();
     out
 }
 
-/// Focus nodes each extractor produced.
-fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
-    [
-        (
-            "pv-contract",
-            extraction
-                .graph
-                .instances_of(&crate::ontology::rdf::ont("Contract"))
-                .len(),
-        ),
-        (
-            "gguf",
-            extraction.gguf.rungs.len() + extraction.gguf.files_read,
-        ),
-        ("apr-model", extraction.apr_model.files_read),
-        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
-        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
-        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
-        // calls it a pass. The same shape as #3610, one map over.
-        ("parity-receipt", extraction.parity.records),
-        ("code", extraction.code.symbols),
-        ("lean", extraction.lean.statements),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v))
-    .collect()
+/// The entity types this build counts. Every name here has an arm in [`entity_count`]
+/// ([`tests::every_counted_entity_type_has_a_counting_arm`]); every name Σ marks `implemented: true` must too, or
+/// the gate refuses ([`by_entity_type`]).
+const COUNTED_ENTITY_TYPES: &[&str] = &[
+    "pv-contract",
+    "json",
+    "gguf",
+    "apr-model",
+    "parity-receipt",
+    "code",
+    "lean",
+    "release-evidence",
+    "cli-surface",
+];
+
+/// Focus nodes each extractor produced, for one Σ entity type. `None` is "this build has no counting arm for the
+/// name" — never zero (#3624: an absent key is not zero).
+fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
+    Some(match name {
+        "pv-contract" => extraction
+            .graph
+            .instances_of(&crate::ontology::rdf::ont("Contract"))
+            .len(),
+        // One per `entity: {type: json}` contract extracted.
+        "json" => extraction.entities_extracted.len(),
+        "gguf" => extraction.gguf.rungs.len() + extraction.gguf.files_read,
+        "apr-model" => extraction.apr_model.files_read,
+        // ONT-4c3: without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT — and an
+        // absent key is not zero, so a consumer that treats it as one measures nothing and calls it a pass.
+        "parity-receipt" => extraction.parity.records,
+        "code" => extraction.code.symbols,
+        "lean" => extraction.lean.statements,
+        // By rule 0 when no release subject was given (an ordinary PR has none): the extractor did not run.
+        "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
+        // #3777 registered cli-surface in Σ after #3624 derived these keys from it: the leaf commands the
+        // release's `apr surface --json` declares. By rule 0 without `--surface` (the extractor did not run).
+        "cli-surface" => extraction
+            .release
+            .as_ref()
+            .and_then(|r| r.surface.as_ref())
+            .map_or(0, |s| s.leaves),
+        _ => return None,
+    })
+}
+
+/// The entity types `<contract_dir>/ontology.yaml` (Σ) marks `implemented: true`. Empty when the tree has no Σ or
+/// Σ does not parse — Σ's well-formedness is the `sigma` gate's verdict, not this one's.
+fn sigma_implemented(contract_dir: &Path) -> BTreeMap<String, String> {
+    std::fs::read_to_string(contract_dir.join("ontology.yaml"))
+        .ok()
+        .and_then(|text| crate::ontology::sigma::Sigma::from_yaml(&text).ok())
+        .map(|sigma| {
+            sigma
+                .entity_types
+                .into_iter()
+                .filter(|e| e.implemented)
+                .map(|e| (e.name, e.extractor))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Focus nodes each extractor produced, keyed by entity type: every type this build counts, and every type Σ
+/// implements. #3624 — the keys were a hand-written array beside Σ, so `json` and `release-evidence` shipped
+/// implemented and uncounted, and every `by_entity_type["<name>"]` probe on them read ABSENT. A Σ-implemented type
+/// with no counting arm is now the gate's refusal, named, never a missing key. `implemented: false` types are
+/// omitted by rule unless this build counts them. A Σ type read by the `pv_contract` extractor (an `entity.type`
+/// declared in a contract, #4160) is counted by its entity class: the contracts typed `entity/<name>`.
+fn by_entity_type(
+    extraction: &extract::Extraction,
+    implemented: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, usize>, ShapeError> {
+    COUNTED_ENTITY_TYPES
+        .iter()
+        .map(|s| (*s).to_string())
+        .chain(implemented.keys().cloned())
+        .map(|name| {
+            let count = entity_count(&name, extraction).or_else(|| {
+                (implemented.get(&name).map(String::as_str) == Some("pv_contract")).then(|| {
+                    extraction
+                        .graph
+                        .instances_of(&extract::pv_contract::entity_class(&name))
+                        .len()
+                })
+            });
+            (name, count)
+        })
+        .map(|(name, count)| match count {
+            Some(n) => Ok((name, n)),
+            None => Err(ShapeError::Malformed {
+                shape: "by_entity_type".into(),
+                what: format!(
+                    "entity type {name} is registered in Σ as implemented and is not counted in by_entity_type"
+                ),
+            }),
+        })
+        .collect()
+}
+
+fn harness_broken(extraction: &extract::Extraction) -> Option<ShapesOutcome> {
+    let causes = extraction
+        .release
+        .as_ref()?
+        .crux
+        .as_ref()?
+        .harness_broken
+        .clone();
+    (!causes.is_empty()).then_some(ShapesOutcome::HarnessBroken { causes })
 }
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
 /// none tracked, the plant silent, an extractor control silent. `None` when the corpus gets a verdict.
+///
+/// No focus node at all is `NoFocus` unless EVERY shape in scope declares `allowEmpty` (#3610): then the run
+/// reaches the per-shape path, which names each one in `declines` and does not refuse for them.
 fn decline(
     shapes_n: usize,
     report: &Report,
+    all_allow_empty: bool,
     unmeasured: bool,
     plant_violations: usize,
     pc_extract: &BTreeMap<String, String>,
 ) -> Option<ShapesOutcome> {
-    if report.focus_nodes_n == 0 {
+    if report.focus_nodes_n == 0 && !all_allow_empty {
         return Some(ShapesOutcome::NoFocus { shapes_n });
     }
     if unmeasured {
@@ -492,6 +741,8 @@ fn extract_controls() -> BTreeMap<String, String> {
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // aprender#3745 S2: a model arg read from its ROLE, never its name — drawn every run
+        ("cli-surface", cli_surface::positive_control()),
     ]
     .into_iter()
     .map(|(k, fired)| {
@@ -748,12 +999,13 @@ mod tests {
                 match &result.extra {
                     Some(GateExtra::Shapes {
                         by_entity_type,
-                        pc_extract,
+                        controls,
                         witnesses,
                         unarmed_violations,
                         ..
                     }) => {
                         assert_eq!(by_entity_type.get("gguf"), Some(&2));
+                        let pc_extract = &controls.pc_extract;
                         assert_eq!(pc_extract.get("gguf").map(String::as_str), Some("fired"));
                         assert_eq!(
                             pc_extract.get("apr-model").map(String::as_str),
@@ -936,5 +1188,77 @@ mod tests {
         for (k, v) in &controls {
             assert_eq!(v, "fired", "pc_extract.{k}");
         }
+    }
+
+    #[test]
+    fn every_counted_entity_type_has_a_counting_arm() {
+        let x = extract::Extraction::default();
+        for name in COUNTED_ENTITY_TYPES {
+            assert!(
+                entity_count(name, &x).is_some(),
+                "{name} is listed as counted and has no arm"
+            );
+        }
+    }
+
+    #[test]
+    fn every_implemented_entity_type_in_sigma_is_a_by_entity_type_key() {
+        // aprender#3624 — `json` and `release-evidence` were implemented in Σ and absent from the map, so a
+        // `jq -e '.by_entity_type["json"] == N'` probe read null. Read the REAL Σ the way the gate does.
+        let contracts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+        let implemented = sigma_implemented(&contracts);
+        assert!(
+            implemented.contains_key("json") && implemented.contains_key("release-evidence"),
+            "Σ no longer implements the two #3624 types — the test would be vacuous: {implemented:?}"
+        );
+        let map = by_entity_type(&extract::Extraction::default(), &implemented)
+            .expect("every implemented type has an arm");
+        for name in implemented.keys() {
+            assert!(
+                map.contains_key(name),
+                "by_entity_type lacks Σ-implemented {name}"
+            );
+        }
+        assert_eq!(
+            map.get("release-evidence"),
+            Some(&0),
+            "no subject: 0 by rule"
+        );
+    }
+
+    #[test]
+    fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
+        // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
+        let flipped: BTreeMap<String, String> = [("gguf", "gguf"), ("readme", "readme")]
+            .iter()
+            .map(|(n, x)| (n.to_string(), x.to_string()))
+            .collect();
+        match by_entity_type(&extract::Extraction::default(), &flipped) {
+            Err(ShapeError::Malformed { what, .. }) => assert!(
+                what.contains("entity type readme is registered in Σ as implemented"),
+                "{what}"
+            ),
+            other => panic!("expected a named refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_pv_contract_entity_type_is_counted_by_its_entity_class() {
+        // #4160 × #3624: `study`/`claim` are Σ types read by `pv_contract` (a contract's `entity.type`); they have
+        // no fixed arm, and before this row the gate refused every fixture that registered them. They count the
+        // contracts typed `entity/<name>`. The refusal above still binds any other extractor.
+        let mut x = extract::Extraction::default();
+        let study = crate::ontology::rdf::Term::Iri(extract::pv_contract::entity_class("study"));
+        for id in ["a", "b"] {
+            x.graph
+                .insert(format!("urn:t:{id}"), RDF_TYPE, study.clone());
+        }
+        let implemented: BTreeMap<String, String> =
+            [("study", "pv_contract"), ("claim", "pv_contract")]
+                .iter()
+                .map(|(n, e)| (n.to_string(), e.to_string()))
+                .collect();
+        let map = by_entity_type(&x, &implemented).expect("pv_contract types are counted");
+        assert_eq!((map.get("study"), map.get("claim")), (Some(&2), Some(&0)));
     }
 }

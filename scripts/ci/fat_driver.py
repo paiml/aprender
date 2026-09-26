@@ -1230,6 +1230,11 @@ def emit_results_output(res: dict) -> None:
         return
     compact = {n: {"result": r["result"], "continue_on_error": r.get("continue_on_error", False)}
                for n, r in res.items()}
+    # A section's job-level outputs ride along when it has any: gate reads
+    # `changes.outputs.docs_only` for the #3668 docs-only rule.
+    for n, r in res.items():
+        if r.get("outputs"):
+            compact[n]["outputs"] = r["outputs"]
     # The actions a section staged for the fat job's own steps (codecov, attest).
     kinds = set()
     dpath = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "fat" / "deferred.jsonl"

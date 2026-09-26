@@ -18,7 +18,6 @@ aprender-contrastive-data	--test	goldens_regenerate
 aprender-contrastive-data	--test	negative_leaky
 aprender-contrastive-data	--test	negative_materializing
 aprender-contrastive-data	--test	reference_fixtures
-aprender-core	--test	realizar_integration_tests
 aprender-core	--test	spec_checklist_19_inference
 aprender-core	--test	spec_checklist_f_wasm
 aprender-core	--test	spec_checklist_q_qwen_coder

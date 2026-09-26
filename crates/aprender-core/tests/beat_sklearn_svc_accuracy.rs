@@ -39,11 +39,14 @@ struct BeatParams {
     ci_gate_name: String,
 }
 
-fn load_beat() -> BeatParams {
-    const YAML: &str = include_str!("../../../contracts/apr-sklearn-svc-accuracy-beat-v1.yaml");
+fn load_beat() -> Option<BeatParams> {
+    let yaml = provable_contracts::workspace_file_or_skip!(
+        "beat_sklearn_svc_accuracy",
+        "contracts/apr-sklearn-svc-accuracy-beat-v1.yaml"
+    )?;
     let contract: BeatContract =
-        serde_yaml::from_str(YAML).expect("parse contracts/apr-sklearn-svc-accuracy-beat-v1.yaml");
-    contract.beat
+        serde_yaml::from_str(&yaml).expect("parse contracts/apr-sklearn-svc-accuracy-beat-v1.yaml");
+    Some(contract.beat)
 }
 
 /// Deterministic `i % 3` Iris split shared by the P1 accuracy beats.
@@ -75,7 +78,9 @@ fn accuracy(preds: &[usize], truth: &[usize]) -> f64 {
 
 #[test]
 fn beat_sklearn_svc_accuracy() {
-    let beat = load_beat();
+    let Some(beat) = load_beat() else {
+        return;
+    };
     assert_eq!(
         beat.ci_gate_name, "beat_sklearn_svc_accuracy",
         "contract ci_gate_name must match this test binary"

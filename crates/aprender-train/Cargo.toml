@@ -80,9 +80,9 @@ provable-contracts-macros = { workspace = true }
 # Core PAIML stack
 ndarray = "0.16"
 trueno = { workspace = true, features = ["parallel"] }
-trueno-gpu = { version = "0.69.3", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
+trueno-gpu = { version = "0.70.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
 realizar = { workspace = true, optional = true }
-aprender = { path = "../aprender-core", version = "0.69.3", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
+aprender = { path = "../aprender-core", version = "0.70.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { workspace = true, features = ["terminal"] }
 batuta-common = { workspace = true, optional = true }  # WithDimensions trait for `viz` feature (APR-MONO §S #1978)
 presentar-terminal = { workspace = true, optional = true }
@@ -135,6 +135,7 @@ zip = "2.2"  # RO-Crate ZIP export (requires native compression, not available o
 alimentar = { workspace = true, optional = true }  # Dataset loading with parquet/arrow support (gated behind parquet feature)
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
@@ -148,7 +149,7 @@ parquet = { version = "59", default-features = false }  # For ALB-007 Parquet wr
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
 dirs = "5.0"  # Cache directory detection for examples
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI snapshot testing (ENT-140); PMAT-955: path-only dev-dep
-provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # PMAT-955: path-only dev-dep (no version)
+provable-contracts = { workspace = true }  # versioned (#4175): tests call its in-tree helper, so it must survive `cargo package`; no cycle - aprender-contracts depends only on -macros
 
 [[bench]]
 name = "monitor_bench"

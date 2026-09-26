@@ -51,7 +51,7 @@ trueno = { workspace = true, features = ["gpu"] }
 unicode-properties = { workspace = true }
 # CUDA PTX generation and runtime for NVIDIA GPUs (optional, pure Rust, no LLVM/nvcc)
 # v0.4.12: BatchedQ6K, MultiWarp, RopeNeox, FlashDecoding kernels
-trueno-gpu = { version = "0.69.3", path = "../aprender-gpu", package = "aprender-gpu", optional = true, features = ["cuda"] }  # APR-MONO single-source-of-truth
+trueno-gpu = { version = "0.70.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true, features = ["cuda"] }  # APR-MONO single-source-of-truth
 # KV cache storage (for attention caching)
 trueno-db = { workspace = true, optional = true }
 # K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
@@ -65,7 +65,7 @@ renacer-core = { workspace = true }
 
 # ML algorithms and .apr model format (optional for aprender model serving)
 # v0.24.1: chat templates, GGUF tokenizer preservation (local may be newer)
-aprender = { path = "../aprender-core", version = "0.69.3", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.70.0", package = "aprender-core", optional = true }
 
 # Data loading library (optional for data pipeline examples)
 alimentar = { workspace = true, optional = true }
@@ -172,13 +172,14 @@ libc = "0.2"
 uuid = { version = "1", features = ["v4", "serde", "js"] }
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 # Parsing provable-contracts binding.yaml for CONTRACT_* env vars (build.rs)
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
-provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }
+provable-contracts = { workspace = true }  # versioned (#4175): tests call its in-tree helper, so it must survive `cargo package`; no cycle - aprender-contracts depends only on -macros
 # Reading contracts/apr-model-capability-v1.yaml in `capability_contract` tests, so
 # the contract is the ORIGIN of the capability facts and capability.rs is its
 # consumer. Already a build-dependency (build.rs parses binding.yaml); a

@@ -7,6 +7,7 @@
 #   derivation said so on stderr (WARN unresolved-include).
 # Also: crate<TAB>--test<TAB>name (integration binary) and crate<TAB>--bins.
 apr-cli	--lib
+apr-cli	--lib	<root>
 apr-cli	--lib	commands
 apr-cli	--lib	commands::aliases
 apr-cli	--lib	commands::capability
@@ -32,15 +33,18 @@ apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-cli	--test	thinking_budgets_mirror
 apr-format	--lib	falsifiers
+aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
+aprender-contracts	--lib	lint::capability_cells_gate
 aprender-contracts	--lib	lint::diff
 aprender-contracts	--lib	lint::duplicate_stems
 aprender-contracts	--lib	lint::finding
 aprender-contracts	--lib	lint::gates
 aprender-contracts	--lib	lint::gates_extended
+aprender-contracts	--lib	lint::ratchet_gates
 aprender-contracts	--lib	lint::relations_gate
 aprender-contracts	--lib	lint::sarif
 aprender-contracts	--lib	lint::shapes_gate
@@ -60,6 +64,7 @@ aprender-contracts	--lib	query::persist
 aprender-contracts	--lib	readme_gen
 aprender-contracts	--lib	schema::kind
 aprender-contracts	--lib	scoring::drift
+aprender-contracts	--lib	tree
 aprender-contracts	--test	apr_serve_api_key_auth_contract
 aprender-contracts	--test	kani_harness_generation
 aprender-contracts	--test	probar_test_generation
@@ -68,6 +73,7 @@ aprender-contracts-cli	--lib	commands::certify
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
+aprender-contracts-cli	--test	ev11_lint_ratchets
 aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	ont2b_sigma_gate
 aprender-contracts-cli	--test	ont4_relations_gate
@@ -75,6 +81,7 @@ aprender-contracts-cli	--test	ont4b2_code_lean_w3c
 aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contracts-cli	--test	ont4c1_model_receipts
 aprender-contracts-cli	--test	ont4c3_parity_receipts
+aprender-contracts-cli	--test	ont4c5_capability_cells
 aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	ont6b_kind_default
 aprender-contracts-cli	--test	ont7_valid_under_gate
@@ -84,6 +91,7 @@ aprender-contracts-cli	--test	ont_refusal_receipt
 aprender-contracts-cli	--test	ont_release_readiness
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_zero_contracts
+aprender-contracts-cli	--test	shapes_vacuity
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001

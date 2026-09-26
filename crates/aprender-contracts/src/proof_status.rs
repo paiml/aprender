@@ -441,10 +441,164 @@ fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<Strin
     }
 }
 
+/// Lean identifier continuation: `sorry_free` and `x.sorry'` are not the `sorry` token.
+fn is_lean_ident_byte(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_' || c == b'\''
+}
+
+/// Whether Lean source admits a proof hole: the token `sorry` outside `--` line comments and
+/// (nested) `/- -/` block comments (#4351).
+///
+/// A doc comment that SAYS "compiles sorry-free" admits nothing, and a byte-level `contains("sorry")`
+/// denied such files every theorem they prove. The scan still fails CLOSED everywhere else:
+/// - a `sorry` inside a string literal counts — a string is code, not commentary;
+/// - string and char literals are skipped only so a `"--"` or `'"'` cannot open a fake comment
+///   that would hide a real `sorry` after it;
+/// - a file that ends inside a comment or string counts — it does not compile, so it proves nothing.
+pub(crate) fn lean_has_sorry(content: &str) -> bool {
+    let b = content.as_bytes();
+    let mut i = 0;
+    let mut depth = 0usize;
+    while i < b.len() {
+        if depth > 0 {
+            (i, depth) = step_block_comment(b, i, depth);
+            continue;
+        }
+        match scan_code_at(b, i) {
+            LeanScan::Next(j) => i = j,
+            LeanScan::OpenBlock(j) => {
+                depth = 1;
+                i = j;
+            }
+            LeanScan::Sorry => return true,
+            LeanScan::EndsInLineComment => return false,
+        }
+    }
+    depth > 0
+}
+
+/// One step of [`lean_has_sorry`] outside a block comment.
+enum LeanScan {
+    /// Resume scanning at this byte.
+    Next(usize),
+    /// A `/-` opened a block comment; resume at this byte, inside it.
+    OpenBlock(usize),
+    /// A `sorry` token was found (or a literal ran off the end of the file).
+    Sorry,
+    /// A `--` comment runs to EOF: nothing after it can admit a hole.
+    EndsInLineComment,
+}
+
+/// `sorry` as a whole Lean token at byte `i`.
+fn sorry_token_at(b: &[u8], i: usize) -> bool {
+    b[i..].starts_with(b"sorry")
+        && (i == 0 || !is_lean_ident_byte(b[i - 1]))
+        && b.get(i + 5).is_none_or(|&c| !is_lean_ident_byte(c))
+}
+
+/// Inside `depth` nested `/- -/` comments: returns the next byte and the new depth.
+fn step_block_comment(b: &[u8], i: usize, depth: usize) -> (usize, usize) {
+    if b[i..].starts_with(b"/-") {
+        (i + 2, depth + 1)
+    } else if b[i..].starts_with(b"-/") {
+        (i + 2, depth - 1)
+    } else {
+        (i + 1, depth)
+    }
+}
+
+/// Classify the lexeme starting at byte `i` of code (not inside any comment).
+fn scan_code_at(b: &[u8], i: usize) -> LeanScan {
+    let prev_ident = i > 0 && is_lean_ident_byte(b[i - 1]);
+    if b[i..].starts_with(b"--") {
+        return match b[i..].iter().position(|&c| c == b'\n') {
+            Some(p) => LeanScan::Next(i + p + 1),
+            None => LeanScan::EndsInLineComment,
+        };
+    }
+    if b[i..].starts_with(b"/-") {
+        return LeanScan::OpenBlock(i + 2);
+    }
+    if b[i] == b'r' && !prev_ident && matches!(b.get(i + 1), Some(b'"' | b'#')) {
+        return scan_raw_string(b, i);
+    }
+    if b[i] == b'"' {
+        return scan_string(b, i);
+    }
+    if b[i] == b'\'' && !prev_ident {
+        return LeanScan::Next(skip_char_literal(b, i));
+    }
+    if sorry_token_at(b, i) {
+        LeanScan::Sorry
+    } else {
+        LeanScan::Next(i + 1)
+    }
+}
+
+/// A literal's body `[from, to)` counts a `sorry` in it; else resume at `resume`.
+fn scan_literal_body(b: &[u8], from: usize, to: usize, resume: usize) -> LeanScan {
+    if (from..to).any(|k| sorry_token_at(b, k)) {
+        LeanScan::Sorry
+    } else {
+        LeanScan::Next(resume)
+    }
+}
+
+/// r"…" / r#"…"#: no escapes, closed by `"` plus the same number of `#`.
+fn scan_raw_string(b: &[u8], i: usize) -> LeanScan {
+    let hashes = b[i + 1..].iter().take_while(|&&c| c == b'#').count();
+    let open = i + 1 + hashes;
+    if b.get(open) != Some(&b'"') {
+        return LeanScan::Next(i + 1);
+    }
+    let mut close = vec![b'"'];
+    close.extend(std::iter::repeat_n(b'#', hashes));
+    let Some(p) = b[open + 1..]
+        .windows(close.len())
+        .position(|w| w == close.as_slice())
+    else {
+        return LeanScan::Sorry;
+    };
+    let end = open + 1 + p;
+    scan_literal_body(b, open + 1, end, end + close.len())
+}
+
+/// "…" with `\` escapes; an unterminated string does not compile, so it counts.
+fn scan_string(b: &[u8], i: usize) -> LeanScan {
+    let mut j = i + 1;
+    loop {
+        match b.get(j) {
+            None => return LeanScan::Sorry,
+            Some(b'\\') => j += 2,
+            Some(b'"') => break,
+            Some(_) => j += 1,
+        }
+    }
+    scan_literal_body(b, i + 1, j, j + 1)
+}
+
+/// A char literal is at most an escape plus one UTF-8 scalar; anything else is not one.
+fn skip_char_literal(b: &[u8], i: usize) -> usize {
+    let from = if b.get(i + 1) == Some(&b'\\') {
+        i + 3
+    } else {
+        i + 2
+    };
+    match b
+        .get(from..b.len().min(i + 7))
+        .and_then(|s| s.iter().position(|&c| c == b'\''))
+    {
+        Some(p) => from + p + 1,
+        None => i + 1,
+    }
+}
+
 /// Register the names contributed by one domain directory's sorry-free `.lean` files.
 ///
-/// A file containing `sorry` contributes NOTHING: an admitted proof grounds no claim, which is the whole
-/// reason this scan is the grounding ONT-2a trusts over a contract's own summary.
+/// A file that admits a `sorry` ([`lean_has_sorry`]) contributes NOTHING: an admitted proof grounds no
+/// claim, which is the whole reason this scan is the grounding ONT-2a trusts over a contract's own
+/// summary. Each file also registers `Theorems.<Domain>.<Stem>`, the `domain.file` form a contract's
+/// `lean_theorem:` cites (e.g. `Theorems.GgufExportSymmetry.Roundtrip`, #4351).
 fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain: &std::path::Path) {
     let domain_name = domain
         .file_name()
@@ -462,7 +616,7 @@ fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain:
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
-        if content.contains("sorry") {
+        if lean_has_sorry(&content) {
             continue;
         }
         let stem = path
@@ -470,6 +624,7 @@ fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain:
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
+        names.insert(format!("Theorems.{domain_name}.{stem}"));
         insert_name_forms(names, &domain_name);
         insert_name_forms(names, &stem);
         insert_theorem_names_from_content(names, &content);

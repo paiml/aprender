@@ -1,0 +1,35 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/lessThan-001.ttl (tests/oracle/w3c/property/lessThan-001.ttl)
+id: property/lessThan-001
+label: "Test of sh:lessThan at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/lessThan-001.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:property1, lessThan: ex:property2}
+data: |
+  ex:InvalidResource1 rdf:type ex:Focus .
+  ex:InvalidResource2 rdf:type ex:Focus .
+  ex:InvalidResource3 rdf:type ex:Focus .
+  ex:ValidResource1 rdf:type ex:Focus .
+  ex:ValidResource2 rdf:type ex:Focus .
+  ex:InvalidResource1 ex:property1 4 .
+  ex:InvalidResource1 ex:property2 4 .
+  ex:InvalidResource2 ex:property1 4 .
+  ex:InvalidResource2 ex:property1 6 .
+  ex:InvalidResource2 ex:property2 5 .
+  ex:InvalidResource3 ex:property1 5 .
+  ex:InvalidResource3 ex:property2 4 .
+  ex:ValidResource1 ex:property1 4 .
+  ex:ValidResource1 ex:property2 6 .
+  ex:ValidResource2 ex:property1 3.1 .
+  ex:ValidResource2 ex:property1 3.2 .
+  ex:property1 rdf:type rdf:Property .
+  ex:property2 rdf:type rdf:Property .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: ex:property1, component: lessThan}
+    - {focus: ex:InvalidResource2, path: ex:property1, component: lessThan}
+    - {focus: ex:InvalidResource3, path: ex:property1, component: lessThan}

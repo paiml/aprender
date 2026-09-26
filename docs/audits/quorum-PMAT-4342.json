@@ -1,0 +1,45 @@
+{
+  "ticket": "PMAT-4342",
+  "refs": [
+    "#4342"
+  ],
+  "branch": "PMAT-4342-q35-setup-timing",
+  "base": "origin/batch/0.70.0",
+  "judged_head": "5ccd4123e6ee015baa4c0b69331458f2d4ccad72",
+  "diff_sha256_raw": "4c2286eb455327b7b273cc54c7531457e8f236f913d620bec798f592bc4cb5f3",
+  "agreed": true,
+  "date": "2026-09-25",
+  "executor": "agy lane + claude-code-agent-lanes (read-only command whitelist)",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "measured_at_head": "fadd86681 (last code commit; 5ccd4123e adds evidence only). evidence/4342/lambda-before-after.txt",
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "role": "refute: setup_ms bound, fallback, chat compat",
+      "verdict": "PASS",
+      "findings": []
+    },
+    {
+      "lane": 2,
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "refute (agy)",
+      "verdict": "PASS"
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "family": "claude",
+      "role": "refute: evidence + isolation",
+      "verdict": "PASS",
+      "notes": "minor: comment at forward_qwen35.rs ~1729 says only decode is generation; the call also covers prefill (wording only)"
+    }
+  ]
+}

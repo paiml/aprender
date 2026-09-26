@@ -1222,6 +1222,32 @@ fn f2_accept_or_reject(
     true
 }
 
+/// #3821: the F2 parity guard's verdict on THIS model, for a SECOND surface.
+///
+/// `GPU-correct(model_sha256, host, apr_version)` is one subject. Until this
+/// existed, `apr run --gpu` consulted the guard and `apr qa`'s `golden_output`
+/// did not — it generated on the GPU directly, so on qwen2.5-coder-0.5b at
+/// `a9502d992` the guard refused at cosine 0.4153 while the gate generated with
+/// the same diverging prefill and scored the text. Grepping that run's stderr
+/// for the guard's own lines returned zero occurrences (#3804).
+///
+/// Exposed so the other surface can read the SAME decision rather than form a
+/// second opinion about the same subject. `Some(true)` when the accelerator is
+/// admitted, `Some(false)` when the guard rejected it, and `None` when the guard
+/// measured nothing (#3973: absence is never agreement).
+#[cfg(feature = "cuda")]
+pub fn gpu_parity_admits(
+    cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    prompt: &[u32],
+) -> Option<bool> {
+    match validate_gpu_first_token(cuda_model, gen_config, prompt) {
+        F2Outcome::Validated { .. } => Some(true),
+        F2Outcome::Mismatch => Some(false),
+        F2Outcome::NotMeasured { .. } => None,
+    }
+}
+
 /// #3922: `pub` so `apr chat` can gate its GPU path on the same check `apr run`
 /// uses. It was private, which is part of why `chat` had no F2 gate: the check
 /// existed and could not be reached from the only other verb that needed it.

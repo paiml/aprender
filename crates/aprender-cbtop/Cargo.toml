@@ -24,7 +24,7 @@ presentar-terminal = { workspace = true }
 
 # Compute backends
 trueno = { workspace = true }
-trueno-gpu = { version = "0.69.3", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
+trueno-gpu = { version = "0.70.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
 
 # Terminal handling
 crossterm = "0.28"
@@ -54,6 +54,9 @@ dirs = "5.0"
 # Unix statvfs for disk metrics
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
 proptest = "1"

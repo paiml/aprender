@@ -24,6 +24,10 @@
 //! development host has the GGUF mmapped at
 //! `/home/noah/.cache/pacha/models/2b88b180a790988f.gguf`.
 //!
+//! A lane that sets `APR_MOE_FALSIFY_MODEL=<path>` gets no skip path: the
+//! test runs against exactly that file and panics `UNMEASURABLE` if it is
+//! missing (#4179).
+//!
 //! ## Why this is heavy
 //!
 //! `apr run --max-tokens 1` on the 17.3 GB Q4_K_M GGUF performs:
@@ -52,10 +56,23 @@ const FRESH_PROMPT: &str = "M32c.2.2.2.1.4 live falsifier 2026-04-29: write the 
 
 #[test]
 fn f_qw3_moe_c22214_001_apr_run_emits_at_least_one_non_whitespace_char() {
-    let Some(gguf_path) = CANONICAL_QWEN3_CODER_GGUF_PATHS
-        .iter()
-        .find(|p| Path::new(p).exists())
-    else {
+    // A lane that names the model is a lane that measures it: a missing file
+    // there is RED, never a vacuous SKIP (#4179, no-defer doctrine).
+    let required = std::env::var("APR_MOE_FALSIFY_MODEL")
+        .ok()
+        .filter(|p| !p.is_empty());
+    if let Some(p) = &required {
+        assert!(
+            Path::new(p).is_file(),
+            "F-QW3-MOE-C22214-001: UNMEASURABLE — APR_MOE_FALSIFY_MODEL={p} does not exist"
+        );
+    }
+    let Some(gguf_path) = required.as_deref().or_else(|| {
+        CANONICAL_QWEN3_CODER_GGUF_PATHS
+            .iter()
+            .copied()
+            .find(|p| Path::new(p).exists())
+    }) else {
         eprintln!(
             "F-QW3-MOE-C22214-001: SKIP — no cached Qwen3-Coder GGUF at any of {:?}",
             CANONICAL_QWEN3_CODER_GGUF_PATHS

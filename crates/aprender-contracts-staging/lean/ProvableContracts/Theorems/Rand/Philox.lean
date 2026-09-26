@@ -15,7 +15,7 @@ namespace ProvableContracts.Rand
 
 -- Status: proved
 /-- Any pure function is deterministic. -/
-theorem philox_deterministic (f : α → β → γ) : deterministic f := by
+theorem philox_deterministic {α β γ : Type*} (f : α → β → γ) : deterministic f := by
   intro k c
   rfl
 

@@ -1,4 +1,4 @@
-import Mathlib.Order.BooleanAlgebra
+import Mathlib.Order.BooleanAlgebra.Basic
 
 /-!
 # Morphology — Opening is Anti-Extensive

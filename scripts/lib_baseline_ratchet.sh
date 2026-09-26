@@ -152,6 +152,8 @@
 # Refs: paiml/aprender#2706 (APR-PERF-GATE-001), PERF-008, PERF-028.
 
 BASELINE_RATCHET_BASE_REF="${BASELINE_RATCHET_BASE_REF:-origin/main}"
+# Where bashrs_pin.sh lives: next to this file, wherever the caller sourced it from.
+_BR_LIB_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || return 1
 
 # ---------------------------------------------------------------------------
 # baseline_require_tool_version — a ratchet compares (tree, instrument), and a
@@ -178,7 +180,7 @@ BASELINE_RATCHET_BASE_REF="${BASELINE_RATCHET_BASE_REF:-origin/main}"
 #     are not comparable, so this is refused before the comparator runs.
 #   * versions agree               -> rc 0.
 baseline_require_tool_version() { # baseline_require_tool_version <baseline-file>
-    local file="$1" raw tool version live_line live_ver
+    local file="$1" raw tool version live_line live_ver bin
     raw=$(grep -m1 -E '^#[[:space:]]*tool_version=' "$file" 2>/dev/null) || raw=""
     raw=${raw#*tool_version=}
     if [ -z "$raw" ]; then
@@ -194,12 +196,28 @@ baseline_require_tool_version() { # baseline_require_tool_version <baseline-file
     if [ "$tool" = "none" ]; then
         return 0
     fi
-    if ! command -v "$tool" >/dev/null 2>&1; then
+    # --- TOOLPIN-RESOLVE-BEGIN ---
+    # bashrs resolves to CI's PIN (tools.toml via bashrs_pin.sh), never PATH: the
+    # fleet runs nightly bashrs while CI pins another, and the ambient one is a
+    # different instrument on every box. A resolver failure is rc 4, loud.
+    if [ "$tool" = bashrs ]; then
+        BASHRS_PIN_ERR="bashrs_pin.sh could not be sourced from $_BR_LIB_DIR"
+        if ! . "$_BR_LIB_DIR/bashrs_pin.sh" || ! bashrs_pin_resolve 2>/dev/null; then
+            printf 'tool_version: %s was recorded under %s %s; %s\n' \
+                "$file" "$tool" "$version" "$BASHRS_PIN_ERR"
+            return 4
+        fi
+        bin=$BASHRS
+    else
+        bin=$(command -v "$tool" 2>/dev/null) || bin=""
+    fi
+    # --- TOOLPIN-RESOLVE-END ---
+    if [ -z "$bin" ]; then
         printf 'tool_version: %s was recorded under %s %s, runner has no %s on PATH — verdicts would compare two instruments\n' \
             "$file" "$tool" "$version" "$tool"
         return 4
     fi
-    live_line=$("$tool" --version 2>/dev/null)
+    live_line=$("$bin" --version 2>/dev/null)
     live_line=${live_line%%$'\n'*}
     # --- TOOLVER-CMP-BEGIN ---
     if [ "$live_line" != "$tool $version" ]; then
@@ -370,6 +388,80 @@ _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
     if [ "$c" -lt "$b" ]; then
         BR_REMOVED=$((b - c))
     fi
+    return 0
+}
+
+# A ONE-TIME RE-BASELINE, PINNED TO A RECEIPT (car #4429, cop ruling B)
+# ---------------------------------------------------------------------
+# A count baseline may RISE exactly once, when the comparand's number was never
+# measured against the tree it guards. Car #4429 wired check_cb200_tdg_grade.sh
+# in for the first time: main recorded 599 and MEASURED 620 at the merge-base,
+# because nothing on main ever ran the guard. A number the tree already exceeds
+# is not a ratchet, and holding a car to it blocks the car for main's debt.
+#
+# The exception is admitted only when <baseline>.rebaseline:
+#   * is NEW on this branch -- absent at the comparand. Once it lands, the
+#     comparand carries it and the NEXT pull request is shrink-only again;
+#   * names a full sha and the count MEASURED there (`sha:` / `measured:`), and
+#     the new value is <= that measurement. A rise past main's own measured
+#     count is still RED;
+#   * carries the same `tool_version` as the baseline, so the two numbers come
+#     from one analyser;
+#   * names a sha that is an ancestor of the comparand, when the history can
+#     say so. A shallow clone cannot; the count at that sha and its ancestry to
+#     origin/main are then proven by the guard that owns the number
+#     (check_cb200_tdg_grade.sh re-measures it and deepens to decide ancestry);
+#   * is for a baseline in BR_REBASELINE_PATHS (space-separated). ONLY a
+#     baseline whose owning guard re-measures the receipt may be listed: for
+#     any other count baseline a receipt is a self-declared number, so the
+#     escape hatch is closed to it.
+: "${BR_REBASELINE_PATHS:=scripts/cb200_baseline.txt}"
+_br_receipt_field() { # _br_receipt_field <file> <key> -> the value, rc 1 when absent
+    sed -nE "s/^$2:[[:space:]]*([^[:space:]#][^#]*[^[:space:]#]|[^[:space:]#])[[:space:]]*(#.*)?\$/\\1/p" "$1" | grep -m1 .
+}
+_br_tool_version() { # _br_tool_version <baseline-file> -> the `# tool_version=` header value
+    sed -nE 's/^#[[:space:]]*tool_version=(.*[^[:space:]])[[:space:]]*$/\1/p' "$1" | grep -m1 .
+}
+_br_rebaseline_admit() { # <root> <ref> <baseline-path> -> 0 admitted, 1 refused; appends why to BR_DELTA
+    local root="$1" ref="$2" path="$3" rc_path sha measured tv btv new
+    rc_path="${path%.txt}.rebaseline"
+    [ -f "$root/$rc_path" ] || return 1
+    case " $BR_REBASELINE_PATHS " in
+        *" $path "*) ;;
+        *)
+            BR_DELTA=$(printf '%s\n        %s is refused: %s has no guard that re-measures a receipt\n        (BR_REBASELINE_PATHS), so it stays shrink-only.' "$BR_DELTA" "$rc_path" "$path")
+            return 1 ;;
+    esac
+    if git -C "$root" cat-file -e "${ref}:${rc_path}" 2>/dev/null; then
+        BR_DELTA=$(printf '%s\n        %s is already on the comparand: the one-time re-baseline is\n        SPENT, and this baseline is shrink-only again.' "$BR_DELTA" "$rc_path")
+        return 1
+    fi
+    sha=$(_br_receipt_field "$root/$rc_path" sha) || sha=""
+    measured=$(_br_receipt_field "$root/$rc_path" measured) || measured=""
+    tv=$(_br_receipt_field "$root/$rc_path" tool_version) || tv=""
+    btv=$(_br_tool_version "$root/$path") || btv=""
+    new=$(_br_stamped_count "$root/$path" || _br_number "$root/$path") || new=""
+    if ! printf '%s' "$sha" | grep -qxE '[0-9a-f]{40}' || ! printf '%s' "$measured" | grep -qxE '[0-9]+'; then
+        BR_DELTA=$(printf '%s\n        %s needs a full 40-hex `sha:` and an integer `measured:`.' "$BR_DELTA" "$rc_path")
+        return 1
+    fi
+    if [ -z "$tv" ] || [ "$tv" != "$btv" ]; then
+        BR_DELTA=$(printf '%s\n        %s tool_version <%s> is not the baseline'"'"'s <%s>.' "$BR_DELTA" "$rc_path" "$tv" "$btv")
+        return 1
+    fi
+    if [ -z "$new" ] || [ "$new" -gt "$measured" ]; then
+        BR_DELTA=$(printf '%s\n        the new value %s is above the count MEASURED at %s (%s): still RED.' "$BR_DELTA" "$new" "${sha:0:12}" "$measured")
+        return 1
+    fi
+    # A full clone decides ancestry here, and a sha it cannot resolve is not main history: RED.
+    # A shallow clone cannot decide it; BR_REBASELINE_PATHS lists only baselines whose guard
+    # deepens origin's main and proves it (check_cb200_tdg_grade.sh main_has).
+    if [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = false ] &&
+        ! git -C "$root" merge-base --is-ancestor "$sha" "$ref" 2>/dev/null; then
+        BR_DELTA=$(printf '%s\n        %s is not an ancestor of %s: the receipt must name a main commit.' "$BR_DELTA" "${sha:0:12}" "$ref")
+        return 1
+    fi
+    BR_ADMITTED=$(printf '        ~ ONE-TIME RE-BASELINE via %s: %s <= %s measured at %s (%s)' "$rc_path" "$new" "$measured" "${sha:0:12}" "$tv")
     return 0
 }
 
@@ -554,7 +646,8 @@ baseline_ratchet_check() {
     # capture is the difference between a RED and a crash.
     case "$kind" in
         set)   if _br_cmp_set   "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
-        count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
+        count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi
+            if [ "$cmp_rc" -eq 1 ] && _br_rebaseline_admit "$root" "$ref" "$path"; then cmp_rc=0; fi ;;
         keyed) if _br_cmp_keyed "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed2) if _br_cmp_keyed2 "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         set-aperture)
@@ -581,7 +674,12 @@ baseline_ratchet_check() {
     fi
 
     if [ "$cmp_rc" -eq 0 ]; then
-        if [ -n "$BR_ADMITTED" ]; then
+        if [ -n "$BR_ADMITTED" ] && [ "$kind" = count ]; then
+            printf 'ok    ratchet  %s ROSE, once, against a measurement:\n' "$path"
+            printf '%s\n' "$BR_ADMITTED"
+            printf '               the receipt is new on this branch; once it is on %s, the\n' "$BASELINE_RATCHET_BASE_REF"
+            printf '               next pull request is shrink-only again.\n'
+        elif [ -n "$BR_ADMITTED" ]; then
             printf 'ok    ratchet  %s grew by %s APERTURE REVEAL(s) vs %s\n' \
                 "$path" "$(printf '%s\n' "$BR_ADMITTED" | grep -c . || true)" \
                 "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"

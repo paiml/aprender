@@ -13,12 +13,25 @@ use tower::ServiceExt;
 /// The real hybrid file the rest of the Qwen3.5 tests are specified against.
 const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
 
+/// #4251: a runner that keeps the file elsewhere names it here (the PERF-053 `APR_*_MODEL`
+/// override pattern). cuda-nightly resolves the file itself and fails on a `SKIP:` line, so an
+/// absent model is RED there and a skip only on a dev box.
+const MODEL_ENV: &str = "APR_QWEN35_MODEL";
+
+fn model_path() -> String {
+    std::env::var(MODEL_ENV)
+        .ok()
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| MODEL_PATH.to_string())
+}
+
 fn state_or_skip(no_gpu: bool) -> Option<(AppState, Arc<MappedGGUFModel>)> {
-    if !std::path::Path::new(MODEL_PATH).exists() {
-        eprintln!("SKIP: {MODEL_PATH} is absent");
+    let path = model_path();
+    if !std::path::Path::new(&path).exists() {
+        eprintln!("SKIP: {path} is absent");
         return None;
     }
-    let mapped = Arc::new(MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF"));
+    let mapped = Arc::new(MappedGGUFModel::from_path(&path).expect("map the GGUF"));
     let vocab = mapped
         .model
         .vocabulary()
@@ -57,7 +70,7 @@ fn one_shot_answer(mapped: &MappedGGUFModel, max_tokens: usize, no_gpu: bool) ->
     // #4263: `apr run`'s load — the host once per file, a device state sized
     // to the one call.
     let qwen = crate::gguf::qwen35_session::Qwen35Forward::cached_host(
-        std::path::Path::new(MODEL_PATH),
+        std::path::Path::new(&model_path()),
         mapped,
     )
     .expect("host");
@@ -393,8 +406,16 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
 /// every gate stayed green because none of them sent a prompt through the
 /// router. The counter is `Qwen35Session::batched_prefills`, which moves only
 /// when `Qwen35CudaModel::prefill` returned logits — the F2 probe, the
-/// per-token fallback and decode steps never move it. Each request below
-/// starts a prompt the session does not hold, so each must add exactly one.
+/// per-token fallback and decode steps never move it.
+///
+/// Since #4214 a prompt prefills in up to two batched spans, split where
+/// `checkpoint_at` puts the checkpoint: before a chat's last `<|im_start|>`
+/// (the generation header), else before a raw prompt's last token. So the
+/// expected count follows the split, not "one per request": a fresh chat is
+/// 2, the same chat again resumes from its checkpoint and adds 1, and a raw
+/// prompt adds 1 batched span plus a one-token step the counter never sees.
+/// A per-token serve adds 0 on every route, so each assertion still catches
+/// #3596.
 ///
 /// RED under `APR_QWEN35_SESSION_PREFILL=per-token` (the session's own
 /// switch back to the one-token loop), and with the batched branch deleted
@@ -434,13 +455,15 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     );
     assert_eq!(
         prefills(),
-        1,
-        "/v1/chat/completions prefilled its prompt one token at a time (#3596)"
+        2,
+        "/v1/chat/completions prefilled its prompt one token at a time (#3596) — \
+         want two batched spans, history then generation header (#4214)"
     );
 
     // 2. /v1/chat/completions, streamed — the SSE path spawns its own generate.
     // The session holds prompt + reply, so the same prompt again does not
-    // extend it: a fresh prefill from position 0.
+    // extend it; it restores request 1's checkpoint (#4214) and prefills only
+    // the generation header, one batched span.
     let (status, body) = post(
         create_router(state.clone()),
         "/v1/chat/completions",
@@ -450,8 +473,9 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         prefills(),
-        2,
-        "streamed /v1/chat/completions prefilled one token at a time (#3596)"
+        3,
+        "streamed /v1/chat/completions prefilled one token at a time (#3596) — \
+         want one batched span from request 1's checkpoint (#4214)"
     );
 
     // 3. /v1/completions — a raw prompt of several tokens.
@@ -462,10 +486,13 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // No `<|im_start|>`: the checkpoint goes before the last token, so the
+    // prompt is one batched span and a one-token step.
     assert_eq!(
         prefills(),
-        3,
-        "/v1/completions prefilled its prompt one token at a time (#3596)"
+        4,
+        "/v1/completions prefilled its prompt one token at a time (#3596) — \
+         want one batched span up to the last token (#4214)"
     );
 
     assert!(
@@ -835,4 +862,93 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     );
     let usage = usage.expect("the terminal chunk carries usage (#4272)");
     assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
+}
+
+// #4274: a chat's second turn, re-rendered through the official template (which
+// drops turn 1's think block), resumed from the checkpoint turn 1 left, and
+// answered exactly what a full re-prefill answers.
+
+fn msg_4274(role: &str, content: &str) -> ChatMessage {
+    ChatMessage {
+        role: role.to_string(),
+        content: content.to_string(),
+        ..Default::default()
+    }
+}
+
+/// The rendered and encoded prompt for `messages`, and the greedy turn.
+fn turn_4274(
+    session: &mut Qwen35Session,
+    mapped: &MappedGGUFModel,
+    messages: &[ChatMessage],
+    thinking: Option<bool>,
+) -> (Vec<u32>, crate::session::Turn) {
+    let m = &mapped.model;
+    let text = crate::api::realize_handlers::format_chat_messages_official_thinking(
+        Some(m),
+        messages,
+        Some("qwen35"),
+        thinking,
+    )
+    .expect("render");
+    let ids = m.encode(&text).expect("encode");
+    let config = QuantizedGenerateConfig {
+        max_tokens: 24,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: m.eos_token_id().into_iter().collect(),
+        ..QuantizedGenerateConfig::default()
+    };
+    let turn = session
+        .generate(&ids, &config, &mut |_| true)
+        .expect("generate");
+    (ids, turn)
+}
+
+#[test]
+fn second_chat_turn_resumes_from_the_first_turns_checkpoint_4274() {
+    if !std::path::Path::new(MODEL_PATH).exists() {
+        eprintln!("SKIP: {MODEL_PATH} is absent");
+        return;
+    }
+    let mapped = MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let m = &mapped.model;
+    for thinking in [Some(false), Some(true)] {
+        let mut session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+        let first = [msg_4274("user", "Name three colors.")];
+        let (ids1, turn1) = turn_4274(&mut session, &mapped, &first, thinking);
+
+        let mut reply = turn1.tokens[ids1.len()..].to_vec();
+        if reply.last().is_some_and(|t| m.eos_token_id() == Some(*t)) {
+            reply.pop();
+        }
+        let reply = crate::api::realize_handlers::clean_chat_output(&m.decode(&reply));
+        let second = [
+            first[0].clone(),
+            msg_4274("assistant", &reply),
+            msg_4274("user", "Two more."),
+        ];
+        let (ids2, turn2) = turn_4274(&mut session, &mapped, &second, thinking);
+        let shared = ids1.iter().zip(&ids2).take_while(|(a, b)| a == b).count();
+        assert!(
+            shared < ids1.len(),
+            "thinking {thinking:?}: turn 2 must NOT extend turn 1 (else this is not #4274)"
+        );
+        // The #4274 body: turn 2 re-prefilled from 0 (reused 0).
+        assert!(
+            turn2.reused > 0 && turn2.reused <= shared,
+            "thinking {thinking:?}: turn 2 must resume from turn 1's checkpoint \
+             (reused {}, shared prefix {shared})",
+            turn2.reused
+        );
+
+        let mut fresh = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+        let (_, full) = turn_4274(&mut fresh, &mapped, &second, thinking);
+        assert_eq!(full.reused, 0);
+        assert_eq!(
+            m.decode(&turn2.tokens[ids2.len()..]),
+            m.decode(&full.tokens[ids2.len()..]),
+            "thinking {thinking:?}: the resumed turn must answer what a full re-prefill answers"
+        );
+    }
 }

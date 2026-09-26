@@ -245,7 +245,16 @@ pub(crate) fn run(
         // and run an element-wise diff per `apr-cli-trace-save-tensor-v1`
         // `apr_diff_values_compat` invariant.
         if is_aprt_stage_file(path1) && is_aprt_stage_file(path2) {
+            #[cfg(feature = "inference")]
             return run_aprt_stage_diff(path1, path2, limit, json_output);
+            // #4041: the stage-file reader is realizar's. A minimal build names the missing feature
+            // instead of falling through to the model walker, which would misread an APRT file.
+            #[cfg(not(feature = "inference"))]
+            return Err(CliError::ValidationFailed(
+                "comparing APRT stage tensor files needs the `inference` feature (this apr was built \
+                 without it)"
+                    .to_string(),
+            ));
         }
         // Run tensor value comparison
         run_tensor_value_diff(path1, path2, filter, limit, transpose_aware, json_output)

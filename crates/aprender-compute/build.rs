@@ -36,13 +36,10 @@ struct Binding {
 
 /// Convert a contract filename + equation into a canonical env var name.
 fn env_var_name(contract: &str, equation: &str) -> String {
-    let stem = contract
-        .trim_end_matches(".yaml")
-        .trim_end_matches(".yml")
-        .to_uppercase()
-        .replace('-', "_");
-    let eq = equation.to_uppercase().replace('-', "_");
-    format!("CONTRACT_{stem}_{eq}")
+    provable_contracts::build_helper::env_key(
+        contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
+        equation,
+    )
 }
 
 /// Rank status values for deduplication.
@@ -55,14 +52,8 @@ fn status_rank(s: &str) -> u8 {
 }
 
 fn main() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("trueno")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/trueno/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 

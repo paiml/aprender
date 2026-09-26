@@ -10,10 +10,10 @@ fn lint_passes_on_real_contracts() {
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed, "lint should pass: {report:?}");
-    // 13 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
+    // 15 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
     // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
-    // valid-under (ONT-7).
-    assert_eq!(report.gates.len(), 13);
+    // valid-under (ONT-7), theorem-pairing and depends-on-present (PVL-001 EV-11).
+    assert_eq!(report.gates.len(), 15);
 }
 
 #[test]
@@ -27,10 +27,72 @@ fn lint_score_gate_fails_with_high_threshold() {
 
 #[test]
 fn lint_empty_dir() {
+    // The lint takes the contract dir's PARENT as the project root and reads
+    // `scripts/contract_duplicate_stem_baseline.txt` from it. A bare tempdir's parent is
+    // the shared `/tmp`, so a stray `/tmp/scripts/` failed this test (#4207). Nest it.
     let tmp = tempfile::tempdir().unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
-    assert!(report.passed);
+    assert!(report.passed, "empty dir should pass: {report:?}");
+    // The new-finding state is the fixture's own, not `$TMPDIR/.pv` shared with every other run (#4173).
+    assert_eq!(pv_state_dir(&dir), tmp.path().join(".pv"));
+    assert!(tmp.path().join(".pv/lint-previous.json").is_file());
+}
+
+/// #4173: `pv_state_dir` is the contract dir's PARENT, so a test that lints a bare `tempdir()` reads
+/// and writes `$TMPDIR/.pv/lint-previous.json`, a file every other run on the host shares. Its
+/// verdict then depends on state it does not own. Every lint test must nest its corpus.
+#[test]
+fn no_lint_test_points_the_lint_at_a_bare_tempdir() {
+    let bare = |line: &str| {
+        let l: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+        ["(tmp.path()", "(&tmp.path()"].iter().any(|arg| {
+            let pat = format!("{}{arg}", concat!("LintConfig::", "new"));
+            l.match_indices(&pat)
+                .any(|(k, _)| matches!(l[k + pat.len()..].chars().next(), Some(',' | ')')))
+        })
+    };
+    for (line, want) in [
+        (
+            concat!("run_lint(&LintConfig::new", "(tmp.path(), None, 0.0));"),
+            true,
+        ),
+        (
+            concat!("let c = LintConfig::new", "( &tmp.path(), None, 0.0);"),
+            true,
+        ),
+        ("let c = LintConfig::new(&corpus, None, 0.0);", false),
+        (
+            "let c = LintConfig::new(&tmp.path().join(\"contracts\"), None, 0.0);",
+            false,
+        ),
+    ] {
+        assert_eq!(bare(line), want, "case table: {line}");
+    }
+    let lint_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lint");
+    let mut scanned = 0;
+    for entry in std::fs::read_dir(&lint_src).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "rs") {
+            scanned += 1;
+            let src = std::fs::read_to_string(&path).unwrap();
+            for (i, line) in src.lines().enumerate() {
+                assert!(
+                    !bare(line),
+                    "{}:{}: lints a bare tempdir: {line}",
+                    path.display(),
+                    i + 1
+                );
+            }
+        }
+    }
+    assert!(
+        scanned > 5,
+        "scanned only {scanned} files under {}",
+        lint_src.display()
+    );
 }
 
 #[test]
@@ -156,14 +218,16 @@ fn lint_cache_second_run_hits() {
 #[test]
 fn lint_validation_failure_skips_audit_and_score() {
     let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
     // Write a malformed YAML that will parse into a Contract with validation errors
     // Actually: write something that fails to parse entirely
-    std::fs::write(tmp.path().join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    std::fs::write(dir.join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 13);
+    assert_eq!(report.gates.len(), 15);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -371,7 +435,10 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             "relations".to_string(),
             "shapes".to_string(),
             // ONT-7, R-8: computed in every run, armed only when the baseline names it.
-            "valid-under".to_string()
+            "valid-under".to_string(),
+            // PVL-001 EV-11: computed in every run (R-8), armed per repo.
+            "theorem-pairing".to_string(),
+            "depends-on-present".to_string(),
         ]
     );
 }
@@ -424,13 +491,16 @@ fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
     );
 
     // Σ and a kernel contract are present, so the ONLY reason to skip is the failed validation.
+    // Nested, not the bare tempdir: the lint writes its state into the contract dir's PARENT (#4173).
     let tmp = tempfile::tempdir().unwrap();
+    let corpus = tmp.path().join("contracts");
+    std::fs::create_dir_all(&corpus).unwrap();
     let fixture = contracts_dir().join("../tests/fixtures/ont/valid-under-ok");
     for f in ["ontology.yaml", "fixture-vu-v1.yaml"] {
-        std::fs::copy(fixture.join(f), tmp.path().join(f)).unwrap();
+        std::fs::copy(fixture.join(f), corpus.join(f)).unwrap();
     }
-    std::fs::write(tmp.path().join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
-    let report = run_lint(&LintConfig::new(tmp.path(), None, 0.0));
+    std::fs::write(corpus.join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let report = run_lint(&LintConfig::new(&corpus, None, 0.0));
     let g = report
         .gates
         .iter()

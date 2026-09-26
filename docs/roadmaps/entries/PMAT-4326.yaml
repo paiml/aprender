@@ -1,0 +1,16 @@
+- id: PMAT-4326
+  github_issue: 4326
+  item_type: task
+  title: nightly ships a CUDA apr build for x86_64 + aarch64
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T01:51:01Z
+  updated: 2026-09-25T01:51:01Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -31,7 +31,7 @@ EXAMPLES:
 #[command(
     name = "aprender-ptx-debug",
     about = "Pure Rust PTX debugging and static analysis tool",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     subcommand_required = true,
     arg_required_else_help = true,
     after_help = AFTER_HELP
@@ -43,7 +43,7 @@ pub struct Cli {
 }
 
 /// Available subcommands.
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 pub enum Command {
     /// Analyze PTX file for bugs and issues
     Analyze(AnalyzeArgs),
@@ -57,7 +57,7 @@ pub enum Command {
 }
 
 /// Arguments for the `analyze` subcommand.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct AnalyzeArgs {
     /// PTX file to analyze
     #[arg(value_name = "FILE")]
@@ -84,7 +84,7 @@ pub struct AnalyzeArgs {
 }
 
 /// Arguments for the `gen-fkr` subcommand.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct GenFkrArgs {
     /// PTX file to generate tests from
     #[arg(value_name = "FILE")]

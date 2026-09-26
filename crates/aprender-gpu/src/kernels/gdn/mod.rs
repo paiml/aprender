@@ -45,10 +45,12 @@
 mod causal_conv1d;
 mod causal_conv1d_seq;
 mod decode_attention;
+mod decode_attention_split;
 mod delta_rule;
 mod delta_rule_scan;
 mod gated_rmsnorm;
 mod gdn_gates;
+mod kv_row_scatter;
 mod l2_norm;
 mod partial_rope;
 mod prefill_flash_attention;
@@ -62,10 +64,14 @@ mod test_support;
 pub use causal_conv1d::CausalConv1dSiluKernel;
 pub use causal_conv1d_seq::CausalConv1dSiluSeqKernel;
 pub use decode_attention::{DecodeAttention256Kernel, DEFAULT_MAX_POSITIONS_PER_PASS};
+pub use decode_attention_split::{
+    DecodeAttentionReduceKernel, DecodeAttentionSplitKernel, DEFAULT_SPLIT_LEN,
+};
 pub use delta_rule::DeltaRuleRecurrenceKernel;
 pub use delta_rule_scan::DeltaRuleChunkScanKernel;
 pub use gated_rmsnorm::GatedRmsNormKernel;
 pub use gdn_gates::GdnGatesKernel;
+pub use kv_row_scatter::KvRowScatterIndirectKernel;
 pub use l2_norm::PerHeadL2NormKernel;
 pub use partial_rope::PartialNeoxRopeKernel;
 pub use prefill_flash_attention::{PrefillFlashAttention256Kernel, FLASH_HEAD_DIM};

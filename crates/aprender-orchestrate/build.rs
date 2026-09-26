@@ -19,14 +19,11 @@ struct Binding {
 }
 
 fn main() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("batuta")
-        .join("binding.yaml");
+    // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
+    build_sha::emit();
+
+    let binding_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/batuta/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 
@@ -55,9 +52,10 @@ fn main() {
     let total = bindings.bindings.len() as u32;
 
     for b in &bindings.bindings {
-        let stem = b.contract.trim_end_matches(".yaml").to_uppercase().replace('-', "_");
-        let eq = b.equation.to_uppercase().replace('-', "_");
-        let var = format!("CONTRACT_{stem}_{eq}");
+        let var = provable_contracts::build_helper::env_key(
+            b.contract.trim_end_matches(".yaml"),
+            &b.equation,
+        );
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status == "implemented" {
             implemented += 1;
@@ -70,7 +68,7 @@ fn main() {
 
     // Phase 2: contract PRE/POST env vars
     {
-        let cdir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
+        let cdir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
         if let Ok(es) = std::fs::read_dir(&cdir) {
             #[derive(serde::Deserialize, Default)]
             struct CY {
@@ -103,8 +101,7 @@ fn main() {
                 if let Ok(c) = std::fs::read_to_string(&p) {
                     if let Ok(y) = serde_yaml_ng::from_str::<CY>(&c) {
                         for (n, eq) in &y.equations {
-                            let k =
-                                format!("CONTRACT_{}_{}", s, n.to_uppercase().replace('-', "_"));
+                            let k = provable_contracts::build_helper::env_key(&s, n);
                             if !eq.preconditions.is_empty() {
                                 println!(
                                     "cargo:rustc-env={k}_PRE_COUNT={}",

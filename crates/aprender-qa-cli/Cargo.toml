@@ -23,13 +23,16 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
-aprender-qa-gen = { version = "0.69.3", path = "../aprender-qa-gen" }
-aprender-qa-runner = { version = "0.69.3", path = "../aprender-qa-runner" }
-aprender-qa-report = { version = "0.69.3", path = "../aprender-qa-report" }
-aprender-qa-certify = { version = "0.69.3", path = "../aprender-qa-certify" }
+aprender-qa-gen = { version = "0.70.0", path = "../aprender-qa-gen" }
+aprender-qa-runner = { version = "0.70.0", path = "../aprender-qa-runner" }
+aprender-qa-report = { version = "0.70.0", path = "../aprender-qa-report" }
+aprender-qa-certify = { version = "0.70.0", path = "../aprender-qa-certify" }
 ctrlc = "3.4"
 safetensors = { workspace = true }
 colored = "2.2"
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
 tempfile = "3"

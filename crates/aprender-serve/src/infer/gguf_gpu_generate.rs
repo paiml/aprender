@@ -193,6 +193,8 @@ fn try_wgpu_generate(
         gpu.device, gpu.queue,
         hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim,
     );
+    // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
+    fwd.set_rms_norm_eps(eps);
 
     // C-WGPU-Q4K-001: Upload raw Q4K bytes for projection weights.
     // encode_matmul() auto-selects Q4K GEMV when M=1 and Q4K weights exist.
@@ -699,6 +701,8 @@ fn try_apr_wgpu_inference(
         gpu.device, gpu.queue,
         hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim,
     );
+    // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
+    fwd.set_rms_norm_eps(eps);
 
     for (name, data, _rows, _cols) in &weights {
         fwd.upload_weight(name, data);

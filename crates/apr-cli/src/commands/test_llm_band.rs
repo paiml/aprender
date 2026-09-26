@@ -51,6 +51,9 @@
 //! `receipt.r1.json` … `receipt.rN.json`. The cell's verdict is the conjunction
 //! over them, which is a decision for the runner, not something this producer
 //! should pre-collapse.
+// #4041: a `--no-default-features` build has no tokio, so `dispatch` cannot run a benchmark and the benchmark
+// code is unreachable there. Dead in that build only; every build with `inference` still lints it.
+#![cfg_attr(not(feature = "inference"), allow(dead_code))]
 
 use crate::error::{CliError, Result};
 use apr_test::llm::band::{run_band, BandRun, RequestExtra};
@@ -1770,7 +1773,12 @@ async fn cool(first_lane: &mut bool, cooldown: std::time::Duration, interleaved:
         *first_lane = false;
         return;
     }
+    #[cfg(feature = "inference")]
     tokio::time::sleep(cooldown).await;
+    // #4041: no tokio in a minimal build. Nothing reaches this there (`dispatch` refuses first); if it did, the
+    // cooldown would still be honoured, blocking.
+    #[cfg(not(feature = "inference"))]
+    std::thread::sleep(cooldown);
 }
 
 /// Run the §5.1 protocol over every requested band and write the receipts.

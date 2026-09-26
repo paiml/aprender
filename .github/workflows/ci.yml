@@ -73,8 +73,8 @@ jobs:
   # with the same rule the old job of that name applied.
   # ==========================================================================
   x86-main:
-    # Any free X64 runner in the pool takes it: intel, framework16 or yoga.
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    # Car #4429 keeps its pre-merge runner pin (cop 2026-09-26: no runner-host change mid-release).
+    runs-on: [self-hosted, Linux, X64, clean-room, intel]
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
@@ -85,13 +85,32 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before
+      # any section starts. rustfmt runs in the image sov.lint uses (same digest,
+      # so the same verdict); the ID-order rule is contract_data_integrity's,
+      # without cargo; the case tables are guard-tree's cheapest.
+      - name: Cheap checks (fmt, falsification-ID order, guard case tables)
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/fail_fast.py self-test
+          python3 scripts/ci/fail_fast.py ids --base origin/main
+          docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -w /w \
+            localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 \
+            cargo fmt --all -- --check
+          bash scripts/tests/guard_tree_test.sh
+          bash scripts/bump-version.sh --self-test
+          bash scripts/check_no_claim_literals.sh --selftest
+          bash scripts/check_hardcoded_paths.sh --self-test
+          bash scripts/check_pr_review_wiring.sh --self-test
+          bash scripts/check_ci_gate_mutants_rule.sh --self-test
+          bash scripts/check_ci_gate_docs_only_rule.sh --self-test
       # The driver decides what every section's if:/matrix/needs means and whether
       # the vendored workflow is the upstream one; its case table must go RED on
       # each planted defect before it is trusted to report a section green.
@@ -100,7 +119,7 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64]'
+          --sections 'sov.*,changes,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64],provable-ladder'
           --external-job workspace-test
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
@@ -436,7 +455,8 @@ jobs:
           # cuda-unit were never in the gate; they still are not.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+          # guard-cargo and determinism-compare are read below under the docs-only rule (#3668).
+          for pair in X86:guard-tree X86:sov.gate; do
             job="${pair%%:*}" sec="${pair#*:}"
             r=$(res "${!job}" "$sec")
             if [ "$r" != success ]; then
@@ -444,6 +464,29 @@ jobs:
               exit 1
             fi
           done
+          # guard-cargo is the cargo half of the same guard universe (BSE-01), and
+          # determinism-compare is APEX-001 EV-2a's two-architecture comparison. A
+          # required check that `gate` does not read is not a required check, so both
+          # are read here -- and each may be `skipped` ONLY on a docs-only PR (#3668).
+          DOCS=$(printf '%s' "${X86:-null}" | jq -r '(. // {}).changes.outputs.docs_only // ""')
+          CHG=$(res "$X86" changes)
+          GC=$(res "$X86" guard-cargo)
+          DC=$(res "$DET" determinism-compare)
+          # --- GATE-DOCS-ONLY-RULE-BEGIN (#3668; scripts/check_ci_gate_docs_only_rule.sh runs this block) ---
+          # A skip is the docs-only skip only when the `changes` section SUCCEEDED and
+          # said docs_only=true. Any other skip -- changes skipped, failed, missing or
+          # said false -- means a section that should have run did not: a failure.
+          skip_ok=0
+          if [ "$CHG" = success ] && [ "$DOCS" = true ]; then skip_ok=1; fi
+          for pair in "guard-cargo=$GC" "determinism-compare=$DC"; do
+            job=${pair%%=*}; res=${pair#*=}
+            case "$res:$skip_ok" in
+              success:*) echo "$job: success" ;;
+              skipped:1) echo "$job: skipped -- docs-only PR (changes: docs_only=true, #3668)" ;;
+              *) echo "$job failed: $res (changes=$CHG docs_only='$DOCS'; a skip passes only on a docs-only PR)"; exit 1 ;;
+            esac
+          done
+          # --- GATE-DOCS-ONLY-RULE-END ---
           MUT=$(res "$X86" mutants)
           # --- GATE-MUTANTS-RULE-BEGIN (#3676; scripts/check_ci_gate_mutants_rule.sh runs this block) ---
           # `skipped` is a pass ONLY when the skip is the job's own filter:

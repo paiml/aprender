@@ -319,7 +319,7 @@ mod fp8_activation_cache;
 mod gdn_ops;
 /// PMAT-3596 (#3596): the Qwen3.5 hybrid's batched-prefill wrappers (GEMM projections,
 /// row-batched Gated `DeltaNet` kernels, causal attention over the resident cache).
-mod gdn_prefill_ops;
+pub(crate) mod gdn_prefill_ops;
 mod gemm;
 /// PMAT-291: Transformer layer graph builder for Qwen2.5 architecture
 mod graph_builder;
@@ -532,6 +532,9 @@ pub struct CudaExecutor {
     // PAR-061: Device-side seq_len buffer for attention in graph replay
     // Updated alongside position_buf (seq_len = position + 1)
     seq_len_buf: Option<GpuBuffer<u32>>,
+    // aprender#4273: per-split partials of the split decode attention,
+    // `[acc | (max, sum)]`, grown on demand as the context grows.
+    decode_attn_partials: Option<GpuBuffer<f32>>,
     // PAR-119: Batched KV caches for true multi-sequence batching
     // Each layer has M separate KV caches (one per sequence in batch)
     // Size per cache: M x num_kv_heads x max_len x head_dim
@@ -634,6 +637,12 @@ pub struct CudaExecutor {
     kv_cache_q8_v_scales: HashMap<String, GpuBuffer<f32>>,
     // PMAT-024: cuBLAS handle for prefill GEMM (dequant Q4K → dense → cuBLAS)
     cublas_handle: Option<trueno_gpu::driver::CublasHandle>,
+    // #4313: tensor-op handle for the Qwen3.5 f16 prefill GEMM. `cublas_handle` is
+    // PEDANTIC, which confines f16 GemmEx to the legacy s1688 kernel.
+    cublas_f16_handle: Option<trueno_gpu::driver::CublasHandle>,
+    // #4313: true once every Qwen3.5 prefill projection is resident as fp16. The f16
+    // prefill GEMM runs only then; otherwise the f32 path runs (no VRAM, or a failure).
+    qwen35_prefill_f16: bool,
     // PMAT-063: Pre-allocated cuBLAS workspace for CUDA graph capture
     // Without this, cuBLAS falls back to workspace-free algorithms (7x slower)
     cublas_workspace: Option<GpuBuffer<u8>>,

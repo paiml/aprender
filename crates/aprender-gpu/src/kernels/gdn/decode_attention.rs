@@ -43,9 +43,9 @@ use crate::ptx::builder::{KernelBuilder, PtxArithmetic, PtxComparison, PtxContro
 use crate::ptx::{PtxKernel, PtxReg, PtxType, VirtualReg};
 
 /// Threads per block.
-const BLOCK: u32 = 256;
+pub(super) const BLOCK: u32 = 256;
 /// Warps per block.
-const WARPS: u32 = BLOCK / 32;
+pub(super) const WARPS: u32 = BLOCK / 32;
 /// Positions whose scores fit in shared memory in one pass (16 KiB).
 pub const DEFAULT_MAX_POSITIONS_PER_PASS: u32 = 4096;
 
@@ -69,6 +69,9 @@ pub struct DecodeAttention256Kernel {
     pub head_dim: u32,
     /// Positions scored per pass — the shared scores buffer holds this many floats.
     pub max_positions_per_pass: u32,
+    /// #4233: read `position` from a device `u32` (`pos_ptr`) and attend over
+    /// `position + 1` entries, so a captured CUDA graph replays at any position.
+    pub indirect: bool,
 }
 
 impl DecodeAttention256Kernel {
@@ -84,6 +87,10 @@ impl DecodeAttention256Kernel {
             "head_dim {head_dim} exceeds the {BLOCK}-thread block; one thread owns one output element"
         );
         assert!(
+            head_dim % 4 == 0,
+            "head_dim {head_dim} must be a multiple of 4: the score dot reads 16-byte vectors"
+        );
+        assert!(
             num_kv_heads > 0 && num_heads % num_kv_heads == 0,
             "num_heads {num_heads} must be a multiple of num_kv_heads {num_kv_heads}"
         );
@@ -92,7 +99,16 @@ impl DecodeAttention256Kernel {
             num_kv_heads,
             head_dim,
             max_positions_per_pass: DEFAULT_MAX_POSITIONS_PER_PASS,
+            indirect: false,
         }
+    }
+
+    /// #4233: the graph-capturable variant — `seq_len = *pos_ptr + 1`, read on
+    /// the device, so the launch arguments are identical at every token.
+    #[must_use]
+    pub const fn indirect(mut self) -> Self {
+        self.indirect = true;
+        self
     }
 
     /// Override the positions-per-pass cap (the shared scores buffer size).
@@ -177,183 +193,434 @@ fn emit_block_reduce(
     acc.expect("WARPS > 0")
 }
 
+/// Compile-time shape of the pass loop.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PassShape {
+    /// Width of one head; one thread owns one output element.
+    pub head_dim: u32,
+    /// Positions scored per pass (the shared scores buffer).
+    pub cap: u32,
+    /// Bytes between consecutive positions of the cache.
+    pub row_stride_bytes: u32,
+    /// Score with a warp per position (coalesced, not bit-identical to the CPU)
+    /// instead of a thread per position. Needs `head_dim % 128 == 0`.
+    pub warp_dot: bool,
+}
+
+/// Registers the scoring phase reads.
+struct ScoreRegs {
+    tid: VirtualReg,
+    lane: VirtualReg,
+    warp: VirtualReg,
+    q_base: VirtualReg,
+    k_head: VirtualReg,
+    chunk: VirtualReg,
+    n_c: VirtualReg,
+    sqrt_hd: VirtualReg,
+    head_dim_r: VirtualReg,
+    four: VirtualReg,
+}
+
+/// Scores with one thread per position, summed in ascending element order: the
+/// CPU's float sequence, bit for bit.
+fn emit_scores_thread(ctx: &mut KernelBuilder<'_>, s: PassShape, r: &ScoreRegs) -> VirtualReg {
+    let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+    let pp = ctx.add_u32(r.tid, 0);
+    ctx.label("gdn_attn_score_loop");
+    let score_go = ctx.setp_lt_u32(pp, r.n_c);
+    ctx.branch_if_not(score_go, "gdn_attn_score_end");
+    let p = ctx.add_u32_reg(r.chunk, pp);
+    let row_off = ctx.mul_wide_u32(p, s.row_stride_bytes);
+    let k_row = ctx.add_u64(r.k_head, row_off);
+
+    let dot = ctx.mov_f32_imm(0.0);
+    let i = ctx.mov_u32_imm(0);
+    ctx.label("gdn_attn_dot_loop");
+    let dot_go = ctx.setp_lt_u32(i, r.head_dim_r);
+    ctx.branch_if_not(dot_go, "gdn_attn_dot_end");
+    let elem_off = ctx.mul_wide_u32_reg(i, r.four);
+    let q_addr = ctx.add_u64(r.q_base, elem_off);
+    let k_addr = ctx.add_u64(k_row, elem_off);
+    // Four elements per 16-byte load, still summed one at a time in ascending
+    // `i` — the same float sequence as scalar loads.
+    let q4 = ctx.ld_global_f32_v4(q_addr);
+    let k4 = ctx.ld_global_f32_v4(k_addr);
+    for (q_val, k_val) in q4.into_iter().zip(k4) {
+        // mul then add, like the CPU's `dot += q_h[i] * k_p[i]` — Rust does
+        // not contract into an fma, so neither do we.
+        let prod = ctx.mul_f32(q_val, k_val);
+        ctx.add_f32_inplace(dot, prod);
+    }
+    ctx.add_u32_inplace(i, 4);
+    ctx.branch("gdn_attn_dot_loop");
+    ctx.label("gdn_attn_dot_end");
+
+    let score = ctx.div_f32(dot, r.sqrt_hd);
+    let score_slot = ctx.mul_u32(pp, 4);
+    let score_addr = ctx.cvt_u64_u32(score_slot);
+    ctx.st_shared_f32(score_addr, score);
+    ctx.max_f32_inplace(local_max, score);
+    ctx.add_u32_inplace(pp, BLOCK);
+    ctx.branch("gdn_attn_score_loop");
+    ctx.label("gdn_attn_score_end");
+    local_max
+}
+
+/// Scores with one warp per position: each lane reads 16-byte pieces of the K
+/// row, so a warp's load is one contiguous 512-byte run, and a shuffle tree sums
+/// the lanes. A different summation order from the CPU's, so not bit-identical
+/// (aprender#4273: a thread walking its own row read the cache at 36–42% of
+/// copy bandwidth).
+fn emit_scores_warp(ctx: &mut KernelBuilder<'_>, s: PassShape, r: &ScoreRegs) -> VirtualReg {
+    let loads = s.head_dim / 128;
+    let lane_off = ctx.mul_wide_u32(r.lane, 16);
+    let q_lane = ctx.add_u64(r.q_base, lane_off);
+    let stride = ctx.mov_u64_imm(512);
+    let mut q_addrs = vec![q_lane];
+    for _ in 1..loads {
+        let prev = *q_addrs.last().expect("one load");
+        q_addrs.push(ctx.add_u64(prev, stride));
+    }
+    let q: Vec<[VirtualReg; 4]> = q_addrs
+        .into_iter()
+        .map(|a| ctx.ld_global_f32_v4(a))
+        .collect();
+    let one = ctx.mov_u32_imm(1);
+
+    let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+    let pp = ctx.add_u32(r.warp, 0);
+    ctx.label("gdn_attn_wscore_loop");
+    let score_go = ctx.setp_lt_u32(pp, r.n_c);
+    ctx.branch_if_not(score_go, "gdn_attn_wscore_end");
+    let p = ctx.add_u32_reg(r.chunk, pp);
+    let row_off = ctx.mul_wide_u32(p, s.row_stride_bytes);
+    let k_row = ctx.add_u64(r.k_head, row_off);
+    let mut k_addr = ctx.add_u64(k_row, lane_off);
+    let mut k = Vec::with_capacity(loads as usize);
+    for j in 0..loads {
+        if j > 0 {
+            k_addr = ctx.add_u64(k_addr, stride);
+        }
+        k.push(ctx.ld_global_f32_v4(k_addr));
+    }
+    let dot = ctx.mov_f32_imm(0.0);
+    for (q4, k4) in q.iter().zip(&k) {
+        for (&q_val, &k_val) in q4.iter().zip(k4) {
+            let prod = ctx.mul_f32(q_val, k_val);
+            ctx.add_f32_inplace(dot, prod);
+        }
+    }
+    for offset in [16, 8, 4, 2, 1] {
+        let other = ctx.shfl_down_f32(dot, offset, 0xFFFF_FFFF);
+        ctx.add_f32_inplace(dot, other);
+    }
+    let lead = ctx.setp_lt_u32(r.lane, one);
+    ctx.branch_if_not(lead, "gdn_attn_wscore_next");
+    let score = ctx.div_f32(dot, r.sqrt_hd);
+    let score_slot = ctx.mul_u32(pp, 4);
+    let score_addr = ctx.cvt_u64_u32(score_slot);
+    ctx.st_shared_f32(score_addr, score);
+    ctx.max_f32_inplace(local_max, score);
+    ctx.label("gdn_attn_wscore_next");
+    ctx.add_u32_inplace(pp, WARPS);
+    ctx.branch("gdn_attn_wscore_loop");
+    ctx.label("gdn_attn_wscore_end");
+    local_max
+}
+
+/// Registers the pass loop reads from its caller.
+pub(super) struct PassRegs {
+    pub tid: VirtualReg,
+    pub lane: VirtualReg,
+    pub warp: VirtualReg,
+    /// This head's `q`.
+    pub q_base: VirtualReg,
+    /// Position 0 of this head's KV head in the K cache.
+    pub k_head: VirtualReg,
+    /// Position 0 of this head's KV head in the V cache.
+    pub v_head: VirtualReg,
+    /// First position, inclusive.
+    pub begin: VirtualReg,
+    /// Last position, exclusive; `begin < end` is the caller's guarantee.
+    pub end: VirtualReg,
+}
+
+/// The softmax state after the last pass: the output element `tid` is `acc / sum`.
+pub(super) struct PassState {
+    pub running_max: VirtualReg,
+    pub running_sum: VirtualReg,
+    pub acc: VirtualReg,
+    /// `tid * 4`, the byte offset of this thread's output element.
+    pub out_elem_off: VirtualReg,
+    pub head_dim_r: VirtualReg,
+}
+
+/// Attention over positions `begin..end`, in passes of `cap`, with the running
+/// max/sum rescaling of flash decoding. The unsplit kernel runs it over
+/// `0..seq_len`; each block of the split kernel over its own slice (aprender#4273).
+pub(super) fn emit_passes(ctx: &mut KernelBuilder<'_>, s: PassShape, r: PassRegs) -> PassState {
+    let PassRegs {
+        tid,
+        lane,
+        warp,
+        q_base,
+        k_head,
+        v_head,
+        begin,
+        end,
+    } = r;
+    // The CPU divides by sqrt(head_dim); the same division, not a reciprocal.
+    let sqrt_head_dim = (s.head_dim as f32).sqrt();
+    let scratch_max = s.cap * 4;
+    let scratch_sum = s.cap * 4 + WARPS * 4;
+    let row_stride_bytes = s.row_stride_bytes;
+
+    let head_dim_r = ctx.mov_u32_imm(s.head_dim);
+    let cap_r = ctx.mov_u32_imm(s.cap);
+    let sqrt_hd = ctx.mov_f32_imm(sqrt_head_dim);
+    let four = ctx.mov_u32_imm(4);
+    let out_elem_off = ctx.mul_wide_u32_reg(tid, four);
+
+    // Running softmax state, carried across passes (flash decoding).
+    let running_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+    let running_sum = ctx.mov_f32_imm(0.0);
+    let acc = ctx.mov_f32_imm(0.0);
+    let chunk = ctx.add_u32(begin, 0);
+
+    ctx.label("gdn_attn_chunk_loop");
+    let more_chunks = ctx.setp_lt_u32(chunk, end);
+    ctx.branch_if_not(more_chunks, "gdn_attn_chunk_end");
+    // n_c = min(cap, end - chunk)
+    let remaining = ctx.sub_u32_reg(end, chunk);
+    let n_c = ctx.min_u32(remaining, cap_r);
+
+    // ---- Phase 1: scores for this pass.
+    let score_regs = ScoreRegs {
+        tid,
+        lane,
+        warp,
+        q_base,
+        k_head,
+        chunk,
+        n_c,
+        sqrt_hd,
+        head_dim_r,
+        four,
+    };
+    let local_max = if s.warp_dot {
+        emit_scores_warp(ctx, s, &score_regs)
+    } else {
+        emit_scores_thread(ctx, s, &score_regs)
+    };
+    ctx.bar_sync(0);
+
+    // ---- Phase 2: softmax over the pass, folded into the running state.
+    let chunk_max = emit_block_reduce(
+        ctx,
+        local_max,
+        lane,
+        warp,
+        scratch_max,
+        ReduceOp::Max,
+        "gdn_attn_max",
+    );
+    let new_max = ctx.max_f32(running_max, chunk_max);
+    // correction = exp(old_max - new_max); on the first pass old_max is
+    // -inf, so this is 0 and the (still zero) accumulators are unaffected.
+    let max_delta = ctx.sub_f32(running_max, new_max);
+    let correction = emit_exp_f32(ctx, max_delta);
+    ctx.mov_f32_reg(running_max, new_max);
+
+    let local_sum = ctx.mov_f32_imm(0.0);
+    let wp = ctx.add_u32(tid, 0);
+    ctx.label("gdn_attn_weight_loop");
+    let weight_go = ctx.setp_lt_u32(wp, n_c);
+    ctx.branch_if_not(weight_go, "gdn_attn_weight_end");
+    let w_slot = ctx.mul_u32(wp, 4);
+    let w_addr = ctx.cvt_u64_u32(w_slot);
+    let raw = ctx.ld_shared_f32(w_addr);
+    let shifted = ctx.sub_f32(raw, running_max);
+    let weight = emit_exp_f32(ctx, shifted);
+    ctx.st_shared_f32(w_addr, weight);
+    ctx.add_f32_inplace(local_sum, weight);
+    ctx.add_u32_inplace(wp, BLOCK);
+    ctx.branch("gdn_attn_weight_loop");
+    ctx.label("gdn_attn_weight_end");
+    ctx.bar_sync(0);
+
+    let chunk_sum = emit_block_reduce(
+        ctx,
+        local_sum,
+        lane,
+        warp,
+        scratch_sum,
+        ReduceOp::Sum,
+        "gdn_attn_sum",
+    );
+    ctx.mul_f32_inplace(running_sum, correction);
+    ctx.add_f32_inplace(running_sum, chunk_sum);
+    ctx.mul_f32_inplace(acc, correction);
+
+    // ---- Phase 3: thread `tid` accumulates output element `tid`,
+    // positions ascending, exactly the CPU's accumulation order.
+    let in_head = ctx.setp_lt_u32(tid, head_dim_r);
+    ctx.branch_if_not(in_head, "gdn_attn_value_skip");
+    let vp = ctx.mov_u32_imm(0);
+    // Four positions per trip: their loads issue together, then the four
+    // products are added in ascending order, so the sum is the same as one
+    // position per trip (aprender#4273: one load in flight per thread left
+    // the value phase latency-bound).
+    let n_c4 = ctx.and_u32_imm(n_c, !3);
+    let row_stride_r = ctx.mov_u32_imm(row_stride_bytes);
+    let row_stride64 = ctx.cvt_u64_u32(row_stride_r);
+    ctx.label("gdn_attn_value4_loop");
+    let value4_go = ctx.setp_lt_u32(vp, n_c4);
+    ctx.branch_if_not(value4_go, "gdn_attn_value4_end");
+    let w_slot = ctx.mul_u32(vp, 4);
+    let w_slot64 = ctx.cvt_u64_u32(w_slot);
+    let vpos = ctx.add_u32_reg(chunk, vp);
+    let v_row_off = ctx.mul_wide_u32(vpos, row_stride_bytes);
+    let v_row = ctx.add_u64(v_head, v_row_off);
+    let v_addr0 = ctx.add_u64(v_row, out_elem_off);
+    let v_addr1 = ctx.add_u64(v_addr0, row_stride64);
+    let v_addr2 = ctx.add_u64(v_addr1, row_stride64);
+    let v_addr3 = ctx.add_u64(v_addr2, row_stride64);
+    let four64 = ctx.cvt_u64_u32(four);
+    let w_addr1 = ctx.add_u64(w_slot64, four64);
+    let w_addr2 = ctx.add_u64(w_addr1, four64);
+    let w_addr3 = ctx.add_u64(w_addr2, four64);
+    let w4 = [w_slot64, w_addr1, w_addr2, w_addr3].map(|a| ctx.ld_shared_f32(a));
+    let v0 = ctx.ld_global_f32(v_addr0);
+    let v1 = ctx.ld_global_f32(v_addr1);
+    let v2 = ctx.ld_global_f32(v_addr2);
+    let v3 = ctx.ld_global_f32(v_addr3);
+    for (w_val, v_val) in w4.into_iter().zip([v0, v1, v2, v3]) {
+        let contrib = ctx.mul_f32(w_val, v_val);
+        ctx.add_f32_inplace(acc, contrib);
+    }
+    ctx.add_u32_inplace(vp, 4);
+    ctx.branch("gdn_attn_value4_loop");
+    ctx.label("gdn_attn_value4_end");
+    ctx.label("gdn_attn_value_loop");
+    let value_go = ctx.setp_lt_u32(vp, n_c);
+    ctx.branch_if_not(value_go, "gdn_attn_value_end");
+    let v_slot = ctx.mul_u32(vp, 4);
+    let v_slot64 = ctx.cvt_u64_u32(v_slot);
+    let w_val = ctx.ld_shared_f32(v_slot64);
+    let vpos = ctx.add_u32_reg(chunk, vp);
+    let v_row_off = ctx.mul_wide_u32(vpos, row_stride_bytes);
+    let v_row = ctx.add_u64(v_head, v_row_off);
+    let v_addr = ctx.add_u64(v_row, out_elem_off);
+    let v_val = ctx.ld_global_f32(v_addr);
+    let contrib = ctx.mul_f32(w_val, v_val);
+    ctx.add_f32_inplace(acc, contrib);
+    ctx.add_u32_inplace(vp, 1);
+    ctx.branch("gdn_attn_value_loop");
+    ctx.label("gdn_attn_value_end");
+    ctx.label("gdn_attn_value_skip");
+
+    // The next pass overwrites the scores buffer.
+    ctx.bar_sync(0);
+    ctx.add_u32_reg_inplace(chunk, cap_r);
+    ctx.branch("gdn_attn_chunk_loop");
+    ctx.label("gdn_attn_chunk_end");
+
+    PassState {
+        running_max,
+        running_sum,
+        acc,
+        out_elem_off,
+        head_dim_r,
+    }
+}
+
 impl Kernel for DecodeAttention256Kernel {
     fn name(&self) -> &str {
-        "gdn_decode_attention"
+        if self.indirect {
+            "gdn_decode_attention_indirect"
+        } else {
+            "gdn_decode_attention"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
         let head_dim = self.head_dim;
         let group_size = self.group_size();
-        let cap = self.max_positions_per_pass;
-        let row_stride_bytes = self.num_kv_heads * head_dim * 4;
-        // The CPU divides by sqrt(head_dim); the same division, not a reciprocal.
-        let sqrt_head_dim = (head_dim as f32).sqrt();
-        let scratch_max = cap * 4;
-        let scratch_sum = cap * 4 + WARPS * 4;
+        let shape = PassShape {
+            head_dim,
+            cap: self.max_positions_per_pass,
+            row_stride_bytes: self.num_kv_heads * head_dim * 4,
+            warp_dot: false,
+        };
+        let indirect = self.indirect;
 
-        PtxKernel::new(self.name())
+        let kernel = PtxKernel::new(self.name())
             .param(PtxType::U64, "q_ptr") // [num_heads * head_dim]
             .param(PtxType::U64, "k_cache_ptr") // [max_len][num_kv_heads * head_dim]
             .param(PtxType::U64, "v_cache_ptr") // [max_len][num_kv_heads * head_dim]
-            .param(PtxType::U64, "out_ptr") // [num_heads * head_dim]
-            .param(PtxType::U32, "seq_len") // valid positions, = position + 1
-            .shared_memory(self.shared_bytes())
-            .build(|ctx| {
-                let tid = ctx.special_reg(PtxReg::TidX);
-                let h = ctx.special_reg(PtxReg::CtaIdX);
-                let lane = ctx.and_u32_imm(tid, 31);
-                let warp = ctx.shr_u32_imm(tid, 5);
+            .param(PtxType::U64, "out_ptr"); // [num_heads * head_dim]
+        let kernel = if indirect {
+            kernel.param(PtxType::U64, "pos_ptr") // device u32 position; seq_len = it + 1
+        } else {
+            kernel.param(PtxType::U32, "seq_len") // valid positions, = position + 1
+        };
+        kernel.shared_memory(self.shared_bytes()).build(|ctx| {
+            let tid = ctx.special_reg(PtxReg::TidX);
+            let h = ctx.special_reg(PtxReg::CtaIdX);
+            let lane = ctx.and_u32_imm(tid, 31);
+            let warp = ctx.shr_u32_imm(tid, 5);
 
-                let q_ptr = ctx.load_param_u64("q_ptr");
-                let k_ptr = ctx.load_param_u64("k_cache_ptr");
-                let v_ptr = ctx.load_param_u64("v_cache_ptr");
-                let out_ptr = ctx.load_param_u64("out_ptr");
-                let seq_len = ctx.load_param_u32("seq_len");
+            let q_ptr = ctx.load_param_u64("q_ptr");
+            let k_ptr = ctx.load_param_u64("k_cache_ptr");
+            let v_ptr = ctx.load_param_u64("v_cache_ptr");
+            let out_ptr = ctx.load_param_u64("out_ptr");
+            let seq_len = if indirect {
+                let pos_ptr = ctx.load_param_u64("pos_ptr");
+                let position = ctx.ld_global_u32(pos_ptr);
+                ctx.add_u32(position, 1)
+            } else {
+                ctx.load_param_u32("seq_len")
+            };
 
-                // An empty cache has no softmax: leave the output alone.
-                let zero_u32 = ctx.mov_u32_imm(0);
-                let has_positions = ctx.setp_lt_u32(zero_u32, seq_len);
-                ctx.branch_if_not(has_positions, "gdn_attn_exit");
+            // An empty cache has no softmax: leave the output alone.
+            let zero_u32 = ctx.mov_u32_imm(0);
+            let has_positions = ctx.setp_lt_u32(zero_u32, seq_len);
+            ctx.branch_if_not(has_positions, "gdn_attn_exit");
 
-                // kv head of this query head, and its byte offset inside a cache row.
-                let kv_h = ctx.div_u32(h, group_size);
-                let kv_off = ctx.mul_wide_u32(kv_h, head_dim * 4);
-                let head_off = ctx.mul_wide_u32(h, head_dim * 4);
-                let q_base = ctx.add_u64(q_ptr, head_off);
-                let out_base = ctx.add_u64(out_ptr, head_off);
-                let k_head = ctx.add_u64(k_ptr, kv_off);
-                let v_head = ctx.add_u64(v_ptr, kv_off);
+            // kv head of this query head, and its byte offset inside a cache row.
+            let kv_h = ctx.div_u32(h, group_size);
+            let kv_off = ctx.mul_wide_u32(kv_h, head_dim * 4);
+            let head_off = ctx.mul_wide_u32(h, head_dim * 4);
+            let q_base = ctx.add_u64(q_ptr, head_off);
+            let out_base = ctx.add_u64(out_ptr, head_off);
+            let k_head = ctx.add_u64(k_ptr, kv_off);
+            let v_head = ctx.add_u64(v_ptr, kv_off);
 
-                let head_dim_r = ctx.mov_u32_imm(head_dim);
-                let cap_r = ctx.mov_u32_imm(cap);
-                let sqrt_hd = ctx.mov_f32_imm(sqrt_head_dim);
-                let four = ctx.mov_u32_imm(4);
-                let out_elem_off = ctx.mul_wide_u32_reg(tid, four);
+            let st = emit_passes(
+                ctx,
+                shape,
+                PassRegs {
+                    tid,
+                    lane,
+                    warp,
+                    q_base,
+                    k_head,
+                    v_head,
+                    begin: zero_u32,
+                    end: seq_len,
+                },
+            );
 
-                // Running softmax state, carried across passes (flash decoding).
-                let running_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
-                let running_sum = ctx.mov_f32_imm(0.0);
-                let acc = ctx.mov_f32_imm(0.0);
-                let chunk = ctx.mov_u32_imm(0);
+            // out = sum_p exp(s_p - max) * v_p / sum_p exp(s_p - max)
+            let in_head_out = ctx.setp_lt_u32(tid, st.head_dim_r);
+            ctx.branch_if_not(in_head_out, "gdn_attn_exit");
+            let result = ctx.div_f32(st.acc, st.running_sum);
+            let out_addr = ctx.add_u64(out_base, st.out_elem_off);
+            ctx.st_global_f32(out_addr, result);
 
-                ctx.label("gdn_attn_chunk_loop");
-                let more_chunks = ctx.setp_lt_u32(chunk, seq_len);
-                ctx.branch_if_not(more_chunks, "gdn_attn_chunk_end");
-                // n_c = min(cap, seq_len - chunk)
-                let remaining = ctx.sub_u32_reg(seq_len, chunk);
-                let n_c = ctx.min_u32(remaining, cap_r);
-
-                // ---- Phase 1: scores for this pass, one thread per few positions.
-                let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
-                let pp = ctx.add_u32(tid, 0);
-                ctx.label("gdn_attn_score_loop");
-                let score_go = ctx.setp_lt_u32(pp, n_c);
-                ctx.branch_if_not(score_go, "gdn_attn_score_end");
-                let p = ctx.add_u32_reg(chunk, pp);
-                let row_off = ctx.mul_wide_u32(p, row_stride_bytes);
-                let k_row = ctx.add_u64(k_head, row_off);
-
-                let dot = ctx.mov_f32_imm(0.0);
-                let i = ctx.mov_u32_imm(0);
-                ctx.label("gdn_attn_dot_loop");
-                let dot_go = ctx.setp_lt_u32(i, head_dim_r);
-                ctx.branch_if_not(dot_go, "gdn_attn_dot_end");
-                let elem_off = ctx.mul_wide_u32_reg(i, four);
-                let q_addr = ctx.add_u64(q_base, elem_off);
-                let k_addr = ctx.add_u64(k_row, elem_off);
-                let q_val = ctx.ld_global_f32(q_addr);
-                let k_val = ctx.ld_global_f32(k_addr);
-                // mul then add, like the CPU's `dot += q_h[i] * k_p[i]` — Rust does
-                // not contract into an fma, so neither do we.
-                let prod = ctx.mul_f32(q_val, k_val);
-                ctx.add_f32_inplace(dot, prod);
-                ctx.add_u32_inplace(i, 1);
-                ctx.branch("gdn_attn_dot_loop");
-                ctx.label("gdn_attn_dot_end");
-
-                let score = ctx.div_f32(dot, sqrt_hd);
-                let score_slot = ctx.mul_u32(pp, 4);
-                let score_addr = ctx.cvt_u64_u32(score_slot);
-                ctx.st_shared_f32(score_addr, score);
-                ctx.max_f32_inplace(local_max, score);
-                ctx.add_u32_inplace(pp, BLOCK);
-                ctx.branch("gdn_attn_score_loop");
-                ctx.label("gdn_attn_score_end");
-                ctx.bar_sync(0);
-
-                // ---- Phase 2: softmax over the pass, folded into the running state.
-                let chunk_max =
-                    emit_block_reduce(ctx, local_max, lane, warp, scratch_max, ReduceOp::Max, "gdn_attn_max");
-                let new_max = ctx.max_f32(running_max, chunk_max);
-                // correction = exp(old_max - new_max); on the first pass old_max is
-                // -inf, so this is 0 and the (still zero) accumulators are unaffected.
-                let max_delta = ctx.sub_f32(running_max, new_max);
-                let correction = emit_exp_f32(ctx, max_delta);
-                ctx.mov_f32_reg(running_max, new_max);
-
-                let local_sum = ctx.mov_f32_imm(0.0);
-                let wp = ctx.add_u32(tid, 0);
-                ctx.label("gdn_attn_weight_loop");
-                let weight_go = ctx.setp_lt_u32(wp, n_c);
-                ctx.branch_if_not(weight_go, "gdn_attn_weight_end");
-                let w_slot = ctx.mul_u32(wp, 4);
-                let w_addr = ctx.cvt_u64_u32(w_slot);
-                let raw = ctx.ld_shared_f32(w_addr);
-                let shifted = ctx.sub_f32(raw, running_max);
-                let weight = emit_exp_f32(ctx, shifted);
-                ctx.st_shared_f32(w_addr, weight);
-                ctx.add_f32_inplace(local_sum, weight);
-                ctx.add_u32_inplace(wp, BLOCK);
-                ctx.branch("gdn_attn_weight_loop");
-                ctx.label("gdn_attn_weight_end");
-                ctx.bar_sync(0);
-
-                let chunk_sum =
-                    emit_block_reduce(ctx, local_sum, lane, warp, scratch_sum, ReduceOp::Sum, "gdn_attn_sum");
-                ctx.mul_f32_inplace(running_sum, correction);
-                ctx.add_f32_inplace(running_sum, chunk_sum);
-                ctx.mul_f32_inplace(acc, correction);
-
-                // ---- Phase 3: thread `tid` accumulates output element `tid`,
-                // positions ascending, exactly the CPU's accumulation order.
-                let in_head = ctx.setp_lt_u32(tid, head_dim_r);
-                ctx.branch_if_not(in_head, "gdn_attn_value_skip");
-                let vp = ctx.mov_u32_imm(0);
-                ctx.label("gdn_attn_value_loop");
-                let value_go = ctx.setp_lt_u32(vp, n_c);
-                ctx.branch_if_not(value_go, "gdn_attn_value_end");
-                let v_slot = ctx.mul_u32(vp, 4);
-                let v_slot64 = ctx.cvt_u64_u32(v_slot);
-                let w_val = ctx.ld_shared_f32(v_slot64);
-                let vpos = ctx.add_u32_reg(chunk, vp);
-                let v_row_off = ctx.mul_wide_u32(vpos, row_stride_bytes);
-                let v_row = ctx.add_u64(v_head, v_row_off);
-                let v_addr = ctx.add_u64(v_row, out_elem_off);
-                let v_val = ctx.ld_global_f32(v_addr);
-                let contrib = ctx.mul_f32(w_val, v_val);
-                ctx.add_f32_inplace(acc, contrib);
-                ctx.add_u32_inplace(vp, 1);
-                ctx.branch("gdn_attn_value_loop");
-                ctx.label("gdn_attn_value_end");
-                ctx.label("gdn_attn_value_skip");
-
-                // The next pass overwrites the scores buffer.
-                ctx.bar_sync(0);
-                ctx.add_u32_reg_inplace(chunk, cap_r);
-                ctx.branch("gdn_attn_chunk_loop");
-                ctx.label("gdn_attn_chunk_end");
-
-                // out = sum_p exp(s_p - max) * v_p / sum_p exp(s_p - max)
-                let in_head_out = ctx.setp_lt_u32(tid, head_dim_r);
-                ctx.branch_if_not(in_head_out, "gdn_attn_exit");
-                let result = ctx.div_f32(acc, running_sum);
-                let out_addr = ctx.add_u64(out_base, out_elem_off);
-                ctx.st_global_f32(out_addr, result);
-
-                ctx.label("gdn_attn_exit");
-                ctx.ret();
-            })
+            ctx.label("gdn_attn_exit");
+            ctx.ret();
+        })
     }
 }
 
@@ -600,6 +867,62 @@ mod gdn_decode_attention_device_tests {
                     (got[h * HEAD_DIM + i] - expected).abs() < 1e-5,
                     "head {h} element {i} = {} but its KV head is {expected}",
                     got[h * HEAD_DIM + i]
+                );
+            }
+        }
+    }
+
+    /// #4233: the graph variant reads `position` from the device and must produce
+    /// the eager kernel's output bit for bit — including across the multi-pass
+    /// boundary, where `seq_len` drives the chunk loop.
+    #[test]
+    fn gdn_decode_attention_indirect_is_bit_identical_to_direct() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!("gdn_decode_attention indirect: no CUDA device — SKIPPED.");
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+        let num_kv_heads = 2usize;
+        let (q, k, v) = fixture(num_kv_heads, 0x4233_0002);
+        for cap in [None, Some(8u32)] {
+            let mut direct = DecodeAttention256Kernel::new(
+                NUM_HEADS as u32,
+                num_kv_heads as u32,
+                HEAD_DIM as u32,
+            );
+            if let Some(cap) = cap {
+                direct = direct.with_max_positions_per_pass(cap);
+            }
+            let indirect = direct.indirect();
+            for seq_len in [1usize, 5, 37] {
+                let want = run(&ctx, &stream, &direct, &q, &k, &v, seq_len);
+
+                let q_buf = GpuBuffer::from_host(&ctx, &q).expect("q");
+                let k_buf = GpuBuffer::from_host(&ctx, &k).expect("k");
+                let v_buf = GpuBuffer::from_host(&ctx, &v).expect("v");
+                let out_buf = GpuBuffer::<f32>::new(&ctx, NUM_HEADS * HEAD_DIM).expect("out");
+                let pos = u32::try_from(seq_len - 1).expect("pos");
+                let pos_buf = GpuBuffer::from_host(&ctx, &[pos]).expect("pos");
+                let mut args = [
+                    q_buf.as_ptr(),
+                    k_buf.as_ptr(),
+                    v_buf.as_ptr(),
+                    out_buf.as_ptr(),
+                    pos_buf.as_ptr(),
+                ];
+                run_kernel(
+                    &ctx,
+                    &stream,
+                    &indirect,
+                    indirect.grid(),
+                    indirect.block(),
+                    &mut args,
+                );
+                let mut got = vec![0.0f32; NUM_HEADS * HEAD_DIM];
+                out_buf.copy_to_host(&mut got).expect("download");
+                assert_eq!(
+                    got, want,
+                    "indirect vs direct, cap {cap:?}, seq_len {seq_len}"
                 );
             }
         }

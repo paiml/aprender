@@ -98,6 +98,7 @@ impl CudaExecutor {
             attention_event: None, // GH-559-PERF: lazily created on first attention pass
             position_buf: None,
             seq_len_buf: None,
+            decode_attn_partials: None,
             // PAR-119: Batched KV caches (lazy init in init_batched_kv_cache)
             batched_kv_k_caches: HashMap::new(),
             batched_kv_v_caches: HashMap::new(),
@@ -152,6 +153,8 @@ impl CudaExecutor {
             kv_cache_q8_v_scales: HashMap::new(),
             // PMAT-024: cuBLAS handle for prefill GEMM (lazy init on first prefill)
             cublas_handle: None,
+            cublas_f16_handle: None,
+            qwen35_prefill_f16: false,
             // PMAT-063: cuBLAS workspace for graph capture (lazy init)
             cublas_workspace: None,
             // PMAT-053: cuBLASLt handle for FP8 GEMM (lazy init on first FP8 prefill)

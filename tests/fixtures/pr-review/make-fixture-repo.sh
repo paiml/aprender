@@ -269,35 +269,35 @@ if g merge-base --is-ancestor "$C3" "$F1"; then
   echo "FIXTURE REPO BROKEN: C3 must NOT be an ancestor of F1 (row 9 needs a stale index)" >&2
   exit 1
 fi
-g diff --name-only "$C1" "$F1" | grep -qx 'src/cuda/kernel.cu' \
+grep -qx 'src/cuda/kernel.cu' <<<"$(g diff --name-only "$C1" "$F1")" \
   || { echo "FIXTURE REPO BROKEN: the gpu PR diff does not touch src/cuda/" >&2; exit 1; }
 
 # The two new heads are asserted the same way: a fixture head that stopped carrying
 # its subject would leave the rules it pins passing over nothing.
 g diff "$C1" "$G1" -- book | grep -q 'Ollama' \
   || { echo "FIXTURE REPO BROKEN: the claim PR diff publishes no competitor ratio" >&2; exit 1; }
-g diff --name-only "$C1" "$S1" | grep -qx 'crates/aprender-core/src/fused.rs' \
+grep -qx 'crates/aprender-core/src/fused.rs' <<<"$(g diff --name-only "$C1" "$S1")" \
   || { echo "FIXTURE REPO BROKEN: the code PR diff touches no Rust source" >&2; exit 1; }
 g diff "$C1" "$P1" | grep -q 'format!("apr sustains' \
   || { echo "FIXTURE REPO BROKEN: the printed PR publishes no ratio" >&2; exit 1; }
 g diff "$C1" "$P1" | grep -q '^+// The book published' \
   || { echo "FIXTURE REPO BROKEN: the printed PR carries no merely-quoted ratio, so nothing distinguishes the two" >&2; exit 1; }
-g diff --name-only "$C1" "$E1" | grep -qx 'book/src/examples/showcase-benchmark.md' \
+grep -qx 'book/src/examples/showcase-benchmark.md' <<<"$(g diff --name-only "$C1" "$E1")" \
   || { echo "FIXTURE REPO BROKEN: the examples PR does not publish under book/src/examples/" >&2; exit 1; }
 g diff "$C1" "$E1" -- book | grep -q 'Ollama' \
   || { echo "FIXTURE REPO BROKEN: the examples PR diff publishes no competitor ratio" >&2; exit 1; }
-if g diff --name-only "$C1" "$D1" | grep -qE '\.rs$'; then
+if grep -qE '\.rs$' <<<"$(g diff --name-only "$C1" "$D1")"; then
   echo "FIXTURE REPO BROKEN: the docs PR must touch no Rust source, or S3.D triggers on it" >&2
   exit 1
 fi
 
 # The five S13 heads are asserted the same way, and for the same reason: a head that
 # stopped carrying its subject leaves the refusal it pins passing over nothing.
-g diff --name-only "$C1" "$M1" | grep -qx 'scripts/check_pr_review_receipt.sh' \
+grep -qx 'scripts/check_pr_review_receipt.sh' <<<"$(g diff --name-only "$C1" "$M1")" \
   || { echo "FIXTURE REPO BROKEN: the mechanism PR touches no MECHANISM_PATHS entry" >&2; exit 1; }
-g diff --name-only "$C1" "$H1" | grep -qx 'scripts/check_no_claim_literals.sh' \
+grep -qx 'scripts/check_no_claim_literals.sh' <<<"$(g diff --name-only "$C1" "$H1")" \
   || { echo "FIXTURE REPO BROKEN: the guard PR touches no guard-shaped file" >&2; exit 1; }
-if g diff --name-only "$C1" "$H1" | grep -qx 'scripts/check_pr_review_receipt.sh'; then
+if grep -qx 'scripts/check_pr_review_receipt.sh' <<<"$(g diff --name-only "$C1" "$H1")"; then
   echo "FIXTURE REPO BROKEN: the guard PR must NOT touch a mechanism path, or Q9 refuses it before the mutation clause is reached" >&2
   exit 1
 fi
@@ -305,11 +305,13 @@ g merge-base --is-ancestor "$F1" "$T1" \
   || { echo "FIXTURE REPO BROKEN: T1 must be a descendant of F1 (S13.3.a needs a reviewed ancestor)" >&2; exit 1; }
 g merge-base --is-ancestor "$F1" "$T2" \
   || { echo "FIXTURE REPO BROKEN: T2 must be a descendant of F1" >&2; exit 1; }
-if g diff --name-only "$F1" "$T1" | grep -qvx 'evidence/pr-review/2783/notes/receipt-note.txt'; then
+# A here-string of an empty diff is one empty line, which -v would match: test non-empty first.
+T1_FILES=$(g diff --name-only "$F1" "$T1")
+if [ -n "$T1_FILES" ] && grep -qvx 'evidence/pr-review/2783/notes/receipt-note.txt' <<<"$T1_FILES"; then
   echo "FIXTURE REPO BROKEN: the clean-tip PR touches something outside evidence/pr-review/2783/, so it cannot show the rule ADMITTING the honest path" >&2
   exit 1
 fi
-g diff --name-only "$F1" "$T2" | grep -qx 'crates/aprender-core/src/late.rs' \
+grep -qx 'crates/aprender-core/src/late.rs' <<<"$(g diff --name-only "$F1" "$T2")" \
   || { echo "FIXTURE REPO BROKEN: the dirty-tip PR carries no unreviewed source change" >&2; exit 1; }
 g cat-file -e "$K1:.github/pr-review-autonomy.disabled" \
   || { echo "FIXTURE REPO BROKEN: the kill-switch head does not carry the kill switch" >&2; exit 1; }

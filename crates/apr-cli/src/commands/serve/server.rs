@@ -37,6 +37,7 @@ fn dominant_quantization(model: &realizar::gguf::OwnedQuantizedModel) -> Option<
 #[cfg(feature = "inference")]
 fn measured_model_source(
     model: &realizar::gguf::OwnedQuantizedModel,
+    mapped: Option<&realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
 ) -> realizar::api::ModelSourceInfo {
     let base = config
@@ -52,7 +53,48 @@ fn measured_model_source(
     if let Some(quantization) = dominant_quantization(model) {
         source = source.with_quantization(quantization);
     }
+    // #4254: counted from the file's own tensor table, which is the whole model. The
+    // owned model is not: the Qwen3.5 hybrid reaches the servers as its BASE (#3571).
+    if let Some(mapped) = mapped {
+        source = source.with_parameter_count(gguf_parameter_count(&mapped.model));
+    }
     source
+}
+
+/// #4254: [`dominant_quantization`]'s rule, read off the GGUF's own tensor table: the
+/// modal qtype across every layer's attention-output and FFN projections. The Qwen3.5
+/// hybrid has no owned model to ask, so the tensor table is the only measurement it has.
+/// The embedding is left out on both paths — on a 0.8B model its Q6_K would outweigh
+/// every Q4_K projection, and it is not what "the model's quantization" names.
+#[cfg(feature = "inference")]
+fn gguf_dominant_quantization(model: &realizar::gguf::GGUFModel) -> Option<&'static str> {
+    use std::collections::HashMap;
+
+    const PROJECTIONS: [&str; 4] = [
+        ".attn_output.weight",
+        ".ffn_up.weight",
+        ".ffn_down.weight",
+        ".ffn_gate.weight",
+    ];
+    let mut counts: HashMap<u32, usize> = HashMap::new();
+    for t in model
+        .tensors
+        .iter()
+        .filter(|t| t.name.starts_with("blk.") && PROJECTIONS.iter().any(|p| t.name.ends_with(p)))
+    {
+        *counts.entry(t.qtype).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .filter_map(|(qtype, n)| realizar::api::gguf_qtype_name(qtype).map(|name| (name, n)))
+        .max_by_key(|&(_, n)| n)
+        .map(|(name, _)| name)
+}
+
+/// #4254: every element of every tensor the GGUF declares.
+#[cfg(feature = "inference")]
+fn gguf_parameter_count(model: &realizar::gguf::GGUFModel) -> u64 {
+    model.tensors.iter().map(|t| t.dims.iter().product::<u64>()).sum()
 }
 
 /// Run the CPU inference server
@@ -76,7 +118,7 @@ fn run_cpu_server(
     // Measure the model BEFORE it is moved into AppState. Anything not
     // measurable here stays absent — `/realize/model` no longer substitutes
     // `size_bytes: 0` / `context_length: 4096` / `quantization: "Q4_K_M"`.
-    let model_source = measured_model_source(&quantized_model, config);
+    let model_source = measured_model_source(&quantized_model, mapped_model.as_deref(), config);
 
     let mut state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
@@ -180,7 +222,13 @@ fn build_qwen35_state(
         .unwrap_or_default()
         .with_architecture("qwen35")
         .with_model_max_context_length(context_length)
-        .with_context_length(config.context_length);
+        .with_context_length(config.context_length)
+        .with_parameter_count(gguf_parameter_count(&mapped_model.model));
+    // #4254: the v0.69.1 CPU asset served this model with `quantization: null`.
+    let model_source = match gguf_dominant_quantization(&mapped_model.model) {
+        Some(q) => model_source.with_quantization(q),
+        None => model_source,
+    };
     let state = AppState::with_qwen35_session(session, mapped_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
         .with_model_source(model_source)
@@ -245,6 +293,97 @@ mod qwen35_serve_route_tests {
         let served = state.qwen35_session().expect("a resident session");
         let layers = served.session.lock().expect("lock").num_layers();
         assert!(layers > 0, "the session holds the hybrid's layers: {layers}");
+    }
+
+    /// #4254: the v0.69.1 CPU asset served Qwen3.5 with `quantization: null` and
+    /// `parameter_count: null` in `/v1/effective-config` — the hybrid path built its
+    /// source from the path alone. Both are now read off the GGUF's own tensor table.
+    #[test]
+    fn qwen35_serve_source_carries_quantization_and_parameter_count_4254() {
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = std::sync::Arc::new(
+            realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF"),
+        );
+        let config = ServerConfig {
+            no_gpu: true,
+            ..ServerConfig::default()
+        };
+        let state = build_qwen35_state(mapped, &config).expect("qwen35 serve passes");
+        let body = realizar::api::effective_config(&state);
+        // A Q4_K_M file holds most of its weight elements in Q4_K (some
+        // projections are Q6_K); "Q4_K_M" is a file label, not a tensor type.
+        assert_eq!(body.model.quantization.as_deref(), Some("Q4_K"));
+        // Qwen3.5-0.8B: a count, not a label — anything off by 10x is a wrong sum.
+        let n = body.model.parameter_count.expect("parameter_count is measured");
+        assert!((500_000_000..1_500_000_000).contains(&n), "parameter_count {n}");
+        assert_eq!(body.compute_class, "cpu");
+    }
+
+    /// #4254: one process, two endpoints, one answer. `/v1/effective-config` on the
+    /// hybrid named no backend (`backend_loaded: []`, `compute_class: unknown`), no
+    /// quantization and no parameter count while `/health` said `cpu` — and listed a
+    /// `gpu` feature this binary cannot dispatch to.
+    #[test]
+    fn qwen35_effective_config_agrees_with_health() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = std::sync::Arc::new(
+            realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF"),
+        );
+        let want_params =
+            realizar::gguf::forward_qwen35::qwen35_known_issue::gguf_param_count(&mapped.model);
+        let config = ServerConfig {
+            no_gpu: true,
+            ..ServerConfig::default()
+        };
+        let state = build_qwen35_state(mapped, &config).expect("qwen35 state");
+        let router = realizar::api::create_router_with_config(state, config.router_config());
+        let get = |uri: &'static str| {
+            let router = router.clone();
+            async move {
+                let req = Request::builder().uri(uri).body(Body::empty()).expect("request");
+                let resp = router.oneshot(req).await.expect("route");
+                let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                    .await
+                    .expect("body");
+                serde_json::from_slice::<serde_json::Value>(&bytes).expect("JSON")
+            }
+        };
+        let (health, ec) = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(async { (get("/health").await, get("/v1/effective-config").await) });
+
+        assert_eq!(health["compute_mode"], "cpu", "{health}");
+        assert_eq!(ec["compute_class"], "cpu", "must agree with /health: {ec}");
+        assert_eq!(ec["backend_loaded"], serde_json::json!(["cpu"]), "{ec}");
+        let q = ec["model"]["quantization"].as_str().expect("quantization named");
+        assert!(q.starts_with('Q'), "a GGUF qtype name, got {q:?}");
+        assert_eq!(ec["model"]["parameter_count"], want_params, "{ec}");
+        assert!(
+            (600_000_000..1_000_000_000).contains(&want_params),
+            "fixture: the 0.8B file counts {want_params}"
+        );
+        // The launcher's own set decides which accelerators are dispatchable.
+        let features: Vec<&str> = ec["build_features"]
+            .as_array()
+            .expect("build_features")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert_eq!(features.contains(&"gpu"), cfg!(feature = "wgpu"), "{features:?}");
+        assert_eq!(features.contains(&"cuda"), cfg!(feature = "cuda"), "{features:?}");
+        let commit = ec["server"]["build_commit"].as_str().expect("build_commit");
+        assert_eq!(commit, env!("APR_GIT_SHA"));
+        assert!(!commit.ends_with("+no-git"), "built from a checkout: {commit}");
     }
 
     /// The startup line's thinking mode is read off what the template renders.

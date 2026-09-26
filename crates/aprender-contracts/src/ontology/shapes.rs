@@ -11,6 +11,7 @@
 //! | `in`, `pattern`, `minLength`, `maxLength` | `languageIn`, `uniqueLang` |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
+//! | `lessThan`, `lessThanOrEquals` (property pairs) | `equals`, `disjoint` |
 //! | a single predicate `path` | sequence, alternative, inverse, `*`/`+` paths |
 //! | — | `and`/`or`/`not`/`xone`, `sparql`, and every component not in this table |
 //!
@@ -115,6 +116,10 @@ pub struct PropertyShape {
     pub min_length: Option<usize>,
     pub max_length: Option<usize>,
     pub node: Option<Box<NodeShape>>,
+    /// `sh:lessThan`: every value must be `<` every value of this predicate on the same focus node.
+    pub less_than: Option<String>,
+    /// `sh:lessThanOrEquals`: every value must be `<=` every value of this predicate on the same focus node.
+    pub less_than_or_equals: Option<String>,
     pub resolves: Option<String>,
     pub severity: Severity,
 }
@@ -128,6 +133,11 @@ pub struct NodeShape {
     pub closed: bool,
     pub ignored_properties: Vec<String>,
     pub properties: Vec<PropertyShape>,
+    /// `allowEmpty: "<why>"` (#3610): this shape's target class is empty BY DESIGN in the good state — a
+    /// `release:RefusalCell` exists only when a cell does not fit. Zero focus nodes then does not refuse the
+    /// verdict, but the shape is still named in the gate's `declines[]`. Not SHACL; pv's own key, and it
+    /// must carry its reason: an exemption with no reason is a silent one.
+    pub allow_empty: Option<String>,
 }
 
 /// One `sh:ValidationResult`.
@@ -185,7 +195,13 @@ pub fn expand(name: &str) -> String {
     }
 }
 
-const NODE_KEYS: &[&str] = &["targetClass", "closed", "ignoredProperties", "properties"];
+const NODE_KEYS: &[&str] = &[
+    "targetClass",
+    "closed",
+    "ignoredProperties",
+    "properties",
+    "allowEmpty",
+];
 const PROPERTY_KEYS: &[&str] = &[
     "path",
     "minCount",
@@ -198,6 +214,8 @@ const PROPERTY_KEYS: &[&str] = &[
     "minLength",
     "maxLength",
     "node",
+    "lessThan",
+    "lessThanOrEquals",
     "resolves",
     "severity",
 ];
@@ -335,7 +353,30 @@ fn parse_node_shape(
         closed,
         ignored_properties,
         properties,
+        allow_empty: allow_empty_of(id, map, depth)?,
     })
+}
+
+/// `allowEmpty` is a reason string on a TOP-LEVEL shape; a nested `node` shape has no focus set of its own.
+fn allow_empty_of(
+    id: &str,
+    map: &serde_yaml::Mapping,
+    depth: usize,
+) -> Result<Option<String>, ShapeError> {
+    let Some(v) = map.get("allowEmpty") else {
+        return Ok(None);
+    };
+    let malformed = |what: &str| ShapeError::Malformed {
+        shape: id.to_string(),
+        what: what.into(),
+    };
+    if depth > 0 {
+        return Err(malformed("`allowEmpty` on a nested node shape"));
+    }
+    match v.as_str().map(str::trim) {
+        Some(reason) if !reason.is_empty() => Ok(Some(reason.to_string())),
+        _ => Err(malformed("`allowEmpty` must be a non-empty reason string")),
+    }
 }
 
 fn parse_property(
@@ -347,25 +388,8 @@ fn parse_property(
         shape: shape.to_string(),
         what,
     };
-    for key in pm.keys() {
-        let k = key.as_str().unwrap_or("?");
-        if !PROPERTY_KEYS.contains(&k) {
-            return Err(ShapeError::Unsupported {
-                shape: shape.to_string(),
-                component: k.to_string(),
-            });
-        }
-    }
-    let path = pm
-        .get("path")
-        .and_then(serde_yaml::Value::as_str)
-        .ok_or_else(|| malformed("a property has no `path`".into()))?;
-    if path.contains(['/', '|', '^', '*', '+']) && !path.starts_with("http") {
-        return Err(ShapeError::Unsupported {
-            shape: shape.to_string(),
-            component: format!("path `{path}` (only a single predicate is a path here)"),
-        });
-    }
+    check_property_keys(shape, pm)?;
+    let path = parse_path(shape, pm)?;
     let count = |k: &str| -> Result<Option<usize>, ShapeError> {
         match pm.get(k) {
             None => Ok(None),
@@ -387,65 +411,9 @@ fn parse_property(
     // `in: ["true"]` accepted `"true"^^xsd:boolean` — which the pinned oracle refuses, and which `make oracle`
     // caught on this row's own shapes (490 results of difference on the real corpus). An entry that expands to
     // an IRI still matches an IRI value, because a `sh:in` over `nodeKind: IRI` is a list of IRIs.
-    let r#in = match pm.get("in") {
-        None => None,
-        Some(v) => Some(
-            v.as_sequence()
-                .ok_or_else(|| malformed("`in` is not a list".into()))?
-                .iter()
-                .map(|x| match x {
-                    serde_yaml::Value::String(s) => InEntry {
-                        lexical: s.clone(),
-                        datatype: XSD_STRING_IRI.to_string(),
-                    },
-                    serde_yaml::Value::Number(n) => InEntry {
-                        lexical: n.to_string(),
-                        datatype: if n.is_f64() {
-                            format!("{XSD_NS}double")
-                        } else {
-                            format!("{XSD_NS}integer")
-                        },
-                    },
-                    serde_yaml::Value::Bool(b) => InEntry {
-                        lexical: b.to_string(),
-                        datatype: format!("{XSD_NS}boolean"),
-                    },
-                    _ => InEntry {
-                        lexical: String::new(),
-                        datatype: XSD_STRING_IRI.to_string(),
-                    },
-                })
-                .collect(),
-        ),
-    };
-    let pattern = match pm.get("pattern").and_then(serde_yaml::Value::as_str) {
-        None => None,
-        Some(p) => Some((
-            p.to_string(),
-            regex::Regex::new(p)
-                .map_err(|e| malformed(format!("`pattern` does not compile: {e}")))?,
-        )),
-    };
-    let node = match pm.get("node") {
-        None => None,
-        Some(_) if depth >= 1 => {
-            return Err(ShapeError::Unsupported {
-                shape: shape.to_string(),
-                component: "node (nested more than one level)".into(),
-            })
-        }
-        Some(v) => {
-            let nm = v
-                .as_mapping()
-                .ok_or_else(|| malformed("`node` is not a mapping".into()))?;
-            Some(Box::new(parse_node_shape(
-                &format!("{shape}/node"),
-                nm,
-                None,
-                depth + 1,
-            )?))
-        }
-    };
+    let r#in = parse_in(shape, pm)?;
+    let pattern = parse_pattern(shape, pm)?;
+    let node = parse_nested_node(shape, pm, depth)?;
     let severity = parse_severity(
         shape,
         pm.get("severity").and_then(serde_yaml::Value::as_str),
@@ -462,12 +430,129 @@ fn parse_property(
         min_length: count("minLength")?,
         max_length: count("maxLength")?,
         node,
+        less_than: iri_opt("lessThan"),
+        less_than_or_equals: iri_opt("lessThanOrEquals"),
         resolves: pm
             .get("resolves")
             .and_then(serde_yaml::Value::as_str)
             .map(String::from),
         severity,
     })
+}
+
+fn malformed_in(shape: &str, what: String) -> ShapeError {
+    ShapeError::Malformed {
+        shape: shape.to_string(),
+        what,
+    }
+}
+
+/// A property mapping may carry only the keys of the supported subset.
+fn check_property_keys(shape: &str, pm: &serde_yaml::Mapping) -> Result<(), ShapeError> {
+    for key in pm.keys() {
+        let k = key.as_str().unwrap_or("?");
+        if !PROPERTY_KEYS.contains(&k) {
+            return Err(ShapeError::Unsupported {
+                shape: shape.to_string(),
+                component: k.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// `path`: a single predicate; a SHACL property path expression is outside the subset.
+fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<&'a str, ShapeError> {
+    let path = pm
+        .get("path")
+        .and_then(serde_yaml::Value::as_str)
+        .ok_or_else(|| malformed_in(shape, "a property has no `path`".into()))?;
+    if path.contains(['/', '|', '^', '*', '+']) && !path.starts_with("http") {
+        return Err(ShapeError::Unsupported {
+            shape: shape.to_string(),
+            component: format!("path `{path}` (only a single predicate is a path here)"),
+        });
+    }
+    Ok(path)
+}
+
+// `sh:in` is TERM equality (SHACL §4.5.1), and a term carries its datatype. The YAML scalar's own type is
+// what gives it one: `in: [true]` is `"true"^^xsd:boolean`, `in: [1]` is `xsd:integer`, `in: [a, b]` is
+// `xsd:string`. This used to collapse every entry to its lexical form and compare strings, so a shape
+// `in: ["true"]` accepted `"true"^^xsd:boolean` — which the pinned oracle refuses, and which `make oracle`
+// caught on this row's own shapes (490 results of difference on the real corpus). An entry that expands to
+// an IRI still matches an IRI value, because a `sh:in` over `nodeKind: IRI` is a list of IRIs.
+fn parse_in(shape: &str, pm: &serde_yaml::Mapping) -> Result<Option<Vec<InEntry>>, ShapeError> {
+    let Some(v) = pm.get("in") else {
+        return Ok(None);
+    };
+    let seq = v
+        .as_sequence()
+        .ok_or_else(|| malformed_in(shape, "`in` is not a list".into()))?;
+    Ok(Some(seq.iter().map(in_entry).collect()))
+}
+
+fn in_entry(x: &serde_yaml::Value) -> InEntry {
+    match x {
+        serde_yaml::Value::String(s) => InEntry {
+            lexical: s.clone(),
+            datatype: XSD_STRING_IRI.to_string(),
+        },
+        serde_yaml::Value::Number(n) => InEntry {
+            lexical: n.to_string(),
+            datatype: if n.is_f64() {
+                format!("{XSD_NS}double")
+            } else {
+                format!("{XSD_NS}integer")
+            },
+        },
+        serde_yaml::Value::Bool(b) => InEntry {
+            lexical: b.to_string(),
+            datatype: format!("{XSD_NS}boolean"),
+        },
+        _ => InEntry {
+            lexical: String::new(),
+            datatype: XSD_STRING_IRI.to_string(),
+        },
+    }
+}
+
+fn parse_pattern(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+) -> Result<Option<(String, regex::Regex)>, ShapeError> {
+    let Some(p) = pm.get("pattern").and_then(serde_yaml::Value::as_str) else {
+        return Ok(None);
+    };
+    let re = regex::Regex::new(p)
+        .map_err(|e| malformed_in(shape, format!("`pattern` does not compile: {e}")))?;
+    Ok(Some((p.to_string(), re)))
+}
+
+/// `node`: one level of nesting is in the subset, deeper is not.
+fn parse_nested_node(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+    depth: usize,
+) -> Result<Option<Box<NodeShape>>, ShapeError> {
+    match pm.get("node") {
+        None => Ok(None),
+        Some(_) if depth >= 1 => Err(ShapeError::Unsupported {
+            shape: shape.to_string(),
+            component: "node (nested more than one level)".into(),
+        }),
+        Some(v) => {
+            let nm = v
+                .as_mapping()
+                .ok_or_else(|| malformed_in(shape, "`node` is not a mapping".into()))?;
+            Ok(Some(Box::new(parse_node_shape(
+                &format!("{shape}/node"),
+                nm,
+                None,
+                depth + 1,
+            )?)))
+        }
+    }
 }
 
 /// `nodeKind`: `IRI` or `Literal` (with or without the `sh:` prefix); anything else is outside the subset.
@@ -595,69 +680,134 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
         };
     for p in &shape.properties {
         let values = graph.objects(focus, &p.path);
-        if let Some(min) = p.min_count {
-            if values.len() < min {
-                push(
-                    p.severity,
-                    Some(&p.path),
-                    "minCount",
-                    format!(
-                        "has {} value(s) of {}, minCount is {min}",
-                        values.len(),
-                        short(&p.path)
-                    ),
-                );
-            }
-        }
-        if let Some(max) = p.max_count {
-            if values.len() > max {
-                // name the values (up to five): a `maxCount 0` on a materialized edge — `missingGreenHost`,
-                // `receiptHexMismatch` (ONT-4c1) — is only actionable when the message says WHICH host, WHICH file
-                let named: Vec<String> = values
-                    .iter()
-                    .take(5)
-                    .map(|v| match v {
-                        Term::Iri(i) => short(i),
-                        Term::Literal { value, .. } => value.clone(),
-                    })
-                    .collect();
-                push(
-                    p.severity,
-                    Some(&p.path),
-                    "maxCount",
-                    format!(
-                        "has {} value(s) of {}, maxCount is {max}: {}",
-                        values.len(),
-                        short(&p.path),
-                        named.join(", ")
-                    ),
-                );
-            }
-        }
-        for v in values {
+        check_counts(p, &values, &mut push);
+        for v in &values {
             check_value(graph, p, v, &mut push);
         }
+        check_pairs(graph, focus, p, &values, &mut push);
     }
     if shape.closed {
-        let allowed: BTreeSet<&str> = shape
-            .properties
-            .iter()
-            .map(|p| p.path.as_str())
-            .chain(shape.ignored_properties.iter().map(String::as_str))
-            .chain(std::iter::once(RDF_TYPE))
-            .collect();
-        for pred in graph.predicates_of(focus) {
-            if !allowed.contains(pred) {
-                push(
-                    Severity::Violation,
-                    Some(pred),
-                    "closed",
-                    format!(
-                        "carries {}, which the closed shape does not declare",
-                        short(pred)
-                    ),
-                );
+        check_closed(graph, shape, focus, &mut push);
+    }
+}
+
+/// `sh:minCount` / `sh:maxCount` on one property of one focus node.
+fn check_counts(
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    if let Some(min) = p.min_count {
+        if values.len() < min {
+            push(
+                p.severity,
+                Some(&p.path),
+                "minCount",
+                format!(
+                    "has {} value(s) of {}, minCount is {min}",
+                    values.len(),
+                    short(&p.path)
+                ),
+            );
+        }
+    }
+    if let Some(max) = p.max_count {
+        if values.len() > max {
+            // name the values (up to five): a `maxCount 0` on a materialized edge — `missingGreenHost`,
+            // `receiptHexMismatch` (ONT-4c1) — is only actionable when the message says WHICH host, WHICH file
+            let named: Vec<String> = values
+                .iter()
+                .take(5)
+                .map(|v| match v {
+                    Term::Iri(i) => short(i),
+                    Term::Literal { value, .. } => value.clone(),
+                })
+                .collect();
+            push(
+                p.severity,
+                Some(&p.path),
+                "maxCount",
+                format!(
+                    "has {} value(s) of {}, maxCount is {max}: {}",
+                    values.len(),
+                    short(&p.path),
+                    named.join(", ")
+                ),
+            );
+        }
+    }
+}
+
+/// `sh:lessThan` / `sh:lessThanOrEquals` (SHACL §4.5.3/§4.5.4) on one property of one focus node.
+fn check_pairs(
+    graph: &Graph,
+    focus: &str,
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    for (other, strict, component) in [
+        (p.less_than.as_deref(), true, "lessThan"),
+        (p.less_than_or_equals.as_deref(), false, "lessThanOrEquals"),
+    ] {
+        let Some(other) = other else { continue };
+        // SHACL §4.5.3/§4.5.4: one result per (value, other value) PAIR that is not ordered — the W3C case
+        // lessThan-002 expects four results from two values against two, so the pair is named in the message
+        // (which also keeps the pairs distinct through `validate`'s dedup). A pair that SPARQL `<` cannot
+        // compare (an IRI, a string against a number) is NOT ordered, so it is a result, never a skip.
+        let others = graph.objects(focus, other);
+        for v in values {
+            for w in &others {
+                let ordered = match compare_terms(v, w) {
+                    Some(std::cmp::Ordering::Less) => true,
+                    Some(std::cmp::Ordering::Equal) => !strict,
+                    _ => false,
+                };
+                if !ordered {
+                    push(
+                        p.severity,
+                        Some(&p.path),
+                        component,
+                        format!(
+                            "{}: {} is not {} {} of {}",
+                            short(&p.path),
+                            term_short(v),
+                            if strict { "<" } else { "<=" },
+                            term_short(w),
+                            short(other)
+                        ),
+                    );
+                }
             }
+        }
+    }
+}
+
+/// `sh:closed`: every predicate the focus carries is declared, ignored, or `rdf:type`.
+fn check_closed(
+    graph: &Graph,
+    shape: &NodeShape,
+    focus: &str,
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    let allowed: BTreeSet<&str> = shape
+        .properties
+        .iter()
+        .map(|p| p.path.as_str())
+        .chain(shape.ignored_properties.iter().map(String::as_str))
+        .chain(std::iter::once(RDF_TYPE))
+        .collect();
+    for pred in graph.predicates_of(focus) {
+        if !allowed.contains(pred) {
+            push(
+                Severity::Violation,
+                Some(pred),
+                "closed",
+                format!(
+                    "carries {}, which the closed shape does not declare",
+                    short(pred)
+                ),
+            );
         }
     }
 }
@@ -704,6 +854,78 @@ fn check_value(
     }
 }
 
+/// The XSD numeric datatypes SPARQL `<` compares by value, across types (`4 < 4.5` holds for an integer and a
+/// decimal).
+const NUMERIC_TYPES: &[&str] = &[
+    "integer",
+    "decimal",
+    "double",
+    "float",
+    "long",
+    "int",
+    "short",
+    "byte",
+    "nonNegativeInteger",
+    "nonPositiveInteger",
+    "positiveInteger",
+    "negativeInteger",
+    "unsignedLong",
+    "unsignedInt",
+    "unsignedShort",
+    "unsignedByte",
+];
+
+/// SPARQL `<` over two terms, as `sh:lessThan` uses it (SHACL §4.5.3): numbers by value across the numeric
+/// types; strings, booleans, dates and dateTimes within their own type. `None` for every pair SPARQL cannot
+/// order — an IRI, a type mismatch, an ill-formed number — which the caller treats as NOT ordered.
+/// Dates and dateTimes compare by lexical form, so this is exact for the corpus's zone-less ISO forms and not for
+/// two values in different time zones.
+#[must_use]
+pub fn compare_terms(a: &Term, b: &Term) -> Option<std::cmp::Ordering> {
+    let (
+        Term::Literal {
+            value: av,
+            datatype: ad,
+        },
+        Term::Literal {
+            value: bv,
+            datatype: bd,
+        },
+    ) = (a, b)
+    else {
+        return None;
+    };
+    let numeric = |d: &str| {
+        d.strip_prefix(XSD_NS)
+            .is_some_and(|local| NUMERIC_TYPES.contains(&local))
+    };
+    if numeric(ad) && numeric(bd) {
+        if let (Ok(x), Ok(y)) = (av.trim().parse::<i128>(), bv.trim().parse::<i128>()) {
+            return Some(x.cmp(&y));
+        }
+        let (x, y) = (
+            av.trim().parse::<f64>().ok()?,
+            bv.trim().parse::<f64>().ok()?,
+        );
+        return x.partial_cmp(&y);
+    }
+    if ad != bd {
+        return None;
+    }
+    match ad.strip_prefix(XSD_NS) {
+        Some("string" | "date" | "dateTime") => Some(av.cmp(bv)),
+        Some("boolean") => {
+            let bool_of = |s: &str| match s {
+                "true" | "1" => Some(true),
+                "false" | "0" => Some(false),
+                _ => None,
+            };
+            Some(bool_of(av)?.cmp(&bool_of(bv)?))
+        }
+        _ => None,
+    }
+}
+
 /// Is `value` a well-formed lexical form of the XSD `datatype`? A literal typed `xsd:byte` with the lexical
 /// form `300` (or `c`) is ill-formed and violates `sh:datatype` (SHACL §4.1.2; W3C `datatype-ill-formed`). The
 /// types checked are the ones the corpus and the vendored cases use; any other datatype is taken as
@@ -713,42 +935,57 @@ pub fn well_formed(value: &str, datatype: &str) -> bool {
     let Some(local) = datatype.strip_prefix(XSD_NS) else {
         return true;
     };
-    let int_in = |lo: i128, hi: i128| value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
+    if let Some((lo, hi)) = integer_range(local) {
+        return value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
+    }
     match local {
-        "string" | "anyURI" => true,
         "boolean" => matches!(value, "true" | "false" | "1" | "0"),
-        "integer" => value.parse::<i128>().is_ok(),
-        "long" => int_in(i128::from(i64::MIN), i128::from(i64::MAX)),
-        "int" => int_in(i128::from(i32::MIN), i128::from(i32::MAX)),
-        "short" => int_in(i128::from(i16::MIN), i128::from(i16::MAX)),
-        "byte" => int_in(i128::from(i8::MIN), i128::from(i8::MAX)),
-        "nonNegativeInteger" => int_in(0, i128::MAX),
-        "positiveInteger" => int_in(1, i128::MAX),
-        "nonPositiveInteger" => int_in(i128::MIN, 0),
-        "negativeInteger" => int_in(i128::MIN, -1),
-        "unsignedLong" => int_in(0, i128::from(u64::MAX)),
-        "unsignedInt" => int_in(0, i128::from(u32::MAX)),
-        "unsignedShort" => int_in(0, i128::from(u16::MAX)),
-        "unsignedByte" => int_in(0, i128::from(u8::MAX)),
-        "decimal" => {
-            !value.is_empty()
-                && value
-                    .strip_prefix(['+', '-'])
-                    .unwrap_or(value)
-                    .chars()
-                    .all(|c| c.is_ascii_digit() || c == '.')
-                && value.chars().filter(|c| *c == '.').count() <= 1
-                && value.chars().any(|c| c.is_ascii_digit())
-        }
+        "decimal" => is_decimal(value),
         "double" | "float" => {
             matches!(value, "INF" | "-INF" | "NaN") || value.parse::<f64>().is_ok()
         }
         "date" => is_date(value),
-        "dateTime" => value
-            .split_once('T')
-            .is_some_and(|(d, t)| is_date(d) && t.len() >= 8 && t.as_bytes()[2] == b':'),
+        "dateTime" => is_date_time(value),
+        // "string", "anyURI", and every datatype outside the checked set.
         _ => true,
     }
+}
+
+/// The value range of each XSD integer type (`integer` itself is unbounded, so i128's).
+fn integer_range(local: &str) -> Option<(i128, i128)> {
+    Some(match local {
+        "integer" => (i128::MIN, i128::MAX),
+        "long" => (i128::from(i64::MIN), i128::from(i64::MAX)),
+        "int" => (i128::from(i32::MIN), i128::from(i32::MAX)),
+        "short" => (i128::from(i16::MIN), i128::from(i16::MAX)),
+        "byte" => (i128::from(i8::MIN), i128::from(i8::MAX)),
+        "nonNegativeInteger" => (0, i128::MAX),
+        "positiveInteger" => (1, i128::MAX),
+        "nonPositiveInteger" => (i128::MIN, 0),
+        "negativeInteger" => (i128::MIN, -1),
+        "unsignedLong" => (0, i128::from(u64::MAX)),
+        "unsignedInt" => (0, i128::from(u32::MAX)),
+        "unsignedShort" => (0, i128::from(u16::MAX)),
+        "unsignedByte" => (0, i128::from(u8::MAX)),
+        _ => return None,
+    })
+}
+
+fn is_decimal(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .strip_prefix(['+', '-'])
+            .unwrap_or(value)
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.')
+        && value.chars().filter(|c| *c == '.').count() <= 1
+        && value.chars().any(|c| c.is_ascii_digit())
+}
+
+fn is_date_time(value: &str) -> bool {
+    value
+        .split_once('T')
+        .is_some_and(|(d, t)| is_date(d) && t.len() >= 8 && t.as_bytes()[2] == b':')
 }
 
 /// `YYYY-MM-DD` with an optional timezone suffix.
@@ -960,6 +1197,31 @@ fn turtle_node(s: &NodeShape, subject: &str) -> String {
     o
 }
 
+/// The string-based (`sh:pattern`, `sh:minLength`, `sh:maxLength`) and property-pair (`sh:lessThan`,
+/// `sh:lessThanOrEquals`) lines of one `sh:property` block, in emission order.
+fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some((src, _)) = &p.pattern {
+        lines.push(format!(
+            "sh:pattern \"{}\"",
+            src.replace('\\', "\\\\").replace('"', "\\\"")
+        ));
+    }
+    if let Some(n) = p.min_length {
+        lines.push(format!("sh:minLength {n}"));
+    }
+    if let Some(n) = p.max_length {
+        lines.push(format!("sh:maxLength {n}"));
+    }
+    if let Some(o) = &p.less_than {
+        lines.push(format!("sh:lessThan <{o}>"));
+    }
+    if let Some(o) = &p.less_than_or_equals {
+        lines.push(format!("sh:lessThanOrEquals <{o}>"));
+    }
+    lines
+}
+
 /// One `sh:property [ … ] ;` block. Every implemented component has a line; nothing else is emitted.
 fn turtle_property(p: &PropertyShape) -> String {
     let mut o = String::from("    sh:property [\n");
@@ -1001,17 +1263,8 @@ fn turtle_property(p: &PropertyShape) -> String {
             .collect();
         line(format!("sh:in ( {} )", items.join(" ")));
     }
-    if let Some((src, _)) = &p.pattern {
-        line(format!(
-            "sh:pattern \"{}\"",
-            src.replace('\\', "\\\\").replace('"', "\\\"")
-        ));
-    }
-    if let Some(n) = p.min_length {
-        line(format!("sh:minLength {n}"));
-    }
-    if let Some(n) = p.max_length {
-        line(format!("sh:maxLength {n}"));
+    for l in turtle_string_and_pair_lines(p) {
+        line(l);
     }
     if p.severity == Severity::Warning {
         line("sh:severity sh:Warning".to_string());
@@ -1049,6 +1302,31 @@ mod tests {
     }
 
     const BASE: &str = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, minCount: 1, maxCount: 1, pattern: '^[a-z0-9-]+$'}\n    - {path: ont:kind, maxCount: 1, in: [kernel, pattern]}\n";
+
+    #[test]
+    fn allow_empty_carries_its_reason_and_refuses_a_blank_or_nested_one() {
+        let with = |v: &str| {
+            format!("entity: {{type: pv-contract}}\nshape:\n  allowEmpty: {v}\n  properties: []\n")
+        };
+        assert_eq!(
+            shape(&with("\"none fit\"")).allow_empty.as_deref(),
+            Some("none fit")
+        );
+        assert_eq!(shape(BASE).allow_empty, None);
+        for bad in ["\"  \"", "true", "[a]"] {
+            let doc: serde_yaml::Value = serde_yaml::from_str(&with(bad)).unwrap();
+            assert!(
+                matches!(parse_shape("t", &doc), Err(ShapeError::Malformed { .. })),
+                "allowEmpty: {bad} must be refused"
+            );
+        }
+        let nested = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, node: {allowEmpty: x, properties: []}}\n";
+        let doc: serde_yaml::Value = serde_yaml::from_str(nested).unwrap();
+        assert!(matches!(
+            parse_shape("t", &doc),
+            Err(ShapeError::Malformed { .. })
+        ));
+    }
 
     #[test]
     fn a_conforming_focus_node_yields_no_result() {
@@ -1124,6 +1402,130 @@ mod tests {
             parse_shape("t", &doc),
             Err(ShapeError::Unsupported { .. })
         ));
+    }
+
+    #[test]
+    fn less_than_pairs_fire_per_unordered_pair_and_an_incomparable_pair_is_a_result() {
+        // #3611: the slk-post case — `part: {i, n}` with i <= n
+        let s = shape(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:i, lessThanOrEquals: ont:n}\n    - {path: ont:lo, lessThan: ont:hi}\n",
+        );
+        let lit = |v: &str, t: &str| Term::Literal {
+            value: v.into(),
+            datatype: format!("{XSD_NS}{t}"),
+        };
+        let part = |id: &str, pairs: &[(&str, Term)]| {
+            let mut g = Graph::new();
+            let s = iri("part", id);
+            g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Part")));
+            for (p, o) in pairs {
+                g.insert(s.clone(), ont(p), o.clone());
+            }
+            g
+        };
+        let comps = |g: &Graph| -> Vec<&'static str> {
+            let mut c: Vec<_> = validate(g, std::slice::from_ref(&s))
+                .results
+                .iter()
+                .map(|r| r.component)
+                .collect();
+            c.sort_unstable();
+            c
+        };
+        let ok = part(
+            "ok",
+            &[
+                ("i", lit("3", "integer")),
+                ("n", lit("3", "integer")),
+                ("lo", lit("2.5", "decimal")),
+                ("hi", lit("3", "integer")),
+            ],
+        );
+        assert!(comps(&ok).is_empty(), "3 <= 3 and 2.5 < 3 hold");
+        let bad = part(
+            "bad",
+            &[
+                ("i", lit("4", "integer")),
+                ("n", lit("3", "integer")),
+                ("lo", lit("3", "integer")),
+                ("hi", lit("3", "integer")),
+            ],
+        );
+        assert_eq!(
+            comps(&bad),
+            vec!["lessThan", "lessThanOrEquals"],
+            "4 <= 3 and 3 < 3 fail"
+        );
+        // numbers against a string, and an IRI: not comparable, so NOT ordered — a result, never a skip
+        let mixed = part(
+            "mixed",
+            &[
+                ("i", lit("1", "integer")),
+                ("n", Term::string("a")),
+                ("lo", Term::iri(ont("x"))),
+                ("hi", lit("3", "integer")),
+            ],
+        );
+        assert_eq!(comps(&mixed), vec!["lessThan", "lessThanOrEquals"]);
+        // no value on the other side: no pair, no result (W3C lessThan-001 ValidResource2)
+        let lone = part("lone", &[("i", lit("9", "integer"))]);
+        assert!(comps(&lone).is_empty());
+        // the exported Turtle carries both components, so the oracle sees what the gate checked
+        let t = to_turtle(std::slice::from_ref(&s));
+        assert!(
+            t.contains(&format!("sh:lessThanOrEquals <{}>", ont("n"))),
+            "{t}"
+        );
+        assert!(t.contains(&format!("sh:lessThan <{}>", ont("hi"))), "{t}");
+    }
+
+    #[test]
+    fn compare_terms_orders_numbers_across_types_and_refuses_mixed_kinds() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        let lit = |v: &str, t: &str| Term::Literal {
+            value: v.into(),
+            datatype: format!("{XSD_NS}{t}"),
+        };
+        assert_eq!(
+            compare_terms(&lit("4", "integer"), &lit("4.5", "decimal")),
+            Some(Less)
+        );
+        assert_eq!(
+            compare_terms(&lit("10", "int"), &lit("9", "integer")),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(&lit("1e1", "double"), &lit("10", "integer")),
+            Some(Equal)
+        );
+        assert_eq!(
+            compare_terms(&lit("2026-09-01", "date"), &lit("2026-09-24", "date")),
+            Some(Less)
+        );
+        assert_eq!(
+            compare_terms(&Term::string("a"), &Term::string("b")),
+            Some(Less)
+        );
+        assert_eq!(
+            compare_terms(&lit("false", "boolean"), &lit("true", "boolean")),
+            Some(Less)
+        );
+        assert_eq!(
+            compare_terms(&lit("1", "integer"), &Term::string("1")),
+            None
+        );
+        assert_eq!(
+            compare_terms(&lit("2026-09-01", "date"), &Term::string("2026-09-02")),
+            None
+        );
+        assert_eq!(
+            compare_terms(&Term::iri(ont("a")), &Term::iri(ont("b"))),
+            None
+        );
+        assert_eq!(
+            compare_terms(&lit("x", "integer"), &lit("1", "integer")),
+            None
+        );
     }
 
     #[test]

@@ -98,7 +98,7 @@ pub fn verify_bindings(binding_yaml_path: &str, policy: BindingPolicy) -> Verify
     };
 
     for binding in &registry.bindings {
-        let env_key = make_env_key(&binding.contract, &binding.equation);
+        let env_key = env_key(&binding.contract, &binding.equation);
 
         match binding.status {
             ImplStatus::Implemented => {
@@ -321,14 +321,8 @@ fn scan_source_fns(dir: &Path, found: &mut std::collections::HashSet<String>) {
     }
 }
 
-/// Generate the env var key from contract name and equation name.
-///
-/// Same convention as `provable-contracts-macros::make_env_key`.
-fn make_env_key(contract: &str, equation: &str) -> String {
-    let contract_part = contract.to_uppercase().replace(['-', '.'], "_");
-    let equation_part = equation.to_uppercase().replace(['-', '.'], "_");
-    format!("CONTRACT_{contract_part}_{equation_part}")
-}
+// One definition, shared with this crate's own build.rs (#4369).
+include!("env_key.rs");
 
 #[cfg(test)]
 mod tests {
@@ -448,14 +442,39 @@ bindings:
 
     // ── make_env_key tests ──
 
+    /// Parity with the key the macro READS, over a case table, so the
+    /// producer's derivation and the consumer's cannot drift (#2699 §4).
+    #[test]
+    fn env_key_equals_the_key_the_contract_macro_reads() {
+        use provable_contracts_macros::contract_env_key;
+        let table = [
+            (
+                env_key("rmsnorm-kernel-v1", "rmsnorm"),
+                contract_env_key!("rmsnorm-kernel-v1", "rmsnorm"),
+            ),
+            (
+                env_key("attention-kernel-v1", "scaled_dot_product"),
+                contract_env_key!("attention-kernel-v1", "scaled_dot_product"),
+            ),
+            (env_key("v1.0", "eq.1"), contract_env_key!("v1.0", "eq.1")),
+            (
+                env_key("mixed-Case.v2", "Eq-x.y"),
+                contract_env_key!("mixed-Case.v2", "Eq-x.y"),
+            ),
+        ];
+        for (producer, consumer) in table {
+            assert_eq!(producer, consumer);
+        }
+    }
+
     #[test]
     fn test_make_env_key_matches_macro_convention() {
         assert_eq!(
-            make_env_key("rmsnorm-kernel-v1", "rmsnorm"),
+            env_key("rmsnorm-kernel-v1", "rmsnorm"),
             "CONTRACT_RMSNORM_KERNEL_V1_RMSNORM"
         );
         assert_eq!(
-            make_env_key("gated-delta-net-v1", "decay"),
+            env_key("gated-delta-net-v1", "decay"),
             "CONTRACT_GATED_DELTA_NET_V1_DECAY"
         );
     }
@@ -463,7 +482,7 @@ bindings:
     #[test]
     fn make_env_key_with_yaml_extension() {
         assert_eq!(
-            make_env_key("softmax-kernel-v1.yaml", "softmax"),
+            env_key("softmax-kernel-v1.yaml", "softmax"),
             "CONTRACT_SOFTMAX_KERNEL_V1_YAML_SOFTMAX"
         );
     }
@@ -471,7 +490,7 @@ bindings:
     #[test]
     fn make_env_key_dots_replaced() {
         assert_eq!(
-            make_env_key("my.contract.v1", "eq.1"),
+            env_key("my.contract.v1", "eq.1"),
             "CONTRACT_MY_CONTRACT_V1_EQ_1"
         );
     }
@@ -1225,5 +1244,143 @@ bindings:
     fn verify_bindings_bare_filename() {
         // A bare filename with no directory separators
         verify_bindings("nonexistent.yaml", BindingPolicy::WarnOnGaps);
+    }
+
+    // ── #4369: no build.rs hand-rolls the key ──
+
+    /// A line of a build.rs that builds a `CONTRACT_<C>_<E>` key itself
+    /// instead of calling `env_key`: a format string that interpolates
+    /// straight after `CONTRACT_`, or a `"CONTRACT_"` prefix to concatenate
+    /// onto. Fixed names (`CONTRACT_BINDING_SOURCE=none`) and comments pass.
+    fn hand_rolls_contract_key(line: &str) -> bool {
+        let code = line.trim_start();
+        !code.starts_with("//") && (code.contains("CONTRACT_{") || code.contains("\"CONTRACT_\""))
+    }
+
+    #[test]
+    fn hand_rolled_key_detector_case_table() {
+        let must_match = [
+            r#"let var = format!("CONTRACT_{stem}_{eq}");"#,
+            r#"    "CONTRACT_{}_{}","#,
+            r#"let k = format!("CONTRACT_{su}_{eu}");"#,
+            r#"let k = "CONTRACT_".to_string() + &stem;"#,
+            r#"println!("cargo:rustc-env=CONTRACT_{stem}_{eq}={}", s);"#,
+        ];
+        let must_not_match = [
+            r#"println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");"#,
+            r#"println!("cargo:rustc-env=CONTRACT_TOTAL={total}");"#,
+            r#"let var = provable_contracts::build_helper::env_key(c, e);"#,
+            r#"println!("cargo:rustc-env={k}_PRE_COUNT={}", n);"#,
+            r#"//   CONTRACT_{STEM}_{EQ}=<status>"#,
+            r#"/// `"x.yaml"` → `"CONTRACT_{}_{}"`"#,
+        ];
+        for l in must_match {
+            assert!(hand_rolls_contract_key(l), "must match: {l}");
+        }
+        for l in must_not_match {
+            assert!(!hand_rolls_contract_key(l), "must not match: {l}");
+        }
+    }
+
+    /// Every build.rs in the workspace builds its keys with `env_key` (#4369).
+    /// A hand-rolled copy that drifts from the macro's format binds nothing,
+    /// silently (#2699 §4). Outside the workspace (a packaged crate) there is
+    /// no tree to scan and the test says so rather than passing on zero files.
+    #[test]
+    fn no_build_rs_hand_rolls_the_contract_key() {
+        let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let root = crates.join("..");
+        if !root.join("Cargo.toml").exists() || !crates.join("aprender-core").exists() {
+            eprintln!("SKIP: not in the aprender workspace (packaged crate)");
+            return;
+        }
+        let mut scanned = Vec::new();
+        let mut offenders = Vec::new();
+        let mut files = vec![root.join("build.rs")];
+        for e in std::fs::read_dir(&crates).expect("read crates/") {
+            files.push(e.expect("dir entry").path().join("build.rs"));
+        }
+        for f in files.into_iter().filter(|f| f.is_file()) {
+            let src = std::fs::read_to_string(&f).expect("read build.rs");
+            for (i, l) in src.lines().enumerate() {
+                if hand_rolls_contract_key(l) {
+                    offenders.push(format!("{}:{}: {}", f.display(), i + 1, l.trim()));
+                }
+            }
+            scanned.push(f);
+        }
+        // 12 producers existed when this guard was written; a scan of fewer
+        // build.rs files than that is looking in the wrong place.
+        assert!(
+            scanned.len() >= 12,
+            "scanned only {} build.rs files",
+            scanned.len()
+        );
+        assert!(
+            offenders.is_empty(),
+            "build.rs hand-rolls a CONTRACT_* key; call provable_contracts::build_helper::env_key \
+             (after trimming \".yaml\"):\n{}",
+            offenders.join("\n")
+        );
+    }
+
+    /// Every producer reads its binding from THIS repo's `contracts/<name>/`
+    /// (#4369). The old `../../../provable-contracts/contracts/<name>/` path
+    /// resolved only on a checkout with the pre-monorepo sibling beside it, so
+    /// worktrees and CI built with `CONTRACT_BINDING_SOURCE=none` and nothing
+    /// was enforced, while the one main checkout enforced a stale copy.
+    #[test]
+    fn producer_bindings_are_in_tree() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        if !root.join("crates/aprender-core").exists() {
+            eprintln!("SKIP: not in the aprender workspace (packaged crate)");
+            return;
+        }
+        let producers = [
+            ("aprender-compute", "trueno"),
+            ("aprender-core", "aprender"),
+            ("aprender-db", "trueno-db"),
+            ("aprender-orchestrate", "batuta"),
+            ("aprender-present-cli", "presentar"),
+            ("aprender-present-core", "presentar"),
+            ("aprender-rag", "trueno-rag"),
+            ("aprender-serve", "realizar"),
+            ("aprender-simulate", "simular"),
+            ("aprender-train", "entrenar"),
+        ];
+        let mut bad = Vec::new();
+        for (krate, name) in producers {
+            let build = root.join("crates").join(krate).join("build.rs");
+            let src = std::fs::read_to_string(&build).expect("read producer build.rs");
+            let want = format!("\"../../contracts/{name}/binding.yaml\"");
+            if !src.contains(&want) {
+                bad.push(format!("{krate}/build.rs does not read {want}"));
+            }
+            // Per statement: a sibling path joined onto binding.yaml. Other
+            // sibling reads (serve's arch-requirements codegen) are out of scope.
+            let sibling_binding = |st: &str| {
+                (st.contains("join(\"provable-contracts\")")
+                    || st.contains("provable-contracts/contracts/"))
+                    && st.contains("binding.yaml")
+            };
+            if src.split(';').any(sibling_binding) {
+                bad.push(format!(
+                    "{krate}/build.rs still reads binding.yaml from the sibling provable-contracts"
+                ));
+            }
+            if !root
+                .join("contracts")
+                .join(name)
+                .join("binding.yaml")
+                .is_file()
+            {
+                bad.push(format!("contracts/{name}/binding.yaml is missing"));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "producer bindings not in-tree:\n{}",
+            bad.join("\n")
+        );
     }
 }

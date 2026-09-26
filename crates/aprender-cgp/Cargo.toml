@@ -36,7 +36,7 @@ num_cpus = "1.17"
 comfy-table = "7"
 colored = "3"
 # GPU profiling: direct cuBLAS measurement (OWN THE STACK)
-trueno-gpu = { path = "../aprender-gpu", version = "0.69.3", features = ["cuda"], optional = true, package = "aprender-gpu" }
+trueno-gpu = { path = "../aprender-gpu", version = "0.70.0", features = ["cuda"], optional = true, package = "aprender-gpu" }
 
 [features]
 default = []
@@ -65,6 +65,9 @@ cuda = ["dep:trueno-gpu"]
 # Arm it where duration IS measurable -- a dedicated, unloaded runner (perf-solo),
 # at release time. Not in CI's default set, and not in the nightly full surface.
 timing-gate = []
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
 proptest = "1.9"
