@@ -20,6 +20,9 @@
 # whole point of keeping this file rather than deleting it too:
 #
 #   R1  ci.yml declares NO job that invokes check_pr_review_receipt.sh.
+#       Since #4433 the job BODIES live in ci/sections.yml and run as sections of
+#       ci.yml's fat jobs, so R1 reads both files: a job restored in
+#       sections.yml runs on every PR exactly as one in ci.yml would.
 #       This is the standing falsifier. Putting the job back — on
 #       `pull_request` as it used to be, or on any other event — turns this
 #       guard RED rather than passing quietly. The case table carries the old
@@ -68,6 +71,7 @@ set -uo pipefail
 PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 CI_YML="${PR_REVIEW_CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
+SECT_YML="${PR_REVIEW_SECT_YML:-$REPO_ROOT/ci/sections.yml}"
 
 GUARD_BASENAME='check_pr_review_receipt.sh'
 GUARD_RE="(^|[[:space:];&|(])((ba)?sh[[:space:]]+|[.]/)?[^[:space:]]*check_pr_review_receipt[.]sh([[:space:]]|$|['\"])"
@@ -129,6 +133,9 @@ check_file() {
 
     # R1 — the standing falsifier: the receipt job must not be back.
     job=$(invoking_job "$f")
+    if [ -f "$SECT_YML" ]; then
+        job=$(printf '%s\n' "$job" "$(invoking_job "$SECT_YML" | sed 's/$/ (ci\/sections.yml)/')" | grep .)
+    fi
     if [ -n "$job" ]; then
         n=$(printf '%s\n' "$job" | grep -c .)
         printf 'FAIL R1: %s job(s) in %s invoke %s:\n' "$n" "$f" "$GUARD_BASENAME"
@@ -180,6 +187,8 @@ check_file() {
 if [ "${1:-}" = "--self-test" ]; then
     TD=$(mktemp -d) || exit 1
     trap 'rm -rf "${TD:?}"' EXIT
+    # Hermetic: no row reads the real ci/sections.yml unless it names one.
+    SECT_YML="$TD/no-sections.yml"
     fails=0
     row=0
 
@@ -238,6 +247,17 @@ if [ "${1:-}" = "--self-test" ]; then
     # along with the job.
     emit_ci "$TD/r1-prback.yml" '' "    if: github.event_name == 'pull_request'" "$INVOKE"
     assert_file 'R1 the per-PR wiring this repository deleted on 2026-09-08' FAIL "$TD/r1-prback.yml" 'invoke check_pr_review_receipt.sh'
+
+    # R1 over ci/sections.yml (#4433): ci.yml clean, the job restored in the
+    # sections file its fat jobs run. The control beside it is the same pair
+    # with a clean sections file, so "refuse any sections file" cannot pass.
+    emit_ci "$TD/sect-bad.yml" '' '' "$INVOKE"
+    emit_ci "$TD/sect-good.yml" '' '' ''
+    SECT_YML="$TD/sect-bad.yml"
+    assert_file 'R1 the job restored only in ci/sections.yml' FAIL "$TD/good.yml" 'pr-review-receipt (ci/sections.yml)'
+    SECT_YML="$TD/sect-good.yml"
+    assert_file 'R1 control: a clean ci/sections.yml beside a clean ci.yml' PASS "$TD/good.yml"
+    SECT_YML="$TD/no-sections.yml"
 
     # R1: dispatch-only is ALSO refused. The deletion was not "move it to
     # workflow_dispatch" — a dispatch-only job whose PR_NUMBER comes from a

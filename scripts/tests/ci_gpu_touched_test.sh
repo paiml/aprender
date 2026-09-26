@@ -23,6 +23,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 SCRIPT="scripts/ci_gpu_touched.sh"
 WF=".github/workflows/ci.yml"
+# #4433: the job BODIES moved verbatim to ci/sections.yml; gx10/yoga/gpu-touched
+# in ci.yml are the fat jobs that run them and must keep the same decision shape.
+SEC="ci/sections.yml"
 
 n=0
 red=0
@@ -68,7 +71,13 @@ row 0 "MUTANT (crate list without aprender-serve) answers 0 — the row discrimi
 
 # --- 3. the workflow shape (rows 67-C1 / 67-D1) ------------------------------
 jobq() { # jobq <job> <python expr over `job`>
-    python3 - "$WF" "$1" "$2" <<'PY'
+    jobq_in "$SEC" "$@"
+}
+jobq_wf() { # jobq_wf <job> <python expr over `job`> -- a job in the workflow itself
+    jobq_in "$WF" "$@"
+}
+jobq_in() {
+    python3 - "$1" "$2" "$3" <<'PY'
 import sys, yaml
 wf, name, expr = sys.argv[1], sys.argv[2], sys.argv[3]
 doc = yaml.safe_load(open(wf, encoding="utf-8")) or {}
@@ -101,16 +110,24 @@ for j in gpu-quick cuda-unit; do
         "^True$" jobq "$j" "any('ci_self_hosted_preflight.sh' in (s.get('run') or '') for s in job['steps'])"
 done
 
-row 0 "the decision job itself runs on the clean-room pool, so a non-GPU PR never holds a GPU runner" \
-    "clean-room" jobq gpu-touched "job['runs-on']"
-row 0 "the decision job publishes gpu_touched as a job output" \
-    "gpu_touched" jobq gpu-touched "sorted(job.get('outputs',{}))"
+for q in jobq jobq_wf; do
+    row 0 "the decision job itself runs on the clean-room pool, so a non-GPU PR never holds a GPU runner ($q)" \
+        "clean-room" $q gpu-touched "job['runs-on']"
+    row 0 "the decision job publishes gpu_touched as a job output ($q)" \
+        "gpu_touched" $q gpu-touched "sorted(job.get('outputs',{}))"
+done
+# #4433: the fat jobs that run gpu-quick / cuda-unit carry the decision at JOB level,
+# so GitHub skips them off the GPU host instead of queueing them on it.
+for j in gx10 yoga; do
+    row 0 "fat job $j runs ONLY on pull_request and only when gpu-touched said 1 (skipped, not queued)" \
+        "^True$" jobq_wf "$j" "\"github.event_name == 'pull_request'\" in job.get('if','') and \"gpu_touched == '1'\" in job.get('if','') and 'gpu-touched' in job.get('needs',[])"
+done
 
 # ADVISORY in 0.67. This is the row that has to be DELETED, not edited, when
 # 68-C3 / 68-D2 promote the jobs — which is the point of pinning it.
 row 0 "neither GPU job is in gate.needs — advisory in 0.67 (68-C3 / 68-D2 promote them)" \
-    "^ADVISORY$" jobq gate \
-    "'PROMOTED' if ({'gpu-quick','cuda-unit'} & set(job.get('needs',[]))) else 'ADVISORY'"
+    "^ADVISORY$" jobq_wf gate \
+    "'PROMOTED' if ({'gpu-quick','cuda-unit','gx10','yoga'} & set(job.get('needs',[]))) else 'ADVISORY'"
 
 row 0 "gpu-quick reuses cuda-nightly's yield-to-training step (a running training job wins)" \
     "^True$" jobq gpu-quick \

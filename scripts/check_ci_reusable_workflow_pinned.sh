@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check_ci_reusable_workflow_pinned.sh — the `uses:` reference to the
-# paiml/.github sovereign-ci.yml reusable workflow in .github/workflows/ci.yml
+# paiml/.github sovereign-ci.yml reusable workflow in ci/sections.yml (#4433; was ci.yml)
 # is pinned to a full 40-hex-char commit sha, never a branch or tag ref.
 #
 # WHY THIS EXISTS (PMAT-976, C0-2, #2891, epic #2873)
@@ -34,7 +34,10 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORKFLOW_REL=".github/workflows/ci.yml"
+# #4433: the pin moved out of ci.yml into ci/sections.yml (sovereign-ci.uses);
+# ci/vendor/sovereign-ci.yml is the copy of that pin fat_driver.py actually runs.
+WORKFLOW_REL="ci/sections.yml"
+VENDOR_REL="ci/vendor/sovereign-ci.yml"
 CALLEE_REPO="paiml/.github"
 CALLEE_PATH=".github/workflows/sovereign-ci.yml"
 
@@ -157,5 +160,13 @@ if ! ref_is_pinned_sha "$ref"; then
   exit 1
 fi
 
-printf 'PASS: %s references %s/%s@%s (a pinned commit sha).\n' "$WORKFLOW_REL" "$CALLEE_REPO" "$CALLEE_PATH" "$ref"
+# The vendored copy must be the pinned one: its first line names the sha it
+# was copied from. A re-pin that forgets to re-vendor runs the OLD callee.
+vend="$(head -n1 "$REPO_ROOT/$VENDOR_REL" 2>/dev/null | grep -oE "@ ?[0-9a-f]{40}" | tr -d "@ ")"
+if [ "$vend" != "$ref" ]; then
+  printf "FAIL: %s was vendored from @%s but %s pins @%s -- re-vendor from the pin.\n" "$VENDOR_REL" "${vend:-<none>}" "$WORKFLOW_REL" "$ref"
+  exit 1
+fi
+
+printf 'PASS: %s references %s/%s@%s (a pinned commit sha), and %s is that copy.\n' "$WORKFLOW_REL" "$CALLEE_REPO" "$CALLEE_PATH" "$ref" "$VENDOR_REL"
 exit 0
