@@ -4,7 +4,8 @@
 //! and algorithms for scientific reproducibility.
 
 use aprender_tsp::{AcoSolver, Budget, GaSolver, HybridSolver, TabuSolver, TspInstance, TspSolver};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 /// Create a random instance with n cities
 fn random_instance(n: usize, seed: u64) -> TspInstance {

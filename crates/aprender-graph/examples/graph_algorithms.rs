@@ -92,9 +92,10 @@ fn demo_find_callers(graph: &CsrGraph) -> Result<Vec<u32>, Box<dyn std::error::E
     Ok(callers)
 }
 
-fn demo_pagerank(
-    graph: &CsrGraph,
-) -> Result<(Vec<(&str, f32)>, Vec<f32>), Box<dyn std::error::Error>> {
+/// Ranked `(name, score)` pairs plus the raw PageRank score vector.
+type PageRankDemo<'a> = (Vec<(&'a str, f32)>, Vec<f32>);
+
+fn demo_pagerank(graph: &CsrGraph) -> Result<PageRankDemo<'_>, Box<dyn std::error::Error>> {
     println!("\n📊 Computing PageRank importance scores...");
     let scores = pagerank(graph, 20, 1e-6)?;
 
@@ -105,7 +106,7 @@ fn demo_pagerank(
             (name, scores[i])
         })
         .collect();
-    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("PageRank scores should not be NaN"));
 
     println!("  Top 5 most important functions:");
     for (i, (name, score)) in ranked.iter().take(5).enumerate() {

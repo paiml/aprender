@@ -13,10 +13,10 @@ fn test_simple_call_graph() {
     let mut graph = CsrGraph::new();
 
     // Add edges
-    graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap(); // main → parse_args
-    graph.add_edge(NodeId(0), NodeId(2), 1.0).unwrap(); // main → validate
-    graph.add_edge(NodeId(0), NodeId(3), 1.0).unwrap(); // main → execute
-    graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap(); // parse_args → validate
+    graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed"); // main → parse_args
+    graph.add_edge(NodeId(0), NodeId(2), 1.0).expect("add_edge should succeed"); // main → validate
+    graph.add_edge(NodeId(0), NodeId(3), 1.0).expect("add_edge should succeed"); // main → execute
+    graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed"); // parse_args → validate
 
     // Add node names
     graph.set_node_name(NodeId(0), "main".to_string());
@@ -25,14 +25,17 @@ fn test_simple_call_graph() {
     graph.set_node_name(NodeId(3), "execute".to_string());
 
     // Test outgoing edges (callees)
-    let main_callees = graph.outgoing_neighbors(NodeId(0)).unwrap();
+    let main_callees =
+        graph.outgoing_neighbors(NodeId(0)).expect("outgoing_neighbors should succeed");
     assert_eq!(main_callees, &[1, 2, 3]);
 
-    let parse_args_callees = graph.outgoing_neighbors(NodeId(1)).unwrap();
+    let parse_args_callees =
+        graph.outgoing_neighbors(NodeId(1)).expect("outgoing_neighbors should succeed");
     assert_eq!(parse_args_callees, &[2]);
 
     // Test incoming edges (callers)
-    let validate_callers = graph.incoming_neighbors(NodeId(2)).unwrap();
+    let validate_callers =
+        graph.incoming_neighbors(NodeId(2)).expect("incoming_neighbors should succeed");
     assert_eq!(validate_callers, vec![0, 1]);
 
     // Test graph metrics
@@ -45,40 +48,46 @@ fn test_from_edge_list_performance() {
     // Test building graph from edge list (batch mode)
     let edges: Vec<_> = (0..1000).map(|i| (NodeId(i), NodeId(i + 1), 1.0)).collect();
 
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
     assert_eq!(graph.num_nodes(), 1001);
     assert_eq!(graph.num_edges(), 1000);
 
     // Verify first and last edges
-    assert_eq!(graph.outgoing_neighbors(NodeId(0)).unwrap(), &[1]);
-    assert_eq!(graph.outgoing_neighbors(NodeId(999)).unwrap(), &[1000]);
+    assert_eq!(
+        graph.outgoing_neighbors(NodeId(0)).expect("outgoing_neighbors should succeed"),
+        &[1]
+    );
+    assert_eq!(
+        graph.outgoing_neighbors(NodeId(999)).expect("outgoing_neighbors should succeed"),
+        &[1000]
+    );
 }
 
 #[tokio::test]
 async fn test_parquet_persistence() {
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("tempdir should succeed");
     let path = dir.path().join("call_graph");
 
     // Build graph
     let mut graph = CsrGraph::new();
-    graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-    graph.add_edge(NodeId(0), NodeId(2), 2.0).unwrap();
+    graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+    graph.add_edge(NodeId(0), NodeId(2), 2.0).expect("add_edge should succeed");
     graph.set_node_name(NodeId(0), "main".to_string());
     graph.set_node_name(NodeId(1), "foo".to_string());
     graph.set_node_name(NodeId(2), "bar".to_string());
 
     // Save
-    graph.write_parquet(&path).await.unwrap();
+    graph.write_parquet(&path).await.expect("write_parquet should succeed");
 
     // Verify files exist
     assert!(std::path::Path::new(&format!("{}_edges.parquet", path.display())).exists());
     assert!(std::path::Path::new(&format!("{}_nodes.parquet", path.display())).exists());
 
     // Load
-    let loaded = CsrGraph::read_parquet(&path).await.unwrap();
+    let loaded = CsrGraph::read_parquet(&path).await.expect("read_parquet should succeed");
 
     // Verify
     assert_eq!(loaded.num_nodes(), 3);
@@ -92,7 +101,7 @@ fn test_csr_components_for_aprender() {
     let edges =
         vec![(NodeId(0), NodeId(1), 1.0), (NodeId(0), NodeId(2), 2.0), (NodeId(1), NodeId(2), 3.0)];
 
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
     let (row_offsets, col_indices, weights) = graph.csr_components();
 
     // Verify CSR format
@@ -111,7 +120,7 @@ fn test_adjacency_iteration() {
         (NodeId(1), NodeId(3), 4.5),
     ];
 
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
     // Test adjacency method
     let (targets, weights) = graph.adjacency(NodeId(0));

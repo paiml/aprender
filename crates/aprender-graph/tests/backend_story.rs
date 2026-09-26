@@ -30,7 +30,7 @@ fn build_test_graph() -> CsrGraph {
         (NodeId(1), NodeId(4), 1.0),
         (NodeId(2), NodeId(4), 1.0),
     ];
-    CsrGraph::from_edge_list(&edges).unwrap()
+    CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed")
 }
 
 /// Build a larger test graph for performance-sensitive tests
@@ -48,7 +48,7 @@ fn build_large_test_graph(num_nodes: usize) -> CsrGraph {
             edges.push((NodeId(src as u32), NodeId(dst as u32), 0.5));
         }
     }
-    CsrGraph::from_edge_list(&edges).unwrap()
+    CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed")
 }
 
 // ============================================================================
@@ -73,15 +73,15 @@ fn test_csr_outgoing_neighbors() {
     let graph = build_test_graph();
 
     // Node 0 has outgoing edges to 1 and 2
-    let neighbors = graph.outgoing_neighbors(NodeId(0)).unwrap();
+    let neighbors = graph.outgoing_neighbors(NodeId(0)).expect("outgoing_neighbors should succeed");
     assert_eq!(neighbors.len(), 2);
 
     // Node 1 has outgoing edges to 3 and 4
-    let neighbors = graph.outgoing_neighbors(NodeId(1)).unwrap();
+    let neighbors = graph.outgoing_neighbors(NodeId(1)).expect("outgoing_neighbors should succeed");
     assert_eq!(neighbors.len(), 2);
 
     // Node 3 has no outgoing edges
-    let neighbors = graph.outgoing_neighbors(NodeId(3)).unwrap();
+    let neighbors = graph.outgoing_neighbors(NodeId(3)).expect("outgoing_neighbors should succeed");
     assert_eq!(neighbors.len(), 0);
 }
 
@@ -91,11 +91,11 @@ fn test_csr_incoming_neighbors() {
     let graph = build_test_graph();
 
     // Node 4 has incoming edges from 1 and 2
-    let callers = graph.incoming_neighbors(NodeId(4)).unwrap();
+    let callers = graph.incoming_neighbors(NodeId(4)).expect("incoming_neighbors should succeed");
     assert_eq!(callers.len(), 2, "Node 4 should have 2 incoming edges");
 
     // Node 0 has no incoming edges
-    let callers = graph.incoming_neighbors(NodeId(0)).unwrap();
+    let callers = graph.incoming_neighbors(NodeId(0)).expect("incoming_neighbors should succeed");
     assert_eq!(callers.len(), 0, "Node 0 should have no incoming edges");
 }
 
@@ -127,7 +127,7 @@ fn test_bfs_disconnected() {
         (NodeId(0), NodeId(1), 1.0),
         (NodeId(2), NodeId(3), 1.0), // Disconnected from 0-1
     ];
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
     let reachable = bfs(&graph, NodeId(0)).expect("BFS should succeed");
 
@@ -238,7 +238,7 @@ fn test_louvain_basic() {
         // Weak connection between communities
         (NodeId(2), NodeId(3), 0.1),
     ];
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
     let result = louvain(&graph).expect("Louvain should succeed");
 
@@ -266,7 +266,7 @@ fn test_pattern_detection_circular() {
         (NodeId(1), NodeId(2), 1.0),
         (NodeId(2), NodeId(0), 1.0), // Creates cycle 0→1→2→0
     ];
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
     let patterns = find_patterns(&graph, &Pattern::circular_dependency(3))
         .expect("Pattern detection should succeed");
@@ -283,7 +283,7 @@ fn test_pattern_detection_god_class() {
     for i in 1..=10 {
         edges.push((NodeId(0), NodeId(i), 1.0));
     }
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
     let patterns =
         find_patterns(&graph, &Pattern::god_class(5)).expect("Pattern detection should succeed");
@@ -396,7 +396,8 @@ mod backend_completeness {
     #[test]
     fn test_csr_graph_methods_exist() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // These method calls verify the methods exist at compile time
         let _ = graph.num_nodes();

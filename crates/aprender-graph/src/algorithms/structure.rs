@@ -239,7 +239,8 @@ mod tests {
     #[test]
     fn test_single_node_component() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         // 0 and 1 are connected
         assert_eq!(connected_components(&graph), 1);
     }
@@ -247,7 +248,8 @@ mod tests {
     #[test]
     fn test_two_disconnected_edges() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(2), NodeId(3), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert_eq!(connected_components(&graph), 2);
     }
 
@@ -259,7 +261,8 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
             (NodeId(2), NodeId(3), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert_eq!(connected_components(&graph), 1);
     }
 
@@ -272,7 +275,8 @@ mod tests {
             (NodeId(1), NodeId(3), 1.0),
             (NodeId(2), NodeId(3), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert_eq!(connected_components(&graph), 1);
     }
 
@@ -280,7 +284,8 @@ mod tests {
     fn test_scc_dag_each_node_separate() {
         // DAG: 0 → 1 → 2 (no cycles, each node is its own SCC)
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let sccs = kosaraju_scc(&graph);
         assert_eq!(sccs.len(), 3);
     }
@@ -293,7 +298,8 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
             (NodeId(2), NodeId(0), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let sccs = kosaraju_scc(&graph);
         // All three form one SCC
         assert_eq!(sccs.len(), 1);
@@ -304,7 +310,8 @@ mod tests {
     fn test_scc_two_node_cycle() {
         // 0 ↔ 1
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(0), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let sccs = kosaraju_scc(&graph);
         assert_eq!(sccs.len(), 1);
         assert_eq!(sccs[0].len(), 2);
@@ -314,7 +321,8 @@ mod tests {
     fn test_scc_self_loop() {
         // Self-loop: 0 → 0
         let edges = vec![(NodeId(0), NodeId(0), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let sccs = kosaraju_scc(&graph);
         assert_eq!(sccs.len(), 1);
         assert_eq!(sccs[0].len(), 1);
@@ -329,7 +337,8 @@ mod tests {
             (NodeId(2), NodeId(3), 1.0),
             (NodeId(3), NodeId(2), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let sccs = kosaraju_scc(&graph);
         assert_eq!(sccs.len(), 2);
         assert!(sccs.iter().all(|scc| scc.len() == 2));
@@ -346,7 +355,8 @@ mod tests {
             (NodeId(2), NodeId(3), 1.0),
             (NodeId(3), NodeId(2), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let sccs = kosaraju_scc(&graph);
         assert_eq!(sccs.len(), 2);
     }
@@ -361,7 +371,8 @@ mod tests {
             (NodeId(3), NodeId(4), 1.0),
             (NodeId(4), NodeId(3), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let sccs = kosaraju_scc(&graph);
         assert_eq!(sccs.len(), 2);
         // One SCC has 3 nodes, one has 2
@@ -378,7 +389,8 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
             (NodeId(2), NodeId(0), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert_eq!(connected_components(&graph), 1);
     }
 
@@ -389,7 +401,8 @@ mod tests {
             (NodeId(2), NodeId(3), 1.0),
             (NodeId(4), NodeId(5), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert_eq!(connected_components(&graph), 3);
     }
 }

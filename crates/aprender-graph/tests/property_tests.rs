@@ -9,7 +9,7 @@ use trueno_graph::{CsrGraph, NodeId};
 proptest! {
     #[test]
     fn prop_from_edge_list_valid_csr(edges in prop_edge_list(0usize..100usize, 0u32..50u32)) {
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Invariant 1: row_offsets is monotonically increasing
         for i in 0..graph.csr_components().0.len() - 1 {
@@ -19,7 +19,7 @@ proptest! {
 
         // Invariant 2: last row_offset == num_edges
         let (row_offsets, col_indices, _) = graph.csr_components();
-        prop_assert_eq!(*row_offsets.last().unwrap() as usize, col_indices.len());
+        prop_assert_eq!(*row_offsets.last().expect("CSR row_offsets always has a trailing entry") as usize, col_indices.len());
 
         // Invariant 3: col_indices and edge_weights have same length
         let (_, col_indices, edge_weights) = graph.csr_components();
@@ -34,10 +34,10 @@ proptest! {
 proptest! {
     #[test]
     fn prop_outgoing_neighbors_correct(edges in prop_edge_list(0usize..100usize, 0u32..20u32)) {
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         for node_id in 0..graph.num_nodes() {
-            let neighbors = graph.outgoing_neighbors(NodeId(node_id as u32)).unwrap();
+            let neighbors = graph.outgoing_neighbors(NodeId(node_id as u32)).expect("outgoing_neighbors should succeed");
 
             // Count expected outgoing edges
             let expected: Vec<_> = edges.iter()
@@ -59,10 +59,10 @@ proptest! {
 proptest! {
     #[test]
     fn prop_incoming_neighbors_correct(edges in prop_edge_list(0usize..100usize, 0u32..20u32)) {
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         for node_id in 0..graph.num_nodes() {
-            let callers = graph.incoming_neighbors(NodeId(node_id as u32)).unwrap();
+            let callers = graph.incoming_neighbors(NodeId(node_id as u32)).expect("incoming_neighbors should succeed");
 
             // Count expected incoming edges (including duplicates/multi-edges)
             let mut expected: Vec<_> = edges.iter()
@@ -88,19 +88,19 @@ proptest! {
 proptest! {
     #[test]
     fn prop_parquet_roundtrip(edges in prop_edge_list(0usize..100usize, 0u32..20u32)) {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let runtime = tokio::runtime::Runtime::new().expect("Runtime::new should succeed");
 
         runtime.block_on(async {
-            let graph = CsrGraph::from_edge_list(&edges).unwrap();
+            let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
             // Write to temp file
-            let dir = tempfile::tempdir().unwrap();
+            let dir = tempfile::tempdir().expect("tempfile::tempdir should succeed");
             let path = dir.path().join("prop_test_graph");
 
-            graph.write_parquet(&path).await.unwrap();
+            graph.write_parquet(&path).await.expect("write_parquet should succeed");
 
             // Read back
-            let loaded = CsrGraph::read_parquet(&path).await.unwrap();
+            let loaded = CsrGraph::read_parquet(&path).await.expect("read_parquet should succeed");
 
             // Verify structure preserved
             prop_assert_eq!(loaded.num_nodes(), graph.num_nodes());
@@ -130,7 +130,7 @@ proptest! {
         let mut graph = CsrGraph::new();
         let initial_count = graph.num_edges();
 
-        graph.add_edge(NodeId(src), NodeId(dst), weight).unwrap();
+        graph.add_edge(NodeId(src), NodeId(dst), weight).expect("add_edge should succeed");
 
         prop_assert_eq!(graph.num_edges(), initial_count + 1);
     }
@@ -140,7 +140,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_node_count_grows(edges in prop_edge_list(0usize..100usize, 0u32..50u32)) {
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Node count should be >= max node ID + 1
         if let Some(max_node) = edges.iter()
@@ -192,7 +192,8 @@ mod unit_tests {
     #[test]
     fn test_single_edge_invariants() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let (row_offsets, col_indices, edge_weights) = graph.csr_components();
 

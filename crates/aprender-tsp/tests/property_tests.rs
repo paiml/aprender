@@ -22,8 +22,11 @@ fn random_coords(n: usize) -> impl Strategy<Value = Vec<(f64, f64)>> {
 /// Generate a random instance with 3-20 cities
 fn random_instance() -> impl Strategy<Value = TspInstance> {
     (3usize..20)
-        .prop_flat_map(|n| random_coords(n))
-        .prop_map(|coords| TspInstance::from_coords("random", coords).unwrap())
+        .prop_flat_map(random_coords)
+        .prop_map(|coords| {
+            TspInstance::from_coords("random", coords)
+                .expect("TspInstance::from_coords should succeed")
+        })
 }
 
 // ============================================================================
@@ -41,14 +44,14 @@ proptest! {
         q0 in 0.5..1.0f64,
         num_ants in 5usize..50
     ) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let params = TspParams::Aco { alpha, beta, rho, q0, num_ants };
         let model = TspModel::new(TspAlgorithm::Aco).with_params(params);
 
-        model.save(&path).unwrap();
-        let loaded = TspModel::load(&path).unwrap();
+        model.save(&path).expect("save should succeed");
+        let loaded = TspModel::load(&path).expect("TspModel::load should succeed");
 
         if let TspParams::Aco {
             alpha: a,
@@ -72,14 +75,14 @@ proptest! {
         tenure in 5usize..100,
         max_neighbors in 10usize..500
     ) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let params = TspParams::Tabu { tenure, max_neighbors };
         let model = TspModel::new(TspAlgorithm::Tabu).with_params(params);
 
-        model.save(&path).unwrap();
-        let loaded = TspModel::load(&path).unwrap();
+        model.save(&path).expect("save should succeed");
+        let loaded = TspModel::load(&path).expect("TspModel::load should succeed");
 
         if let TspParams::Tabu { tenure: t, max_neighbors: m } = loaded.params {
             prop_assert_eq!(t, tenure);
@@ -95,14 +98,14 @@ proptest! {
         crossover_rate in 0.5..1.0f64,
         mutation_rate in 0.01..0.5f64
     ) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let params = TspParams::Ga { population_size, crossover_rate, mutation_rate };
         let model = TspModel::new(TspAlgorithm::Ga).with_params(params);
 
-        model.save(&path).unwrap();
-        let loaded = TspModel::load(&path).unwrap();
+        model.save(&path).expect("save should succeed");
+        let loaded = TspModel::load(&path).expect("TspModel::load should succeed");
 
         if let TspParams::Ga { population_size: p, crossover_rate: c, mutation_rate: m } = loaded.params {
             prop_assert_eq!(p, population_size);
@@ -119,7 +122,7 @@ proptest! {
         tabu_frac in 0.0..1.0f64,
         aco_frac in 0.0..1.0f64
     ) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let params = TspParams::Hybrid {
@@ -129,8 +132,8 @@ proptest! {
         };
         let model = TspModel::new(TspAlgorithm::Hybrid).with_params(params);
 
-        model.save(&path).unwrap();
-        let loaded = TspModel::load(&path).unwrap();
+        model.save(&path).expect("save should succeed");
+        let loaded = TspModel::load(&path).expect("TspModel::load should succeed");
 
         if let TspParams::Hybrid { ga_fraction, tabu_fraction, aco_fraction } = loaded.params {
             prop_assert!((ga_fraction - ga_frac).abs() < 1e-10);
@@ -148,7 +151,7 @@ proptest! {
         gap in 0.0..100.0f64,
         time in 0.0..10000.0f64
     ) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let metadata = TspModelMetadata {
@@ -159,8 +162,8 @@ proptest! {
         };
 
         let model = TspModel::new(TspAlgorithm::Aco).with_metadata(metadata);
-        model.save(&path).unwrap();
-        let loaded = TspModel::load(&path).unwrap();
+        model.save(&path).expect("save should succeed");
+        let loaded = TspModel::load(&path).expect("TspModel::load should succeed");
 
         prop_assert_eq!(loaded.metadata.trained_instances, instances);
         prop_assert_eq!(loaded.metadata.avg_instance_size, avg_size);
@@ -229,10 +232,10 @@ proptest! {
         seed in 0u64..10000
     ) {
         let coords = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.5, 0.5)];
-        let instance = TspInstance::from_coords("test", coords).unwrap();
+        let instance = TspInstance::from_coords("test", coords).expect("TspInstance::from_coords should succeed");
 
         let mut solver = AcoSolver::new().with_seed(seed);
-        let result = solver.solve(&instance, Budget::Iterations(30)).unwrap();
+        let result = solver.solve(&instance, Budget::Iterations(30)).expect("solve should succeed");
 
         prop_assert!(instance.validate_tour(&result.tour).is_ok());
     }
@@ -242,10 +245,10 @@ proptest! {
         seed in 0u64..10000
     ) {
         let coords = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.5, 0.5)];
-        let instance = TspInstance::from_coords("test", coords).unwrap();
+        let instance = TspInstance::from_coords("test", coords).expect("TspInstance::from_coords should succeed");
 
         let mut solver = TabuSolver::new().with_seed(seed);
-        let result = solver.solve(&instance, Budget::Iterations(30)).unwrap();
+        let result = solver.solve(&instance, Budget::Iterations(30)).expect("solve should succeed");
 
         prop_assert!(instance.validate_tour(&result.tour).is_ok());
     }
@@ -255,10 +258,10 @@ proptest! {
         seed in 0u64..10000
     ) {
         let coords = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.5, 0.5)];
-        let instance = TspInstance::from_coords("test", coords).unwrap();
+        let instance = TspInstance::from_coords("test", coords).expect("TspInstance::from_coords should succeed");
 
         let mut solver = GaSolver::new().with_seed(seed).with_population_size(20);
-        let result = solver.solve(&instance, Budget::Iterations(30)).unwrap();
+        let result = solver.solve(&instance, Budget::Iterations(30)).expect("solve should succeed");
 
         prop_assert!(instance.validate_tour(&result.tour).is_ok());
     }
@@ -268,10 +271,10 @@ proptest! {
         seed in 0u64..10000
     ) {
         let coords = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.5, 0.5)];
-        let instance = TspInstance::from_coords("test", coords).unwrap();
+        let instance = TspInstance::from_coords("test", coords).expect("TspInstance::from_coords should succeed");
 
         let mut solver = HybridSolver::new().with_seed(seed).with_ga_population(10);
-        let result = solver.solve(&instance, Budget::Iterations(30)).unwrap();
+        let result = solver.solve(&instance, Budget::Iterations(30)).expect("solve should succeed");
 
         prop_assert!(instance.validate_tour(&result.tour).is_ok());
     }
@@ -281,13 +284,13 @@ proptest! {
         seed in 0u64..10000
     ) {
         let coords = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
-        let instance = TspInstance::from_coords("test", coords).unwrap();
+        let instance = TspInstance::from_coords("test", coords).expect("TspInstance::from_coords should succeed");
 
         let mut solver1 = AcoSolver::new().with_seed(seed);
         let mut solver2 = AcoSolver::new().with_seed(seed);
 
-        let result1 = solver1.solve(&instance, Budget::Iterations(50)).unwrap();
-        let result2 = solver2.solve(&instance, Budget::Iterations(50)).unwrap();
+        let result1 = solver1.solve(&instance, Budget::Iterations(50)).expect("solve should succeed");
+        let result2 = solver2.solve(&instance, Budget::Iterations(50)).expect("solve should succeed");
 
         prop_assert!((result1.length - result2.length).abs() < 1e-10);
     }
@@ -314,7 +317,7 @@ proptest! {
             }
         }
 
-        let instance = TspInstance::from_matrix("test", matrix.clone()).unwrap();
+        let instance = TspInstance::from_matrix("test", matrix.clone()).expect("TspInstance::from_matrix should succeed");
 
         prop_assert_eq!(instance.dimension, size);
         for i in 0..size {

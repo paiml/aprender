@@ -147,13 +147,15 @@ fn build_retriever(
     for spec in corpus() {
         let mut chunk =
             Chunk::new(DocumentId::new(), spec.content.to_string(), 0, spec.content.len());
-        chunk.set_embedding(embedder.embed(spec.content).unwrap());
+        chunk.set_embedding(
+            embedder.embed(spec.content).expect("mock embedder embeds fixture content"),
+        );
         let id = chunk.id;
         if spec.relevant {
             ground_truth.insert(id);
         }
         labels.insert(id, spec.id);
-        retriever.index(chunk).unwrap();
+        retriever.index(chunk).expect("indexing fixture chunk succeeds");
     }
 
     (retriever, ground_truth, labels)
@@ -178,9 +180,10 @@ fn label_set(hits: &[ChunkId], labels: &HashMap<ChunkId, &'static str>) -> Vec<&
 fn hybrid_beats_max_of_legs_by_5pts() {
     let (retriever, ground_truth, labels) = build_retriever();
 
-    let dense_results = retriever.retrieve_dense(QUERY, TOP_K).unwrap();
-    let sparse_results = retriever.retrieve_sparse(QUERY, TOP_K).unwrap();
-    let hybrid_results = retriever.retrieve(QUERY, TOP_K).unwrap();
+    let dense_results = retriever.retrieve_dense(QUERY, TOP_K).expect("dense retrieval succeeds");
+    let sparse_results =
+        retriever.retrieve_sparse(QUERY, TOP_K).expect("sparse retrieval succeeds");
+    let hybrid_results = retriever.retrieve(QUERY, TOP_K).expect("hybrid retrieval succeeds");
 
     let dense_ids: Vec<ChunkId> = dense_results.iter().map(|r| r.chunk.id).collect();
     let sparse_ids: Vec<ChunkId> = sparse_results.iter().map(|r| r.chunk.id).collect();
@@ -217,10 +220,18 @@ fn fixture_legs_cover_overlapping_but_distinct_subsets() {
     // tie-structure assumption breaks silently.
     let (retriever, _, labels) = build_retriever();
 
-    let dense_top3: BTreeSet<&'static str> =
-        retriever.retrieve_dense(QUERY, 3).unwrap().iter().map(|r| labels[&r.chunk.id]).collect();
-    let sparse_top3: BTreeSet<&'static str> =
-        retriever.retrieve_sparse(QUERY, 3).unwrap().iter().map(|r| labels[&r.chunk.id]).collect();
+    let dense_top3: BTreeSet<&'static str> = retriever
+        .retrieve_dense(QUERY, 3)
+        .expect("dense retrieval succeeds")
+        .iter()
+        .map(|r| labels[&r.chunk.id])
+        .collect();
+    let sparse_top3: BTreeSet<&'static str> = retriever
+        .retrieve_sparse(QUERY, 3)
+        .expect("sparse retrieval succeeds")
+        .iter()
+        .map(|r| labels[&r.chunk.id])
+        .collect();
 
     let want_dense: BTreeSet<&'static str> = ["d1", "d2", "x1"].into_iter().collect();
     let want_sparse: BTreeSet<&'static str> = ["d1", "d3", "x2"].into_iter().collect();

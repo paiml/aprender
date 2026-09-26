@@ -259,7 +259,8 @@ mod tests {
     #[test]
     fn test_single_edge() {
         let edges = vec![(NodeId(0), NodeId(1), 5.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let distances = dijkstra(&graph, NodeId(0));
         assert_eq!(distances.get(&NodeId(0)), Some(&0.0));
@@ -270,7 +271,8 @@ mod tests {
     fn test_chain() {
         // 0 --1.0--> 1 --2.0--> 2
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 2.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let distances = dijkstra(&graph, NodeId(0));
         assert_eq!(distances.get(&NodeId(0)), Some(&0.0));
@@ -287,7 +289,8 @@ mod tests {
             (NodeId(1), NodeId(2), 2.0),
             (NodeId(0), NodeId(2), 5.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let distances = dijkstra(&graph, NodeId(0));
         assert_eq!(distances.get(&NodeId(2)), Some(&3.0)); // Not 5.0
@@ -297,43 +300,47 @@ mod tests {
     fn test_unreachable_node() {
         // 0 → 1, 2 → 3 (disconnected)
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(2), NodeId(3), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let distances = dijkstra(&graph, NodeId(0));
         assert_eq!(distances.get(&NodeId(0)), Some(&0.0));
         assert_eq!(distances.get(&NodeId(1)), Some(&1.0));
-        assert!(distances.get(&NodeId(2)).is_none());
-        assert!(distances.get(&NodeId(3)).is_none());
+        assert!(!distances.contains_key(&NodeId(2)));
+        assert!(!distances.contains_key(&NodeId(3)));
     }
 
     #[test]
     fn test_dijkstra_path_simple() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 2.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let result = dijkstra_path(&graph, NodeId(0), NodeId(2));
         assert!(result.is_some());
-        let (dist, path) = result.unwrap();
-        assert_eq!(dist, 3.0);
+        let (dist, path) = result.expect("a path should exist between source and target");
+        assert!((dist - 3.0).abs() < f32::EPSILON, "dist = {dist}");
         assert_eq!(path, vec![NodeId(0), NodeId(1), NodeId(2)]);
     }
 
     #[test]
     fn test_dijkstra_path_same_node() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let result = dijkstra_path(&graph, NodeId(0), NodeId(0));
         assert!(result.is_some());
-        let (dist, path) = result.unwrap();
-        assert_eq!(dist, 0.0);
+        let (dist, path) = result.expect("a path should exist between source and target");
+        assert!(dist.abs() < f32::EPSILON, "dist = {dist}");
         assert_eq!(path, vec![NodeId(0)]);
     }
 
     #[test]
     fn test_dijkstra_path_unreachable() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(2), NodeId(3), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let result = dijkstra_path(&graph, NodeId(0), NodeId(3));
         assert!(result.is_none());
@@ -348,12 +355,13 @@ mod tests {
             (NodeId(1), NodeId(2), 2.0),
             (NodeId(0), NodeId(2), 5.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let result = dijkstra_path(&graph, NodeId(0), NodeId(2));
         assert!(result.is_some());
-        let (dist, path) = result.unwrap();
-        assert_eq!(dist, 3.0);
+        let (dist, path) = result.expect("a path should exist between source and target");
+        assert!((dist - 3.0).abs() < f32::EPSILON, "dist = {dist}");
         assert_eq!(path, vec![NodeId(0), NodeId(1), NodeId(2)]);
     }
 
@@ -371,12 +379,13 @@ mod tests {
             (NodeId(1), NodeId(3), 1.0),
             (NodeId(2), NodeId(3), 5.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let result = dijkstra_path(&graph, NodeId(0), NodeId(3));
         assert!(result.is_some());
-        let (dist, path) = result.unwrap();
-        assert_eq!(dist, 2.0); // 0→1→3
+        let (dist, path) = result.expect("a path should exist between source and target");
+        assert!((dist - 2.0).abs() < f32::EPSILON, "dist = {dist}"); // 0→1→3
         assert_eq!(path, vec![NodeId(0), NodeId(1), NodeId(3)]);
     }
 
@@ -389,7 +398,8 @@ mod tests {
             (NodeId(2), NodeId(0), 1.0),
             (NodeId(0), NodeId(3), 10.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let distances = dijkstra(&graph, NodeId(0));
         assert_eq!(distances.get(&NodeId(0)), Some(&0.0));
@@ -401,7 +411,8 @@ mod tests {
     #[test]
     fn test_source_out_of_bounds() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let distances = dijkstra(&graph, NodeId(100));
         assert!(distances.is_empty());
@@ -410,7 +421,8 @@ mod tests {
     #[test]
     fn test_zero_weight_edge() {
         let edges = vec![(NodeId(0), NodeId(1), 0.0), (NodeId(1), NodeId(2), 0.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let distances = dijkstra(&graph, NodeId(0));
         assert_eq!(distances.get(&NodeId(2)), Some(&0.0));

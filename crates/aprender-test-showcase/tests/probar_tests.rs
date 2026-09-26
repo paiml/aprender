@@ -781,7 +781,7 @@ mod tests {
     #[test]
     fn h0_fixture_027_fixture_teardown_clears_state() {
         let mut fixture = CalculatorFixture::new();
-        fixture.setup().unwrap();
+        fixture.setup().expect("fixture setup succeeds");
         assert!(fixture.teardown().is_ok());
         assert!(!fixture.setup_complete);
     }
@@ -990,9 +990,9 @@ mod tests {
     #[test]
     fn h0_int_057_page_object_with_fixture() {
         let mut fixture = CalculatorFixture::new();
-        fixture.setup().unwrap();
+        fixture.setup().expect("fixture setup succeeds");
         assert_eq!(fixture.page.calc_page_name(), "CalculatorPage");
-        fixture.teardown().unwrap();
+        fixture.teardown().expect("fixture teardown succeeds");
     }
 
     #[test]
@@ -1004,11 +1004,11 @@ mod tests {
     #[test]
     fn h0_int_059_replay_with_fixture() {
         let mut fixture = CalculatorFixture::new();
-        fixture.setup().unwrap();
+        fixture.setup().expect("fixture setup succeeds");
         fixture.record_press("4", 0);
         fixture.record_press("2", 1);
         assert_eq!(fixture.input_count(), 2);
-        fixture.teardown().unwrap();
+        fixture.teardown().expect("fixture teardown succeeds");
     }
 
     #[test]
@@ -1271,10 +1271,10 @@ mod tests {
     #[test]
     fn h0_life_091_multiple_setup_teardown() {
         let mut fixture = CalculatorFixture::new();
-        fixture.setup().unwrap();
-        fixture.teardown().unwrap();
-        fixture.setup().unwrap();
-        fixture.teardown().unwrap();
+        fixture.setup().expect("fixture setup succeeds");
+        fixture.teardown().expect("fixture teardown succeeds");
+        fixture.setup().expect("fixture setup succeeds");
+        fixture.teardown().expect("fixture teardown succeeds");
         assert!(!fixture.setup_complete);
     }
 
@@ -1323,7 +1323,7 @@ mod tests {
     #[test]
     fn h0_full_097_complete_calculation_flow() {
         let mut fixture = CalculatorFixture::new();
-        fixture.setup().unwrap();
+        fixture.setup().expect("fixture setup succeeds");
 
         // Record a calculation
         fixture.record_press("4", 0);
@@ -1339,7 +1339,7 @@ mod tests {
         // Verify theme accessibility
         assert!(fixture.theme.passes_wcag_aa());
 
-        fixture.teardown().unwrap();
+        fixture.teardown().expect("fixture teardown succeeds");
     }
 
     #[test]
@@ -1363,7 +1363,7 @@ mod tests {
     #[test]
     fn h0_full_100_fixture_supports_all_operations() {
         let mut fixture = CalculatorFixture::new();
-        fixture.setup().unwrap();
+        fixture.setup().expect("fixture setup succeeds");
 
         // Test all operations can be recorded
         for op in ['+', '-', '*', '/', '%', '^'] {
@@ -1371,6 +1371,6 @@ mod tests {
         }
 
         assert_eq!(fixture.input_count(), 6);
-        fixture.teardown().unwrap();
+        fixture.teardown().expect("fixture teardown succeeds");
     }
 }

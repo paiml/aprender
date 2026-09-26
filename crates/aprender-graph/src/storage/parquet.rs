@@ -251,31 +251,34 @@ mod tests {
 
     #[tokio::test]
     async fn test_parquet_roundtrip() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("tempdir should succeed");
         let path = dir.path().join("test_graph");
 
         // Create graph
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(0), NodeId(2), 2.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 3.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(0), NodeId(2), 2.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 3.0).expect("add_edge should succeed");
 
         graph.set_node_name(NodeId(0), "main".to_string());
         graph.set_node_name(NodeId(1), "parse_args".to_string());
         graph.set_node_name(NodeId(2), "validate".to_string());
 
         // Write to Parquet
-        graph.write_parquet(&path).await.unwrap();
+        graph.write_parquet(&path).await.expect("write_parquet should succeed");
 
         // Read back
-        let loaded = CsrGraph::read_parquet(&path).await.unwrap();
+        let loaded = CsrGraph::read_parquet(&path).await.expect("read_parquet should succeed");
 
         // Verify structure
         assert_eq!(loaded.num_nodes(), graph.num_nodes());
         assert_eq!(loaded.num_edges(), graph.num_edges());
 
         // Verify edges
-        assert_eq!(loaded.outgoing_neighbors(NodeId(0)).unwrap(), &[1, 2]);
+        assert_eq!(
+            loaded.outgoing_neighbors(NodeId(0)).expect("outgoing_neighbors should succeed"),
+            &[1, 2]
+        );
 
         // Verify node names
         assert_eq!(loaded.get_node_name(NodeId(0)), Some("main"));
@@ -285,13 +288,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_graph_parquet() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("tempdir should succeed");
         let path = dir.path().join("empty_graph");
 
         let graph = CsrGraph::new();
-        graph.write_parquet(&path).await.unwrap();
+        graph.write_parquet(&path).await.expect("write_parquet should succeed");
 
-        let loaded = CsrGraph::read_parquet(&path).await.unwrap();
+        let loaded = CsrGraph::read_parquet(&path).await.expect("read_parquet should succeed");
         assert_eq!(loaded.num_nodes(), 0);
         assert_eq!(loaded.num_edges(), 0);
     }

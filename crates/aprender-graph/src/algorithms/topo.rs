@@ -237,14 +237,14 @@ mod tests {
     #[test]
     fn test_empty_graph_toposort() {
         let graph = CsrGraph::new();
-        let order = toposort(&graph).unwrap();
+        let order = toposort(&graph).expect("toposort should succeed");
         assert!(order.is_empty());
     }
 
     #[test]
     fn test_single_node_not_cyclic() {
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
         // Node 0 exists with edge to node 1
         assert!(!is_cyclic(&graph));
     }
@@ -252,7 +252,8 @@ mod tests {
     #[test]
     fn test_self_loop_is_cyclic() {
         let edges = vec![(NodeId(0), NodeId(0), 1.0)]; // Self-loop
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert!(is_cyclic(&graph));
     }
 
@@ -260,7 +261,8 @@ mod tests {
     fn test_simple_dag_not_cyclic() {
         // 0 → 1 → 2
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert!(!is_cyclic(&graph));
     }
 
@@ -272,7 +274,8 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
             (NodeId(2), NodeId(0), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert!(is_cyclic(&graph));
     }
 
@@ -285,7 +288,8 @@ mod tests {
             (NodeId(1), NodeId(3), 1.0),
             (NodeId(2), NodeId(3), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert!(!is_cyclic(&graph));
     }
 
@@ -293,9 +297,10 @@ mod tests {
     fn test_toposort_simple_chain() {
         // 0 → 1 → 2
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let order = toposort(&graph).unwrap();
+        let order = toposort(&graph).expect("toposort should succeed");
         assert_eq!(order, vec![NodeId(0), NodeId(1), NodeId(2)]);
     }
 
@@ -308,12 +313,18 @@ mod tests {
             (NodeId(1), NodeId(3), 1.0),
             (NodeId(2), NodeId(3), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let order = toposort(&graph).unwrap();
+        let order = toposort(&graph).expect("toposort should succeed");
 
         // Verify constraints
-        let pos = |n: u32| order.iter().position(|&x| x == NodeId(n)).unwrap();
+        let pos = |n: u32| {
+            order
+                .iter()
+                .position(|&x| x == NodeId(n))
+                .expect("every node should appear in the topological order")
+        };
 
         assert!(pos(0) < pos(1), "0 must come before 1");
         assert!(pos(0) < pos(2), "0 must come before 2");
@@ -329,7 +340,8 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
             (NodeId(2), NodeId(0), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let result = toposort(&graph);
         assert!(result.is_err());
@@ -340,15 +352,21 @@ mod tests {
     fn test_disconnected_components() {
         // Two disconnected chains: 0 → 1, 2 → 3
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(2), NodeId(3), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         assert!(!is_cyclic(&graph));
 
-        let order = toposort(&graph).unwrap();
+        let order = toposort(&graph).expect("toposort should succeed");
         assert_eq!(order.len(), 4);
 
         // Verify ordering constraints
-        let pos = |n: u32| order.iter().position(|&x| x == NodeId(n)).unwrap();
+        let pos = |n: u32| {
+            order
+                .iter()
+                .position(|&x| x == NodeId(n))
+                .expect("every node should appear in the topological order")
+        };
         assert!(pos(0) < pos(1));
         assert!(pos(2) < pos(3));
     }
@@ -369,11 +387,12 @@ mod tests {
             (NodeId(2), NodeId(4), 1.0),
             (NodeId(3), NodeId(4), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         assert!(!is_cyclic(&graph));
 
-        let order = toposort(&graph).unwrap();
+        let order = toposort(&graph).expect("toposort should succeed");
 
         // 0 must be first, 4 must be last
         assert_eq!(order[0], NodeId(0));
@@ -384,7 +403,8 @@ mod tests {
     fn test_two_node_cycle() {
         // Simple 2-node cycle: 0 ↔ 1
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(0), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert!(is_cyclic(&graph));
     }
 
@@ -397,7 +417,8 @@ mod tests {
             (NodeId(2), NodeId(1), 1.0), // Creates cycle
             (NodeId(3), NodeId(4), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         assert!(is_cyclic(&graph));
     }
 }

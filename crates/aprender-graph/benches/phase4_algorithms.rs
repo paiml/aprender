@@ -45,15 +45,16 @@ fn generate_community_graph(num_communities: usize, nodes_per_community: usize) 
             for j in (i + 1)..nodes_per_community {
                 let src = NodeId(base + i as u32);
                 let dst = NodeId(base + j as u32);
-                graph.add_edge(src, dst, 1.0).unwrap();
-                graph.add_edge(dst, src, 1.0).unwrap(); // Bidirectional
+                graph.add_edge(src, dst, 1.0).expect("add_edge should succeed");
+                graph.add_edge(dst, src, 1.0).expect("add_edge should succeed");
+                // Bidirectional
             }
         }
 
         // Sparse inter-community connections
         if comm < num_communities - 1 {
             let next_base = ((comm + 1) * nodes_per_community) as u32;
-            graph.add_edge(NodeId(base), NodeId(next_base), 1.0).unwrap();
+            graph.add_edge(NodeId(base), NodeId(next_base), 1.0).expect("add_edge should succeed");
         }
     }
 
@@ -73,7 +74,7 @@ fn bench_louvain(c: &mut Criterion) {
             &graph,
             |b, graph| {
                 b.iter(|| {
-                    let result = louvain(black_box(graph)).unwrap();
+                    let result = louvain(black_box(graph)).expect("louvain should succeed");
                     black_box(result);
                 });
             },
@@ -89,7 +90,8 @@ fn bench_pattern_god_class(c: &mut Criterion) {
 
     for size in [100, 500, 1000, 5000].iter() {
         let edges = generate_scale_free_graph(*size, 3);
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let pattern = Pattern::god_class(10);
 
         group.bench_with_input(
@@ -97,7 +99,8 @@ fn bench_pattern_god_class(c: &mut Criterion) {
             &(&graph, &pattern),
             |b, (graph, pattern)| {
                 b.iter(|| {
-                    let matches = find_patterns(black_box(graph), black_box(pattern)).unwrap();
+                    let matches = find_patterns(black_box(graph), black_box(pattern))
+                        .expect("find_patterns should succeed");
                     black_box(matches);
                 });
             },
@@ -113,7 +116,8 @@ fn bench_pattern_circular_dependency(c: &mut Criterion) {
 
     for size in [100, 500, 1000].iter() {
         let edges = generate_scale_free_graph(*size, 3);
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let pattern = Pattern::circular_dependency(3);
 
         group.bench_with_input(
@@ -121,7 +125,8 @@ fn bench_pattern_circular_dependency(c: &mut Criterion) {
             &(&graph, &pattern),
             |b, (graph, pattern)| {
                 b.iter(|| {
-                    let matches = find_patterns(black_box(graph), black_box(pattern)).unwrap();
+                    let matches = find_patterns(black_box(graph), black_box(pattern))
+                        .expect("find_patterns should succeed");
                     black_box(matches);
                 });
             },
@@ -137,7 +142,8 @@ fn bench_pattern_dead_code(c: &mut Criterion) {
 
     for size in [100, 500, 1000, 5000].iter() {
         let edges = generate_scale_free_graph(*size, 3);
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let pattern = Pattern::dead_code();
 
         group.bench_with_input(
@@ -145,7 +151,8 @@ fn bench_pattern_dead_code(c: &mut Criterion) {
             &(&graph, &pattern),
             |b, (graph, pattern)| {
                 b.iter(|| {
-                    let matches = find_patterns(black_box(graph), black_box(pattern)).unwrap();
+                    let matches = find_patterns(black_box(graph), black_box(pattern))
+                        .expect("find_patterns should succeed");
                     black_box(matches);
                 });
             },

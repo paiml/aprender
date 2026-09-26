@@ -133,19 +133,21 @@ fn rrf_beats_single_retriever_ndcg10() {
     for spec in corpus() {
         let mut chunk =
             Chunk::new(DocumentId::new(), spec.content.to_string(), 0, spec.content.len());
-        chunk.set_embedding(embedder.embed(spec.content).unwrap());
+        chunk.set_embedding(
+            embedder.embed(spec.content).expect("mock embedder embeds fixture content"),
+        );
         let id = chunk.id;
         if spec.relevant {
             ground_truth.insert(id);
         }
         labels.insert(id, spec.id);
         sparse.add(&chunk);
-        dense.insert(chunk).unwrap();
+        dense.insert(chunk).expect("dense store insert succeeds");
     }
 
     // Single-leg results.
-    let q_emb = embedder.embed_query(QUERY).unwrap();
-    let dense_results = dense.search(&q_emb, TOP_K).unwrap();
+    let q_emb = embedder.embed_query(QUERY).expect("mock embedder embeds query");
+    let dense_results = dense.search(&q_emb, TOP_K).expect("dense store search succeeds");
     let sparse_results = sparse.search(QUERY, TOP_K);
 
     // RRF-fused result.

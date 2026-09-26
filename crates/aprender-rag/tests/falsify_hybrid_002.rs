@@ -79,7 +79,7 @@ fn build_retriever(
     let mut retriever =
         HybridRetriever::new(dense, sparse, embedder.clone()).with_config(config.clone());
     for (chunk, _) in corpus() {
-        retriever.index(chunk).unwrap();
+        retriever.index(chunk).expect("indexing fixture chunk succeeds");
     }
     (retriever, embedder, config)
 }
@@ -92,9 +92,11 @@ fn manual_fused_pairs(
     query: &str,
     k: usize,
 ) -> Vec<(ChunkId, f32)> {
-    let q_emb = embedder.embed_query(query).unwrap();
-    let dense_results =
-        retriever.dense_store().search(&q_emb, config.candidates_per_source).unwrap();
+    let q_emb = embedder.embed_query(query).expect("mock embedder embeds query");
+    let dense_results = retriever
+        .dense_store()
+        .search(&q_emb, config.candidates_per_source)
+        .expect("dense store search succeeds");
     let sparse_results = retriever.sparse_index().search(query, config.candidates_per_source);
     config.fusion.fuse(&dense_results, &sparse_results).into_iter().take(k).collect()
 }
@@ -106,7 +108,7 @@ fn trait_fused_pairs(
 ) -> Vec<(ChunkId, f32)> {
     retriever
         .retrieve(query, k)
-        .unwrap()
+        .expect("hybrid retrieval succeeds")
         .into_iter()
         .map(|r| {
             let id = r.chunk.id;
@@ -147,7 +149,7 @@ fn trait_method_respects_k_truncation() {
     // candidates_per_source. Catches a regression where retrieve()
     // forgets to apply the .take(k).
     let (retriever, _, _) = build_retriever(FusionStrategy::RRF { k: 60.0 });
-    let got = retriever.retrieve("machine learning", 2).unwrap();
+    let got = retriever.retrieve("machine learning", 2).expect("hybrid retrieval succeeds");
     assert!(got.len() <= 2);
 }
 
@@ -159,7 +161,7 @@ fn trait_method_populates_per_leg_scores_when_present() {
     // scores would silently break downstream rerankers that consult
     // `RetrievalResult::dense_score`/`sparse_score`.
     let (retriever, _, _) = build_retriever(FusionStrategy::RRF { k: 60.0 });
-    let got = retriever.retrieve("machine learning", 3).unwrap();
+    let got = retriever.retrieve("machine learning", 3).expect("hybrid retrieval succeeds");
     let any_dense = got.iter().any(|r| r.dense_score.is_some());
     let any_sparse = got.iter().any(|r| r.sparse_score.is_some());
     assert!(

@@ -440,11 +440,11 @@ mod tests {
         // Node 0 calls 5 other functions (high fan-out)
         let mut graph = CsrGraph::new();
         for i in 1..=5 {
-            graph.add_edge(NodeId(0), NodeId(i), 1.0).unwrap();
+            graph.add_edge(NodeId(0), NodeId(i), 1.0).expect("add_edge should succeed");
         }
 
         let pattern = Pattern::god_class(5);
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].pattern_name, "God Class");
@@ -455,12 +455,12 @@ mod tests {
     fn test_circular_dependency_pattern() {
         // Create 3-node cycle: 0 -> 1 -> 2 -> 0
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
 
         let pattern = Pattern::circular_dependency(3);
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].pattern_name, "Circular Dependency");
@@ -471,14 +471,14 @@ mod tests {
     fn test_dead_code_pattern() {
         // Node 0 -> Node 1, but Node 2 has no incoming edges
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(1), 1.0).unwrap(); // Node 2 exists but not called
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(1), 1.0).expect("add_edge should succeed"); // Node 2 exists but not called
 
         // Manually expand graph to include node 3 with no callers
-        graph.add_edge(NodeId(3), NodeId(4), 1.0).unwrap();
+        graph.add_edge(NodeId(3), NodeId(4), 1.0).expect("add_edge should succeed");
 
         let pattern = Pattern::dead_code();
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
 
         // Nodes with no incoming edges (except if they're source nodes in edge list)
         assert!(!matches.is_empty());
@@ -498,11 +498,11 @@ mod tests {
     fn test_no_circular_dependency() {
         // Linear graph: 0 -> 1 -> 2 (no cycle)
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
 
         let pattern = Pattern::circular_dependency(3);
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
 
         assert_eq!(matches.len(), 0); // No cycles found
     }
@@ -522,11 +522,11 @@ mod tests {
 
         // Graph with triangle
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
 
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
         assert!(!matches.is_empty());
     }
 
@@ -537,10 +537,10 @@ mod tests {
 
         // Graph with matching line
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
 
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
         assert!(!matches.is_empty());
     }
 
@@ -551,9 +551,9 @@ mod tests {
 
         // Graph with different structure (linear)
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
 
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
         assert_eq!(matches.len(), 0);
     }
 
@@ -563,11 +563,11 @@ mod tests {
         pattern.max_nodes = Some(3);
 
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
 
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
         assert_eq!(matches.len(), 1);
     }
 
@@ -577,15 +577,15 @@ mod tests {
         let mut graph = CsrGraph::new();
         // Node 0 calls 5 functions
         for i in 1..=5 {
-            graph.add_edge(NodeId(0), NodeId(i), 1.0).unwrap();
+            graph.add_edge(NodeId(0), NodeId(i), 1.0).expect("add_edge should succeed");
         }
         // Node 6 calls 5 functions
         for i in 7..=11 {
-            graph.add_edge(NodeId(6), NodeId(i), 1.0).unwrap();
+            graph.add_edge(NodeId(6), NodeId(i), 1.0).expect("add_edge should succeed");
         }
 
         let pattern = Pattern::god_class(5);
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
 
         assert_eq!(matches.len(), 2);
     }
@@ -595,16 +595,16 @@ mod tests {
         // Create two separate 3-node cycles
         let mut graph = CsrGraph::new();
         // Cycle 1: 0 -> 1 -> 2 -> 0
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
         // Cycle 2: 3 -> 4 -> 5 -> 3
-        graph.add_edge(NodeId(3), NodeId(4), 1.0).unwrap();
-        graph.add_edge(NodeId(4), NodeId(5), 1.0).unwrap();
-        graph.add_edge(NodeId(5), NodeId(3), 1.0).unwrap();
+        graph.add_edge(NodeId(3), NodeId(4), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(4), NodeId(5), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(5), NodeId(3), 1.0).expect("add_edge should succeed");
 
         let pattern = Pattern::circular_dependency(3);
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
 
         assert_eq!(matches.len(), 2);
     }
@@ -613,11 +613,11 @@ mod tests {
     fn test_dead_code_with_callers() {
         // Node 0 has callers, node 1 has no callers
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(3), 1.0).unwrap();
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(3), 1.0).expect("add_edge should succeed");
 
         let pattern = Pattern::dead_code();
-        let matches = find_patterns(&graph, &pattern).unwrap();
+        let matches = find_patterns(&graph, &pattern).expect("find_patterns should succeed");
 
         // Should find nodes 1 and 2 (no incoming edges)
         assert!(matches.len() >= 2);

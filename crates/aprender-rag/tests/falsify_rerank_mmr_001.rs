@@ -46,7 +46,7 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if na == 0.0 || nb == 0.0 {
         return 0.0;
     }
-    (dot / (na * nb)).max(0.0).min(1.0)
+    (dot / (na * nb)).clamp(0.0, 1.0)
 }
 
 fn euclidean(a: &[f32], b: &[f32]) -> f32 {

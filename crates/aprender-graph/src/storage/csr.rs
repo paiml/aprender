@@ -375,7 +375,8 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
         ];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         assert_eq!(graph.num_nodes(), 3);
         assert_eq!(graph.num_edges(), 3);
@@ -390,12 +391,15 @@ mod tests {
     fn test_outgoing_neighbors() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(0), NodeId(2), 2.0)];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let neighbors = graph.outgoing_neighbors(NodeId(0)).unwrap();
+        let neighbors =
+            graph.outgoing_neighbors(NodeId(0)).expect("outgoing_neighbors should succeed");
         assert_eq!(neighbors, &[1, 2]);
 
-        let neighbors = graph.outgoing_neighbors(NodeId(1)).unwrap();
+        let neighbors =
+            graph.outgoing_neighbors(NodeId(1)).expect("outgoing_neighbors should succeed");
         let empty: &[u32] = &[];
         assert_eq!(neighbors, empty);
     }
@@ -404,9 +408,11 @@ mod tests {
     fn test_incoming_neighbors() {
         let edges = vec![(NodeId(0), NodeId(2), 1.0), (NodeId(1), NodeId(2), 1.0)];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let callers = graph.incoming_neighbors(NodeId(2)).unwrap();
+        let callers =
+            graph.incoming_neighbors(NodeId(2)).expect("incoming_neighbors should succeed");
         assert_eq!(callers.len(), 2);
         assert!(callers.contains(&0));
         assert!(callers.contains(&1));
@@ -421,17 +427,25 @@ mod tests {
             (NodeId(1), NodeId(2), 3.0), // 1 → 2
         ];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Node 0: no incoming edges
         let empty: &[u32] = &[];
-        assert_eq!(graph.incoming_neighbors(NodeId(0)).unwrap(), empty);
+        assert_eq!(
+            graph.incoming_neighbors(NodeId(0)).expect("incoming_neighbors should succeed"),
+            empty
+        );
 
         // Node 1: incoming from 0
-        assert_eq!(graph.incoming_neighbors(NodeId(1)).unwrap(), &[0]);
+        assert_eq!(
+            graph.incoming_neighbors(NodeId(1)).expect("incoming_neighbors should succeed"),
+            &[0]
+        );
 
         // Node 2: incoming from 0 and 1
-        let node2_incoming = graph.incoming_neighbors(NodeId(2)).unwrap();
+        let node2_incoming =
+            graph.incoming_neighbors(NodeId(2)).expect("incoming_neighbors should succeed");
         assert_eq!(node2_incoming.len(), 2);
         assert!(node2_incoming.contains(&0));
         assert!(node2_incoming.contains(&1));
@@ -446,10 +460,12 @@ mod tests {
             (NodeId(2), NodeId(1), 3.0),
         ];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Node 1 should have 3 incoming edges (2 from node 0, 1 from node 2)
-        let incoming = graph.incoming_neighbors(NodeId(1)).unwrap();
+        let incoming =
+            graph.incoming_neighbors(NodeId(1)).expect("incoming_neighbors should succeed");
         assert_eq!(incoming.len(), 3);
 
         // Count occurrences
@@ -465,20 +481,22 @@ mod tests {
         // Test that reverse CSR is correctly updated when using add_edge
         let mut graph = CsrGraph::new();
 
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(1), 2.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(1), 2.0).expect("add_edge should succeed");
 
         // Node 1 should have incoming edges from 0 and 2
-        let incoming = graph.incoming_neighbors(NodeId(1)).unwrap();
+        let incoming =
+            graph.incoming_neighbors(NodeId(1)).expect("incoming_neighbors should succeed");
         assert_eq!(incoming.len(), 2);
         assert!(incoming.contains(&0));
         assert!(incoming.contains(&2));
 
         // Add another edge
-        graph.add_edge(NodeId(3), NodeId(1), 3.0).unwrap();
+        graph.add_edge(NodeId(3), NodeId(1), 3.0).expect("add_edge should succeed");
 
         // Now node 1 should have 3 incoming edges
-        let incoming = graph.incoming_neighbors(NodeId(1)).unwrap();
+        let incoming =
+            graph.incoming_neighbors(NodeId(1)).expect("incoming_neighbors should succeed");
         assert_eq!(incoming.len(), 3);
         assert!(incoming.contains(&0));
         assert!(incoming.contains(&2));
@@ -489,20 +507,21 @@ mod tests {
     fn test_add_edge_dynamic() {
         let mut graph = CsrGraph::new();
 
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(0), NodeId(2), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(0), NodeId(2), 1.0).expect("add_edge should succeed");
 
         assert_eq!(graph.num_nodes(), 3);
         assert_eq!(graph.num_edges(), 2);
 
-        let neighbors = graph.outgoing_neighbors(NodeId(0)).unwrap();
+        let neighbors =
+            graph.outgoing_neighbors(NodeId(0)).expect("outgoing_neighbors should succeed");
         assert_eq!(neighbors, &[1, 2]);
     }
 
     #[test]
     fn test_node_names() {
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
 
         graph.set_node_name(NodeId(0), "main".to_string());
         graph.set_node_name(NodeId(1), "parse_args".to_string());
@@ -515,7 +534,8 @@ mod tests {
     fn test_csr_components() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(0), NodeId(2), 2.0)];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
         let (row_offsets, col_indices, weights) = graph.csr_components();
 
         assert_eq!(row_offsets, &[0, 2, 2, 2]);
@@ -531,7 +551,8 @@ mod tests {
             (NodeId(1), NodeId(2), 3.5),
         ];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Node 0 has two outgoing edges
         let (targets, weights) = graph.adjacency(NodeId(0));
@@ -545,23 +566,24 @@ mod tests {
 
         // Node 2 has no outgoing edges
         let (targets, weights) = graph.adjacency(NodeId(2));
-        let empty_u32: &[u32] = &[];
-        let empty_f32: &[f32] = &[];
-        assert_eq!(targets, empty_u32);
-        assert_eq!(weights, empty_f32);
+        let no_targets: &[u32] = &[];
+        let no_weights: &[f32] = &[];
+        assert_eq!(targets, no_targets);
+        assert_eq!(weights, no_weights);
     }
 
     #[test]
     fn test_adjacency_out_of_bounds() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Out of bounds node should return empty slices
         let (targets, weights) = graph.adjacency(NodeId(999));
-        let empty_u32: &[u32] = &[];
-        let empty_f32: &[f32] = &[];
-        assert_eq!(targets, empty_u32);
-        assert_eq!(weights, empty_f32);
+        let no_targets: &[u32] = &[];
+        let no_weights: &[f32] = &[];
+        assert_eq!(targets, no_targets);
+        assert_eq!(weights, no_weights);
     }
 
     #[test]
@@ -572,7 +594,8 @@ mod tests {
             (NodeId(1), NodeId(2), 3.0),
         ];
 
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         let adjacencies: Vec<_> = graph.iter_adjacency().collect();
 
@@ -590,16 +613,17 @@ mod tests {
 
         // Node 2
         assert_eq!(adjacencies[2].0, NodeId(2));
-        let empty_u32: &[u32] = &[];
-        let empty_f32: &[f32] = &[];
-        assert_eq!(adjacencies[2].1, empty_u32);
-        assert_eq!(adjacencies[2].2, empty_f32);
+        let no_targets: &[u32] = &[];
+        let no_weights: &[f32] = &[];
+        assert_eq!(adjacencies[2].1, no_targets);
+        assert_eq!(adjacencies[2].2, no_weights);
     }
 
     #[test]
     fn test_slice_methods() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(0), NodeId(2), 2.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Test slice methods
         assert_eq!(graph.row_offsets_slice(), &[0, 2, 2, 2]);

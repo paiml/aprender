@@ -41,7 +41,8 @@ fn bench_csr_construction(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("from_edge_list", size), &edges, |b, edges| {
             b.iter(|| {
-                let graph = CsrGraph::from_edge_list(black_box(edges)).unwrap();
+                let graph = CsrGraph::from_edge_list(black_box(edges))
+                    .expect("CsrGraph::from_edge_list should succeed");
                 black_box(graph);
             });
         });
@@ -56,11 +57,12 @@ fn bench_bfs(c: &mut Criterion) {
 
     for size in [100, 500, 1000, 5000].iter() {
         let edges = generate_scale_free_graph(*size, 3);
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         group.bench_with_input(BenchmarkId::new("traversal", size), &graph, |b, graph| {
             b.iter(|| {
-                let reachable = bfs(black_box(graph), NodeId(0)).unwrap();
+                let reachable = bfs(black_box(graph), NodeId(0)).expect("bfs should succeed");
                 black_box(reachable);
             });
         });
@@ -75,11 +77,13 @@ fn bench_find_callers(c: &mut Criterion) {
 
     for size in [100, 500, 1000, 5000].iter() {
         let edges = generate_scale_free_graph(*size, 3);
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         group.bench_with_input(BenchmarkId::new("depth_10", size), &graph, |b, graph| {
             b.iter(|| {
-                let callers = find_callers(black_box(graph), NodeId(*size as u32 / 2), 10).unwrap();
+                let callers = find_callers(black_box(graph), NodeId(*size as u32 / 2), 10)
+                    .expect("find_callers should succeed");
                 black_box(callers);
             });
         });
@@ -94,11 +98,12 @@ fn bench_pagerank(c: &mut Criterion) {
 
     for size in [100, 500, 1000].iter() {
         let edges = generate_scale_free_graph(*size, 3);
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         group.bench_with_input(BenchmarkId::new("20_iterations", size), &graph, |b, graph| {
             b.iter(|| {
-                let scores = pagerank(black_box(graph), 20, 1e-6).unwrap();
+                let scores = pagerank(black_box(graph), 20, 1e-6).expect("pagerank should succeed");
                 black_box(scores);
             });
         });
@@ -116,12 +121,14 @@ fn bench_neighbor_queries(c: &mut Criterion) {
     let mut group = c.benchmark_group("neighbor_queries");
 
     let edges = generate_scale_free_graph(1000, 5);
-    let graph = CsrGraph::from_edge_list(&edges).unwrap();
+    let graph = CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
     group.bench_function("outgoing_neighbors_O1", |b| {
         b.iter(|| {
             for node in 0..100 {
-                let neighbors = graph.outgoing_neighbors(NodeId(node)).unwrap();
+                let neighbors = graph
+                    .outgoing_neighbors(NodeId(node))
+                    .expect("outgoing_neighbors should succeed");
                 black_box(neighbors);
             }
         });
@@ -130,7 +137,9 @@ fn bench_neighbor_queries(c: &mut Criterion) {
     group.bench_function("incoming_neighbors_O1", |b| {
         b.iter(|| {
             for node in 0..100 {
-                let neighbors = graph.incoming_neighbors(NodeId(node)).unwrap();
+                let neighbors = graph
+                    .incoming_neighbors(NodeId(node))
+                    .expect("incoming_neighbors should succeed");
                 black_box(neighbors);
             }
         });

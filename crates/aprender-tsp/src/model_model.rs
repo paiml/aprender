@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_model_save_load_aco() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let model = TspModel::new(TspAlgorithm::Aco).with_params(TspParams::Aco {
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_model_save_load_tabu() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let model = TspModel::new(TspAlgorithm::Tabu).with_params(TspParams::Tabu {
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_model_save_load_ga() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let model = TspModel::new(TspAlgorithm::Ga).with_params(TspParams::Ga {
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_model_save_load_hybrid() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let model = TspModel::new(TspAlgorithm::Hybrid).with_params(TspParams::Hybrid {
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_model_metadata_roundtrip() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("test.apr");
 
         let metadata = TspModelMetadata {
@@ -175,13 +175,13 @@ mod tests {
 
     #[test]
     fn test_model_invalid_magic() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("bad.apr");
 
         // Write invalid magic (must be at least 16 bytes to pass size check)
         let mut data = vec![0u8; 20];
         data[0..4].copy_from_slice(b"BAD\x00");
-        std::fs::write(&path, &data).unwrap();
+        std::fs::write(&path, &data).expect("fs::write should succeed");
 
         let result = TspModel::load(&path);
         assert!(result.is_err());
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_model_invalid_checksum() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("corrupt.apr");
 
         // Create valid model
@@ -199,9 +199,9 @@ mod tests {
         model.save(&path).expect("should save");
 
         // Corrupt the checksum
-        let mut data = std::fs::read(&path).unwrap();
+        let mut data = std::fs::read(&path).expect("fs::read should succeed");
         data[12] ^= 0xFF; // Flip bits in checksum
-        std::fs::write(&path, &data).unwrap();
+        std::fs::write(&path, &data).expect("fs::write should succeed");
 
         let result = TspModel::load(&path);
         assert!(result.is_err());
@@ -211,11 +211,11 @@ mod tests {
 
     #[test]
     fn test_model_file_too_small() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("small.apr");
 
         // Write too-small file
-        std::fs::write(&path, b"APR\x00").unwrap();
+        std::fs::write(&path, b"APR\x00").expect("fs::write should succeed");
 
         let result = TspModel::load(&path);
         assert!(result.is_err());
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_model_unsupported_version() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("TempDir::new should succeed");
         let path = temp_dir.path().join("future.apr");
 
         // Write header with future version
@@ -234,7 +234,7 @@ mod tests {
         data.extend_from_slice(&99u32.to_le_bytes()); // Future version
         data.extend_from_slice(&MODEL_TYPE_TSP.to_le_bytes());
         data.extend_from_slice(&0u32.to_le_bytes()); // Fake checksum
-        std::fs::write(&path, &data).unwrap();
+        std::fs::write(&path, &data).expect("fs::write should succeed");
 
         let result = TspModel::load(&path);
         assert!(result.is_err());

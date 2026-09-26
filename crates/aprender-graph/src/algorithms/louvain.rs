@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_louvain_empty_graph() {
         let graph = CsrGraph::new();
-        let result = louvain(&graph).unwrap();
+        let result = louvain(&graph).expect("louvain should succeed");
 
         assert_eq!(result.num_communities, 0);
         assert_eq!(result.communities.len(), 0);
@@ -143,11 +143,11 @@ mod tests {
     fn test_louvain_single_triangle() {
         // Single triangle - should form one community
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
 
-        let result = louvain(&graph).unwrap();
+        let result = louvain(&graph).expect("louvain should succeed");
 
         assert_eq!(result.num_communities, 1, "Triangle should form 1 community");
 
@@ -169,19 +169,19 @@ mod tests {
         let mut graph = CsrGraph::new();
 
         // Triangle 1
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
 
         // Triangle 2
-        graph.add_edge(NodeId(3), NodeId(4), 1.0).unwrap();
-        graph.add_edge(NodeId(4), NodeId(5), 1.0).unwrap();
-        graph.add_edge(NodeId(5), NodeId(3), 1.0).unwrap();
+        graph.add_edge(NodeId(3), NodeId(4), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(4), NodeId(5), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(5), NodeId(3), 1.0).expect("add_edge should succeed");
 
         // Bridge edge
-        graph.add_edge(NodeId(2), NodeId(3), 1.0).unwrap();
+        graph.add_edge(NodeId(2), NodeId(3), 1.0).expect("add_edge should succeed");
 
-        let result = louvain(&graph).unwrap();
+        let result = louvain(&graph).expect("louvain should succeed");
 
         // Should find 2 communities (one per triangle)
         assert!(result.num_communities >= 1, "Should find at least 1 community");
@@ -198,16 +198,16 @@ mod tests {
         let mut graph = CsrGraph::new();
 
         // Triangle 1
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(0), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(0), 1.0).expect("add_edge should succeed");
 
         // Triangle 2
-        graph.add_edge(NodeId(3), NodeId(4), 1.0).unwrap();
-        graph.add_edge(NodeId(4), NodeId(5), 1.0).unwrap();
-        graph.add_edge(NodeId(5), NodeId(3), 1.0).unwrap();
+        graph.add_edge(NodeId(3), NodeId(4), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(4), NodeId(5), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(5), NodeId(3), 1.0).expect("add_edge should succeed");
 
-        let result = louvain(&graph).unwrap();
+        let result = louvain(&graph).expect("louvain should succeed");
 
         // Should find 2 communities (one per disconnected component)
         assert_eq!(
@@ -257,12 +257,12 @@ mod tests {
         let mut graph = CsrGraph::new();
 
         // Create a simple graph: 0-1-2-3-4
-        graph.add_edge(NodeId(0), NodeId(1), 1.0).unwrap();
-        graph.add_edge(NodeId(1), NodeId(2), 1.0).unwrap();
-        graph.add_edge(NodeId(2), NodeId(3), 1.0).unwrap();
-        graph.add_edge(NodeId(3), NodeId(4), 1.0).unwrap();
+        graph.add_edge(NodeId(0), NodeId(1), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(1), NodeId(2), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(2), NodeId(3), 1.0).expect("add_edge should succeed");
+        graph.add_edge(NodeId(3), NodeId(4), 1.0).expect("add_edge should succeed");
 
-        let result = louvain(&graph).unwrap();
+        let result = louvain(&graph).expect("louvain should succeed");
 
         // Collect all assigned nodes
         let mut assigned_nodes = std::collections::HashSet::new();

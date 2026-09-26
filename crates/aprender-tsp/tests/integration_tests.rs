@@ -61,7 +61,7 @@ fn test_load_att48_tsplib() {
 
 #[test]
 fn test_load_csv_format() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("TempDir::new should succeed");
     let csv_path = temp_dir.path().join("test.csv");
 
     let csv_content = r#"# Test CSV instance
@@ -70,7 +70,7 @@ fn test_load_csv_format() {
 3,1.0,1.0
 4,0.0,1.0
 "#;
-    std::fs::write(&csv_path, csv_content).unwrap();
+    std::fs::write(&csv_path, csv_content).expect("fs::write should succeed");
 
     let instance = TspInstance::load(&csv_path).expect("should load CSV");
     assert_eq!(instance.dimension, 4);
@@ -79,14 +79,14 @@ fn test_load_csv_format() {
 
 #[test]
 fn test_load_csv_with_header() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("TempDir::new should succeed");
     let csv_path = temp_dir.path().join("header.csv");
 
     let csv_content = r#"id,x,y
 1,10.0,20.0
 2,30.0,40.0
 "#;
-    std::fs::write(&csv_path, csv_content).unwrap();
+    std::fs::write(&csv_path, csv_content).expect("fs::write should succeed");
 
     // Should fail because header row has non-numeric id
     let result = TspInstance::load(&csv_path);
@@ -95,9 +95,9 @@ fn test_load_csv_with_header() {
 
 #[test]
 fn test_load_unknown_extension() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("TempDir::new should succeed");
     let bad_path = temp_dir.path().join("test.xyz");
-    std::fs::write(&bad_path, "content").unwrap();
+    std::fs::write(&bad_path, "content").expect("fs::write should succeed");
 
     let result = TspInstance::load(&bad_path);
     assert!(result.is_err());
@@ -109,7 +109,7 @@ fn test_load_unknown_extension() {
 
 #[test]
 fn test_model_roundtrip_all_algorithms() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("TempDir::new should succeed");
 
     for algo in [
         TspAlgorithm::Aco,
@@ -129,7 +129,7 @@ fn test_model_roundtrip_all_algorithms() {
 
 #[test]
 fn test_model_preserves_custom_params() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("TempDir::new should succeed");
     let path = temp_dir.path().join("custom.apr");
 
     let params = TspParams::Aco {
@@ -141,9 +141,9 @@ fn test_model_preserves_custom_params() {
     };
 
     let model = TspModel::new(TspAlgorithm::Aco).with_params(params);
-    model.save(&path).unwrap();
+    model.save(&path).expect("save should succeed");
 
-    let loaded = TspModel::load(&path).unwrap();
+    let loaded = TspModel::load(&path).expect("TspModel::load should succeed");
     if let TspParams::Aco {
         alpha,
         beta,
@@ -164,7 +164,7 @@ fn test_model_preserves_custom_params() {
 
 #[test]
 fn test_model_preserves_metadata() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("TempDir::new should succeed");
     let path = temp_dir.path().join("meta.apr");
 
     let metadata = TspModelMetadata {
@@ -175,9 +175,9 @@ fn test_model_preserves_metadata() {
     };
 
     let model = TspModel::new(TspAlgorithm::Tabu).with_metadata(metadata);
-    model.save(&path).unwrap();
+    model.save(&path).expect("save should succeed");
 
-    let loaded = TspModel::load(&path).unwrap();
+    let loaded = TspModel::load(&path).expect("TspModel::load should succeed");
     assert_eq!(loaded.metadata.trained_instances, 5);
     assert_eq!(loaded.metadata.avg_instance_size, 100);
     assert!((loaded.metadata.best_known_gap - 0.05).abs() < 1e-10);
@@ -190,7 +190,7 @@ fn test_model_preserves_metadata() {
 
 fn square_instance() -> TspInstance {
     let coords = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
-    TspInstance::from_coords("square", coords).unwrap()
+    TspInstance::from_coords("square", coords).expect("TspInstance::from_coords should succeed")
 }
 
 #[test]
@@ -199,22 +199,30 @@ fn test_all_solvers_find_valid_tours() {
 
     // ACO
     let mut aco = AcoSolver::new().with_seed(42);
-    let aco_result = aco.solve(&instance, Budget::Iterations(50)).unwrap();
+    let aco_result = aco
+        .solve(&instance, Budget::Iterations(50))
+        .expect("solve should succeed");
     assert!(instance.validate_tour(&aco_result.tour).is_ok());
 
     // Tabu
     let mut tabu = TabuSolver::new().with_seed(42);
-    let tabu_result = tabu.solve(&instance, Budget::Iterations(50)).unwrap();
+    let tabu_result = tabu
+        .solve(&instance, Budget::Iterations(50))
+        .expect("solve should succeed");
     assert!(instance.validate_tour(&tabu_result.tour).is_ok());
 
     // GA
     let mut ga = GaSolver::new().with_seed(42).with_population_size(20);
-    let ga_result = ga.solve(&instance, Budget::Iterations(50)).unwrap();
+    let ga_result = ga
+        .solve(&instance, Budget::Iterations(50))
+        .expect("solve should succeed");
     assert!(instance.validate_tour(&ga_result.tour).is_ok());
 
     // Hybrid
     let mut hybrid = HybridSolver::new().with_seed(42).with_ga_population(15);
-    let hybrid_result = hybrid.solve(&instance, Budget::Iterations(50)).unwrap();
+    let hybrid_result = hybrid
+        .solve(&instance, Budget::Iterations(50))
+        .expect("solve should succeed");
     assert!(instance.validate_tour(&hybrid_result.tour).is_ok());
 }
 
@@ -226,8 +234,12 @@ fn test_solver_determinism() {
     let mut solver1 = AcoSolver::new().with_seed(12345);
     let mut solver2 = AcoSolver::new().with_seed(12345);
 
-    let result1 = solver1.solve(&instance, Budget::Iterations(100)).unwrap();
-    let result2 = solver2.solve(&instance, Budget::Iterations(100)).unwrap();
+    let result1 = solver1
+        .solve(&instance, Budget::Iterations(100))
+        .expect("solve should succeed");
+    let result2 = solver2
+        .solve(&instance, Budget::Iterations(100))
+        .expect("solve should succeed");
 
     assert!((result1.length - result2.length).abs() < 1e-10);
     assert_eq!(result1.tour, result2.tour);
@@ -240,8 +252,12 @@ fn test_solver_different_seeds_vary() {
     let mut solver1 = AcoSolver::new().with_seed(1);
     let mut solver2 = AcoSolver::new().with_seed(99999);
 
-    let result1 = solver1.solve(&instance, Budget::Iterations(10)).unwrap();
-    let result2 = solver2.solve(&instance, Budget::Iterations(10)).unwrap();
+    let result1 = solver1
+        .solve(&instance, Budget::Iterations(10))
+        .expect("solve should succeed");
+    let result2 = solver2
+        .solve(&instance, Budget::Iterations(10))
+        .expect("solve should succeed");
 
     // Results may be equal by chance, but history should differ
     // This is a weak test but ensures seeds are actually used
@@ -255,7 +271,7 @@ fn test_solver_different_seeds_vary() {
 
 #[test]
 fn test_train_save_load_solve_workflow() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("TempDir::new should succeed");
     let model_path = temp_dir.path().join("trained.apr");
 
     // Create instance
@@ -267,11 +283,14 @@ fn test_train_save_load_solve_workflow() {
         (1.0, 1.0),
         (0.0, 1.0),
     ];
-    let instance = TspInstance::from_coords("hexagon", coords).unwrap();
+    let instance = TspInstance::from_coords("hexagon", coords)
+        .expect("TspInstance::from_coords should succeed");
 
     // Train
     let mut solver = AcoSolver::new().with_seed(42);
-    let train_result = solver.solve(&instance, Budget::Iterations(100)).unwrap();
+    let train_result = solver
+        .solve(&instance, Budget::Iterations(100))
+        .expect("solve should succeed");
 
     // Save model
     let model = TspModel::new(TspAlgorithm::Aco)
@@ -288,10 +307,10 @@ fn test_train_save_load_solve_workflow() {
             best_known_gap: 0.0,
             training_time_secs: 0.1,
         });
-    model.save(&model_path).unwrap();
+    model.save(&model_path).expect("save should succeed");
 
     // Load and solve
-    let loaded = TspModel::load(&model_path).unwrap();
+    let loaded = TspModel::load(&model_path).expect("TspModel::load should succeed");
     if let TspParams::Aco {
         alpha,
         beta,
@@ -310,7 +329,7 @@ fn test_train_save_load_solve_workflow() {
 
         let solve_result = loaded_solver
             .solve(&instance, Budget::Iterations(100))
-            .unwrap();
+            .expect("solve should succeed");
 
         // Should get identical results (same seed and params)
         assert!((solve_result.length - train_result.length).abs() < 1e-10);
@@ -326,7 +345,9 @@ fn test_aco_solves_instance() {
     let instance = square_instance();
 
     let mut solver = AcoSolver::new().with_seed(42).with_num_ants(10);
-    let result = solver.solve(&instance, Budget::Iterations(50)).unwrap();
+    let result = solver
+        .solve(&instance, Budget::Iterations(50))
+        .expect("solve should succeed");
 
     assert!(instance.validate_tour(&result.tour).is_ok());
     // Optimal tour around square is 4.0
@@ -342,7 +363,9 @@ fn test_tabu_refine_improves() {
     let initial_length = instance.tour_length(&crossing_tour);
 
     let mut solver = TabuSolver::new().with_seed(42);
-    let result = solver.refine(crossing_tour, &instance, 50).unwrap();
+    let result = solver
+        .refine(crossing_tour, &instance, 50)
+        .expect("refine should succeed");
 
     // Should improve or stay same
     assert!(result.length <= initial_length + 1e-10);
@@ -353,7 +376,7 @@ fn test_ga_evolve_returns_sorted_population() {
     let instance = square_instance();
 
     let mut solver = GaSolver::new().with_seed(42).with_population_size(20);
-    let population = solver.evolve(&instance, 20).unwrap();
+    let population = solver.evolve(&instance, 20).expect("evolve should succeed");
 
     // Should be sorted by fitness (ascending)
     for window in population.windows(2) {
@@ -372,7 +395,9 @@ fn test_hybrid_uses_all_phases() {
         .with_aco_fraction(0.3)
         .with_ga_population(15);
 
-    let result = solver.solve(&instance, Budget::Iterations(100)).unwrap();
+    let result = solver
+        .solve(&instance, Budget::Iterations(100))
+        .expect("solve should succeed");
 
     // Verify we get a valid result
     assert!(instance.validate_tour(&result.tour).is_ok());

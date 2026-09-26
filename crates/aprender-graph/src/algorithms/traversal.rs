@@ -132,9 +132,10 @@ mod tests {
     fn test_find_callers_direct() {
         // Graph: 0 → 2, 1 → 2 (both call 2)
         let edges = vec![(NodeId(0), NodeId(2), 1.0), (NodeId(1), NodeId(2), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let callers = find_callers(&graph, NodeId(2), 1).unwrap();
+        let callers = find_callers(&graph, NodeId(2), 1).expect("find_callers should succeed");
         assert_eq!(callers.len(), 2);
         assert!(callers.contains(&0));
         assert!(callers.contains(&1));
@@ -144,9 +145,10 @@ mod tests {
     fn test_find_callers_transitive() {
         // Graph: 0 → 1 → 2 (0 transitively calls 2)
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let callers = find_callers(&graph, NodeId(2), 10).unwrap();
+        let callers = find_callers(&graph, NodeId(2), 10).expect("find_callers should succeed");
         assert_eq!(callers.len(), 2);
         assert!(callers.contains(&0));
         assert!(callers.contains(&1));
@@ -160,21 +162,22 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
             (NodeId(2), NodeId(3), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
         // Depth 1: only node 2 calls node 3
-        let callers = find_callers(&graph, NodeId(3), 1).unwrap();
+        let callers = find_callers(&graph, NodeId(3), 1).expect("find_callers should succeed");
         assert_eq!(callers.len(), 1);
         assert!(callers.contains(&2));
 
         // Depth 2: nodes 1 and 2 call node 3
-        let callers = find_callers(&graph, NodeId(3), 2).unwrap();
+        let callers = find_callers(&graph, NodeId(3), 2).expect("find_callers should succeed");
         assert_eq!(callers.len(), 2);
         assert!(callers.contains(&1));
         assert!(callers.contains(&2));
 
         // Depth 10: all nodes call node 3
-        let callers = find_callers(&graph, NodeId(3), 10).unwrap();
+        let callers = find_callers(&graph, NodeId(3), 10).expect("find_callers should succeed");
         assert_eq!(callers.len(), 3);
         assert!(callers.contains(&0));
         assert!(callers.contains(&1));
@@ -184,9 +187,10 @@ mod tests {
     #[test]
     fn test_bfs_simple() {
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let reachable = bfs(&graph, NodeId(0)).unwrap();
+        let reachable = bfs(&graph, NodeId(0)).expect("bfs should succeed");
         assert_eq!(reachable.len(), 3);
         assert!(reachable.contains(&0));
         assert!(reachable.contains(&1));
@@ -199,9 +203,10 @@ mod tests {
             (NodeId(0), NodeId(1), 1.0),
             (NodeId(2), NodeId(3), 1.0), // Disconnected component
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let reachable = bfs(&graph, NodeId(0)).unwrap();
+        let reachable = bfs(&graph, NodeId(0)).expect("bfs should succeed");
         assert_eq!(reachable.len(), 2); // Only nodes 0 and 1
         assert!(reachable.contains(&0));
         assert!(reachable.contains(&1));

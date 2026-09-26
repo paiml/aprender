@@ -65,7 +65,7 @@ fn rrf_distinct_scores_on_rotational_fixture() {
 
     let scores: Vec<f32> = fused.iter().map(|(_, s)| *s).collect();
     let mut sorted = scores.clone();
-    sorted.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    sorted.sort_by(|x, y| x.partial_cmp(y).expect("scores are finite, never NaN"));
     sorted.dedup_by(|x, y| (*x - *y).abs() < f32::EPSILON);
     assert_eq!(
         sorted.len(),

@@ -134,9 +134,10 @@ mod tests {
     fn test_pagerank_simple_chain() {
         // Linear chain: 0 → 1 → 2
         let edges = vec![(NodeId(0), NodeId(1), 1.0), (NodeId(1), NodeId(2), 1.0)];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let scores = pagerank(&graph, 20, 1e-6).unwrap();
+        let scores = pagerank(&graph, 20, 1e-6).expect("pagerank should succeed");
 
         // Verify properties
         assert_eq!(scores.len(), 3);
@@ -158,9 +159,10 @@ mod tests {
             (NodeId(1), NodeId(2), 1.0),
             (NodeId(2), NodeId(0), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let scores = pagerank(&graph, 50, 1e-6).unwrap();
+        let scores = pagerank(&graph, 50, 1e-6).expect("pagerank should succeed");
 
         // In a symmetric cycle, all nodes should have equal rank
         assert_eq!(scores.len(), 3);
@@ -182,9 +184,10 @@ mod tests {
             (NodeId(2), NodeId(0), 1.0),
             (NodeId(3), NodeId(0), 1.0),
         ];
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let scores = pagerank(&graph, 20, 1e-6).unwrap();
+        let scores = pagerank(&graph, 20, 1e-6).expect("pagerank should succeed");
 
         // Center node (0) should have highest score
         assert!(scores[0] > scores[1]);
@@ -199,16 +202,16 @@ mod tests {
     #[test]
     fn test_pagerank_empty_graph() {
         let graph = CsrGraph::new();
-        let scores = pagerank(&graph, 20, 1e-6).unwrap();
+        let scores = pagerank(&graph, 20, 1e-6).expect("pagerank should succeed");
         assert_eq!(scores.len(), 0);
     }
 
     #[test]
     fn test_pagerank_single_node() {
         let mut graph = CsrGraph::new();
-        graph.add_edge(NodeId(0), NodeId(0), 1.0).unwrap(); // Self-loop
+        graph.add_edge(NodeId(0), NodeId(0), 1.0).expect("add_edge should succeed"); // Self-loop
 
-        let scores = pagerank(&graph, 20, 1e-6).unwrap();
+        let scores = pagerank(&graph, 20, 1e-6).expect("pagerank should succeed");
         assert_eq!(scores.len(), 1);
         assert!((scores[0] - 1.0).abs() < 1e-5); // Single node gets all rank
     }
@@ -220,9 +223,10 @@ mod tests {
         for i in 0..10 {
             edges.push((NodeId(i), NodeId((i + 1) % 10), 1.0));
         }
-        let graph = CsrGraph::from_edge_list(&edges).unwrap();
+        let graph =
+            CsrGraph::from_edge_list(&edges).expect("CsrGraph::from_edge_list should succeed");
 
-        let scores = pagerank(&graph, 100, 1e-6).unwrap();
+        let scores = pagerank(&graph, 100, 1e-6).expect("pagerank should succeed");
 
         // Should converge to uniform distribution
         for score in &scores {

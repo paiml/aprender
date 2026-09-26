@@ -61,7 +61,7 @@ fn rerank_top_100_within_budget() {
 
     let query = "keyword search relevance";
     let start = Instant::now();
-    let reranked = reranker.rerank(query, &candidates, TOP_K).unwrap();
+    let reranked = reranker.rerank(query, &candidates, TOP_K).expect("rerank succeeds");
     let elapsed = start.elapsed();
 
     let max = budget();
@@ -103,16 +103,17 @@ fn rerank_scales_sub_quadratically_on_doubling_input() {
     let cands_100 = build_candidates();
 
     // Warm-up to avoid first-call setup costs distorting the ratio.
-    let _ = reranker.rerank("warm", &cands_50, 50).unwrap();
+    let _ = reranker.rerank("warm", &cands_50, 50).expect("warm-up rerank succeeds");
 
     let t_50 = {
         let start = Instant::now();
-        let _ = reranker.rerank("query", &cands_50, 50).unwrap();
+        let _ = reranker.rerank("query", &cands_50, 50).expect("rerank of 50 candidates succeeds");
         start.elapsed()
     };
     let t_100 = {
         let start = Instant::now();
-        let _ = reranker.rerank("query", &cands_100, 100).unwrap();
+        let _ =
+            reranker.rerank("query", &cands_100, 100).expect("rerank of 100 candidates succeeds");
         start.elapsed()
     };
 
@@ -140,7 +141,7 @@ fn rerank_empty_candidates_is_fast_and_returns_empty() {
     // task — not fine).
     let reranker = MockCrossEncoderReranker::new("test");
     let start = Instant::now();
-    let reranked = reranker.rerank("query", &[], 10).unwrap();
+    let reranked = reranker.rerank("query", &[], 10).expect("rerank of empty candidates succeeds");
     let elapsed = start.elapsed();
     assert!(reranked.is_empty());
     // Generous 50 ms — even an empty-input slow path is suspicious

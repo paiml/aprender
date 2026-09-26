@@ -136,7 +136,8 @@ fn bm25_per_doc_cost_is_sub_millisecond_on_average() {
     index.add_batch(&chunks);
     let elapsed = start.elapsed();
 
-    let per_doc_us = elapsed.as_micros() / u128::from(u32::try_from(CORPUS_SIZE).unwrap());
+    let per_doc_us = elapsed.as_micros()
+        / u128::from(u32::try_from(CORPUS_SIZE).expect("CORPUS_SIZE fits in u32"));
     // Generous: 500us per doc is far above linear expectations.
     assert!(
         per_doc_us < 500,
