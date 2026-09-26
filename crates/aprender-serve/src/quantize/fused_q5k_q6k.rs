@@ -125,8 +125,13 @@ pub fn fused_q6k_dot_simd(q6k_data: &[u8], activations: &[f32]) -> Result<f32> {
             return unsafe { fused_q6k_dot_avx2(q6k_data, activations) };
         }
     }
+    // #2880: NEON is mandatory on aarch64, so no detection is needed.
+    #[cfg(target_arch = "aarch64")]
+    return fused_q6k_dot_neon(q6k_data, activations);
+
     // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q6k_dot)
     // Fallback to scalar implementation
+    #[cfg(not(target_arch = "aarch64"))]
     fused_q6k_dot(q6k_data, activations)
 }
 
@@ -392,3 +397,4 @@ pub fn fused_q5k_dot_simd(q5k_data: &[u8], activations: &[f32]) -> Result<f32> {
 
 include!("fused_q4k_q8_dot.rs");
 include!("create.rs");
+include!("q6k_dot_neon.rs");
