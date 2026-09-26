@@ -181,6 +181,7 @@ fn row(engine: Engine, i: usize, wall_ms: f64) -> Row {
         } else {
             Verdict::Pass
         },
+        prompt_ids_sha256: None,
     }
 }
 
@@ -412,4 +413,62 @@ fn falsify_replay_004_p95_equal_to_the_budget_is_within() {
     let s = summarize(&run(20), &exact, None, 1).expect("valid");
     assert!((s.p95_s - s.queue_budget_p95_s).abs() < 1e-12);
     assert!(s.within_budget);
+}
+
+fn pinned_run(n: usize) -> Vec<Row> {
+    let mut rows = run(n);
+    for r in &mut rows {
+        r.replay_version = V2.into();
+        let i = usize::from_str_radix(&r.diff_sha256, 16).expect("hex id");
+        r.prompt_ids_sha256 = Some(ids_sha256(&[1, 2, i as u64]));
+    }
+    rows
+}
+
+/// PRM-S1 v2: only a prompt-pinning version asks for thinking off, on every engine.
+#[test]
+fn falsify_replay_007_v2_request_turns_thinking_off_and_v1_is_unchanged() {
+    let v1 = replay_request("review-replay-v1", "m", "p", "d");
+    assert_eq!(v1, crate::harness::request_body("m", "p", "d"));
+    let v2 = replay_request(V2, "m", "p", "d");
+    assert_eq!(v2["chat_template_kwargs"]["enable_thinking"], false);
+    assert_eq!(v2["messages"], v1["messages"]);
+}
+
+/// PRM-S1 v2: a pinned run whose engines prefilled different ids never prints
+/// a number, and neither does one missing an ids sha.
+#[test]
+fn falsify_replay_007_v2_refuses_differing_or_missing_prompt_ids() {
+    let v = voters();
+    let ok = summarize(&pinned_run(8), &v, None, 1).expect("ids agree");
+    assert!(ok.prompt_ids_sha.is_some());
+
+    let mut r = pinned_run(8);
+    r[10].prompt_ids_sha256 = Some(ids_sha256(&[9]));
+    assert_eq!(
+        summarize(&r, &v, None, 1),
+        Err(SummaryError::PromptIdsDiffer {
+            diff_sha256: r[10].diff_sha256.clone()
+        })
+    );
+    let mut r = pinned_run(8);
+    r[3].prompt_ids_sha256 = None;
+    assert!(matches!(
+        summarize(&r, &v, None, 1),
+        Err(SummaryError::NoPromptIds {
+            engine: Engine::Apr,
+            ..
+        })
+    ));
+    // v1 needs none and reports none.
+    assert_eq!(
+        summarize(&run(8), &v, None, 1).expect("v1").prompt_ids_sha,
+        None
+    );
+}
+
+#[test]
+fn falsify_replay_007_ids_sha_is_order_sensitive() {
+    assert_ne!(ids_sha256(&[1, 2]), ids_sha256(&[2, 1]));
+    assert_ne!(ids_sha256(&[12]), ids_sha256(&[1, 2]));
 }

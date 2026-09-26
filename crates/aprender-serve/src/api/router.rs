@@ -134,6 +134,8 @@ fn metrics_routes() -> Vec<Route> {
 pub struct RouteCapabilities {
     /// `cached_model` is present, so `/v1/batch/completions` can answer.
     pub gpu_batch: bool,
+    /// A Qwen3.5 hybrid session is resident, so `/v1/chat/prompt-ids` can answer (#4354).
+    pub qwen35_prompt_ids: bool,
 }
 
 impl RouteCapabilities {
@@ -148,13 +150,19 @@ impl RouteCapabilities {
             let _ = state;
             false
         };
-        Self { gpu_batch }
+        Self {
+            gpu_batch,
+            qwen35_prompt_ids: state.qwen35_session().is_some(),
+        }
     }
 
     /// Every capability present: the largest surface any state can mount.
     #[must_use]
     pub fn all() -> Self {
-        Self { gpu_batch: true }
+        Self {
+            gpu_batch: true,
+            qwen35_prompt_ids: true,
+        }
     }
 }
 
@@ -211,6 +219,11 @@ fn openai_routes(caps: RouteCapabilities) -> Vec<Route> {
             "/v1/batch/completions",
             post(gpu_batch_completions_handler),
         ));
+    }
+    // PRM-S1 v2 (#4354): the chat path's own prompt ids, for cross-engine replay.
+    // Only the Qwen3.5 hybrid path reports them, so only there is the route mounted.
+    if caps.qwen35_prompt_ids {
+        routes.push(("POST", "/v1/chat/prompt-ids", post(chat_prompt_ids_handler)));
     }
     routes
 }
