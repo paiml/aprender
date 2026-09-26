@@ -1,0 +1,22 @@
+- id: PMAT-2730
+  github_issue: 2730
+  item_type: task
+  title: 'cbtop: an empty brick set reports PASS/green over its own grade F, so --ci exits 0'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-1c
+  created: 2026-09-26T11:00:00Z
+  updated: 2026-09-26T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'A headless report with zero brick scores says status FAIL, ci_result red, falsification failed 1 (total 1), in BOTH producers (CUDA measured batch and simulated)'
+  - 'apr cbtop --ci fails on that report with no explicit --throughput/--brick-score threshold (check_ci_thresholds returns false)'
+  - 'One shared verdict helper; the two producers cannot disagree about the empty set again'
+  - 'A non-empty set is unchanged: green iff every brick gap_factor <= 1 + 1e-9'
+  - 'Restoring the vacuous .all() turns at least one test RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
