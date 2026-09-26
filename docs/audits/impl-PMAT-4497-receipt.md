@@ -10,12 +10,13 @@ path to a RED rule is refused; a consumer before night 14 is refused".
 | `contracts/apr-loop-admission-v1.yaml` | 4 obligations, 6 falsifiers. `pv validate`: valid, 0 warnings |
 
 Measured:
-- `--self-test`: 16/16 rows ok, rc 0. Rows include both done-when cases (RED-rule write path → REFUSED; 13 nights → REFUSED).
+- `--self-test`: 17/17 rows ok, rc 0. Rows include both done-when cases (RED-rule write path → REFUSED; 13 nights → REFUSED).
 - Mutants, each run on a scratch copy (worktree clean afterwards), all killed:
   M1 `MIN_NIGHTS` 14→13 → the 13-nights row goes RED;
   M2 RED-rule path removed from PROTECTED → the done-when-1 row goes RED;
   M3 identity-field check dropped → the missing-`model_sha256` row goes RED;
   M4 acting-refusal no longer RED → 12 rows go RED.
+- Quorum r1 (sonnet): a `writes=unassigned` placeholder read as a declared glob; now refused like an empty field (self-test row added).
 - Self-test found a real defect before commit: `read` with `IFS=$'\t'` merges an empty column, so an undeclared `writes` was ADMITTED. Fixed by splitting on `\x1f`.
 - Live run on this tree: both consumers refused, reason "prerequisite rows not GREEN" (no OBS contract is on main yet), rc 0, 0 admitted. The gate fails closed.
 - Wiring: `guard_tree.sh --list --no-cargo` prints `scripts/check_loop_admission.sh`. No CI edit.

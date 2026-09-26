@@ -114,9 +114,10 @@ judge() {
     if [ -n "$missing" ]; then
         echo "false|prerequisite rows not GREEN:$missing"; return
     fi
-    if [ -z "$writes" ]; then
-        echo "false|no declared write paths (declare them, or 'none')"; return
-    fi
+    case "$writes" in
+        ''|unassigned|unknown|tbd|TBD)
+            echo "false|no declared write paths (declare them, or 'none')"; return ;;
+    esac
     if [ "$writes" != "none" ] && hit=$(write_hit "$writes"); then
         echo "false|holds a write path to $hit"; return
     fi
@@ -221,6 +222,8 @@ self_test() {
     row 1 'REFUSED  c .*write path to docs/obs/loop-admission-consumers.tsv' "a write path to the registry -> refused" 'c\tgx10\tcuda\tyes\tdocs/obs/*\tS\n'
     row 1 'REFUSED  c .*write path' "a write-everything glob -> refused" 'c\tgx10\tcuda\tyes\t**\tS\n'
     row 1 'REFUSED  c .*no declared write paths' "undeclared write paths -> refused" 'c\tgx10\tcuda\tyes\t\tS\n'
+    row 1 'REFUSED  c .*no declared write paths' "a placeholder ('unassigned') is not a declaration" \
+        'c\tgx10\tcuda\tyes\tunassigned\tS\n'
     mkdir -p "$td/bare/contracts"
     row 1 'REFUSED  c .*not GREEN: OBS-01.*OBS-05' "prerequisite rows absent -> refused" \
         'c\tgx10\tcuda\tyes\tnone\tS\n' "$td/bare"
