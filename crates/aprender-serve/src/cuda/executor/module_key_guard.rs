@@ -24,6 +24,11 @@ use trueno_gpu::GpuError;
 pub(crate) struct ModuleKeyLedger {
     /// key -> (hash of the PTX compiled under it, `Debug` of every request proven to produce it)
     entries: std::collections::HashMap<String, (u64, Vec<String>)>,
+    /// Test-only: while set, a cache hit skips the proof. The proof `format!`s the request on
+    /// every hit, and a test that counts a decode token's host allocations (#4215) must measure
+    /// the lookup a release build does, not this debug-only check.
+    #[cfg(test)]
+    suspended: bool,
 }
 
 #[cfg(any(debug_assertions, test))]
@@ -62,6 +67,10 @@ impl CudaExecutor {
 
     #[cfg(any(debug_assertions, test))]
     fn prove_module_key_complete(&mut self, key: &str, kernel_type: &KernelType) {
+        #[cfg(test)]
+        if self.module_key_ledger.suspended {
+            return;
+        }
         let request = format!("{kernel_type:?}");
         // A key compiled outside this helper has no record: nothing to compare against.
         let Some((_, proven)) = self.module_key_ledger.entries.get(key) else {
@@ -84,5 +93,12 @@ impl CudaExecutor {
             proven[0]
         );
         proven.push(request);
+    }
+
+    /// Test-only (#4215): suspend or resume the #3759 proof on cache hits. Misses still record
+    /// what they compile, so a key first compiled while suspended is proven on its next hit.
+    #[cfg(test)]
+    pub(crate) fn suspend_module_key_proof(&mut self, suspended: bool) {
+        self.module_key_ledger.suspended = suspended;
     }
 }
