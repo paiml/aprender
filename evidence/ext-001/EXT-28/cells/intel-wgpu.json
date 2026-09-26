@@ -1,0 +1,5 @@
+{
+  "tag": "v0.70.0",
+  "cell": "intel-wgpu",
+  "not_run": "not measured: REX-08 has not ruled the cell list, and this run had only the lambda-cpu host (lambda-labs box, GPU hidden); the cell stays not_run until a session on that host runs c2_cell.sh"
+}

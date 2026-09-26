@@ -26,6 +26,7 @@ metadata:
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'EXT-001 C2 model binding (EXT-28, aprender#4410): the blessed model is ours-q4k.gguf sha256:97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af (Qwen3.5-4B Q4_K_M, text-only), served at m=1 by apr and every like-for-like arm; per-cell receipts in evidence/ext-001/EXT-28, measured by c2_cell.sh (all arms resident, iterations interleaved)'
   - github.com/huggingface/accelerate
   - github.com/pytorch/pytorch — DDP/FSDP
 equations:

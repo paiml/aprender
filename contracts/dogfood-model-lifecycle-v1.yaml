@@ -274,7 +274,8 @@ falsification_tests:
   obligation: EXT-INV-009
   rule: Speed ratchet
   prediction: a planted sleep in the decode loop widens the gap vs the llama.cpp d1d3c3396 arm and is RED at release phase
-  if_fails: 'the ratchet measures noise, not the engine (owed EXT-28 #4410; planned: cargo test -p apr-cli --test ext_speed_ratchet falsify_ext_022_planted_sleep_red)'
+  test: cargo test -p apr-cli --lib falsify_ext_022_planted_sleep_red
+  if_fails: 'the ratchet measures noise, not the engine: apr 0.70.0 with a 1 s sleep per decode step, measured on lambda-cpu next to the same llama.cpp d1d3c3396 and the same file as three unpatched records (evidence/ext-001/EXT-28), stays GREEN, or a fourth unpatched record goes RED'
 - id: FALSIFY-EXT-023
   obligation: EXT-INV-009
   rule: Stock-baseline gate

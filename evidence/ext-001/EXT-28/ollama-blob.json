@@ -1,0 +1,15 @@
+{
+  "arm": "ollama",
+  "version": "ollama version is 0.34.4",
+  "tag": "qwen3.5:4b",
+  "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+  "model_blob_sha256": "81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490",
+  "model_blob_bytes": 3389971840,
+  "file_type": 15,
+  "tensors": 834,
+  "vision_tensors": 393,
+  "server_log_line": "clip_model_loader: has vision encoder",
+  "ours_vision_tensors": 0,
+  "measured_with": "apr 0.70.0 (99c6c61b4) inspect --json / tensors --json",
+  "ours_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af"
+}
