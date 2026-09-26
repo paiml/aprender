@@ -20,6 +20,15 @@ and re-run `pv lint contracts/ --gate shapes`. Each header records what was meas
 | S16 (2/2) | binary-aprender-train-lora-v1.yaml | aprender-train-lora | 4 | `--version` says "entrenar-lora" |
 | S15 (1/2) | binary-aprender-profile-v1.yaml | aprender-profile | 1 leaf + 46 options; ledger is option rows | `--version` says "renacer" |
 | S15 (2/2) | binary-aprender-zram-generator-v1.yaml | aprender-zram-generator | 0; 3 generator positionals | `--version` says "trueno-zram-generator" |
+| S2 | binary-aprender-test-cli-v1.yaml | aprender-test-cli | 36 (34 leaves + optional-subcommand groups `comply`, `serve`) | `--version` says "probador"; ledger row `llm experiment` names a group that requires a subcommand |
+| S8 (apr(apr-cli) 2/2) | binary-apr-cli-2of2-v1.yaml | apr (apr-cli) | 41 HTTP routes (union over `apr serve` routers, default build) + 9 MCP tools; S9 holds identity + CLI | 2 ledger rows name cuda-only routes (POST /v1/logprobs, /v1/perplexity); extractor drops METHOD and misses apr-cli serve/ routes |
+| S14 (1/2) | binary-aprender-train-shell-v1.yaml | aprender-train-shell | REPL: 10 commands, flags -c/-s, 0 subcommands | `--version` says "entrenar-shell"; `-c help` omits `clear` |
+| S14 (2/2) | binary-presentar-v1.yaml | presentar (aprender-present-cli) | 7 | none beyond G0.1 |
+| S20 | binary-apr-corpus-ingest-v1.yaml | apr-corpus-ingest (apr-cli) | 2 | none beyond G0.1 (pretokenize-bin-v1 cites a nonexistent `run`) |
 
 G0.1 (git sha in `--version`) is a warning on all four and RED on every current build. The S3 half of
 aprender-orchestrate (the 92 HTTP routes) is aprender-1c's.
+
+S8 is the HTTP + MCP half of apr (apr-cli); S9 holds identity and every CLI command (the split is by kind, see
+S9's header). `apr` is the only binary in S2/S8/S14/S20 whose `--version` carries the sha, so G0.1 is RED on the
+other four.

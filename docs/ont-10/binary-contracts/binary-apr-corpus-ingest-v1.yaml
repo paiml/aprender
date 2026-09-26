@@ -1,0 +1,92 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-apr-corpus-ingest-v1 — ONT-10 slice S20: the `apr-corpus-ingest` binary (package apr-cli) as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, LC_ALL=C recursive --help walk):
+#   - `apr-corpus-ingest --version` = "apr-corpus-ingest 0.69.3"; G0.1 (git sha) is a warning and RED today.
+#   - the walk gives 2 leaves (plan, validate-contract), set-equal to surface_audit.csv's 2 rows.
+#   - contracts/pretokenize-bin-v1.yaml names an `apr-corpus-ingest run` subcommand that the binary does not have,
+#     and contracts/apr-mono-binary-rule-v1.yaml does not list this [[bin]] (both logged to the cop, 18:54Z).
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): nodes also typed bin:target/<package>/<target>
+# (no targetNode in pv's subset); commands as bin:command literals (full path below the binary name, space-joined);
+# the csv join yields bin:ledgerOrphan / bin:unledgeredCommand.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-apr-corpus-ingest
+version: "0.1.0"
+scope: >
+  The built `apr-corpus-ingest` target of package `apr-cli` (default features) as the focus node binary/apr-cli/apr-corpus-ingest:
+  its identity and its exact command surface, and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S20 (apr-corpus-ingest). DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on this branch yet,
+    so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - "crates/apr-cli/src/bin/apr-corpus-ingest.rs"
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: apr-corpus-ingest-identity
+    targetClass: bin:target/apr-cli/apr-corpus-ingest
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["apr-corpus-ingest"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["apr-cli"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^apr-corpus-ingest [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: apr-corpus-ingest-commands
+    targetClass: bin:target/apr-cli/apr-corpus-ingest
+    properties:
+      - path: bin:command
+        minCount: 2
+        maxCount: 2
+        in:
+          - "plan"
+          - "validate-contract"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/apr-cli/apr-corpus-ingest) = C, |C| = 2, where C = the invocable command paths of the recursive --help walk of the default-feature build"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per command path, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount 2 + maxCount 2 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = apr-corpus-ingest ∧ strip(r.feature) ∉ C }; unledgeredCommand = C ∖ { strip(r.feature) : r.binary = apr-corpus-ingest }"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is apr-corpus-ingest; strip removes the leading binary name"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-CORPUS_INGEST-001
+    name: dropped_command_is_red
+    prediction: "deleting one command from the snapshot's command list makes the command-set shape RED naming it (minCount 2)"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one command removed"
+    expected_output: "verdict Fail, one result on binary/apr-cli/apr-corpus-ingest path bin:command"
+    if_fails: "A command could vanish from the shipped apr-corpus-ingest with the ontology green."
+  - id: FALSIFY-BIN-CORPUS_INGEST-002
+    name: ledger_row_deleted_is_red
+    prediction: "deleting one surface_audit.csv row for a live apr-corpus-ingest command makes bin:unledgeredCommand non-empty, RED naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the csv with one row deleted"
+    expected_output: "verdict Fail naming the command"
+    if_fails: "The dogfood coverage ratio would be computed over a ledger that silently omits a shipped command."
