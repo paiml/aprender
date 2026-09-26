@@ -116,7 +116,7 @@ falsification_tests:
   - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-004
     rule: "The guard is wired into the per-PR gate, not merely present in the tree"
     prediction: "ci.yml invokes spec_conformance.sh in guard-runner-labels, which `gate` lists in its needs"
-    test: "grep -q 'bash scripts/spec_conformance.sh' .github/workflows/ci.yml"
+    test: "grep -q 'bash scripts/spec_conformance.sh' .github/workflows/ci.yml ci/sections.yml"
     if_fails: "A reference is not an execution — the join would sit unexecuted while being counted as enforcement (the #2327 defect class)"
 
   - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-005

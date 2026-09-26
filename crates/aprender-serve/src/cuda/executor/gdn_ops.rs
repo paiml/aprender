@@ -16,6 +16,27 @@
 
 use super::*;
 
+/// The most argument slots any Gated `DeltaNet` kernel takes.
+const GDN_MAX_ARGS: usize = 16;
+
+/// Pack `ptrs` then `scalars` into `args`; returns the slot count.
+fn gdn_pack_args(
+    kernel_name: &str,
+    args: &mut [u64; GDN_MAX_ARGS],
+    ptrs: &[u64],
+    scalars: &[u64],
+) -> Result<usize, GpuError> {
+    let n = ptrs.len() + scalars.len();
+    if n > GDN_MAX_ARGS {
+        return Err(GpuError::InvalidParameter(format!(
+            "{kernel_name}: {n} arguments exceed {GDN_MAX_ARGS}"
+        )));
+    }
+    args[..ptrs.len()].copy_from_slice(ptrs);
+    args[ptrs.len()..n].copy_from_slice(scalars);
+    Ok(n)
+}
+
 impl CudaExecutor {
     /// Compile (once) and fetch the module for a Gated `DeltaNet` kernel.
     ///
@@ -49,13 +70,19 @@ impl CudaExecutor {
         ptrs: &[u64],
     ) -> Result<(), GpuError> {
         for (i, &p) in ptrs.iter().enumerate() {
-            validate_device_ptr(p, &format!("{kernel_name} arg {i}"))?;
+            validate_kernel_arg(p, kernel_name, i)?;
+            // #4258: any pointer argument may be an output (several GDN kernels
+            // write in place), so any of them can stale the Q8 activation.
+            self.q8_activation_written(p);
         }
-        let mut args: Vec<u64> = ptrs.to_vec();
-        let mut raw: Vec<*mut std::ffi::c_void> = args
-            .iter_mut()
-            .map(|a| std::ptr::from_mut(a).cast::<std::ffi::c_void>())
-            .collect();
+        // #4215: argument slots live on the stack; the `Vec` is built only when
+        // a graph is being recorded.
+        let mut args = [0u64; GDN_MAX_ARGS];
+        let n = gdn_pack_args(kernel_name, &mut args, ptrs, &[])?;
+        let mut raw = [std::ptr::null_mut::<std::ffi::c_void>(); GDN_MAX_ARGS];
+        for (r, a) in raw.iter_mut().zip(args.iter_mut()) {
+            *r = std::ptr::from_mut(a).cast::<std::ffi::c_void>();
+        }
 
         let module = self
             .modules
@@ -66,7 +93,7 @@ impl CudaExecutor {
         // argument order matches the kernel's `.param` declarations.
         unsafe {
             self.stream
-                .launch_kernel(module, kernel_name, &config, &mut raw)?;
+                .launch_kernel(module, kernel_name, &config, &mut raw[..n])?;
         }
 
         // trueno#243 / #3413: the manual decode graph is rebuilt ONLY from
@@ -78,7 +105,7 @@ impl CudaExecutor {
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
                 config,
-                arg_data: args,
+                arg_data: args[..n].to_vec(),
             });
         }
         Ok(())
@@ -102,14 +129,19 @@ impl CudaExecutor {
         scalars: &[u64],
     ) -> Result<(), GpuError> {
         for (i, &p) in ptrs.iter().enumerate() {
-            validate_device_ptr(p, &format!("{kernel_name} arg {i}"))?;
+            validate_kernel_arg(p, kernel_name, i)?;
+            // #4258: any pointer argument may be an output (several GDN kernels
+            // write in place), so any of them can stale the Q8 activation.
+            self.q8_activation_written(p);
         }
-        let mut args: Vec<u64> = ptrs.to_vec();
-        args.extend_from_slice(scalars);
-        let mut raw: Vec<*mut std::ffi::c_void> = args
-            .iter_mut()
-            .map(|a| std::ptr::from_mut(a).cast::<std::ffi::c_void>())
-            .collect();
+        // #4215: argument slots live on the stack; the `Vec` is built only when
+        // a graph is being recorded.
+        let mut args = [0u64; GDN_MAX_ARGS];
+        let n = gdn_pack_args(kernel_name, &mut args, ptrs, scalars)?;
+        let mut raw = [std::ptr::null_mut::<std::ffi::c_void>(); GDN_MAX_ARGS];
+        for (r, a) in raw.iter_mut().zip(args.iter_mut()) {
+            *r = std::ptr::from_mut(a).cast::<std::ffi::c_void>();
+        }
 
         let module = self
             .modules
@@ -121,7 +153,7 @@ impl CudaExecutor {
         // kernel's `.param` declarations.
         unsafe {
             self.stream
-                .launch_kernel(module, kernel_name, &config, &mut raw)?;
+                .launch_kernel(module, kernel_name, &config, &mut raw[..n])?;
         }
 
         // trueno#243 / #3413: the manual decode graph is rebuilt ONLY from
@@ -133,7 +165,7 @@ impl CudaExecutor {
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
                 config,
-                arg_data: args,
+                arg_data: args[..n].to_vec(),
             });
         }
         Ok(())
@@ -161,7 +193,7 @@ impl CudaExecutor {
             num_heads,
             head_dim,
         };
-        let cache_key = format!("gdn_split_interleaved_{num_heads}_{head_dim}");
+        let cache_key = module_key!(self, "gdn_split_interleaved_{}_{}", num_heads, head_dim);
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -201,9 +233,13 @@ impl CudaExecutor {
             head_dim,
             n_rot,
         };
-        let cache_key = format!(
-            "gdn_partial_neox_rope_{num_heads}_{head_dim}_{n_rot}_{}",
-            Self::f32_bits_tag(theta_scale)
+        let cache_key = module_key!(
+            self,
+            "gdn_partial_neox_rope_{}_{}_{}_b{:08x}",
+            num_heads,
+            head_dim,
+            n_rot,
+            theta_scale.to_bits()
         );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
@@ -249,7 +285,13 @@ impl CudaExecutor {
             num_kv_heads,
             head_dim,
         };
-        let cache_key = format!("gdn_decode_attention_{num_heads}_{num_kv_heads}_{head_dim}");
+        let cache_key = module_key!(
+            self,
+            "gdn_decode_attention_{}_{}_{}",
+            num_heads,
+            num_kv_heads,
+            head_dim
+        );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -405,7 +447,7 @@ impl CudaExecutor {
             channels,
             kernel_size,
         };
-        let cache_key = format!("gdn_causal_conv1d_silu_{channels}_{kernel_size}");
+        let cache_key = module_key!(self, "gdn_causal_conv1d_silu_{}_{}", channels, kernel_size);
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -445,7 +487,18 @@ impl CudaExecutor {
             epsilon,
         };
         // epsilon is an immediate in the PTX, so it belongs in the cache key.
-        let cache_key = format!("gdn_per_head_l2_norm_{head_dim}_{num_heads}_{epsilon:e}");
+        // `{epsilon:e}` is not an integer: key it by its bits, format it once.
+        let cache_key = self.module_key(
+            (
+                "gdn_per_head_l2_norm_{}_{}_{:e}",
+                key_dims(&[
+                    u64::from(head_dim),
+                    u64::from(num_heads),
+                    u64::from(epsilon.to_bits()),
+                ]),
+            ),
+            || format!("gdn_per_head_l2_norm_{head_dim}_{num_heads}_{epsilon:e}"),
+        );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -471,7 +524,7 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let kernel = trueno_gpu::kernels::gdn::GdnGatesKernel::new(num_heads);
         let kernel_type = KernelType::GdnGates { num_heads };
-        let cache_key = format!("gdn_gates_{num_heads}");
+        let cache_key = module_key!(self, "gdn_gates_{}", num_heads);
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -529,8 +582,14 @@ impl CudaExecutor {
             num_k_heads,
             head_k_dim,
         };
-        let cache_key =
-            format!("gdn_delta_rule_{num_v_heads}_{head_v_dim}_{num_k_heads}_{head_k_dim}");
+        let cache_key = module_key!(
+            self,
+            "gdn_delta_rule_{}_{}_{}_{}",
+            num_v_heads,
+            head_v_dim,
+            num_k_heads,
+            head_k_dim
+        );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -574,7 +633,18 @@ impl CudaExecutor {
             num_heads,
             epsilon,
         };
-        let cache_key = format!("gdn_gated_rmsnorm_{head_dim}_{num_heads}_{epsilon:e}");
+        // `{epsilon:e}` is not an integer: key it by its bits, format it once.
+        let cache_key = self.module_key(
+            (
+                "gdn_gated_rmsnorm_{}_{}_{:e}",
+                key_dims(&[
+                    u64::from(head_dim),
+                    u64::from(num_heads),
+                    u64::from(epsilon.to_bits()),
+                ]),
+            ),
+            || format!("gdn_gated_rmsnorm_{head_dim}_{num_heads}_{epsilon:e}"),
+        );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -605,7 +675,7 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let kernel = trueno_gpu::kernels::gdn::SigmoidGateKernel::new(n);
         let kernel_type = KernelType::GdnSigmoidGate { n };
-        let cache_key = format!("gdn_sigmoid_gate_{n}");
+        let cache_key = module_key!(self, "gdn_sigmoid_gate_{}", n);
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();

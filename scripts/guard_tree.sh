@@ -342,14 +342,27 @@ fi
 # the remainder are NOT arguments and are stripped before the emptiness test.
 # Reading `bash scripts/check_x.sh >/dev/null` as "takes arguments" would skip
 # a guard that runs perfectly well bare, which is coverage lost silently.
+#
+# #4433: ci.yml's job bodies moved verbatim to ci/sections.yml and run as
+# sections of ci.yml's fat jobs, so an invocation there IS a ci.yml invocation
+# and is labelled ci.yml. Reading only .github/workflows/*.yml after the move
+# turned 7 ARG-only guards into bare runs and hid one behind wired-elsewhere.
 workflow_invocations() {
     [ -d .github/workflows ] || return 0
+    # An explicit list: an unmatched glob would hand awk a literal `*.yml`,
+    # and gawk then reads none of the files, sections.yml included.
+    local files=() f
+    for f in .github/workflows/*.yml ci/sections.yml; do
+        [ ! -f "$f" ] || files+=("$f")
+    done
+    [ "${#files[@]}" -gt 0 ] || return 0
     awk '
         BEGIN { q = sprintf("%c", 39) }
         FNR == 1 {
             step_env = 0
             nf = split(FILENAME, fp, "/")
             wf = fp[nf]
+            if (FILENAME ~ /(^|\/)ci\/sections\.yml$/) wf = "ci.yml"
             re = "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]\"" q "`]*check_[A-Za-z0-9_.-]+\\.sh"
         }
         /^[[:space:]]*-[[:space:]]+(name|run|uses|if|shell|env|with|id):/ { step_env = 0 }
@@ -379,7 +392,7 @@ workflow_invocations() {
                     printf "%s\tBARE\t%s\n", base, wf
             }
         }
-    ' .github/workflows/*.yml 2>/dev/null
+    ' "${files[@]}" 2>/dev/null
 }
 
 INVOCATIONS="$(workflow_invocations)"

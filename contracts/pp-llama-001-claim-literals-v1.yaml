@@ -135,7 +135,7 @@ falsification_tests:
   - id: FALSIFY-PP-LLAMA-CLAIMLIT-009
     rule: "The guard is wired into the per-PR gate, not merely present in the tree"
     prediction: "ci.yml invokes both the guard and its case table in guard-runner-labels, which `gate` lists in its needs"
-    test: "[ \"$(grep -c 'check_no_claim_literals.sh' .github/workflows/ci.yml)\" -ge 2 ]"
+    test: "[ \"$(cat .github/workflows/ci.yml ci/sections.yml | grep -c 'check_no_claim_literals.sh')\" -ge 2 ]"
     if_fails: "A reference is not an execution — the guard would sit unexecuted while being counted as enforcement (the #2327 defect class)"
 
   - id: FALSIFY-PP-LLAMA-CLAIMLIT-010
