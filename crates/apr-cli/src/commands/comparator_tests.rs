@@ -78,7 +78,14 @@ fn two_identical_runs_give_identical_blocks_except_timestamps() {
     };
     let first = run_arm(&s, &logs).expect("run 1");
     let second = run_arm(&s, &logs).expect("run 2");
-    assert!(!first.started_utc.is_empty());
+    for t in [&first.started_utc, &first.finished_utc] {
+        let ts = chrono::DateTime::parse_from_rfc3339(t).expect("rfc3339");
+        assert!(
+            t.ends_with('Z') && ts.offset().local_minus_utc() == 0,
+            "{t}"
+        );
+    }
+    assert!(first.started_utc <= first.finished_utc);
     assert_eq!(strip(first.clone()), strip(second));
     assert_eq!(first.version, "tool 1.2.3");
     assert_eq!(first.command, s.command);
@@ -123,7 +130,28 @@ fn a_failed_arm_gives_no_block() {
     assert!(run_arm(&quiet, d)
         .expect_err("no version")
         .contains("version"));
-    assert!(run_arm(&spec(d, "../x", "true"), d).is_err());
+    let mut lies = spec(d, "lies", "echo x > out.bin");
+    lies.version_command = vec!["sh".into(), "-c".into(), "echo tool 1.2.3; exit 2".into()];
+    assert!(run_arm(&lies, d)
+        .expect_err("a failed version command")
+        .contains("gave no version"));
+    for bad in ["../x", "", "Arm", "a b"] {
+        let e = run_arm(&spec(d, bad, "echo x > out.bin"), d).expect_err(bad);
+        assert!(e.contains("is not [a-z0-9._-]+"), "{bad}: {e}");
+    }
+    for good in ["llama.cpp", "arm_2-b"] {
+        assert!(
+            run_arm(&spec(d, good, "echo x > out.bin"), d).is_ok(),
+            "{good}"
+        );
+    }
+    // An artifact path that cannot be removed (a directory) is refused, not ignored.
+    let mut stuck = spec(d, "stuck", "true");
+    stuck.artifact = d.join("stuck-dir");
+    std::fs::create_dir(&stuck.artifact).expect("mkdir");
+    assert!(run_arm(&stuck, d)
+        .expect_err("a directory")
+        .contains("stale artifact"));
 }
 
 /// R-1a: containers are digest-pinned and run with the network denied.
