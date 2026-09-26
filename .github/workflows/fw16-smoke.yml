@@ -1,0 +1,18 @@
+# THROWAWAY (infra-8d, cop OK 2026-09-26): one smoke job proving the repo-scoped
+# framework16 runner picks up work. Superseded by a2's routing PR. Not on main.
+name: fw16 smoke
+on:
+  push:
+    branches: [fw16-smoke]
+permissions: {}
+jobs:
+  smoke:
+    runs-on: [self-hosted, aprender, framework16]
+    timeout-minutes: 10
+    steps:
+      - name: host
+        run: |
+          uname -a; nproc; free -g | head -2
+          cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+          cat /sys/firmware/acpi/platform_profile 2>/dev/null || true
+          if command -v vulkaninfo >/dev/null; then vulkaninfo --summary 2>/dev/null | grep -E 'deviceName|driverName' ; else echo "vulkaninfo absent"; fi
