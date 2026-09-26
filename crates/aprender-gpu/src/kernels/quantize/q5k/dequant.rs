@@ -215,7 +215,7 @@ mod tests {
 /// Device parity against a verbatim port of `aprender-serve`'s `for_each_q5k_value`.
 #[cfg(test)]
 #[cfg(feature = "cuda")]
-mod q5k_dequant_device_tests {
+pub(super) mod q5k_dequant_device_tests {
     use super::Q5KDequantKernel;
     use crate::driver::{CudaContext, CudaModule, CudaStream, GpuBuffer, LaunchConfig};
     use crate::kernels::Kernel;
@@ -263,7 +263,7 @@ mod q5k_dequant_device_tests {
     }
 
     /// Verbatim port of `for_each_q5k_value` (aprender-serve quantize/dequant_q4k.rs).
-    fn cpu_block(sb: &[u8]) -> Vec<f32> {
+    pub(in crate::kernels::quantize::q5k) fn cpu_block(sb: &[u8]) -> Vec<f32> {
         let d = f16_bits_to_f32(u16::from_le_bytes([sb[0], sb[1]]));
         let dmin = f16_bits_to_f32(u16::from_le_bytes([sb[2], sb[3]]));
         let mut scales = [0u8; 12];
