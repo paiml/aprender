@@ -62,7 +62,7 @@ def ids(base):
             continue
         print(f"RED {p}: test ID gap: {head} (contract_data_integrity)")
         red += 1
-    print(f"fail_fast ids: {len(paths)} changed contract(s) vs {mb[:9]}, {red} new gap(s)")
+    print(f"fail_fast ids: {len(paths)} changed contract(s) vs {mb}, {red} new gap(s)")
     return 1 if red else 0
 
 
