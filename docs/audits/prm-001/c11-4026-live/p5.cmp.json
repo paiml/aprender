@@ -1,0 +1,77 @@
+{
+  "steps": [
+    {
+      "step": 0,
+      "top1_apr": 3,
+      "top1_oracle": 3,
+      "overlap": 19,
+      "max_abs_dlogprob": 0.37291622161865234,
+      "chosen_dlogprob": 0.0032587647438049316,
+      "apr_mass": 0.9931514917707769
+    },
+    {
+      "step": 1,
+      "top1_apr": 16,
+      "top1_oracle": 16,
+      "overlap": 19,
+      "max_abs_dlogprob": 1.1312856674194336,
+      "chosen_dlogprob": 6.10313072684221e-05,
+      "apr_mass": 0.9999847144564954
+    },
+    {
+      "step": 2,
+      "top1_apr": 17,
+      "top1_oracle": 17,
+      "overlap": 20,
+      "max_abs_dlogprob": 0.8994979858398438,
+      "chosen_dlogprob": 0.00011284198262728751,
+      "apr_mass": 0.9999995896980145
+    },
+    {
+      "step": 3,
+      "top1_apr": 1088,
+      "top1_oracle": 1088,
+      "overlap": 19,
+      "max_abs_dlogprob": 0.504298210144043,
+      "chosen_dlogprob": 0.004473257809877396,
+      "apr_mass": 0.9999511791930462
+    },
+    {
+      "step": 4,
+      "top1_apr": 14695,
+      "top1_oracle": 14695,
+      "overlap": 19,
+      "max_abs_dlogprob": 0.4799470901489258,
+      "chosen_dlogprob": 0.002074435818940401,
+      "apr_mass": 0.9999943652934382
+    },
+    {
+      "step": 5,
+      "top1_apr": 220,
+      "top1_oracle": 220,
+      "overlap": 18,
+      "max_abs_dlogprob": 0.5460624694824219,
+      "chosen_dlogprob": 5.960466182841628e-07,
+      "apr_mass": 1.0000008061051011
+    },
+    {
+      "step": 6,
+      "top1_apr": 16,
+      "top1_oracle": 16,
+      "overlap": 19,
+      "max_abs_dlogprob": 0.384429931640625,
+      "chosen_dlogprob": 5.960412181593711e-07,
+      "apr_mass": 0.999999761818531
+    },
+    {
+      "step": 7,
+      "top1_apr": 17,
+      "top1_oracle": 17,
+      "overlap": 20,
+      "max_abs_dlogprob": 0.39574527740478516,
+      "chosen_dlogprob": 3.386379103176296e-05,
+      "apr_mass": 1.0000016665789389
+    }
+  ],
+  "pass": false
+}

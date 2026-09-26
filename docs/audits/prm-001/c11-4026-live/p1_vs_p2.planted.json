@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {
+      "step": 0,
+      "top1_apr": 11751,
+      "top1_oracle": 17,
+      "overlap": 1,
+      "max_abs_dlogprob": 5.084360599517822,
+      "chosen_dlogprob": 999999999.4941273,
+      "apr_mass": 0.9878417476958157
+    }
+  ],
+  "pass": false
+}
