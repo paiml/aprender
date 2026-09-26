@@ -135,6 +135,9 @@ def qualify(chain):
     return out
 
 
+TAIL = 4096
+
+
 def read_set(path):
     """Every receipt field this file reads, as a qualified path."""
     base = os.path.basename(path)
@@ -145,16 +148,33 @@ def read_set(path):
     found = set()
     for match in TOKEN.finditer(src):
         name = match.group(2) or match.group(4)
-        before = src[:match.start()]
-        chain = CHAIN.search(before)
-        coalesce = COALESCE.search(before)
+        # The receiver patterns are all anchored at the END of `before`, and a
+        # search over the whole prefix is quadratic in the file (most of this
+        # guard's minutes, #4429). Search a tail window; a hit touching the
+        # window's left edge (an identifier it may have cut), or a miss that
+        # would be an error, re-searches the full prefix. A receiver expression
+        # longer than TAIL is the one shape the window does not see.
+        start = match.start()
+        lo = max(0, start - TAIL)
+        before = src[lo:start]
+
+        def tail_search(rx, miss_is_error=False):
+            hit = rx.search(before)
+            if lo and ((hit is None and miss_is_error) or (hit is not None and hit.start() == 0)):
+                full = rx.search(src[:start])
+                if full is not None and (hit is None or full.start() < lo):
+                    return full
+            return hit
+
+        chain = tail_search(CHAIN)
+        coalesce = tail_search(COALESCE)
         if chain:
             recv, outer = chain.group(1), chain.group(2)
             qualified = outer + "." + name
         elif coalesce:
             recv, qualified = coalesce.group(1), name
         else:
-            plain = RECV.search(before)
+            plain = tail_search(RECV, miss_is_error=True)
             if not plain:
                 line = src.count("\n", 0, match.start()) + 1
                 errors.append(
