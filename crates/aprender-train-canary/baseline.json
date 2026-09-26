@@ -1,0 +1,29 @@
+{
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "host": "lambda",
+  "tolerance": 0.5,
+  "measured": "2026-09-26, commit e7a52949d + #3174 canary, burn 0.21.0, median of 10 per run; ratio = MIN over 3 runs (load avg ~99 during the runs)",
+  "evidence": "evidence/section-3174/lambda.json",
+  "rows": [
+    {
+      "size": "4x2560x9728",
+      "ratio": 9.84
+    },
+    {
+      "size": "32x2560x9728",
+      "ratio": 10.5
+    },
+    {
+      "size": "128x2560x9728",
+      "ratio": 7.04
+    },
+    {
+      "size": "4x2560x151936",
+      "ratio": 2.99
+    },
+    {
+      "size": "32x2560x4096",
+      "ratio": 7.39
+    }
+  ]
+}

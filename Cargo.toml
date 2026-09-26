@@ -46,9 +46,8 @@ members = [
     "crates/aprender-train-shell",
     "crates/aprender-train-bench",
     "crates/aprender-train-wasm",
-    # "crates/aprender-train-canary",  # Excluded: sqlite3/burn link conflict AND
-    #   non-portable absolute `path = "/home/noah/src/trueno"` patch (breaks any
-    #   checkout without that sibling — intel, clean-room, CI). Dev-only, publish=false.
+    # "crates/aprender-train-canary",  # Excluded: burn's libsqlite3-sys conflicts
+    #   with aprender-rag's. Run by scripts/run_train_canary.sh (#3174).
     # --- APR-MONO Phase 2e: was batuta (orchestration) ---
     "crates/aprender-orchestrate",
     # --- MCP server (Model Context Protocol) ---
@@ -142,13 +141,26 @@ exclude = [
     # They live in their own workspace at crates/facades/ and are built in CI by
     # scripts/check_facade_compat.sh (ci.yml, job `guard-runner-labels`).
     "crates/facades",
-    # aprender-train-canary is intentionally NOT a member — see the exclusion
-    # note above. It is a publish=false, dev-only GPU/burn benchmark whose
-    # Cargo.toml pins `[patch.crates-io] trueno = { path = "/home/noah/src/trueno" }`
-    # (an absolute dev path). Including it breaks every checkout without that
-    # sibling (intel, clean-room, CI). Build it manually when benchmarking.
+    # Every entry above needs a row in [workspace.metadata.excluded] below
+    # (scripts/check_excluded_crates_accounted.sh, #3174).
 ]
 resolver = "2"
+
+# #3174: excluded is not the same as unrunnable. The build tool's metadata and
+# every workspace-wide CI job are blind to an `exclude` entry, so each one says
+# here what runs it (`ci`, a script CI runs that names the path) or why nothing
+# does (`unbuilt`). scripts/check_excluded_crates_accounted.sh takes the universe
+# from `exclude` itself, and it is RED on a missing row, a stale row, or an
+# excluded crate pinned to a pre-release.
+[workspace.metadata.excluded]
+"crates/aprender-train-canary" = { unbuilt = "trueno-vs-Burn WGPU matmul canary; burn's libsqlite3-sys cannot share a graph with aprender-rag's. No CI job runs it yet: the job needs a WGPU runner and is pending (#3174). Run it by hand: `scripts/run_train_canary.sh`", issue = 3174 }
+"crates/aprender-zram/bins/trueno-ublk" = { unbuilt = "does not compile (renacer has no `visualize`); never built by anything", issue = 2470 }
+"tools/ccpa-sft-export" = { unbuilt = "standalone CCPA -> SFT JSONL export tool with its own [workspace] (#2243); built by hand when exporting" }
+"fuzz" = { unbuilt = "cargo-fuzz harness: nightly toolchain, own [workspace]; run by hand via `make fuzz`" }
+"crates/aprender-viz-ttop" = { unbuilt = "pre-monorepo workspace shell: no [workspace] of its own, so its `version.workspace` resolves nowhere" }
+"crates/aprender-present" = { unbuilt = "pre-monorepo workspace root shell (no package)" }
+"crates/aprender-test" = { unbuilt = "pre-monorepo workspace root shell (no package)" }
+"crates/facades" = { ci = "scripts/check_facade_compat.sh" }
 
 [workspace.package]
 version = "0.69.3"

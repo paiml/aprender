@@ -1,0 +1,207 @@
+{
+ "issue": 3174,
+ "host": "lambda",
+ "gpu": "NVIDIA GeForce RTX 4090",
+ "burn": "0.21.0",
+ "iters": 10,
+ "statistic": "median",
+ "mechanism": "nvidia-smi --query-compute-apps during a run: aprender-train-canary C+G on the RTX 4090, 4290 MiB",
+ "load_average_1m": 99.54,
+ "runs": [
+  {
+   "iters": 10,
+   "statistic": "median",
+   "rows": [
+    {
+     "size": "4x2560x9728",
+     "trueno_ms": 20.233,
+     "burn_ms": 199.116,
+     "ratio": 9.8414
+    },
+    {
+     "size": "32x2560x9728",
+     "trueno_ms": 20.366,
+     "burn_ms": 213.817,
+     "ratio": 10.4986
+    },
+    {
+     "size": "128x2560x9728",
+     "trueno_ms": 25.241,
+     "burn_ms": 177.788,
+     "ratio": 7.0436
+    },
+    {
+     "size": "4x2560x151936",
+     "trueno_ms": 1251.236,
+     "burn_ms": 3746.897,
+     "ratio": 2.9946
+    },
+    {
+     "size": "32x2560x4096",
+     "trueno_ms": 14.282,
+     "burn_ms": 105.818,
+     "ratio": 7.4093
+    }
+   ]
+  },
+  {
+   "iters": 10,
+   "statistic": "median",
+   "rows": [
+    {
+     "size": "4x2560x9728",
+     "trueno_ms": 20.269,
+     "burn_ms": 252.791,
+     "ratio": 12.4716
+    },
+    {
+     "size": "32x2560x9728",
+     "trueno_ms": 21.31,
+     "burn_ms": 249.066,
+     "ratio": 11.688
+    },
+    {
+     "size": "128x2560x9728",
+     "trueno_ms": 26.995,
+     "burn_ms": 213.19,
+     "ratio": 7.8974
+    },
+    {
+     "size": "4x2560x151936",
+     "trueno_ms": 1413.698,
+     "burn_ms": 6368.356,
+     "ratio": 4.5047
+    },
+    {
+     "size": "32x2560x4096",
+     "trueno_ms": 15.342,
+     "burn_ms": 177.564,
+     "ratio": 11.5734
+    }
+   ]
+  },
+  {
+   "iters": 10,
+   "statistic": "median",
+   "rows": [
+    {
+     "size": "4x2560x9728",
+     "trueno_ms": 32.548,
+     "burn_ms": 391.162,
+     "ratio": 12.0181
+    },
+    {
+     "size": "32x2560x9728",
+     "trueno_ms": 23.255,
+     "burn_ms": 651.56,
+     "ratio": 28.0178
+    },
+    {
+     "size": "128x2560x9728",
+     "trueno_ms": 27.378,
+     "burn_ms": 378.382,
+     "ratio": 13.8208
+    },
+    {
+     "size": "4x2560x151936",
+     "trueno_ms": 1352.517,
+     "burn_ms": 7078.047,
+     "ratio": 5.2332
+    },
+    {
+     "size": "32x2560x4096",
+     "trueno_ms": 22.461,
+     "burn_ms": 165.957,
+     "ratio": 7.3885
+    }
+   ]
+  }
+ ],
+ "per_size": {
+  "4x2560x9728": {
+   "ratios": [
+    9.8414,
+    12.4716,
+    12.0181
+   ],
+   "trueno_ms": [
+    20.233,
+    20.269,
+    32.548
+   ],
+   "burn_ms": [
+    199.116,
+    252.791,
+    391.162
+   ]
+  },
+  "32x2560x9728": {
+   "ratios": [
+    10.4986,
+    11.688,
+    28.0178
+   ],
+   "trueno_ms": [
+    20.366,
+    21.31,
+    23.255
+   ],
+   "burn_ms": [
+    213.817,
+    249.066,
+    651.56
+   ]
+  },
+  "128x2560x9728": {
+   "ratios": [
+    7.0436,
+    7.8974,
+    13.8208
+   ],
+   "trueno_ms": [
+    25.241,
+    26.995,
+    27.378
+   ],
+   "burn_ms": [
+    177.788,
+    213.19,
+    378.382
+   ]
+  },
+  "4x2560x151936": {
+   "ratios": [
+    2.9946,
+    4.5047,
+    5.2332
+   ],
+   "trueno_ms": [
+    1251.236,
+    1413.698,
+    1352.517
+   ],
+   "burn_ms": [
+    3746.897,
+    6368.356,
+    7078.047
+   ]
+  },
+  "32x2560x4096": {
+   "ratios": [
+    7.4093,
+    11.5734,
+    7.3885
+   ],
+   "trueno_ms": [
+    14.282,
+    15.342,
+    22.461
+   ],
+   "burn_ms": [
+    105.818,
+    177.564,
+    165.957
+   ]
+  }
+ }
+}

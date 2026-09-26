@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-burn = { version = "0.21.0-pre.2", features = ["wgpu"] }
+burn = { version = "0.21.0", features = ["wgpu"] }
 # APR-MONO: in-tree sibling. This replaces BOTH the crates.io pin and the
 # `[patch.crates-io] trueno = { path = "/home/noah/src/trueno" }` that used to
 # follow — an absolute path to a now-archived sibling checkout that exists only
