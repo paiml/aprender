@@ -104,6 +104,9 @@ pub(crate) mod model_gate;
 // EXT-19 speed ledger; its consumer is the EXT-001 §3.7 per-tag speed loop.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod speed_ledger;
+// EXT-19 release-phase gate over the speed ledger (G3 coverage + ratchet).
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod speed_gate;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;
 pub(crate) mod model_gate_m2;
