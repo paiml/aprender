@@ -13,6 +13,7 @@ use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
+use super::labels::{LabelText, Labels};
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -67,12 +68,11 @@ pub struct GGPlot {
     width: u32,
     /// Height in pixels.
     height: u32,
-    /// Title.
-    title: Option<String>,
-    /// X-axis label.
-    xlab: Option<String>,
-    /// Y-axis label.
-    ylab: Option<String>,
+    /// Title and axis labels, resolved (drawn or refused) by `build()`.
+    labels: LabelText,
+    /// Font the labels are drawn in; there is no default (#3590).
+    #[cfg(feature = "text-path")]
+    font: Option<Vec<u8>>,
 }
 
 impl Default for GGPlot {
@@ -94,9 +94,9 @@ impl GGPlot {
             theme: Theme::grey(),
             width: 800,
             height: 600,
-            title: None,
-            xlab: None,
-            ylab: None,
+            labels: LabelText::default(),
+            #[cfg(feature = "text-path")]
+            font: None,
         }
     }
 
@@ -165,24 +165,37 @@ impl GGPlot {
         self
     }
 
-    /// Set title.
+    /// Set the title, drawn centred in the top margin.
+    ///
+    /// Needs `.font(bytes)` (feature `text-path`); without one `build()` refuses it (#3590).
     #[must_use]
     pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.title = Some(title.into());
+        self.labels.title = Some(title.into());
         self
     }
 
-    /// Set x-axis label.
+    /// Set the x-axis label, drawn centred in the bottom margin. Needs a font, as [`Self::title`].
     #[must_use]
     pub fn xlab(mut self, label: impl Into<String>) -> Self {
-        self.xlab = Some(label.into());
+        self.labels.xlab = Some(label.into());
         self
     }
 
-    /// Set y-axis label.
+    /// Set the y-axis label, drawn turned a quarter and centred in the left margin. Needs a font,
+    /// as [`Self::title`].
     #[must_use]
     pub fn ylab(mut self, label: impl Into<String>) -> Self {
-        self.ylab = Some(label.into());
+        self.labels.ylab = Some(label.into());
+        self
+    }
+
+    /// Pin the font (TrueType/OpenType bytes) the title and axis labels are drawn in.
+    ///
+    /// There is deliberately no default font: see [`crate::text`].
+    #[cfg(feature = "text-path")]
+    #[must_use]
+    pub fn font(mut self, font_bytes: impl Into<Vec<u8>>) -> Self {
+        self.font = Some(font_bytes.into());
         self
     }
 
@@ -190,12 +203,19 @@ impl GGPlot {
     ///
     /// # Errors
     ///
-    /// Returns an error if the plot cannot be built.
+    /// Returns an error if the plot has no layer, or if a title or axis label is set that cannot
+    /// be drawn: no `text-path` feature, no `.font(bytes)`, or a font that draws no glyph for it.
+    /// A label is drawn or refused, never silently dropped (#3590).
     pub fn build(self) -> Result<BuiltGGPlot> {
         // Validate we have at least one layer
         if self.layers.is_empty() {
             return Err(Error::Rendering("No geometry layers specified".into()));
         }
+        #[cfg(feature = "text-path")]
+        let font = self.font.as_deref();
+        #[cfg(not(feature = "text-path"))]
+        let font: Option<&[u8]> = None;
+        let labels = Labels::resolve(&self.labels, font, self.theme.margin)?;
 
         Ok(BuiltGGPlot {
             data: self.data,
@@ -206,7 +226,7 @@ impl GGPlot {
             theme: self.theme,
             width: self.width,
             height: self.height,
-            title: self.title,
+            labels,
         })
     }
 }
@@ -222,8 +242,7 @@ pub struct BuiltGGPlot {
     theme: Theme,
     width: u32,
     height: u32,
-    #[allow(dead_code)]
-    title: Option<String>,
+    labels: Labels,
 }
 
 /// Where each panel sits in the figure.
@@ -278,6 +297,7 @@ impl BuiltGGPlot {
         for p in &ps {
             self.render_panel(&mut fb, p, &grid)?;
         }
+        self.labels.draw(&mut fb, self.theme.margin, self.theme.text_color);
 
         Ok(fb)
     }
@@ -813,19 +833,44 @@ mod tests {
         assert!(fb.width() > 0);
     }
 
-    #[test]
-    fn test_ggplot_title_labels() {
-        let plot = GGPlot::new()
-            .data_xy(&[1.0, 2.0], &[3.0, 4.0])
-            .geom(Geom::point())
-            .title("My Plot")
-            .xlab("X Axis")
-            .ylab("Y Axis")
-            .build()
-            .expect("operation should succeed");
+    fn labelled(set: &str) -> GGPlot {
+        let plot = GGPlot::new().data_xy(&[1.0, 2.0], &[3.0, 4.0]).geom(Geom::point());
+        match set {
+            "title" => plot.title("My Plot"),
+            "xlab" => plot.xlab("X Axis"),
+            _ => plot.ylab("Y Axis"),
+        }
+    }
 
-        let fb = plot.to_framebuffer().expect("operation should succeed");
-        assert!(fb.width() > 0);
+    fn refusal(plot: GGPlot) -> String {
+        match plot.build() {
+            Ok(_) => panic!("a label that cannot be drawn was accepted (#3590)"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    /// #3590: a label that cannot be drawn is refused, naming its builder method — never
+    /// accepted and dropped.
+    #[test]
+    fn test_ggplot_label_without_a_font_is_refused() {
+        for set in ["title", "xlab", "ylab"] {
+            let err = refusal(labelled(set));
+            assert!(err.contains(&format!("GGPlot::{set}")), "{set}: {err}");
+        }
+    }
+
+    /// An empty label asks for nothing to be drawn, so it needs no font.
+    #[test]
+    fn test_ggplot_empty_label_needs_no_font() {
+        let plot = GGPlot::new().data_xy(&[1.0, 2.0], &[3.0, 4.0]).geom(Geom::point()).title("");
+        assert!(plot.build().is_ok());
+    }
+
+    #[cfg(feature = "text-path")]
+    #[test]
+    fn test_ggplot_font_that_draws_no_glyph_is_refused() {
+        let err = refusal(labelled("title").font(vec![0u8; 64]));
+        assert!(err.contains("draws no glyph"), "{err}");
     }
 
     #[test]
