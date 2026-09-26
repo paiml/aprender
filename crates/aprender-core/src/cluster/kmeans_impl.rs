@@ -324,17 +324,51 @@ impl KMeans {
             as usize
     }
 
-    /// Initializes centroids by farthest-point seeding from row `first_idx`.
+    /// Greedy k-means++ (D²) seeding from row `first_idx`, as sklearn and linfa do.
+    ///
+    /// Each further centroid is the best of `2 + ln k` candidates, each drawn
+    /// with probability proportional to its squared distance to the nearest
+    /// centroid so far; "best" is the lowest resulting potential (sum of those
+    /// distances). The draws come from `SplitMix64` keyed on the seed and
+    /// `first_idx`, so a seeded fit is reproducible on every platform.
+    /// Farthest-point seeding, used before #3146, always took the argmax and
+    /// so chased outliers.
     fn kmeans_plusplus_init(&self, x: &Matrix<f32>, first_idx: usize) -> Matrix<f32> {
-        let (_, n_features) = x.shape();
+        let (n_samples, n_features) = x.shape();
         let mut centroids_data = Vec::with_capacity(self.n_clusters * n_features);
-
         append_row(&mut centroids_data, x, first_idx, n_features);
 
+        let seed = self.random_state.unwrap_or(42);
+        let mut rng = SplitMix64(seed ^ (first_idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let n_trials = 2 + (self.n_clusters as f64).ln() as usize;
+        let mut closest = distances_sq_to_sample(x, first_idx);
+
         for _ in 1..self.n_clusters {
-            let min_distances = nearest_centroid_distances_sq(x, &centroids_data, n_features);
-            let max_idx = argmax(&min_distances);
-            append_row(&mut centroids_data, x, max_idx, n_features);
+            let cumulative: Vec<f64> = closest
+                .iter()
+                .scan(0.0_f64, |acc, &d| {
+                    *acc += f64::from(d);
+                    Some(*acc)
+                })
+                .collect();
+            let total = cumulative[n_samples - 1];
+
+            let mut best: Option<(f64, usize, Vec<f32>)> = None;
+            for _ in 0..n_trials {
+                let target = rng.next_unit() * total;
+                let cand = cumulative
+                    .partition_point(|&cum| cum <= target)
+                    .min(n_samples - 1);
+                let d_cand = distances_sq_to_sample(x, cand);
+                let merged: Vec<f32> = closest.iter().zip(&d_cand).map(|(&a, &b)| a.min(b)).collect();
+                let potential: f64 = merged.iter().map(|&d| f64::from(d)).sum();
+                if best.as_ref().map_or(true, |b| potential < b.0) {
+                    best = Some((potential, cand, merged));
+                }
+            }
+            let (_, cand, merged) = best.expect("n_trials >= 2");
+            append_row(&mut centroids_data, x, cand, n_features);
+            closest = merged;
         }
 
         Matrix::from_vec(self.n_clusters, n_features, centroids_data)
@@ -470,7 +504,7 @@ impl UnsupervisedEstimator for KMeans {
 }
 
 impl KMeans {
-    /// One Lloyd run from farthest-point seeding at `first_idx`:
+    /// One Lloyd run from D² seeding at `first_idx`:
     /// (centroids, labels, inertia, iterations).
     fn lloyd(&self, x: &Matrix<f32>, first_idx: usize) -> (Matrix<f32>, Vec<usize>, f32, usize) {
         let mut centroids = self.kmeans_plusplus_init(x, first_idx);
@@ -508,58 +542,35 @@ fn splitmix64(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+/// A seeded `SplitMix64` stream for the D² draws.
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    /// Uniform in `[0, 1)` from the top 53 bits.
+    fn next_unit(&mut self) -> f64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        (splitmix64(self.0) >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// Squared distance of every sample to sample `row`.
+fn distances_sq_to_sample(x: &Matrix<f32>, row: usize) -> Vec<f32> {
+    let n_features = x.n_cols();
+    (0..x.n_rows())
+        .map(|i| {
+            (0..n_features)
+                .map(|j| {
+                    let diff = x.get(i, j) - x.get(row, j);
+                    diff * diff
+                })
+                .sum()
+        })
+        .collect()
+}
+
 /// Append the `row`-th row of `x` to the flat centroid buffer.
 fn append_row(centroids_data: &mut Vec<f32>, x: &Matrix<f32>, row: usize, n_features: usize) {
     for j in 0..n_features {
         centroids_data.push(x.get(row, j));
     }
-}
-
-/// Squared Euclidean distance from point `i` to flat centroid `c` in `centroids_data`.
-fn squared_distance_to_centroid(
-    x: &Matrix<f32>,
-    i: usize,
-    centroids_data: &[f32],
-    c: usize,
-    n_features: usize,
-) -> f32 {
-    let mut dist_sq = 0.0;
-    for j in 0..n_features {
-        let diff = x.get(i, j) - centroids_data[c * n_features + j];
-        dist_sq += diff * diff;
-    }
-    dist_sq
-}
-
-/// For each sample, the squared distance to its nearest centroid seen so far.
-fn nearest_centroid_distances_sq(
-    x: &Matrix<f32>,
-    centroids_data: &[f32],
-    n_features: usize,
-) -> Vec<f32> {
-    let n_samples = x.n_rows();
-    let n_current = centroids_data.len() / n_features;
-    let mut min_distances = vec![f32::INFINITY; n_samples];
-    for (i, min_dist) in min_distances.iter_mut().enumerate() {
-        for c in 0..n_current {
-            let dist_sq = squared_distance_to_centroid(x, i, centroids_data, c, n_features);
-            if dist_sq < *min_dist {
-                *min_dist = dist_sq;
-            }
-        }
-    }
-    min_distances
-}
-
-/// Index of the maximum element. Ties resolve to the first occurrence.
-fn argmax(values: &[f32]) -> usize {
-    let mut max_val = 0.0;
-    let mut max_idx = 0;
-    for (i, &v) in values.iter().enumerate() {
-        if v > max_val {
-            max_val = v;
-            max_idx = i;
-        }
-    }
-    max_idx
 }

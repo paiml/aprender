@@ -234,6 +234,89 @@ fn falsify_km_009_n_init_reproducible() {
     assert_eq!(KMeans::new(3).with_n_init(0).n_init(), 1);
 }
 
+// =========================================================================
+// FALSIFY-KM-011/012: D² (k-means++) seeding (E9 finding 5d-E9-kmeans-d2-seeding)
+// =========================================================================
+
+/// The pre-#3146 init, kept here as the reference D² must beat: farthest-point
+/// seeding from `first_idx`, then the same Lloyd iterations. Returns inertia.
+fn farthest_point_lloyd(km: &KMeans, x: &Matrix<f32>, first_idx: usize) -> f32 {
+    let (n, d) = x.shape();
+    let mut data = Vec::with_capacity(km.n_clusters * d);
+    append_row(&mut data, x, first_idx, d);
+    let mut closest = distances_sq_to_sample(x, first_idx);
+    for _ in 1..km.n_clusters {
+        let far = (0..n).fold(0, |b, i| if closest[i] > closest[b] { i } else { b });
+        append_row(&mut data, x, far, d);
+        let d_far = distances_sq_to_sample(x, far);
+        for (c, f) in closest.iter_mut().zip(d_far) {
+            *c = c.min(f);
+        }
+    }
+    let mut centroids = Matrix::from_vec(km.n_clusters, d, data).expect("valid matrix");
+    for _ in 0..km.max_iter {
+        let labels = km.assign_labels(x, &centroids);
+        let next = km.update_centroids(x, &labels);
+        let done = km.centroids_converged(&centroids, &next);
+        centroids = next;
+        if done {
+            break;
+        }
+    }
+    let labels = km.assign_labels(x, &centroids);
+    inertia(x, &centroids, &labels)
+}
+
+/// FALSIFY-KM-011: over the KM-007 grid (96 single-init fits) D² seeding
+/// reaches a strictly lower total inertia than farthest-point seeding
+/// (measured: 29668.4 vs 30066.0, 33 wins / 25 losses). An argmax mutant IS
+/// farthest-point and ties, so it fails the strict inequality.
+#[test]
+fn falsify_km_011_d2_beats_farthest_point() {
+    let (mut sum_d2, mut sum_fp, mut wins, mut losses) = (0.0_f64, 0.0_f64, 0, 0);
+    for seed in 0..24u64 {
+        let x = km_blobs(seed, 60, 3, 6);
+        for k in [2usize, 3, 5, 8] {
+            let km = km_fit(&x, k, 1);
+            let fp = farthest_point_lloyd(&km, &x, km.restart_start_row(0, x.n_rows()));
+            sum_d2 += f64::from(km.inertia());
+            sum_fp += f64::from(fp);
+            wins += usize::from(km.inertia() < fp);
+            losses += usize::from(km.inertia() > fp);
+        }
+    }
+    assert!(
+        sum_d2 < sum_fp,
+        "FALSIFIED KM-011: D² total inertia {sum_d2} >= farthest-point {sum_fp} over 96 fits (wins {wins}, losses {losses})"
+    );
+}
+
+/// FALSIFY-KM-012: a draw is proportional to D², so a row at distance 0 from
+/// a chosen centroid is never drawn while any other row has weight. 50 copies
+/// of one point plus two distinct points, k = 3: every seed must seed all
+/// three distinct points and reach inertia 0. Uniform sampling draws a copy
+/// with probability ~50/52 per step.
+#[test]
+fn falsify_km_012_zero_weight_rows_never_drawn() {
+    let mut data = vec![1.0_f32; 100];
+    data.extend([5.0, -3.0, -4.0, 7.0]);
+    let x = Matrix::from_vec(52, 2, data).expect("valid matrix");
+    for seed in 0..32u64 {
+        let km = KMeans::new(3).with_random_state(seed);
+        let centroids = km.kmeans_plusplus_init(&x, km.restart_start_row(0, 52));
+        let mut rows: Vec<(u32, u32)> = (0..3)
+            .map(|c| (centroids.get(c, 0).to_bits(), centroids.get(c, 1).to_bits()))
+            .collect();
+        rows.sort_unstable();
+        rows.dedup();
+        assert_eq!(
+            rows.len(),
+            3,
+            "FALSIFIED KM-012: seed {seed}: D² drew a zero-weight duplicate row"
+        );
+    }
+}
+
 /// Written by the pre-`n_init` code (d868ec946^, `KMeans::new(2).with_random_state(7)`
 /// fitted on these six points). Regenerating them with the current code would
 /// make the test vacuous: they must stay the OLD bytes.

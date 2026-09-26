@@ -302,7 +302,7 @@ fn test_initialization_centroid_spread() {
 }
 
 #[test]
-fn test_initialization_selects_farthest() {
+fn test_initialization_separates_distant_groups() {
     // Test that k-means++ initialization leads to correct clustering
     // This catches comparison mutations (line 191: < with <=, line 202: > with >=)
     // Data: two far apart points (0.0 and 10.0) plus one near first (0.5)
