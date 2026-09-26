@@ -254,3 +254,37 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           JOB_STATUS: ${{ job.status }}
+
+  # CB-200 MEASURED (check_complexity_ratchet.sh --cb200-measured). The PR path
+  # only compares TYPED numbers (baseline file vs [tdg] baseline, ceiling file
+  # shrink-only); nothing required ever ran `pmat comply`, and main measured 620
+  # against a banked 599 with every step green
+  # (docs/findings/cb200-main-green-over-baseline.jsonl). This job MEASURES the
+  # count and is RED when it exceeds scripts/cb200_measured_ceiling.txt.
+  # Its OWN job, not a step above: a cold pmat index is ~24 min, and guards-nightly
+  # already spends ~27 of its 60. Same runner pool, same pinned pmat, no secrets.
+  cb200-measured:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # 45: one measured cold run of ~24 min (cbf623e5b, pmat 3.41.1) x1.5 = 36,
+    # +20 = 44, rounded up. Replace with the p99 of the first three runs.
+    timeout-minutes: 45
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: pmat/bashrs must match the pinned fleet versions (never install)
+        run: bash scripts/check_tool_versions.sh
+      - name: CB-200 measured count may only fall (pmat comply, ceiling scripts/cb200_measured_ceiling.txt)
+        run: |
+          printf 'pmat: %s (%s)\n' "$(command -v pmat)" "$(pmat --version 2>/dev/null | head -1)"
+          bash scripts/check_complexity_ratchet.sh --cb200-measured
