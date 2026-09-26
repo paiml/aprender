@@ -144,101 +144,8 @@ impl OwnedQuantizedModel {
         current_k: &[f32],
         current_v: &[f32],
     ) -> Vec<f32> {
-        let num_heads = self.config.num_heads;
-        let num_kv_heads = self.config.num_kv_heads;
-        // GH-479: Use config methods (Qwen3 head_dim != hidden/heads)
-        let head_dim = self.config.head_dim();
-        let q_dim = self.config.q_dim();
-        let kv_dim = self.config.kv_dim();
-        // PMAT-810: Gemma2 scales by 1/sqrt(query_pre_attn_scalar); every other
-        // arch (and gemma-2-2b, key absent) → 1/sqrt(head_dim), byte-identical.
-        let scale = self.config.attn_scale();
-        // PMAT-810: Gemma2 caps attention logits with `cap*tanh(scores/cap)`
-        // (cap=50) BEFORE softmax. `None` for every other arch → no-op.
-        let attn_softcap = self.config.attn_logit_softcap();
-
-        // Number of Q heads that share each KV head
-        let q_per_kv = num_heads / num_kv_heads;
-
-        // Total sequence length = cached + 1 (current)
-        let cache_len = k_cache.len().checked_div(kv_dim).unwrap_or(0);
-        let total_len = cache_len + 1;
-
-        let mut output = vec![0.0f32; q_dim];
-
-        // Score buffer for the current group.
-        // Size: q_per_kv * total_len.
-        // We reuse this buffer for each KV group to minimize allocation.
-        let mut group_scores = vec![0.0f32; q_per_kv * total_len];
-
-        // Process each KV head group (OPTIMIZATION: Scan KV cache once per group)
-        for kv_head in 0..num_kv_heads {
-            let kv_head_offset = kv_head * head_dim;
-
-            // 1. Compute Scores (Scan K Cache Once)
-            for pos in 0..cache_len {
-                let k_start = pos * kv_dim + kv_head_offset;
-                let cached_key = &k_cache[k_start..k_start + head_dim];
-
-                // For each Q head in this group
-                for i in 0..q_per_kv {
-                    let q_head_idx = kv_head * q_per_kv + i;
-                    let q_head_offset = q_head_idx * head_dim;
-                    let q_head_data = &q[q_head_offset..q_head_offset + head_dim];
-
-                    let score = Self::simd_dot_f32(q_head_data, cached_key) * scale;
-                    group_scores[i * total_len + pos] = score;
-                }
-            }
-
-            // Handle current position K
-            let curr_key = &current_k[kv_head_offset..kv_head_offset + head_dim];
-            for i in 0..q_per_kv {
-                let q_head_idx = kv_head * q_per_kv + i;
-                let q_head_offset = q_head_idx * head_dim;
-                let q_head_data = &q[q_head_offset..q_head_offset + head_dim];
-
-                let score = Self::simd_dot_f32(q_head_data, curr_key) * scale;
-                group_scores[i * total_len + cache_len] = score;
-            }
-
-            // 2. Softmax (Per Q Head). PMAT-810: Gemma2 softcaps the scores first.
-            for i in 0..q_per_kv {
-                let start = i * total_len;
-                let end = start + total_len;
-                if let Some(cap) = attn_softcap {
-                    crate::gguf::ops::softcap(&mut group_scores[start..end], cap);
-                }
-                crate::quantize::softmax_simd(&mut group_scores[start..end]);
-            }
-
-            // 3. Accumulate Values (Scan V Cache Once)
-            for pos in 0..cache_len {
-                let v_start = pos * kv_dim + kv_head_offset;
-                let cached_val = &v_cache[v_start..v_start + head_dim];
-
-                for i in 0..q_per_kv {
-                    let weight = group_scores[i * total_len + pos];
-                    let q_head_idx = kv_head * q_per_kv + i;
-                    let out_offset = q_head_idx * head_dim;
-                    let out_head = &mut output[out_offset..out_offset + head_dim];
-
-                    Self::simd_axpy_f32(out_head, weight, cached_val);
-                }
-            }
-
-            // Handle current position V
-            let curr_val = &current_v[kv_head_offset..kv_head_offset + head_dim];
-            for i in 0..q_per_kv {
-                let weight = group_scores[i * total_len + cache_len];
-                let q_head_idx = kv_head * q_per_kv + i;
-                let out_offset = q_head_idx * head_dim;
-                let out_head = &mut output[out_offset..out_offset + head_dim];
-
-                Self::simd_axpy_f32(out_head, weight, curr_val);
-            }
-        }
-
+        let mut output = vec![0.0f32; self.config.q_dim()];
+        self.attention_with_cache_gqa_into(q, k_cache, v_cache, current_k, current_v, &mut output);
         output
     }
 
@@ -252,99 +159,28 @@ impl OwnedQuantizedModel {
         current_v: &[f32],
         output: &mut [f32],
     ) {
-        let num_heads = self.config.num_heads;
-        let num_kv_heads = self.config.num_kv_heads;
-        // GH-479: Use config methods (Qwen3 head_dim != hidden/heads)
-        let head_dim = self.config.head_dim();
-        let q_dim = self.config.q_dim();
-        let kv_dim = self.config.kv_dim();
         // PMAT-810: Gemma2 scales by 1/sqrt(query_pre_attn_scalar); every other
         // arch (and gemma-2-2b, key absent) → 1/sqrt(head_dim), byte-identical.
-        let scale = self.config.attn_scale();
-        // PMAT-810: Gemma2 attention-logit softcap (None elsewhere → no-op).
-        let attn_softcap = self.config.attn_logit_softcap();
-
-        let q_per_kv = num_heads / num_kv_heads;
-
-        let cache_len = k_cache.len().checked_div(kv_dim).unwrap_or(0);
-        let total_len = cache_len + 1;
-
-        // Zero output buffer
-        // GH-479: Use q_dim (may differ from hidden_dim for Qwen3)
-        output[..q_dim].iter_mut().for_each(|x| *x = 0.0);
-
-        // Score buffer for the current group.
-        // Size: q_per_kv * total_len.
-        // We reuse this buffer for each KV group to minimize allocation.
-        let mut group_scores = vec![0.0f32; q_per_kv * total_len];
-
-        // Process each KV head group (OPTIMIZATION: Scan KV cache once per group)
-        for kv_head in 0..num_kv_heads {
-            let kv_head_offset = kv_head * head_dim;
-
-            // 1. Compute Scores (Scan K Cache Once)
-            for pos in 0..cache_len {
-                let k_start = pos * kv_dim + kv_head_offset;
-                let cached_key = &k_cache[k_start..k_start + head_dim];
-
-                // For each Q head in this group
-                for i in 0..q_per_kv {
-                    let q_head_idx = kv_head * q_per_kv + i;
-                    let q_head_offset = q_head_idx * head_dim;
-                    let q_head_data = &q[q_head_offset..q_head_offset + head_dim];
-
-                    let score = Self::simd_dot_f32(q_head_data, cached_key) * scale;
-                    group_scores[i * total_len + pos] = score;
-                }
-            }
-
-            // Handle current position K
-            let curr_key = &current_k[kv_head_offset..kv_head_offset + head_dim];
-            for i in 0..q_per_kv {
-                let q_head_idx = kv_head * q_per_kv + i;
-                let q_head_offset = q_head_idx * head_dim;
-                let q_head_data = &q[q_head_offset..q_head_offset + head_dim];
-
-                let score = Self::simd_dot_f32(q_head_data, curr_key) * scale;
-                group_scores[i * total_len + cache_len] = score;
-            }
-
-            // 2. Softmax (Per Q Head). PMAT-810: Gemma2 softcaps the scores first.
-            for i in 0..q_per_kv {
-                let start = i * total_len;
-                let end = start + total_len;
-                if let Some(cap) = attn_softcap {
-                    crate::gguf::ops::softcap(&mut group_scores[start..end], cap);
-                }
-                crate::quantize::softmax_simd(&mut group_scores[start..end]);
-            }
-
-            // 3. Accumulate Values (Scan V Cache Once)
-            for pos in 0..cache_len {
-                let v_start = pos * kv_dim + kv_head_offset;
-                let cached_val = &v_cache[v_start..v_start + head_dim];
-
-                for i in 0..q_per_kv {
-                    let weight = group_scores[i * total_len + pos];
-                    let q_head_idx = kv_head * q_per_kv + i;
-                    let out_offset = q_head_idx * head_dim;
-                    let out_head = &mut output[out_offset..out_offset + head_dim];
-
-                    Self::simd_axpy_f32(out_head, weight, cached_val);
-                }
-            }
-
-            // Handle current position V
-            let curr_val = &current_v[kv_head_offset..kv_head_offset + head_dim];
-            for i in 0..q_per_kv {
-                let weight = group_scores[i * total_len + cache_len];
-                let q_head_idx = kv_head * q_per_kv + i;
-                let out_offset = q_head_idx * head_dim;
-                let out_head = &mut output[out_offset..out_offset + head_dim];
-
-                Self::simd_axpy_f32(out_head, weight, curr_val);
-            }
-        }
+        // Gemma2 also caps attention logits (None elsewhere → no-op).
+        // PP-ARCH-001 §9.13: the body is the shared cached-GQA home, which
+        // zeroes `output[..q_dim]` itself.
+        crate::gguf::ops::attend_cached_gqa_into(
+            q,
+            k_cache,
+            v_cache,
+            current_k,
+            current_v,
+            output,
+            crate::gguf::ops::CachedGqa {
+                num_heads: self.config.num_heads,
+                num_kv_heads: self.config.num_kv_heads,
+                head_dim: self.config.head_dim(),
+            },
+            self.config.attn_scale(),
+            self.config.attn_logit_softcap(),
+            Self::simd_dot_f32,
+            Self::simd_axpy_f32,
+        );
     }
 
     /// Adaptive attention with KV cache - auto-selects CPU or GPU backend (IMP-122)

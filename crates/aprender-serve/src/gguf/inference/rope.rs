@@ -161,7 +161,7 @@ impl OwnedQuantizedModel {
 
     /// SIMD-optimized dot product for f32 slices
     #[inline]
-    fn simd_dot_f32(a: &[f32], b: &[f32]) -> f32 {
+    pub(crate) fn simd_dot_f32(a: &[f32], b: &[f32]) -> f32 {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
@@ -239,7 +239,7 @@ impl OwnedQuantizedModel {
 
     /// SIMD-optimized scaled accumulation: out[i] += weight * val[i]
     #[inline]
-    fn simd_axpy_f32(out: &mut [f32], weight: f32, val: &[f32]) {
+    pub(crate) fn simd_axpy_f32(out: &mut [f32], weight: f32, val: &[f32]) {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx2") {
@@ -320,55 +320,27 @@ impl OwnedQuantizedModel {
         let num_heads = self.config.num_heads;
         // GH-479: Use config methods (Qwen3 head_dim != hidden/heads)
         let head_dim = self.config.head_dim();
-        let q_dim = self.config.q_dim();
         let scale = 1.0 / (head_dim as f32).sqrt();
-
-        // Total sequence length = cached + 1 (current)
-        let cache_len = k_cache.len() / q_dim;
-        let total_len = cache_len + 1;
-
-        let mut output = vec![0.0f32; q_dim];
-
-        // Process each head
-        for head in 0..num_heads {
-            let head_offset = head * head_dim;
-            let q_head = &q[head_offset..head_offset + head_dim];
-
-            // Compute attention scores against all positions (cached + current)
-            let mut scores = Vec::with_capacity(total_len);
-
-            // Scores against cached positions (SIMD-optimized)
-            for pos in 0..cache_len {
-                let k_start = pos * q_dim + head_offset;
-                let cached_key = &k_cache[k_start..k_start + head_dim];
-                let score = Self::simd_dot_f32(q_head, cached_key) * scale;
-                scores.push(score);
-            }
-
-            // Score against current position (SIMD-optimized)
-            let curr_key = &current_k[head_offset..head_offset + head_dim];
-            let current_score = Self::simd_dot_f32(q_head, curr_key) * scale;
-            scores.push(current_score);
-
-            // Softmax (SIMD-optimized)
-            crate::quantize::softmax_simd(&mut scores);
-
-            // Weighted sum of values
-            let out_head = &mut output[head_offset..head_offset + head_dim];
-
-            // Sum over cached values (SIMD-optimized)
-            for (pos, &weight) in scores.iter().enumerate().take(cache_len) {
-                let v_start = pos * q_dim + head_offset;
-                let cached_val = &v_cache[v_start..v_start + head_dim];
-                Self::simd_axpy_f32(out_head, weight, cached_val);
-            }
-
-            // Add current value (SIMD-optimized)
-            let curr_val = &current_v[head_offset..head_offset + head_dim];
-            let current_weight = scores[cache_len];
-            Self::simd_axpy_f32(out_head, current_weight, curr_val);
-        }
-
+        let mut output = vec![0.0f32; self.config.q_dim()];
+        // PP-ARCH-001 §9.13: multi-head attention is the shared cached-GQA
+        // home with one query head per KV head.
+        crate::gguf::ops::attend_cached_gqa_into(
+            q,
+            k_cache,
+            v_cache,
+            current_k,
+            current_v,
+            &mut output,
+            crate::gguf::ops::CachedGqa {
+                num_heads,
+                num_kv_heads: num_heads,
+                head_dim,
+            },
+            scale,
+            None,
+            Self::simd_dot_f32,
+            Self::simd_axpy_f32,
+        );
         output
     }
 }

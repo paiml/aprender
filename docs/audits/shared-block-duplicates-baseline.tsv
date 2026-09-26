@@ -10,7 +10,6 @@ attention	gguf/inference/attention_gqa.rs	gpu_attention_with_cache
 attention	gguf/inference/cached/single_true_batched_owned.rs	gpu_fused_causal_attention
 attention	gguf/inference/cached/thread-safe.rs	gpu_fused_causal_attention
 attention	gguf/inference/flash_attention_dispatch.rs	flash_attention_tiled
-attention	gguf/inference/rope.rs	attention_with_cache
 attention	gpu/scheduler/ops.rs	gqa_multihead_attention
 rmsnorm	gguf/inference/forward/forward_qwen35.rs	gated_rmsnorm
 rmsnorm	gpu/scheduler/linear_attn.rs	rms_norm_gated

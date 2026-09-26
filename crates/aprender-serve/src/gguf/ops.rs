@@ -1247,6 +1247,297 @@ mod attend_row_online_tiled_equivalence_tests {
     }
 }
 
+/// Head geometry of one [`attend_cached_gqa_into`] call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CachedGqa {
+    /// Query heads.
+    pub num_heads: usize,
+    /// KV heads; `num_heads` for multi-head attention.
+    pub num_kv_heads: usize,
+    /// Per-head width.
+    pub head_dim: usize,
+}
+
+/// Decode-step attention of every query head over a KV cache plus the current
+/// position's K/V (PP-ARCH-001 §9.13, the shared cached-GQA home).
+///
+/// `k_cache`/`v_cache` are `[cache_len, num_kv_heads * head_dim]`, `current_k`/
+/// `current_v` are `[num_kv_heads * head_dim]`, `q` and `out` are
+/// `[num_heads * head_dim]`; `out` is zeroed first. Per KV group: scores
+/// `dot(q_h, k_j) * scale` (cached positions, then current), an optional
+/// [`softcap`], [`crate::quantize::softmax_simd`], then `axpy(out_h, w_j, v_j)`
+/// in the same key order. `dot`/`axpy` are the caller's SIMD kernels, so the
+/// result is bit-identical to the per-site bodies it replaced (per-head
+/// arithmetic does not depend on the loop nesting).
+#[allow(clippy::too_many_arguments)]
+pub fn attend_cached_gqa_into(
+    q: &[f32],
+    k_cache: &[f32],
+    v_cache: &[f32],
+    current_k: &[f32],
+    current_v: &[f32],
+    out: &mut [f32],
+    geom: CachedGqa,
+    scale: f32,
+    attn_softcap: Option<f32>,
+    dot: impl Fn(&[f32], &[f32]) -> f32,
+    axpy: impl Fn(&mut [f32], f32, &[f32]),
+) {
+    let CachedGqa {
+        num_heads,
+        num_kv_heads,
+        head_dim,
+    } = geom;
+    let kv_dim = num_kv_heads * head_dim;
+    let q_per_kv = num_heads / num_kv_heads;
+    let cache_len = k_cache.len().checked_div(kv_dim).unwrap_or(0);
+    let total_len = cache_len + 1;
+
+    out[..num_heads * head_dim]
+        .iter_mut()
+        .for_each(|x| *x = 0.0);
+    // Scores of one KV group, reused across groups: [q_per_kv, total_len].
+    let mut group_scores = vec![0.0f32; q_per_kv * total_len];
+
+    for kv_head in 0..num_kv_heads {
+        let kv_off = kv_head * head_dim;
+        let q_head = |i: usize| {
+            let off = (kv_head * q_per_kv + i) * head_dim;
+            &q[off..off + head_dim]
+        };
+
+        // Scan the K cache once per group.
+        for pos in 0..cache_len {
+            let k_start = pos * kv_dim + kv_off;
+            let key = &k_cache[k_start..k_start + head_dim];
+            for i in 0..q_per_kv {
+                group_scores[i * total_len + pos] = dot(q_head(i), key) * scale;
+            }
+        }
+        let curr_key = &current_k[kv_off..kv_off + head_dim];
+        for i in 0..q_per_kv {
+            group_scores[i * total_len + cache_len] = dot(q_head(i), curr_key) * scale;
+        }
+
+        for row in group_scores.chunks_exact_mut(total_len) {
+            if let Some(cap) = attn_softcap {
+                softcap(row, cap);
+            }
+            crate::quantize::softmax_simd(row);
+        }
+
+        // Scan the V cache once per group.
+        for pos in 0..total_len {
+            let val = if pos < cache_len {
+                let v_start = pos * kv_dim + kv_off;
+                &v_cache[v_start..v_start + head_dim]
+            } else {
+                &current_v[kv_off..kv_off + head_dim]
+            };
+            for i in 0..q_per_kv {
+                let off = (kv_head * q_per_kv + i) * head_dim;
+                axpy(
+                    &mut out[off..off + head_dim],
+                    group_scores[i * total_len + pos],
+                    val,
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod attend_cached_gqa_equivalence_tests {
+    use super::{attend_cached_gqa_into, softcap, CachedGqa};
+    use crate::gguf::OwnedQuantizedModel as M;
+
+    // Frozen per-site bodies (before §9.13).
+
+    // gguf/inference/rope.rs::attention_with_cache (MHA, 1/sqrt(head_dim)).
+    fn ref_rope(
+        q: &[f32],
+        kc: &[f32],
+        vc: &[f32],
+        ck: &[f32],
+        cv: &[f32],
+        nh: usize,
+        hd: usize,
+    ) -> Vec<f32> {
+        let q_dim = nh * hd;
+        let scale = 1.0 / (hd as f32).sqrt();
+        let cache_len = kc.len() / q_dim;
+        let mut output = vec![0.0f32; q_dim];
+        for head in 0..nh {
+            let ho = head * hd;
+            let q_head = &q[ho..ho + hd];
+            let mut scores = Vec::with_capacity(cache_len + 1);
+            for pos in 0..cache_len {
+                let ks = pos * q_dim + ho;
+                scores.push(M::simd_dot_f32(q_head, &kc[ks..ks + hd]) * scale);
+            }
+            scores.push(M::simd_dot_f32(q_head, &ck[ho..ho + hd]) * scale);
+            crate::quantize::softmax_simd(&mut scores);
+            let out_head = &mut output[ho..ho + hd];
+            for (pos, &w) in scores.iter().enumerate().take(cache_len) {
+                let vs = pos * q_dim + ho;
+                M::simd_axpy_f32(out_head, w, &vc[vs..vs + hd]);
+            }
+            M::simd_axpy_f32(out_head, scores[cache_len], &cv[ho..ho + hd]);
+        }
+        output
+    }
+
+    // gguf/inference/attention_gqa.rs::attention_with_cache_gqa{,_into}.
+    #[allow(clippy::too_many_arguments)]
+    fn ref_gqa(
+        q: &[f32],
+        kc: &[f32],
+        vc: &[f32],
+        ck: &[f32],
+        cv: &[f32],
+        g: CachedGqa,
+        scale: f32,
+        cap: Option<f32>,
+    ) -> Vec<f32> {
+        let (nh, nkv, hd) = (g.num_heads, g.num_kv_heads, g.head_dim);
+        let kv_dim = nkv * hd;
+        let q_per_kv = nh / nkv;
+        let cache_len = kc.len().checked_div(kv_dim).unwrap_or(0);
+        let total_len = cache_len + 1;
+        let mut output = vec![0.0f32; nh * hd];
+        let mut gs = vec![0.0f32; q_per_kv * total_len];
+        for kv_head in 0..nkv {
+            let ko = kv_head * hd;
+            for pos in 0..cache_len {
+                let ks = pos * kv_dim + ko;
+                for i in 0..q_per_kv {
+                    let qo = (kv_head * q_per_kv + i) * hd;
+                    gs[i * total_len + pos] =
+                        M::simd_dot_f32(&q[qo..qo + hd], &kc[ks..ks + hd]) * scale;
+                }
+            }
+            for i in 0..q_per_kv {
+                let qo = (kv_head * q_per_kv + i) * hd;
+                gs[i * total_len + cache_len] =
+                    M::simd_dot_f32(&q[qo..qo + hd], &ck[ko..ko + hd]) * scale;
+            }
+            for i in 0..q_per_kv {
+                let r = &mut gs[i * total_len..(i + 1) * total_len];
+                if let Some(c) = cap {
+                    softcap(r, c);
+                }
+                crate::quantize::softmax_simd(r);
+            }
+            for pos in 0..cache_len {
+                let vs = pos * kv_dim + ko;
+                for i in 0..q_per_kv {
+                    let oo = (kv_head * q_per_kv + i) * hd;
+                    M::simd_axpy_f32(
+                        &mut output[oo..oo + hd],
+                        gs[i * total_len + pos],
+                        &vc[vs..vs + hd],
+                    );
+                }
+            }
+            for i in 0..q_per_kv {
+                let oo = (kv_head * q_per_kv + i) * hd;
+                M::simd_axpy_f32(
+                    &mut output[oo..oo + hd],
+                    gs[i * total_len + cache_len],
+                    &cv[ko..ko + hd],
+                );
+            }
+        }
+        output
+    }
+
+    fn lcg(seed: &mut u64, mag: f32) -> f32 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        #[allow(clippy::cast_precision_loss)]
+        let u = (*seed >> 40) as f32 / (1u64 << 24) as f32;
+        (u * 2.0 - 1.0) * mag
+    }
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    fn shared(
+        q: &[f32],
+        kc: &[f32],
+        vc: &[f32],
+        ck: &[f32],
+        cv: &[f32],
+        g: CachedGqa,
+        scale: f32,
+        cap: Option<f32>,
+    ) -> Vec<f32> {
+        // Poisoned buffer: the home must zero it.
+        let mut out = vec![f32::NAN; g.num_heads * g.head_dim];
+        attend_cached_gqa_into(
+            q,
+            kc,
+            vc,
+            ck,
+            cv,
+            &mut out,
+            g,
+            scale,
+            cap,
+            M::simd_dot_f32,
+            M::simd_axpy_f32,
+        );
+        out
+    }
+
+    #[test]
+    fn shared_home_is_bit_identical_to_each_per_site_body() {
+        let mut seed = 0x3422_0913u64;
+        let mut cases = 0;
+        for &(nh, nkv) in &[(1, 1), (4, 4), (4, 2), (8, 1), (6, 3)] {
+            for &hd in &[1usize, 7, 8, 16, 33] {
+                for &cache_len in &[0usize, 1, 5, 17] {
+                    for &mag in &[0.1f32, 3.0, 40.0] {
+                        let g = CachedGqa {
+                            num_heads: nh,
+                            num_kv_heads: nkv,
+                            head_dim: hd,
+                        };
+                        let kv_dim = nkv * hd;
+                        let mut r =
+                            |n: usize| (0..n).map(|_| lcg(&mut seed, mag)).collect::<Vec<_>>();
+                        let q = r(nh * hd);
+                        let kc = r(cache_len * kv_dim);
+                        let vc = r(cache_len * kv_dim);
+                        let ck = r(kv_dim);
+                        let cv = r(kv_dim);
+                        let scale = 1.0 / (hd as f32).sqrt();
+                        for cap in [None, Some(50.0f32), Some(2.5)] {
+                            assert_eq!(
+                                bits(&shared(&q, &kc, &vc, &ck, &cv, g, scale, cap)),
+                                bits(&ref_gqa(&q, &kc, &vc, &ck, &cv, g, scale, cap)),
+                                "gqa nh={nh} nkv={nkv} hd={hd} len={cache_len} mag={mag} cap={cap:?}"
+                            );
+                            cases += 1;
+                        }
+                        if nh == nkv {
+                            assert_eq!(
+                                bits(&shared(&q, &kc, &vc, &ck, &cv, g, scale, None)),
+                                bits(&ref_rope(&q, &kc, &vc, &ck, &cv, nh, hd)),
+                                "rope nh={nh} hd={hd} len={cache_len} mag={mag}"
+                            );
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 5 * 5 * 4 * 3 * 3 + 2 * 5 * 4 * 3);
+    }
+}
+
 #[cfg(test)]
 mod softmax_scalar_equivalence_tests {
     use super::{softmax_exp_in_place, softmax_normalize, softmax_scalar_in_place, SoftmaxNorm};

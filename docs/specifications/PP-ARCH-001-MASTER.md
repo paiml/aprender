@@ -642,3 +642,36 @@ in its FFN gate, not because of any attention math.
 - `gpu_fused_causal_attention` ×2.
 - `gpu/scheduler/ops.rs::gqa_multihead_attention`.
 - The non-attention rows.
+
+### 9.13 Phase 2 step 5d delivered: cached-GQA SIMD home (2026-09-26)
+
+**New home:** `gguf/ops.rs::attend_cached_gqa_into` with `CachedGqa { num_heads,
+num_kv_heads, head_dim }`. It is the decode-step attention over a KV cache plus the
+current position. Per KV group it computes `dot * scale`, then an optional `softcap`,
+then `softmax_simd`, then `axpy` in key order. The caller passes its own SIMD `dot`
+and `axpy` (the model's AVX2 helpers, now `pub(crate)`), so the math is unchanged.
+
+**Sites migrated:**
+- `gguf/inference/attention_gqa.rs::attention_with_cache_gqa_into`: the body moved
+  verbatim into the home. It passes `attn_scale()` and `attn_logit_softcap()`.
+- `gguf/inference/attention_gqa.rs::attention_with_cache_gqa`: this was a second copy
+  of the same body. It now allocates and calls `_into`.
+- `gguf/inference/rope.rs::attention_with_cache` (a ratchet row): this is multi-head
+  attention, so it calls the home with `num_kv_heads = num_heads`, `1/sqrt(hd)` and
+  no softcap. The loop nesting changes (head-major to group-major), but each head's
+  arithmetic is independent of it, so the result is unchanged.
+
+**Bit-exact:** `attend_cached_gqa_equivalence_tests` keeps frozen copies of the rope
+body and the GQA body. It runs 1020 cases with `to_bits` across:
+- 5 head layouts (MHA and GQA)
+- `head_dim` ∈ {1, 7, 8, 16, 33}, which covers the AVX2 tails
+- cache length ∈ {0, 1, 5, 17}
+- 3 magnitudes
+- softcap ∈ {None, 50, 2.5}
+
+The output buffer is poisoned with NaN, so the home's zeroing is tested too.
+
+**Rows: 19 → 18.** `apr_transformer/cache_attention.rs::compute_attention_with_cache`
+stays. It uses a different kernel set (the APR `simd_dot_f32`, a scalar guarded MulInv
+softmax, a causal mask and a first-token shortcut), so it does not fit this home
+bit-exactly.
