@@ -87,6 +87,8 @@ pub mod kernel_path;
 mod neon_q4k_q8k_tests;
 pub mod parallel_dequant;
 pub mod parallel_k;
+#[cfg(all(test, any(target_arch = "x86_64", target_arch = "aarch64")))]
+mod q5k_dot_simd_tests;
 pub mod simd;
 pub mod types;
 #[cfg(all(test, target_arch = "x86_64"))]

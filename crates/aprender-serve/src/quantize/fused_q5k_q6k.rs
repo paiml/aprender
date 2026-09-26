@@ -386,13 +386,19 @@ pub fn fused_q5k_dot(q5k_data: &[u8], activations: &[f32]) -> Result<f32> {
 /// Returns error if data sizes don't match or are malformed.
 /// See [`fused_q5k_dot`] for details.
 pub fn fused_q5k_dot_simd(q5k_data: &[u8], activations: &[f32]) -> Result<f32> {
-    // #2880: no Q5_K SIMD kernel exists. The gap is declared in
-    // kernel_path::KNOWN_SCALAR_GAPS; a kernel added here must be dispatched
-    // through selected_dot_kernel(DotOp::Q5kF32), which then fails the gate
-    // until the gap row is removed.
-    fused_q5k_dot(q5k_data, activations)
+    use super::kernel_path::{selected_dot_kernel, DotKernel, DotOp};
+    // #2880: the arm that runs is the one kernel_path reports.
+    match selected_dot_kernel(DotOp::Q5kF32) {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: selected_dot_kernel returns Avx2 only when avx2 and fma are detected.
+        DotKernel::Avx2 => unsafe { fused_q5k_dot_avx2(q5k_data, activations) },
+        #[cfg(target_arch = "aarch64")]
+        DotKernel::Neon => fused_q5k_dot_neon(q5k_data, activations),
+        _ => fused_q5k_dot(q5k_data, activations),
+    }
 }
 
 include!("fused_q4k_q8_dot.rs");
 include!("create.rs");
 include!("q6k_dot_neon.rs");
+include!("q5k_dot_simd.rs");
