@@ -40,6 +40,20 @@ fn sha(c: char) -> String {
     c.to_string().repeat(64)
 }
 
+/// A complete comparator block for an artifact arm (EXT-26).
+pub(crate) fn block() -> Option<ComparatorBlock> {
+    Some(ComparatorBlock {
+        command: vec!["llama-cli".into(), "-m".into(), "stock.gguf".into()],
+        version: "llama.cpp b6000".into(),
+        env_sha256: "e".repeat(64),
+        artifact_sha256: "f".repeat(64),
+        log_path: "logs/stock.log".into(),
+        image: None,
+        started_utc: "2026-09-26T00:00:00Z".into(),
+        finished_utc: "2026-09-26T00:10:00Z".into(),
+    })
+}
+
 fn stock(humaneval: usize, mbpp: usize) -> Arm {
     Arm {
         identity: ArmIdentity::Artifact {
@@ -51,6 +65,7 @@ fn stock(humaneval: usize, mbpp: usize) -> Arm {
             suite("humaneval", Some(above(humaneval))),
             suite("mbpp", Some(above(mbpp))),
         ],
+        comparator: block(),
     }
 }
 
@@ -66,6 +81,7 @@ fn api(role: ArmRole) -> Arm {
             suite("humaneval", Some(above(20))),
             suite("mbpp", Some(above(20))),
         ],
+        comparator: None,
     }
 }
 
@@ -212,6 +228,7 @@ fn ext_30_underpowered_against_stock_is_not_a_pass() {
         },
         role: ArmRole::Blocking,
         suites: vec![scored(base)],
+        comparator: block(),
     };
     let patch = ReleaseClass::PatchTensorIdentical;
     assert!(matches!(
@@ -275,5 +292,45 @@ fn ext_30_malformed_arms_are_refused_not_judged() {
     assert!(
         refused(&[a]).contains("qwen3.5-4b-stock"),
         "an arm always has a baseline"
+    );
+}
+
+#[test]
+fn falsify_ext_020_an_m2_artifact_arm_needs_a_complete_comparator_block() {
+    let patch = ReleaseClass::PatchTensorIdentical;
+    let inc = incumbent();
+    let refused = |arm: Arm| gate(&PRE, patch, &inc, &[arm]).unwrap_err();
+
+    let mut a = stock(0, 0);
+    a.comparator = None;
+    let e = refused(a);
+    assert!(
+        e.contains("FALSIFY-EXT-020") && e.contains("qwen3.5-4b-stock"),
+        "{e}"
+    );
+
+    let plants: [(&str, fn(&mut ComparatorBlock)); 5] = [
+        ("version", |b| b.version = " ".into()),
+        ("command", |b| b.command.clear()),
+        ("env_sha256", |b| b.env_sha256 = "E".repeat(64)),
+        ("artifact_sha256", |b| b.artifact_sha256 = "f".repeat(63)),
+        ("pinned by digest", |b| {
+            b.image = Some("ghcr.io/x:latest".into())
+        }),
+    ];
+    for (want, plant) in plants {
+        let mut a = stock(0, 0);
+        plant(a.comparator.as_mut().unwrap());
+        let e = refused(a);
+        assert!(
+            e.contains(want) && e.contains("qwen3.5-4b-stock"),
+            "{want}: {e}"
+        );
+    }
+
+    // A report-only API arm has no artifact to hash and needs no block.
+    assert_eq!(
+        verdict(patch, &inc, &[stock(0, 0), api(ArmRole::ReportOnly)]),
+        Verdict::Promote
     );
 }
