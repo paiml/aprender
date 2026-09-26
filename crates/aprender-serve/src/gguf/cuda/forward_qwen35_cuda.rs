@@ -1667,12 +1667,7 @@ impl<'a> Qwen35CudaModel<'a> {
             .ok_or_else(|| RealizarError::InvalidShape {
                 reason: "qwen35_cuda: the hidden buffer is already in use".to_string(),
             })?;
-        let run = self.run_layers_and_head(
-            &mut dev,
-            row,
-            state,
-            position,
-        );
+        let run = self.run_layers_and_head(&mut dev, row, state, position);
         self.hidden_buf = Some(dev);
         run
     }

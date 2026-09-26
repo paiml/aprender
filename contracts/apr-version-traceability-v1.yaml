@@ -92,16 +92,16 @@ falsification_tests:
     prediction: "When built without git context, apr --version output contains the package version string"
     test: "apr --version 2>&1 | grep -qE '0\\.[1-9][0-9]*\\.[0-9]+'"
     if_fails: "Version string missing entirely"
-  - id: FALSIFY-VERSION-005
-    rule: "a packaged apr-cli (no .git of its own) names the commit in its .cargo_vcs_info.json, even inside a foreign repository"
-    prediction: "The shipped build.rs, compiled and run as cargo runs it on a package dir holding the byte-exact apr-cli-0.69.1 vcs file, emits APR_GIT_SHA=d8a6df53a; inside an unrelated repo it still does; with the vcs rung removed or placed behind git rev-parse the table goes RED"
-    test: "cargo test -p aprender-build-sha --lib emit_tests"
-    if_fails: "crates.io installs regress to '+no-git' (0.68.1/0.69.1 shape), or report an enclosing repository's HEAD"
   - id: FALSIFY-VERSION-004
     rule: "build.rs registers worktree-aware rerun-if-changed triggers"
     prediction: "build.rs invokes `git rev-parse --git-dir` and `--git-common-dir` (not a hardcoded `../../.git/HEAD` path)"
     test: "grep -qE 'rev-parse.*--git-(dir|common-dir)' crates/aprender-build-sha/src/lib.rs && ! grep -qE '\\.\\./\\.\\./\\.git/HEAD' crates/aprender-build-sha/src/lib.rs crates/apr-cli/build.rs"
     if_fails: "build.rs still relies on a hardcoded relative .git/HEAD path; worktree HEAD changes won't trigger rebuild"
+  - id: FALSIFY-VERSION-005
+    rule: "a packaged apr-cli (no .git of its own) names the commit in its .cargo_vcs_info.json, even inside a foreign repository"
+    prediction: "The shipped build.rs, compiled and run as cargo runs it on a package dir holding the byte-exact apr-cli-0.69.1 vcs file, emits APR_GIT_SHA=d8a6df53a; inside an unrelated repo it still does; with the vcs rung removed or placed behind git rev-parse the table goes RED"
+    test: "cargo test -p aprender-build-sha --lib emit_tests"
+    if_fails: "crates.io installs regress to '+no-git' (0.68.1/0.69.1 shape), or report an enclosing repository's HEAD"
 
 kani_harnesses:
   - id: KANI-VERSION-001
