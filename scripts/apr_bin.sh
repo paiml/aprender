@@ -285,16 +285,31 @@ apr_bin_origin() {
     return 0
 }
 
+# True when a `--version` string ($1) names the commit whose FULL sha is $2.
+# Never compare two `--short` abbreviations: git lengthens the abbreviation as the
+# object count grows, so a binary built minutes ago from HEAD embeds `8cf336c60`
+# while `git rev-parse --short HEAD` now prints `8cf336c60a`, and a substring
+# match called the HEAD build STALE (#3555). Any hex run of >= 7 characters in
+# the version string that is a prefix of the full sha is the same commit.
+apr_bin_names_commit() {
+    local reported="$1" full="$2" tok
+    [ -n "$full" ] || return 1
+    for tok in $(printf '%s\n' "$reported" | tr -c '0-9a-f' ' '); do
+        [ "${#tok}" -ge 7 ] || continue
+        case "$full" in
+            "$tok"*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 apr_bin_is_fresh() {
-    local bin="$1" head
-    head=$(git rev-parse --short HEAD 2>/dev/null) || head=""
-    if [ -z "$head" ]; then
+    local bin="$1" full
+    full=$(git rev-parse HEAD 2>/dev/null) || full=""
+    if [ -z "$full" ]; then
         return 1
     fi
-    case "$("$bin" --version 2>&1)" in
-        *"$head"*) return 0 ;;
-    esac
-    return 1
+    apr_bin_names_commit "$("$bin" --version 2>&1)" "$full"
 }
 
 # One candidate, one mode. Prints the path and returns 0 on a match.
@@ -512,10 +527,9 @@ apr_bin_assert_fresh() {
     fi
     head=$(git rev-parse --short HEAD)
 
-    case "$reported" in
-        *"$head"*) return 0 ;;
-        *) ;;
-    esac
+    if apr_bin_names_commit "$reported" "$(git rev-parse HEAD)"; then
+        return 0
+    fi
 
     {
         printf 'STALE apr BINARY\n'

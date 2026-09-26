@@ -1,0 +1,21 @@
+# The ONE model the release names as "Qwen usable on pure CUDA" (#3555), and its evidence per host.
+#
+# Judged by `bash scripts/check_model_parity.sh --blessed`: for every host below BOTH receipts must PASS —
+#   m1       an `apr parity` CPU-vs-CUDA cosine record (shape batch=1 concurrency=1), judged against this
+#            model's threshold and basis in evidence/parity/thresholds.yaml — read the number THERE, not here;
+#   serving  a perf041 batch-invariance witness (scripts/perf041_batched_parity_probe.sh): `apr serve` on CUDA,
+#            concurrent greedy requests, every slot of an m>1 batch compared token-for-token. Its shape is the
+#            batch the SERVER formed, not the concurrency the client asked for.
+# An m=1 receipt does not license a claim about the batched path `apr serve` runs; that is why both exist.
+# A missing receipt is RED. A RED serving receipt that measured the right path is kept, not replaced.
+schema: apr-parity-blessed/v1
+model: qwen3.5-9b
+file: Qwen3.5-9B-Q4_K_M.gguf
+hosts: [lambda, gx10]
+receipts:
+  lambda:
+    m1: evidence/parity/blessed/lambda/qwen3.5-9b.json
+    serving: evidence/parity/blessed/lambda/qwen3.5-9b-serving/witness.json
+  gx10:
+    m1: evidence/parity/blessed/gx10/qwen3.5-9b.json
+    serving: evidence/parity/blessed/gx10/qwen3.5-9b-serving/witness.json

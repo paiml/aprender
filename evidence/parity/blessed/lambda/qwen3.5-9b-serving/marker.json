@@ -1,0 +1,11 @@
+{
+  "cc": "89",
+  "commit": "8cf336c60a2b5071b855af99c99def618fb1f41b",
+  "exit": 2,
+  "host": "noah-Lambda-Vector",
+  "max_m": 0,
+  "reason": "the probe could not decide (see /mnt/nvme-raid0/tmp/m0694-3555-run/serving/witness.json)",
+  "sha256": "dd62891a7acfbc72771e10d831b6a03a8627a94ff419200d0607a517c4571537",
+  "started_utc": "2026-09-26T16:29:59Z",
+  "status": "UNMEASURED"
+}

@@ -19,6 +19,8 @@
 #
 #   bash scripts/check_model_parity.sh --manifest [--models-dir <dir>] [--out <dir>] [--apr <bin>]
 #   bash scripts/check_model_parity.sh --judge <apr-parity.json> [--model <name>]   # judge one recorded run
+#   bash scripts/check_model_parity.sh --serving <perf041 witness.json> --model <name>   # judge a serving-shape receipt (#3555)
+#   bash scripts/check_model_parity.sh --blessed    # the release's named model: m=1 + serving receipt per host
 #   bash scripts/check_model_parity.sh --self-test
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -45,6 +47,16 @@ except Exception as e: print(f"FAIL {model}: unreadable apr parity output ({e})"
 # receipt that quotes it — not two spellings of one, so the rule is stated once: look inside the
 # envelope when there is one. Anything else is still refused by the line below.
 raw = d.get("raw") if isinstance(d, dict) and isinstance(d.get("raw"), dict) else d
+# #3555: every verdict names the shape it was measured at. `apr parity` is single-stream by
+# construction, so a record with no `shape` is {batch: 1, concurrency: 1} and says so. A record
+# CLAIMING more is refused: no cosine producer runs the batched path, so the claim has no mechanism
+# behind it. The serving shape is judged by --serving, on the path `apr serve` actually runs.
+shape = d.get("shape") if isinstance(d, dict) else None
+if shape is None: shape = {"batch": 1, "concurrency": 1}
+ok = isinstance(shape, dict) and all(type(shape.get(k)) is int and shape[k] >= 1 for k in ("batch", "concurrency"))
+if not ok: print(f"FAIL {model}: malformed shape {shape!r} (want positive integers batch, concurrency)"); sys.exit(1)
+if (shape["batch"], shape["concurrency"]) != (1, 1):
+    print(f"FAIL {model}: a cosine record claims shape batch={shape['batch']} concurrency={shape['concurrency']}, but apr parity is single-stream — judge the serving shape with --serving"); sys.exit(1)
 rows = raw.get("metrics") if isinstance(raw, dict) else None
 if not isinstance(rows, list) or not rows: print(f"FAIL {model}: no per-position metrics in the output"); sys.exit(1)
 cos = [(r.get("position"), float(r.get("cosine_similarity"))) for r in rows if r.get("cosine_similarity") is not None]
@@ -53,8 +65,80 @@ bad = [(p, c) for p, c in cos if c < mc]
 mn = min(cos, key=lambda x: x[1])
 if bad:
     print(f"FAIL {model}: {len(bad)} of {len(cos)} positions below cosine {mc} (basis {basis}); min {mn[1]:.4f} at position {mn[0]}; first: " + ", ".join(f"{p}:{c:.4f}" for p, c in bad[:5])); sys.exit(1)
-print(f"PASS {model}: {len(cos)} positions, min cosine {mn[1]:.4f} at position {mn[0]} >= {mc} (basis {basis})")
+print(f"PASS {model}: shape batch=1 concurrency=1, {len(cos)} positions, min cosine {mn[1]:.4f} at position {mn[0]} >= {mc} (basis {basis})")
 PY
+}
+
+# judge_serving <perf041 witness.json> <model name> -> "PASS|FAIL|UNMEASURED <detail>", rc 0/1 (#3555).
+#
+# The serving-shape receipt is the PP-26 batch-invariance witness that
+# scripts/perf041_batched_parity_probe.sh writes: `apr serve` on CUDA, c concurrent
+# greedy requests, every slot of an m=c batch compared token-for-token against the
+# others. It is the path #2753/#2770 cover and that C14's m=1 cosine never reaches.
+# Its shape is what the SERVER formed (max m_formed), not what the client asked
+# for (c): two staggered requests are two m=1 batches, and calling that a serving
+# shape is the vacuous pass this mode exists to refuse.
+judge_serving() {
+    python3 - "$1" "$2" <<'PY'
+import sys, json
+f, model = sys.argv[1:3]
+try: w = json.load(open(f, encoding="utf-8"))
+except Exception as e: print(f"FAIL {model}: unreadable serving witness ({e})"); sys.exit(1)
+if not isinstance(w, dict) or w.get("probe") != "perf041" or not isinstance(w.get("bands"), list):
+    print(f"FAIL {model}: not a perf041 serving witness (probe={w.get('probe') if isinstance(w, dict) else None!r})"); sys.exit(1)
+path = str((w.get("model") or {}).get("path") or "")
+base = path.rsplit("/", 1)[-1].lower()
+if not base.startswith(model.lower()):
+    print(f"FAIL {model}: the witness measured {path or '<no model>'!r}, not {model} — a receipt for another model"); sys.exit(1)
+if not w.get("commit") or not (w.get("binary_sha256") or ""):
+    print(f"FAIL {model}: the witness carries no commit/binary_sha256 — an unattributed run is not a receipt"); sys.exit(1)
+bands = [b for b in w["bands"] if isinstance(b, dict)]
+formed = [b["m_formed"] for b in bands if b.get("result") in ("PASS", "FAIL") and type(b.get("m_formed")) is int]  # measured bands only
+batch = max(formed, default=0)
+conc = max((b["c"] for b in bands if b.get("result") in ("PASS", "FAIL") and type(b.get("c")) is int), default=0)
+shape = f"shape batch={batch} concurrency={conc}"
+bad = [b for b in bands if b.get("result") not in ("PASS", "UNMEASURABLE")]
+if bad:
+    b = bad[0]
+    print(f"FAIL {model}: {shape} — {len(bad)} band(s) diverged; first c={b.get('c')} m_formed={b.get('m_formed')} "
+          f"agree_to={b.get('intra_agree_to')} < declared {b.get('declared_min')} ({b.get('result')}; {str(b.get('reason') or '')[:80]})"); sys.exit(1)
+if batch < 2:
+    asked = max((b["c"] for b in bands if type(b.get("c")) is int), default=0)
+    print(f"UNMEASURED {model}: {shape} — no m>1 batch formed (the client asked for up to c={asked}), so the serving path was never exercised (not a pass)"); sys.exit(1)
+if w.get("exit") != 0 or any(b.get("result") != "PASS" for b in bands):
+    print(f"UNMEASURED {model}: {shape} — witness exit {w.get('exit')}, a band could not decide (not a pass)"); sys.exit(1)
+print(f"PASS {model}: {shape}, {len(bands)} bands agree to >= {w.get('declared_min')} tokens (commit {str(w['commit'])[:9]})")
+PY
+}
+
+# blessed [blessed.yaml] -> rc 0 iff every required host has BOTH receipts for the named model:
+# an m=1 cosine record that PASSes `judge`, and a serving-shape witness that PASSes
+# `judge_serving` (#3555). A missing receipt is RED, never skipped: the release names
+# ONE model as "usable on pure CUDA" and this is the claim's evidence, per host.
+# Until #2753 lands the serving row is expected RED; the file says so, the exit does not hide it.
+BLESSED="${PARITY_BLESSED:-"$ROOT/evidence/parity/blessed.yaml"}"
+blessed() {
+    local f="${1:-$BLESSED}" rc=0 model host m1 serving
+    [ -f "$f" ] || { printf 'FAIL blessed: %s missing — no model is named\n' "$f"; return 1; }
+    while IFS=$'\t' read -r model host m1 serving; do
+        [ "$model" = "ERR" ] && { printf 'FAIL blessed: %s\n' "$host"; return 1; }
+        printf -- '--- %s @ %s\n' "$model" "$host"
+        case "$m1" in /*) ;; *) m1="$ROOT/$m1" ;; esac
+        case "$serving" in /*) ;; *) serving="$ROOT/$serving" ;; esac
+        if [ -f "$m1" ]; then judge "$m1" "$model" || rc=1; else printf 'FAIL %s: no m=1 record %s\n' "$model" "${m1#"$ROOT"/}"; rc=1; fi
+        if [ -f "$serving" ]; then judge_serving "$serving" "$model" || rc=1; else printf 'FAIL %s: no serving-shape receipt %s\n' "$model" "${serving#"$ROOT"/}"; rc=1; fi
+    done < <(python3 - "$f" <<'BY'
+import sys, yaml
+try: b = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+except Exception as e: print(f"ERR\tunreadable {sys.argv[1]} ({e})"); sys.exit(0)
+m, hosts, rec = b.get("model"), b.get("hosts") or [], b.get("receipts") or {}
+if not m or not hosts: print("ERR\tblessed.yaml names no model or no hosts"); sys.exit(0)
+for h in hosts:
+    r = rec.get(h) or {}
+    print(f"{m}\t{h}\t{r.get('m1', '-')}\t{r.get('serving', '-')}")
+BY
+)
+    return "$rc"
 }
 
 # resolve_model_file <models-dir> <manifest-name> -> prints the path, rc:
@@ -238,13 +322,61 @@ PY
     row 1 "README.md makes no parity claim about qwen3.5-0.8b today"                       readme_cites_parity qwen3.5-0.8b "$ROOT/README.md"
     row 1 "README.md makes no parity claim about qwen3-30b today"                          readme_cites_parity qwen3-30b "$ROOT/README.md"
 
+    # #3555: every receipt names its shape, and the serving shape is judged on the path
+    # `apr serve` runs (perf041 witness), never inferred from an m=1 cosine record.
+    W="$ROOT/evidence/perf041/lambda/witness.json"; C7="$L/qwen2.5-coder-7b-instruct-q4_k_m.json"
+    python3 - "$W" "$C7" "$TD" <<'SV'
+import json, sys, copy
+w0, c7, td = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3]
+def put(name, doc): json.dump(doc, open(f"{td}/{name}.json", "w"))
+def tw(fn):
+    d = copy.deepcopy(w0); fn(d); return d
+def band(d, c): return next(b for b in d["bands"] if b["c"] == c)
+def fail4(d): band(d, 4).update(result="FAIL", intra_agree_to=3, reason="slot 2 diverged at token 3"); d["exit"] = 1
+def stagger(d):
+    for b in d["bands"]: b["m_formed"] = 1
+def unmeas(d):
+    for c in (4, 8, 16): band(d, c).update(result="UNMEASURABLE", reason="no batch formed")
+    d["exit"] = 2
+def as7b(d): d["model"]["path"] = "qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+put("w-fail4", tw(fail4)); put("w-stagger", tw(stagger)); put("w-unmeas", tw(unmeas))
+put("w-nocommit", tw(lambda d: d.pop("commit"))); put("w-7b", tw(as7b))
+for n, sh in (("c7-b4", {"batch": 4, "concurrency": 4}), ("c7-b1", {"batch": 1, "concurrency": 1}), ("c7-bool", {"batch": True, "concurrency": 1})):
+    d = copy.deepcopy(c7); d["shape"] = sh; put(n, d)
+SV
+    M15=qwen2.5-coder-1.5b-instruct
+    # says <text> <cmd...>: rc 0 iff the verdict line CONTAINS text. A crash also exits 1, and a
+    # crashing fixture reads as a killed mutant; these rows pin the verdict, not just the code.
+    says() { local want=$1 out; shift; out=$("$@" 2>&1) || true; case "$out" in *"$want"*) return 0 ;; *) printf '%s\n' "$out"; return 1 ;; esac; }
+    row 0 "the committed lambda perf041 witness PASSes at the serving shape batch=16"          judge_serving "$W" "$M15"
+    row 1 "a witness for another model is refused (bound to its model)"                        judge_serving "$W" qwen3.5-9b
+    row 1 "the must-RED twin: the c=4 band diverged at token 3 is FAIL naming the band"        judge_serving "$TD/w-fail4.json" "$M15"
+    row 1 "staggered requests (every m_formed=1) never exercised batching: UNMEASURED, not PASS" judge_serving "$TD/w-stagger.json" "$M15"
+    row 1 "every c>1 band UNMEASURABLE (exit 2) is not a pass"                                  judge_serving "$TD/w-unmeas.json" "$M15"
+    row 1 "a witness without its commit is unattributed, not a receipt"                         judge_serving "$TD/w-nocommit.json" "$M15"
+    row 0 "...and it says so, rather than crashing on the missing key"                           says "carries no commit" judge_serving "$TD/w-nocommit.json" "$M15"
+    row 0 "UNMEASURABLE bands' m_formed never counts toward the reported serving shape"          says "shape batch=1 concurrency=1" judge_serving "$TD/w-unmeas.json" "$M15"
+    row 1 "an m=1 cosine record handed to --serving is refused (not a perf041 witness)"         judge_serving "$C7" qwen2.5-coder-7b-instruct
+    row 1 "a cosine record CLAIMING batch=4 is refused — apr parity is single-stream"           judge "$TD/c7-b4.json" qwen2.5-coder-7b-instruct
+    row 0 "an explicit shape batch=1 concurrency=1 on the 7B record still PASSes"               judge "$TD/c7-b1.json" qwen2.5-coder-7b-instruct
+    row 1 "a bool batch is malformed, never read as 1"                                         judge "$TD/c7-bool.json" qwen2.5-coder-7b-instruct
+    printf 'model: qwen2.5-coder-7b-instruct\nhosts: [lambda]\nreceipts:\n  lambda: {m1: %s, serving: %s}\n' "$C7" "$TD/w-7b.json" > "$TD/bl-ok.yaml"
+    printf 'model: qwen2.5-coder-7b-instruct\nhosts: [lambda, gx10]\nreceipts:\n  lambda: {m1: %s, serving: %s}\n' "$C7" "$TD/w-7b.json" > "$TD/bl-nogx10.yaml"
+    printf 'model: qwen2.5-coder-7b-instruct\nhosts: [lambda]\nreceipts:\n  lambda: {m1: %s}\n' "$C7" > "$TD/bl-noserve.yaml"
+    row 0 "blessed: m=1 PASS + serving PASS on the one declared host is GREEN"                  blessed "$TD/bl-ok.yaml"
+    row 1 "blessed: a declared host with no receipts is RED, never skipped"                     blessed "$TD/bl-nogx10.yaml"
+    row 1 "blessed: an m=1 record alone (no serving-shape receipt) is RED — the #3555 gap"       blessed "$TD/bl-noserve.yaml"
+    row 0 "the shipped blessed.yaml names a model and both GPU hosts"                           python3 -c "import yaml,sys; b=yaml.safe_load(open('$ROOT/evidence/parity/blessed.yaml')); sys.exit(0 if b.get('model') and {'lambda','gx10'} <= set(b.get('hosts') or []) else 1)"
+
     printf '%s/%s rows\n' "$((n - red))" "$n"; [ "$red" = 0 ] || exit 1; exit 0
 fi
 
 MODE=""; MODELS_DIR="${APR_MODELS_DIR:-$HOME/models}"; OUT="$ROOT/evidence/parity/$(hostname -s)"; JSON=""; MODEL=""; APR_BIN=""
-while [ $# -gt 0 ]; do case "$1" in --manifest) MODE=manifest; shift ;; --judge) MODE=judge; JSON=$2; shift 2 ;; --model) MODEL=$2; shift 2 ;; --models-dir) MODELS_DIR=$2; shift 2 ;; --out) OUT=$2; shift 2 ;; --apr) APR_BIN=$2; shift 2 ;; *) printf 'usage: %s --manifest [--models-dir d] [--out d] [--apr bin] | --judge <json> [--model m] | --self-test\n' "$PROG" >&2; exit 2 ;; esac; done
+while [ $# -gt 0 ]; do case "$1" in --manifest) MODE=manifest; shift ;; --judge) MODE=judge; JSON=$2; shift 2 ;; --model) MODEL=$2; shift 2 ;; --models-dir) MODELS_DIR=$2; shift 2 ;; --out) OUT=$2; shift 2 ;; --apr) APR_BIN=$2; shift 2 ;; --serving) MODE=serving; JSON=$2; shift 2 ;; --blessed) MODE=blessed; shift ;; *) printf 'usage: %s --manifest [--models-dir d] [--out d] [--apr bin] | --judge <json> [--model m] | --serving <perf041 witness.json> --model m | --blessed | --self-test\n' "$PROG" >&2; exit 2 ;; esac; done
 [ -f "$THRESH" ] || { printf '%s: ENV - %s missing\n' "$PROG" "$THRESH" >&2; exit 2; }
 if [ "$MODE" = judge ]; then judge "$JSON" "${MODEL:-$(basename "$JSON" .json)}"; exit $?; fi
+if [ "$MODE" = serving ]; then [ -n "$MODEL" ] || { printf '%s: --serving needs --model (the witness is bound to one)\n' "$PROG" >&2; exit 2; }; judge_serving "$JSON" "$MODEL"; exit $?; fi
+if [ "$MODE" = blessed ]; then blessed; exit $?; fi
 [ "$MODE" = manifest ] || { printf 'usage: %s --manifest | --judge <json> | --self-test\n' "$PROG" >&2; exit 2; }
 [ -f "$MANIFEST" ] || { printf '%s: ENV - %s missing (scripts/derive_model_manifest.sh)\n' "$PROG" "$MANIFEST" >&2; exit 2; }
 if [ -n "${SKIP_PARITY_GATE:-}" ]; then printf 'override: SKIP_PARITY_GATE=%s is set — every receipt of this run is INVALID-CORRECTNESS (REG-15); C14 refuses to pass under an override\n' "$SKIP_PARITY_GATE"; OVERRIDE=1; else OVERRIDE=0; fi

@@ -1,0 +1,383 @@
+{
+  "bands": [
+    {
+      "c": 1,
+      "declared_min": 64,
+      "divergence_at": 128,
+      "intra_agree_to": 128,
+      "m_formed": 0,
+      "max_constant_run": 1,
+      "max_constant_run_declared": 16,
+      "reason": null,
+      "result": "PASS",
+      "slots": [
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 0,
+          "intra_agree_to": 128,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    },
+    {
+      "c": 4,
+      "declared_min": 64,
+      "divergence_at": null,
+      "intra_agree_to": null,
+      "m_formed": 0,
+      "max_constant_run": null,
+      "max_constant_run_declared": 16,
+      "reason": "no batch with m>1 formed in this band's window (max m=0); the batched path was never exercised, so nothing about it was witnessed",
+      "result": "UNMEASURABLE",
+      "slots": [
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 0,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 1,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 2,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 3,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    },
+    {
+      "c": 8,
+      "declared_min": 64,
+      "divergence_at": null,
+      "intra_agree_to": null,
+      "m_formed": 0,
+      "max_constant_run": null,
+      "max_constant_run_declared": 16,
+      "reason": "no batch with m>1 formed in this band's window (max m=0); the batched path was never exercised, so nothing about it was witnessed",
+      "result": "UNMEASURABLE",
+      "slots": [
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 0,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 1,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 2,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 3,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 4,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 5,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 6,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 7,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    },
+    {
+      "c": 16,
+      "declared_min": 64,
+      "divergence_at": null,
+      "intra_agree_to": null,
+      "m_formed": 0,
+      "max_constant_run": null,
+      "max_constant_run_declared": 16,
+      "reason": "no batch with m>1 formed in this band's window (max m=0); the batched path was never exercised, so nothing about it was witnessed",
+      "result": "UNMEASURABLE",
+      "slots": [
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 0,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 1,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 2,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 3,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 4,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 5,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 6,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 7,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 8,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 9,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 10,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 11,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 12,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 13,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 14,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 128,
+          "completion_tokens": 128,
+          "constant_run": 1,
+          "finish_reason": "length",
+          "i": 15,
+          "intra_agree_to": null,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    }
+  ],
+  "binary_sha256": "dd62891a7acfbc72771e10d831b6a03a8627a94ff419200d0607a517c4571537",
+  "commit": "8cf336c60a2b5071b855af99c99def618fb1f41b",
+  "declared_min": 64,
+  "env": {
+    "APR_DECODE_GEMM": null,
+    "BATCHED_PREFILL": null,
+    "CUBLAS_GEMM_THRESHOLD": null,
+    "CUDA_BATCH_WINDOW_MS": "200",
+    "FP8_DECODE": null,
+    "FP8_PREFILL": null,
+    "FUSED_GATE_UP": null,
+    "ITERATION_SCHEDULER": null,
+    "MULTI_PROMPT_PREFILL": null
+  },
+  "exit": 2,
+  "host": "noah-Lambda-Vector",
+  "model": {
+    "dir": "APR_MODELS (default $HOME/models)",
+    "path": "Qwen3.5-9B-Q4_K_M.gguf",
+    "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
+  },
+  "notes": [],
+  "probe": "perf041",
+  "prompt_sha256": "3e31578371f85f23c8fa13b7b287e65bad7e0c09584bc79d3064feab3d1ab7e5",
+  "reference": {
+    "self_divergence_at": 128,
+    "stable": true,
+    "token_count_source": "usage",
+    "tokens": 128
+  },
+  "sampler": {
+    "ignore_eos": true,
+    "n_predict": 128,
+    "seed": 0,
+    "temperature": 0.0
+  },
+  "witness_version": 2
+}
