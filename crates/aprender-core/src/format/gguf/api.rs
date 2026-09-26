@@ -361,6 +361,20 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
 fn gguf_value_display(v: &crate::format::gguf::types::GgufValue) -> String {
     use crate::format::gguf::types::GgufValue;
     match v {
+        GgufValue::ArrayUint32(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayInt32(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayFloat32(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayString(a) => format!("[len={}]", a.len()),
+        scalar => gguf_scalar_display(scalar),
+    }
+}
+
+/// Display a non-array `GgufValue` (PMAT CB-200: split out of
+/// `gguf_value_display` so neither match's complexity crosses the gate's
+/// ceiling; every variant is still covered, just across the two functions).
+fn gguf_scalar_display(v: &crate::format::gguf::types::GgufValue) -> String {
+    use crate::format::gguf::types::GgufValue;
+    match v {
         GgufValue::Uint8(n) => n.to_string(),
         GgufValue::Int8(n) => n.to_string(),
         GgufValue::Uint16(n) => n.to_string(),
@@ -373,10 +387,12 @@ fn gguf_value_display(v: &crate::format::gguf::types::GgufValue) -> String {
         GgufValue::Uint64(n) => n.to_string(),
         GgufValue::Int64(n) => n.to_string(),
         GgufValue::Float64(n) => n.to_string(),
-        GgufValue::ArrayUint32(a) => format!("[len={}]", a.len()),
-        GgufValue::ArrayInt32(a) => format!("[len={}]", a.len()),
-        GgufValue::ArrayFloat32(a) => format!("[len={}]", a.len()),
-        GgufValue::ArrayString(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayUint32(_)
+        | GgufValue::ArrayInt32(_)
+        | GgufValue::ArrayFloat32(_)
+        | GgufValue::ArrayString(_) => {
+            unreachable!("gguf_value_display routes arrays separately")
+        }
     }
 }
 

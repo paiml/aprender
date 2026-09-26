@@ -209,18 +209,20 @@ impl WeightQuantType {
     /// Bytes per 256 elements for super-block quantization types
     pub const fn bytes_per_superblock(&self) -> usize {
         match self {
-            Self::Q4K => 144,
-            Self::Q5K => 176,
+            // Q4K/Q4_0/IQ4_NL all land on 144 bytes per 256-element super-block
+            // (Q4_0/IQ4_NL: 18 bytes/32-element block * 8 blocks = 144).
+            Self::Q4K | Self::Q4_0 | Self::IQ4NL => 144,
+            // Q5K/Q5_0 both land on 176 bytes per 256-element super-block
+            // (Q5_0: 22 bytes/32-element block * 8 blocks = 176).
+            Self::Q5K | Self::Q5_0 => 176,
             Self::Q6K => 210,
             Self::Q8_0 => 34 * 8, // Q8_0 uses 32-element blocks, so 8 blocks for 256 elements
-            Self::Q5_0 => 22 * 8, // Q5_0 uses 32-element blocks, so 8 blocks for 256 elements
-            Self::Q4_0 => 18 * 8, // Q4_0 uses 32-element blocks, so 8 blocks for 256 elements
             Self::Q4_1 => 20 * 8, // Q4_1 uses 32-element blocks, so 8 blocks for 256 elements
             Self::F32 => 256 * 4, // F32: 4 bytes per element, 256 elements
-            Self::F16 => 256 * 2, // F16: 2 bytes per element, 256 elements
-            Self::BF16 => 256 * 2, // BF16: 2 bytes per element, 256 elements
+            // F16/BF16 both land on 512 bytes per 256-element super-block
+            // (2 bytes per element, 256 elements).
+            Self::F16 | Self::BF16 => 256 * 2,
             Self::IQ4XS => 136,   // IQ4_XS: 136 bytes per 256-element super-block
-            Self::IQ4NL => 18 * 8, // IQ4_NL uses 32-element blocks, so 8 blocks for 256 elements
             Self::IQ3S => 110,    // IQ3_S: 110 bytes per 256-element super-block
             Self::IQ2XXS => 66,   // IQ2_XXS: 66 bytes per 256-element super-block
             Self::IQ2S => 82,     // IQ2_S: 82 bytes per 256-element super-block
@@ -233,18 +235,18 @@ impl WeightQuantType {
     /// Bytes per 32 elements (for block-based quantization types)
     pub const fn bytes_per_block(&self) -> usize {
         match self {
-            Self::Q4K => 18, // Q4K is super-block, treat as 18 per 32 for calculation
-            Self::Q5K => 22, // Q5K is super-block
+            // Q4K (super-block, treated as 18 per 32), Q4_0 and IQ4_NL (both
+            // natively 32-element blocks) all land on 18 bytes per block.
+            Self::Q4K | Self::Q4_0 | Self::IQ4NL => 18,
+            // Q5K (super-block) and Q5_0 (natively 32-element) both land on 22.
+            Self::Q5K | Self::Q5_0 => 22,
             Self::Q6K => 26, // Q6K is super-block (210/8 = 26.25, round to 26)
             Self::Q8_0 => 34,
-            Self::Q5_0 => 22,
-            Self::Q4_0 => 18,
             Self::Q4_1 => 20,
-            Self::F32 => 128,   // F32: 4 bytes per element, 32 elements
-            Self::F16 => 64,    // F16: 2 bytes per element, 32 elements
-            Self::BF16 => 64,   // BF16: 2 bytes per element, 32 elements
+            Self::F32 => 128, // F32: 4 bytes per element, 32 elements
+            // F16/BF16 both land on 64 (2 bytes per element, 32 elements).
+            Self::F16 | Self::BF16 => 64,
             Self::IQ4XS => 17,  // IQ4_XS super-block: 136/8 = 17 per 32
-            Self::IQ4NL => 18,  // IQ4_NL is NATIVELY a 32-element block: exact, not a division
             Self::IQ3S => 13,   // IQ3_S super-block: 110/8 = 13.75, truncated as Q6K's 210/8 is
             Self::IQ2XXS => 8,  // IQ2_XXS super-block: 66/8 = 8.25, truncated as IQ3S's is
             Self::IQ2S => 10,   // IQ2_S super-block: 82/8 = 10.25, truncated likewise

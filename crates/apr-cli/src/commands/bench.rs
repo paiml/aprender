@@ -420,35 +420,69 @@ fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> R
     }
 }
 
+/// Brick name aliases -> (budget_us, description) for
+/// `resolve_brick_spec` (spec §9.2).
+#[cfg(feature = "inference")]
+const BRICK_SPEC_TABLE: &[(&[&str], f64, &str)] = &[
+    (&["rms_norm"], 1.5, "RMS Layer Normalization"),
+    (&["qkv"], 6.0, "Q/K/V Projections"),
+    (&["rope"], 1.0, "Rotary Position Embedding"),
+    (&["attn", "attention"], 10.0, "Scaled Dot-Product Attention"),
+    (&["o_proj"], 3.5, "Output Projection"),
+    (&["ffn"], 12.2, "Feed-Forward Network (SwiGLU)"),
+    (&["layer"], 35.7, "Full Transformer Layer"),
+    (&["tokenize", "bpe"], 80.0, "BPE Tokenizer Encode (GH-378)"),
+    // Training bricks
+    (
+        &["lora_forward", "lora"],
+        5.0,
+        "LoRA Forward Pass (rank-16)",
+    ),
+    (&["optimizer", "adamw"], 50.0, "SIMD AdamW Optimizer Step"),
+    (
+        &["loss", "cross_entropy"],
+        20.0,
+        "Cross-Entropy Loss Computation",
+    ),
+    (
+        &["train_step", "training"],
+        5000.0,
+        "Full Training Step (fwd+bwd+optim)",
+    ),
+    // Serving bricks
+    (
+        &["ttft", "time_to_first_token"],
+        500.0,
+        "Time to First Token",
+    ),
+    (
+        &["throughput", "decode"],
+        20000.0,
+        "Decode Throughput (50 tok/s target)",
+    ),
+    (
+        &["batch", "batch_generate"],
+        1000.0,
+        "Batch Generation (4 concurrent)",
+    ),
+];
+
 /// Resolve brick budget target and description from name (spec §9.2).
 ///
 /// Returns `(budget_us, description)` or error for unknown brick types.
 #[cfg(feature = "inference")]
 fn resolve_brick_spec(brick_name: &str) -> Result<(f64, &'static str)> {
-    match brick_name {
-        "rms_norm" => Ok((1.5, "RMS Layer Normalization")),
-        "qkv" => Ok((6.0, "Q/K/V Projections")),
-        "rope" => Ok((1.0, "Rotary Position Embedding")),
-        "attn" | "attention" => Ok((10.0, "Scaled Dot-Product Attention")),
-        "o_proj" => Ok((3.5, "Output Projection")),
-        "ffn" => Ok((12.2, "Feed-Forward Network (SwiGLU)")),
-        "layer" => Ok((35.7, "Full Transformer Layer")),
-        "tokenize" | "bpe" => Ok((80.0, "BPE Tokenizer Encode (GH-378)")),
-        // Training bricks
-        "lora_forward" | "lora" => Ok((5.0, "LoRA Forward Pass (rank-16)")),
-        "optimizer" | "adamw" => Ok((50.0, "SIMD AdamW Optimizer Step")),
-        "loss" | "cross_entropy" => Ok((20.0, "Cross-Entropy Loss Computation")),
-        "train_step" | "training" => Ok((5000.0, "Full Training Step (fwd+bwd+optim)")),
-        // Serving bricks
-        "ttft" | "time_to_first_token" => Ok((500.0, "Time to First Token")),
-        "throughput" | "decode" => Ok((20000.0, "Decode Throughput (50 tok/s target)")),
-        "batch" | "batch_generate" => Ok((1000.0, "Batch Generation (4 concurrent)")),
-        _ => Err(CliError::ValidationFailed(format!(
-            "Unknown brick type: '{}'. Valid: rms_norm, qkv, rope, attn, o_proj, ffn, layer, \
-             tokenize, lora_forward, optimizer, loss, train_step, ttft, throughput, batch",
-            brick_name
-        ))),
-    }
+    BRICK_SPEC_TABLE
+        .iter()
+        .find(|(aliases, _, _)| aliases.contains(&brick_name))
+        .map(|(_, budget_us, description)| (*budget_us, *description))
+        .ok_or_else(|| {
+            CliError::ValidationFailed(format!(
+                "Unknown brick type: '{}'. Valid: rms_norm, qkv, rope, attn, o_proj, ffn, layer, \
+                 tokenize, lora_forward, optimizer, loss, train_step, ttft, throughput, batch",
+                brick_name
+            ))
+        })
 }
 
 /// GH-90: Return analytical budget for bricks without run() implementations.

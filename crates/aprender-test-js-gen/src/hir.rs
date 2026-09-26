@@ -301,29 +301,17 @@ pub enum BinOp {
     BitOr,
 }
 
+/// JavaScript operator strings for `BinOp`, indexed by its declaration order
+/// (`BinOp as usize`).
+const BIN_OP_STRS: [&str; 17] = [
+    "+", "-", "*", "/", "%", "==", "===", "!=", "!==", "<", "<=", ">", ">=", "&&", "||", "&", "|",
+];
+
 impl BinOp {
     /// Get the JavaScript operator string.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Add => "+",
-            Self::Sub => "-",
-            Self::Mul => "*",
-            Self::Div => "/",
-            Self::Mod => "%",
-            Self::Eq => "==",
-            Self::EqStrict => "===",
-            Self::Ne => "!=",
-            Self::NeStrict => "!==",
-            Self::Lt => "<",
-            Self::Le => "<=",
-            Self::Gt => ">",
-            Self::Ge => ">=",
-            Self::And => "&&",
-            Self::Or => "||",
-            Self::BitAnd => "&",
-            Self::BitOr => "|",
-        }
+        BIN_OP_STRS[self as usize]
     }
 }
 

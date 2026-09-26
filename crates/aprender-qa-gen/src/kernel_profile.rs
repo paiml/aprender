@@ -62,49 +62,55 @@ impl KernelOp {
     /// Serde-compatible snake_case name (matches `#[serde(rename_all = "snake_case")]`).
     #[must_use]
     pub const fn serde_name(&self) -> &'static str {
-        match self {
-            Self::FusedQ4kMatvec => "fused_q4k_matvec",
-            Self::FusedQ5kMatvec => "fused_q5k_matvec",
-            Self::FusedQ6kMatvec => "fused_q6k_matvec",
-            Self::RmsNorm => "rms_norm",
-            Self::LayerNorm => "layer_norm",
-            Self::Silu => "silu",
-            Self::Gelu => "gelu",
-            Self::SwiGlu => "swi_glu",
-            Self::Rope => "rope",
-            Self::GroupedQueryAttention => "grouped_query_attention",
-            Self::MultiHeadAttention => "multi_head_attention",
-            Self::MultiQueryAttention => "multi_query_attention",
-            Self::BiasAdd => "bias_add",
-            Self::TiedEmbeddings => "tied_embeddings",
-            Self::Alibi => "alibi",
-            Self::AbsolutePosition => "absolute_position",
-            Self::GatedMlp => "gated_mlp",
-        }
+        // `KernelOp`'s declaration order matches this table exactly, so the
+        // discriminant is a direct index into it.
+        const NAMES: [&str; 17] = [
+            "fused_q4k_matvec",
+            "fused_q5k_matvec",
+            "fused_q6k_matvec",
+            "rms_norm",
+            "layer_norm",
+            "silu",
+            "gelu",
+            "swi_glu",
+            "rope",
+            "grouped_query_attention",
+            "multi_head_attention",
+            "multi_query_attention",
+            "bias_add",
+            "tied_embeddings",
+            "alibi",
+            "absolute_position",
+            "gated_mlp",
+        ];
+        NAMES[*self as usize]
     }
 
     /// Human-readable description of this kernel operation.
     #[must_use]
     pub const fn description(&self) -> &'static str {
-        match self {
-            Self::FusedQ4kMatvec => "Fused Q4K quantized matrix-vector multiply",
-            Self::FusedQ5kMatvec => "Fused Q5K quantized matrix-vector multiply",
-            Self::FusedQ6kMatvec => "Fused Q6K quantized matrix-vector multiply",
-            Self::RmsNorm => "RMS normalization",
-            Self::LayerNorm => "Layer normalization",
-            Self::Silu => "SiLU activation function",
-            Self::Gelu => "GELU activation function",
-            Self::SwiGlu => "SwiGLU gated MLP",
-            Self::Rope => "Rotary positional encoding",
-            Self::GroupedQueryAttention => "Grouped-query attention (GQA)",
-            Self::MultiHeadAttention => "Multi-head attention (MHA)",
-            Self::MultiQueryAttention => "Multi-query attention (MQA)",
-            Self::BiasAdd => "Bias addition in linear layers",
-            Self::TiedEmbeddings => "Tied input/output embeddings",
-            Self::Alibi => "ALiBi positional encoding",
-            Self::AbsolutePosition => "Absolute positional encoding",
-            Self::GatedMlp => "Gated MLP (gate-up projection)",
-        }
+        // `KernelOp`'s declaration order matches this table exactly, so the
+        // discriminant is a direct index into it.
+        const DESCRIPTIONS: [&str; 17] = [
+            "Fused Q4K quantized matrix-vector multiply",
+            "Fused Q5K quantized matrix-vector multiply",
+            "Fused Q6K quantized matrix-vector multiply",
+            "RMS normalization",
+            "Layer normalization",
+            "SiLU activation function",
+            "GELU activation function",
+            "SwiGLU gated MLP",
+            "Rotary positional encoding",
+            "Grouped-query attention (GQA)",
+            "Multi-head attention (MHA)",
+            "Multi-query attention (MQA)",
+            "Bias addition in linear layers",
+            "Tied input/output embeddings",
+            "ALiBi positional encoding",
+            "Absolute positional encoding",
+            "Gated MLP (gate-up projection)",
+        ];
+        DESCRIPTIONS[*self as usize]
     }
 }
 

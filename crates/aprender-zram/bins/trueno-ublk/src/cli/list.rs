@@ -87,29 +87,35 @@ fn device_to_info(device: &UblkDevice) -> DeviceInfo {
     }
 }
 
+/// Column header name -> `OutputColumn` mappings for `parse_columns`.
+const COLUMN_NAME_TABLE: &[(&str, OutputColumn)] = &[
+    ("NAME", OutputColumn::Name),
+    ("DISKSIZE", OutputColumn::Disksize),
+    ("DATA", OutputColumn::Data),
+    ("COMPR", OutputColumn::Compr),
+    ("ALGORITHM", OutputColumn::Algorithm),
+    ("STREAMS", OutputColumn::Streams),
+    ("ZERO-PAGES", OutputColumn::ZeroPages),
+    ("TOTAL", OutputColumn::Total),
+    ("MEM-LIMIT", OutputColumn::MemLimit),
+    ("MEM-USED", OutputColumn::MemUsed),
+    ("MIGRATED", OutputColumn::Migrated),
+    ("MOUNTPOINT", OutputColumn::Mountpoint),
+    ("GPU", OutputColumn::Gpu),
+    ("THROUGHPUT", OutputColumn::Throughput),
+    ("BACKEND", OutputColumn::Backend),
+    ("ENTROPY", OutputColumn::Entropy),
+];
+
 fn parse_columns(s: &str) -> Result<Vec<OutputColumn>> {
     s.split(',')
         .map(|col| {
             let col = col.trim().to_uppercase();
-            match col.as_str() {
-                "NAME" => Ok(OutputColumn::Name),
-                "DISKSIZE" => Ok(OutputColumn::Disksize),
-                "DATA" => Ok(OutputColumn::Data),
-                "COMPR" => Ok(OutputColumn::Compr),
-                "ALGORITHM" => Ok(OutputColumn::Algorithm),
-                "STREAMS" => Ok(OutputColumn::Streams),
-                "ZERO-PAGES" => Ok(OutputColumn::ZeroPages),
-                "TOTAL" => Ok(OutputColumn::Total),
-                "MEM-LIMIT" => Ok(OutputColumn::MemLimit),
-                "MEM-USED" => Ok(OutputColumn::MemUsed),
-                "MIGRATED" => Ok(OutputColumn::Migrated),
-                "MOUNTPOINT" => Ok(OutputColumn::Mountpoint),
-                "GPU" => Ok(OutputColumn::Gpu),
-                "THROUGHPUT" => Ok(OutputColumn::Throughput),
-                "BACKEND" => Ok(OutputColumn::Backend),
-                "ENTROPY" => Ok(OutputColumn::Entropy),
-                _ => anyhow::bail!("Unknown column: {}", col),
-            }
+            COLUMN_NAME_TABLE
+                .iter()
+                .find(|(name, _)| *name == col)
+                .map(|(_, column)| *column)
+                .ok_or_else(|| anyhow::anyhow!("Unknown column: {}", col))
         })
         .collect()
 }

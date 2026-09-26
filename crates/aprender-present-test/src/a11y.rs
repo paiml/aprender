@@ -1192,31 +1192,35 @@ pub enum AutocompleteValue {
     Off,
 }
 
+/// HTML attribute values for `AutocompleteValue`, indexed by its declaration
+/// order (`AutocompleteValue as usize`).
+const AUTOCOMPLETE_VALUE_STRS: [&str; 19] = [
+    "name",
+    "given-name",
+    "family-name",
+    "email",
+    "tel",
+    "street-address",
+    "address-level1",
+    "address-level2",
+    "postal-code",
+    "country",
+    "organization",
+    "username",
+    "current-password",
+    "new-password",
+    "cc-number",
+    "cc-exp",
+    "cc-csc",
+    "one-time-code",
+    "off",
+];
+
 impl AutocompleteValue {
     /// Get the HTML attribute value.
     #[must_use]
     pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Name => "name",
-            Self::GivenName => "given-name",
-            Self::FamilyName => "family-name",
-            Self::Email => "email",
-            Self::Tel => "tel",
-            Self::StreetAddress => "street-address",
-            Self::AddressLevel1 => "address-level1",
-            Self::AddressLevel2 => "address-level2",
-            Self::PostalCode => "postal-code",
-            Self::Country => "country",
-            Self::Organization => "organization",
-            Self::Username => "username",
-            Self::CurrentPassword => "current-password",
-            Self::NewPassword => "new-password",
-            Self::CcNumber => "cc-number",
-            Self::CcExp => "cc-exp",
-            Self::CcCsc => "cc-csc",
-            Self::OneTimeCode => "one-time-code",
-            Self::Off => "off",
-        }
+        AUTOCOMPLETE_VALUE_STRS[*self as usize]
     }
 }
 

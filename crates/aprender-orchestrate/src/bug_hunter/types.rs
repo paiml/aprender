@@ -108,27 +108,31 @@ pub enum DefectCategory {
     Unknown,
 }
 
+/// Display names for `DefectCategory`, indexed by its declaration order
+/// (`DefectCategory as usize`).
+const DEFECT_CATEGORY_NAMES: [&str; 17] = [
+    "TraitBounds",
+    "ASTTransform",
+    "OwnershipBorrow",
+    "ConfigurationErrors",
+    "ConcurrencyBugs",
+    "SecurityVulnerabilities",
+    "TypeErrors",
+    "MemorySafety",
+    "LogicErrors",
+    "PerformanceIssues",
+    "GpuKernelBugs",
+    "SilentDegradation",
+    "TestDebt",
+    "HiddenDebt",
+    "ContractGap",
+    "ModelParityGap",
+    "Unknown",
+];
+
 impl std::fmt::Display for DefectCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DefectCategory::TraitBounds => write!(f, "TraitBounds"),
-            DefectCategory::AstTransform => write!(f, "ASTTransform"),
-            DefectCategory::OwnershipBorrow => write!(f, "OwnershipBorrow"),
-            DefectCategory::ConfigurationErrors => write!(f, "ConfigurationErrors"),
-            DefectCategory::ConcurrencyBugs => write!(f, "ConcurrencyBugs"),
-            DefectCategory::SecurityVulnerabilities => write!(f, "SecurityVulnerabilities"),
-            DefectCategory::TypeErrors => write!(f, "TypeErrors"),
-            DefectCategory::MemorySafety => write!(f, "MemorySafety"),
-            DefectCategory::LogicErrors => write!(f, "LogicErrors"),
-            DefectCategory::PerformanceIssues => write!(f, "PerformanceIssues"),
-            DefectCategory::GpuKernelBugs => write!(f, "GpuKernelBugs"),
-            DefectCategory::SilentDegradation => write!(f, "SilentDegradation"),
-            DefectCategory::TestDebt => write!(f, "TestDebt"),
-            DefectCategory::HiddenDebt => write!(f, "HiddenDebt"),
-            DefectCategory::ContractGap => write!(f, "ContractGap"),
-            DefectCategory::ModelParityGap => write!(f, "ModelParityGap"),
-            DefectCategory::Unknown => write!(f, "Unknown"),
-        }
+        write!(f, "{}", DEFECT_CATEGORY_NAMES[*self as usize])
     }
 }
 

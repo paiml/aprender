@@ -86,48 +86,36 @@ pub enum KernelType {
 }
 
 impl KernelType {
-    /// One-hot encoding index (0-16)
+    /// One-hot encoding index (0-16). `KernelType`'s declaration order matches
+    /// the index assignment exactly, so this is just the discriminant.
     pub fn to_index(self) -> usize {
-        match self {
-            KernelType::TiledQ4K => 0,
-            KernelType::CoalescedQ4K => 1,
-            KernelType::VectorizedQ4K => 2,
-            KernelType::BatchedQ4K => 3,
-            KernelType::Dp4aQ4K => 4,
-            KernelType::FusedRmsNormQ4K => 5,
-            KernelType::CoalescedQ6K => 6,
-            KernelType::IncrementalAttention => 7,
-            KernelType::MultiWarpAttention => 8,
-            KernelType::BatchedAttention => 9,
-            KernelType::RmsNorm => 10,
-            KernelType::VectorizedRmsNorm => 11,
-            KernelType::BatchedRmsNorm => 12,
-            KernelType::FusedQKVHwDp4aQ4KGemv => 13,
-            KernelType::Generic => 14,
-            KernelType::Unknown => 15,
-        }
+        self as usize
     }
 
-    /// Convert kernel index to type (inverse of to_index())
+    /// All variants that occupy indices 0..14, in `to_index()` order. `Unknown`
+    /// (index 15) is deliberately excluded: it is the catch-all fallback below.
+    const INDEXED: [KernelType; 15] = [
+        KernelType::TiledQ4K,
+        KernelType::CoalescedQ4K,
+        KernelType::VectorizedQ4K,
+        KernelType::BatchedQ4K,
+        KernelType::Dp4aQ4K,
+        KernelType::FusedRmsNormQ4K,
+        KernelType::CoalescedQ6K,
+        KernelType::IncrementalAttention,
+        KernelType::MultiWarpAttention,
+        KernelType::BatchedAttention,
+        KernelType::RmsNorm,
+        KernelType::VectorizedRmsNorm,
+        KernelType::BatchedRmsNorm,
+        KernelType::FusedQKVHwDp4aQ4KGemv,
+        KernelType::Generic,
+    ];
+
+    /// Convert kernel index to type (inverse of to_index()). Any index at or
+    /// beyond 15 (including the `Unknown` index itself) maps to `Unknown`.
     pub fn from_index(idx: usize) -> Self {
-        match idx {
-            0 => KernelType::TiledQ4K,
-            1 => KernelType::CoalescedQ4K,
-            2 => KernelType::VectorizedQ4K,
-            3 => KernelType::BatchedQ4K,
-            4 => KernelType::Dp4aQ4K,
-            5 => KernelType::FusedRmsNormQ4K,
-            6 => KernelType::CoalescedQ6K,
-            7 => KernelType::IncrementalAttention,
-            8 => KernelType::MultiWarpAttention,
-            9 => KernelType::BatchedAttention,
-            10 => KernelType::RmsNorm,
-            11 => KernelType::VectorizedRmsNorm,
-            12 => KernelType::BatchedRmsNorm,
-            13 => KernelType::FusedQKVHwDp4aQ4KGemv,
-            14 => KernelType::Generic,
-            15.. => KernelType::Unknown,
-        }
+        Self::INDEXED.get(idx).copied().unwrap_or(KernelType::Unknown)
     }
 
     /// Number of kernel types
@@ -198,6 +186,43 @@ impl std::fmt::Display for BottleneckClass {
             BottleneckClass::ComputeBound => write!(f, "ComputeBound"),
             BottleneckClass::LaunchBound => write!(f, "LaunchBound"),
             BottleneckClass::AttentionBound => write!(f, "AttentionBound"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod cb200_kernel_type_index_tests {
+    use super::KernelType;
+
+    /// `to_index()`/`from_index()` must round-trip for every real variant,
+    /// and every out-of-range index (including the `Unknown` slot itself)
+    /// must map to `Unknown`.
+    #[test]
+    fn kernel_type_index_round_trip_matches_declaration_order() {
+        let variants = [
+            KernelType::TiledQ4K,
+            KernelType::CoalescedQ4K,
+            KernelType::VectorizedQ4K,
+            KernelType::BatchedQ4K,
+            KernelType::Dp4aQ4K,
+            KernelType::FusedRmsNormQ4K,
+            KernelType::CoalescedQ6K,
+            KernelType::IncrementalAttention,
+            KernelType::MultiWarpAttention,
+            KernelType::BatchedAttention,
+            KernelType::RmsNorm,
+            KernelType::VectorizedRmsNorm,
+            KernelType::BatchedRmsNorm,
+            KernelType::FusedQKVHwDp4aQ4KGemv,
+            KernelType::Generic,
+        ];
+        for (expected_idx, variant) in variants.into_iter().enumerate() {
+            assert_eq!(variant.to_index(), expected_idx);
+            assert_eq!(KernelType::from_index(expected_idx), variant);
+        }
+        assert_eq!(KernelType::Unknown.to_index(), 15);
+        for idx in 15..20 {
+            assert_eq!(KernelType::from_index(idx), KernelType::Unknown);
         }
     }
 }

@@ -44,25 +44,37 @@ pub enum MetricId {
 
 impl MetricId {
     /// Get the CUPTI metric name string.
+    ///
+    /// # Panics
+    ///
+    /// Never: every fixed variant has a table row, which the unit tests pin.
     pub fn cupti_name(&self) -> &'static str {
-        match self {
-            MetricId::SmUtilization => "sm__throughput.avg.pct_of_peak_sustained_elapsed",
-            MetricId::AchievedOccupancy => "sm__warps_active.avg.pct_of_peak_sustained_elapsed",
-            MetricId::DramThroughput => "dram__throughput.avg.pct_of_peak_sustained_elapsed",
-            MetricId::L1HitRate => "l1tex__t_sector_hit_rate.pct",
-            MetricId::L2HitRate => "lts__t_sector_hit_rate.pct",
-            MetricId::WarpExecutionEfficiency => "smsp__thread_inst_executed_per_inst_executed.pct",
-            MetricId::BranchEfficiency => "smsp__sass_average_branch_targets_threads_uniform.pct",
-            MetricId::GlobalLoadEfficiency => "smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct_of_peak_sustained_elapsed",
-            MetricId::GlobalStoreEfficiency => "smsp__sass_average_data_bytes_per_sector_mem_global_op_st.pct_of_peak_sustained_elapsed",
-            MetricId::SharedLoadEfficiency => "smsp__sass_average_data_bytes_per_sector_mem_shared_op_ld.pct_of_peak_sustained_elapsed",
-            MetricId::SharedStoreEfficiency => "smsp__sass_average_data_bytes_per_sector_mem_shared_op_st.pct_of_peak_sustained_elapsed",
-            MetricId::TensorCoreUtilization => "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed",
-            MetricId::Flop32 => "smsp__sass_thread_inst_executed_op_fp32_pred_on.sum",
-            MetricId::Flop16 => "smsp__sass_thread_inst_executed_op_fp16_pred_on.sum",
-            MetricId::Ipc => "sm__inst_executed.avg.per_cycle_active",
-            MetricId::Custom(_) => "custom",
+        /// The fixed (non-`Custom`) metric ids, paired with their CUPTI name.
+        const NAMES: &[(MetricId, &str)] = &[
+            (MetricId::SmUtilization, "sm__throughput.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::AchievedOccupancy, "sm__warps_active.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::DramThroughput, "dram__throughput.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::L1HitRate, "l1tex__t_sector_hit_rate.pct"),
+            (MetricId::L2HitRate, "lts__t_sector_hit_rate.pct"),
+            (MetricId::WarpExecutionEfficiency, "smsp__thread_inst_executed_per_inst_executed.pct"),
+            (MetricId::BranchEfficiency, "smsp__sass_average_branch_targets_threads_uniform.pct"),
+            (MetricId::GlobalLoadEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct_of_peak_sustained_elapsed"),
+            (MetricId::GlobalStoreEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_global_op_st.pct_of_peak_sustained_elapsed"),
+            (MetricId::SharedLoadEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_shared_op_ld.pct_of_peak_sustained_elapsed"),
+            (MetricId::SharedStoreEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_shared_op_st.pct_of_peak_sustained_elapsed"),
+            (MetricId::TensorCoreUtilization, "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::Flop32, "smsp__sass_thread_inst_executed_op_fp32_pred_on.sum"),
+            (MetricId::Flop16, "smsp__sass_thread_inst_executed_op_fp16_pred_on.sum"),
+            (MetricId::Ipc, "sm__inst_executed.avg.per_cycle_active"),
+        ];
+        if matches!(self, MetricId::Custom(_)) {
+            return "custom";
         }
+        NAMES
+            .iter()
+            .find(|(id, _)| id == self)
+            .map(|(_, name)| *name)
+            .expect("every fixed MetricId variant is listed in NAMES")
     }
 }
 
@@ -276,6 +288,31 @@ pub enum Bottleneck {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn metric_id_cupti_name_pins_every_variant() {
+        let cases = [
+            (MetricId::SmUtilization, "sm__throughput.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::AchievedOccupancy, "sm__warps_active.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::DramThroughput, "dram__throughput.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::L1HitRate, "l1tex__t_sector_hit_rate.pct"),
+            (MetricId::L2HitRate, "lts__t_sector_hit_rate.pct"),
+            (MetricId::WarpExecutionEfficiency, "smsp__thread_inst_executed_per_inst_executed.pct"),
+            (MetricId::BranchEfficiency, "smsp__sass_average_branch_targets_threads_uniform.pct"),
+            (MetricId::GlobalLoadEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct_of_peak_sustained_elapsed"),
+            (MetricId::GlobalStoreEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_global_op_st.pct_of_peak_sustained_elapsed"),
+            (MetricId::SharedLoadEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_shared_op_ld.pct_of_peak_sustained_elapsed"),
+            (MetricId::SharedStoreEfficiency, "smsp__sass_average_data_bytes_per_sector_mem_shared_op_st.pct_of_peak_sustained_elapsed"),
+            (MetricId::TensorCoreUtilization, "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed"),
+            (MetricId::Flop32, "smsp__sass_thread_inst_executed_op_fp32_pred_on.sum"),
+            (MetricId::Flop16, "smsp__sass_thread_inst_executed_op_fp16_pred_on.sum"),
+            (MetricId::Ipc, "sm__inst_executed.avg.per_cycle_active"),
+            (MetricId::Custom(7), "custom"),
+        ];
+        for (id, want) in cases {
+            assert_eq!(id.cupti_name(), want, "{id:?}");
+        }
+    }
     use super::*;
 
     #[test]

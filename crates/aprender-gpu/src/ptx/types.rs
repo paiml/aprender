@@ -69,27 +69,13 @@ impl PtxType {
     /// Convert to PTX string representation
     #[must_use]
     pub const fn to_ptx_string(self) -> &'static str {
-        match self {
-            Self::Pred => ".pred",
-            Self::U8 => ".u8",
-            Self::U16 => ".u16",
-            Self::U32 => ".u32",
-            Self::U64 => ".u64",
-            Self::S8 => ".s8",
-            Self::S16 => ".s16",
-            Self::S32 => ".s32",
-            Self::S64 => ".s64",
-            Self::F16 => ".f16",
-            Self::BF16 => ".bf16",
-            Self::F32 => ".f32",
-            Self::F64 => ".f64",
-            Self::B8 => ".b8",
-            Self::B16 => ".b16",
-            Self::B32 => ".b32",
-            Self::B64 => ".b64",
-            Self::V2F32 => ".v2.f32",
-            Self::V4F32 => ".v4.f32",
-        }
+        // `PtxType`'s declaration order matches this table exactly, so the
+        // discriminant is a direct index into it.
+        const STRINGS: [&str; 19] = [
+            ".pred", ".u8", ".u16", ".u32", ".u64", ".s8", ".s16", ".s32", ".s64", ".f16", ".bf16",
+            ".f32", ".f64", ".b8", ".b16", ".b32", ".b64", ".v2.f32", ".v4.f32",
+        ];
+        STRINGS[self as usize]
     }
 
     /// Check if this is a floating point type

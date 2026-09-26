@@ -252,27 +252,35 @@ fn truncate_path(path: &str, max_width: usize) -> String {
 // FILESYSTEM TYPE
 // =============================================================================
 
+/// Known filesystem type -> display name mappings.
+const FS_TYPE_DISPLAY_TABLE: &[(&str, &str)] = &[
+    ("ext4", "ext4"),
+    ("ext3", "ext3"),
+    ("ext2", "ext2"),
+    ("btrfs", "btrfs"),
+    ("xfs", "xfs"),
+    ("zfs", "zfs"),
+    ("ntfs", "NTFS"),
+    ("vfat", "FAT32"),
+    ("fat32", "FAT32"),
+    ("exfat", "exFAT"),
+    ("tmpfs", "tmpfs"),
+    ("devtmpfs", "devfs"),
+    ("overlay", "overlay"),
+    ("squashfs", "squash"),
+    ("nfs", "NFS"),
+    ("nfs4", "NFS"),
+    ("cifs", "SMB"),
+    ("smb", "SMB"),
+];
+
 /// Get display name for filesystem type.
 #[must_use]
 pub fn fs_type_display(fs_type: &str) -> &str {
-    match fs_type {
-        "ext4" => "ext4",
-        "ext3" => "ext3",
-        "ext2" => "ext2",
-        "btrfs" => "btrfs",
-        "xfs" => "xfs",
-        "zfs" => "zfs",
-        "ntfs" => "NTFS",
-        "vfat" | "fat32" => "FAT32",
-        "exfat" => "exFAT",
-        "tmpfs" => "tmpfs",
-        "devtmpfs" => "devfs",
-        "overlay" => "overlay",
-        "squashfs" => "squash",
-        "nfs" | "nfs4" => "NFS",
-        "cifs" | "smb" => "SMB",
-        _ => fs_type,
-    }
+    FS_TYPE_DISPLAY_TABLE
+        .iter()
+        .find(|(key, _)| *key == fs_type)
+        .map_or(fs_type, |(_, display)| display)
 }
 
 // =============================================================================

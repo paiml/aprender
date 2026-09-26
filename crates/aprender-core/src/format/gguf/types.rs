@@ -250,6 +250,19 @@ fn write_array_header<W: Write>(
 /// Write a GGUF value
 fn write_value<W: Write>(writer: &mut W, value: &GgufValue) -> Result<()> {
     match value {
+        GgufValue::ArrayUint32(arr) => write_array_u32(writer, arr),
+        GgufValue::ArrayInt32(arr) => write_array_i32(writer, arr),
+        GgufValue::ArrayFloat32(arr) => write_array_f32(writer, arr),
+        GgufValue::ArrayString(arr) => write_array_string(writer, arr),
+        scalar => write_scalar_value(writer, scalar),
+    }
+}
+
+/// Write a non-array `GgufValue` (PMAT CB-200: split out of `write_value` so
+/// neither match's complexity crosses the gate's ceiling; behaviour is
+/// unchanged, `write_value` still dispatches every variant).
+fn write_scalar_value<W: Write>(writer: &mut W, value: &GgufValue) -> Result<()> {
+    match value {
         GgufValue::Uint8(v) => write_bytes(writer, &[*v]),
         GgufValue::Int8(v) => write_bytes(writer, &v.to_le_bytes()),
         GgufValue::Uint16(v) => write_bytes(writer, &v.to_le_bytes()),
@@ -262,10 +275,10 @@ fn write_value<W: Write>(writer: &mut W, value: &GgufValue) -> Result<()> {
         GgufValue::Uint64(v) => write_bytes(writer, &v.to_le_bytes()),
         GgufValue::Int64(v) => write_bytes(writer, &v.to_le_bytes()),
         GgufValue::Float64(v) => write_bytes(writer, &v.to_le_bytes()),
-        GgufValue::ArrayUint32(arr) => write_array_u32(writer, arr),
-        GgufValue::ArrayInt32(arr) => write_array_i32(writer, arr),
-        GgufValue::ArrayFloat32(arr) => write_array_f32(writer, arr),
-        GgufValue::ArrayString(arr) => write_array_string(writer, arr),
+        GgufValue::ArrayUint32(_)
+        | GgufValue::ArrayInt32(_)
+        | GgufValue::ArrayFloat32(_)
+        | GgufValue::ArrayString(_) => unreachable!("write_value routes arrays separately"),
     }
 }
 
