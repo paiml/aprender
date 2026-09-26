@@ -804,6 +804,20 @@ bindings:
   notes: 'compose(embedding, L x block, final_norm, unembed) as a shape pipeline: [S] -> [S,d] ->
     [S,d] (xL) -> [S,d] -> [S,V]. composition_is_well_formed() checks it chains; every block stage
     satisfies QE2E-INV-006 and the last stage is QE2E-CON-007''s [seq_len, V].'
+- contract: gated-delta-net-v1.yaml
+  equation: gated_rmsnorm
+  module_path: realizar::gguf::forward_qwen35
+  function: gated_rmsnorm
+  signature: 'fn gated_rmsnorm(input: &[f32], gate: &[f32], weight: &[f32], eps: f32, head_v_dim: usize, output: &mut [f32])'
+  status: implemented
+  notes: 'CPU reference of the GDN output norm; the kernel-parity shape joins the #[kernel] below to this symbol by the shared equation.'
+- contract: gated-delta-net-v1.yaml
+  equation: gated_rmsnorm
+  module_path: gated_rmsnorm_oxide::kernels
+  function: gated_rmsnorm
+  signature: 'fn gated_rmsnorm(input: &[f32], gate: &[f32], weight: &[f32], out: DisjointSlice<f32>, head_dim: u32, eps: f32)'
+  status: implemented
+  notes: '#3522 O-1: the cuda-oxide #[kernel] (experiments/cuda-oxide/gated-rmsnorm), beside the hand PTX gdn_gated_rmsnorm; graded by evidence/kernels/gated_rmsnorm/<host>.json.'
 critical_path:
 - softmax
 - rmsnorm

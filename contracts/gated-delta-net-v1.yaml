@@ -62,6 +62,17 @@ equations:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Output
+  gated_rmsnorm:
+    formula: out_i = x_i / sqrt(Σ_j x_j² / d + ε) × w_i × silu(z_i), per head chunk of d = head_v_dim
+    domain: x, z ∈ ℝ^{heads × d}, w ∈ ℝ^{d}, ε > 0
+    codomain: out ∈ ℝ^{heads × d}
+    invariants:
+    - The input is normalised per head; the gate z is not
+    - w is shared across heads (no head stride); z is indexed per head
+    preconditions:
+    - input.len() > 0
+    - input.len() % head_v_dim == 0
+    - input.iter().all(|v| v.is_finite())
 proof_obligations:
 - id: GDN-BND-001
   type: bound
