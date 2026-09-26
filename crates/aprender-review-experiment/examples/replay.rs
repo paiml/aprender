@@ -16,6 +16,10 @@
 //!   replays every item once through the chat-completions endpoint `U` and
 //!   appends one `review-replay-receipt-v1` row per item. `--server-pid` adds
 //!   the serve's VmHWM (peak RSS so far) to each row.
+//! - `sketch --items DIR` writes `test-sketch-v1.txt` (the near-dup sketches
+//!   `build` needs) from the corpus items in DIR, e.g. the unpacked
+//!   `items-v1.tar`. Every test-split diff must hash to its corpus
+//!   `diff_sha256`, or nothing is written. Prints counts only.
 //! - `voters DIR` prints `lane seconds` for every
 //!   `predicate.consultations.<lane>.duration_seconds` in `DIR/*/*/receipt.intoto.jsonl`
 //!   (quorum receipts under `evidence/pr-review/`).
@@ -27,9 +31,9 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::process::ExitCode;
 
-use aprender_review_experiment::cluster::parse_sketches;
+use aprender_review_experiment::cluster::{parse_sketches, render_sketches, sketch};
 use aprender_review_experiment::contamination::Index;
-use aprender_review_experiment::corpus::{parse_manifest, sha256_hex};
+use aprender_review_experiment::corpus::{parse_manifest, sha256_hex, Item, Split};
 use aprender_review_experiment::harness::{classify, compose, post, request_body};
 use aprender_review_experiment::prereg::PROMPT_V1;
 use aprender_review_experiment::replay::{
@@ -47,12 +51,13 @@ fn main() -> ExitCode {
     let r = match a.first().map(String::as_str) {
         Some("build") => flags(&a[1..]).and_then(|f| cmd_build(&f)),
         Some("run") => flags(&a[1..]).and_then(|f| cmd_run(&f)),
+        Some("sketch") => flags(&a[1..]).and_then(|f| cmd_sketch(&f)),
         Some("voters") => a
             .get(1)
             .ok_or_else(|| "voters DIR".to_string())
             .and_then(|d| cmd_voters(d)),
         Some("summary") => flags(&a[1..]).and_then(|f| cmd_summary(&f)),
-        _ => Err("usage: replay build|run|voters|summary (see the example's docs)".into()),
+        _ => Err("usage: replay build|run|sketch|voters|summary (see the example's docs)".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,
@@ -320,5 +325,34 @@ fn cmd_summary(f: &Flags) -> Result<(), String> {
         "{}",
         serde_json::to_string_pretty(&speed).map_err(|e| e.to_string())?
     );
+    Ok(())
+}
+
+/// `sketch`: the test items' near-dup sketches, written only when every
+/// test-split diff in DIR is byte-identical to the one the corpus sealed.
+fn cmd_sketch(f: &Flags) -> Result<(), String> {
+    let dir = need(f, "items")?;
+    let mut out: Vec<(String, Vec<u64>)> = Vec::new();
+    let mut tests = 0usize;
+    for line in read(&format!("{CORPUS_DIR}/corpus-v1.jsonl"))?.lines() {
+        let item: Item = serde_json::from_str(line).map_err(|e| e.to_string())?;
+        if item.split != Split::Test {
+            continue;
+        }
+        tests += 1;
+        let diff = read(&format!("{dir}/{}.diff", item.id))?;
+        if sha256_hex(diff.as_bytes()) != item.diff_sha256 {
+            return Err(format!("{}: diff sha differs from the corpus", item.id));
+        }
+        if let Some(s) = sketch(&diff) {
+            out.push((item.id, s));
+        }
+    }
+    if tests == 0 {
+        return Err("the corpus has no test items".into());
+    }
+    let path = format!("{CORPUS_DIR}/test-sketch-v1.txt");
+    std::fs::write(&path, render_sketches(&out)).map_err(|e| format!("{path}: {e}"))?;
+    println!("test_items {tests} sketched {}", out.len());
     Ok(())
 }
