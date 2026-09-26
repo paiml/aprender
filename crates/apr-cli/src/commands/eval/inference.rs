@@ -1315,6 +1315,18 @@ pub(super) fn execute_python_test_with_diagnostics(
         }
     };
 
+    // Drain stderr while the child runs. Reading it only after exit deadlocks
+    // once the child writes more than the pipe holds: a python3 that fills an
+    // 8 KiB pipe (Linux shrinks pipes past pipe-user-pages-soft) blocks, and a
+    // passing program is reported as timed out.
+    let stderr_reader = child.stderr.take().map(|mut s| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = s.read_to_end(&mut buf);
+            buf
+        })
+    });
+
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let mut timed_out = false;
     let exit_status = loop {
@@ -1333,13 +1345,10 @@ pub(super) fn execute_python_test_with_diagnostics(
         }
     };
 
-    let mut stderr_capture = String::new();
-    if let Some(mut s) = child.stderr.take() {
-        let mut buf = vec![0u8; 65536];
-        if let Ok(n) = s.read(&mut buf) {
-            stderr_capture = String::from_utf8_lossy(&buf[..n]).to_string();
-        }
-    }
+    let stderr_capture = stderr_reader
+        .and_then(|h| h.join().ok())
+        .map(|buf| String::from_utf8_lossy(&buf[..buf.len().min(65536)]).to_string())
+        .unwrap_or_default();
 
     let _ = std::fs::remove_file(&tmp);
 
