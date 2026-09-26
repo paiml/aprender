@@ -1,0 +1,57 @@
+{
+  "replay_version": "review-replay-v2",
+  "set_sha": "a4910a65ea53e520841b164876d34dead653771226f8a740e6d3408b08b30632",
+  "apr_tag": "untagged-96eb79f51",
+  "cell": "gx10-cuda",
+  "gguf_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+  "n_items": 200,
+  "p50_s": 26.607406881,
+  "p95_s": 69.357750129,
+  "p95_ci": [
+    59.489092600000006,
+    82.555173866
+  ],
+  "queue_budget_p95_s": 601.590268351,
+  "queue_budget_lane": "antigravity",
+  "within_budget": true,
+  "ttft_ms": {
+    "apr": null,
+    "llama_cpp": 1900.281,
+    "ratio": null
+  },
+  "prefill_tps": {
+    "2k": {
+      "apr": null,
+      "llama_cpp": 3695.8528371964057,
+      "ratio": null
+    },
+    "8k": {
+      "apr": null,
+      "llama_cpp": 4090.4108679044743,
+      "ratio": null
+    },
+    "16k": {
+      "apr": null,
+      "llama_cpp": 4076.943817086877,
+      "ratio": null
+    },
+    "32k": {
+      "apr": null,
+      "llama_cpp": 3864.512505097709,
+      "ratio": null
+    }
+  },
+  "decode_tps": {
+    "apr": null,
+    "llama_cpp": 63.52869487427154,
+    "ratio": null
+  },
+  "peak_rss_mb": {
+    "apr": 8419.2890625,
+    "llama_cpp": 9566.1953125,
+    "ratio": 0.8801084221538572
+  },
+  "parse_rate": 1.0,
+  "verdict_identity_vs_prev_tag": null,
+  "prompt_ids_sha": "f3c201362a6287c9c665509b8e8832e437131eddb206e0202010debe131dc0fa"
+}
