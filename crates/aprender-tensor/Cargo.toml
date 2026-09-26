@@ -17,6 +17,7 @@ thiserror = "2"
 
 [dev-dependencies]
 proptest = "1"
+trybuild = { workspace = true }
 criterion = { workspace = true }
 
 [[bench]]

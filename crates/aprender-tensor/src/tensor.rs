@@ -36,6 +36,18 @@ impl Tensor {
         })
     }
 
+    /// Build from parts whose length the caller already guarantees (the
+    /// rank-typed tensor's invariant).
+    pub(crate) fn from_trusted(shape: Vec<usize>, data: Vec<f32>) -> Self {
+        debug_assert_eq!(data.len(), shape.iter().product::<usize>());
+        let strides = compute_strides(&shape);
+        Self {
+            shape,
+            strides,
+            data,
+        }
+    }
+
     /// Create a zero tensor with the given shape.
     pub fn zeros(shape: Vec<usize>) -> Self {
         let product: usize = shape.iter().product();
