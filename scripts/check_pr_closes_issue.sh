@@ -578,6 +578,11 @@ STUB
     run_rc_case "rc-close-touching-textarea" $'<textarea>\n</textarea>\nCloses #9002'  1 "FAIL no-close"
     run_rc_case "rc-close-after-textarea" $'<textarea>\n</textarea>\n\nCloses #9002'  0 "PASS: discharges 1"
     run_rc_case "rc-close-between-front-matter-rules" $'---\n\nCloses #9002\n\n---' 0 "PASS: discharges 1"
+    # agy round 10 (@d6ac5c1fa), each measured against commonmark.js 0.31.2 as <p>Closes #N</p>:
+    # a closing tag opens no block, and a column-0 line after a blank ends a list item and its fence
+    run_rc_case "rc-close-between-script-closers" $'</script>\n\nCloses #9002\n\n</script>' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-list-item-fence" $'- item\n\n    ```\n\nCloses #9002\n\n    ```' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-list-marker-fence" $'* ```\n\nCloses #9002\n\n```' 0 "PASS: discharges 1"
     run_rc_case "rc-close-trailing-tab" $'Closes #9002\t'                          0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
