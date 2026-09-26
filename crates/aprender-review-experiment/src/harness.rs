@@ -12,7 +12,11 @@ use crate::receipt::{
 };
 use crate::stats::SplitMix64;
 use serde_json::{json, Value};
+use std::io::Read;
 use std::time::{Duration, Instant};
+
+/// Largest reply body read, in bytes (ureq's `into_string` stops at 10 MB).
+const MAX_BODY: u64 = 256 << 20;
 
 /// Fixed decoding (§2.1 `[A]`): greedy, seed = the epic number, 512 tokens
 /// (the prompt asks for a verdict line and ≤ 5 short bullets).
@@ -109,7 +113,13 @@ pub fn post(url: &str, body: &Value) -> Result<Reply, String> {
         Err(ureq::Error::Status(code, r)) => (code, r),
         Err(e) => return Err(e.to_string()),
     };
-    let body = resp.into_string().map_err(|e| e.to_string())?;
+    // `into_string` refuses bodies over 10 MB; the /tokenize reply for a large
+    // candidate diff exceeds that. Read bounded at MAX_BODY instead.
+    let mut body = String::new();
+    resp.into_reader()
+        .take(MAX_BODY)
+        .read_to_string(&mut body)
+        .map_err(|e| e.to_string())?;
     Ok(Reply {
         status,
         body,
