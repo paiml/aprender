@@ -1,0 +1,12 @@
+# Guard scripts that ci.yml runs OUTSIDE the guard-* jobs, so
+# `scripts/ci_guards.sh` (#4416) cannot reach them. One row each:
+#   <job> <script>  # why it is not in a guard job
+# `bash scripts/ci_guards.sh --check-coverage` fails on a guard script
+# in a non-guard job that has no row here, and on a row whose job no longer
+# runs that script. This list should only shrink.
+workspace-test-shard check_build_rs_paths.sh  # runs against the shard's built tree
+workspace-test-shard check_format_sovereignty.sh  # runs against the shard's built tree
+vendored-schemas check_vendored_schemas.sh  # its own job with its own checkout
+gate check_ci_gate_mutants_rule.sh  # judges the gate's own needs results
+gate check_receipt_gate_base_owned.sh  # judges the gate's own needs results
+mutants check_cargo_install_private_root.sh  # runs inside the mutants job's install

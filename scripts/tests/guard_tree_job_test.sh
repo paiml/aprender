@@ -132,7 +132,7 @@ assertions_yq() {
         e '
         (.jobs."guard-tree".needs == null)
         and (.jobs.gate.needs | contains(["guard-tree"]))
-        and ((.jobs."guard-tree".steps | map(.run // "") | join(" ") | test("(^|[^a-z_-])cargo ")) | not)
+        and (((.jobs."guard-tree".steps + (.jobs."guard-tree-steps".steps // [])) | map(.run // "") | join(" ") | test("(^|[^a-z_-])cargo ")) | not)
         and (.jobs."guard-tree"."runs-on" | contains(["clean-room"]))
     ' "$1" 2>/dev/null
 }
@@ -148,7 +148,9 @@ assertions_awk() {
     needs_line="$(grep -c '^    needs:' <<<"$gt_job")"
     runson_line="$(grep '^    runs-on:' <<<"$gt_job")"
     gate_needs_line="$(grep '^    needs:' <<<"$gate_job")"
-    run_text="$(run_text_of_job_block <<<"$gt_job")"
+    # guard-tree's guard steps live in its `guard-tree-steps` manifest, run by
+    # scripts/ci_guards.sh (#4415): the no-cargo leg must read both jobs.
+    run_text="$(run_text_of_job_block <<<"$gt_job"; job_block "guard-tree-steps" "$file" | run_text_of_job_block)"
 
     local leg1=false leg2=false leg3=false leg4=false
     [ "${needs_line:-1}" -eq 0 ] && leg1=true
@@ -210,6 +212,32 @@ if [ "$mut2" = "false" ]; then
 else
     fail_row "mutant: cargo step in guard-tree turns the assertion RED" \
         "assertions()=$mut2 (expected false)"
+fi
+
+# ---------------------------------------------------------------------------
+# 2b. Mutant: a `cargo ` step added to the guard-tree-steps MANIFEST (#4415),
+#     which scripts/ci_guards.sh runs inside guard-tree -> must go RED.
+# ---------------------------------------------------------------------------
+m2b="$WORK/cargo-step-manifest.yml"
+awk '
+    /^  guard-tree-steps:/ { in_m = 1 }
+    { print }
+    in_m && /^    steps:/ {
+        print "      - name: mutant cargo step"
+        print "        run: cargo build --release"
+        in_m = 0
+    }
+' "$CI_YML" > "$m2b"
+if ! grep -q 'mutant cargo step' "$m2b"; then
+    fail_row "mutant fixture: cargo step planted in guard-tree-steps" "no guard-tree-steps job in ci.yml -- fixture is stale"
+else
+    mut2b="$(assertions "$m2b")"
+    if [ "$mut2b" = "false" ]; then
+        pass_row "mutant: cargo step in the guard-tree-steps manifest turns the assertion RED"
+    else
+        fail_row "mutant: cargo step in the guard-tree-steps manifest turns the assertion RED" \
+            "assertions()=$mut2b (expected false)"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
