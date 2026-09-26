@@ -231,6 +231,29 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
         run(&bin, &dev, None, &no_git_env),
         &wt_full[..9],
     );
+    // GIT_CEILING_DIRECTORIES parity with git itself: a ceiling equal to the start dir does NOT
+    // stop the walk (git 2.34: it only refuses to walk UP INTO a ceiling), a ceiling at the
+    // parent does. `want` is git's own answer in the same place, not our reading of the docs
+    let sub = dev.join("sub");
+    let inner = sub.join("inner");
+    std::fs::create_dir_all(&inner).expect("mkdir sub/inner");
+    for (row, start) in [
+        ("no-git-ceiling-is-start", &sub),
+        ("no-git-ceiling-is-parent", &inner),
+    ] {
+        let by_git = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(start)
+            .env("GIT_CEILING_DIRECTORIES", &sub)
+            .output()
+            .expect("git");
+        let want = if by_git.status.success() {
+            String::from_utf8_lossy(&by_git.stdout).trim()[..9].to_string()
+        } else {
+            "v9.9.9+no-git".to_string()
+        };
+        expect(row, run(&bin, start, Some(&sub), &no_git_env), &want);
+    }
     wrong
 }
 
@@ -295,6 +318,22 @@ fn planted_regressions_turn_red() {
         w5.iter().any(|r| r.starts_with("no-git-symref-chain:"))
             && !w5.iter().any(|r| r.starts_with("no-git-binary:")),
         "one-level plant: the chain row must go RED and only it: {w5:#?}"
+    );
+    let ceiling = ".take_while(|d| !ceilings.iter().any(|c| c == d))";
+    assert_eq!(
+        shipped.matches(ceiling).count(),
+        1,
+        "the ceiling check moved; re-anchor the plant"
+    );
+    let w6 = table(
+        &shipped.replace(ceiling, ".take_while(|_| true)"),
+        "plant_no_ceiling",
+    );
+    assert!(
+        w6.iter()
+            .any(|r| r.starts_with("no-git-ceiling-is-parent:"))
+            && !w6.iter().any(|r| r.starts_with("no-git-ceiling-is-start:")),
+        "no-ceiling plant: the parent-ceiling row must go RED and only it: {w6:#?}"
     );
     let w3 = table(
         &no_dot_git.replace(retry, "run_git(&head)"),

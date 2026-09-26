@@ -209,14 +209,8 @@ fn read_head_sha_from_dot_git() -> Option<String> {
         )
         .map(|d| d.join(".git"))
         .find(|p| p.exists())?;
-    let relative_to = |base: &Path, p: &str| {
-        let p = Path::new(p);
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            base.join(p)
-        }
-    };
+    // `join` keeps an absolute `p` as is, which is what a `gitdir:`/`commondir` entry means
+    let relative_to = |base: &Path, p: &str| base.join(p);
     let git_dir: PathBuf = if dot_git.is_file() {
         let text = std::fs::read_to_string(&dot_git).ok()?;
         let rel = text.trim().strip_prefix("gitdir:")?.trim();
