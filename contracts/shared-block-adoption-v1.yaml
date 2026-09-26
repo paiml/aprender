@@ -43,11 +43,11 @@ equations:
 proof_obligations:
 - type: invariant
   property: the oracle's own case table holds
-  formal: "classify_shared_block_adoption.py --self-test exits 0"
+  formal: "∀ case ∈ SELF_TEST_CASES: classify(case.src) ≡ case.expected"
   applies_to: all
 - type: invariant
   property: the tree matches the ratchet baseline
-  formal: "classify_shared_block_adoption.py exits 0 on HEAD"
+  formal: "multiset(dup(HEAD)) ≡ multiset(baseline) ∧ violations(HEAD) ≡ ∅"
   applies_to: all
 falsification_tests:
 - id: FALSIFY-SBA-001
