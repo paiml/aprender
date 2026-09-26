@@ -666,6 +666,14 @@ gates = [
     # Release time only, like the entry above; the PR-time half (the helpers' case table) is
     # scripts/check_tokenizer_parity.sh, which guard_tree.sh dispatches.
     "scripts/tokenizer_parity.sh",
+    # #3759: the aprender-serve and aprender-gpu CUDA lib suites under the module-key guard
+    # (one key, one PTX) on every GPU host the release claims, lambda and gx10, each with the
+    # one-key-two-epsilons mutant run on the device and caught. Reads the committed receipts
+    # in evidence/cuda-module-key/; a missing host, a skipped mutant, a device skip or a
+    # receipt measured on CUDA source HEAD has since changed is RED. PR CI's cuda-unit runs
+    # the same suites on yoga only, and only for GPU-touching PRs. The PR-time half (the
+    # receipt evaluator's case table) is scripts/check_cuda_module_key_gate.sh.
+    "scripts/cuda_module_key_gate.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves
