@@ -1,0 +1,66 @@
+{
+  "issue": 3725,
+  "kind": "e2e decode A/B, greedy (--temperature 0 --seed 0 --chat --backend cuda)",
+  "host": "lambda",
+  "device": "NVIDIA GeForce RTX 4090 (sm_89)",
+  "model": "Qwen3.5-9B-Q4_K_M.gguf",
+  "model_sha256_prefix": "03b74727a860",
+  "baseline_binary": "apr 0.69.3 (e7a52949d) --features cuda \u2014 main, DecodeAttention256Kernel",
+  "splitk_binary": "apr 0.69.3 (6ee82d79a) --features cuda \u2014 e7a52949d + PMAT-3725 split-K",
+  "measured": "2026-09-26",
+  "rows": [
+    {
+      "prompt": "short",
+      "prompt_tokens": 26,
+      "tokens_generated": 256,
+      "baseline_decode_tok_s": 50.3,
+      "baseline_ms_per_tok": 19.9,
+      "splitk_decode_tok_s": 47.4,
+      "splitk_ms_per_tok": 21.1,
+      "output_tokens_identical": true,
+      "finish_reason": "length",
+      "backend_ran": "gpu",
+      "fell_back": false
+    },
+    {
+      "prompt": "r891",
+      "prompt_tokens": 6275,
+      "tokens_generated": 133,
+      "baseline_decode_tok_s": 13.3,
+      "baseline_ms_per_tok": 74.9,
+      "splitk_decode_tok_s": 20.5,
+      "splitk_ms_per_tok": 48.8,
+      "output_tokens_identical": true,
+      "finish_reason": "stop",
+      "backend_ran": "gpu",
+      "fell_back": false
+    },
+    {
+      "prompt": "c9",
+      "prompt_tokens": 13506,
+      "tokens_generated": 297,
+      "baseline_decode_tok_s": 4.3,
+      "baseline_ms_per_tok": 232.4,
+      "splitk_decode_tok_s": 19.6,
+      "splitk_ms_per_tok": 51.0,
+      "output_tokens_identical": true,
+      "finish_reason": "stop",
+      "backend_ran": "gpu",
+      "fell_back": false
+    }
+  ],
+  "short_context_repeat": {
+    "note": "3 alternating pairs, tok/s; no regression at 26-token context",
+    "base": [
+      51.7,
+      51.1,
+      51.4
+    ],
+    "splitk": [
+      52.5,
+      50.7,
+      52.6
+    ]
+  },
+  "not_measured": "llama.cpp ratio and the 20k/60k/148k/262k e2e rungs (done_when 2); gx10 e2e"
+}
