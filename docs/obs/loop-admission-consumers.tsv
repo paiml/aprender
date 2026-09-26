@@ -1,0 +1,7 @@
+# APR-OBS-001 §5.1 loop-admission registry (OBS-10, #4497). Read by scripts/check_loop_admission.sh.
+# A consumer acting on speed signals is listed here BEFORE it acts; acting=yes while refused is RED.
+# writes = comma-separated repo-relative globs the consumer can write (fleet_perf_dir/... = the ledger dir), or none.
+# Tab-separated. Edits to this file are themselves a protected write path: no consumer may hold one.
+consumer	host	backend	acting	writes	spec
+prm-rex-10	unassigned	unassigned	no	unassigned	PRM-001 REX-10 perf ratchet
+arb-self-001	unassigned	unassigned	no	unassigned	ARB-SELF-001 arbiter feedback loop (paiml/infra)
