@@ -76,7 +76,30 @@ measure() {
             | if test("@") then sub("@.*"; "") else ($p | sub(".*/"; "")) end) as $pkg
         | "\($pkg)/\(.target.kind[0]):\(.target.name)/\(.message.code.code)"' "$json" \
         | LC_ALL=C sort | uniq -c | awk '{ printf "%s\t%s\n", $2, $1 }' >"$out"
+    # Every package cargo reported a unit for (fresh units are reported too): the evidence
+    # that a zero count covered the scope instead of skipping it. Dependencies are listed
+    # as well; the zero check intersects with the workspace members.
+    jq -r 'select(.reason == "compiler-artifact")
+        | (.package_id | split("#") | .[0] as $p | .[1]
+            | if test("@") then sub("@.*"; "") else ($p | sub(".*/"; "")) end)' "$json" \
+        | LC_ALL=C sort -u >"$out.checked"
     rm -f "$json" "$err"
+}
+
+# zero_is_proven <checked-list> — zero is the ratchet's goal (#4153), so an empty workspace
+# count is accepted only with proof that clippy checked every in-scope member; a short list
+# is a broken measurement, not a clean tree.
+zero_is_proven() {
+    local checked="$1" want missing
+    want="$(cd "$ROOT" && cargo metadata --no-deps --format-version 1)" || die2 "cargo metadata failed"
+    want="$(printf '%s' "$want" | jq -r '.packages[].name' \
+        | awk -v ex="$EXCLUDED_PKGS" 'index(ex, " " $0 " ") == 0' | LC_ALL=C sort -u)"
+    [ -n "$want" ] || die2 "cargo metadata listed no workspace members"
+    missing="$(LC_ALL=C comm -23 <(printf '%s\n' "$want") "$checked")"
+    if [ -n "$missing" ]; then
+        die2 "measured zero findings but clippy never checked: $(printf '%s' "$missing" | tr '\n' ' ')— a broken measurement"
+    fi
+    echo "check_clippy_members: zero findings, all $(printf '%s\n' "$want" | wc -l) in-scope workspace members checked"
 }
 
 # compare <baseline> <current> — prints NEW/RAISED to stderr (rc 1) and LOWERED to stdout.
@@ -162,8 +185,9 @@ gate() {
     fi
     measure "$cur" "${scope[@]}"
     if [ "$full" = --full ] && ! [ -s "$cur" ]; then
-        die2 "measured zero findings — an empty count from a 77-crate workspace is a broken measurement"
+        zero_is_proven "$cur.checked"
     fi
+    rm -f "${cur:?}.checked"
     compare "$base" "$cur" || rc=$?
     if [ "$rc" -ne 0 ]; then
         echo "check_clippy_members: RED — findings above scripts/clippy_members_baseline.txt in [$label] (fix them; the baseline never grows)" >&2
@@ -188,6 +212,7 @@ update_baseline() {
     } >"$BASELINE"
     echo "check_clippy_members: wrote $(wc -l <"$cur") keys to $BASELINE"
     rm -f "$cur"
+    rm -f "${cur:?}.checked"
 }
 
 self_test() {
@@ -229,8 +254,22 @@ PLANT
         echo "SELF-TEST FAILED: RED, but not on the planted needless_return" >&2
         return 1
     fi
+    rm -f "${base:?}.checked" "${cur:?}.checked"
+    local all
+    all="$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name' | LC_ALL=C sort -u)" \
+        || die2 "cargo metadata failed"
+    printf '%s\n' "$all" >"$cur"
+    if ! (zero_is_proven "$cur") >/dev/null 2>&1; then
+        echo "SELF-TEST FAILED: zero findings with every member checked was refused" >&2
+        return 1
+    fi
+    printf '%s\n' "$all" | grep -vx aprender-common >"$cur"
+    if (zero_is_proven "$cur") >/dev/null 2>&1; then
+        echo "SELF-TEST FAILED: zero findings with aprender-common unchecked reported clean" >&2
+        return 1
+    fi
     rm -f "$base" "$cur"
-    echo "SELF-TEST PASSED: unchanged tree -> green; planted needless_return -> RED"
+    echo "SELF-TEST PASSED: unchanged tree -> green; planted needless_return -> RED; zero with a member unchecked -> refused"
 }
 
 case "${1:-}" in
