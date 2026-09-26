@@ -90,6 +90,25 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before
+      # any section starts. rustfmt runs in the image sov.lint uses (same digest,
+      # so the same verdict); the ID-order rule is contract_data_integrity's,
+      # without cargo; the case tables are guard-tree's cheapest.
+      - name: Cheap checks (fmt, falsification-ID order, guard case tables)
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/fail_fast.py self-test
+          python3 scripts/ci/fail_fast.py ids --base origin/main
+          docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -w /w \
+            localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 \
+            cargo fmt --all -- --check
+          bash scripts/tests/guard_tree_test.sh
+          bash scripts/bump-version.sh --self-test
+          bash scripts/check_no_claim_literals.sh --selftest
+          bash scripts/check_hardcoded_paths.sh --self-test
+          bash scripts/check_pr_review_wiring.sh --self-test
+          bash scripts/check_ci_gate_mutants_rule.sh --self-test
+          bash scripts/check_ci_gate_docs_only_rule.sh --self-test
       # The driver decides what every section's if:/matrix/needs means and whether
       # the vendored workflow is the upstream one; its case table must go RED on
       # each planted defect before it is trusted to report a section green.
