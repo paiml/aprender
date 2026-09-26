@@ -203,6 +203,20 @@ arm4() {
     echo "  A2  subject ($kind) diff $base..$head, patch-id $pid"
 
     local dir best_dir='' best_head='' d h rp legacy=0 other=0 legacy_dir='' legacy_dirs=()
+    if [ ! -d "$root/$pr" ] && [ "${GITHUB_EVENT_NAME:-}" = merge_group ]; then
+        # NEUTRAL ON THE QUEUE CAR, AND ONLY FOR AN ABSENT DIRECTORY (cop ruling
+        # 2026-09-26, relayed to aprender-a2). The receipt is owed by the PR, and the
+        # pull_request_target run of this same job is RED for its absence. The car
+        # re-judging that absence made every merge_group red (#4468, #4471: "A2 no
+        # receipt directory") and a red check is not a green car. What stays RED on
+        # the queue: no public key (A1), a subject with no patch-id (two parents, an
+        # empty diff), and a receipt directory that binds a different diff. Keyed
+        # on the EVENT, not PR_REVIEW_SUBJECT_KIND: a branch event cannot opt in.
+        echo "  A2  NEUTRAL - no receipt directory at $root/$pr on the merge_group car."
+        echo "      The receipt is owed on the PR, where this job is RED for it (S6.3);"
+        echo "      the queue does not re-judge its absence. Nothing was verified here."
+        return 0
+    fi
     if [ ! -d "$root/$pr" ]; then
         echo "  A2  no receipt directory at $root/$pr" >&2
         echo "      S6.3: a missing receipt is RED, not skipped. S8 fixes" >&2
@@ -511,6 +525,13 @@ self_test() {
         "$repo"   999 "$squash_ws" GITHUB_EVENT_NAME=merge_group
     row queue-two-parents         1 "merge_group: a two-parent queue commit has no single diff (fail closed)" \
         "$repo"   999 "$merge2"    GITHUB_EVENT_NAME=merge_group
+    # The queue's NEUTRAL, bounded in both directions over the SAME no-receipt PR.
+    row queue-no-receipt-neutral  0 "merge_group, no receipt directory: NEUTRAL (the PR event owes it)" \
+        "$repo"  1000 "$squash"    GITHUB_EVENT_NAME=merge_group
+    row no-receipt-kind-queue     1 "branch event forced to kind=queue, no receipt: RED (neutral keys on the EVENT)" \
+        "$repo"  1000 "$squash"    PR_REVIEW_SUBJECT_KIND=queue
+    row queue-no-receipt-merge   1 "merge_group, no receipt, two-parent car: RED (no patch-id, fail closed)" \
+        "$repo"  1000 "$merge2"    GITHUB_EVENT_NAME=merge_group
     row branch-squash-as-branch   0 "the same squash judged as a branch event (merge-base = its parent)" \
         "$repo"   999 "$squash"
     row legacy-receipt-no-id      1 "a valid signed receipt with no diff_patch_id binds nothing" \
@@ -552,7 +573,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 23/23 rows, both polarities ---"
+    echo "--- 26/26 rows, both polarities ---"
     return 0
 }
 

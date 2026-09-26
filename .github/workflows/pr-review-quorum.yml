@@ -129,7 +129,7 @@ jobs:
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
           echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
 
-      - name: "Arm 4 case table: 23 rows, both polarities of the cutoff and the patch-id binding"
+      - name: "Arm 4 case table: 26 rows, both polarities of the cutoff and the patch-id binding"
         shell: bash
         run: bash scripts/check_pr_review_arm4.sh --self-test
 
