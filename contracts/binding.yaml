@@ -476,10 +476,11 @@ bindings:
 # --- apr-model-graph-v1 (full LLM forward pass) ---
 - contract: apr-model-graph-v1.yaml
   equation: forward_pass_completeness
-  module_path: aprender::inference::forward
-  function: forward_pass
+  module_path: realizar::gguf
+  function: OwnedQuantizedModel::forward
+  signature: 'fn forward(&self, token_ids: &[u32]) -> Result<Vec<f32>>'
   status: implemented
-  notes: Full forward pass from tokens to logits
+  notes: Full forward pass from tokens to logits (crates/aprender-serve/src/gguf/inference/forward/forward_fused_q4k.rs); returns last-position logits [V], not [B,S,V]. Was ghost aprender::inference::forward::forward_pass (#4094)
 - contract: apr-model-graph-v1.yaml
   equation: attention_mechanism
   module_path: aprender::nn::transformer
@@ -666,7 +667,7 @@ bindings:
   status: implemented
   notes: >-
     S8, the four jidoka parameters. guard_mutation_score is REPRODUCIBLE:
-    scripts/mutate-guard.sh is committed and its DERIVED set is 233/233 over
+    scripts/mutate-guard.sh is committed and its DERIVED set is 237/237 over
     scripts/check_pr_review_receipt.sh. THE SET SIZE IS DERIVED AND CERTAIN; THE KILL
     COUNT ON THIS MERGED TREE IS PENDING, and is the `pr-review-receipt` job's Arm 3.
     215/215 was measured on PRREV-015's tree and 185/185 on PRREV-013's, and neither

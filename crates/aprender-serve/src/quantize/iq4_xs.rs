@@ -68,7 +68,7 @@ pub fn dequantize_iq4_xs(data: &[u8]) -> Result<Vec<f32>> {
     }
     let nb = data.len() / IQ4_XS_BLOCK_BYTES;
     let mut out = vec![0.0f32; nb * IQ4_XS_BLOCK_ELEMS];
-    for (i, block) in data.chunks_exact(IQ4_XS_BLOCK_BYTES).enumerate() {
+    for (i, block) in data.as_chunks::<IQ4_XS_BLOCK_BYTES>().0.iter().enumerate() {
         dequantize_iq4_xs_block(
             block,
             &mut out[i * IQ4_XS_BLOCK_ELEMS..(i + 1) * IQ4_XS_BLOCK_ELEMS],
@@ -97,6 +97,9 @@ mod tests {
     ];
 
     /// `dequantize_row_iq4_xs` of IQ4_XS_BLOCK, from ggml-quants.c.
+    // `%.9e` dumps of the ggml reference output, kept byte-for-byte so they diff
+    // against it; the values are exact in f32, only the digit count trips the lint.
+    #[allow(clippy::excessive_precision)]
     #[rustfmt::skip]
     const IQ4_XS_EXPECTED: [f32; IQ4_XS_BLOCK_ELEMS] = [
         -4.167187500e+01, 4.265625000e+00, 2.920312500e+01, -4.167187500e+01, 2.920312500e+01, -2.723437500e+01,

@@ -354,10 +354,19 @@ fi
 # installing, and not probing, but producing the evidence artifact that
 # scripts/dogfood.sh and Gate 12 already own.
 SWEEP_ALLOWED="scripts/dogfood.sh scripts/check_multiplatform_dogfood.sh scripts/check_dogfood_shim.sh"
+# The RELEASE SKILL's own post-publish host receipt (#3731): the skill's
+# "Recording a receipt" step, run by the release autopilot on each host. It is
+# allowed ONLY while the skill names it as that step's tracked implementation —
+# drop the name from the skill and the script is a second sweep again.
+RELEASE_SKILL_SWEEPS="scripts/release/autopilot.sh scripts/release/host_receipt.sh"
+RELEASE_SKILL_MD=".claude/skills/pre-release/SKILL.md"
 sweep_hits=""
 while IFS= read -r f; do
     [ -f "$f" ] || continue
     case " $SWEEP_ALLOWED " in *" $f "*) continue ;; esac
+    case " $RELEASE_SKILL_SWEEPS " in
+        *" $f "*) grep -qF -- "\`$f\`" "$RELEASE_SKILL_MD" 2>/dev/null && continue ;;
+    esac
     # COMMENTS ARE NOT INVOCATIONS. scripts/bench_host_receipt.sh documents
     # "RUN THIS ON THE HOST, AFTER `cargo install aprender`" in its header and
     # installs nothing — it was flagged as a second sweep on the strength of

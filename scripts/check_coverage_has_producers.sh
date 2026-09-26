@@ -15,7 +15,7 @@
 #   R3  .github/workflows/coverage-nightly.yml triggers on `schedule:` and NOT on
 #       `v*` tags -- the nightly trend stays, and a tag is measured ONCE, by ci.yml.
 #   R4  the Makefile defines a numeric COV_FLOOR -- the floor `make coverage` enforces.
-#   R5  ci.yml hands sovereign-ci `coverage_on: tag` (no `skip_coverage: true`)
+#   R5  ci/sections.yml (#4433) hands sovereign-ci `coverage_on: tag` (no `skip_coverage: true`)
 #       AND its own `on:` has `push: tags: ['v*']` -- the reusable's two required
 #       edits. sovereign-ci's gate then prints "coverage: NOT MEASURED" on a pull
 #       request and REQUIRES coverage to succeed on a v* tag. `skip_coverage: true`
@@ -40,8 +40,8 @@ V_TAGS_RE="^[[:space:]]+tags:[[:space:]]*\[[^]]*['\"]?v\*['\"]?"
 
 judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
     local r=$1 bad=0 dry blk ci
-    local mk="$r/Makefile" df="$r/scripts/dogfood.sh" wf="$r/.github/workflows/coverage-nightly.yml" cy="$r/.github/workflows/ci.yml"
-    for f in "$mk" "$df" "$wf" "$cy"; do [ -r "$f" ] || { printf 'ENV   %s is not readable -- cannot judge, not a pass\n' "$f"; return 2; }; done
+    local mk="$r/Makefile" df="$r/scripts/dogfood.sh" wf="$r/.github/workflows/coverage-nightly.yml" cy="$r/.github/workflows/ci.yml" sy="$r/ci/sections.yml"
+    for f in "$mk" "$df" "$wf" "$cy" "$sy"; do [ -r "$f" ] || { printf 'ENV   %s is not readable -- cannot judge, not a pass\n' "$f"; return 2; }; done
 
     dry=$(make -n -C "$r" coverage-check 2>/dev/null) || dry=""
     if [[ $dry == *"llvm-cov"* ]]; then printf 'ok    R1 make -n coverage-check reaches llvm-cov (the release producer measures, it reads nothing from CI)\n'
@@ -77,14 +77,16 @@ judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
         printf 'ok    R4 the Makefile defines a numeric COV_FLOOR\n'
     else printf 'FAIL  R4 the Makefile has no numeric COV_FLOOR -- make coverage enforces nothing\n'; bad=1; fi
 
-    ci=$(live "$cy")
+    # #4433: the sovereign-ci `with:` block moved to ci/sections.yml (sovereign-ci:);
+    # the `on:` trigger stays in ci.yml.
+    ci=$(live "$sy")
     if grep -qE '^[[:space:]]+skip_coverage:[[:space:]]*true' <<<"$ci"; then
-        printf 'FAIL  R5 ci.yml sets skip_coverage: true -- sovereign-ci'"'"'s gate reads that skip as a mandatory failure (ci / gate red on every PR); use coverage_on: tag\n'; bad=1
+        printf 'FAIL  R5 ci/sections.yml sets skip_coverage: true -- sovereign-ci'"'"'s gate reads that skip as a mandatory failure (ci / gate red on every PR); use coverage_on: tag\n'; bad=1
     elif ! grep -qE "^[[:space:]]+coverage_on:[[:space:]]*['\"]?tag['\"]?[[:space:]]*$" <<<"$ci"; then
-        printf 'FAIL  R5 ci.yml does not hand sovereign-ci coverage_on: tag (on a live line)\n'; bad=1
+        printf 'FAIL  R5 ci/sections.yml does not hand sovereign-ci coverage_on: tag (on a live line)\n'; bad=1
     elif ! grep -qE "$V_TAGS_RE" <<<"$(on_block "$cy")"; then
         printf "FAIL  R5 ci.yml's on: block has no push tags [v*] -- coverage_on: tag alone never fires on a tag (the reusable's second required edit)\n"; bad=1
-    else printf 'ok    R5 ci.yml: coverage_on: tag, and on: push tags [v*] (coverage is owed on every release tag)\n'; fi
+    else printf 'ok    R5 ci/sections.yml: coverage_on: tag, and ci.yml on: push tags [v*] (coverage is owed on every release tag)\n'; fi
     return "$bad"
 }
 
@@ -98,11 +100,12 @@ if [ "${1:-}" = "--self-test" ]; then
     trap 'rmtree "${d:-}"' EXIT
     bad=0; n=0
     fixture() { # fixture <dir> -> a tree where every link holds
-        mkdir -p "$1/scripts" "$1/.github/workflows"
+        mkdir -p "$1/scripts" "$1/.github/workflows" "$1/ci"
         printf 'COV_FLOOR := 88\nLLVMCOV := llvm-cov\ncoverage:\n\t$(LLVMCOV) report --fail-under-lines $(COV_FLOOR)\ncoverage-check: coverage\n' > "$1/Makefile"
         printf '#!/usr/bin/env bash\n  gate coverage make -C "$d" coverage-check\n' > "$1/scripts/dogfood.sh"
         printf "on:\n  schedule:\n    - cron: '0 22 * * *'\n  workflow_dispatch: {}\njobs: {}\n" > "$1/.github/workflows/coverage-nightly.yml"
-        printf "on:\n  push:\n    branches: [main, master]\n    tags: ['v*']\n  pull_request:\n    branches: [main, master]\njobs:\n  ci:\n    uses: paiml/.github/.github/workflows/sovereign-ci.yml@x\n    with:\n      coverage_on: tag\n" > "$1/.github/workflows/ci.yml"
+        printf "on:\n  push:\n    branches: [main, master]\n    tags: ['v*']\n  pull_request:\n    branches: [main, master]\njobs: {}\n" > "$1/.github/workflows/ci.yml"
+        printf "sovereign-ci:\n  uses: paiml/.github/.github/workflows/sovereign-ci.yml@x\n  with:\n    coverage_on: tag\n" > "$1/ci/sections.yml"
     }
     # one mutation per row, as a function (no eval: the mutation is code, not a string)
     m_none()          { :; }
@@ -112,15 +115,16 @@ if [ "${1:-}" = "--self-test" ]; then
     m_r3_nosched()    { sed -i '/schedule:/d; /cron:/d' .github/workflows/coverage-nightly.yml; }
     m_r3_tagsback()   { printf "on:\n  schedule:\n    - cron: '0 22 * * *'\n  push:\n    tags: ['v*']\njobs: {}\n" > .github/workflows/coverage-nightly.yml; }
     m_r4()            { sed -i '/^COV_FLOOR/d' Makefile; }
-    m_r5_skip()       { sed -i 's/coverage_on: tag/skip_coverage: true/' .github/workflows/ci.yml; }
-    m_r5_both()       { printf '      skip_coverage: true\n' >> .github/workflows/ci.yml; }
-    m_r5_nocov()      { sed -i '/coverage_on:/d' .github/workflows/ci.yml; }
-    m_r5_comment()    { sed -i 's/      coverage_on: tag/      # coverage_on: tag/' .github/workflows/ci.yml; }
-    m_r5_always()     { sed -i 's/coverage_on: tag/coverage_on: always/' .github/workflows/ci.yml; }
+    m_r5_skip()       { sed -i 's/coverage_on: tag/skip_coverage: true/' ci/sections.yml; }
+    m_r5_both()       { printf '    skip_coverage: true\n' >> ci/sections.yml; }
+    m_r5_nocov()      { sed -i '/coverage_on:/d' ci/sections.yml; }
+    m_r5_comment()    { sed -i 's/    coverage_on: tag/    # coverage_on: tag/' ci/sections.yml; }
+    m_r5_always()     { sed -i 's/coverage_on: tag/coverage_on: always/' ci/sections.yml; }
     m_r5_notag()      { sed -i "/    tags: \['v\*'\]/d" .github/workflows/ci.yml; }
     m_r5_tagcomment() { sed -i "s/^    tags: \['v\*'\]/    # tags: ['v*']/" .github/workflows/ci.yml; }
     m_missing()       { rm -f .github/workflows/coverage-nightly.yml; }
     m_missing_ci()    { rm -f .github/workflows/ci.yml; }
+    m_missing_sy()    { rm -f ci/sections.yml; }
     row() { # row WANT-RC LABEL MUTATION-FUNCTION
         local want=$1 label=$2 rc=0; n=$((n + 1)); rmtree "$d/t"; fixture "$d/t"
         ( cd "$d/t" && "$3" ) || { printf 'FAIL  row %s fixture mutation failed: %s\n' "$n" "$label"; bad=1; return; }
@@ -144,6 +148,7 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "R5: ci.yml's v* tag trigger only in a COMMENT -> RED"                m_r5_tagcomment
     row 2 "coverage-nightly.yml missing is ENV rc=2, never a pass"              m_missing
     row 2 "ci.yml missing is ENV rc=2, never a pass"                            m_missing_ci
+    row 2 "ci/sections.yml missing is ENV rc=2, never a pass"                   m_missing_sy
     [ "$bad" = 0 ] && { printf 'SELF-TEST PASSED: %s rows\n' "$n"; exit 0; }
     printf 'SELF-TEST FAILED\n' >&2; exit 1
 fi

@@ -66,27 +66,42 @@ USAGE
 
 # The measurement. One instrument, shared with check_readme_claims.sh's
 # measured_contract_count(): find over contracts/, *.yaml, any depth.
+# ONE definition of "a contract file" — kept byte-identical to
+# scripts/check_readme_claims.sh's, and held to `pv census` by `make contracts`.
+contract_files_only() {
+  grep -E '\.yaml$' \
+    | grep -Ev '(^|/)(kaizen|legacy|pipelines|publish-manifests|quarantine)/' \
+    | grep -Ev '(^|/)(binding\.yaml|binding\.yml|external-corpora\.yaml|ontology\.yaml)$' \
+    | grep -Ev '(^|/)\.[^/]*$'
+}
+
 measured_contract_count() {
-    # ONT-001 ONT-1 (F-1): the count is the census's `n_files` — the number the
-    # gate actually validates — not a `find`, which counts 51 files `pv lint`
-    # never walks (kaizen/, legacy/, pipelines/, publish-manifests/, binding.yaml,
-    # external-corpora.yaml). A README printing a number no gate measures is the
-    # drift this script exists to end; the generator and the guard now read the
-    # same file.
-    local census="$REPO_ROOT/contracts/census.json" n
-    [ -s "$census" ] || {
-        printf 'FAIL readme_sync: %s is missing or empty — run `make contracts`. The count is UNMEASURED, which is a failure, not a zero.\n' "$census" >&2
-        return 1
-    }
-    n=$(jq -r '.n_files // empty' "$census" 2>/dev/null || true)
+    # The count is a property of the WORKING TREE, measured with the one definition
+    # of "a contract file" that `pv census` (ONT-001 ONT-1) and the lint walker
+    # apply (contract_files_only). It used to be read out of the tracked
+    # contracts/census.json, but since #3569 that file is a release-train snapshot
+    # that no PR may edit, so it lags by design. A README generated from it would
+    # lag the tree it describes, and FALSIFY-README-002 holds the block EQUAL to the
+    # tree. CENSUS_JSON=<a fresh pv census> reads that census instead; `make
+    # contracts` uses it to prove this listing and `pv census` still agree.
+    local n
+    if [ -n "${CENSUS_JSON:-}" ]; then
+        [ -s "$CENSUS_JSON" ] || {
+            printf 'FAIL readme_sync: CENSUS_JSON=%s is missing or empty. The count is UNMEASURED, which is a failure, not a zero.\n' "$CENSUS_JSON" >&2
+            return 1
+        }
+        n=$(jq -r '.n_files // empty' "$CENSUS_JSON" 2>/dev/null || true)
+    else
+        n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || true
+    fi
     case "$n" in
         '' | *[!0-9]*)
-            printf 'FAIL readme_sync: %s carries no numeric .n_files\n' "$census" >&2
+            printf 'FAIL readme_sync: the contract count read %q, not a number\n' "$n" >&2
             return 1
             ;;
     esac
     [ "$n" -gt 0 ] || {
-        printf 'FAIL readme_sync: the census reports 0 contracts. A zero count is a broken measurement, not a README to regenerate.\n' >&2
+        printf 'FAIL readme_sync: the contract count is 0. A zero count is a broken measurement, not a README to regenerate.\n' >&2
         return 1
     }
     printf '%s' "$n"
@@ -178,7 +193,7 @@ case "$mode" in
             printf 'FAIL readme_sync: %s of %s block(s) carry the measured count %s after the rewrite.\n' "$after" "$n" "$count" >&2
             exit 1
         fi
-        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (contracts/census.json .n_files)\n' "$n" "$count"
+        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (contract files under contracts/, walked)\n' "$n" "$count"
         exit 0
         ;;
 esac

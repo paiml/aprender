@@ -42,15 +42,24 @@
 #   bash scripts/check_shell_lint_ratchet.sh --update     # re-baseline (shrink only)
 
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard and hit PROBE-TIMEOUT (#4144).
+case "${1:-}" in -h|--help) printf '%s\n' 'usage: bash scripts/check_shell_lint_ratchet.sh [--update]'; exit 0 ;; esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE="${REPO_ROOT}/scripts/shell_lint_baseline.txt"
 
 cd "$REPO_ROOT" || exit 1
 
-if ! command -v bashrs >/dev/null 2>&1; then
-    printf 'ENV: bashrs is not on PATH; the fleet pin installs it (tools.toml; CI never installs tools).\n' >&2
-    printf 'Without the linter this guard cannot decide, so it refuses to pass (exit 2, never 0).\n' >&2
+# THE PINNED bashrs, never the one on PATH. The fleet runs nightly bashrs (7.4.2
+# on lambda, 2026-09-25) while tools.toml pins CI at another; error counts move
+# between releases, so an ambient bashrs compares two instruments and blames the
+# tree. bashrs_pin.sh installs the pin into its own --root on first use, or
+# refuses loudly on a mismatch. It never falls back to PATH.
+# shellcheck source=scripts/bashrs_pin.sh
+if ! . "$REPO_ROOT/scripts/bashrs_pin.sh" || ! bashrs_pin_resolve; then
+    printf 'ENV: the pinned bashrs (tools.toml) is unusable, see above. Without the linter this\n' >&2
+    printf 'guard cannot decide, so it refuses to pass (exit 2, never 0).\n' >&2
     exit 2
 fi
 
@@ -80,7 +89,7 @@ trap 'rm -f "${LOG:?}"' EXIT
 # improvement (measured: a stub exiting 101 produced "Improved: 9 -> 0", PASS).
 tool_failed=0
 while IFS= read -r script; do
-    out=$(bashrs lint "$script" 2>&1); rc=$?
+    out=$("$BASHRS" lint "$script" 2>&1); rc=$?
     printf '%s\n' "$out" | sed "s|^|${script}: |" >> "$LOG"
     # bashrs: 0 clean, 1 warnings, 2 errors -- all three are the tool RUNNING.
     if [ "$rc" -gt 2 ]; then
@@ -118,7 +127,7 @@ if [ "${1:-}" = "--update" ]; then
     # disagrees with the pin and check_tool_versions.sh says so — which is the
     # finding, not a nuisance. Stamping the pin instead would launder a number
     # measured by the wrong instrument into one that looks correctly measured.
-    bashrs_ver=$(bashrs --version 2>/dev/null | awk 'NR==1{print $2}')
+    bashrs_ver=$("$BASHRS" --version 2>/dev/null | awk 'NR==1{print $2}')
     if [ -z "$bashrs_ver" ]; then
         printf 'FAIL: bashrs --version did not name a version; refusing to record a\n'
         printf '      count whose instrument cannot be stamped.\n' >&2

@@ -94,6 +94,9 @@
 #
 # Refs: PMAT-746.
 set -euo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard and hit PROBE-TIMEOUT (#4144).
+case "${1:-}" in -h|--help) printf '%s\n' 'usage: bash scripts/check_complexity_ratchet.sh [--self-test|--selftest]'; exit 0 ;; esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE_REL='scripts/complexity_baseline.txt'

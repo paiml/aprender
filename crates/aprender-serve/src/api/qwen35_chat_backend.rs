@@ -166,6 +166,7 @@ async fn try_qwen35_backend(
             budget,
             prompt_token_count,
             None,
+            request.stop.as_deref(),
         ));
     }
 

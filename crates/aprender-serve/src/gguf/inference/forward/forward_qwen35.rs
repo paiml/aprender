@@ -258,46 +258,74 @@ pub fn delta_rule_recurrence_gqa(
 
         let state_stride = head_v_dim * head_k_dim;
         let state_offset = h * state_stride;
-        let s_h = &mut state[state_offset..state_offset + state_stride];
+        delta_rule_head(
+            q_h,
+            k_h,
+            v_h,
+            beta_val,
+            gate_val,
+            &mut state[state_offset..state_offset + state_stride],
+            &mut output[h * head_v_dim..(h + 1) * head_v_dim],
+            head_k_dim,
+            scale,
+        );
+    }
+}
 
-        // 1. S_h *= exp(gate_val)
-        let exp_gate = gate_val.exp();
-        for s in s_h.iter_mut() {
-            *s *= exp_gate;
-        }
+/// One value head of [`delta_rule_recurrence_gqa`] for one token: `s_h` is that head's
+/// `head_v_dim × head_k_dim` state and `out_h` its `head_v_dim` outputs. The per-token path and
+/// the batched prefill's per-head walk (#4228) both run this body, so their arithmetic is the same.
+#[allow(clippy::too_many_arguments)]
+#[inline]
+pub(crate) fn delta_rule_head(
+    q_h: &[f32],
+    k_h: &[f32],
+    v_h: &[f32],
+    beta_val: f32,
+    gate_val: f32,
+    s_h: &mut [f32],
+    out_h: &mut [f32],
+    head_k_dim: usize,
+    scale: f32,
+) {
+    let head_v_dim = out_h.len();
+    // 1. S_h *= exp(gate_val)
+    let exp_gate = gate_val.exp();
+    for s in s_h.iter_mut() {
+        *s *= exp_gate;
+    }
 
-        // 2. delta = (v_h - S_h^T * k_h) * beta_val
-        // Note: s_h[j * head_k_dim + i] is S[i][j].
-        // So row j of s_h in memory is column j of S.
-        // sum = dot(row j of s_h, k_h)
-        let mut delta = vec![0.0; head_v_dim];
-        for j in 0..head_v_dim {
-            let row_j = &s_h[j * head_k_dim..(j + 1) * head_k_dim];
-            let mut sum = 0.0;
-            for i in 0..head_k_dim {
-                sum += row_j[i] * k_h[i];
-            }
-            delta[j] = (v_h[j] - sum) * beta_val;
+    // 2. delta = (v_h - S_h^T * k_h) * beta_val
+    // Note: s_h[j * head_k_dim + i] is S[i][j].
+    // So row j of s_h in memory is column j of S.
+    // sum = dot(row j of s_h, k_h)
+    let mut delta = vec![0.0; head_v_dim];
+    for j in 0..head_v_dim {
+        let row_j = &s_h[j * head_k_dim..(j + 1) * head_k_dim];
+        let mut sum = 0.0;
+        for i in 0..head_k_dim {
+            sum += row_j[i] * k_h[i];
         }
+        delta[j] = (v_h[j] - sum) * beta_val;
+    }
 
-        // 3. S_h += k_h * delta^T
-        for j in 0..head_v_dim {
-            let row_j = &mut s_h[j * head_k_dim..(j + 1) * head_k_dim];
-            let d_j = delta[j];
-            for i in 0..head_k_dim {
-                row_j[i] += k_h[i] * d_j;
-            }
+    // 3. S_h += k_h * delta^T
+    for j in 0..head_v_dim {
+        let row_j = &mut s_h[j * head_k_dim..(j + 1) * head_k_dim];
+        let d_j = delta[j];
+        for i in 0..head_k_dim {
+            row_j[i] += k_h[i] * d_j;
         }
+    }
 
-        // 4. out_h = S_h^T * q_h * scale
-        for j in 0..head_v_dim {
-            let row_j = &s_h[j * head_k_dim..(j + 1) * head_k_dim];
-            let mut sum = 0.0;
-            for i in 0..head_k_dim {
-                sum += row_j[i] * q_h[i];
-            }
-            output[h * head_v_dim + j] = sum * scale;
+    // 4. out_h = S_h^T * q_h * scale
+    for j in 0..head_v_dim {
+        let row_j = &s_h[j * head_k_dim..(j + 1) * head_k_dim];
+        let mut sum = 0.0;
+        for i in 0..head_k_dim {
+            sum += row_j[i] * q_h[i];
         }
+        out_h[j] = sum * scale;
     }
 }
 
@@ -550,8 +578,10 @@ fn load_f32_vec(tensor_ref: &QuantizedTensorRef, data: &[u8]) -> Result<Vec<f32>
         })?;
     // Decoded, not reinterpreted: an mmap offset carries no f32 alignment guarantee.
     Ok(bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect())
 }
 
@@ -995,97 +1025,23 @@ impl<'a> Qwen35Model<'a> {
         normed: &mut [f32],
         post_attn_normed: &mut [f32],
     ) -> Result<()> {
-        let fn_softplus = |x: f32| -> f32 {
-            if x > 20.0 {
-                x
-            } else {
-                (1.0 + x.exp()).ln()
-            }
-        };
-
         crate::gguf::ops::rms_norm_into(hidden, &d.attn_norm, self.base.config.eps, normed);
         let conv_dim = self.head_k_dim * self.num_k_heads * 2 + self.head_v_dim * self.num_v_heads;
+        let v_dim = self.head_v_dim * self.num_v_heads;
         let mut conv_in = vec![0.0; conv_dim];
         self.base
             .fused_matmul_into(normed, &d.attn_qkv, &mut conv_in)?;
-        let mut conv_out = vec![0.0; conv_dim];
-        causal_conv1d(
-            &conv_in,
-            &mut cache.conv_states[il][..],
-            &d.ssm_conv1d_weight,
-            self.conv_kernel,
-            conv_dim,
-            &mut conv_out,
-        );
-        for x in conv_out.iter_mut() {
-            *x = *x / (1.0 + (-*x).exp()); // silu/sigmoid
-        }
-        // SiLU ONCE, as llama.cpp (ggml_silu on conv_output_raw). A second identical loop applied silu(silu(x)).
-
-        let k_dim = self.head_k_dim * self.num_k_heads;
-        let v_dim = self.head_v_dim * self.num_v_heads;
-        let mut q = conv_out[0..k_dim].to_vec();
-        let mut k = conv_out[k_dim..k_dim * 2].to_vec();
-        let mut v = conv_out[k_dim * 2..conv_dim].to_vec();
-
-        // Per-head L2 normalisation of q and k, as llama.cpp build_gdn_l2_norm:
-        // rms_norm(x, eps/n) * 1/sqrt(n) over ne[0] = head_k_dim, i.e. x_h / sqrt(sum(x_h^2) + eps)
-        // for EACH head. The earlier global norm over all heads (applied twice) scaled every head wrong.
-        l2_norm_per_head(&mut q, self.head_k_dim, self.base.config.eps);
-        l2_norm_per_head(&mut k, self.head_k_dim, self.base.config.eps);
-
-        // Gated DeltaNet applies NO RoPE: llama.cpp build_layer_attn_linear has none (position comes from the causal conv).
-
         let mut dt_raw = vec![0.0; self.num_v_heads];
         self.base
             .fused_matmul_into(normed, &d.ssm_alpha, &mut dt_raw)?;
-        let mut dt = vec![0.0; self.num_v_heads];
-        for (i, val) in dt_raw.iter().enumerate() {
-            dt[i] = fn_softplus(val + d.ssm_dt_bias[i]) * d.ssm_a[i];
-        }
-
         let mut beta = vec![0.0; self.num_v_heads];
         self.base
             .fused_matmul_into(normed, &d.ssm_beta, &mut beta)?;
-        // sigmoid ONCE, as llama.cpp: beta = sigmoid(ssm_beta . x). (It was applied twice.)
-        for x in beta.iter_mut() {
-            *x = 1.0 / (1.0 + (-*x).exp());
-        }
-
         let mut gate = vec![0.0; v_dim];
         self.base
             .fused_matmul_into(normed, &d.attn_gate, &mut gate)?;
 
-        // q and k are num_k_heads wide, v is num_v_heads wide: on 4B/9B (32 value heads to 16
-        // key heads) and 27B (48 to 16) the recurrence shares each key/query head across
-        // num_v_heads / num_k_heads value heads (PMAT-3477, #3346/#3510). On 0.8B and 2B the
-        // ratio is 1 and this is the pre-GQA arithmetic, unchanged.
-        let mut out_h = vec![0.0; v_dim];
-        delta_rule_recurrence_gqa(
-            &q,
-            &k,
-            &v,
-            &beta,
-            &dt,
-            &mut cache.ssm_states[il][..],
-            &mut out_h,
-            self.num_k_heads,
-            self.head_k_dim,
-            self.num_v_heads,
-            self.head_v_dim,
-        );
-
-        let mut ssm_out_in = vec![0.0; v_dim];
-        gated_rmsnorm(
-            &out_h,
-            &gate,
-            &d.ssm_norm_weight,
-            self.base.config.eps,
-            self.head_v_dim,
-            &mut ssm_out_in,
-        );
-        // No normalisation after the gated RMS norm: llama.cpp goes from build_norm_gated straight to ssm_out.
-        // (Two extra global L2 norms here forced every DeltaNet output to unit length.)
+        let ssm_out_in = self.deltanet_mix_token(d, cache, il, &conv_in, &dt_raw, &mut beta, &gate);
 
         let mut ssm_out = vec![0.0; self.base.config.hidden_dim];
         self.base
@@ -1147,6 +1103,486 @@ impl<'a> Qwen35Model<'a> {
         self.base.fused_matmul_into(normed, &a.attn_k, &mut k)?;
         self.base.fused_matmul_into(normed, &a.attn_v, &mut v)?;
 
+        let attn_out_in = self.attention_mix_token(a, cache, il, position, &q_full, &mut k, &v);
+        let mut attn_out = vec![0.0; self.base.config.hidden_dim];
+        self.base
+            .fused_matmul_into(&attn_out_in, &a.attn_output, &mut attn_out)?;
+        for i in 0..self.base.config.hidden_dim {
+            hidden[i] += attn_out[i];
+        }
+
+        crate::gguf::ops::rms_norm_into(
+            hidden,
+            &a.post_attention_norm,
+            self.base.config.eps,
+            post_attn_normed,
+        );
+        let mut ffn_gate = vec![0.0; a.ffn_gate.out_dim];
+        self.base
+            .fused_matmul_into(post_attn_normed, &a.ffn_gate, &mut ffn_gate)?;
+        let mut ffn_up = vec![0.0; a.ffn_up.out_dim];
+        self.base
+            .fused_matmul_into(post_attn_normed, &a.ffn_up, &mut ffn_up)?;
+        for i in 0..ffn_gate.len() {
+            let x = ffn_gate[i];
+            let silu = x / (1.0 + (-x as f32).exp());
+            ffn_up[i] *= silu;
+        }
+        let mut ffn_down = vec![0.0; a.ffn_down.out_dim];
+        self.base
+            .fused_matmul_into(&ffn_up, &a.ffn_down, &mut ffn_down)?;
+        for i in 0..self.base.config.hidden_dim {
+            hidden[i] += ffn_down[i];
+        }
+        Ok(())
+    }
+    /// Prefill `tokens` at positions `start_pos..`, updating `cache`, and return the logits of
+    /// the LAST token (#4228).
+    ///
+    /// Layer-major over chunks of [`QWEN35_PREFILL_CHUNK`] tokens: every projection and FFN
+    /// matmul runs once per chunk over all its rows (Q4_K weights stream from DRAM once per
+    /// tile, not once per token), while the `DeltaNet` recurrence and causal attention still
+    /// run token by token in order. Bit-identical to calling [`Self::forward_single_qwen35`]
+    /// once per token, which FALSIFY-4228-004 checks.
+    ///
+    /// The whole prompt must fit the KV cache: `cache` length plus `tokens.len()` may not
+    /// exceed its `max_len`. Past that bound the per-token path stops appending and then
+    /// indexes past the cache, so a chunk that straddles it has no per-token behaviour to
+    /// match; the overflow is refused before any state is touched (FALSIFY-4228-007).
+    ///
+    /// # Errors
+    /// An empty `tokens`, a prompt that overflows the KV cache, or a matmul or shape
+    /// failure in any layer.
+    pub fn forward_prefill_qwen35(
+        &self,
+        tokens: &[u32],
+        cache: &mut Qwen35State,
+        start_pos: usize,
+    ) -> Result<Vec<f32>> {
+        if tokens.is_empty() {
+            return Err(crate::error::RealizarError::InvalidShape {
+                reason: "forward_prefill_qwen35: no tokens".to_string(),
+            });
+        }
+        let (used, cap) = (cache.kv_cache.len(), cache.kv_cache.max_len());
+        if used + tokens.len() > cap {
+            return Err(crate::error::RealizarError::InvalidShape {
+                reason: format!(
+                    "forward_prefill_qwen35: {} tokens at cache length {used} overflow max_seq_len {cap}",
+                    tokens.len()
+                ),
+            });
+        }
+        let mut logits = Vec::new();
+        for (ci, chunk) in tokens.chunks(QWEN35_PREFILL_CHUNK).enumerate() {
+            logits =
+                self.prefill_chunk_qwen35(chunk, cache, start_pos + ci * QWEN35_PREFILL_CHUNK)?;
+        }
+        Ok(logits)
+    }
+
+    fn prefill_chunk_qwen35(
+        &self,
+        chunk: &[u32],
+        cache: &mut Qwen35State,
+        pos0: usize,
+    ) -> Result<Vec<f32>> {
+        let hd = self.base.config.hidden_dim;
+        let eps = self.base.config.eps;
+        let b = chunk.len();
+        let emb = self.base.token_embedding();
+        let mut hidden = vec![0.0; b * hd];
+        for (t, &tok) in chunk.iter().enumerate() {
+            let at = tok as usize * hd;
+            hidden[t * hd..(t + 1) * hd].copy_from_slice(&emb[at..at + hd]);
+        }
+        let mut normed = vec![0.0; b * hd];
+
+        for (il, layer) in self.layers.iter().enumerate() {
+            match layer {
+                Qwen35OwnedLayer::DeltaNet(d) => {
+                    rms_norm_rows(&hidden, &d.attn_norm, eps, hd, &mut normed);
+                    let conv_in = self.matmul_rows(&normed, b, &d.attn_qkv)?;
+                    let dt_raw = self.matmul_rows(&normed, b, &d.ssm_alpha)?;
+                    let mut beta = self.matmul_rows(&normed, b, &d.ssm_beta)?;
+                    let gate = self.matmul_rows(&normed, b, &d.attn_gate)?;
+                    let mix = self
+                        .deltanet_mix_rows(d, cache, il, b, &conv_in, &dt_raw, &mut beta, &gate);
+                    let out = self.matmul_rows(&mix, b, &d.ssm_out)?;
+                    add_into(&mut hidden, &out);
+                    self.ffn_rows(
+                        &mut hidden,
+                        b,
+                        &d.post_attention_norm,
+                        [&d.ffn_gate, &d.ffn_up, &d.ffn_down],
+                    )?;
+                },
+                Qwen35OwnedLayer::Attention(a) => {
+                    rms_norm_rows(&hidden, &a.attn_norm, eps, hd, &mut normed);
+                    let q_full = self.matmul_rows(&normed, b, &a.attn_q)?;
+                    let mut k = self.matmul_rows(&normed, b, &a.attn_k)?;
+                    let v = self.matmul_rows(&normed, b, &a.attn_v)?;
+                    let mix = self.attention_mix_rows(a, cache, il, pos0, b, &q_full, &mut k, &v);
+                    let out = self.matmul_rows(&mix, b, &a.attn_output)?;
+                    add_into(&mut hidden, &out);
+                    self.ffn_rows(
+                        &mut hidden,
+                        b,
+                        &a.post_attention_norm,
+                        [&a.ffn_gate, &a.ffn_up, &a.ffn_down],
+                    )?;
+                },
+            }
+        }
+        cache.kv_cache.advance_by(b);
+
+        let mut out_normed = vec![0.0; hd];
+        crate::gguf::ops::rms_norm_into(
+            &hidden[(b - 1) * hd..],
+            self.base.output_norm_weight(),
+            eps,
+            &mut out_normed,
+        );
+        let mut logits = vec![0.0; self.base.config.vocab_size];
+        self.base
+            .fused_matmul_into(&out_normed, self.base.lm_head_weight(), &mut logits)?;
+        Ok(logits)
+    }
+
+    /// `b` rows of `weight.in_dim` through `weight`, token-major out. Q4_K/Q5_K/Q6_K with
+    /// `b > 1` take the multi-row GEMMs (each bit-identical to its per-row matvec); every other
+    /// type loops the same per-row `fused_matmul_into` the per-token forward calls.
+    /// A `DeltaNet` layer's mix for `b` token rows, bitwise [`Self::deltanet_mix_token`] per row.
+    /// The conv window runs in token order; then each value head walks every token on its own
+    /// thread, because a head's recurrence state is touched by that head alone.
+    #[allow(clippy::too_many_arguments)]
+    fn deltanet_mix_rows(
+        &self,
+        d: &Qwen35OwnedDeltaNetLayer,
+        cache: &mut Qwen35State,
+        il: usize,
+        b: usize,
+        conv_in: &[f32],
+        dt_raw: &[f32],
+        beta: &mut [f32],
+        gate: &[f32],
+    ) -> Vec<f32> {
+        use rayon::prelude::*;
+        let (cd, nv) = (d.attn_qkv.out_dim, d.ssm_alpha.out_dim);
+        let (hk, hv, nk) = (self.head_k_dim, self.head_v_dim, self.num_k_heads);
+        let vd = hv * nv;
+        let preps: Vec<[Vec<f32>; 4]> = (0..b)
+            .map(|t| {
+                self.deltanet_prep_token(
+                    d,
+                    cache,
+                    il,
+                    &conv_in[t * cd..(t + 1) * cd],
+                    &dt_raw[t * nv..(t + 1) * nv],
+                    &mut beta[t * nv..(t + 1) * nv],
+                )
+            })
+            .collect();
+
+        let scale = 1.0 / (hk as f32).sqrt();
+        let beta: &[f32] = beta;
+        let mut by_head = vec![0.0f32; nv * b * hv];
+        cache.ssm_states[il][..]
+            .par_chunks_mut(hv * hk)
+            .zip(by_head.par_chunks_mut(b * hv))
+            .enumerate()
+            .for_each(|(h, (s_h, out))| {
+                let kh = h % nk;
+                for (t, [q, k, v, dt]) in preps.iter().enumerate() {
+                    delta_rule_head(
+                        &q[kh * hk..(kh + 1) * hk],
+                        &k[kh * hk..(kh + 1) * hk],
+                        &v[h * hv..(h + 1) * hv],
+                        beta[t * nv + h],
+                        dt[h],
+                        s_h,
+                        &mut out[t * hv..(t + 1) * hv],
+                        hk,
+                        scale,
+                    );
+                }
+            });
+
+        let mut mix = vec![0.0; b * vd];
+        let mut out_h = vec![0.0; vd];
+        for t in 0..b {
+            for h in 0..nv {
+                let at = h * b * hv + t * hv;
+                out_h[h * hv..(h + 1) * hv].copy_from_slice(&by_head[at..at + hv]);
+            }
+            gated_rmsnorm(
+                &out_h,
+                &gate[t * vd..(t + 1) * vd],
+                &d.ssm_norm_weight,
+                self.base.config.eps,
+                hv,
+                &mut mix[t * vd..(t + 1) * vd],
+            );
+        }
+        mix
+    }
+
+    /// A full-attention layer's mix for `b` token rows at positions `pos0..pos0 + b`, bitwise
+    /// [`Self::attention_mix_token`] per row. Every row's K/V is appended first, in order; row
+    /// `t` then reads positions `0..=pos0 + t` only, so the rows attend in parallel.
+    #[allow(clippy::too_many_arguments)]
+    fn attention_mix_rows(
+        &self,
+        a: &Qwen35OwnedAttentionLayer,
+        cache: &mut Qwen35State,
+        il: usize,
+        pos0: usize,
+        b: usize,
+        q_full: &[f32],
+        k: &mut [f32],
+        v: &[f32],
+    ) -> Vec<f32> {
+        use rayon::prelude::*;
+        let (qd, kd) = (a.attn_q.out_dim, a.attn_k.out_dim);
+        let od = a.attn_output.in_dim;
+        let qg: Vec<(Vec<f32>, Vec<f32>)> = (0..b)
+            .map(|t| {
+                self.attention_append_token(
+                    a,
+                    cache,
+                    il,
+                    pos0 + t,
+                    &q_full[t * qd..(t + 1) * qd],
+                    &mut k[t * kd..(t + 1) * kd],
+                    &v[t * kd..(t + 1) * kd],
+                )
+            })
+            .collect();
+        let cache: &Qwen35State = cache;
+        let mut mix = vec![0.0; b * od];
+        mix.par_chunks_mut(od)
+            .zip(qg.par_iter())
+            .enumerate()
+            .for_each(|(t, (out, (q, gate)))| {
+                out.copy_from_slice(&self.attention_attend_token(cache, il, pos0 + t, q, gate));
+            });
+        mix
+    }
+
+    fn matmul_rows(
+        &self,
+        input: &[f32],
+        b: usize,
+        weight: &OwnedQuantizedTensor,
+    ) -> Result<Vec<f32>> {
+        let (in_dim, out_dim) = (weight.in_dim, weight.out_dim);
+        let mut out = vec![0.0; b * out_dim];
+        if weight.qtype == crate::gguf::GGUF_TYPE_Q4_K && b > 1 {
+            crate::quantize::fused_q4k_multirow_matmul_f32_into(
+                &weight.data,
+                &input[..b * in_dim],
+                b,
+                in_dim,
+                out_dim,
+                &mut out,
+            )?;
+        } else if weight.qtype == crate::gguf::GGUF_TYPE_Q5_K && b > 1 {
+            crate::quantize::fused_q5k_multirow_matmul_into(
+                &weight.data,
+                &input[..b * in_dim],
+                b,
+                in_dim,
+                out_dim,
+                &mut out,
+            )?;
+        } else if weight.qtype == crate::gguf::GGUF_TYPE_Q6_K && b > 1 {
+            crate::quantize::fused_q6k_multirow_matmul_into(
+                &weight.data,
+                &input[..b * in_dim],
+                b,
+                in_dim,
+                out_dim,
+                &mut out,
+            )?;
+        } else {
+            for t in 0..b {
+                self.base.fused_matmul_into(
+                    &input[t * in_dim..(t + 1) * in_dim],
+                    weight,
+                    &mut out[t * out_dim..(t + 1) * out_dim],
+                )?;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The post-attention SwiGLU FFN over `b` rows of `hidden`, residual added in place; the
+    /// same arithmetic as the tail of `forward_deltanet`/`forward_attention`.
+    fn ffn_rows(
+        &self,
+        hidden: &mut [f32],
+        b: usize,
+        post_norm: &[f32],
+        [ffn_gate, ffn_up, ffn_down]: [&OwnedQuantizedTensor; 3],
+    ) -> Result<()> {
+        let hd = self.base.config.hidden_dim;
+        let mut normed = vec![0.0; b * hd];
+        rms_norm_rows(hidden, post_norm, self.base.config.eps, hd, &mut normed);
+        let gate = self.matmul_rows(&normed, b, ffn_gate)?;
+        let mut up = self.matmul_rows(&normed, b, ffn_up)?;
+        for (u, &x) in up.iter_mut().zip(&gate) {
+            let silu = x / (1.0 + (-x as f32).exp());
+            *u *= silu;
+        }
+        let down = self.matmul_rows(&up, b, ffn_down)?;
+        add_into(hidden, &down);
+        Ok(())
+    }
+
+    /// The conv window, SiLU, the per-head q/k L2 norms, `dt` and the in-place beta sigmoid of
+    /// [`Self::deltanet_mix_token`]: everything before the recurrence. Returns `[q, k, v, dt]`.
+    #[allow(clippy::too_many_arguments)]
+    fn deltanet_prep_token(
+        &self,
+        d: &Qwen35OwnedDeltaNetLayer,
+        cache: &mut Qwen35State,
+        il: usize,
+        conv_in: &[f32],
+        dt_raw: &[f32],
+        beta: &mut [f32],
+    ) -> [Vec<f32>; 4] {
+        let fn_softplus = |x: f32| -> f32 {
+            if x > 20.0 {
+                x
+            } else {
+                (1.0 + x.exp()).ln()
+            }
+        };
+
+        let conv_dim = self.head_k_dim * self.num_k_heads * 2 + self.head_v_dim * self.num_v_heads;
+        let mut conv_out = vec![0.0; conv_dim];
+        causal_conv1d(
+            conv_in,
+            &mut cache.conv_states[il][..],
+            &d.ssm_conv1d_weight,
+            self.conv_kernel,
+            conv_dim,
+            &mut conv_out,
+        );
+        for x in conv_out.iter_mut() {
+            *x = *x / (1.0 + (-*x).exp()); // silu/sigmoid
+        }
+        // SiLU ONCE, as llama.cpp (ggml_silu on conv_output_raw). A second identical loop applied silu(silu(x)).
+
+        let k_dim = self.head_k_dim * self.num_k_heads;
+        let v_dim = self.head_v_dim * self.num_v_heads;
+        let mut q = conv_out[0..k_dim].to_vec();
+        let mut k = conv_out[k_dim..k_dim * 2].to_vec();
+        let v = conv_out[k_dim * 2..conv_dim].to_vec();
+
+        // Per-head L2 normalisation of q and k, as llama.cpp build_gdn_l2_norm:
+        // rms_norm(x, eps/n) * 1/sqrt(n) over ne[0] = head_k_dim, i.e. x_h / sqrt(sum(x_h^2) + eps)
+        // for EACH head. The earlier global norm over all heads (applied twice) scaled every head wrong.
+        l2_norm_per_head(&mut q, self.head_k_dim, self.base.config.eps);
+        l2_norm_per_head(&mut k, self.head_k_dim, self.base.config.eps);
+
+        // Gated DeltaNet applies NO RoPE: llama.cpp build_layer_attn_linear has none (position comes from the causal conv).
+
+        let mut dt = vec![0.0; self.num_v_heads];
+        for (i, val) in dt_raw.iter().enumerate() {
+            dt[i] = fn_softplus(val + d.ssm_dt_bias[i]) * d.ssm_a[i];
+        }
+
+        // sigmoid ONCE, as llama.cpp: beta = sigmoid(ssm_beta . x). (It was applied twice.)
+        for x in beta.iter_mut() {
+            *x = 1.0 / (1.0 + (-*x).exp());
+        }
+
+        // q and k are num_k_heads wide, v is num_v_heads wide: on 4B/9B (32 value heads to 16
+        // key heads) and 27B (48 to 16) the recurrence shares each key/query head across
+        // num_v_heads / num_k_heads value heads (PMAT-3477, #3346/#3510). On 0.8B and 2B the
+        // ratio is 1 and this is the pre-GQA arithmetic, unchanged.
+        [q, k, v, dt]
+    }
+
+    /// The per-token middle of a `DeltaNet` layer: causal conv, q/k L2 norms, the delta-rule
+    /// recurrence and the gated RMS norm. Takes the four input projections of one token and
+    /// returns the `ssm_out` input. Shared by the per-token forward and the batched prefill
+    /// (#4228), so both run the exact same recurrence arithmetic.
+    #[allow(clippy::too_many_arguments)]
+    fn deltanet_mix_token(
+        &self,
+        d: &Qwen35OwnedDeltaNetLayer,
+        cache: &mut Qwen35State,
+        il: usize,
+        conv_in: &[f32],
+        dt_raw: &[f32],
+        beta: &mut [f32],
+        gate: &[f32],
+    ) -> Vec<f32> {
+        let [q, k, v, dt] = self.deltanet_prep_token(d, cache, il, conv_in, dt_raw, beta);
+        let v_dim = self.head_v_dim * self.num_v_heads;
+        let mut out_h = vec![0.0; v_dim];
+        delta_rule_recurrence_gqa(
+            &q,
+            &k,
+            &v,
+            beta,
+            &dt,
+            &mut cache.ssm_states[il][..],
+            &mut out_h,
+            self.num_k_heads,
+            self.head_k_dim,
+            self.num_v_heads,
+            self.head_v_dim,
+        );
+
+        let mut ssm_out_in = vec![0.0; v_dim];
+        gated_rmsnorm(
+            &out_h,
+            gate,
+            &d.ssm_norm_weight,
+            self.base.config.eps,
+            self.head_v_dim,
+            &mut ssm_out_in,
+        );
+        // No normalisation after the gated RMS norm: llama.cpp goes from build_norm_gated straight to ssm_out.
+        // (Two extra global L2 norms here forced every DeltaNet output to unit length.)
+        ssm_out_in
+    }
+
+    /// The per-token middle of a full-attention layer: q/gate split, per-head norms, partial
+    /// NEOX RoPE at `position`, the KV append, causal attention and the sigmoid output gate.
+    /// Returns the `attn_output` input. Shared with the batched prefill (#4228).
+    #[allow(clippy::too_many_arguments)]
+    fn attention_mix_token(
+        &self,
+        a: &Qwen35OwnedAttentionLayer,
+        cache: &mut Qwen35State,
+        il: usize,
+        position: usize,
+        q_full: &[f32],
+        k: &mut [f32],
+        v: &[f32],
+    ) -> Vec<f32> {
+        let (q, gate) = self.attention_append_token(a, cache, il, position, q_full, k, v);
+        self.attention_attend_token(cache, il, position, &q, &gate)
+    }
+
+    /// The mutating half of [`Self::attention_mix_token`]: splits q from its gate, applies the
+    /// per-head norms and the partial NEOX RoPE at `position`, and appends this token's K/V to
+    /// layer `il`. Returns the roped `q` and the gate.
+    #[allow(clippy::too_many_arguments)]
+    fn attention_append_token(
+        &self,
+        a: &Qwen35OwnedAttentionLayer,
+        cache: &mut Qwen35State,
+        il: usize,
+        position: usize,
+        q_full: &[f32],
+        k: &mut [f32],
+        v: &[f32],
+    ) -> (Vec<f32>, Vec<f32>) {
         let num_heads = self.base.config.num_heads;
         let head_dim = a.attn_q_norm.len(); // 256
         let mut q = vec![0.0; num_heads * head_dim];
@@ -1170,7 +1606,7 @@ impl<'a> Qwen35Model<'a> {
             self.base.config.eps,
         );
         crate::gguf::ops::apply_per_head_rms_norm(
-            &mut k,
+            k,
             &a.attn_k_norm,
             self.base.config.num_kv_heads,
             self.base.config.eps,
@@ -1183,7 +1619,7 @@ impl<'a> Qwen35Model<'a> {
         let freq_base = self.base.config.rope_theta;
         apply_partial_neox_rope(&mut q, num_heads, head_dim, n_rot, position, freq_base);
         apply_partial_neox_rope(
-            &mut k,
+            k,
             self.base.config.num_kv_heads,
             head_dim,
             n_rot,
@@ -1191,7 +1627,22 @@ impl<'a> Qwen35Model<'a> {
             freq_base,
         );
 
-        cache.kv_cache.append(il, &k, &v);
+        cache.kv_cache.append(il, k, v);
+        (q, gate)
+    }
+
+    /// The read-only half of [`Self::attention_mix_token`]: causal attention of the roped `q`
+    /// over positions `0..=position` of layer `il`'s KV cache, then the sigmoid output gate.
+    /// Reads only rows the caller already appended, so the batched prefill (#4228) runs it for
+    /// every token of a chunk in parallel once the chunk's K/V is in.
+    fn attention_attend_token(
+        &self,
+        cache: &Qwen35State,
+        il: usize,
+        position: usize,
+        q: &[f32],
+        gate: &[f32],
+    ) -> Vec<f32> {
         let k_cache = cache.kv_cache.get_k(il);
         let v_cache = cache.kv_cache.get_v(il);
 
@@ -1229,38 +1680,27 @@ impl<'a> Qwen35Model<'a> {
         }
         // Output gate, as llama.cpp: attn_output * sigmoid(gate) before the output projection
         // (the attn_gated node). The gate split off the joint Q projection was never applied.
-        apply_sigmoid_gate(&mut attn_out_in, &gate);
-        let mut attn_out = vec![0.0; self.base.config.hidden_dim];
-        self.base
-            .fused_matmul_into(&attn_out_in, &a.attn_output, &mut attn_out)?;
-        for i in 0..self.base.config.hidden_dim {
-            hidden[i] += attn_out[i];
-        }
+        apply_sigmoid_gate(&mut attn_out_in, gate);
+        attn_out_in
+    }
+}
 
-        crate::gguf::ops::rms_norm_into(
-            hidden,
-            &a.post_attention_norm,
-            self.base.config.eps,
-            post_attn_normed,
-        );
-        let mut ffn_gate = vec![0.0; a.ffn_gate.out_dim];
-        self.base
-            .fused_matmul_into(post_attn_normed, &a.ffn_gate, &mut ffn_gate)?;
-        let mut ffn_up = vec![0.0; a.ffn_up.out_dim];
-        self.base
-            .fused_matmul_into(post_attn_normed, &a.ffn_up, &mut ffn_up)?;
-        for i in 0..ffn_gate.len() {
-            let x = ffn_gate[i];
-            let silu = x / (1.0 + (-x as f32).exp());
-            ffn_up[i] *= silu;
-        }
-        let mut ffn_down = vec![0.0; a.ffn_down.out_dim];
-        self.base
-            .fused_matmul_into(&ffn_up, &a.ffn_down, &mut ffn_down)?;
-        for i in 0..self.base.config.hidden_dim {
-            hidden[i] += ffn_down[i];
-        }
-        Ok(())
+/// Prompt tokens per layer-major prefill chunk (#4228): enough rows to amortise each Q4_K
+/// weight tile's DRAM pass (the multi-row GEMM measured 8.4x at 32 rows, 8.6x at 64), small
+/// enough that a chunk's activations stay cache-resident.
+pub const QWEN35_PREFILL_CHUNK: usize = 64;
+
+/// Row-wise RMS norm: each `width`-wide row of `x` into the same row of `out`.
+fn rms_norm_rows(x: &[f32], weight: &[f32], eps: f32, width: usize, out: &mut [f32]) {
+    for (row, o) in x.chunks_exact(width).zip(out.chunks_exact_mut(width)) {
+        crate::gguf::ops::rms_norm_into(row, weight, eps, o);
+    }
+}
+
+/// `acc += x`, element-wise.
+fn add_into(acc: &mut [f32], x: &[f32]) {
+    for (a, &v) in acc.iter_mut().zip(x) {
+        *a += v;
     }
 }
 
@@ -1922,3 +2362,7 @@ mod qhf_contract_tests;
 #[cfg(test)]
 #[path = "forward_qwen35_gqa_tests.rs"]
 mod qwen35_gqa_tests;
+
+#[cfg(test)]
+#[path = "forward_qwen35_prefill_tests.rs"]
+mod qwen35_prefill_tests;

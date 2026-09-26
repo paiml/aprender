@@ -1,3 +1,4 @@
+import Mathlib.Data.Fintype.Card
 import ProvableContracts.Defs.Image
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 

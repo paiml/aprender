@@ -98,7 +98,7 @@ cp "$REPO_ROOT/scripts/pv_bin.sh" "$FX/scripts/pv_bin.sh" || exit 2
 printf '[workspace.package]\nversion = "%s"\n' "$DECLARED" > "$FX/Cargo.toml"
 printf '{"n_files": 3}\n' > "$FX/contracts/census.json"
 cp "$FX/contracts/census.json" "$TMP/census.golden"
-for s in readme_sync:readme lint-provenance:provenance; do
+for s in readme_sync:readme lint-provenance:provenance check_census_derived:derived; do
     printf '#!/usr/bin/env bash\n[ "${FAIL_AT:-}" = %s ] && { echo "STUB %s fails" >&2; exit 7; }\nexit 0\n' \
         "${s#*:}" "${s%%:*}" > "$FX/scripts/${s%%:*}.sh"
 done
@@ -164,11 +164,18 @@ row "contracts: pv lint fails (rc 7, through | tail) -> Error 7, census never st
 expect_stop "$M" contracts census 7 '== graph'
 row "contracts: pv census fails -> Error 7, graph never starts" $?
 
+expect_stop "$M" contracts derived 7 '== graph'
+row "contracts: check_census_derived fails -> Error 7, graph never starts" $?
+
 expect_stop "$M" contracts extract 7 '== README'
 row "contracts: pv extract --check fails -> Error 7, README never starts" $?
 
-expect_stop "$M" contracts readme 7 '== provenance'
-row "contracts: readme_sync fails -> Error 7, provenance never starts" $?
+# readme_sync now runs FIRST inside the census step (CENSUS_JSON=... readme_sync --check,
+# #3569), protected by that step's own `|| exit`, so a FAIL_AT=readme stub fails there and
+# the recipe never reaches '== graph' -- the standalone `readme_sync --check` after
+# '== README states...' is the step's second, later invocation and is never reached first.
+expect_stop "$M" contracts readme 7 '== graph'
+row "contracts: readme_sync fails -> Error 7, graph never starts" $?
 
 expect_stop "$M" contracts provenance 7 '== contract engine tests'
 row "contracts: lint-provenance fails -> Error 7, engine tests never start" $?
@@ -202,8 +209,10 @@ mutant() {
 }
 
 m=$(mutant no-errexit '/^contracts:/,/^$/{/^\t@set -e$/d}') || exit 2
-expect_stop "$m" contracts readme 7 '== provenance'
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: contracts without set -e -> the readme_sync row goes RED" $?
+# The provenance row, not readme_sync's: since #3569 readme_sync also runs inside
+# the census step, whose own `|| exit` stops the recipe with or without errexit.
+expect_stop "$m" contracts provenance 7 '== contract engine tests'
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: contracts without set -e -> the lint-provenance row goes RED" $?
 
 m=$(mutant no-exit-on-lint '/lint contracts\//s/ \|\| exit$//') || exit 2
 expect_stop "$m" contracts none 1 '== census' "$TMP/bin/stale-pv"
@@ -214,6 +223,8 @@ run "$m" contracts none
 { [ "$RC" -eq 0 ] && grep -qF 'test result: ok' <<<"$OUT"; }
 went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the lint line exits unconditionally (.ONESHELL) -> the every-step-passes row goes RED" $?
 
+# Targets the engine-tests pipe (cargo test | grep | tail), not the lint step: lint captures
+# its rc explicitly (`rc=$$?` after a file redirect, no pipe), so pipefail never governed it.
 m=$(mutant no-pipefail 's/-o pipefail //') || exit 2
 expect_stop "$m" contracts cargo 101 '@@unreachable@@'
 went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: .SHELLFLAGS without pipefail -> the engine-tests (grep | tail) row goes RED" $?

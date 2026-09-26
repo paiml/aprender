@@ -1,0 +1,62 @@
+{
+  "ticket": "PMAT-3741",
+  "refs": [
+    "#3741",
+    "#3740"
+  ],
+  "branch": "PMAT-3741-b-on-070",
+  "base": "origin/batch/0.70.0",
+  "judged_head": "6b094a4dc14bca848b897decc6df89f9fb961303",
+  "diff_sha256_raw": "b7a6f7ba553303915fee6304e92fc7f1e697dd99d71319e4f18e430a1e0c6060",
+  "agreed": true,
+  "degraded": "same-family",
+  "degraded_why": "agy gemini-3.1-pro-high pre-check probe returned 429 (quota); operator fallback sonnet+haiku+opus-5.5, author is opus-5.5 so the opus seat is a 2nd sonnet",
+  "executor": "claude-code-agent-lanes (read-only command whitelist)",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "role": "adversarial bypass hunt",
+      "verdict": "PASS",
+      "rounds": "FAIL r1-r6, PASS r7",
+      "closed_findings": [
+        "r1 directory exemption docs/roadmaps + docs/audits/quorum-",
+        "r2 content-blind file-shape exemption",
+        "r3 file-granular ledger: appended live claim",
+        "r4 in-place edit of a dated line (count unchanged)",
+        "r5 NUL-byte binary skip (git diff: Binary files differ)",
+        "r6 UTF-16 receipt"
+      ],
+      "summary": "every reproducible bypass closed, each with a case-table row and a killing mutant; no further bypass found"
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "role": "#3740 consumers + regressions vs moving base",
+      "verdict": "PASS",
+      "rounds": "FAIL r2 (stale aggregate, swapped comments), FAIL r4 (base moved), PASS r3,r5,r6,r7",
+      "summary": "merge-base ancestor ok; roadmap ids = base + PMAT-3740/3741; Cargo.toml dogfood gates clean union; both self-tests pass (36, 32)"
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "role": "ledger/case-table verification",
+      "verdict": "PASS",
+      "rounds": "PASS r2-r7",
+      "summary": "self-test 32/32, tree PASS 77 files 176 lines pinned, --pin spot-checks match ledger"
+    }
+  ],
+  "measured_at_head": {
+    "check_comparator_pin_citations --self-test": "32 rows and mutants PASSED",
+    "check_comparator_pin_citations": "PASS",
+    "check_comparator_consumers_resolve --self-test": "36 PASSED",
+    "check_baseline_ratchets": "rc 0",
+    "check_roadmap_fragment_required": "rc 0",
+    "cargo fmt --check": "rc 0"
+  },
+  "date": "2026-09-24"
+}

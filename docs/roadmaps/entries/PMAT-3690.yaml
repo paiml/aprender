@@ -1,0 +1,17 @@
+- id: PMAT-3690
+  github_issue: 3690
+  item_type: task
+  kind: code
+  title: Release T-4 waits for the tag's own coverage run
+  status: planned
+  priority: medium
+  assigned_to: aprender-4285
+  created: 2026-09-24T16:25:58Z
+  updated: 2026-09-24T16:25:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -997,7 +997,7 @@ fn lean_scan_in_tree_is_primary_and_self_sufficient() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "lean") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    if !content.contains("sorry") {
+                    if !lean_has_sorry(&content) {
                         sorry_free += 1;
                     }
                 }
@@ -1130,4 +1130,150 @@ fn na_obligations_grant_no_lean_credit() {
     assert!(!is_lean_proved_with_grounding(&c, 0));
     let one = contract_with_na_obligations(1, 3, 4, 4);
     assert!(!is_lean_proved_with_grounding(&one, 1));
+}
+
+// ── #4351: the sorry scan reads TOKENS, not bytes ─────────────────
+
+/// The case table for `lean_has_sorry`. A comment that only mentions `sorry` grounds; every other
+/// row either admits a hole or is shaped to HIDE one from a scanner that gets comments wrong.
+#[test]
+fn lean_sorry_token_case_table() {
+    let rows: &[(&str, bool, &str)] = &[
+        // grounds (false): the word is commentary only
+        ("theorem t : True := trivial", false, "no sorry at all"),
+        (
+            "-- sorry here\ntheorem t : True := trivial",
+            false,
+            "line comment",
+        ),
+        (
+            "/-- compiles sorry-free -/\ntheorem t : True := trivial",
+            false,
+            "doc comment (#4351)",
+        ),
+        (
+            "/-! module: sorry-free -/\ntheorem t : True := trivial",
+            false,
+            "module doc comment",
+        ),
+        (
+            "/- a /- b -/ sorry -/\ntheorem t : True := trivial",
+            false,
+            "sorry inside a NESTED comment",
+        ),
+        (
+            "theorem sorry_free : True := trivial",
+            false,
+            "identifier sorry_free",
+        ),
+        (
+            "theorem t' : True := trivial -- no sorry",
+            false,
+            "trailing line comment at EOF",
+        ),
+        // denies (true): a real hole
+        ("theorem t : False := sorry", true, "term sorry"),
+        ("theorem t : False := by\n  sorry", true, "tactic sorry"),
+        (
+            "theorem t : False := by sorry -- ok",
+            true,
+            "sorry before a comment",
+        ),
+        (
+            "/- a /- b -/ -/ theorem t : False := sorry",
+            true,
+            "sorry after a nested comment closes",
+        ),
+        (
+            "def s := \"sorry\"",
+            true,
+            "sorry in a string counts (code, not commentary)",
+        ),
+        ("def s := r#\"x \" sorry\"#", true, "sorry in a raw string"),
+        // denies (true): a real hole a naive comment stripper would hide
+        (
+            "def s := \"--\"\ntheorem t : False := by sorry",
+            true,
+            "string holding -- is not a comment",
+        ),
+        (
+            "def s := \"/-\" theorem t : False := sorry",
+            true,
+            "string holding /- is not a comment",
+        ),
+        (
+            "def c := '\"' theorem t : False := sorry -- \"",
+            true,
+            "char literal '\"' opens no string",
+        ),
+        (
+            "def s := \"a\\\" -- b\" theorem t : False := sorry",
+            true,
+            "escaped quote keeps the string open",
+        ),
+        // denies (true): does not compile, so proves nothing
+        (
+            "/- unterminated\ntheorem t : True := trivial",
+            true,
+            "EOF inside a block comment",
+        ),
+        ("def s := \"unterminated", true, "EOF inside a string"),
+    ];
+    for (src, want, why) in rows {
+        assert_eq!(lean_has_sorry(src), *want, "{why}: {src:?}");
+    }
+}
+
+/// The three in-tree files #4351 names are sorry-free except in their doc comments, and each now
+/// grounds; `Theorems.<Domain>.<Stem>` is registered for the domain.file citation form.
+#[test]
+fn lean_scan_grounds_doc_comment_sorry_and_domain_file_form() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/aprender-contracts-staging/lean/ProvableContracts/Theorems");
+    for rel in [
+        "TensorTranspose/Roundtrip.lean",
+        "Metrics/RegressionAnalytic.lean",
+        "AbsolutePosition/Core.lean",
+    ] {
+        let content = std::fs::read_to_string(root.join(rel)).expect("in-tree lean file");
+        assert!(
+            content.contains("sorry"),
+            "{rel}: the byte-level trap this test pins"
+        );
+        assert!(
+            !lean_has_sorry(&content),
+            "{rel}: its only sorry is commentary"
+        );
+    }
+
+    let base = tempfile::tempdir().expect("tempdir");
+    let dom = base
+        .path()
+        .join("ProvableContracts/Theorems/GgufExportSymmetry");
+    std::fs::create_dir_all(&dom).expect("mkdir");
+    std::fs::write(
+        dom.join("Roundtrip.lean"),
+        "/-- sorry-free -/\ntheorem dtype_roundtrip : True := trivial\n",
+    )
+    .expect("write");
+    let holed = base.path().join("ProvableContracts/Theorems/Holed");
+    std::fs::create_dir_all(&holed).expect("mkdir");
+    std::fs::write(
+        holed.join("Open.lean"),
+        "theorem open_goal : False := by sorry\n",
+    )
+    .expect("write");
+
+    let names = scan_theorem_base(base.path().to_str().expect("utf8 path"));
+    assert!(
+        names.contains("Theorems.GgufExportSymmetry.Roundtrip"),
+        "domain.file form: {names:?}"
+    );
+    assert!(names.contains("Theorems.DtypeRoundtrip"));
+    assert!(
+        !names
+            .iter()
+            .any(|n| n.contains("Holed") || n.contains("OpenGoal")),
+        "a real sorry grounds nothing"
+    );
 }

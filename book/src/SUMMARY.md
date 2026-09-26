@@ -353,6 +353,7 @@
 - [apr prune](./cli/prune.md)
 - [apr ptx-map](./cli/ptx-map.md)
 - [apr ptx](./cli/ptx.md)
+- [apr ptx-debug](./cli/ptx-debug.md)
 - [apr publish](./cli/publish.md)
 - [apr pull](./cli/pull.md)
 - [apr pv](./cli/pv.md)

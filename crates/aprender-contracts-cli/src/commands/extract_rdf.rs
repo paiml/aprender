@@ -25,6 +25,27 @@ struct ExtractReport<'a> {
     check: Option<Vec<String>>,
 }
 
+/// `--out` and `--cells-out` describe a release; without a release subject they are refused.
+fn refuse_release_only_args(
+    out: Option<&Path>,
+    cells_out: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if cells_out.is_some() {
+        return Err(ReleaseArgsRefused(
+            "--cells-out lists a release's derived cells; it needs --release-version, --release-commit and --surface"
+                .into(),
+        )
+        .into());
+    }
+    if out.is_some() {
+        return Err(ReleaseArgsRefused(
+            "--out writes the release evidence graph; it needs --release-version and --release-commit".into(),
+        )
+        .into());
+    }
+    Ok(())
+}
+
 /// `check == true` → compare and report drift, write nothing. With a release `subject` (aprender#3715) the
 /// release evidence joins the graph, and the result goes ONLY to `out`: the tracked `contracts.nt` is the corpus,
 /// and a release's receipts written into it would be a release baked into every later PR's baseline.
@@ -33,16 +54,12 @@ pub fn run(
     check: bool,
     subject: Option<&Subject>,
     out: Option<&Path>,
+    cells_out: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(subject) = subject {
-        return run_release(contract_dir, check, subject, out);
+        return run_release(contract_dir, check, subject, out, cells_out);
     }
-    if out.is_some() {
-        return Err(ReleaseArgsRefused(
-            "--out writes the release evidence graph; it needs --release-version and --release-commit".into(),
-        )
-        .into());
-    }
+    refuse_release_only_args(out, cells_out)?;
     let extraction = match extract::all(contract_dir) {
         Ok(x) => x,
         Err(e) => {
@@ -125,6 +142,7 @@ fn run_release(
     check: bool,
     subject: &Subject,
     out: Option<&Path>,
+    cells_out: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if check {
         return Err(ReleaseArgsRefused(
@@ -151,6 +169,9 @@ fn run_release(
     let mut hasher = Sha256::new();
     hasher.update(nt.as_bytes());
     std::fs::write(out, &nt)?;
+    if let Some(path) = cells_out {
+        write_cells(path, subject, extraction.release.as_ref())?;
+    }
     let report = ReleaseExtractReport {
         triples: extraction.graph.len(),
         sha256: format!("{:x}", hasher.finalize()),
@@ -158,5 +179,28 @@ fn run_release(
         release: extraction.release.unwrap_or_default(),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+/// `--cells-out`: every derived cell — the producer's work list, keyed by `cell_id` (aprender#3745 S2).
+fn write_cells(
+    path: &Path,
+    subject: &Subject,
+    release: Option<&provable_contracts::ontology::extract::release_evidence::ReleaseStats>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let derived = release.map(|r| r.derived.as_slice()).unwrap_or_default();
+    if derived.is_empty() {
+        return Err(ReleaseArgsRefused(
+            "--cells-out: no cell was derived (no --surface, or a surface with no leaf command)"
+                .into(),
+        )
+        .into());
+    }
+    let mut doc = serde_json::Map::new();
+    doc.insert("schema".into(), "apr-release-cells/v1".into());
+    doc.insert("version".into(), subject.version.clone().into());
+    doc.insert("release_commit".into(), subject.commit.clone().into());
+    doc.insert("cells".into(), serde_json::to_value(derived)?);
+    std::fs::write(path, serde_json::to_string_pretty(&doc)?)?;
     Ok(())
 }

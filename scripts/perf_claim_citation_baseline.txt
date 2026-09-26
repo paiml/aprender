@@ -83,7 +83,6 @@ book/src/ml-fundamentals/feature-scaling.md:585
 book/src/ml-fundamentals/graph-algorithms.md:649
 book/src/ml-fundamentals/graph-components-traversal.md:512
 book/src/ml-fundamentals/graph-pathfinding.md:396
-crates/apr-cli/src/commands/eval/inference.rs:516
 crates/apr-cli/src/commands/kernel.rs:346
 crates/apr-cli/src/commands/ollama.rs:24
 crates/apr-cli/src/commands/qa.rs:152
@@ -120,9 +119,6 @@ crates/aprender-profile/src/cli.rs:249
 crates/aprender-profile/src/hpu.rs:10
 crates/aprender-profile/src/model_persistence.rs:4
 crates/aprender-qa-gen/src/kernel_coverage.rs:122
-crates/aprender-serve/src/api/mod.rs:161
-crates/aprender-serve/src/api/mod.rs:164
-crates/aprender-serve/src/api/mod_app_state_new.rs:517
 crates/aprender-serve/src/apr/mapped_apr_model.rs:63
 crates/aprender-serve/src/apr/special_tokens.rs:63
 crates/aprender-serve/src/brick/brick.rs:316
@@ -151,9 +147,6 @@ crates/aprender-serve/src/quantize/fused_k.rs:266
 crates/aprender-serve/src/quantize/fused_q4_0_q8_0.rs:5
 crates/aprender-serve/src/quantize/fused_q5k_q6k.rs:135
 crates/aprender-serve/src/quantize/fused_q8_0_q8_0.rs:230
-crates/aprender-serve/src/quantize/mod.rs:179
-crates/aprender-serve/src/quantize/mod.rs:292
-crates/aprender-serve/src/quantize/mod.rs:318
 crates/aprender-serve/src/quantize/parallel_dequant.rs:144
 crates/aprender-serve/src/quantize/parallel_dequant.rs:145
 crates/aprender-serve/src/quantize/parallel_dequant.rs:35

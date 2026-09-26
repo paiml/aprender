@@ -16,7 +16,9 @@ use crate::ontology::receipts;
 
 pub mod apr_model;
 pub mod claims;
+pub mod cli_surface;
 pub mod code;
+pub mod covering;
 pub mod csv;
 pub mod gguf;
 pub mod json;
@@ -25,6 +27,8 @@ pub mod llm_context;
 pub mod parity_receipt;
 pub mod pv_contract;
 pub mod readme;
+pub mod release_cells;
+pub mod release_crux;
 pub mod release_evidence;
 pub mod release_inputs;
 

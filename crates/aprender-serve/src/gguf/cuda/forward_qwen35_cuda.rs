@@ -271,6 +271,12 @@ pub struct Qwen35CudaModel<'a> {
     /// The batched prefill's attention path (#3596): cuBLAS f32 unless only flash
     /// fits, as the capacity plan decides.
     prefill_attention: prefill::PrefillAttention,
+    /// #4233: the captured decode step, built lazily when
+    /// `QWEN35_CUDA_GRAPH=1`; `None` on the eager path.
+    decode_graph: Option<graph::Qwen35DecodeGraph>,
+    /// #4233: route [`Self::forward_single`] through the captured graph.
+    /// Starts from `QWEN35_CUDA_GRAPH=1`; [`Self::set_decode_graph`] overrides.
+    use_decode_graph: bool,
 }
 
 /// Why a projection cannot go on the GPU, stated so the user can act on it
@@ -655,6 +661,8 @@ impl<'a> Qwen35CudaModel<'a> {
             max_seq_len,
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
             prefill_attention,
+            decode_graph: None,
+            use_decode_graph: graph::graph_enabled(),
         })
     }
 
@@ -1041,7 +1049,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 ),
             });
         }
-        self.attention_layer_inner(state, il, hidden, position)
+        self.attention_layer_inner(state, il, hidden, position, None)
             .map_err(|e| gpu_err("qwen35_cuda_attention", &e))
     }
 
@@ -1053,6 +1061,7 @@ impl<'a> Qwen35CudaModel<'a> {
         il: usize,
         hidden: &GpuBuffer<f32>,
         position: usize,
+        graph_io: Option<&graph::Qwen35GraphIo>,
     ) -> std::result::Result<(), trueno_gpu::GpuError> {
         let d = self.dims;
         let CudaLayer::Attention(w) = &self.layers[il] else {
@@ -1069,16 +1078,22 @@ impl<'a> Qwen35CudaModel<'a> {
 
         // This token's row in the KV cache: the GEMVs and the norm write
         // straight into it, which IS the CPU's `kv_cache.append`.
-        let k_row = Self::view(
-            k_cache,
-            u32::try_from(position).unwrap_or(0) * kv_dim,
-            kv_dim,
-        );
-        let v_row = Self::view(
-            v_cache,
-            u32::try_from(position).unwrap_or(0) * kv_dim,
-            kv_dim,
-        );
+        //
+        // #4233: under graph capture a row view would freeze the capture
+        // token's row pointer into every replay, so k/v go to fixed scratch
+        // rows instead and a device-position scatter appends them below.
+        let views = graph_io.is_none().then(|| {
+            let row_off = u32::try_from(position).unwrap_or(0) * kv_dim;
+            (
+                Self::view(k_cache, row_off, kv_dim),
+                Self::view(v_cache, row_off, kv_dim),
+            )
+        });
+        let (k_row, v_row) = match (graph_io, &views) {
+            (Some(g), _) => (&g.k_row, &g.v_row),
+            (None, Some((k, v))) => (k, v),
+            (None, None) => unreachable!("views exist whenever graph_io is None"),
+        };
 
         // rms_norm(hidden, attn_norm)
         ex.rmsnorm_into(hidden, &w.attn_norm, &s.normed, d.hidden_dim, d.eps)?;
@@ -1104,7 +1119,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.attn_v.qtype,
             w.attn_v.ptr,
             &s.normed,
-            &v_row,
+            v_row,
             w.attn_v.n,
             w.attn_v.k,
         )?;
@@ -1125,7 +1140,7 @@ impl<'a> Qwen35CudaModel<'a> {
         ex.per_head_rmsnorm_into(
             &a.k_raw,
             &w.attn_k_norm,
-            &k_row,
+            k_row,
             d.attn_head_dim,
             d.num_kv_heads,
             d.eps,
@@ -1133,36 +1148,70 @@ impl<'a> Qwen35CudaModel<'a> {
 
         // partial NEOX rope on q and k, in place, at this position
         let pos32 = u32::try_from(position).unwrap_or(u32::MAX);
-        ex.gdn_partial_neox_rope_into(
-            &a.q_normed,
-            d.num_heads,
-            d.attn_head_dim,
-            d.n_rot,
-            pos32,
-            d.theta_scale,
-        )?;
-        ex.gdn_partial_neox_rope_into(
-            &k_row,
-            d.num_kv_heads,
-            d.attn_head_dim,
-            d.n_rot,
-            pos32,
-            d.theta_scale,
-        )?;
+        if let Some(g) = graph_io {
+            // #4233: the same three ops, with the position read on the device.
+            ex.gdn_partial_neox_rope_indirect_into(
+                &a.q_normed,
+                &g.pos,
+                d.num_heads,
+                d.attn_head_dim,
+                d.n_rot,
+                d.theta_scale,
+            )?;
+            ex.gdn_partial_neox_rope_indirect_into(
+                k_row,
+                &g.pos,
+                d.num_kv_heads,
+                d.attn_head_dim,
+                d.n_rot,
+                d.theta_scale,
+            )?;
+            ex.gdn_kv_row_scatter_indirect_into(k_row, k_cache, &g.pos, kv_dim)?;
+            ex.gdn_kv_row_scatter_indirect_into(v_row, v_cache, &g.pos, kv_dim)?;
+            ex.gdn_decode_attention_indirect_into(
+                &a.q_normed,
+                k_cache,
+                v_cache,
+                &a.attn_out_in,
+                &g.pos,
+                d.num_heads,
+                d.num_kv_heads,
+                d.attn_head_dim,
+            )?;
+        } else {
+            ex.gdn_partial_neox_rope_into(
+                &a.q_normed,
+                d.num_heads,
+                d.attn_head_dim,
+                d.n_rot,
+                pos32,
+                d.theta_scale,
+            )?;
+            ex.gdn_partial_neox_rope_into(
+                k_row,
+                d.num_kv_heads,
+                d.attn_head_dim,
+                d.n_rot,
+                pos32,
+                d.theta_scale,
+            )?;
 
-        // GQA decode attention over positions 0..=position
-        ex.gdn_decode_attention_into(
-            &a.q_normed,
-            k_cache,
-            v_cache,
-            &a.attn_out_in,
-            d.num_heads,
-            d.num_kv_heads,
-            d.attn_head_dim,
-            pos32 + 1,
-        )?;
-        std::mem::forget(k_row);
-        std::mem::forget(v_row);
+            // GQA decode attention over positions 0..=position
+            ex.gdn_decode_attention_into(
+                &a.q_normed,
+                k_cache,
+                v_cache,
+                &a.attn_out_in,
+                d.num_heads,
+                d.num_kv_heads,
+                d.attn_head_dim,
+                pos32 + 1,
+            )?;
+        }
+        if let Some((k_view, v_view)) = views {
+            std::mem::forget(k_view);
+            std::mem::forget(v_view);
+        }
 
         // the output gate, then the output projection and the first residual
         ex.gdn_sigmoid_gate_into(&a.attn_out_in, &a.gate, q_dim)?;
@@ -1502,6 +1551,15 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(())
     }
 
+    /// #4233: turn the captured-graph decode step on or off. Turning it off
+    /// drops the captured graph and its IO buffers.
+    pub fn set_decode_graph(&mut self, on: bool) {
+        self.use_decode_graph = on;
+        if !on {
+            self.decode_graph = None;
+        }
+    }
+
     /// Run one token at `position` through every layer of both kinds, the
     /// output norm and the `lm_head`, and return the logits — the GPU twin of
     /// `Qwen35Model::forward_single_qwen35`.
@@ -1519,6 +1577,9 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<Vec<f32>> {
+        if self.use_decode_graph {
+            return self.forward_single_graphed(token, state, position);
+        }
         self.forward_to_logits(token, state, position)?;
         // The ONE sync of the whole token, in front of the ONE download.
         self.executor
@@ -1533,10 +1594,43 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(logits)
     }
 
+    /// `token`'s embedding row, after checking the token and the position.
+    fn embedding_row(
+        &self,
+        token: u32,
+        state: &Qwen35CudaState,
+        position: usize,
+    ) -> Result<&'a [f32]> {
+        let hidden_dim = self.dims.hidden_dim as usize;
+        let embedding = self.model.base.token_embedding();
+        let start = (token as usize) * hidden_dim;
+        if start + hidden_dim > embedding.len() {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda: token {token} is outside the {}-row embedding table",
+                    embedding.len() / hidden_dim
+                ),
+            });
+        }
+        if position >= state.max_seq_len {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda: position {position} is past the KV cache ({} rows)",
+                    state.max_seq_len
+                ),
+            });
+        }
+
+        Ok(&embedding[start..start + hidden_dim])
+    }
+
     /// The token temperature 0 picks after `token` at `position` (#4215): the
     /// argmax runs on the device over `logits_buf`, so the token downloads its
     /// 4-byte id instead of the whole logits vector. Ties go to the LOWEST
     /// index, as [`crate::gguf::ops::argmax`] does.
+    ///
+    /// Always the eager path: the #4233 decode graph (`QWEN35_CUDA_GRAPH=1`)
+    /// covers [`Self::forward_single`] only.
     ///
     /// # Errors
     /// As [`Self::forward_single`].
@@ -1564,26 +1658,7 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<()> {
-        let hidden_dim = self.dims.hidden_dim as usize;
-        let embedding = self.model.base.token_embedding();
-        let start = (token as usize) * hidden_dim;
-        if start + hidden_dim > embedding.len() {
-            return Err(RealizarError::InvalidShape {
-                reason: format!(
-                    "qwen35_cuda: token {token} is outside the {}-row embedding table",
-                    embedding.len() / hidden_dim
-                ),
-            });
-        }
-        if position >= state.max_seq_len {
-            return Err(RealizarError::InvalidShape {
-                reason: format!(
-                    "qwen35_cuda: position {position} is past the KV cache ({} rows)",
-                    state.max_seq_len
-                ),
-            });
-        }
-
+        let row = self.embedding_row(token, state, position)?;
         // #4215: the residual stream lives in one persistent buffer; taking it
         // out of `self` lets the layers borrow `self` mutably beside it.
         let mut dev = self
@@ -1592,12 +1667,7 @@ impl<'a> Qwen35CudaModel<'a> {
             .ok_or_else(|| RealizarError::InvalidShape {
                 reason: "qwen35_cuda: the hidden buffer is already in use".to_string(),
             })?;
-        let run = self.run_layers_and_head(
-            &mut dev,
-            &embedding[start..start + hidden_dim],
-            state,
-            position,
-        );
+        let run = self.run_layers_and_head(&mut dev, row, state, position);
         self.hidden_buf = Some(dev);
         run
     }
@@ -1617,6 +1687,16 @@ impl<'a> Qwen35CudaModel<'a> {
                 CudaLayer::Attention(_) => self.attention_layer(state, il, dev, position)?,
             }
         }
+        self.lm_head_tail(dev)
+            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))
+    }
+
+    /// The output norm and the `lm_head` GEMV into `logits_buf`, enqueued on
+    /// the stream with no sync.
+    fn lm_head_tail(
+        &mut self,
+        dev: &GpuBuffer<f32>,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
         // The tail stays on the device (#3090 review). `hidden_to_logits` would
         // sync, copy `dev` to the host and upload it again; the hidden state is
         // already where the output norm wants it, so run the norm into
@@ -1625,26 +1705,21 @@ impl<'a> Qwen35CudaModel<'a> {
         // None for this architecture — `forward_single_qwen35` goes straight
         // from `rms_norm_into` to `fused_matmul_into`), so neither does this.
         let d = self.dims;
-        self.executor
-            .rmsnorm_into(
-                dev,
-                &self.output_norm,
-                &self.out_normed,
-                d.hidden_dim,
-                d.eps,
-            )
-            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
-        self.executor
-            .gemv_dispatch(
-                self.lm_head.qtype,
-                self.lm_head.ptr,
-                &self.out_normed,
-                &self.logits_buf,
-                self.lm_head.n,
-                self.lm_head.k,
-            )
-            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
-        Ok(())
+        self.executor.rmsnorm_into(
+            dev,
+            &self.output_norm,
+            &self.out_normed,
+            d.hidden_dim,
+            d.eps,
+        )?;
+        self.executor.gemv_dispatch(
+            self.lm_head.qtype,
+            self.lm_head.ptr,
+            &self.out_normed,
+            &self.logits_buf,
+            self.lm_head.n,
+            self.lm_head.k,
+        )
     }
 
     /// Run every Gated `DeltaNet` layer over a host hidden state and read the
@@ -1689,6 +1764,10 @@ pub use prefill::{
     PrefillAttention, PREFILL_ATTENTION_ENV, PREFILL_MAX_CHUNK_ROWS, PREFILL_SCORES_BUDGET_BYTES,
     UNIFIED_PREFILL_CHUNK_ROWS,
 };
+
+/// #4233: the decode step captured as one CUDA graph.
+#[path = "forward_qwen35_cuda_graph.rs"]
+mod graph;
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]

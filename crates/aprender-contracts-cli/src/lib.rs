@@ -132,12 +132,19 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract_dir,
             check,
             out,
+            cells_out,
             release,
         } => {
             let subject = release
                 .subject()
                 .map_err(crate::contract_walk::ReleaseArgsRefused)?;
-            commands::extract_rdf::run(&contract_dir, check, subject.as_ref(), out.as_deref())
+            commands::extract_rdf::run(
+                &contract_dir,
+                check,
+                subject.as_ref(),
+                out.as_deref(),
+                cells_out.as_deref(),
+            )
         }
         Commands::Coverage {
             contract_dir,
@@ -250,8 +257,12 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 watch,
                 strict_test_binding,
                 armed_baseline_ref.as_deref(),
-                gate.as_deref(),
-                commands::lint::shapes_options(gate.as_deref(), shape, &release)?,
+                &gate,
+                commands::lint::shapes_options(
+                    gate.iter().any(|g| g == "shapes").then_some("shapes"),
+                    shape,
+                    &release,
+                )?,
             )
         }
         Commands::Score {

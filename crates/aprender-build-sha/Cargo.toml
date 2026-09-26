@@ -19,3 +19,6 @@ name = "build_sha"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = { workspace = true }

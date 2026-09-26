@@ -406,13 +406,10 @@ fn disabled(step: &serde_yaml::Value) -> bool {
     }
 }
 
-/// The normalised `run:` lines of one workflow document (empty unless it is on the merge path).
-#[must_use]
-pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
+/// The normalised `run:` lines of every job in a `jobs:` mapping, regardless of what
+/// document it came from (shared by `workflow_run_lines` and the `ci/sections.yml` reader).
+fn jobs_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    if !on_merge_path(doc) {
-        return out;
-    }
     let Some(jobs) = doc.get("jobs").and_then(serde_yaml::Value::as_mapping) else {
         return out;
     };
@@ -432,7 +429,21 @@ pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
     out
 }
 
-/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`. Unparseable files contribute
+/// The normalised `run:` lines of one workflow document (empty unless it is on the merge path).
+#[must_use]
+pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
+    if !on_merge_path(doc) {
+        return BTreeSet::new();
+    }
+    jobs_run_lines(doc)
+}
+
+/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`, plus every
+/// `run:` line in `<root>/ci/sections.yml` if present. #4433 moved the fat CI jobs' step
+/// bodies out of `.github/workflows/ci.yml` verbatim into `ci/sections.yml`, run by
+/// `scripts/ci/fat_driver.py` from the thin `ci.yml` that stayed on the merge path — so
+/// `sections.yml` carries no `on:` of its own and is read unconditionally, not gated by
+/// `on_merge_path` (there is nothing there to gate on). Unparseable files contribute
 /// nothing (a workflow GitHub cannot parse runs nothing either).
 #[must_use]
 pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
@@ -452,6 +463,11 @@ pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
         };
         if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) {
             out.extend(workflow_run_lines(&doc));
+        }
+    }
+    if let Ok(text) = std::fs::read_to_string(root.join("ci/sections.yml")) {
+        if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) {
+            out.extend(jobs_run_lines(&doc));
         }
     }
     out

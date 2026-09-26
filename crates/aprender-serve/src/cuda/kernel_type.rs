@@ -668,4 +668,20 @@ pub enum KernelType {
         num_kv_heads: u32,
         head_dim: u32,
     },
+    /// aprender#4233: [`Self::GdnPartialNeoxRope`] reading `position` from a
+    /// device `u32`, so a captured decode graph replays at any position.
+    GdnPartialNeoxRopeIndirect {
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+    },
+    /// aprender#4233: [`Self::GdnDecodeAttention`] with `seq_len = *pos + 1`
+    /// read on the device.
+    GdnDecodeAttentionIndirect {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    },
+    /// aprender#4233: `cache[*pos * row ..][..row] = src`, the graph-safe KV append.
+    GdnKvRowScatterIndirect { row: u32 },
 }

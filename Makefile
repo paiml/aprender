@@ -493,10 +493,14 @@ COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] 
 #   Test infrastructure:
 #     - test_factory      : Test code, not production
 #     - demo/             : Demo/example code
-# NOTE: Coverage tracks the main aprender library only.
-# Subcrate tests still RUN (--workspace), exercising main lib code paths,
-# but subcrate source files are excluded from the coverage REPORT.
-# External deps (trueno, realizar, .cargo) also excluded.
+# NOTE (#3839): coverage measures the MONOREPO. #4023 scopes every report by a derived
+# `-p` list, so aprender-serve/-train/-compute (formerly realizar/entrenar/trueno) are
+# measured. The pre-monorepo `trueno|realizar/|entrenar/` alternatives were removed: in-tree
+# `entrenar/` matched 0 files, `realizar/` 7 unrelated aprender-train files, and `trueno`
+# 54/56 of aprender-zram while missing aprender-compute entirely.
+#   aprender-compute/src/backends/gpu/ : no coverage runner executes it (no GPU lane), so it
+#   is kept out of the denominator until one exists - excluded AND unrun, never "measured 0%".
+# Named subcrates below (apr-cli, aprender-shell, ...) and .cargo stay excluded.
 # Subcrate code, external deps, and modules requiring external model files for coverage.
 # models/ = dead code per UCBD §9.1 (scheduled for deletion).
 # serialization/ = SafeTensors IO (needs actual .safetensors files).
@@ -506,7 +510,7 @@ COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] 
 # format/rosetta = cross-format parity (needs model files).
 # transfer/ = transfer learning (needs pretrained models).
 # bench/ = benchmark visualization (non-core).
-COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
+COVERAGE_EXCLUDE_REGEX := \.cargo/|aprender-compute/src/backends/gpu/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
 
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95
@@ -564,7 +568,7 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # DERIVED from `cargo metadata` (scripts/coverage_report_scope.py), the verified alternative
 # above, and scripts/check_coverage_report_scoped.sh refuses any unscoped `llvm-cov report`. profraw
 # survive it (31 present afterwards), so coverage-html still has data to work from.
-.PHONY: coverage-check contracts
+.PHONY: coverage-check contracts census
 
 # BSE-03 phase A (Pmat-Ticket: PMAT-1068). The README's contract count is
 # DERIVED: scripts/readme_sync.sh rewrites the text between the
@@ -609,6 +613,13 @@ coverage-check: coverage
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
 # contracts/ and is the documented entry point (never hand-rolled bash).
+# The release train's one census writer (#3569). A PR that runs this and commits
+# the result is refused by scripts/check_census_derived.sh; the train runs it on
+# release/X.Y.Z, where the guard exempts the edit.
+census:
+	@. scripts/pv_bin.sh && t=$$(mktemp contracts/census.json.XXXXXX) && "$$PV" census contracts --format json > "$$t" && bash scripts/check_census_derived.sh --census "$$t" && mv "$$t" contracts/census.json || { rm -f "$$t"; exit 1; }
+	@bash scripts/readme_sync.sh --write
+
 # EXIT PROPAGATION (PVL-001 EV-4, aprender#4168). Under .ONESHELL this whole
 # recipe is ONE shell script, so without errexit its status is the LAST line's
 # and every earlier step -- `pv lint` included -- was advisory: a failing lint
@@ -631,13 +642,16 @@ contracts:
 # recipe green after lint -- census, graph, README, provenance and the engine tests never ran.
 # Exit only on failure (#4315, caught by scripts/tests/make_contracts_propagates.sh).
 	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; [ $$rc -eq 0 ] || exit $$rc; } || exit
-	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
-	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
-	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json || exit
-	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
+	@echo "== census: a FRESH pv census holds its invariants (ONT-001 ONT-1, F-1; #3569) =="
+	@# The tracked contracts/census.json is a release-train snapshot (its one writer,
+	@# `make census`) and is expected to lag; a PR may not edit it
+	@# (scripts/check_census_derived.sh). So the census is computed fresh into a temp
+	@# file, its identities are checked there, and the README count (readme_sync's
+	@# tree listing) must equal its n_files — the tracked file is not rewritten.
+	@. scripts/pv_bin.sh && t=$$(mktemp) && ( "$$PV" census contracts --format json > "$$t" && bash scripts/check_census_derived.sh --census "$$t" && CENSUS_JSON="$$t" bash scripts/readme_sync.sh --check; rc=$$?; rm -f "$$t"; exit $$rc ) || exit
 	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
 	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null || exit
-	@echo "== README states the censused count =="
+	@echo "== README states the tree's count (the listing readme_sync uses; the fresh census was held to it above) =="
 	@bash scripts/readme_sync.sh --check
 	@echo "== provenance marks, interim (ONT-001 R-10) =="
 	@bash scripts/lint-provenance.sh --self-test
@@ -682,7 +696,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib -- --list \
 		> target/coverage/serve-list.txt 2>> target/coverage/test.log || \
 		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
-	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt \
+	@bash scripts/coverage_serve_shards.sh target/coverage/serve-list.txt scripts/coverage-skips.txt \
 		target/coverage/serve-shards scripts/coverage-solo.txt
 	@# scripts/coverage-solo.txt: run FIRST, each in its OWN process, and print its test binary's peak RSS
 	@# (RUSAGE_CHILDREN.ru_maxrss), so a later skip carries a measured per-test reason.
@@ -1488,15 +1502,27 @@ check-siblings: ## Verify sibling repos exist and versions are compatible
 		echo "  Remove [patch.crates-io] from .cargo/config.toml"; \
 	fi
 
-# APR-RELEASE-001 §11.2 (ONT R-6): the five ontology counters move ONLY through
-# this target. `--check` is what guard_tree.sh runs on every PR; `--write` is the
-# deliberate restamp, and it is the only way a counter is allowed to change.
+# APR-RELEASE-001 §11.2 (ONT R-6). Since #3569 the ontology counters are MEASURED,
+# never committed: `--check` (guard_tree.sh, every PR) measures them at the
+# comparand tree and at the working tree and refuses any move the wrong way.
+# `--write` stores DECISIONS only (armed_gates, armed_shapes + the Rust gates'
+# foreign keys); it can no longer restamp a counter to hide a regression.
 .PHONY: ont-ratchet ont-ratchet-check
 ont-ratchet:
 	@bash scripts/check_ont_ratchet.sh --write
 
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
+
+# PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
+# through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
+# NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
+.PHONY: lint-ratchet lint-ratchet-self-test
+lint-ratchet:
+	@bash scripts/lint_ratchet.sh
+
+lint-ratchet-self-test:
+	@bash scripts/lint_ratchet.sh --self-test
 
 # ONT-001 §5 ONT-4b2 / R-13 — the out-of-gate SHACL differential oracle.
 #

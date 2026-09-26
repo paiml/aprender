@@ -90,6 +90,16 @@ LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr ex
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
 apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+# THE LOCK IS NOT EXCLUSIVITY (#3964). The lock serializes only the processes that take it, and
+# Ollama's daemon never does: on lambda it loaded 1328 MiB onto the card in the MIDDLE of a
+# locked device A/B. So a GPU run leg goes through gpu_exclusive_run: the same lock, plus a
+# whole-run sample of the card by full path. A foreign process refuses the leg (exit 75,
+# CONTENDED -> an ENV decline, never a model verdict). Only the GPU leg: the helper refuses a
+# command it never saw on the card (UNVERIFIED), which is every CPU leg by construction.
+apr_exclusive() {
+  GPU_OWNED_PREFIX="$(readlink -f "$APR")" GPU_LOCK="$GPU_LOCK" GPU_WAIT_SECS="$LOCK_WAIT" \
+    choom -n 1000 -- bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"
+}
 
 # ── #3843: ASK THE BINARY whether a verb takes a flag; never assume ───────────
 # The verb loop hard-coded one backend flag and passed it to all four verbs. Their
@@ -1008,9 +1018,21 @@ except Exception: print("unknown")' "$arch_json")
     # bytes, all four of them `verbose:` lines). The refusal is recorded verbatim, so the judge can
     # check that apr refused BY NAME (capability::no_cuda_forward_reason) and did not just fail.
     run_o="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.out"; run_e="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.err"
-    # shellcheck disable=SC2086
-    apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
-    [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    if [ "$flag" = --gpu ] && [ -n "$GPU_NAME" ]; then
+      # shellcheck disable=SC2086
+      apr_exclusive run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
+      # CONTENDED: a foreign process shared the card, or the card/lock never cleared. UNVERIFIED
+      # (apr never appeared on the card) is NOT declined: a GPU leg that ran on the CPU is the
+      # fallback defect this ladder exists to catch, and rc=75 already records it as ran=false.
+      if grep -q 'gpu_exclusive_run: CONTENDED' "$run_o" "$run_e"; then
+        echo "decline: ENV the GPU was not exclusive for apr run $rid ($b) -- $(grep -h -A3 'gpu_exclusive_run: CONTENDED' "$run_e" "$run_o" | tr '\n' ' '). Not a model verdict." >&2
+        exit 2
+      fi
+    else
+      # shellcheck disable=SC2086
+      apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
+      [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    fi
     run_out=$(cat "$run_o" "$run_e")
     run_stdout_bytes=$(stat -c %s "$run_o" 2> /dev/null || echo null)
     run_generated_bytes=$(grep -v '^verbose: ' "$run_o" | wc -c)

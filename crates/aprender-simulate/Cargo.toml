@@ -57,7 +57,7 @@ crossterm = { version = "0.28", optional = true }
 # ComputeBlocks from presentar-terminal (SIMD-optimized TUI widgets)
 # Path deps to avoid jugar-probar prod dep chain (CB-081)
 presentar-terminal = { workspace = true, optional = true }
-presentar-core = { version = "0.69.3", path = "../aprender-present-core", package = "aprender-present-core", default-features = false, optional = true }
+presentar-core = { version = "0.70.0", path = "../aprender-present-core", package = "aprender-present-core", default-features = false, optional = true }
 
 # WASM (optional)
 wasm-bindgen = { version = "0.2", optional = true }
@@ -92,6 +92,7 @@ provable-contracts-macros = { workspace = true }
 # Code gated behind #[cfg(feature = "z3-proofs")]
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"

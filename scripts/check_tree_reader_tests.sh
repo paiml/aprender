@@ -197,7 +197,8 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
 # So the derived set is SPLIT by an oracle, never a hand list:
 #   * `--lib`  — wired: the full tier runs `cargo nextest run --workspace --lib`
 #                and the excluded crates have their own named steps.
-#   * `--test NAME` — wired iff some file under .github/workflows/ names
+#   * `--test NAME` — wired iff some file under .github/workflows/ or
+#                ci/sections.yml (#4433: the job bodies ci.yml's fat jobs run) names
 #                `--test NAME`.
 # Unwired targets go to the ledger below and are NOT in the quick tier. The
 # ledger is shrink-only in the sense that matters: a new unwired reader FAILS
@@ -212,7 +213,7 @@ UNWIRED_LEDGER_DEFAULT="scripts/tree_reader_unwired_baseline.txt"
 # not wired by `--workspace --lib`, and the first quick-tier run would have
 # tested aprender-gpu --lib on a CPU runner had this not been derived.
 full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
-    grep -rhoE 'nextest run --profile ci --workspace --lib( --exclude [a-z0-9-]+)+' "$1"/.github/workflows/ 2>/dev/null \
+    grep -rhoE 'nextest run --profile ci --workspace --lib( --exclude [a-z0-9-]+)+' "$1"/.github/workflows/ "$1"/ci/sections.yml 2>/dev/null \
         | head -1 | grep -oE -- '--exclude [a-z0-9-]+' | awk '{print $2}'
 }
 
@@ -222,9 +223,30 @@ full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
 # (PMAT-3313: that list used to be one ci.yml line). Reading only the workflows
 # after the move would call all 39 of its commands unwired. grep -q exits 0 on a
 # match even if the directory is absent.
-names_test() {
-    grep -rqF --include='*.cmd' -- "--test $2" "$1"/ci/explicit-test-commands.d/ 2>/dev/null \
-        || grep -rqF -- "--test $2" "$1"/.github/workflows/ 2>/dev/null
+#
+# #4329: the match is WHOLE-WORD and PER-PACKAGE, on one line. The old unanchored
+# `grep -F -- "--test integration"` matched `--test integration_test` of ANOTHER
+# crate, so `aprender-cgp --test integration` read as wired while no lane ran it.
+# A line wires CRATE NAME only if it names `-p CRATE` (or `--package CRATE`) AND
+# `--test NAME`, each ending at a non-name character. $3 (CRATE) is required.
+names_test() { # names_test ROOT NAME CRATE
+    local e='([^A-Za-z0-9_-]|$)' pk ts
+    pk="(^|[[:space:]])(-p|--package)[[:space:]=]+$3$e"
+    ts="(^|[[:space:]])--test[[:space:]=]+$2$e"
+    # A here-string, never `{ grep ...; } | grep -q`: under pipefail the producer's
+    # SIGPIPE after grep -q's first match fails the pipeline (the class in wired_targets).
+    # A command continued with a trailing `\` is ONE line (ci.yml's `-p aprender-core \`
+    # then `--test falsification_spec_v10_tests`), so continuations are joined first.
+    # The joined lines are read ONCE per root (a per-target re-read cost +10 s a pass).
+    local lines f
+    if [ "${NT_ROOT:-}" != "$1" ]; then
+        NT_ROOT=$1
+        NT_LINES=$(for f in "$1"/ci/explicit-test-commands.d/*.cmd "$1"/.github/workflows/* "$1"/ci/sections.yml; do
+                       [ -f "$f" ] && awk '/\\$/ { sub(/\\$/, " "); buf = buf $0; next } { print buf $0; buf = "" }' "$f"
+                   done | grep -E -- '--test' || true)
+    fi
+    lines=$(grep -E -- "$ts" <<< "$NT_LINES" || true)
+    grep -qE -- "$pk" <<< "$lines"
 }
 
 wired_targets() { # wired_targets <root> -- the derived set, wired half only
@@ -244,7 +266,7 @@ wired_targets() { # wired_targets <root> -- the derived set, wired half only
             grep -qxF -- "$c" <<< "$ex" && continue
             if [ -n "$name" ]; then printf '%s\t%s\t%s\n' "$c" "$kind" "$name"
             else printf '%s\t%s\n' "$c" "$kind"; fi
-        elif names_test "$root" "$name"; then
+        elif names_test "$root" "$name" "$c"; then
             printf '%s\t--test\t%s\n' "$c" "$name"
         fi
     done
@@ -254,7 +276,7 @@ unwired_targets() { # unwired_targets <root> -- reads the tree, no lane runs it
     local root=$1 c kind name
     derive "$root" | while IFS=$'\t' read -r c kind name; do
         [ "$kind" = "--test" ] || continue
-        names_test "$root" "$name" || printf '%s\t--test\t%s\n' "$c" "$name"
+        names_test "$root" "$name" "$c" || printf '%s\t--test\t%s\n' "$c" "$name"
     done
 }
 
@@ -359,6 +381,16 @@ self_test() {
     else
         printf 'FAIL  row %-2s        split wrong. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
+    # #4433: the same lane moved into ci/sections.yml is still wired.
+    mkdir -p "$td/ci"; mv "$td/.github/workflows/ci.yml" "$td/ci/sections.yml"
+    n=$((n + 1))
+    w=$(bash "$T" --print "$td" 2>/dev/null)
+    if grep -q '^alpha' <<< "$w"; then
+        printf 'ok    row %-2s        a lane named only in ci/sections.yml (#4433) is wired\n' "$n"
+    else
+        printf 'FAIL  row %-2s        ci/sections.yml lane not read. wired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')"; red=1
+    fi
+    mv "$td/ci/sections.yml" "$td/.github/workflows/ci.yml"
     # PMAT-3313: the explicit integration list is a directory of one-command
     # fragments, not a workflow line. A target named ONLY there is wired; the same
     # tree without that fragment is not.
@@ -372,6 +404,26 @@ self_test() {
     else
         printf 'FAIL  row %-2s        ci/explicit-test-commands.d/ not read as wiring. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
+    # #4329: names_test is whole-word AND per-package. Each case is run against
+    # gamma manifest_dir alone, in a ci/ fragment, then the fragment is removed.
+    local frag want label
+    while IFS='|' read -r want frag label; do
+        mkdir -p "$td/ci/explicit-test-commands.d"
+        printf '%b\n' "$frag" > "$td/ci/explicit-test-commands.d/020-case.cmd"
+        u=$(bash "$T" --print-unwired "$td" 2>/dev/null); rm -rf "${td:?}/ci"; n=$((n + 1))
+        if grep -q '^gamma	--test	manifest_dir$' <<< "$u"; then got=unwired; else got=wired; fi
+        if [ "$got" = "$want" ]; then printf 'ok    row %-2s        #4329 %s -> %s\n' "$n" "$label" "$got"
+        else printf 'FAIL  row %-2s        #4329 %s: wanted %s, got %s\n' "$n" "$label" "$want" "$got"; red=1; fi
+    done <<'CASES'
+wired|cargo test -p gamma --test manifest_dir|exact package + name
+wired|cargo nextest run --package=gamma --test=manifest_dir --no-fail-fast|--package= / --test= spellings
+wired|cargo test -p gamma \\\n    --test manifest_dir|a backslash-continued command is one line
+unwired|cargo test -p other --test manifest_dir_extra|a LONGER test name of another crate (the cgp/orchestrate substring bug)
+unwired|cargo test -p gamma --test manifest_dir_extra|a longer test name, same package
+unwired|cargo test -p other --test manifest_dir|same test name, ANOTHER package
+unwired|cargo test -p gamma-extra --test manifest_dir|a package that only PREFIXES gamma
+unwired|cargo test -p gamma\ncargo test -p other --test manifest_dir|package and test on DIFFERENT commands
+CASES
     update "$td" "$td/registry.txt" > /dev/null 2>&1
     row 0 "registry equals derived -> PASS" '^PASS' bash "$T" --check "$td" "$td/registry.txt"
     printf 'zeta\t--lib\n' >> "$td/registry.txt"

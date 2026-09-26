@@ -299,23 +299,29 @@ pub fn format_chat_messages_for_state_thinking(
     )
 }
 
+/// The stop sequences that end an assistant response.
+///
+/// Shared by [`clean_chat_output`] (non-streaming) and the streaming
+/// `ChatStopFilter` (aprender#4340), so a marker the non-streaming body never
+/// shows can never reach a stream delta either.
+pub(crate) const CHAT_STOP_SEQUENCES: &[&str] = &[
+    "<|im_end|>",    // ChatML (Qwen, OpenHermes, Yi)
+    "<|endoftext|>", // GPT-style
+    "<|end|>",       // Alternative
+    "</s>",          // LLaMA style
+    "\nHuman:",      // Anthropic/Claude style
+    "\nUser:",       // Alternative user turn
+    "\n\nHuman:",    // With extra newline
+    "\n\nUser:",     // With extra newline
+    "<|im_start|>",  // Start of new turn in ChatML
+];
+
 /// Clean chat output to prevent prompt injection (PMAT-088)
 ///
 /// Stops output at the first stop sequence to prevent the model from
 /// generating additional conversation turns or injected content.
 pub fn clean_chat_output(text: &str) -> String {
-    // List of stop sequences that indicate end of assistant response
-    const STOP_SEQUENCES: &[&str] = &[
-        "<|im_end|>",    // ChatML (Qwen, OpenHermes, Yi)
-        "<|endoftext|>", // GPT-style
-        "<|end|>",       // Alternative
-        "</s>",          // LLaMA style
-        "\nHuman:",      // Anthropic/Claude style
-        "\nUser:",       // Alternative user turn
-        "\n\nHuman:",    // With extra newline
-        "\n\nUser:",     // With extra newline
-        "<|im_start|>",  // Start of new turn in ChatML
-    ];
+    const STOP_SEQUENCES: &[&str] = CHAT_STOP_SEQUENCES;
 
     // V1_004 follow-up (paiml/claude-code-parity-apr M291): "\nHuman:" /
     // "\n\nHuman:" require a preceding newline to match. When a response

@@ -27,7 +27,7 @@ open Real
 -- Status: proved
 /-- Sigmoid is dominated by `exp`: `σ(x) < exp(x)` for all x, because
     `exp(x) · (1 + exp(-x)) = exp(x) + 1 > 1`. -/
-theorem sigmoid_lt_exp (x : ℝ) : sigmoid x < Real.exp x := by
+private theorem sigmoid_lt_exp (x : ℝ) : sigmoid x < Real.exp x := by
   unfold sigmoid
   have hpos : (0:ℝ) < 1 + Real.exp (-x) := by linarith [Real.exp_pos (-x)]
   rw [div_lt_iff₀ hpos]

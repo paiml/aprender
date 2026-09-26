@@ -180,6 +180,8 @@ book/src/advanced-testing/popperian-falsification.md:44
 crates/apr-cli/src/commands/bench_safetensors.rs:123
 crates/apr-cli/src/commands/bench_safetensors.rs:124
 crates/apr-cli/src/commands/qa.rs:147
+crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
+crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
 crates/apr-cli/src/commands/speedup.rs:11
 crates/apr-cli/src/commands/test_llm.rs:14

@@ -190,18 +190,29 @@ fn verify_softmax_bounded() {
     }
 }
 
-/// KANI-RN-001: RMSNorm output is finite when eps > 0.
+/// KANI-RN-001: RMSNorm output is finite when eps > 0, |x| <= 1e18 and |gamma| <= 1e30.
 /// Obligation: RN-INV-001
 /// Strategy: exhaustive
 /// Bound: 16 elements
+///
+/// Bounds (PMAT-3140). Input: unbounded, Kani 0.67 reported
+/// `rmsnorm_scalar.NaN.5 FAILURE "NaN on division"` at `1.0 / rms` (rmsnorm.rs:37)
+/// on a trace with |x| ~ 1.9e36, where sum(x^2) overflows. IEEE gives
+/// sqrt(inf) = inf and 1/inf = 0, so this is most likely CBMC's builtin sqrtf
+/// model on inf, not a runtime NaN. The bound stays anyway: past it the real
+/// output collapses to all zeros, which is finite but is not RMSNorm. Gamma: pure
+/// arithmetic, not a Kani finding. The normalized value reaches sqrt(n) = 4, so
+/// |gamma| > f32::MAX / 4 ~ 8.5e37 overflows, and 1e30 is conservative.
 #[kani::proof]
 #[kani::unwind(17)]
 fn verify_rmsnorm_finiteness() {
     const N: usize = 16;
     let input: [f32; N] = kani::any();
     let gamma: [f32; N] = kani::any();
-    kani::assume(input.iter().all(|x| x.is_finite()));
-    kani::assume(gamma.iter().all(|x| x.is_finite()));
+    // |x| <= 1e18 keeps sum(x^2) <= 1.6e37 < f32::MAX. Past that, sum_sq overflows,
+    // inv_rms becomes 0 and every output is 0: finite, but no longer RMSNorm.
+    kani::assume(input.iter().all(|x| x.is_finite() && x.abs() <= 1.0e18));
+    kani::assume(gamma.iter().all(|x| x.is_finite() && x.abs() <= 1.0e30));
 
     let eps: f32 = kani::any();
     kani::assume(eps > 0.0 && eps.is_finite() && eps < 1.0);
@@ -222,7 +233,12 @@ fn verify_rmsnorm_finiteness() {
 /// Obligation: RN-INV-002
 /// Strategy: exhaustive
 /// Bound: 16 elements
-/// Inlines the RMS computation to check the intermediate value.
+/// Inlines the RMS computation to check the intermediate value, then binds the
+/// property to the KERNEL: the inline copy alone never calls `rmsnorm_scalar`,
+/// so a kernel that dropped or negated `+ eps` stayed green (#3140 finding).
+/// The all-zero input is the worst case (sum_sq = 0, denominator = eps): there
+/// the kernel's output is finite iff its denominator was positive, since a zero
+/// denominator gives 0 * inf = NaN and a negative one gives sqrt(<0) = NaN.
 #[kani::proof]
 #[kani::unwind(17)]
 fn verify_rms_positive() {
@@ -241,6 +257,20 @@ fn verify_rms_positive() {
     let denom = sum_sq / N as f32 + eps;
 
     assert!(denom > 0.0, "KANI-RN-002: denominator = {} <= 0", denom);
+
+    let zeros = [0.0f32; N];
+    let gamma: [f32; N] = kani::any();
+    kani::assume(gamma.iter().all(|g| g.is_finite()));
+    let mut output = [1.0f32; N];
+    rmsnorm::rmsnorm_scalar(&zeros, &gamma, eps, &mut output);
+    for i in 0..N {
+        assert!(
+            output[i] == 0.0,
+            "KANI-RN-002: kernel output[{}] = {} on zero input (denominator not positive)",
+            i,
+            output[i]
+        );
+    }
 }
 
 /// KANI-LN-001: LayerNorm output has zero mean (with gamma=1, beta=0).

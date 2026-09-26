@@ -605,3 +605,27 @@
             "Empty temp file should map to 0.5b via file size heuristic"
         );
     }
+
+    /// #3714: the throughput label names what the timed runs REPORTED. A cuda
+    /// build whose runs all fell back to the CPU must not print "GPU".
+    #[cfg(feature = "inference")]
+    #[test]
+    fn runtime_backend_label_follows_used_gpu_not_the_build() {
+        assert_eq!(
+            runtime_backend_label(3, 3),
+            "runtime entry point, GPU on every timed run"
+        );
+        assert_eq!(
+            runtime_backend_label(0, 3),
+            "runtime entry point, CPU on every timed run"
+        );
+        assert_eq!(
+            runtime_backend_label(1, 3),
+            "runtime entry point, MIXED GPU/CPU timed runs"
+        );
+        assert_eq!(runtime_backend_label(0, 0), "runtime entry point, no timed run");
+        for (g, r) in [(0, 1), (0, 3), (1, 3), (2, 3)] {
+            assert!(!runtime_backend_label(g, r).contains("GPU on every"), "{g}/{r}");
+        }
+    }
+

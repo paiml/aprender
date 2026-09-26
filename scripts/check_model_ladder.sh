@@ -635,6 +635,27 @@ for n, line in enumerate(open(sys.argv[1]), 1):
 sys.exit(bad)
 LOCKPY
 }
+# exclusive_audit <producer> -> the GPU run leg goes through gpu_exclusive_run and a CONTENDED
+# refusal declines (#3964). Static: the helper's behaviour is its own 12-row self-test
+# (scripts/lib/gpu_exclusive_run_selftest.sh); this proves the ladder is wired to it.
+exclusive_audit() {
+  python3 - "$1" <<'EXCLPY'
+import re, sys
+src = open(sys.argv[1]).read()
+code = "\n".join(re.sub(r"(^|\s)#.*$", "", l) for l in src.splitlines())
+bad = 0
+body = re.search(r"apr_exclusive\(\) \{(.*?)\n\}", code, re.S)
+if not body or 'bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"' not in body.group(1):
+    print("FAIL  apr_exclusive does not run apr through scripts/lib/gpu_exclusive_run.sh"); bad = 1
+elif "GPU_OWNED_PREFIX=" not in body.group(1) or 'GPU_LOCK="$GPU_LOCK"' not in body.group(1):
+    print("FAIL  apr_exclusive does not pass GPU_OWNED_PREFIX and the ladder's GPU_LOCK"); bad = 1
+if not re.search(r'if \[ "\$flag" = --gpu \][^\n]*\n(?:[ \t]*\n)*[ \t]*apr_exclusive run "\$path"', code):
+    print("FAIL  the --gpu run leg does not go through apr_exclusive -- a foreign GPU process goes unseen"); bad = 1
+if not re.search(r"grep -q 'gpu_exclusive_run: CONTENDED' \"\$run_o\" \"\$run_e\"; then\n[^\n]*decline: ENV the GPU was not exclusive[^\n]*\n\s*exit 2", code):
+    print("FAIL  a CONTENDED GPU leg does not decline (exit 2) -- a shared-card result would be judged"); bad = 1
+sys.exit(bad)
+EXCLPY
+}
 # lock_probe <producer> <work dir> -> prints ok/FAIL lines, exit 1 on any failure
 lock_probe() {
   local prod=$1 w=$2 out rc hp bad=0
@@ -826,6 +847,18 @@ if [ "$SELF_TEST" = 1 ]; then
     vmutant no-reader    's/                    return struct.unpack(fmt, /                    return None and struct.unpack(fmt, /'
     mutant fit-missing    red-fit-missing      's/        if not isinstance(fit, dict) or not fit.get("verdict"):/        if False:/'
     mutant fit-not-fits   red-fit-does-not-fit 's/        elif fit.get("verdict") != "fits":/        elif False:/'
+    if exclusive_audit "$prod" > "$mdir/excl.out"; then echo "ok    exclusive: $prod runs its GPU leg through gpu_exclusive_run and declines CONTENDED (#3964)"
+    else cat "$mdir/excl.out"; bad=$((bad+1)); fi
+    emutant() { # emutant <label> <sed expression breaking the exclusive GPU leg in a copy of the producer>
+      local m="$mdir/e-$1.sh"
+      sed "$2" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  exclusive mutant $1 did not apply -- the check proves nothing"; bad=$((bad+1)); return; fi
+      if exclusive_audit "$m" > /dev/null; then echo "FAIL  exclusive mutant $1 SURVIVED the exclusive check"; bad=$((bad+1))
+      else printf 'ok    exclusive mutant %-16s killed\n' "$1"; fi
+    }
+    emutant gpu-leg-locked    's/      apr_exclusive run "$path"/      apr_locked run "$path"/'
+    emutant helper-bypassed   's/bash scripts\/lib\/gpu_exclusive_run.sh "$APR" "$@"/"$APR" "$@"/'
+    emutant contended-judged  '/decline: ENV the GPU was not exclusive/{n;s/exit 2/:/}'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
     cmutant() { # cmutant <label> <case that must kill it> <sed expression deleting the rule>
@@ -843,9 +876,9 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant prompt-short    red-cells-prompt-under-rung     's/if int(c.get("prompt_tokens") or 0) < tok:/if False:/'
     cmutant modes-evidence  red-cells-thinking-modes-disagree-with-template 's/elif want is not None and modes != want:/elif False:/'
     cmutant no-representative red-cells-arch-without-representative 's/        if not r:/        if False:/'
-    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
+    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/    if not fit:/    if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
-    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
+    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/        if gone:/        if False:/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
     xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>

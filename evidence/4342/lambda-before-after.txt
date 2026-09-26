@@ -1,0 +1,56 @@
+# #4342 — qwen35 --gpu inference_ms; lambda RTX 4090, Qwen3.5-4B-Q4_K_M, apr run --gpu --json, stderr timestamped from process start (script: 4 runs, max-tokens 1,128,1,128; run 1 = fresh F2 guard since the receipt is keyed on the exe)
+
+## BEFORE: batch/0.70.0 2d1978aad
+apr 0.69.0 (2d1978aad) host=noah-Lambda-Vector gpu=NVIDIA GeForce RTX 4090 model=Qwen3.5-4B-Q4_K_M.gguf
+== apr run --gpu --max-tokens 1
+  t+  7.227s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+  8.508s stderr: F2 guard: validating on this run (receipt schema 2, this build writes 1) [source=fresh]
+  t+ 15.582s stderr: F2 guard: passed in 7076 ms on 20 positions; receipt written to /home/noah/.cache/apr/f2-receipts/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11
+  t+ 16.572s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 1, "inference_ms": null, "load_ms": null, "tok_per_sec": 0.1, "tokens_per_second": null}
+== apr run --gpu --max-tokens 128
+  t+  8.854s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+ 10.121s stderr: F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0 exe:c1d985d89fefac01, NVIDIA GeForce RTX 4090) — validated 11s ago on 20 positions; CPU refere
+  t+ 11.146s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 9, "inference_ms": null, "load_ms": null, "tok_per_sec": 1.2, "tokens_per_second": null}
+== apr run --gpu --max-tokens 1
+  t+  4.370s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+  5.993s stderr: F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0 exe:c1d985d89fefac01, NVIDIA GeForce RTX 4090) — validated 18s ago on 20 positions; CPU refere
+  t+  6.924s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 1, "inference_ms": null, "load_ms": null, "tok_per_sec": 0.3, "tokens_per_second": null}
+== apr run --gpu --max-tokens 128
+  t+  4.542s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+  5.806s stderr: F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0 exe:c1d985d89fefac01, NVIDIA GeForce RTX 4090) — validated 25s ago on 20 positions; CPU refere
+  t+  6.872s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 9, "inference_ms": null, "load_ms": null, "tok_per_sec": 2.7, "tokens_per_second": null}
+
+## AFTER: fadd86681
+apr 0.69.0 (fadd86681) host=noah-Lambda-Vector gpu=NVIDIA GeForce RTX 4090 model=Qwen3.5-4B-Q4_K_M.gguf
+== apr run --gpu --max-tokens 1
+  t+  6.088s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+  7.397s stderr: F2 guard: validating on this run (receipt written by apr 0.69.0 exe:c1d985d89fefac01, this is 0.69.0 exe:bad5d451b7619c1c) [source=fresh]
+  t+ 15.346s stderr: F2 guard: passed in 7947 ms on 20 positions; receipt written to /home/noah/.cache/apr/f2-receipts/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11
+  t+ 16.267s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 1, "inference_ms": null, "load_ms": null, "tok_per_sec": 2.3, "tokens_per_second": null}
+== apr run --gpu --max-tokens 128
+  t+  4.848s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+  6.123s stderr: F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0 exe:bad5d451b7619c1c, NVIDIA GeForce RTX 4090) — validated 7s ago on 20 positions; CPU referen
+  t+  7.105s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 9, "inference_ms": null, "load_ms": null, "tok_per_sec": 18.7, "tokens_per_second": null}
+== apr run --gpu --max-tokens 1
+  t+  4.374s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+  5.685s stderr: F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0 exe:bad5d451b7619c1c, NVIDIA GeForce RTX 4090) — validated 14s ago on 20 positions; CPU refere
+  t+  6.611s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 1, "inference_ms": null, "load_ms": null, "tok_per_sec": 2.4, "tokens_per_second": null}
+== apr run --gpu --max-tokens 128
+  t+  4.399s stderr: Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+  t+  5.665s stderr: F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0 exe:bad5d451b7619c1c, NVIDIA GeForce RTX 4090) — validated 20s ago on 20 positions; CPU refere
+  t+  6.660s exit rc=0
+  json: {"used_gpu": true, "fell_back": null, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}, "tokens_generated": 9, "inference_ms": null, "load_ms": null, "tok_per_sec": 18.8, "tokens_per_second": null}
+
+## tok_per_sec summary (tokens@tok/s)
+before: 1@0.1 9@1.2 1@0.3 9@2.7
+after:  1@2.3 9@18.7 1@2.4 9@18.8
+
+## tests at fadd86681
+     Summary [1845.966s] 274 tests run: 274 passed (3 slow), 23161 skipped

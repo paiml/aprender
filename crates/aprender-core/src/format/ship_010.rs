@@ -437,16 +437,14 @@ mod ship_010_tests {
     /// any network I/O is launched.
     #[test]
     fn falsify_ship_010_yaml_binding_pins_discharged_status() {
-        // #4130: read at RUN time — the published .crate carries no repo-root contracts/.
-        let Some(contract_yaml_owned) = crate::test_support::workspace_contract_or_skip(
+        let Some(contract_yaml) = provable_contracts::workspace_file_or_skip!(
             "falsify_ship_010_yaml_binding_pins_discharged_status",
-            "publish-manifest-v1.yaml",
+            "contracts/publish-manifest-v1.yaml"
         ) else {
             return;
         };
-        let contract_yaml: &str = &contract_yaml_owned;
 
-        let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml)
+        let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml.as_str())
             .expect("publish-manifest-v1.yaml must parse as YAML");
 
         let falsifications = doc["falsification_tests"]

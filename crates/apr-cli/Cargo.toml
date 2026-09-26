@@ -106,7 +106,10 @@ cuda = ["inference", "realizar/cuda", "entrenar/cuda", "trueno/cuda", "aprender-
 # the binary was built with it (§2.1 INVALID-BUILD reads that entry).
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
-wgpu = ["inference"]
+# #4056: the finetune wgpu path (commands/finetune.rs) uses entrenar items gated
+# behind entrenar's own `gpu` feature. Weak dep: enabled only when `training`
+# brings entrenar in, which is exactly when that path compiles.
+wgpu = ["inference", "entrenar?/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
@@ -126,23 +129,23 @@ libc = "0.2"
 # performed. A surface and its capability must not be able to drift.
 apr-test = { workspace = true }
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.69.3", package = "aprender-core", default-features = true, features = ["format-compression"] }
+aprender = { path = "../aprender-core", version = "0.70.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 # Provable-contracts engine — `apr beat-run` parses + evaluates BeatBenchmark contracts (PMAT-741)
 aprender-contracts = { workspace = true }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.69.3", features = ["apr-tools"] }   # apr mcp serves apr's own tools (PMAT-3954)
+aprender-mcp = { path = "../aprender-mcp", version = "0.70.0", features = ["apr-tools"] }   # apr mcp serves apr's own tools (PMAT-3954)
 async-stream = "0.3"
 provable-contracts-macros = { workspace = true }
 
 # Shared formatting and system utilities (Batuta stack)
-batuta-common = { workspace = true }
+batuta-common = { workspace = true, features = ["cli-roles"] }
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182.
 # Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
 # requires apr code in default builds). GH-344: path dep via
 # .cargo/config.toml.dev-overrides; CI uses checkout+symlink.
-batuta = { version = "0.69.3", path = "../aprender-orchestrate", package = "aprender-orchestrate", default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
+batuta = { version = "0.70.0", path = "../aprender-orchestrate", package = "aprender-orchestrate", default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
@@ -238,7 +241,7 @@ pacha = { workspace = true }
 # published-crate dependency cycle the APR-MONO consolidation removed, and
 # (b) was never actually linked, so every `trueno_explain::` path in
 # commands/ptx_explain.rs failed to resolve.
-trueno-explain = { path = "../aprender-explain", version = "0.69.3", package = "aprender-explain", optional = true }
+trueno-explain = { path = "../aprender-explain", version = "0.70.0", package = "aprender-explain", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
 entrenar-lora = { workspace = true, optional = true }
@@ -259,6 +262,8 @@ alimentar = { workspace = true }
 # `dispatch` fn those binaries call, so the surfaces cannot drift.
 aprender-rag-cli = { workspace = true }
 aprender-zram-cli = { workspace = true }
+# `apr ptx-debug` (#4062): pure-Rust PTX falsification analyzer, always built.
+aprender-ptx-debug = { workspace = true }
 # simular: hand-rolled parser, wired as a verbatim passthrough (apr sim ...)
 simular = { workspace = true }
 aprender-cgp = { workspace = true }

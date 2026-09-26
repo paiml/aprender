@@ -87,6 +87,7 @@ fn registered_commands() -> Vec<&'static str> {
         "gpu",
         "profile",
         "ptx",
+        "ptx-debug",
         "ptx-map",
         "cbtop",
         "data",

@@ -11,6 +11,13 @@ keywords = ["verification", "formal-methods", "kani", "contracts", "ml-kernels"]
 categories = ["development-tools::testing", "mathematics"]
 exclude = ["/tests/", "benches/"]
 
+[package.metadata.kani]
+# kani_proofs_cd.rs uses #[kani::stub], which needs -Z stubbing. Kani reads this
+# only from the crate directory (`cd crates/aprender-contracts && cargo kani
+# --lib`); `cargo kani -p` from the workspace root still needs `-Z stubbing`
+# (#3140).
+unstable = { stubbing = true }
+
 [features]
 default = []
 kani = []
@@ -19,7 +26,7 @@ kani = []
 name = "provable_contracts"
 
 [dependencies]
-provable-contracts-macros = { path = "../aprender-contracts-macros", version = "0.69.3", package = "aprender-contracts-macros" }
+provable-contracts-macros = { path = "../aprender-contracts-macros", version = "0.70.0", package = "aprender-contracts-macros" }
 regex = "1"
 sha2 = { workspace = true }
 syn = { workspace = true }
