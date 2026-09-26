@@ -176,7 +176,10 @@ pub(crate) async fn try_qwen35_completions(
     };
 
     let mut generated_ids = turn.tokens[prompt_tokens..].to_vec();
-    if generated_ids.last().is_some_and(|t| stop_tokens.contains(t)) {
+    if generated_ids
+        .last()
+        .is_some_and(|t| stop_tokens.contains(t))
+    {
         generated_ids.pop();
     }
     let completion_tokens = generated_ids.len();
@@ -224,11 +227,19 @@ enum Qwen35StreamMsg {
 /// stop sequence, less an incomplete UTF-8 character. `None`: nothing new, or
 /// the decode of the prefix does not extend what was sent (it is then sent at
 /// the end, when the whole text is known).
-pub(crate) fn qwen35_stream_delta(decoded: &str, emitted: usize, stops: &[String]) -> Option<String> {
+pub(crate) fn qwen35_stream_delta(
+    decoded: &str,
+    emitted: usize,
+    stops: &[String],
+) -> Option<String> {
     if decoded.ends_with('\u{FFFD}') || !decoded.is_char_boundary(emitted.min(decoded.len())) {
         return None;
     }
-    let hold = stops.iter().map(|s| s.len().saturating_sub(1)).max().unwrap_or(0);
+    let hold = stops
+        .iter()
+        .map(|s| s.len().saturating_sub(1))
+        .max()
+        .unwrap_or(0);
     let mut safe = decoded.len().saturating_sub(hold);
     while !decoded.is_char_boundary(safe) {
         safe -= 1;
@@ -300,7 +311,9 @@ pub(crate) fn try_qwen35_completions_stream(
             .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
         drop(s);
         if let Err(e) = result {
-            let _ = tx.send(Qwen35StreamMsg::Failed(format!("Qwen3.5 generation failed: {e}")));
+            let _ = tx.send(Qwen35StreamMsg::Failed(format!(
+                "Qwen3.5 generation failed: {e}"
+            )));
             return;
         }
         let completion_tokens = generated.len();
@@ -323,8 +336,8 @@ pub(crate) fn try_qwen35_completions_stream(
     let created = epoch_secs();
     let model = request.model.clone();
     let metrics = state.metrics.clone();
-    let chunk = move |text: String, finish_reason: Option<String>, usage: Option<Usage>| {
-        CompletionChunk {
+    let chunk =
+        move |text: String, finish_reason: Option<String>, usage: Option<Usage>| CompletionChunk {
             id: id.clone(),
             object: "text_completion".to_string(),
             created,
@@ -336,8 +349,7 @@ pub(crate) fn try_qwen35_completions_stream(
                 finish_reason,
             }],
             usage,
-        }
-    };
+        };
     let events = async_stream::stream! {
         while let Some(msg) = rx.recv().await {
             let data = match msg {

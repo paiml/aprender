@@ -20,7 +20,7 @@ use std::process::ExitCode;
 /// trueno-zram: SIMD-accelerated zram management
 #[derive(Parser)]
 #[command(name = "trueno-zram")]
-#[command(author, version, about, long_about = None)]
+#[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
 pub struct Cli {
     /// Output format
     #[arg(long, default_value = "table")]

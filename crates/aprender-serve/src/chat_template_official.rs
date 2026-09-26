@@ -71,7 +71,9 @@ fn official_template_str_method(
 
 /// Positional argument `i` as a string; `None`/undefined count as absent (Python's default).
 fn str_arg(args: &[minijinja::Value], i: usize) -> Option<String> {
-    args.get(i).filter(|v| !v.is_none() && !v.is_undefined()).and_then(|v| v.as_str().map(str::to_string))
+    args.get(i)
+        .filter(|v| !v.is_none() && !v.is_undefined())
+        .and_then(|v| v.as_str().map(str::to_string))
 }
 
 /// `str.startswith` / `str.endswith`: Python accepts a str or a tuple of strs.
@@ -81,7 +83,9 @@ fn str_affix_any(
     f: &dyn Fn(&str) -> bool,
 ) -> Result<minijinja::Value, minijinja::Error> {
     use minijinja::{Error, ErrorKind, Value};
-    let a = args.first().ok_or_else(|| Error::new(ErrorKind::MissingArgument, method.to_string()))?;
+    let a = args
+        .first()
+        .ok_or_else(|| Error::new(ErrorKind::MissingArgument, method.to_string()))?;
     if let Some(p) = a.as_str() {
         return Ok(Value::from(f(p)));
     }
@@ -97,12 +101,18 @@ fn str_affix_any(
 /// `str.split(sep=None, maxsplit=-1)`.
 fn str_split(s: &str, args: &[minijinja::Value]) -> Result<minijinja::Value, minijinja::Error> {
     use minijinja::{Error, ErrorKind, Value};
-    let maxsplit = args.get(1).and_then(|v| i64::try_from(v.clone()).ok()).unwrap_or(-1);
+    let maxsplit = args
+        .get(1)
+        .and_then(|v| i64::try_from(v.clone()).ok())
+        .unwrap_or(-1);
     let parts: Vec<Value> = match str_arg(args, 0) {
         // Python: no separator splits on runs of whitespace and drops empties.
         None => s.split_whitespace().map(Value::from).collect(),
         Some(sep) if sep.is_empty() => {
-            return Err(Error::new(ErrorKind::InvalidOperation, "split: empty separator"));
+            return Err(Error::new(
+                ErrorKind::InvalidOperation,
+                "split: empty separator",
+            ));
         },
         Some(sep) if maxsplit >= 0 => s
             .splitn(usize::try_from(maxsplit).unwrap_or(0) + 1, sep.as_str())
@@ -130,18 +140,30 @@ pub fn render_official(
     env.set_trim_blocks(true);
     env.set_lstrip_blocks(true);
     env.set_unknown_method_callback(official_template_str_method);
-    env.add_function("raise_exception", |msg: String| -> Result<minijinja::Value, minijinja::Error> {
-        Err(minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, format!("template raised: {msg}")))
-    });
-    env.add_template("chat", chat_template).map_err(|e| RealizarError::FormatError {
-        reason: format!("model chat_template does not parse: {e}"),
-    })?;
-    let tmpl = env.get_template("chat").map_err(|e| RealizarError::FormatError {
-        reason: format!("model chat_template: {e}"),
-    })?;
+    env.add_function(
+        "raise_exception",
+        |msg: String| -> Result<minijinja::Value, minijinja::Error> {
+            Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("template raised: {msg}"),
+            ))
+        },
+    );
+    env.add_template("chat", chat_template)
+        .map_err(|e| RealizarError::FormatError {
+            reason: format!("model chat_template does not parse: {e}"),
+        })?;
+    let tmpl = env
+        .get_template("chat")
+        .map_err(|e| RealizarError::FormatError {
+            reason: format!("model chat_template: {e}"),
+        })?;
     let mut ctx = std::collections::BTreeMap::<&str, minijinja::Value>::new();
     ctx.insert("messages", minijinja::Value::from_serialize(messages));
-    ctx.insert("add_generation_prompt", minijinja::Value::from(add_generation_prompt));
+    ctx.insert(
+        "add_generation_prompt",
+        minijinja::Value::from(add_generation_prompt),
+    );
     if let Some(b) = bos_token {
         ctx.insert("bos_token", minijinja::Value::from(b));
     }
@@ -151,9 +173,10 @@ pub fn render_official(
     if let Some(t) = enable_thinking {
         ctx.insert("enable_thinking", minijinja::Value::from(t));
     }
-    tmpl.render(minijinja::Value::from(ctx)).map_err(|e| RealizarError::FormatError {
-        reason: format!("model chat_template failed to render: {e}"),
-    })
+    tmpl.render(minijinja::Value::from(ctx))
+        .map_err(|e| RealizarError::FormatError {
+            reason: format!("model chat_template failed to render: {e}"),
+        })
 }
 
 /// Render the GGUF's own `tokenizer.chat_template` for `messages`, with the generation
@@ -167,7 +190,8 @@ pub fn render_official_for_model(
     messages: &[ChatMessage],
     enable_thinking: Option<bool>,
 ) -> Result<String, RealizarError> {
-    let Some(crate::gguf::GGUFValue::String(tpl)) = gguf.metadata.get("tokenizer.chat_template") else {
+    let Some(crate::gguf::GGUFValue::String(tpl)) = gguf.metadata.get("tokenizer.chat_template")
+    else {
         return Err(RealizarError::FormatError {
             reason: "this GGUF carries no tokenizer.chat_template; the official renderer has nothing to render (#3990)".to_string(),
         });
@@ -178,7 +202,14 @@ pub fn render_official_for_model(
         v.get(usize::try_from(i).ok()?).cloned()
     };
     let (bos, eos) = (piece(gguf.bos_token_id()), piece(gguf.eos_token_id()));
-    render_official(tpl, bos.as_deref(), eos.as_deref(), messages, true, enable_thinking)
+    render_official(
+        tpl,
+        bos.as_deref(),
+        eos.as_deref(),
+        messages,
+        true,
+        enable_thinking,
+    )
 }
 
 /// A `tokenizer_config.json` special token: a bare string, or an AddedToken object
@@ -205,9 +236,10 @@ pub fn render_official_from_tokenizer_config(
     messages: &[ChatMessage],
     enable_thinking: Option<bool>,
 ) -> Result<String, RealizarError> {
-    let cfg: serde_json::Value = serde_json::from_str(tokenizer_config_json).map_err(|e| {
-        RealizarError::FormatError { reason: format!("tokenizer_config.json does not parse: {e}") }
-    })?;
+    let cfg: serde_json::Value =
+        serde_json::from_str(tokenizer_config_json).map_err(|e| RealizarError::FormatError {
+            reason: format!("tokenizer_config.json does not parse: {e}"),
+        })?;
     let tpl = match cfg.get("chat_template") {
         Some(serde_json::Value::String(s)) => Some(s.as_str()),
         Some(serde_json::Value::Array(list)) => list
@@ -221,5 +253,12 @@ pub fn render_official_from_tokenizer_config(
     })?;
     let bos = tokenizer_config_token(cfg.get("bos_token"));
     let eos = tokenizer_config_token(cfg.get("eos_token"));
-    render_official(tpl, bos.as_deref(), eos.as_deref(), messages, true, enable_thinking)
+    render_official(
+        tpl,
+        bos.as_deref(),
+        eos.as_deref(),
+        messages,
+        true,
+        enable_thinking,
+    )
 }

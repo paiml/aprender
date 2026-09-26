@@ -1,0 +1,167 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 23.151644468,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=aprender-contracts@0.69.0",
+            "--package=aprender-contracts-cli@0.69.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 59.082406528,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=aprender-contracts@0.69.0",
+            "--package=aprender-contracts-cli@0.69.0",
+            "--lib"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/aprender-contracts/src/discharge/mod.rs:63:9: replace Tree::load -> Result<Self, String> with Ok(Default::default())",
+          "package": "aprender-contracts",
+          "file": "crates/aprender-contracts/src/discharge/mod.rs",
+          "function": {
+            "function_name": "Tree::load",
+            "return_type": "-> Result<Self, String>",
+            "span": {
+              "start": {
+                "line": 61,
+                "column": 5
+              },
+              "end": {
+                "line": 75,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 63,
+              "column": 9
+            },
+            "end": {
+              "line": 74,
+              "column": 11
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/crates__aprender-contracts__src__discharge__mod.rs_line_63_col_9.log",
+      "diff_path": "diff/crates__aprender-contracts__src__discharge__mod.rs_line_63_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.6298631380000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=aprender-contracts@0.69.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/aprender-contracts/src/discharge/mod.rs:64:12: delete ! in Tree::load",
+          "package": "aprender-contracts",
+          "file": "crates/aprender-contracts/src/discharge/mod.rs",
+          "function": {
+            "function_name": "Tree::load",
+            "return_type": "-> Result<Self, String>",
+            "span": {
+              "start": {
+                "line": 61,
+                "column": 5
+              },
+              "end": {
+                "line": 75,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 64,
+              "column": 12
+            },
+            "end": {
+              "line": 64,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__aprender-contracts__src__discharge__mod.rs_line_64_col_12.log",
+      "diff_path": "diff/crates__aprender-contracts__src__discharge__mod.rs_line_64_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 35.61587292,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=aprender-contracts@0.69.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 109.881691064,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=aprender-contracts@0.69.0",
+            "--lib"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 2,
+  "missed": 1,
+  "caught": 25,
+  "timeout": 0,
+  "unviable": 3,
+  "success": 0,
+  "start_time": "2026-09-24T05:58:58.204261201Z",
+  "end_time": null,
+  "cargo_mutants_version": "27.0.0"
+}

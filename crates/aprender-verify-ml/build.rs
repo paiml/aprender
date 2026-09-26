@@ -1,4 +1,7 @@
 fn main() {
+    // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
+    build_sha::emit();
+
     // Provable-contracts enforcement (CB-1208)
     let contracts_dir = std::path::Path::new("../../provable-contracts/contracts");
     let pkg = env!("CARGO_PKG_NAME");

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://antigravity.google/",
+          "version": "1.2.11",
+          "rules": [
+            {
+              "id": "new-schedule-mutants-nightly"
+            },
+            {
+              "id": "guard-steps-swallowed-scan-error"
+            },
+            {
+              "id": "coverage-log-swallowed-grep-error"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "new-schedule-mutants-nightly",
+          "level": "note",
+          "message": {
+            "text": "New `schedule:` cron trigger (01:00 UTC) added to brand-new workflow .github/workflows/mutants-nightly.yml, widening execution surface to run unattended on a schedule rather than only manual/dispatch."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/mutants-nightly.yml"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "excerpt_sha256": "fc2f41e67380480fbcfb7cf62cd26f46fa96358c94afaaaae5a914d3d2f73cb2",
+            "agy_conversation_id": "3d82db3f-f9c7-4c10-b27d-36dfe5bdc824",
+            "agy_model_id": "gemini-3.1-pro-high",
+            "reverified_by_primary": true,
+            "primary_verification": "Confirmed mutants-nightly.yml is an entirely new (+ only) file genuinely containing schedule: - cron: '0 1 * * *'. Low-severity/informational: new nightly workflows commonly carry a schedule; no untrusted-input path found feeding this trigger.",
+            "source": "+    - cron: '0 1 * * *'   # 01:00 UTC",
+            "excerpt": "+    - cron: '0 1 * * *'   # 01:00 UTC",
+            "failure_scenario": "If a future commit on this schedule introduces a supply-chain-tainted dependency or workflow step, it now runs unattended nightly on a self-hosted/CI runner rather than only on manual dispatch, widening the window an untrusted change could execute with CI credentials before a human reviews it."
+          }
+        },
+        {
+          "ruleId": "guard-steps-swallowed-scan-error",
+          "level": "warning",
+          "message": {
+            "text": "scripts/check_guard_steps_isolated.sh line 59 assigns out=\"$(scan \"$f\")\" without `set -e` or explicit rc capture; if scan crashes, out is empty, [ -n \"$out\" ] is false, and the guard exits 0 (pass) instead of failing."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_guard_steps_isolated.sh"
+                },
+                "region": {
+                  "startLine": 59
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "excerpt_sha256": "83c4739dc26f0ceda6a2b00163e298c2ca370666deb27472a24a717684da8464",
+            "agy_conversation_id": "a1065250-3007-49c4-b585-723cfd6d0b79",
+            "agy_model_id": "gemini-3.1-pro-high",
+            "reverified_by_primary": true,
+            "primary_verification": "Confirmed against actual file content, lines 50-65: check() { ... out=\"$(scan \"$f\")\"; if [ -n \"$out\" ]; then bad=1; ...}. Real narrow robustness gap; guard self-test itself passed rc=0 in this review.",
+            "source": "out=\"$(scan \"$f\")\"",
+            "excerpt": "out=\"$(scan \"$f\")\"",
+            "failure_scenario": "If `scan` crashes or errors for a given file (unexpected input, missing tool, permissions), `out` becomes empty because the command substitution's failure is not captured; `[ -n \"$out\" ]` is then false and the guard exits 0, silently marking an unreviewed file as isolated-and-passing instead of failing the required check."
+          }
+        },
+        {
+          "ruleId": "coverage-log-swallowed-grep-error",
+          "level": "warning",
+          "message": {
+            "text": "scripts/check_coverage_log_complete.sh line 28 pipes grep into `|| true`; if grep errors (rc=2) under pipefail, killed becomes empty and the guard passes (exit 0) instead of failing, which could let a required check pass vacuously."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_coverage_log_complete.sh"
+                },
+                "region": {
+                  "startLine": 28
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "excerpt_sha256": "f13134826cbbda3e2e23893980b471818b681599c38620c3a2436cab18eba4df",
+            "agy_conversation_id": "a1065250-3007-49c4-b585-723cfd6d0b79",
+            "agy_model_id": "gemini-3.1-pro-high",
+            "reverified_by_primary": true,
+            "primary_verification": "Confirmed against actual file content, lines 20-32. Overlaps conceptually with Lane C's vacuous-pass mandate despite surfacing from Lane B; guard self-test itself passed rc=0 in this review.",
+            "source": "killed=$(grep -E \"$KILLED_RE\" \"$log\" | sed -E 's/.*deps\\/([^ `]+).*(\\(signal: [^)]*\\)).*/\\1 \\2/' || true)",
+            "excerpt": "killed=$(grep -E \"$KILLED_RE\" \"$log\" | sed -E 's/.*deps\\/([^ `]+).*(\\(signal: [^)]*\\)).*/\\1 \\2/' || true)",
+            "failure_scenario": "If grep errors (e.g. rc=2 from a malformed $KILLED_RE or unreadable $log) under `pipefail`, `|| true` swallows the failure and `killed` becomes empty; the guard then reports the coverage log as complete/passing when it never actually parsed the mutation log, letting the required check pass vacuously."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://mutants.rs/",
+          "version": "guard-self-test-scope",
+          "rules": [
+            {
+              "id": "ont-ratchet-selftest-inconclusive"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "ont-ratchet-selftest-inconclusive",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_ont_ratchet.sh --self-test did not complete within budget across 4 escalating attempts (15s, 90s, 240s, 300s) under measured host contention (load average up to 67); result is inconclusive, not a confirmed pass or failure. 17 of the other 18 self-test-capable guards touched by this diff completed with rc=0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ont_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "measurement": "4 timed attempts (15s/90s/240s/300s), each reaching a different partial point (~7-8 'ok' lines) before being killed; not deterministic slow-but-linear progress, consistent with genuine host-load flakiness rather than a logic defect.",
+            "host_load_average_observed": "up to 67 (1-min)",
+            "failure_scenario": "A guard whose self-test cannot be confirmed to terminate cannot be trusted to fail correctly in CI either; if check_ont_ratchet.sh hangs or times out in a real PR's required-check run under similar host load, the job could be killed and treated as a skip/pass by surrounding CI plumbing rather than a hard failure, letting a ratchet regression merge unreviewed."
+          }
+        }
+      ]
+    }
+  ]
+}

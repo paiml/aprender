@@ -51,6 +51,12 @@ sourced_basenames() {
         | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u
 }
 
+# Sourced through a VARIABLE, which the literal-name discovery above cannot see:
+# apr_bin.sh and pv_bin.sh load `. "$APR_NP_LIB"` (#4186), on every source. Named
+# here so the check covers them; a named file that is missing fails below, so
+# the list cannot go stale silently.
+VAR_SOURCED="nightly_pin.sh"
+
 scan_file() {
     local f="$1"
     grep -nE "$SETOPT_RE" "$f" 2>/dev/null || true
@@ -59,7 +65,11 @@ scan_file() {
 violations=0
 checked=0
 
-for base in $(sourced_basenames); do
+for base in $VAR_SOURCED; do
+    [ -f "$SEARCH_DIR/$base" ] || { printf 'ERROR: %s is named in VAR_SOURCED but %s/%s does not exist.\n' "$base" "$SEARCH_DIR" "$base" >&2; exit 1; }
+done
+
+for base in $( { sourced_basenames; printf '%s\n' $VAR_SOURCED; } | sort -u); do
     f="$SEARCH_DIR/$base"
     [ -f "$f" ] || continue
     # A file that sources itself is not interesting; skip self-references.

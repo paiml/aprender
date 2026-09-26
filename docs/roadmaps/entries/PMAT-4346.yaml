@@ -1,0 +1,17 @@
+- id: PMAT-4346
+  github_issue: 4346
+  item_type: task
+  title: 'qwen-story-daily builds apr in place instead of cargo-installing into the gx10 host ~/.cargo/bin (fleet-bins clobber) (#4346)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-e6
+  created: 2026-09-25T02:51:16Z
+  updated: 2026-09-25T02:51:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

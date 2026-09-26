@@ -66,7 +66,6 @@ fn gen_config_from_request(
     }
 }
 
-
 /// The Qwen3.5 arm of the chat backend chain (#3571).
 ///
 /// `None` when this state serves no hybrid, so the chain falls through
@@ -174,7 +173,9 @@ async fn try_qwen35_backend(
     let turn = tokio::task::spawn_blocking(move || match session.session.lock() {
         Ok(mut s) => {
             let r = s.generate(&input_ids, &gen_config, &mut |_| true);
-            session.on_gpu.store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+            session
+                .on_gpu
+                .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
             r.map_err(|e| e.to_string())
         },
         Err(_) => Err(POISONED.to_string()),
@@ -201,7 +202,10 @@ async fn try_qwen35_backend(
     };
 
     let mut generated_ids = turn.tokens[prompt_token_count..].to_vec();
-    if generated_ids.last().is_some_and(|t| stop_tokens.contains(t)) {
+    if generated_ids
+        .last()
+        .is_some_and(|t| stop_tokens.contains(t))
+    {
         generated_ids.pop();
     }
     let completion_tokens = generated_ids.len();

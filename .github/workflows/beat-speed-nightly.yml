@@ -130,7 +130,7 @@ jobs:
       # anything, and self-heal the known poisoned-uv-cache fault in place.
       - name: Preflight — scikit-learn/numpy baseline must be importable
         id: preflight
-        run: bash scripts/check_beat_baseline_env.sh
+        run: setsid --wait bash scripts/check_beat_baseline_env.sh
 
       - name: Pillar-1 — apr vs scikit-learn LinearRegression speed beat
         if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
@@ -212,7 +212,7 @@ jobs:
       # not "pass quietly", it went dark. Assert all ten reported.
       - name: Every beat must have reported a measurement
         if: ${{ !cancelled() }}
-        run: bash scripts/check_beat_measurements.sh "$BEAT_LOG"
+        run: setsid --wait bash scripts/check_beat_measurements.sh "$BEAT_LOG"
 
       # Closing half of the receipt. The neighbour count is passed in through
       # `env:` rather than spliced into the script body: Actions substitutes

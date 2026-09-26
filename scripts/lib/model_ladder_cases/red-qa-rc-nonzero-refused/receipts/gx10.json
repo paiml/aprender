@@ -127,7 +127,19 @@
    "file": "c.gguf",
    "qa_rc": 0,
    "gates_failed": [],
-   "gates_account_for_rc": true
+   "gates_account_for_rc": true,
+   "fit": {
+    "tool": "llama-fit-params",
+    "pin": "d1d3c3396",
+    "llama_cpp": "d1d3c3396",
+    "free_mib": 23332,
+    "ctx": 32768,
+    "ngl": -1,
+    "rc": 0,
+    "raw": "-c 32768 -ngl -1",
+    "verdict": "fits",
+    "reason": "full GPU at ctx 32768"
+   }
   },
   {
    "id": "q3-q4km",
@@ -248,7 +260,19 @@
    "file": "q.gguf",
    "qa_rc": 0,
    "gates_failed": [],
-   "gates_account_for_rc": true
+   "gates_account_for_rc": true,
+   "fit": {
+    "tool": "llama-fit-params",
+    "pin": "d1d3c3396",
+    "llama_cpp": "d1d3c3396",
+    "free_mib": 23332,
+    "ctx": 32768,
+    "ngl": -1,
+    "rc": 0,
+    "raw": "-c 32768 -ngl -1",
+    "verdict": "fits",
+    "reason": "full GPU at ctx 32768"
+   }
   }
  ],
  "inventory": [
