@@ -174,11 +174,64 @@ exit 0
 EOF
 )
 
+# ---- the shadow lane: paused for the floor, resumed fail-CLOSED ------------------------
+# The floor host's :8091 review lane (apr-review-serve.service, infra#1088) serves from the
+# same GPU the floor measures on, so both the rc and the previous line would decode against
+# it. It is paused through the host's own pause unit (apr-shadow-pause.service: starting it
+# drains and stops the lane, frees the GPU lock, and blocks restarts; stopping it resumes),
+# never by stopping the lane directly, which its restart policy would undo mid-measurement.
+# An EXIT trap resumes however the floor ends. The lane counts as back only when the unit is
+# active AND its port listens; anything else is a `shadow-lane` FAIL row, never waivable, so
+# a stage that leaves the lane down cannot publish.
+SHADOW_UNIT=${RC_FLEET_SHADOW_UNIT:-apr-review-serve.service}
+SHADOW_PAUSE_UNIT=${RC_FLEET_SHADOW_PAUSE_UNIT:-apr-shadow-pause.service}
+SHADOW_PORT=${RC_FLEET_SHADOW_PORT:-8091}
+SHADOW_WAIT=${RC_FLEET_SHADOW_WAIT:-300}
+# args: <lane unit> <pause unit>. Prints `paused` | `idle` (lane not serving, or already paused
+# by anyone -- a pause someone else holds is not ours to lift: left as found) | `ERR <why>`.
+SHADOW_PAUSE_SH='set -u
+u=$1 p=$2
+systemctl --user is-active --quiet "$p" && { echo idle; exit 0; }
+systemctl --user is-active --quiet "$u" || { echo idle; exit 0; }
+systemctl --user start "$p" || { echo "ERR systemctl --user start $p failed"; exit 0; }
+if systemctl --user is-active --quiet "$u"; then echo "ERR $u still active after $p"; else echo paused; fi'
+# args: <lane unit> <pause unit> <port> <wait s>. Prints `up <detail>` | `DOWN <why>`.
+SHADOW_RESUME_SH='set -u
+u=$1 p=$2 port=$3 w=$4 i=0
+systemctl --user stop "$p" || { echo "DOWN systemctl --user stop $p failed"; exit 0; }
+while :; do
+    if systemctl --user is-active --quiet "$u" && [ -n "$(ss -Hltn "sport = :$port" 2>/dev/null)" ]; then
+        echo "up $u active, :$port listening after ${i}s"; exit 0
+    fi
+    [ "$i" -ge "$w" ] && break
+    sleep 5; i=$((i + 5))
+done
+echo "DOWN $u is $(systemctl --user is-active "$u" 2>/dev/null) and :$port is not listening after ${w}s"'
+
+# shadow_resume_row <ssh-target> <host> <tag> <commit> <pause answer> -> the `shadow-lane` row.
+# Run from decode_floor_row's EXIT trap, so it prints on every path out of the floor.
+shadow_resume_row() {
+    local t=$1 h=$2 tag=$3 commit=$4 was=$5 out state detail
+    if [ "$was" = idle ]; then
+        state=pass detail="$SHADOW_UNIT was not serving (or already paused) before the floor; left as found"
+    else
+        out=$(rx_script "$t" "$SHADOW_UNIT" "$SHADOW_PAUSE_UNIT" "$SHADOW_PORT" "$SHADOW_WAIT" <<< "$SHADOW_RESUME_SH" 2>/dev/null)
+        detail="paused for the floor"; [ "$was" = paused ] || detail="pause failed (${was:-no answer})"
+        case "$out" in
+            "up "*) state=pass detail="$detail, resumed: ${out#up }" ;;
+            *) state=fail detail="LANE LEFT DOWN after the floor: ${out:-no answer from $h} ($detail)" ;;
+        esac
+    fi
+    printf 'shadow-lane\ton %s\t%s\t%s\t-\t%s\t%s\n' "$h" "$tag" "${commit:0:9}" "$state" "$detail"
+}
+
 # decode_floor_row <tag> <commit> <assets dir> <hosts table> <stage rows> -> one receipt row,
 # host `decode-floor`: pass | fail (never waivable) | unreachable (not measured; only a dated
-# `decode-floor` waiver covers it). Thresholds and the model live in scripts/perf-matrix.yaml.
-decode_floor_row() {
-    local tag=$1 commit=$2 ad=$3 hosts=$4 rows=$5 df="$HERE/decode_floor.py" fh t as prev asset rdir out err state detail
+# `decode-floor` waiver covers it), then the `shadow-lane` row when the lane was touched.
+# Thresholds and the model live in scripts/perf-matrix.yaml.
+decode_floor_row() (  # a subshell: its EXIT trap is the shadow lane's resume, on every path out
+    # no `local`: the subshell already scopes every name set here
+    tag=$1 commit=$2 ad=$3 hosts=$4 rows=$5 df="$HERE/decode_floor.py"
     fh=${RC_FLEET_FLOOR_HOST:-$(python3 "$df" get host 2>/dev/null)}
     row() { printf 'decode-floor\ton %s\t%s\t%s\t-\t%s\t%s\n' "${fh:-?}" "$tag" "${commit:0:9}" "$1" "$2"; }
     [ -n "$fh" ] || { row unreachable "no release_gates.decode_floor.host in scripts/perf-matrix.yaml"; return 0; }
@@ -194,6 +247,16 @@ decode_floor_row() {
     [ -f "$ad/prev/$asset" ] && [ -f "$ad/prev/$asset.sha256" ] || { row unreachable "cannot download $asset"; return 0; }
     rdir=.cache/rc-stage/$tag/prev
     put "$t" "$rdir" "$ad/prev/$asset" "$ad/prev/$asset.sha256" || { row unreachable "copy of $asset to $fh failed"; return 0; }
+    # Pause the shadow lane, and arm its resume BEFORE reading the answer: a stop that half
+    # worked still gets a resume. The trap's arguments are frozen now (%q), not read at exit.
+    paused=$(rx_script "$t" "$SHADOW_UNIT" "$SHADOW_PAUSE_UNIT" <<< "$SHADOW_PAUSE_SH" 2>/dev/null)
+    # shellcheck disable=SC2064
+    trap "shadow_resume_row $(printf '%q ' "$t" "$fh" "$tag" "$commit" "${paused:-ERR no answer}")" EXIT
+    trap 'exit 130' INT TERM HUP
+    case "$paused" in
+        paused|idle) ;;
+        *) row unreachable "the shadow lane $SHADOW_UNIT could not be paused: ${paused:-no answer}"; return 0 ;;
+    esac
     out=$(rx_script "$t" "$rdir" "$asset" "$(python3 "$df" get model)" "$(python3 "$df" get n)" \
         "$(python3 "$df" get max_tokens)" "$(python3 "$df" get gpu_wait)" <<< "$DECODE_SH" 2>/dev/null)
     err=$(printf '%s\n' "$out" | sed -n 's/^ERR //p' | head -n 1)
@@ -205,7 +268,7 @@ decode_floor_row() {
         *) detail="decode_floor.py said '$state'"; state=fail ;;
     esac
     row "$state" "vs $prev: $detail"
-}
+)
 
 tag_commit() {  # the commit a tag names (annotated tags dereferenced)
     [ -n "${RC_FLEET_COMMIT:-}" ] && { echo "$RC_FLEET_COMMIT"; return 0; }
@@ -310,6 +373,29 @@ self_test() {
     mkdir -p "$d/hosts/good1/shadow" "$d/hosts/good1/models"
     : > "$d/hosts/good1/$(python3 "$HERE/decode_floor.py" get model | sed 's|^~/||')"
     printf '#!/bin/sh\nshift 3; exec "$@"\n' > "$d/hosts/good1/shadow/gpu-q"; chmod +x "$d/hosts/good1/shadow/gpu-q"
+    # ...and a shadow lane: a user unit whose state is a file, and an `ss` that lists its port
+    # only while it is active and not told to hang (unit.noport). gpu-q logs the lane's state
+    # at the moment it measures, so "paused DURING the floor" is observed, not assumed.
+    cat > "$d/hosts/good1/shadow/systemctl" <<'EOF'
+#!/bin/sh
+# two units, as on gx10: the lane (unit.state) and its pause unit (pause.state). Starting the
+# pause stops the lane; stopping it brings the lane back unless unit.nostart says it won't.
+[ "$1" = --user ] && shift
+v=$1; shift; q=0; [ "$1" = --quiet ] && { q=1; shift; }
+case "$1" in apr-shadow-pause*) st=$HOME/pause.state ;; *) st=$HOME/unit.state ;; esac
+case "$v" in
+  is-active) s=$(cat "$st" 2>/dev/null || echo inactive); [ "$q" = 1 ] || echo "$s"; [ "$s" = active ] ;;
+  start) [ "$st" = "$HOME/pause.state" ] || exit 1; echo active > "$st"; echo inactive > "$HOME/unit.state" ;;
+  stop) [ "$st" = "$HOME/pause.state" ] || exit 1; echo inactive > "$st"
+        [ -f "$HOME/unit.nostart" ] || echo active > "$HOME/unit.state" ;;
+  *) exit 1 ;;
+esac
+EOF
+    printf '#!/bin/sh\n[ "$(cat "$HOME/unit.state" 2>/dev/null)" = active ] && [ ! -f "$HOME/unit.noport" ] && echo "LISTEN 0 128 127.0.0.1:8091 0.0.0.0:*"\nexit 0\n' \
+        > "$d/hosts/good1/shadow/ss"
+    printf '#!/bin/sh\ncat "$HOME/unit.state" >> "$HOME/gpuq.seen"\nshift 3; exec "$@"\n' > "$d/hosts/good1/shadow/gpu-q"
+    chmod +x "$d/hosts/good1/shadow/"*
+    lane() { cat "$d/hosts/good1/unit.state" 2>/dev/null || echo absent; }
     fake_bin pv "pv 9.9.9-rc.3 (aprender provable-contracts verifier)"
     # the bad host runs an old apr and a fleet-bins that SAYS installed and swaps nothing:
     # only verifying what PATH serves afterwards can see it (the installer is not trusted)
@@ -351,13 +437,18 @@ EOF
         for h in "$@"; do printf '%s\t%s\tx86_64-unknown-linux-gnu-cpu\tx86_64-unknown-linux-gnu\n' "$h" "$h" >> "$d/hosts.tsv"; done
         PATH="$d/bin:$PATH" RC_FLEET_COMMIT=$sha RC_FLEET_HOSTS_FILE="$d/hosts.tsv" RC_FLEET_WORK="$d/work" \
             RELEASE_ASSETS_FIXTURE="$d/complete.txt" RC_FLEET_TODAY=2026-09-24 \
-            RC_FLEET_FLOOR_HOST=good1 RC_FLEET_HERE=$HERE bash "$self" "$tag" --publish > "$d/out.txt" 2>&1
+            RC_FLEET_FLOOR_HOST=good1 RC_FLEET_SHADOW_WAIT=0 RC_FLEET_HERE=$HERE bash "$self" "$tag" --publish > "$d/out.txt" 2>&1
     }
     bash "$HERE/../check_release_assets.sh" --list "$tag" > "$d/complete.txt"
     mkdir -p "$d/work"
     e2e() {  # e2e <want rc> <want edit 0|1> <label> <hosts...>
-        local wrc=$1 wedit=$2 label=$3; shift 3
+        local wrc=$1 wedit=$2 label=$3 fl; shift 3
         rm -rf -- "${d:?}/work"; mkdir -p "$d/work"
+        # the lane starts as LANE_STATE says (default: serving), with each of LANE_FLAGS set
+        rm -f -- "${d:?}/hosts/good1/unit.nostart" "${d:?}/hosts/good1/unit.noport" "${d:?}/hosts/good1/gpuq.seen"
+        echo "${LANE_STATE:-active}" > "$d/hosts/good1/unit.state"
+        echo "${LANE_PAUSE:-inactive}" > "$d/hosts/good1/pause.state"
+        for fl in ${LANE_FLAGS:-}; do : > "$d/hosts/good1/unit.$fl"; done
         run_fleet "$@"; rc=$?
         local edited=0; grep -q '^gh release edit' "$log" && edited=1
         if [ "$rc" = "$wrc" ] && [ "$edited" = "$wedit" ]; then echo "  ok   $label (rc $rc, published=$edited)"
@@ -370,6 +461,45 @@ EOF
     grep -q '| good2 | .* | PASS |' "$d/work/receipt.md" || { echo "  FAIL receipt has no PASS row for good2"; fail=1; }
     grep -q '| decode-floor | on good1 | .* | PASS | vs v9.8.0: rc 100.0 tok/s vs prev 100.0' "$d/work/receipt.md" \
         || { echo "  FAIL receipt has no measured decode-floor PASS row"; sed 's/^/       /' "$d/work/receipt.md"; fail=1; }
+    # the shadow lane: off while gpu-q measured, serving again after, and the receipt says so
+    grep -q '| shadow-lane | on good1 | .* | PASS | paused for the floor, resumed: ' "$d/work/receipt.md" \
+        || { echo "  FAIL receipt has no shadow-lane PASS row"; sed 's/^/       /' "$d/work/receipt.md"; fail=1; }
+    [ "$(sort -u "$d/hosts/good1/gpuq.seen" 2>/dev/null)" = inactive ] \
+        || { echo "  FAIL the shadow lane was not paused while the floor measured (gpu-q saw: $(tr '\n' ' ' < "$d/hosts/good1/gpuq.seen" 2>/dev/null))"; fail=1; }
+    [ "$(lane)" = active ] || { echo "  FAIL the shadow lane is '$(lane)' after the stage, not active"; fail=1; }
+    LANE_FLAGS=noport e2e 1 0 'the shadow lane does not come back up -> RED, NOT published (fail closed)' good1 good2
+    grep -q '| shadow-lane | on good1 | .* | FAIL | LANE LEFT DOWN after the floor: DOWN ' "$d/work/receipt.md" \
+        || { echo "  FAIL the lane left down is not a FAIL row"; sed 's/^/       /' "$d/work/receipt.md"; fail=1; }
+    LANE_FLAGS=nostart e2e 1 0 'the shadow lane refuses to start -> RED, NOT published' good1 good2
+    LANE_STATE=inactive e2e 0 1 'an idle shadow lane is left as found, and does not hold the rc' good1 good2
+    [ "$(lane)" = inactive ] || { echo "  FAIL an idle lane was started by the stage: '$(lane)'"; fail=1; }
+    grep -q '| shadow-lane | .* | PASS | apr-review-serve.service was not serving (or already paused) before the floor; left as found' "$d/work/receipt.md" \
+        || { echo "  FAIL the idle lane has no left-as-found row"; fail=1; }
+    LANE_STATE=inactive LANE_PAUSE=active e2e 0 1 'a lane someone else holds paused is left paused' good1 good2
+    [ "$(cat "$d/hosts/good1/pause.state")" = active ] && [ "$(lane)" = inactive ] \
+        || { echo "  FAIL the stage lifted a pause it did not take (pause $(cat "$d/hosts/good1/pause.state"), lane $(lane))"; fail=1; }
+    # an early return AFTER the pause (the model vanished) must still resume the lane
+    mv "$d/hosts/good1/$(python3 "$HERE/decode_floor.py" get model | sed 's|^~/||')" "$d/model.away"
+    e2e 1 0 'the floor errors out after the pause -> the lane is resumed anyway' good1 good2
+    [ "$(lane)" = active ] || { echo "  FAIL the early-return floor path left the lane '$(lane)'"; fail=1; }
+    grep -q '| shadow-lane | .* | PASS | paused for the floor, resumed' "$d/work/receipt.md" \
+        || { echo "  FAIL the early-return path has no shadow-lane row"; sed 's/^/       /' "$d/work/receipt.md"; fail=1; }
+    mv "$d/model.away" "$d/hosts/good1/$(python3 "$HERE/decode_floor.py" get model | sed 's|^~/||')"
+    # MUTANT: the resume trap deleted -- the lane must be left down, and nothing reports it
+    self=$d/mutant-shadow.sh
+    sed '/^    trap "shadow_resume_row /d' "${BASH_SOURCE[0]}" > "$self"
+    if cmp -s "$self" "${BASH_SOURCE[0]}"; then echo "  FAIL shadow mutant not built: the anchor moved"; fail=1
+    else
+        e2e 0 1 'mutant (resume trap deleted) publishes silently...' good1 good2
+        if [ "$(lane)" = inactive ]; then echo "  ok   ...with the lane left DOWN: the trap is what brings it back"
+        else echo "  FAIL mutant lane is '$(lane)': something else resumes it"; fail=1; fi
+    fi
+    # MUTANT: the resume fails OPEN -- the lane left down must now get published
+    self=$d/mutant-shadow-open.sh
+    sed 's/\*) state=fail detail="LANE LEFT DOWN/*) state=pass detail="LANE LEFT DOWN/' "${BASH_SOURCE[0]}" > "$self"
+    if cmp -s "$self" "${BASH_SOURCE[0]}"; then echo "  FAIL fail-open mutant not built: the anchor moved"; fail=1
+    else LANE_FLAGS=noport e2e 0 1 'mutant (resume fails open) publishes with the lane down: the FAIL row is what holds it' good1 good2; fi
+    self=${BASH_SOURCE[0]}
     e2e 1 0 'ONE host whose PATH resolves an old apr -> NOT published (operator acceptance, #4327)' good1 bad good2
     grep -q 'bad.*FAIL.*wants 9.9.9-rc.3' "$d/work/receipt.md" || { echo "  FAIL the bad host's row does not name the version it served"; fail=1; }
     e2e 1 0 'an unreachable host -> NOT published (#4328 C7)' good1 gone
