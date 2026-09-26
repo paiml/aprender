@@ -41,6 +41,11 @@ pub(crate) const PREREGISTERED_ITERATIONS: u32 = 5;
 /// interleaved iterations. Host contention only ever slows a run, so the best
 /// iteration is the one least disturbed by it.
 pub(crate) const PREREGISTERED_STATISTIC: &str = "best_of_n_decode";
+/// Quiet-host amendment (cop ruling, 2026-09-26): the reserved cpuset's busy
+/// share, sampled over 1 s with every arm idle just before each measured
+/// iteration, may not exceed this. Host-wide load1 cannot gate a reserved
+/// cpuset (the rest of the host stays busy), so it is recorded, not gated.
+pub(crate) const PREREGISTERED_MAX_CPUSET_BUSY_PCT: f64 = 10.0;
 
 /// What every arm on a cell must share with apr's run (S-14).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +60,11 @@ pub(crate) struct Conditions {
     pub statistic: String,
     pub max_tokens: u32,
     pub prompt_sha256: String,
+    /// The systemd unit (in the reserved slice) the whole record ran under.
+    pub isolation_unit: String,
+    /// `Cpus_allowed_list` read from the harness's own /proc status: proof the
+    /// cpuset engaged, not a restatement of `cpus`.
+    pub cpus_allowed_list: String,
 }
 
 /// TTFT, ITL and e2e are medians over the measured iterations; `decode_tok_s` is
@@ -72,6 +82,10 @@ pub(crate) struct Timing {
     pub decode_tok_s_iters: Vec<f64>,
     /// The host's 1-minute load average when each iteration started.
     pub loadavg_1m_iters: Vec<f64>,
+    /// Host 1-minute load average when the record started (recorded precondition).
+    pub load1_at_start: f64,
+    /// Busy % of the reserved cpuset over 1 s, arms idle, before each iteration.
+    pub cpuset_busy_pct_iters: Vec<f64>,
 }
 
 /// The best of the iterations (NaN when there are none).
@@ -221,6 +235,35 @@ fn check_record(key: &str, r: &ArmRecord, findings: &mut Vec<String>) {
     {
         findings.push(format!(
             "arm `{key}`: a loadavg sample is not a measurement"
+        ));
+    }
+    // Quiet-host amendment: the record ran in a reserved cpuset, proven from the
+    // harness's own affinity, and that cpuset was idle before every iteration.
+    if c.isolation_unit.trim().is_empty() {
+        findings.push(format!("arm `{key}`: no isolation unit (quiet-host rule)"));
+    }
+    if c.cpus_allowed_list != c.cpus {
+        findings.push(format!(
+            "arm `{key}`: ran with Cpus_allowed_list `{}`, not the reserved cpuset `{}`",
+            c.cpus_allowed_list, c.cpus
+        ));
+    }
+    if !(t.load1_at_start.is_finite() && t.load1_at_start >= 0.0) {
+        findings.push(format!("arm `{key}`: load1 at start is not a measurement"));
+    }
+    if t.cpuset_busy_pct_iters.len() != n {
+        findings.push(format!(
+            "arm `{key}`: {} cpuset busy samples for {n} iterations",
+            t.cpuset_busy_pct_iters.len()
+        ));
+    }
+    if let Some(b) = t
+        .cpuset_busy_pct_iters
+        .iter()
+        .find(|b| !(b.is_finite() && (0.0..=PREREGISTERED_MAX_CPUSET_BUSY_PCT).contains(*b)))
+    {
+        findings.push(format!(
+            "arm `{key}`: the reserved cpuset was {b}% busy before an iteration (max {PREREGISTERED_MAX_CPUSET_BUSY_PCT}%)"
         ));
     }
     // The statistic is recomputed from the samples, never taken on the record's word.

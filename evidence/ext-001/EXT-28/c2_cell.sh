@@ -48,6 +48,40 @@ logdir=$outdir/logs
 mkdir -p "$logdir"
 prompt=$(cat "${PROMPT_FILE:?}")
 prompt_sha=$(sha256sum "$PROMPT_FILE" | cut -d' ' -f1)
+
+# Quiet-host amendment (cop ruling, 2026-09-26): the whole record runs inside a
+# unit of the reserved slice, and the cpuset is PROVEN from this process's own
+# affinity and cgroup, never taken from $CPUS. Refused otherwise.
+SLICE=${SLICE:-speedledger.slice}
+cpus_allowed=$(awk '/^Cpus_allowed_list:/{print $2}' /proc/self/status)
+[ "$cpus_allowed" = "$CPUS" ] || { echo "refused: Cpus_allowed_list is '$cpus_allowed', not the reserved cpuset '$CPUS' (run under systemd-run --slice=$SLICE -p AllowedCPUs=$CPUS)" >&2; exit 3; }
+isolation_unit=$(awk -F: '{print $3}' /proc/self/cgroup | tail -1)
+case "$isolation_unit" in
+    */"$SLICE"/*) ;;
+    *) echo "refused: cgroup '$isolation_unit' is not under $SLICE" >&2; exit 3 ;;
+esac
+load1_at_start=$(cut -d' ' -f1 /proc/loadavg)
+# Busy % of the cpuset over 1 s (all arms idle): 100 * (1 - Δidle / Δtotal), with
+# idle = idle + iowait, from /proc/stat.
+cpu_list() {
+    local part a b
+    for part in ${1//,/ }; do
+        a=${part%-*}; b=${part#*-}
+        seq "$a" "$b"
+    done
+}
+cpuset_ticks() { # -> "total idle" summed over the cpuset
+    local want
+    want=$(cpu_list "$CPUS" | sed 's/^/cpu/' | paste -sd'|')
+    awk -v re="^($want)\$" '$1 ~ re {for (i = 2; i <= NF; i++) t += $i; id += $5 + $6} END {print t, id}' /proc/stat
+}
+cpuset_busy_pct() {
+    local t0 i0 t1 i1
+    read -r t0 i0 < <(cpuset_ticks)
+    sleep 1
+    read -r t1 i1 < <(cpuset_ticks)
+    awk -v dt=$((t1 - t0)) -v di=$((i1 - i0)) 'BEGIN{printf "%.2f", (dt > 0) ? 100 * (1 - di / dt) : 100}'
+}
 utc() { date -u +%Y-%m-%dT%H:%M:%S.%3NZ; }
 
 declare -A PORT SERVED FILE VERSION ENGINE ENVSHA CMDJSON PID LOAD STARTED FINISHED
@@ -176,10 +210,11 @@ for it in $(seq 1 "$N"); do
     for j in $(seq 0 $((k - 1))); do
         arm=${arms[$(((it - 1 + j) % k))]}
         [ -n "${STARTED[$arm]:-}" ] || STARTED[$arm]=$(utc)
+        busy=$(cpuset_busy_pct)
         la=$(cut -d" " -f1 /proc/loadavg)
         r=$(measure "$arm" "$it")
         [ "$r" != ERR ] || { echo "$arm: iteration $it streamed < 2 text chunks: $(tail -c 400 "$logdir/$arm.iter$it.sse.err" 2>/dev/null) $(tail -c 400 "$logdir/$arm.iter$it.sse")" >&2; exit 1; }
-        echo "$r $la" >>"$logdir/$arm.iters"
+        echo "$r $la $busy" >>"$logdir/$arm.iters"
         FINISHED[$arm]=$(utc)
     done
 done
@@ -226,6 +261,8 @@ for arm in "${arms[@]}"; do
         --argjson e2e "$(col 3)" --argjson rss "$peak" \
         --argjson tpsi "$(awk '{print $5}' "$logdir/$arm.iters" | jq -s .)" \
         --argjson lai "$(awk '{print $6}' "$logdir/$arm.iters" | jq -s .)" \
+        --argjson busyi "$(awk '{print $7}' "$logdir/$arm.iters" | jq -s .)" \
+        --arg iso "$isolation_unit" --arg allowed "$cpus_allowed" --argjson l1 "$load1_at_start" \
         --argjson command "${CMDJSON[$arm]}" \
         --arg envsha "${ENVSHA[$arm]}" --arg asha "$artifact_sha" --arg log "logs/$arm.server.log" \
         --arg started "${STARTED[$arm]}" --arg finished "${FINISHED[$arm]}" \
@@ -233,10 +270,12 @@ for arm in "${arms[@]}"; do
           vision_tensors:$vision, served_model:$served,
           ollama_manifest_digest:(if $digest == "" then null else $digest end),
           conditions:{cpus:$cpus, threads:$threads, concurrency:1, iterations:$n, statistic:"best_of_n_decode",
+                      isolation_unit:$iso, cpus_allowed_list:$allowed,
                       max_tokens:$max, prompt_sha256:$psha},
           timing:{load_ms:$load, ttft_ms:$ttft, itl_ms:$itl, e2e_ms:$e2e,
                   decode_tok_s:($tpsi | max), decode_tok_s_iters:$tpsi,
-                  loadavg_1m_iters:$lai, peak_rss_kb:$rss},
+                  loadavg_1m_iters:$lai, load1_at_start:$l1, cpuset_busy_pct_iters:$busyi,
+                  peak_rss_kb:$rss},
           comparator:{command:$command, version:$version, env_sha256:$envsha,
                       artifact_sha256:$asha, log_path:$log,
                       started_utc:$started, finished_utc:$finished}}' >"$outdir/$arm.json"

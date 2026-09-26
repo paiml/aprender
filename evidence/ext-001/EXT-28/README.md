@@ -123,3 +123,31 @@ contended, and llama.cpp still degrades less than apr (2.92 vs 5.05 best), so th
 ratio falls. The 1-minute load average lags, so a low reading (r4 iteration 4: 25) does
 not mean that iteration ran quiet. Per the ruling this is recorded, not tuned away:
 TOLERANCE and the statistic are unchanged.
+
+## Amendment: quiet-host rule (cop ruling, 2026-09-26, after the best-of-5 RED)
+
+Registered in this commit, before any record under it exists. The statistic, N and
+TOLERANCE are unchanged. The records above stay as evidence of why this amendment exists.
+
+- **Every record runs inside a unit of the reserved slice.** It is started as
+  `systemd-run --user --slice=speedledger.slice -p AllowedCPUs=$CPUS …`; the cores
+  are reserved through infra-8d's slice, and every foreign slice is fenced off them.
+- **The mechanism is proven, not declared.** `c2_cell.sh` refuses (exit 3) unless
+  its own `Cpus_allowed_list` equals `$CPUS` and its cgroup lies under the slice.
+  Both values are written into each arm's `conditions` (`cpus_allowed_list`,
+  `isolation_unit`), and `check_record` refuses a record where they disagree.
+- **The cpuset must be sibling-complete.** On lambda, CPU 24+k is the SMT sibling of
+  core k, so a reserved set must hold both threads of each core. For example,
+  `16-23,40-47` is 8 cores, 16 threads.
+- **Preconditions, recorded in the receipt:**
+  - Host `load1_at_start` is recorded, not gated. Host-wide load includes the
+    fenced-off rest of the host.
+  - The reserved cpuset's busy share is measured over 1 s, with every arm idle,
+    before each measured iteration (`cpuset_busy_pct_iters`, from `/proc/stat`). It
+    must be ≤ 10 % (`PREREGISTERED_MAX_CPUSET_BUSY_PCT`). A busy iteration turns the
+    record RED; it is not retried or dropped.
+- **Pass condition as before:** the unpatched control GREEN against the r1–r3 floor, and
+  the 1 s/step plant RED.
+
+At registration, the unfenced `16-23,40-47` measured about 75 % busy. The
+precondition refuses that host state, as intended.

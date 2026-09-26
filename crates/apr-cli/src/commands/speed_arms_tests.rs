@@ -28,6 +28,8 @@ fn record(arm: &str, tok_s: f64) -> ArmRecord {
             statistic: PREREGISTERED_STATISTIC.into(),
             max_tokens: 32,
             prompt_sha256: sha(3),
+            isolation_unit: "speedledger-c2.service".into(),
+            cpus_allowed_list: "0-15".into(),
         },
         timing: Timing {
             load_ms: 1000.0,
@@ -37,6 +39,8 @@ fn record(arm: &str, tok_s: f64) -> ArmRecord {
             decode_tok_s: tok_s,
             decode_tok_s_iters: vec![tok_s * 0.8, tok_s, tok_s * 0.9, tok_s * 0.7, tok_s * 0.95],
             loadavg_1m_iters: vec![31.0, 32.5, 30.2, 29.9, 33.1],
+            load1_at_start: 31.0,
+            cpuset_busy_pct_iters: vec![0.4, 1.1, 0.0, 2.5, 0.9],
             peak_rss_kb: 4_000_000,
         },
         comparator: ComparatorBlock {
@@ -148,7 +152,7 @@ fn each_unlike_arm_is_refused_and_red_if_recorded_as_measured() {
 #[test]
 fn each_plant_turns_the_cell_red() {
     type Plant = (&'static str, fn(&mut CellReceipt));
-    let plants: [Plant; 17] = [
+    let plants: [Plant; 22] = [
         ("empty tag", |c| c.tag.clear()),
         ("no apr arm", |c| {
             c.arms.remove("apr");
@@ -223,6 +227,31 @@ fn each_plant_turns_the_cell_red() {
         ("a NaN loadavg sample", |c| {
             if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
                 r.timing.loadavg_1m_iters[2] = f64::NAN;
+            }
+        }),
+        ("no isolation unit", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
+                r.conditions.isolation_unit = " ".into();
+            }
+        }),
+        ("the harness's affinity is not the reserved cpuset", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
+                r.conditions.cpus_allowed_list = "0-47".into();
+            }
+        }),
+        ("a NaN load1 precondition", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("llama.cpp") {
+                r.timing.load1_at_start = f64::NAN;
+            }
+        }),
+        ("a busy cpuset before an iteration", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
+                r.timing.cpuset_busy_pct_iters[3] = 37.5;
+            }
+        }),
+        ("a missing cpuset busy sample", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("llama.cpp") {
+                r.timing.cpuset_busy_pct_iters.pop();
             }
         }),
         ("a not_run cell with arms", |c| {
