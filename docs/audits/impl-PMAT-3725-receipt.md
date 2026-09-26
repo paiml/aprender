@@ -33,7 +33,7 @@ The device tests were re-run at `01118724d` on both hosts, and both oxide receip
   - The attention layer step calls the split-K pair with `KvStorage::F32`.
 - **Not modified:**
   - `DecodeAttention256Kernel` / `decode_attention.rs` is the parity reference.
-  - `gdn_decode_attention_into` is now called only by the executor-level parity test.
+  - `gdn_decode_attention_into` is no longer on the Qwen3.5 decode path. It keeps two callers: the executor-level parity test and the qwen3moe resident path (`forward_qwen3_moe_resident.rs:963`).
   - `Qwen35CudaState` and the KV row writes belong to #3596.
 - **`aprender-gpu/examples/gdn_splitk_rungs.rs`:** the rungs receipt. `--emit-ptx DIR` writes the builder PTX for the oxide A/B.
 - **`experiments/cuda-oxide/splitk-decode-attention/`:** the same algorithm as cuda-oxide `#[kernel]`s (b9847e95, nightly-2026-08-28), with the twin, an f64 reference, and an in-process A/B against the builder PTX. This is cop ruling (2): production stays builder-PTX until OXIDE-001 O-1.
@@ -120,3 +120,15 @@ Same buffers, same stream, CUDA events, median of 5 × 20. The builder PTX comes
 - **The e2e decode tok/s table vs pinned llama.cpp is not here.** Cop ruling (1): it follows #3596's batched prefill, the issue stays open, and this PR uses `Refs`.
 - **Occupancy headroom:** 120 regs → ~16 warps/SM on sm_89, and 155 regs for the 27B → 8 warps/SM. At 148k–262k the f32 kernel already runs near peak bandwidth on lambda. The gx10 f16 path, at ~55% of LPDDR5X peak, is the place a later tuning pass would pay.
 - **Graph replay:** the split count is a runtime scalar. The Qwen3.5 decode path does not use the manual decode graph (neither did the 16-block kernel, whose `seq_len` is also a per-token scalar). The launches are still recorded, like every GDN wrapper.
+
+## Round 3 — #4215 zero-alloc decode (quorum BLOCKER, sonnet-b)
+
+The split-K wrapper built both module-cache keys with `format!` on every call. Both now use
+`module_key!`, the #4215 pattern. Lambda (RTX 4090) evidence, from the `realizar` lib test binary built with `--features cuda`:
+
+- Fixed tree: `a_steady_state_greedy_decode_token_allocates_nothing_and_downloads_only_the_token_id`
+  printed `[4215] per steady-state token: host allocs 0.0, device allocs 0.0, D2H bytes 4.0` and passed.
+  In the same run, both `gdn_decode_splitk_ops::tests` passed and
+  `greedy_on_the_device_is_token_identical_to_the_cpu_argmax_of_the_logits` passed (4/4).
+- Mutant (kernel-A key reverted to `format!`): `host allocs 12.0` and the test FAILED at
+  `forward_qwen35_decode_overhead_tests.rs:152`. The test reaches the split-K call site and catches this defect.

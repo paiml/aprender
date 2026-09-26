@@ -70,9 +70,14 @@ impl CudaExecutor {
             head_dim,
             kv_f16: kv == KvStorage::F16,
         };
-        let a_key = format!(
-            "gdn_decode_attention_splitk_{}_{num_heads}_{num_kv_heads}_{head_dim}",
-            kv.tag()
+        // #4215: formatted on first sight only; steady-state decode allocates nothing.
+        let a_key = module_key!(
+            self,
+            "gdn_decode_attention_splitk_{}_{}_{}_f16{}",
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            u8::from(kv == KvStorage::F16)
         );
         let a_name = self.gdn_prepare(&a_type, &a_key)?;
         let (gx, gy, _) = a.grid(plan);
@@ -100,7 +105,12 @@ impl CudaExecutor {
             num_heads,
             head_dim,
         };
-        let b_key = format!("gdn_decode_attention_splitk_reduce_{num_heads}_{head_dim}");
+        let b_key = module_key!(
+            self,
+            "gdn_decode_attention_splitk_reduce_{}_{}",
+            num_heads,
+            head_dim
+        );
         let b_name = self.gdn_prepare(&b_type, &b_key)?;
         let (gx, _, _) = b.grid();
         let (bx, _, _) = b.block();
