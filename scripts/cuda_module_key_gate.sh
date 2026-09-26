@@ -155,6 +155,44 @@ summary_count() {
     printf '%s\n' "${n:-0}"
 }
 
+# test_binary BUILD_LOG CARGO_ARGS... - build a crate's release lib test binary (no run) and
+# print its path; non-zero if it does not build or cargo names no executable.
+test_binary() {
+    local build_log="$1" exe
+    shift
+    exe=$(cargo test "$@" --lib --release --no-run --message-format=json 2>"$build_log" \
+        | jq -r 'select(.reason == "compiler-artifact" and .profile.test and .executable != null) | .executable' \
+        | tail -1) || return 1
+    [ -n "$exe" ] && [ -x "$exe" ] || return 1
+    printf '%s\n' "$exe"
+}
+
+# run_each_under_lock BIN LIST LOG - run every test named in LIST, one process per test,
+# each under its own hold of $GPU_LOCK, appending to LOG. Ends LOG with one synthesized
+# libtest `test result:` line carrying the summed counts, so summary_count reads the whole
+# suite. Returns non-zero iff any test failed or the list was empty.
+run_each_under_lock() {
+    local bin="$1" list="$2" log="$3" one="$3.one" name line passed=0 failed=0 ignored=0
+    : >"$log"
+    [ -s "$list" ] || { echo "run_each_under_lock: empty test list $list" >>"$log"; return 1; }
+    while IFS= read -r name; do
+        flock "$GPU_LOCK" "$bin" --exact --test-threads 1 --nocapture "$name" >"$one" 2>&1
+        cat "$one" >>"$log"
+        line=$(grep -E '^test result: ' "$one" | tail -1)
+        if [ -z "$line" ]; then
+            # The process aborted before libtest could summarize: that test failed.
+            failed=$((failed + 1))
+            continue
+        fi
+        passed=$((passed + $(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) passed.*/\1/p')))
+        failed=$((failed + $(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) failed.*/\1/p')))
+        ignored=$((ignored + $(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) ignored.*/\1/p')))
+    done <"$list"
+    printf 'test result: %s. %d passed; %d failed; %d ignored; 0 measured; 0 filtered out (synthesized per-test)\n' \
+        "$([ "$failed" -eq 0 ] && echo ok || echo FAILED)" "$passed" "$failed" "$ignored" >>"$log"
+    [ "$failed" -eq 0 ]
+}
+
 run_mode() {
     local host="$1" t log_serve log_gpu rc_serve rc_gpu started commit trees gpu cc
     command -v nvidia-smi >/dev/null 2>&1 || { echo "cuda_module_key_gate --run: no nvidia-smi on this host" >&2; exit 2; }
@@ -184,20 +222,22 @@ run_mode() {
         exit 2
     fi
 
-    # 2. Build aprender-gpu's suite too, so the device lock below covers only device time.
-    cargo test -p aprender-gpu --features cuda --lib --release --no-run >"$t/gpu-build.log" 2>&1 \
+    # 2. Resolve both suites' test binaries now, so the device lock below covers only device time.
+    local bin_serve bin_gpu
+    bin_serve=$(test_binary "$t/serve-build.log" -p aprender-serve --features cuda) \
+        || { echo "cuda_module_key_gate --run: aprender-serve cuda lib tests do not build" >&2; tail -5 "$t/serve-build.log" >&2; exit 2; }
+    bin_gpu=$(test_binary "$t/gpu-build.log" -p aprender-gpu --features cuda) \
         || { echo "cuda_module_key_gate --run: aprender-gpu cuda lib tests do not build" >&2; tail -5 "$t/gpu-build.log" >&2; exit 2; }
+    "$bin_gpu" --list 2>/dev/null | sed -n 's/: test$//p' | sort >"$t/gpu-list.txt"
 
-    # 3. Run both on the device, one test at a time (#4043: parallel runs poison the context),
-    #    under the host's shared GPU lock.
+    # 3. Run both on the device, one test per process (#4043: parallel runs poison the context),
+    #    each under its own hold of the host's shared GPU lock. One hold around the whole
+    #    1400-test suite kept the lambda fleet off the GPU for 3 h (cop, 2026-09-26).
     log_serve="$t/serve.log"
-    # shellcheck disable=SC2046 # test names contain no whitespace
-    flock "$GPU_LOCK" cargo test -p aprender-serve --features cuda --lib --release -- \
-        --exact --test-threads 1 --nocapture $(cat "$t/cuda-only.txt") >"$log_serve" 2>&1
+    run_each_under_lock "$bin_serve" "$t/cuda-only.txt" "$log_serve"
     rc_serve=$?
     log_gpu="$t/gpu.log"
-    flock "$GPU_LOCK" cargo test -p aprender-gpu --features cuda --lib --release -- \
-        --test-threads 1 --nocapture >"$log_gpu" 2>&1
+    run_each_under_lock "$bin_gpu" "$t/gpu-list.txt" "$log_gpu"
     rc_gpu=$?
 
     # 4. Judge, with ci.yml cuda-unit's anti-vacuity checks. Device skips print and return,
