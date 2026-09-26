@@ -70,12 +70,11 @@ pub(super) fn float16_row_dot_portable(kind: Float16Kind, row: &[u8], x: &[f32])
     let mut tail = 0.0f32;
     for (bytes, xs) in row.chunks(CHUNK * 2).zip(x.chunks(CHUNK)) {
         let m = xs.len();
-        for (w, b) in buf[..m].iter_mut().zip(bytes.chunks_exact(2)) {
+        for (w, b) in buf[..m].iter_mut().zip(bytes.as_chunks::<2>().0) {
             *w = decode_float16(kind, u16::from_le_bytes([b[0], b[1]]));
         }
-        let (ws, xs8) = (buf[..m].chunks_exact(8), xs.chunks_exact(8));
-        let (w_rem, x_rem) = (ws.remainder(), xs8.remainder());
-        for (w8, x8) in ws.zip(xs8) {
+        let ((ws, w_rem), (xs8, x_rem)) = (buf[..m].as_chunks::<8>(), xs.as_chunks::<8>());
+        for (w8, x8) in ws.iter().zip(xs8) {
             for l in 0..8 {
                 lanes[l] += w8[l] * x8[l];
             }

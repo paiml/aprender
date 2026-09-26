@@ -98,7 +98,7 @@ pub fn dequantize_iq3_s(data: &[u8]) -> Result<Vec<f32>> {
     }
     let nb = data.len() / IQ3_S_BLOCK_BYTES;
     let mut out = vec![0.0f32; nb * IQ3_S_BLOCK_ELEMS];
-    for (i, block) in data.chunks_exact(IQ3_S_BLOCK_BYTES).enumerate() {
+    for (i, block) in data.as_chunks::<IQ3_S_BLOCK_BYTES>().0.iter().enumerate() {
         dequantize_iq3_s_block(
             block,
             &mut out[i * IQ3_S_BLOCK_ELEMS..(i + 1) * IQ3_S_BLOCK_ELEMS],
