@@ -842,7 +842,7 @@ qa_gate:
   pass_criteria: "F-DOGCOV-{001..016} all PASS; any one FAIL is NO-GO"
 
 verification_summary:
-  total_obligations: 16
+  total_obligations: 9
   proven: 0
   tested: 16
   status: proposed

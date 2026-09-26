@@ -68,6 +68,9 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
     // and by non-crux contracts that reuse the vocabulary.
     validate_crux_intake(contract, &mut violations);
 
+    // aprender#2648: kind-independent — a summary on any kind can drift.
+    validate_summary_count(contract, &mut violations);
+
     violations
 }
 
@@ -445,6 +448,42 @@ fn validate_provability_invariant(contract: &Contract, violations: &mut Vec<Viol
             rule: "PROVABILITY-001".to_string(),
             message: v,
             location: None,
+        });
+    }
+}
+
+/// SCHEMA-024 (aprender#2648): `verification_summary.total_obligations` must
+/// equal the number of `proof_obligations` the file actually lists.
+///
+/// The schema requires the field, so every summary carries a hand-maintained
+/// count of a list that sits a screen above it — the count constant
+/// APR-QUALITY-001 P7 bans. Until the field is derived (option (a) of the
+/// issue), a stated count that disagrees with the list is an error rather
+/// than silent drift: measured 2026-09-26, 17 hand-written contracts had
+/// drifted, one of them understating its own list.
+///
+/// Exempt: a `kind: schema` file with no `proof_obligations`. That is the
+/// shape of the generated `contracts/work/` pmat work-contracts (296 of them),
+/// whose `total_obligations` counts the work contract's own obligation list,
+/// which this file does not carry and the generator owns.
+fn validate_summary_count(contract: &Contract, violations: &mut Vec<Violation>) {
+    let Some(vs) = contract.verification_summary.as_ref() else {
+        return;
+    };
+    let listed = contract.proof_obligations.len();
+    if listed == 0 && contract.kind() == ContractKind::Schema {
+        return;
+    }
+    if usize::try_from(vs.total_obligations).ok() != Some(listed) {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-024".to_string(),
+            message: format!(
+                "verification_summary.total_obligations is {} but proof_obligations lists {listed}: \
+                 the count is a copy of the list and has drifted from it",
+                vs.total_obligations
+            ),
+            location: Some("verification_summary.total_obligations".to_string()),
         });
     }
 }

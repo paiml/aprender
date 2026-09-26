@@ -288,6 +288,10 @@ falsification_tests: []
     #[path = "validator_tests_na.rs"]
     mod na;
 
+    /// aprender#2648: summary count vs the obligation list (SCHEMA-024).
+    #[path = "validator_tests_summary.rs"]
+    mod summary;
+
     // ── PMAT-741 BeatBenchmark validator (BEAT-001..007) ──────────────────────
 
     /// Wrap a `beat:` block body in a valid beat-benchmark metadata envelope so

@@ -282,7 +282,7 @@ proof_obligations:
   property: "60 FPS frame budget with smart diffing"
 
 verification_summary:
-  total_obligations: 8
+  total_obligations: 6
   proven: 0
   tested: 0
   status: pending
