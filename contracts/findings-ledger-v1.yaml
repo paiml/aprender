@@ -21,12 +21,13 @@
 #          on pull_request.
 #   * L2 — case tables, MEASURED 2026-09-25:
 #          check_findings_ledger.sh --self-test has 19 cases, 10/10 mutants
-#          killed; check_pr_closes_issue.sh --self-test has 116 cases (95 of
-#          them rule-18 rows); 35 mutants of the rule-18 path, 32 killed, 3
+#          killed; check_pr_closes_issue.sh --self-test has 122 cases (101 of
+#          them rule-18 rows); 41 mutants of the rule-18 path, 37 killed, 4
 #          equivalent: dropping CLOSE_LINE_RE's or ROW_LINE_RE's end anchor (the
 #          extracting sed re-anchors each), and skipping block lines instead of
 #          printing a placeholder (a skipped run always follows its opener's
-#          placeholder, so an isolated line keeps a non-blank neighbour).
+#          placeholder, so an isolated line keeps a non-blank neighbour), and
+#          stripping a CR at line end (none survives the CR normalisation).
 #   * L3/L4 — NOT APPLICABLE: a data file and a PR body, not a kernel.
 # ─────────────────────────────────────────────────────────────────────────────
 name: findings-ledger
@@ -97,7 +98,7 @@ equations:
 
   every_pr_discharges_an_open_issue:
     formula: |
-      prose(body) = the lines outside ``` / ~~~ fences, <!-- --> comments left open on their line, the HTML blocks that may span a blank line (<pre|script|style|textarea>, <?, <![CDATA[, <!X) and $$ math blocks (a line opening with $$ and not closing it); a BOM on the first line is dropped as cmark-gfm drops it; an unclosed block runs to the end. isolated(body) = the prose lines that are a paragraph of their own: blank (or the body edge) before and after. Discharge lines are read from isolated(body) only
+      prose(body) = the lines outside ``` / ~~~ fences, <!-- --> comments left open on their line, the HTML blocks that may span a blank line (<pre|script|style|textarea>, <?, <![CDATA[, <!X) and $$ math blocks (a line opening with $$ and not closing it, closed only by a line that is $$ alone); CRLF and a bare CR are line endings, normalised to LF first; a BOM on the first line is dropped as cmark-gfm drops it; an unclosed block runs to the end. isolated(body) = the prose lines that are a paragraph of their own: blank (or the body edge) before and after. Discharge lines are read from isolated(body) only
       at PR time: prose ∋ a line, whole and at column 0, `(Closes|Fixes|Resolves)[:] [own/repo]#N[.]` with N an OPEN issue in this repo
                ∨ prose ∋ a line `Refs #P row <id>[.]` with P an OPEN issue in this repo whose body has an unticked line `- [ ] <id>:`
                ∨ prose ∋ a line matching ^no-issue:\s*\S

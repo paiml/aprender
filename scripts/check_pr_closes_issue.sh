@@ -71,7 +71,7 @@ REF_RE='#[0-9]+'
 # fence), a <!-- comment left open on its line (to -->), and the HTML blocks
 # that may span a blank line (<pre|script|style|textarea> to the closing tag,
 # <? to ?>, <![CDATA[ to ]]>, <!X to >) and a $$ math block (any line opening
-# with $$ and not closing it, to the next $$). A BOM on the first line is
+# with $$ and not closing it, to a line that is $$ alone). A BOM on the first line is
 # dropped, as cmark-gfm drops it (agy round 7 @1ae7cb5fd). Nothing that ends at a blank line is
 # tracked -- inline code spans, tags, link reference definitions, blockquote
 # lazy continuations, the other HTML blocks: a line inside one always has a
@@ -80,15 +80,17 @@ REF_RE='#[0-9]+'
 # them line by line was a race against a Markdown parser that lost six agy
 # quorum rounds (@afc250626 .. @b91da50e1).
 prose_lines() {
-    perl -ne '
+    # CRLF and a bare CR are line endings in CommonMark: normalise both to LF
+    # first, or `prose\r```` hides a fence from the pass (agy round 8)
+    perl -0777 -pe 's/\r\n?/\n/g' | perl -ne '
         BEGIN { $end = "" }
-        s/\r?\n\z//;
+        s/\n\z//;
         s/^\xEF\xBB\xBF// if $. == 1;
         if ($end ne "") { $end = "" if /$end/; print "\x01\n"; next }
         if (/^[ \t]*$/) { print "\n"; next }
         if (/^ {0,3}(`{3,})[^`]*$/ || /^ {0,3}(~{3,})/) {
             $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; print "\x01\n"; next }
-        if (/^ {0,3}\$\$(?!.*\$\$)/) { $end = "\\\$\\\$"; print "\x01\n"; next }
+        if (/^ {0,3}\$\$(?!.*\$\$)/) { $end = "^ {0,3}\\\$\\\$[ \t]*\$"; print "\x01\n"; next }
         if (/<!--(?!.*-->)/) { $end = "-->"; print "\x01\n"; next }
         if (/^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)/i) {
             $end = "(?i)</(?:pre|script|style|textarea)>" unless /<\/(?:pre|script|style|textarea)>/i; print "\x01\n"; next }
@@ -111,8 +113,10 @@ isolated_lines() {
 #   Closes #N | Fixes owner/repo#N | Resolves: #N     (any GitHub closing keyword)
 #   Refs #P row <id>                                  (rule 20 checklist row)
 #   no-issue: <reason>
-CLOSE_LINE_RE='^(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+[[:space:]]*\.?[[:space:]]*$'
-ROW_LINE_RE='^refs?:?[[:space:]]+#[0-9]+[[:space:]]+row[[:space:]]+[A-Za-z0-9._-]+[[:space:]]*$'
+# Separators are spaces only and trailing blanks are space or tab: [[:space:]]
+# also takes \v and \f, which Markdown does not treat as a separator (agy round 8).
+CLOSE_LINE_RE='^(close[sd]?|fix(e[sd])?|resolve[sd]?):? +([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+[ 	]*\.?[ 	]*$'
+ROW_LINE_RE='^refs?:? +#[0-9]+ +row +[A-Za-z0-9._-]+[ 	]*$'
 
 # THE #3400 LANDMINE, CLASS: a hyphen-prefixed closing keyword. Requires a
 # word character immediately before the hyphen so it does not also match a
@@ -562,6 +566,13 @@ STUB
     run_rc_case "rc-close-mid-body-bom" $'Intro.\n\n\xef\xbb\xbfCloses #9002'   1 "FAIL no-close"
     run_rc_case "rc-close-in-math-text-opener" $'$$ x\n\nCloses #9002\n\n$$'   1 "FAIL no-close"
     run_rc_case "rc-close-after-oneline-math" $'$$x$$\n\nCloses #9002'          0 "PASS: discharges 1"
+    # agy round 8 (@cb1ab552c): bare CR is a line ending; $$ closes only alone; \v is no separator
+    run_rc_case "rc-close-after-bare-cr-fence" $'prose\r```\n\nCloses #9002\n\n```' 1 "FAIL no-close"
+    run_rc_case "rc-close-bare-cr-lines" $'Intro.\r\rCloses #9002\r'             0 "PASS: discharges 1"
+    run_rc_case "rc-close-in-math-early-dollars" $'$$\n\na $$ b\n\nCloses #9002\n\n$$' 1 "FAIL no-close"
+    run_rc_case "rc-close-vtab-separator" $'Closes\v#9002'                         1 "FAIL no-close"
+    run_rc_case "rc-row-ref-vtab-separator" $'Refs\v#9002 row A8\n\nkeep-open: parent checklist' 1 "FAIL no-close"
+    run_rc_case "rc-close-trailing-tab" $'Closes #9002\t'                          0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
     run_rc_case "rc-close-after-fence" $'```\nexample\n```\n\nCloses #9002'           0 "PASS: discharges 1"
