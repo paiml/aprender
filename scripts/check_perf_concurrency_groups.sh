@@ -56,7 +56,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_DIR="${REPO_ROOT}/.github/workflows"
 DEFAULT_MATRIX="${REPO_ROOT}/scripts/perf-matrix.yaml"
 
-SELFTEST_NAMES="isolation_breach isolation_ok cancel_true_is_red ignored_bench_without_group_is_red ref_scoped_group_is_red na_host_under_lock_ok na_host_without_lock_is_red perf_host_under_lock_is_red na_host_other_lock_is_red na_host_lock_not_flock_is_red na_host_workflow_env_is_red"
+SELFTEST_NAMES="isolation_breach isolation_ok cancel_true_is_red ignored_bench_without_group_is_red ref_scoped_group_is_red na_host_under_lock_ok na_host_without_lock_is_red perf_host_under_lock_is_red na_host_other_lock_is_red na_host_lock_not_flock_is_red na_host_workflow_env_is_red na_host_foreign_triple_is_red na_host_lock_as_trailing_arg_is_red na_and_perf_host_is_red na_host_no_arch_label_is_red na_host_two_arch_labels_is_red na_host_lock_path_prefix_is_red undeclared_host_under_lock_is_red"
 
 scan() {
     python3 - "$1" "$2" <<'PY'
@@ -101,21 +101,30 @@ for h, spec in (declared.items() if isinstance(declared, dict) else ()):
         na_hosts.add(str(h).lower())
 
 HOST_GPU_LOCK = "/run/lock/fleet-gpu/gpu.lock"
-RUNNER_ENV_RE = re.compile(r"^CARGO_TARGET_[A-Z0-9_]+_RUNNER$")
+# The runner cargo actually uses is the one for the job's OWN triple: a lock on
+# CARGO_TARGET_WASM32_…_RUNNER leaves x86_64 tests unlocked. So the key is
+# derived from the runs-on arch label, never "any CARGO_TARGET_*_RUNNER".
+NATIVE_RUNNER_KEY = {
+    "x64": "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
+    "arm64": "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER",
+}
+# The WHOLE value: flock, its options, then the lock as the last word and the
+# lock operand. `flock … /tmp/x.lock env X=/run/lock/fleet-gpu/gpu.lock` is
+# a different lock with the right path as a trailing argument - RED.
+LOCKED_RUNNER_RE = re.compile(
+    r"^flock(\s+-[A-Za-z](\s+[0-9]+)?)*\s+%s$" % re.escape(HOST_GPU_LOCK))
 
 
-def takes_host_gpu_lock(job):
-    """True when the job-level env runs every test binary under the host lock."""
+def takes_host_gpu_lock(job, labels):
+    """True when the job-level env runs every native test binary under the host lock."""
     env = job.get("env")
     if not isinstance(env, dict):
         return False
-    for key, val in env.items():
-        if not RUNNER_ENV_RE.match(str(key)):
-            continue
-        words = str(val).split()
-        if words and words[0] == "flock" and words[-1] == HOST_GPU_LOCK:
-            return True
-    return False
+    keys = {NATIVE_RUNNER_KEY[a] for a in labels if a in NATIVE_RUNNER_KEY}
+    if len(keys) != 1:                     # no arch label, or two: cannot tell
+        return False
+    val = env.get(keys.pop())
+    return val is not None and bool(LOCKED_RUNNER_RE.match(str(val).strip()))
 
 # Same vocabulary as scripts/check_runner_labels.sh DISCRIM, GPU half only.
 GPU_LABELS = {"gpu", "gx10", "cuda", "blackwell", "gb10", "ada", "rtx4090"}
@@ -181,8 +190,11 @@ for path in paths:
             why = "gpu runs-on + --ignored tests"
         where = "%s:%s" % (os.path.basename(path), name)
         group, cancel = concurrency_of(job)
-        na_host = sorted(labels_of(job.get("runs-on")) & na_hosts)
-        if group is None and na_host and takes_host_gpu_lock(job):
+        labels = labels_of(job.get("runs-on"))
+        na_host = sorted(labels & na_hosts)
+        perf_host = labels & (set(hosts) - na_hosts)   # a perf host never qualifies
+        if (group is None and na_host and not perf_host
+                and takes_host_gpu_lock(job, labels)):
             print("  ok    %s (%s) no group: NA host %s, test binaries run under "
                   "the host GPU lock %s (waits, never cancels; #4489)"
                   % (where, why, na_host[0], HOST_GPU_LOCK))
@@ -359,6 +371,26 @@ selftest() {
     _fixture_host "$tmp/na_wfenv" "w.yml" "$yoga" "" 'env:
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -w 600 /run/lock/fleet-gpu/gpu.lock'
     _row na_host_workflow_env_is_red red "$tmp/na_wfenv"
+    # 12-15. Quorum lane findings on the first cut of the exception.
+    _fixture_host "$tmp/na_wasm" "w.yml" "$yoga" '    env:
+      CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: flock -w 600 /run/lock/fleet-gpu/gpu.lock' ""
+    _row na_host_foreign_triple_is_red red "$tmp/na_wasm"
+    _fixture_host "$tmp/na_spoof" "w.yml" "$yoga" '    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -w 600 /run/lock/other/gpu.lock env X=/run/lock/fleet-gpu/gpu.lock' ""
+    _row na_host_lock_as_trailing_arg_is_red red "$tmp/na_spoof"
+    _fixture_host "$tmp/na_mixed" "w.yml" "[self-hosted, gpu, yoga, gx10, Linux, X64, cuda]" "$lock" ""
+    _row na_and_perf_host_is_red red "$tmp/na_mixed"
+    _fixture_host "$tmp/na_noarch" "w.yml" "[self-hosted, gpu, yoga, Linux, cuda, ada]" "$lock" ""
+    _row na_host_no_arch_label_is_red red "$tmp/na_noarch"
+    _fixture_host "$tmp/na_twoarch" "w.yml" "[self-hosted, gpu, yoga, Linux, X64, ARM64, cuda]" '    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -w 600 /run/lock/fleet-gpu/gpu.lock
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: flock -w 600 /run/lock/fleet-gpu/gpu.lock' ""
+    _row na_host_two_arch_labels_is_red red "$tmp/na_twoarch"
+    _fixture_host "$tmp/na_prefix" "w.yml" "$yoga" '    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -w 600 /run/lock/fleet-gpu/gpu.lock.old' ""
+    _row na_host_lock_path_prefix_is_red red "$tmp/na_prefix"
+    _fixture_host "$tmp/nohost" "w.yml" "[self-hosted, gpu, Linux, X64, cuda]" "$lock" ""
+    _row undeclared_host_under_lock_is_red red "$tmp/nohost"
 
     printf '  %d passed, %d broken\n' "$pass" "$fail"
     [ "$fail" = 0 ]
