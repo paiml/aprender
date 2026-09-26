@@ -1,0 +1,23 @@
+- id: PMAT-3183
+  github_issue: 3183
+  item_type: task
+  title: 'dogfood G3.RN: the changelog row passed on `grep -qF $VERSION` — a bare heading or another release''s notes read as PASS'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-1c
+  created: 2026-09-26T12:00:00Z
+  updated: 2026-09-26T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/check_changelog_covers_merged.sh LAST_TAG CUT VERSION exits 1 when a PR merged (first-parent, trailing (#N)) in LAST_TAG..CUT is cited neither by its PR number nor by any #N in its subject in the [VERSION] section'
+  - 'It exits 1 on a FALSE row: a ref the section cites whose (#R) merge commit is an ancestor of LAST_TAG'
+  - '--notes FILE applies the same predicate to a release-notes file'
+  - '--self-test case table: covered passes; a deleted row, an uncited PR, a false row, an absent section and a bare heading are each RED with the named row; wired into make tier3'
+  - 'dogfood.sh changelog row calls the guard: FAIL in pre-publish/post-publish, WARN with the count in a full run (mid-cycle tree); falls back to the heading check only when no earlier tag or no guard exists'
+  - 'Mutants: disabling false-row detection or forcing covered=1 each turn the self-test RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Measured: v0.69.1..v0.69.3 reports 17 uncovered PRs for [0.69.3] (old row: PASS). The gate reds current practice; the 0.70.1 captain must write CHANGELOG coverage.'
