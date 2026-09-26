@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [],
+          "properties": {
+            "transport": "cli",
+            "index_probe": {
+              "grounding": "measured",
+              "command": ["pmat", "query", "x", "--limit", "1"],
+              "exit_code": 0,
+              "note": "index built fresh from this worktree HEAD (3a75d9b93b8fcf72401e50f9d1b305b735e56906); index_commit == HEAD_SHA so index_is_ancestor is trivially true"
+            }
+          }
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://api.copilot.nsight.ngc.nvidia.com/mcp/cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "S3.B trigger fired on 2 paths matched purely by the substring 'ptx' (crates/aprender-ptx-debug/Cargo.toml, crates/aprender-ptx-debug/src/bin/main.rs), both confirmed to contain only update-check-hook wiring with zero device-behavior claims. The nvidia-cuda-docs MCP endpoint answered HTTP 401 invalid_token to tools/list, and mcp__nvidia-cuda-docs__search_cuda_docs is not exposed in this session (ToolSearch: server failed to connect). S3.B could not be consulted."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["curl", "-sS", "-m", "20", "-X", "POST", "https://api.copilot.nsight.ngc.nvidia.com/mcp/cuda-docs", "(tools/list)"],
+                "exit_code": 0,
+                "http_status": 401,
+                "stdout_sha256": "8599a03b4c1d788236014f851ec320b3ad4a589c59e8c1ea045dd4d052291cce"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [],
+          "properties": {
+            "method": "cargo mutants -p aprender-update --in-diff <BASE..HEAD diff of crates/aprender-update/> --timeout 120 --jobs 2 -- --lib (jobs clamped 4->2 by host cargo-memcap wrapper). Scoped to the substantive logic crate; the ~30 one-line hook! insertions in other crates were not separately mutated."
+          }
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutation/survivor",
+          "level": "warning",
+          "message": {
+            "text": "Mutant survived: crates/aprender-update/src/lib.rs:401:5 `replace entry with ()` — build+test still green."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-update/src/lib.rs" },
+                "region": { "startLine": 401, "startColumn": 5 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["cargo", "mutants", "-p", "aprender-update", "--in-diff", "/tmp/aprender-update.diff", "--timeout", "120", "--jobs", "2", "--", "--lib"],
+            "exit_code": 0,
+            "failure_scenario": "entry() could be stubbed to a no-op and the --lib test suite would not notice, so a future refactor that silently drops the entry-construction path ships undetected."
+          }
+        },
+        {
+          "ruleId": "mutation/survivor",
+          "level": "warning",
+          "message": {
+            "text": "Mutant survived: crates/aprender-update/src/lib.rs:403:38 `replace == with !=` inside entry — build+test still green."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-update/src/lib.rs" },
+                "region": { "startLine": 403, "startColumn": 38 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["cargo", "mutants", "-p", "aprender-update", "--in-diff", "/tmp/aprender-update.diff", "--timeout", "120", "--jobs", "2", "--", "--lib"],
+            "exit_code": 0,
+            "failure_scenario": "an equality check inside entry() could be inverted and no --lib test would flip from pass to fail, so a wrong branch (e.g. usable-sha comparison) could be silently taken."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy/finding",
+          "level": "warning",
+          "message": {
+            "text": "sovereign_update::hook!(...) is called unconditionally in main.rs for 14 workspace binaries whose Cargo.toml gates the aprender-update dependency itself behind #[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies] (aprender-cbtop, aprender-cgp, aprender-explain, aprender-profile, aprender-ptx-debug, aprender-qa-cli, aprender-qa-certify, aprender-rag-cli/trueno-rag, aprender-train-bench, aprender-train-distill, aprender-train-inspect, aprender-train-lora, aprender-train-shell, aprender-zram-cli/trueno-zram, aprender-zram-generator). 8 of the 22 gated crates got it right (aprender-db, aprender-data, aprender-explain-adjacent aprender-orchestrate, alimentar, presentar, simular, aprender-test-cli, aprender-present-cli) by wrapping the call in the same #[cfg(not(target_arch = \"wasm32\"))]. Reverified by primary reviewer via direct diff/grep inspection, independent of agy's own read; agy's own report named only cbtop/cgp/ptop/score, the primary reviewer's own count of unguarded call sites is 14, wider than agy's own claim."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-cbtop/src/main.rs" },
+                "region": { "startLine": 224 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["git", "diff", "a016cee94909d3617133e82de822fb2863dfa97c", "3a75d9b93b8fcf72401e50f9d1b305b735e56906", "--", "*main.rs"],
+            "exit_code": 0,
+            "reverified_by_primary": true,
+            "failure_scenario": "a wasm32 build of any of the 14 affected binaries fails with an undeclared-module error at the hook! call site, because the sovereign_update crate itself is excluded from the wasm32 dependency graph while the macro invocation is not target-gated. Not exercised by current CI (guards-nightly.yml only wasm32-builds aprender-core), so this is a latent, not currently-CI-visible, break."
+          }
+        }
+      ]
+    }
+  ]
+}
