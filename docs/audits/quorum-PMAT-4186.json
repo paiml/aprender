@@ -1,0 +1,55 @@
+{
+  "ticket": "PMAT-4186",
+  "issue": 4186,
+  "pr": 4208,
+  "kind": "diff-review",
+  "head_reviewed": "720759b392455b24167e66d640f40504cb2a08d1",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "shape": {
+    "lanes": [
+      "claude-sonnet-5",
+      "claude-sonnet-5",
+      "claude-haiku-4-5"
+    ],
+    "degraded": "same-family",
+    "substitution": "agy gemini-3.1-pro-high 429 (quota); default sonnet+agy+haiku -> sonnet+sonnet+haiku; author is opus so no lane shares the author id"
+  },
+  "brief_sha256": "8d07cb6178f6b889a6ab1cbe54a5394afc4c0545510f01ba5b72791ed09208d2",
+  "diff_sha256": "5222deb2f70f9772badbe6169824f79d95cb76bb4417ebd3b818d49fe1df3343",
+  "diff_range": "aa7c6ef03..720759b392455b24167e66d640f40504cb2a08d1 -- Makefile scripts/",
+  "round": 8,
+  "lanes": [
+    {
+      "lane": "sonnet-A",
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "notes": "no-rule elif lacks Actions exemption: over-refuses, fails closed"
+    },
+    {
+      "lane": "sonnet-B",
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "notes": "zsh HOME=/ for a UID with no passwd row escapes the empty-HOME guard; not marker-present, follow-up"
+    },
+    {
+      "lane": "haiku",
+      "model": "claude-haiku-4-5",
+      "verdict": "PASS",
+      "notes": "none blocking"
+    }
+  ],
+  "agreed": true,
+  "verdict": "PASS",
+  "prior_rounds": {
+    "1": "FAIL non-hermetic table",
+    "2": "FAIL bare GITHUB_ACTIONS skipped marker",
+    "3": "FAIL binary-sha denylist entries",
+    "4": "FAIL null generated_at read fresh; rule loaded from cwd checkout",
+    "5": "FAIL option-neutral guard blind to nightly_pin.sh; zsh $0",
+    "6": "FAIL (sonnet-B) unset HOME silently selected HEAD mode",
+    "7": "FAIL (sonnet-B) zsh repopulates HOME; rebutted (passwd home is the real marker path), zsh empty-HOME rows added"
+  }
+}

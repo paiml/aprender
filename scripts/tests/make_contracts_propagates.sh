@@ -62,6 +62,7 @@ header_line() { # header_line <ERE> -> the single matching line, or die
 }
 recipe() { # recipe <target> -> the target line and its tab-indented body
     out=$(awk -v t="$1:" 'index($0, t) == 1 { f = 1; print; next }
+                         f && /^#/ { next }
                          f && /^\t/ { print; next }
                          f { exit }' "$MAKEFILE")
     if [ -z "$out" ] || [ "$(printf '%s\n' "$out" | wc -l)" -lt 3 ]; then
@@ -162,14 +163,19 @@ row "contracts: pv lint fails (rc 7, through | tail) -> Error 7, census never st
 
 expect_stop "$M" contracts census 7 '== graph'
 row "contracts: pv census fails -> Error 7, graph never starts" $?
+
 expect_stop "$M" contracts derived 7 '== graph'
 row "contracts: check_census_derived fails -> Error 7, graph never starts" $?
 
 expect_stop "$M" contracts extract 7 '== README'
 row "contracts: pv extract --check fails -> Error 7, README never starts" $?
 
-expect_stop "$M" contracts readme 7 '== provenance'
-row "contracts: readme_sync fails -> Error 7, provenance never starts" $?
+# readme_sync now runs FIRST inside the census step (CENSUS_JSON=... readme_sync --check,
+# #3569), protected by that step's own `|| exit`, so a FAIL_AT=readme stub fails there and
+# the recipe never reaches '== graph' -- the standalone `readme_sync --check` after
+# '== README states...' is the step's second, later invocation and is never reached first.
+expect_stop "$M" contracts readme 7 '== graph'
+row "contracts: readme_sync fails -> Error 7, graph never starts" $?
 
 expect_stop "$M" contracts provenance 7 '== contract engine tests'
 row "contracts: lint-provenance fails -> Error 7, engine tests never start" $?

@@ -272,10 +272,18 @@ root=$(git rev-parse --show-toplevel)
 printf '=== CB-200: definitions below the [tdg] min_grade may not exceed the baseline (check_cb200_tdg_grade.sh) ===\n'
 # PROVE THE MECHANISM ENGAGED: name the analyser that produced the number.
 printf 'pmat: %s (%s)\n' "$(pmat --version 2>/dev/null | head -1)" "$(command -v pmat)"
+# The receipt's cold index (~220 s) shares nothing with this tree's (~240 s): run it alongside, not
+# after (#4429 x86-main guard_tree.sh 1409 s). Its lines print after the CB-200 line, as before.
+receipt_out="$TMPROOT/receipt.out"
+receipt_check "$root" > "$receipt_out" 2>&1 &
+receipt_pid=$!
 v=$(cb200_verdict "$root")
 s=${v%%$'\t'*}
 printf 'CB-200 %s: %s\n' "$s" "${v#*$'\t'}"
-receipt_check "$root" || exit 1
+receipt_rc=0
+wait "$receipt_pid" || receipt_rc=$?
+cat "$receipt_out"
+[ "$receipt_rc" -eq 0 ] || exit 1
 if judge "$s"; then
     printf 'ok    CB-200 held (a cold index over this tree; the baseline is .pmat-gates.toml [tdg])\n'
     exit 0

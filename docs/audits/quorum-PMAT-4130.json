@@ -1,0 +1,181 @@
+{
+  "ticket": "PMAT-4130",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "9cf59b2ccd58bc16df6094e9b2cd2c0aa35f6d9d",
+  "diff_sha256": "f4bfbca8cf52ee16694863ac824aae28f5dd7ae6959a5f855f733d0bca47e54f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 40543,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4130. It correctly excludes test targets that depend on path-only dev-deps or workspace files so they are dropped during `cargo package`. It successfully replaces `include_str!` with the agreed `workspace_contract_or_skip` helper in the `aprender-core` library tests, which correctly panics in-tree and skips dynamically out-of-tree. No dependencies are re-versioned. The generated stub in `aprender-db` is a legitimate, necessary fix for unblocking `cargo package` checks (which the gate depends on). The receipt claims are thoroughly backed by the diff. No refutations found.",
+      "findings": [],
+      "raw_bytes": 5804,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed diff against ticket PMAT-4130 and receipt. The diff successfully resolves uncompilable integration tests and run-time contract includes for the four target crates (aprender-core, aprender-orchestrate, aprender-cbtop, aprender-test-showcase) without re-versioning any sibling dev-dependencies:\n1. Integration test targets depending on path-only dev-dependencies or out-of-crate files are excluded in Cargo.toml using CB-510 root-anchored paths, allowing cargo to drop the targets during packaging while keeping them executable in the workspace.\n2. aprender-core lib unit tests including repo-root contracts are converted to run-time resolution via test_support::workspace_contract_or_skip, panicking in-tree if missing/unreadable and skipping with an explicit column-0 message only when out-of-tree.\n3. aprender-db/src/generated_contracts.rs is checked in identically to the 25 other crates, preventing build-time tree dirtying that caused cargo package failures.\n4. All receipt claims were verified and measured: test_support unit tests pass (including panic on in-tree missing file), lib unit tests pass under both default and --features setfit without skipping, and check_include_files.sh passes with 1795 files. No regressions, scope creeps, or weakened gates found.",
+      "findings": [],
+      "raw_bytes": 3828,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4130 diff verified and passed. The four crates (aprender-core, aprender-orchestrate, aprender-cbtop, aprender-test-showcase) no longer ship uncompilable tests in their tarballs. Package excludes are root-anchored (CB-510), sibling dev-dependencies remain path-only (PMAT-955/R6), in-tree unit test contract reads panic on missing files and skip with explicit diagnostics out-of-tree, cargo package builds succeed without dirtying the working tree, and the tarball build gate confirms none of the four target crates are RED.",
+      "findings": [],
+      "raw_bytes": 12660,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

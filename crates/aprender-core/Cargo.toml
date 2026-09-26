@@ -12,6 +12,24 @@ readme = "README.md"
 keywords = ["machine-learning", "classification", "clustering", "statistics", "graph-algorithms"]
 categories = ["science", "algorithms"]
 exclude = [
+    # #4130: test targets that cannot compile from the published .crate, so they are not shipped (cargo drops a
+    # target whose file is excluded). Each either uses a PATH-ONLY sibling dev-dependency, which `cargo package`
+    # strips (PMAT-955 / preflight R6 forbid versioning it: the 0.65.0 publish cycle), or `include_str!`s a file
+    # outside this crate (the repo-root contracts/, CLAUDE.md, LICENSE, apr-cli sources). They still run in the
+    # workspace. Root-anchored (CB-510). Measured by scripts/package_tarball_build.sh (#4114).
+    "/tests/beat_sklearn_gaussiannb_accuracy.rs",
+    "/tests/beat_sklearn_iris.rs",
+    "/tests/beat_sklearn_metrics_parity.rs",
+    "/tests/beat_sklearn_nmi.rs",
+    "/tests/beat_sklearn_pipeline_encoder.rs",
+    "/tests/beat_sklearn_svc_accuracy.rs",
+    "/tests/chat_template_probar_testing.rs",
+    "/tests/contract_tests.rs",
+    "/tests/contract_traits.rs",
+    "/tests/format_parity_tests.rs",
+    "/tests/realizar_integration_tests.rs",
+    "/tests/toyota_principles_tests.rs",
+    "/tests/contracts/",
     # Build/IDE artifacts
     "target/",
     "*.profraw",

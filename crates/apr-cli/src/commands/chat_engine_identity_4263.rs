@@ -3,7 +3,10 @@
 // enters the resident session: one witness entry per turn, on THIS session.
 
 fn model_path() -> String {
-    format!("{}/models/Qwen3.5-0.8B-Q4_K_M.gguf", std::env::var("HOME").unwrap_or_default())
+    format!(
+        "{}/models/Qwen3.5-0.8B-Q4_K_M.gguf",
+        std::env::var("HOME").unwrap_or_default()
+    )
 }
 
 #[test]

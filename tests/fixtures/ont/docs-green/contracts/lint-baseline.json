@@ -1,0 +1,6 @@
+{
+  "armed_gates": ["shapes"],
+  "armed_shapes": ["shape-holder", "readme-doc", "claude-doc", "data-csv"],
+  "readme": {"verified_commands":["bash scripts/check.sh","cargo test --lib"],"withdrawn":[]},
+  "claude_md": {"verified_commands":["cargo test --lib"],"withdrawn":[]}
+}

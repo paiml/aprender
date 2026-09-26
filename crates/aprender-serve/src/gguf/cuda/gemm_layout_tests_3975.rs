@@ -78,7 +78,12 @@ mod gemm_layout_tests_3975 {
     fn gemm_bt_tiled_ptx_names_its_entry_and_assembles() {
         use crate::cuda::{CudaKernels, KernelType};
         let kernels = CudaKernels::new();
-        let kt = KernelType::GemmBtTiled { m: 37, n: 45, k: 70, tile_size: 16 };
+        let kt = KernelType::GemmBtTiled {
+            m: 37,
+            n: 45,
+            k: 70,
+            tile_size: 16,
+        };
         let ptx = kernels.generate_ptx(&kt);
         let name = kernels.kernel_name(&kt);
         assert!(
@@ -86,9 +91,13 @@ mod gemm_layout_tests_3975 {
             "GemmBtTiled PTX ({} bytes) does not declare the entry `{name}` the launcher looks up",
             ptx.len()
         );
-        assert!(ptx.is_ascii(), "ptxas rejects non-ASCII anywhere in a module");
+        assert!(
+            ptx.is_ascii(),
+            "ptxas rejects non-ASCII anywhere in a module"
+        );
         let declared = crate::test_ptxas::declared_target(&ptx);
-        let assemble = |ptx: &str, first: &[&str]| crate::test_ptxas::assemble(ptx, "gemm_bt", first);
+        let assemble =
+            |ptx: &str, first: &[&str]| crate::test_ptxas::assemble(ptx, "gemm_bt", first);
 
         // Row 1: the real module assembles (at its declared target, or the first newer
         // arch this ptxas still defines).
@@ -102,7 +111,10 @@ mod gemm_layout_tests_3975 {
         // Row 3: the fallback never masks a real error.
         let bogus = ptx.replacen("ret;", "bogus.plant.u32 %r0, %r0;\n    ret;", 1);
         assert_ne!(bogus, ptx, "the plant must land");
-        assert!(assemble(&bogus, &[declared.as_str()]).is_err(), "a bogus instruction must fail ptxas");
+        assert!(
+            assemble(&bogus, &[declared.as_str()]).is_err(),
+            "a bogus instruction must fail ptxas"
+        );
     }
 
     #[test]
@@ -120,7 +132,9 @@ mod gemm_layout_tests_3975 {
     fn cuda_scheduler_matmul_honours_k_n_at_m1_and_m2() {
         let mut sched = crate::cuda_scheduler_or_skip!();
         for m in [1, 2] {
-            let got = sched.matmul(&x(m), &w_in_out(), m, IN, OUT).expect("matmul");
+            let got = sched
+                .matmul(&x(m), &w_in_out(), m, IN, OUT)
+                .expect("matmul");
             assert_matches(&got, m, "CudaScheduler::matmul (GpuModel)");
         }
     }
@@ -130,21 +144,43 @@ mod gemm_layout_tests_3975 {
     #[test]
     fn gemm_and_gemm_bt_agree_with_the_oracle_across_tile_boundaries() {
         let mut exec = crate::cuda_executor_or_skip!(0);
-        for &(m, k, n) in &[(1, 70, 45), (2, 70, 45), (17, 33, 16), (37, 70, 45), (64, 128, 96)] {
-            let x: Vec<f32> = (0..m * k).map(|i| ((i * 7 % 13) as f32 - 6.0) * 0.25).collect();
-            let w: Vec<f32> = (0..n * k).map(|i| ((i * 5 % 11) as f32 - 5.0) * 0.125).collect(); // [n, k]
+        for &(m, k, n) in &[
+            (1, 70, 45),
+            (2, 70, 45),
+            (17, 33, 16),
+            (37, 70, 45),
+            (64, 128, 96),
+        ] {
+            let x: Vec<f32> = (0..m * k)
+                .map(|i| ((i * 7 % 13) as f32 - 6.0) * 0.25)
+                .collect();
+            let w: Vec<f32> = (0..n * k)
+                .map(|i| ((i * 5 % 11) as f32 - 5.0) * 0.125)
+                .collect(); // [n, k]
             let w_kn: Vec<f32> = (0..k * n).map(|j| w[(j % n) * k + j / n]).collect();
             let want: Vec<f32> = (0..m * n)
-                .map(|j| (0..k).map(|i| x[(j / n) * k + i] * w[(j % n) * k + i]).sum())
+                .map(|j| {
+                    (0..k)
+                        .map(|i| x[(j / n) * k + i] * w[(j % n) * k + i])
+                        .sum()
+                })
                 .collect();
             let (m32, n32, k32) = (m as u32, n as u32, k as u32);
             let mut kn = vec![0.0f32; m * n];
             exec.gemm(&x, &w_kn, &mut kn, m32, n32, k32).expect("gemm");
             let mut nk = vec![0.0f32; m * n];
-            exec.gemm_bt(&x, &w, &mut nk, m32, n32, k32).expect("gemm_bt");
+            exec.gemm_bt(&x, &w, &mut nk, m32, n32, k32)
+                .expect("gemm_bt");
             for (name, got) in [("gemm [k,n]", &kn), ("gemm_bt [n,k]", &nk)] {
-                let worst = got.iter().zip(&want).map(|(g, w)| (g - w).abs()).fold(0.0f32, f32::max);
-                assert!(worst < 1e-3, "#3975 {name} at (m,k,n)=({m},{k},{n}): max |err| {worst}");
+                let worst = got
+                    .iter()
+                    .zip(&want)
+                    .map(|(g, w)| (g - w).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(
+                    worst < 1e-3,
+                    "#3975 {name} at (m,k,n)=({m},{k},{n}): max |err| {worst}"
+                );
             }
         }
     }
@@ -175,7 +211,10 @@ mod gemm_layout_tests_3975 {
     #[test]
     fn cached_batch_matmul_reads_a_dequantized_out_in_weight_at_m1_and_m2() {
         let cached = crate::gguf::OwnedQuantizedModelCachedSync::new(test_model());
-        let has_cuda = cached.get_cuda_scheduler().map(|g| g.is_some()).unwrap_or(false);
+        let has_cuda = cached
+            .get_cuda_scheduler()
+            .map(|g| g.is_some())
+            .unwrap_or(false);
         if !has_cuda {
             eprintln!("SKIP: no CudaScheduler -- the wgpu fallback is not what #3975 pins");
             return;

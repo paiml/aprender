@@ -160,9 +160,9 @@ fn try_qwen35_stream_tokens(
     else {
         return Ok(None);
     };
-    let tokenizer = state.get_tokenizer(None).map_err(|e| {
-        api_err(super::model_resolution_status(&e), e.to_string())
-    })?;
+    let tokenizer = state
+        .get_tokenizer(None)
+        .map_err(|e| api_err(super::model_resolution_status(&e), e.to_string()))?;
     Ok(Some((tokens, prompt_len, tokenizer)))
 }
 
@@ -175,7 +175,10 @@ mod qwen35_raw_generate_tests {
     #[test]
     fn a_state_without_a_hybrid_leaves_the_raw_chain_unchanged() {
         let state = AppState::demo().expect("demo state");
-        assert!(state.qwen35_session().is_none(), "the fixture must hold no hybrid");
+        assert!(
+            state.qwen35_session().is_none(),
+            "the fixture must hold no hybrid"
+        );
         let cancel = CancelToken::new();
         let one: GenerateRequest =
             serde_json::from_value(serde_json::json!({"prompt": "hi", "max_tokens": 4}))
@@ -183,9 +186,18 @@ mod qwen35_raw_generate_tests {
         let many: BatchGenerateRequest =
             serde_json::from_value(serde_json::json!({"prompts": ["hi"], "max_tokens": 4}))
                 .expect("request");
-        assert!(matches!(try_qwen35_generate(&state, &one, &cancel), Ok(None)));
-        assert!(matches!(try_qwen35_batch_generate(&state, &many, &cancel), Ok(None)));
-        assert!(matches!(try_qwen35_stream_tokens(&state, &one, &cancel), Ok(None)));
+        assert!(matches!(
+            try_qwen35_generate(&state, &one, &cancel),
+            Ok(None)
+        ));
+        assert!(matches!(
+            try_qwen35_batch_generate(&state, &many, &cancel),
+            Ok(None)
+        ));
+        assert!(matches!(
+            try_qwen35_stream_tokens(&state, &one, &cancel),
+            Ok(None)
+        ));
     }
 }
 
@@ -199,8 +211,12 @@ mod raw_stream_utf8_tests {
     /// ids: 0 <unk>, 1 "caf", 2 <0xC3>, 3 <0xA9>, 4 "Ġquick".
     fn tok() -> BPETokenizer {
         let vocab = ["<unk>", "caf", "<0xC3>", "<0xA9>", "Ġquick"];
-        BPETokenizer::new(vocab.iter().map(|s| (*s).to_string()).collect(), vec![], "<unk>")
-            .expect("test tokenizer")
+        BPETokenizer::new(
+            vocab.iter().map(|s| (*s).to_string()).collect(),
+            vec![],
+            "<unk>",
+        )
+        .expect("test tokenizer")
     }
 
     #[test]
@@ -208,7 +224,10 @@ mod raw_stream_utf8_tests {
         let events = raw_stream_token_events(&tok(), &[1, 2, 3, 4]);
         let texts: Vec<&str> = events.iter().map(|e| e.text.as_str()).collect();
         assert_eq!(texts.concat(), "café quick", "events: {texts:?}");
-        assert!(texts.iter().all(|t| !t.contains('\u{FFFD}')), "events: {texts:?}");
+        assert!(
+            texts.iter().all(|t| !t.contains('\u{FFFD}')),
+            "events: {texts:?}"
+        );
         assert_eq!(events.last().map(|e| e.token_id), Some(4));
     }
 

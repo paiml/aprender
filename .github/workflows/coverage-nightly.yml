@@ -232,7 +232,7 @@ jobs:
           # one line. The fleet pin (infra machines/*/forjar.yaml) is the only
           # installer this repo may rely on; assert it and fail CLOSED.
           export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          bash scripts/check_tool_versions.sh
+          setsid --wait bash scripts/check_tool_versions.sh
 
       # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
       # Same default ./target as the make step so pmat finds the coverage profiles.

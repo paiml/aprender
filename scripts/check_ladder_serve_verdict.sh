@@ -83,7 +83,7 @@ run_row() { # run_row <src> <be-json> [qa-json] -> prints true|false (the row's 
   local src="$1" be="$2" qa="${3:-$QA_OK}" builder out
   builder=$(extract_builder "$src") || return 2
   out=$(printf '%s' "$builder" \
-        | python3 - "rid" "$qa" "$be" 0 1 "deadbeef" "m.gguf" 1 "qwen2" 2>/dev/null) || {
+        | python3 - "rid" "$qa" "$be" 0 1 "deadbeef" "m.gguf" 1 "qwen2" '{"verdict": "fits"}' 2>/dev/null) || {
     echo "  the row builder errored on this input" >&2; return 2; }
   python3 -c 'import json,sys; print(str(json.loads(sys.stdin.read())["green"]).lower())' <<< "$out"
 }

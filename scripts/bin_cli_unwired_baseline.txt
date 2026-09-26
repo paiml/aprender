@@ -1,0 +1,13 @@
+# tool_version=none (derived by scripts/check_bin_cli_tests_wired.sh --print; regenerate with --update, never edit)
+# Test targets that SPAWN a workspace binary and that no workflow or ci/explicit-test-commands.d/
+# fragment runs (#4059). Each line is a finding. The file may only shrink against origin/main.
+aprender-data	--test	cli_repl_tests
+aprender-explain	--test	integration_tests
+aprender-mcp	--test	falsify_mcp_dogfood_001
+aprender-mcp	--test	falsify_mcp_stdio_protocol
+aprender-present-cli	--test	gate_can_fail
+aprender-ptx-debug	--test	cli_binary
+aprender-rag-cli	--test	cli_tests
+aprender-test-cli	--test	smoke_tests
+aprender-train-distill	--test	validate_rejects_bad_config
+aprender-verify-ml	--test	language_flag_reaches_generator

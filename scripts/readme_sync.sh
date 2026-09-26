@@ -120,7 +120,11 @@ block_occurrences() {
 # closing marker, and a body that has been hand-edited to prose is replaced
 # just as a stale number is.
 rewrite_stream() { # rewrite_stream <count> < README
-    sed -E "s|(${CONTRACT_BLOCK_START})[^<]*(${CONTRACT_BLOCK_END})|\1${1}\2|g"
+    # ONT-4c (B.4): the frontmatter's `contract_count:` is the same derived number — `extract:readme` grades it
+    # `resolves: census`, so it is rewritten here, never typed. Only a line that is exactly `contract_count: N`
+    # matches; the frontmatter is the only place README.md carries one.
+    sed -E -e "s|(${CONTRACT_BLOCK_START})[^<]*(${CONTRACT_BLOCK_END})|\1${1}\2|g" \
+        -e "s|^contract_count: [0-9]+\$|contract_count: ${1}|"
 }
 
 mode=""

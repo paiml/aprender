@@ -351,6 +351,10 @@ jobs:
           # runner (uid 1001) cannot write — run 34488955316 built the asset in 1m54s and
           # then died on `mkdir: cannot create directory 'target/aarch64-unknown-linux-gnu':
           # Permission denied`. Pre-creating it as the runner keeps the ownership.
+          # build.rs runs `git rev-parse` INSIDE this container, where the checkout is owned by
+          # the runner uid and git refuses it — so every release asset printed `(vX+no-git)` and
+          # scripts/apr_bin.sh (STRICT) could not attribute it to its tag. Ask the host checkout.
+          APR_SHA=$(git rev-parse --short=9 HEAD)
           mkdir -p "$GITHUB_WORKSPACE/target"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -359,12 +363,13 @@ jobs:
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
-            -e APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
+            -e APR_GIT_SHA_OVERRIDE="$APR_SHA" \
             rust:1.93.0-bullseye \
             sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --features cuda --locked; strip target/${{ matrix.target }}/release/apr'
           # the mounted target dir is the host cache; expose the binary where the next steps expect it
           mkdir -p "target/${{ matrix.target }}/release"
           cp "$CACHE/target/${{ matrix.target }}/release/apr" "target/${{ matrix.target }}/release/apr"
+          grep -aqF "$APR_SHA" "target/${{ matrix.target }}/release/apr" || { echo "::error::apr binary does not embed its commit $APR_SHA"; exit 1; }
           GLIBC=$(cat "$CACHE/target/BUILDER_GLIBC"); RUSTC=$(cat "$CACHE/target/BUILDER_RUSTC")
           echo "builder glibc: $GLIBC"; echo "builder rustc: $RUSTC"; nvidia-smi -L | head -1
           {
@@ -516,6 +521,10 @@ jobs:
           # runner (uid 1001) cannot write — run 34488955316 built the asset in 1m54s and
           # then died on `mkdir: cannot create directory 'target/aarch64-unknown-linux-gnu':
           # Permission denied`. Pre-creating it as the runner keeps the ownership.
+          # build.rs runs `git rev-parse` INSIDE this container, where the checkout is owned by
+          # the runner uid and git refuses it — so every release asset printed `(vX+no-git)` and
+          # scripts/apr_bin.sh (STRICT) could not attribute it to its tag. Ask the host checkout.
+          APR_SHA=$(git rev-parse --short=9 HEAD)
           mkdir -p "$GITHUB_WORKSPACE/target"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -524,12 +533,13 @@ jobs:
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
-            -e APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
+            -e APR_GIT_SHA_OVERRIDE="$APR_SHA" \
             rust:1.93.0-bullseye \
             sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --locked; strip target/${{ matrix.target }}/release/apr'
           # the mounted target dir is the host cache; expose the binary where the next steps expect it
           mkdir -p "target/${{ matrix.target }}/release"
           cp "$CACHE/target/${{ matrix.target }}/release/apr" "target/${{ matrix.target }}/release/apr"
+          grep -aqF "$APR_SHA" "target/${{ matrix.target }}/release/apr" || { echo "::error::apr binary does not embed its commit $APR_SHA"; exit 1; }
           GLIBC=$(cat "$CACHE/target/BUILDER_GLIBC"); RUSTC=$(cat "$CACHE/target/BUILDER_RUSTC")
           echo "builder glibc: $GLIBC"; echo "builder rustc: $RUSTC"
           {
@@ -738,7 +748,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
-          bash scripts/check_release_assets.sh "$TAG" | tee "$RUNNER_TEMP/assets.txt"
+          setsid --wait bash scripts/check_release_assets.sh "$TAG" | tee "$RUNNER_TEMP/assets.txt"
           rc=${PIPESTATUS[0]}
           # 2 is ENV (the release could not be read) and is NOT a pass; 1 names
           # each missing asset. Both are red here, distinguished in the summary.

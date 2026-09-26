@@ -65,9 +65,35 @@
 //! # Design Principles Enforcement
 //!
 //! This library enforces strict adherence to design principles (Tufte, Popper, Nielsen).
-//! The following `include_str!` ensures that the design principles test suite exists at compile time.
+//! `design_principles_suite::the_design_principles_test_suite_exists` fails the build's tests
+//! when that suite is missing.
+/// The design-principles suite must exist (#4129). This was a compile-time
+/// `include_str!("../tests/design_principles_interface.rs")`, but the package excludes `tests/`,
+/// so `cargo test` from the published tarball could not compile this crate at all. It is now a
+/// run-time check: in tree (the workspace's `contracts/` beside the crate), a missing suite FAILS.
+/// Out of tree (the crates.io tarball, which ships no `tests/`) it skips and names itself.
 #[cfg(test)]
-const _DESIGN_PRINCIPLES_TESTS: &str = include_str!("../tests/design_principles_interface.rs");
+mod design_principles_suite {
+    #[test]
+    fn the_design_principles_test_suite_exists() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        if !manifest.join("../../contracts").is_dir() {
+            eprintln!(
+                "SKIP the_design_principles_test_suite_exists: out of tree (no workspace \
+                 contracts/ beside this crate) - a published crate ships no tests/ (#4129)"
+            );
+            return;
+        }
+        let suite = manifest.join("tests/design_principles_interface.rs");
+        let text = std::fs::read_to_string(&suite)
+            .unwrap_or_else(|e| panic!("in tree, {} must exist: {e}", suite.display()));
+        assert!(
+            text.contains("#[test]"),
+            "{} holds no #[test]",
+            suite.display()
+        );
+    }
+}
 
 #[macro_use]
 #[allow(unused_macros)]

@@ -68,12 +68,12 @@ jobs:
       # The receipt validator's own case table must discriminate before any
       # number it blesses means anything.
       - name: Bench receipt validator discriminates
-        run: bash scripts/check_bench_receipt.sh
+        run: setsid --wait bash scripts/check_bench_receipt.sh
 
       # The threshold derivation, re-falsified on every run so the correction
       # to BENCH-003 cannot rot back (#2675).
       - name: Bench threshold derivation holds
-        run: bash scripts/check_bench_threshold.sh
+        run: setsid --wait bash scripts/check_bench_threshold.sh
 
       # The comparator pin's case table. The gate exits 0 when the pin
       # DISCRIMINATES; the repo's own UNPINNED bootstrap state is REPORTed
@@ -85,7 +85,7 @@ jobs:
       # reasoning about it: it printed "pinned" on a tree whose declaration
       # says UNPINNED.
       - name: llama.cpp comparator pin discriminates
-        run: bash scripts/check_llama_pin.sh
+        run: setsid --wait bash scripts/check_llama_pin.sh
 
       # The measurement itself. `--ignored` because a wall-clock assertion in a
       # normally-running test is the class that has failed eleven times here;

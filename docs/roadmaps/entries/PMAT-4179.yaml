@@ -1,0 +1,17 @@
+- id: PMAT-4179
+  github_issue: 4179
+  item_type: task
+  title: 'binary-debt: qwen3_moe live falsifier nightly, fail-closed'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-88
+  created: 2026-09-24T16:20:28Z
+  updated: 2026-09-24T16:20:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
