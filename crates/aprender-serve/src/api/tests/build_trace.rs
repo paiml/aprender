@@ -32,7 +32,7 @@ fn test_build_trace_data_brick_level() {
         .details
         .as_ref()
         .expect("details should be present")
-        .contains("apr profile"));
+        .contains("no phase split"));
     // GH-92: provenance must be WallClockTotal, never Estimated or Measured
     assert_eq!(trace.provenance, TraceProvenance::WallClockTotal);
 }
@@ -507,3 +507,68 @@ fn test_usage_clone() {
 
 include!("openai_model_02.rs");
 include!("chat_completion_05.rs");
+
+// SRV-TIM-001: X-Trace-Level carries the response's measured phase split.
+#[test]
+fn test_build_trace_data_phased_reports_the_measured_split_at_every_level() {
+    let t = PhaseTimings {
+        prefill_ms: Some(12.5),
+        decode_ms: Some(40.0),
+    }
+    .to_timings(7, 3)
+    .expect("both phases measured");
+    for (i, level) in ["brick", "step", "layer"].into_iter().enumerate() {
+        let traces = build_trace_data_phased(Some(level), 60_000, 7, 3, 28, Some(&t));
+        let trace = [traces.0, traces.1, traces.2][i]
+            .clone()
+            .expect("the requested level is filled");
+        assert_eq!(trace.level, level);
+        assert_eq!(trace.provenance, TraceProvenance::Measured);
+        let names: Vec<_> = trace.breakdown.iter().map(|o| o.name.as_str()).collect();
+        assert_eq!(names, ["prefill", "decode"]);
+        assert_eq!(trace.breakdown[0].time_us, 12_500);
+        assert_eq!(trace.breakdown[1].time_us, 40_000);
+        assert_eq!(trace.operations, 2);
+    }
+    // No split: the one wall-clock entry, never an invented phase.
+    let (_, step, _) = build_trace_data_phased(Some("step"), 60_000, 7, 3, 28, None);
+    let step = step.expect("step");
+    assert_eq!(step.provenance, TraceProvenance::WallClockTotal);
+    assert_eq!(step.breakdown.len(), 1);
+    assert!(step.breakdown[0]
+        .details
+        .as_ref()
+        .expect("details")
+        .contains("no phase split"));
+}
+
+// FALSIFY-SRV-TIM-004: the mutant a backend would be if it stopped measuring —
+// `PhaseTimings::default()` — yields NO timings block, so FALSIFY-SRV-TIM-001
+// ("timings non-null") reads RED on it. Never a zero-filled block.
+#[test]
+fn falsify_srv_tim_004_default_phases_make_timings_absent_not_zero() {
+    assert_eq!(PhaseTimings::default().to_timings(7, 3), None);
+    assert_eq!(PhaseTimings::from_split(None).to_timings(7, 3), None);
+    let half = PhaseTimings {
+        prefill_ms: Some(1.0),
+        decode_ms: None,
+    };
+    assert_eq!(half.to_timings(7, 3), None, "one measured phase is not a split");
+}
+
+// FALSIFY-SRV-TIM-003 (unit half): the clock's two phases partition its own
+// wall time — both positive, sum ≤ elapsed.
+#[test]
+fn falsify_srv_tim_003_phase_clock_partitions_wall_time() {
+    let wall = std::time::Instant::now();
+    let mut clock = PhaseClock::start();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    clock.mark();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    clock.mark();
+    let t = clock.finish().to_timings(5, 2).expect("both phases measured");
+    let wall_ms = wall.elapsed().as_secs_f64() * 1000.0;
+    assert!(t.prompt_ms > 0.0 && t.predicted_ms > 0.0, "{t:?}");
+    assert!(t.prompt_ms + t.predicted_ms <= wall_ms + 1e-6, "{t:?} > {wall_ms}");
+    assert_eq!((t.prompt_n, t.predicted_n), (5, 2));
+}

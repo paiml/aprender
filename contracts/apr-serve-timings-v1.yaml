@@ -1,0 +1,125 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-26'
+  author: PAIML Engineering
+  kind: pattern
+  description: >-
+    SRV-TIM-001. Every `apr serve` chat and completions response, and every SSE
+    terminal chunk, carries a MEASURED prefill/decode split as `timings`
+    (llama.cpp field names). The same numbers are logged once per request as a
+    `[request] {json}` stderr line, observed in the /metrics prefill/decode/ttft
+    histograms, appended to the optional `--timings-log` JSONL file, and shown
+    by X-Trace-Level. A backend that cannot split reports NO timings block: it
+    is RED here, never a zero-filled block (no third state).
+  references:
+  - 'crates/aprender-serve/src/api/mod_create_demo.rs — Timings, PhaseTimings, PhaseClock, build_trace_data_phased'
+  - 'crates/aprender-serve/src/api/request_log.rs — RequestRecord, emit, prometheus_histograms, set_timings_log'
+  - 'scripts/serve_timings_falsify.py — the live falsifier (F1, F2, F3, F5, F6)'
+equations:
+  phase_split:
+    formula: >-
+      prefill_ms = t(first chosen token) - t(engine start);
+      decode_ms  = t(last token) - t(first chosen token);
+      timings = { prompt_n = |prompt|, prompt_ms = prefill_ms,
+                  predicted_n = |generated|, predicted_ms = decode_ms }
+                iff prefill_ms AND decode_ms were both measured, else absent
+    domain: >-
+      one /v1/chat/completions or /v1/completions request, stream or not, on
+      any backend `apr serve run` dispatches to
+    codomain: "timings object, or absent (never a zero-filled object)"
+    invariants:
+    - >-
+      NO THIRD STATE. PhaseTimings::to_timings returns None unless BOTH phases
+      were measured; a backend that cannot split is a RED row in
+      `backend_coverage`, not a block of zeros.
+    - >-
+      ONE SOURCE. The log line, the histograms, the --timings-log line and the
+      X-Trace-Level breakdown are built from the SAME Timings the response
+      carries, so they cannot disagree with it.
+    - >-
+      NO EXTRA SYNC. The boundary is the host-side instant the engine hands back
+      its first chosen token (a callback on the existing path) or the CUDA
+      model's own prefill clock; nothing adds a device synchronise to measure.
+    preconditions:
+    - "a pinned apr binary (`. scripts/apr_bin.sh`) built with the backend under test"
+    postconditions:
+    - "prompt_ms > 0 AND predicted_ms > 0 AND prompt_ms + predicted_ms <= wall_ms + 1"
+  backend_coverage:
+    formula: >-
+      covered(backend) = GREEN iff F1 holds on it, stream and non-stream
+    domain: "the serve dispatch arms"
+    codomain: "GREEN / RED per row"
+    invariants:
+    - "chat: CUDA GGUF, CUDA batch scheduler, APR Q4K, APR transformer, registry, GpuModel, CPU cached GGUF, Qwen3.5 session — GREEN (measured split)"
+    - "completions: the same arms plus Qwen3/MoE dispatch — GREEN (measured split)"
+    - >-
+      completions, continuous-batch scheduler arm — RED: the scheduler reports
+      one whole-batch latency_ms and no per-request first-token instant; the
+      response carries no timings until it does
+    - "streaming chat log records report backend `unreported` (the SSE builders do not see used_gpu); the phase values are still the response's"
+    preconditions:
+    - "row coverage is read from the dispatch arms in gpu_completions_handler.rs, openai_handlers.rs, cuda_chat_backend.rs"
+    postconditions:
+    - "a new dispatch arm is RED until it sets timings"
+  request_log_line:
+    formula: >-
+      stderr line = "[request] " ++ json{ request_id, model, endpoint, backend,
+      stream, prompt_n, predicted_n, prefill_ms, decode_ms, ttft_ms, total_ms,
+      finish_reason }; ttft_ms = total_ms - decode_ms (an upper bound)
+    domain: "one completed request"
+    codomain: "one line on stderr; +build, host, unix_ms in the --timings-log file"
+    invariants:
+    - "queue_ms and tokenize_ms are not separately measured; they are inside ttft_ms, which is labelled an upper bound"
+    - "the line is always JSON: the server has no tracing subscriber and no --log-format flag"
+    preconditions:
+    - "--timings-log is off unless given"
+    postconditions:
+    - "exactly one line per request, emitted before the terminal chunk is written"
+proof_obligations:
+- type: invariant
+  property: timings are absent unless both phases were measured
+  formal: "to_timings(p) = None  ⟸  p.prefill_ms = None ∨ p.decode_ms = None"
+  applies_to: all
+- type: invariant
+  property: the phases partition wall time
+  formal: "prompt_ms > 0 ∧ predicted_ms > 0 ∧ prompt_ms + predicted_ms ≤ wall_ms + 1"
+  applies_to: all
+- type: invariant
+  property: every sink equals the response
+  formal: "∀ sink ∈ {stderr line, --timings-log line, X-Trace-Level}: sink.(prefill, decode) ≡ (timings.prompt_ms, timings.predicted_ms)"
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SRV-TIM-001
+  rule: every response carries timings
+  prediction: >-
+    chat and completions, stream and non-stream, at max_tokens 1 and 32: the
+    body or the SSE terminal chunk carries a non-null `timings`.
+  test: "python3 scripts/serve_timings_falsify.py --apr \"$APR\" --model <gguf> --out <dir> (column F1)"
+  if_fails: a backend dropped its split; Prometheus reads null and the gate on prefill_ratio is blind
+- id: FALSIFY-SRV-TIM-002
+  rule: timings counts equal usage
+  prediction: "timings.prompt_n == usage.prompt_tokens and timings.predicted_n == usage.completion_tokens"
+  test: "python3 scripts/serve_timings_falsify.py ... (column F2)"
+  if_fails: the rates are computed over the wrong token counts
+- id: FALSIFY-SRV-TIM-003
+  rule: the phases are positive and partition wall time
+  prediction: "prompt_ms > 0, predicted_ms > 0, prompt_ms + predicted_ms <= client wall ms + 1"
+  test: "python3 scripts/serve_timings_falsify.py ... (column F3); cargo test -p aprender-serve --lib falsify_srv_tim_003"
+  if_fails: a phase was invented or double-counted
+- id: FALSIFY-SRV-TIM-004
+  rule: an unmeasured backend is RED, never zero-filled
+  prediction: >-
+    The mutant `PhaseTimings::default()` in place of a measured split yields no
+    timings block, which turns F1 RED; one measured phase alone also yields none.
+  test: "cargo test -p aprender-serve --lib falsify_srv_tim_004"
+  if_fails: a zero-filled block would be read as a measurement (no third state violated)
+- id: FALSIFY-SRV-TIM-005
+  rule: the stderr log line equals the response
+  prediction: "the `[request] ` line for the response id is JSON with prefill_ms/decode_ms/prompt_n/predicted_n equal to the response timings"
+  test: "python3 scripts/serve_timings_falsify.py ... (column F5); cargo test -p aprender-serve --lib request_log"
+  if_fails: the log and the response disagree; one of them is lying
+- id: FALSIFY-SRV-TIM-006
+  rule: the --timings-log line equals the response and names its build
+  prediction: "the JSONL line for the response id carries the same four values plus non-empty build and host"
+  test: "python3 scripts/serve_timings_falsify.py ... (column F6)"
+  if_fails: the NAS ledger records numbers the client never saw, or cannot say which binary produced them
