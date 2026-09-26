@@ -577,6 +577,7 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: oracle-owl oracle-owl-check
 .PHONY: roadmap-aggregate roadmap-aggregate-check
 roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
 	@python3 scripts/lib/roadmap_fragments.py aggregate --write
@@ -593,6 +594,12 @@ ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 # that asks a human to do the measurement is not a gate. `coverage` already
 # enforces COV_FLOOR, so this is a name, not a new policy.
 coverage-check: coverage
+
+# PVL-001 EV-6a (#4139): the ONLY writer of the Lean label ratchet. `pv discharge check` never writes
+# unresolved-labels.json; this rewrites it DOWNWARD (a label that resolves now leaves; a new one is never added).
+.PHONY: label-ratchet
+label-ratchet:
+	@. scripts/pv_bin.sh && "$$PV" discharge label-ratchet crates/aprender-contracts-staging/lean --contracts contracts
 
 # Ditto for `contracts`. The provable-contract tier is a HARD release gate per
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
@@ -612,7 +619,10 @@ contracts:
 	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json
 	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
 	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
-	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null
+	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null || exit 1
+	@echo "== consistency: pv-sat writes the witness, pv lint re-checks it (ONT-001 ONT-5, R-1); refines is Liskov (ONT-4e, R-20); bindings resolve (ONT-3a) =="
+	@. scripts/pv_bin.sh && { [ -x "$$PV_SAT" ] || { echo "FAIL: no pv-sat beside $$PV -- a PV_BIN override must ship its pv-sat too"; exit 1; }; } && "$$PV_SAT" contracts && "$$PV" lint contracts/ --gate ont-consistency >/dev/null && "$$PV" lint contracts/ --gate refines >/dev/null && "$$PV" lint contracts/ --gate bindings >/dev/null || exit 1
+	@test -z "$$(git status --porcelain -- contracts/witness)" || { git status --short -- contracts/witness; echo "FAIL: contracts/witness/ differs from what pv-sat writes -- commit it"; exit 1; }
 	@echo "== README states the censused count =="
 	@bash scripts/readme_sync.sh --check
 	@echo "== provenance marks, interim (ONT-001 R-10) =="
@@ -1398,6 +1408,16 @@ ont-ratchet:
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
 
+# PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
+# through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
+# NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
+.PHONY: lint-ratchet lint-ratchet-self-test
+lint-ratchet:
+	@bash scripts/lint_ratchet.sh
+
+lint-ratchet-self-test:
+	@bash scripts/lint_ratchet.sh --self-test
+
 # ONT-001 §5 ONT-4b2 / R-13 — the out-of-gate SHACL differential oracle.
 #
 # NOT a PR check, by the rule that puts it here: `shacl` is 316 crates and pinned at ONE version (ONT-0's
@@ -1417,3 +1437,22 @@ oracle:
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
+
+# ONT-001 §3.8 / ONT-2c — the OWL oracle (release gate only, R-13; never per PR). Three arms:
+# horned-owl re-parses the fixture's written .ofn and must equal the HAND-WRITTEN axiom list; every live
+# axiom must be a told-closure-admitted kind; ELK 0.4.3 (pinned by sha256, needs a JVM) must agree with
+# contracts/tbox-report.json, with a planted positive control turning it RED every run. No JVM exits 2 with
+# `decline: NOT MEASURED`, which is RED at the release gate and never a skip. The crate is detached from the
+# workspace AND from tests/oracle's SHACL crate (feature unification breaks horned-owl there).
+oracle-owl:
+	@echo "== OWL oracle: horned-owl round-trip + admitted kinds + ELK TBox differential (out of gate) =="
+	@. scripts/pv_bin.sh && "$$PV" ontology export --owl tests/fixtures/ont/owl/ontology.yaml > "$${TMPDIR:-/tmp}/ont2c-fixture.ofn"
+	@cargo build --release --quiet --manifest-path tests/oracle/owl/Cargo.toml
+	@O="$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/owl/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/owl-oracle"; \
+	"$$O" roundtrip "$${TMPDIR:-/tmp}/ont2c-fixture.ofn" tests/fixtures/ont/owl/axioms.txt && \
+	"$$O" kinds contracts/ontology.ofn && \
+	"$$O" elk .
+
+oracle-owl-check: oracle-owl
+	@git diff --exit-code tests/oracle/tbox-differential.json \
+	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }

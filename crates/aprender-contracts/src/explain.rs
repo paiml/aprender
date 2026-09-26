@@ -67,6 +67,9 @@ fn strategy_explanation(strategy: &str) -> &str {
         }
         "compositional" => "verify sub-kernels separately, compose proofs",
         "bounded_int" => "integer-only verification within bound",
+        "bounded_float" => {
+            "symbolic finite f32 within a magnitude bound, real float arithmetic (no stubs)"
+        }
         _ => "bounded model check",
     }
 }

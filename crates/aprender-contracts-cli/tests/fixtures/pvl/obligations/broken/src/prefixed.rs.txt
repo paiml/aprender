@@ -1,0 +1,4 @@
+// The type is only ever named as the tail of a longer word here.
+pub fn grade_prefixed(g: &TdgGrade) -> bool {
+    g.is_passing()
+}

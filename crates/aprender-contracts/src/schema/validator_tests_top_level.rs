@@ -275,7 +275,19 @@ fn allow_list_matches_the_contract_struct() {
     // Pins CONTRACT_TOP_LEVEL_FIELDS to the struct. Add a field to `Contract`
     // without adding it here and the new block becomes "a near-miss of itself":
     // every contract using it would collect a SCHEMA-019 error.
-    let value = serde_yaml::to_value(Contract::default()).expect("Contract must serialize");
+    // ONT-4e's `requires`/`ensures` are skipped when empty, so they are populated here to be serialized at all.
+    let clause = crate::schema::Clause {
+        id: "PRE-1".into(),
+        statement: "s".into(),
+        formal: None,
+        formal_status: crate::schema::FormalStatus::Prose,
+    };
+    let contract = Contract {
+        requires: vec![clause.clone()],
+        ensures: vec![clause],
+        ..Contract::default()
+    };
+    let value = serde_yaml::to_value(contract).expect("Contract must serialize");
     let mapping = value.as_mapping().expect("Contract serializes to a mapping");
     let mut serialized: Vec<&str> = mapping.keys().filter_map(serde_yaml::Value::as_str).collect();
     serialized.sort_unstable();

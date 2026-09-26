@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "symbol": "aprender::inference::forward::forward_pass",
+      "reason": "ghost: no `mod inference` or `use \u2026 inference` in `crates/aprender-core/src/lib.rs`",
+      "ticket": "#4094"
+    }
+  ]
+}

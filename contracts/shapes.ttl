@@ -2,6 +2,337 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ont: <https://ont.paiml.dev/v1alpha1/> .
 
+<https://ont.paiml.dev/v1alpha1/shape/binary-pv-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-contracts-cli/pv> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pv" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-contracts-cli" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^pv [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 44 ;
+        sh:maxCount 44 ;
+        sh:in ( "audit" "book" "census" "certify" "challenge" "check-parity" "codegen" "coq" "coverage" "diff" "discharge" "equations" "explain" "extract" "extract-pytorch" "flux" "fuzz" "generate" "graph" "infer" "invariants" "kaizen" "kani" "lean" "lean-status" "lint" "migrate" "mirai" "obligations" "ontology" "pipeline" "probar" "proof-status" "query" "roofline" "scaffold" "score" "status" "tla" "unlock" "validate" "verify-bindings" "verify-pipeline" "verify-structure" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/binary-target> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Binary> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/target> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/srcPath> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/gitSha> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{40}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionSha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/helpSha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/route> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/mcpTool> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/exposes> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredRoute> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredTool> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/namePairMismatch> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/helpFailed> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/auditRow> ;
+        sh:minCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/surface-audit-ledger> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/Dataset> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/header> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/rows> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/github-repo> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Repo> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/nameWithOwner> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/sha> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{40}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/url> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/github-issue> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Issue> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/repo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/number> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/title> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/state> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "OPEN" "CLOSED" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/updatedAt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/milestone> ;
+        sh:maxCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/Milestone> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/milestoneUnresolved> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/github-pull-request> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/PullRequest> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/repo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/number> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/title> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/state> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "OPEN" "CLOSED" "MERGED" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/updatedAt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/mergedAt> ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/baseRepo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/Repo> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/baseRepoUnresolved> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/github-milestone> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Milestone> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/repo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/number> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/title> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/state> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "OPEN" "CLOSED" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/updatedAt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
     sh:property [
@@ -53,6 +384,47 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/lean/sorryFree> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/examples-well-formed> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Example> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/file> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/crate> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/namesQwen35> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/modelCurrent> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/examples-model-current> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Example> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/modelCurrent> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;

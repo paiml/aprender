@@ -1,0 +1,157 @@
+# ──────────────────────────────────────────────
+# github-entities-v1 — GitHub repos, issues, pull requests and milestones as focus nodes (ONT-001 §5 ONT-4f;
+# issue aprender#4330)
+#
+# WHAT THIS IS. Four Σ entity types — `repo`, `issue`, `pull-request`, `milestone` — on the `json` extractor, each
+# with its own vocabulary (contracts/ontology.yaml `entity_types[].vocabulary`), and the four shapes below over
+# them. Each class is ⊑ Json in Σ `subsumes`, so a shape on Json would reach all four through the R-19 closure.
+#
+# COMMITTED SNAPSHOTS, NEVER A LIVE API. The extractor reads `evidence/github/<type>/<ref-slug>.json` and nothing
+# else (`ontology/extract/json/github.rs`). A snapshot records ONE moment, and its `ref` says which:
+#   · repo:                        <owner>/<repo>@<sha>              — must equal the snapshot's own `sha`
+#   · issue, pull-request, milestone: <owner>/<repo>#<n>@<updatedAt>  — must equal the snapshot's own `updatedAt`
+# A disagreement is refused BY THE EXTRACTOR naming both values (PV-ONT-012, Fail), as is a `state: merged` with
+# no `mergedAt` (named). Refreshing a snapshot is committing a new one; the gate never goes to the network, so
+# its verdict is a function of the tree.
+#
+# `resolves:` BETWEEN TRACKED SNAPSHOTS ONLY. `pr:baseRepo resolves: repo` and `issue:milestone resolves:
+# milestone`: a value naming a tracked snapshot (by `owner/repo[#n]` or by its full ref) becomes an IRI edge to
+# that node, which `class:` then checks; a value naming nothing tracked is materialized on `…Unresolved`, held at
+# `maxCount: 0` — FAIL CLOSED, never `Unknown`, never looked up live. The extractor's RESOLVES table is asserted
+# equal to these declarations by a unit test, so the two cannot drift apart.
+#
+# ARMED. The four ids are in `contracts/lint-baseline.json` `armed_shapes[]`: a violation here is a Fail.
+#
+# KIND: pattern. Vocabulary, an extractor and shapes over a graph; the proof is the gate's own case table.
+# ──────────────────────────────────────────────
+name: github-entities-v1
+version: "1.0.0"
+scope: >
+  How a committed GitHub snapshot under evidence/github/<type>/ becomes a focus node typed ont:Repo, ont:Issue,
+  ont:PullRequest or ont:Milestone, and the four shapes over them. Out of scope: fetching or refreshing the
+  snapshots (a commit does that), and any GitHub entity type Σ does not declare.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    GitHub repositories, issues, pull requests and milestones are focus nodes read from committed snapshots; a
+    snapshot's ref names the version it records and must agree with it, a merge carries its time, and a
+    reference between snapshots resolves to a tracked node or fails closed.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.6 (the implemented SHACL subset), §3.7, §5 ONT-4f'
+    - 'aprender#4330 (this row); aprender#4323 (ONT-4c, the Σ entity_type_target_class map)'
+    - 'crates/aprender-contracts/src/ontology/extract/json/github.rs — the extractor and its case table'
+    - 'contracts/ontology.yaml — entity_types[].vocabulary, concepts Json/Repo/Issue/PullRequest/Milestone, subsumes'
+
+entity:
+  # The contract governs four entity types; `entity:` names one Σ type, so it anchors on `repo`, the type every
+  # other one resolves back to. The shapes below target all four by class.
+  type: repo
+
+relations:
+  depends_on: [ont-shapes-v1, ont-sigma-v1]
+
+shapes:
+  - id: github-repo
+    targetClass: ont:Repo
+    properties:
+      - {path: repo:ref, minCount: 1, maxCount: 1}
+      - {path: repo:nameWithOwner, minCount: 1, maxCount: 1}
+      - {path: repo:sha, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{40}$"}
+      - {path: repo:url, minCount: 1, maxCount: 1}
+
+  - id: github-issue
+    targetClass: ont:Issue
+    properties:
+      - {path: issue:ref, minCount: 1, maxCount: 1}
+      - {path: issue:repo, minCount: 1, maxCount: 1}
+      - {path: issue:number, minCount: 1, maxCount: 1, datatype: xsd:integer}
+      - {path: issue:title, minCount: 1, maxCount: 1}
+      - {path: issue:state, minCount: 1, maxCount: 1, in: [OPEN, CLOSED]}
+      - {path: issue:updatedAt, minCount: 1, maxCount: 1}
+      - {path: issue:milestone, maxCount: 1, nodeKind: IRI, class: ont:Milestone, resolves: milestone}
+      - {path: issue:milestoneUnresolved, maxCount: 0}
+
+  - id: github-pull-request
+    targetClass: ont:PullRequest
+    properties:
+      - {path: pr:ref, minCount: 1, maxCount: 1}
+      - {path: pr:repo, minCount: 1, maxCount: 1}
+      - {path: pr:number, minCount: 1, maxCount: 1, datatype: xsd:integer}
+      - {path: pr:title, minCount: 1, maxCount: 1}
+      - {path: pr:state, minCount: 1, maxCount: 1, in: [OPEN, CLOSED, MERGED]}
+      - {path: pr:updatedAt, minCount: 1, maxCount: 1}
+      - {path: pr:mergedAt, maxCount: 1}
+      - {path: pr:baseRepo, minCount: 1, maxCount: 1, nodeKind: IRI, class: ont:Repo, resolves: repo}
+      - {path: pr:baseRepoUnresolved, maxCount: 0}
+
+  - id: github-milestone
+    targetClass: ont:Milestone
+    properties:
+      - {path: milestone:ref, minCount: 1, maxCount: 1}
+      - {path: milestone:repo, minCount: 1, maxCount: 1}
+      - {path: milestone:number, minCount: 1, maxCount: 1, datatype: xsd:integer}
+      - {path: milestone:title, minCount: 1, maxCount: 1}
+      - {path: milestone:state, minCount: 1, maxCount: 1, in: [OPEN, CLOSED]}
+      - {path: milestone:updatedAt, minCount: 1, maxCount: 1}
+
+equations:
+  version_slot:
+    formula: "accepted(s) ⇒ version(ref(s)) = s[vocabulary(type(s)).version]"
+    domain: "every *.json under evidence/github/<type>/ for a Σ snapshot type, walked in byte order"
+    codomain: "one root node typed the type's root_class, or a refusal naming both values"
+    invariants:
+      - "a refused snapshot emits no triple"
+      - "a file or directory the walk cannot place is refused by name, never skipped"
+    preconditions:
+      - "Σ declares the type with a vocabulary on the json extractor"
+    postconditions:
+      - "two extractions are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  resolves:
+    formula: "value(s, k) ∈ tracked(target(k)) ⇒ edge(s, k, node(value)) ∧ value(s, k) ∉ tracked(target(k)) ⇒ unresolved(s, k)"
+    domain: "the RESOLVES table: pr:baseRepo → repo, issue:milestone → milestone"
+    codomain: "an IRI edge to a tracked node, or a literal on the Unresolved predicate"
+    invariants:
+      - "no network lookup: only snapshots in the same walk are candidates"
+    preconditions:
+      - "the RESOLVES table equals this contract's resolves: declarations"
+    postconditions:
+      - "an unresolved reference fails its shape's maxCount 0"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: GHE-INV-001
+    property: a snapshot whose ref version disagrees with its own recorded version is refused naming both
+    formal: 'version(ref(s)) ≠ s[version] ⇒ s ∈ errors ∧ |nodes(s)| = 0'
+    prose: false
+  - id: GHE-INV-002
+    property: a merged snapshot with no mergedAt is refused naming the field
+    formal: 'state(s) = merged ∧ |mergedAt(s)| = 0 ⇒ s ∈ errors'
+    prose: false
+  - id: GHE-INV-003
+    property: a reference to an untracked snapshot fails closed
+    formal: 'value(s, k) ∉ tracked(target(k)) ⇒ |unresolved(s, k)| = 1 ⇒ Fail(shape(s), s)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-GHE-001
+    rule: the three named mutations
+    prediction: >
+      a merged pull-request snapshot with no mergedAt is refused naming `mergedAt`; an issue naming an untracked
+      milestone materializes milestoneUnresolved and no edge; a repo whose sha disagrees with its ref is refused
+      naming both shas
+    test: cargo test -p aprender-contracts --lib ontology::extract::json::github
+    if_fails: a snapshot that contradicts itself, or points at nothing, reads as a clean corpus
+  - id: FALSIFY-GHE-002
+    rule: the gate discriminates on the CLI
+    prediction: >
+      the green fixture passes with every GitHub type counted; each mutation fixture fails with exit 1 naming the
+      file or the focus node and the property
+    test: cargo test -p aprender-contracts-cli --test ont4f_github_entities
+    if_fails: the shapes decorate the corpus instead of grading it

@@ -24,6 +24,9 @@ use std::path::Path;
 use crate::ontology::rdf::{iri, Graph, Term, PROV_ENTITY, RDF_TYPE};
 use crate::ontology::shapes::expand;
 
+/// ONT-4f (aprender#4330): the GitHub snapshot entity types, read through this module's [`node`].
+pub mod github;
+
 /// The declaration's fault: the gate exits 3 naming the contract and the reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtractError {

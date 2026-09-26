@@ -1,18 +1,23 @@
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through `make ont-ratchet` (ONT R-6)",
-  "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes"],
-  "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green"],
+  "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes", "proved-is-derived"],
+  "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green", "github-repo", "github-issue", "github-pull-request", "github-milestone"],
   "contracts_without_valid_under": 386,
+  "command": "make lint-ratchet",
+  "unpaired_theorem_modules": 130,
+  "contracts_without_depends_on": 278,
+  "underived_proved_claims": 95,
   "ont": {
     "consumer_present": true,
-    "contracts_total": 1889,
-    "entity_types_registered": 11,
-    "extractors_implemented": 8,
-    "contracts_anchored": 8,
-    "contracts_shaped": 6,
+    "contracts_total": 1898,
+    "entity_types_registered": 16,
+    "extractors_implemented": 9,
+    "contracts_anchored": 10,
+    "contracts_shaped": 8,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
-    "shapes_unarmed": 15
+    "liskov_prose": 0,
+    "shapes_unarmed": 17
   }
 }

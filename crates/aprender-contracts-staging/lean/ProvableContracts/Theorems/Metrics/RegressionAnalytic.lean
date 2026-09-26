@@ -1,4 +1,7 @@
-import Mathlib
+import Mathlib.Algebra.Order.Chebyshev
+import Mathlib.Data.Real.Sqrt
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.Positivity
 
 /-!
 # Regression Metrics — Analytic Correctness (Mathlib-backed)

@@ -1,0 +1,114 @@
+# ──────────────────────────────────────────────
+# bin-aprender-cbtop--aprender-cbtop-v1 — the `aprender-cbtop` bin target of package aprender-cbtop (ONT-10 slice S19 1/3)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml (ONT-4g, dafb8194f).
+# MEASURED 2026-09-26, batch/ont-10 @ dafb8194f, release build, default features:
+#   --help rc 0; --no-such-flag rc 2; --version = "cbtop 0.69.3" (clap #[command(name = "cbtop")], src/main.rs:19);
+#   the --help walk gives 4 leaf commands and surface_audit.csv has exactly those 4 rows (set-equal).
+# LIVE RED: G0.1 (no sha); name pair — --version says "cbtop", the target is aprender-cbtop; G1.3 — `bench --backend
+#   nosuch`, `--workload nosuch`, `--format nosuch` each exit 0 and run with a default (values parsed after clap).
+# [U] [COMMAND] is optional: a bare invocation starts the TUI, and no ledger row names that root surface.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-cbtop--aprender-cbtop-v1
+version: "1.0.0"
+scope: >
+  The command surface of the `aprender-cbtop` binary (package aprender-cbtop, src crates/aprender-cbtop/src/main.rs):
+  its help, its usage errors, its version string, its subcommand set, and its surface-audit rows. Out of scope: what
+  the benchmarks measure and the TUI's rendering.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    aprender-cbtop answers --help, rejects an unknown flag as a usage error, names the commit it was built from,
+    exposes exactly the 4 leaf commands the snapshot records, and has an audited ledger row for each.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'crates/aprender-cbtop/src/main.rs — the clap Cli and Commands enums'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is aprender-cbtop'
+    - 'aprender#4502 — ONT-10, slice S19'
+
+entity:
+  type: binary
+  ref: binary/aprender-cbtop/aprender-cbtop
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-cbtop-surface
+    targetClass: bin:target/aprender-cbtop/aprender-cbtop
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-cbtop"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-cbtop"]}
+      # LIVE RED 2026-09-26: "cbtop 0.69.3" — clap's command name is cbtop, not the target name; a warning until renamed
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-cbtop [0-9]+\\.[0-9]+\\.[0-9]+", severity: warning}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - path: bin:command
+        minCount: 4
+        maxCount: 4
+        in:
+          - "bench"
+          - "optimize analyze"
+          - "optimize baseline"
+          - "optimize check"
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(aprender-cbtop)) = leaves(clap(Cli)) ∧ commands(snapshot(aprender-cbtop)) ⊆ {f.feature : f ∈ surface_audit, f.binary = aprender-cbtop}"
+    domain: "the aprender-cbtop line of the tracked snapshot, the clap Commands/OptimizeCommands enums, and the ledger rows with binary = aprender-cbtop"
+    codomain: "set equality, or a Fail naming each command in the symmetric difference"
+    invariants:
+      - "a leaf clap accepts and the snapshot omits is an unaudited surface"
+    preconditions:
+      - "the snapshot was written at this commit"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `aprender-cbtop --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APRENDER-CBTOP-INV-001
+    property: every aprender-cbtop leaf command has an audited ledger row
+    formal: '∀ c ∈ commands(aprender-cbtop): |{r ∈ surface_audit : r.binary = aprender-cbtop ∧ r.feature = "aprender-cbtop " ++ c}| ≥ 1'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER-CBTOP-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-cbtop --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-cbtop'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-cbtop --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-cbtop'
+    if_fails: 'a typo is silently ignored (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`aprender-cbtop --version` starts with the target name and contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-26: `cbtop 0.69.3` — no sha, and the name is cbtop, not aprender-cbtop'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-004
+    rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
+    prediction: '`aprender-cbtop bench --backend nosuch` exits 2 naming simd, wgpu, cuda, all; leaves(clap) = commands(snapshot)'
+    test: 'NOT YET WRITTEN — S19 (aprender-5d)'
+    if_fails: 'LIVE RED 2026-09-26: `bench --backend nosuch`, `bench --workload nosuch` and `bench --format nosuch` each exit 0 and run with a default — the values are parsed after clap and fall back silently'
+    mutation: 'add a subcommand without re-snapshotting; must turn RED naming it'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = aprender-cbtop per leaf (4 on 2026-09-26)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'a shipped command has no audited row (observed 2026-09-26: 4 of 4 ledgered, GREEN)'
+    mutation: 'delete every aprender-cbtop row; must turn RED naming aprender-cbtop'

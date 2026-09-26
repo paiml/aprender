@@ -1,0 +1,3 @@
+pub fn grade_ok(g: Grade) -> bool {
+    matches!(g, Grade::A)
+}

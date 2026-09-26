@@ -1,0 +1,419 @@
+{
+  "ticket": "PMAT-4431",
+  "base": "e5929e6e5",
+  "base_resolved": "e5929e6e5",
+  "base_note": "no origin/e5929e6e5 exists; judged against the local ref",
+  "head": "2df1dc065332a9ea7a601d3944639be4ce5b77dd",
+  "diff_sha256": "3d2ae07331f74819e134b56b30b7b0fdd16cfb4021b3126afbb62f2a096fafd3",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 24509,
+  "prompt_sha256": "ee66cf71e1c49037498326e19c1ccabc89127115bff9f3f2f8ec9f232dbe3cfb",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff fails because it does not fulfill the acceptance criteria for PMAT-4431 (missing both the 'quorum on the merge delta' and 're-armed with --match-head-commit'). Additionally, the diff modifies the state of a separate ticket (PMAT-4072) without authorization from the PMAT-4431 ticket.",
+      "findings": [
+        {
+          "claim": "The ticket PMAT-4431 explicitly requires 'quorum on the merge delta' and 're-armed with --match-head-commit' in its acceptance criteria, but neither are addressed in the diff nor supported by evidence in the receipt.",
+          "file": "docs/roadmaps/entries/PMAT-4431.yaml",
+          "fix": "Provide evidence of the quorum on the merge delta in the receipt, and include the implementation for 're-armed with --match-head-commit' as requested by the ticket.",
+          "grounding": "cited",
+          "line": 12
+        },
+        {
+          "claim": "The diff updates the status, assignee, and notes (adding a quorum receipt) for PMAT-4072. This modifies a separate ticket's state, which PMAT-4431 does not ask for.",
+          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+          "fix": "Remove modifications to PMAT-4072, or explicitly state why resolving this merge requires updating a completely separate ticket's status.",
+          "grounding": "cited",
+          "line": 18
+        }
+      ],
+      "raw_bytes": 3756,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "ee66cf71e1c49037498326e19c1ccabc89127115bff9f3f2f8ec9f232dbe3cfb",
+      "trace": {
+        "input_sha256": "d81929372725fd76973bda7183325e6ac70e99283ee51405b16b95edb8695d10",
+        "output_sha256": "6357005f95c739e6165428f671df3bca852e0bddf7d66591e2b3a08d7cfb8b23",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff contains drive-by changes that do not resolve conflicts or green the target-side guards, therefore doing things the ticket does not ask for. These include updating a completely unrelated roadmap fragment (PMAT-4072) with a quorum receipt, changing the truncation reason string formatting in the producer script, and rewriting a mutant without a slice in the producer guard check script.",
+      "findings": [
+        {
+          "claim": "The diff modifies the notes of an unrelated ticket fragment (PMAT-4072) to cite its quorum receipt. Ticket PMAT-4431 is for merging B3 onto main and greening target-side guards, and requires quorum on the PMAT-4431 merge delta itself; it does not ask to update PMAT-4072.",
+          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+          "grounding": "cited",
+          "line": 18
+        },
+        {
+          "claim": "The diff modifies the truncation reason format string to append '... and N more chars'. This is a drive-by improvement that does not resolve a conflict or green a target-side guard, doing something the ticket does not ask for.",
+          "file": "scripts/lib/model_ladder_cells_produce.py",
+          "grounding": "cited",
+          "line": 210
+        },
+        {
+          "claim": "The diff rewrites the 'owed-set' mutant to use zip(..., range(1)) instead of list(...)[:1]. The receipt acknowledges the mutant was rewritten 'without a slice' and 'still killed', indicating this was an unasked refactoring rather than a required fix to green the guard.",
+          "file": "scripts/check_ladder_cells_producer.sh",
+          "grounding": "cited",
+          "line": 116
+        }
+      ],
+      "raw_bytes": 4173,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "ee66cf71e1c49037498326e19c1ccabc89127115bff9f3f2f8ec9f232dbe3cfb",
+      "trace": {
+        "input_sha256": "76fa5ad9defd36ec48ded81bdad4777636738cf549e00083becc1ce3c50a1c3d",
+        "output_sha256": "d2e7e0e99928fb3e10c4158ae189d1a4ea3cc631e0ef08cc3678adc2799e1303",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the three fix commits following the merge of origin/main into fold/b3-onto-main. Refactoring of validation helpers preserves all checks and their order; guard retirement appropriately responds to removed ci.yml structures; documentation and roadmap updates are accurate. Target-side guards newer than merge-base are green or their reds are explained and match main's state. Receipt validates test passing and mutant behavior.",
+      "findings": [],
+      "raw_bytes": 1823,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ee66cf71e1c49037498326e19c1ccabc89127115bff9f3f2f8ec9f232dbe3cfb",
+      "trace": {
+        "input_sha256": "57fc5d18cb76b9164a7dbc0e0246fa7dd4ffbccbd0a47c7cde43cc9228caee70",
+        "output_sha256": "45caa34ac0f35285d633821f03c3b2aa8c89b19a14465a82a1e131270a9af726",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The diff fails because it does not fulfill the acceptance criteria for PMAT-4431 (missing both the 'quorum on the merge delta' and 're-armed with --match-head-commit'). Additionally, the diff modifies the state of a separate ticket (PMAT-4072) without authorization from the PMAT-4431 ticket.",
+      "findings": [
+        {
+          "claim": "The ticket PMAT-4431 explicitly requires 'quorum on the merge delta' and 're-armed with --match-head-commit' in its acceptance criteria, but neither are addressed in the diff nor supported by evidence in the receipt.",
+          "file": "docs/roadmaps/entries/PMAT-4431.yaml",
+          "fix": "Provide evidence of the quorum on the merge delta in the receipt, and include the implementation for 're-armed with --match-head-commit' as requested by the ticket.",
+          "grounding": "cited",
+          "line": 12
+        },
+        {
+          "claim": "The diff updates the status, assignee, and notes (adding a quorum receipt) for PMAT-4072. This modifies a separate ticket's state, which PMAT-4431 does not ask for.",
+          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+          "fix": "Remove modifications to PMAT-4072, or explicitly state why resolving this merge requires updating a completely separate ticket's status.",
+          "grounding": "cited",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "The diff contains drive-by changes that do not resolve conflicts or green the target-side guards, therefore doing things the ticket does not ask for. These include updating a completely unrelated roadmap fragment (PMAT-4072) with a quorum receipt, changing the truncation reason string formatting in the producer script, and rewriting a mutant without a slice in the producer guard check script.",
+      "findings": [
+        {
+          "claim": "The diff modifies the notes of an unrelated ticket fragment (PMAT-4072) to cite its quorum receipt. Ticket PMAT-4431 is for merging B3 onto main and greening target-side guards, and requires quorum on the PMAT-4431 merge delta itself; it does not ask to update PMAT-4072.",
+          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+          "grounding": "cited",
+          "line": 18
+        },
+        {
+          "claim": "The diff modifies the truncation reason format string to append '... and N more chars'. This is a drive-by improvement that does not resolve a conflict or green a target-side guard, doing something the ticket does not ask for.",
+          "file": "scripts/lib/model_ladder_cells_produce.py",
+          "grounding": "cited",
+          "line": 210
+        },
+        {
+          "claim": "The diff rewrites the 'owed-set' mutant to use zip(..., range(1)) instead of list(...)[:1]. The receipt acknowledges the mutant was rewritten 'without a slice' and 'still killed', indicating this was an unasked refactoring rather than a required fix to green the guard.",
+          "file": "scripts/check_ladder_cells_producer.sh",
+          "grounding": "cited",
+          "line": 116
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+      "line": 18,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The diff modifies the notes of an unrelated ticket fragment (PMAT-4072) to cite its quorum receipt. Ticket PMAT-4431 is for merging B3 onto main and greening target-side guards, and requires quorum on the PMAT-4431 merge delta itself; it does not ask to update PMAT-4072.",
+        "The diff updates the status, assignee, and notes (adding a quorum receipt) for PMAT-4072. This modifies a separate ticket's state, which PMAT-4431 does not ask for."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-4431.yaml",
+      "line": 12,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The ticket PMAT-4431 explicitly requires 'quorum on the merge delta' and 're-armed with --match-head-commit' in its acceptance criteria, but neither are addressed in the diff nor supported by evidence in the receipt."
+      ]
+    },
+    {
+      "file": "scripts/check_ladder_cells_producer.sh",
+      "line": 116,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff rewrites the 'owed-set' mutant to use zip(..., range(1)) instead of list(...)[:1]. The receipt acknowledges the mutant was rewritten 'without a slice' and 'still killed', indicating this was an unasked refactoring rather than a required fix to green the guard."
+      ]
+    },
+    {
+      "file": "scripts/lib/model_ladder_cells_produce.py",
+      "line": 210,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff modifies the truncation reason format string to append '... and N more chars'. This is a drive-by improvement that does not resolve a conflict or green a target-side guard, doing something the ticket does not ask for."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, gemini-3.1-pro-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 21h38m15s."
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790422948,
+          "window_calls": 4,
+          "window_429": 4,
+          "hour_calls": 3,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-26T11:42:28Z)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 30,
+          "basis": "[U] default 30, raised to the 20 calls a window has made without a 429; no window reached one",
+          "window_start": 1790422948,
+          "window_calls": 20,
+          "window_429": 0,
+          "hour_calls": 17,
+          "share": 6,
+          "want": 2,
+          "state": "hour",
+          "reason": "agy bucket gemini: 17 calls in the last hour + 2 this round exceed the hour share 6 (1/5 of the budget 30, [U] default 30, raised to the 20 calls a window has made without a 429; no window reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 24509
+  },
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 350,
+    "budget_s": 300,
+    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "brief": {
+      "bytes": 24509,
+      "sent_bytes": 24678,
+      "max_bytes": 24576
+    },
+    "trace": {
+      "input_sha256": "a4cd78d6c8fb929bc4ba0580079e5d1502d6ec82b18eb65b684b8db1a6b2620c",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 1,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-25T20:18:53Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)"
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=1/2"
+  }
+}

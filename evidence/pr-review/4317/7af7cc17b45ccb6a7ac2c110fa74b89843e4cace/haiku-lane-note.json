@@ -1,0 +1,111 @@
+{
+  "tool": {
+    "driver": {
+      "name": "claude-haiku-4-5-20251001",
+      "version": "headless -p lane, read-only brief over scoped.diff",
+      "rules": []
+    }
+  },
+  "invocations": [
+    {
+      "executionSuccessful": true,
+      "toolExecutionNotifications": [
+        {
+          "level": "note",
+          "message": {
+            "text": "Ran headless as `claude -p --model claude-haiku-4-5-20251001` with a read-only brief (haiku_prompt.md, 1282 lines: instructions + scoped.diff appended) over the same scoped diff subset agy reviewed. Output: reviewed:true, 2 findings. Both independently reverified against actual source by the primary reviewer and BOTH REFUTED (0 of 2 confirmed). This lane is not represented in the agy-review-v1.schema.json (that schema is agy-specific per S3.E); per the task's own fallback instruction its verdict and findings are recorded here as a findings note rather than in a schema field that has no place for it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "claude",
+              "-p",
+              "--model",
+              "claude-haiku-4-5-20251001"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "aaaa80eb3296ae15e66db0ad9187e54dd3e6600aefc5b6ceb5391ba045d1f65d"
+          }
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "ruleId": "docker-rm-wrong-source",
+      "level": "note",
+      "message": {
+        "text": "REFUTED by primary. Haiku claimed the docker cleanup command's nested `bash -c '... $(dirname \"$0\") ...'` expands $0 to the literal string 'bash' rather than the target directory, because $0 is 'the script name'. This is wrong for this construct: scripts/ci_run_target_release.sh's do_release() runs `\"$@\" \"$dir\"` (confirmed at its line 70) \u2014 i.e. it appends $dir as the LAST positional argument to the command it invokes. Bash's own `-c 'script' arg0 arg1...` convention binds that trailing argument to $0 *inside* the script string, exactly as the script's own header comment states ('The delete command gets the dir as its last argument.'). So $0 correctly resolves to $dir, not to the literal word 'bash'."
+      },
+      "locations": [
+        {
+          "physicalLocation": {
+            "artifactLocation": {
+              "uri": "scripts/ci_run_target_release.sh"
+            },
+            "region": {
+              "startLine": 70
+            }
+          }
+        }
+      ],
+      "properties": {
+        "grounding": "measured",
+        "command": [
+          "sed",
+          "-n",
+          "69,70p",
+          "scripts/ci_run_target_release.sh"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": null,
+        "excerpt": "  if [ \"$#\" -eq 0 ]; then set -- rm -rf --; fi\n  if \"$@\" \"$dir\"; then",
+        "excerpt_sha256": "e644af666329440d1851003d97ac2434bd39125153f913ad8729cdcdea72d591",
+        "precision_class": "advisory",
+        "reverified_by_primary": true,
+        "divergence_class": "contradicted",
+        "suppressed_by_measurement": true,
+        "failure_scenario": "None \u2014 this finding does not hold; refuted by the script's own documented and implemented trailing-argument convention."
+      }
+    },
+    {
+      "ruleId": "cli-gate-vec-change",
+      "level": "note",
+      "message": {
+        "text": "REFUTED by primary. Haiku claimed the `gate: Option<String> -> Vec<String>` change in crates/aprender-contracts-cli/src/cli.rs 'breaks internal Rust code that expects Option type' because the consuming code was 'not shown'. It is in fact shown in this same diff: crates/aprender-contracts-cli/src/lib.rs's `Commands::Lint {...}` match arm (destructuring `gate` and passing `&gate`) and crates/aprender-contracts-cli/src/commands/lint.rs's `pub fn run(...)` (line 27) are BOTH modified in this same PR (12 and 174 changed lines respectively) to accept the new Vec<String> type consistently. There is no orphaned Option-typed consumer left behind."
+      },
+      "locations": [
+        {
+          "physicalLocation": {
+            "artifactLocation": {
+              "uri": "crates/aprender-contracts-cli/src/cli.rs"
+            },
+            "region": {
+              "startLine": 309
+            }
+          }
+        }
+      ],
+      "properties": {
+        "grounding": "measured",
+        "command": [
+          "git",
+          "diff",
+          "--stat",
+          "$BASE",
+          "HEAD",
+          "--",
+          "crates/aprender-contracts-cli/src/lib.rs",
+          "crates/aprender-contracts-cli/src/commands/lint.rs"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": null,
+        "precision_class": "advisory",
+        "reverified_by_primary": true,
+        "divergence_class": "contradicted",
+        "suppressed_by_measurement": true,
+        "failure_scenario": "None \u2014 this finding does not hold; the consuming code is updated in the same diff, confirmed by reading both files' changed hunks."
+      }
+    }
+  ]
+}

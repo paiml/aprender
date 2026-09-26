@@ -171,3 +171,14 @@ falsification_tests:
     prediction: an entry with no exit_code, or a one-word reason, is refused
     test: cargo test -p aprender-contracts-cli --test ont_refusal_receipt
     if_fails: a refusal is indistinguishable from success to anything not reading prose
+
+# ONT-8: one evidence block — PROV-O names, one L-enum (ProofLevel). The level is MEASURED, not declared: it is what
+# the cited command printed for this contract at the time below. Checked by `pv lint --gate evidence`.
+evidence:
+  level: L1
+  mark: C
+  provenance:
+    wasGeneratedBy:
+      command: "pv proof-status contracts/ --format json"
+    wasAttributedTo: pv
+    generatedAtTime: "2026-09-24T08:22:07Z"

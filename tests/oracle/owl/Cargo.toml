@@ -1,0 +1,20 @@
+# ONT-001 §3.8 / ONT-2c — the OWL oracle: horned-owl (round-trip) + ELK 0.4.3 (TBox differential, via a JVM).
+# A SCRATCH CRATE, DETACHED from the workspace (`[workspace]` below) AND from the SHACL oracle one directory up:
+# oxigraph (pulled by `shacl`) enables oxrdf's `Triple` term, and cargo's feature unification then breaks
+# horned-owl's `horned-pretty-rdf` (E0004 on `TermRef::Triple`, measured 2026-09-23). Two arms, two lockfiles.
+# `make oracle-owl` runs it; no PR check does (R-13: release gate only). horned-owl is LGPL-3.0: ORACLE only.
+[package]
+name = "ont-owl-oracle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+horned-owl = { version = "=3.0.0", default-features = false }
+serde_json = "1"
+
+[[bin]]
+name = "owl-oracle"
+path = "src/main.rs"

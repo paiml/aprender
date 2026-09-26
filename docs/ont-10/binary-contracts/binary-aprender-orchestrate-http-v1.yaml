@@ -1,0 +1,184 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-aprender-orchestrate-http-v1 — ONT-10 slice S3 (orchestrate 2/2): the HTTP routes the
+# `aprender-orchestrate` binary serves (the banco server), as properties of its binary node
+# (ONT-001 v4.17 ONT-4g; #4476, #4079). The CLI and MCP half is S4, binary-aprender-orchestrate-cli-v1.yaml.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b59): crates/aprender-orchestrate/src/serve/banco/router.rs mounts
+# 92 (method, path) pairs through .route(); there is no .nest/.merge/.route_service/.fallback anywhere under
+# serve/. That set is EQUAL to surface_audit.csv's 92 HTTP rows for this binary (comm -3: 0 lines either side).
+# Identity (name, version, sha) is shaped once, in S4; this contract shapes only the route set.
+#
+# GAP THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): scripts/dogfood_surfaces.sh enumerates HTTP routes
+# only from crates/aprender-serve/src/api/ route tables. The banco router uses axum `.route("/p", get(h).post(h))`
+# chains and is NOT in the snapshot, so bin:route is empty for this node today and every shape below is RED until
+# the extractor reads it: from the router source, or better from a live route index banco does not yet expose.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-aprender-orchestrate-http
+version: "0.1.0"
+scope: >
+  The HTTP surface of the built `aprender-orchestrate` target of package `aprender-orchestrate`: the exact set of
+  (method, path) routes its banco router mounts, and the surface_audit.csv HTTP rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S3 (aprender-orchestrate HTTP). Per-binary shapes over the node extract:binary
+    (ONT-4g, #4476) draws for binary/aprender-orchestrate/aprender-orchestrate. DRAFT: binary-surface-v1 (the bin:
+    vocabulary) and extract:binary do not exist on this branch yet, so this contract goes green only after
+    ONT-4g lands and the extractor reads the banco router.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-orchestrate, feature = "METHOD /path")'
+    - 'crates/aprender-orchestrate/src/serve/banco/router.rs (the route table)'
+    - 'docs/ont-10/binary-contracts/binary-aprender-orchestrate-cli-v1.yaml (S4: identity, CLI, MCP)'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: aprender-orchestrate-routes
+    targetClass: bin:target/aprender-orchestrate/aprender-orchestrate
+    properties:
+      - path: bin:route
+        minCount: 92
+        maxCount: 92
+        in:
+          - "DELETE /api/delete"
+          - "DELETE /api/v1/conversations/:id"
+          - "DELETE /api/v1/data/files/:id"
+          - "DELETE /api/v1/models/registry/:name"
+          - "DELETE /api/v1/prompts/:id"
+          - "DELETE /api/v1/rag/index"
+          - "DELETE /api/v1/train/runs/:id"
+          - "GET /"
+          - "GET /api/tags"
+          - "GET /api/v1/audio/formats"
+          - "GET /api/v1/audit"
+          - "GET /api/v1/batch"
+          - "GET /api/v1/batch/:id"
+          - "GET /api/v1/chat/parameters"
+          - "GET /api/v1/config"
+          - "GET /api/v1/conversations"
+          - "GET /api/v1/conversations/:id"
+          - "GET /api/v1/conversations/export"
+          - "GET /api/v1/conversations/search"
+          - "GET /api/v1/data/datasets"
+          - "GET /api/v1/data/datasets/:id/preview"
+          - "GET /api/v1/data/files"
+          - "GET /api/v1/data/files/:id/info"
+          - "GET /api/v1/data/recipes"
+          - "GET /api/v1/data/recipes/:id"
+          - "GET /api/v1/eval/runs"
+          - "GET /api/v1/eval/runs/:id"
+          - "GET /api/v1/experiments"
+          - "GET /api/v1/experiments/:id/compare"
+          - "GET /api/v1/mcp/info"
+          - "GET /api/v1/metrics"
+          - "GET /api/v1/models"
+          - "GET /api/v1/models/merge/strategies"
+          - "GET /api/v1/models/registry"
+          - "GET /api/v1/models/status"
+          - "GET /api/v1/prompts"
+          - "GET /api/v1/prompts/:id"
+          - "GET /api/v1/rag/search"
+          - "GET /api/v1/rag/status"
+          - "GET /api/v1/system"
+          - "GET /api/v1/tools"
+          - "GET /api/v1/train/presets"
+          - "GET /api/v1/train/runs"
+          - "GET /api/v1/train/runs/:id"
+          - "GET /api/v1/train/runs/:id/metrics"
+          - "GET /api/v1/ws"
+          - "GET /assets/*path"
+          - "GET /health"
+          - "GET /health/live"
+          - "GET /health/ready"
+          - "GET /v1/models"
+          - "GET /v1/models/:id"
+          - "PATCH /api/v1/conversations/:id"
+          - "POST /api/chat"
+          - "POST /api/generate"
+          - "POST /api/pull"
+          - "POST /api/show"
+          - "POST /api/v1/audio/transcriptions"
+          - "POST /api/v1/batch"
+          - "POST /api/v1/chat/completions"
+          - "POST /api/v1/conversations"
+          - "POST /api/v1/conversations/import"
+          - "POST /api/v1/data/recipes"
+          - "POST /api/v1/data/recipes/:id/run"
+          - "POST /api/v1/data/upload"
+          - "POST /api/v1/data/upload/json"
+          - "POST /api/v1/detokenize"
+          - "POST /api/v1/embeddings"
+          - "POST /api/v1/eval/perplexity"
+          - "POST /api/v1/experiments"
+          - "POST /api/v1/experiments/:id/runs"
+          - "POST /api/v1/mcp"
+          - "POST /api/v1/models/load"
+          - "POST /api/v1/models/merge"
+          - "POST /api/v1/models/pull"
+          - "POST /api/v1/models/unload"
+          - "POST /api/v1/prompts"
+          - "POST /api/v1/rag/index"
+          - "POST /api/v1/tokenize"
+          - "POST /api/v1/tools"
+          - "POST /api/v1/tools/execute"
+          - "POST /api/v1/train/runs/:id/export"
+          - "POST /api/v1/train/runs/:id/stop"
+          - "POST /api/v1/train/start"
+          - "POST /ui/chat"
+          - "POST /v1/audio/transcriptions"
+          - "POST /v1/chat/completions"
+          - "POST /v1/completions"
+          - "POST /v1/embeddings"
+          - "PUT /api/v1/chat/parameters"
+          - "PUT /api/v1/config"
+          - "PUT /api/v1/tools/:name/config"
+      - {path: bin:ledgerOrphanRoute, maxCount: 0}
+      - {path: bin:unledgeredRoute, maxCount: 0}
+
+equations:
+  route_set:
+    formula: "routes(binary/aprender-orchestrate/aprender-orchestrate) = R, |R| = 92, R = the (METHOD, /path) pairs router.rs mounts via .route(path, method(handler)...)"
+    domain: "the banco router of the default-feature build"
+    codomain: "one bin:route literal \"METHOD /path\" per pair, LC_ALL=C sorted; axum :param segments kept verbatim"
+    invariants:
+      - "in + minCount 92 + maxCount 92 over distinct literals is set equality: an added, dropped or re-methoded route is a violation naming it"
+      - "one path served under two methods is two literals"
+  ledger_join:
+    formula: "ledgerOrphanRoute = { r in csv : r.binary = aprender-orchestrate, r.feature starts with an HTTP method, r.feature not in R }; unledgeredRoute = R minus those features"
+    domain: "docs/audits/surface_audit.csv HTTP rows whose binary column is aprender-orchestrate (92 on 2026-09-26)"
+    codomain: "literals on the focus node, one per orphan row or unledgered route"
+    invariants:
+      - "S4 joins the 86 CLI and 6 mcp rows; this join sees only rows whose feature starts with an HTTP method, so no row is judged twice"
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER_ORCHESTRATE_HTTP-001
+    name: dropped_route_is_red
+    prediction: "removing DELETE /api/delete from the snapshot's route list makes aprender-orchestrate-routes RED twice: minCount 92 and a bin:ledgerOrphanRoute naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with the route removed"
+    expected_output: "verdict Fail, results on binary/aprender-orchestrate/aprender-orchestrate paths bin:route and bin:ledgerOrphanRoute"
+    if_fails: "An Ollama-compat endpoint could vanish from banco with the ontology green."
+  - id: FALSIFY-BIN-APRENDER_ORCHESTRATE_HTTP-002
+    name: unledgered_route_is_red
+    prediction: "adding GET /api/v1/probe to the snapshot makes the shape RED on maxCount 92, on `in`, and on bin:unledgeredRoute"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with the route added"
+    expected_output: "verdict Fail naming GET /api/v1/probe"
+    if_fails: "A new endpoint could ship without a ledger row, so dogfood coverage would be computed over a stale surface."
+  - id: FALSIFY-BIN-APRENDER_ORCHESTRATE_HTTP-003
+    name: extractor_gap_is_red_not_vacuous
+    prediction: "on today's snapshot (dogfood_surfaces.sh does not read the banco router) bin:route is empty and the shape is RED on minCount 92, never green over an empty set"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the unmodified snapshot"
+    expected_output: "verdict Fail, one minCount result on path bin:route"
+    if_fails: "The HTTP half of orchestrate would read as covered while no extractor looks at it."

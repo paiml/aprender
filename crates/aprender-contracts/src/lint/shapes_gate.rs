@@ -25,7 +25,7 @@
 //! violate at least one armed shape. `pc_extract` — one planted defect per extractor Σ marks implemented (R-3):
 //! `pv-contract`, a contract stripped of `metadata` carries no `ont:kind`; `json`, a nested key the vocabulary does
 //! not map is refused naming it; `gguf`, a corrupt magic is refused; `apr-model`, a header whose tensor count
-//! disagrees with its index is refused; `code` and `lean`, as their modules state; `parity-receipt`, a record
+//! disagrees with its index is refused; `code`, `lean` and `example`, as their modules state; `parity-receipt`, a record
 //! stripped of `comparator` loses its comparator edge. All of them every run, in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,8 +35,8 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
-    ExtractFailure,
+    self, apr_model, code, example, gguf, json, lean, parity_receipt, pv_contract,
+    release_evidence, ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -282,13 +282,17 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         Err(differential) => return differential,
     };
 
-    let counted = findings_of(
+    let mut counted = findings_of(
         &report,
         &arming,
         graph,
         &extraction.gguf,
         &extraction.apr_model,
+        &extraction.github,
+        &extraction.example.errors,
     );
+    let (inherited_shapes_applied, inherited_by_shape) =
+        subsumption_of(contract_dir, graph, &shapes, &mut counted);
     let passed = counted.violations == 0;
     let verdict = verdict_of(&counted);
     let by_shape = by_shape(graph, &shapes);
@@ -296,7 +300,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         .iter()
         .map(|s| s.id.clone())
         .partition(|id| arming.is_armed(id));
-    let by_entity_type = by_entity_type(&extraction);
+    let by_entity_type = match by_entity_type(&extraction, &sigma_implemented(contract_dir)) {
+        Ok(m) => m,
+        Err(e) => return ShapesOutcome::Unsupported(e),
+    };
     let duration = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let result = GateResult {
         name: "shapes".into(),
@@ -335,10 +342,14 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             unmeasured_rows: extraction.resolve.unmeasured_rows,
             w3c_cases_passed: w3c_run.passed(),
             w3c_cases_n: w3c_run.results.len(),
-            symbols_resolved: extraction.code.resolved,
-            symbols_unresolved: extraction.code.unresolved,
-            lean_statements: extraction.lean.statements,
-            lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+            counters: Box::new(super::ShapesCounters {
+                symbols_resolved: extraction.code.resolved,
+                symbols_unresolved: extraction.code.unresolved,
+                lean_statements: extraction.lean.statements,
+                lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+                inherited_shapes_applied,
+                inherited_by_shape,
+            }),
             release: extraction.release.clone().map(Box::new),
         }),
     };
@@ -413,32 +424,86 @@ fn by_shape(graph: &Graph, shapes: &[NodeShape]) -> Vec<String> {
     out
 }
 
-/// Focus nodes each extractor produced.
-fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
-    [
-        (
-            "pv-contract",
-            extraction
-                .graph
-                .instances_of(&crate::ontology::rdf::ont("Contract"))
-                .len(),
-        ),
-        (
-            "gguf",
-            extraction.gguf.rungs.len() + extraction.gguf.files_read,
-        ),
-        ("apr-model", extraction.apr_model.files_read),
-        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
-        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
-        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
-        // calls it a pass. The same shape as #3610, one map over.
-        ("parity-receipt", extraction.parity.records),
-        ("code", extraction.code.symbols),
-        ("lean", extraction.lean.statements),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v))
-    .collect()
+/// The entity types this build counts. Every name here has an arm in [`entity_count`]
+/// ([`tests::every_counted_entity_type_has_a_counting_arm`]); every name Σ marks `implemented: true` must have one
+/// too, or the gate refuses ([`by_entity_type`]).
+const COUNTED_ENTITY_TYPES: &[&str] = &[
+    "pv-contract",
+    "json",
+    "gguf",
+    "apr-model",
+    "parity-receipt",
+    "code",
+    "lean",
+    "example",
+    "release-evidence",
+];
+
+/// Focus nodes the extractors produced for one Σ entity type. `None` is "this build has no counting arm for the
+/// name", never zero (#3624: an absent key is not zero).
+fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
+    Some(match name {
+        "pv-contract" => extraction
+            .graph
+            .instances_of(&crate::ontology::rdf::ont("Contract"))
+            .len(),
+        // One per `entity: {type: json}` contract extracted.
+        "json" => extraction.entities_extracted.len(),
+        "gguf" => extraction.gguf.rungs.len() + extraction.gguf.files_read,
+        "apr-model" => extraction.apr_model.files_read,
+        // ONT-4c3: without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT — and an
+        // absent key is not zero, so a consumer that treats it as one measures nothing and calls it a pass.
+        "parity-receipt" => extraction.parity.records,
+        "code" => extraction.code.symbols,
+        "lean" => extraction.lean.statements,
+        "example" => extraction.example.examples,
+        // 0 by rule when no release subject was given (an ordinary PR has none): the extractor did not run.
+        "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
+        // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone). The extractor seeds every
+        // declared type at 0, so a declared type is never absent here.
+        _ => return extraction.github.by_type.get(name).copied(),
+    })
+}
+
+/// The entity types `<contract_dir>/ontology.yaml` (Σ) marks `implemented: true`. Empty when the tree has no Σ or
+/// Σ is malformed: Σ's well-formedness is the `sigma` gate's verdict, not this one's.
+fn sigma_implemented(contract_dir: &Path) -> BTreeSet<String> {
+    extract::sigma_of(contract_dir)
+        .map(|sigma| {
+            sigma
+                .entity_types
+                .into_iter()
+                .filter(|e| e.implemented)
+                .map(|e| e.name)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Focus nodes each extractor produced, keyed by entity type: every type this build counts, every GitHub snapshot
+/// type, and every type Σ implements. #3624: the keys were a hand-written array beside Σ, so `json` and
+/// `release-evidence` shipped implemented and uncounted, and every `by_entity_type["<name>"]` probe on them read
+/// ABSENT. A Σ-implemented type with no counting arm is now the gate's refusal, by name, never a missing key.
+/// `implemented: false` types are omitted by rule unless this build counts them.
+fn by_entity_type(
+    extraction: &extract::Extraction,
+    implemented: &BTreeSet<String>,
+) -> Result<BTreeMap<String, usize>, ShapeError> {
+    COUNTED_ENTITY_TYPES
+        .iter()
+        .map(|s| (*s).to_string())
+        .chain(extraction.github.by_type.keys().cloned())
+        .chain(implemented.iter().cloned())
+        .map(|name| match entity_count(&name, extraction) {
+            Some(n) => Ok((name, n)),
+            None => Err(ShapeError::Malformed {
+                shape: "by_entity_type".into(),
+                what: format!(
+                    "entity type {name} is registered in Σ as implemented and is not counted in by_entity_type"
+                ),
+            }),
+        })
+        .collect()
 }
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
@@ -486,12 +551,22 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("apr-model", apr_model::positive_control(&apr_sample)),
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
+        ("example", example::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // ONT-4f: the GitHub snapshot types — a version mismatch (repo, milestone), a merge with no time
+        // (pull-request), a milestone reference to nothing tracked (issue)
+        ("repo", json::github::positive_control("repo")),
+        ("issue", json::github::positive_control("issue")),
+        (
+            "pull-request",
+            json::github::positive_control("pull-request"),
+        ),
+        ("milestone", json::github::positive_control("milestone")),
     ]
     .into_iter()
     .map(|(k, fired)| {
@@ -519,6 +594,8 @@ fn findings_of(
     graph: &Graph,
     gguf_stats: &gguf::GgufStats,
     apr_stats: &apr_model::AprStats,
+    github: &json::github::GithubStats,
+    example_errors: &[gguf::ExtractError],
 ) -> Counted {
     let mut c = Counted {
         findings: Vec::new(),
@@ -566,7 +643,25 @@ fn findings_of(
         f.contract_stem = Some(r.shape.clone());
         c.findings.push(f);
     }
-    for e in gguf_stats.errors.iter().chain(apr_stats.errors.iter()) {
+    for e in gguf_stats
+        .errors
+        .iter()
+        .chain(apr_stats.errors.iter())
+        .chain(example_errors)
+    {
+        c.violations += 1;
+        let mut f = LintFinding::new(
+            "PV-ONT-012",
+            RuleSeverity::Error,
+            format!("extractor refused {}: {}", e.file, e.what),
+            e.file.clone(),
+        );
+        f.contract_stem = None;
+        c.findings.push(f);
+    }
+    // ONT-4f: a refused GitHub snapshot is the corpus being wrong (a version that disagrees, a merge with no time),
+    // so it is a Fail naming the file, exactly like a lying model header.
+    for e in &github.errors {
         c.violations += 1;
         let mut f = LintFinding::new(
             "PV-ONT-012",
@@ -578,6 +673,32 @@ fn findings_of(
         c.findings.push(f);
     }
     c
+}
+
+/// ONT-4d (R-19): what Σ's subsumption did in this run. Returns `(inherited_shapes_applied, inherited_by_shape)`
+/// and adds one violation per weakened component (PV-ONT-013, exit 1). No Σ is no hierarchy, so zero and none.
+fn subsumption_of(
+    contract_dir: &Path,
+    graph: &Graph,
+    shapes: &[NodeShape],
+    counted: &mut Counted,
+) -> (usize, Vec<String>) {
+    let Some(sigma) = extract::sigma_of(contract_dir) else {
+        return (0, Vec::new());
+    };
+    for w in super::subsumption::weakenings(shapes, &sigma) {
+        counted.violations += 1;
+        let stem: String = w.split(' ').next().unwrap_or_default().to_string();
+        let mut f = LintFinding::new(
+            "PV-ONT-013",
+            RuleSeverity::Error,
+            format!("reject: {w} (R-19: a sub-concept may add constraints and may not remove any)"),
+            format!("contracts/{stem}.yaml"),
+        );
+        f.contract_stem = Some(stem);
+        counted.findings.push(f);
+    }
+    super::subsumption::inherited(graph, shapes, &sigma)
 }
 
 /// Validate the corpus graph plus the plant. Returns the corpus report (the plant's results removed) and how
@@ -935,6 +1056,60 @@ mod tests {
         );
         for (k, v) in &controls {
             assert_eq!(v, "fired", "pc_extract.{k}");
+        }
+    }
+
+    #[test]
+    fn every_counted_entity_type_has_a_counting_arm() {
+        let x = extract::Extraction::default();
+        for name in COUNTED_ENTITY_TYPES {
+            assert!(
+                entity_count(name, &x).is_some(),
+                "{name} is listed as counted and has no arm"
+            );
+        }
+    }
+
+    #[test]
+    fn every_implemented_entity_type_in_sigma_is_a_by_entity_type_key() {
+        // aprender#3624: `json` and `release-evidence` were implemented in Σ and absent from the map, so a
+        // `jq -e '.by_entity_type["json"] == N'` probe read null. Read the REAL Σ the way the gate does.
+        let contracts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+        let implemented = sigma_implemented(&contracts);
+        assert!(
+            implemented.contains("json") && implemented.contains("release-evidence"),
+            "Σ no longer implements the two #3624 types, so the test would be vacuous: {implemented:?}"
+        );
+        // The GitHub extractor seeds every Σ snapshot type at 0 before it reads a file; do the same here.
+        let mut x = extract::Extraction::default();
+        let sigma = extract::sigma_of(&contracts).expect("Σ parses");
+        for e in sigma.entity_types.iter().filter(|e| e.vocabulary.is_some()) {
+            x.github.by_type.insert(e.name.clone(), 0);
+        }
+        let map = by_entity_type(&x, &implemented).expect("every implemented type has an arm");
+        for name in &implemented {
+            assert!(
+                map.contains_key(name),
+                "by_entity_type lacks Σ-implemented {name}"
+            );
+        }
+        assert_eq!(
+            map.get("release-evidence"),
+            Some(&0),
+            "no subject: 0 by rule"
+        );
+    }
+
+    #[test]
+    fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
+        // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
+        let flipped: BTreeSet<String> = ["gguf", "readme"].iter().map(|s| s.to_string()).collect();
+        match by_entity_type(&extract::Extraction::default(), &flipped) {
+            Err(ShapeError::Malformed { what, .. }) => assert!(
+                what.contains("entity type readme is registered in Σ as implemented"),
+                "{what}"
+            ),
+            other => panic!("expected a named refusal, got {other:?}"),
         }
     }
 }

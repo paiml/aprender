@@ -1,0 +1,21 @@
+- id: PMAT-4075
+  github_issue: 4075
+  item_type: task
+  title: 'ONT-4e: requires/ensures as first-class; Liskov rule on refines, witness-checked'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:05:32Z
+  updated: 2026-09-24T12:05:32Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'schema: requires[] and ensures[] take the {id, statement, formal, formal_status} Clause shape; an invariant counts as a clause only when it carries formal_status; a non-list requires/ensures is PV-ONT-026 naming its file'
+  - 'liskov.rs: pre (B.requires implies A.requires), post (A.ensures implies B.ensures), inv (A.invariants implies B.invariants) over opaque atoms; check() refuses a chain from a different atom and a counter-model that hides or invents a violation; pc_checker refuses fixtures/liskov-corrupt.json every run'
+  - 'pv lint --gate refines: exit 1 reject naming "precondition strengthened (PRE-1)" / "postcondition weakened (POST-1)" / "invariant dropped"; prose is Unknown{Prose} naming the clause; legacy is Pass with liskov_pairs_checked 0; WitnessStale names make contracts; liskov_prose baseline ratchets down (PV-ONT-027); computed and NOT armed'
+  - 'pv-sat writes contracts/witness/liskov/<liskov_sha256>.json after its own pc_liskov_reasoner plant fires; readme_gen prints Requires/Ensures/Invariants counts; contracts/ont-refines-v1.yaml names 6 falsification tests that exist; ci/explicit-test-commands.d 600 runs ont4e_refines_gate'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ONT-001 §5 row ONT-4e. Stacked on #4248 (ONT-5) and #4137 (ONT-4d). Receipt: docs/audits/impl-PMAT-4075-receipt.md'

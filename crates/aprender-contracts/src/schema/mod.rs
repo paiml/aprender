@@ -1,4 +1,5 @@
 pub mod artifact;
+mod clause;
 pub mod composition;
 pub mod external_corpora;
 pub mod kaizen;
@@ -8,6 +9,7 @@ mod types;
 mod validator;
 
 pub use artifact::{classify_artifact, validate_artifact, ArtifactKind};
+pub use clause::{Clause, FormalStatus};
 pub use external_corpora::{
     is_external_corpora_schema, parse_external_corpora_str, validate_external_corpora,
     ExternalCorpora, ExternalCorpus,

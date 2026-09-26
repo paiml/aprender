@@ -42,10 +42,37 @@ BASELINE="$REPO_ROOT/contracts/lint-baseline.json"
 # ── the consumer probe ───────────────────────────────────────────────────────
 # Derived from the binary's own surface, never from a list here. `pv census` is
 # ONT-1; until it exists, `entity:` is a key nothing reads.
-ont_consumer_present() {
-    local pvbin help_out
-    pvbin="$(command -v pv 2>/dev/null || true)"
-    [ -n "$pvbin" ] || return 1
+#
+# WHICH pv (#3679). This probe used to take a bare `pv` off PATH. On intel the
+# fleet pin was clobbered to 0.65.2 (paiml-implement#315), which has no census,
+# so the probe answered "no consumer" about the RUNNER, not the tree, and the
+# guard went RED on `contracts_anchored rose 3 -> 6`. It now resolves pv the way
+# check_fleet_pv_shapes_gate.sh does (#3633): the fleet paths, the pin, and the
+# version proved against the pin. A pv that cannot answer is UNMEASURED, and it
+# names its version: a binary too old to judge is not evidence of absence.
+#
+# Two outcomes, printed on one line:
+#   true                        the pinned pv lists `census`
+#   unmeasured <reason> <what>  no-pin | no-binary | pin-mismatch | incapable
+# There is no `false` outcome. The one binary that could say "absent" is a pinned
+# pv without census, and that says only that the pin predates ONT-1.
+FLEET_PV_CANDIDATES="${FLEET_PV_BIN:-"/opt/fleet-bin/bin/pv:$HOME/.cargo/bin/pv"}"
+FLEET_PV_PIN_FILE="${FLEET_PV_PIN:-"$HOME/.config/fleet/pv.pin"}"
+# resolve_fleet_pv -> the first candidate that is executable; rc 1 if none (same order as #3633)
+resolve_fleet_pv() {
+    local c IFS=:
+    for c in $FLEET_PV_CANDIDATES; do
+        if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
+    done
+    return 1
+}
+ont_consumer_probe() {
+    local pin pvbin ver help_out
+    [ -r "$FLEET_PV_PIN_FILE" ] || { printf 'unmeasured no-pin pin_file=%s\n' "$FLEET_PV_PIN_FILE"; return 0; }
+    pin="$(<"$FLEET_PV_PIN_FILE")"; pin="${pin//[[:space:]]/}"
+    pvbin="$(resolve_fleet_pv)" || { printf 'unmeasured no-binary pin=%s candidates=%s\n' "$pin" "$FLEET_PV_CANDIDATES"; return 0; }
+    ver="$("$pvbin" --version 2>/dev/null || true)"; ver="${ver%%$'\n'*}"; ver="$(awk '{print $2}' <<<"$ver")"
+    [ "$ver" = "$pin" ] || { printf 'unmeasured pin-mismatch pin=%s pv=%s version=%s\n' "$pin" "$pvbin" "${ver:-?}"; return 0; }
     help_out="$("$pvbin" --help 2>&1 || true)"
     # HERE-STRING, never a pipe into a quiet grep. Under pipefail the quiet grep
     # exits on the first match, the producer takes SIGPIPE and returns 141, and the
@@ -53,8 +80,8 @@ ont_consumer_present() {
     # EXISTS. check_no_pipe_into_grep_q.sh caught this line; it then caught the
     # COMMENT that replaced it, because the scanner reads text and a warning that
     # spells the banned construct IS the banned construct as far as it can tell.
-    grep -qE '^[[:space:]]+census[[:space:]]' <<<"$help_out" || return 1
-    return 0
+    if grep -qE '^[[:space:]]+census[[:space:]]' <<<"$help_out"; then printf 'true\n'; return 0; fi
+    printf 'unmeasured incapable pv=%s version=%s (no census subcommand)\n' "$pvbin" "$ver"
 }
 
 # ── the five counters ───────────────────────────────────────────────────────
@@ -88,6 +115,7 @@ count_extractors() {
 
 # Keys under `ont` that OTHER gates own and this script does not measure: `formal_prose` (the sigma gate's
 # prose-debt ratchet) and `legacy_unresolved_depends_on` (the relations gate's, PV-ONT-010). Both are read
+# (ONT-4e adds `liskov_prose`, the refines gate's PV-ONT-027 prose ratchet, on the same terms.)
 # from this file by `lint/{sigma,relations}_gate.rs` and neither is computed here — so `--write` used to
 # DELETE them, disarming two shrink-only ratchets in the act of updating a third. They ride through verbatim,
 # the same rule `armed_gates` and `armed_shapes` already follow: what this script does not measure, it does
@@ -95,7 +123,7 @@ count_extractors() {
 foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file order
     [ -f "$1" ] || return 0
     local key
-    for key in formal_prose legacy_unresolved_depends_on; do
+    for key in formal_prose legacy_unresolved_depends_on liskov_prose; do
         { grep -E "\"$key\"[[:space:]]*:" "$1" || true; } | head -1 | sed 's/^[[:space:]]*/    /; s/,\{0,1\}[[:space:]]*$/,/'
     done
 }
@@ -104,10 +132,29 @@ foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file ord
 # and enforced by `lint/valid_under_gate.rs` (PV-ONT-016, shrink-only). This script does not measure it, so by
 # the rule above it rides through `--write` verbatim; without this, `make ont-ratchet` would delete it and
 # disarm the ratchet. Prints nothing when the key is absent, so measure() can omit it.
-foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines
+# PVL-001 EV-11 (PMAT-4166): the same holds for `command` and the two `pv lint` ratchets
+# (`unpaired_theorem_modules`, `contracts_without_depends_on`), owned by `lint/ratchet_gates.rs` and moved only by
+# `make lint-ratchet`. A top-level key is one at EXACTLY two spaces of indent (the layout this script and
+# lint_ratchet.sh write); a nested key of the same name sits deeper and is never carried.
+# ONT-4f (aprender#4330): this WAS an allowlist of the foreign keys above, and it went stale the first time a
+# gate added one — `underived_proved_claims` (proved-is-derived) was not on it, so `make ont-ratchet` DELETED
+# that ratchet from the baseline while printing PASS. Two hand-kept lists with nothing tying them together
+# (bashrs#266's root cause). So the rule is inverted: every top-level key this script does NOT own is carried,
+# in file order, and one it cannot carry verbatim (a multi-line value) is refused, never dropped.
+OWNED_TOP_KEYS="_spec armed_gates armed_shapes ont"
+foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines, in file order; 1 on an uncarriable value
     [ -f "$1" ] || return 0
-    { grep -E '"contracts_without_valid_under"[[:space:]]*:' "$1" || true; } | head -1 \
-        | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    local line key
+    while IFS= read -r line; do
+        key="${line#  \"}"; key="${key%%\"*}"
+        case " $OWNED_TOP_KEYS " in *" $key "*) continue ;; esac
+        case "$line" in
+            *'{'|*'['|*'{'[[:space:]]|*'['[[:space:]])
+                printf 'ont-ratchet: top-level "%s" is multi-line; --write cannot carry it verbatim\n' "$key" >&2
+                return 1 ;;
+        esac
+        printf '%s\n' "$line" | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    done < <(grep -E '^  "[^"]+"[[:space:]]*:' "$1" || true)
 }
 
 # ONT R-5, verbatim: "Only contracts that *should* be anchored (kernel-kind with
@@ -208,14 +255,17 @@ measure() { # prints the JSON document
     [ -z "$armed_shapes" ] || shapes_line="$(printf '  "armed_shapes": %s,\n' "$armed_shapes")
 "
     unarmed="$(count_shapes_unarmed "$BASELINE")" || return 2
-    top_line="$(foreign_top_keys "$BASELINE")"
+    top_line="$(foreign_top_keys "$BASELINE")" || return 2
     [ -z "$top_line" ] || top_line="$top_line
 "
     anchored="$(count_anchored)"; shaped="$(count_shaped)"
     types="$(count_entity_types)"; extractors="$(count_extractors)"
     bindable="$(count_unanchored_bindable)"
     total="$({ find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null || true; } | wc -l | tr -d ' ')"
-    if ont_consumer_present; then consumer=true; else consumer=false; fi
+    # `true`, or the JSON STRING "unmeasured" -- never `false` from a runner that cannot judge (#3679).
+    # compare_against() skips the consumer rule on it, visibly; --write refuses to stamp it.
+    [ -n "${ONT_PROBE:-}" ] || ONT_PROBE="$(ont_consumer_probe)"
+    case "$ONT_PROBE" in true) consumer=true ;; *) consumer='"unmeasured"' ;; esac
     cat <<JSON
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through \`make ont-ratchet\` (ONT R-6)",
@@ -242,7 +292,7 @@ JSON
 # characters is how a green-looking table measures nothing.
 field() { # field JSON_FILE NAME
     { grep -E "\"$2\"" "$1" || true; } | head -1 \
-        | sed -E "s/.*\"$2\"[[:space:]]*:[[:space:]]*//" \
+        | sed -E "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"?//" \
         | sed -E 's/[^A-Za-z0-9._-].*$//'
 }
 
@@ -255,6 +305,10 @@ self_test() {
         else fail=$((fail+1)); printf '  FAIL  %-44s want=%s got=%s\n' "$1" "$3" "$2"; fi
     }
     printf 'check_ont_ratchet self-test\n'
+    # The --write rows below test what --write PRESERVES, so they run against a MEASURED consumer. Left to
+    # the host's real probe, an unconverged box makes --write refuse and every "preserved" row passes on an
+    # untouched file (#3679). The probe's own rows set ONT_PROBE themselves.
+    local ONT_PROBE=true
     printf '{"ont":{"contracts_anchored": 7}}\n' > "$t/j.json"
     row "field reads a number"          "$(field "$t/j.json" contracts_anchored)" "7"
     printf '{"ont":{"consumer_present": false}}\n' > "$t/k.json"
@@ -303,15 +357,16 @@ self_test() {
     cp "$t/sigma.yaml" "$t/repo/contracts/ontology.yaml"
     row "entity types counted from Σ, not from a Rust form nobody writes" "$(REPO_ROOT="$t/repo" count_entity_types)" 2
     row "extractors counted from Σ's implemented: true" "$(REPO_ROOT="$t/repo" count_extractors)" 1
-    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8\n  }\n}\n' > "$t/foreign.json"
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8,\n    "liskov_prose": 0\n  }\n}\n' > "$t/foreign.json"
     BASELINE="$t/foreign.json" measure > "$t/f.json"
     row "measure() keeps formal_prose (the sigma gate reads it)" "$(grep -c '"formal_prose": 1464' "$t/f.json")" 1
     row "measure() keeps legacy_unresolved_depends_on (the relations gate reads it)" "$(grep -c '"legacy_unresolved_depends_on": 8' "$t/f.json")" 1
+    row "measure() keeps liskov_prose (the refines gate reads it)" "$(grep -c '"liskov_prose": 0' "$t/f.json")" 1
     cp "$t/foreign.json" "$t/fw.json"
     set +e
     BASELINE="$t/fw.json" main --write >/dev/null 2>&1
     set -e
-    row "--write keeps both foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"' "$t/fw.json")" 2
+    row "--write keeps all three foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"|"liskov_prose"' "$t/fw.json")" 3
     # ONT-7: the valid-under gate's top-level ratchet survives measure() and --write, and absence stays absent.
     printf '{\n  "armed_gates": ["validate"],\n  "contracts_without_valid_under": 386,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/vu.json"
     BASELINE="$t/vu.json" measure > "$t/vum.json"
@@ -321,6 +376,24 @@ self_test() {
     set -e
     row "--write keeps contracts_without_valid_under in place" "$(grep -c '"contracts_without_valid_under": 386' "$t/vu.json")" 1
     row "--write does not invent contracts_without_valid_under" "$(grep -c '"contracts_without_valid_under"' "$t/fw.json")" 0
+    # EV-11 (PMAT-4166): `make lint-ratchet`'s three keys ride through --write too; a NESTED key of the same name does not.
+    printf '{\n  "armed_gates": ["validate"],\n  "contracts_without_valid_under": 386,\n  "command": "make lint-ratchet",\n  "unpaired_theorem_modules": 130,\n  "contracts_without_depends_on": 278,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/lr.json"
+    set +e
+    BASELINE="$t/lr.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps command + both lint ratchets in place" "$(grep -cE '^  "(command": "make lint-ratchet"|unpaired_theorem_modules": 130|contracts_without_depends_on": 278),$' "$t/lr.json")" 3
+    # ONT-4f (aprender#4330): a top-level key NO list here names — the next gate's ratchet — rides through too.
+    # Against the old allowlist this row read 0: `underived_proved_claims` was deleted by `make ont-ratchet`.
+    printf '{\n  "armed_gates": ["validate"],\n  "underived_proved_claims": 95,\n  "some_future_ratchet": 7,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/fut.json"
+    set +e
+    BASELINE="$t/fut.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps a top-level ratchet no list names" "$(grep -cE '^  "(underived_proved_claims": 95|some_future_ratchet": 7),$' "$t/fut.json")" 2
+    printf '{\n  "armed_gates": ["validate"],\n  "nested_block": {\n    "x": 1\n  },\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/ml.json"
+    row "a multi-line top-level value is refused, never dropped" "$(foreign_top_keys "$t/ml.json" >/dev/null 2>&1 && echo carried || echo refused)" refused
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "command": "nested",\n    "formal_prose": 1\n  }\n}\n' > "$t/nest.json"
+    row "a nested \"command\" is not carried to the top level" "$(foreign_top_keys "$t/nest.json" | grep -c '"command"')" 0
+    row "a top-level \"command\" beside a nested one is carried once" "$(printf '{\n  "command": "x",\n  "ont": {\n    "command": "y"\n  }\n}\n' > "$t/both.json"; foreign_top_keys "$t/both.json" | tr '\n' '|')" '  "command": "x",|'
     if command -v python3 >/dev/null 2>&1; then
         python3 -c "import json;json.load(open('$t/vum.json'))" >/dev/null 2>&1 \
             && row "measure() with the valid-under key is valid JSON" ok ok || row "measure() with the valid-under key is valid JSON" bad ok
@@ -337,6 +410,44 @@ self_test() {
     rc=$?
     set -e
     row "anchored rises with NO consumer -> refused" "$rc" "1"
+    # #3679: WHICH pv the consumer probe asks. Stubs only -- a real pv on this box would make the rows
+    # pass here and vacuously everywhere else. `stale` has no census and sits FIRST on PATH (the intel
+    # 0.65.2 condition); `fleet` has census and is the pinned binary. The PATH-probe this replaced reads
+    # `stale` and says false, so reverting the resolution turns the first row RED.
+    mkdir -p "$t/stale" "$t/fleet"
+    printf '#!/bin/sh\ncase "$1" in --version) echo "pv 0.65.2 (stub)";; --help) printf "Commands:\\n  validate  V\\n";; esac\n' > "$t/stale/pv"
+    printf '#!/bin/sh\ncase "$1" in --version) echo "pv 9.9.9 (stub)";; --help) printf "Commands:\\n  validate  V\\n  census    C\\n";; esac\n' > "$t/fleet/pv"
+    chmod +x "$t/stale/pv" "$t/fleet/pv"
+    printf '9.9.9\n' > "$t/pin.ok"; printf '0.65.2\n' > "$t/pin.old"; printf '1.0.0\n' > "$t/pin.other"
+    PATH="$t/stale:$PATH" FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/pin.ok" ONT_PROBE='' \
+        BASELINE="$t/armed.json" measure > "$t/pinned.json"
+    row "stale PATH pv + pinned census pv -> consumer true" "$(field "$t/pinned.json" consumer_present)" "true"
+    row "pinned pv without census -> unmeasured, names version" \
+        "$(FLEET_PV_CANDIDATES="$t/stale/pv" FLEET_PV_PIN_FILE="$t/pin.old" ont_consumer_probe | awk '{print $1, $2, $4}')" \
+        "unmeasured incapable version=0.65.2"
+    row "no pin -> unmeasured no-pin" \
+        "$(FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/nope" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured no-pin"
+    row "pin != binary version -> unmeasured pin-mismatch" \
+        "$(FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/pin.other" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured pin-mismatch"
+    row "no fleet binary -> unmeasured no-binary" \
+        "$(FLEET_PV_CANDIDATES="$t/none/pv" FLEET_PV_PIN_FILE="$t/pin.ok" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured no-binary"
+    PATH="$t/stale:$PATH" FLEET_PV_CANDIDATES="$t/stale/pv" FLEET_PV_PIN_FILE="$t/pin.old" ONT_PROBE='' \
+        BASELINE="$t/armed.json" measure > "$t/unm.json"
+    row "an unmeasured consumer is never written as false" "$(field "$t/unm.json" consumer_present)" "unmeasured"
+    set +e
+    BASELINE="$t/base.json" ONT_PROBE='unmeasured no-pin stub' _ONT_FORCE_ANCHORED=5 _ONT_FORCE_CONSUMER='"unmeasured"' \
+        compare_against "$t/base.json" > "$t/cmp.out" 2>&1
+    rc=$?
+    set -e
+    row "anchored rises, consumer UNMEASURED -> not judged (rc 0)" "$rc" "0"
+    row "...and says UNMEASURED, never silent" "$(grep -c '^UNMEASURED consumer probe' "$t/cmp.out")" "1"
+    cp "$t/armed.json" "$t/wu.json"
+    set +e
+    BASELINE="$t/wu.json" ONT_PROBE='unmeasured no-pin stub' main --write >/dev/null 2>&1
+    rc=$?
+    set -e
+    row "--write refuses an UNMEASURED consumer" "$rc" "2"
+    row "...and leaves the baseline untouched" "$(cmp -s "$t/armed.json" "$t/wu.json" && echo same || echo changed)" "same"
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
@@ -356,9 +467,15 @@ compare_against() { # compare_against BASELINE_FILE -> 0 ok, 1 violation
     bind_now="$(field "$cur" unanchored_but_bindable)"; bind_was="$(field "$base" unanchored_but_bindable)"
     consumer_now="$(field "$cur" consumer_present)"
 
+    # UNMEASURED is fleet state, not a verdict (#3679, the #3633 convention): the runner's pv cannot
+    # say whether the consumer exists, so the consumer rule is not judged here -- and says so. The
+    # ratchet directions below still are.
+    if [ "$consumer_now" = "unmeasured" ]; then
+        printf 'UNMEASURED consumer probe: %s -- the anchored-rise rule is not judged on this runner; fleet state, not a pass\n' "${ONT_PROBE#unmeasured }"
+    fi
     # THE GATE. An anchor nothing reads is decoration, and a counter that rises on
     # decoration is the theater §11 exists to stop. Refuse the rise, name the fix.
-    if [ "$consumer_now" != "true" ] && [ "${anchored_now:-0}" -gt "${anchored_was:-0}" ]; then
+    if [ "$consumer_now" = "false" ] && [ "${anchored_now:-0}" -gt "${anchored_was:-0}" ]; then
         printf 'FAIL  contracts_anchored rose %s -> %s while consumer_present=false.\n' "${anchored_was:-0}" "${anchored_now:-0}"
         printf '      `pv census` does not exist, nothing in either contracts crate reads\n'
         printf '      `entity:`, and `pv validate` calls such a contract VALID by ignoring\n'
@@ -386,6 +503,14 @@ main() {
             local tmp
             tmp="$(mktemp "$BASELINE.XXXXXX")"
             measure > "$tmp" || { rm -f "$tmp"; return 2; }
+            # A restamp records a MEASURED consumer or nothing (#3679): "unmeasured" in the baseline
+            # would read as a verdict to the next reviewer. #3669's restamp needs a census-capable pv.
+            if [ "$(field "$tmp" consumer_present)" = "unmeasured" ]; then
+                rm -f "$tmp"
+                printf 'NO-GO: consumer probe is UNMEASURED (%s); --write stamps only a measured consumer.\n' "${ONT_PROBE:-?}" >&2
+                printf '       Converge this host to its pv pin (or run on one that is), then make ont-ratchet.\n' >&2
+                return 2
+            fi
             mv "$tmp" "$BASELINE"
             printf 'wrote %s\n' "${BASELINE#"$REPO_ROOT"/}"
             sed -n '/"ont"/,/}/p' "$BASELINE"

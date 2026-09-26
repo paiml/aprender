@@ -1,0 +1,48 @@
+{
+  "pr": "paiml/aprender#4230",
+  "ticket": "GH-4198",
+  "head": "54a27e0b9cc177f840aae93d92393f4067c2a8c2",
+  "base": "origin/main",
+  "base_resolved": "aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f",
+  "diff_sha256": "5efcf0ae09520cb296b73bbf52ddc82e6d639a398b0ff8607597385b6aa014a2",
+  "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+  "width": 3,
+  "executor": "claude-code",
+  "degraded": "same-family",
+  "why": "agy 429 on gemini and openai pre-check probes (quorum-review.sh lane 1 NO-VERDICT, round 3); operator fallback sonnet+haiku+opus, opus seat = second sonnet-5 sample because the author is claude-opus-5-5; round 4 (same head, same brief): round-3 seat a5412bc23ea8a330b was DISCARDED because it ran rm -rf on shared /mnt/nvme-raid0/tmp; its replacement afa578549d06e08f8 FAILed on a STALE pv binary the brief pointed to (a fresh build at head reproduces broken.stdout byte for byte, 11/11 golden tests pass), so the whole round was re-run on the fresh binary; haiku seat a436890e322b68468 was discarded for running cargo outside its whitelist and replaced",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "agent_id": "a8c3e22ba328ccc7d",
+      "verdict": "PASS",
+      "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+      "findings": [],
+      "summary": "pv (fresh) and the live script reproduce the pmat/broken/edge goldens byte for byte; four hand-built differential cases agree; divergences documented; scope matches the ticket."
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "agent_id": "a8e1b24208bd463ad",
+      "verdict": "PASS",
+      "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+      "findings": [],
+      "summary": "Adversarial seat: goldens reproduced by both pv and the script (pmat 0/35 rc0, broken 6/4 rc1, edge 3/4 rc1); round-2 edge cases rebuilt by hand agree; line-by-line check of the three checks against the script; no scope excess."
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "agent_id": "ac3c8b81356ed5018",
+      "verdict": "PASS",
+      "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+      "findings": [],
+      "summary": "Fixtures reproduce the goldens; --gate rc semantics and zero-contracts decline correct; no forbidden changes."
+    }
+  ],
+  "round": 4
+}

@@ -1,0 +1,103 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-apr-qa-v1 — ONT-10 slice S16 (1/2): the `apr-qa` binary as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features): `apr-qa --version` =
+# "apr-qa 0.69.3"; the --help walk gives 15 leaf commands, and surface_audit.csv has exactly those 15 rows
+# (set-equal). G0.1 (--version carries the git sha) is a warning here and RED today.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): nodes also typed bin:target/<package>/<target>
+# (no targetNode in pv's subset); commands as bin:command literals; the csv join yields bin:ledgerOrphan /
+# bin:unledgeredCommand.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-apr-qa
+version: "0.1.0"
+scope: >
+  The built `apr-qa` target of package `aprender-qa-cli` (default features) as the focus node binary/aprender-qa-cli/apr-qa:
+  its identity and its exact CLI command set, and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice (apr-qa). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws for
+    binary/aprender-qa-cli/apr-qa. DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on this
+    branch yet, so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = apr-qa)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: apr-qa-identity
+    targetClass: bin:target/aprender-qa-cli/apr-qa
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["apr-qa"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-qa-cli"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^apr-qa [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: apr-qa-commands
+    targetClass: bin:target/aprender-qa-cli/apr-qa
+    properties:
+      - path: bin:command
+        minCount: 15
+        maxCount: 15
+        in:
+          - "bootstrap"
+          - "certify"
+          - "export-csv"
+          - "export-evidence"
+          - "generate"
+          - "kernel-coverage"
+          - "list"
+          - "lock-playbooks"
+          - "parity"
+          - "report"
+          - "run"
+          - "score"
+          - "tickets"
+          - "tools"
+          - "validate-contract"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-qa-cli/apr-qa) = C, |C| = 15, where C = the leaves of the recursive --help walk of the default-feature build"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per leaf command path, space-joined, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount 15 + maxCount 15 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = apr-qa ∧ r.feature ∉ C }; unledgeredCommand = C ∖ { r.feature : r.binary = apr-qa }"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is apr-qa"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-APR_QA-001
+    name: dropped_command_is_red
+    prediction: "deleting one leaf from the snapshot's command list makes apr-qa-commands RED naming the command (minCount 15)"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one command removed"
+    expected_output: "verdict Fail, one result on binary/aprender-qa-cli/apr-qa path bin:command"
+    if_fails: "A command could vanish from the shipped apr-qa with the ontology green."
+  - id: FALSIFY-BIN-APR_QA-002
+    name: ledger_row_deleted_is_red
+    prediction: "deleting one surface_audit.csv row for a live apr-qa command makes bin:unledgeredCommand non-empty, RED naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the csv with one row deleted"
+    expected_output: "verdict Fail naming the command"
+    if_fails: "The dogfood coverage ratio would be computed over a ledger that silently omits a shipped command."

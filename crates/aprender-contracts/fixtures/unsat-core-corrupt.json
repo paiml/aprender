@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "units": ["A"],
+    "implies": [["A", "B"], ["B", "C"]],
+    "conflicts": [["A", "C"]]
+  },
+  "result": {
+    "kind": "unsat_core",
+    "payload": {
+      "steps": [{"unit": "A"}, {"implies": ["B", "C"]}],
+      "conflict": ["A", "C"]
+    }
+  }
+}

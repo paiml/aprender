@@ -486,8 +486,10 @@ name = "aprender-contracts"
 version = "0.69.3"
 dependencies = [
  "aprender-contracts-macros",
+ "blake3",
  "criterion 0.5.1",
  "half",
+ "proc-macro2",
  "proptest",
  "regex",
  "serde",
@@ -1305,6 +1307,16 @@ dependencies = [
  "toml 0.8.23",
  "uuid",
  "zstd",
+]
+
+[[package]]
+name = "aprender-review-experiment"
+version = "0.69.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "ureq 2.12.1",
 ]
 
 [[package]]

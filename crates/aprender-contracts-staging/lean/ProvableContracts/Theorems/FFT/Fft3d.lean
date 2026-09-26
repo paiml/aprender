@@ -1,4 +1,4 @@
-import Mathlib.Data.Complex.Basic
+import Mathlib.Analysis.Complex.Exponential
 
 /-!
 # FFT 3D — Triple Separability

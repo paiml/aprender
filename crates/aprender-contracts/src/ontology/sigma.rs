@@ -44,6 +44,11 @@ pub struct Sigma {
     pub extractors: Vec<ExtractorDecl>,
     #[serde(default)]
     pub not_expressible: Vec<NotExpressible>,
+    /// ONT-4d (R-19): the subsumption hierarchy, `sub ⊑ sup` between declared concepts. Acyclic (a cycle is
+    /// exit 3); shapes declared on `sup` apply to every instance of `sub`, through the type closure
+    /// `extract::all` materializes.
+    #[serde(default)]
+    pub subsumes: Vec<Subsumes>,
     /// Which reader claims each Σ key. The anti-decoration rule: a key nobody reads is refused (exit 3).
     #[serde(default)]
     pub readers: BTreeMap<String, String>,
@@ -115,6 +120,21 @@ pub struct EntityTypeDecl {
     #[serde(default)]
     pub extractor: String,
     pub implemented: bool,
+    /// ONT-4f: the vocabulary `extract:json` reads a SNAPSHOT entity type with — the GitHub entities under
+    /// `evidence/github/<name>/`. Absent for every other type. `root_class` must be `ont:<a declared concept>`,
+    /// because the type closure (R-19) reaches only Σ concepts; `version` names the snapshot's own field that
+    /// the ref's `@<version>` slot must equal.
+    #[serde(default)]
+    pub vocabulary: Option<EntityVocabulary>,
+}
+
+/// ONT-4f: a snapshot entity type's vocabulary (`prefix:key` predicates, one root class, one version field).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EntityVocabulary {
+    pub prefix: String,
+    pub root_class: String,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -135,6 +155,14 @@ pub struct NotExpressible {
     pub reader: String,
 }
 
+/// One subsumption edge: every instance of `sub` is an instance of `sup` (ONT-4d, R-19).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Subsumes {
+    pub sub: String,
+    pub sup: String,
+}
+
 /// Σ is malformed. Every variant is exit 3 (`error:`): the corpus is not at fault, the declaration is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SigmaError {
@@ -151,6 +179,12 @@ pub enum SigmaError {
     NotExpressibleWithoutReader { key: String },
     /// An `extractors[]` entry without a `reader`.
     ExtractorWithoutReader { extractor: String },
+    /// ONT-4d: a `subsumes` edge names a concept `concepts` does not declare.
+    SubsumesUndeclared { concept: String },
+    /// ONT-4d (R-19): `subsumes` is cyclic. `path` walks the cycle and repeats its first concept at the end.
+    SubsumesCycle { path: Vec<String> },
+    /// ONT-4f: an entity type's `vocabulary` is incomplete, or its `root_class` is not a declared `ont:` concept.
+    VocabularyMalformed { entity_type: String, why: String },
     /// An `entity_types` entry named [`RESERVED_ENTITY_TYPE`].
     ReservedEntityType { entity_type: String },
 }
@@ -193,14 +227,56 @@ impl fmt::Display for SigmaError {
             Self::ExtractorWithoutReader { extractor } => {
                 write!(f, "extractor `{extractor}` has no reader")
             }
+            Self::SubsumesUndeclared { concept } => {
+                write!(
+                    f,
+                    "subsumes names concept `{concept}`, which concepts does not declare"
+                )
+            }
+            Self::SubsumesCycle { path } => write!(f, "subsumes cycle {}", path.join(" -> ")),
+            Self::VocabularyMalformed { entity_type, why } => {
+                write!(
+                    f,
+                    "entity_type `{entity_type}` vocabulary is malformed: {why}"
+                )
+            }
         }
     }
 }
 
 impl std::error::Error for SigmaError {}
 
+/// ONT-4d: depth-first search from `n` for a cycle through `path`, the concepts currently on the stack. A cycle
+/// is returned as the path that closes it, its first concept repeated at the end. `done` holds concepts
+/// fully explored, which cannot be on a cycle not yet found, so each concept is searched once. Recursion
+/// depth is bounded by the number of concepts.
+fn find_cycle<'a>(
+    n: &'a str,
+    edges: &BTreeMap<&'a str, BTreeSet<&'a str>>,
+    path: &mut Vec<&'a str>,
+    done: &mut BTreeSet<&'a str>,
+) -> Option<Vec<String>> {
+    if let Some(at) = path.iter().position(|p| *p == n) {
+        let mut cycle: Vec<String> = path[at..].iter().map(|s| (*s).to_string()).collect();
+        cycle.push(n.to_string());
+        return Some(cycle);
+    }
+    if done.contains(n) {
+        return None;
+    }
+    path.push(n);
+    for &m in edges.get(n).into_iter().flatten() {
+        if let Some(c) = find_cycle(m, edges, path, done) {
+            return Some(c);
+        }
+    }
+    path.pop();
+    done.insert(n);
+    None
+}
+
 /// The Σ keys that must be claimed by a reader when they are present and non-empty.
-pub const READABLE_KEYS: [&str; 9] = [
+pub const READABLE_KEYS: [&str; 10] = [
     "concepts",
     "roles",
     "symbols",
@@ -209,6 +285,7 @@ pub const READABLE_KEYS: [&str; 9] = [
     "entity_types",
     "extractors",
     "not_expressible",
+    "subsumes",
     // The contract schema owns this one; Σ only carries it (see `Sigma::metadata`).
     "metadata",
 ];
@@ -226,9 +303,101 @@ impl Sigma {
     /// [`SigmaError`] — every variant is exit 3, because a malformed declaration is not the corpus's fault.
     pub fn check_integrity(&self) -> Result<(), SigmaError> {
         self.check_entity_types()?;
+        self.check_vocabularies()?;
         self.check_readers()?;
         self.check_not_expressible()?;
-        self.check_extractors()
+        self.check_extractors()?;
+        self.check_subsumes()
+    }
+
+    /// ONT-4d: every `subsumes` edge names declared concepts, and the hierarchy is acyclic (R-19). A cycle is
+    /// reported as the path that closes it, first concept repeated at the end.
+    fn check_subsumes(&self) -> Result<(), SigmaError> {
+        if let Some(c) = self
+            .subsumes
+            .iter()
+            .flat_map(|e| [&e.sub, &e.sup])
+            .find(|c| !self.concepts.contains_key(c.as_str()))
+        {
+            return Err(SigmaError::SubsumesUndeclared { concept: c.clone() });
+        }
+        let edges = self.subsumption_edges();
+        let mut done: BTreeSet<&str> = BTreeSet::new();
+        for &root in edges.keys() {
+            if let Some(path) = find_cycle(root, &edges, &mut Vec::new(), &mut done) {
+                return Err(SigmaError::SubsumesCycle { path });
+            }
+        }
+        Ok(())
+    }
+
+    /// `sub → {sup}` as declared.
+    fn subsumption_edges(&self) -> BTreeMap<&str, BTreeSet<&str>> {
+        let mut edges: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for e in &self.subsumes {
+            edges
+                .entry(e.sub.as_str())
+                .or_default()
+                .insert(e.sup.as_str());
+        }
+        edges
+    }
+
+    /// ONT-4d: every STRICT super-concept of `concept` (the transitive closure of `subsumes`, R-19). Terminates on
+    /// a cyclic Σ too, though [`Sigma::check_integrity`] refuses one first.
+    #[must_use]
+    pub fn supers(&self, concept: &str) -> BTreeSet<String> {
+        let edges = self.subsumption_edges();
+        let mut out = BTreeSet::new();
+        let mut stack: Vec<&str> = edges
+            .get(concept)
+            .map(|s| s.iter().copied().collect())
+            .unwrap_or_default();
+        while let Some(c) = stack.pop() {
+            if c != concept && out.insert(c.to_string()) {
+                stack.extend(edges.get(c).into_iter().flatten().copied());
+            }
+        }
+        out
+    }
+
+    /// ONT-4d: every STRICT sub-concept of `concept`.
+    #[must_use]
+    pub fn subs(&self, concept: &str) -> BTreeSet<String> {
+        self.concepts
+            .keys()
+            .filter(|c| c.as_str() != concept && self.supers(c).contains(concept))
+            .cloned()
+            .collect()
+    }
+
+    /// ONT-4f: a vocabulary names a non-empty prefix and version, and a root class `ont:<concept>` for a concept
+    /// Σ declares — a root class the closure cannot reach types nodes no Σ shape can inherit onto.
+    fn check_vocabularies(&self) -> Result<(), SigmaError> {
+        for et in &self.entity_types {
+            let Some(v) = &et.vocabulary else { continue };
+            let bad = |why: String| SigmaError::VocabularyMalformed {
+                entity_type: et.name.clone(),
+                why,
+            };
+            if v.prefix.trim().is_empty() {
+                return Err(bad("empty `prefix`".into()));
+            }
+            if v.version.trim().is_empty() {
+                return Err(bad("empty `version`".into()));
+            }
+            if !v
+                .root_class
+                .strip_prefix("ont:")
+                .is_some_and(|c| self.concepts.contains_key(c))
+            {
+                return Err(bad(format!(
+                    "root_class `{}` is not `ont:<a concept Σ declares>`",
+                    v.root_class
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Class 1: every `entity_types` entry names an extractor `extractors[]` declares.
@@ -325,6 +494,9 @@ impl Sigma {
         }
         if !self.not_expressible.is_empty() {
             keys.insert("not_expressible");
+        }
+        if !self.subsumes.is_empty() {
+            keys.insert("subsumes");
         }
         if self.metadata.is_some() {
             keys.insert("metadata");
@@ -569,5 +741,151 @@ readers:
             "Σ declares the corpus's operator vocabulary, got {}",
             s.symbols.len()
         );
+    }
+
+    // ---- ONT-4d (R-19): subsumes ------------------------------------------------------------------------
+
+    fn with_subsumes(edges: &[(&str, &str)]) -> Sigma {
+        let mut s = Sigma::from_yaml(good()).expect("Σ parses");
+        s.concepts.insert(
+            "Kernel".into(),
+            Concept {
+                doc: "a kernel contract".into(),
+            },
+        );
+        s.subsumes = edges
+            .iter()
+            .map(|(a, b)| Subsumes {
+                sub: (*a).into(),
+                sup: (*b).into(),
+            })
+            .collect();
+        s.readers
+            .insert("subsumes".into(), "ontology/sigma.rs".into());
+        s
+    }
+
+    #[test]
+    fn ont4d_supers_and_subs_are_the_strict_transitive_closure() {
+        let s = with_subsumes(&[("Kernel", "Code"), ("Code", "Contract")]);
+        assert!(s.check_integrity().is_ok(), "{:?}", s.check_integrity());
+        assert_eq!(
+            s.supers("Kernel").into_iter().collect::<Vec<_>>(),
+            vec!["Code", "Contract"]
+        );
+        assert!(
+            s.supers("Contract").is_empty(),
+            "the top has no strict super"
+        );
+        assert_eq!(
+            s.subs("Contract").into_iter().collect::<Vec<_>>(),
+            vec!["Code", "Kernel"]
+        );
+        assert!(
+            !s.supers("Code").contains("Code"),
+            "strict: a concept is never its own super"
+        );
+    }
+
+    #[test]
+    fn ont4d_a_cycle_is_refused_naming_the_closing_path() {
+        let s = with_subsumes(&[
+            ("Kernel", "Code"),
+            ("Code", "Contract"),
+            ("Contract", "Kernel"),
+        ]);
+        match s.check_integrity() {
+            Err(SigmaError::SubsumesCycle { path }) => {
+                assert_eq!(path.first(), path.last(), "the path closes: {path:?}");
+                assert_eq!(
+                    path.len(),
+                    4,
+                    "three edges, first concept repeated: {path:?}"
+                );
+                assert!(SigmaError::SubsumesCycle { path: path.clone() }
+                    .to_string()
+                    .starts_with("subsumes cycle "));
+            }
+            other => panic!("a cycle is exit 3: {other:?}"),
+        }
+        // A self-edge is the shortest cycle.
+        assert!(matches!(
+            with_subsumes(&[("Code", "Code")]).check_integrity(),
+            Err(SigmaError::SubsumesCycle { .. })
+        ));
+        // supers() terminates on a cyclic Σ (check_integrity refuses it first, but a caller must not hang).
+        let cyc = with_subsumes(&[("Kernel", "Code"), ("Code", "Kernel")]);
+        assert_eq!(
+            cyc.supers("Kernel").into_iter().collect::<Vec<_>>(),
+            vec!["Code"]
+        );
+    }
+
+    #[test]
+    fn ont4d_a_diamond_is_not_a_cycle() {
+        let mut s = with_subsumes(&[
+            ("Kernel", "Code"),
+            ("Kernel", "Contract"),
+            ("Code", "Contract"),
+        ]);
+        s.concepts
+            .insert("Other".into(), Concept { doc: "x".into() });
+        assert!(
+            s.check_integrity().is_ok(),
+            "two paths to one super is a DAG: {:?}",
+            s.check_integrity()
+        );
+    }
+
+    #[test]
+    fn ont4d_an_edge_over_an_undeclared_concept_is_refused() {
+        let s = with_subsumes(&[("Kernel", "Ghost")]);
+        assert!(matches!(
+            s.check_integrity(),
+            Err(SigmaError::SubsumesUndeclared { concept }) if concept == "Ghost"
+        ));
+    }
+
+    #[test]
+    fn ont4d_subsumes_needs_a_reader_like_every_key() {
+        let mut s = with_subsumes(&[("Kernel", "Code")]);
+        s.readers.remove("subsumes");
+        assert!(
+            matches!(s.check_integrity(), Err(SigmaError::KeyWithoutReader { key }) if key == "subsumes")
+        );
+    }
+
+    fn with_vocabulary(root_class: &str, version: &str) -> Sigma {
+        let yaml = good().replace(
+            "  - {name: pv-contract, extractor: pv_contract, implemented: false}\n",
+            &format!(
+                "  - {{name: pv-contract, extractor: pv_contract, implemented: false}}\n  - {{name: repo, extractor: pv_contract, implemented: false, vocabulary: {{prefix: repo, root_class: \"{root_class}\", version: \"{version}\"}}}}\n"
+            ),
+        );
+        Sigma::from_yaml(&yaml).expect("Σ with a vocabulary parses")
+    }
+
+    #[test]
+    fn ont4f_a_vocabulary_over_a_declared_concept_is_well_formed() {
+        let s = with_vocabulary("ont:Code", "sha");
+        let v = s.entity_types[1].vocabulary.as_ref().expect("vocabulary");
+        assert_eq!((v.prefix.as_str(), v.version.as_str()), ("repo", "sha"));
+        assert!(s.check_integrity().is_ok(), "{:?}", s.check_integrity());
+    }
+
+    #[test]
+    fn ont4f_a_vocabulary_whose_root_class_the_closure_cannot_reach_is_refused() {
+        for bad in ["ont:Ghost", "repo:Repo", ""] {
+            let s = with_vocabulary(bad, "sha");
+            let err = s.check_integrity().expect_err(bad);
+            assert!(
+                matches!(&err, SigmaError::VocabularyMalformed { entity_type, .. } if entity_type == "repo"),
+                "{err}"
+            );
+        }
+        let err = with_vocabulary("ont:Code", " ")
+            .check_integrity()
+            .unwrap_err();
+        assert!(err.to_string().contains("empty `version`"), "{err}");
     }
 }

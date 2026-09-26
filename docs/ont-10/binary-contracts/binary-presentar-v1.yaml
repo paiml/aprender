@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-presentar-v1 — ONT-10 slice S14 (2/2): the `presentar` binary (package aprender-present-cli) as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, LC_ALL=C recursive --help walk):
+#   - `presentar --version` = "presentar 0.69.3"; G0.1 (git sha) is a warning and RED today.
+#   - the walk gives 7 leaves, set-equal to surface_audit.csv's 7 rows.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): nodes also typed bin:target/<package>/<target>
+# (no targetNode in pv's subset); commands as bin:command literals (full path below the binary name, space-joined);
+# the csv join yields bin:ledgerOrphan / bin:unledgeredCommand.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-presentar
+version: "0.1.0"
+scope: >
+  The built `presentar` target of package `aprender-present-cli` (default features) as the focus node binary/aprender-present-cli/presentar:
+  its identity and its exact command surface, and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S14 (presentar). DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on this branch yet,
+    so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - "crates/aprender-present-cli/src/main.rs"
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: presentar-identity
+    targetClass: bin:target/aprender-present-cli/presentar
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["presentar"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-present-cli"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^presentar [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: presentar-commands
+    targetClass: bin:target/aprender-present-cli/presentar
+    properties:
+      - path: bin:command
+        minCount: 7
+        maxCount: 7
+        in:
+          - "bundle"
+          - "check"
+          - "deploy"
+          - "gate"
+          - "new"
+          - "score"
+          - "serve"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-present-cli/presentar) = C, |C| = 7, where C = the invocable command paths of the recursive --help walk of the default-feature build"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per command path, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount 7 + maxCount 7 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = presentar ∧ strip(r.feature) ∉ C }; unledgeredCommand = C ∖ { strip(r.feature) : r.binary = presentar }"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is presentar; strip removes the leading binary name"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-PRESENTAR-001
+    name: dropped_command_is_red
+    prediction: "deleting one command from the snapshot's command list makes the command-set shape RED naming it (minCount 7)"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one command removed"
+    expected_output: "verdict Fail, one result on binary/aprender-present-cli/presentar path bin:command"
+    if_fails: "A command could vanish from the shipped presentar with the ontology green."
+  - id: FALSIFY-BIN-PRESENTAR-002
+    name: ledger_row_deleted_is_red
+    prediction: "deleting one surface_audit.csv row for a live presentar command makes bin:unledgeredCommand non-empty, RED naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the csv with one row deleted"
+    expected_output: "verdict Fail naming the command"
+    if_fails: "The dogfood coverage ratio would be computed over a ledger that silently omits a shipped command."

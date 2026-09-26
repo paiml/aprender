@@ -30,15 +30,15 @@ bindings:
   status: implemented
 - contract: pagerank-kernel-v1.yaml
   equation: pagerank
-  module_path: aprender::graph::pagerank
-  function: pagerank
+  module_path: aprender::graph::centrality
+  function: Graph::pagerank
   signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) -> Tensor'
   status: implemented
   notes: Power iteration PageRank
 - contract: pagerank-kernel-v1.yaml
   equation: power_iteration
-  module_path: aprender::graph::pagerank
-  function: pagerank
+  module_path: aprender::graph::centrality
+  function: Graph::pagerank
   signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) -> Tensor'
   status: implemented
   notes: Iteration loop inside pagerank()
@@ -186,7 +186,7 @@ bindings:
   notes: Weighted Gini impurity for binary split
 - contract: decision-tree-v1.yaml
   equation: mse_split
-  module_path: aprender::tree::helpers_part_02
+  module_path: aprender::tree::helpers
   function: compute_mse
   signature: 'fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32'
   status: implemented
@@ -235,61 +235,61 @@ bindings:
   notes: Max aggregation of node features per graph
 - contract: ../gguf-format-safety-v1.yaml
   equation: magic_validation
-  module_path: aprender::gguf::reader
+  module_path: aprender::bundle::format
   function: validate_magic
   status: implemented
   notes: Magic byte check before any allocation
 - contract: ../gguf-format-safety-v1.yaml
   equation: metadata_kv_safety
-  module_path: aprender::gguf::reader
-  function: parse_metadata
+  module_path: aprender::format::gguf::reader
+  function: read_metadata_value
   status: implemented
   notes: String length checked before alloc (CVE-2024-25664 mitigation)
 - contract: ../safetensors-format-safety-v1.yaml
   equation: header_size_validation
-  module_path: aprender::safetensors::reader
-  function: validate_header
+  module_path: aprender::format::core_io
+  function: parse_and_validate_header
   status: implemented
   notes: Header size bounded before JSON parsing
 - contract: model-format-conversion-v1.yaml
   equation: format_conversion_roundtrip
-  module_path: aprender::convert
+  module_path: apr_cli::commands::convert
   function: run
   status: implemented
   notes: Tensor count/names/shapes preserved across format conversion
 - contract: model-format-conversion-v1.yaml
   equation: quantization_bounds
-  module_path: aprender::quantize
-  function: quantize_tensor
+  module_path: aprender::format
+  function: quantize_data
   status: implemented
   notes: Error bounded by dtype-specific tolerance
 - contract: model-format-conversion-v1.yaml
   equation: import_integrity
-  module_path: aprender::import
+  module_path: apr_cli::commands::import
   function: run
   status: implemented
   notes: Content-based format detection, not extension-based
 - contract: model-format-conversion-v1.yaml
   equation: export_fidelity
-  module_path: aprender::export
+  module_path: apr_cli::commands::export
   function: run
   status: implemented
   notes: Atomic write via temp file + rename
 - contract: model-format-conversion-v1.yaml
   equation: apr_tokenizer_embedding
-  module_path: aprender::convert
+  module_path: aprender::format::converter
   function: save_model_tensors_with_gguf_config_and_tokenizer
   status: implemented
   notes: "P0 invariant \u2014 every APR file embeds tokenizer (PMAT-154 fix, Q4K passthrough/fallback paths)"
 - contract: apr-cli-operations-v1.yaml
   equation: side_effect_classification
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: All 48 commands classified as ReadOnly/Mutating/LongRunning
 - contract: apr-cli-operations-v1.yaml
   equation: resource_cleanup
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: GPU/tmp/thread cleanup on all exit paths via RAII
@@ -297,36 +297,36 @@ bindings:
   equation: inference_determinism
   module_path: aprender::inference
   function: generate
-  status: implemented
+  status: not_implemented
   notes: temperature=0 greedy decoding is deterministic
 - contract: apr-cli-operations-v1.yaml
   equation: tokenizer_consistency
-  module_path: aprender::tokenizer
-  function: encode
+  module_path: aprender::text::tokenize::bpe_impl
+  function: BpeTokenizer::encode
   status: implemented
   notes: BPE encode/decode roundtrip for valid UTF-8
 - contract: apr-cli-operations-v1.yaml
   equation: concurrent_model_access
-  module_path: aprender::serve
+  module_path: apr_cli::commands::serve
   function: run
   status: implemented
   notes: Per-request KV cache, immutable model weights
 - contract: apr-cli-v1.yaml
   equation: contract_gate_enforcement
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: execute_command
   status: implemented
   notes: "PMAT-237 contract gate \u2014 extract_model_paths + validate_model_contract before dispatch"
 - contract: apr-cli-v1.yaml
   equation: training_plan_apply_semantics
   module_path: apr_cli::commands::train
-  function: train::run
+  function: run_apply
   status: implemented
   notes: Plan is pure (no GPU/filesystem), Apply writes to --output directory only
 - contract: apr-cli-v1.yaml
   equation: tokenizer_training_correctness
   module_path: apr_cli::commands::tokenize
-  function: tokenize::run
+  function: run_apply
   status: implemented
   notes: "BPE plan/apply \u2014 vocab.json size equals requested vocab_size"
 - contract: apr-cli-v1.yaml
@@ -392,20 +392,20 @@ bindings:
 - contract: apr-data-pipeline-v1.yaml
   equation: data_validation
   module_path: apr_cli::commands::data
-  function: run
+  function: run_audit
   status: implemented
   notes: JSONL/CSV/text validation with line-level error reporting
 - contract: apr-data-pipeline-v1.yaml
   equation: data_split_determinism
   module_path: apr_cli::commands::data
-  function: run
+  function: run_split
   status: implemented
   notes: Seed-deterministic train/val/test split
 - contract: apr-data-pipeline-v1.yaml
   equation: streaming_data_loader
   module_path: aprender::data::dataloader
   function: DataLoader::next_batch
-  status: implemented
+  status: not_implemented
   notes: Epoch-seeded shuffle, no sample drop on final partial batch
 - contract: apr-model-qa-v1.yaml
   equation: model_integrity_check
@@ -440,26 +440,26 @@ bindings:
 - contract: apr-architecture-schema-v1.yaml
   equation: architecture_config_invariants
   module_path: aprender::format::gguf::api
-  function: GgufModelConfig::validate
+  function: GgufModelConfig::warn_out_of_bounds
   status: implemented
   notes: Validates hidden_size/num_heads divisibility, GQA ratio, MoE fields
 - contract: apr-architecture-schema-v1.yaml
   equation: rope_position_encoding
-  module_path: aprender::nn::rope
-  function: RotaryPositionEmbedding::validate_config
+  module_path: aprender::nn::transformer::attention_helpers
+  function: RotaryPositionEmbedding::with_base
   status: implemented
   notes: RoPE theta, type (NORM vs NEOX), frequency vector length
 - contract: apr-format-safety-v1.yaml
   equation: magic_byte_validation
   module_path: aprender::gguf::reader
   function: detect_format
-  status: implemented
+  status: not_implemented
   notes: GGUF/SafeTensors/APR magic byte prefix detection, panic-free on truncated input
 - contract: apr-format-safety-v1.yaml
   equation: header_integrity
   module_path: aprender::gguf::reader
   function: validate_header
-  status: implemented
+  status: not_implemented
   notes: Bounded allocation, no OOM from crafted tensor_count
 - contract: apr-chat-session-v1.yaml
   equation: session_state_machine
@@ -469,7 +469,7 @@ bindings:
   notes: Init->WaitInput->Generating->WaitInput->Exit state machine
 - contract: apr-chat-session-v1.yaml
   equation: session_persistence
-  module_path: apr_cli::commands::chat_session
+  module_path: apr_cli::commands::chat
   function: run
   status: implemented
   notes: JSON serialization, KV-cache not persisted (rebuilt from history)
@@ -521,14 +521,14 @@ bindings:
 # --- apr-model-security-v1 (encrypt, decrypt, publish) ---
 - contract: apr-model-security-v1.yaml
   equation: encryption_roundtrip
-  module_path: apr_cli::commands::encrypt
-  function: run
+  module_path: aprender::format::encryption
+  function: save_encrypted
   status: implemented
   notes: AES-256-GCM with Argon2id key derivation
 - contract: apr-model-security-v1.yaml
   equation: publish_manifest_integrity
   module_path: apr_cli::commands::publish
-  function: run
+  function: execute
   status: implemented
   notes: SHA-256 manifest with signed model publishing
 # --- apr-model-diagnostics-v1 (hex, rosetta, oracle, diagnose) ---
@@ -547,7 +547,7 @@ bindings:
 - contract: apr-model-diagnostics-v1.yaml
   equation: rosetta_fingerprint_determinism
   module_path: apr_cli::commands::rosetta
-  function: run
+  function: run_fingerprint
   status: implemented
   notes: Cross-format fingerprint comparison (GGUF/SafeTensors/APR)
 # ── apr-code-harness-ir (Pillar-5): the first L5 contract. Every obligation

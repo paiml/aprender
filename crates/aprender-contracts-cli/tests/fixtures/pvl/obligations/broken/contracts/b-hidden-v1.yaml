@@ -1,0 +1,29 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  references:
+    - "PVL-001 EV-10 golden fixture"
+  description: "CHECK 2: two test-bearing entries hide under falsification:; the action-only entry is an alert threshold and is not counted"
+
+equations:
+  relu:
+    formula: "y_i = max(0, x_i)"
+    invariants:
+      - "y_i >= 0"
+
+proof_obligations:
+  - type: invariant
+    property: "Non-negativity"
+    applies_to: all
+falsification:
+  - id: HIDDEN-1
+    test: "relu_nonneg"
+  - id: HIDDEN-2
+    test: "relu_idempotent"
+  - id: ALERT-1
+    action: "page on-call"
+falsification_tests:
+  - id: FALSIFY-OBL-001
+    rule: "Non-negativity"
+    prediction: "relu(x)_i >= 0"
+    if_fails: "Comparison inverted"

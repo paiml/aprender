@@ -68,7 +68,43 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
     // and by non-crux contracts that reuse the vocabulary.
     validate_crux_intake(contract, &mut violations);
 
+    validate_summary_obligation_count(contract, &mut violations);
+
     violations
+}
+
+/// VS-COUNT-001 (#2648): `verification_summary.total_obligations` is a hand-typed
+/// integer that the schema requires, while `proof_obligations` is the list it counts.
+/// Nothing compared the two, so 17 contracts drifted silently (16 vs 9, 6 vs 0, ...).
+/// A stated count that disagrees with the list is now an Error.
+///
+/// `kind: schema` gets a Warning instead. The `contracts/work/` tickets are that
+/// kind, and their total counts obligations held outside the file (296 of 306 carry
+/// 47 or 22 against an empty list). For those files a mismatch is not evidence of
+/// drift.
+fn validate_summary_obligation_count(contract: &Contract, violations: &mut Vec<Violation>) {
+    let Some(vs) = contract.verification_summary.as_ref() else {
+        return;
+    };
+    let derived = contract.proof_obligations.len();
+    if vs.total_obligations as usize == derived {
+        return;
+    }
+    let severity = if contract.kind() == ContractKind::Schema {
+        Severity::Warning
+    } else {
+        Severity::Error
+    };
+    violations.push(Violation {
+        severity,
+        rule: "VS-COUNT-001".to_string(),
+        message: format!(
+            "verification_summary.total_obligations is {} but proof_obligations has {derived} \
+             entries; set it to {derived} (the count is derived, not declared)",
+            vs.total_obligations
+        ),
+        location: Some("verification_summary.total_obligations".to_string()),
+    });
 }
 
 /// The sentence a kind-less contract's first kernel-only error carries

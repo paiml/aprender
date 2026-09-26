@@ -313,7 +313,7 @@ kani_harnesses:
   bound: 8  # 4 failure modes × 2 mode values
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 7
   proven: 0
   tested: 0
   status: pending

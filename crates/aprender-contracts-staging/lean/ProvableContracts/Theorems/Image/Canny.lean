@@ -1,4 +1,5 @@
 import Mathlib.Data.Real.Basic
+import Mathlib.Tactic.Linarith
 
 /-!
 # Canny Edge Detection — Threshold Ordering

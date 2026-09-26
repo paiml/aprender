@@ -1,0 +1,163 @@
+{
+ "version": "2.1.0",
+ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "tool": { "driver": { "name": "pmat" } },
+   "invocations": [ { "executionSuccessful": true } ],
+   "results": [
+    {
+     "ruleId": "PRREV-4431-GHOST-BINDING-MSE-SPLIT",
+     "level": "error",
+     "message": {
+      "text": "contracts/aprender/binding.yaml (edited by cf038d37f, this PR) now binds decision-tree-v1.yaml's mse_split to module_path aprender::tree::helpers, function compute_mse, status implemented. crates/aprender-core/src/tree/helpers.rs has no compute_mse; the real fn is pub(super) in regression_helpers.rs and is not re-exported through helpers. binding-allowlist.json does not name it. bindings_gate.rs::resolve_depth walks module_path::function through re-exports only, so this binding will not resolve and will be counted as a ghost (PV-ONT-028) the next time --gate bindings runs."
+     },
+     "locations": [
+      { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 188 } } }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": ["grep", "-rn", "fn compute_mse", "crates/aprender-core/src/tree/"],
+      "exit_code": 0,
+      "stdout_sha256": "01cc86128eb832a8c559d84e428caf80f6c92bbe86ca37adac6560ea19df75a5",
+      "failure_scenario": "pv obligations check-bindings / pv lint --gate bindings run against this tree counts mse_split as an unresolved, unallowlisted ghost and fails the bindings gate (PV-ONT-028), or — if merged unnoticed — silently drops mse_split's implemented-status guarantee, so a later regression to compute_mse's MSE-split math has no contract holding it.",
+      "precision_class": "advisory",
+      "rationale_for_class": "Real, measured, and independently reproduced (agy found the same binding; see antigravity run), but not one of the six mechanical B1-B6 classes in SS7, so it cannot itself force BLOCK; it is reported for the human/CI merge decision."
+     }
+    },
+    {
+     "ruleId": "PRREV-4431-GHOST-BINDING-PAGERANK",
+     "level": "error",
+     "message": {
+      "text": "contracts/aprender/binding.yaml (edited by cf038d37f, this PR) rebinds pagerank-kernel-v1.yaml's pagerank and power_iteration equations to module_path aprender::graph::centrality, function Graph::pagerank, with signature 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) -> Tensor'. No centrality module exists under crates/aprender-graph/src, no Graph type has a pagerank method, and the real fn is a free function crates/aprender-graph/src/algorithms/pagerank.rs:59 with a completely different signature (graph: &CsrGraph, max_iterations: usize, tolerance: f32) -> Result<Vec<f32>>. Not in binding-allowlist.json."
+     },
+     "locations": [
+      { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 32 } } }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": ["grep", "-rn", "fn pagerank\\|impl Graph\\|struct Graph", "crates/aprender-graph/src/"],
+      "exit_code": 0,
+      "stdout_sha256": "8d95326fd7ce783b1b3d75472604c3975ffea5ec7a3e6a001ec99ffa2e7a1dc3",
+      "failure_scenario": "Same PV-ONT-028 ghost-binding failure mode as mse_split, for two equations in pagerank-kernel-v1.yaml; the claimed signature does not even match the real fn's (Tensor/f64 vs CsrGraph/f32), so this looks like a stale binding left over from an in-progress Graph-API rename rather than a completed one.",
+      "precision_class": "advisory",
+      "rationale_for_class": "Same as PRREV-4431-GHOST-BINDING-MSE-SPLIT."
+     }
+    },
+    {
+     "ruleId": "PRREV-4431-BUILD-VERIFY-UNREACHABLE",
+     "level": "warning",
+     "message": {
+      "text": "ae1887db9's commit message self-reports 'aprender-contracts --lib passes 2002/2002, and clippy -D warnings is clean'. Could not independently verify: two build attempts (cargo test -p aprender-contracts --lib, PID 4089092; cargo check -p aprender-contracts --lib --tests, PID 869248) were each killed by their own recorded PID after multiple minutes with the CARGO_TARGET_DIR remaining at 4.0K (no real compilation progress) under a measured host load average of 16-71 on a 32-core box (many concurrent Claude Code fleet sessions building simultaneously). Substituted with full manual diff review of both real code commits (ae1887db9, fe8c9dff7) instead."
+     },
+     "locations": [
+      { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-contracts/src/kani_gen/mod.rs" } } }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": ["uptime"],
+      "exit_code": 0,
+      "stdout_sha256": "80a8f0badfeee229361f9dfe42b86cd69bd7f260225bac3c4aa01103fbdb663a",
+      "failure_scenario": "The commit's self-reported '2002/2002 tests pass, clippy clean' is asserted by its author, not measured by this review; if false, this receipt would be the only record that independent verification was attempted and could not complete, rather than silently repeating the claim as fact.",
+      "precision_class": "advisory",
+      "rationale_for_class": "Environmental unreachability, not a defect in the diff; manual review of both commits found no correctness issue."
+     }
+    }
+   ]
+  },
+  {
+   "tool": { "driver": { "name": "nvidia-cuda-docs" } },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": { "text": "S3.B triggers on crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/pmat/src/tdg/cuda_simd_scores.rs.txt (TDG scoring-rubric fixture naming 'bar.sync'/'warp divergence' categories, no device code) and crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean (generated Lean 4 real-number FP8 theorems, no GPU claim). The cuda-docs-reviewer agent type is not registered in this session ('Agent type cuda-docs-reviewer not found'), and the nvidia-cuda-docs MCP server requires OAuth this non-interactive session cannot complete. Not answered from memory." },
+       "properties": {
+        "grounding": "measured",
+        "command": ["Agent", "subagent_type=cuda-docs-reviewer"],
+        "exit_code": 1,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       }
+      }
+     ]
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": { "driver": { "name": "crux" } },
+   "invocations": [ { "executionSuccessful": true } ],
+   "results": [
+    {
+     "ruleId": "PRREV-4431-CRUX-NONE-PV-CLI",
+     "level": "note",
+     "message": {
+      "text": "S3.C triggers: the CLI output surface of pv/pv-sat (crates/aprender-contracts-cli/src/cli.rs, src/commands/*.rs, src/bin/pv-sat/*.rs) changes across the diff (all via the folded cf038d37f, which the commit message states 'replaces #4317', i.e. prior-reviewed content; neither of the two new commits ae1887db9/fe8c9dff7 touches the CLI binary surface). No contracts/crux-*.yaml names pv-sat or aprender-contracts-cli: crux_coverage none. No comparative/competitor-ratio claim was found in-scope (the one 'N×' string in the whole diff is in docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md, out of B4 scope per SS3.C.1; README.md's only change is the machine-regenerated CONTRACT_COUNT marker 1837->1851)."
+     },
+     "locations": [
+      { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-contracts-cli/src/cli.rs" } } }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": ["git", "grep", "-l", "-e", "pv-sat", "-e", "aprender-contracts-cli", "--", "contracts/crux-*.yaml"],
+      "exit_code": 1,
+      "stdout_sha256": "cf205dbb8cea84897b488abcc281bf96698d5e94b1096b16657b4caba9082a22",
+      "failure_scenario": "pv/pv-sat's CLI output can drift with no CRUX contract or competitor comparison to catch a regression, because no gap_effect is tracked for this surface today.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": { "driver": { "name": "mutation" } },
+   "invocations": [ { "executionSuccessful": true } ],
+   "results": [
+    {
+     "ruleId": "PRREV-4431-MUTATION-GAP-GUARDS",
+     "level": "note",
+     "message": {
+      "text": "S3.D triggers (8 scripts/check_*.sh + .github/workflows/ci.yml + ~26 contracts/*.yaml touched). No committed cargo-mutants set exists for any of the 8 touched guard scripts; --self-test is the available substitute. 6/8 ran clean: check_ci_release_fold_scope.sh 8/8, check_guards_are_wired.sh 14/14, check_leanchecker_scoped.sh 23/23, check_milestone_cut.sh 31/31, check_tag_step_gated.sh 5/5, check_workspace_test_waits_on_guard_tree.sh 10/10 mutant scenarios killed. check_ont_ratchet.sh --self-test timed out twice (60s, then 150s; got through 4 assertions before hanging) under measured host load average 16-71 on 32 cores -- not scored, not a pass. check_ladder_cells_producer.sh has no --self-test and no bats coverage by name -- a genuine, pre-existing gap this PR does not close."
+     },
+     "locations": [
+      { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_ont_ratchet.sh" } } },
+      { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_ladder_cells_producer.sh" } } }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": ["timeout", "150", "bash", "scripts/check_ont_ratchet.sh", "--self-test"],
+      "exit_code": 124,
+      "stdout_sha256": "4ce20c541fb08aebf6d1b6982b478756c45a711d8e637a5722a77a3c8be3456d",
+      "failure_scenario": "A future edit to check_ont_ratchet.sh or check_ladder_cells_producer.sh that breaks their gate logic has no self-test or mutation harness to catch it before it reaches CI.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": { "driver": { "name": "antigravity" } },
+   "invocations": [ { "executionSuccessful": true } ],
+   "results": [
+    {
+     "ruleId": "PRREV-4431-GHOST-BINDING-MSE-SPLIT",
+     "level": "error",
+     "message": {
+      "text": "agy (gemini-3.1-pro-high) independently found the same mse_split ghost binding: 'The PR updates the mse_split equation binding to module_path: aprender::tree::helpers and function: compute_mse. However, compute_mse is still located in crates/aprender-core/src/tree/regression_helpers.rs, making the new module path incorrect.' Reverified by primary via grep (see the pmat-driver run); classification: agreed."
+     },
+     "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 188 } } } ],
+     "properties": { "grounding": "measured", "precision_class": "advisory", "rationale_for_class": "S3.E is advisory-only (SS7); corroborates the pmat-driver finding, does not independently force any verdict." }
+    },
+    {
+     "ruleId": "PRREV-4431-GHOST-BINDING-PAGERANK",
+     "level": "error",
+     "message": {
+      "text": "agy independently found the same pagerank ghost binding: 'the implementation is still a free function pagerank located in crates/aprender-graph/src/algorithms/pagerank.rs. The non-existent centrality module and Graph::pagerank function will result in a ghost binding error.' Reverified by primary via grep (see the pmat-driver run); classification: agreed."
+     },
+     "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 32 } } } ],
+     "properties": { "grounding": "measured", "precision_class": "advisory", "rationale_for_class": "S3.E is advisory-only (SS7); corroborates the pmat-driver finding, does not independently force any verdict." }
+    }
+   ]
+  }
+ ]
+}

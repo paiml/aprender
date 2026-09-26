@@ -11,7 +11,7 @@ use std::fmt::Write;
 
 use crate::binding::BindingRegistry;
 use crate::coverage::{coverage_report, CoverageReport};
-use crate::proof_status::compute_proof_level;
+use crate::proof_status::{compute_proof_level, ProofLevel};
 use crate::schema::Contract;
 
 /// Generate a deterministic CONTRACT-README.md for a consumer project.
@@ -24,6 +24,7 @@ pub fn generate_readme(contracts: &[(String, &Contract)], binding: &BindingRegis
 
     let _ = writeln!(out, "# Contract Coverage ({})\n", binding.target_crate);
     write_coverage_summary(&mut out, &report);
+    write_clause_counts(&mut out, contracts);
     write_binding_table(&mut out, contracts, binding);
     write_verification_summary(&mut out, contracts, binding);
     write_gaps(&mut out, contracts, binding);
@@ -49,6 +50,22 @@ fn write_coverage_summary(out: &mut String, report: &CoverageReport) {
         out,
         "**Obligations:** {} | **Falsification:** {} | **Kani:** {}\n",
         report.totals.obligations, report.totals.falsification_tests, report.totals.kani_harnesses
+    );
+}
+
+/// ONT-4e: the contract surface R-20 checks on `refines` — `requires` and `ensures` clauses, and the equations'
+/// `invariants` — counted over every contract, so a consumer README says how much of it is stated at all.
+fn write_clause_counts(out: &mut String, contracts: &[(String, &Contract)]) {
+    let requires: usize = contracts.iter().map(|(_, c)| c.requires.len()).sum();
+    let ensures: usize = contracts.iter().map(|(_, c)| c.ensures.len()).sum();
+    let invariants: usize = contracts
+        .iter()
+        .flat_map(|(_, c)| c.equations.values())
+        .map(|e| e.invariants.len())
+        .sum();
+    let _ = writeln!(
+        out,
+        "**Requires:** {requires} | **Ensures:** {ensures} | **Invariants:** {invariants}\n"
     );
 }
 
@@ -126,14 +143,22 @@ fn write_verification_summary(
     }
 
     let _ = writeln!(out, "## Verification Ladder\n");
+    out.push_str(&verification_ladder_table(&[l5, l4, l3, l2, l1]));
+    let _ = writeln!(out);
+}
+
+/// The README's verification-ladder table, counts given highest level first.
+///
+/// PVL-001 EV-3: the method column is [`ProofLevel::method`], the one definition.
+/// It printed its own strings, one level off (the Kani row labelled one level too high).
+pub(crate) fn verification_ladder_table(counts_desc: &[usize; 5]) -> String {
+    let mut out = String::new();
     let _ = writeln!(out, "| Level | Count | Method |");
     let _ = writeln!(out, "|-------|-------|--------|");
-    let _ = writeln!(out, "| L5 | {l5} | Lean 4 theorem |");
-    let _ = writeln!(out, "| L4 | {l4} | Kani BMC |");
-    let _ = writeln!(out, "| L3 | {l3} | Kani + probar |");
-    let _ = writeln!(out, "| L2 | {l2} | Falsification |");
-    let _ = writeln!(out, "| L1 | {l1} | Type system |");
-    let _ = writeln!(out);
+    for (level, count) in ProofLevel::ALL_DESCENDING.iter().zip(counts_desc) {
+        let _ = writeln!(out, "| {level} | {count} | {} |", level.method());
+    }
+    out
 }
 
 fn write_gaps(out: &mut String, contracts: &[(String, &Contract)], binding: &BindingRegistry) {
@@ -239,6 +264,11 @@ metadata:
 equations:
   f:
     formula: "f(x) = x"
+requires:
+  - {id: PRE-1, statement: "s", formal: "len(x) > 0", formal_status: parsed}
+ensures:
+  - {id: POST-1, statement: "s", formal_status: prose}
+  - {id: POST-2, statement: "s", formal: "y ≥ 0", formal_status: parsed}
 proof_obligations:
   - type: invariant
     property: "test"
@@ -285,6 +315,10 @@ qa_gate:
         assert!(out1.contains("# Contract Coverage (test-crate)"));
         assert!(out1.contains("test-v1"));
         assert!(out1.contains("implemented"));
+        assert!(
+            out1.contains("**Requires:** 1 | **Ensures:** 2 | **Invariants:** 0"),
+            "{out1}"
+        );
     }
 
     #[test]

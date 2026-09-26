@@ -120,6 +120,11 @@ pub struct Census {
     pub quarantined_n: usize,
     pub by_kind: BTreeMap<String, usize>,
     pub by_entity_type: BTreeMap<String, usize>,
+    /// ONT-4d: instances per Σ concept in the extracted graph AFTER the subsumption closure, so a concept
+    /// counts its sub-concepts' instances too. Empty when there is no well-formed Σ or the extraction refused
+    /// (the `sigma` / `shapes` gates report why); never a guess.
+    #[serde(default)]
+    pub by_concept: BTreeMap<String, usize>,
     pub by_anchoring: AnchoringCounts,
     /// sha256 over the sorted, unique contract ids (file stems), newline
     /// separated. Two corpora with the same ids hash the same; adding, removing
@@ -271,7 +276,21 @@ pub fn census_of(dir: &Path) -> Result<Census, Box<dyn std::error::Error>> {
     }
     census.id_set_sha256 = id_set_sha256(&ids);
     census.declared_external = declared_external(dir)?;
+    census.by_concept = by_concept(dir);
     Ok(census)
+}
+
+/// ONT-4d: `concept → instances` over the closed graph (see [`Census::by_concept`]).
+fn by_concept(dir: &Path) -> BTreeMap<String, usize> {
+    use provable_contracts::ontology::{extract, rdf::ont};
+    let (Some(sigma), Ok(x)) = (extract::sigma_of(dir), extract::all(dir)) else {
+        return BTreeMap::new();
+    };
+    sigma
+        .concepts
+        .keys()
+        .map(|c| (c.clone(), x.graph.instances_of(&ont(c)).len()))
+        .collect()
 }
 
 /// Contracts held OUT of the corpus, counted but never parsed. The shared walker
@@ -311,6 +330,7 @@ fn empty_census(n_files: usize, quarantined_n: usize) -> Census {
         quarantined_n,
         by_kind: BTreeMap::new(),
         by_entity_type: BTreeMap::new(),
+        by_concept: BTreeMap::new(),
         by_anchoring: AnchoringCounts::default(),
         id_set_sha256: String::new(),
         declared_external: Vec::new(),
