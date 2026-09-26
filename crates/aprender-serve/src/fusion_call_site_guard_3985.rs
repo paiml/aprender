@@ -9,20 +9,20 @@
 //! test is also in no CI workflow. This one is a lib test, so CI's `--lib` run
 //! executes it.
 //!
-//! The check per ACTIVE entry: the path exists from the workspace root, the line
-//! exists, and within a few lines of it the fused kernel's name appears (case and
-//! underscores ignored, so `FusedSwigluKernel` matches `fused_swiglu_into`). A
-//! path that moved, a line that drifted and a file that stopped being the call
-//! site all fail.
+//! #3422: a `path:line` citation went RED on an unrelated edit — #4234 moved the
+//! arms of `kernels_generate_gemm_cuda.rs` and FUSION-009/010's lines fell off
+//! their kernels. A line number is a property of every edit above it, not of the
+//! call. So a `call_site` is `path#symbol`, and the check per ACTIVE entry is:
+//! the path exists from the workspace root; the symbol occurs there EXACTLY ONCE
+//! outside a `//` comment (an anchor that matches twice anchors nothing); and the
+//! symbol NAMES the fused kernel as a whole identifier (case and underscores
+//! ignored, `Kernel`/`_into` suffixes allowed, so `self.fused_swiglu_into(` names
+//! `FusedSwigluKernel`, but `KernelType::FusedGateUpQ4KGemv {` does not name
+//! `FusedGateUpKernel`). A `path:line` citation is rejected outright.
 
 use std::path::Path;
 
 const CONTRACT: &str = include_str!("../../../contracts/kernel-fusion-v1.yaml");
-
-/// Lines searched around the cited one for the kernel's name: one before, three
-/// after (a call often spans a `let kernel_type =` line and its arguments).
-const WINDOW_BEFORE: usize = 1;
-const WINDOW_AFTER: usize = 3;
 
 fn normalise(s: &str) -> String {
     s.chars()
@@ -31,35 +31,55 @@ fn normalise(s: &str) -> String {
         .collect()
 }
 
+/// True when some identifier in `symbol` IS the kernel `stem` (normalised), bare
+/// or with a `Kernel` / `_into` suffix. Whole identifiers, never substrings:
+/// `FusedGateUp` must not be satisfied by `FusedGateUpQ4KGemv`.
+fn names_kernel(symbol: &str, stem: &str) -> bool {
+    symbol
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .map(normalise)
+        .any(|t| t == stem || t == format!("{stem}kernel") || t == format!("{stem}into"))
+}
+
 /// `Err(reason)` if `call_site` is not a live call of the kernel `fused` names.
 fn check_call_site(root: &Path, fused: &str, call_site: &str) -> Result<(), String> {
-    let (path, line) = call_site
-        .rsplit_once(':')
-        .ok_or_else(|| format!("`{call_site}` has no `:line`"))?;
-    let line: usize = line
-        .parse()
-        .map_err(|_| format!("`{call_site}`: `{line}` is not a line number"))?;
+    let (path, symbol) = call_site.split_once('#').ok_or_else(|| {
+        format!("`{call_site}` is not `path#symbol` (a line number drifts on every edit above it, #3422)")
+    })?;
+    if symbol.trim().is_empty() {
+        return Err(format!("`{call_site}` has an empty symbol"));
+    }
     let src = std::fs::read_to_string(root.join(path))
         .map_err(|e| format!("`{path}` does not exist from the workspace root ({e})"))?;
-    let lines: Vec<&str> = src.lines().collect();
-    if line == 0 || line > lines.len() {
-        return Err(format!(
-            "`{path}` has {} lines, cited line {line}",
-            lines.len()
-        ));
+    let hits: Vec<(usize, &str)> = src
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| l.contains(symbol) && !l.trim_start().starts_with("//"))
+        .collect();
+    match hits.len() {
+        0 => {
+            return Err(format!(
+                "`{path}` has no non-comment occurrence of `{symbol}`"
+            ))
+        },
+        1 => {},
+        n => {
+            let at: Vec<String> = hits.iter().map(|(i, _)| (i + 1).to_string()).collect();
+            return Err(format!(
+                "`{symbol}` occurs {n} times in `{path}` (lines {}); an anchor must be unique",
+                at.join(", ")
+            ));
+        },
     }
-    // `FusedSwigluKernel (path)` -> `FusedSwiglu`
+    // `FusedSwigluKernel (path)` -> `fusedswiglu`
     let kernel = fused.split_whitespace().next().unwrap_or(fused);
     let stem = normalise(kernel.strip_suffix("Kernel").unwrap_or(kernel));
-    let lo = line.saturating_sub(1 + WINDOW_BEFORE);
-    let hi = (line + WINDOW_AFTER).min(lines.len());
-    let window = lines[lo..hi].join("\n");
-    if normalise(&window).contains(&stem) {
+    if names_kernel(symbol, &stem) {
         Ok(())
     } else {
         Err(format!(
-            "`{call_site}` does not call `{kernel}`; lines {}..={hi} read:\n{window}",
-            lo + 1
+            "`{symbol}` (line {} of `{path}`) does not name `{kernel}`",
+            hits[0].0 + 1
         ))
     }
 }
@@ -102,31 +122,63 @@ fn every_active_fusion_call_site_is_a_live_call_of_its_kernel() {
     );
 }
 
-/// The case table: the check must reject each way a citation goes stale, and
-/// accept the real one.
+/// The case table: the check must reject each way a citation goes stale or
+/// ambiguous, accept the real one, and keep accepting it after the lines move.
 #[test]
 fn the_call_site_check_rejects_each_stale_shape() {
     let root = workspace_root();
     let live = "crates/aprender-serve/src/cuda/kernels_generate_gemm_cuda.rs";
-    let src = std::fs::read_to_string(root.join(live)).expect("read live generator");
-    let at = src
-        .lines()
-        .position(|l| l.contains("KernelType::FusedQKV {"))
-        .expect("FusedQKV arm")
-        + 1;
-    let fused = "FusedQKVKernel (x)";
+    let qkv = "FusedQKVKernel (x)";
+    let gate_up = "FusedGateUpKernel (x)";
 
-    // must-match: the real arm.
-    assert!(check_call_site(&root, fused, &format!("{live}:{at}")).is_ok());
-    // must-not-match: a pre-monorepo path, an out-of-range line, no line at all,
-    // a line drifted well away from the arm, the deleted orphan generator.
-    for (stale, why) in [
-        (format!("realizar/src/cuda/{at}.rs:{at}"), "moved path"),
-        (format!("{live}:999999"), "line past end of file"),
-        (live.to_string(), "no line number"),
-        (format!("{live}:{}", at + 40), "drifted line"),
+    // must-match: the real arms, and a call named with an `_into` suffix.
+    for (fused, site) in [
+        (qkv, format!("{live}#KernelType::FusedQKV {{")),
+        (gate_up, format!("{live}#KernelType::FusedGateUp {{")),
         (
-            "crates/aprender-serve/src/cuda/generate.rs:267".to_string(),
+            "FusedSwigluKernel (x)",
+            "crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs#self.fused_swiglu_into("
+                .to_string(),
+        ),
+    ] {
+        assert!(
+            check_call_site(&root, fused, &site).is_ok(),
+            "real call site `{site}` was rejected: {:?}",
+            check_call_site(&root, fused, &site)
+        );
+    }
+
+    // must-not-match against the real tree.
+    for (fused, stale, why) in [
+        (
+            qkv,
+            format!("realizar/src/cuda/x.rs#KernelType::FusedQKV {{"),
+            "moved path",
+        ),
+        (qkv, format!("{live}:371"), "a line number, not a symbol"),
+        (qkv, live.to_string(), "no symbol at all"),
+        (qkv, format!("{live}#"), "empty symbol"),
+        (
+            qkv,
+            format!("{live}#KernelType::FusedNoSuchArm {{"),
+            "symbol absent",
+        ),
+        (qkv, format!("{live}#KernelType::"), "ambiguous: many arms"),
+        (
+            qkv,
+            format!("{live}#KernelType::FusedGateUp {{"),
+            "names another kernel",
+        ),
+        // Substring hole of the line-window check: `FusedGateUp` is a prefix of
+        // `FusedGateUpQ4KGemv`, so the Q4K arm must not satisfy FUSION-007.
+        (
+            gate_up,
+            format!("{live}#KernelType::FusedGateUpQ4KGemv {{"),
+            "prefix-named kernel",
+        ),
+        (
+            qkv,
+            "crates/aprender-serve/src/cuda/generate.rs#KernelType::FusedQKV {".to_string(),
             "deleted orphan",
         ),
     ] {
@@ -135,4 +187,30 @@ fn the_call_site_check_rejects_each_stale_shape() {
             "{why}: `{stale}` was accepted"
         );
     }
+
+    // Synthetic files: line drift must NOT matter; a comment must not anchor.
+    let dir = std::env::temp_dir().join(format!("fusion-guard-3422-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let arm = "        KernelType::FusedQKV { hidden_size, kv_dim } => {\n";
+    let drifted = format!("{}{arm}", "// padding\n".repeat(40));
+    std::fs::write(dir.join("drifted.rs"), &drifted).expect("write");
+    std::fs::write(
+        dir.join("comment.rs"),
+        "// KernelType::FusedQKV { was here\n",
+    )
+    .expect("write");
+    std::fs::write(dir.join("twice.rs"), format!("{arm}{arm}")).expect("write");
+    let drift = check_call_site(&dir, qkv, "drifted.rs#KernelType::FusedQKV {");
+    let comment = check_call_site(&dir, qkv, "comment.rs#KernelType::FusedQKV {");
+    let twice = check_call_site(&dir, qkv, "twice.rs#KernelType::FusedQKV {");
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(
+        drift.is_ok(),
+        "40 lines of drift broke a symbol anchor: {drift:?}"
+    );
+    assert!(comment.is_err(), "a `//` comment anchored the call site");
+    assert!(
+        twice.is_err(),
+        "a symbol occurring twice was accepted as an anchor"
+    );
 }
