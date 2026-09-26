@@ -162,16 +162,18 @@ fn falsify_slc_003_a_bad_run_is_refused() {
     );
     refused("null (no --logprobs)", |v| *v = Value::Null);
     refused("no steps", |v| v["steps"] = json!([]));
-    refused("top_k 0", |v| v["top_k"] = json!(0));
-    refused("top_k 256", |v| v["top_k"] = json!(256));
-    refused("an unknown key", |v| v["extra"] = json!(1));
+    refused("top_k 0", |v| v["top_k"] = Value::from(0));
+    refused("top_k 256", |v| v["top_k"] = Value::from(256));
+    refused("an unknown key", |v| v["extra"] = Value::from(1));
     refused("a missing key", |v| {
         v.as_object_mut().expect("obj").remove("prompt_token_ids");
     });
     refused("a null logit", |v| {
         v["steps"][0]["top"][2]["logit"] = Value::Null
     });
-    refused("a step out of order", |v| v["steps"][1]["step"] = json!(2));
+    refused("a step out of order", |v| {
+        v["steps"][1]["step"] = Value::from(2)
+    });
     refused("a short top list", |v| {
         v["steps"][2]["top"].as_array_mut().expect("arr").pop();
     });
@@ -185,7 +187,7 @@ fn falsify_slc_003_a_bad_run_is_refused() {
     });
     refused("two distributions in one step", |v| {
         let l = v["steps"][0]["top"][5]["logit"].as_f64().expect("f");
-        v["steps"][0]["top"][5]["logit"] = json!(l + 0.01);
+        v["steps"][0]["top"][5]["logit"] = Value::from(l + 0.01);
     });
     refused("a positive logprob", |v| {
         for t in v["steps"][0]["top"].as_array_mut().expect("arr") {
@@ -193,8 +195,8 @@ fn falsify_slc_003_a_bad_run_is_refused() {
                 t["logit"].as_f64().expect("f"),
                 t["logprob"].as_f64().expect("f"),
             );
-            t["logit"] = json!(l + 20.0);
-            t["logprob"] = json!(p + 20.0);
+            t["logit"] = Value::from(l + 20.0);
+            t["logprob"] = Value::from(p + 20.0);
         }
     });
     let mut m = meta();
