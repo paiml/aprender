@@ -11,6 +11,7 @@
 //!
 //! Missing evidence is RED, never a skip. M-CR (EXT-13) and M7 (EXT-15) are separate rows.
 
+use super::model_gate_m1b::{self, M1bEvidence, M1bReport};
 use super::model_gate_m2::arms::{gate as m2_gate, Arm, GateReport};
 use super::model_gate_m2::{M2Prereg, ReleaseClass, Suite};
 use pacha::data::{AdmittedManifest, SealedItems};
@@ -126,6 +127,9 @@ pub(crate) struct M3Evidence {
 pub(crate) struct GateEvidence {
     #[serde(default)]
     pub m1: Option<M1Evidence>,
+    /// M1b artifact quality (EXT-27): KL and top-1 vs BF16, per arm, ratcheted.
+    #[serde(default)]
+    pub m1b: Option<M1bEvidence>,
     #[serde(default)]
     pub m2: Option<M2Evidence>,
     #[serde(default)]
@@ -161,6 +165,7 @@ pub(crate) struct GateReceipt {
     pub manifest_sha256: String,
     pub gates: Vec<GateRow>,
     pub m1: Option<M1Evidence>,
+    pub m1b: Option<M1bReport>,
     pub m2: Option<GateReport>,
     pub m3_parse_rate: Option<f64>,
     pub sealed_items_checked: usize,
@@ -560,7 +565,7 @@ fn m6(m: &ReleaseManifest, inp: &GateInputs<'_>) -> GateRow {
     )
 }
 
-/// Run M0..M6.
+/// Run M0..M6, with M1b after M1.
 ///
 /// # Errors
 ///
@@ -571,10 +576,12 @@ pub(crate) fn run(pre: &M2Prereg, inp: &GateInputs<'_>) -> Result<GateReceipt, S
     let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let m: ReleaseManifest =
         serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (m1b_row, m1b_report) = model_gate_m1b::gate(&m, inp.evidence.m1b.as_ref());
     let (m2_row, m2_report) = m2(pre, inp.evidence.m2.as_ref());
     let gates = vec![
         m0(&m, inp),
         m1(inp.evidence.m1.as_ref()),
+        m1b_row,
         m2_row,
         m3(inp.evidence.m3.as_ref()),
         m4(&m, inp),
@@ -589,6 +596,7 @@ pub(crate) fn run(pre: &M2Prereg, inp: &GateInputs<'_>) -> Result<GateReceipt, S
         manifest_sha256: hex_lower(&Sha256::digest(&bytes)),
         gates,
         m1: inp.evidence.m1.clone(),
+        m1b: m1b_report,
         m2: m2_report,
         m3_parse_rate: inp.evidence.m3.as_ref().and_then(|e| e.parse_rate),
         sealed_items_checked: inp.sealed.len(),

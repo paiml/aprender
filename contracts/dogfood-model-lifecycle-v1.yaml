@@ -268,7 +268,8 @@ falsification_tests:
   obligation: EXT-INV-009
   rule: Artifact-quality gate
   prediction: one tensor re-quantized to Q2_K widens the gap vs the reference quant and turns the gate RED
-  if_fails: 'the quality gate cannot see a degraded artifact (owed EXT-27 #4409; planned: cargo test -p apr-cli --test ext_quality_gate falsify_ext_021_degraded_quant_red)'
+  test: cargo test -p apr-cli --lib falsify_ext_021_degraded_quant_red
+  if_fails: 'the quality gate cannot see a degraded artifact — `apr model gate` M1b no longer turns RED when our KL rises or our top-1 falls past the baseline gap to an unchanged arm (EXT-27 #4409; the M1b plant of falsify_ext_015_each_gate_turns_red_on_its_plant runs it through the whole gate). The unit test plants the Q2_K effect as numbers; the measured Q2_K record is evidence/ext-001/EXT-27/'
 - id: FALSIFY-EXT-022
   obligation: EXT-INV-009
   rule: Speed ratchet
