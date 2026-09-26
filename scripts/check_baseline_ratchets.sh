@@ -145,6 +145,8 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # an author one conversation, a wrong `set-aperture` costs a hole.
         silent_truncation_baseline.txt)          printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        guard_fail_fast_baseline.txt)            printf 'keyed\n' ;;   # #4415: <guard section><TAB><fail-fast steps>; no section may rise, none may appear (scripts/check_guard_steps_run_all.sh)
+        ci_guards_uncovered.txt)                 printf 'set\n' ;;   # #4415: guard scripts ci_guards.sh cannot reach, one <section> <script> row each; may only shrink (scripts/ci_guards.sh --check-coverage)
         src_test_files_unwired_baseline.txt)     printf 'set\n' ;;   # dark src test files, SHRINK-ONLY exact set (scripts/check_src_test_files_wired.sh, #3809)
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;

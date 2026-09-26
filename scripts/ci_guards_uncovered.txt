@@ -1,3 +1,4 @@
+# tool_version=none (derived by scripts/ci_guards.sh --check-coverage over ci/sections.yml; not a versioned analyser)
 # Guard scripts that ci/sections.yml runs OUTSIDE the guard-* sections, so
 # `scripts/ci_guards.sh` (#4416) cannot reach them. One row each:
 #   <section> <script>  # why it is not in a guard section

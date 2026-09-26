@@ -247,8 +247,9 @@ manifest_rows() {
         LIB="$d/mutlib/lib/$(basename "$LIB")" mrun "CI: a jq that dies mid-stream stops the run (rc 2)" 2 'cannot read the steps of guard-x'
     else n=$((n + 1)); printf 'FAIL %-58s\n' "jq-death mutant: the sed did not apply"; bad=1; fi
     n=$((n + 1))
-    if [ "$(cd "$repo" && bash "$LIB" sha guard-x)" = "$(cd "$repo" && GITHUB_ACTIONS=true bash "$LIB" sha guard-x)" ] \
-        && grep -q '^ci_guards: sha256 [0-9a-f]\{16\} manifest [0-9a-f]\{16\}' "$d/out"; then
+    local_sha="$(cd "$repo" && bash "$LIB" sha guard-x)"
+    ci_sha="$(cd "$repo" && GITHUB_ACTIONS=true bash "$LIB" sha guard-x)"
+    if [ "$local_sha" = "$ci_sha" ] && grep -q '^ci_guards: sha256 [0-9a-f]\{16\} manifest [0-9a-f]\{16\}' "$d/out"; then
         printf 'ok   %-58s\n' "the sha line is the same in CI and locally, and is printed"
     else printf 'FAIL %-58s\n' "the sha line is the same in CI and locally, and is printed"; bad=1; fi
     return "$bad"
