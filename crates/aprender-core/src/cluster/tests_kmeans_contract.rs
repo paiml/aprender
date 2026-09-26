@@ -185,7 +185,7 @@ fn falsify_km_007_n_init_never_worse_than_single() {
             // (every fit = restart 0) fails this wherever restart 0 is not
             // the minimum, independently of KM-008.
             let runs_min = (0..10)
-                .map(|r| ten.lloyd(&x, ten.restart_start_row(r, x.n_rows())).2)
+                .map(|r| ten.lloyd(&x, r).2)
                 .fold(f32::INFINITY, f32::min);
             assert_eq!(
                 ten.inertia(),
@@ -239,7 +239,7 @@ fn falsify_km_009_n_init_reproducible() {
 // =========================================================================
 
 /// The pre-#3146 init, kept here as the reference D² must beat: farthest-point
-/// seeding from `first_idx`, then the same Lloyd iterations. Returns inertia.
+/// seeding from `first_idx`, then the SAME Lloyd iterations (`lloyd_from`).
 fn farthest_point_lloyd(km: &KMeans, x: &Matrix<f32>, first_idx: usize) -> f32 {
     let (n, d) = x.shape();
     let mut data = Vec::with_capacity(km.n_clusters * d);
@@ -253,23 +253,14 @@ fn farthest_point_lloyd(km: &KMeans, x: &Matrix<f32>, first_idx: usize) -> f32 {
             *c = c.min(f);
         }
     }
-    let mut centroids = Matrix::from_vec(km.n_clusters, d, data).expect("valid matrix");
-    for _ in 0..km.max_iter {
-        let labels = km.assign_labels(x, &centroids);
-        let next = km.update_centroids(x, &labels);
-        let done = km.centroids_converged(&centroids, &next);
-        centroids = next;
-        if done {
-            break;
-        }
-    }
-    let labels = km.assign_labels(x, &centroids);
-    inertia(x, &centroids, &labels)
+    let centroids = Matrix::from_vec(km.n_clusters, d, data).expect("valid matrix");
+    km.lloyd_from(x, centroids).2
 }
 
 /// FALSIFY-KM-011: over the KM-007 grid (96 single-init fits) D² seeding
 /// reaches a strictly lower total inertia than farthest-point seeding
-/// (measured: 29668.4 vs 30066.0, 33 wins / 25 losses). An argmax mutant IS
+/// (measured: 29635.9 vs 30066.0, 30 wins / 31 losses — the margin is in the
+/// aggregate, not in a per-fit majority). An argmax mutant IS
 /// farthest-point and ties, so it fails the strict inequality.
 #[test]
 fn falsify_km_011_d2_beats_farthest_point() {
@@ -303,7 +294,7 @@ fn falsify_km_012_zero_weight_rows_never_drawn() {
     let x = Matrix::from_vec(52, 2, data).expect("valid matrix");
     for seed in 0..32u64 {
         let km = KMeans::new(3).with_random_state(seed);
-        let centroids = km.kmeans_plusplus_init(&x, km.restart_start_row(0, 52));
+        let centroids = km.kmeans_plusplus_init(&x, 0);
         let mut rows: Vec<(u32, u32)> = (0..3)
             .map(|c| (centroids.get(c, 0).to_bits(), centroids.get(c, 1).to_bits()))
             .collect();
@@ -315,6 +306,40 @@ fn falsify_km_012_zero_weight_rows_never_drawn() {
             "FALSIFIED KM-012: seed {seed}: D² drew a zero-weight duplicate row"
         );
     }
+}
+
+/// FALSIFY-KM-013: two restarts that happen to share a start row must still draw
+/// different candidates. `restart_start_row` is `% n`, so over 200 runs on 60 rows
+/// collisions are certain; an RNG keyed on the start row instead of the run makes
+/// every colliding pair seed identically, and n_init silently repeats a restart.
+#[test]
+fn falsify_km_013_restarts_sharing_a_start_row_still_differ() {
+    let x = km_blobs(3, 60, 3, 6);
+    let n = x.shape().0;
+    let km = KMeans::new(5).with_random_state(11);
+    let mut first_run_at: Vec<Option<usize>> = vec![None; n];
+    let (mut pairs, mut differ) = (0usize, 0usize);
+    for run in 0..200 {
+        let row = km.restart_start_row(run, n);
+        let Some(prev) = first_run_at[row] else {
+            first_run_at[row] = Some(run);
+            continue;
+        };
+        pairs += 1;
+        if km.kmeans_plusplus_init(&x, prev).as_slice()
+            != km.kmeans_plusplus_init(&x, run).as_slice()
+        {
+            differ += 1;
+        }
+    }
+    assert!(
+        pairs > 0,
+        "KM-013 is vacuous: no two of 200 runs shared a start row"
+    );
+    assert!(
+        differ * 2 > pairs,
+        "FALSIFIED KM-013: only {differ} of {pairs} restart pairs sharing a start row drew differently"
+    );
 }
 
 /// Written by the pre-`n_init` code (d868ec946^, `KMeans::new(2).with_random_state(7)`

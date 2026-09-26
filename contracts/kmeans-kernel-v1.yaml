@@ -153,7 +153,7 @@ falsification_tests:
   if_fails: Best-of selection keeps a worse restart (last-run-wins mutant turns this RED)
 - id: FALSIFY-KM-008
   rule: n_init explores
-  prediction: n_init=10 strictly beats n_init=1 on at least one of the 96 fits; on the E9 corpus (232x2665 TF-IDF) it wins at 27/29 K and loses at 0 with D2 seeding (21/29 with farthest-point) (examples/kmeans_n_init_e9.rs)
+  prediction: n_init=10 strictly beats n_init=1 on at least one of the 96 fits; on the E9 corpus (232x2665 TF-IDF) it wins at 15/29 K and loses at 0 with run-keyed D2 seeding (21/29 with farthest-point) (examples/kmeans_n_init_e9.rs)
   test: cluster::kmeans::tests_kmeans_contract::falsify_km_008_n_init_strictly_improves_somewhere
   if_fails: Restarts reuse the same start row (same-start mutant turns this RED, 0/96)
 - id: FALSIFY-KM-009
@@ -168,7 +168,7 @@ falsification_tests:
   if_fails: Adding n_init broke on-disk compatibility of saved KMeans models
 - id: FALSIFY-KM-011
   rule: D2 seeding beats farthest-point
-  prediction: over the 96 KM-007 single-init fits, total inertia with greedy D2 seeding < farthest-point seeding (29668.4 vs 30066.0, 33 wins / 25 losses); on E9 with n_init=10 aprender is above sklearn at 12/29 K, max +0.82% (25/29, max +1.35% with farthest-point)
+  prediction: over the 96 KM-007 single-init fits, total inertia with greedy D2 seeding < farthest-point seeding (29635.9 vs 30066.0; 30 wins / 31 losses, so the claim is the aggregate, not a per-fit majority); on E9 with n_init=10 aprender is above sklearn at 8/29 K, max +0.64% (25/29, max +1.35% with farthest-point)
   test: cluster::kmeans::tests_kmeans_contract::falsify_km_011_d2_beats_farthest_point
   if_fails: Seeding regressed to argmax (farthest-point ties the reference and fails the strict inequality)
 - id: FALSIFY-KM-012
@@ -176,6 +176,11 @@ falsification_tests:
   prediction: 50 copies of one point plus two distinct points, k = 3, 32 seeds - the init never draws a zero-weight duplicate, so all three seeded rows are distinct
   test: cluster::kmeans::tests_kmeans_contract::falsify_km_012_zero_weight_rows_never_drawn
   if_fails: Candidates are drawn uniformly or the cumulative search can land on a zero-weight row
+- id: FALSIFY-KM-013
+  rule: restarts draw independently of their start row
+  prediction: over runs 0..200 on 60 rows (k = 5, seed 11), more than half of the run pairs that share restart_start_row seed different centroids
+  test: cluster::kmeans::tests_kmeans_contract::falsify_km_013_restarts_sharing_a_start_row_still_differ
+  if_fails: The D2 RNG is keyed on the start row instead of the run, so colliding restarts repeat each other (run-blind mutant turns this RED)
 kani_harnesses:
 - id: KANI-KM-001
   obligation: KM-INV-001

@@ -324,22 +324,25 @@ impl KMeans {
             as usize
     }
 
-    /// Greedy k-means++ (D²) seeding from row `first_idx`, as sklearn and linfa do.
+    /// Greedy k-means++ (D²) seeding for restart `run`, as sklearn and linfa do.
+    /// The first centroid is row [`Self::restart_start_row`].
     ///
     /// Each further centroid is the best of `2 + ln k` candidates, each drawn
     /// with probability proportional to its squared distance to the nearest
     /// centroid so far; "best" is the lowest resulting potential (sum of those
     /// distances). The draws come from `SplitMix64` keyed on the seed and
-    /// `first_idx`, so a seeded fit is reproducible on every platform.
+    /// `run`, so a seeded fit is reproducible on every platform, and two
+    /// restarts that share a start row still draw differently.
     /// Farthest-point seeding, used before #3146, always took the argmax and
     /// so chased outliers.
-    fn kmeans_plusplus_init(&self, x: &Matrix<f32>, first_idx: usize) -> Matrix<f32> {
+    fn kmeans_plusplus_init(&self, x: &Matrix<f32>, run: usize) -> Matrix<f32> {
         let (n_samples, n_features) = x.shape();
+        let first_idx = self.restart_start_row(run, n_samples);
         let mut centroids_data = Vec::with_capacity(self.n_clusters * n_features);
         append_row(&mut centroids_data, x, first_idx, n_features);
 
         let seed = self.random_state.unwrap_or(42);
-        let mut rng = SplitMix64(seed ^ (first_idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let mut rng = SplitMix64(splitmix64(seed ^ 0xA076_1D64_78BD_642F) ^ run as u64);
         let n_trials = 2 + (self.n_clusters as f64).ln() as usize;
         let mut closest = distances_sq_to_sample(x, first_idx);
 
@@ -474,8 +477,7 @@ impl UnsupervisedEstimator for KMeans {
         // (the single-init result) survives unless a restart strictly beats it.
         let mut best: Option<(Matrix<f32>, Vec<usize>, f32, usize)> = None;
         for run in 0..self.n_init.max(1) {
-            let first_idx = self.restart_start_row(run, n_samples);
-            let (centroids, labels, run_inertia, n_iter) = self.lloyd(x, first_idx);
+            let (centroids, labels, run_inertia, n_iter) = self.lloyd(x, run);
             if best.as_ref().map_or(true, |b| run_inertia < b.2) {
                 best = Some((centroids, labels, run_inertia, n_iter));
             }
@@ -504,10 +506,17 @@ impl UnsupervisedEstimator for KMeans {
 }
 
 impl KMeans {
-    /// One Lloyd run from D² seeding at `first_idx`:
-    /// (centroids, labels, inertia, iterations).
-    fn lloyd(&self, x: &Matrix<f32>, first_idx: usize) -> (Matrix<f32>, Vec<usize>, f32, usize) {
-        let mut centroids = self.kmeans_plusplus_init(x, first_idx);
+    /// Restart `run`: D² seeding, then Lloyd iterations.
+    fn lloyd(&self, x: &Matrix<f32>, run: usize) -> (Matrix<f32>, Vec<usize>, f32, usize) {
+        self.lloyd_from(x, self.kmeans_plusplus_init(x, run))
+    }
+
+    /// Lloyd iterations from `centroids`: (centroids, labels, inertia, iterations).
+    fn lloyd_from(
+        &self,
+        x: &Matrix<f32>,
+        mut centroids: Matrix<f32>,
+    ) -> (Matrix<f32>, Vec<usize>, f32, usize) {
         let mut labels = vec![0; x.n_rows()];
         let mut n_iter = 0;
 
