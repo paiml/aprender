@@ -1,0 +1,130 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-26'
+  author: PAIML Engineering
+  description: Dense f64 singular value decomposition (trueno::Svd) — Golub-Reinsch thin SVD and randomized top-k SVD, the substrate for PCA, TruncatedSVD and least squares (#3147, epic E9 #4164)
+  references:
+  - Golub & Reinsch (1970) Singular value decomposition and least squares solutions
+  - Golub & Van Loan (2013) Matrix Computations, 4th ed., §8.6
+  - Halko, Martinsson & Tropp (2011) Finding structure with randomness, Alg. 4.4 and 5.1
+equations:
+  thin_svd:
+    formula: A = U Σ Vᵀ, U ∈ ℝ^{m×r}, Σ = diag(σ_1 ≥ … ≥ σ_r ≥ 0), V ∈ ℝ^{n×r}, r = min(m, n)
+    domain: A ∈ ℝ^{m×n}, m ≥ 1, n ≥ 1, every entry finite
+    codomain: (U, σ, Vᵀ) with UᵀU = I_r and VᵀV = I_r
+    invariants:
+    - '||A − U Σ Vᵀ||_F / ||A||_F ≤ 1e-10'
+    - '|UᵀU − I|_max ≤ 1e-10 and |VᵀV − I|_max ≤ 1e-10'
+    - σ_j ≥ 0 and σ_j ≥ σ_{j+1}
+    - the largest-magnitude entry of every column of U is positive (first on a tie)
+    preconditions:
+    - rows > 0 && cols > 0
+    - a.len() == rows * cols
+    - a.iter().all(|v| v.is_finite())
+  rank_tolerance:
+    formula: 'τ = max(m, n) · ε · σ_1, rank(A) = |{j : σ_j > τ}|'
+    domain: A of exact rank ρ < min(m, n)
+    codomain: σ_j ≤ τ for every j > ρ
+    invariants:
+    - singular values past the exact rank are bounded by τ, not forced to zero
+  randomized_svd:
+    formula: Y = (A Aᵀ)^q A Ω, Q = orth(Y), B = Qᵀ A = Ũ Σ Vᵀ, U = Q Ũ, truncated to k
+    domain: Ω ∈ ℝ^{n×(k+p)} standard normal from a fixed seed, 1 ≤ k ≤ min(m, n)
+    codomain: top-k (U, σ, Vᵀ) with orthonormal factors
+    invariants:
+    - with p = 10 and q = 2, |σ̃_j − σ_j| / σ_j ≤ 0.01 for j ≤ k whenever σ_{k+p+1} / σ_k ≤ 0.5
+    - outside that decay domain a larger q restores the bound (harmonic k = 20 at q = 6)
+    - the same seed returns the same bits
+    preconditions:
+    - k >= 1 && k <= rows.min(cols)
+proof_obligations:
+- id: SVD-INV-001
+  type: invariant
+  property: Reconstruction
+  formal: '||A − U Σ Vᵀ||_F ≤ 1e-10 · ||A||_F'
+  applies_to: all
+- id: SVD-INV-002
+  type: invariant
+  property: Orthonormal factors
+  formal: '|UᵀU − I|_max ≤ 1e-10 ∧ |VᵀV − I|_max ≤ 1e-10'
+  applies_to: all
+- id: SVD-ORD-003
+  type: ordering
+  property: Non-negative descending singular values
+  formal: ∀j σ_j ≥ 0 ∧ σ_j ≥ σ_{j+1}
+  applies_to: all
+- id: SVD-EQV-004
+  type: equivalence
+  property: Parity with scipy.linalg.svd
+  formal: '|σ_j − σ_j^scipy| ≤ 1e-9 · σ_1, and |U − U^scipy|_max ≤ 1e-9 on separated triplets after the sign rule'
+  applies_to: all
+- id: SVD-BND-005
+  type: bound
+  property: Rank-deficient tail bounded by the documented tolerance
+  formal: rank(A) = ρ ⟹ ∀j > ρ, σ_j ≤ max(m, n) · ε · σ_1
+  applies_to: all
+- id: SVD-BND-006
+  type: bound
+  property: Randomized top-k accuracy
+  formal: p = 10 ∧ q = 2 ∧ σ_{k+p+1} / σ_k ≤ 0.5 ⟹ |σ̃_j − σ_j| / σ_j ≤ 0.01 for j ≤ k
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SVD-001
+  rule: Reconstruction
+  prediction: relative Frobenius reconstruction error ≤ 1e-10 on 200 f64 matrices — 40 each of m<n, m=n, m>n, rank-deficient, and cond ≥ 1e8 (condition measured by nalgebra)
+  test: cargo test -p aprender-compute --lib svd::tests::falsify_svd_001_reconstruction_over_200_matrices
+  if_fails: Bidiagonalization or QR iteration lost part of A (reverting the left Householder update turns this RED)
+- id: FALSIFY-SVD-002
+  rule: Orthonormal factors
+  prediction: UᵀU and VᵀV equal I within 1e-10 on 256 random shapes up to 9×9
+  test: cargo test -p aprender-compute --lib svd::tests::falsify_svd_002_003_orthonormal_and_sorted
+  if_fails: Reflector accumulation or Givens rotations applied to the wrong columns
+- id: FALSIFY-SVD-003
+  rule: Non-negative descending singular values
+  prediction: every σ ≥ 0 and the sequence is non-increasing
+  test: cargo test -p aprender-compute --lib svd::tests::falsify_svd_002_003_orthonormal_and_sorted
+  if_fails: Sign fix-up or bubble ordering after convergence skipped
+- id: FALSIFY-SVD-004
+  rule: Parity with scipy.linalg.svd
+  prediction: all 10 fixture cases agree within 1e-9 relative (crates/aprender-compute/tests/fixtures/svd_scipy_v1.json)
+  test: cargo test -p aprender-compute --lib svd::tests::falsify_svd_004_scipy_oracle_parity
+  if_fails: Algorithmic divergence from LAPACK, or the sign convention differs from the one applied to the fixture
+- id: FALSIFY-SVD-005
+  rule: Rank-deficient tail bounded
+  prediction: on 40 rank-deficient matrices every σ past the rank is ≤ max(m,n)·ε·σ_1 and rank() equals the construction rank
+  test: cargo test -p aprender-compute --lib svd::tests::falsify_svd_005_rank_deficient_values_are_within_tolerance
+  if_fails: Deflation threshold too loose or the documented tolerance is wrong
+- id: FALSIFY-SVD-006
+  rule: Randomized top-k accuracy
+  prediction: inside the decay domain σ_{k+p+1}/σ_k ≤ 0.5 — geometric 0.9^i at k ∈ {1,5,10,20}, harmonic 1/i at k ∈ {1,5,10}, tall and wide, 160×120 — the top-k σ are within 1%
+  test: cargo test -p aprender-compute --lib svd::tests::falsify_svd_006_randomized_top_k_within_one_percent
+  if_fails: Power iterations or re-orthonormalization missing from the range finder
+kani_harnesses:
+- id: KANI-SVD-001
+  obligation: SVD-ORD-003
+  property: Singular values non-negative and descending
+  bound: 4
+  strategy: stub_float
+- id: KANI-SVD-002
+  obligation: SVD-INV-001
+  property: Reconstruction of a 2×2 matrix
+  bound: 2
+  strategy: stub_float
+enforcement:
+  reconstruction:
+    description: Reconstruction and orthonormality hold on the 200-matrix acceptance set
+    check: contract_tests::FALSIFY-SVD-001
+    severity: ERROR
+qa_gate:
+  id: F-SVD-001
+  name: SVD Contract
+  description: Dense f64 SVD correctness gate
+  checks:
+  - reconstruction
+  - orthonormality
+  - ordering
+  - scipy_parity
+  - rank_tolerance
+  - randomized_accuracy
+  pass_criteria: All 6 falsification tests pass
+  falsification: Skip the left Householder update in bidiagonalization
