@@ -121,6 +121,6 @@ pub enum ServeCommands {
         /// (the `[request]` log fields plus build and host) to this file.
         /// Off unless given.
         #[arg(long, value_name = "PATH")]
-        timings_log: Option<OutputPath>,
+        timings_log: Option<PathBuf>,
     },
 }
