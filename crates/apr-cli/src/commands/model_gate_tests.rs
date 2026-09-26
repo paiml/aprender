@@ -265,7 +265,10 @@ fn ext_12_green_release_passes_every_gate_deterministically() {
     let f = fixture();
     let r = f.gate();
     let names: Vec<_> = r.gates.iter().map(|g| g.gate).collect();
-    assert_eq!(names, ["M-CR", "M0", "M1", "M1b", "M2", "M3", "M4", "M5", "M6"]);
+    assert_eq!(
+        names,
+        ["M-CR", "M0", "M1", "M1b", "M2", "M3", "M4", "M5", "M6"]
+    );
     assert!(r.all_green, "{:#?}", r.gates);
     assert_eq!(r.schema, "model-gate-receipt-v1");
     assert_eq!(r.sealed_items_checked, 1);
