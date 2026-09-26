@@ -102,3 +102,58 @@
         assert!(!out.contains("NaN"), "got:\n{out}");
         assert!(!out.contains("inf"), "got:\n{out}");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Layer trace on the GPU: refused by name, never estimated
+    //
+    // On the GPU path nothing times the steps: the table is the same fixed
+    // 85/8/2/1.7 split of wall time, and kernel launches are asynchronous, so a
+    // host-side split of one wall-clock total says nothing about where the
+    // device spent it. An ESTIMATED label is not enough there — the run is
+    // refused by name, so a script cannot mistake the table for a measurement.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    fn layer_trace_result_on(used_gpu: Option<bool>) -> RunResult {
+        RunResult {
+            used_gpu,
+            ..layer_trace_result(2.0, 4)
+        }
+    }
+
+    #[test]
+    fn layer_trace_on_gpu_is_refused_by_name() {
+        let err = print_layer_trace(&layer_trace_result_on(Some(true)), 4)
+            .expect_err("a GPU run must not print estimated layer times");
+        let CliError::NotImplemented(msg) = &err else {
+            panic!("expected NotImplemented, got {err:?}");
+        };
+        for needle in ["--trace-level layer", "GPU", "not measured"] {
+            assert!(msg.contains(needle), "refusal must name {needle:?}; got: {msg}");
+        }
+        assert_eq!(err.exit_code_value(), 12, "NotImplemented exit code");
+    }
+
+    /// The refusal points somewhere real, and never at a number it cannot back.
+    #[test]
+    fn layer_trace_gpu_refusal_names_no_timing() {
+        let msg = layer_trace_refusal(&layer_trace_result_on(Some(true)))
+            .map(|e| e.to_string())
+            .expect("GPU run must be refused");
+        assert!(
+            !msg.chars().any(|c| c.is_ascii_digit()),
+            "a refusal must not carry a number; got: {msg}"
+        );
+        assert!(msg.contains("--no-gpu"), "must name the CPU fallback; got: {msg}");
+    }
+
+    /// CPU and an unknown backend keep the labelled ESTIMATED table.
+    #[test]
+    fn layer_trace_off_gpu_still_renders() {
+        for used_gpu in [Some(false), None] {
+            assert!(
+                layer_trace_refusal(&layer_trace_result_on(used_gpu)).is_none(),
+                "used_gpu={used_gpu:?} must not be refused"
+            );
+            assert!(print_layer_trace(&layer_trace_result_on(used_gpu), 4).is_ok());
+        }
+    }

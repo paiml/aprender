@@ -124,7 +124,7 @@ pub(crate) fn run(
     let result = run_model(source, &options)?;
 
     if trace && trace_level == "layer" {
-        print_layer_trace(&result, max_tokens);
+        print_layer_trace(&result, max_tokens)?;
     }
 
     if trace && trace_level == "payload" {

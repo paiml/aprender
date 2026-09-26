@@ -8,8 +8,21 @@
 /// per-step timing. When realizar provides TensorStats (min/max/mean/std/
 /// NaN/Inf counts), those are printed per layer. Otherwise falls back to
 /// aggregate timing from RunResult.
-fn print_layer_trace(result: &RunResult, max_tokens: usize) {
+///
+/// # Errors
+/// [`CliError::NotImplemented`] when the run went through the GPU — see
+/// [`layer_trace_refusal`].
+fn print_layer_trace(result: &RunResult, max_tokens: usize) -> Result<()> {
+    if let Some(refusal) = layer_trace_refusal(result) {
+        return Err(refusal);
+    }
     eprint!("{}", render_layer_trace(result, max_tokens));
+    Ok(())
+}
+
+/// Refuse `--trace-level layer` when the GPU ran. (stub: never refuses)
+fn layer_trace_refusal(_result: &RunResult) -> Option<CliError> {
+    None
 }
 
 /// Fixed share of per-token wall time attributed to each step of the 8-step
