@@ -55,10 +55,14 @@ defines_test() {
 
 # Does file $1 declare module $2 (`mod x;`, `pub mod x;`, `pub(crate) mod x;`)?
 # Comments are stripped first: a commented-out `// mod x;` is a MENTION.
+# The stripped text of each owner is read ONCE and matched in-shell: a sed+grep
+# pair per (file, owner) was ~12k forks and ~200 s of CI's guard-tree (#4429).
+declare -A STRIPPED=()
 declares_mod() {
     [ -f "$1" ] || return 1
-    grep -qE "^[[:space:]]*(pub(\([a-z:]+\))?[[:space:]]+)?mod[[:space:]]+(r#)?$2[[:space:]]*;" \
-        <<< "$(sed 's://.*$::' "$1")"
+    [ -n "${STRIPPED[$1]+x}" ] || STRIPPED[$1]=$'\n'$(sed 's://.*$::' "$1")
+    local re=$'\n''[[:blank:]]*(pub(\([a-z:]+\))?[[:blank:]]+)?mod[[:blank:]]+(r#)?'"$2"'[[:blank:]]*;'
+    [[ ${STRIPPED[$1]} =~ $re ]]
 }
 
 # The files crate src dir $1 reaches through #[path] or include!, comments
@@ -87,22 +91,22 @@ is_declared() {
     case "$rel" in
         lib.rs|main.rs|bin/*.rs|bin/*/main.rs) return 0 ;;
     esac
-    dir=$(dirname "$f")
-    stem=$(basename "$f" .rs)
+    dir=${f%/*}
+    stem=${f##*/}; stem=${stem%.rs}
     if [ "$stem" = "mod" ]; then
-        stem=$(basename "$dir")
-        dir=$(dirname "$dir")
+        stem=${dir##*/}
+        dir=${dir%/*}
     fi
     for owner in "$dir/mod.rs" "$dir/lib.rs" "$dir/main.rs" "$dir.rs"; do
         declares_mod "$owner" "$stem" && return 0
     done
-    grep -qxF "$f" <<< "$names" && return 0
+    [ -n "${NAMED[$f]+x}" ] && return 0
     # A sibling that is itself include!d/#[path]ed into the directory's module
     # declares at that module's position: `mod x;` inside an include!d
     # D/hashing.rs resolves to D/x.rs (vectorize, brick/graph.rs, gpu/*).
     for owner in "$dir"/*.rs; do
         [ -f "$owner" ] || continue
-        grep -qxF "$owner" <<< "$names" || continue
+        [ -n "${NAMED[$owner]+x}" ] || continue
         declares_mod "$owner" "$stem" && return 0
     done
     return 1
@@ -114,11 +118,15 @@ dark_in() {
     for src in "$root"/crates/*/src; do
         [ -d "$src" ] || continue
         names=$(named_files "$src")
+        declare -A NAMED=()
+        while IFS= read -r f; do [ -n "$f" ] && NAMED[$f]=1; done <<< "$names"
         while IFS= read -r f; do
-            defines_test "$f" || continue
             is_declared "$f" "$src" "$names" || printf '%s\n' "${f#"$root"/}"
-        # Raw grep -l is a superset prefilter; defines_test re-checks without comments.
-        done < <(grep -rlE --include='*.rs' '#\[(tokio::)?test(\]|\()|#\[test_case|#\[rstest|proptest! *\{' "$src")
+        # Raw grep -l is a superset prefilter; ONE awk re-checks every candidate without
+        # comments -- defines_test's rule, not a sed+grep pair per file.
+        done < <(grep -rlE --include='*.rs' '#\[(tokio::)?test(\]|\()|#\[test_case|#\[rstest|proptest! *\{' "$src" |
+            xargs -r -d '\n' awk '{ sub(/\/\/.*$/, "") } /#\[(tokio::)?test(\]|\()|#\[test_case|#\[rstest|proptest! *\{/ { print FILENAME; nextfile }')
+        unset NAMED
     done | sort -u
 }
 
