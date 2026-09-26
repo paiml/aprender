@@ -227,6 +227,12 @@ fn scores_budget_bytes() -> usize {
     PREFILL_SCORES_BUDGET_BYTES
 }
 
+/// f32 floats of split-KV partials (`O` and `(m, l)`) at the most splits (#4484).
+fn flash_partial_floats(d: Qwen35CudaDims, rows: usize) -> usize {
+    let splits = trueno_gpu::kernels::gdn::FLASH_MAX_SPLITS as usize;
+    splits * rows * (d.num_heads as usize) * (d.attn_head_dim as usize + 2)
+}
+
 /// Device bytes a prefill ending at `total_positions` allocates beyond weights and
 /// state: its chunk buffers, the attention scores and the f32 dequant scratch.
 fn workspace_bytes_for(
@@ -258,8 +264,9 @@ fn workspace_bytes_for(
         PrefillAttention::CublasF32 => {
             hpk * attention_rows_for(d, total_positions, max_rows) * total_positions
         },
-        // The f16 copy of K and V over every position (#4442).
-        PrefillAttention::FlashF16In => kv_dim * total_positions,
+        // The f16 copy of K and V over every position (#4442), then the split-KV
+        // partials (#4484).
+        PrefillAttention::FlashF16In => kv_dim * total_positions + flash_partial_floats(d, rows),
     };
     4 * (rows * per_row + scores + largest_projection)
 }
@@ -513,7 +520,9 @@ impl Qwen35CudaModel<'_> {
                     hpk * attention_rows_for(d, total_positions, self.prefill_rows)
                         * total_positions
                 },
-                PrefillAttention::FlashF16In => kv_dim * total_positions,
+                PrefillAttention::FlashF16In => {
+                    kv_dim * total_positions + flash_partial_floats(d, rows)
+                },
             })?,
             ffn_gate: z(rows * inter)?,
             ffn_up: z(rows * inter)?,
@@ -983,6 +992,7 @@ impl Qwen35CudaModel<'_> {
                 k_cache.as_ptr(),
                 v_cache.as_ptr(),
                 b.scores.as_ptr(),
+                b.scores.len(),
                 b.attn_out_in.as_ptr(),
                 rows,
                 pos32,

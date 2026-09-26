@@ -74,7 +74,9 @@ pub use gdn_gates::GdnGatesKernel;
 pub use kv_row_scatter::KvRowScatterIndirectKernel;
 pub use l2_norm::PerHeadL2NormKernel;
 pub use partial_rope::PartialNeoxRopeKernel;
-pub use prefill_flash_attention::{PrefillFlashAttention256Kernel, FLASH_HEAD_DIM};
+pub use prefill_flash_attention::{
+    PrefillFlashAttention256Kernel, PrefillFlashCombine256Kernel, FLASH_HEAD_DIM, FLASH_MAX_SPLITS,
+};
 pub use rows::{GdnGatesRowsKernel, PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel};
 pub use sigmoid_gate::SigmoidGateKernel;
 pub use split_interleave::SplitInterleavedKernel;

@@ -27,7 +27,7 @@ use super::*;
 use trueno_gpu::kernels::gdn::{
     CausalConv1dSiluSeqKernel, DeltaRuleChunkScanKernel, GdnGatesRowsKernel,
     PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel, PrefillFlashAttention256Kernel,
-    FLASH_HEAD_DIM,
+    PrefillFlashCombine256Kernel, FLASH_HEAD_DIM,
 };
 use trueno_gpu::kernels::{
     Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel, Q8_0DequantKernel,
@@ -376,6 +376,12 @@ impl CudaExecutor {
     /// K/V tiles with 16 B `cp.async` (#4442); converting here once (`cvt.rn`, the
     /// rounding v1 did per element in-kernel) keeps the result bit-identical.
     ///
+    /// Split-KV (#4484): a 512-row chunk is only `rows/32 × num_kv_heads` blocks —
+    /// 64 on Qwen3.5-4B, half a 4090 idle. When the chunk's key range allows, the key
+    /// tiles are split over `grid.z` and a combine kernel merges the partial `(m, l, O)`.
+    /// The partials live at the END of `kv16` (`kv16_floats` f32 floats in all); the
+    /// splits shrink until they fit, down to the unsplit path.
+    ///
     /// # Errors
     /// Compile/launch failure or a null pointer.
     #[allow(clippy::too_many_arguments)]
@@ -385,6 +391,7 @@ impl CudaExecutor {
         k_cache: u64,
         v_cache: u64,
         kv16: u64,
+        kv16_floats: usize,
         out: u64,
         rows: u32,
         pos0: u32,
@@ -401,15 +408,56 @@ impl CudaExecutor {
         self.convert_f32_to_f16(v_cache, v16, count)?;
         let key = format!("qp_flash_attn_{num_heads}_{num_kv_heads}");
         self.qp_prepare(&key, &kern)?;
+        let sm = u32::try_from(self.context.multiprocessor_count()?).unwrap_or(1);
+        let free = kv16_floats.saturating_sub(n as usize);
+        let mut splits = kern.splits_for(rows, pos0, sm);
+        while splits > 1 && {
+            let (po, pml) = kern.partial_floats(rows, splits);
+            po + pml > free
+        } {
+            splits -= 1;
+        }
+        let (po, pml) = kern.partial_floats(rows, splits);
+        let f = std::mem::size_of::<f32>() as u64;
+        // Unsplit, the kernel never reads the partial pointers; pass `out` (non-null).
+        let (part_o, part_ml) = if splits > 1 {
+            let o = kv16 + (kv16_floats - po - pml) as u64 * f;
+            (o, o + po as u64 * f)
+        } else {
+            (out, out)
+        };
         let (gx, gy, _) = kern.grid(rows);
         let (bx, _, _) = kern.block();
         let config = LaunchConfig {
-            grid: (gx, gy, 1),
+            grid: (gx, gy, splits),
             block: (bx, 1, 1),
             shared_mem: 0, // static: the kernel declares its tiles
         };
-        let mut args = [q, k16, v16, out, u64::from(rows), u64::from(pos0)];
-        self.qp_launch(&key, kern.name(), config, &mut args, 4)
+        let mut args = [
+            q,
+            k16,
+            v16,
+            out,
+            part_o,
+            part_ml,
+            u64::from(rows),
+            u64::from(pos0),
+            u64::from(splits),
+        ];
+        self.qp_launch(&key, kern.name(), config, &mut args, 6)?;
+        if splits == 1 {
+            return Ok(());
+        }
+        let comb = PrefillFlashCombine256Kernel::new(num_heads);
+        let ckey = format!("qp_flash_combine_{num_heads}");
+        self.qp_prepare(&ckey, &comb)?;
+        let config = LaunchConfig {
+            grid: comb.grid(rows),
+            block: comb.block(),
+            shared_mem: 0,
+        };
+        let mut args = [part_o, part_ml, out, u64::from(rows), u64::from(splits)];
+        self.qp_launch(&ckey, comb.name(), config, &mut args, 3)
     }
 
     /// Causal attention for `rows` query rows at positions `pos0..pos0+rows` over the

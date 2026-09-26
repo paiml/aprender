@@ -281,19 +281,24 @@ impl Kernel for PrefillFlashAttention256Kernel {
             .param(PtxType::U64, "k_ptr") // f16 [>= pos0 + rows][num_kv_heads * 256]
             .param(PtxType::U64, "v_ptr") // f16 [>= pos0 + rows][num_kv_heads * 256]
             .param(PtxType::U64, "out_ptr") // f32 [rows][num_heads * 256]
+            .param(PtxType::U64, "part_o_ptr") // f32 [splits][rows][num_heads * 256]
+            .param(PtxType::U64, "part_ml_ptr") // f32 [splits][rows][num_heads][m, l]
             .param(PtxType::U32, "rows")
             .param(PtxType::U32, "pos0")
+            .param(PtxType::U32, "splits")
             .shared_memory(self.shared_bytes())
             .build(|ctx| {
                 let tid = ctx.special_reg(PtxReg::TidX);
                 let qblk = ctx.special_reg(PtxReg::CtaIdX);
                 let kvh = ctx.special_reg(PtxReg::CtaIdY);
+                let split = ctx.special_reg(PtxReg::CtaIdZ);
                 let q_ptr = ctx.load_param_u64("q_ptr");
                 let k_ptr = ctx.load_param_u64("k_ptr");
                 let v_ptr = ctx.load_param_u64("v_ptr");
                 let out_ptr = ctx.load_param_u64("out_ptr");
                 let rows = ctx.load_param_u32("rows");
                 let pos0 = ctx.load_param_u32("pos0");
+                let splits = ctx.load_param_u32("splits");
 
                 let lane_mask = ctx.mov_u32_imm(31);
                 let lane = ctx.and_u32(tid, lane_mask);
@@ -399,6 +404,18 @@ impl Kernel for PrefillFlashAttention256Kernel {
                 let blk_pos = ctx.add_u32_reg(pos0, blk_last);
                 let blk_tile = ctx.div_u32(blk_pos, BC);
                 let tiles = ctx.add_u32(blk_tile, 1);
+                // Split-KV (#4484): split z walks key tiles [t_begin, t_end) of the
+                // block's range. `splits == 1` is the whole range.
+                let tps = {
+                    let s_m1 = ctx.sub_u32_reg(splits, one);
+                    let n = ctx.add_u32_reg(tiles, s_m1);
+                    ctx.div_u32_reg(n, splits)
+                };
+                let t_begin = ctx.mul_u32_reg(split, tps);
+                let t_end = {
+                    let e = ctx.add_u32_reg(t_begin, tps);
+                    ctx.min_u32(e, tiles)
+                };
                 // Warp: its own rows' extent; 0 if the row tile is past `rows`.
                 let w_end = ctx.add_u32(q0, BR - 1);
                 let w_last = ctx.min_u32(w_end, rows_m1);
@@ -452,18 +469,22 @@ impl Kernel for PrefillFlashAttention256Kernel {
                     ctx.add_u32(vb, KV_TILE_BYTES)
                 };
 
-                // Prologue: tile 0 in flight.
-                issue_tile(ctx, &issue, zero, "pro");
+                // Prologue: tile t_begin in flight (none for an empty split).
+                let nonempty = ctx.setp_lt_u32(t_begin, t_end);
+                ctx.branch_if_not(nonempty, "fa_pro_none");
+                issue_tile(ctx, &issue, t_begin, "pro");
+                ctx.label("fa_pro_none");
                 ctx.cp_async_commit_group();
 
                 let kb = ctx.mov_u32_imm(0);
+                ctx.mov_u32_reg(kb, t_begin);
                 ctx.label("fa_key_loop");
-                let more = ctx.setp_lt_u32(kb, tiles);
+                let more = ctx.setp_lt_u32(kb, t_end);
                 ctx.branch_if_not(more, "fa_key_end");
                 // Tile kb + 1 in flight while kb is consumed. Always commit (an empty
                 // group on the last tile) so `wait_group 1` means "tile kb landed".
                 let nxt = ctx.add_u32(kb, 1);
-                let has_next = ctx.setp_lt_u32(nxt, tiles);
+                let has_next = ctx.setp_lt_u32(nxt, t_end);
                 ctx.branch_if_not(has_next, "fa_issue_none");
                 issue_tile(ctx, &issue, nxt, "loop");
                 ctx.label("fa_issue_none");
@@ -565,7 +586,10 @@ impl Kernel for PrefillFlashAttention256Kernel {
                 ctx.branch("fa_key_loop");
                 ctx.label("fa_key_end");
 
-                // ---- O / l, written for the rows that exist.
+                // ---- One split: O / l, written for the rows that exist.
+                let two_splits = ctx.mov_u32_imm(2);
+                let whole = ctx.setp_lt_u32(splits, two_splits);
+                ctx.branch_if_not(whole, "fa_store_part");
                 for hr in 0..2usize {
                     let row = ctx.add_u32(g, hr as u32 * 8);
                     let qrow = ctx.add_u32_reg(q0, row);
@@ -587,6 +611,194 @@ impl Kernel for PrefillFlashAttention256Kernel {
                     }
                     ctx.label(&skip);
                 }
+                ctx.branch("fa_done");
+
+                // ---- Split-KV: unnormalised O and (m, l) per row, merged by
+                // `PrefillFlashCombine256Kernel`.
+                ctx.label("fa_store_part");
+                let part_o = ctx.load_param_u64("part_o_ptr");
+                let part_ml = ctx.load_param_u64("part_ml_ptr");
+                let split_rows = ctx.mul_u32_reg(split, rows);
+                let is_t0 = ctx.setp_lt_u32(t, one);
+                for hr in 0..2usize {
+                    let row = ctx.add_u32(g, hr as u32 * 8);
+                    let qrow = ctx.add_u32_reg(q0, row);
+                    let skip = format!("fa_part_skip_{hr}");
+                    let in_rows = ctx.setp_lt_u32(qrow, rows);
+                    ctx.branch_if_not(in_rows, &skip);
+                    let prow = ctx.add_u32_reg(split_rows, qrow);
+                    let rowel = ctx.mul_u32(prow, q_stride);
+                    let rowh = ctx.add_u32_reg(rowel, head_col);
+                    let colt = ctx.add_u32_reg(rowh, t2);
+                    for (nt, tile) in o.iter().enumerate() {
+                        for e in 0..2usize {
+                            let el = ctx.add_u32(colt, nt as u32 * 8 + e as u32);
+                            let off = ctx.mul_wide_u32(el, 4);
+                            let addr = ctx.add_u64(part_o, off);
+                            ctx.st_global_f32(addr, tile[2 * hr + e]);
+                        }
+                    }
+                    let ml_skip = format!("fa_ml_skip_{hr}");
+                    ctx.branch_if_not(is_t0, &ml_skip);
+                    let mrow = ctx.mul_u32(prow, self.num_heads);
+                    let mh = ctx.add_u32_reg(mrow, head);
+                    let off = ctx.mul_wide_u32(mh, 8);
+                    let addr = ctx.add_u64(part_ml, off);
+                    ctx.st_global_f32(addr, m[hr]);
+                    let four_b = ctx.mov_u64_imm(4);
+                    let addr_l = ctx.add_u64(addr, four_b);
+                    ctx.st_global_f32(addr_l, l[hr]);
+                    ctx.label(&ml_skip);
+                    ctx.label(&skip);
+                }
+                ctx.label("fa_done");
+                ctx.ret();
+            })
+    }
+}
+
+/// Most key splits one flash launch takes (#4484); sizes the partial scratch.
+pub const FLASH_MAX_SPLITS: u32 = 16;
+/// Fewest 16-key tiles a split walks: below this the combine costs more than the
+/// parallelism it buys.
+const FLASH_MIN_TILES_PER_SPLIT: u32 = 16;
+
+impl PrefillFlashAttention256Kernel {
+    /// Key splits for `rows` query rows at `pos0`: enough blocks to cover
+    /// `2 × sm_count` (one 8-warp block fills an SM's registers), never more than
+    /// [`FLASH_MAX_SPLITS`] nor below [`FLASH_MIN_TILES_PER_SPLIT`] tiles per split.
+    /// Short chunks at short context stay at 1: the unsplit, bit-stable path.
+    #[must_use]
+    pub fn splits_for(&self, rows: u32, pos0: u32, sm_count: u32) -> u32 {
+        let (gx, gy, _) = self.grid(rows);
+        let base = (gx * gy).max(1);
+        let want = (2 * sm_count.max(1)).div_ceil(base);
+        let tiles = (pos0 + rows).div_ceil(BC);
+        let by_tiles = (tiles / FLASH_MIN_TILES_PER_SPLIT).max(1);
+        want.min(by_tiles).clamp(1, FLASH_MAX_SPLITS)
+    }
+
+    /// f32 floats of partial `O` and of partial `(m, l)` for `splits` splits.
+    #[must_use]
+    pub fn partial_floats(&self, rows: u32, splits: u32) -> (usize, usize) {
+        let per = splits as usize * rows as usize;
+        (
+            per * (self.num_heads * FLASH_HEAD_DIM) as usize,
+            per * self.num_heads as usize * 2,
+        )
+    }
+}
+
+/// Merges the split-KV partials of [`PrefillFlashAttention256Kernel`] (#4484):
+/// `O = Σ_s O_s·2^((m_s − m*)·c) / Σ_s l_s·2^((m_s − m*)·c)`, `m* = max_s m_s`. A
+/// split that saw no key for a row carries `m_s = −∞, l_s = 0, O_s = 0` and weighs 0;
+/// split 0 always holds key 0, so `m*` is finite.
+///
+/// One block per (row, head), one thread per output dimension.
+#[derive(Debug, Clone, Copy)]
+pub struct PrefillFlashCombine256Kernel {
+    num_heads: u32,
+}
+
+impl PrefillFlashCombine256Kernel {
+    #[must_use]
+    pub fn new(num_heads: u32) -> Self {
+        Self { num_heads }
+    }
+
+    #[must_use]
+    pub fn grid(&self, rows: u32) -> (u32, u32, u32) {
+        (rows, self.num_heads, 1)
+    }
+
+    #[must_use]
+    pub fn block(&self) -> (u32, u32, u32) {
+        (FLASH_HEAD_DIM, 1, 1)
+    }
+}
+
+impl Kernel for PrefillFlashCombine256Kernel {
+    fn name(&self) -> &str {
+        "gdn_prefill_flash_combine_256"
+    }
+
+    fn build_ptx(&self) -> PtxKernel {
+        let q_stride = self.num_heads * FLASH_HEAD_DIM;
+        let num_heads = self.num_heads;
+        let c_exp = std::f32::consts::LOG2_E / (FLASH_HEAD_DIM as f32).sqrt();
+        PtxKernel::new(self.name())
+            .param(PtxType::U64, "part_o_ptr")
+            .param(PtxType::U64, "part_ml_ptr")
+            .param(PtxType::U64, "out_ptr")
+            .param(PtxType::U32, "rows")
+            .param(PtxType::U32, "splits")
+            .build(|ctx| {
+                let d = ctx.special_reg(PtxReg::TidX);
+                let row = ctx.special_reg(PtxReg::CtaIdX);
+                let head = ctx.special_reg(PtxReg::CtaIdY);
+                let part_o = ctx.load_param_u64("part_o_ptr");
+                let part_ml = ctx.load_param_u64("part_ml_ptr");
+                let out_ptr = ctx.load_param_u64("out_ptr");
+                let rows = ctx.load_param_u32("rows");
+                let splits = ctx.load_param_u32("splits");
+                let c_exp_r = ctx.mov_f32_imm(c_exp);
+                let head_col = ctx.mul_u32(head, FLASH_HEAD_DIM);
+                let col = ctx.add_u32_reg(head_col, d);
+
+                // ml index of split s: ((s * rows + row) * H + head) * 2.
+                let ml_addr = |ctx: &mut crate::ptx::builder::KernelBuilder<'_>, s: VirtualReg| {
+                    let sr = ctx.mul_u32_reg(s, rows);
+                    let pr = ctx.add_u32_reg(sr, row);
+                    let ph = ctx.mul_u32(pr, num_heads);
+                    let idx = ctx.add_u32_reg(ph, head);
+                    let off = ctx.mul_wide_u32(idx, 8);
+                    (ctx.add_u64(part_ml, off), pr)
+                };
+
+                let m_star = ctx.mov_f32_imm(f32::NEG_INFINITY);
+                let s = ctx.mov_u32_imm(0);
+                ctx.label("fc_max_loop");
+                let more = ctx.setp_lt_u32(s, splits);
+                ctx.branch_if_not(more, "fc_max_end");
+                let (a, _) = ml_addr(ctx, s);
+                let ms = ctx.ld_global_f32(a);
+                ctx.max_f32_inplace(m_star, ms);
+                ctx.add_u32_inplace(s, 1);
+                ctx.branch("fc_max_loop");
+                ctx.label("fc_max_end");
+
+                let acc = ctx.mov_f32_imm(0.0);
+                let lsum = ctx.mov_f32_imm(0.0);
+                let s2 = ctx.mov_u32_imm(0);
+                ctx.label("fc_sum_loop");
+                let more2 = ctx.setp_lt_u32(s2, splits);
+                ctx.branch_if_not(more2, "fc_sum_end");
+                let (a, pr) = ml_addr(ctx, s2);
+                let ms = ctx.ld_global_f32(a);
+                let four_b = ctx.mov_u64_imm(4);
+                let al = ctx.add_u64(a, four_b);
+                let ls = ctx.ld_global_f32(al);
+                let dm = ctx.sub_f32(ms, m_star);
+                let dms = ctx.mul_f32(dm, c_exp_r);
+                let w = ctx.ex2_f32(dms);
+                ctx.fma_f32_inplace(lsum, ls, w);
+                let rowel = ctx.mul_u32(pr, q_stride);
+                let el = ctx.add_u32_reg(rowel, col);
+                let off = ctx.mul_wide_u32(el, 4);
+                let oa = ctx.add_u64(part_o, off);
+                let os = ctx.ld_global_f32(oa);
+                ctx.fma_f32_inplace(acc, os, w);
+                ctx.add_u32_inplace(s2, 1);
+                ctx.branch("fc_sum_loop");
+                ctx.label("fc_sum_end");
+
+                let inv = ctx.rcp_f32(lsum);
+                let v = ctx.mul_f32(acc, inv);
+                let orow = ctx.mul_u32(row, q_stride);
+                let oel = ctx.add_u32_reg(orow, col);
+                let ooff = ctx.mul_wide_u32(oel, 4);
+                let oaddr = ctx.add_u64(out_ptr, ooff);
+                ctx.st_global_f32(oaddr, v);
                 ctx.ret();
             })
     }
@@ -629,6 +841,29 @@ mod ptx_tests {
             PrefillFlashAttention256Kernel::new(16, 4).grid(37),
             (2, 4, 1)
         );
+        // #4484 split-KV sizing on a 128-SM 4090, Qwen3.5-4B (64 base blocks).
+        let k4 = PrefillFlashAttention256Kernel::new(16, 4);
+        assert_eq!(
+            k4.splits_for(512, 0, 128),
+            2,
+            "512 keys: 32 tiles, 2 splits"
+        );
+        assert_eq!(k4.splits_for(512, 30_000, 128), 4, "2*128 / 64 blocks");
+        assert_eq!(k4.splits_for(16, 0, 128), 1, "one tile: unsplit");
+        assert_eq!(
+            k4.splits_for(16, 30_000, 128),
+            16,
+            "capped at FLASH_MAX_SPLITS"
+        );
+        assert_eq!(
+            k4.partial_floats(512, 4),
+            (4 * 512 * 4096, 4 * 512 * 16 * 2)
+        );
+        let comb = PrefillFlashCombine256Kernel::new(16).emit_ptx();
+        assert!(
+            comb.contains(".entry gdn_prefill_flash_combine_256"),
+            "{comb}"
+        );
         assert!(PrefillFlashAttention256Kernel::fits(24, 4));
         assert!(PrefillFlashAttention256Kernel::fits(32, 4));
         assert!(!PrefillFlashAttention256Kernel::fits(36, 4));
@@ -647,7 +882,7 @@ mod ptx_tests {
 #[cfg(test)]
 #[cfg(feature = "cuda")]
 mod gdn_flash_prefill_device_tests {
-    use super::{PrefillFlashAttention256Kernel, FLASH_HEAD_DIM};
+    use super::{PrefillFlashAttention256Kernel, PrefillFlashCombine256Kernel, FLASH_HEAD_DIM};
     use crate::driver::{CudaContext, CudaModule, CudaStream, GpuBuffer, LaunchConfig};
     use crate::kernels::gdn::test_support::Lcg;
     use crate::kernels::Kernel;
@@ -739,6 +974,11 @@ mod gdn_flash_prefill_device_tests {
     }
 
     fn run(heads: u32, kv_heads: u32, rows: usize, pos0: usize) {
+        run_split(heads, kv_heads, rows, pos0, 1);
+    }
+
+    /// `splits > 1` runs the split-KV path (#4484): partials, then the combine kernel.
+    fn run_split(heads: u32, kv_heads: u32, rows: usize, pos0: usize, splits: u32) {
         let Ok(ctx) = CudaContext::new(0) else {
             println!("flash prefill: no CUDA device — SKIPPED");
             return;
@@ -764,29 +1004,64 @@ mod gdn_flash_prefill_device_tests {
         let ob = GpuBuffer::from_host(&ctx, &vec![f32::NAN; rows * h * d]).expect("o");
         let mut module =
             CudaModule::from_ptx(&ctx, &kern.emit_ptx_for_target("sm_80")).expect("module");
+        let (gx, gy, _) = kern.grid(rows as u32);
         let config = LaunchConfig {
-            grid: kern.grid(rows as u32),
+            grid: (gx, gy, splits),
             block: kern.block(),
             shared_mem: 0,
         };
+        let (po, pml) = kern.partial_floats(rows as u32, splits);
+        let pob = GpuBuffer::from_host(&ctx, &vec![f32::NAN; po]).expect("part o");
+        let pmb = GpuBuffer::from_host(&ctx, &vec![f32::NAN; pml]).expect("part ml");
         let mut args = [
             qb.as_ptr(),
             kb.as_ptr(),
             vb.as_ptr(),
             ob.as_ptr(),
+            pob.as_ptr(),
+            pmb.as_ptr(),
             rows as u64,
             pos0 as u64,
+            u64::from(splits),
         ];
         let mut raw: Vec<*mut std::ffi::c_void> = args
             .iter_mut()
             .map(|a| std::ptr::from_mut(a).cast())
             .collect();
-        // SAFETY: q/o are f32 rows × heads × 256, k/v f16 × (pos0 + rows) keys; the
-        // two u32 scalars sit in the low half of their slots.
+        // SAFETY: q/o are f32 rows × heads × 256, k/v f16 × (pos0 + rows) keys, the
+        // partials are sized by `partial_floats`; the u32 scalars sit in the low half
+        // of their slots.
         unsafe {
             stream
                 .launch_kernel(&mut module, kern.name(), &config, &mut raw)
                 .expect("launch");
+        }
+        if splits > 1 {
+            let comb = PrefillFlashCombine256Kernel::new(heads);
+            let mut cmod =
+                CudaModule::from_ptx(&ctx, &comb.emit_ptx_for_target("sm_80")).expect("module");
+            let cconfig = LaunchConfig {
+                grid: comb.grid(rows as u32),
+                block: comb.block(),
+                shared_mem: 0,
+            };
+            let mut cargs = [
+                pob.as_ptr(),
+                pmb.as_ptr(),
+                ob.as_ptr(),
+                rows as u64,
+                u64::from(splits),
+            ];
+            let mut craw: Vec<*mut std::ffi::c_void> = cargs
+                .iter_mut()
+                .map(|a| std::ptr::from_mut(a).cast())
+                .collect();
+            // SAFETY: the partials the launch above wrote, and `o` as before.
+            unsafe {
+                stream
+                    .launch_kernel(&mut cmod, comb.name(), &cconfig, &mut craw)
+                    .expect("combine launch");
+            }
         }
         stream.synchronize().expect("sync");
         let mut got = vec![0.0f32; rows * h * d];
@@ -804,7 +1079,7 @@ mod gdn_flash_prefill_device_tests {
         let e16 = linf(&got, &exact16) / scale(&exact16);
         let e32 = linf(&got, &exact32) / scale(&exact32);
         println!(
-            "[3596] flash prefill heads {heads}/{kv_heads} rows {rows} pos0 {pos0}: rel L∞ vs f16-input \
+            "[3596] flash prefill heads {heads}/{kv_heads} rows {rows} pos0 {pos0} splits {splits}: rel L∞ vs f16-input \
              reference {e16:.3e}, vs full-f32 reference {e32:.3e}"
         );
         assert!(e16 <= 2e-3, "vs the f16-input reference: {e16}");
@@ -840,6 +1115,20 @@ mod gdn_flash_prefill_device_tests {
         // One head per KV head: 4 row tiles per block, 70 rows (the last block's
         // later row tiles have no rows and still take part in every barrier).
         run(4, 4, 70, 10);
+    }
+
+    #[test]
+    fn gdn_flash_prefill_split_kv_matches_reference() {
+        // #4484: 4 splits over 38 key tiles.
+        run_split(16, 4, 100, 500, 4);
+    }
+
+    #[test]
+    fn gdn_flash_prefill_split_kv_with_empty_splits() {
+        // Block 0 has 4 key tiles, so splits 4..8 walk nothing and must weigh 0;
+        // the partial last block still merges.
+        run_split(16, 4, 37, 29, 8);
+        run_split(4, 4, 70, 10, 3);
     }
 
     #[test]
