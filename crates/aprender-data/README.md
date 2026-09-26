@@ -166,16 +166,16 @@ for batch in dataset {
 
 ```bash
 # Convert between formats
-alimentar convert data.csv data.parquet
+aprender-data convert data.csv data.parquet
 
 # View dataset info
-alimentar info data.parquet
+aprender-data info data.parquet
 
 # Preview first N rows
-alimentar head data.parquet --rows 10
+aprender-data head data.parquet --rows 10
 
 # Import from HuggingFace
-alimentar import hf squad --output ./data/squad
+aprender-data import hf squad --output ./data/squad
 ```
 
 ## Architecture

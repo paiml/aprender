@@ -238,16 +238,16 @@ This checklist provides 100 verification points for Quality Assurance teams to v
 
 ```bash
 # Schema check
-alimentar schema /path/to/doctests.parquet
+aprender-data schema /path/to/doctests.parquet
 
 # Quality report
-alimentar quality check /path/to/doctests.parquet
+aprender-data quality check /path/to/doctests.parquet
 
 # Row count verification
-alimentar info /path/to/doctests.parquet
+aprender-data info /path/to/doctests.parquet
 
 # Sample inspection
-alimentar head /path/to/doctests.parquet -n 20
+aprender-data head /path/to/doctests.parquet -n 20
 
 # Checksum generation
 sha256sum /path/to/doctests.parquet
@@ -277,6 +277,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run QA Checks
         run: |
-          alimentar quality check data/doctests.parquet
-          alimentar schema data/doctests.parquet --validate
+          aprender-data quality check data/doctests.parquet
+          aprender-data schema data/doctests.parquet --validate
 ```

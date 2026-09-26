@@ -46,9 +46,9 @@ HTTP_VERBS = ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "HEAD ")
 # intends and a rebuild says what the binary does.
 #
 #   dev      -> apr mono {publish, shims, audit, archive}
-#   hf-hub   -> alimentar {hub push, import hf}   (+ the `apr data x` mirror)
-#   doctest  -> alimentar doctest {extract, merge} (+ the `apr data x` mirror)
-#   eval     -> trueno-rag eval {7 verbs}          (+ the `apr rag` mirror)
+#   hf-hub   -> aprender-data {hub push, import hf}   (+ the `apr data x` mirror)
+#   doctest  -> aprender-data doctest {extract, merge} (+ the `apr data x` mirror)
+#   eval     -> aprender-rag eval {7 verbs}          (+ the `apr rag` mirror)
 #
 # ENUMERATED, never a bare count: a tolerance of "<= 28 mismatches" would absorb
 # a real deletion. Anything not on this list turns the gate RED.

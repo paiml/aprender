@@ -84,17 +84,17 @@ std::fs::write("drift_report.json", json)?;
 
 ```bash
 # Compare two datasets
-alimentar drift compare baseline.parquet current.parquet
+aprender-data drift compare baseline.parquet current.parquet
 
 # Specific tests
-alimentar drift detect --tests ks,psi baseline.parquet current.parquet
+aprender-data drift detect --tests ks,psi baseline.parquet current.parquet
 
 # JSON output
-alimentar drift compare --format json baseline.parquet current.parquet
+aprender-data drift compare --format json baseline.parquet current.parquet
 
 # Create sketch for incremental comparison
-alimentar drift sketch data.parquet --output sketch.bin
-alimentar drift merge sketch1.bin sketch2.bin --output merged.bin
+aprender-data drift sketch data.parquet --output sketch.bin
+aprender-data drift merge sketch1.bin sketch2.bin --output merged.bin
 ```
 
 ## Drift Tests Available

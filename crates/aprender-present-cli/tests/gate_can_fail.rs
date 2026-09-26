@@ -1,4 +1,4 @@
-//! `presentar gate` must be able to FAIL.
+//! `aprender-present gate` must be able to FAIL.
 //!
 //! `run_gates` is the only subcommand with an exit-code contract: it calls
 //! `std::process::exit(1)` when the manifest's computed grade falls below
@@ -20,7 +20,7 @@ fn manifest(name: &str, yaml: &str) -> PathBuf {
     path
 }
 
-/// Run `presentar gate <path>` at the default `--min-grade B`.
+/// Run `aprender-present gate <path>` at the default `--min-grade B`.
 fn gate(path: &PathBuf) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_aprender-present"))
         .args(["gate", path.to_str().expect("utf-8 path")])
@@ -84,7 +84,7 @@ fn gate_rejects_a_threadbare_manifest() {
 
     assert!(
         !out.status.success(),
-        "presentar gate exited 0 on a manifest with no description, no data \
+        "aprender-present gate exited 0 on a manifest with no description, no data \
          sources and no widgets — the gate cannot fail. stdout:\n{}\nstderr:\n{stderr}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -101,7 +101,7 @@ fn gate_accepts_a_rich_manifest() {
 
     assert!(
         out.status.success(),
-        "presentar gate rejected a fully specified manifest — the gate cannot \
+        "aprender-present gate rejected a fully specified manifest — the gate cannot \
          pass. stdout:\n{stdout}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );

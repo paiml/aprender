@@ -101,12 +101,12 @@
 # CLI Reference
 
 - [Overview](./cli/overview.md)
-- [alimentar info](./cli/info.md)
-- [alimentar head](./cli/head.md)
-- [alimentar schema](./cli/schema.md)
-- [alimentar view](./cli/view.md)
-- [alimentar convert](./cli/convert.md)
-- [alimentar registry](./cli/registry.md)
+- [aprender-data info](./cli/info.md)
+- [aprender-data head](./cli/head.md)
+- [aprender-data schema](./cli/schema.md)
+- [aprender-data view](./cli/view.md)
+- [aprender-data convert](./cli/convert.md)
+- [aprender-data registry](./cli/registry.md)
 
 # Examples
 

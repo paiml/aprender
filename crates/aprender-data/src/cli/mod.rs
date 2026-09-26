@@ -25,7 +25,7 @@ pub use registry::RegistryCommands;
 
 /// alimentar - Data Loading, Distribution and Tooling in Pure Rust
 #[derive(Parser)]
-#[command(name = "alimentar")]
+#[command(name = "aprender-data")]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]

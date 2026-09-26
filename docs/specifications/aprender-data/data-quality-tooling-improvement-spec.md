@@ -162,10 +162,10 @@ To respect the developer's time and focus, tools must be available "Just-in-Time
 
 | Command | Status | Requirement |
 |---------|--------|-------------|
-| `alimentar quality check <file>` | **Refactor** | Implement profile-based scoring (Standard Work). |
-| `alimentar quality report <file>` | **Enhance** | Add "Andon" style visual indicators (Colors/Symbols). |
-| `alimentar stats <file>` | **New** | Compute distribution metrics in-process (No Pandas). |
-| `alimentar histogram <file>` | **New** | ASCII visual control for distribution shape. |
+| `aprender-data quality check <file>` | **Refactor** | Implement profile-based scoring (Standard Work). |
+| `aprender-data quality report <file>` | **Enhance** | Add "Andon" style visual indicators (Colors/Symbols). |
+| `aprender-data stats <file>` | **New** | Compute distribution metrics in-process (No Pandas). |
+| `aprender-data histogram <file>` | **New** | ASCII visual control for distribution shape. |
 
 ### 5.3 Statistical Analysis (Fact-Based Decisions)
 
@@ -239,7 +239,7 @@ Tools must allow rapid application of countermeasures (fixes) to return to stand
 
 ```bash
 # Apply standard countermeasures
-alimentar fix corpus.parquet --profile doctest --output corpus_clean.parquet
+aprender-data fix corpus.parquet --profile doctest --output corpus_clean.parquet
 ```
 
 ### 5.7 Visual Control (Andon)

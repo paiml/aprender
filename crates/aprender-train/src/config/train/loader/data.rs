@@ -1159,7 +1159,7 @@ fn load_lm_batches_from_parquet(
          Build with: cargo build --features parquet"
     );
     eprintln!(
-        "  Alternatively, convert to JSONL: alimentar export {} -o train.jsonl --text-column {}",
+        "  Alternatively, convert to JSONL: aprender-data export {} -o train.jsonl --text-column {}",
         path.display(),
         text_column
     );

@@ -583,7 +583,7 @@ fn test_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("trueno-rag"));
+        .stdout(predicate::str::contains("aprender-rag"));
 }
 
 #[test]

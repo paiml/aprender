@@ -361,7 +361,7 @@ fn mutation_session_export_has_comment_header() {
     let mut session = ReplSession::new();
     session.add_history("info");
     let export = session.export_history();
-    assert!(export.contains("# alimentar session export"));
+    assert!(export.contains("# aprender-data session export"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
