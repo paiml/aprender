@@ -107,6 +107,9 @@ pub(crate) mod hf_publish;
 #[cfg(feature = "training")]
 pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
+// EXT-19 speed ledger; its consumer is the EXT-001 §3.7 per-tag speed loop.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod speed_ledger;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;
 pub(crate) mod model_gate_cr;

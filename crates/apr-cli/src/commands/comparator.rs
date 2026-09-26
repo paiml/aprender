@@ -66,7 +66,7 @@ pub(crate) struct ArmSpec {
     pub workdir: PathBuf,
 }
 
-fn is_sha256(s: &str) -> bool {
+pub(crate) fn is_sha256(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
