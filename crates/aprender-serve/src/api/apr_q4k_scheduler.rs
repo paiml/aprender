@@ -68,6 +68,8 @@ pub struct AprQ4kResponse {
     pub generation_time_ms: f64,
     /// Tokens per second.
     pub tokens_per_second: f64,
+    /// SRV-TIM-001: the session's measured prefill/decode split.
+    pub phases: crate::api::PhaseTimings,
 }
 
 /// Spawn a dedicated Q4K GPU inference thread.
@@ -347,6 +349,7 @@ fn generate_q4k(
         .generate(prompt_ids, &gen_config, &mut |_| true)
         .map_err(|e| format!("Q4K generate failed: {e}"))?;
     let output_tokens = turn.tokens[prompt_ids.len()..].to_vec();
+    let phases = crate::api::PhaseTimings::from_turn(&turn);
 
     let gen_time = gen_start.elapsed();
     let tokens_generated = output_tokens.len();
@@ -361,6 +364,7 @@ fn generate_q4k(
         tokens_generated,
         generation_time_ms: gen_time.as_secs_f64() * 1000.0,
         tokens_per_second,
+        phases,
     })
 }
 

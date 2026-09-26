@@ -335,6 +335,21 @@ impl GpuModel {
         prompt: &[usize],
         config: &GpuGenerateConfig,
     ) -> Result<Vec<usize>> {
+        self.generate_optimized_observed(prompt, config, &mut || {})
+    }
+
+    /// [`Self::generate_optimized`] with `on_token()` fired as each token is
+    /// chosen, so a caller can time the prefill boundary (SRV-TIM-001).
+    ///
+    /// # Errors
+    ///
+    /// Returns error if generation fails
+    pub fn generate_optimized_observed(
+        &mut self,
+        prompt: &[usize],
+        config: &GpuGenerateConfig,
+        on_token: &mut dyn FnMut(),
+    ) -> Result<Vec<usize>> {
         if prompt.is_empty() {
             return Err(RealizarError::InvalidShape {
                 reason: "Prompt cannot be empty".to_string(),
@@ -367,6 +382,7 @@ impl GpuModel {
         } else {
             Self::sample_topk_generate(&logits, config.temperature, config.top_k, &mut rng)
         };
+        on_token();
 
         if config.stop_tokens.contains(&next_token) {
             return Ok(tokens);
@@ -388,6 +404,7 @@ impl GpuModel {
             } else {
                 Self::sample_topk_generate(&logits, config.temperature, config.top_k, &mut rng)
             };
+            on_token();
 
             if config.stop_tokens.contains(&next_token) {
                 break;

@@ -372,6 +372,22 @@ impl GpuModel {
         prompt: &[usize],
         config: &GpuGenerateConfig,
     ) -> Result<Vec<usize>> {
+        self.generate_refcell_observed(prompt, config, &mut || {})
+    }
+
+    /// [`Self::generate_refcell`] with `on_token()` fired as each token is
+    /// chosen, so a caller can time the prefill boundary (SRV-TIM-001).
+    ///
+    /// # Errors
+    ///
+    /// Returns error if generation fails.
+    #[cfg(feature = "cuda")]
+    pub fn generate_refcell_observed(
+        &self,
+        prompt: &[usize],
+        config: &GpuGenerateConfig,
+        on_token: &mut dyn FnMut(),
+    ) -> Result<Vec<usize>> {
         if prompt.is_empty() {
             return Err(RealizarError::InvalidShape {
                 reason: "Prompt cannot be empty".to_string(),
@@ -441,6 +457,7 @@ impl GpuModel {
             };
 
             tokens.push(next_token);
+            on_token();
 
             // Check for stop tokens
             if config.stop_tokens.contains(&next_token) {

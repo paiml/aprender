@@ -637,6 +637,47 @@ pub struct Timings {
 /// The clock [`Timings`] is measured on.
 pub const TIMINGS_CLOCK: &str = "server std::time::Instant (CLOCK_MONOTONIC)";
 
+/// SRV-TIM-001: the prefill/decode split for an engine that reports each
+/// chosen token through a callback. The first `mark` is the boundary — the
+/// prompt has been forwarded and the first token chosen (a host read-back on
+/// every backend), so timing it adds no synchronisation. A turn that chose no
+/// token has no split, and `finish` says so with `None`s rather than zeros.
+#[derive(Debug, Clone, Copy)]
+pub struct PhaseClock {
+    start: std::time::Instant,
+    first_token: Option<std::time::Instant>,
+}
+
+impl PhaseClock {
+    /// Start timing a turn; call immediately before the engine runs.
+    #[must_use]
+    pub fn start() -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            first_token: None,
+        }
+    }
+
+    /// Record a chosen token. Only the first call moves the boundary.
+    pub fn mark(&mut self) {
+        if self.first_token.is_none() {
+            self.first_token = Some(std::time::Instant::now());
+        }
+    }
+
+    /// The split, as of now.
+    #[must_use]
+    pub fn finish(&self) -> PhaseTimings {
+        let Some(first) = self.first_token else {
+            return PhaseTimings::default();
+        };
+        PhaseTimings {
+            prefill_ms: Some(first.duration_since(self.start).as_secs_f64() * 1000.0),
+            decode_ms: Some(first.elapsed().as_secs_f64() * 1000.0),
+        }
+    }
+}
+
 /// What an engine measured for one request, on its way to the handler.
 ///
 /// [`Timings`] is the wire shape and needs token COUNTS the handler owns; this
@@ -655,6 +696,15 @@ pub struct PhaseTimings {
 }
 
 impl PhaseTimings {
+    /// From a measured (prefill, decode) split; `None` stays unmeasured.
+    #[must_use]
+    pub fn from_split(split: Option<(std::time::Duration, std::time::Duration)>) -> Self {
+        split.map_or_else(Self::default, |(prefill, decode)| Self {
+            prefill_ms: Some(prefill.as_secs_f64() * 1000.0),
+            decode_ms: Some(decode.as_secs_f64() * 1000.0),
+        })
+    }
+
     /// SRV-TIM-001: both phases of one [`crate::session::Session`] turn. The
     /// session measures its prefill/decode boundary on every backend it
     /// drives, so a handler serving a `Turn` always has a split to report.
