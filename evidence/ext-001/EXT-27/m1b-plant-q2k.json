@@ -1,0 +1,67 @@
+{
+  "current": {
+    "version": "plant: blk.10.ffn_down re-quantized to Q2_K",
+    "llama_cpp_commit": "d1d3c3396aa13a5f239109a822666c4870490ad5",
+    "corpus_sha256": "32f70802fd34b07643574171c29338a49e4ccadf8f66e5e72386e7d1b6c94f6c",
+    "reference_sha256": "9e6e2841a75f503ccb330831832fd7861266e187e0dbf149a954219ccb8c197a",
+    "ours": {
+      "arm": "ours",
+      "file_sha256": "186256778202bf6d38ce4ac1abae70363f565b3779710b80dd97a7dc6f552753",
+      "kl_mean": 0.031958,
+      "top1": 0.93290
+    },
+    "arms": [
+      {
+        "arm": "unsloth-q4_k_m",
+        "file_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "kl_mean": 0.018684,
+        "top1": 0.95294
+      },
+      {
+        "arm": "bartowski-q4_k_m",
+        "file_sha256": "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
+        "kl_mean": 0.016423,
+        "top1": 0.95251
+      },
+      {
+        "arm": "unsloth-ud-q4_k_xl",
+        "file_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
+        "kl_mean": 0.013781,
+        "top1": 0.95991
+      }
+    ]
+  },
+  "baseline": {
+    "version": "baseline (apr 2718c5214)",
+    "llama_cpp_commit": "d1d3c3396aa13a5f239109a822666c4870490ad5",
+    "corpus_sha256": "32f70802fd34b07643574171c29338a49e4ccadf8f66e5e72386e7d1b6c94f6c",
+    "reference_sha256": "9e6e2841a75f503ccb330831832fd7861266e187e0dbf149a954219ccb8c197a",
+    "ours": {
+      "arm": "ours",
+      "file_sha256": "97784e90405056f4529564a811acb333d2303b09ce493a361d75b5797e1158af",
+      "kl_mean": 0.028094,
+      "top1": 0.93638
+    },
+    "arms": [
+      {
+        "arm": "unsloth-q4_k_m",
+        "file_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "kl_mean": 0.018684,
+        "top1": 0.95294
+      },
+      {
+        "arm": "bartowski-q4_k_m",
+        "file_sha256": "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
+        "kl_mean": 0.016423,
+        "top1": 0.95251
+      },
+      {
+        "arm": "unsloth-ud-q4_k_xl",
+        "file_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
+        "kl_mean": 0.013781,
+        "top1": 0.95991
+      }
+    ]
+  },
+  "receipt_id": "m1b-quality"
+}
