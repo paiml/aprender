@@ -49,6 +49,7 @@ equations:
       - "Row formatters read pmat's own JSON keys — function_name, impact_score, commit_count, fault_annotations"
       - "Hunts are scoped by --path alone; a free-text query is a relevance filter applied BEFORE --path and collapses a module-scoped hunt to nothing"
       - "Every path a beat hunts exists in the tree"
+      - "The hunt is bounded in time: each query under PMAT_QUERY_TIMEOUT_S, the whole hunt under PMAT_HUNT_BUDGET_S across all beats; a cut-short hunt prints a skip line and is not reported inert (#4489: the unbounded hunt ran the nightly past its 30-min job timeout, cancelling it with no verdict)"
       - "Manifest is consumed by the daily cron to detect drift over time"
 
   beat_to_command_surface:
@@ -167,7 +168,7 @@ falsification_tests:
 
   - id: FALSIFY-QWEN-STORY-015
     rule: "The pmat bug-hunt manifest can produce rows, and an empty manifest fails the beat"
-    prediction: "scripts/check_story_pmat_hunt.sh exits 0: pmat_rows formats from function_name/impact_score/commit_count/fault_annotations, a free-text query before --path yields nothing, pmat_hunt returns 1 and calls emit_fail when its header carries no rows, and every path the story hunts exists"
+    prediction: "scripts/check_story_pmat_hunt.sh exits 0: pmat_rows formats from function_name/impact_score/commit_count/fault_annotations, a free-text query before --path yields nothing, pmat_hunt returns 1 and calls emit_fail when its header carries no rows, every path the story hunts exists, and a query past PMAT_QUERY_TIMEOUT_S or a spent PMAT_HUNT_BUDGET_S prints a skip line instead of hanging the story (#4489)"
     test: "bash scripts/check_story_pmat_hunt.sh"
     if_fails: "The hunt printed eight manifest headers and ZERO rows a night from the day the cron was added, so the workflow's 'manifest grew by >5' alert branch never had a non-zero input and half the nightly's alerting was decorative. Three independent causes, each sufficient: (1) the jq filters named .function / .churn.commit_count / .faults while pmat emits function_name / commit_count / fault_annotations - the row guard select(.function != null) discarded 100% of records; (2) the churn and fault hunts passed the beat label as a free-text query, and --path is a POST-filter over the semantic top-K, so a module-scoped hunt collapsed to nothing (measured on pmat 3.30.0: query + --path <module> = 0 rows, no query + --path <same module> = 3 rows); (3) commands/list.rs, commands/code.rs and commands/serve.rs had been deleted or moved. All three present as an empty manifest, which pmat_hunt's unconditional `return 0` made indistinguishable from clean code."
 

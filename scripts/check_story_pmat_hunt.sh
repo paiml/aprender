@@ -64,7 +64,9 @@ cat >> "$TMP/bin/pmat" <<'STUB'
 case "${STUB_MODE:-rows}" in
   empty) printf '[]\n'; exit 0 ;;
   docs)  printf '{"documents":[{"path":"a.rs"},{"path":"b.rs"}]}\n'; exit 0 ;;
+  slow)  sleep 5 ;;  # then answers with rows, too late
 esac
+[ -z "${STUB_CALLS:-}" ] || printf 'call\n' >> "$STUB_CALLS"
 shift  # drop the `query` subcommand
 # A leading non-flag argument is a free-text semantic query.
 if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
@@ -188,6 +190,46 @@ out=$(PMAT_HUNT=0 pmat_hunt "check" "$LIB"); rc=$?
 want "PMAT_HUNT=0 returns 0" "0" "$rc"
 want "PMAT_HUNT=0 prints nothing" "" "$out"
 want "PMAT_HUNT=0 tallies no failure" "" "$(cat "$FAILLOG")"
+
+# -- 7b. The hunt is bounded in time (#4489) ---------------------------------
+# qwen-story-daily was cancelled at its 30-minute job timeout every night once
+# pmat reached the gx10 runner: one real `pmat query --churn` took 407 s, and the
+# unbounded hunt ran the job out of time inside Beat 3 - no verdict at all. A
+# query past PMAT_QUERY_TIMEOUT_S must be killed and SAID to be killed, and must
+# not be reported as an inert hunt (it proved nothing either way).
+: > "$FAILLOG"
+PMAT_QUERY_TIMEOUT_S=1 PMAT_HUNT_DEADLINE=""
+start=$SECONDS
+out=$(STUB_MODE=slow PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
+took=$((SECONDS - start))
+want "a hunt whose queries time out returns 0" "0" "$rc"
+want "a timed-out query is not reported as an inert hunt" "" "$(cat "$FAILLOG")"
+want "each timed-out query prints a skip line" "3" \
+  "$(printf '%s\n' "$out" | grep -cE '^        skip  (gap|churn|fault) query timed out after 1s$')"
+want "a timed-out query's late rows are not emitted" "0" \
+  "$(printf '%s\n' "$out" | grep -cE '^        (gap|churn|fault) ')"
+if [ "$took" -lt 12 ]; then
+  ok "3 slow queries were each cut at the timeout (${took}s, not 15s)"
+else
+  bad "3 slow queries were each cut at the timeout" "< 12s" "${took}s"
+fi
+
+# Budget: the clock spans every beat. A spent budget runs NO query and says so.
+: > "$FAILLOG"
+calls="$TMP/calls"; : > "$calls"
+PMAT_QUERY_TIMEOUT_S=60 PMAT_HUNT_DEADLINE=$((SECONDS - 1))
+out=$(STUB_CALLS="$calls" PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
+want "a hunt past its budget returns 0" "0" "$rc"
+want "a hunt past its budget runs no pmat query" "0" "$(grep -c . "$calls")"
+want "a hunt past its budget prints a skip line" "1" \
+  "$(printf '%s\n' "$out" | grep -c 'skip  hunt budget PMAT_HUNT_BUDGET_S=')"
+want "a hunt past its budget is not reported as inert" "" "$(cat "$FAILLOG")"
+# And a fresh budget runs the queries again (the deadline is not sticky-zero).
+: > "$calls"
+PMAT_HUNT_DEADLINE=""
+STUB_CALLS="$calls" PMAT_HUNT=1 pmat_hunt "check" "$LIB" >/dev/null
+want "a hunt within its budget runs all 3 queries" "3" "$(grep -c . "$calls")"
+PMAT_HUNT_DEADLINE=""
 
 # -- 8. Every path the story hunts still exists -----------------------------
 # Cause 3. Static, because a path can rot without anyone running the nightly.

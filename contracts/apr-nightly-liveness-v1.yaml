@@ -1,0 +1,90 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-26'
+  author: PAIML Engineering
+  description: "A model nightly is alive only when its scheduled runs SUCCEED. NIGHTLY-RED counts every non-success conclusion - cancelled and timed_out included, not just failure - and a schedule that stopped firing. APR-OBS-001 OBS-02 (#4489); extends NIGHTLY-RED of APR-RELEASE-001."
+  kind: pattern
+  references:
+    - "scripts/check_nightly_liveness.sh - the NIGHTLY-RED implementation (offline case table by default; --live queries GitHub)"
+    - "scripts/lib_story_pmat.sh - the time-bounded pmat hunt (mechanism A's fix)"
+    - "handoff/APR-OBS-001-dogfood-observability.md - OBS-02, section 3 contract, section 4 rule 5"
+    - "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md - the NIGHTLY-RED report line"
+    - "paiml/aprender#4489"
+  registry: true
+  tags:
+    - nightly
+    - liveness
+    - observability
+    - andon
+
+five_whys:
+  symptom: "cuda-nightly.yml and qwen-story-daily.yml both ended their last scheduled run CANCELLED, so no scheduled model run happened, and no alert fired. Measured 2026-09-26 by `check_nightly_liveness.sh --live`: qwen-story-daily 15 consecutive non-success scheduled runs (cancelled=14 failure=1)."
+  why_1: "A cancelled run has no verdict. qwen-story-daily's failure branch (file an issue, exit 2) never executes when the job is killed, and NIGHTLY-RED as every reader applied it counted failures only."
+  why_2: "qwen-story-daily (mechanism A): the 30-minute job timeout cancelled the run inside Beat 3 (run 36208736078: story log ends at Beat 3, followed by the pmat manifest). The good run 34702492822 (apr 0.67.0) ran all 8 beats in 5.3 min with no hunt lines at all."
+  why_3: "The per-beat pmat bug-hunt is skipped when pmat is absent. Once pmat was on the gx10 runner's PATH it switched on: 3 queries per hunted path, ~20 paths, and one `pmat query --path <file> --churn --max-complexity 30` measured 407 s on lambda. Nothing bounded a query or the hunt."
+  why_4: "cuda-nightly (mechanism B): its ada-yoga job waits on the cross-workflow `perf-yoga` concurrency group (PP-19). A concurrency group holds ONE pending job; a newer arrival cancels it. ci.yml's pull_request `yoga` job shares the group, so PR traffic displaced the nightly's pending job - run 36201092630, job 108287688073, annotation 'Canceling since a higher priority waiting request for perf-yoga exists'. cancel-in-progress: false protects only the RUNNING job."
+  why_5: "NIGHTLY-RED was a report-line format with no implementation and no case table, so 'cancelled' was never a row anyone had to classify."
+  root_cause: "An unbounded advisory step (the pmat hunt) and a single-slot concurrency queue each produce CANCELLED - a state with no verdict - and the liveness signal counted only FAILED. Fix: bound the hunt in time so the story always reaches its verdict; count every non-success scheduled run in NIGHTLY-RED."
+
+equations:
+  nightly_liveness:
+    formula: "RED(wf) iff no completed scheduled run exists, OR the newest is older than LIVENESS_STALE_H (50h), OR the newest LIVENESS_RED_AT (2) completed scheduled runs are all conclusion != success"
+    domain: "model nightlies: cuda-nightly.yml, qwen-story-daily.yml (overridable on the command line)"
+    codomain: "one line per workflow: `NIGHTLY-RED <wf> <n> consecutive non-success (<conclusion>=<count> ...)` or `nightly-ok <wf>`; exit 1 if any RED"
+    invariants:
+      - "cancelled, timed_out and failure all count toward the streak; only success resets it"
+      - "in-progress runs are ignored; a workflow_dispatch rerun does not make the schedule alive"
+      - "a run list that cannot be fetched is RED (fail closed)"
+
+  hunt_is_bounded:
+    formula: "each pmat query runs under timeout PMAT_QUERY_TIMEOUT_S (60) and the hunt spends at most PMAT_HUNT_BUDGET_S (480) of wall clock across all beats"
+    domain: "scripts/qwen-story.sh with PMAT_HUNT=1 and pmat on PATH"
+    codomain: "manifest rows, or a visible `skip` line per timed-out query / spent budget"
+    invariants:
+      - "a timed-out query or a spent budget prints a skip line and is not reported as an inert hunt"
+      - "the story's own beats are never starved by the hunt: 8 beats (~6 min) + 8 min budget < 30 min job timeout"
+
+proof_obligations:
+  - id: NLV-INV-001
+    type: invariant
+    property: "Two cancelled nights are RED"
+    formal: "judge([cancelled, cancelled, success]) = RED"
+    applies_to: nightly_liveness
+  - id: NLV-INV-002
+    type: invariant
+    property: "A stale or empty schedule is RED"
+    formal: "judge([]) = RED and judge(newest older than 50h) = RED"
+    applies_to: nightly_liveness
+  - id: NLV-INV-003
+    type: invariant
+    property: "The hunt cannot run the job out of time"
+    formal: "a query past PMAT_QUERY_TIMEOUT_S is killed, and no query starts once PMAT_HUNT_BUDGET_S is spent"
+    applies_to: hunt_is_bounded
+
+falsification_tests:
+  - id: FALSIFY-NLV-001
+    rule: "A workflow cancelled 2 nights in a row is not reported GREEN"
+    prediction: "bash scripts/check_nightly_liveness.sh exits 0: every case-table row matches (cancelled x2, failure x2, timed_out, mixed, stale, empty, dispatch-only and in-progress rows), AND the planted failure-only counter - the pre-#4489 NIGHTLY-RED - turns the table RED"
+    test: "bash scripts/check_nightly_liveness.sh"
+    if_fails: "NIGHTLY-RED is back to reading a cancelled nightly - no verdict at all - as quiet. That is how qwen-story-daily went 14 cancelled nights with no alert (#4489)."
+
+  - id: FALSIFY-NLV-002
+    rule: "The qwen story's pmat hunt is bounded in time and a cut-short hunt is visible, not inert"
+    prediction: "bash scripts/check_story_pmat_hunt.sh exits 0, including: 3 slow queries each cut at PMAT_QUERY_TIMEOUT_S with a skip line; a spent budget runs no query and prints a skip line; neither calls emit_fail"
+    test: "bash scripts/check_story_pmat_hunt.sh"
+    if_fails: "The hunt can again run qwen-story-daily past its 30-minute timeout, which cancels the run before any verdict (mechanism A, #4489)."
+
+  - id: FALSIFY-NLV-003
+    rule: "The live model nightlies are not NIGHTLY-RED"
+    prediction: "bash scripts/check_nightly_liveness.sh --live exits 0. RED on 2026-09-26 (qwen-story-daily 15 consecutive: cancelled=14 failure=1); GREEN once two consecutive scheduled runs succeed after the fix"
+    test: "bash scripts/check_nightly_liveness.sh --live"
+    if_fails: "A model nightly has produced no successful scheduled run for 2+ nights: read the NIGHTLY-RED line for which conclusions, and the run id."
+
+qa_gate:
+  id: F-NIGHTLY-LIVENESS-001
+  name: "Model nightly liveness"
+  description: "A cancelled nightly is a dead nightly. NIGHTLY-RED counts every non-success scheduled run, and the qwen story's hunt can no longer cancel the story."
+  checks:
+    - "nightly_liveness"
+    - "hunt_is_bounded"
+  pass_criteria: "FALSIFY-NLV-001 and -002 PASS on every PR (guard_tree); FALSIFY-NLV-003 GREEN, and 0 cancelled model nightlies over the trailing 7 nights (OBS-02 done-when)"
