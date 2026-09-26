@@ -1605,8 +1605,10 @@ pub enum ModelCommands {
         /// HF model repo, owner/name
         #[arg(long)]
         repo: String,
-        /// File holding the HF token, mode 0600. Without it: HF_TOKEN, then the
-        /// local HF token file (~/.cache/huggingface/token); only the source is logged
+        /// File holding the HF token, mode 0600. Without it, the local HF token as
+        /// huggingface_hub finds it: HF_TOKEN, HUGGING_FACE_HUB_TOKEN, then the file at
+        /// HF_TOKEN_PATH, $HF_HOME/token or ~/.cache/huggingface/token. Only the
+        /// source is logged
         #[arg(long, value_name = "FILE")]
         token_file: Option<PathBuf>,
         /// Line state directory: <version>/model-publish-receipt-v1.json

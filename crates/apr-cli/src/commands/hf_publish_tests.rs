@@ -604,3 +604,19 @@ fn record_writes_only_what_changed() {
     assert_eq!(record(&again, &state).expect("record"), None);
     assert_eq!(std::fs::read_to_string(&path).expect("read"), "previous");
 }
+
+/// `>` not `>=`: a hub tag that parses to OUR version under another spelling
+/// (`v01.1.0`) is not "released and newer", so it does not block the release.
+#[test]
+fn an_equal_version_spelled_differently_is_not_newer() {
+    let t = TempDir::new().expect("tmp");
+    let d = t.path().join("rel");
+    release(&d, "1.1.0", "released", "w1");
+    let rcd = t.path().join("rc");
+    release(&rcd, "1.1.0-rc.1", "rc", "w1");
+    let hub = FakeHub::new();
+    go(&hub, &rcd).expect("rc");
+    hub.tags.borrow_mut().insert("v01.1.0".into(), "c0".into());
+    let r = go(&hub, &d).expect("not newer");
+    assert_eq!(r.target, "v1.1.0");
+}
