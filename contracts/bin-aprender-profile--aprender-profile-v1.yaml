@@ -1,0 +1,124 @@
+# ──────────────────────────────────────────────
+# bin-aprender-profile--aprender-profile-v1 — the `aprender-profile` bin target of package aprender-profile
+# (ONT-10 slice S15, 1/2)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha256, helpSha256,
+# gitSha, …) live in binary-surface-v1 and are not restated.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features, private CARGO_TARGET_DIR):
+#   `aprender-profile --version` = "renacer 0.69.3": the pre-monorepo name and no sha. LIVE RED on the name pattern
+#   and on G0.1.
+#   `--help` exits 0; `--no-such-flag` exits 2; `--format nosuch` exits 2.
+#   The --help walk gives 1 command (`validate`; clap's `help` excluded), 46 long options (--help/--version
+#   excluded) and a trailing `-- <COMMAND>...` (trace a program).
+#   surface_audit.csv holds 16 rows: 1 command row (validate), 1 trace-mode row (`-- <COMMAND>`), 14 option rows.
+#
+# VOCABULARY EXTENSION ASKED OF binary-surface-v1 (aprender-88) AND extract:binary (aprender-98): this binary's
+# surface is mostly OPTIONS. bin:option (one literal per long option) and bin:positional (one per Usage
+# positional) are not in the shared vocabulary yet. A ledger row whose feature starts with `-` keys on its long
+# form (`-p <PID>` → --pid); a row starting `-- ` keys on positional COMMAND. Joined against bin:command alone,
+# 15 of the 16 rows would read as ledgerOrphan.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-profile--aprender-profile-v1
+version: "1.0.0"
+scope: >
+  The command surface of the `aprender-profile` binary (package aprender-profile): its help, its usage errors, its
+  version string, its command set, its long options, and its surface-audit rows. Out of scope: what a trace or a
+  profile computes.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    aprender-profile answers --help, rejects an unknown flag as a usage error, names itself and the commit it was
+    built from, exposes exactly the command and options the snapshot records, and has an audited ledger row for
+    each ledgered mode.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'contracts/bin-aprender-contracts-cli--pv-v1.yaml — the exemplar'
+    - 'crates/aprender-profile/src/cli.rs — the clap Cli struct'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is aprender-profile'
+    - 'aprender#4502 — ONT-10, slice S15'
+
+entity:
+  type: binary
+  ref: binary/aprender-profile/aprender-profile
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-profile-surface
+    targetClass: bin:target/aprender-profile/aprender-profile
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-profile"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-profile"]}
+      # LIVE RED 2026-09-26: "renacer 0.69.3" — the version names another program
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-profile [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - {path: bin:command, minCount: 1, maxCount: 1, in: ["validate"]}
+      # vocabulary extension (header): 46 long options counted exactly; the ledger names 14, the other 32 tune a
+      # ledgered mode (e.g. --dl-epochs under --dl-anomaly), so no unledgered check applies to options
+      - {path: bin:option, minCount: 46, maxCount: 46}
+      - {path: bin:positional, minCount: 1, maxCount: 1, in: ["COMMAND"]}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(aprender-profile)) = {validate} ∧ |options(snapshot)| = 46 ∧ positionals = {COMMAND} ∧ key(r) ∈ {validate} ∪ options ∪ {COMMAND} for every ledger row r with r.binary = aprender-profile"
+    domain: "the aprender-profile line of the tracked snapshot and the 16 ledger rows with binary = aprender-profile"
+    codomain: "set equality on commands, an exact option count, or a Fail naming each orphan row"
+    invariants:
+      - "a new or renamed subcommand is a violation naming it; an added or dropped long option is RED until re-measured"
+      - "`--save-model / --load-model` keys on --save-model; both are options"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "key(r) = the command, the long form of the first option, or COMMAND for a `-- ` row"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APRENDER-PROFILE-INV-001
+    property: every aprender-profile ledger row names a command, option or positional the built binary accepts
+    formal: '∀ r ∈ surface_audit : r.binary = aprender-profile ⇒ key(r) ∈ commands ∪ options ∪ positionals'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER-PROFILE-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-profile --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-profile'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-PROFILE-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-profile --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-profile'
+    if_fails: 'a typo would be traced as a program argument (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'mark the trailing COMMAND trailing_var_arg + allow_hyphen_values; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-PROFILE-003
+    rule: 'G0.1 the version names the binary and the commit'
+    prediction: '`aprender-profile --version` starts with "aprender-profile " and contains the first 9 hex of the git sha'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-26: "renacer 0.69.3" — another program''s name and no sha'
+    mutation: 'restore the renacer name after a fix; must turn RED on bin:versionString'
+  - id: FALSIFY-BIN-APRENDER-PROFILE-004
+    rule: 'G1.3/G1.4 enumerated values are parsed by clap and the surface equals the snapshot'
+    prediction: '`aprender-profile --format nosuch` exits 2; the snapshot has exactly {validate}, 46 options, {COMMAND}'
+    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    if_fails: 'a profiling mode could be added or dropped unmodelled (observed 2026-09-26: --format exits 2, GREEN)'
+    mutation: 'delete --chaos from the snapshot; must turn RED on bin:option (45) and bin:ledgerOrphan naming `--chaos <PRESET>`'
+  - id: FALSIFY-BIN-APRENDER-PROFILE-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = aprender-profile (16 on 2026-09-26), each keying on the surface'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'a ledgered profiling mode could vanish from the shipped binary with the ontology green'
+    mutation: 'delete every aprender-profile row; must turn RED naming aprender-profile'

@@ -14,12 +14,12 @@ and re-run `pv lint contracts/ --gate shapes`. Each header records what was meas
 |---|---|---|---|---|
 | S4 (orchestrate 1/2) | binary-aprender-orchestrate-cli-v1.yaml | aprender-orchestrate | 86 CLI leaves; MCP tools/list = 4 | `--version` says "batuta"; 4 MCP tools unledgered, 6 `mcp:*` ledger rows are not tools/list tools |
 | S3 (orchestrate 2/2) | binary-aprender-orchestrate-http-v1.yaml | aprender-orchestrate | 92 HTTP routes (banco), set-equal to the ledger | extract gap: dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty |
-| S9 (apr(apr-cli) 1/2) | binary-apr-cli-apr-v1.yaml | apr (apr-cli) | 264 (262 leaves + debug + sim help); identity + all CLI — S8 takes the 47 HTTP + mcp rows (split by kind: pv refuses qualifiedValueShape) | 15 ledger rows name feature-gated commands (mono, rag eval, data x doctest/hub); 12 pv/capability commands unledgered |
+| S9 (apr(apr-cli) 1/2) | MOVED → contracts/bin-apr-cli--apr-v1.yaml | apr (apr-cli) | 264 (262 leaves + debug + sim help); identity + all CLI — S8 takes the 47 HTTP + mcp rows (split by kind: pv refuses qualifiedValueShape) | 15 ledger rows name feature-gated commands (mono, rag eval, data x doctest/hub); 12 pv/capability commands unledgered |
 | S10 | binary-alimentar-v1.yaml | alimentar (aprender-data) | 31 | 4 ledger rows name feature-gated commands the default build lacks |
 | S16 (1/2) | binary-apr-qa-v1.yaml | apr-qa (aprender-qa-cli) | 15 | none beyond G0.1 |
 | S16 (2/2) | binary-aprender-train-lora-v1.yaml | aprender-train-lora | 4 | `--version` says "entrenar-lora" |
-| S15 (1/2) | binary-aprender-profile-v1.yaml | aprender-profile | 1 leaf + 46 options; ledger is option rows | `--version` says "renacer" |
-| S15 (2/2) | binary-aprender-zram-generator-v1.yaml | aprender-zram-generator | 0; 3 generator positionals | `--version` says "trueno-zram-generator" |
+| S15 (1/2) | MOVED → contracts/bin-aprender-profile--aprender-profile-v1.yaml | aprender-profile | 1 leaf + 46 options; ledger is option rows | `--version` says "renacer" |
+| S15 (2/2) | MOVED → contracts/bin-aprender-zram-generator--aprender-zram-generator-v1.yaml | aprender-zram-generator | 0; 3 generator positionals | `--version` says "trueno-zram-generator" |
 | S2 | binary-aprender-test-cli-v1.yaml | aprender-test-cli | 36 (34 leaves + optional-subcommand groups `comply`, `serve`) | `--version` says "probador"; ledger row `llm experiment` names a group that requires a subcommand |
 | S8 (apr(apr-cli) 2/2) | binary-apr-cli-2of2-v1.yaml | apr (apr-cli) | 41 HTTP routes (union over `apr serve` routers, default build) + 9 MCP tools; S9 holds identity + CLI | 2 ledger rows name cuda-only routes (POST /v1/logprobs, /v1/perplexity); extractor drops METHOD and misses apr-cli serve/ routes |
 | S14 (1/2) | binary-aprender-train-shell-v1.yaml | aprender-train-shell | REPL: 10 commands, flags -c/-s, 0 subcommands | `--version` says "entrenar-shell"; `-c help` omits `clear` |
