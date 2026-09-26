@@ -185,6 +185,7 @@ entity_type_target_class:
   lean: ~
   parity-receipt: ~
   release-evidence: ~
+  cli-surface: ~
 
 # v4.16 D5b (qd4c3): which `## ` headings of an llm-context file satisfy each role. extract:llm-context emits
 # llm:purposeSection / rulesSection / commandsSection / layoutSection per match; an unlisted heading is no error.

@@ -1308,13 +1308,20 @@ mod tests {
     #[test]
     fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
         // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
-        let flipped: BTreeMap<String, String> = [("gguf", "gguf"), ("readme", "readme")]
+        // The plant was `readme` until ONT-4c gave readme an arm and the test went vacuous; a planted name
+        // cannot gain one, and the precondition below fails loudly if it ever does.
+        const PLANT: &str = "planted-no-arm";
+        assert!(
+            entity_count(PLANT, &extract::Extraction::default()).is_none(),
+            "{PLANT} has a counting arm — the plant is vacuous"
+        );
+        let flipped: BTreeMap<String, String> = [("gguf", "gguf"), (PLANT, PLANT)]
             .iter()
             .map(|(n, x)| (n.to_string(), x.to_string()))
             .collect();
         match by_entity_type(&extract::Extraction::default(), &flipped) {
             Err(ShapeError::Malformed { what, .. }) => assert!(
-                what.contains("entity type readme is registered in Σ as implemented"),
+                what.contains(&format!("entity type {PLANT} is registered in Σ as implemented")),
                 "{what}"
             ),
             other => panic!("expected a named refusal, got {other:?}"),
