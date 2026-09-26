@@ -109,12 +109,12 @@ struct PrefillBuffers {
 pub enum PrefillAttention {
     /// The fused flash-attention kernel: f16 inputs to the tensor cores, f32
     /// accumulation and f32 online softmax (the cop's #3596 ruling). No scores are
-    /// materialised, so it serves the contexts whose f32 scores do not fit; forced
+    /// materialised. The default where the device and heads allow it (#4484); forced
     /// with `APR_QWEN35_PREFILL_ATTENTION=flash`.
     FlashF16In,
     /// cuBLAS `QKᵀ` → causal softmax → `PV`, all f32, over materialised scores (split
-    /// into query passes by a 1 GiB budget) — the default while it fits, the only
-    /// path on a device without `mma.sync` (pre-sm_80); forced with `=f32`.
+    /// into query passes by a 1 GiB budget) — the fallback, the only path on a device
+    /// without `mma.sync` (pre-sm_80); forced with `=f32`.
     CublasF32,
 }
 
@@ -138,16 +138,17 @@ thread_local! {
     static ATTENTION_OVERRIDE: std::cell::Cell<Option<PrefillAttention>> = const { std::cell::Cell::new(None) };
 }
 
-/// The attention paths a prefill may run, most preferred first (#3596, cop ruling
-/// 2026-09-21): [`PREFILL_ATTENTION_ENV`] pins one; otherwise cuBLAS f32 — exact, and
-/// faster than the flash kernel on sm_89 from 20k to 148k — then flash where the
-/// device and the heads allow it, for the contexts whose f32 scores do not fit. The
-/// capacity plan takes the first that fits. An unrecognised value, or `flash` where
+/// The attention paths a prefill may run, most preferred first: [`PREFILL_ATTENTION_ENV`]
+/// pins one; otherwise flash where the device and the heads allow it, then cuBLAS f32.
+/// The 2026-09-21 ruling put f32 first while it was faster on sm_89 from 20k to 148k;
+/// split-KV flash (#4484) is 1.5-1.7x faster to first token at 32k on the 4090 with
+/// greedy text identical, which was that ruling's bar. The capacity plan takes the
+/// first that fits. An unrecognised value, or `flash` where
 /// flash cannot run, is printed, never silently read as something else.
 #[must_use]
 pub fn attention_candidates(forced: Option<&str>, flash_supported: bool) -> Vec<PrefillAttention> {
     let default = if flash_supported {
-        vec![PrefillAttention::CublasF32, PrefillAttention::FlashF16In]
+        vec![PrefillAttention::FlashF16In, PrefillAttention::CublasF32]
     } else {
         vec![PrefillAttention::CublasF32]
     };

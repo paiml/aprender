@@ -371,24 +371,24 @@ fn qwen35_prefill_refuses_an_empty_prompt_and_positions_past_the_cache() {
         .expect("pos0 == kv_len continues the state");
 }
 
-/// The cop's 2026-09-21 ruling on the default: cuBLAS f32 first (exact, and faster
-/// than flash on sm_89 from 20k to 148k), flash second where it can run; the
-/// environment pins one. Pure — no device.
+/// The default (#4484): flash first where it can run — split-KV flash beats cuBLAS
+/// f32 with greedy text identical — then f32; the environment pins one. Pure — no
+/// device.
 #[test]
-fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one() {
+fn qwen35_prefill_attention_prefers_flash_then_f32_and_the_environment_pins_one() {
     use super::{
         attention_candidates,
         PrefillAttention::{CublasF32, FlashF16In},
     };
     let rows: [(Option<&str>, bool, &[super::PrefillAttention]); 7] = [
-        (None, true, &[CublasF32, FlashF16In]),
+        (None, true, &[FlashF16In, CublasF32]),
         (None, false, &[CublasF32]),
         (Some("f32"), true, &[CublasF32]),
         (Some("flash"), true, &[FlashF16In]),
         // Flash asked for where it cannot run: said so, and f32 — never nothing.
         (Some("flash"), false, &[CublasF32]),
         // An unrecognised value is the default, and printed.
-        (Some("fast"), true, &[CublasF32, FlashF16In]),
+        (Some("fast"), true, &[FlashF16In, CublasF32]),
         (Some(""), false, &[CublasF32]),
     ];
     for (forced, flash, want) in rows {
