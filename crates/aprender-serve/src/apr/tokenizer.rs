@@ -147,7 +147,7 @@ pub(crate) fn bpe_encode(
 }
 
 /// Segment type for special token handling
-enum TextSegment {
+pub(crate) enum TextSegment {
     Special(u32),
     Regular(String),
 }
@@ -179,7 +179,10 @@ fn find_earliest_special_pos(remaining: &str, sorted_tokens: &[(&String, &u32)])
     earliest
 }
 
-fn split_by_special_tokens(text: &str, special_tokens: &HashMap<String, u32>) -> Vec<TextSegment> {
+pub(crate) fn split_by_special_tokens(
+    text: &str,
+    special_tokens: &HashMap<String, u32>,
+) -> Vec<TextSegment> {
     if special_tokens.is_empty() {
         return vec![TextSegment::Regular(text.to_string())];
     }

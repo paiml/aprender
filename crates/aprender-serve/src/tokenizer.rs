@@ -147,6 +147,9 @@ pub struct BPETokenizer {
     merge_rules: Vec<(String, String)>,
     /// GH-88: Special tokens for atomic tokenization (not split by BPE).
     special_tokens: HashMap<String, u32>,
+    /// #2817: the vocabulary's `<|...|>` tokens, which the greedy path emits whole. Kept
+    /// apart from `special_tokens` so embedding pooling (`is_special_token`) is unchanged.
+    chat_markers: HashMap<String, u32>,
 }
 
 impl BPETokenizer {
@@ -222,6 +225,11 @@ impl BPETokenizer {
         // This avoids repeated HashMap operations during inference
         let vocab_size = token_to_id.len();
         let max_token_id = id_to_token.keys().copied().max().unwrap_or(0);
+        let chat_markers = token_to_id
+            .iter()
+            .filter(|(t, _)| t.len() > 4 && t.starts_with("<|") && t.ends_with("|>"))
+            .map(|(t, &id)| (t.clone(), id))
+            .collect();
 
         Ok(Self {
             token_to_id,
@@ -231,6 +239,7 @@ impl BPETokenizer {
             max_token_id,
             merge_rules: Vec::new(),
             special_tokens: HashMap::new(),
+            chat_markers,
         })
     }
 
@@ -318,6 +327,25 @@ impl BPETokenizer {
             );
         }
 
+        // #2817: a chat marker is ONE token. Greedy matching alone let the byte before it
+        // win: `.<|im_end|>\n` became `.<` `|` `im` `_end` `|` `>\n` (Qwen2.5: `.<` is id 15757),
+        // 6 tokens for llama.cpp's 3, and the model never saw an end of turn.
+        let mut tokens = Vec::new();
+        for segment in crate::apr::tokenizer::split_by_special_tokens(text, &self.chat_markers) {
+            match segment {
+                crate::apr::tokenizer::TextSegment::Special(id) => tokens.push(id),
+                crate::apr::tokenizer::TextSegment::Regular(s) => {
+                    self.greedy_encode(&s, &mut tokens)
+                },
+            }
+        }
+
+        contract_post_encode!(&tokens);
+        tokens
+    }
+
+    /// Greedy longest-match encoding of text that holds no chat marker.
+    fn greedy_encode(&self, text: &str, tokens: &mut Vec<u32>) {
         // Convert to GPT-2 encoding: space -> Ġ, newline -> Ċ
         let processed: String = text
             .chars()
@@ -329,7 +357,6 @@ impl BPETokenizer {
             })
             .collect();
 
-        let mut tokens = Vec::new();
         let mut remaining = processed.as_str();
 
         while !remaining.is_empty() {
@@ -368,9 +395,6 @@ impl BPETokenizer {
                 remaining = &remaining[ch_len..];
             }
         }
-
-        contract_post_encode!(&tokens);
-        tokens
     }
 
     /// Decode token IDs to text
