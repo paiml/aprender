@@ -1,0 +1,15 @@
+# Renamed to Cargo.toml by scripts/check_viz_published_example.sh in a scratch
+# directory. A real nested manifest here would be a second package that every
+# workspace-wide guard must be told about (see tests/fixtures/dogfood_examples).
+[package]
+name = "viz-facet-coord"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# The PUBLISHED crate, exact pin, from crates.io only (#3552). The check script
+# refuses to build if this resolves to a path or git source.
+[dependencies]
+aprender-viz = "=0.69.1"
+
+[workspace]

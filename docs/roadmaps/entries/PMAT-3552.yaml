@@ -1,0 +1,23 @@
+- id: PMAT-3552
+  github_issue: 3552
+  item_type: task
+  title: 'Facet/Coord have no runnable example — EV-15/EV-16 have nothing to build against'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-1c
+  created: 2026-09-26T10:40:00Z
+  updated: 2026-09-26T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'examples/viz-facet-coord is one program: study data (DataFrame) -> grammar::panels(Facet::wrap) -> grammar::apply/apply_limits(Coord) -> output::SvgEncoder SVG'
+  - 'It depends on aprender-viz = "=0.69.1" from crates.io only; the manifest is Cargo.toml.in so it is never a workspace member or a second package for workspace guards'
+  - 'scripts/check_viz_published_example.sh builds it in a scratch dir outside the workspace, proves aprender-viz resolved from the crates.io registry (not path/git), runs it and checks the SVG (12 points, >=3 rects, closed </svg>)'
+  - 'The example exits non-zero if a facet partition law (3 panels covering every row), the flip-moves-xlim law, or a point-inside-its-panel law fails'
+  - 'Mutation control inside the script: Facet::wrap -> Facet::none must turn the run RED'
+  - 'make check-viz-example runs it; the CI workflow step needs a cop quorum (.github/workflows) and is handed off, not edited here'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Not in tier3: it needs network and a full aprender-viz+trueno build from crates.io.'

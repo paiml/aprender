@@ -1,0 +1,36 @@
+# impl receipt — PMAT-3552 (aprender#3552)
+
+**Ticket:** Facet/Coord have no runnable example; EV-15/EV-16 have nothing to build against.
+**Acceptance:** one program under `examples/` going study data → `panels` → `Coord::apply` → SVG,
+compiling against the **published crate only**, wired so it cannot rot.
+
+## What changed
+
+| File | Change |
+|------|--------|
+| `examples/viz-facet-coord/src/main.rs` | New program. 12-row study `DataFrame` (lineage/dose/response) → `panels(&Facet::wrap("lineage", 2))` → `apply_limits` + `apply(&Coord::cartesian().xlim(0,8).flip())` per point → `SvgEncoder` (panel rects, level labels, circles, polyline) → `render()`/`write_to_file`. It exits 1 if a law it relies on fails: 3 panels covering every row, the flip moving xlim to the vertical axis, every point inside its panel, and one point per row. |
+| `examples/viz-facet-coord/Cargo.toml.in` | `aprender-viz = "=0.69.1"` (crates.io), its own `[workspace]`. The name is `.in` so it is never a workspace member or a nested package. This follows the precedent of `tests/fixtures/dogfood_examples` (FALSIFY-MONO-012 flat layout). |
+| `scripts/check_viz_published_example.sh` | Copies the example to a scratch dir outside the repo and renames the manifest. It builds, then reads `cargo metadata` and requires `aprender-viz` = `0.69.1 registry+…crates.io-index` (a path or git source is RED). It runs the program and checks the SVG: 12 `<circle`, ≥3 `<rect`, `</svg>`. The mutation control swaps `Facet::wrap` for `Facet::none()` and requires exit ≠0. A failed mutant rebuild exits 2 rather than judging a stale binary. |
+| `Makefile` | `make check-viz-example` target. |
+
+## Evidence (lambda, private CARGO_TARGET_DIR, via the heavy-slot queue)
+
+```
+ok   aprender-viz resolved from crates.io: 0.69.1 registry+https://github.com/rust-lang/crates.io-index
+ok   SVG: 12 points, 4 rects (viz-facet-coord: panels=3 points=12 bytes=1815)
+ok   mutant (Facet::none) killed: viz-facet-coord: FAIL: facet law: 1 panels covering 12/12 rows
+rc=0
+```
+
+Second mutant, run by hand (`.flip()` removed, build=0, fresh binary):
+`FAIL: coord law: flip must move xlim to the vertical axis, got (1.5, 7.5)`, rc=1.
+
+A DNS failure during an earlier mutant build left a stale binary. It "killed" a mutant it was never built from, so that run is discarded. That is why the script now exits 2 on a failed rebuild.
+
+## Not done / handed off
+
+- **CI step**: `.github/workflows` edits need a cop quorum. The step to add is
+  `bash scripts/check_viz_published_example.sh` (it needs network to crates.io).
+- Not in `make tier3`: it needs network and a full aprender-viz+trueno build from crates.io.
+- EV-15 (byte-identical SVG across archs, `text-path`+`raster`) and EV-16 are downstream; this program is what they build on.
+- The pin `=0.69.1` must be bumped when a newer aprender-viz is published. The check stays on the published crate by design.

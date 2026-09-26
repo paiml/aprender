@@ -1364,6 +1364,10 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 check-wasm32: ## Verify aprender-core still compiles for wasm32-unknown-unknown (aprender#2310)
 	@bash scripts/check_wasm32_core_builds.sh
 
+.PHONY: check-viz-example
+check-viz-example: ## Build+run examples/viz-facet-coord against the PUBLISHED aprender-viz (#3552; needs crates.io)
+	@bash scripts/check_viz_published_example.sh
+
 check-siblings: ## Verify sibling repos exist and versions are compatible
 	@echo "Checking sibling repositories..."
 	@all_ok=true; \
