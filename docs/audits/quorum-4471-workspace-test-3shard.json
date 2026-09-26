@@ -1,0 +1,63 @@
+{
+ "ticket": "workspace-test 3-shard split",
+ "pr": 4471,
+ "base": "e7a52949d10141e177ca680bc8b95b0fb3792e2b",
+ "head": "92dd697cf8c07a8a855660732dc17e92095bf3d7",
+ "diff_sha256": "aad72cb07ce59a29452ef18786e2bed3098fc0de29dfa6ecd7c0a9f7ea093641",
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "executor": "paiml-agy-delegate, agy 1.2.11 --mode plan, width 3, read-only private snapshot",
+ "shape": "3 non-Claude gemini lanes (workflow change: standing yes needs 3/3 non-Claude)",
+ "round_1": {
+  "head": "6dabab4d3",
+  "result": "1 approve / 2 request_changes",
+  "conversations": [
+   "595af061",
+   "66a33d2d",
+   "797a44c1"
+  ],
+  "findings_fixed_in_92dd697cf": [
+   "R1-a mixed-tier run passed green -> tier split RED",
+   "R1-b jobs list attempt-scoped -> run-scoped filter=latest",
+   "R1-c jobs list unpaginated -> every page",
+   "R1-d external poll had no deadline -> 200 min, failure"
+  ]
+ },
+ "agreed": true,
+ "consensus": "3/3 approve",
+ "lanes": [
+  {
+   "lane": 1,
+   "model": "gemini-3.1-pro-high",
+   "model_source": "measured",
+   "family": "gemini",
+   "conversation_id": "46a48b92-73a8-4210-9cca-b3f453934278",
+   "verdict": "PASS",
+   "summary": "R1-a..d RESOLVED (ci.yml:389-391; fat_driver.py:1068-1083); no silent drop, no hang."
+  },
+  {
+   "lane": 2,
+   "model": "gemini-3.8-flash-high",
+   "model_source": "measured",
+   "family": "gemini",
+   "conversation_id": "6c6413c0-ac9f-4323-9de1-95544d3f4d4c",
+   "verdict": "PASS",
+   "summary": "R1-a..d RESOLVED; tier split RED, missing tier file RED, exact job-name match, filter=latest + pagination, 200-min deadline -> failure (180+10+10 < 240), one section per shard glob, artifact paths agree, gate semantics unchanged."
+  },
+  {
+   "lane": 3,
+   "model": "gemini-3.7-flash-high",
+   "model_source": "measured",
+   "family": "gemini",
+   "conversation_id": "ba5ebdc9-063e-4f1b-8732-52b44deef526",
+   "verdict": "PASS",
+   "summary": "R1-a..d RESOLVED; Σ union vs shard-1 universe, exact job-name match, glob, artifact paths and gate integrity sound."
+  }
+ ],
+ "open_questions": [
+  "filter=latest including a job carried over by 'Re-run failed jobs' was asserted by all lanes, not evidenced.",
+  "The external deadline starts at x86-main start; shards queued >~10 min behind fail closed (flake, not a silent pass)."
+ ]
+}
