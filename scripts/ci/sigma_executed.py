@@ -114,19 +114,26 @@ def run(argv) -> int:
     if argv[0] == "--self-test":
         return self_test()
     mode, rest = argv[0], argv[1:]
-    opts = dict(zip(rest[::2], rest[1::2]))
+    # --junit and --log repeat: a sharded run passes one per shard and the
+    # executed set is their UNION, compared with the one universe.
+    opts, many = {}, {"--junit": [], "--log": []}
+    for k, v in zip(rest[::2], rest[1::2]):
+        if k in many:
+            many[k].append(v)
+        else:
+            opts[k] = v
     if mode == "nextest":
-        return compare(opts.get("--kind", "nextest"), junit_ids(Path(opts["--junit"])),
+        executed = set().union(*(junit_ids(Path(j)) for j in many["--junit"]))
+        return compare(opts.get("--kind", "nextest"), executed,
                        nextest_list_ids(Path(opts["--list-json"])))
-    log = Path(opts["--log"]).read_text(errors="replace")
-    sl = step_slice(log, opts["--step"])
+    slices = [step_slice(Path(f).read_text(errors="replace"), opts["--step"]) for f in many["--log"]]
     if mode == "cargo":
         uni = cargo_list_ids(Path(opts["--list"]).read_text()) - \
             cargo_list_ids(Path(opts["--ignored"]).read_text())
-        return compare(opts.get("--kind", "cargo"), cargo_ids(sl), uni)
+        return compare(opts.get("--kind", "cargo"), set().union(*map(cargo_ids, slices)), uni)
     if mode == "explicit":
         uni = {l.strip() for l in Path(opts["--list"]).read_text().splitlines() if l.strip()}
-        return compare(opts.get("--kind", "explicit"), explicit_ids(sl), uni)
+        return compare(opts.get("--kind", "explicit"), set().union(*map(explicit_ids, slices)), uni)
     print(f"Σ: unknown mode {mode!r}", file=sys.stderr)
     return 2
 
@@ -196,6 +203,35 @@ def self_test() -> int:
             rc = run(["explicit", "--log", str(d / "sec.log"), "--step", "Integration tests",
                       "--list", str(d / "ex.txt")])
             rows.append((label, want, rc))
+        # Sharded: one junit / one log per shard, the executed set is the union.
+        def junit(name, cases):
+            (d / name).write_text(JUNIT.format(cases="\n".join(
+                f'<testcase classname="{b}" name="{n}"/>' for b, n in cases)))
+            return str(d / name)
+        suites = {}
+        for b, n in u:
+            suites.setdefault(b, {"testcases": {}})["testcases"][n] = {"filter-match": {"status": "matches"}}
+        (d / "l.json").write_text(json.dumps({"rust-suites": suites}))
+        for label, parts, want in (
+            ("nextest shards: union of three partitions == universe", [u[:1], u[1:2], u[2:]], 0),
+            ("nextest shards: MUTANT a shard's partition lost", [u[:1], u[1:2]], 1),
+            ("nextest shards: no junit at all", [], 1),
+        ):
+            args = ["nextest", "--list-json", str(d / "l.json")]
+            for i, part in enumerate(parts):
+                args += ["--junit", junit(f"s{i}.xml", part)]
+            rows.append((label, want, run(args)))
+        g1 = "::group::[1/1] cargo test -p a --test one\n::endgroup::"
+        g2 = "::group::[1/1] cargo test -p b --test two\n::endgroup::"
+        for label, bodies, want in (
+            ("explicit shards: union of the shard logs == list", [g1, g2], 0),
+            ("explicit shards: MUTANT a shard's log lost", [g1], 1),
+        ):
+            args = ["explicit", "--step", "Integration tests", "--list", str(d / "ex.txt")]
+            for i, body in enumerate(bodies):
+                (d / f"s{i}.log").write_text(log_with(body).replace("Compute tests", "Integration tests"))
+                args += ["--log", str(d / f"s{i}.log")]
+            rows.append((label, want, run(args)))
         try:
             (d / "sec.log").write_text(log_with(""))
             run(["explicit", "--log", str(d / "sec.log"), "--step", "No such step", "--list", str(d / "ex.txt")])

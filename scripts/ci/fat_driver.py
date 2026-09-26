@@ -1051,6 +1051,46 @@ class RunCtx:
         ev_path = os.environ.get("GITHUB_EVENT_PATH")
         self.event = json.load(open(ev_path)) if ev_path and os.path.exists(ev_path) else {}
         self.sections: dict = {}
+        # --external-job NAME: a need satisfied by another job of THIS workflow
+        # run, read from the Actions API (the workspace-test shards run as their
+        # own jobs; mutants, here, still needs their verdict). Pending until
+        # that job completes.
+        self.external: dict = {}
+        self.fetch_jobs = self._fetch_jobs
+        self._jobs_at = 0.0
+        self._jobs: list = []
+        self.external_deadline = time.time() + EXTERNAL_TIMEOUT_S
+
+    def _fetch_jobs(self) -> list:
+        # Run-scoped with filter=latest, not attempt-scoped: "Re-run failed jobs"
+        # carries a green workspace-test over from the earlier attempt, and an
+        # attempt-scoped list would never show it. Every page, not the first.
+        jobs, page = [], 1
+        while True:
+            url = (f"{self.api}/repos/{self.repo}/actions/runs/{self.run_id}"
+                   f"/jobs?filter=latest&per_page=100&page={page}")
+            got = gh_json(url, self.token).get("jobs", [])
+            jobs += got
+            if len(got) < 100:
+                return jobs
+            page += 1
+
+    def external_result(self, need: str):
+        # A job that never completes (or never appears) fails the need at the
+        # deadline, pointing at the need -- not at x86-main's own job timeout.
+        if time.time() >= self.external_deadline:
+            say(f"::error::external job {need!r}: not completed within {EXTERNAL_TIMEOUT_S:.0f}s")
+            return "failure"
+        if time.time() - self._jobs_at >= EXTERNAL_POLL_S:
+            self._jobs, self._jobs_at = self.fetch_jobs(), time.time()
+        js = [j for j in self._jobs if j.get("name") == need]
+        if not js or any(j.get("status") != "completed" for j in js):
+            return None
+        cs = [j.get("conclusion") for j in js]
+        for bad, r in (("failure", "failure"), ("timed_out", "failure"), ("cancelled", "cancelled")):
+            if bad in cs:
+                return r
+        return "success" if all(c == "success" for c in cs) else "skipped"
 
     def members(self, need: str) -> list:
         """A need names a job; a matrix job is every expansion present HERE.
@@ -1059,11 +1099,13 @@ class RunCtx:
         x86-main job: only the ARM64 half is in this run, and the X64 half
         reaches the compare as an artifact (a missing one fails the download).
         """
-        if need in self.sections:
+        if need in self.sections or need in self.external:
             return [need]
         return [n for n in self.sections if n.startswith(need + "[")]
 
     def need_result(self, need: str):
+        if need in self.external and need not in self.sections:
+            return self.external_result(need)
         rs = [self.sections[n].result for n in self.members(need)]
         if not rs or any(r is None for r in rs):
             return None
@@ -1075,7 +1117,8 @@ class RunCtx:
     def need_outputs(self, need: str) -> dict:
         out = {}
         for n in self.members(need):
-            out.update(self.sections[n].outputs)
+            if n in self.sections:
+                out.update(self.sections[n].outputs)
         return out
 
     def github_ctx(self, ws: Path) -> dict:
@@ -1095,6 +1138,9 @@ class RunCtx:
 
 
 DEFAULT_TIMEOUT_SCALE = 2.0
+EXTERNAL_POLL_S = 60.0
+# The shard jobs' own timeout (180 min) plus the verdict job's (10), plus queue.
+EXTERNAL_TIMEOUT_S = 200 * 60.0
 
 
 def timeout_seconds(minutes, default_minutes=0) -> float:
@@ -1217,6 +1263,7 @@ def cmd_run(a):
     base = Path(a.base or Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "fat")
     base.mkdir(parents=True, exist_ok=True)
     ctx = RunCtx(base)
+    ctx.external = dict.fromkeys(a.external_job or [])
     for n in names:
         ctx.sections[n] = Section(n, cat[n], ctx)
     signal.signal(signal.SIGTERM, on_signal)
@@ -1445,6 +1492,27 @@ def cmd_self_test(a):
         row("checkout fetch-depth 0: full history", (ok, cnt), (True, "3"))
         ok, _ = uses_checkout(clone("d2"), {"fetch-depth": 2}, None)
         row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
+    # --external-job: a need on another job of the run is pending until that
+    # job completes, then carries its conclusion; without the flag it is absent.
+    x = RunCtx.__new__(RunCtx)
+    x.sections, x.external, x._jobs_at, x._jobs = {}, {"workspace-test": None}, 0.0, []
+    x.external_deadline = time.time() + 3600
+    for label, jobs, want in (
+        ("external need: job not listed yet -> pending", [], None),
+        ("external need: job in progress -> pending", [{"name": "workspace-test", "status": "in_progress"}], None),
+        ("external need: completed success", [{"name": "workspace-test", "status": "completed", "conclusion": "success"}], "success"),
+        ("external need: completed failure", [{"name": "workspace-test", "status": "completed", "conclusion": "failure"}], "failure"),
+        ("external need: timed out is a failure", [{"name": "workspace-test", "status": "completed", "conclusion": "timed_out"}], "failure"),
+        ("external need: cancelled", [{"name": "workspace-test", "status": "completed", "conclusion": "cancelled"}], "cancelled"),
+        ("external need: another job's success does not count", [{"name": "workspace-test-shard (1)", "status": "completed", "conclusion": "success"}], None),
+    ):
+        x._jobs_at, x.fetch_jobs = 0.0, (lambda j=jobs: j)
+        row(label, x.need_result("workspace-test"), want)
+    row("external need: a member of the run", x.members("workspace-test"), ["workspace-test"])
+    x.external_deadline, x._jobs_at, x.fetch_jobs = time.time() - 1, 0.0, (lambda: [])
+    row("external need: past the deadline and still absent -> failure", x.need_result("workspace-test"), "failure")
+    x.external = {}
+    row("no --external-job: the need is absent (schedule refuses)", x.members("workspace-test"), [])
     bad = 0
     for label, good, got, want in rows:
         bad += not good
@@ -1461,6 +1529,7 @@ def main(argv=None):
     r.add_argument("--results", required=True)
     r.add_argument("--base")
     r.add_argument("--background-until")
+    r.add_argument("--external-job", action="append")
     w = sub.add_parser("wait")
     w.add_argument("--results", required=True)
     w.add_argument("--base")

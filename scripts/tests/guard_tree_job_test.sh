@@ -277,7 +277,7 @@ mutant_row "guard-tree dropped from x86-main --sections" "$m4" "$SECT_YML" diffe
 # 5. Mutant: x86-main dropped from gate.needs.
 # ---------------------------------------------------------------------------
 m5="$WORK/gate-drops-x86.yml"
-sed -E 's/^(    needs: \[)x86-main, (determinism\].*)$/\1\2/' "$CI_YML" > "$m5"
+sed -E 's/^(    needs: \[)x86-main, ([a-z, -]*determinism\].*)$/\1\2/' "$CI_YML" > "$m5"
 mutant_row "x86-main dropped from gate.needs" "$m5" "$SECT_YML" differs "$CI_YML" "$m5"
 
 # ---------------------------------------------------------------------------
@@ -296,7 +296,7 @@ mutant_row "guard-tree gaining a needs:" "$CI_YML" "$m6" differs "$SECT_YML" "$m
 m7="$WORK/x86-off-clean-room.yml"
 awk '
     /^  x86-main:/ { in_x = 1 }
-    in_x && /^    runs-on:/ { sub(/clean-room, /, ""); in_x = 0 }
+    in_x && /^    runs-on:/ { sub(/, clean-room/, ""); in_x = 0 }
     { print }
 ' "$CI_YML" > "$m7"
 mutant_row "x86-main off clean-room" "$m7" "$SECT_YML" differs "$CI_YML" "$m7"

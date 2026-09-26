@@ -26,14 +26,17 @@ sovereign-ci:
     coverage_on: 'tag'
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
-# runs as ONE shard (SHARD=1 SHARDS=1: nextest's hash partition 1/1 is every test,
-# and the explicit-command runner's shard 1/1 is every fragment); `any: 1` makes
-# `matrix.shard == 1` AND `matrix.shard == 3` both true, so the once-only steps
-# gated on either still run exactly once. determinism keeps both arches; x86-main
-# runs [X64], the determinism fat job runs [ARM64] + the compare.
+# runs as THREE shards, each its own ci.yml job on its own runner: as one shard
+# it took 5358 s of x86-main and was the release critical path. nextest's hash
+# partition N/3 and the explicit runner's round-robin N/3 each cover their list
+# exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
+# verdict job checks that by id. determinism keeps both arches; x86-main runs
+# [X64], the determinism fat job runs [ARM64] + the compare.
 matrix-pins:
   workspace-test-shard:
-    - {shard: {any: 1}, shards: 1}
+    - {shard: 1, shards: 3}
+    - {shard: 2, shards: 3}
+    - {shard: 3, shards: 3}
   determinism:
     - {arch: X64}
     - {arch: ARM64}
@@ -588,14 +591,17 @@ jobs:
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
       - name: "Σ-executed: the tests this job ran are exactly the tests it owes (#4433)"
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1 && matrix.shards == 1
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         # #4433, the cop's condition on the 5-fat-job PR: "The test-id set across
         # the 5 jobs must equal today's set (by id, not by count), and a mutation
         # that drops one test must turn it RED." The UNIVERSE is listed HERE, with
         # the filters of today's jobs written out again, never read back from the
         # step that ran the tests -- so an added --exclude, a --partition or a
         # dropped fragment in a run step cannot narrow its own yardstick.
-        # Only on the unsharded full tier: a shard owes a partition, not the set.
+        # Sharded, a shard owes a partition, not the set: this step (shard 1)
+        # lists the universes and checks the shard-1-only GPU and compute steps;
+        # the lib and explicit universes go to the workspace-test verdict job,
+        # which compares them with the UNION of the three shards' executed ids.
         shell: bash
         run: |
           set -euo pipefail
@@ -623,11 +629,39 @@ jobs:
               cargo test -p aprender-compute --lib -- --list --ignored > /sigma/compute.ignored.txt'
           bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d > "$sig/explicit.list.txt"
           rc=0
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib" --junit "$sig/lib.junit.xml" --list-json "$sig/lib.list.json" || rc=1
+          if [ "$SHARDS" = 1 ]; then
+            python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib" --junit "$sig/lib.junit.xml" --list-json "$sig/lib.list.json" || rc=1
+            python3 scripts/ci/sigma_executed.py explicit --kind "explicit" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Integration tests" --list "$sig/explicit.list.txt" || rc=1
+          fi
           python3 scripts/ci/sigma_executed.py nextest --kind "nextest gpu" --junit "$sig/gpu.junit.xml" --list-json "$sig/gpu.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py cargo --kind "compute" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Compute tests" --list "$sig/compute.list.txt" --ignored "$sig/compute.ignored.txt" || rc=1
-          python3 scripts/ci/sigma_executed.py explicit --kind "explicit" --log "$FAT_SECTION_LOG" --step "Integration tests" --list "$sig/explicit.list.txt" || rc=1
           exit "$rc"
+      # The shard's half of the cross-shard Σ (#4433). The tier file is written
+      # on every tier, so the verdict job can tell "not a full run" from "a
+      # shard's ids never arrived" -- a missing file there is RED, not a skip.
+      - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
+        if: matrix.shards != 1
+        shell: bash
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          mkdir -p sigma-shard
+          printf '%s\n' "$TIER" > sigma-shard/tier
+          if [ "$TIER" = full ]; then
+            cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
+            cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
+            if [ "$SHARD" = 1 ]; then
+              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
+            fi
+          fi
+      - uses: actions/upload-artifact@v7
+        if: matrix.shards != 1
+        with:
+          name: sigma-shard-${{ matrix.shard }}
+          path: sigma-shard/
+          if-no-files-found: error
       # PACK-001: the examples build used to be fragment 350 of the explicit
       # list. Measured on the first sharded full-tier run (35361149112, shard 1
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
@@ -3078,10 +3112,31 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       CARGO_INCREMENTAL: "0"
+      # ONE HOST GPU LOCK (operator, 2026-09-26). yoga's GPU is shared by CI and by
+      # agents; an agent's test holding it with no lock hung #4429's cuda-unit. Every
+      # GPU user on yoga takes a flock on /run/lock/fleet-gpu/gpu.lock (infra, forjar
+      # gpu-lock-tmpfiles), bind-mounted read-only into this container. cargo runs each
+      # TEST BINARY through this runner, so compiling holds no lock. 175 = the lock
+      # was not free after 10 min.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock
     steps:
       - uses: actions/checkout@v7
       - name: Preflight — the self-hosted toolset this job needs (67-C2)
         run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      - name: Host GPU lock — the host's file, and the runner takes it
+        run: |
+          set -euo pipefail
+          l=/run/lock/fleet-gpu/gpu.lock
+          # Without the bind mount, flock would create a private file in the
+          # container and serialise nothing. So ask for the mount, not the path.
+          mountpoint -q /run/lock/fleet-gpu || { echo "::error::/run/lock/fleet-gpu is not mounted from the host (infra eph-env EXTRA_MOUNTS)"; exit 1; }
+          [ -f "$l" ] || { echo "::error::$l is absent on the host (infra gpu-lock-tmpfiles)"; exit 1; }
+          command -v flock > /dev/null || { echo "::error::no flock in the runner image"; exit 1; }
+          case "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER" in
+            "flock "*" $l") ;;
+            *) echo "::error::cargo's target runner does not take $l: '$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER'"; exit 1 ;;
+          esac
+          echo "GPU lock: $l (host bind mount); test binaries run under: $CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER"
       # No yield-to-training step here, and that is a decision rather than an
       # omission: yoga is a rack-mounted CI box that runs basic CUDA unit tests
       # (operator, 2026-09-09), not a training host. Nothing to yield to. The
