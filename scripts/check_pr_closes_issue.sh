@@ -572,6 +572,12 @@ STUB
     run_rc_case "rc-close-in-math-early-dollars" $'$$\n\na $$ b\n\nCloses #9002\n\n$$' 1 "FAIL no-close"
     run_rc_case "rc-close-vtab-separator" $'Closes\v#9002'                         1 "FAIL no-close"
     run_rc_case "rc-row-ref-vtab-separator" $'Refs\v#9002 row A8\n\nkeep-open: parent checklist' 1 "FAIL no-close"
+    # agy round 9 (@71e3c0ce3): <textarea> spans blank lines until </textarea> (errs RED); a
+    # PR body has no YAML front matter, so --- ... --- are thematic breaks and the line is prose
+    run_rc_case "rc-close-in-textarea"    $'<textarea>\n\nCloses #9002\n\n</textarea>' 1 "FAIL no-close"
+    run_rc_case "rc-close-touching-textarea" $'<textarea>\n</textarea>\nCloses #9002'  1 "FAIL no-close"
+    run_rc_case "rc-close-after-textarea" $'<textarea>\n</textarea>\n\nCloses #9002'  0 "PASS: discharges 1"
+    run_rc_case "rc-close-between-front-matter-rules" $'---\n\nCloses #9002\n\n---' 0 "PASS: discharges 1"
     run_rc_case "rc-close-trailing-tab" $'Closes #9002\t'                          0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
