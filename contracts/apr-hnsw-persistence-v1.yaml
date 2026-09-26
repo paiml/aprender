@@ -86,7 +86,7 @@ description: |
 
 # ── Enforced falsification gates ──
 
-falsification_conditions:
+falsification_tests:
   - id: FALSIFY-HNSW-PERSIST-001
     description: >
       Insert N vectors into a `PersistentHnsw`, `flush()`, drop the
@@ -99,6 +99,8 @@ falsification_conditions:
       (recall threshold) which lands in Phase 3.
     test_file: crates/aprender-core/tests/falsify_hnsw_persist_001.rs
     test_name: reopen_top_k_matches_in_memory
+    test: "cargo test -p aprender-core --test falsify_hnsw_persist_001 reopen_top_k_matches_in_memory"
+    prediction: "reopen_top_k_matches_in_memory passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-HNSW-PERSIST-002
@@ -115,6 +117,8 @@ falsification_conditions:
       `flush()` calls `fs::rename` (not `fs::write` direct).
     test_file: crates/aprender-core/tests/falsify_hnsw_persist_002.rs
     test_name: partial_write_does_not_silently_corrupt
+    test: "cargo test -p aprender-core --test falsify_hnsw_persist_002 partial_write_does_not_silently_corrupt"
+    prediction: "partial_write_does_not_silently_corrupt passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-HNSW-PERSIST-003
@@ -133,6 +137,8 @@ falsification_conditions:
       in the index construction or query path, not in serialization.
     test_file: crates/aprender-core/tests/falsify_hnsw_persist_003.rs
     test_name: recall_at_10_meets_threshold
+    test: "cargo test -p aprender-core --test falsify_hnsw_persist_003 recall_at_10_meets_threshold"
+    prediction: "recall_at_10_meets_threshold passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-HNSW-PERSIST-004
@@ -150,6 +156,8 @@ falsification_conditions:
       to chase tens of milliseconds.
     test_file: crates/aprender-core/tests/falsify_hnsw_persist_004.rs
     test_name: cold_open_first_query_within_budget
+    test: "cargo test -p aprender-core --test falsify_hnsw_persist_004 cold_open_first_query_within_budget"
+    prediction: "cold_open_first_query_within_budget passes; it fails when the rule above is broken"
     status: ENFORCED
 
 # ── Acceptance gate ──

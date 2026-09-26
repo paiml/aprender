@@ -76,43 +76,7 @@ description: |
 
 # ── Enforced falsification gates ──
 
-falsification_conditions:
-  - id: FALSIFY-HYBRID-002
-    description: >
-      `HybridRetriever::retrieve(query, k)` returns
-      `Vec<RetrievalResult>` whose `(chunk.id, fused_score)` pairs
-      match — for the same query, configured `FusionStrategy`,
-      `candidates_per_source`, and `k` — what a caller computes by
-      separately calling `dense_store().search(embed_query(q), c)`,
-      `sparse_index().search(q, c)`, then
-      `fusion.fuse(&dense, &sparse).into_iter().take(k)`. Falsifies
-      "the trait method silently re-normalizes scores or drops
-      candidates compared to the documented arithmetic". The test
-      runs against a 6-chunk fixture with deterministic
-      `MockEmbedder::new(64)` content-derived embeddings; the
-      manual side and the trait side must produce the same Vec.
-    test_file: crates/aprender-rag/tests/falsify_hybrid_002.rs
-    test_name: trait_method_matches_explicit_combine
-    status: ENFORCED
-
-  - id: FALSIFY-HYBRID-004
-    description: >
-      `BM25Index::add_batch` over a deterministic 5k-doc fixture
-      (each doc is a 10-word synthetic sentence drawn from a small
-      vocabulary, ChaCha8Rng-seeded for reproducibility) completes
-      within 10 s on commodity hardware. The §2.5 production target
-      is "<2 min for 1M docs"; on a 5k fixture, extrapolating
-      linearly that's 0.6 s — but the gate sets a 10 s ceiling
-      (≥16× headroom) to absorb CI noise on shared runners while
-      still catching order-of-magnitude regressions
-      (super-linear-in-corpus blowups). Tunable via
-      `APR_BM25_BUILD_BUDGET_MS`. Falsifies "indexing is
-      super-linear in corpus size" or "the indexer does work
-      proportional to vocabulary squared".
-    test_file: crates/aprender-rag/tests/falsify_hybrid_004.rs
-    test_name: bm25_batch_index_within_budget
-    status: ENFORCED
-
+falsification_tests:
   - id: FALSIFY-HYBRID-001
     description: >
       Hybrid retrieval recall@k beats max(dense recall@k, sparse
@@ -133,6 +97,28 @@ falsification_conditions:
       provides alone.
     test_file: crates/aprender-rag/tests/falsify_hybrid_001.rs
     test_name: hybrid_beats_max_of_legs_by_5pts
+    test: "cargo test -p aprender-rag --test falsify_hybrid_001 hybrid_beats_max_of_legs_by_5pts"
+    prediction: "hybrid_beats_max_of_legs_by_5pts passes; it fails when the rule above is broken"
+    status: ENFORCED
+
+  - id: FALSIFY-HYBRID-002
+    description: >
+      `HybridRetriever::retrieve(query, k)` returns
+      `Vec<RetrievalResult>` whose `(chunk.id, fused_score)` pairs
+      match — for the same query, configured `FusionStrategy`,
+      `candidates_per_source`, and `k` — what a caller computes by
+      separately calling `dense_store().search(embed_query(q), c)`,
+      `sparse_index().search(q, c)`, then
+      `fusion.fuse(&dense, &sparse).into_iter().take(k)`. Falsifies
+      "the trait method silently re-normalizes scores or drops
+      candidates compared to the documented arithmetic". The test
+      runs against a 6-chunk fixture with deterministic
+      `MockEmbedder::new(64)` content-derived embeddings; the
+      manual side and the trait side must produce the same Vec.
+    test_file: crates/aprender-rag/tests/falsify_hybrid_002.rs
+    test_name: trait_method_matches_explicit_combine
+    test: "cargo test -p aprender-rag --test falsify_hybrid_002 trait_method_matches_explicit_combine"
+    prediction: "trait_method_matches_explicit_combine passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-HYBRID-003
@@ -156,6 +142,28 @@ falsification_conditions:
       shared trait).
     test_file: crates/aprender-rag/tests/falsify_hybrid_003.rs
     test_name: bm25_uses_injected_tokenizer
+    test: "cargo test -p aprender-rag --test falsify_hybrid_003 bm25_uses_injected_tokenizer"
+    prediction: "bm25_uses_injected_tokenizer passes; it fails when the rule above is broken"
+    status: ENFORCED
+
+  - id: FALSIFY-HYBRID-004
+    description: >
+      `BM25Index::add_batch` over a deterministic 5k-doc fixture
+      (each doc is a 10-word synthetic sentence drawn from a small
+      vocabulary, ChaCha8Rng-seeded for reproducibility) completes
+      within 10 s on commodity hardware. The §2.5 production target
+      is "<2 min for 1M docs"; on a 5k fixture, extrapolating
+      linearly that's 0.6 s — but the gate sets a 10 s ceiling
+      (≥16× headroom) to absorb CI noise on shared runners while
+      still catching order-of-magnitude regressions
+      (super-linear-in-corpus blowups). Tunable via
+      `APR_BM25_BUILD_BUDGET_MS`. Falsifies "indexing is
+      super-linear in corpus size" or "the indexer does work
+      proportional to vocabulary squared".
+    test_file: crates/aprender-rag/tests/falsify_hybrid_004.rs
+    test_name: bm25_batch_index_within_budget
+    test: "cargo test -p aprender-rag --test falsify_hybrid_004 bm25_batch_index_within_budget"
+    prediction: "bm25_batch_index_within_budget passes; it fails when the rule above is broken"
     status: ENFORCED
 
 # ── Acceptance gate ──

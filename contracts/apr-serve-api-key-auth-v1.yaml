@@ -79,7 +79,7 @@ description: |
 # Every gate maps to a shipped Rust test. Adding/renaming a test without
 # updating this YAML breaks the workspace contract integration test.
 
-falsification_conditions:
+falsification_tests:
   - id: FALSIFY-AUTH-001
     description: >
       Without an `Authorization: Bearer <key>` header, every protected
@@ -88,6 +88,8 @@ falsification_conditions:
       are NOT exempt — auth applies to the whole surface.
     test_file: crates/apr-cli/tests/falsify_auth_001.rs
     test_name: missing_bearer_returns_401_on_every_route
+    test: "cargo test -p apr-cli --test falsify_auth_001 missing_bearer_returns_401_on_every_route"
+    prediction: "missing_bearer_returns_401_on_every_route passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-AUTH-002
@@ -98,6 +100,8 @@ falsification_conditions:
       against plaintext.
     test_file: crates/apr-cli/tests/falsify_auth_002.rs
     test_name: valid_bearer_passes_on_every_route
+    test: "cargo test -p apr-cli --test falsify_auth_002 valid_bearer_passes_on_every_route"
+    prediction: "valid_bearer_passes_on_every_route passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-AUTH-003
@@ -109,6 +113,8 @@ falsification_conditions:
       runtime timing tests are too noisy to be CI-tractable.
     test_file: crates/apr-cli/tests/falsify_auth_003.rs
     test_name: auth_module_imports_subtle_constanttimeeq
+    test: "cargo test -p apr-cli --test falsify_auth_003 auth_module_imports_subtle_constanttimeeq"
+    prediction: "auth_module_imports_subtle_constanttimeeq passes; it fails when the rule above is broken"
     status: ENFORCED
 
 # ── Acceptance gate ──

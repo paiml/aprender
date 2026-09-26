@@ -102,7 +102,7 @@ description: |
 
 # ── Enforced falsification gates ──
 
-falsification_conditions:
+falsification_tests:
   - id: FALSIFY-INVENTORY-001
     description: >
       Iterating the inventory at startup yields exactly the same set of
@@ -114,6 +114,8 @@ falsification_conditions:
       of `tools/list` to a frozen golden set.
     test_file: crates/aprender-mcp/tests/falsify_inventory_001.rs
     test_name: inventory_yields_same_tool_set_as_hardcoded_list
+    test: "cargo test -p aprender-mcp --test falsify_inventory_001 inventory_yields_same_tool_set_as_hardcoded_list"
+    prediction: "inventory_yields_same_tool_set_as_hardcoded_list passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-INVENTORY-002
@@ -131,6 +133,8 @@ falsification_conditions:
       just one targeted gate.
     test_file: crates/aprender-mcp/tests/falsify_inventory_002.rs
     test_name: duplicate_tool_name_panics_at_index_build
+    test: "cargo test -p aprender-mcp --test falsify_inventory_002 duplicate_tool_name_panics_at_index_build"
+    prediction: "duplicate_tool_name_panics_at_index_build passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-INVENTORY-003
@@ -144,7 +148,9 @@ falsification_conditions:
       subprocess output level (subprocess output is covered by
       FALSIFY-MCP-003 / FALSIFY-MCP-004 in the parent contract).
     test_file: crates/aprender-mcp/tests/falsify_inventory_003.rs
-    test_name: inventory_dispatch_envelope_matches_hardcoded_path
+    test_name: dispatch_envelope_matches_hardcoded_path
+    test: "cargo test -p aprender-mcp --test falsify_inventory_003 dispatch_envelope_matches_hardcoded_path"
+    prediction: "dispatch_envelope_matches_hardcoded_path passes; it fails when the rule above is broken"
     status: ENFORCED
 
 # ── Acceptance gate ──

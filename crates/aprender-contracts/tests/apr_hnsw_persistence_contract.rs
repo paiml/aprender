@@ -7,7 +7,7 @@
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. **Exactly 4** entries in `falsification_conditions`:
+//! 3. **Exactly 4** entries in `falsification_tests`:
 //!    FALSIFY-HNSW-PERSIST-001 (round-trip identity),
 //!    FALSIFY-HNSW-PERSIST-002 (crash safety),
 //!    FALSIFY-HNSW-PERSIST-003 (recall threshold), and
@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, serde::Deserialize)]
 struct ContractRoot {
     status: String,
-    falsification_conditions: Vec<FalsificationCondition>,
+    falsification_tests: Vec<FalsificationCondition>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -77,13 +77,13 @@ fn apr_hnsw_persistence_contract_is_active() {
 fn apr_hnsw_persistence_contract_has_exactly_four_conditions() {
     let contract = load_contract();
     assert_eq!(
-        contract.falsification_conditions.len(),
+        contract.falsification_tests.len(),
         4,
         "HELIX-IDEA-001 ships exactly 4 falsification gates \
          (FALSIFY-HNSW-PERSIST-001..004); contract has {}. \
          Any future amendment must update both the YAML and this \
          test in the same PR.",
-        contract.falsification_conditions.len()
+        contract.falsification_tests.len()
     );
 }
 
@@ -91,7 +91,7 @@ fn apr_hnsw_persistence_contract_has_exactly_four_conditions() {
 fn apr_hnsw_persistence_contract_ids_are_persist_001_through_004() {
     let contract = load_contract();
     let actual: Vec<String> = contract
-        .falsification_conditions
+        .falsification_tests
         .iter()
         .map(|c| c.id.clone())
         .collect();
@@ -110,7 +110,7 @@ fn apr_hnsw_persistence_contract_ids_are_persist_001_through_004() {
 fn apr_hnsw_persistence_contract_test_file_exists() {
     let contract = load_contract();
     let root = workspace_root();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert!(
             !cond.test_file.is_empty(),
             "{}: test_file must be non-empty",
@@ -130,7 +130,7 @@ fn apr_hnsw_persistence_contract_test_file_exists() {
 #[test]
 fn apr_hnsw_persistence_contract_condition_is_enforced() {
     let contract = load_contract();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert_eq!(
             cond.status, "ENFORCED",
             "{}: status must be ENFORCED (got {:?})",

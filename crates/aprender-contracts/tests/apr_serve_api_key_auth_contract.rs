@@ -6,7 +6,7 @@
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. Exactly 3 entries in `falsification_conditions`, with ids
+//! 3. Exactly 3 entries in `falsification_tests`, with ids
 //!    FALSIFY-AUTH-001, FALSIFY-AUTH-002, FALSIFY-AUTH-003 (no gaps,
 //!    no duplicates).
 //! 4. Every entry has a non-empty `test_file` that exists on disk
@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, serde::Deserialize)]
 struct ContractRoot {
     status: String,
-    falsification_conditions: Vec<FalsificationCondition>,
+    falsification_tests: Vec<FalsificationCondition>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -78,10 +78,10 @@ fn apr_serve_api_key_auth_contract_is_active() {
 fn apr_serve_api_key_auth_contract_has_exactly_three_conditions() {
     let contract = load_contract();
     assert_eq!(
-        contract.falsification_conditions.len(),
+        contract.falsification_tests.len(),
         3,
         "spec lists 3 FALSIFY-AUTH gates; contract has {}",
-        contract.falsification_conditions.len()
+        contract.falsification_tests.len()
     );
 }
 
@@ -89,7 +89,7 @@ fn apr_serve_api_key_auth_contract_has_exactly_three_conditions() {
 fn apr_serve_api_key_auth_contract_ids_are_falsify_auth_001_through_003() {
     let contract = load_contract();
     let actual: Vec<String> = contract
-        .falsification_conditions
+        .falsification_tests
         .iter()
         .map(|c| c.id.clone())
         .collect();
@@ -104,7 +104,7 @@ fn apr_serve_api_key_auth_contract_ids_are_falsify_auth_001_through_003() {
 fn apr_serve_api_key_auth_contract_every_test_file_exists() {
     let contract = load_contract();
     let root = workspace_root();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert!(
             !cond.test_file.is_empty(),
             "{}: test_file must be non-empty",
@@ -137,7 +137,7 @@ fn apr_serve_api_key_auth_contract_every_test_file_exists() {
 fn apr_serve_api_key_auth_contract_every_test_name_exists_in_its_file() {
     let contract = load_contract();
     let root = workspace_root();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         let full = root.join(&cond.test_file);
         let src = std::fs::read_to_string(&full)
             .unwrap_or_else(|e| panic!("{}: read {}: {e}", cond.id, full.display()));
@@ -156,7 +156,7 @@ fn apr_serve_api_key_auth_contract_every_test_name_exists_in_its_file() {
 #[test]
 fn apr_serve_api_key_auth_contract_every_condition_is_enforced() {
     let contract = load_contract();
-    for cond in &contract.falsification_conditions {
+    for cond in &contract.falsification_tests {
         assert_eq!(
             cond.status, "ENFORCED",
             "{}: status must be ENFORCED (got {:?})",

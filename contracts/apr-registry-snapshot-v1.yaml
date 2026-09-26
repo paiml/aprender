@@ -78,7 +78,7 @@ description: |
 
 # ── Enforced falsification gates ──
 
-falsification_conditions:
+falsification_tests:
   - id: FALSIFY-SNAPSHOT-001
     description: >
       A snapshot taken on a populated registry yields a target file that,
@@ -88,6 +88,8 @@ falsification_conditions:
       target, and asserts equality.
     test_file: crates/aprender-registry/tests/falsify_snapshot_001.rs
     test_name: snapshot_yields_bit_identical_query_results
+    test: "cargo test -p aprender-registry --test falsify_snapshot_001 snapshot_yields_bit_identical_query_results"
+    prediction: "snapshot_yields_bit_identical_query_results passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-SNAPSHOT-002
@@ -101,6 +103,8 @@ falsification_conditions:
       microbenchmark perf.
     test_file: crates/aprender-registry/tests/falsify_snapshot_002.rs
     test_name: snapshot_does_not_block_concurrent_writers
+    test: "cargo test -p aprender-registry --test falsify_snapshot_002 snapshot_does_not_block_concurrent_writers"
+    prediction: "snapshot_does_not_block_concurrent_writers passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-SNAPSHOT-003
@@ -111,6 +115,8 @@ falsification_conditions:
       target path; callers must rotate filenames.
     test_file: crates/aprender-registry/tests/falsify_snapshot_003.rs
     test_name: snapshot_refuses_to_overwrite_existing_file
+    test: "cargo test -p aprender-registry --test falsify_snapshot_003 snapshot_refuses_to_overwrite_existing_file"
+    prediction: "snapshot_refuses_to_overwrite_existing_file passes; it fails when the rule above is broken"
     status: ENFORCED
 
 # ── Acceptance gate ──

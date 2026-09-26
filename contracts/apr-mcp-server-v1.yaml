@@ -82,13 +82,15 @@ description: |
 # Adding a new gate requires: (1) a shipped test, (2) an entry here, (3)
 # spec cross-reference updated.
 
-falsification_conditions:
+falsification_tests:
   - id: FALSIFY-MCP-001
     description: >
       `initialize` responds within 500ms with protocolVersion "2024-11-05"
       (spec budget 500ms; test budget 50ms for 10× CI headroom).
     test_file: crates/aprender-mcp/tests/falsify_m1.rs
     test_name: falsify_mcp_001_initialize_under_500ms
+    test: "cargo test -p aprender-mcp --test falsify_m1 falsify_mcp_001_initialize_under_500ms"
+    prediction: "falsify_mcp_001_initialize_under_500ms passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-002
@@ -98,6 +100,8 @@ falsification_conditions:
       `jsonschema::validator_for`).
     test_file: crates/aprender-mcp/tests/falsify_schema.rs
     test_name: every_tool_input_schema_is_valid_jsonschema_draft_7
+    test: "cargo test -p aprender-mcp --test falsify_schema every_tool_input_schema_is_valid_jsonschema_draft_7"
+    prediction: "every_tool_input_schema_is_valid_jsonschema_draft_7 passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-003
@@ -112,6 +116,8 @@ falsification_conditions:
       which remains in run.rs as a cheaper first-line check.
     test_file: crates/aprender-mcp/tests/falsify_mcp_003.rs
     test_name: falsify_mcp_003_apr_run_returns_tokens_array
+    test: "cargo test -p aprender-mcp --test falsify_mcp_003 falsify_mcp_003_apr_run_returns_tokens_array"
+    prediction: "falsify_mcp_003_apr_run_returns_tokens_array passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-004
@@ -126,6 +132,8 @@ falsification_conditions:
       which remains in qa.rs as a cheaper first-line check.
     test_file: crates/aprender-mcp/tests/falsify_mcp_004.rs
     test_name: falsify_mcp_004_apr_qa_returns_eight_gates_with_pass_value_threshold
+    test: "cargo test -p aprender-mcp --test falsify_mcp_004 falsify_mcp_004_apr_qa_returns_eight_gates_with_pass_value_threshold"
+    prediction: "falsify_mcp_004_apr_qa_returns_eight_gates_with_pass_value_threshold passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-005
@@ -136,6 +144,8 @@ falsification_conditions:
       / tools/call.
     test_file: crates/aprender-mcp/tests/falsify_m1.rs
     test_name: falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600
+    test: "cargo test -p aprender-mcp --test falsify_m1 falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600"
+    prediction: "falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600 passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-006
@@ -145,6 +155,8 @@ falsification_conditions:
       SIGKILL) and returns a partial result flagged `isError: true`.
     test_file: crates/aprender-mcp/tests/falsify_mcp_006.rs
     test_name: falsify_mcp_006_cancel_stops_subprocess_within_grace
+    test: "cargo test -p aprender-mcp --test falsify_mcp_006 falsify_mcp_006_cancel_stops_subprocess_within_grace"
+    prediction: "falsify_mcp_006_cancel_stops_subprocess_within_grace passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-007
@@ -159,6 +171,8 @@ falsification_conditions:
       2026-08-10 from the inverted gate found by the 0.63.0 dogfood (#2393).
     test_file: crates/aprender-mcp/tests/falsify_m1.rs
     test_name: falsify_mcp_007_protocol_version_mismatch_negotiates_down
+    test: "cargo test -p aprender-mcp --test falsify_m1 falsify_mcp_007_protocol_version_mismatch_negotiates_down"
+    prediction: "falsify_mcp_007_protocol_version_mismatch_negotiates_down passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-008
@@ -169,6 +183,8 @@ falsification_conditions:
       `contracts/apr-mcp-tool-schemas-v1.yaml` by `build.rs`.
     test_file: crates/aprender-mcp/tests/falsify_mcp_008.rs
     test_name: migrated_tools_match_yaml_contract_byte_for_byte
+    test: "cargo test -p aprender-mcp --test falsify_mcp_008 migrated_tools_match_yaml_contract_byte_for_byte"
+    prediction: "migrated_tools_match_yaml_contract_byte_for_byte passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-009
@@ -185,6 +201,8 @@ falsification_conditions:
       id-bearing reply.
     test_file: crates/aprender-mcp/tests/falsify_mcp_dogfood_001.rs
     test_name: falsify_mcp_009_no_reply_to_notification
+    test: "cargo test -p aprender-mcp --test falsify_mcp_dogfood_001 falsify_mcp_009_no_reply_to_notification"
+    prediction: "falsify_mcp_009_no_reply_to_notification passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-010
@@ -199,6 +217,8 @@ falsification_conditions:
       Added 2026-08-10 from the 0.63.0 dogfood (#2393, P0).
     test_file: crates/aprender-mcp/src/server.rs
     test_name: serve_stream_answers_tools_call_before_returning_on_eof
+    test: "cargo test -p aprender-mcp --lib serve_stream_answers_tools_call_before_returning_on_eof"
+    prediction: "serve_stream_answers_tools_call_before_returning_on_eof passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-011
@@ -213,6 +233,8 @@ falsification_conditions:
       Added 2026-08-10 from the 0.63.0 dogfood (#2393).
     test_file: crates/aprender-mcp/src/server.rs
     test_name: serve_stream_survives_invalid_utf8_line
+    test: "cargo test -p aprender-mcp --lib serve_stream_survives_invalid_utf8_line"
+    prediction: "serve_stream_survives_invalid_utf8_line passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-012
@@ -228,6 +250,8 @@ falsification_conditions:
       Added 2026-08-10 from the 0.63.0 dogfood (#2393).
     test_file: crates/aprender-mcp/src/server.rs
     test_name: missing_required_field_is_invalid_request_with_id_echoed
+    test: "cargo test -p aprender-mcp --lib missing_required_field_is_invalid_request_with_id_echoed"
+    prediction: "missing_required_field_is_invalid_request_with_id_echoed passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-013
@@ -239,6 +263,8 @@ falsification_conditions:
       Added 2026-08-10 from the 0.63.0 dogfood (#2393).
     test_file: crates/aprender-mcp/src/server.rs
     test_name: ping_returns_empty_result
+    test: "cargo test -p aprender-mcp --lib ping_returns_empty_result"
+    prediction: "ping_returns_empty_result passes; it fails when the rule above is broken"
     status: ENFORCED
 
   - id: FALSIFY-MCP-014
@@ -252,6 +278,8 @@ falsification_conditions:
       Added 2026-08-10 from the 0.63.0 dogfood (#2393).
     test_file: crates/aprender-mcp/src/tools/args.rs
     test_name: wrong_type_names_the_type_and_never_says_missing
+    test: "cargo test -p aprender-mcp --lib wrong_type_names_the_type_and_never_says_missing"
+    prediction: "wrong_type_names_the_type_and_never_says_missing passes; it fails when the rule above is broken"
     status: ENFORCED
 
 # ── Acceptance gate ──
