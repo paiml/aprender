@@ -318,12 +318,13 @@ jobs:
   # ==========================================================================
   # The workspace tests, one shard per job (nextest hash partition N/8 plus the
   # explicit runner's round-robin N/8), in parallel on the X64 clean-room pool.
-  # CI-WIDE: eight shards, so every idle X64 runner takes a slice, and every job
-  # here is capped at 15 minutes of wall time.
-  # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # CI-WIDE: eight shards, so every idle X64 runner takes a slice. The target is
+  # 15 minutes of wall time. Measured on run 36257835805: four shards finished in
+  # 7.8-11.9 min, and four were cancelled at a 15-min cap while still compiling
+  # cold on their runners. Held at 25 until the compile is shared across shards.
   workspace-test-shard:
     runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
