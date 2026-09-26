@@ -70,7 +70,9 @@ REF_RE='#[0-9]+'
 # at least as long; a backtick fence whose info string holds a backtick is not a
 # fence), a <!-- comment left open on its line (to -->), and the HTML blocks
 # that may span a blank line (<pre|script|style|textarea> to the closing tag,
-# <? to ?>, <![CDATA[ to ]]>, <!X to >) and a $$ math block. Nothing that ends at a blank line is
+# <? to ?>, <![CDATA[ to ]]>, <!X to >) and a $$ math block (any line opening
+# with $$ and not closing it, to the next $$). A BOM on the first line is
+# dropped, as cmark-gfm drops it (agy round 7 @1ae7cb5fd). Nothing that ends at a blank line is
 # tracked -- inline code spans, tags, link reference definitions, blockquote
 # lazy continuations, the other HTML blocks: a line inside one always has a
 # non-blank neighbour, so the paragraph rule in isolated_lines() excludes it by
@@ -81,11 +83,12 @@ prose_lines() {
     perl -ne '
         BEGIN { $end = "" }
         s/\r?\n\z//;
+        s/^\xEF\xBB\xBF// if $. == 1;
         if ($end ne "") { $end = "" if /$end/; print "\x01\n"; next }
         if (/^[ \t]*$/) { print "\n"; next }
         if (/^ {0,3}(`{3,})[^`]*$/ || /^ {0,3}(~{3,})/) {
             $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; print "\x01\n"; next }
-        if (/^ {0,3}\$\$[ \t]*$/) { $end = "^ {0,3}\\\$\\\$[ \t]*\$"; print "\x01\n"; next }
+        if (/^ {0,3}\$\$(?!.*\$\$)/) { $end = "\\\$\\\$"; print "\x01\n"; next }
         if (/<!--(?!.*-->)/) { $end = "-->"; print "\x01\n"; next }
         if (/^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)/i) {
             $end = "(?i)</(?:pre|script|style|textarea)>" unless /<\/(?:pre|script|style|textarea)>/i; print "\x01\n"; next }
@@ -553,6 +556,12 @@ STUB
     run_rc_case "rc-close-in-long-fence" $'````\n```\n\nCloses #9002\n\n````'  1 "FAIL no-close"
     run_rc_case "rc-close-fence-info-not-closer" $'```\n```x\n\nCloses #9002\n\n```' 1 "FAIL no-close"
     run_rc_case "rc-close-after-oneline-pre" $'<pre>x</pre>\n\nCloses #9002'    0 "PASS: discharges 1"
+    # agy round 7 (@1ae7cb5fd): a leading BOM hid a fence; $$ with text opens math
+    run_rc_case "rc-close-after-bom-fence" $'\xef\xbb\xbf```\n\nCloses #9002\n\n```' 1 "FAIL no-close"
+    run_rc_case "rc-close-bom-first-line" $'\xef\xbb\xbfCloses #9002'           0 "PASS: discharges 1"
+    run_rc_case "rc-close-mid-body-bom" $'Intro.\n\n\xef\xbb\xbfCloses #9002'   1 "FAIL no-close"
+    run_rc_case "rc-close-in-math-text-opener" $'$$ x\n\nCloses #9002\n\n$$'   1 "FAIL no-close"
+    run_rc_case "rc-close-after-oneline-math" $'$$x$$\n\nCloses #9002'          0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
     run_rc_case "rc-close-after-fence" $'```\nexample\n```\n\nCloses #9002'           0 "PASS: discharges 1"
