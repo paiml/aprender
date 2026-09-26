@@ -15,6 +15,8 @@ through to `cargo install` below):
 curl -LsSf https://paiml.com/apr/install.sh | sh
 ```
 
+To read the script before it runs, download it with `curl -LsSf https://paiml.com/apr/install.sh -o install.sh`, review it, then run `sh install.sh`.
+
 Compile and build:
 
 ```bash
