@@ -1,0 +1,23 @@
+- id: PMAT-2880
+  github_issue: 2880
+  item_type: task
+  title: 'CPU decode: no quantized dot runs scalar where the host has a SIMD kernel — per-ISA reachability gate'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-1c
+  created: 2026-09-26T03:00:00Z
+  updated: 2026-09-26T07:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Slice 1: measure VNNI 4-row vs lean AVX2 Q4K×Q8K on Zen 4; no dispatch change if VNNI is not faster (ignored bench only)'
+  - 'Slice 2: aarch64 NEON Q4_K×Q8_K dot, bitwise equal to the scalar kernel, reached by fused_q4k_q8k_dot_simd'
+  - 'Slice 3: aarch64 NEON Q6_K×f32 dot within 1e-5·Σ|w·a| of an f64 reference, reached by fused_q6k_dot_simd'
+  - 'Slice 4: selected_dot_kernel(op) is what the dispatchers match on; reachability_gate is RED on an undeclared Scalar path on a SIMD host and on a declared gap that has closed'
+  - 'Oracle is "not scalar where a SIMD kernel exists", not "widest ISA"'
+  - 'Remaining declared gaps (Q5_K all arches, Q4_K×f32 aarch64) are owned by #2880'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
