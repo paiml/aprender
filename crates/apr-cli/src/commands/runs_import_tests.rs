@@ -188,3 +188,61 @@ fn a_write_is_refused_under_five_gib_free() {
     assert!(refuse_low_space((5 << 30) - 1, home).is_err());
     assert!(refuse_low_space(5 << 30, home).is_ok());
 }
+
+/// `apr runs import` end to end: without `--yes` it writes nothing, with it the runs
+/// land in the given pacha home, and a second `--yes` writes none again.
+#[test]
+fn run_import_writes_only_with_yes() {
+    let dir = root();
+    let home = TempDir::new().expect("tempdir");
+    let home = home.path().join("pacha");
+    run_import(dir.path(), false, true, Some(&home)).expect("plan only");
+    assert!(
+        !RegistryConfig::new(&home).db_path().exists(),
+        "a plan writes no registry"
+    );
+    run_import(dir.path(), true, true, Some(&home)).expect("apply");
+    let backend = open_backend(&home).expect("backend");
+    let again = plan(dir.path(), Some(&backend)).expect("replan");
+    assert_eq!(
+        again
+            .iter()
+            .filter(|p| matches!(&p.outcome, Outcome::Skip(r) if r.starts_with("already imported")))
+            .count(),
+        4,
+        "--yes imported the four runs"
+    );
+}
+
+/// What `apr runs import` prints: one row per dir and the totals, in text and JSON.
+#[test]
+fn render_plan_reports_every_dir_and_the_totals() {
+    let dir = root();
+    let planned = plan(dir.path(), None).expect("plan");
+    let text = render_plan(&planned, &[], false, false);
+    assert_eq!(text.lines().filter(|l| l.starts_with("IMPORT ")).count(), 4);
+    assert_eq!(text.lines().filter(|l| l.starts_with("SKIP ")).count(), 2);
+    assert!(
+        text.ends_with("6 dir(s): 4 import, 2 skip; plan only, pass --yes to write"),
+        "{text}"
+    );
+    let ids = vec!["r1".to_string(), "r2".to_string()];
+    assert!(render_plan(&planned, &ids, true, false).ends_with("; wrote 2 run(s)"));
+
+    let v: serde_json::Value =
+        serde_json::from_str(&render_plan(&planned, &ids, true, true)).expect("json");
+    assert_eq!(v["applied"], true);
+    assert_eq!(
+        (v["dirs"].as_u64(), v["import"].as_u64(), v["skip"].as_u64()),
+        (Some(6), Some(4), Some(2))
+    );
+    assert_eq!(v["run_ids"], serde_json::json!(["r1", "r2"]));
+    let rows = v["rows"].as_array().expect("rows");
+    assert_eq!(rows.len(), 6);
+    assert!(rows
+        .iter()
+        .any(|r| r["action"] == "skip" && r["reason"].is_string()));
+    assert!(rows
+        .iter()
+        .any(|r| r["action"] == "import" && r["status"] == "completed"));
+}
