@@ -1,0 +1,67 @@
+contract: beat-sklearn-pca-speed
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 BEAT benchmark: aprender PCA fit_transform must be comfortably FASTER than
+    scikit-learn's PCA on the same data, same host, same run, both on their default
+    svd_solver="auto" (which resolves to the randomized solver at K=10 for both shapes,
+    with the same oversampling and power iterations). Two shapes: TALL 10000x100 and
+    WIDE 2000x1000. The pre-#3148 implementation formed the d x d covariance matrix and
+    eigendecomposed it (O(d^3)); on the wide shape it measured 24.4x slower than
+    sklearn. #3148 moved PCA onto a thin/randomized SVD of the centered data.
+    Gated on ratio apr_ms/sklearn_ms per shape. Runs nightly (needs uv + scikit-learn).
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_pca_speed.rs"
+  - "crates/aprender-core/src/preprocessing/pca.rs"
+  - "contracts/pca-v1.yaml"
+version: 1
+status: enforced
+date: 2026-09-26
+beat:
+  pillar: 1
+  incumbent: scikit-learn
+  incumbent_pinned: "2026-09-26 scikit-learn 1.9.1 via uv run --with scikit-learn (sklearn.decomposition.PCA)"
+  canonical_task: >
+    PCA(n_components=10).fit_transform on make_classification(n, d, n_informative=20,
+    n_classes=5, seed=42) for (n, d) in {(10000, 100), (2000, 1000)}. Same data, same
+    host, same run (median of 5 + warmup); metric is ratio apr_ms/sklearn_ms per shape.
+  metric: wall_clock_ratio_apr_over_sklearn
+  direction: lower_is_better
+  baseline_value: 1.0000
+  baseline_floor: 0.2790
+  beat_threshold: 0.8000
+  baseline_sourced_date: "2026-09-26"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_pca_speed"
+measurements:
+- date: "2026-09-26"
+  host: lambda (load ~50, shared)
+  code: "#3148 SVD route"
+  tall_ratio: 0.543
+  wide_ratio: 0.279
+- date: "2026-09-26"
+  host: lambda (load ~50, shared)
+  code: "pre-#3148 covariance route (61b39d07c)"
+  tall_ratio: 0.498
+  wide_ratio: 24.425
+proof_obligations:
+- id: OBLIG-PCA-SPEED-RATIO
+  statement: >
+    On the canonical task, apr_ms / sklearn_ms <= beat_threshold (0.80) on BOTH shapes,
+    measured same-host/same-run as the median of 5 timed iterations after a warmup.
+  type: bound
+falsification_tests:
+- id: FALSIFY-BEAT-SKLEARN-PCA-SPEED
+  description: >
+    FALSE if apr PCA fit_transform is not >= 1.25x faster than scikit-learn on either
+    canonical shape (ratio > 0.80). The WIDE shape catches a return to the d x d
+    covariance + eigendecomposition route (measured 24.4 there).
+  command: >
+    cargo test -p aprender-core --release --test beat_sklearn_pca_speed --
+    --ignored --nocapture
+  expected: "ratio <= 0.80 on tall and wide (apr >= 1.25x faster than scikit-learn PCA)"
+  if_fails: >
+    A regression slowed apr PCA (preprocessing/pca.rs). Check that fit still routes
+    through top_k_svd (trueno Svd / Svd::randomized) and not a covariance matrix, and
+    that svd_solver Auto still picks Randomized for K < 0.8*min(n, d). Compare ms per shape.

@@ -65,7 +65,6 @@ apr **loses** speed in these **specific, narrow** cases (not a blanket concessio
 | **llama.cpp** single-request c=1 decode | llama.cpp ~1.55× faster (431 vs 277 tok/s, RTX 4090) | This is *llama.cpp*, not Ollama; against Ollama on the same host apr is at **parity** (1.015–1.109×), not ahead — the 1.371× win previously cited here is withdrawn |
 | **7B-Q4K on GB10 Blackwell** | ~12 tok/s (bandwidth-bound; DP4A path degraded) | Memory-wall + degraded DP4A on Blackwell, not a kernel-design loss |
 | **Short-prompt one-shot wall-clock vs Ollama** | apr CLI ~2.7–3.9 s fixed startup vs Ollama's resident daemon | Decode-rate beat is steady-state; one-shot startup is a separate, scoped comparison (see Pillar 4) |
-| **PCA fit_transform vs sklearn** | apr ~18.6× *slower* | sklearn delegates to LAPACK-SVD; apr's decomposition is unoptimized |
 | **KMeans / Ridge / Lasso vs sklearn** | apr ~2× / slower / ~19× slower | LAPACK/BLAS-bound (sklearn Cholesky/coordinate-descent); apr wins the LAPACK-free O(nd) tasks above |
 | **2-layer MLP training time vs PyTorch** | apr ~11× *slower* | Overhead-bound; PyTorch MKL + fused autograd (apr is provably *correct* — see autograd-equivalence beat) |
 
@@ -92,7 +91,7 @@ apr **loses** speed in these **specific, narrow** cases (not a blanket concessio
 | BernoulliNB fit+predict | wall-clock ratio | ✅ **WON** — apr **~1.90× faster** (ratio 0.526, gate ≤ 0.90) | nightly · `beat_sklearn_bernoullinb_speed` · `beat-sklearn-bernoullinb-speed-v1` |
 | ComplementNB fit+predict | wall-clock ratio | ✅ **WON** — apr **~1.68× faster** (ratio 0.596, gate ≤ 0.90) | nightly · `beat_sklearn_complementnb_speed` · `beat-sklearn-complementnb-speed-v1` |
 | MultinomialNB fit+predict | wall-clock ratio | ✅ **WON** — apr **~1.60× faster** (ratio 0.625, gate ≤ 0.90) | nightly · `beat_sklearn_multinomialnb_speed` · `beat-sklearn-multinomialnb-speed-v1` |
-| PCA fit_transform | wall-clock ratio | ⚖️ **NARROW LOSS** — apr ~18.6× *slower* (sklearn is LAPACK-SVD-bound) | — |
+| PCA fit_transform | wall-clock ratio | ✅ **WON** — apr **~1.8× faster** tall 10000×100 (ratio 0.54), **~3.6× faster** wide 2000×1000 (ratio 0.28), gate ≤ 0.80 on both; the pre-#3148 covariance route measured 24.4× *slower* on the wide shape (the old unsourced "~18.6× slower" row is replaced by this measurement) | nightly · `beat_sklearn_pca_speed` · `beat-sklearn-pca-speed-v1` |
 | Ridge fit+predict | wall-clock ratio | ⚖️ **NARROW LOSS** — apr ~1.5× *slower* (sklearn Ridge defaults to fast Cholesky; the LinReg-SVD win doesn't transfer) | — |
 | Lasso fit+predict | wall-clock ratio | ⚖️ **NARROW LOSS** — apr ~19× *slower* (apr coordinate-descent unoptimized) | — |
 | KMeans fit+predict | wall-clock ratio | ⚖️ **NARROW LOSS** — apr ~2× *slower* (both Lloyd; sklearn BLAS-bound) | — |

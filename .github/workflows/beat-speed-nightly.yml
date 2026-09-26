@@ -180,6 +180,13 @@ jobs:
           cargo test -p aprender-core --release \
             --test beat_sklearn_gmm_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
+      - name: Pillar-1 — apr vs scikit-learn PCA speed (re-measurement, #3148)
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          cargo test -p aprender-core --release \
+            --test beat_sklearn_pca_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
+
       - name: Pillar-2 — apr vs PyTorch one-shot cold-start training speed beat
         if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
