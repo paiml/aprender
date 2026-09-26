@@ -34,6 +34,14 @@ pub(crate) const PROVISIONAL_CELLS: [&str; 6] = [
     "mini-metal",
 ];
 
+/// Measured iterations per arm, pre-registered before the records it judges were
+/// taken (cop ruling on FALSIFY-EXT-022, 2026-09-26).
+pub(crate) const PREREGISTERED_ITERATIONS: u32 = 5;
+/// The pre-registered ledger statistic: the best (highest) decode rate of the
+/// interleaved iterations. Host contention only ever slows a run, so the best
+/// iteration is the one least disturbed by it.
+pub(crate) const PREREGISTERED_STATISTIC: &str = "best_of_n_decode";
+
 /// What every arm on a cell must share with apr's run (S-14).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,11 +51,14 @@ pub(crate) struct Conditions {
     /// Concurrent requests: C2 is m=1.
     pub concurrency: u32,
     pub iterations: u32,
+    /// How `decode_tok_s` summarises the iterations ([`PREREGISTERED_STATISTIC`]).
+    pub statistic: String,
     pub max_tokens: u32,
     pub prompt_sha256: String,
 }
 
-/// Medians over the measured iterations.
+/// TTFT, ITL and e2e are medians over the measured iterations; `decode_tok_s` is
+/// the pre-registered statistic over `decode_tok_s_iters`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Timing {
@@ -57,6 +68,15 @@ pub(crate) struct Timing {
     pub e2e_ms: f64,
     pub decode_tok_s: f64,
     pub peak_rss_kb: u64,
+    /// Every measured iteration's decode rate, in run order.
+    pub decode_tok_s_iters: Vec<f64>,
+    /// The host's 1-minute load average when each iteration started.
+    pub loadavg_1m_iters: Vec<f64>,
+}
+
+/// The best of the iterations (NaN when there are none).
+pub(crate) fn best_of(iters: &[f64]) -> f64 {
+    iters.iter().copied().fold(f64::NAN, f64::max)
 }
 
 /// One arm's run on one cell, as `c2_cell.sh` writes it.
@@ -179,6 +199,36 @@ fn check_record(key: &str, r: &ArmRecord, findings: &mut Vec<String>) {
     }
     if t.peak_rss_kb == 0 {
         findings.push(format!("arm `{key}`: no peak RSS"));
+    }
+    let c = &r.conditions;
+    if c.iterations != PREREGISTERED_ITERATIONS || c.statistic != PREREGISTERED_STATISTIC {
+        findings.push(format!(
+            "arm `{key}`: ran {} iterations under `{}`; pre-registered is {PREREGISTERED_ITERATIONS} under `{PREREGISTERED_STATISTIC}`",
+            c.iterations, c.statistic
+        ));
+    }
+    let n = c.iterations as usize;
+    if t.decode_tok_s_iters.len() != n || t.loadavg_1m_iters.len() != n {
+        findings.push(format!(
+            "arm `{key}`: {} decode samples and {} loadavg samples for {n} iterations",
+            t.decode_tok_s_iters.len(),
+            t.loadavg_1m_iters.len()
+        ));
+    }
+    if t.loadavg_1m_iters
+        .iter()
+        .any(|x| !(x.is_finite() && *x >= 0.0))
+    {
+        findings.push(format!(
+            "arm `{key}`: a loadavg sample is not a measurement"
+        ));
+    }
+    // The statistic is recomputed from the samples, never taken on the record's word.
+    if best_of(&t.decode_tok_s_iters) != t.decode_tok_s {
+        findings.push(format!(
+            "arm `{key}`: decode_tok_s {} is not the best of its iterations {:?}",
+            t.decode_tok_s, t.decode_tok_s_iters
+        ));
     }
     match serde_json::to_value(&r.comparator) {
         Ok(v) => {

@@ -24,7 +24,8 @@ fn record(arm: &str, tok_s: f64) -> ArmRecord {
             cpus: "0-15".into(),
             threads: 16,
             concurrency: 1,
-            iterations: 3,
+            iterations: PREREGISTERED_ITERATIONS,
+            statistic: PREREGISTERED_STATISTIC.into(),
             max_tokens: 32,
             prompt_sha256: sha(3),
         },
@@ -34,6 +35,8 @@ fn record(arm: &str, tok_s: f64) -> ArmRecord {
             itl_ms: 100.0,
             e2e_ms: 3600.0,
             decode_tok_s: tok_s,
+            decode_tok_s_iters: vec![tok_s * 0.8, tok_s, tok_s * 0.9, tok_s * 0.7, tok_s * 0.95],
+            loadavg_1m_iters: vec![31.0, 32.5, 30.2, 29.9, 33.1],
             peak_rss_kb: 4_000_000,
         },
         comparator: ComparatorBlock {
@@ -145,7 +148,7 @@ fn each_unlike_arm_is_refused_and_red_if_recorded_as_measured() {
 #[test]
 fn each_plant_turns_the_cell_red() {
     type Plant = (&'static str, fn(&mut CellReceipt));
-    let plants: [Plant; 12] = [
+    let plants: [Plant; 17] = [
         ("empty tag", |c| c.tag.clear()),
         ("no apr arm", |c| {
             c.arms.remove("apr");
@@ -189,6 +192,37 @@ fn each_plant_turns_the_cell_red() {
         ("apr with a vision path", |c| {
             if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
                 r.vision_tensors = 3;
+            }
+        }),
+        ("a statistic other than the pre-registered one", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
+                r.conditions.statistic = "median".into();
+            }
+        }),
+        ("an N other than the pre-registered one", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
+                r.conditions.iterations = 3;
+                r.timing.decode_tok_s_iters.truncate(3);
+                r.timing.loadavg_1m_iters.truncate(3);
+                r.timing.decode_tok_s = best_of(&r.timing.decode_tok_s_iters);
+            }
+        }),
+        (
+            "a decode rate that is not the best of its iterations",
+            |c| {
+                if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("llama.cpp") {
+                    r.timing.decode_tok_s *= 1.5;
+                }
+            },
+        ),
+        ("a missing loadavg sample", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
+                r.timing.loadavg_1m_iters.pop();
+            }
+        }),
+        ("a NaN loadavg sample", |c| {
+            if let Some(ArmOutcome::Measured(r)) = c.arms.get_mut("apr") {
+                r.timing.loadavg_1m_iters[2] = f64::NAN;
             }
         }),
         ("a not_run cell with arms", |c| {

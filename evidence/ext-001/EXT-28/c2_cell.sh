@@ -12,7 +12,12 @@
 # so a change in host load lands on every arm alike instead of on whichever arm ran
 # in that minute. Servers are killed by their recorded PIDs.
 #
-# Per arm, <out dir>/<arm>.json (median over N measured iterations after one warmup):
+# Per arm, <out dir>/<arm>.json, over N measured iterations after one warmup. N=5 and
+# the decode statistic are PRE-REGISTERED (cop ruling on EXT-022, 2026-09-26):
+# decode_tok_s is the BEST of the N (a contention-robust statistic: host load only
+# ever slows an iteration), with every sample kept in decode_tok_s_iters and the
+# 1-minute load average read at each iteration start in loadavg_1m_iters. The other
+# timings are medians:
 #   load_ms      spawn -> first successful 1-token completion (includes model load;
 #                arms load one after another, so no load overlaps another arm's)
 #   ttft_ms      request sent -> first non-empty text chunk
@@ -33,7 +38,7 @@ shift
 arms=("$@")
 CPUS=${CPUS:-0-15}
 THREADS=${THREADS:-16}
-N=${N:-5}
+N=5 # pre-registered; not an env knob
 MAX_TOKENS=${MAX_TOKENS:-32}
 BASE_PORT=${BASE_PORT:-18780}
 OLLAMA_TAG=${OLLAMA_TAG:-qwen3.5:4b}
@@ -171,9 +176,10 @@ for it in $(seq 1 "$N"); do
     for j in $(seq 0 $((k - 1))); do
         arm=${arms[$(((it - 1 + j) % k))]}
         [ -n "${STARTED[$arm]:-}" ] || STARTED[$arm]=$(utc)
+        la=$(cut -d" " -f1 /proc/loadavg)
         r=$(measure "$arm" "$it")
         [ "$r" != ERR ] || { echo "$arm: iteration $it streamed < 2 text chunks: $(tail -c 400 "$logdir/$arm.iter$it.sse.err" 2>/dev/null) $(tail -c 400 "$logdir/$arm.iter$it.sse")" >&2; exit 1; }
-        echo "$r" >>"$logdir/$arm.iters"
+        echo "$r $la" >>"$logdir/$arm.iters"
         FINISHED[$arm]=$(utc)
     done
 done
@@ -217,17 +223,20 @@ for arm in "${arms[@]}"; do
         --argjson threads "$THREADS" --argjson n "$N" --argjson max "$MAX_TOKENS" \
         --arg psha "$prompt_sha" \
         --argjson load "${LOAD[$arm]}" --argjson ttft "$(col 1)" --argjson itl "$(col 2)" \
-        --argjson e2e "$(col 3)" --argjson tps "$(col 5)" --argjson rss "$peak" \
+        --argjson e2e "$(col 3)" --argjson rss "$peak" \
+        --argjson tpsi "$(awk '{print $5}' "$logdir/$arm.iters" | jq -s .)" \
+        --argjson lai "$(awk '{print $6}' "$logdir/$arm.iters" | jq -s .)" \
         --argjson command "${CMDJSON[$arm]}" \
         --arg envsha "${ENVSHA[$arm]}" --arg asha "$artifact_sha" --arg log "logs/$arm.server.log" \
         --arg started "${STARTED[$arm]}" --arg finished "${FINISHED[$arm]}" \
         '{arm:$arm, version:$version, engine_sha256:$engine, model_sha256:$file, file_type:$ftype,
           vision_tensors:$vision, served_model:$served,
           ollama_manifest_digest:(if $digest == "" then null else $digest end),
-          conditions:{cpus:$cpus, threads:$threads, concurrency:1, iterations:$n,
+          conditions:{cpus:$cpus, threads:$threads, concurrency:1, iterations:$n, statistic:"best_of_n_decode",
                       max_tokens:$max, prompt_sha256:$psha},
           timing:{load_ms:$load, ttft_ms:$ttft, itl_ms:$itl, e2e_ms:$e2e,
-                  decode_tok_s:$tps, peak_rss_kb:$rss},
+                  decode_tok_s:($tpsi | max), decode_tok_s_iters:$tpsi,
+                  loadavg_1m_iters:$lai, peak_rss_kb:$rss},
           comparator:{command:$command, version:$version, env_sha256:$envsha,
                       artifact_sha256:$asha, log_path:$log,
                       started_utc:$started, finished_utc:$finished}}' >"$outdir/$arm.json"

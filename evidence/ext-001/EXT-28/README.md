@@ -12,7 +12,7 @@ only; the apr/llama.cpp comparison exists only inside the EXT-19 ledger ratchet 
 | `prompt.txt` | the 681-byte prompt every arm is sent |
 | `ollama-blob.json` | why Ollama is refused (S-14): the `qwen3.5:4b` blob carries 393 vision tensors of 834 and its server loads a CLIP encoder; ours carries 0 |
 | `cells/*.json` | the five REX cells this run had no host for, recorded `not_run` |
-| `lambda-cpu/{r1,r2,r3,plant,r4}/` | five records on lambda-cpu (GPU hidden): per-arm JSON, `cell.json`, and `logs/` (server logs + the raw timestamped SSE streams the comparator `artifact_sha256` covers) |
+| `lambda-cpu-median/{r1,r2,r3,plant,r4}/` | the first five records (median statistic, superseded — kept, see below) on lambda-cpu (GPU hidden): per-arm JSON, `cell.json`, and `logs/` (server logs + the raw timestamped SSE streams the comparator `artifact_sha256` covers) |
 
 ## Arms
 
@@ -21,7 +21,7 @@ only; the apr/llama.cpp comparison exists only inside the EXT-19 ledger ratchet 
 - **mistral.rs** v0.9.4 @ 4400935, `serve --cpu --format gguf`
 - **Ollama** 0.34.4 — refused, see `ollama-blob.json`
 
-## lambda-cpu, medians of 5 (shared host, load average 30–55 during the run)
+## lambda-cpu-median: the first method, medians of 5 (shared host, load average 30–55)
 
 | record | arm | load ms | TTFT ms | ITL ms | e2e ms | decode tok/s | peak RSS MiB |
 |---|---|---|---|---|---|---|---|
@@ -58,3 +58,24 @@ another) failed the same way.
 What would make it hold is a method decision, not a tolerance edit made after
 seeing the data: a quiet-host rule for records, or a contention-robust statistic
 chosen in advance (e.g. best-of-N per arm). It is escalated, not decided here.
+
+## Pre-registered second method (cop ruling, 2026-09-26)
+
+Registered in this commit, before any record under it exists:
+
+- **N = 5** measured iterations per arm, pinned in `c2_cell.sh` (not an env knob) and
+  in `speed_arms::PREREGISTERED_ITERATIONS`; one warmup; arms resident, rounds
+  interleaved with the order rotated each round (unchanged).
+- **Statistic: best-of-5 decode tok/s per arm** (`best_of_n_decode`, i.e. the minimum
+  per-token wall time). Host load only ever slows an iteration, so the best sample is
+  the one least touched by it. Every sample is kept in `decode_tok_s_iters`, and
+  `check_record` recomputes the best rather than trusting the field.
+- **Load is recorded:** the 1-minute load average at each iteration's start, in
+  `loadavg_1m_iters`.
+- **TOLERANCE unchanged** (EXT-19 ratchet, floor × 0.95).
+- **Pass condition, both sides:** under this statistic the unpatched control r4 must be
+  GREEN against the r1–r3 floor, and the 1 s/step plant must still be RED. If the
+  control stays RED at load above 30, that is recorded as a contention finding, not
+  tuned away.
+
+The new records go to `lambda-cpu/{r1,r2,r3,plant,r4}/`.
