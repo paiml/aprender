@@ -1,0 +1,93 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-26'
+  author: PAIML Engineering
+  description: "APR-OBS-001 §5.1 / OBS-10 (#4497) — loop admission. A consumer (PRM-001 REX-10 perf ratchet, ARB-SELF-001 arbiter, any autotuner) may act on speed signals only when the prerequisite rows OBS-01/03/04/05 are GREEN, the ledger holds >= 14 consecutive nights of admissible rows on the consumer's host x backend, and the consumer holds no write path to any ledger, RED rule, baseline, OBS contract, the consumer registry or this gate. The gate fails closed: with no OBS contracts in the tree it refuses every consumer."
+  kind: pattern
+  references:
+    - "scripts/check_loop_admission.sh — the gate (auto-wired by scripts/guard_tree.sh: no cargo token, --help advertises --self-test)"
+    - "docs/obs/loop-admission-consumers.tsv — the consumer registry"
+    - "APR-OBS-001-dogfood-observability.md §5.1 (admission), §7 row OBS-10, §9 loop_admission field"
+    - "paiml/aprender#4497"
+
+five_whys:
+  symptom: "APR-OBS-001 lets consumers close a loop on speed signals: a perf ratchet and an arbiter may act on the nightly ledger. Nothing in the tree decided whether a consumer was allowed to act."
+  why_1: "A loop that acts on a signal it can also write optimises the signal, not the speed (R-10: the writer is not the subject)."
+  why_2: "A loop that acts on a short or broken history acts on noise: one night is an anecdote, and a row with a missing identity field is not a row (R-2)."
+  why_3: "The prerequisites (lane rows, serve timing, self-report agreement, the ledger) are separate rows landing on separate days; a consumer can be wired before they exist."
+  why_4: "Admission lived in prose, so 'consumers acting without admission: 0' had no measurement behind it."
+  why_5: "No gate owned the decision, and no registry named the consumers it was deciding for."
+  root_cause: "Admission must be a mechanical verdict over a registry of consumers, computed by a gate the consumer cannot write, that refuses by default."
+
+equations:
+  admission:
+    formula: "admitted(c) = prereqs_green AND nights(c.host, c.backend) >= 14 AND writes(c) ∩ PROTECTED = ∅ AND writes(c) declared"
+    domain: "consumers listed in docs/obs/loop-admission-consumers.tsv; apr-perf-ledger-v1 JSONL rows under the ledger dir"
+    codomain: "{consumer, admitted: bool, reason} per consumer (§9 loop_admission); exit 1 iff an acting consumer is refused or the registry is empty"
+    invariants:
+      - "prereqs_green: contracts apr-lane-row-v1, apr-serve-timing-v1, apr-selfreport-agreement-v1, apr-perf-ledger-v1 exist (each ships with its row per §3)"
+      - "nights counts consecutive UTC dates ending today or yesterday; a date counts only with an admissible row"
+      - "admissible: every §2.1 identity field present and non-empty; a non-cpu row carries gpu_proof"
+      - "PROTECTED covers the ledger dir, every OBS contract (incl. RED rules and baseline), this contract, the registry, the gate, guard_tree.sh, ci.yml, ci/sections.yml and the spec"
+      - "an empty writes field is refused; only an explicit 'none' declares no writes"
+
+proof_obligations:
+  - id: LADM-INV-001
+    type: invariant
+    property: "A consumer with a write path to a RED rule is refused"
+    formal: "writes ∋ contracts/apr-perf-red-rules-v1.yaml => admitted = false"
+    applies_to: admission
+  - id: LADM-INV-002
+    type: invariant
+    property: "A consumer before night 14 is refused"
+    formal: "nights = 13 => admitted = false"
+    applies_to: admission
+  - id: LADM-INV-003
+    type: invariant
+    property: "An inadmissible row breaks the run of nights"
+    formal: "a row missing model_sha256, or a GPU row without gpu_proof, does not count its night"
+    applies_to: admission
+  - id: LADM-INV-004
+    type: invariant
+    property: "The gate fails closed"
+    formal: "absent prerequisite contracts => every consumer refused; empty registry => exit 1"
+    applies_to: admission
+
+falsification_tests:
+  - id: FALSIFY-LADM-001
+    rule: "A planted write path to a RED rule is refused (OBS-10 done-when 1)"
+    prediction: "Self-test row with writes=crates/**,contracts/apr-perf-red-rules-v1.yaml reports REFUSED and exits 1; deleting that path from PROTECTED turns the row RED"
+    test: "bash scripts/check_loop_admission.sh --self-test"
+    if_fails: "A consumer could rewrite the rule that judges it and be admitted"
+  - id: FALSIFY-LADM-002
+    rule: "A consumer before night 14 is refused (OBS-10 done-when 2)"
+    prediction: "Self-test row with 13 consecutive nights reports REFUSED; MIN_NIGHTS 14->13 turns the row RED"
+    test: "bash scripts/check_loop_admission.sh --self-test"
+    if_fails: "A loop could act on less history than §5.1 requires"
+  - id: FALSIFY-LADM-003
+    rule: "A row missing an identity field, or a GPU row without gpu_proof, does not count"
+    prediction: "Self-test rows show runs of 5 and 7 nights where 14 were written; dropping the identity-field check turns the row RED"
+    test: "bash scripts/check_loop_admission.sh --self-test"
+    if_fails: "Unattributable rows would count toward admission (R-2)"
+  - id: FALSIFY-LADM-004
+    rule: "Write paths to the ledger, the gate, the registry, or everything are refused; undeclared writes are refused"
+    prediction: "Self-test rows fleet_perf_dir/, scripts/**, docs/obs/*, ** and an empty writes field each report REFUSED"
+    test: "bash scripts/check_loop_admission.sh --self-test"
+    if_fails: "A consumer could hold a write path to what judges it (R-10)"
+  - id: FALSIFY-LADM-005
+    rule: "The gate fails closed on the current tree"
+    prediction: "With no OBS contracts on main, every registered consumer is refused with reason 'prerequisite rows not GREEN'"
+    test: "f=$(mktemp) && bash scripts/check_loop_admission.sh --json \"$f\" >/dev/null && jq -e '[.loop_admission[] | select(.admitted)] | length == 0' \"$f\""
+    if_fails: "A consumer would be admitted before the rows it depends on exist"
+  - id: FALSIFY-LADM-006
+    rule: "An acting consumer that is refused is RED; an empty registry is RED"
+    prediction: "Self-test rows acting=yes (refused) exit 1; acting=no (refused) exit 0; empty registry exits 1"
+    test: "bash scripts/check_loop_admission.sh --self-test"
+    if_fails: "'Consumers acting on speed signals without admission: 0' would have no enforcement"
+
+qa_gate:
+  id: F-LADM-001
+  name: "Loop admission — no consumer acts on speed signals unadmitted"
+  description: "Judges every registered consumer against §5.1 and emits the §9 loop_admission field. Refuses by default; RED when a consumer marked acting is refused."
+  checks:
+    - "admission"
