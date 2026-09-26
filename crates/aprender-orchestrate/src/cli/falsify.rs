@@ -93,6 +93,13 @@ fn check_grade_threshold(result: &ChecklistResult, threshold: TpsGrade) -> anyho
 /// If `path` is a file, walks up the directory tree looking for project markers
 /// (Cargo.toml, .git, pyproject.toml). If `path` is already a directory, returns it.
 fn resolve_project_root(path: &Path) -> PathBuf {
+    resolve_project_root_below(path, None)
+}
+
+/// [`resolve_project_root`] with the walk stopping at `ceiling`: `ceiling` itself is
+/// checked, nothing above it is. The tests set it so a marker the host happens to have
+/// above the system temp dir (a stray `/tmp/Cargo.toml`) cannot decide them (#4191).
+fn resolve_project_root_below(path: &Path, ceiling: Option<&Path>) -> PathBuf {
     let start = if path.is_file() { path.parent().unwrap_or(path) } else { path };
 
     let markers = ["Cargo.toml", ".git", "pyproject.toml"];
@@ -102,6 +109,9 @@ fn resolve_project_root(path: &Path) -> PathBuf {
             if current.join(marker).exists() {
                 return current.to_path_buf();
             }
+        }
+        if ceiling == Some(current) {
+            break;
         }
         match current.parent() {
             Some(parent) if parent != current => current = parent,
@@ -397,13 +407,28 @@ mod tests {
         }
     }
 
+    /// #4191: the walk used to run to `/`, so a stray `/tmp/Cargo.toml` on the host made
+    /// this return `/tmp`. The ceiling is the tempdir, and the marker planted just above
+    /// it stands in for that stray file: it must not be found.
     #[test]
     fn test_resolve_project_root_nonexistent_falls_back() {
-        let tmp = std::env::temp_dir().join("batuta_test_no_project_root");
-        let _ = fs::create_dir_all(&tmp);
-        let result = resolve_project_root(&tmp);
-        assert_eq!(result, tmp);
-        let _ = fs::remove_dir(&tmp);
+        let outer = tempfile::tempdir().expect("tempdir");
+        fs::write(outer.path().join("Cargo.toml"), "").expect("plant marker above ceiling");
+        let ceiling = outer.path().join("ceiling");
+        let tmp = ceiling.join("no_project_root");
+        fs::create_dir_all(&tmp).expect("create dirs");
+        assert_eq!(resolve_project_root_below(&tmp, Some(&ceiling)), tmp);
+        // Without the ceiling the planted marker is found: the case is not vacuous.
+        assert_eq!(resolve_project_root_below(&tmp, None), outer.path());
+    }
+
+    #[test]
+    fn test_resolve_project_root_ceiling_itself_is_checked() {
+        let ceiling = tempfile::tempdir().expect("tempdir");
+        fs::write(ceiling.path().join("pyproject.toml"), "").expect("plant marker");
+        let nested = ceiling.path().join("a/b");
+        fs::create_dir_all(&nested).expect("create dirs");
+        assert_eq!(resolve_project_root_below(&nested, Some(ceiling.path())), ceiling.path());
     }
 
     #[test]
