@@ -13,11 +13,11 @@
 //!   3. `git rev-parse --short HEAD` (dev builds from worktree or primary checkout; retried with
 //!      the enclosing checkout marked safe.directory when git refuses a checkout owned by another
 //!      user — binary-release.yml builds as root in a container over the runner's checkout)
-//!   3b. the SHA read straight from `.git` when there is no git binary to ask (#4254: the
-//!      v0.69.1 asset said `+no-git` because `git` fails inside the sibling build container over
-//!      a bind-mounted checkout, while the checkout's `.git` is right there)
-//!   4. committed `.git-sha` file
-//!   5. `v{CARGO_PKG_VERSION}+no-git` (informative fallback — never bare "unknown")
+//!   4. the SHA read straight from `.git` when there is no git binary to ask (#4254: the
+//!      v0.69.1 asset said `+no-git` because `git` fails inside the sibling build container
+//!      over a bind-mounted checkout, while the checkout's `.git` is right there)
+//!   5. committed `.git-sha` file
+//!   6. `v{CARGO_PKG_VERSION}+no-git` (informative fallback — never bare "unknown")
 //!
 //! This logic was moved out of `crates/apr-cli/build.rs`; the pure resolution
 //! order is factored into [`resolve`] so it can be tested without running git,
@@ -199,9 +199,14 @@ fn read_head_sha_from_dot_git() -> Option<String> {
     let ceilings: Vec<PathBuf> = std::env::var_os("GIT_CEILING_DIRECTORIES")
         .map(|v| std::env::split_paths(&v).collect())
         .unwrap_or_default();
-    let dot_git = start
-        .ancestors()
-        .take_while(|d| !ceilings.iter().any(|c| c == d))
+    // git always looks in the starting directory; a ceiling only stops the walk UP into it
+    let dot_git = std::iter::once(start.as_path())
+        .chain(
+            start
+                .ancestors()
+                .skip(1)
+                .take_while(|d| !ceilings.iter().any(|c| c == d)),
+        )
         .map(|d| d.join(".git"))
         .find(|p| p.exists())?;
     let relative_to = |base: &Path, p: &str| {
@@ -222,25 +227,31 @@ fn read_head_sha_from_dot_git() -> Option<String> {
     let common_dir = std::fs::read_to_string(git_dir.join("commondir"))
         .map(|c| relative_to(&git_dir, c.trim()))
         .unwrap_or_else(|_| git_dir.clone());
-    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
-    let head = head.trim();
-    let full = match head.strip_prefix("ref:") {
-        None => head.to_string(),
-        Some(name) => {
-            let name = name.trim();
-            [&git_dir, &common_dir]
-                .iter()
-                .find_map(|d| std::fs::read_to_string(d.join(name)).ok())
-                .map(|s| s.trim().to_string())
-                .or_else(|| {
-                    let packed = std::fs::read_to_string(common_dir.join("packed-refs")).ok()?;
-                    packed.lines().find_map(|l| {
-                        let (sha, r) = l.split_once(' ')?;
-                        (r.trim() == name).then(|| sha.to_string())
-                    })
-                })?
-        }
+    let resolve_ref = |name: &str| {
+        [&git_dir, &common_dir]
+            .iter()
+            .find_map(|d| std::fs::read_to_string(d.join(name)).ok())
+            .map(|s| s.trim().to_string())
+            .or_else(|| {
+                let packed = std::fs::read_to_string(common_dir.join("packed-refs")).ok()?;
+                packed.lines().find_map(|l| {
+                    let (sha, r) = l.split_once(' ')?;
+                    (r.trim() == name).then(|| sha.to_string())
+                })
+            })
     };
+    // HEAD is a SHA (detached) or `ref: <name>`; a ref may itself be symbolic. git caps the
+    // chain at 5 (SYMREF_MAXDEPTH); past that, or on a dangling ref, give up and fall through
+    let mut full = std::fs::read_to_string(git_dir.join("HEAD"))
+        .ok()?
+        .trim()
+        .to_string();
+    for _ in 0..5 {
+        match full.strip_prefix("ref:") {
+            None => break,
+            Some(name) => full = resolve_ref(name.trim())?,
+        }
+    }
     let is_sha = full.len() >= 40 && full.bytes().all(|b| b.is_ascii_hexdigit());
     is_sha.then(|| full[..9].to_string())
 }

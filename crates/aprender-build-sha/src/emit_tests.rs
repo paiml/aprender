@@ -213,6 +213,24 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
         run(&bin, &wt, None, &no_git_env),
         &wt_full[..9],
     );
+    // a tag/release checkout: detached HEAD is the bare SHA, no `ref:` to follow
+    git(&dev, &["checkout", "-q", "--detach", &full]);
+    expect(
+        "no-git-detached",
+        run(&bin, &dev, None, &no_git_env),
+        &full[..9],
+    );
+    // a chain: HEAD -> refs/heads/alias -> refs/heads/wt-branch (packed)
+    git(
+        &dev,
+        &["symbolic-ref", "refs/heads/alias", "refs/heads/wt-branch"],
+    );
+    git(&dev, &["symbolic-ref", "HEAD", "refs/heads/alias"]);
+    expect(
+        "no-git-symref-chain",
+        run(&bin, &dev, None, &no_git_env),
+        &wt_full[..9],
+    );
     wrong
 }
 
@@ -259,8 +277,24 @@ fn planted_regressions_turn_red() {
     let w4 = table(&no_dot_git, "plant_no_dot_git");
     assert!(
         w4.iter().any(|r| r.starts_with("no-git-binary:"))
-            && w4.iter().any(|r| r.starts_with("no-git-worktree-packed:")),
+            && w4.iter().any(|r| r.starts_with("no-git-worktree-packed:"))
+            && w4.iter().any(|r| r.starts_with("no-git-detached:")),
         "no-.git-read plant survived: {w4:#?}"
+    );
+    let depth = "    for _ in 0..5 {";
+    assert_eq!(
+        shipped.matches(depth).count(),
+        1,
+        "the ref-chain loop moved; re-anchor the plant"
+    );
+    let w5 = table(
+        &shipped.replace(depth, "    for _ in 0..1 {"),
+        "plant_one_level",
+    );
+    assert!(
+        w5.iter().any(|r| r.starts_with("no-git-symref-chain:"))
+            && !w5.iter().any(|r| r.starts_with("no-git-binary:")),
+        "one-level plant: the chain row must go RED and only it: {w5:#?}"
     );
     let w3 = table(
         &no_dot_git.replace(retry, "run_git(&head)"),
