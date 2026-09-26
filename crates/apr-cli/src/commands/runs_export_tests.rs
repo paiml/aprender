@@ -58,6 +58,20 @@ fn falsify_ext_010_deleted_export_row_red() {
         "{err}"
     );
 
+    // Plant: a row the registry does not hold (a stale or foreign row).
+    let stale = text.replacen("\"consumed\"", "\"produced\"", 1);
+    assert_ne!(stale, text, "the plant must change a row");
+    let row = stale
+        .lines()
+        .find(|l| !text.lines().any(|t| t == *l))
+        .expect("changed row");
+    std::fs::write(&out, format!("{text}{row}\n")).expect("plant");
+    let err = run_export(Some(&reg), &out, true, true).expect_err("an extra row must be RED");
+    assert!(
+        err.to_string().contains("0 row(s) missing, 1 extra"),
+        "{err}"
+    );
+
     // Same rows, other order: still RED — only the canonical bytes pass.
     let mut rev: Vec<&str> = text.lines().collect();
     rev.reverse();
