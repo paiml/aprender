@@ -184,6 +184,18 @@ impl<'a> KernelBuilder<'a> {
         dst
     }
 
+    /// OR two predicates: dst = a OR b
+    pub fn or_pred(&mut self, a: VirtualReg, b: VirtualReg) -> VirtualReg {
+        let dst = self.registers.allocate_virtual(PtxType::Pred);
+        self.instructions.push(
+            PtxInstruction::new(PtxOp::Or, PtxType::Pred)
+                .dst(Operand::Reg(dst))
+                .src(Operand::Reg(a))
+                .src(Operand::Reg(b)),
+        );
+        dst
+    }
+
     /// Get shared memory base pointer
     ///
     /// PAR-062: Returns base address of shared memory for this block

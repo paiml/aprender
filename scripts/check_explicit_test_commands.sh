@@ -51,8 +51,9 @@ is_wiring() {
 }
 
 workflow_files() { # workflow_files ROOT -> one path per line
+    # #4433: the job bodies live in ci/sections.yml; the fat jobs in ci.yml run them.
     local f
-    for f in "$1"/.github/workflows/*.yml "$1"/.github/workflows/*.yaml; do
+    for f in "$1"/.github/workflows/*.yml "$1"/.github/workflows/*.yaml "$1"/ci/sections.yml; do
         [ -f "$f" ] && printf '%s\n' "$f"
     done
     return 0
@@ -267,6 +268,10 @@ TABLE
     row 1 "check: a megaline reintroduced in a workflow -> RED" 'chains cargo commands' bash "$T" --check "$td/mega"
     mk "$td/dark" 'jobs:\n  t:\n    steps:\n      # bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d\n      - run: true\n' '010-a-x.cmd=cargo test -p a --test x\n'
     row 1 "check: runner only in a comment -> RED (dark)" 'every fragment is dark' bash "$T" --check "$td/dark"
+    mk "$td/sect" 'jobs: {}\n' '010-a-x.cmd=cargo test -p a --test x\n'; mkdir -p "$td/sect/ci"; printf '%b' "$wire" > "$td/sect/ci/sections.yml"
+    row 0 "check: runner wired only in ci/sections.yml (#4433) -> PASS" '^PASS' bash "$T" --check "$td/sect"
+    printf '%b' "$wire      - run: bash -c 'cargo test -p a --test x && cargo test -p b --test y'\n" > "$td/sect/ci/sections.yml"
+    row 1 "check: a megaline in ci/sections.yml -> RED" 'chains cargo commands' bash "$T" --check "$td/sect"
     mk "$td/vac" "$wire"
     row 1 "check: empty directory -> RED (vacuity)" 'EMPTY' bash "$T" --check "$td/vac"
     rm -rf "${td:?}/vac/$DIR_REL"

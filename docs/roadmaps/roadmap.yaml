@@ -21626,6 +21626,25 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4215
+  github_issue: 4215
+  item_type: task
+  title: 'Qwen3.5 CUDA greedy decode: persistent embedding buffer, GPU argmax, no format!/Vec on the launch path'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T08:28:19Z
+  updated: 2026-09-24T20:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'A steady-state greedy decode token makes 0 host heap allocations, 0 device allocations and downloads exactly the 4-byte token id (counted, not asserted by reading).'
+  - 'Greedy on the device is token-identical to the CPU argmax of the downloaded logits at temperature 0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Scope is #4215 (a)(b)(c) from /mnt/nvme-raid0/tmp/alt0693/REPORT.md §A. Measured +2% at 850 on 4B (78.3 -> 79.9 tok/s); the 0.58x gap to ollama is NOT closed by this slice.'
 - id: PMAT-4242
   github_issue: 4242
   item_type: task
@@ -21660,6 +21679,42 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4258
+  github_issue: 4258
+  item_type: task
+  title: 'Qwen3.5 CUDA: q8_activation_valid is never cleared on the qwen35 path, so DP4A reuses a stale Q8_1 activation'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T10:25:13Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'A DP4A GEMV requantizes its input whenever the input buffer differs from the cached Q8_1 activation or a qwen35 writer kernel (rmsnorm_into, per_head_rmsnorm_into, residual_add_into, fused_swiglu_into, gdn_sigmoid_gate_into) rewrote it; a red-first test covers both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found in /mnt/nvme-raid0/tmp/alt0693/REPORT.md "Extra finding". The DP4A-catastrophic falsifier now passes parity at every position on 0.8B; re-measure the #4030 pin on 2B/4B.'
+- id: PMAT-4259
+  github_issue: 4259
+  item_type: task
+  title: 'GPU argmax kernel keeps the later index on an exact tie; CPU argmax keeps the first — breaks greedy token identity once #4215(b) moves argmax to GPU'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:01:41Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'The GPU argmax returns the FIRST index of an exact maximum, as the CPU argmax does; a red-first tie-break falsifier covers ties within a thread, across threads, and across blocks.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'
 - id: PMAT-4263
   github_issue: 4263
   item_type: task
@@ -21737,3 +21792,62 @@ roadmap:
   labels:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
+- id: PMAT-4421
+  github_issue: 4421
+  item_type: task
+  title: 'P0: bind the pr-review-sign receipt by diff patch-id (git patch-id --verbatim) so it verifies on the merge-queue sha; fail closed'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-5d
+  created: 2026-09-25 14:00:00+00:00
+  updated: '2026-09-25T16:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'the signer stamps predicate.diff_patch_id (git patch-id --verbatim of the pinned base_sha..head_sha diff, evidence/pr-review/<pr>/ excluded) before signing'
+  - 'Arm 4 recomputes the id from the subject (merge_group: sha^1..sha; else merge-base(origin/main,sha)..sha) and fails closed on empty diff, two parents, missing id, or mismatch'
+  - 'negative arm: a 1-byte change and a trailing-space change to the squash no longer verify (self-test rows)'
+  - 'works on git 2.34 (no --verbatim) via a byte-exact port checked against golden ids and native git'
+  - 'legacy (pre-#4421) receipts are exempt only for PRs < 4427 and only until 2026-09-26T16:00Z (operator ruling via cop, FLOW-04); branch events keep the ancestor rule; each bound has a negative self-test row'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'
+- id: PMAT-4433
+  github_issue: 4433
+  item_type: task
+  title: 'CI = 5 fat jobs (x86 main, gx10, yoga, mac-refusal, determinism) with a Σ-executed invariant (operator ruling 2026-09-25 16:58, items 1+4)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-1c
+  created: 2026-09-25 17:00:00+00:00
+  updated: '2026-09-25T18:00:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Collapse the ~20 ci.yml jobs into 5 fat jobs; each runs every section (ci/sections.yml, verbatim old job bodies; vendored sovereign-ci verified against its upstream sha256) to completion on the biggest runner in its class via scripts/ci/fat_driver.py. Required contexts gate / workspace-test / ci / gate keep their names. scripts/ci/sigma_executed.py enforces the executed test-id set == the universe listed independently (by id, not count); a dropped test turns it RED. Train-active priority hook kept as a floor. Item 3 (rc.N = tag on queue-green main) and the #4434/#4436 release-rule docs are a follow-up PR. Scope of the driver: fat_driver.py collapses the MULTI-section Linux jobs (x86-main, gx10, yoga, determinism); mac-check is the ruling''s mac-refusal job, already ONE section on the one macOS runner (no docker there), so it keeps its steps and its context name, and as on main it is not in gate.needs.'
+- id: PMAT-4453
+  github_issue: 4453
+  item_type: task
+  title: 'Arm 4 self-test inherits GITHUB_EVENT_NAME: four rows RED inside the merge_group job (FLOW-04 follow-up)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-ont
+  created: 2026-09-25 20:00:00+00:00
+  updated: '2026-09-25T20:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'every self-test row runs with GITHUB_EVENT_NAME, PR_REVIEW_SUBJECT_KIND, PR_REVIEW_NOW and PR_REVIEW_LEGACY_UNTIL unset; a row that needs an event names it'
+  - 'self-test is 23/23 with the ambient event empty, merge_group and pull_request_target, and RED under merge_group without the fix'
+  - 'no change to the verdict logic of Arm 4 itself'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
