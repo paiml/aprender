@@ -30,6 +30,10 @@ png = "0.17"
 # Base64 encoding for SVG embedded images
 base64 = "0.22"
 
+# APEX-001 EV-2e: `SvgEncoder::metadata` refuses a payload that is not well-formed XML. A real
+# parser, not a hand-rolled one; already in the lock through usvg (the `raster` feature).
+roxmltree = "0.20"
+
 # Error handling
 thiserror = "2.0"
 

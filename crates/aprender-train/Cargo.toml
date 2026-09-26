@@ -118,7 +118,7 @@ regex = "1.10"  # ORCID/ROR validation
 ed25519-dalek = "2.1"  # Ed25519 signing for pre-registration
 bytemuck = { version = "1.19", features = ["derive"] }  # Safe byte casting for tensor data
 jsonschema = "0.28"  # JSON Schema validation for declarative config (AI-05)
-validator = { version = "0.20", features = ["derive"] }  # Declarative struct validation (AI-05)
+validator = { version = "0.21", features = ["derive"] }  # Declarative struct validation (AI-05)
 schemars = "0.8"  # JSON Schema generation from Rust structs (AI-05)
 fs4 = "0.13"  # Cross-platform file locking for VRAM ledger (GPU-SHARE-001)
 arrow = { version = "59", default-features = false, optional = true }  # Arrow array types for alimentar integration

@@ -51,6 +51,20 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// A scratch copy of a fixture's `contracts/`, for a command that writes beside its input (`pv extract` writes
+/// `contracts.nt` and `shapes.ttl`): the tracked fixture is never written, and a failing assert leaves nothing behind
+/// (quorum PMAT-4160, agy lanes 1 and 2).
+fn scratch_copy(name: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("scratch");
+    let to = dir.path().join("contracts");
+    std::fs::create_dir_all(&to).expect("scratch contracts/");
+    for e in std::fs::read_dir(fixture(name).join("contracts")).expect("fixture contracts/") {
+        let e = e.expect("dir entry");
+        std::fs::copy(e.path(), to.join(e.file_name())).expect("copy fixture file");
+    }
+    dir
+}
+
 fn json_of(r: &Run) -> serde_json::Value {
     serde_json::from_str(&r.stdout).unwrap_or_else(|e| panic!("stdout is JSON: {e}\n{}", show(r)))
 }
@@ -167,14 +181,149 @@ fn a_property_the_shape_does_not_declare_fails_on_closed_naming_it() {
 
 #[test]
 fn the_properties_are_namespaced_by_the_entity_type_and_land_in_the_extraction() {
-    let dir = fixture("entity-props-ok");
-    let r = pv_in(&dir, &["extract", "contracts"]);
+    let scratch = scratch_copy("entity-props-ok");
+    let dir = scratch.path();
+    let r = pv_in(dir, &["extract", "contracts"]);
     assert_eq!(r.code, 0, "{}", show(&r));
     let nt = std::fs::read_to_string(dir.join("contracts/contracts.nt")).expect("contracts.nt");
     assert!(nt.contains("/study/scale> \"linear\""), "{nt}");
     assert!(nt.contains("/study/vintage> \"2026-09-12\""), "{nt}");
     // Never under ont:, which would let a shape over one entity type constrain another's `scale`.
     assert!(!nt.contains("/v1alpha1/scale>"), "{nt}");
-    let _ = std::fs::remove_file(dir.join("contracts/contracts.nt"));
-    let _ = std::fs::remove_file(dir.join("contracts/shapes.ttl"));
+}
+
+// #4160 (apex EV-19b) — a shape can target ONE entity type. `ont:Contract` is every contract, so apex's closed
+// study shape failed its 18 claim contracts and the claim shape failed the study. The pv-contract extractor now
+// also types each contract `entity:<type>`, and `targetClass: entity:study` selects the study contracts only.
+// DISCRIMINATION: `entity-types-scoped/` must PASS with exactly 3 focus nodes (a build without the entity class
+// has 0; `ont:Contract` would give 4, the shape-only contract included); `entity-types-unscoped/` — the same two
+// shapes on `ont:Contract` — must FAIL on the cross-firing, which is the gap measured; `entity-types-wrong-type/`
+// adds a contract typed `study` that carries a claim's `row`, which the study shape must reject.
+
+#[test]
+fn two_closed_shapes_scoped_by_entity_type_pass_with_no_cross_firing() {
+    let r = gate("entity-types-scoped", "shapes");
+    assert_eq!(r.code, 0, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Pass", "{}", show(&r));
+    assert_eq!(v["violations"], 0, "{}", show(&r));
+    // study-shape-v1 (study) + PMAT-001, PMAT-002 (claim). claim-shape-v1 has no entity type: a focus of neither.
+    assert_eq!(v["focus_nodes_n"], 3, "{}", show(&r));
+}
+
+#[test]
+fn must_red_the_same_shapes_on_ont_contract_cross_fire() {
+    let r = gate("entity-types-unscoped", "shapes");
+    assert_eq!(r.code, 1, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Fail", "{}", show(&r));
+    let msgs = messages(&v);
+    assert!(
+        msgs.iter().any(|m| m.contains("contract/PMAT-001")
+            && m.contains("study-shape-v1")
+            && m.contains("(closed)")
+            && m.contains("ont:claim/row")),
+        "the study shape fires on a claim contract: {msgs:?}"
+    );
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("contract/study-shape-v1") && m.contains("claim-shape-v1")),
+        "the claim shape fires on the study: {msgs:?}"
+    );
+}
+
+#[test]
+fn a_contract_of_the_wrong_type_fails_its_types_shape_and_only_that_one() {
+    let r = gate("entity-types-wrong-type", "shapes");
+    assert_eq!(r.code, 1, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Fail", "{}", show(&r));
+    let msgs = messages(&v);
+    let fired: Vec<&String> = msgs.iter().filter(|m| m.contains("violates")).collect();
+    assert!(
+        fired.iter().any(|m| m.contains("contract/PMAT-003")
+            && m.contains("(closed)")
+            && m.contains("ont:study/row")),
+        // properties are namespaced by the contract's OWN type, so a claim's `row` on a study is `study:row`
+        "the study shape rejects a study-typed contract carrying a claim's row: {msgs:?}"
+    );
+    assert!(
+        fired
+            .iter()
+            .all(|m| m.contains("contract/PMAT-003") && m.contains("study-shape-v1")),
+        "nothing else fires — the claim contracts are still out of the study shape's scope: {msgs:?}"
+    );
+}
+
+#[test]
+fn the_entity_class_lands_in_the_extraction() {
+    let scratch = scratch_copy("entity-types-scoped");
+    let dir = scratch.path();
+    let r = pv_in(dir, &["extract", "contracts"]);
+    assert_eq!(r.code, 0, "{}", show(&r));
+    let nt = std::fs::read_to_string(dir.join("contracts/contracts.nt")).expect("contracts.nt");
+    let ty = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+    assert!(
+        nt.contains(&format!(
+            "/contract/PMAT-001> {ty} <https://ont.paiml.dev/v1alpha1/entity/claim>"
+        )),
+        "{nt}"
+    );
+    assert!(
+        nt.contains(&format!(
+            "/contract/study-shape-v1> {ty} <https://ont.paiml.dev/v1alpha1/entity/study>"
+        )),
+        "{nt}"
+    );
+    assert!(
+        !nt.contains("/contract/claim-shape-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/"),
+        "no entity.type, no entity class: {nt}"
+    );
+}
+
+/// PMAT-4160 (quorum round 3, sonnet seat 2): Σ refuses to DECLARE the reserved type, but a contract could still
+/// CARRY it, and `pv extract` and `--gate shapes` never consult Σ. Both must refuse the extraction, with no graph
+/// written, rather than emit an `entity/entity/<key>` predicate that aliases the class of type `<key>`.
+#[test]
+fn a_contract_carrying_the_reserved_entity_type_is_refused_by_extract_and_by_the_shapes_gate() {
+    let scratch = scratch_copy("entity-types-scoped");
+    let dir = scratch.path();
+    let rogue = std::fs::read_to_string(dir.join("contracts/PMAT-001.yaml"))
+        .expect("PMAT-001")
+        .replace("name: PMAT-001", "name: ROGUE-001")
+        .replace("  type: claim", "  type: entity")
+        .replace("    row: EV-19b", "    study: EV-19b");
+    assert!(
+        rogue.contains("  type: entity"),
+        "the fixture edit applied: {rogue}"
+    );
+    std::fs::write(dir.join("contracts/ROGUE-001.yaml"), rogue).expect("write rogue");
+
+    let r = pv_in(dir, &["extract", "contracts"]);
+    assert_ne!(r.code, 0, "{}", show(&r));
+    assert!(
+        r.stderr.contains("ROGUE-001") && r.stderr.contains("reserved"),
+        "{}",
+        show(&r)
+    );
+    assert!(
+        !dir.join("contracts/contracts.nt").exists(),
+        "a refused extraction writes no graph"
+    );
+
+    let r = pv_in(
+        dir,
+        &["lint", "contracts", "--gate", "shapes", "--format", "json"],
+    );
+    assert_ne!(r.code, 0, "{}", show(&r));
+    assert!(
+        format!("{}{}", r.stdout, r.stderr).contains("reserved"),
+        "{}",
+        show(&r)
+    );
+
+    // Control: the same corpus without the rogue contract extracts.
+    std::fs::remove_file(dir.join("contracts/ROGUE-001.yaml")).expect("rm rogue");
+    let r = pv_in(dir, &["extract", "contracts"]);
+    assert_eq!(r.code, 0, "{}", show(&r));
 }

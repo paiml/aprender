@@ -89,12 +89,12 @@ impl InstructPipeline {
             }
         }
 
-        if use_graph
-            && training_state.graph_cached_seq_len == seq_len
-            && training_state.forward_graph_exec.is_some()
+        if let Some(exec) = training_state
+            .forward_graph_exec
+            .as_ref()
+            .filter(|_| use_graph && training_state.graph_cached_seq_len == seq_len)
         {
             // === GRAPH REPLAY ===
-            let exec = training_state.forward_graph_exec.as_ref().unwrap();
             exec.launch(stream.raw())
                 .map_err(|e| eprintln!("[CUDA] Graph replay failed: {e}"))
                 .ok()?;

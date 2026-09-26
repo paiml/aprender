@@ -1,0 +1,267 @@
+{
+  "ticket": "PMAT-3837",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "a85d3f86ee609e5d77277b92a17cd95481a921d6",
+  "diff_sha256": "abaa027237e45bcecf4097ddb05cc3dd2668c9403aba1e485089d91ca036606c",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 51630,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The implementation perfectly satisfies the PMAT-3837 acceptance criteria.\n\n1. **Surface Clear (Commit b56baf78d):** Resolves all warnings by deleting entirely unused functions (`cublas_gemm_backward_a_f16`, `clip_workspace_gradients`, etc.), marking initialized but unread fields with `#[allow(dead_code)]` (e.g., `fused_clip`, `profiler_op_us`), fixing `unnecessary_unwrap` in `cuda_block.rs`, and resolving redundant casts/unused variable warnings. All changes correctly match what would be flagged by `clippy --features cuda` without breaking runtime logic or weakening existing code.\n2. **Gating & Axis Coverage (Commit f18503020):** `check_clippy_feature_matrix.sh` strictly tests the `cuda`, `default`, `full`, `dev`, and `dhat-heap` axes. The script elegantly retrieves workspace features via `cargo metadata` and ensures all features are either reached or explicitly excluded (`wgpu=#4056`, `no-default=#4041`). The `--features cuda` flag is correctly passed via a bash array, resolving the previous shell string-splitting trap.\n3. **Workflow Integration:** The self-test mechanism successfully plants a `clippy::unnecessary_cast` in cuda-only code, proving that the flags reach cargo properly and redden only the targeted axes. The matrix check is robustly integrated into `.github/workflows/toolchain-ceiling.yml`.\n\nNo regressions, weakened gates, or out-of-scope changes found. Pass.",
+      "findings": [],
+      "raw_bytes": 6003,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "VERDICT: PASS.\n\nThe diff completely satisfies all ticket acceptance criteria for PMAT-3837 and is backed by the implementation and measurements:\n1. `cargo clippy -p apr-cli --lib --features cuda -- -D warnings` exits 0 (measured on the cuda axis: 0 findings).\n2. The gate `scripts/check_clippy_feature_matrix.sh` is wired into `.github/workflows/toolchain-ceiling.yml` as `clippy-feature-matrix` on clean-room runner. Flags are passed as a bash array with separate words, and `--self-test` verifies both an unreached feature rejection and that a planted cuda-only finding turns exactly `cuda` and `full` red.\n3. All 24 apr-cli features are derived from `cargo metadata`, 23 are reached across 5 axes, and 1 (`wgpu`) is explicitly excluded with ticket #4056.\n4. `aprender-train` test profile builds cleanly with and without `--features cuda`.\n5. No gates are weakened; `check_guards_are_wired.sh`, `check_runner_labels.sh`, `actionlint`, and `bashrs` pass cleanly.",
+      "findings": [
+        {
+          "claim": "All 5 feature axes (default, cuda, full, dev, dhat-heap) pass strict clippy with 0 findings in check_clippy_feature_matrix.sh.",
+          "file": "scripts/check_clippy_feature_matrix.sh",
+          "fix": "None needed; verified by running scripts/check_clippy_feature_matrix.sh.",
+          "grounding": "measured",
+          "line": 146
+        },
+        {
+          "claim": "check_clippy_feature_matrix.sh --self-test successfully verifies that an unreached feature is refused by name before clippy runs, and a planted cuda-only cast causes exactly cuda and full to fail while default, dev, and dhat-heap pass.",
+          "file": "scripts/check_clippy_feature_matrix.sh",
+          "fix": "None needed; verified by running scripts/check_clippy_feature_matrix.sh --self-test.",
+          "grounding": "measured",
+          "line": 119
+        },
+        {
+          "claim": "aprender-train builds cleanly in test profile both with and without --features cuda (rc 0).",
+          "file": "crates/aprender-train/src/autograd/cuda_forward/cache.rs",
+          "fix": "None needed; verified with cargo check -p aprender-train --lib [--features cuda] --profile test.",
+          "grounding": "measured",
+          "line": 683
+        },
+        {
+          "claim": "check_guards_are_wired.sh passes without growing the unwired guards baseline against origin/main (49fe19c28), actionlint passes on toolchain-ceiling.yml, and check_runner_labels.sh passes.",
+          "file": ".github/workflows/toolchain-ceiling.yml",
+          "fix": "None needed; verified with check_guards_are_wired.sh, actionlint, and check_runner_labels.sh.",
+          "grounding": "measured",
+          "line": 98
+        },
+        {
+          "claim": "All deleted functions (cublas_gemm_backward_a_f16, cublas_gemm_backward_b_f16, try_capture_backward, clip_workspace_gradients, fused_clip_workspace_gradients, and the backward cache jit methods) were verified dead with zero callers workspace-wide.",
+          "file": "crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs",
+          "fix": "None needed; verified by git log and grep.",
+          "grounding": "cited",
+          "line": 133
+        }
+      ],
+      "raw_bytes": 6997,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria of PMAT-3837 and is fully grounded in the codebase and verified by measurements:\n\n1. Surface is clean: `cargo clippy -p apr-cli --lib --features cuda -- -D warnings` and the feature axes (default, cuda, full, dev, dhat-heap) compile with 0 warnings.\n2. The gate script `scripts/check_clippy_feature_matrix.sh` verifies that every feature declared in `apr-cli`'s metadata is reached by an axis or explicitly excluded with a ticket (`wgpu` #4056, `no-default` #4041).\n3. `--self-test` verifies both failure modes: (a) unreached features are rejected by name before clippy runs, and (b) planted cuda-only code triggers failure exclusively on cuda-reaching axes (`cuda`, `full`).\n4. Both test profile checks (`cargo check -p aprender-train --lib --profile test` with and without `--features cuda`) exit with rc 0.\n5. All CI quality checks (`actionlint`, `shellcheck -S error`, `bashrs lint`, `check_guards_are_wired.sh`, `check_runner_labels.sh`) pass cleanly.\n\nNo discrepancies between receipt claims, ticket requirements, and the diff were found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 5840,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/toolchain-ceiling.yml",
+      "line": 98,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "check_guards_are_wired.sh passes without growing the unwired guards baseline against origin/main (49fe19c28), actionlint passes on toolchain-ceiling.yml, and check_runner_labels.sh passes."
+      ]
+    },
+    {
+      "file": "crates/aprender-train/src/autograd/cuda_forward/cache.rs",
+      "line": 683,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "aprender-train builds cleanly in test profile both with and without --features cuda (rc 0)."
+      ]
+    },
+    {
+      "file": "crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs",
+      "line": 133,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "All deleted functions (cublas_gemm_backward_a_f16, cublas_gemm_backward_b_f16, try_capture_backward, clip_workspace_gradients, fused_clip_workspace_gradients, and the backward cache jit methods) were verified dead with zero callers workspace-wide."
+      ]
+    },
+    {
+      "file": "scripts/check_clippy_feature_matrix.sh",
+      "line": 119,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "check_clippy_feature_matrix.sh --self-test successfully verifies that an unreached feature is refused by name before clippy runs, and a planted cuda-only cast causes exactly cuda and full to fail while default, dev, and dhat-heap pass."
+      ]
+    },
+    {
+      "file": "scripts/check_clippy_feature_matrix.sh",
+      "line": 146,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "All 5 feature axes (default, cuda, full, dev, dhat-heap) pass strict clippy with 0 findings in check_clippy_feature_matrix.sh."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

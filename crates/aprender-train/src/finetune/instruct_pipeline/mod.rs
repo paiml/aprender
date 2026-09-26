@@ -137,8 +137,11 @@ pub(super) struct InstructGpuTrainingState {
     grad_buf_b: GpuBuffer<f32>,
     /// Gradient for final RMSNorm weight [hidden_size]
     grad_final_norm_weight: GpuBuffer<f32>,
+    // Never read, but BUILT at init (a GPU allocation/transpose). Removing it changes what training
+    // allocates, which needs a GPU-verified run; tracked separately from this lint sweep (#3837).
+    #[allow(dead_code)]
     embed_transposed: GpuBuffer<f32>, // [hidden*vocab] lm_head forward
-    embed_original: GpuBuffer<f32>,   // [vocab*hidden] lm_head backward (KAIZEN-068)
+    embed_original: GpuBuffer<f32>, // [vocab*hidden] lm_head backward (KAIZEN-068)
     /// GPU scratch for logits [max_seq_len * vocab_size]
     logits_buf: GpuBuffer<f32>,
     /// GPU scratch for grad_hidden [max_seq_len * hidden_size]
@@ -168,8 +171,11 @@ pub(super) struct InstructGpuTrainingState {
     profiler_layer_start: Option<std::time::Instant>,
     /// PMAT-483/entrenar#328: Per-operation timing within layers (accumulated per step)
     /// Index matches StepProfiler::OP_* constants. Reset each step.
+    // Written at init, never read: the per-op profiler was never wired (#3837).
+    #[allow(dead_code)]
     profiler_op_us: [u64; 16],
     /// Per-operation start timestamp
+    #[allow(dead_code)]
     profiler_op_start: Option<std::time::Instant>,
 }
 

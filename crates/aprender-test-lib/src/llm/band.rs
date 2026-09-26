@@ -695,10 +695,15 @@ mod tests {
     }
 
     /// The negative control that makes the assertion above mean something: the
-    /// same code at `c = 1` must show a server peak of exactly 1, and must take
-    /// several times longer for the same request count.
+    /// same code at `c = 1` must show a server peak of exactly 1, while `c = 8` on the
+    /// same work must OVERLAP as the server counts it.
+    ///
+    /// #4103: this asserted a wall-clock speedup (`> 2.0x`), which failed under llvm-cov
+    /// instrumentation on a loaded runner (coverage-nightly run 35908686532). The property
+    /// is structural, so it is asserted as the server-observed in-flight COUNT; the speedup
+    /// is still printed, as information only.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn c1_is_sequential_and_slower_for_the_same_work() {
+    async fn c1_is_sequential_where_c8_overlaps_for_the_same_work() {
         let requests = 16;
         let service_ms = 40;
 
@@ -741,10 +746,21 @@ mod tests {
         assert_eq!(p1.peak.load(Ordering::SeqCst), 1, "c=1 must never overlap");
         assert_eq!(r1.window.client_peak_in_flight, 1);
         assert!(r8.window.client_peak_in_flight > 1);
+        let server_peak8 = p8.peak.load(Ordering::SeqCst);
         assert!(
-            speedup > 2.0,
-            "c=8 must beat c=1 on the same work; got {speedup:.2}x \
-             (c=1 {wall1:?}, c=8 {wall8:?})"
+            server_peak8 >= 4,
+            "c=8 must OVERLAP on the same work, as the server counts it: peak in flight \
+             {server_peak8} (c=1 peak is 1); a secretly sequential c=8 shows 1"
+        );
+        assert!(
+            r1.metrics.completed >= requests,
+            "c=1 finished the work: {:?}",
+            r1.metrics
+        );
+        assert!(
+            r8.metrics.completed >= requests,
+            "c=8 finished the work: {:?}",
+            r8.metrics
         );
     }
 

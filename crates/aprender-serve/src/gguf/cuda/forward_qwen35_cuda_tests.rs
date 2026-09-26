@@ -1735,3 +1735,72 @@ fn qwen35_cuda_refusal_names_the_tensor_the_dtype_and_the_eligible_build() {
         "{unknown}"
     );
 }
+
+/// DP4A through the recurrence holds the parity contract (#4258).
+///
+/// This was the falsifier `qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`
+/// (PMAT-3477 / #3090), which asserted the opposite: 1.656 relative away and a wrong
+/// argmax under `HwDp4a`. That reading was not Q8_1 quantization error. No qwen35
+/// writer kernel ever cleared `q8_activation_valid`, so every DP4A GEMV after the
+/// first reused the FIRST token's Q8_1 activation (#4258). With the activation cache
+/// keyed to its input and invalidated by the writers, the same run passes at every
+/// position. So this now guards the fix: if the stale-activation reuse comes back,
+/// the argmax breaks here.
+///
+/// The float pin in `Qwen35CudaModel::with_max_seq_len` stays until DP4A is
+/// re-measured on 2B/4B (#4030). This test only says the pin's stated reason is gone.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence() {
+    use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    // The variant IS selectable from a test: the executor's profile is what
+    // every `gemv_dispatch` reads, and `gemv_variants()` reports it back.
+    gpu.executor_mut().gpu_profile.q4k = Q4kVariant::HwDp4a;
+    gpu.executor_mut().gpu_profile.q6k = Q6kVariant::HwDp4a;
+    assert_eq!(
+        gpu.gemv_variants(),
+        (Q4kVariant::HwDp4a, Q6kVariant::HwDp4a),
+        "the DP4A variants must actually be armed, else this test proves nothing"
+    );
+
+    let mut gpu_state = gpu.new_state().expect("device state");
+    let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
+    let mut broken = 0usize;
+
+    for (pos, &token) in LONG_PROMPT.iter().enumerate() {
+        let want = qwen
+            .forward_single_qwen35(token, &mut cpu_state, pos)
+            .expect("cpu forward");
+        let got = gpu
+            .forward_single(token, &mut gpu_state, pos)
+            .expect("gpu forward");
+        let cos = cosine(&got, &want);
+        let (gpu_arg, cpu_arg) = (
+            crate::gguf::ops::argmax(&got),
+            crate::gguf::ops::argmax(&want),
+        );
+        eprintln!(
+            "[dp4a] pos {pos}: gpu argmax {gpu_arg} cpu argmax {cpu_arg} cosine {cos:.6} \
+             relative L-inf {:.3e}",
+            rel_linf(&got, &want),
+        );
+        if gpu_arg != cpu_arg || cos < COSINE_FLOOR {
+            broken += 1;
+        }
+    }
+
+    assert_eq!(
+        broken,
+        0,
+        "the DP4A GEMV path broke the parity contract at {broken} of {} positions: a stale \
+         Q8_1 activation is being reused again (#4258)",
+        LONG_PROMPT.len()
+    );
+}

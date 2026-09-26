@@ -94,7 +94,7 @@ pub struct XetUploader<'a> {
 }
 
 #[cfg(feature = "xet")]
-impl<'a> XetUploader<'a> {
+impl XetUploader<'_> {
     /// Upload a single file via Xet.
     ///
     /// `commit_msg` is attached to the downstream LFS pointer commit inside

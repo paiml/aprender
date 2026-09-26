@@ -104,6 +104,33 @@ use commands::{finetune, gpu, train, tune};
 #[cfg(feature = "training")]
 pub use commands::pretrain::PretrainMode;
 
+/// Update identity (EPIC #4232). A cuda build installs the cuda release
+/// asset and skips the nightly, whose `apr` is the cpu build.
+const UPDATE_PRODUCT: sovereign_update::Product = sovereign_update::Product {
+    bin: "apr",
+    repo: "paiml/aprender",
+    version: env!("CARGO_PKG_VERSION"),
+    build_sha: Some(env!("APR_GIT_SHA")),
+    #[cfg(feature = "cuda")]
+    release_asset: Some("{bin}-{tag}-{target}-cuda.tar.gz"),
+    #[cfg(not(feature = "cuda"))]
+    release_asset: Some("{bin}-{tag}-{target}-cpu.tar.gz"),
+    nightly: cfg!(not(feature = "cuda")),
+};
+
+/// Run `apr update [--check]` if that is what `args` asks for, else start
+/// the non-blocking update check and return `None`. Called first by both
+/// `apr` entry points (`src/main.rs` and the root facade via [`cli_main`]).
+#[must_use]
+pub fn update_or_check(args: &[String]) -> Option<std::process::ExitCode> {
+    if args.get(1).is_some_and(|a| a == "update") {
+        let rc = sovereign_update::update_main(&UPDATE_PRODUCT, &args[2..]);
+        return Some(std::process::ExitCode::from(u8::try_from(rc).unwrap_or(1)));
+    }
+    sovereign_update::startup(&UPDATE_PRODUCT, args);
+    None
+}
+
 /// apr - APR Model Operations Tool
 ///
 /// Inspect, debug, and manage .apr model files.
@@ -195,6 +222,9 @@ pub fn cli_main() -> std::process::ExitCode {
     if raw.iter().any(|a| a == "--version") && raw.iter().any(|a| a == "--json") {
         emit_version_json();
         return std::process::ExitCode::SUCCESS;
+    }
+    if let Some(rc) = update_or_check(&raw) {
+        return rc;
     }
 
     let cli = Cli::parse();

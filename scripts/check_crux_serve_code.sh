@@ -253,7 +253,20 @@ td_case() { # <label> <want rc> <want state prefix> <td script> [pid files...]
 }
 tdrow() { local l="$1"; shift; if td_case "$l" "$@"; then ok "$l"; else bad "$l (state: $(cat "$TMP/td.state" 2> /dev/null))"; fi; }
 stubborn() { # a server that ignores SIGTERM; its pid goes to $1
-  bash -c 'trap "" TERM; while :; do sleep 0.2; done' > /dev/null 2>&1 &
+  # Publish the pid only once the trap is IN: on a loaded runner a TERM sent before the child ran
+  # `trap` killed it outright, and M10 (no KILL escalation) "survived" against a server that was
+  # never stubborn (#4312 guard-tree).
+  local ready="$1.ready" i=0
+  rm -f "$ready"
+  READY="$ready" bash -c 'trap "" TERM; : > "$READY"; while :; do sleep 0.2; done' > /dev/null 2>&1 &
+  while [ ! -e "$ready" ] && [ "$i" -lt 100 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  if [ ! -e "$ready" ]; then
+    printf 'stubborn: server never installed its TERM trap\n' >&2
+    return 1
+  fi
   printf '%s\n' "$!" > "$1"
 }
 : > "$TMP/smi-pids"

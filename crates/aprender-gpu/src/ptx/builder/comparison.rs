@@ -118,6 +118,18 @@ pub trait PtxComparison: KernelBuilderCore {
         pred
     }
 
+    /// Set predicate if a == b (f32). Ordered: false when either is NaN.
+    fn setp_eq_f32(&mut self, a: VirtualReg, b: VirtualReg) -> VirtualReg {
+        let pred = self.registers_mut().allocate_virtual(PtxType::Pred);
+        let mut instr = PtxInstruction::new(PtxOp::Setp, PtxType::F32)
+            .dst(Operand::Reg(pred))
+            .src(Operand::Reg(a))
+            .src(Operand::Reg(b));
+        instr.label = Some(CmpOp::Eq.to_ptx_string().to_string());
+        self.instructions_mut().push(instr);
+        pred
+    }
+
     /// Set predicate comparing u32 with immediate
     fn setp_ge_u32_imm(&mut self, a: VirtualReg, b: u32) -> VirtualReg {
         let pred = self.registers_mut().allocate_virtual(PtxType::Pred);
@@ -226,9 +238,13 @@ mod tests {
         let _lt = builder.setp_lt_f32(a, b);
         let _gt = builder.setp_gt_f32(a, b);
 
-        assert_eq!(builder.instructions.len(), 2);
+        let _eq = builder.setp_eq_f32(a, b);
+
+        assert_eq!(builder.instructions.len(), 3);
         assert_eq!(builder.instructions[0].ty, PtxType::F32);
         assert_eq!(builder.instructions[1].ty, PtxType::F32);
+        assert_eq!(builder.instructions[2].ty, PtxType::F32);
+        assert_eq!(builder.instructions[2].label.as_deref(), Some("eq"));
     }
 
     #[test]
