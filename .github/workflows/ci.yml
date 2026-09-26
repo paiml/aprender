@@ -73,7 +73,7 @@ jobs:
   # with the same rule the old job of that name applied.
   # ==========================================================================
   x86-main:
-    runs-on: [self-hosted, Linux, X64, clean-room, intel]
+    runs-on: [self-hosted, Linux, X64, clean-room]   # intel, framework16 or yoga: any free X64 clean-room runner
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
@@ -316,10 +316,10 @@ jobs:
   # failure, never a pass.
   # ==========================================================================
   # The workspace tests, one shard per job (nextest hash partition N/3 plus the
-  # explicit runner's round-robin N/3), in parallel on the intel clean-room pool.
+  # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    runs-on: [self-hosted, Linux, X64, clean-room, intel]
+    runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
     timeout-minutes: 180
     strategy:
       fail-fast: false
