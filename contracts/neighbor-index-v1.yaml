@@ -8,6 +8,8 @@ metadata:
   - 'Friedman, Bentley & Finkel (1977) An Algorithm for Finding Best Matches in Logarithmic Expected Time'
   - 'Omohundro (1989) Five Balltree Construction Algorithms'
   - 'scikit-learn sklearn.neighbors (KDTree, BallTree, algorithm="auto") — the reference API'
+  valid_under:
+    world: committed
 equations:
   k_nearest:
     formula: 'knn(q, k) = the first min(k, n) points of X ordered by (dist(q, x_i), i) ascending'
@@ -47,37 +49,37 @@ proof_obligations:
 - id: NBR-EXACT-001
   type: equivalence
   property: Tree k-nearest equals brute-force k-nearest
-  formal: 'KdTree.knn(q, k) == BallTree.knn(q, k) == BruteForce.knn(q, k), bitwise, for all X, q, k and every tree-compatible metric'
+  formal: '∀ X, q, k, tree-compatible metric: KdTree.knn(q, k) ≡ BallTree.knn(q, k) ≡ BruteForce.knn(q, k), bitwise'
   applies_to: all
 - id: NBR-EXACT-002
   type: equivalence
   property: Tree radius query equals brute-force radius query
-  formal: 'KdTree.rad(q, r) == BallTree.rad(q, r) == BruteForce.rad(q, r), bitwise, including r equal to an existing neighbor distance'
+  formal: '∀ X, q, r (incl. r = an existing neighbor distance): KdTree.rad(q, r) ≡ BallTree.rad(q, r) ≡ BruteForce.rad(q, r), bitwise'
   applies_to: all
 - id: NBR-SOUND-003
   type: invariant
   property: Pruning never skips an answer
-  formal: 'a subtree is skipped only when its lower bound, less a relative rounding slack of 1e-4, is strictly greater than the current k-th distance (or r); strict, so an equal-distance lower-index tie is still searched'
+  formal: 'skip(subtree) ⇒ lower_bound(subtree) · (1 − 1e-4) > d_k (or r); strict, so an equal-distance lower-index tie is still searched'
   applies_to: all
 - id: NBR-COMPLEXITY-004
   type: bound
   property: Query work grows sub-linearly in n for low d
-  formal: 'mean distance evaluations per k=5 query at n=1e5 is < 10x that at n=1e3 (uniform data, d=3); brute force shows 100x'
+  formal: 'd = 3, uniform X, k = 5: evals(n = 1e5) < 10 × evals(n = 1e3); brute force: evals(n = 1e5) = 100 × evals(n = 1e3)'
   applies_to: all
 - id: NBR-TOTAL-005
   type: invariant
   property: Degenerate inputs are answered, never a panic
-  formal: 'n=0, n=1, k=0, k>n, all-identical points, duplicate coordinates, d=1 and d=0 return the brute-force answer'
+  formal: '∀ input ∈ {n = 0, n = 1, k = 0, k > n, all-identical points, duplicate coordinates, d = 1, d = 0}: result ≡ BruteForce result ∧ ¬panic'
   applies_to: all
 - id: NBR-METRIC-006
   type: invariant
   property: Metric axioms
-  formal: 'dist >= 0; dist(a,b) == dist(b,a) bitwise; dist(a,a) == 0; dist(a,c) <= dist(a,b) + dist(b,c) within rounding, for every metric except cosine'
+  formal: '∀ metric ≠ cosine: dist ≥ 0 ∧ dist(a,b) ≡ dist(b,a) bitwise ∧ dist(a,a) = 0 ∧ dist(a,c) ≤ dist(a,b) + dist(b,c) + ε'
   applies_to: all
 - id: NBR-REWIRE-007
   type: equivalence
   property: Consumers unchanged by the rewire
-  formal: 'KNearestNeighbors.predict, uniform predict_proba, DBSCAN labels and LocalOutlierFactor scores/predict are bit-identical before and after querying through the index, on pinned fixtures that select kd and ball trees. Distance-weighted predict_proba sums 1/d in (distance, index) order instead of an undefined partition order, so it is held to |new - legacy| <= 1e-6 against an in-test legacy reference that must itself reproduce the pinned digest'
+  formal: '∀ pinned fixture selecting kd or ball tree: KNearestNeighbors.predict, uniform predict_proba, DBSCAN labels, LocalOutlierFactor scores/predict ≡ legacy (bit-identical); distance-weighted predict_proba sums 1/d in (distance, index) order ∧ abs(new − legacy) ≤ 1e-6 against an in-test legacy reference that reproduces the pinned digest'
   applies_to: all
 kani_harnesses:
 - id: KANI-NBR-001
