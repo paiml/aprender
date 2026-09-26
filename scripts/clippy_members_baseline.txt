@@ -19,7 +19,6 @@ aprender-profile/test:sprint50_validate_tests/unreachable_patterns	7
 aprender-qa-cli/lib:aprender_qa_cli/clippy::disallowed_methods	42
 aprender-qa-report/example:generate_certificate/clippy::disallowed_methods	1
 aprender-qa-report/lib:aprender_qa_report/clippy::disallowed_methods	87
-aprender-qa-runner/lib:aprender_qa_runner/clippy::disallowed_methods	569
 aprender-rag/test:falsify_hybrid_001/clippy::disallowed_methods	7
 aprender-rag/test:falsify_hybrid_002/clippy::disallowed_methods	6
 aprender-rag/test:falsify_hybrid_004/clippy::disallowed_methods	1
