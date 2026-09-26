@@ -41,6 +41,10 @@ pub struct Resolved {
     pub kind: String,
     /// Attribute paths on the item, in source order (`inline`, `kernel`, `cfg`, …).
     pub attributes: Vec<String>,
+    /// ONT-4c4: no `unsafe fn` signature and no `unsafe { … }` block in the body.
+    pub unsafe_free: bool,
+    /// ONT-4c4: no `get_unchecked` / `get_unchecked_mut` call in the body — every index is bounds-checked.
+    pub bounds_checked: bool,
 }
 
 /// Why the walk stopped.
@@ -468,7 +472,9 @@ fn child_file(
 /// A free `fn name` or an `impl … { fn name }` among `items`.
 fn find_item(items: &[syn::Item], name: &str) -> Option<Resolved> {
     items.iter().find_map(|item| match item {
-        syn::Item::Fn(f) if f.sig.ident == name => Some(found("fn", &f.vis, &f.attrs)),
+        syn::Item::Fn(f) if f.sig.ident == name => {
+            Some(found("fn", &f.vis, &f.attrs, &f.sig, &f.block))
+        }
         syn::Item::Impl(im) => find_method(&im.items, name),
         _ => None,
     })
@@ -477,19 +483,65 @@ fn find_item(items: &[syn::Item], name: &str) -> Option<Resolved> {
 /// The `fn name` of one `impl` block.
 fn find_method(items: &[syn::ImplItem], name: &str) -> Option<Resolved> {
     items.iter().find_map(|ii| match ii {
-        syn::ImplItem::Fn(f) if f.sig.ident == name => Some(found("method", &f.vis, &f.attrs)),
+        syn::ImplItem::Fn(f) if f.sig.ident == name => {
+            Some(found("method", &f.vis, &f.attrs, &f.sig, &f.block))
+        }
         _ => None,
     })
 }
 
 /// A resolution with the file filled in by the caller that knows it.
-fn found(kind: &str, vis: &syn::Visibility, attrs: &[syn::Attribute]) -> Resolved {
+fn found(
+    kind: &str,
+    vis: &syn::Visibility,
+    attrs: &[syn::Attribute],
+    sig: &syn::Signature,
+    block: &syn::Block,
+) -> Resolved {
+    let mut body = BodySafety::default();
+    syn::visit::Visit::visit_block(&mut body, block);
     Resolved {
         file: String::new(),
         visibility: visibility_of(vis),
         kind: kind.to_string(),
         attributes: attr_paths(attrs),
+        unsafe_free: sig.unsafety.is_none() && body.unsafe_blocks == 0,
+        bounds_checked: body.unchecked_calls == 0,
     }
+}
+
+/// What ONT-4c4's `kernel-safety` reads off a function body: `unsafe` blocks and unchecked indexing.
+#[derive(Default)]
+struct BodySafety {
+    unsafe_blocks: usize,
+    unchecked_calls: usize,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for BodySafety {
+    fn visit_expr_unsafe(&mut self, e: &'ast syn::ExprUnsafe) {
+        self.unsafe_blocks += 1;
+        syn::visit::visit_expr_unsafe(self, e);
+    }
+    fn visit_expr_method_call(&mut self, e: &'ast syn::ExprMethodCall) {
+        if is_unchecked(&e.method.to_string()) {
+            self.unchecked_calls += 1;
+        }
+        syn::visit::visit_expr_method_call(self, e);
+    }
+    fn visit_expr_path(&mut self, e: &'ast syn::ExprPath) {
+        if e.path
+            .segments
+            .last()
+            .is_some_and(|s| is_unchecked(&s.ident.to_string()))
+        {
+            self.unchecked_calls += 1;
+        }
+        syn::visit::visit_expr_path(self, e);
+    }
+}
+
+fn is_unchecked(name: &str) -> bool {
+    matches!(name, "get_unchecked" | "get_unchecked_mut")
 }
 
 /// The path a `use` item binds `name` to, as written (`crate::a::b`, `self::x`, `super::y`, `other::z`), when
@@ -645,6 +697,15 @@ pub fn emit(g: &mut Graph, b: &Bound, found: &Result<Resolved, Unresolved>) {
             g.insert(s.clone(), sym("kind"), Term::string(&r.kind));
             for a in &r.attributes {
                 g.insert(s.clone(), sym("attribute"), Term::string(a));
+            }
+            // ONT-4c4: only a `#[kernel]` carries the body facts — `kernel-safety` reads them; no other shape does.
+            if r.attributes.iter().any(|a| a == "kernel") {
+                g.insert(s.clone(), sym("unsafeFree"), Term::boolean(r.unsafe_free));
+                g.insert(
+                    s.clone(),
+                    sym("boundsChecked"),
+                    Term::boolean(r.bounds_checked),
+                );
             }
         }
         Err(u) => {
@@ -818,5 +879,23 @@ mod tests {
         assert_eq!(m.package.as_deref(), Some("a-b"));
         assert_eq!(m.lib.as_deref(), Some("ab"));
         assert_eq!(m.lib_path.as_deref(), Some("src/x.rs"));
+    }
+
+    #[test]
+    fn the_body_walk_reads_unsafe_and_unchecked_indexing() {
+        let src = r"
+            pub fn clean(x: &[f32]) -> f32 { x[0] }
+            pub fn blocky(x: &[f32]) -> f32 { unsafe { *x.as_ptr() } }
+            pub unsafe fn signed(x: &[f32]) -> f32 { x[0] }
+            pub fn method(x: &[f32]) -> f32 { let v = || x.len(); if v() > 0 { *x.get_unchecked(0) } else { 0.0 } }
+            pub fn path(x: &[f32]) -> f32 { *<[f32]>::get_unchecked_mut(&mut [0.0][..], 0) + x[0] }
+        ";
+        let ast = syn::parse_file(src).expect("parses");
+        let r = |n: &str| find_item(&ast.items, n).expect(n);
+        assert!(r("clean").unsafe_free && r("clean").bounds_checked);
+        assert!(!r("blocky").unsafe_free && r("blocky").bounds_checked);
+        assert!(!r("signed").unsafe_free);
+        assert!(r("method").unsafe_free && !r("method").bounds_checked);
+        assert!(!r("path").bounds_checked);
     }
 }

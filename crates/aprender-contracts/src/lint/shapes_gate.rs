@@ -35,7 +35,7 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
+    self, apr_model, code, gguf, json, kernel, lean, parity_receipt, pv_contract, release_evidence,
     ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
@@ -282,13 +282,14 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         Err(differential) => return differential,
     };
 
-    let counted = findings_of(
+    let mut counted = findings_of(
         &report,
         &arming,
         graph,
         &extraction.gguf,
         &extraction.apr_model,
     );
+    refuse_vacuous_kernels(&mut counted, &shapes, extraction.kernel.kernels);
     let passed = counted.violations == 0;
     let verdict = verdict_of(&counted);
     let by_shape = by_shape(graph, &shapes);
@@ -435,6 +436,8 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
         ("parity-receipt", extraction.parity.records),
         ("code", extraction.code.symbols),
         ("lean", extraction.lean.statements),
+        // ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`
+        ("kernel", extraction.kernel.kernels),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -486,6 +489,7 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("apr-model", apr_model::positive_control(&apr_sample)),
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
+        ("kernel", kernel::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
@@ -511,6 +515,30 @@ struct Counted {
     warnings: usize,
     /// From unarmed shapes: reported, never in the meet.
     unarmed_violations: usize,
+}
+
+/// A kernel shape over zero `#[kernel]` symbols is not a pass: every one of its constraints held over nothing
+/// (#3522 ruling). The count of `ont:KernelSymbol` focus nodes is the measurement, so zero is a violation.
+fn refuse_vacuous_kernels(c: &mut Counted, shapes: &[NodeShape], kernels: usize) {
+    let kernel_class = crate::ontology::rdf::ont("KernelSymbol");
+    let kernel_shapes: Vec<&str> = shapes
+        .iter()
+        .filter(|s| s.target_class == kernel_class)
+        .map(|s| s.id.as_str())
+        .collect();
+    if kernels > 0 || kernel_shapes.is_empty() {
+        return;
+    }
+    c.violations += 1;
+    c.findings.push(LintFinding::new(
+        "PV-ONT-012",
+        RuleSeverity::Error,
+        format!(
+            "0 #[kernel] symbols extracted: kernel shape(s) {} graded nothing — vacuous, not a pass",
+            kernel_shapes.join(", ")
+        ),
+        "contracts/ont-kernel-receipts-v1.yaml".to_string(),
+    ));
 }
 
 fn findings_of(
