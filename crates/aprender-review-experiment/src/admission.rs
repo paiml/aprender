@@ -244,67 +244,71 @@ pub struct Expect<'a> {
     pub min_positions: usize,
 }
 
-/// Derive an `Admitted` parity block from the bytes of a parity receipt.
-///
-/// # Errors
-/// Every reason the receipt cannot admit the cell.
-pub fn parity_from_receipt(receipt: &[u8], x: &Expect<'_>) -> Result<Parity, Vec<String>> {
-    use serde_json::Value;
-    let v: Value =
-        serde_json::from_slice(receipt).map_err(|e| vec![format!("receipt is not JSON: {e}")])?;
-    let mut e = Vec::new();
-    // (oracle, cosines, weights sha, binary sha) per receipt shape
-    let (oracle, cos, weights, binary): (String, Vec<Option<f64>>, Option<&str>, Option<&str>) =
-        if v["schema"].as_str() == Some("apr-parity-oracle/v1") {
-            if v["verdict"].as_str() != Some("GREEN") {
-                e.push(format!("verdict {} is not GREEN", v["verdict"]));
-            }
-            let per = v["per_position"].as_array().map_or(&[][..], Vec::as_slice);
-            (
-                v["oracle"].as_str().unwrap_or_default().to_string(),
-                per.iter().map(|p| p["cosine"].as_f64()).collect(),
-                v["subject"]["producer"]["model_sha256"].as_str(),
-                None,
-            )
-        } else if v.get("parity").is_some() && v.get("comparator").is_some() {
-            if v["exit"].as_i64() != Some(0) {
-                e.push(format!("exit {} is not 0", v["exit"]));
-            }
-            if v["verdict"].as_str() != Some("pass") {
-                e.push(format!("verdict {} is not pass", v["verdict"]));
-            }
-            let p = &v["parity"];
-            if p["failed"].as_u64() != Some(0) || p["parity"].as_bool() != Some(true) {
-                e.push(format!(
-                    "parity failed {} (parity {})",
-                    p["failed"], p["parity"]
-                ));
-            }
-            let comparator = v["comparator"].as_str().unwrap_or_default();
-            let oracle = if comparator.starts_with("apr-cpu") {
-                APR_GPU_CPU.to_string()
-            } else {
-                comparator.to_string()
-            };
-            let metrics = p["metrics"].as_array().map_or(&[][..], Vec::as_slice);
-            (
-                oracle,
-                metrics
-                    .iter()
-                    .map(|m| m["cosine_similarity"].as_f64())
-                    .collect(),
-                v["weights_sha256"].as_str(),
-                Some(v["binary_sha256"].as_str().unwrap_or_default()),
-            )
-        } else {
-            return Err(vec![
-                "not a parity receipt (apr-parity-oracle/v1 or apr-review-serve parity)".into(),
-            ]);
-        };
+/// What a receipt boils down to, whichever of the two shapes it was.
+type ReceiptFields<'v> = (String, Vec<Option<f64>>, Option<&'v str>, Option<&'v str>);
+
+/// Parse an `apr-parity-oracle/v1` receipt: oracle, per-position cosines and
+/// the producer's weights sha (this shape carries no binary sha).
+fn parse_oracle_v1_receipt<'v>(v: &'v serde_json::Value, e: &mut Vec<String>) -> ReceiptFields<'v> {
+    if v["verdict"].as_str() != Some("GREEN") {
+        e.push(format!("verdict {} is not GREEN", v["verdict"]));
+    }
+    let per = v["per_position"].as_array().map_or(&[][..], Vec::as_slice);
+    (
+        v["oracle"].as_str().unwrap_or_default().to_string(),
+        per.iter().map(|p| p["cosine"].as_f64()).collect(),
+        v["subject"]["producer"]["model_sha256"].as_str(),
+        None,
+    )
+}
+
+/// Parse an `apr-review-serve` parity receipt: exit/verdict/parity checks,
+/// the comparator (normalized to `APR_GPU_CPU` for an `apr-cpu*` comparator),
+/// weights sha and binary sha.
+fn parse_review_serve_receipt<'v>(
+    v: &'v serde_json::Value,
+    e: &mut Vec<String>,
+) -> ReceiptFields<'v> {
+    if v["exit"].as_i64() != Some(0) {
+        e.push(format!("exit {} is not 0", v["exit"]));
+    }
+    if v["verdict"].as_str() != Some("pass") {
+        e.push(format!("verdict {} is not pass", v["verdict"]));
+    }
+    let p = &v["parity"];
+    if p["failed"].as_u64() != Some(0) || p["parity"].as_bool() != Some(true) {
+        e.push(format!(
+            "parity failed {} (parity {})",
+            p["failed"], p["parity"]
+        ));
+    }
+    let comparator = v["comparator"].as_str().unwrap_or_default();
+    let oracle = if comparator.starts_with("apr-cpu") {
+        APR_GPU_CPU.to_string()
+    } else {
+        comparator.to_string()
+    };
+    let metrics = p["metrics"].as_array().map_or(&[][..], Vec::as_slice);
+    (
+        oracle,
+        metrics
+            .iter()
+            .map(|m| m["cosine_similarity"].as_f64())
+            .collect(),
+        v["weights_sha256"].as_str(),
+        Some(v["binary_sha256"].as_str().unwrap_or_default()),
+    )
+}
+
+/// The cross-checks common to both receipt shapes: declared oracle, weights
+/// sha, binary sha (when the shape carries one), position count and the
+/// row's own threshold declaration.
+fn check_receipt_fields(fields: &ReceiptFields<'_>, x: &Expect<'_>, e: &mut Vec<String>) {
+    let (oracle, cos, weights, binary) = fields;
     if oracle != LLAMA_CPP && oracle != APR_GPU_CPU {
         e.push(format!("oracle {oracle:?} is not a declared parity.oracle"));
     }
-    if weights != Some(x.weights_sha256) {
+    if *weights != Some(x.weights_sha256) {
         e.push(format!(
             "weights sha {weights:?} is not the row's {}",
             x.weights_sha256
@@ -329,20 +333,50 @@ pub fn parity_from_receipt(receipt: &[u8], x: &Expect<'_>) -> Result<Parity, Vec
     if x.threshold_basis.trim().is_empty() {
         e.push("no threshold basis declared".into());
     }
+}
+
+/// The minimum cosine across positions, recording a "no numeric cosine"
+/// error for each position that did not carry one (JSON has no NaN or
+/// infinity, so a present cosine is always finite).
+fn min_cosine(cos: &[Option<f64>], e: &mut Vec<String>) -> f64 {
     let mut min = f64::INFINITY;
     for (i, c) in cos.iter().enumerate() {
         match c {
-            // JSON carries no NaN or infinity: a number is finite
             Some(c) => min = min.min(*c),
             None => e.push(format!("position {i}: no numeric cosine")),
         }
     }
+    min
+}
+
+/// Derive an `Admitted` parity block from the bytes of a parity receipt.
+///
+/// # Errors
+/// Every reason the receipt cannot admit the cell.
+pub fn parity_from_receipt(receipt: &[u8], x: &Expect<'_>) -> Result<Parity, Vec<String>> {
+    use serde_json::Value;
+    let v: Value =
+        serde_json::from_slice(receipt).map_err(|e| vec![format!("receipt is not JSON: {e}")])?;
+    let mut e = Vec::new();
+    // (oracle, cosines, weights sha, binary sha) per receipt shape
+    let fields: ReceiptFields<'_> = if v["schema"].as_str() == Some("apr-parity-oracle/v1") {
+        parse_oracle_v1_receipt(&v, &mut e)
+    } else if v.get("parity").is_some() && v.get("comparator").is_some() {
+        parse_review_serve_receipt(&v, &mut e)
+    } else {
+        return Err(vec![
+            "not a parity receipt (apr-parity-oracle/v1 or apr-review-serve parity)".into(),
+        ]);
+    };
+    check_receipt_fields(&fields, x, &mut e);
+    let (oracle, cos, ..) = &fields;
+    let min = min_cosine(cos, &mut e);
     if min < x.threshold {
         e.push(format!("min cosine {min} below threshold {}", x.threshold));
     }
     if e.is_empty() {
         Ok(Parity {
-            oracle,
+            oracle: oracle.clone(),
             cosine: min,
             threshold: x.threshold,
             threshold_basis: x.threshold_basis.to_string(),

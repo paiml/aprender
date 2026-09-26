@@ -197,11 +197,8 @@ pub fn admissible(line: &str, expect: Expect<'_>) -> Result<Receipt, Vec<String>
     }
 }
 
-fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
-    let mut bad = Vec::new();
-    if r.schema != SCHEME {
-        bad.push(format!("schema {:?} != {SCHEME}", r.schema));
-    }
+/// The identity fields that must be non-empty and not `unknown`.
+fn check_named_fields(r: &Receipt, bad: &mut Vec<String>) {
     let named = [
         ("item_id", &r.item_id),
         ("cell", &r.cell),
@@ -216,6 +213,12 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
             bad.push(format!("{k} is empty or unknown"));
         }
     }
+}
+
+/// The sha256 fields: `apr_sha256`/`weights_sha256` must literally be
+/// `hosted` for a hosted arm, and a real sha256 otherwise; the rest are
+/// always shas.
+fn check_shas(r: &Receipt, bad: &mut Vec<String>) {
     let mut shas = vec![
         ("item_sha256", &r.item_sha256),
         ("prompt_sha256", &r.prompt_sha256),
@@ -240,6 +243,10 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
             bad.push(format!("{k} is not a sha256"));
         }
     }
+}
+
+/// The locked prereg/corpus identity and the fixed decoding settings.
+fn check_locks(r: &Receipt, expect: Expect<'_>, bad: &mut Vec<String>) {
     if r.prereg_sha != expect.prereg_sha {
         bad.push("prereg_sha is not the locked one (exploratory data)".into());
     }
@@ -252,6 +259,11 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
     if r.decoding.temperature != 0.0 {
         bad.push("decoding is not greedy (temperature != 0)".into());
     }
+}
+
+/// What an executed row (one that produced a verdict, parsed or not) must
+/// also carry, and the shape of its `output` block when present.
+fn check_executed_fields(r: &Receipt, bad: &mut Vec<String>) {
     if r.verdict.executed() {
         for (k, missing) in [
             ("tokens", r.tokens.is_none()),
@@ -269,6 +281,17 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
             bad.push("output path/sha malformed".into());
         }
     }
+}
+
+fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
+    let mut bad = Vec::new();
+    if r.schema != SCHEME {
+        bad.push(format!("schema {:?} != {SCHEME}", r.schema));
+    }
+    check_named_fields(r, &mut bad);
+    check_shas(r, &mut bad);
+    check_locks(r, expect, &mut bad);
+    check_executed_fields(r, &mut bad);
     bad
 }
 

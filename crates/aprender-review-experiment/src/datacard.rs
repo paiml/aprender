@@ -641,37 +641,50 @@ fn check_distribution(obj: &Map<String, Value>, ids: &BTreeSet<String>, errs: &m
         errs.push("distribution is missing or empty".into());
     }
     for r in dist.into_iter().flatten() {
-        let id = r["@id"].as_str().unwrap_or("?");
-        let has = |k: &str| {
-            r.get(k)
-                .and_then(Value::as_str)
-                .is_some_and(|s| !s.is_empty())
-        };
-        match r["@type"].as_str() {
-            Some("cr:FileObject") => {
-                for k in ["contentUrl", "encodingFormat"] {
-                    if !has(k) {
-                        errs.push(format!("FileObject {id}: {k} is missing"));
-                    }
-                }
-                let sha = r["sha256"].as_str().unwrap_or("");
-                if sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    errs.push(format!("FileObject {id}: sha256 is missing or not 64 hex"));
-                }
-            }
-            Some("cr:FileSet") => {
-                for k in ["includes", "encodingFormat"] {
-                    if !has(k) {
-                        errs.push(format!("FileSet {id}: {k} is missing"));
-                    }
-                }
-            }
-            t => errs.push(format!(
-                "distribution {id}: @type {t:?} is not cr:FileObject/cr:FileSet"
-            )),
+        check_one_distribution(r, ids, errs);
+    }
+}
+
+/// One `distribution[]` entry: `@type`-specific field checks, then its
+/// `containedIn` reference (if any) against the known `@id` set.
+fn check_one_distribution(r: &Value, ids: &BTreeSet<String>, errs: &mut Vec<String>) {
+    let id = r["@id"].as_str().unwrap_or("?");
+    let has = |k: &str| {
+        r.get(k)
+            .and_then(Value::as_str)
+            .is_some_and(|s| !s.is_empty())
+    };
+    match r["@type"].as_str() {
+        Some("cr:FileObject") => check_file_object(r, id, &has, errs),
+        Some("cr:FileSet") => check_file_set(id, &has, errs),
+        t => errs.push(format!(
+            "distribution {id}: @type {t:?} is not cr:FileObject/cr:FileSet"
+        )),
+    }
+    if let Some(c) = r.get("containedIn") {
+        check_ref(c, ids, &format!("{id}.containedIn"), errs);
+    }
+}
+
+/// A `cr:FileObject` distribution entry: required fields, and a well-formed
+/// sha256.
+fn check_file_object(r: &Value, id: &str, has: &impl Fn(&str) -> bool, errs: &mut Vec<String>) {
+    for k in ["contentUrl", "encodingFormat"] {
+        if !has(k) {
+            errs.push(format!("FileObject {id}: {k} is missing"));
         }
-        if let Some(c) = r.get("containedIn") {
-            check_ref(c, ids, &format!("{id}.containedIn"), errs);
+    }
+    let sha = r["sha256"].as_str().unwrap_or("");
+    if sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        errs.push(format!("FileObject {id}: sha256 is missing or not 64 hex"));
+    }
+}
+
+/// A `cr:FileSet` distribution entry: required fields.
+fn check_file_set(id: &str, has: &impl Fn(&str) -> bool, errs: &mut Vec<String>) {
+    for k in ["includes", "encodingFormat"] {
+        if !has(k) {
+            errs.push(format!("FileSet {id}: {k} is missing"));
         }
     }
 }

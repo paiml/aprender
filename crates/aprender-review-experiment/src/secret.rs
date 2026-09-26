@@ -465,50 +465,114 @@ fn compile(toml_text: &str) -> Result<Gitleaks, toml::de::Error> {
     })
 }
 
+/// Push one escape sequence (`\` plus the escaped char, which may be
+/// multi-byte UTF-8) onto `out` and advance `i` past it.
+fn push_escape(p: &str, i: &mut usize, out: &mut String) {
+    let n = p[*i + 1..].chars().next().map_or(1, char::len_utf8);
+    out.push_str(&p[*i..*i + 1 + n]);
+    *i += 1 + n;
+}
+
+/// A `[` that just opened a character class: `[^]` and `[]` are pushed
+/// verbatim (Go RE2 allows a class with an immediate `]`, which Rust's parser
+/// would otherwise read as closing the class one byte early). Returns `true`
+/// when it fully consumed the bracket (the caller should `continue`); `false`
+/// means neither special case applied and the `[` still needs its common,
+/// single-character push.
+fn push_class_open(b: &[u8], i: &mut usize, out: &mut String) -> bool {
+    if b.get(*i + 1) == Some(&b'^') {
+        out.push_str("[^");
+        *i += 2;
+        if b.get(*i) == Some(&b']') {
+            out.push(']');
+            *i += 1;
+        }
+        return true;
+    }
+    if b.get(*i + 1) == Some(&b']') {
+        out.push_str("[]");
+        *i += 2;
+        return true;
+    }
+    false
+}
+
+/// Cursor state for [`go_to_rust`], threaded through one character at a time
+/// by [`GoToRust::step`].
+struct GoToRust {
+    i: usize,
+    class: bool,
+    prev_atom: bool,
+}
+
+impl GoToRust {
+    /// A `\` escape: pushed verbatim, `prev_atom` set. Returns `true` when it
+    /// consumed the byte at `self.i` (the caller should move on).
+    fn step_escape(&mut self, p: &str, c: u8, out: &mut String) -> bool {
+        if c != b'\\' || self.i + 1 >= p.len() {
+            return false;
+        }
+        push_escape(p, &mut self.i, out);
+        self.prev_atom = true;
+        true
+    }
+
+    /// A `{` outside a character class that is not the start of a valid
+    /// repetition: Go RE2 reads it as a literal, so Rust needs it escaped.
+    fn step_brace(&mut self, p: &str, c: u8, out: &mut String) -> bool {
+        if c != b'{' || (self.prev_atom && is_repetition(&p[self.i..])) {
+            return false;
+        }
+        out.push_str("\\{");
+        self.i += 1;
+        self.prev_atom = true;
+        true
+    }
+
+    /// One character that reached the common path: whatever it is, it is
+    /// pushed as-is and `prev_atom` is updated for the next `{`/repetition
+    /// check.
+    fn step_plain(&mut self, p: &str, c: u8, out: &mut String) {
+        self.prev_atom = self.class || !matches!(c, b'(' | b'|');
+        let n = p[self.i..].chars().next().map_or(1, char::len_utf8);
+        out.push_str(&p[self.i..self.i + n]);
+        self.i += n;
+    }
+
+    /// Advance past exactly one input character (possibly multi-byte),
+    /// pushing its Rust-regex translation onto `out`.
+    fn step(&mut self, p: &str, b: &[u8], out: &mut String) {
+        let c = b[self.i];
+        if self.step_escape(p, c, out) {
+            return;
+        }
+        if self.class {
+            self.class = c != b']';
+        } else if c == b'[' {
+            self.class = true;
+            if push_class_open(b, &mut self.i, out) {
+                return;
+            }
+        } else if self.step_brace(p, c, out) {
+            return;
+        }
+        self.step_plain(p, c, out);
+    }
+}
+
 /// Go RE2 takes a `{` that does not open a valid repetition as a literal; Rust
 /// rejects it. Escape those, outside character classes; nothing else differs
 /// for this ruleset (the compile-all test is the proof).
 fn go_to_rust(p: &str) -> String {
     let b = p.as_bytes();
     let mut out = String::with_capacity(p.len() + 8);
-    let (mut i, mut class, mut prev_atom) = (0, false, false);
-    while i < b.len() {
-        let c = b[i];
-        if c == b'\\' && i + 1 < b.len() {
-            let n = p[i + 1..].chars().next().map_or(1, char::len_utf8);
-            out.push_str(&p[i..i + 1 + n]);
-            i += 1 + n;
-            prev_atom = true;
-            continue;
-        }
-        if class {
-            class = c != b']';
-        } else if c == b'[' {
-            class = true;
-            if b.get(i + 1) == Some(&b'^') {
-                out.push_str("[^");
-                i += 2;
-                if b.get(i) == Some(&b']') {
-                    out.push(']');
-                    i += 1;
-                }
-                continue;
-            }
-            if b.get(i + 1) == Some(&b']') {
-                out.push_str("[]");
-                i += 2;
-                continue;
-            }
-        } else if c == b'{' && !(prev_atom && is_repetition(&p[i..])) {
-            out.push_str("\\{");
-            i += 1;
-            prev_atom = true;
-            continue;
-        }
-        prev_atom = class || !matches!(c, b'(' | b'|');
-        let n = p[i..].chars().next().map_or(1, char::len_utf8);
-        out.push_str(&p[i..i + n]);
-        i += n;
+    let mut st = GoToRust {
+        i: 0,
+        class: false,
+        prev_atom: false,
+    };
+    while st.i < b.len() {
+        st.step(p, b, &mut out);
     }
     out
 }

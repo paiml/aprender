@@ -403,21 +403,8 @@ fn p95_ci(wall_s: &[f64], seed: u64) -> [f64; 2] {
     ]
 }
 
-/// Fold one run's rows into the §9 block.
-///
-/// `voters` is `(lane, total seconds per review)` for every counted voter;
-/// the queue budget is the largest lane p95. `prev` is the previous tag's
-/// apr rows on the same set, for verdict identity.
-///
-/// # Errors
-/// See [`SummaryError`]; every refusal names what was inconsistent.
-pub fn summarize(
-    rows: &[Row],
-    voters: &[(String, Vec<f64>)],
-    prev: Option<&[Row]>,
-    seed: u64,
-) -> Result<Speed, SummaryError> {
-    let first = rows.first().ok_or(SummaryError::NoRows)?;
+/// Every row must share `first`'s set identity, GGUF, cell and apr tag.
+fn check_consistent_rows(rows: &[Row], first: &Row) -> Result<(), SummaryError> {
     for r in rows {
         if r.set_sha != first.set_sha || r.replay_version != first.replay_version {
             return Err(SummaryError::MixedSet);
@@ -432,21 +419,32 @@ pub fn summarize(
             return Err(SummaryError::Mismatch("apr_tag"));
         }
     }
-    let [apr, llama] = index(rows)?;
-    if apr.is_empty() || !apr.keys().eq(llama.keys()) {
-        return Err(SummaryError::CoverageDiffers);
-    }
+    Ok(())
+}
+
+/// The largest lane p95 across every counted voter (the queue budget).
+fn queue_budget(voters: &[(String, Vec<f64>)]) -> Result<(String, f64), SummaryError> {
     if voters.is_empty() || voters.iter().any(|(_, v)| v.is_empty()) {
         return Err(SummaryError::NoVoterLatency);
     }
-    let (queue_budget_lane, queue_budget_p95_s) = voters
+    voters
         .iter()
         .map(|(lane, v)| (lane.clone(), percentile(v, 0.95)))
         .max_by(|a, b| a.1.total_cmp(&b.1))
-        .ok_or(SummaryError::NoVoterLatency)?;
+        .ok_or(SummaryError::NoVoterLatency)
+}
 
-    let wall_s: Vec<f64> = apr.values().map(|r| r.wall_ms / 1000.0).collect();
-    let p95_s = percentile(&wall_s, 0.95);
+/// The engine-vs-engine ratios and the parse rate that make up most of
+/// [`Speed`]: TTFT, per-stratum prefill, decode, peak RSS and parse rate.
+struct Ratios {
+    ttft_ms: Ratio,
+    prefill_tps: BTreeMap<Stratum, Ratio>,
+    decode_tps: Ratio,
+    peak_rss_mb: Ratio,
+    parse_rate: f64,
+}
+
+fn compute_ratios(apr: &ByItem<'_>, llama: &ByItem<'_>) -> Ratios {
     let pair = |f: fn(&Row) -> Option<f64>, keep: &dyn Fn(&Row) -> bool| {
         Ratio::of(
             median(apr.values().filter(|r| keep(r)).map(|r| f(r))),
@@ -467,27 +465,68 @@ pub fn summarize(
         .values()
         .filter(|r| matches!(r.verdict, Verdict::Pass | Verdict::Fail))
         .count();
+    Ratios {
+        ttft_ms: pair(|r| r.prompt_ms, &all),
+        prefill_tps,
+        decode_tps: pair(|r| r.decode_tps, &all),
+        peak_rss_mb: Ratio::of(peak(apr), peak(llama)),
+        parse_rate: parsed as f64 / apr.len() as f64,
+    }
+}
 
-    let verdict_identity_vs_prev_tag = match prev {
-        None => None,
-        Some(prev) => {
-            let mut p = BTreeMap::new();
-            for r in prev.iter().filter(|r| r.engine == Engine::Apr) {
-                if r.set_sha != first.set_sha {
-                    return Err(SummaryError::PrevSetDiffers);
-                }
-                p.insert(r.diff_sha256.as_str(), r.verdict);
-            }
-            if !p.keys().eq(apr.keys()) {
-                return Err(SummaryError::PrevCoverageDiffers);
-            }
-            let same = apr
-                .values()
-                .filter(|r| p[r.diff_sha256.as_str()] == r.verdict)
-                .count();
-            Some(same as f64 / apr.len() as f64)
-        }
+/// The fraction of `apr`'s items whose verdict matches `prev`'s apr rows on
+/// the same set; `None` when there is no previous tag to compare against.
+fn verdict_identity_vs_prev(
+    prev: Option<&[Row]>,
+    first: &Row,
+    apr: &ByItem<'_>,
+) -> Result<Option<f64>, SummaryError> {
+    let Some(prev) = prev else {
+        return Ok(None);
     };
+    let mut p = BTreeMap::new();
+    for r in prev.iter().filter(|r| r.engine == Engine::Apr) {
+        if r.set_sha != first.set_sha {
+            return Err(SummaryError::PrevSetDiffers);
+        }
+        p.insert(r.diff_sha256.as_str(), r.verdict);
+    }
+    if !p.keys().eq(apr.keys()) {
+        return Err(SummaryError::PrevCoverageDiffers);
+    }
+    let same = apr
+        .values()
+        .filter(|r| p[r.diff_sha256.as_str()] == r.verdict)
+        .count();
+    Ok(Some(same as f64 / apr.len() as f64))
+}
+
+/// Fold one run's rows into the §9 block.
+///
+/// `voters` is `(lane, total seconds per review)` for every counted voter;
+/// the queue budget is the largest lane p95. `prev` is the previous tag's
+/// apr rows on the same set, for verdict identity.
+///
+/// # Errors
+/// See [`SummaryError`]; every refusal names what was inconsistent.
+pub fn summarize(
+    rows: &[Row],
+    voters: &[(String, Vec<f64>)],
+    prev: Option<&[Row]>,
+    seed: u64,
+) -> Result<Speed, SummaryError> {
+    let first = rows.first().ok_or(SummaryError::NoRows)?;
+    check_consistent_rows(rows, first)?;
+    let [apr, llama] = index(rows)?;
+    if apr.is_empty() || !apr.keys().eq(llama.keys()) {
+        return Err(SummaryError::CoverageDiffers);
+    }
+    let (queue_budget_lane, queue_budget_p95_s) = queue_budget(voters)?;
+
+    let wall_s: Vec<f64> = apr.values().map(|r| r.wall_ms / 1000.0).collect();
+    let p95_s = percentile(&wall_s, 0.95);
+    let ratios = compute_ratios(&apr, &llama);
+    let verdict_identity_vs_prev_tag = verdict_identity_vs_prev(prev, first, &apr)?;
 
     Ok(Speed {
         replay_version: first.replay_version.clone(),
@@ -502,11 +541,11 @@ pub fn summarize(
         queue_budget_p95_s,
         queue_budget_lane,
         within_budget: p95_s <= queue_budget_p95_s,
-        ttft_ms: pair(|r| r.prompt_ms, &all),
-        prefill_tps,
-        decode_tps: pair(|r| r.decode_tps, &all),
-        peak_rss_mb: Ratio::of(peak(&apr), peak(&llama)),
-        parse_rate: parsed as f64 / apr.len() as f64,
+        ttft_ms: ratios.ttft_ms,
+        prefill_tps: ratios.prefill_tps,
+        decode_tps: ratios.decode_tps,
+        peak_rss_mb: ratios.peak_rss_mb,
+        parse_rate: ratios.parse_rate,
         verdict_identity_vs_prev_tag,
     })
 }

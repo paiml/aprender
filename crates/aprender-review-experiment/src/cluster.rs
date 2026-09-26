@@ -44,37 +44,55 @@ const KEYWORDS: &[&str] = &[
 pub fn tokens(body: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in body.lines() {
-        let (marker, rest) = match line.chars().next() {
-            Some(c @ ('+' | '-')) => (Some(c), &line[1..]),
-            Some(' ') => (None, &line[1..]),
-            _ => (None, line),
-        };
+        let (marker, rest) = line_marker(line);
         if rest.trim().is_empty() {
             continue;
         }
         out.extend(marker.map(String::from));
-        let mut chars = rest.chars().peekable();
-        while let Some(c) = chars.next() {
-            if c.is_whitespace() {
-                continue;
-            }
-            if c.is_alphanumeric() || c == '_' {
-                let mut w = String::from(c);
-                while let Some(&n) = chars.peek() {
-                    if n.is_alphanumeric() || n == '_' {
-                        w.push(n);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                out.push(ident(w));
-            } else {
-                out.push(c.to_string());
-            }
-        }
+        push_line_tokens(rest, &mut out);
     }
     out
+}
+
+/// The line's `+`/`-` marker (kept as a token) or a leading context space
+/// (dropped), and the remainder of the line after either.
+fn line_marker(line: &str) -> (Option<char>, &str) {
+    match line.chars().next() {
+        Some(c @ ('+' | '-')) => (Some(c), &line[1..]),
+        Some(' ') => (None, &line[1..]),
+        _ => (None, line),
+    }
+}
+
+/// Append one line's tokens: whitespace dropped, identifier runs normalised
+/// via [`ident`], every other character kept as its own token.
+fn push_line_tokens(rest: &str, out: &mut Vec<String>) {
+    let mut chars = rest.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_whitespace() {
+            continue;
+        }
+        if c.is_alphanumeric() || c == '_' {
+            out.push(ident(take_ident(c, &mut chars)));
+        } else {
+            out.push(c.to_string());
+        }
+    }
+}
+
+/// Consume a run of identifier characters starting at `first`, returning the
+/// whole run as a `String`.
+fn take_ident(first: char, chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let mut w = String::from(first);
+    while let Some(&n) = chars.peek() {
+        if n.is_alphanumeric() || n == '_' {
+            w.push(n);
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    w
 }
 
 fn ident(w: String) -> String {
