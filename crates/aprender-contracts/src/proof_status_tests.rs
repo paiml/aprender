@@ -1332,6 +1332,21 @@ fn lean_sorry_token_case_table() {
             false,
             "trailing line comment at EOF",
         ),
+        (
+            "theorem t : True := trivial\n#print axioms t",
+            false,
+            "#print axioms is the token axioms",
+        ),
+        (
+            "theorem axiom_free : True := trivial -- uses no axiom",
+            false,
+            "identifier axiom_free, axiom in a comment",
+        ),
+        (
+            "theorem admitted_ok : True := trivial",
+            false,
+            "identifier admitted_ok",
+        ),
         // denies (true): a real hole
         ("theorem t : False := sorry", true, "term sorry"),
         ("theorem t : False := by\n  sorry", true, "tactic sorry"),
@@ -1351,6 +1366,18 @@ fn lean_sorry_token_case_table() {
             "sorry in a string counts (code, not commentary)",
         ),
         ("def s := r#\"x \" sorry\"#", true, "sorry in a raw string"),
+        // denies (true): an unproved assumption (PV-AXIOM-GAP)
+        (
+            "axiom f16_bound : False\ntheorem t : False := f16_bound",
+            true,
+            "declared axiom",
+        ),
+        (
+            "private axiom a : False\ntheorem t : True := trivial",
+            true,
+            "modified axiom, even if no theorem uses it",
+        ),
+        ("theorem t : False := by admit", true, "tactic admit"),
         // denies (true): a real hole a naive comment stripper would hide
         (
             "def s := \"--\"\ntheorem t : False := by sorry",
