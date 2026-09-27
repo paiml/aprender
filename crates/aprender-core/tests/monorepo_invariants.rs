@@ -1023,3 +1023,62 @@ fn falsify_ggml_003_extractor_case_table_passes() {
         .unwrap_or_else(|| panic!("the self-test did not report a case count:\n{stdout}"));
     assert!(ran >= 7, "the extractor case table ran only {ran} case(s)");
 }
+
+/// PVL EV-5a (#4124, #4244): every Lean module under `ProvableContracts/` is
+/// reachable by import from `ProvableContracts.lean`, so `lake build` compiles
+/// it. 59 were not, and 17 of those had stopped elaborating while their
+/// theorems still counted as proved. EV-5c drained them to zero, but
+/// `scripts/check_lean_modules_reachable.sh` was wired to nothing, so a new
+/// orphan would have gone unseen. Both the judgement and its mutation rows run
+/// here, because this target is already in CI (030-*).
+#[test]
+fn falsify_pvl_ev5a_every_lean_module_is_reachable_from_the_root() {
+    let root = workspace_root();
+    let script = root.join("scripts/check_lean_modules_reachable.sh");
+    assert!(
+        script.is_file(),
+        "scripts/check_lean_modules_reachable.sh is missing"
+    );
+    let run = |args: &[&str]| {
+        let out = Command::new("bash")
+            .arg(&script)
+            .args(args)
+            .current_dir(&root)
+            .output()
+            .expect("the Lean reachability guard must be runnable");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (out.status.success(), text)
+    };
+
+    let (ok, text) = run(&[]);
+    assert!(ok, "Lean modules outside the root import cone:\n{text}");
+    // A walk that found no modules passes vacuously: require N/N with N large.
+    let reached = text
+        .split("reachable ")
+        .nth(1)
+        .and_then(|s| s.split('/').next())
+        .and_then(|n| n.parse::<usize>().ok())
+        .unwrap_or(0);
+    assert!(
+        reached > 100,
+        "the guard reached only {reached} modules; the walk is broken, not the tree:\n{text}"
+    );
+
+    let (ok, text) = run(&["--self-test"]);
+    assert!(
+        ok,
+        "check_lean_modules_reachable.sh --self-test failed:\n{text}"
+    );
+    let rows = text
+        .lines()
+        .filter(|l| l.trim_start().starts_with("ok "))
+        .count();
+    assert!(
+        rows >= 6,
+        "the self-test ran {rows} mutation rows, expected at least 6:\n{text}"
+    );
+}
