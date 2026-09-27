@@ -73,7 +73,7 @@ suite for main `761d6247de` itself. It is marked PRE-EXISTING below and is not c
 | F12 | fold/rc1-F12-2378 | `9ba41b3f18` | fix/2378 cherry-picked + cb/2378 merged; PRE-EXISTING thread_config only | – |
 | S1 | fold/rc1-S1-3761 | `0c6aec0da2` | green except PRE-EXISTING thread_config | – |
 | S2 | fold/rc1-S2-4153 | `13746adedb` | clippy clean on core/serve/cli; PRE-EXISTING thread_config only | – |
-| S3 | fold/rc1-S3-parity-receipt | `fa6289e784` | green (contracts.nt regenerated) | 36322094539 |
+| S3 | fold/rc1-S3-parity-receipt | `fa6289e784` | green (contracts.nt regenerated) | 36322094539: determinism RED on gx10-build (13:50→14:51Z, determinism-compare at `timeout (-1803s)`). Same budget exhaustion as S5; runner time, not the fold |
 | S4 | fold/rc1-S4-rex-001 | `89832a3cbf` | green on the touched modules (the full serve and cli suites were memcap-killed) | – |
 | S5 | fold/rc1-S5-tier-base-race | `f8a1d940ca` | tier self-test 94/0. **CI definition: needs 3/3 agy quorum** | 36322091100: determinism RED on gx10-pool3. The job used its whole budget (13:28→14:05Z) and determinism-compare started with `timeout (-400s)`. That is runner time, not the fold. Other jobs still running at 14:15Z |
 
