@@ -511,33 +511,38 @@ fn compare(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
     // ONE process per Challenge file (#4202): each file's header import builds a whole Mathlib environment that
     // `processHeader` never frees, so one process over all files grew ~4 GB per file (39 files OOM'd at 24 and
     // 48 GiB). Per file, a run peaks at one import however many files there are.
-    let mut stdout = String::new();
+    let mut per_file = Vec::with_capacity(files.len());
     for f in &files {
-        match compare_one(lake, lean_dir, f, r) {
-            Some(rows) => stdout.push_str(&rows),
-            None => return,
+        let Some(stdout) = compare_one(lake, lean_dir, f, r) else {
+            return;
+        };
+        match comparator::parse_rows(&stdout) {
+            Ok(rows) => per_file.push(rows),
+            Err(e) => {
+                r.lines.push(format!("FAIL  {what}: {}: {e}", f.display()));
+                r.reject = true;
+                return;
+            }
         }
     }
-    match comparator::parse_rows(&stdout) {
-        Ok(rows) => {
-            r.lines.push(format!("ok    {what}"));
-            let mut c = comparator::judge_rows(&rows, r);
-            match comparator::expected_roots(lean_dir, &files) {
-                Ok(roots) => comparator::cross_check(&rows, &roots, &mut c, r),
-                Err(e) => {
-                    r.lines.push(format!(
-                        "FAIL  comparator: a Challenge file could not be read, its roots were never counted: {e}"
-                    ));
-                    r.reject = true;
-                }
-            }
-            r.challenges = Some(c);
-        }
+    let (rows, shared) = comparator::merge_file_rows(per_file);
+    r.lines.push(format!("ok    {what}"));
+    if shared > 0 {
+        r.lines.push(format!(
+            "COMPARATOR {shared} identical row(s) from a later Challenge file folded: a root several contracts cite"
+        ));
+    }
+    let mut c = comparator::judge_rows(&rows, r);
+    match comparator::expected_roots(lean_dir, &files) {
+        Ok(roots) => comparator::cross_check(&rows, &roots, &mut c, r),
         Err(e) => {
-            r.lines.push(format!("FAIL  {what}: {e}"));
+            r.lines.push(format!(
+                "FAIL  comparator: a Challenge file could not be read, its roots were never counted: {e}"
+            ));
             r.reject = true;
         }
     }
+    r.challenges = Some(c);
 }
 
 /// The FIPS 180-4 vectors `Comparator.lean --self-test` checks: "", "abc" and the two-block 448-bit message.
