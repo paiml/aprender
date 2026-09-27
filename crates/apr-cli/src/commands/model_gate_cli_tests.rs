@@ -68,6 +68,7 @@ impl Cli {
             evidence: &self.work.path().join("evidence.json"),
             sealed: &self.work.path().join(sealed),
             engine_tarball: Some(&self.f.tarball),
+            fetched: Some(self.f.fetched.path()),
             pacha_home: Some(self.home.path()),
             out: None,
             json: true,
@@ -101,7 +102,7 @@ fn falsify_ext_015_cli_gates_a_real_pacha_home() {
     assert_eq!(c.red(), ["M0", "M4"]);
 
     c.populate();
-    c.gate("sealed").expect("all seven gates green");
+    c.gate("sealed").expect("all eight gates green");
     let r = c.receipt();
     assert_eq!(r["all_green"], true);
     assert_eq!(r["sealed_items_checked"], 1);

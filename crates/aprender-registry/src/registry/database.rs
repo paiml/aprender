@@ -11,7 +11,7 @@ use std::path::Path;
 
 /// `SQLite` database for registry metadata.
 pub struct RegistryDb {
-    conn: Connection,
+    pub(super) conn: Connection,
 }
 
 /// A stored lineage row: `(from_id, to_id, edge_type, metadata_json)`.

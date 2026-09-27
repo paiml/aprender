@@ -100,6 +100,15 @@ pub(crate) mod lint_error;
 // EXT-26 comparator harness; its consumers are the EXT-27/28 competitor arms.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod comparator;
+// EXT-28 C2 speed arms; their consumer is the EXT-19 speed ledger.
+#[cfg(feature = "training")]
+pub(crate) mod hf_http;
+#[cfg(feature = "training")]
+pub(crate) mod hf_publish;
+#[cfg(feature = "training")]
+pub(crate) mod hf_token;
+#[cfg(feature = "training")]
+pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
 // EXT-19 speed ledger; its consumer is the EXT-001 §3.7 per-tag speed loop.
 #[cfg_attr(not(test), allow(dead_code))]
@@ -109,9 +118,15 @@ pub(crate) mod speed_ledger;
 pub(crate) mod speed_gate;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;
+pub(crate) mod model_gate_cr;
+pub(crate) mod model_gate_m1b;
 pub(crate) mod model_gate_m2;
 #[cfg(feature = "training")]
+pub(crate) mod model_ghcr;
+#[cfg(feature = "training")]
 pub(crate) mod model_pack;
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod speed_arms;
 // Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
 // own source so the class cannot be reintroduced by the next copy-paste.
 #[cfg(test)]
@@ -202,6 +217,8 @@ pub(crate) mod rosetta;
 pub(crate) mod run;
 #[cfg(feature = "training")]
 pub(crate) mod runs;
+#[cfg(feature = "training")]
+pub(crate) mod runs_export;
 #[cfg(feature = "training")]
 pub(crate) mod runs_import;
 pub(crate) mod search_merge;

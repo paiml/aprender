@@ -1545,6 +1545,9 @@ pub enum ModelCommands {
         /// The released apr crate tarball, re-hashed against engine.crate_tarball_sha256
         #[arg(long, value_name = "FILE")]
         engine_tarball: Option<PathBuf>,
+        /// The rc as the clean-room job fetched it from HF, re-hashed for M-CR
+        #[arg(long, value_name = "DIR")]
+        fetched: Option<PathBuf>,
         /// Pacha home (default: ~/.pacha)
         #[arg(long, value_name = "DIR")]
         pacha_home: Option<PathBuf>,
@@ -1552,6 +1555,108 @@ pub enum ModelCommands {
         #[arg(long, value_name = "FILE")]
         out: Option<PathBuf>,
         /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// M7: compare a fetched published revision with its release; a mismatch yanks and STOPs
+    Confirm {
+        /// Release directory holding model-release-v1.json (as packed)
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// Directory the publisher's fetch of the tag wrote
+        #[arg(long, value_name = "DIR")]
+        fetched: PathBuf,
+        /// Where the fetch came from, e.g. hf:paiml/line@v0.1.0
+        #[arg(long)]
+        source: String,
+        /// Line state directory: <version>/ receipt, yanked.json, YANKED.md
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Yank a version: write yanked.json and the card banner; nothing is deleted
+    Yank {
+        /// Version to yank (must be the manifest's)
+        #[arg(value_name = "VERSION")]
+        version: String,
+        /// Release directory holding model-release-v1.json
+        #[arg(long, value_name = "DIR")]
+        dir: PathBuf,
+        /// Why the version is yanked
+        #[arg(long)]
+        reason: String,
+        /// Receipt id that justifies the yank
+        #[arg(long)]
+        receipt: String,
+        /// Line state directory: <version>/yanked.json, YANKED.md
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Print the record as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Publish a release dir to the HF Hub: rc to its branch, released to main + tag (idempotent)
+    Publish {
+        /// Release directory holding model-release-v1.json
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// HF model repo, owner/name
+        #[arg(long)]
+        repo: String,
+        /// File holding the HF token, mode 0600. Without it, the local HF token as
+        /// huggingface_hub finds it: HF_TOKEN, HUGGING_FACE_HUB_TOKEN, then the file at
+        /// HF_TOKEN_PATH, $HF_HOME/token or ~/.cache/huggingface/token. Only the
+        /// source is logged
+        #[arg(long, value_name = "FILE")]
+        token_file: Option<PathBuf>,
+        /// Line state directory: <version>/model-publish-receipt-v1.json
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Hub endpoint
+        #[arg(long, default_value = "https://huggingface.co")]
+        endpoint: String,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// EXT-17: push a release dir to GHCR as one OCI artifact (idempotent; token file only)
+    GhcrPush {
+        /// Release directory holding model-release-v1.json and the files it lists
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// Repository without a tag, e.g. ghcr.io/paiml/qwen3.5-4b-apr (tag = manifest version)
+        #[arg(long)]
+        repo: String,
+        /// Owner-only (0600) file holding the push token on the driver host (R-7)
+        #[arg(long, value_name = "FILE")]
+        token_file: PathBuf,
+        /// Registry user name paired with the token
+        #[arg(long, default_value = "apr")]
+        user: String,
+        /// Line state directory: the receipt goes to <version>/model-ghcr-receipt-v1.json
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// EXT-17: fetch a GHCR tag into DIR, re-hashing every blob, for `apr model confirm`
+    GhcrFetch {
+        /// Reference with a tag, e.g. ghcr.io/paiml/qwen3.5-4b-apr:0.1.0
+        #[arg(value_name = "REF")]
+        reference: String,
+        /// Empty or absent directory to write the files into
+        #[arg(long, value_name = "DIR")]
+        to: PathBuf,
+        /// Owner-only token file (omit for a public package)
+        #[arg(long, value_name = "FILE")]
+        token_file: Option<PathBuf>,
+        /// Registry user name paired with the token
+        #[arg(long, default_value = "apr")]
+        user: String,
+        /// Print the OCI manifest as JSON
         #[arg(long)]
         json: bool,
     },
@@ -1715,6 +1820,26 @@ pub enum RunsCommands {
         /// pacha registry database (default: ~/.pacha/registry.db)
         #[arg(long, value_name = "PATH")]
         registry: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Export the pacha registry as sorted JSONL for the fleet (EXT-22, I-7)
+    ///
+    /// One line per row, keyed by content (sha256, run ULID, manifest sha);
+    /// host-local autoincrement ids are left out. An unchanged registry
+    /// re-exports to the same bytes, and an identical file is not rewritten.
+    /// `--check` writes nothing and fails unless FILE is exactly that export.
+    Export {
+        /// Where to write the export (the nightly job points this at the RAID)
+        #[arg(long, value_name = "FILE")]
+        out: PathBuf,
+        /// pacha registry database (default: ~/.pacha/registry.db)
+        #[arg(long, value_name = "PATH")]
+        registry: Option<PathBuf>,
+        /// Compare FILE with a fresh export instead of writing it
+        #[arg(long)]
+        check: bool,
         /// Output as JSON
         #[arg(long)]
         json: bool,

@@ -12,6 +12,7 @@
 
 use super::{apply_holm, m2, suite_report, validate, M2Prereg, M2Report, ReleaseClass, Suite};
 use super::{SuiteData, SuiteReport, Verdict};
+use crate::commands::comparator::{check_block, ComparatorBlock};
 use serde::{Deserialize, Serialize};
 
 /// What an arm is, as the receipt records it.
@@ -41,6 +42,10 @@ pub(crate) struct Arm {
     /// Same suite names and the same candidate items as the incumbent comparison;
     /// the baseline side is this arm.
     pub suites: Vec<Suite>,
+    /// How the arm was run (EXT-26, R-1a, FALSIFY-EXT-020). Required for an artifact arm; an API arm has
+    /// no artifact to hash, and it is report-only anyway.
+    #[serde(default)]
+    pub comparator: Option<ComparatorBlock>,
 }
 
 /// One suite against one arm: M2's paired report plus the arm's own level, so a first
@@ -82,12 +87,26 @@ fn candidate_of(s: &Suite) -> (Option<&[bool]>, Option<&[f64]>) {
     }
 }
 
+/// FALSIFY-EXT-020 on an M2 arm: an artifact arm carries a complete comparator block.
+/// The block's `artifact_sha256` is what the arm *produced* (its scored outputs), so it
+/// is not compared with the model sha the arm names.
+fn check_comparator(name: &str, b: Option<&ComparatorBlock>) -> Result<(), String> {
+    let b = b.ok_or_else(|| {
+        format!("C7: arm {name}: FALSIFY-EXT-020: artifact arm has no comparator block")
+    })?;
+    let v = serde_json::to_value(b).map_err(|e| format!("C7: arm {name}: {e}"))?;
+    check_block(&v)
+        .map(drop)
+        .map_err(|e| format!("C7: arm {name}: {e}"))
+}
+
 fn validate_arm(arm: &Arm, incumbent: &[Suite]) -> Result<(), String> {
     let label = match &arm.identity {
         ArmIdentity::Artifact { name, sha256 } => {
             if !is_sha256_hex(sha256) {
                 return Err(format!("C7: arm {name}: sha256 is not 64 lowercase hex"));
             }
+            check_comparator(name, arm.comparator.as_ref())?;
             name.clone()
         }
         ArmIdentity::Api { model_id, version } => {
@@ -227,4 +246,4 @@ pub(crate) fn gate(
 
 #[cfg(test)]
 #[path = "model_gate_m2_arms_tests.rs"]
-mod tests;
+pub(crate) mod tests;

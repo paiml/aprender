@@ -9,8 +9,11 @@
 //! - it writes `model-gate-receipt-v1`, with one row per gate and no timestamp, so the
 //!   same inputs give the same bytes.
 //!
-//! Missing evidence is RED, never a skip. M-CR (EXT-13) and M7 (EXT-15) are separate rows.
+//! Missing evidence is RED, never a skip. M-CR (EXT-13, `model_gate_cr`) runs first; M7
+//! (EXT-15) is a separate row.
 
+use super::model_gate_cr::{mcr, CrEvidence};
+use super::model_gate_m1b::{self, M1bEvidence, M1bReport};
 use super::model_gate_m2::arms::{gate as m2_gate, Arm, GateReport};
 use super::model_gate_m2::{M2Prereg, ReleaseClass, Suite};
 use pacha::data::{AdmittedManifest, SealedItems};
@@ -30,7 +33,7 @@ pub(crate) const M1_MIN_COSINE: f64 = 0.98;
 pub(crate) const M1_LLAMA_CPP_PIN: &str = "d1d3c3396";
 /// The files a release dir may hold beside those the manifest lists: the gate's own
 /// inputs and output.
-const GATE_FILES: [&str; 2] = [MANIFEST, RECEIPT];
+pub(crate) const GATE_FILES: [&str; 2] = [MANIFEST, RECEIPT];
 
 /// One file of the release (§3.4 `files`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,8 +127,14 @@ pub(crate) struct M3Evidence {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct GateEvidence {
+    /// The clean-room job's record (M-CR).
+    #[serde(default)]
+    pub cr: Option<CrEvidence>,
     #[serde(default)]
     pub m1: Option<M1Evidence>,
+    /// M1b artifact quality (EXT-27): KL and top-1 vs BF16, per arm, ratcheted.
+    #[serde(default)]
+    pub m1b: Option<M1bEvidence>,
     #[serde(default)]
     pub m2: Option<M2Evidence>,
     #[serde(default)]
@@ -161,6 +170,7 @@ pub(crate) struct GateReceipt {
     pub manifest_sha256: String,
     pub gates: Vec<GateRow>,
     pub m1: Option<M1Evidence>,
+    pub m1b: Option<M1bReport>,
     pub m2: Option<GateReport>,
     pub m3_parse_rate: Option<f64>,
     pub sealed_items_checked: usize,
@@ -175,10 +185,12 @@ pub(crate) struct GateInputs<'a> {
     pub sealed: &'a SealedItems,
     /// The released `apr` crate tarball, re-hashed against `engine.crate_tarball_sha256`.
     pub engine_tarball: Option<&'a Path>,
+    /// The rc as the clean-room job fetched it from HF, re-hashed for M-CR.
+    pub fetched: Option<&'a Path>,
     pub env: &'a dyn GateEnv,
 }
 
-fn sha256_file(path: &Path) -> std::io::Result<(u64, String)> {
+pub(crate) fn sha256_file(path: &Path) -> std::io::Result<(u64, String)> {
     let mut f = std::fs::File::open(path)?;
     let mut h = Sha256::new();
     let n = std::io::copy(&mut f, &mut h)?;
@@ -194,7 +206,7 @@ fn hex_lower(b: &[u8]) -> String {
         })
 }
 
-fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
+pub(crate) fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
     if findings.is_empty() {
         GateRow {
             gate,
@@ -210,7 +222,7 @@ fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
     }
 }
 
-fn clean_name(n: &str) -> bool {
+pub(crate) fn clean_name(n: &str) -> bool {
     !n.is_empty() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
 }
 
@@ -306,7 +318,7 @@ fn m0(m: &ReleaseManifest, inp: &GateInputs<'_>) -> GateRow {
 }
 
 /// M1 parity: cosine ≥ 0.98 against the pinned llama.cpp.
-fn m1(ev: Option<&M1Evidence>) -> GateRow {
+pub(crate) fn m1(ev: Option<&M1Evidence>) -> GateRow {
     let Some(e) = ev else {
         return row("M1", vec!["no M1 parity evidence".into()], String::new());
     };
@@ -366,7 +378,7 @@ fn verdict_text(v: &super::model_gate_m2::Verdict) -> String {
 }
 
 /// M3 smoke: every probe answered by both `apr run` and `apr serve`.
-fn m3(ev: Option<&M3Evidence>) -> GateRow {
+pub(crate) fn m3(ev: Option<&M3Evidence>) -> GateRow {
     let Some(e) = ev else {
         return row("M3", vec!["no M3 probe evidence".into()], String::new());
     };
@@ -457,7 +469,7 @@ fn m5(m: &ReleaseManifest) -> GateRow {
 }
 
 /// A card line's receipt markers: `[receipt:<id>]`.
-fn receipt_markers(line: &str) -> (String, Vec<&str>) {
+pub(crate) fn receipt_markers(line: &str) -> (String, Vec<&str>) {
     let mut ids = Vec::new();
     let mut rest = String::with_capacity(line.len());
     let mut s = line;
@@ -481,7 +493,7 @@ fn receipt_markers(line: &str) -> (String, Vec<&str>) {
 
 /// Whether a line states a figure: a digit that is not part of an identifier (the
 /// `3.5` in `Qwen3.5-4B`, the `0` in `v0.1.0`) and not an ordered-list marker.
-fn states_a_figure(text: &str) -> bool {
+pub(crate) fn states_a_figure(text: &str) -> bool {
     let body = text.trim_start();
     let body = match body.find(". ") {
         Some(i) if i > 0 && body[..i].bytes().all(|b| b.is_ascii_digit()) => &body[i + 2..],
@@ -560,7 +572,7 @@ fn m6(m: &ReleaseManifest, inp: &GateInputs<'_>) -> GateRow {
     )
 }
 
-/// Run M0..M6.
+/// Run M-CR, then M0..M6, with M1b after M1.
 ///
 /// # Errors
 ///
@@ -571,10 +583,13 @@ pub(crate) fn run(pre: &M2Prereg, inp: &GateInputs<'_>) -> Result<GateReceipt, S
     let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let m: ReleaseManifest =
         serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (m1b_row, m1b_report) = model_gate_m1b::gate(&m, inp.evidence.m1b.as_ref());
     let (m2_row, m2_report) = m2(pre, inp.evidence.m2.as_ref());
     let gates = vec![
+        mcr(&m, inp.evidence.cr.as_ref(), inp.fetched),
         m0(&m, inp),
         m1(inp.evidence.m1.as_ref()),
+        m1b_row,
         m2_row,
         m3(inp.evidence.m3.as_ref()),
         m4(&m, inp),
@@ -589,6 +604,7 @@ pub(crate) fn run(pre: &M2Prereg, inp: &GateInputs<'_>) -> Result<GateReceipt, S
         manifest_sha256: hex_lower(&Sha256::digest(&bytes)),
         gates,
         m1: inp.evidence.m1.clone(),
+        m1b: m1b_report,
         m2: m2_report,
         m3_parse_rate: inp.evidence.m3.as_ref().and_then(|e| e.parse_rate),
         sealed_items_checked: inp.sealed.len(),

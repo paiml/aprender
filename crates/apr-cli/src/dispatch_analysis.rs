@@ -898,6 +898,7 @@ fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Re
             evidence,
             sealed,
             engine_tarball,
+            fetched,
             pacha_home,
             out,
             json,
@@ -906,10 +907,69 @@ fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Re
             evidence,
             sealed,
             engine_tarball: engine_tarball.as_deref(),
+            fetched: fetched.as_deref(),
             pacha_home: pacha_home.as_deref(),
             out: out.as_deref(),
             json: *json || cli.json,
         }),
+        ModelCommands::Confirm {
+            dir,
+            fetched,
+            source,
+            state,
+            json,
+        } => commands::model_confirm::run_confirm(dir, fetched, source, state, *json || cli.json),
+        ModelCommands::Publish {
+            dir,
+            repo,
+            token_file,
+            state,
+            endpoint,
+            json,
+        } => commands::hf_publish::run_publish(dir, repo, token_file.as_deref(), state, endpoint, *json || cli.json),
+        ModelCommands::Yank {
+            version,
+            dir,
+            reason,
+            receipt,
+            state,
+            json,
+        } => commands::model_confirm::run_yank(
+            dir,
+            version,
+            reason,
+            receipt,
+            state,
+            *json || cli.json,
+        ),
+        ModelCommands::GhcrPush {
+            dir,
+            repo,
+            token_file,
+            user,
+            state,
+            json,
+        } => commands::model_ghcr::run_push(&commands::model_ghcr::PushArgs {
+            dir,
+            repository: repo,
+            token_file,
+            user,
+            state,
+            json: *json || cli.json,
+        }),
+        ModelCommands::GhcrFetch {
+            reference,
+            to,
+            token_file,
+            user,
+            json,
+        } => commands::model_ghcr::run_fetch(
+            reference,
+            to,
+            token_file.as_deref(),
+            user,
+            *json || cli.json,
+        ),
         ModelCommands::Pack {
             model,
             line,
@@ -995,6 +1055,17 @@ fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Resu
         RunsCommands::Fsck { registry, json } => {
             commands::runs::run_fsck(registry.as_deref(), *json || cli.json)
         }
+        RunsCommands::Export {
+            out,
+            registry,
+            check,
+            json,
+        } => commands::runs_export::run_export(
+            registry.as_deref(),
+            out,
+            *check,
+            *json || cli.json,
+        ),
     }
 }
 

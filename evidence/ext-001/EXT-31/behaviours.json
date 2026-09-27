@@ -1,0 +1,62 @@
+{
+  "row": "EXT-31",
+  "issue": "https://github.com/paiml/aprender/issues/4413",
+  "spec": "paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 rows C5, C6",
+  "pins": "evidence/ext-001/EXT-24/crux-bind-receipt.json",
+  "marks": "[V] verified here (test or command below) · [C] cited from a committed test/spec · [X] third-party docs at the pinned version · [U] unmeasured",
+  "measured_at": "2026-09-25T23:35Z",
+  "C5": {
+    "contract": "contracts/crux-P-04-v1.yaml",
+    "behaviours": {
+      "a_lineage_in_one_command": {
+        "apr": {"holds": true, "mark": "[V]", "basis": "cargo test -p apr-cli --lib falsify_crux_p_04_001_lineage_answers_run_dataset_base_or_orphan (planted orphan -> reported, never given a run)"},
+        "mlflow@3.16.1": {"holds": "partial", "mark": "[X]", "basis": "a LoggedModel records its source run, and the run records dataset inputs; there is no first-class base-model edge, and the answer takes more than one call"},
+        "dvc@3.67.1": {"holds": "partial", "mark": "[X]", "basis": "dvc.lock pins a stage's deps/outs by hash; there is no model registry to ask 'what produced model X'"}
+      },
+      "b_dataset_identity_content_addressed": {
+        "apr": {"holds": true, "mark": "[C]", "basis": "crates/aprender-registry/src/data/provenance_tests.rs ext_08_canonical_hash_* (EXT-08); track.rs records a dataset node as blake3:<tree hash>, never a registered name"},
+        "mlflow@3.16.1": {"holds": "partial", "mark": "[X]", "basis": "a dataset carries a digest computed by its dataset source type; it is not specified as a hash of the full content"},
+        "dvc@3.67.1": {"holds": true, "mark": "[X]", "basis": "the cache is content-addressed by file hash"}
+      },
+      "c_promotion_is_an_alias": {
+        "apr": {"holds": null, "mark": "[U]", "basis": "`apr registry promote` does not exist (registry subcommands: aliases, lineage); FALSIFY-CRUX-P-04-002 stays owed on EXT-12 FALSIFY-EXT-007"},
+        "mlflow@3.16.1": {"holds": true, "mark": "[X]", "basis": "registered-model aliases are movable pointers to immutable model versions"},
+        "dvc@3.67.1": {"holds": "n/a", "mark": "[X]", "basis": "no registry or alias in DVC core"}
+      },
+      "d_works_offline": {
+        "apr": {"holds": true, "mark": "[V]", "basis": "cargo test -p apr-cli --lib falsify_crux_p_04_003 (re-mutated: a TcpStream plant in runs.rs and features=[\"remote\"] on apr-cli's pacha dep each -> RED)"},
+        "mlflow@3.16.1": {"holds": true, "mark": "[X]", "basis": "a local file or sqlite backend store needs no tracking server"},
+        "dvc@3.67.1": {"holds": true, "mark": "[X]", "basis": "git plus a local cache; a remote is optional"}
+      },
+      "e_write_overhead_per_metric_row": {"status": "report-only", "mark": "[C]", "basis": "spec §10 C5 (e) is report-only; the EXT-05 overhead receipt is ours; no competitor arm has been run"},
+      "wandb": {"status": "NotRun", "comparator": "unrunnable-hermetically", "basis": "EXT-24 pin row: SaaS, no artifact sha; no claim may cite it (S-12)"}
+    },
+    "gap_effect": "closes",
+    "gap_derivation": "apr holds (a), (b) and (d); MLflow holds (a) and (b) only in part; DVC holds (a) only in part. apr does not yet hold (c) and MLflow does, so the gap on (c) stays open until promote lands. The effect stays 'closes', the value EXT-25 recorded for `apr runs gc`, because nothing apr held has regressed"
+  },
+  "C6": {
+    "contract": "contracts/crux-P-05-v1.yaml",
+    "arms_measured": {
+      "Qwen/Qwen3.5-4B@851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a": {"refs": {"tags": [], "branches": ["main"]}, "card_sha256": "1406be1b6b8fd8a6545870da516912804756593628a1d0fb0a7965211e82a7bb", "card_decimal_lines": 539, "card_receipt_words": 0},
+      "unsloth/Qwen3.5-4B-GGUF@e87f176479d0855a907a41277aca2f8ee7a09523": {"refs": {"tags": [], "branches": ["main"]}, "card_sha256": "28546f5fc4f22ee1b3f17b908957f17fcfa66174032136265bdb27f404bc1e6c", "card_decimal_lines": 543, "card_receipt_words": 0},
+      "bartowski/Qwen_Qwen3.5-4B-GGUF@4168f45a16a1290d65a4ec0fa312ae917a4c15d6": {"refs": {"tags": [], "branches": ["main"]}, "card_sha256": "385066b55f515ade2629bfa5c0c43213b13fa2610f94ccc183f010df3e9fb55a", "card_decimal_lines": 50, "card_receipt_words": 0},
+      "ollama:qwen3.5:4b": {"status": "[U]", "basis": "tag mutability and card receipts were not measured in this row"}
+    },
+    "method": "refs: GET https://huggingface.co/api/models/<repo>/refs; card: GET https://huggingface.co/<repo>/raw/<pinned revision>/README.md; decimal lines = grep -cE '[0-9]+\\.[0-9]+'; receipt words = grep -ciE 'receipt|sha256|provenance'",
+    "behaviours": {
+      "a_tag_redownload_sha_stable": {
+        "apr": {"holds": "at the release gate", "mark": "[V]", "basis": "falsify_ext_015_each_gate_turns_red_on_its_plant M0 'one byte of the model flipped' (same size, sha differs -> RED)"},
+        "competitors": {"holds": false, "mark": "[V]", "basis": "the three HF arms have no tags at all; the only mutable name is the branch main, so a download by name is not sha-stable. Only a pinned commit is"}
+      },
+      "b_tags_immutable": {"apr": {"mark": "[C]", "basis": "blocking via M-CR, M7 and I-8 (spec §10 C6); no fixture here"}, "competitors": {"holds": "n/a", "mark": "[V]", "basis": "no tags"}},
+      "c_card_numbers_receipted": {
+        "apr": {"holds": true, "mark": "[V]", "basis": "falsify_ext_015 M6 plants: a card figure with no receipt, or with an unknown receipt -> RED"},
+        "competitors": {"holds": false, "mark": "[V]", "basis": "50-543 decimal lines per card, 0 receipt/sha256/provenance words"}
+      },
+      "d_build_receipt_published": {"apr": {"mark": "[C]", "basis": "blocking via I-8 (spec §10 C6); no fixture here"}, "competitors": {"holds": false, "mark": "[V]", "basis": "0 receipt/provenance words on any pinned card"}}
+    },
+    "gap_effect": "closes",
+    "gap_derivation": "apr holds (a) at the gate and (c); no pinned HF arm holds either one",
+    "finding": "`apr pull` is not sha-stable by itself. Its cache hit compares file size only, yet prints 'cached, verified' (pull.rs, the cache-hit branch in download_shard), and a re-download rewrites .apr-manifest.json with the new hashes. A re-pushed revision with the same size is accepted silently. The gate catches it on a release dir; pull does not"
+  }
+}
