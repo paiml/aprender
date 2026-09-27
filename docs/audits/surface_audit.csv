@@ -827,9 +827,9 @@ pv-sat,pv-sat [CONTRACT_DIR] (SAT witness write),6,x86_64-linux,NONE,no,6,contra
 pv-sat,pv-sat --self-test,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:39,high
 aprender-score,"aprender-score --ci --threshold <N> (gate mode, exit 1 below threshold)",6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:49,high
 aprender-score,aprender-score [PATH] (TUI-crate quality scoring),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:30-64,high
-aprender-simulate,GET / (visualization UI),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:88,medium
-aprender-simulate,GET /health (visualization),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:89,medium
-aprender-simulate,"GET /ws (visualization, WebSocket)",6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:82,medium
+aprender-simulate,unserved: GET / (visualization UI; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:88,medium
+aprender-simulate,unserved: GET /health (visualization; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:89,medium
+aprender-simulate,unserved: GET /ws (visualization WebSocket; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:82,medium
 aprender-simulate,aprender-simulate emc-check,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:105,high
 aprender-simulate,aprender-simulate emc-validate,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:110,high
 aprender-simulate,aprender-simulate help,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:117,high
