@@ -59,29 +59,50 @@ fn header_matches_the_whole_file_reader() {
     assert_eq!(from_header, from_data);
 }
 
-/// A header past the first 8 MiB prefix (a big vocabulary does this) still parses: the
-/// prefix doubles instead of reporting the file as malformed.
-#[test]
-fn a_header_longer_than_the_first_prefix_still_parses() {
+fn big_vocab_gguf() -> Vec<u8> {
     let mut metadata = arch();
     let tokens: Vec<String> = (0..700_000).map(|i| format!("token-{i:08}")).collect();
     metadata.push((
         "tokenizer.ggml.tokens".to_string(),
         GgufValue::ArrayString(tokens),
     ));
-    let bytes = gguf(&metadata);
+    gguf(&metadata)
+}
+
+/// A header past the first prefix (a big vocabulary does this) still parses: the prefix
+/// doubles instead of reporting the file as malformed.
+#[test]
+fn a_header_longer_than_the_first_prefix_still_parses() {
+    let bytes = big_vocab_gguf();
     assert!(
-        bytes.len() > 8 << 20,
+        bytes.len() > 1 << 20,
         "the fixture must outgrow the first prefix"
     );
     let f = file(&bytes);
-    let (reader, len) = GgufReader::header_from_file(f.path()).expect("header");
+    let (reader, len) =
+        GgufReader::header_from_file_within(f.path(), 1 << 20, 64 << 20).expect("header");
+    assert_eq!(len, bytes.len() as u64);
     assert_eq!(reader.tensor_extents(len).expect("extents").len(), 2);
     assert_eq!(
         gguf_raw_metadata(&reader)
             .get("tokenizer.ggml.tokens")
             .map(String::as_str),
         Some("[len=700000]")
+    );
+}
+
+/// A header still unparsed at the cap is refused by name, never read to EOF: without the
+/// cap a corrupt 17 GB GGUF buffered all 17 GB before its parse error (quorum finding on
+/// PMAT-3761, lane 2).
+#[test]
+fn a_header_past_the_cap_is_refused_not_read_whole() {
+    let bytes = big_vocab_gguf();
+    let f = file(&bytes);
+    let err = GgufReader::header_from_file_within(f.path(), 64 << 10, 1 << 20)
+        .expect_err("the header does not fit in 1 MiB");
+    assert!(
+        err.to_string().contains("refused rather than read whole"),
+        "{err}"
     );
 }
 

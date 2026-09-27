@@ -12,27 +12,33 @@ impl GgufReader {
     /// #4520 step 2 / #3761: `apr inspect --json` on Qwen3.5-27B-Q4_K_M read all 16.7 GB
     /// and peaked at 32.8 GB RSS (`from_file`, then a copy of every tensor) to report
     /// numbers the header holds. The header is read as a prefix that doubles until it
-    /// parses; only a file whose header does not parse reads to EOF, and that error is
-    /// final. The reader's `data` is the prefix, so tensor bytes are NOT available from
+    /// parses (16 MiB first, 256 MiB cap, the #3750 policy). A small file that does not
+    /// parse is that parse error; a header still unparsed at the cap is refused rather
+    /// than read whole. The reader's `data` is the prefix, so tensor bytes are NOT available from
     /// it: size tensors with [`Self::tensor_extents`] against the returned file length.
     pub fn header_from_file<P: AsRef<Path>>(path: P) -> Result<(Self, u64)> {
-        const FIRST_PREFIX: u64 = 8 << 20;
-        let mut file = File::open(path.as_ref()).map_err(AprenderError::Io)?;
-        let file_len = file.metadata().map_err(AprenderError::Io)?.len();
-        let mut data = Vec::new();
-        let mut want = FIRST_PREFIX.min(file_len);
-        loop {
-            let more = want - data.len() as u64;
-            (&mut file)
-                .take(more)
-                .read_to_end(&mut data)
-                .map_err(AprenderError::Io)?;
-            match Self::from_bytes(data.clone()) {
-                Ok(reader) => return Ok((reader, file_len)),
-                Err(e) if want >= file_len || (data.len() as u64) < want => return Err(e),
-                Err(_) => want = want.saturating_mul(2).min(file_len),
-            }
-        }
+        Self::header_from_file_within(
+            path,
+            crate::format::prefix::HEADER_FIRST_READ,
+            crate::format::prefix::HEADER_READ_CAP,
+        )
+    }
+
+    /// [`Self::header_from_file`] with the first read and the cap as parameters (the case
+    /// table uses small ones). The prefix grows through the ONE bounded-prefix policy
+    /// (`parse_growing_prefix_within`), so a header that still does not parse at `cap` is
+    /// refused by name, never read to EOF: a corrupt 17 GB GGUF costs `cap`, not 17 GB.
+    pub fn header_from_file_within<P: AsRef<Path>>(
+        path: P,
+        first: usize,
+        cap: usize,
+    ) -> Result<(Self, u64)> {
+        let path = path.as_ref();
+        let file_len = std::fs::metadata(path).map_err(AprenderError::Io)?.len();
+        let reader =
+            crate::format::prefix::parse_growing_prefix_within(path, first, cap, Self::from_bytes)
+                .map_err(|message| AprenderError::FormatError { message })?;
+        Ok((reader, file_len))
     }
 
     /// Load a GGUF file preserving ALL metadata keys (no architecture
