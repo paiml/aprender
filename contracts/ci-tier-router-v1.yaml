@@ -1,0 +1,93 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "The CI tier router (FLOW-003 QM-11, #4529). Given a diff D and the input set I = I_dep ∪ F ∪ C that QM-10 records, it decides which tier the diff owes: T0 (lint only), selective (build the workspace, test R'), or T3 (everything). A router that under-selects lets a regression merge green, so it FAILS CLOSED: every case it cannot prove is T3 with a reason."
+  kind: pattern
+  references:
+    - "scripts/ci/tier_router.py — the router, its case table and its planted mutants"
+    - "docs/specifications/FLOW-003-queue-and-release-cycle-model.md §T.2 — Def. 14, Thm 14 (T0), Thm 15 (R')"
+    - "ci-input-set-v1 (QM-10) — the producer of I; the router reads it and never writes it"
+    - "#4527 QM-09 compile-once, #4528 QM-10 input set, #4529 QM-11 this contract"
+
+five_whys:
+  symptom: "Every PR pays for the whole workspace test run, including PRs that change a markdown file no build or test reads."
+  why_1: "CI has one tier. It cannot tell a diff that affects nothing from a diff that affects everything."
+  why_2: "Telling them apart needs the input set of every build and test step, and until QM-10 nothing recorded it."
+  why_3: "A path filter written by hand (paths-ignore: docs/**) is the usual shortcut, and it is wrong in exactly the cases that matter: include_str! of a README, a test that enumerates docs/specifications/, a new file under tests/ that Cargo discovers."
+  why_4: "Those cases are invisible to review because each hand-written filter looks right for the files its author was thinking of."
+  why_5: "Tier selection was treated as configuration rather than as a claim that can be falsified."
+  root_cause: "The tier decision must be derived from recorded inputs (Def. 14), must refuse to narrow when a term is unknown (fail closed), and must carry a case table with planted mutants so a weakened rule goes RED."
+
+equations:
+  t0_iff_disjoint:
+    formula: "tier(D) = T0  ⇔  D ∩ I = ∅ ∧ base_valid ∧ no changed path is autodiscovered by a package"
+    domain: "D: changed repo paths (both sides of a rename); I: ci-input-set-v1 document for the base"
+    codomain: "tier ∈ {T0, selective, T3}"
+    invariants:
+      - "Without --base-valid (INV-BASE held for this base) T0 is never returned"
+      - "A path under a package's src/, tests/, examples/, benches/ or its build.rs is owned by that package even when I does not name it (Cargo target autodiscovery, a term Def. 14 does not name)"
+
+  selective_is_reverse_closure:
+    formula: "D ∩ (C ∪ F) = ∅ ⇒ packages(D) = closure_rev(owners(D ∩ I_dep) ∪ owners(stale))"
+    domain: "owners from rustc dep-info or autodiscovery; reverse edges over normal, dev and build dependencies"
+    codomain: "sorted package list R'"
+    invariants:
+      - "R' contains every package that depends, by any edge kind, on a package owning a changed input"
+      - "Paths changed between the nightly and the base, when INV-BASE failed, join R' through their owners"
+
+  fail_closed:
+    formula: "I absent ∨ I invalid ∨ D ∩ C ≠ ∅ ∨ D ∩ F ≠ ∅ ∨ (∃ p ∈ D ∩ I_dep: owners(p) = ∅) ⇒ tier(D) = T3 ∧ packages = workspace"
+    domain: "the undecidable cases"
+    codomain: "T3 with at least one reason"
+    invariants:
+      - "F is recorded for the whole test run, not per package, so a change in F cannot prove any R' smaller than the workspace"
+      - "An input set missing a required key is refused, never read as empty"
+
+proof_obligations:
+  - id: CTR-INV-001
+    type: invariant
+    property: "T0 only on a disjoint diff over a valid base"
+    formal: "tier_router.py --self-test rows 'docs-only PR runs T0 only' and 'docs-only but INV-BASE failed is never T0' pass"
+    applies_to: t0_iff_disjoint
+  - id: CTR-INV-002
+    type: invariant
+    property: "Autodiscovered targets are never T0"
+    formal: "rows 'an added test target' and 'an added bin target' route selective"
+    applies_to: t0_iff_disjoint
+  - id: CTR-INV-003
+    type: invariant
+    property: "R' is the reverse closure over every edge kind"
+    formal: "row 'change to crate X runs exactly R'(X)' passes; mutants drop-dev-edges and no-closure turn the table RED"
+    applies_to: selective_is_reverse_closure
+  - id: CTR-INV-004
+    type: invariant
+    property: "Every undecidable case is T3 over the whole workspace"
+    formal: "rows for C, F, unowned I_dep, no input set and a malformed input set pass; mutant ignore-f turns the table RED"
+    applies_to: fail_closed
+  - id: CTR-INV-005
+    type: invariant
+    property: "The case table can turn RED"
+    formal: "each of the five planted mutants (ignore-f, drop-dev-edges, drop-autodiscovery, ignore-base, no-closure) fails at least one row"
+    applies_to: fail_closed
+
+falsification_tests:
+  - id: FALSIFY-CI-TIER-ROUTER-001
+    rule: "The router exists and is executable"
+    prediction: "scripts/ci/tier_router.py is a regular file with the execute bit set"
+    test: "test -x scripts/ci/tier_router.py"
+    if_fails: "The router was deleted or unmarked; tier selection is unguarded"
+
+  - id: FALSIFY-CI-TIER-ROUTER-002
+    rule: "The case table passes and every planted mutant turns it RED"
+    prediction: "--self-test exits 0: every row PASS and every mutant RED"
+    test: "python3 scripts/ci/tier_router.py --self-test"
+    if_fails: "A routing rule regressed (a row FAILs) or a rule is no longer tested (a mutant survives). The output names the row or the mutant."
+
+  - id: FALSIFY-CI-TIER-ROUTER-003
+    rule: "With no usable input set the router fails closed on the real workspace"
+    prediction: "Routing Cargo.lock against this tree's cargo metadata with an absent input set returns T3 over every workspace package"
+    test: "T=\"${TMPDIR:-/tmp}\"; cargo metadata --format-version 1 --no-deps > \"$T/ctr-m.json\" && printf 'Cargo.lock\\n' > \"$T/ctr-d.txt\" && python3 scripts/ci/tier_router.py route --input-set \"$T/ctr-absent.json\" --metadata \"$T/ctr-m.json\" --changed \"$T/ctr-d.txt\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=json.load(open(sys.argv[1])); sys.exit(0 if d[\"tier\"] == \"T3\" and len(d[\"packages\"]) == len(m[\"packages\"]) else 1)' \"$T/ctr-m.json\""
+    if_fails: "The router narrowed a diff it could not decide: a missing or unreadable input set would let a change merge without its tests"
+
+kani_harnesses: []
