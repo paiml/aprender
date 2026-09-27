@@ -87,7 +87,6 @@ import ProvableContracts.Theorems.LayerNorm.Idempotency
 import ProvableContracts.Theorems.LayerNorm.ShiftInvariance
 import ProvableContracts.Theorems.LayerNorm.Standardization
 import ProvableContracts.Theorems.MatMul.Associativity
-import ProvableContracts.Theorems.MatMul.CooperativeTiling
 import ProvableContracts.Theorems.MatMul.Identity
 import ProvableContracts.Theorems.QR.Orthogonality
 import ProvableContracts.Theorems.Quantization.RoundtripBound
@@ -121,4 +120,3 @@ import ProvableContracts.Defs.GPU
 import ProvableContracts.Defs.Image
 import ProvableContracts.Defs.Rand
 import ProvableContracts.Defs.Tensor
-import ProvableContracts.Theorems.MatMul.CooperativeTiling

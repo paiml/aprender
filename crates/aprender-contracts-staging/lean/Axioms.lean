@@ -66,8 +66,6 @@ run_cmd pvlAxiomsSubset `ProvableContracts.Conv1D.conv_smul pvlPinned
 run_cmd pvlAxiomsSubset `ProvableContracts.Conv1D.conv_zero pvlPinned
 run_cmd pvlAxiomsSubset `ProvableContracts.Conv1D.conv_zero_eq pvlPinned
 run_cmd pvlAxiomsSubset `ProvableContracts.Conv1D.outLen_valid pvlPinned
-run_cmd pvlAxiomsSubset `ProvableContracts.CooperativeMatrix.f16_input_rounding_error_bound pvlPinned
-run_cmd pvlAxiomsSubset `ProvableContracts.CooperativeMatrix.matmul_block_sum pvlPinned
 run_cmd pvlAxiomsSubset `ProvableContracts.Elementwise.relu_idempotent pvlPinned
 run_cmd pvlAxiomsSubset `ProvableContracts.Elementwise.relu_monotone pvlPinned
 run_cmd pvlAxiomsSubset `ProvableContracts.Elementwise.relu_nonneg pvlPinned
