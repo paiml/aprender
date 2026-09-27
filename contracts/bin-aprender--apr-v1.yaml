@@ -1,4 +1,9 @@
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────
+# bin-aprender--apr-v1 — the `apr` bin target of package aprender (ONT-10 slice S7 (apr(aprender) 1/2))
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha, helpSha,
+# gitSha, …) live in binary-surface-v1 and are not restated. Moved from docs/ont-10/binary-contracts/ (aprender-bb).
+#
 # binary-aprender-apr-v1 — ONT-10 slice S7 (apr(aprender) 1/2): the `apr` target of the root facade package
 # `aprender` (what `cargo install aprender` installs) as an entity — identity and the full CLI command set
 # (ONT-001 v4.17 ONT-4g; #4476, #4079)
@@ -28,52 +33,47 @@
 # CONVENTION: S9's, unchanged (a runnable non-leaf is a command; only clap's auto help is excluded; the join keys
 # on the ledger's binary column).
 #
-# KIND: pattern.
-# ─────────────────────────────────────────────────────────────────────────────
-name: binary-aprender-apr
-version: "0.1.0"
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender--apr-v1
+version: "1.0.0"
 scope: >
-  The built `apr` target of the root facade package `aprender` (default features) as the focus node
-  binary/aprender/apr: its identity, its exact CLI command set, and the surface_audit.csv CLI rows that must resolve
-  to it. HTTP and MCP rows are S6.
-status: draft
+  The built `apr` target of the root facade package `aprender` (default features) as the focus node binary/aprender/apr: its identity, its exact CLI command set, and the surface_audit.csv CLI rows that must resolve to it. HTTP and MCP rows are S6.
+status: active
 
 metadata:
-  version: "0.1.0"
+  version: "1.0.0"
   kind: pattern
   created: '2026-09-26'
-  last_modified: '2026-09-26'
+  last_modified: '2026-09-27'
   author: PAIML Engineering
   description: >
-    ONT-10 binary slice S7 (apr, package aprender). Per-binary shapes over the node extract:binary (ONT-4g, #4476)
-    draws for binary/aprender/apr. DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on
-    this branch yet, so this contract goes green only after ONT-4g lands — and then only once the 27 ledger
-    mismatches above are resolved in the ledger or the build.
+    ONT-10 binary slice S7 (apr(aprender) 1/2) (apr). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender/apr, on the binary-surface-v1 vocabulary.
   references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
     - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
     - 'docs/audits/surface_audit.csv (the ledger; binary column = apr, feature starts with "apr ")'
     - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
     - 'docs/ont-10/binary-contracts/binary-apr-cli-apr-v1.yaml (S9: the same command set on binary/apr-cli/apr)'
+    - 'aprender#4502 — ONT-10'
 
 entity:
   type: binary
+  ref: binary/aprender/apr
 
 relations:
   depends_on: [binary-surface-v1]
 
 shapes:
-  - id: aprender-apr-identity
+  - id: binary-apr-surface
     targetClass: bin:target/aprender/apr
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["apr"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender"]}
-      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
-      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
-      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^apr [0-9]+\\.[0-9]+\\.[0-9]+"}
-      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
-  - id: aprender-apr-commands
-    targetClass: bin:target/aprender/apr
-    properties:
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^apr [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — GREEN 2026-09-27 ("apr 0.69.3 (8e88b8fc5d)")
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
       - path: bin:command
         minCount: 264
         maxCount: 264
@@ -342,40 +342,70 @@ shapes:
           - "zram create"
           - "zram remove"
           - "zram status"
-      - {path: bin:ledgerOrphan, maxCount: 0}
-      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: "bin:ledgerOrphan", maxCount: 0}
+      - {path: "bin:unledgeredCommand", maxCount: 0}
 
 equations:
-  command_set:
-    formula: "commands(binary/aprender/apr) = C, |C| = 264, C = the leaves of the recursive --help walk of the default-feature build ∪ the non-leaves whose Usage shows [COMMAND] ∪ user-defined `help` subcommands"
-    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
-    codomain: "one bin:command literal per command path, space-joined, LC_ALL=C sorted"
+  surface_equals_snapshot:
+    formula: "commands(binary/aprender/apr) = C, |C| = 264, C = the leaves of the recursive --help walk of the default-feature build ∪ the non-leaves whose Usage shows [COMMAND] ∪ user-defined `help` subcommands ∧ ledgerOrphan = { r ∈ csv : r.binary = apr ∧ r.feature starts with 'apr ' ∧ path(r) ∉ C }; unledgeredCommand = C ∖ { path(r) }, path(r) = r.feature minus the leading 'apr ', cut at the first token starting with -, <, [ or ("
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv CLI rows whose binary column is apr (318 rows, 267 paths, on 2026-09-26)"
+    codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan path or unledgered command"
     invariants:
       - "in + minCount 264 + maxCount 264 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
       - "clap's auto-generated help is never a member; a feature-gated command is a member only if the default build exposes it"
-  ledger_join:
-    formula: "ledgerOrphan = { r ∈ csv : r.binary = apr ∧ r.feature starts with 'apr ' ∧ path(r) ∉ C }; unledgeredCommand = C ∖ { path(r) }, path(r) = r.feature minus the leading 'apr ', cut at the first token starting with -, <, [ or ("
-    domain: "docs/audits/surface_audit.csv CLI rows whose binary column is apr (318 rows, 267 paths, on 2026-09-26)"
-    codomain: "literals on the focus node, one per orphan path or unledgered command"
-    invariants:
       - "a ledger row for a command the default build does not expose is a violation, never a silent skip; the fix is a row naming its feature or a default-build change, never deleting the shape"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `apr --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APRENDER-APR-INV-001
+    property: every apr surface member has an audited ledger row, and every ledger row names one
+    formal: '∀ c ∈ surface(apr): ∃ r ∈ surface_audit : r.binary = apr ∧ path(r) = c; ∀ r with r.binary = apr: path(r) ∈ surface(apr)'
+    prose: false
 
 falsification_tests:
-  - id: FALSIFY-BIN-APRENDER_APR-001
-    name: dropped_command_is_red
-    prediction: "deleting `qa` from the snapshot's command list makes aprender-apr-commands RED twice: minCount 264 and a bin:ledgerOrphan naming qa"
-    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with qa removed"
-    expected_output: "verdict Fail, results on binary/aprender/apr paths bin:command and bin:ledgerOrphan"
-    if_fails: "The first diagnostic tool (apr qa) could vanish from the shipped binary with the ontology green."
-  - id: FALSIFY-BIN-APRENDER_APR-002
-    name: feature_gated_ledger_rows_are_red_today
-    prediction: "on today's snapshot the 15 feature-gated rows (mono ×4, rag eval ×7, data x doctest/hub/import hf ×4) are bin:ledgerOrphan and the 12 pv/capability commands are bin:unledgeredCommand: the shape is RED with 27 results"
-    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the b6cf6d2ed snapshot"
-    expected_output: "verdict Fail, 27 results on binary/aprender/apr naming each path"
-    if_fails: "The dogfood coverage ratio would count commands users of the default install cannot run."
-  - id: FALSIFY-BIN-APRENDER_APR-003
-    name: runnable_group_counts
-    prediction: "an extractor that emits leaves only (dropping `debug` and `sim help`) makes the shape RED on minCount 264 and turns the `apr debug` ledger row into an orphan"
-    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot built by a leaves-only walk"
-    expected_output: "verdict Fail naming debug and sim help"
-    if_fails: "`apr debug model.apr`, a documented Step-4 diagnostic, would be outside the modelled surface."
+  - id: FALSIFY-BIN-APRENDER-APR-001
+    rule: 'G1.2 help answers'
+    prediction: '`apr --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli apr'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-APR-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`apr --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli apr'
+    if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-APR-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`apr --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'a stale apr reads as HEAD (observed 2026-09-27: "apr 0.69.3 (8e88b8fc5d)", GREEN)'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-APR-004
+    rule: 'G1.3/G1.4 the surface set equals the snapshot'
+    prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
+    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
+    mutation: 'remove `attn-parity-lint` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
+  - id: FALSIFY-BIN-APRENDER-APR-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = apr (375 rows on 2026-09-27)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
+    mutation: 'delete every apr row; must turn RED naming apr'
+  - id: FALSIFY-BIN-APRENDER-APR-006
+    rule: 'feature gated ledger rows are red today'
+    prediction: 'on today''s snapshot the 15 feature-gated rows (mono ×4, rag eval ×7, data x doctest/hub/import hf ×4) are bin:ledgerOrphan and the 12 pv/capability commands are bin:unledgeredCommand: the shape is RED with 27 results'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on the b6cf6d2ed snapshot'
+    if_fails: 'The dogfood coverage ratio would count commands users of the default install cannot run.'
+    mutation: 'the edit in the prediction; must turn RED — verdict Fail, 27 results on binary/aprender/apr naming each path'
+  - id: FALSIFY-BIN-APRENDER-APR-007
+    rule: 'runnable group counts'
+    prediction: 'an extractor that emits leaves only (dropping `debug` and `sim help`) makes the shape RED on minCount 264 and turns the `apr debug` ledger row into an orphan'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot built by a leaves-only walk'
+    if_fails: '`apr debug model.apr`, a documented Step-4 diagnostic, would be outside the modelled surface.'
+    mutation: 'the edit in the prediction; must turn RED — verdict Fail naming debug and sim help'

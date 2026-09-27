@@ -1,0 +1,25 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: fixture
+  description: fixture data-csv
+name: data-csv
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: csv
+  ref: data/train.csv
+  properties:
+    producer: gen.sh
+shape:
+  closed: true
+  properties:
+    - {path: csv:column, minCount: 3, maxCount: 3}
+    - {path: csv:header, in: ["feature1,feature2,label"]}
+    - {path: csv:rows, minCount: 1, datatype: xsd:integer}
+    - {path: csv:dtype, in: [string, float, int]}
+    - {path: csv:sha256, minCount: 1, maxCount: 1}
+    - {path: csv:producer, minCount: 1, maxCount: 1, resolves: path}

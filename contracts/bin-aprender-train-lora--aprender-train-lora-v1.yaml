@@ -1,35 +1,42 @@
 # ──────────────────────────────────────────────
-# bin-aprender-train-lora--aprender-train-lora-v1 — the `aprender-train-lora` bin target of package aprender-train-lora (ONT-10 slice S16)
+# bin-aprender-train-lora--aprender-train-lora-v1 — the `aprender-train-lora` bin target of package aprender-train-lora (ONT-10 slice S16 (2/2))
 #
-# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes live in
-# binary-surface-v1; this file restates none of them. Measured 2026-09-26 on a 0.69.3 build of this tree.
-#   RED today beyond G0.1: the version names "entrenar-lora", not the bin name.
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha, helpSha,
+# gitSha, …) live in binary-surface-v1 and are not restated. Moved from docs/ont-10/binary-contracts/ (aprender-bb).
+#
+# binary-aprender-train-lora-v1 — ONT-10 slice S16 (2/2): the `aprender-train-lora` binary as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features): the --help walk gives 4 leaf
+# commands, set-equal to surface_audit.csv's 4 rows. `aprender-train-lora --version` prints "entrenar-lora 0.69.3":
+# the pre-monorepo name, not the binary's. The identity shape below requires the version string to start with
+# the target name, so it is RED today — a user who runs `aprender-train-lora --version` is told a different
+# program's name. G0.1 (git sha in --version) is a warning and RED today.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
 name: bin-aprender-train-lora--aprender-train-lora-v1
 version: "1.0.0"
 scope: >
-  The command surface of the `aprender-train-lora` binary (package aprender-train-lora, src crates/aprender-train-lora/src/main.rs): its help, its usage errors, its
-  version string, its subcommand set, its rejection of unusable input, and its surface-audit rows. Out of scope:
-  what each subcommand computes.
+  The built `aprender-train-lora` target of package `aprender-train-lora` (default features) as the focus node binary/aprender-train-lora/aprender-train-lora: its identity and its exact CLI command set, and the surface_audit.csv rows that must resolve to it.
 status: active
 
 metadata:
   version: "1.0.0"
   kind: pattern
   created: '2026-09-26'
-  last_modified: '2026-09-26'
+  last_modified: '2026-09-27'
   author: PAIML Engineering
   description: >
-    aprender-train-lora answers --help, rejects an unknown flag or subcommand as a usage error, exposes exactly the subcommands
-    the snapshot records, rejects unusable input without a panic, and has an audited ledger row for each command.
+    ONT-10 binary slice S16 (2/2) (aprender-train-lora). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender-train-lora/aprender-train-lora, on the binary-surface-v1 vocabulary.
   references:
+    - 'crates/aprender-train-lora/tests/cli_surface_gate.rs — the gate falsifiers 001, 002, 004 and 006 run'
     - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
-    - 'contracts/bin-aprender-contracts-cli--pv-v1.yaml — the exemplar'
-    - 'crates/aprender-train-lora/tests/cli_surface_gate.rs — the gate every falsifier below runs'
-    - 'docs/audits/surface_audit.csv — the rows whose binary column is aprender-train-lora'
-    - 'aprender#4502 — ONT-10, slice S16'
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-train-lora)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'aprender#4502 — ONT-10'
 
 entity:
   type: binary
@@ -38,25 +45,47 @@ entity:
 relations:
   depends_on: [binary-surface-v1]
 
+shapes:
+  - id: binary-aprender-train-lora-surface
+    targetClass: bin:target/aprender-train-lora/aprender-train-lora
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-train-lora"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-train-lora"]}
+      # LIVE RED 2026-09-27: --version prints "entrenar-lora 0.69.3", not the target name
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^aprender-train-lora [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
+      - path: bin:command
+        minCount: 4
+        maxCount: 4
+        in:
+          - "compare"
+          - "inspect"
+          - "merge"
+          - "plan"
+      - {path: "bin:ledgerOrphan", maxCount: 0}
+      - {path: "bin:unledgeredCommand", maxCount: 0}
+
 equations:
   surface_equals_snapshot:
-    formula: "commands(snapshot(aprender-train-lora)) = subcommands(clap(Cli)) = SUBCOMMANDS(crates/aprender-train-lora/tests/cli_surface_gate.rs) ∧ leaves(aprender-train-lora) = {f.feature : f ∈ surface_audit, f.binary = aprender-train-lora}"
-    domain: "the aprender-train-lora line of the tracked snapshot, the clap Command enum, the gate's pinned list, and the ledger rows with binary = aprender-train-lora"
-    codomain: "set equality, or a Fail naming each command in the symmetric difference"
+    formula: "commands(binary/aprender-train-lora/aprender-train-lora) = C, |C| = 4, where C = the leaves of the recursive --help walk of the default-feature build ∧ ledgerOrphan = { r ∈ csv : r.binary = aprender-train-lora ∧ r.feature ∉ C }; unledgeredCommand = C ∖ { r.feature : r.binary = aprender-train-lora }"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is aprender-train-lora"
+    codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan row or unledgered command"
     invariants:
-      - "a subcommand clap accepts and the snapshot omits is an unaudited surface"
-      - "measured 2026-09-26: top-level = {plan, compare, merge, inspect}; 4 leaves, set-equal to the ledger rows"
+      - "in + minCount 4 + maxCount 4 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
     preconditions:
-      - "the snapshot was written at this commit"
+      - "the snapshot was written at this commit, default features"
     postconditions:
       - "help_sha256 in the snapshot is the sha256 of `aprender-train-lora --help` at this commit"
     lean_theorem: none — L4 not declared
 
 invariants:
   - id: BIN-APRENDER-TRAIN-LORA-INV-001
-    property: every aprender-train-lora command leaf has an audited ledger row
-    formal: '∀ c ∈ leaves(aprender-train-lora): |{r ∈ surface_audit : r.binary = aprender-train-lora ∧ r.feature = "aprender-train-lora " ++ c}| ≥ 1'
+    property: every aprender-train-lora surface member has an audited ledger row, and every ledger row names one
+    formal: '∀ c ∈ surface(aprender-train-lora): ∃ r ∈ surface_audit : r.binary = aprender-train-lora ∧ path(r) = c; ∀ r with r.binary = aprender-train-lora: path(r) ∈ surface(aprender-train-lora)'
     prose: false
+
   - id: BIN-APRENDER-TRAIN-LORA-INV-002
     property: unusable input is a clean rejection, never a success and never a panic
     formal: '∀ a ∈ rejection_rows(crates/aprender-train-lora/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
@@ -78,8 +107,8 @@ falsification_tests:
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-003
     rule: 'G0.1 the version names the commit'
     prediction: '`aprender-train-lora --version` contains the first 9 hex of the git sha it was built from'
-    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands. cargo test -p aprender-train-lora --test cli_surface_gate version_reports_the_crate_version pins only the crate version today'
-    if_fails: 'LIVE RED 2026-09-26: `entrenar-lora 0.69.3` — no sha; a stale aprender-train-lora reads as HEAD; the version names "entrenar-lora", not the bin name'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-27: "entrenar-lora 0.69.3" — no sha; a stale aprender-train-lora reads as HEAD'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-004
     rule: 'G1.3/G1.4 the command set equals the snapshot'
@@ -89,9 +118,9 @@ falsification_tests:
     mutation: 'add a subcommand without editing SUBCOMMANDS; must turn RED naming it'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-005
     rule: 'ledger rows exist'
-    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = aprender-train-lora per leaf (4 rows for 4 leaves on 2026-09-26)'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = aprender-train-lora (4 rows on 2026-09-27)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: 'aprender-train-lora ships a command with no audited row'
+    if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
     mutation: 'delete every aprender-train-lora row; must turn RED naming aprender-train-lora'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-006
     rule: 'unusable input is rejected cleanly'

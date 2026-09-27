@@ -116,6 +116,49 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/binary-apr-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender/apr> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "apr" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^apr [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 264 ;
+        sh:maxCount 264 ;
+        sh:in ( "attn-parity-lint" "attn-viz-lint" "audio-inspect-lint" "awq-lint" "beat-run" "bench" "canary check" "canary create" "capability" "cbtop" "cgp baseline" "cgp bench" "cgp compete" "cgp contract generate" "cgp contract verify" "cgp diff" "cgp doctor" "cgp explain" "cgp profile binary" "cgp profile compare" "cgp profile cublas" "cgp profile kernel" "cgp profile library" "cgp profile metal" "cgp profile parallel" "cgp profile python" "cgp profile quant" "cgp profile scalar" "cgp profile scaling" "cgp profile simd" "cgp profile wasm" "cgp profile wgpu" "cgp roofline" "cgp trace" "cgp tui" "chat" "check" "check-finite-lint" "code" "compare-hf" "compile" "convert" "data audit" "data balance" "data decontaminate" "data dedup" "data split" "data x convert" "data x dedup" "data x drift compare" "data x drift detect" "data x drift merge" "data x drift report" "data x drift sketch" "data x fed manifest" "data x fed plan" "data x fed split" "data x fed verify" "data x filter-text" "data x fim" "data x head" "data x import local" "data x info" "data x mix" "data x quality check" "data x quality profiles" "data x quality report" "data x quality score" "data x registry delete" "data x registry init" "data x registry list" "data x registry pull" "data x registry push" "data x registry search" "data x registry show-info" "data x repl" "data x schema" "data x view" "dataset audio-inspect" "ddp-metrics-lint" "debug" "debug embed-viz" "decrypt" "devices" "diagnose" "diff" "distill" "dry-sampling-lint" "embed" "embed-viz-lint" "embeddings-lint" "encrypt" "eval" "experiment view" "explain" "explain-token-lint" "export" "finetune" "flow" "fp8-lint" "gbnf-lint" "gptq-lint" "gpu" "gpu-memtrace-lint" "grad-norm" "hang-trace-lint" "hex" "imatrix-lint" "import" "inspect" "kernel parity" "kv-timeline-lint" "lint" "list" "manifest" "mcp" "merge" "modelfile parse" "monitor" "nccl-diag-lint" "nf4-lint" "ollama-chat-lint" "ollama-tools-lint" "oom-lint" "oracle" "otlp-lint" "parity" "pipeline apply" "pipeline plan" "pipeline status" "pipeline validate" "ppl" "pretrain" "profile" "prometheus-lint" "prune" "ptx" "ptx-map" "publish" "pull" "pv audit" "pv book" "pv census" "pv certify" "pv challenge check" "pv challenge gen" "pv check-parity" "pv codegen" "pv coq" "pv coverage" "pv diff" "pv discharge check" "pv discharge gen-axioms" "pv discharge label-ratchet" "pv discharge run" "pv equations" "pv explain" "pv extract" "pv extract-pytorch" "pv flux" "pv fuzz" "pv generate" "pv graph" "pv infer" "pv invariants" "pv kaizen" "pv kani" "pv lean" "pv lean-status" "pv lint" "pv migrate" "pv mirai" "pv obligations" "pv ontology export" "pv ontology tbox" "pv pipeline" "pv probar" "pv proof-status" "pv query" "pv roofline" "pv scaffold" "pv score" "pv status" "pv tla" "pv unlock" "pv validate" "pv verify-bindings" "pv verify-pipeline" "pv verify-structure" "qa" "qualify" "quant-preservation-lint" "quantize" "rag demo" "rag extract-frames" "rag index" "rag info" "rag query" "rag transcribe" "react-trace-lint" "registry aliases" "registry-quota-lint" "rerank" "rm" "rm-gc-lint" "rosetta chain" "rosetta compare-inference" "rosetta convert" "rosetta diff-tensors" "rosetta fingerprint" "rosetta inspect" "rosetta validate-stats" "rosetta verify" "run" "runs diff" "runs ls" "runs show" "serve plan" "serve run" "shard" "shared-cache-lint" "showcase" "sim emc-check" "sim emc-validate" "sim help" "sim list-emc" "sim render" "sim run" "sim validate" "sim verify" "sim version" "stamp" "tensors" "test llm bench" "test tensor" "tokenize apply" "tokenize encode" "tokenize encode-corpus" "tokenize import-hf" "tokenize plan" "tokenize repair-manifest" "tokenize train" "tool-use-lint" "trace" "train apply" "train archive" "train cluster-status" "train halving" "train plan" "train submit" "train sweep" "train watch" "tree" "tui" "tune" "typical-p-lint" "unified-search-lint" "unshard" "validate" "validate-manifest" "zram benchmark" "zram create" "zram remove" "zram status" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/binary-aprender-cbtop-surface> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-cbtop/aprender-cbtop> ;
     sh:property [
@@ -229,9 +272,9 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
-        sh:minCount 44 ;
-        sh:maxCount 44 ;
-        sh:in ( "audit" "book" "census" "certify" "challenge" "check-parity" "codegen" "coq" "coverage" "diff" "discharge" "equations" "explain" "extract" "extract-pytorch" "flux" "fuzz" "generate" "graph" "infer" "invariants" "kaizen" "kani" "lean" "lean-status" "lint" "migrate" "mirai" "obligations" "ontology" "pipeline" "probar" "proof-status" "query" "roofline" "scaffold" "score" "status" "tla" "unlock" "validate" "verify-bindings" "verify-pipeline" "verify-structure" ) ;
+        sh:minCount 49 ;
+        sh:maxCount 49 ;
+        sh:in ( "audit" "book" "census" "certify" "challenge check" "challenge gen" "check-parity" "codegen" "coq" "coverage" "diff" "discharge check" "discharge gen-axioms" "discharge label-ratchet" "discharge run" "equations" "explain" "extract" "extract-pytorch" "flux" "fuzz" "generate" "graph" "infer" "invariants" "kaizen" "kani" "lean" "lean-status" "lint" "migrate" "mirai" "obligations" "ontology export" "ontology tbox" "pipeline" "probar" "proof-status" "query" "roofline" "scaffold" "score" "status" "tla" "unlock" "validate" "verify-bindings" "verify-pipeline" "verify-structure" ) ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
@@ -239,6 +282,49 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/binary-alimentar-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-data/alimentar> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "alimentar" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-data" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^alimentar [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 31 ;
+        sh:maxCount 31 ;
+        sh:in ( "convert" "dedup" "drift compare" "drift detect" "drift merge" "drift report" "drift sketch" "fed manifest" "fed plan" "fed split" "fed verify" "filter-text" "fim" "head" "import local" "info" "mix" "quality check" "quality profiles" "quality report" "quality score" "registry delete" "registry init" "registry list" "registry pull" "registry push" "registry search" "registry show-info" "repl" "schema" "view" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
         sh:maxCount 0 ;
     ] ;
 .
@@ -406,6 +492,92 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/binary-presentar-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-present-cli/presentar> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "presentar" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-present-cli" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^presentar [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 7 ;
+        sh:maxCount 7 ;
+        sh:in ( "bundle" "check" "deploy" "gate" "new" "score" "serve" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/binary-ptop-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-present-terminal/ptop> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "ptop" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-present-terminal" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^ptop [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/option> ;
+        sh:minCount 10 ;
+        sh:maxCount 10 ;
+        sh:in ( "--config" "--deterministic" "--dump-config" "--explode" "--height" "--no-color" "--qa-timing" "--refresh" "--render-once" "--width" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
         sh:maxCount 0 ;
     ] ;
 .
@@ -596,6 +768,49 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/binary-apr-qa-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-qa-cli/apr-qa> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "apr-qa" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-qa-cli" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^apr-qa [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 15 ;
+        sh:maxCount 15 ;
+        sh:in ( "bootstrap" "certify" "export-csv" "export-evidence" "generate" "kernel-coverage" "list" "lock-playbooks" "parity" "report" "run" "score" "tickets" "tools" "validate-contract" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/binary-trueno-rag-surface> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-rag-cli/trueno-rag> ;
     sh:property [
@@ -639,6 +854,53 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/binary-simular-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-simulate/simular> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "simular" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-simulate" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^simular [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 9 ;
+        sh:maxCount 9 ;
+        sh:in ( "emc-check" "emc-validate" "help" "list-emc" "render" "run" "validate" "verify" "version" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/route> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/binary-aprender-test-cli-surface> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-test-cli/aprender-test-cli> ;
     sh:property [
@@ -678,6 +940,102 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/binary-aprender-train-lora-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-train-lora/aprender-train-lora> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-train-lora" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-train-lora" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^aprender-train-lora [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 4 ;
+        sh:maxCount 4 ;
+        sh:in ( "compare" "inspect" "merge" "plan" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/binary-aprender-train-shell-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-train-shell/aprender-train-shell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-train-shell" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-train-shell" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^aprender-train-shell [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/replCommand> ;
+        sh:minCount 10 ;
+        sh:maxCount 10 ;
+        sh:in ( "clear" "distill" "export" "fetch" "help" "history" "inspect" "memory" "quit" "set" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/flag> ;
+        sh:minCount 2 ;
+        sh:maxCount 2 ;
+        sh:in ( "-c" "-s" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
         sh:maxCount 0 ;
     ] ;
 .
@@ -787,6 +1145,12 @@
         sh:path <https://ont.paiml.dev/v1alpha1/bin/mcpTool> ;
     ] ;
     sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/option> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/positional> ;
+    ] ;
+    sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/exposes> ;
         sh:nodeKind sh:IRI ;
     ] ;
@@ -847,6 +1211,78 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/claude-md> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/llm/LlmContext> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/section> ;
+        sh:minCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/purposeSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/rulesSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/commandsSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/layoutSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/referencedPath> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/command> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/declaredTool> ;
+        sh:in ( "pmat" "pv" "forjar" "bashrs" "cargo" "gh" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/neverRule> ;
+        sh:minCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/csv-train> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/Dataset> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/column> ;
+        sh:minCount 3 ;
+        sh:maxCount 3 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/header> ;
+        sh:in ( "feature1,feature2,label" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/rows> ;
+        sh:minCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/dtype> ;
+        sh:in ( "string" "float" "int" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
@@ -1013,6 +1449,35 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/model-setfit-slice> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/AprModel> ;
+    sh:closed true ;
+    sh:ignoredProperties ( <https://ont.paiml.dev/v1alpha1/model/file> <https://ont.paiml.dev/v1alpha1/model/contract> ) ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/format> ;
+        sh:in ( "apr" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/aprVersion> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9]+\\.[0-9]+$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/tensorCount> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e" ) ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
     sh:property [
@@ -1112,7 +1577,7 @@
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/ladder-measured> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/Model> ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/LadderRung> ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/model/sha256> ;
         sh:minCount 1 ;
@@ -1267,6 +1732,37 @@
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/comparatorSha> ;
         sh:minCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/readme-root> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/readme/Readme> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/schemaVersion> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9]+\\.[0-9]+$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/kind> ;
+        sh:in ( "library" "cli" "service" "spec" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/entrypoint> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/section> ;
+        sh:minCount 3 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/contractCount> ;
+        sh:maxCount 1 ;
     ] ;
 .
 
