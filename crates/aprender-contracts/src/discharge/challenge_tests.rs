@@ -245,3 +245,18 @@ fn a_theorem_bound_by_two_contracts_is_restated_once_across_files() {
         r.files
     );
 }
+
+/// #4502: a bound root outside the root's import cone (ORPHANED-ROOT) gets no challenge. Its module is never built,
+/// so a challenge importing it cannot elaborate. Importing it again restores the challenge.
+#[test]
+fn an_orphaned_root_is_not_restated() {
+    let d = fixture();
+    let root = d.path().join("lean/ProvableContracts.lean");
+    std::fs::write(&root, "-- nothing imported\n").expect("write");
+    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    assert!(r.files.is_empty(), "{:?}", r.files.keys());
+    assert!(r.unrestated.is_empty(), "{:?}", r.unrestated);
+    std::fs::write(&root, "import ProvableContracts.Theorems.Gelu.Bound\n").expect("write");
+    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    assert!(r.files.contains_key("Challenge/gelu-v1.lean"));
+}

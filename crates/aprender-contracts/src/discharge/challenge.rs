@@ -49,6 +49,9 @@ pub struct Rendered {
 pub fn render(lean_dir: &Path, contract_dir: &Path) -> Result<Rendered, String> {
     let tree = Tree::load(lean_dir)?;
     let binding = bind(&tree, contract_dir);
+    // Only roots in the root's import cone, as Axioms.lean: an ORPHANED-ROOT's module has no .olean, so its
+    // challenge cannot elaborate and the comparator would withhold every row of that file (#4502).
+    let cone = tree.cone();
     let mut out = Rendered::default();
     let mut sources: BTreeMap<&str, String> = BTreeMap::new();
     // Two obligations may bind one theorem; a second restatement is a duplicate declaration and the file fails to
@@ -60,7 +63,11 @@ pub fn render(lean_dir: &Path, contract_dir: &Path) -> Result<Rendered, String> 
     for (stem, roots) in &binding.by_contract {
         let mut blocks = Vec::new();
         let mut imports = BTreeSet::new();
-        for root in roots.iter().filter(|r| seen.insert(r.fqn.as_str())) {
+        for root in roots
+            .iter()
+            .filter(|r| cone.contains(&r.module))
+            .filter(|r| seen.insert(r.fqn.as_str()))
+        {
             match restate(&tree, root, &mut sources) {
                 Ok(block) => {
                     imports.insert(root.module.clone());

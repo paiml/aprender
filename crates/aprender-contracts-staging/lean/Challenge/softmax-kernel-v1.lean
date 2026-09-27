@@ -1,4 +1,3 @@
-import ProvableContracts.Theorems.CrossEntropy.CoreSoftmaxInvariants
 import ProvableContracts.Theorems.Softmax.Bounded
 import ProvableContracts.Theorems.Softmax.Monotonicity
 import ProvableContracts.Theorems.Softmax.NonNegativity
@@ -55,28 +54,4 @@ namespace ProvableContracts.Softmax
 open Real Finset
 theorem _root_.PvlChallenge.ProvableContracts.Softmax.sum_exp_pos {n : ℕ} (x : RVec (n + 1)) : 0 < ∑ j : Fin (n + 1), Real.exp (x j) := sorry
 end ProvableContracts.Softmax
-end
-
-section
-namespace ProvableContracts.SoftmaxCore
-theorem _root_.PvlChallenge.ProvableContracts.SoftmaxCore.softmax_denom_pos (a : Int) (t : List Int) (ha : 0 < a) (ht : ∀ y ∈ t, 0 ≤ y) : 0 < lsum (a :: t) := sorry
-end ProvableContracts.SoftmaxCore
-end
-
-section
-namespace ProvableContracts.SoftmaxCore
-theorem _root_.PvlChallenge.ProvableContracts.SoftmaxCore.softmax_num_le_denom (l : List Int) (i : Int) (hi : i ∈ l) (h : ∀ y ∈ l, 0 ≤ y) : i ≤ lsum l := sorry
-end ProvableContracts.SoftmaxCore
-end
-
-section
-namespace ProvableContracts.SoftmaxCore
-theorem _root_.PvlChallenge.ProvableContracts.SoftmaxCore.softmax_num_lt_denom (i : Int) (rest : List Int) (_hi : 0 ≤ i) (hrest : 0 < lsum rest) : i < lsum (i :: rest) := sorry
-end ProvableContracts.SoftmaxCore
-end
-
-section
-namespace ProvableContracts.SoftmaxCore
-theorem _root_.PvlChallenge.ProvableContracts.SoftmaxCore.softmax_partition (w : List Int) : lsum w = lsum w := sorry
-end ProvableContracts.SoftmaxCore
 end
