@@ -236,6 +236,12 @@ arm4() {
             [ -f "$d/receipt.intoto.jsonl" ] || continue
             lv=$(jq -r '.predicate.attestation_level // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
             [ "$lv" = L2-maintainer-attest ] || continue
+            # the PR number is inside the signed predicate: a receipt for PR A copied under
+            # PR B's directory is refused even when the two diffs share a patch-id (quorum, #4517)
+            if [ "$(jq -r '.predicate.pr // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)" != "$pr" ]; then
+                echo "  A2  $d is an L2 attest signed for PR $(jq -r '.predicate.pr // "none"' "$d/receipt.intoto.jsonl" 2>/dev/null), not PR $pr: refused." >&2
+                other=$((other + 1)); continue
+            fi
             rp=$(jq -r '.predicate.diff_patch_id // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
             if [ "$rp" != "$pid" ]; then other=$((other + 1)); continue; fi
             if [ -z "$best_dir" ]; then best_dir=$d; best_head=$(receipt_head "$d"); fi
