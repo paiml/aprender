@@ -1,0 +1,18 @@
+# GH-4197 kani-assume baseline seed receipt (ONT R-6: moved only by make kani-ratchet)
+tree: #4502 head 8d021f61e1 + dca5e4b953 (baseline + receipt dropped before the seed)
+measured: 2026-09-27T22:58:29Z by aprender-01
+BUILD=0
+PV_SHA=7327e3060fad7188
+wrote contracts/kani-assume-baseline.json (182 kani::assume in 27 file(s))
+RATCHET=0
+kani::assume: 182 in 27 file(s) under crates (baseline 182 in 27)
+accept: no file's kani::assume count rose
+KANI=0
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+T1=0
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 2114 filtered out; finished in 0.01s
+T2=0
+FMT=0
+contracts gate: 8 of 8 step(s) RAN, 0 FAILED
+GATE=0
+baseline_sha256: 1294cfc50986ba7723021ab3161bf66bc5e2cac764d409d5fe58aaee386bd8cd
