@@ -1,0 +1,54 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-27"
+  author: PAIML Engineering
+  kind: pattern
+  references:
+  - "docs/specifications/TRACE-001-tracing-consumers.md"
+  - "https://github.com/paiml/aprender/issues/4559"
+  description: >
+    TRACE-001 TR-04 (R-5): a mock is named as a mock. A module or type named after a
+    workspace lib crate (renacer, trueno, realizar, ...) must not be defined outside
+    that crate in a mock shape: an inline `mod <crate> {`, or a crate-named module or
+    CamelCase type in test code (tests/, benches/). File modules in src/ backed by a
+    file (`pub mod realizar;`) are adapters that call the real crate and are exempt.
+    The tree scan is report-only (R-6) until first green plus 7 green nights; set
+    NO_MOCK_NAMED_REAL_ENFORCE=1 to make it blocking.
+
+equations:
+  no_mock_named_real:
+    formula: |
+      hits = { (file, item) : item.name in lib_crates(workspace)
+                              and file not under dir(item.name)
+                              and (item is inline mod or file in test code) }
+      |hits| = 0
+    domain: every .rs file under crates/ and src/
+    codomain: bool
+    invariants:
+    - "lib_crates comes from cargo metadata, never a hand list"
+    - "a planted `mod trueno {` in a test file is a hit"
+    - "a mock named mock_trace is not a hit"
+
+proof_obligations:
+- type: invariant
+  property: mock modules and types never carry a real crate's name
+  formal: "|hits| = 0 at HEAD"
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-TR04-001
+  rule: the lint turns RED on a planted mock named after a real crate
+  prediction: "violations() is non-empty for `mod trueno {` in a test file, `pub mod renacer {` in modality_matrix/common.rs, `struct Trueno;` in tests/, and empty for `pub mod mock_trace {` and `pub mod realizar;` in src/"
+  test: "cargo test -p aprender-core --test monorepo_invariants falsify_tr04_no_mock_named_real_case_table"
+  if_fails: "the lint cannot see a mock named after a real crate"
+- id: FALSIFY-TR04-002
+  rule: zero hits at HEAD
+  prediction: "the tree scan reports 0 hits and reaches modality_matrix/common.rs"
+  test: "NO_MOCK_NAMED_REAL_ENFORCE=1 cargo test -p aprender-core --test monorepo_invariants tr04_no_mock_named_real_at_head"
+  if_fails: "a mock named after a real crate is in the tree"
+
+verification_summary:
+  total_obligations: 1
+  proven: 0
+  tested: 1
+  status: partial

@@ -18,7 +18,7 @@ fn test_cpu_scalar_single_shot() {
     // Force scalar backend
     force_backend(Backend::Scalar);
 
-    // Create mock trace (in real impl, renacer captures this)
+    // Create mock trace (a mock; renacer is not run here)
     let mut trace = ExecutionTrace::new();
     trace.add_span(
         TraceSpan::new("compute_block:scalar_matmul", 50000).with_attr("backend", "scalar"),

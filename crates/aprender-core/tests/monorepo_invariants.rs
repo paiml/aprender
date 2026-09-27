@@ -1023,3 +1023,6 @@ fn falsify_ggml_003_extractor_case_table_passes() {
         .unwrap_or_else(|| panic!("the self-test did not report a case count:\n{stdout}"));
     assert!(ran >= 7, "the extractor case table ran only {ran} case(s)");
 }
+
+#[path = "monorepo_invariants/no_mock_named_real.rs"]
+mod no_mock_named_real;
