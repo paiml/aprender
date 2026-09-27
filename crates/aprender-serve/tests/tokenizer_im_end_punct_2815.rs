@@ -40,7 +40,9 @@ fn im_end_after_punctuation_matches_llama_tokenize() {
         for (text, want) in GOLDEN {
             let got = mapped.model.encode(text).expect("encode");
             if got != *want {
-                bad.push(format!("{name}: {text:?} -> {got:?}, llama-tokenize {want:?}"));
+                bad.push(format!(
+                    "{name}: {text:?} -> {got:?}, llama-tokenize {want:?}"
+                ));
             }
         }
     }
