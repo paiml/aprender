@@ -19,7 +19,7 @@
 # -- a shrunken universe reports "all passed".
 #
 # Grepping the source is no better: a regex over clap `Subcommand` enums reports
-# 0 subcommands for `simular`, which is a clap-derive CLI. The binary is the
+# 0 subcommands for `aprender-simulate` (was `simular`), which is a clap-derive CLI. The binary is the
 # only thing that knows what the binary accepts.
 #
 # So: binaries come from `cargo metadata`, commands from `<bin> --help`, routes
@@ -304,7 +304,7 @@ probe_help() {
 
 # The outcome-excluding half: an unknown flag must be REJECTED. A CLI that
 # accepts anything is the hand-rolled-parser defect that silently dropped
-# --seed in simular.
+# --seed in aprender-simulate (then `simular`).
 probe_rejects_garbage() {
     local bin="$1" label="$2" out rc
     out=$("$bin" --definitely-not-a-real-flag-xyz 2>&1); rc=$?
@@ -658,7 +658,7 @@ for line in sys.stdin:
     vacuity_guard "built executables" "$an" "$MIN_BINARIES"
 
     # A binary cargo DECLARES but does not BUILD is unprobed, and silence here
-    # would let it read as a surface that shrank. `ptop` and `score` are exactly
+    # would let it read as a surface that shrank. `aprender-ptop` and `aprender-score` are exactly
     # this: both carry required-features outside `default`, so `--bins
     # --workspace` skips them and surface_cli never probes them either.
     local built_names
