@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-trueno-rag-v1 — ONT-10 slice S12 (1/2): the `trueno-rag` binary (package aprender-rag-cli) as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-27, batch/ont-10 @ acc3827954, `cargo build --release -p aprender-rag-cli --bin trueno-rag`,
+# default features = [], private CARGO_TARGET_DIR, LC_ALL=C recursive --help walk):
+#   - `trueno-rag --version` = "trueno-rag 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   - the walk gives 6 leaf commands (clap's `help` excluded): demo, extract-frames, index, info, query,
+#     transcribe. None of the 6 has subcommands.
+#   - surface_audit.csv holds 13 rows with binary=trueno-rag. 6 are set-equal to the walk. The other 7 name
+#     `eval compare|gate|generate|judge|metrics|retrieve|sample`, which the default build does not expose: the
+#     `Eval` variant is `#[cfg(feature = "eval")]` (crates/aprender-rag-cli/src/lib.rs:309), and `eval` is not a
+#     default feature. Those 7 are bin:ledgerOrphan today, so `trueno-rag-commands` is RED until either the ledger
+#     rows name their feature or the release build enables it (the same defect S10 records for alimentar).
+#
+# CONVENTION: as S10/S14 — bin:command literals are full leaf paths below the binary name, space-joined; the csv
+# join yields bin:ledgerOrphan / bin:unledgeredCommand.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-trueno-rag
+version: "0.1.0"
+scope: >
+  The built `trueno-rag` target of package `aprender-rag-cli` (default features) as the focus node
+  binary/aprender-rag-cli/trueno-rag: its identity and its exact command surface, and the surface_audit.csv rows
+  that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S12 (trueno-rag, package aprender-rag-cli). DRAFT: binary-surface-v1 (the bin: vocabulary)
+    and extract:binary do not exist on this branch yet, so this contract goes green only after ONT-4g lands.
+    RED today on 7 feature-gated `eval` ledger rows.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = trueno-rag)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'crates/aprender-rag-cli/Cargo.toml ([[bin]] trueno-rag; feature eval)'
+    - 'crates/aprender-rag-cli/src/lib.rs (enum Commands)'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: trueno-rag-identity
+    targetClass: bin:target/aprender-rag-cli/trueno-rag
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["trueno-rag"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-rag-cli"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^trueno-rag [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: trueno-rag-commands
+    targetClass: bin:target/aprender-rag-cli/trueno-rag
+    properties:
+      - path: bin:command
+        minCount: 6
+        maxCount: 6
+        in:
+          - "demo"
+          - "extract-frames"
+          - "index"
+          - "info"
+          - "query"
+          - "transcribe"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-rag-cli/trueno-rag) = C, |C| = 6, where C = the invocable leaf command paths of the recursive --help walk of the default-feature build, clap's help excluded"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per command path, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount 6 + maxCount 6 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = trueno-rag ∧ strip(r.feature) ∉ C }; unledgeredCommand = C ∖ { strip(r.feature) : r.binary = trueno-rag }"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is trueno-rag (13 on 2026-09-27); strip removes the leading binary name"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a command the built binary does not expose (today: the 7 `eval *` rows, feature eval) is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-TRUENO-RAG-001
+    name: dropped_command_is_red
+    prediction: "deleting `query` from the snapshot's command list makes trueno-rag-commands RED naming it (minCount 6), and its ledger row becomes bin:ledgerOrphan"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one command removed"
+    expected_output: "verdict Fail, results on binary/aprender-rag-cli/trueno-rag paths bin:command and bin:ledgerOrphan"
+    if_fails: "A command could vanish from the shipped trueno-rag with the ontology green."
+  - id: FALSIFY-BIN-TRUENO-RAG-002
+    name: feature_gated_ledger_rows_are_red
+    prediction: "on today's default-feature snapshot the 7 `eval *` ledger rows are bin:ledgerOrphan, so the shape is RED naming each; a snapshot of a `--features eval` build clears them only if the walk then lists those 7 paths and C is widened to match"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the default-feature snapshot"
+    expected_output: "verdict Fail, 7 results on path bin:ledgerOrphan, one per eval row"
+    if_fails: "The ledger would claim a shipped `trueno-rag eval` surface the release binary does not have."

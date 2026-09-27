@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-score-v1 — ONT-10 slice S12 (2/2): the `score` target of package `aprender-present-terminal` as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-27, batch/ont-10 @ acc3827954, release build, private CARGO_TARGET_DIR, LC_ALL=C). score
+# declares `required-features = ["score"]` and the package's default features are empty, so a default build does
+# not produce it; it was built with `--features score`, the smallest build that has it (as S13 does for ptop).
+#   `score --version` = "score 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   --help: no subcommands (0 commands), one optional positional [PATH], and 7 long options, --help/--version
+#   excluded: --ci, --config, --no-color, --output, --quiet, --threshold, --verbose.
+#   surface_audit.csv holds 2 rows with binary=score: `score [PATH] (TUI-crate quality scoring)` and
+#   `score --ci --threshold <N> (gate mode, exit 1 below threshold)`. Both resolve: GREEN today apart from G0.1.
+#
+# CONVENTION: S13's (ptop) option join — a row whose feature after the binary name starts with `-` joins bin:option
+# on its first long option; a row that is the bare binary name (optionally with a parenthetical) is the default mode
+# and resolves to the focus node. ONE EXTENSION, asked of extract:binary: a bare row may also carry positional
+# placeholders (`[PATH]`, `<X>`) before the parenthetical and still resolve to the node.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-score
+version: "0.1.0"
+scope: >
+  The built `score` target of package `aprender-present-terminal` (features = ["score"], its required feature) as
+  the focus node binary/aprender-present-terminal/score: its identity, its options, and the surface_audit.csv rows
+  that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S12 (score, package aprender-present-terminal). DRAFT: binary-surface-v1 (the bin:
+    vocabulary) and extract:binary do not exist on this branch yet, so this contract goes green only after ONT-4g
+    lands. extract:binary must build this target with its required feature, or it has no node to draw.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = score)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'crates/aprender-present-terminal/Cargo.toml ([[bin]] score, required-features = ["score"])'
+    - 'crates/aprender-present-terminal/src/bin/score.rs'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: score-identity
+    targetClass: bin:target/aprender-present-terminal/score
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["score"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-present-terminal"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^score [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: score-options
+    targetClass: bin:target/aprender-present-terminal/score
+    properties:
+      - {path: bin:command, maxCount: 0}
+      - path: bin:option
+        minCount: 7
+        maxCount: 7
+        in:
+          - "--ci"
+          - "--config"
+          - "--no-color"
+          - "--output"
+          - "--quiet"
+          - "--threshold"
+          - "--verbose"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  option_set:
+    formula: "commands(binary/aprender-present-terminal/score) = ∅; options = O, |O| = 7, O = the long options of --help of the --features score build, --help and --version excluded"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:option literal per long option; no bin:command literal"
+    invariants:
+      - "in + minCount 7 + maxCount 7 is set equality on options: an added, dropped or renamed option is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = score ∧ key(r) ≠ ⊤ ∧ key(r) ∉ O }; key(r) = ⊤ (the node) for a bare row (binary name, optional positional placeholders, optional parenthetical), else the first long option of r.feature"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is score (2 on 2026-09-27)"
+    codomain: "literals on the focus node, one per orphan row"
+    invariants:
+      - "a ledgered option the built binary does not accept is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-SCORE-001
+    name: ledgered_option_removed_is_red
+    prediction: "deleting --ci from the snapshot's option list makes score-options RED: |O| = 6 and the `score --ci --threshold <N>` row becomes bin:ledgerOrphan"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with --ci removed"
+    expected_output: "verdict Fail, results on binary/aprender-present-terminal/score paths bin:option and bin:ledgerOrphan"
+    if_fails: "score's CI gate mode, the one a pipeline relies on, could vanish with the ontology green."
+  - id: FALSIFY-BIN-SCORE-002
+    name: default_feature_build_has_no_node
+    prediction: "an extractor that builds aprender-present-terminal with default features produces no score target, so no focus node exists and the 2 ledger rows resolve to nothing"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot from a default-feature build"
+    expected_output: "the ONT-4g surface_audit_bins gate names score as a ledgered binary with no node"
+    if_fails: "A binary the ledger lists could drop out of the ontology silently because its feature is opt-in."
