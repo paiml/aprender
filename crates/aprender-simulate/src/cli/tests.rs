@@ -94,7 +94,7 @@ fn test_version_flag_names_the_commit() {
     let line = err.to_string();
     let sha = env!("APR_GIT_SHA");
     let fields: Vec<&str> = line.split_whitespace().collect();
-    assert_eq!(fields.first(), Some(&"simular"), "got `{line}`");
+    assert_eq!(fields.first(), Some(&"aprender-simulate"), "got `{line}`");
     assert_eq!(
         fields.get(1),
         Some(&env!("CARGO_PKG_VERSION")),
