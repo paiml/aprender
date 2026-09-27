@@ -22147,3 +22147,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4579
+  github_issue: 4579
+  item_type: task
+  title: 'flow: signer-bot pushes leave CI action_required — approve held runs in-job'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-a2
+  created: 2026-09-27T18:20:00Z
+  updated: 2026-09-27T18:20:00Z
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'after pr-review-sign pushes a signature, the pull_request runs that push created (head_sha == pushed sha, event pull_request, actor github-actions[bot], conclusion action_required) are approved in the same job; no other run is touched'
+  - 'scripts/pr_review_approve_signer_runs.sh --self-test: 8/8 rows and 4/4 planted filter mutants RED, wired as a step in ci/sections.yml pr-review-sign'
+  - 'an approve call that fails, or a signed head with no run at all, exits non-zero with the run URL; never green'
+  - 'no secret, ruleset or .github/workflows change'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator 10x flow directive via the cop 2026-09-27. Measured: 8 held runs, every one actor github-actions[bot]. Ships in the post-rc.1 batch.'
