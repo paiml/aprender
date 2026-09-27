@@ -133,3 +133,27 @@ fn measured_steps_split_prefill_decode_emit() {
         .collect();
     assert_eq!(rows, [("prefill", 400), ("decode", 210), ("emit", 15)]);
 }
+
+/// FALSIFY-TRACE-002, the boundary: a sum EXACTLY at the wall clock is still a
+/// measurement. Kills `total > wall_us` -> `>=` in both `step_trace` and
+/// `layer_trace`; one unit over is the refusal side of the same edge.
+#[test]
+fn falsify_trace_002_sum_at_wall_is_measured_one_over_is_not() {
+    let case = |sum_extra: u64| {
+        let at = [layer(600, 3), layer(400 + sum_extra, 3)];
+        let (_, _, l) = traces_for(&serve("layer", &[], Some(&at), 1_000));
+        let t = traced(&[
+            (TraceStep::TransformerBlock, 0, 800),
+            (TraceStep::TransformerBlock, 1, 150),
+            (TraceStep::Decode, 1, 50 + sum_extra),
+        ]);
+        let (_, s, _) = traces_for(&serve("step", t.events(), None, 1_000));
+        (
+            l.expect("layer row").provenance,
+            s.expect("step row").provenance,
+        )
+    };
+    use TraceProvenance::{Measured, WallClockTotal};
+    assert_eq!(case(0), (Measured, Measured), "sum == wall");
+    assert_eq!(case(1), (WallClockTotal, WallClockTotal), "sum == wall + 1");
+}
