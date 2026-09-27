@@ -525,14 +525,8 @@ fn compare(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
             }
         }
     }
-    let (rows, shared) = comparator::merge_file_rows(per_file);
     r.lines.push(format!("ok    {what}"));
-    if shared > 0 {
-        r.lines.push(format!(
-            "COMPARATOR {shared} identical row(s) from a later Challenge file folded: a root several contracts cite"
-        ));
-    }
-    let mut c = comparator::judge_rows(&rows, r);
+    let (mut c, rows) = comparator::judge_files(&per_file, r);
     match comparator::expected_roots(lean_dir, &files) {
         Ok(roots) => comparator::cross_check(&rows, &roots, &mut c, r),
         Err(e) => {
