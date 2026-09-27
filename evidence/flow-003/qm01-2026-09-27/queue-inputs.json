@@ -688,7 +688,365 @@
         "next_exit": null,
         "next_entry": null
       }
-    ]
+    ],
+    "merged_pr_rows": [
+      {
+        "pr": 3461,
+        "class": "x",
+        "mq_wait_min": 60.8167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T05:09:28Z"
+      },
+      {
+        "pr": 3491,
+        "class": "x",
+        "mq_wait_min": 155,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T00:41:10Z"
+      },
+      {
+        "pr": 3538,
+        "class": "x",
+        "mq_wait_min": 51.1,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T14:26:51Z"
+      },
+      {
+        "pr": 3540,
+        "class": "x",
+        "mq_wait_min": 83.3167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T18:36:08Z"
+      },
+      {
+        "pr": 3557,
+        "class": "x",
+        "mq_wait_min": 9.6333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T11:04:26Z"
+      },
+      {
+        "pr": 3564,
+        "class": "x",
+        "mq_wait_min": 88.1167,
+        "entries": 2,
+        "first_try": "fail",
+        "ejects": 1,
+        "merged_at": "2026-09-20T12:49:37Z"
+      },
+      {
+        "pr": 3566,
+        "class": "x",
+        "mq_wait_min": 21.2,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T11:56:29Z"
+      },
+      {
+        "pr": 3580,
+        "class": "x",
+        "mq_wait_min": 50.3167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T15:23:32Z"
+      },
+      {
+        "pr": 3581,
+        "class": "x",
+        "mq_wait_min": 93.4333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T18:36:07Z"
+      },
+      {
+        "pr": 3582,
+        "class": "x",
+        "mq_wait_min": 40.1333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T14:11:51Z"
+      },
+      {
+        "pr": 3599,
+        "class": "x",
+        "mq_wait_min": 56.0833,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T16:48:10Z"
+      },
+      {
+        "pr": 3608,
+        "class": "x",
+        "mq_wait_min": 443.7333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T05:15:20Z"
+      },
+      {
+        "pr": 3614,
+        "class": "x",
+        "mq_wait_min": 156.85,
+        "entries": 2,
+        "first_try": "fail",
+        "ejects": 1,
+        "merged_at": "2026-09-20T21:14:23Z"
+      },
+      {
+        "pr": 3616,
+        "class": "x",
+        "mq_wait_min": 134.75,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T20:52:19Z"
+      },
+      {
+        "pr": 3617,
+        "class": "x",
+        "mq_wait_min": 332.9167,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T03:43:23Z"
+      },
+      {
+        "pr": 3619,
+        "class": "x",
+        "mq_wait_min": 421.7333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T04:53:22Z"
+      },
+      {
+        "pr": 3621,
+        "class": "x",
+        "mq_wait_min": 77.95,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T06:35:54Z"
+      },
+      {
+        "pr": 3623,
+        "class": "x",
+        "mq_wait_min": 373.6333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T03:43:24Z"
+      },
+      {
+        "pr": 3626,
+        "class": "x",
+        "mq_wait_min": 117.1333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T05:15:54Z"
+      },
+      {
+        "pr": 3631,
+        "class": "x",
+        "mq_wait_min": 135.05,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T03:43:24Z"
+      },
+      {
+        "pr": 3632,
+        "class": "x",
+        "mq_wait_min": 181.6167,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T06:35:53Z"
+      },
+      {
+        "pr": 3633,
+        "class": "x",
+        "mq_wait_min": 115.8667,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T04:27:25Z"
+      },
+      {
+        "pr": 3669,
+        "class": "x",
+        "mq_wait_min": 12.0333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T10:50:29Z"
+      },
+      {
+        "pr": 3689,
+        "class": "x",
+        "mq_wait_min": 16.9,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T12:16:20Z"
+      },
+      {
+        "pr": 3698,
+        "class": "x",
+        "mq_wait_min": 17.55,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T13:47:41Z"
+      },
+      {
+        "pr": 3706,
+        "class": "x",
+        "mq_wait_min": 16.7833,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T16:17:54Z"
+      },
+      {
+        "pr": 3707,
+        "class": "x",
+        "mq_wait_min": 91.7167,
+        "entries": 2,
+        "first_try": "merge_conflict",
+        "ejects": 0,
+        "merged_at": "2026-09-21T18:25:24Z"
+      },
+      {
+        "pr": 3737,
+        "class": "x",
+        "mq_wait_min": 18.7167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-23T07:16:59Z"
+      },
+      {
+        "pr": 3772,
+        "class": "x",
+        "mq_wait_min": 15.2333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-22T05:22:07Z"
+      },
+      {
+        "pr": 4042,
+        "class": "x",
+        "mq_wait_min": 35.55,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-24T06:11:15Z"
+      },
+      {
+        "pr": 4312,
+        "class": "x",
+        "mq_wait_min": 43.85,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-25T10:07:04Z"
+      },
+      {
+        "pr": 4338,
+        "class": "x",
+        "mq_wait_min": 245.4667,
+        "entries": 3,
+        "first_try": "fail",
+        "ejects": 1,
+        "merged_at": "2026-09-25T06:17:35Z"
+      },
+      {
+        "pr": 4426,
+        "class": "x",
+        "mq_wait_min": 43.3333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-25T19:47:04Z"
+      },
+      {
+        "pr": 4439,
+        "class": "x",
+        "mq_wait_min": 43.3167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T00:42:44Z"
+      },
+      {
+        "pr": 4441,
+        "class": "x",
+        "mq_wait_min": 54.25,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T02:28:13Z"
+      },
+      {
+        "pr": 4452,
+        "class": "x",
+        "mq_wait_min": 28.75,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-25T21:54:07Z"
+      },
+      {
+        "pr": 4461,
+        "class": "x",
+        "mq_wait_min": 40.6667,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T07:40:37Z"
+      },
+      {
+        "pr": 4468,
+        "class": "x",
+        "mq_wait_min": 27.1833,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T13:48:01Z"
+      },
+      {
+        "pr": 4471,
+        "class": "x",
+        "mq_wait_min": 15.4,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T16:26:56Z"
+      }
+    ],
+    "rho_hol": {
+      "split": 0.0339,
+      "blind": 0.0339,
+      "formula": "FLOW-003 v1.1 Prop 11: lambda' qbar' Tbar, B=1, r=0 (lower bound, Thm 8 tightness)"
+    }
   },
   "unknown": [],
   "low_n": [

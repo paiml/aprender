@@ -67,3 +67,14 @@ docs entries, which print **PASS**.
 - **x is not decided.** With n = 57, its upper bound of 0.30 is above q* = 0.25. It can stay in the full lane.
 - Measure-only: no gate or ruleset changed. The pv binding (`queue-inputs-v1`, §11.3 entity
   `docs/receipts/flow-003/queue-inputs.json`) waits on QM-00.
+
+## ρ_HOL and per-merged-PR rows
+
+`derived.rho_hol` is Prop 11 (B = 1, r = 0): λ′·q̄′·T̄ = 0.00625/min × 0.1228 × 44.1 min = **0.034**. The split and
+blind values agree because every entry is class x. This is a lower bound (Theorem 8 tightness), about 18× below
+the ρ_HOL > 0.6 stop line. So the head of line is not the bottleneck at today's λ′.
+
+`derived.merged_pr_rows` has one row per PR that left the queue merged in the window: class, mq_wait_min (first add
+→ merged), entries, first_try, ejects. There are 39 rows, all class x. On the first try, 29 passed, 3 failed
+(ejected), 6 were removed `manual` and 1 left with a `merge_conflict`. There were 3 ejects in total. Median wait
+is 54.3 min and the max is 443.7 min.

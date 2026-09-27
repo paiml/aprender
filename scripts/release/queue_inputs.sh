@@ -281,6 +281,22 @@ def backout($qe; $f): if $qe == null or $f == null or $qe >= 1 then null else $q
          elif ($m.isCrossRepository and any($m.labels[]; . == $attest)) then "a"
          else "x" end)})) as $cls
 | [$entries[] | . + {class: ($cls[.pr | tostring] // "x")}] as $centries
+# One row per PR that left the queue merged in the window.
+| [ $tl[] | . as $p
+    | ([$p.timelineItems.nodes[] | select(.__typename == "AddedToMergeQueueEvent" or .__typename == "RemovedFromMergeQueueEvent")]
+       | sort_by(.createdAt)) as $mq
+    | ([$mq[] | select(.__typename == "RemovedFromMergeQueueEvent" and (.reason | ascii_downcase) == "merged"
+                        and (.createdAt | inwin))] | first) as $m
+    | select($m != null)
+    | ([$mq[] | select(.__typename == "RemovedFromMergeQueueEvent" and .createdAt <= $m.createdAt)]) as $exits
+    | ([$mq[] | select(.__typename == "AddedToMergeQueueEvent" and .createdAt <= $m.createdAt)]) as $adds
+    | {pr: $p.number, class: ($cls[$p.number | tostring] // "x"),
+       mq_wait_min: (if ($adds | length) > 0 then (mins($adds[0].createdAt; $m.createdAt) | r4) else null end),
+       entries: ($adds | length),
+       first_try: (($exits[0].reason // "") | ascii_downcase
+                   | if . == "merged" then "pass" elif . == "failed_checks" or . == "checks_timed_out" then "fail" else . end),
+       ejects: ([$exits[] | select((.reason | ascii_downcase) == "failed_checks" or (.reason | ascii_downcase) == "checks_timed_out")] | length),
+       merged_at: $m.createdAt} ] as $merged_rows
 | ($qsave / ($kdiff * $dcost)) as $qstar
 | (reduce ("d", "a", "x") as $c ({};
     . + {($c): (
@@ -390,9 +406,18 @@ def backout($qe; $f): if $qe == null or $f == null or $qe >= 1 then null else $q
                 false: ($false_ej | length), not_reentered: ([$ej[] | select(.reentry == null)] | length)},
     retries: {mq: ($rho_mq_s | length), release: ($rho_rel_s | length), all: ($rho_all_s | length)},
     release_cycles: {total: ($rel | length), red: ($rel_red | length), unclassified_red: $unclassified},
-    ejection_rows: $ej
+    ejection_rows: $ej,
+    merged_pr_rows: $merged_rows
   }
 }
+# Prop 11 (B = 1, r = 0): rho_HOL = lambda' * sum(pi_eff q'_c) * sum(pi_eff T_c); blind = lambda' q' T.
+| .derived.rho_hol = (
+    (.inputs.lambda_eff_per_h.value / 60) as $lm
+    | [.classes[] | select(.pi_eff.value > 0)] as $cs
+    | (if any($cs[]; .q_eff.value == null or .T.value == null) then null
+       else {split: ($lm * ([$cs[] | .pi_eff.value * .q_eff.value] | add) * ([$cs[] | .pi_eff.value * .T.value] | add) | r4),
+             blind: ($lm * .inputs.q_eff.value * .inputs.T.value | r4),
+             formula: "FLOW-003 v1.1 Prop 11: lambda' qbar' Tbar, B=1, r=0 (lower bound, Thm 8 tightness)"} end))
 | .unknown = [.inputs | to_entries[] | select(.value.n == 0 or .value.value == null) | .key]
 | .low_n = [.inputs | to_entries[] | select(.value.n > 0 and .value.n < 5 and .key != "window_days") | .key]
 | .verdict = (if .inputs.n_runs.n == 0 then "RED: empty window"
@@ -521,6 +546,9 @@ EOF
     mk "$t/base"
     out=$(compute "$t/base")
     check "T = median of passed entries (20, 40, 30 -> 30)" '.inputs.T.value == 30 and .inputs.T.n == 3' "$out"
+    check "merged rows: pr1 x, 140 min wait, 2 entries, first try fail, 1 eject" '.derived.merged_pr_rows | map(select(.pr == 1))[0] | .class == "x" and .mq_wait_min == 140 and .entries == 2 and .first_try == "fail" and .ejects == 1' "$out"
+    check "merged rows: pr2 docs, 100 min; pr3 first try pass, 0 ejects" '(.derived.merged_pr_rows | map(select(.pr == 2))[0] | .class == "d" and .mq_wait_min == 100) and (.derived.merged_pr_rows | map(select(.pr == 3))[0] | .first_try == "pass" and .ejects == 0)' "$out"
+    check "rho_HOL blind = lambda'/60 * q' * T" '.derived.rho_hol.blind == ((.inputs.lambda_eff_per_h.value / 60 * .inputs.q_eff.value * .inputs.T.value * 10000 | round) / 10000)' "$out"
     check "q' raw = 2 failed / 5" '.derived.q_prime_raw == 0.4' "$out"
     check "flaky failed entry (pr2, no push) removed from q'" '.derived.entries.failed_flaky == 1 and .derived.q_prime_defect == 0.25' "$out"
     check "f = 1/1 fixed re-entry merged" '.inputs.f.value == 1 and .inputs.f.n == 1' "$out"
