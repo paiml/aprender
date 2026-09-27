@@ -1,0 +1,96 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  kind: schema
+  references:
+  - 'aprender#4518 — FLOW-003 v1.1 §5.1: service classes d (docs), a (attested fork), x (full); Prop 12'
+  - 'aprender#4513 — QM-01: the queue-inputs-v1 receipt and the 7-day raw window it is re-derived from'
+  - 'aprender#4519 — QM-15: q per service class; this contract is its pv binding'
+  - 'scripts/release/queue_inputs.sh — compute (writes the receipt) and receipt-check (re-derives it)'
+  - 'evidence/flow-003/qm01-2026-09-27/queue-inputs.json — the first receipt bound by this contract'
+  description: >
+    A queue-inputs-v1 receipt has one row per service class (n, q_c, its Wilson
+    95% upper bound, T_c) and a Prop 12 verdict for each. Prop 12 lets a class
+    skip the full quorum only if q_c < q* = ΔQ/((κ_x−κ_c)·D), which is
+    30/(0.5·240) = 0.25 at the [A] inputs.
+
+    The verdict is the only field anyone acts on, so it must follow from the
+    numbers beside it, never from whoever wrote the file. receipt-check
+    re-derives every verdict from the receipt's own n, q_c and upper bound. It
+    is RED on any disagreement, and on a missing class, a missing field, a
+    drifted q*, or class shares that do not sum to 1. The two failures it
+    exists to refuse are a class with too little data reading PASS, and a
+    measured q_c above q* reading anything but FAIL.
+
+    This is measure-only. Nothing here changes a gate or a ruleset. FLOW-003 §7
+    stays "no change" until these receipts exist and the operator rules.
+
+equations:
+  prop12_verdict_follows_from_the_numbers:
+    formula: |
+      q* = ΔQ / ((κ_x − κ_c) · D) = 30 / (0.5 · 240) = 0.25        [A]
+      verdict(c) = NOT-DECIDED  if n_c = 0 or q_c is null
+                 = FAIL         if q_c >= q*
+                 = PASS         if upper95(q_c) < q*
+                 = NOT-DECIDED  otherwise
+    domain: 'one class row of a queue-inputs-v1 receipt'
+    codomain: '{PASS, FAIL, NOT-DECIDED}'
+    invariants:
+    - 'PASS needs the Wilson 95% upper bound below q*, not the point estimate.
+       A class with little data cannot pass on a lucky week.'
+    - 'n = 0 is NOT-DECIDED, never PASS. An empty class is absence of evidence.'
+    - 'q_c >= q* is FAIL whatever the bound says.'
+
+  classes_partition_the_queue:
+    formula: |
+      classes = {d, a, x}
+      |Σ_c π_c − 1| <= 0.001
+      n_c > 0  =>  q_c, upper95(q_c) >= q_c, T_c and a window are present
+    domain: 'a queue-inputs-v1 receipt'
+    codomain: bool
+    invariants:
+    - 'Every queue entry lands in exactly one class. A receipt that drops a class
+       or double-counts one reports shares that do not sum to 1.'
+
+falsification_tests:
+- id: F-QI-001
+  rule: a stated verdict the numbers do not give is refused
+  prediction: 'A planted class with q_c = 0.5 stated PASS is RED; the same class
+    stated FAIL is OK. n = 0 stated PASS, and an upper bound of 0.30 > q* stated
+    PASS, are each RED.'
+  test: 'bash scripts/release/queue_inputs.sh self-test   # receipt-check cases'
+  if_fails: 'a class could skip the full quorum on a hand-edited verdict, which is
+    the Prop 12 decision made without the Prop 12 inequality'
+  mutation: 'replace the verdict comparison in receipt_check with `if false`; the
+    three stated-PASS cases must turn FAIL (observed 2026-09-27, self-test "3 FAIL")'
+- id: F-QI-002
+  rule: the receipt is complete
+  prediction: 'A missing class, n > 0 without T_c, q* != 0.25, class shares not
+    summing to 1, or a schema other than queue-inputs-v1 are each RED.'
+  test: 'bash scripts/release/queue_inputs.sh self-test   # receipt-check cases'
+  if_fails: 'a partial receipt reads as a measured one, and a verdict against a
+    drifted q* reads as the spec inequality'
+  mutation: 'drop the "class missing" rule from receipt_check; the missing-class case
+    must turn FAIL'
+- id: F-QI-003
+  rule: the committed receipt passes its own check
+  prediction: 'The 2026-09-27 receipt checks OK: d n=0 and a n=0 NOT-DECIDED; x n=57,
+    q_c 0.14, upper95 0.3029 > 0.25, NOT-DECIDED.'
+  test: 'bash scripts/release/queue_inputs.sh receipt-check evidence/flow-003/qm01-2026-09-27/queue-inputs.json'
+  if_fails: 'the committed evidence disagrees with its own verdicts'
+  mutation: 'set .classes.x.prop12.verdict to "PASS" in a copy of the receipt; the
+    check must exit 1'
+
+proof_obligations:
+- type: invariant
+  property: 'Every stated Prop 12 verdict equals the verdict re-derived from n, q_c,
+    upper95 and q* (F-QI-001)'
+  formal: 'forall c in classes: c.prop12.verdict = verdict(c.q.n, c.q.value, c.q_upper95, 0.25)'
+- type: invariant
+  property: 'The receipt names the three classes, their shares sum to 1, and every
+    class with data carries q_c, upper95 >= q_c, T_c and a window (F-QI-002)'
+  formal: 'keys(classes) ⊇ {d,a,x} and |Σ π − 1| <= 0.001 and forall c: c.n > 0 => complete(c)'
+- type: soundness
+  property: 'PASS is never emitted for a class with n = 0 or with upper95 >= q* (F-QI-001)'
+  formal: 'forall c: c.verdict = PASS => c.n > 0 and c.q_upper95 < 0.25'

@@ -7,6 +7,8 @@
 #   queue_inputs.sh ident   <raw-dir>          write <raw-dir>/ident.tsv (red release cycles, mechanical rule)
 #   queue_inputs.sh readset <tree> <raw-dir>   write <raw-dir>/readset.txt: the .md paths a build/test reads
 #   queue_inputs.sh prop12  <queue-inputs.json> print the Prop 12 verdict per service class (#4519)
+#   queue_inputs.sh receipt-check <queue-inputs.json>  re-derive every class verdict from the receipt's own
+#                                              numbers; RED (rc 1) on any disagreement (pv: flow-003-queue-inputs-v1)
 #   queue_inputs.sh untangle [inbox-dir] [days] weekly untangle tally: conflicts per PR + first-CI-run green
 #                                              rate (target >= 0.9) from '| untangle |' inbox lines; no rows = NO-DATA, rc 1
 #   queue_inputs.sh dora-fetch <raw-dir> [days] / dora <raw-dir>   weekly DORA table (lead time, CI p50,
@@ -518,6 +520,42 @@ prop12_lines() {  # stdin: queue-inputs JSON
     jq -r '.classes | to_entries[] | "PROP12 class=\(.key) n=\(.value.q.n) q=\(.value.q.value) q_upper95=\(.value.q_upper95) q*=\(.value.prop12.q_star) \(.value.prop12.verdict)"'
 }
 
+receipt_check() {  # stdin: queue-inputs JSON. The pv binding for #4519: re-derives, never trusts, each verdict.
+    # One row per class {n, q_c, q_upper95, T_c, verdict}; RED (rc 1) on a missing class or field, q* != [A],
+    # pi not summing to 1, or a stated Prop 12 verdict the numbers do not give.
+    jq -c '
+      def num: type == "number";
+      def expect($c): if ($c.q.n // 0) == 0 or $c.q.value == null then "NOT-DECIDED"
+                      elif $c.q.value >= 0.25 then "FAIL"
+                      elif ($c.q_upper95 | num) and $c.q_upper95 < 0.25 then "PASS"
+                      else "NOT-DECIDED" end;
+      (.classes // {}) as $cl
+      | [ (if .schema != "queue-inputs-v1" then "schema is \(.schema), not queue-inputs-v1" else empty end),
+          (["a","d","x"][] as $k | select($cl[$k] == null) | "class \($k) missing"),
+          ($cl | to_entries[] | .key as $k | .value as $c
+            | ( (if ($c.q.n | num) and $c.q.n >= 0 then empty else "class \($k): q.n missing" end),
+                (if $c.q.n > 0 and ($c.q.value | num | not) then "class \($k): n>0 but q_c missing" else empty end),
+                (if $c.q.n > 0 and (($c.q_upper95 | num | not) or $c.q_upper95 < $c.q.value) then "class \($k): q_upper95 missing or below q_c" else empty end),
+                (if ($c.q.window // "") == "" then "class \($k): no window" else empty end),
+                (if $c.q.n > 0 and ($c.T.value | num | not) then "class \($k): n>0 but T_c missing" else empty end),
+                (if $c.prop12.q_star != 0.25 then "class \($k): q* \($c.prop12.q_star) != 30/(0.5*240) = 0.25 [A]" else empty end),
+                (expect($c) as $e | if $c.prop12.verdict != $e then "class \($k): stated \($c.prop12.verdict), numbers give \($e)" else empty end))),
+          (if ($cl | length) > 0 and (([$cl[].pi.value // 0] | add) - 1 | fabs) > 0.001 then "pi sums to \([$cl[].pi.value // 0] | add), not 1" else empty end)
+        ] as $err
+      | {verdict: (if ($err | length) == 0 then "OK" else "RED" end), errors: $err,
+         rows: [$cl | to_entries[] | {class: .key, n: .value.q.n, q_c: .value.q.value, q_upper95: .value.q_upper95,
+                                      T_c: .value.T.value, verdict: .value.prop12.verdict}]}'
+}
+
+cmd_receipt_check() {
+    local out
+    out=$(receipt_check < "$1") || die "receipt-check: $1 is not JSON"
+    printf '%s' "$out" | jq -r '.rows[] | "RECEIPT class=\(.class) n=\(.n) q_c=\(.q_c) q_upper95=\(.q_upper95) T_c=\(.T_c) \(.verdict)"'
+    printf '%s' "$out" | jq -r '.errors[] | "  RED  \(.)"'
+    printf '%s' "$out" | jq -r '"queue_inputs receipt-check: \(.verdict)"'
+    printf '%s' "$out" | jq -e '.verdict == "OK"' >/dev/null
+}
+
 cmd_compute() {
     local out
     out=$(compute "$1")
@@ -733,6 +771,26 @@ J
     check "runner wait: fw16 only, negative re-run wait excluded, p50 of 10,30 = 10" '.all.n == 2 and .all.p50_s == 10 and .excluded_negative_waits == 1' "$uo"
     uo=$(runner_wait "$rw" '^nomatch')
     check "runner wait: no matching runner is NO-DATA" '.verdict == "NO-DATA" and .all.n == 0' "$uo"
+
+    # receipt-check (#4519 pv binding): each case plants one defect in a copy of a valid receipt.
+    local rcpt rc_of
+    rcpt='{"schema":"queue-inputs-v1","classes":{
+      "d":{"pi":{"value":0.25},"q":{"value":null,"n":0,"window":"w"},"q_upper95":null,"T":{"value":null},"prop12":{"q_star":0.25,"verdict":"NOT-DECIDED"}},
+      "a":{"pi":{"value":0},"q":{"value":null,"n":0,"window":"w"},"q_upper95":null,"T":{"value":null},"prop12":{"q_star":0.25,"verdict":"NOT-DECIDED"}},
+      "x":{"pi":{"value":0.75},"q":{"value":0.14,"n":57,"window":"w"},"q_upper95":0.3029,"T":{"value":44.1},"prop12":{"q_star":0.25,"verdict":"NOT-DECIDED"}}}}'
+    rc_of() { printf '%s' "$rcpt" | jq -c "$1" | receipt_check; }
+    check "receipt-check: valid receipt is OK" '.verdict == "OK" and (.rows | length) == 3' "$(rc_of .)"
+    check "receipt-check: planted q_c = 0.5 stated FAIL is OK" '.verdict == "OK"' \
+        "$(rc_of '.classes.d.q = {"value":0.5,"n":3,"window":"w"} | .classes.d.q_upper95 = 0.9 | .classes.d.T.value = 5 | .classes.d.prop12.verdict = "FAIL"')"
+    check "receipt-check: planted q_c = 0.5 stated PASS is RED" '.verdict == "RED" and any(.errors[]; test("numbers give FAIL"))' \
+        "$(rc_of '.classes.d.q = {"value":0.5,"n":3,"window":"w"} | .classes.d.q_upper95 = 0.9 | .classes.d.T.value = 5 | .classes.d.prop12.verdict = "PASS"')"
+    check "receipt-check: n = 0 stated PASS is RED" '.verdict == "RED"' "$(rc_of '.classes.a.prop12.verdict = "PASS"')"
+    check "receipt-check: upper bound above q* stated PASS is RED" '.verdict == "RED"' "$(rc_of '.classes.x.prop12.verdict = "PASS"')"
+    check "receipt-check: missing class is RED" '.verdict == "RED" and any(.errors[]; test("class a missing"))' "$(rc_of 'del(.classes.a)')"
+    check "receipt-check: q* drifted from [A] is RED" '.verdict == "RED"' "$(rc_of '.classes.x.prop12.q_star = 0.5')"
+    check "receipt-check: n > 0 without T_c is RED" '.verdict == "RED"' "$(rc_of '.classes.x.T.value = null')"
+    check "receipt-check: pi not summing to 1 is RED" '.verdict == "RED"' "$(rc_of '.classes.d.pi.value = 0.5')"
+    check "receipt-check: wrong schema is RED" '.verdict == "RED"' "$(rc_of '.schema = "queue-inputs-v0"')"
 
     if [ "$fails" -eq 0 ]; then printf 'queue_inputs self-test: PASS\n'; return 0; fi
     printf 'queue_inputs self-test: %s FAIL\n' "$fails"; return 1
@@ -966,6 +1024,7 @@ case "${1:-}" in
     ident) [ $# -eq 2 ] || die "usage: ident <raw-dir>"; ident "$2" ;;
     readset) [ $# -eq 3 ] || die "usage: readset <tree> <raw-dir>"; readset "$2" "$3" ;;
     prop12) [ $# -eq 2 ] || die "usage: prop12 <queue-inputs.json>"; prop12_lines < "$2" ;;
+    receipt-check) [ $# -eq 2 ] || die "usage: receipt-check <queue-inputs.json>"; cmd_receipt_check "$2" ;;
     untangle) shift; untangle_week "$@" ;;
     dora-fetch) [ $# -ge 2 ] || die "usage: dora-fetch <raw-dir> [days]"; dora_fetch "$2" "${3:-7}" ;;
     runner-wait-fetch) [ $# -ge 2 ] || die "usage: runner-wait-fetch <raw-dir> [days]"; runner_wait_fetch "$2" "${3:-7}" ;;

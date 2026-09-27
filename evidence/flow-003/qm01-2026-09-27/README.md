@@ -96,3 +96,10 @@ the closed forms against the four §6.1 oracle rows. A mutant that drops `r·ρ`
 - r* = 1 at every k, but the gain from r = 0 to r = 1 is only about 0.8 min. φ* ≈ 0.0004–0.002 because ρ_rel is
   about 8 s (nextest retries a single test, not the whole cycle).
 - f = 1 rests on one fix, so EM is optimistic. EM equals 1−(1−q)^k exactly when f = 1.
+
+## pv binding (aprender#4519)
+
+`contracts/flow-003-queue-inputs-v1.yaml` binds this receipt. `queue_inputs.sh receipt-check queue-inputs.json`
+re-derives every class verdict from the receipt's own n, q_c, upper bound and q*, and exits 1 on any disagreement,
+missing class or field, drifted q*, or class shares that do not sum to 1. This receipt checks OK. The self-test plants
+q_c = 0.5 stated PASS (RED) and stated FAIL (OK); disabling the verdict comparison turns 3 cases FAIL.

@@ -1,0 +1,20 @@
+- id: PMAT-4519
+  github_issue: 4519
+  item_type: task
+  title: 'FLOW-003 QM-15: measure q per service class (docs / attested-fork / full) — Prop 12 inputs'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-41
+  created: 2026-09-27T00:00:00Z
+  updated: 2026-09-27T00:00:00Z
+  spec: docs/specifications/FLOW-003-queue-and-release-cycle-model.md
+  acceptance_criteria:
+  - 'A receipt under evidence/ that the pv contract checks: contracts/flow-003-queue-inputs-v1.yaml binds queue_inputs.sh receipt-check'
+  - 'Prop 12 evaluated per class (n, q_c, Wilson 95% upper, T_c) and printed PASS/FAIL/NOT-DECIDED'
+  - 'A planted class with q_c = 0.5 prints FAIL; the same class stated PASS is RED in receipt-check'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Builds on aprender-89 branch 89/4513-qm01-inputs (per-class compute + Prop 12, commit 56d911cae0). Measure-only: no gate or ruleset change.'
