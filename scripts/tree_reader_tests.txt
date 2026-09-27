@@ -123,6 +123,7 @@ aprender-contracts-cli	--test	pvl_comparator
 aprender-contracts-cli	--test	pvl_discharge_check
 aprender-contracts-cli	--test	pvl_discharge_leanchecker
 aprender-contracts-cli	--test	pvl_ghost_binding
+aprender-contracts-cli	--test	pvl_kani_assume
 aprender-contracts-cli	--test	pvl_obligations_golden
 aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-contracts-cli	--test	shapes_vacuity
