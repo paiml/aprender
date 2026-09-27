@@ -100,7 +100,7 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64]'
+          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64],provable-ladder'
           --external-job workspace-test
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
