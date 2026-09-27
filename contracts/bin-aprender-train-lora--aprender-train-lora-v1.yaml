@@ -31,6 +31,7 @@ metadata:
     ONT-10 binary slice S16 (2/2) (aprender-train-lora). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
     for binary/aprender-train-lora/aprender-train-lora, on the binary-surface-v1 vocabulary.
   references:
+    - 'crates/aprender-train-lora/tests/cli_surface_gate.rs — the gate falsifiers 001, 002, 004 and 006 run'
     - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
     - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
     - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-train-lora)'
@@ -85,18 +86,23 @@ invariants:
     formal: '∀ c ∈ surface(aprender-train-lora): ∃ r ∈ surface_audit : r.binary = aprender-train-lora ∧ path(r) = c; ∀ r with r.binary = aprender-train-lora: path(r) ∈ surface(aprender-train-lora)'
     prose: false
 
+  - id: BIN-APRENDER-TRAIN-LORA-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-train-lora/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
+
 falsification_tests:
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-001
     rule: 'G1.2 help answers'
-    prediction: '`aprender-train-lora --help` exits 0 with non-empty stdout'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-train-lora'
-    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
-    mutation: 'make the top-level --help return an error; must turn RED'
+    prediction: '`aprender-train-lora --help` exits 0 and advertises ≥1 subcommand; every advertised `<cmd> --help` exits 0'
+    test: 'cargo test -p aprender-train-lora --test cli_surface_gate every_advertised_subcommand_is_reachable'
+    if_fails: 'the binary cannot describe its own surface, or advertises a command it cannot reach (observed 2026-09-26: GREEN)'
+    mutation: 'make one subcommand''s --help return an error; must turn RED naming it'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-002
-    rule: 'G1.2 an unknown flag is a usage error'
-    prediction: '`aprender-train-lora --no-such-flag` exits 2'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-train-lora'
-    if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
+    rule: 'G1.2 an unknown flag or subcommand is a usage error'
+    prediction: '`aprender-train-lora --no-such-flag` and `aprender-train-lora no-such-subcommand` each exit 2'
+    test: 'cargo test -p aprender-train-lora --test cli_surface_gate unknown_'
+    if_fails: 'a typo is silently ignored (observed 2026-09-26: both exit 2, GREEN)'
     mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-003
     rule: 'G0.1 the version names the commit'
@@ -105,14 +111,20 @@ falsification_tests:
     if_fails: 'LIVE RED 2026-09-27: "entrenar-lora 0.69.3" — no sha; a stale aprender-train-lora reads as HEAD'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-004
-    rule: 'G1.3/G1.4 the surface set equals the snapshot'
-    prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
-    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
-    if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
-    mutation: 'remove `compare` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
+    rule: 'G1.3/G1.4 the command set equals the snapshot'
+    prediction: 'the advertised top-level subcommands are exactly plan, compare, merge, inspect'
+    test: 'cargo test -p aprender-train-lora --test cli_surface_gate advertised_subcommands_are_the_pinned_surface'
+    if_fails: 'a subcommand was added or removed without updating the pinned surface (observed 2026-09-26: GREEN)'
+    mutation: 'add a subcommand without editing SUBCOMMANDS; must turn RED naming it'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-005
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = aprender-train-lora (4 rows on 2026-09-27)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
     mutation: 'delete every aprender-train-lora row; must turn RED naming aprender-train-lora'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-006
+    rule: 'unusable input is rejected cleanly'
+    prediction: '`merge --base/--adapter` on a missing, empty and garbage input (and no output file left behind); `inspect` on a missing input only: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-train-lora --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): before the fix `merge` on existing garbage printed "Merged adapter into base model", exited 0 and wrote no file (merge_from_file returned a placeholder Ok); with the fix reverted this test is RED; fixed, GREEN. `inspect` on an empty or garbage file prints a header and exits 0 — NOT asserted, recorded as finding a01-ont10-lora-inspect-reads-nothing'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

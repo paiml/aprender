@@ -29,7 +29,7 @@ use std::process::ExitCode;
 /// that protocol exactly: same order, same meaning.
 #[derive(Debug, Parser)]
 #[command(
-    name = "trueno-zram-generator",
+    name = "aprender-zram-generator",
     version,
     about = "systemd generator for zram device configuration",
     long_about = "systemd generator for zram device configuration.\n\n\
@@ -94,6 +94,13 @@ mod tests {
     #[test]
     fn test_cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    /// ONT-10 S15 (aprender#4502): the version names this binary, not `trueno-zram-generator`.
+    #[test]
+    fn test_version_names_aprender_zram_generator() {
+        let v = Cli::command().render_version();
+        assert!(v.starts_with("aprender-zram-generator "), "got {v:?}");
     }
 
     /// The systemd protocol: three positional directories, in order.

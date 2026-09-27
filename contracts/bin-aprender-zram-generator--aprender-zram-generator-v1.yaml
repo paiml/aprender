@@ -10,6 +10,7 @@
 #   EARLY_DIR and LATE_DIR. `--help` exits 0; `--no-such-flag` exits 2.
 #   `aprender-zram-generator --version` = "trueno-zram-generator 0.69.3": the pre-monorepo name and no sha. LIVE RED
 #   on the name pattern and on G0.1.
+#   FIXED on batch/ont-10 (2026-09-27): clap name aprender-zram-generator (measured after the fix: "aprender-zram-generator 0.69.3").
 #   surface_audit.csv holds 1 row, `<NORMAL_DIR>`.
 #
 # VOCABULARY EXTENSION ASKED OF binary-surface-v1 (aprender-88), as in bin-aprender-profile--aprender-profile-v1:
@@ -56,7 +57,7 @@ shapes:
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-zram-generator"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-zram-generator"]}
-      # LIVE RED 2026-09-26: "trueno-zram-generator 0.69.3" — the version names another program
+      # was RED at b1cd8c0b0 ("trueno-zram-generator 0.69.3"); FIXED on batch/ont-10 (clap name = aprender-zram-generator)
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-zram-generator [0-9]+\\.[0-9]+\\.[0-9]+"}
       # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
@@ -100,7 +101,7 @@ falsification_tests:
     rule: 'G0.1 the version names the binary and the commit'
     prediction: '`aprender-zram-generator --version` starts with "aprender-zram-generator " and contains the first 9 hex of the git sha'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-26: "trueno-zram-generator 0.69.3" — another program''s name and no sha'
+    if_fails: 'name: FIXED on batch/ont-10 (was "trueno-zram-generator 0.69.3"); sha: LIVE RED on 0.69.3, clears at rc.1 (car/0.70.0 carries #4219)'
     mutation: 'restore the trueno name after a fix; must turn RED on bin:versionString'
   - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-004
     rule: 'G1.3/G1.4 the argv surface equals the snapshot'

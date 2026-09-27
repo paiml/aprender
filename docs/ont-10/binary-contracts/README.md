@@ -18,8 +18,8 @@ and re-run `pv lint contracts/ --gate shapes`. Each header records what was meas
 | S10 | MOVED → contracts/bin-aprender-data--alimentar-v1.yaml | alimentar (aprender-data) | 31 | 4 ledger rows name feature-gated commands the default build lacks |
 | S16 (1/2) | MOVED → contracts/bin-aprender-qa-cli--apr-qa-v1.yaml | apr-qa (aprender-qa-cli) | 15 | none beyond G0.1 |
 | S16 (2/2) | MOVED → contracts/bin-aprender-train-lora--aprender-train-lora-v1.yaml | aprender-train-lora | 4 | `--version` says "entrenar-lora" |
-| S15 (1/2) | MOVED → contracts/bin-aprender-profile--aprender-profile-v1.yaml | aprender-profile | 1 leaf + 46 options; ledger is option rows | `--version` says "renacer" |
-| S15 (2/2) | MOVED → contracts/bin-aprender-zram-generator--aprender-zram-generator-v1.yaml | aprender-zram-generator | 0; 3 generator positionals | `--version` says "trueno-zram-generator" |
+| S15 (1/2) | MOVED → contracts/bin-aprender-profile--aprender-profile-v1.yaml | aprender-profile | 1 leaf + 46 options; ledger is option rows | none beyond G0.1 (`--version` said "renacer" — FIXED) |
+| S15 (2/2) | MOVED → contracts/bin-aprender-zram-generator--aprender-zram-generator-v1.yaml | aprender-zram-generator | 0; 3 generator positionals | none beyond G0.1 (`--version` said "trueno-zram-generator" — FIXED) |
 | S2 | MOVED → contracts/bin-aprender-test-cli--aprender-test-cli-v1.yaml | aprender-test-cli | 36 (34 leaves + optional-subcommand groups `comply`, `serve`) | `--version` says "probador"; ledger row `llm experiment` names a group that requires a subcommand |
 | S8 (apr(apr-cli) 2/2) | MOVED → contracts/bin-apr-cli--apr-http-mcp-v1.yaml | apr (apr-cli) | 41 HTTP routes (union over `apr serve` routers, default build) + 9 MCP tools; S9 holds identity + CLI | 2 ledger rows name cuda-only routes (POST /v1/logprobs, /v1/perplexity); extractor drops METHOD and misses apr-cli serve/ routes |
 | S14 (1/2) | MOVED → contracts/bin-aprender-train-shell--aprender-train-shell-v1.yaml | aprender-train-shell | REPL: 10 commands, flags -c/-s, 0 subcommands | `--version` says "entrenar-shell"; `-c help` omits `clear` |
