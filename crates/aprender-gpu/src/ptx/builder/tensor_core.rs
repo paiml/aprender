@@ -370,6 +370,40 @@ impl<'a> KernelBuilder<'a> {
         self.instructions.push(instr);
     }
 
+    /// In-place int8 mma.sync: `mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32`
+    /// (SM 8.0+, #4376 MMQ). D overwrites C.
+    ///
+    /// Per-thread register layout:
+    ///   A: 4 B32 regs (16 s8 values) — 16×32 fragment
+    ///   B: 2 B32 regs (8 s8 values) — 32×8 fragment
+    ///   C/D: 4 S32 regs (4 int32 accumulators) — 16×8 fragment
+    pub fn mma_sync_m16n8k32_s8_inplace(
+        &mut self,
+        a_regs: &[VirtualReg; 4],
+        b_regs: &[VirtualReg; 2],
+        c_regs: &[VirtualReg; 4],
+    ) {
+        for &c in c_regs {
+            self.registers.extend_live_range(c);
+        }
+
+        let mut instr = PtxInstruction::new(PtxOp::MmaSync, PtxType::S32);
+        instr = instr.dst(Operand::Reg(c_regs[0]));
+        instr.dsts.push(Operand::Reg(c_regs[1]));
+        instr.dsts.push(Operand::Reg(c_regs[2]));
+        instr.dsts.push(Operand::Reg(c_regs[3]));
+        for &a in a_regs {
+            instr = instr.src(Operand::Reg(a));
+        }
+        for &b in b_regs {
+            instr = instr.src(Operand::Reg(b));
+        }
+        for &c in c_regs {
+            instr = instr.src(Operand::Reg(c));
+        }
+        self.instructions.push(instr);
+    }
+
     /// ldmatrix.sync.aligned.m8n8.x4.shared.b16
     ///
     /// Loads 4 8×8 FP16 matrices from shared memory in one instruction.

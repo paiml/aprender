@@ -197,3 +197,60 @@ fn test_wmma_layout_col_major() {
     let ptx = kernel.emit();
     assert!(ptx.contains(".col."), "Expected .col. layout in: {}", ptx);
 }
+
+/// #4376: the int8 mma form is emitted for S32 and assembles on sm_89;
+/// the f16 form is unchanged for F32.
+#[test]
+fn test_mma_sync_m16n8k32_s8_emits_and_assembles() {
+    let kernel = PtxKernel::new("test_mma_s8")
+        .param(PtxType::U64, "out_ptr")
+        .build(|ctx| {
+            let out = ctx.load_param_u64("out_ptr");
+            let a =
+                [0x0101_0101, 0x0202_0202, 0x0303_0303, 0x0404_0404].map(|v| ctx.mov_b32_imm(v));
+            let b = [0x0101_0101, 0xFFFF_FFFF].map(|v| ctx.mov_b32_imm(v));
+            let c = [0, 0, 0, 0].map(|v| ctx.mov_s32_imm(v));
+            ctx.mma_sync_m16n8k32_s8_inplace(&a, &b, &c);
+            let fa = [0x3c00_3c00; 4].map(|v| ctx.mov_b32_imm(v));
+            let fb = [0x3c00_3c00; 2].map(|v| ctx.mov_b32_imm(v));
+            let fc = ctx.wmma_init_c_zero();
+            ctx.mma_sync_m16n8k16_inplace(&fa, &fb, &[fc[0], fc[1], fc[2], fc[3]]);
+            ctx.st_global_u32(out, c[0]);
+            ctx.ret();
+        });
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .add_kernel(kernel)
+        .emit();
+    assert!(
+        ptx.contains("mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 {"),
+        "int8 mma missing:\n{ptx}"
+    );
+    assert!(
+        ptx.contains("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {"),
+        "f16 mma changed:\n{ptx}"
+    );
+
+    let Ok(out) = std::process::Command::new("ptxas")
+        .arg("--version")
+        .output()
+    else {
+        eprintln!("ptxas not found; emission checked only");
+        return;
+    };
+    assert!(out.status.success());
+    let path = std::env::temp_dir().join(format!("mma_s8_{}.ptx", std::process::id()));
+    std::fs::write(&path, &ptx).expect("write ptx");
+    let res = std::process::Command::new("ptxas")
+        .args(["--gpu-name", "sm_89", "-o", "/dev/null"])
+        .arg(&path)
+        .output()
+        .expect("run ptxas");
+    let _ = std::fs::remove_file(&path);
+    assert!(
+        res.status.success(),
+        "ptxas rejected:\n{}\n{ptx}",
+        String::from_utf8_lossy(&res.stderr)
+    );
+}

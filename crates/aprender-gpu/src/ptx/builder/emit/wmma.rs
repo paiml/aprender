@@ -4,6 +4,7 @@
 
 use super::operand::emit_operand;
 use crate::ptx::instructions::{PtxInstruction, PtxOp};
+use crate::ptx::types::PtxType;
 
 /// Emit WMMA load instruction with proper register list format
 /// Format: wmma.load.{a|b|c}.sync.aligned.m16n16k16.{layout}.{type} {regs}, [ptr], stride
@@ -207,7 +208,13 @@ pub(crate) fn emit_mma_sync(prefix: String, instr: &PtxInstruction) -> String {
     let mut s = prefix;
 
     // Destinations (D: 4 FP32 regs — dst + dsts)
-    s.push_str("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {");
+    // The instruction's type picks the shape: S32 is the int8 MMQ form (#4376),
+    // anything else the f16 form. The operand layout (4 A, 2 B, 4 C/D) is the same.
+    s.push_str(if instr.ty == PtxType::S32 {
+        "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 {"
+    } else {
+        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {"
+    });
     if let Some(ref d) = instr.dst {
         s.push_str(&emit_operand(d));
     }
