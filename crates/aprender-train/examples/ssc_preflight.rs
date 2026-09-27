@@ -18,7 +18,9 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let model_dir = get_arg(&args, "--model-dir").map(PathBuf::from).expect("--model-dir required");
+    let model_dir = get_arg(&args, "--model-dir")
+        .map(PathBuf::from)
+        .expect("usage: ssc_preflight --model-dir <dir>");
 
     println!("=== SSC Run 8 Preflight Gate (Step 8.4) ===");
     println!("Model: {}", model_dir.display());

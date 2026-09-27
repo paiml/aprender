@@ -77,9 +77,19 @@ SELFTEST=0
 # the driver loader and wgpu print when the device is absent. Widening either
 # one turns a real defect into a skip, so each addition belongs in the selftest
 # table first.
-NEEDS_ARGS_RE='^(Usage|error: the following required arguments)'
-NEEDS_HW_RE='(CUDA_ERROR_[A-Z_]+|no CUDA-capable device|CUDA driver version is insufficient|cuInit|libcuda\.so|libnvidia-ml|[Nn]o (suitable )?(graphics )?adapter|RequestAdapterError|NoAdapter|wgpu.*(device|adapter) (not|un)|Metal device (not|un))'
-NEEDS_DATA_RE='No such file or directory|[Mm]odel not found|not found at |Failed to open |[Nn]o tokenizer|Download with:|does not exist|hf://'
+#
+# (Added 2026-09-27, examples-nightly run 36283459907.) needs-args also takes the
+# lower-case `usage: <name> ...` line a clap-free example prints -- bare, as a
+# `.expect("usage: ...")` panic payload (Rust prints the payload on its own
+# line), or Debug-quoted by `fn main() -> Result<_, String>` (`Error: "usage:`).
+# needs-hardware takes aprender-gpu's own GpuError::CudaNotAvailable Display
+# ("CUDA not available: {0}", crates/aprender-gpu/src/error.rs), which is what a
+# driver-less clean-room host prints; cuInit only appears when the driver loads.
+NEEDS_ARGS_RE='^(Usage|(Error: ")?usage: [A-Za-z0-9_-]+ |error: the following required arguments)'
+NEEDS_HW_RE='(CUDA not available: |CUDA_ERROR_[A-Z_]+|no CUDA-capable device|CUDA driver version is insufficient|cuInit|libcuda\.so|libnvidia-ml|[Nn]o (suitable )?(graphics )?adapter|RequestAdapterError|NoAdapter|wgpu.*(device|adapter) (not|un)|Metal device (not|un))'
+# (Added 2026-09-27) `No model found` / `Missing model artifacts:` are the qa_*
+# and publish_* examples' own refusals when no model is on the host.
+NEEDS_DATA_RE='No model found|Missing model artifacts: |No such file or directory|[Mm]odel not found|not found at |Failed to open |[Nn]o tokenizer|Download with:|does not exist|hf://'
 # needs-feature (Added 2026-09-14): 6 rows on run 34826552378 were classified
 # `fail` whose output says the example is not built with the feature it needs --
 # either the example's own guard ("This example requires the 'compression'
@@ -87,7 +97,8 @@ NEEDS_DATA_RE='No such file or directory|[Mm]odel not found|not found at |Failed
 # cuda"). Not runnable in THIS configuration; not broken. Like needs-hardware,
 # these must be re-run WITH the feature before a release verdict -- a skip here
 # must never be readable as "the compression example works".
-NEEDS_FEATURE_RE="requires the '[^']+' feature|requires the features?:"
+# (Added 2026-09-27) plus the `requires --features cuda` form of the same guard.
+NEEDS_FEATURE_RE="requires the '[^']+' feature|requires the features?:|requires --features [a-z]"
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +222,15 @@ classify() {
         printf 'needs-feature\t%s\n' "$(oneline "${line}")"
         return 0
     fi
+    # A fail cites the FIRST and the LAST non-blank line. The first alone was a
+    # banner (`╔════`, a title) on 9 of 27 fail rows of run 36283459907, which
+    # names nothing; the last is where a Rust error or panic payload lands.
+    local last
     line=$(grep -m1 -E '[^[:space:]]' "${log}" 2> /dev/null) || line=''
+    last=$(grep -E '[^[:space:]]' "${log}" 2> /dev/null | tail -n 1) || last=''
+    if [ -n "${last}" ] && [ "${last}" != "${line}" ]; then
+        line="$(oneline "${line}" | cut -c1-80) ... $(oneline "${last}" | cut -c1-160)"
+    fi
     printf 'fail\t%s: %s\n' "${stage}" "$(oneline "${line:-no output}")"
 }
 
@@ -444,6 +463,42 @@ selftest() {
             st_row PASS "re: does not match -- $(oneline "${_s}")"
         fi
     done
+
+    # The 2026-09-27 additions, both polarities, as NAME<TAB>MUST|MUSTNOT<TAB>TEXT.
+    # Each MUST line is verbatim from examples-nightly run 36283459907 (yoga).
+    local _re _want _txt _name _got
+    while IFS=$'\t' read -r _name _want _txt; do
+        case "${_name}" in
+            args) _re="${NEEDS_ARGS_RE}" ;;
+            hw) _re="${NEEDS_HW_RE}" ;;
+            data) _re="${NEEDS_DATA_RE}" ;;
+            feature) _re="${NEEDS_FEATURE_RE}" ;;
+            *) st_row FAIL "re table: unknown pattern ${_name}"; continue ;;
+        esac
+        if grep -qE "${_re}" <<< "${_txt}"; then _got=MUST; else _got=MUSTNOT; fi
+        if [ "${_got}" = "${_want}" ]; then
+            st_row PASS "re ${_name} ${_want}: $(oneline "${_txt}" | cut -c1-70)"
+        else
+            st_row FAIL "re ${_name} ${_want}: $(oneline "${_txt}")"
+        fi
+    done <<'CASES'
+args	MUST	Error: "usage: qwen35_parity <model.gguf> [tokens.txt]"
+args	MUST	usage: qwen35_prefill_parity <model.gguf> <n_tokens> <stride> <out.json> [ids.txt]
+args	MUST	usage: think_ab <model.gguf> <budget> <cpu|gpu>
+args	MUSTNOT	thread 'main' (1222794) panicked at crates/aprender-serve/examples/check_layer4.rs:4:46:
+args	MUSTNOT	warning: usage: of a deprecated item
+args	MUSTNOT	peak memory usage: 412 MB
+args	MUSTNOT	Error: "usage count overflow"
+hw	MUST	Error: GpuError { reason: "Failed to create CudaExecutor: CUDA not available: CUDA driver not found" }
+hw	MUSTNOT	CUDA available: true
+hw	MUSTNOT	CUDA not available, falling back to CPU
+data	MUST	ERROR: No model found.
+data	MUST	Error: Missing model artifacts: model.safetensors, vocab.json, config.json
+data	MUSTNOT	No models were harmed
+data	MUSTNOT	Missing model artifacts check passed
+feature	MUST	This example requires --features cuda
+feature	MUSTNOT	rebuild with --features cuda for speed
+CASES
 
     # rc of the failing example is recorded, not flattened to 1.
     if awk -F'\t' '$2 == "bad" && $4 == 3 { f = 1 } END { exit !f }' "${out}"; then

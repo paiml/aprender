@@ -13,11 +13,13 @@ use entrenar::finetune::{GenerateConfig, InstructConfig, InstructPipeline};
 use entrenar::transformer::TransformerConfig;
 use std::path::PathBuf;
 
+const USAGE: &str = "usage: ssc_eval --model-dir <dir> --data <path> [--samples N]";
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    let model_dir = get_arg(&args, "--model-dir").map(PathBuf::from).expect("--model-dir required");
-    let data_path = get_arg(&args, "--data").map(PathBuf::from).expect("--data required");
+    let model_dir = get_arg(&args, "--model-dir").map(PathBuf::from).expect(USAGE);
+    let data_path = get_arg(&args, "--data").map(PathBuf::from).expect(USAGE);
     let num_samples: usize = get_arg(&args, "--samples").and_then(|s| s.parse().ok()).unwrap_or(50);
 
     // Load config.json from model directory
