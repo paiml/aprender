@@ -52,10 +52,12 @@ impl CudaExecutor {
 
         // trueno#243: Skip stream capture (code 901 poisons context on driver 570.207).
         // Use manual graph construction via cuGraphAddKernelNode instead.
-        eprintln!(
-            "[trueno#243] Manual graph construction: pos={}, has_graph={}, capture_failed={}, token_count={}",
-            position, self.decode_graph.is_some(), self.graph_capture_failed, self.decode_token_count
-        );
+        if crate::dev_trace::dev_trace_enabled() {
+            eprintln!(
+                "[trueno#243] Manual graph construction: pos={}, has_graph={}, capture_failed={}, token_count={}",
+                position, self.decode_graph.is_some(), self.graph_capture_failed, self.decode_token_count
+            );
+        }
         self.begin_graph_recording();
         self.is_capturing = true;
         let eager_result = self.forward_workspace_captured(
@@ -213,7 +215,9 @@ impl CudaExecutor {
             Ok(_) => {
                 // No kernels recorded — recording not wired to all ops yet.
                 // First token was computed by eager pass.
-                eprintln!("[trueno#243] 0 kernels recorded, using eager path for subsequent tokens");
+                if crate::dev_trace::dev_trace_enabled() {
+                    eprintln!("[trueno#243] 0 kernels recorded, using eager path for subsequent tokens");
+                }
                 self.graph_capture_failed = true;
                 self.stream.synchronize()?;
                 if let Some(ref logits_buf) = self.workspace.logits_buf {
