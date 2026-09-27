@@ -461,3 +461,8 @@ mod tests;
 #[cfg(test)]
 #[path = "tests_gelu_exact_backward.rs"]
 mod tests_gelu_exact_backward;
+
+// ONT-10 L4: the Rust side of the Lean simulation model of `matmul` above.
+#[cfg(test)]
+#[path = "tests_matmul_shape_l4.rs"]
+mod tests_matmul_shape_l4;
