@@ -76,14 +76,16 @@ fn falsify_h1_simd_dot_speedup() {
 /// number of elements and epsilon is machine epsilon (~1.2e-7 for f32).
 /// For random data with potential cancellation (positive and negative values),
 /// the result magnitude can be small while intermediate values are large, causing
-/// relative error to amplify significantly. We use 2% threshold to account for
-/// this pathological case while still catching implementation bugs.
+/// relative error to be unbounded: a result near zero divides by ~0 (FLAKE-0 — a
+/// relative-error criterion failed on random draws). The error is measured against
+/// the summation bound instead: |scalar − simd| ≤ 2·n·ε·Σ|aᵢbᵢ| (Higham, Accuracy
+/// and Stability of Numerical Algorithms, §3.1), which holds for any cancellation.
 ///
-/// FALSIFIED IF: Relative error > 2e-2
+/// FALSIFIED IF: |scalar − simd| > 2·n·ε·Σ|aᵢbᵢ|
 #[test]
 fn falsify_h2_numerical_accuracy() {
-    use rand::Rng;
-    let mut rng = rand::rng();
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+    let mut rng = StdRng::seed_from_u64(0x4832);
 
     for _ in 0..100 {
         let size = rng.random_range(64..2048);
@@ -93,20 +95,21 @@ fn falsify_h2_numerical_accuracy() {
         let scalar_result = scalar_dot(&a, &b);
         let simd_result = simd_dot(&a, &b);
 
-        // Use relative error, not ULP, for accumulated operations
-        let rel_error = (scalar_result - simd_result).abs() / scalar_result.abs().max(1e-10);
+        let error = (scalar_result - simd_result).abs();
+        let bound = dot_error_bound(&a, &b);
 
-        // FALSIFICATION CRITERION: Relative error <= 2% (allows for cancellation)
+        // FALSIFICATION CRITERION: the difference is within the summation bound
         assert!(
-            rel_error <= 2e-2,
-            "H2 FALSIFIED: Relative error {} > 2e-2 for size={}, scalar={}, simd={}",
-            rel_error,
+            error <= bound,
+            "H2 FALSIFIED: |scalar - simd| {} > bound {} for size={}, scalar={}, simd={}",
+            error,
+            bound,
             size,
             scalar_result,
             simd_result
         );
     }
-    println!("H2: All 100 random tests passed with relative error <= 2%");
+    println!("H2: All 100 random tests passed within the summation error bound");
 }
 
 /// H3: Attention SIMD Correctness
@@ -115,15 +118,15 @@ fn falsify_h2_numerical_accuracy() {
 ///
 /// RATIONALE: Attention scores are computed via dot products. Per H2 rationale,
 /// different accumulation orders cause O(n * epsilon) variation. For head_dim=64,
-/// theoretical max error ≈ 64 * 1.2e-7 ≈ 7.7e-6. We use 5e-4 (0.05%) to account for
-/// pathological cases with near-zero denominators (denominator clamping adds noise)
-/// and accumulated errors across multiple attention positions.
+/// theoretical max error ≈ 64 * 1.2e-7 ≈ 7.7e-6 of Σ|qᵢkᵢ| — not of the score
+/// itself: a score near zero made a relative-error criterion fail on random draws
+/// (FLAKE-0, passed on CI retry). See H2 for the bound.
 ///
-/// FALSIFIED IF: Relative error > 5e-4
+/// FALSIFIED IF: any score differs by more than 2·n·ε·Σ|qᵢkᵢ|
 #[test]
 fn falsify_h3_attention_correctness() {
-    use rand::Rng;
-    let mut rng = rand::rng();
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+    let mut rng = StdRng::seed_from_u64(0x4833);
 
     let head_dim = 64;
     let num_positions = 50;
@@ -138,20 +141,19 @@ fn falsify_h3_attention_correctness() {
         let scalar_scores: Vec<f32> = keys.iter().map(|k| scalar_dot(&q, k)).collect();
         let simd_scores: Vec<f32> = keys.iter().map(|k| simd_dot(&q, k)).collect();
 
-        let max_rel_error = scalar_scores
-            .iter()
-            .zip(simd_scores.iter())
-            .map(|(s, m)| (s - m).abs() / s.abs().max(1e-10))
-            .fold(0.0f32, f32::max);
-
-        // FALSIFICATION CRITERION: Relative error <= 5e-4 (0.05%)
-        assert!(
-            max_rel_error <= 5e-4,
-            "H3 FALSIFIED: Attention relative error {} > 5e-4",
-            max_rel_error
-        );
+        for ((s, m), k) in scalar_scores.iter().zip(&simd_scores).zip(&keys) {
+            let bound = dot_error_bound(&q, k);
+            // FALSIFICATION CRITERION: the difference is within the summation bound
+            assert!(
+                (s - m).abs() <= bound,
+                "H3 FALSIFIED: attention score |{} - {}| > bound {}",
+                s,
+                m,
+                bound
+            );
+        }
     }
-    println!("H3: All attention tests passed with relative error <= 5e-4");
+    println!("H3: All attention tests passed within the summation error bound");
 }
 
 /// H4: AXPY Operation Correctness
@@ -217,6 +219,19 @@ fn falsify_h5_minimum_throughput() {
 }
 
 // === Helper Functions ===
+
+/// The forward-error bound on the difference of two f32 dot products that sum the
+/// same n products in different orders: 2·n·ε·Σ|aᵢbᵢ| (each is within n·ε·Σ|aᵢbᵢ|
+/// of the exact value). Summed in f64 so the bound itself carries no f32 error.
+fn dot_error_bound(a: &[f32], b: &[f32]) -> f32 {
+    let abs_sum: f64 = a
+        .iter()
+        .zip(b)
+        .map(|(x, y)| f64::from(*x) * f64::from(*y))
+        .map(f64::abs)
+        .sum();
+    (2.0 * a.len().min(b.len()) as f64 * f64::from(f32::EPSILON) * abs_sum) as f32
+}
 
 fn scalar_dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
