@@ -21,6 +21,7 @@ pub mod init;
 mod model;
 mod norm;
 mod qwen35_layer;
+mod qwen35_model;
 pub(crate) mod weights;
 #[cfg(feature = "gpu")]
 pub mod wgpu_block;
@@ -49,6 +50,7 @@ pub use qwen35_layer::{
     gated_attn_forward, partial_neox_rope_seq, qwen35_block_forward, GatedAttnDims,
     GatedAttnWeights, Qwen35Mixer, SwiGluWeights,
 };
+pub use qwen35_model::Qwen35Model;
 pub use weights::{load_safetensors_weights, validate_weights, Architecture};
 #[cfg(feature = "gpu")]
 pub use wgpu_block::WgpuForwardPass;
