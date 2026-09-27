@@ -1,0 +1,359 @@
+{
+  "ticket": "PMAT-4380",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 158 commit(s); judged against origin/main",
+  "head": "32b3f2b4bf25b44918f0f43b69a62a8a5558e1b4",
+  "diff_sha256": "090a0068420d3400fb673d4ca8c9e716e0634219758820501fbb260b25f6c0c5",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 152797,
+  "prompt_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff matches PMAT-4380 (+#4369) exactly: fixes 10 #[contract] producer build.rs scripts to read in-tree contracts/<crate>/binding.yaml instead of the gone ../../../provable-contracts sibling, adds a hard panic when contracts/ exists in-tree but the per-crate binding.yaml is missing, restores/adds 8 new per-repo binding.yaml registries (batuta, entrenar, presentar, realizar, simular, trueno-db, trueno-rag, trueno) plus 22 backfilled rows in contracts/aprender/binding.yaml, removes 3 now-dead build.rs stubs (aprender-graph, aprender-verify, and the provable-contracts block in aprender-verify-ml), fixes aprender-serve's arch-requirements/tensor-names paths, and renames three #[contract] sites in aprender-serve (gemm-v1/forward-pass-v1/sampling-v1 -> matmul-kernel-v1/rmsnorm-kernel-v1/softmax-kernel-v1) to match rows that now actually exist in the restored realizar registry (verified matmul/rmsnorm/softmax rows present at lines ~1387/1483/1417 of the new contracts/realizar/binding.yaml). The macro/build_helper changes (registry_miss, env_key parity test, fail-closed read_contract_assertions) are additive hardening consistent with #4368/#2699 and are unit-tested with case tables. ALLOWED_GAPS additions in aprender-core/build.rs are an honest whitelist of pre-existing not_implemented rows the policy never saw before (path was broken), not a blanket gate disable. No test asserts behavior contrary to the ticket, no gate is silently weakened, and no out-of-scope work was found. Roadmap entry's acceptance criteria and its measured claims (64/64 arch_ tests, build.rs:570 line) are consistent with the code changes shown.",
+      "findings": [
+        {
+          "file": "crates/aprender-core/build.rs",
+          "line": 2913,
+          "claim": "ALLOWED_GAPS gained 12 new (contract_stem, equation) exceptions to keep the AllImplemented policy from newly failing the build now that the binding registry is actually read; this is an explicit, dated whitelist of pre-existing gaps rather than a policy weakening, but it does mean those 12 sites remain unimplemented and unenforced going forward.",
+          "failure_scenario": "Not a defect in this diff, but a residual: if a future contributor assumes 'AllImplemented' means all contracts are actually implemented, these 12 excepted rows are silent gaps until #4369-tracked follow-up closes them.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 5540,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+      "trace": {
+        "input_sha256": "291669ec9fc63b6668936b0798420849757309e3317e4b0fb063bcb908ee21ee",
+        "output_sha256": "9b6734fd94129691bdf39ec5a55d7db765fe1516cdd7b905c4184521b972f047",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fixes 10 #[contract] build.rs producers (aprender-compute/core/db/orchestrate/present-cli/present-core/rag/serve/simulate/train) that were reading a now-nonexistent `../../../provable-contracts/contracts` sibling path, redirecting them to the in-tree `contracts/<producer>/binding.yaml`, and hard-failing the build (panic) when the registry is missing in a monorepo checkout (vs. a graceful CONTRACT_BINDING_SOURCE=none fallback only for out-of-tree crates.io builds). It also adds a macro-level compile_error! (#4368) when a registry ran but has no row for a #[contract] site, backfills ~40 previously-invisible binding rows across 7 contracts/*/binding.yaml registries (purely additive), fixes aprender-serve's arch-requirements/tensor-names YAML paths, and deletes two dead build.rs stubs (aprender-graph, aprender-verify) that referenced the same gone sibling. Verified against the actual tree: the roadmap's measured build.rs:570 line, the 10 producers all emit CONTRACT_BINDING_SOURCE=binding.yaml, contract renames (matmul/rmsnorm/softmax-kernel-v1) match rows added to contracts/realizar/binding.yaml, ALLOWED_GAPS additions match pre-existing not_implemented rows in contracts/aprender/binding.yaml, and the generated contract_pre_constraint_matrix_exhaustiveness!() call is a legitimate crate-visible macro already used identically in the fallback file. No deletions or weakenings found in any binding.yaml; all contract-registry diffs are additive.",
+      "findings": [],
+      "raw_bytes": 3844,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+      "trace": {
+        "input_sha256": "e6bdef5c7b1ec4ed3f43d40989b28865d8b323b5b5c165a3912ede7e72f6c6eb",
+        "output_sha256": "b4365b19856329a7866f8c75bf47d2ad2dbec7bd81b918de4246d9ba84c00a27",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3's FAIL is based on misreading criterion #3, which requires code-path switching, not adding a new message. The diff correctly changes all build.rs paths from ../../../provable-contracts/contracts/ to in-tree ../../contracts/, adds panic guards preventing silent registry fallback, and wires registry-miss compile-error checks. Lane 1 and 2 correctly PASS; their findings (cosmetic warning text, ALLOWED_GAPS comment accuracy) are minor, non-functional issues that don't constitute refutation.",
+      "findings": [
+        {
+          "file": "crates/aprender-present-core/build.rs",
+          "line": 3223,
+          "claim": "Unreachable-path warning string still references 'provable-contracts binding.yaml not found' despite fixing the path itself to in-tree contracts/",
+          "grounding": "cited",
+          "fix": "Update warning text for consistency (cosmetic only; path is correct, warning never runs)"
+        },
+        {
+          "file": "crates/aprender-core/build.rs",
+          "line": 78,
+          "claim": "12 ALLOWED_GAPS entries reference a rationale of 'not_implemented' status, but all 12 are status:implemented in contracts/aprender/binding.yaml (verified by grep)",
+          "grounding": "measured",
+          "fix": "Optional: remove entries or correct comment to clarify these were pre-existing implemented bindings (gate not weakened; findings inert)"
+        },
+        {
+          "file": "docs/audits/quorum-PMAT-4380.json",
+          "line": 120,
+          "claim": "Lane 3 FAIL verdict claims criterion #3 requires adding 'Generated arch_requirements from YAML' message, but criterion explicitly states 'No new message is added; the criterion is which branch runs'",
+          "grounding": "cited",
+          "fix": "Lane 3 misread criterion as requiring new message; diff DOES implement criterion by switching path to in-tree ../../contracts/architecture-requirements-v1.yaml"
+        }
+      ],
+      "raw_bytes": 4388,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+      "trace": {
+        "input_sha256": "7ef1af1fe59bb72935a6ab5bc219422fd71aa19409c443adda9ae548b3602749",
+        "output_sha256": "44e925f5356ede6e2fac4837890572e0cd163353f26c35cf142a997549fe9b76",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-core/build.rs",
+      "line": 78,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "12 ALLOWED_GAPS entries reference a rationale of 'not_implemented' status, but all 12 are status:implemented in contracts/aprender/binding.yaml (verified by grep)"
+      ]
+    },
+    {
+      "file": "crates/aprender-core/build.rs",
+      "line": 2913,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "ALLOWED_GAPS gained 12 new (contract_stem, equation) exceptions to keep the AllImplemented policy from newly failing the build now that the binding registry is actually read; this is an explicit, dated whitelist of pre-existing gaps rather than a policy weakening, but it does mean those 12 sites remain unimplemented and unenforced going forward."
+      ]
+    },
+    {
+      "file": "crates/aprender-present-core/build.rs",
+      "line": 3223,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Unreachable-path warning string still references 'provable-contracts binding.yaml not found' despite fixing the path itself to in-tree contracts/"
+      ]
+    },
+    {
+      "file": "docs/audits/quorum-PMAT-4380.json",
+      "line": 120,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Lane 3 FAIL verdict claims criterion #3 requires adding 'Generated arch_requirements from YAML' message, but criterion explicitly states 'No new message is added; the criterion is which branch runs'"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 38,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 152797 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 152797 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 152797,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
