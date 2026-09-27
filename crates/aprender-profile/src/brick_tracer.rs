@@ -29,7 +29,9 @@
 //!     let result = tracer.trace_brick(&my_brick, || {
 //!         my_brick.run(input)
 //!     })?;
-//!     println!("Syscall breakdown: {:?}", result.syscall_breakdown);
+//!     // TR-01: no syscall capture is wired in, so this is `NotInstrumented`
+//!     // and the breakdown is `None` — never wall-clock time dressed as compute.
+//!     println!("{} {:?}", result.provenance, result.syscall_breakdown);
 //! }
 //! ```
 
@@ -37,6 +39,9 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// TR-01 (#4556): the stack-wide provenance type, re-exported for tracer callers.
+pub use renacer_core::TraceProvenance;
 
 use crate::otlp_exporter::{OtlpConfig, OtlpExporter};
 
@@ -235,8 +240,11 @@ pub struct TracedBrickResult<R> {
     pub result: R,
     /// Execution duration in microseconds
     pub duration_us: u64,
-    /// Syscall breakdown for root cause analysis
-    pub syscall_breakdown: SyscallBreakdown,
+    /// Syscall breakdown for root cause analysis. `None` when no syscall
+    /// events were captured: an absent breakdown, never a zeroed one (TR-01)
+    pub syscall_breakdown: Option<SyscallBreakdown>,
+    /// How `duration_us` and `syscall_breakdown` were obtained (TR-01)
+    pub provenance: TraceProvenance,
     /// Brick metadata (if available)
     pub metadata: Option<BrickMetadata>,
     /// OTLP span ID (if exported)
@@ -392,9 +400,12 @@ impl BrickTracer {
     /// Trace a closure execution with syscall capture.
     ///
     /// This is the main entry point for brick tracing. It:
-    /// 1. Captures syscalls during execution
-    /// 2. Calculates syscall breakdown
-    /// 3. Exports span to OTLP (if configured)
+    /// 1. Times the closure with a wall clock
+    /// 2. Exports span to OTLP (if configured)
+    ///
+    /// It does NOT capture syscalls (that needs ptrace from a separate process),
+    /// so the result is `TraceProvenance::NotInstrumented` with no breakdown.
+    /// A breakdown exists only via [`SyscallBreakdown::from_events`] on real events.
     ///
     /// # Type Parameters
     ///
@@ -434,10 +445,12 @@ impl BrickTracer {
         let duration = start.elapsed();
         let duration_us = duration.as_micros() as u64;
 
-        // For now, we don't have syscall capture integrated here
-        // This would require ptrace which needs to be in a separate process
-        // We provide the infrastructure for when syscall events are available
-        let breakdown = SyscallBreakdown { compute_us: duration_us, ..Default::default() };
+        // TR-01: no syscall capture is integrated here (it needs ptrace from a
+        // separate process), so there is no breakdown to report. Presenting the
+        // wall-clock duration as `compute_us` claimed 0% syscall overhead that
+        // was never measured.
+        let breakdown: Option<SyscallBreakdown> = None;
+        let provenance = TraceProvenance::NotInstrumented;
 
         let over_budget = duration_us > budget_us;
         let efficiency =
@@ -459,7 +472,7 @@ impl BrickTracer {
 
         // Export to OTLP if configured
         let span_id = if let Some(ref exporter) = self.exporter {
-            self.export_brick_span(exporter, &metadata, &breakdown, reason);
+            self.export_brick_span(exporter, &metadata, breakdown.as_ref(), provenance, reason);
             Some(format!("{:016x}", rand::random::<u64>()))
         } else {
             None
@@ -469,6 +482,7 @@ impl BrickTracer {
             result,
             duration_us,
             syscall_breakdown: breakdown,
+            provenance,
             metadata: Some(metadata),
             span_id,
             escalation_reason: Some(reason),
@@ -480,7 +494,8 @@ impl BrickTracer {
         &self,
         exporter: &OtlpExporter,
         metadata: &BrickMetadata,
-        breakdown: &SyscallBreakdown,
+        breakdown: Option<&SyscallBreakdown>,
+        provenance: TraceProvenance,
         reason: EscalationReason,
     ) {
         use crate::otlp_exporter::ComputeBlock;
@@ -502,8 +517,10 @@ impl BrickTracer {
             brick.actual_us = metadata.actual_us,
             brick.over_budget = metadata.over_budget,
             brick.efficiency = %format!("{:.2}", metadata.efficiency),
-            syscall.overhead_percent = %format!("{:.1}", breakdown.syscall_overhead_percent()),
-            syscall.dominant = breakdown.dominant_syscall(),
+            trace.provenance = provenance.as_str(),
+            syscall.overhead_percent = %breakdown
+                .map_or_else(|| "null".to_string(), |b| format!("{:.1}", b.syscall_overhead_percent())),
+            syscall.dominant = breakdown.map_or("null", SyscallBreakdown::dominant_syscall),
             escalation.reason = %reason,
             "ComputeBrick traced"
         );
@@ -1102,5 +1119,35 @@ mod tests {
         let reason = EscalationReason::Both;
         let copied = reason;
         assert_eq!(copied, EscalationReason::Both);
+    }
+
+    /// FALSIFY-BTP-003 (TR-01): a trace with no captured syscall events reports
+    /// `NotInstrumented` and an absent breakdown. RED on the old code, which
+    /// returned a breakdown with `compute_us == duration_us` (0% "overhead").
+    #[test]
+    fn falsify_btp_003_uninstrumented_trace_has_no_breakdown() {
+        let tracer = BrickTracer::new_local();
+        for reason in [EscalationReason::Manual, EscalationReason::CvExceeded] {
+            let r = tracer.trace_with_reason("B", 1, reason, || {
+                std::thread::sleep(Duration::from_micros(50));
+            });
+            assert_eq!(r.provenance, TraceProvenance::NotInstrumented);
+            assert!(r.syscall_breakdown.is_none(), "breakdown must be null, not zeroed");
+            assert!(!r.provenance.has_breakdown());
+            assert!(r.duration_us >= 50, "the wall-clock total stays real");
+        }
+    }
+
+    /// FALSIFY-BTP-004 (TR-01): real events still yield a breakdown whose
+    /// compute share is the residual, so honesty did not delete the capability.
+    #[test]
+    fn falsify_btp_004_events_still_produce_a_breakdown() {
+        let ev = SyscallEvent {
+            syscall: "futex".to_string(),
+            duration: Duration::from_micros(300),
+            result: 0,
+        };
+        let b = SyscallBreakdown::from_events(&[ev], 1000);
+        assert_eq!((b.futex_us, b.compute_us, b.syscall_count), (300, 700, 1));
     }
 }

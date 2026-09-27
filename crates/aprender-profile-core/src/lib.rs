@@ -7,6 +7,7 @@
 //! - [`LazySpan`] — Deferred span construction (zero overhead when unused)
 //! - [`SpanPool`] — Memory pool for span allocations
 //! - [`TraceContext`] / [`LamportClock`] — W3C trace context + causal ordering
+//! - [`TraceProvenance`] — how a trace's timings were obtained (TR-01, #4556)
 //!
 //! # Design
 //!
@@ -31,9 +32,11 @@ pub mod phase_timer;
 pub mod span_pool;
 pub mod span_record;
 pub mod trace_context;
+pub mod trace_provenance;
 
 pub use lazy_span::LazySpan;
 pub use phase_timer::PhaseTimer;
 pub use span_pool::SpanPool;
 pub use span_record::{SpanKind, SpanRecord, StatusCode};
 pub use trace_context::{LamportClock, TraceContext};
+pub use trace_provenance::TraceProvenance;

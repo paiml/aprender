@@ -35,6 +35,7 @@ fn run_safetensors_benchmark(
         let traced = tracer.trace("bench_safetensors_cpu_iter", budget_us, || {
             transformer.forward(&prompt_tokens)
         });
+        print_trace_provenance(config, i, traced.provenance, traced.syscall_breakdown.is_some());
         let _ = traced.result;
         let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
@@ -236,6 +237,7 @@ fn run_cuda_measurement(
             cuda_model
                 .generate_gpu_resident(prompt_tokens, gen_config)
         });
+        print_trace_provenance(config, i, traced.provenance, traced.syscall_breakdown.is_some());
         let output = traced.result.map_err(|e| {
             eprintln!("\n  Generation error: {e}");
             CliError::ValidationFailed(format!("GPU generation failed: {e}"))
@@ -379,6 +381,7 @@ fn run_cpu_measurement(
                 .generate_with_cache(prompt_tokens, gen_config)
                 .unwrap_or_default()
         });
+        print_trace_provenance(config, i, traced.provenance, traced.syscall_breakdown.is_some());
         let output = traced.result;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
         let iter_time = Duration::from_micros(traced.duration_us);

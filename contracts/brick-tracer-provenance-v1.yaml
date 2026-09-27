@@ -1,0 +1,73 @@
+contract: brick-tracer-provenance
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    TR-01 (#4556, TRACE-001 v1.2): renacer's BrickTracer must not present
+    wall-clock time as a syscall breakdown. BrickTracer::trace_with_reason has
+    no syscall capture wired in (that needs ptrace from a separate process), yet
+    it returned SyscallBreakdown { compute_us: duration_us, .. } — a breakdown
+    claiming 0% syscall overhead that was never measured — under a doc comment
+    saying it "captures syscalls during execution". The apr bench/qa no-renacer
+    shims copied the same fabrication. Fix: TraceProvenance is hoisted from
+    aprender-serve (GH-92) to aprender-profile-core (renacer_core) and gains
+    NotInstrumented; an uninstrumented trace returns provenance NotInstrumented
+    with syscall_breakdown = None (null, not zeroed); the false doc line is
+    deleted; the apr bench, benchmark and qa (golden_output) callers print the
+    provenance and print a breakdown only when one was captured.
+  references:
+  - "crates/aprender-profile-core/src/trace_provenance.rs (TraceProvenance, hoisted)"
+  - "crates/aprender-profile/src/brick_tracer.rs (trace_with_reason, TracedBrickResult)"
+  - "crates/aprender-serve/src/api/mod_create_demo.rs (re-export for TraceData)"
+  - "crates/apr-cli/src/commands/benchmark.rs (print_trace_provenance)"
+  - "crates/apr-cli/src/commands/golden_output.rs (measure_generate_throughput)"
+version: 1
+status: enforced
+date: 2026-09-27
+
+proof_obligations:
+  - id: BTP-INV-001
+    type: invariant
+    property: >
+      NO-FABRICATED-BREAKDOWN: a BrickTracer trace for which no syscall events
+      were captured has provenance NotInstrumented and syscall_breakdown None.
+      No code path sets compute_us to the traced wall-clock duration
+      (`git grep -n "compute_us: duration_us"` returns nothing).
+  - id: BTP-INV-002
+    type: invariant
+    property: >
+      ONE-TYPE: aprender-serve's TraceData and renacer's TracedBrickResult use
+      the same TraceProvenance (renacer_core). Its serde names are measured,
+      wall_clock_total, estimated, not_instrumented, and only Measured claims a
+      per-component breakdown.
+  - id: BTP-INV-003
+    type: invariant
+    property: >
+      CAPABILITY-KEPT: SyscallBreakdown::from_events on real events still yields
+      per-category times with compute_us = total - Σ syscall time.
+
+falsification_tests:
+  - id: FALSIFY-BTP-001
+    name: falsify_btp_001_as_str_matches_serde
+    prediction: "every TraceProvenance variant round-trips through serde and as_str() equals its serde name"
+    test_harness: "cargo test -p aprender-profile-core --lib falsify_btp_001"
+    expected_output: "test result: ok"
+    if_fails: "human-readable provenance output and JSON disagree — a trace can print one provenance and serialize another."
+  - id: FALSIFY-BTP-002
+    name: falsify_btp_002_only_measured_has_breakdown
+    prediction: "has_breakdown() is true for Measured only"
+    test_harness: "cargo test -p aprender-profile-core --lib falsify_btp_002"
+    expected_output: "test result: ok"
+    if_fails: "a non-measured provenance claims a breakdown, so callers print estimated or absent numbers as measured."
+  - id: FALSIFY-BTP-003
+    name: falsify_btp_003_uninstrumented_trace_has_no_breakdown
+    prediction: "trace_with_reason with no captured events → provenance NotInstrumented, syscall_breakdown None, duration_us still the real wall clock"
+    test_harness: "cargo test -p aprender-profile --lib falsify_btp_003"
+    expected_output: "test result: ok"
+    if_fails: "BrickTracer regressed to returning compute_us = duration_us — a fabricated 0%-overhead breakdown (RED on the pre-TR-01 code, which did not compile against Option<SyscallBreakdown> and set compute_us = duration_us)."
+  - id: FALSIFY-BTP-004
+    name: falsify_btp_004_events_still_produce_a_breakdown
+    prediction: "from_events([futex 300us], 1000) → futex_us 300, compute_us 700, syscall_count 1"
+    test_harness: "cargo test -p aprender-profile --lib falsify_btp_004"
+    expected_output: "test result: ok"
+    if_fails: "the honesty fix removed the real breakdown path instead of only the fabricated one."

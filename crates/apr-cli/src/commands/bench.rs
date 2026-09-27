@@ -36,7 +36,19 @@ use renacer::brick_tracer::BrickTracer as TracerImpl;
 /// Provides the same API surface so callers compile without cfg gates on every call site.
 #[cfg(not(feature = "visualization"))]
 mod brick_tracer_shim {
-    /// Stub syscall breakdown — all zeros.
+    /// TR-01 (#4556): mirrors `renacer_core::TraceProvenance` for the no-renacer build.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum TraceProvenance {
+        NotInstrumented,
+    }
+    impl std::fmt::Display for TraceProvenance {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("not_instrumented")
+        }
+    }
+
+    /// Stub syscall breakdown — never constructed: the shim captures no syscalls.
+    #[allow(dead_code)]
     pub struct SyscallBreakdown {
         pub compute_us: u64,
         pub mmap_us: u64,
@@ -63,7 +75,8 @@ mod brick_tracer_shim {
     pub struct TracedResult<T> {
         pub result: T,
         pub duration_us: u64,
-        pub syscall_breakdown: SyscallBreakdown,
+        pub syscall_breakdown: Option<SyscallBreakdown>,
+        pub provenance: TraceProvenance,
         pub metadata: Option<TraceMetadata>,
     }
 
@@ -85,12 +98,8 @@ mod brick_tracer_shim {
             TracedResult {
                 result,
                 duration_us,
-                syscall_breakdown: SyscallBreakdown {
-                    compute_us: duration_us,
-                    mmap_us: 0,
-                    futex_us: 0,
-                    ioctl_us: 0,
-                },
+                syscall_breakdown: None,
+                provenance: TraceProvenance::NotInstrumented,
                 metadata: None,
             }
         }

@@ -1083,7 +1083,7 @@ fn judge_thinking_on_leg(
 /// Run warmup+measure loop for throughput benchmarking.
 ///
 /// Calls `generate_fn` for `warmup` iterations (discarding results), then
-/// measures `iterations` runs using `BrickTracer` for syscall-level diagnostics.
+/// measures `iterations` runs using `BrickTracer` (wall-clock; its provenance is printed).
 /// Returns (tokens_per_second, measurement_duration).
 #[cfg(feature = "inference")]
 fn measure_generate_throughput(
@@ -1101,7 +1101,7 @@ fn measure_generate_throughput(
         let _ = generate_fn();
     }
 
-    // Measurement (traced via BrickTracer for syscall breakdown)
+    // Measurement (timed via BrickTracer; provenance says whether syscalls were captured)
     let traced = tracer.trace(brick_name, budget_us, || {
         let mut tokens = 0usize;
         for _ in 0..iterations {
@@ -1119,20 +1119,24 @@ fn measure_generate_throughput(
     };
 
     if verbose {
-        let bd = &traced.syscall_breakdown;
         eprintln!(
-            "  BrickTracer [{brick_name}]: {:.1} tok/s, {}us total",
-            tps, traced.duration_us
+            "  BrickTracer [{brick_name}]: {:.1} tok/s, {}us total (provenance: {})",
+            tps, traced.duration_us, traced.provenance
         );
-        eprintln!(
-            "    compute: {}us  mmap: {}us  futex: {}us  ioctl: {}us",
-            bd.compute_us, bd.mmap_us, bd.futex_us, bd.ioctl_us
-        );
-        eprintln!(
-            "    overhead: {:.1}%  dominant: {}",
-            bd.syscall_overhead_percent(),
-            bd.dominant_syscall()
-        );
+        // TR-01: print a breakdown only when syscalls were actually captured.
+        if let Some(bd) = &traced.syscall_breakdown {
+            eprintln!(
+                "    compute: {}us  mmap: {}us  futex: {}us  ioctl: {}us",
+                bd.compute_us, bd.mmap_us, bd.futex_us, bd.ioctl_us
+            );
+            eprintln!(
+                "    overhead: {:.1}%  dominant: {}",
+                bd.syscall_overhead_percent(),
+                bd.dominant_syscall()
+            );
+        } else {
+            eprintln!("    syscall breakdown: null (no syscall events captured)");
+        }
         if let Some(ref meta) = traced.metadata {
             eprintln!(
                 "    budget: {}us  actual: {}us  efficiency: {:.1}%",

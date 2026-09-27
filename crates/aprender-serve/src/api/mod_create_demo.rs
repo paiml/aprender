@@ -429,21 +429,11 @@ pub struct ChatCompletionResponse {
     pub used_gpu: Option<bool>,
 }
 
-/// Provenance of trace timing data (GH-92: truth-in-reporting)
+/// Provenance of trace timing data (GH-92: truth-in-reporting).
 ///
-/// Distinguishes measured data from estimates to prevent fabricated trace output.
+/// TR-01 (#4556): hoisted to `renacer_core` so every tracer shares one type.
 /// Every `TraceData` instance MUST declare its provenance.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TraceProvenance {
-    /// Real per-operation timing from BrickProfiler instrumentation
-    Measured,
-    /// Only the wall-clock total is real; no per-op breakdown available
-    WallClockTotal,
-    /// Values are statistical estimates (e.g., from sampling or heuristics)
-    #[default]
-    Estimated,
-}
+pub use renacer_core::TraceProvenance;
 
 /// Trace data for debugging inference
 #[derive(Debug, Clone, Serialize, Deserialize)]

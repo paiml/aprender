@@ -17,6 +17,24 @@ fn run_bench_warmup<F: FnMut()>(config: &BenchConfig, count: usize, mut f: F) {
 }
 
 /// Print benchmark progress for a single iteration.
+/// TR-01 (#4556): say once per run how the iteration timings were obtained, so a
+/// wall-clock number is never read as an instrumented breakdown.
+fn print_trace_provenance(
+    config: &BenchConfig,
+    i: usize,
+    provenance: impl std::fmt::Display,
+    has_breakdown: bool,
+) {
+    if i == 0 && !config.quiet {
+        let detail = if has_breakdown {
+            "syscall breakdown captured"
+        } else {
+            "wall clock only; syscall breakdown null"
+        };
+        eprintln!("  Timing provenance: {provenance} ({detail})");
+    }
+}
+
 fn print_bench_progress(config: &BenchConfig, i: usize, tokens: usize, time: Duration) {
     if !config.quiet {
         eprint!(
@@ -410,6 +428,7 @@ fn run_apr_measurement(
         let traced = tracer.trace("bench_apr_iter", budget_us, || {
             transformer.generate_with_cache(prompt_tokens, gen_config)
         });
+        print_trace_provenance(config, i, traced.provenance, traced.syscall_breakdown.is_some());
         let output = match traced.result {
             Ok(tokens) => tokens,
             Err(e) => {
@@ -545,6 +564,7 @@ fn run_apr_cuda_benchmark(
                 .generate_gpu_resident(&prompt_tokens, &gen_config)
                 .unwrap_or_default()
         });
+        print_trace_provenance(config, i, traced.provenance, traced.syscall_breakdown.is_some());
         let output = traced.result;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 

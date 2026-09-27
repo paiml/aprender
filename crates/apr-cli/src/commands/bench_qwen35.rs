@@ -40,7 +40,9 @@ fn run_qwen35_session_benchmark(
     let budget_us = config.max_tokens as u64 * 100_000;
     for i in 0..config.iterations {
         let (turn, iter_time, ttft) =
-            session_timed_turn(&mut session, prompt_tokens, gen_config, tracer, budget_us)?;
+            session_timed_turn(&mut session, prompt_tokens, gen_config, tracer, budget_us, |p, b| {
+                print_trace_provenance(config, i, p, b);
+            })?;
         let tokens_generated = turn.tokens.len().saturating_sub(prompt_tokens.len());
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
@@ -63,6 +65,7 @@ fn session_timed_turn(
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     tracer: &TracerImpl,
     budget_us: u64,
+    report_provenance: impl FnOnce(&dyn std::fmt::Display, bool),
 ) -> Result<(realizar::session::Turn, Duration, Duration)> {
     let t0 = Instant::now();
     let mut first: Option<Duration> = None;
@@ -72,6 +75,7 @@ fn session_timed_turn(
             true
         })
     });
+    report_provenance(&traced.provenance, traced.syscall_breakdown.is_some());
     let turn = traced
         .result
         .map_err(|e| CliError::ValidationFailed(format!("qwen35 session generate: {e}")))?;
