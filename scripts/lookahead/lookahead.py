@@ -13,6 +13,7 @@ The cop is the single writer of that file; workers write heartbeat files.
   pr-budget STATE --prs SNAP          LA-04  §2 open-PR budgets, repo-cap yield order, queue order
   readiness STATE                     LA-05  §6 Definition of Ready, judged against the tree
   latency --tag V --tag-at T ...      LA-05  train-start latency receipt (tag N -> first PR of N+1)
+  budget STATE --window-pct X         LA-06  §5 pause ladder: which slots run this window
 
 Exit codes, shared by every verb:
   0  the property holds (or the action was done)
@@ -684,9 +685,79 @@ def cmd_latency(args):
     return 0 if rec["met"] else 1
 
 
+# ---- LA-06: the §5 budget ladder ---------------------------------------------------
+L3_PAUSE_PCT = 70  # 5-hour window at or above this: L3 pauses
+L2_PAUSE_PCT = 85  # above this: L2 pauses too
+SHARE_CAP_PCT = 15  # S-7: look-ahead share above this for 2 consecutive windows
+
+
+def pct(opts, key, required):
+    raw = opts.get(key)
+    if raw is None:
+        if required:
+            raise CannotJudge(f"--{key.replace('_', '-')} is required")
+        return None
+    try:
+        val = float(raw)
+    except ValueError as exc:
+        raise CannotJudge(f"--{key.replace('_', '-')}: {raw!r} is not a number") from exc
+    if not 0 <= val <= 100:
+        raise CannotJudge(f"--{key.replace('_', '-')}: {val} is outside 0..100")
+    return val
+
+
+def ladder(window, account, train_needs, s1, share, prev_share):
+    """Slot modes under §5 and §8: active | paused (heartbeat only) | no-arm (L1 under S-1)."""
+    mode = {s: "active" for s in SLOTS}
+    pauses, stops = [], []
+    if window >= L3_PAUSE_PCT:
+        mode["L3"] = "paused"
+        pauses.append(f"L3: window {window:g}% >= {L3_PAUSE_PCT}%")
+    if window > L2_PAUSE_PCT:
+        mode["L2"] = "paused"
+        pauses.append(f"L2: window {window:g}% > {L2_PAUSE_PCT}%")
+    if account is not None and account >= 100 and train_needs:
+        mode["L1"] = "paused"
+        pauses.append("L1: account at 100% and the current train needs the budget")
+    if s1 and mode["L1"] == "active":
+        mode["L1"] = "no-arm"
+        pauses.append("L1: S-1 release cut in progress, no arming")
+    if share is not None and prev_share is not None and share > SHARE_CAP_PCT and prev_share > SHARE_CAP_PCT:
+        stops.append(f"S-7: look-ahead share {prev_share:g}% then {share:g}% > {SHARE_CAP_PCT}% for 2 windows")
+        if mode["L3"] == "active":
+            mode["L3"] = "paused"
+            pauses.append("L3: S-7")
+    return mode, pauses, stops
+
+
+def cmd_budget(args):
+    """LA-06: which slots run this window. Prints the §10 `budget` section; exit 1 when
+    an S-7 stop is due (the cop reports it), else 0."""
+    pos, opts = parse_opts(args, {"window_pct", "account_pct", "share_pct", "prev_share_pct"},
+                           bools=("train_needs_budget", "s1"))
+    if len(pos) != 1:
+        raise CannotJudge("usage: budget STATE --window-pct X [--account-pct Y --train-needs-budget] [--s1] [--share-pct S --prev-share-pct P]")
+    state, bad = load_legal_state(pos[0])
+    if bad:
+        raise CannotJudge(f"{pos[0]} is not a legal state ({bad[0][0]}: {bad[0][1]})")
+    window = pct(opts, "window_pct", True)
+    share = pct(opts, "share_pct", False)
+    mode, pauses, stops = ladder(window, pct(opts, "account_pct", False), opts.get("train_needs_budget", False),
+                                 opts.get("s1", False), share, pct(opts, "prev_share_pct", False))
+    print(json.dumps({"budget": {"window_pct": window, "lookahead_share_pct": share, "pauses": pauses,
+                                 "slots": {s: {"train": state["slots"][s]["train"], "mode": mode[s]} for s in SLOTS},
+                                 "stops": stops}}, indent=2))
+    for s in SLOTS:
+        print(f"SLOT {s} {mode[s]}")
+    for stop in stops:
+        print(f"STOP {stop}")
+    return 1 if stops else 0
+
+
 VERBS = {"validate": cmd_validate, "heartbeat": cmd_heartbeat, "tick": cmd_tick,
          "respawn": cmd_respawn, "prompt": cmd_prompt, "pr-budget": cmd_pr_budget,
-         "readiness": cmd_readiness, "latency": cmd_latency}
+         "readiness": cmd_readiness, "latency": cmd_latency,
+         "budget": cmd_budget}
 
 
 def main(argv):

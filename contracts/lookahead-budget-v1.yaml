@@ -1,0 +1,69 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "Look-ahead work spends the same Claude budget as the current train, so it yields first (APR-LOOKAHEAD-001 §5, LA-06 #4547). `lookahead.py budget` maps one 5-hour-window reading to slot modes: below 70% all slots active; at 70% and up to 85% L3 pauses; above 85% L2 and L3 pause and L1 keeps running; an account at 100% pauses L1 only when the current train needs the budget; under S-1 L1 may not arm. Look-ahead share above 15% for two consecutive windows is an S-7 stop and pauses L3. A paused slot keeps its heartbeat, so a pause is never read as a death."
+  kind: pattern
+  references:
+    - "docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md — §5 budget ladder, §8 S-1/S-7, §9 LA-06"
+    - "scripts/lookahead/lookahead.py — `budget` verb"
+    - "scripts/check_lookahead.sh — LA-06 rows and mutants"
+
+five_whys:
+  symptom: "Three always-on look-ahead workers could push the 5-hour window past the point where the current train stalls."
+  why_1: "Every session draws on the same window; nothing ranks the current train above look-ahead work."
+  why_2: "The ladder existed only as a spec table the cop applied by eye."
+  why_3: "The boundaries (70 inclusive, 85 exclusive) are exactly where an eyeballed rule drifts."
+  why_4: "A pause that also stopped heartbeats would trigger LA-02's respawn and spend more budget."
+  why_5: "No planted 86% reading ever ran against a rule."
+  root_cause: "The ladder lived in prose. The remedy is one function from reading to slot modes, with its boundaries planted."
+
+equations:
+  pause_ladder:
+    formula: "mode(L3) = paused ⇔ w ≥ 70 ∨ S-7; mode(L2) = paused ⇔ w > 85; mode(L1) = paused ⇔ account ≥ 100 ∧ train_needs; else mode(L1) = no-arm ⇔ S-1"
+    domain: "window reading w ∈ [0,100], optional account reading, S-1 flag, look-ahead share of two windows"
+    codomain: "{L1,L2,L3} → {active, paused, no-arm}; exit 0 | 1 (S-7 stop) | 2 (no or impossible reading)"
+    invariants:
+      - "L1 is never paused by the window reading alone"
+      - "a reading outside 0..100 is cannot-judge, not a mode"
+  s7_share:
+    formula: "S-7 ⇔ share_t > 15 ∧ share_{t−1} > 15"
+    domain: "look-ahead share of the last two windows"
+    codomain: "a STOP line and an L3 pause"
+
+proof_obligations:
+  - id: LAG-INV-001
+    type: invariant
+    property: "An 86% reading pauses L2 and L3 and leaves L1 running"
+    formal: "w = 86 ⇒ mode = {L1: active, L2: paused, L3: paused}"
+    applies_to: pause_ladder
+  - id: LAG-INV-002
+    type: invariant
+    property: "The boundaries sit where §5 puts them"
+    formal: "mode_{69}(L3) = active ∧ mode_{70}(L3) = paused ∧ mode_{85}(L2) = active"
+    applies_to: pause_ladder
+  - id: LAG-INV-003
+    type: invariant
+    property: "The guard still fails on the defects it names"
+    formal: "∀ m ∈ {l3-threshold-off, l2-never-pauses, l1-pauses-with-l2, account-ignores-train, s7-one-window}: guard(m) ≠ 0"
+    applies_to: pause_ladder
+
+falsification_tests:
+  - id: FALSIFY-LAG-001
+    rule: "A planted 86% reading pauses L2 and L3 and leaves L1 running"
+    prediction: "the LA-06 rows of the case table are GREEN"
+    test: "bash scripts/check_lookahead.sh"
+    if_fails: "Look-ahead work outspends the current train, or L1 stops when it should not"
+  - id: FALSIFY-LAG-002
+    rule: "The guard can still fail"
+    prediction: "every LA-06 mutant turns at least one row RED"
+    test: "bash scripts/check_lookahead.sh --self-test"
+    if_fails: "The ladder rows are theater"
+
+qa_gate:
+  id: F-LAG-001
+  name: "Look-ahead slots pause by the §5 ladder"
+  description: "lookahead.py budget maps the window reading to slot modes each tick; scripts/check_lookahead.sh runs in guard_tree.sh's --no-cargo step."
+  checks:
+    - "pause_ladder"
+    - "s7_share"

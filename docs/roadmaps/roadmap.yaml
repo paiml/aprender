@@ -22243,3 +22243,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: epic #4540
+- id: PMAT-4547
+  github_issue: 4547
+  item_type: task
+  title: 'LA-06: apply the §5 pause ladder from the window-usage reading (lookahead-budget-v1)'
+  status: inprogress
+  priority: high
+  assigned_to: la-impl
+  created: 2026-09-27T11:27:31Z
+  updated: 2026-09-27T11:27:31Z
+  spec: docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: epic #4540

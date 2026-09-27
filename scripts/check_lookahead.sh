@@ -254,6 +254,23 @@ FIX
     printf '[{"number": 11, "milestone": {"title": "0.71.0"}, "mergedAt": "2026-09-27T19:30:00Z"}]\n' > "$T/merged-late.json"
     row "latency/over-target-not-met" 1 '"latency_min": 150, "target_min": 120, "met": false' -- la latency --tag v0.70.0 --tag-at 2026-09-27T17:00:00Z --train 0.71 --merged "$T/merged-late.json"
     row "latency/none-yet-pending" 1 '"first_pr": null' -- la latency --tag v0.70.0 --tag-at 2026-09-27T20:00:00Z --train 0.71 --merged "$T/merged.json"
+
+    # LA-06 lookahead-budget-v1 -----------------------------------------------------
+    local G="$T/good.json"
+    row "budget5h/69-all-active" 0 'SLOT L3 active' -- la budget "$G" --window-pct 69
+    row "budget5h/70-l3-pauses" 0 'SLOT L3 paused' -- la budget "$G" --window-pct 70
+    row "budget5h/85-l2-still-active" 0 'SLOT L2 active' -- la budget "$G" --window-pct 85
+    # the planted 86% reading: L2 and L3 pause, L1 keeps running
+    row "budget5h/86-l2-paused" 0 'SLOT L2 paused' -- la budget "$G" --window-pct 86
+    row "budget5h/86-l3-paused" 0 'SLOT L3 paused' -- la budget "$G" --window-pct 86
+    row "budget5h/86-l1-runs" 0 'SLOT L1 active' -- la budget "$G" --window-pct 86
+    row "budget5h/account-100-train-needs-l1-pauses" 0 'SLOT L1 paused' -- la budget "$G" --window-pct 99 --account-pct 100 --train-needs-budget
+    row "budget5h/account-100-train-idle-l1-runs" 0 'SLOT L1 active' -- la budget "$G" --window-pct 99 --account-pct 100
+    row "budget5h/s1-l1-no-arm" 0 'SLOT L1 no-arm' -- la budget "$G" --window-pct 10 --s1
+    row "budget5h/s7-two-windows-over-share" 1 'STOP S-7' -- la budget "$G" --window-pct 10 --share-pct 16 --prev-share-pct 17
+    row "budget5h/s7-one-window-no-stop" 0 'SLOT L3 active' -- la budget "$G" --window-pct 10 --share-pct 16 --prev-share-pct 14
+    row "budget5h/no-reading-cannot-judge" 2 'CANNOT-JUDGE' -- la budget "$G"
+    row "budget5h/reading-over-100-cannot-judge" 2 'CANNOT-JUDGE' -- la budget "$G" --window-pct 186
 }
 
 run_all() {
@@ -289,6 +306,11 @@ MUTANTS=(
   "met-trusted|        elif status == \"met\" and not|        elif False and not"
   "epic-unchecked|    if groomed != 100:|    if False:"
   "latency-before-tag-counted|        if when >= tag_at and|        if True and"
+  "l3-threshold-off|    if window >= L3_PAUSE_PCT:|    if window > L3_PAUSE_PCT:"
+  "l2-never-pauses|    if window > L2_PAUSE_PCT:|    if False:"
+  "l1-pauses-with-l2|        mode[\"L2\"] = \"paused\"|        mode[\"L2\"] = mode[\"L1\"] = \"paused\""
+  "account-ignores-train|    if account is not None and account >= 100 and train_needs:|    if account is not None and account >= 100:"
+  "s7-one-window|share > SHARE_CAP_PCT and prev_share > SHARE_CAP_PCT:|share > SHARE_CAP_PCT:"
   "cannot-judge-passes|        return 2\n\n\nif __name__|        return 0\n\n\nif __name__"
 )
 
