@@ -676,7 +676,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "rag eval metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "rag eval retrieve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "rag eval sample"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "b7a93598835cd6d0fe750fa42a685a497045bf126c7a0e47533fed7ca5e28b9d"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.finetune"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -730,11 +730,11 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/route> "POST /v1/explain"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/route> "POST /v1/gpu/warmup"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/route> "POST /v1/predict"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/sha256> "31384c3c30ad47bfcaae4dd8352bd25b2ccf146e102159f63546c212a79aebc9"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/sha256> "45e0063f6c7e52dcc123a2a5e994f122e590261cc9880a6cf0dba8f562436500"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/apr-cli/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/target> "apr"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "9c7d74d55399bdaf139a088a4a021006fdde1a2721d86c333cc890ada9804801"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/versionString> "apr 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "db679cb83f5968a2cbf5dcdcb953d4571b964db333bc6a212ffc280d482f170a"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/versionString> "apr 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/apr-cli/aprender-corpus-ingest> .
@@ -743,15 +743,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-corpus-ingest validate-contract"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/command> "plan"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/command> "validate-contract"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "3aacb0d04dcfea82adf867ce13ea8ee82d827b7935f9b1aded576458eeed880e"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-corpus-ingest"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/package> "apr-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/sha256> "72254e647f8e6125949043ac24ee644e24cdd9f8fcdc54a6ef3ebeb7b2c5ce75"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/sha256> "3fa7b432fe0cf0876de73bab680d70ba89f30cb94d6c58d91477b0a04d42950b"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/apr-cli/src/bin/apr-corpus-ingest.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-corpus-ingest"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "16c3b1de2c1b82707a2fa8ae8bd88a7143131c28cd741c6893d989c8492c60df"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-corpus-ingest 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "425c079e83cd6ac72496734c2b9720943838e638f56bbf6ae06b171dfe9ce52a"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/aprender-corpus-ingest> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-corpus-ingest 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-cbtop/aprender-cbtop> .
@@ -765,15 +765,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/command> "optimize analyze"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/command> "optimize baseline"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/command> "optimize check"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "c4dc2690a55b6d36248ac132a7b1253eb387b8eddc04daf5f342270f96d5ef03"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-cbtop"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-cbtop"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/sha256> "bcd44383284afe6db0c9cfe1b56dd34aa93618dcb968bb1fe73365c7709a62a9"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/sha256> "3919d955fe1ded5b2e5be68dc037317e51309771c85204e346d08fc0e3fd5b6e"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-cbtop/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-cbtop"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "30b28d29712282263664bb5f0daa2e6211b55af0ac05b995fa01908d871023b5"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-cbtop 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "003bfbc1458836084f7c51a372f2315c1833ad11dd975b4613d0cdb03dad97fb"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cbtop/aprender-cbtop> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-cbtop 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-cgp/aprender-cgp> .
@@ -828,15 +828,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/command> "roofline"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/command> "trace"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/command> "tui"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "b8af590c9699f603777465783d50c195dfa1c1b1ee756cecc6e331cb6be666f8"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-cgp"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-cgp"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/sha256> "8955bc6a879ac73d914aa4194355f434e191657617422aed47148000cf8a5aff"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/sha256> "4e7f68e1176c02ac4645d0121023387840a2300dae918dbfadd7606ae3bf0719"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-cgp/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-cgp"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "8d1c881f906f48c3a0e674af69bc09edf765d3a54b9913094c156e00ac70f90e"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/versionString> "cgp 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "7f98021afebc1825cd4e40f6f5a9de203d954f24bf5d36fe2f0f8078576fc399"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-cgp/aprender-cgp> <https://ont.paiml.dev/v1alpha1/bin/versionString> "cgp 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-compute-xtask/aprender-compute-xtask> .
@@ -847,15 +847,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/command> "check-simd"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/command> "install-hooks"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/command> "validate-examples"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "0fd1378010ef06964de87702bde179b3ec1bd1d2c773017ef442bba01bce7c8b"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-compute-xtask"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-compute-xtask"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/sha256> "7d2d3e79853f22187544b57969e67fa53a1550f595ea8611e49246243cd36040"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/sha256> "fce5401a840224d4f036fd24442fc8c8bf7748fb17ffb9bbf28861aaca73b9c4"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-compute-xtask/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-compute-xtask"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "7c87b626a1eca6d1178ed19ad9935bd5371476bcb594b2e34363cf3ba420329d"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-compute-xtask 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "b0c6e4efe27a54e2b5d1d8e54ec3a28740097088f47c1fdc6cf7139bb045a8af"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-compute-xtask 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-contracts-cli/pv> .
@@ -957,29 +957,29 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/command> "verify-bindings"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/command> "verify-pipeline"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/command> "verify-structure"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "89531431006777244e533a7a98ee1a7977a108514e222dda12df1e44834e7733"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/name> "pv"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-contracts-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/sha256> "188818e209c9af1861339f5a70c6a11adf50e2dbeb1d004bcfacf92fcab64fad"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/sha256> "03de9e2149fd0619634f608e96ac5f2c7217223c61da07f7a46548c8105e254f"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-contracts-cli/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/target> "pv"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "b97ae0ee2b274082af78439eadb6168d2bb1551f1a3646938c74e268d3f067c2"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/versionString> "pv 0.70.0 (47d198202) (aprender provable-contracts verifier)\ncrate aprender-contracts-cli — https://github.com/paiml/aprender\nVerifies YAML contracts under contracts/; run `pv --help` for the command surface.\nThis is NOT pv(1), the pipe viewer (distro package `pv`, or the `pv` crate on crates.io)."^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "ad6acd57db63d3a77e4a50a43f8179c5d0c19c2498644b76a17ed83be48498c8"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv> <https://ont.paiml.dev/v1alpha1/bin/versionString> "pv 0.70.0 (445eb598f9) (aprender provable-contracts verifier)\ncrate aprender-contracts-cli — https://github.com/paiml/aprender\nVerifies YAML contracts under contracts/; run `pv --help` for the command surface.\nThis is NOT pv(1), the pipe viewer (distro package `pv`, or the `pv` crate on crates.io)."^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-contracts-cli/pv-sat> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "pv-sat --self-test"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "pv-sat [CONTRACT_DIR] (SAT witness write)"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "58bca35c2499aaf32a3c6535b86ec7e60c77ca0a4f53a6ecec61bc4fd3c14564"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/name> "pv-sat"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-contracts-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/sha256> "349c75a188b705a67dbec0383174e088d7c73b12363745e79570fa18aa1f893b"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/sha256> "23bfc634deecd125cb4a2ca4bde5c06c21a5216574b30695b4d3b559602e4fdc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-contracts-cli/src/bin/pv-sat/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/target> "pv-sat"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "ccc3a35f79fb5a2114a3caa2e5fb1243539a9004f4478c571ad14c77f7287bfd"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/versionString> "pv-sat 0.70.0 (47d198202) (aprender ONT-5 reasoner)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "cfa8228dbfb0460c4b25d35e7e961c61570b11f0d78b125b9205efaa2b7cf761"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/pv-sat> <https://ont.paiml.dev/v1alpha1/bin/versionString> "pv-sat 0.70.0 (445eb598f9) (aprender ONT-5 reasoner)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-data/aprender-data> .
@@ -1054,15 +1054,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "doctest merge"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "hub push"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "import hf"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "b8214ec953dfe3ebb99617eb2ea4200c517ce11e5b4374851a917439d0ba6bf3"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-data"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-data"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/sha256> "03f4d3209c6facc3b0603b26d209d8a310117a3239571c780e3b3b0fc1c1011e"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/sha256> "25854f145bfb0acaaa0a83839f79e7244402db2b00e4bcb3c643009382928597"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-data/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-data"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "a2b1007b2427d651f306e97d0bd753eb9b7f329a765e036b0f8fbc138e50f73f"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-data 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "43f752a74a575b85b555ee619ed81b69839604347bff924ea9c283143e095306"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-data/aprender-data> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-data 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-db/aprender-db> .
@@ -1071,18 +1071,18 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /query (aprender-db)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-db --config <PATH> (single-mode DB server)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-db --version"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "0f906ee0b41275dd8edfab3dda71d1251b6a962552d9c241e717f156f8a48857"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "GET /health"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "GET /status"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /query"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-db"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-db"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/sha256> "81cb86f2c811665a6a8ca04de4f6f5237e007314a5ec869ec72457279ab3555c"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/route> "GET /health"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/route> "GET /status"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/route> "POST /query"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/sha256> "35283d8ea2749937ab15b8d9ac986ad3c2a612f4dd6c85a13f8b4b150a3ca392"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-db/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-db"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "c2b613c616c04920a4f4b0678dfd3f78eb2891f33ef862d65b9c275a530e3ebc"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-db 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "398725238b1b60224f2aeac40bdd536fbcb034dc1051efe07358442c48a4a4f0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-db/aprender-db> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-db 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-explain/aprender-explain> .
@@ -1101,15 +1101,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/command> "simd"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/command> "tui"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/command> "wgpu"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "152f7c9b34f1ad69065ca65f6606d59eefdc7972d7e7eac3bbb18f2e49181d6e"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-explain"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-explain"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/sha256> "4d0c33d4f8156e69147dd9f9202416e9b9f710b4ed000d8c71f6402d39ece6e6"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/sha256> "f15b0dd9753b4e8cff3397af9d2a9d22abbefe852add61d07d8729cdca337b6c"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-explain/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-explain"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "598a96c3ce54b733ecdfc808719e232a27c46945c7bdd5a813790c1b08665871"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-explain 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "12ebac7e6ad318fcd9a837fbb7318e03212a91c05da3d302404dd0799301d505"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-explain/aprender-explain> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-explain 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-orchestrate/aprender-orchestrate> .
@@ -1388,7 +1388,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/command> "validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/command> "viz dashboard"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/command> "viz tree"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "75d3d25a35e94ea7654c7bc12ba89da8885ee5b61546cb679bb4e632bd8560d6"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-orchestrate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-orchestrate"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -1484,11 +1484,11 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/route> "PUT /api/v1/chat/parameters"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/route> "PUT /api/v1/config"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/route> "PUT /api/v1/tools/:name/config"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/sha256> "f33909d49eaa195870889c319c2c5e759b5bfd65b9b3ff894e3085ce467e16f1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/sha256> "6408c45841765e05c0145e4d6d91281e1781028b60f0b810a5af0e7a8257c193"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-orchestrate/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-orchestrate"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "bef9a228bc7a9611d6434f8eaf14560aad6d08c12d599a4547dd88314edb4b82"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-orchestrate 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "780e09b1c336279fdd3574eed74a9af73a269e974e1a8286ac7c83699f5fce60"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-orchestrate/aprender-orchestrate> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-orchestrate 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-present-cli/aprender-present> .
@@ -1507,15 +1507,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/command> "new"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/command> "score"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/command> "serve"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "b098b9327edab97690a6feffa6c5b7aede7254125b922a59d135aeb2d23ea70a"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-present"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-present-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/sha256> "5779553d8501238b97ccab98b2386ebac950a14de67b268f7e9000e30621a828"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/sha256> "833398bf3f41f1c51f5659aa06af820bd8a44a11837541c2dc1a551c1487eae6"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-present-cli/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-present"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "9189e3c58390b77ff546157ee126b57b6aff3397e539fc248928c02b8644406a"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-present 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "b52a28834c82b14c86cbbbcba53562adb3e9027016485209af24562614d94ab7"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-present 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-present-terminal/aprender-ptop> .
@@ -1524,30 +1524,30 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ptop --render-once"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ptop --render-once --explode <PANEL>"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ptop --version"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "6e44c6b6793846711bed695354d8fdfcaa760f3c53f22b7e0264523a35aca036"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-ptop"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-present-terminal"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/sha256> "bb6bb8271d3e277ebcb622892199a6959a7fcf9dc55eb4c56c5eb55fbc38fe9a"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/sha256> "a4374de094fa6b1d99a91b8c9e8121102c1c213f21d55fbd723cf84b951d24d3"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-present-terminal/src/bin/ptop.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-ptop"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "022221b68f660356ca6923ddeebab5b72e0cc688b072597408885eb318513b9c"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-ptop 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "33b48c60baadc163717bef229b386e77941682bd07ec52e94b1c2895518feaea"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-ptop> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-ptop 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-present-terminal/aprender-score> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-score --ci --threshold <N> (gate mode, exit 1 below threshold)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-score --version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-score [PATH] (TUI-crate quality scoring)"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "472f30797188a3f73cd85bd866fa1546f0ced41cf232c969edd7452b3f915f0a"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-score"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-present-terminal"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/sha256> "c2fff5d89890757f96005998634f4cd4e312fcf9bafa9903ea6a16f5aa5e6731"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/sha256> "029ab72f1385e171352898bb7225b124b513cb6583e0b00e627416edb99cfa90"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-present-terminal/src/bin/score.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-score"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "84b51a94f4382c0d0c888ae368530b947130978f2966a8874a73ec6ea63a939a"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-score 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "19dd575d61d0ea41a4aedf4b85d597ac3a1b186027fe36921d9724095fb56acc"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-terminal/aprender-score> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-score 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-profile/aprender-profile> .
@@ -1569,15 +1569,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-profile -s/--source (DWARF source correlation)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-profile validate -- <COMMAND> (golden-baseline trace validation)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/command> "validate"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "5e34c71f7393013aacb5cc8c217d31287cac5d719797fe50d4c2a8e4881e45da"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-profile"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-profile"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/sha256> "191e14b470c2011dc801bcb94072b46e35ad4168bc22fc3d4b68b78bd128bfb7"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/sha256> "469f552a89cdb9dec18cb8bac4733c60b9696ebe6c0e5b84e451f7d6077419e8"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-profile/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-profile"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "a96a92dd7dde45441a30254f1157268705ee20e56480cd51b9686537a65b351a"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-profile 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "f81093774d397697b3ce0a35302122b22eda629a7e23ee3052191023d5de1e4b"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-profile/aprender-profile> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-profile 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-ptx-debug/aprender-ptx-debug> .
@@ -1588,29 +1588,29 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/command> "analyze"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/command> "gen-fkr"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/command> "version"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "f12815327ac0f82a16b762881cb82c7ab20209614e682e27bf4ea47be2de8de7"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-ptx-debug"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-ptx-debug"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/sha256> "5a26e4d5675c4b0e9d8972fee59d0c110c549fe4b823ce4dd450cdf8c7f21e8a"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/sha256> "84d6719b5ad40e4d6dfc941c3200194317350a8465bf996feabb23d57bea9a8a"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-ptx-debug/src/bin/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-ptx-debug"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "6b733fabbd4a40a85a8481bf02a99c1931aa1cd96a37b71951fd09497081b03c"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-ptx-debug 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "3fa49fd2df8b49fe4d7a067ac2c03646b022337e913f0ef6c05e0588df0cc717"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ptx-debug/aprender-ptx-debug> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-ptx-debug 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-qa-certify/aprender-qa-readme-sync> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-qa-readme-sync (README certification-table sync)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-qa-readme-sync --version"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "edfc1fade8953df6a4cbfd49e5e0a1da55f604dd8aeffa0d49763b3c39bc5fa3"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-qa-readme-sync"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-qa-certify"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/sha256> "5a1a71cc88d2eafe930c6578e27e526e06b88f77ce8547197b7677c78df68453"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/sha256> "fa64630c3eb70de6d3237719b5f78cb00cff87ac226ed67aa784465670c11b1a"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-qa-certify/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-qa-readme-sync"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "f5272da6ac0c9ce78272891e6fa9fab2d004480c80c75a0ce56a42be65a4d507"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-qa-readme-sync 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "062dc76396b15e18167932d9757bf8765ab9b2b818e92564e1616cb7a0733e4a"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-certify/aprender-qa-readme-sync> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-qa-readme-sync 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-qa-cli/apr-qa> .
@@ -1645,15 +1645,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/command> "tickets"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/command> "tools"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/command> "validate-contract"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "a8cb537ca5744570d2eb338170b8da5d48088358f17dbd88aa8a538d3a5f102f"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/name> "apr-qa"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-qa-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/sha256> "1b9087ae6055960718263d8491d18e93712130d37a597ea2a4c4140b81b3303c"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/sha256> "f8b5df8c9e218aab55f2569c791a0a351b9a7d6085b71da00e5e2a83c8c63dec"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-qa-cli/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/target> "apr-qa"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "31ef071f9c7b471a1fb09798ad92435623491583a674cdb5de7e1e3c88c41aa2"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/versionString> "apr-qa 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "40c35cb4a5e61ab0fdacf3d21b4728be5c54fd48354e3c4dd5050ad36f41b9ba"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-qa-cli/apr-qa> <https://ont.paiml.dev/v1alpha1/bin/versionString> "apr-qa 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-rag-cli/aprender-rag> .
@@ -1684,15 +1684,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "eval metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "eval retrieve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "eval sample"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "49786a548b7c25c6a67c16db5bd8b1ab336b410556955ef5f7f6657a6fdbd26d"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-rag"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-rag-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/sha256> "d6945efe30bd87ec5865d7bd48a7f232399f9b1a3e03c5f972ff04ac7d99e857"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/sha256> "30b9bcfc2f470695ecff6a31a4db1d66b2c12ac3052e5412eb182ff8acc96b15"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-rag-cli/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-rag"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "a7a00dd65876e1a486acf580879c8528d9262d20a6211a293b8558b58838967d"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-rag 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "5e020c8ab4448b9d3cb37cc264180035bf6de3cf0d54d893e10da96068d5c101"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-rag-cli/aprender-rag> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-rag 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-simulate/aprender-simulate> .
@@ -1718,15 +1718,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/command> "validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/command> "verify"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/command> "version"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "adaaa5979da2b555e584a1ca8e918e8c4859c1bab12c89c3924044a1a002f0ee"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-simulate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-simulate"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/sha256> "1d57fceab026705fbcb61e62721b0cbdc4299277f2e4cfd76340981781ccb241"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/sha256> "8362580ae3381049302b753229320f9b4a5bbbd589864b773b6d8a3ade6df84b"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-simulate/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-simulate"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "a7ad86bad2c4090750f8d805b282e4002f21b3e62ddf30924c6549b080f64532"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-simulate 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "fe4de3489dec73434524e049392c47fc329e95bafb6216598ee917349cdb6d8f"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-simulate 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-test-cli/aprender-test-cli> .
@@ -1807,17 +1807,17 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/command> "test"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/command> "video check"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/command> "watch"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "097224de11e0b6ba9e38e363e4d4238f17aa9aca0a9425627faed1abba0b1d36"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "GET /"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "GET /ws"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-test-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-test-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/sha256> "879b610adf5b3ad8e501d4393a3baa5bf33e37a8564f588c440596260a9ed809"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/route> "GET /"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/route> "GET /ws"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/sha256> "3f3325f328f4117ff0fcb732d43f96ae0bee9e9cfeace32741e665dfaa45c773"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-test-cli/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-test-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "419743418d4db8edf98ce3859c7dbf8339e7f6e1518078ebeea25cccf9edbfba"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-test-cli 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "56a56f1180e0388847e293fa9dfd6aebab02fe1bc59d185f0a0403b2e40d5b74"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-test-cli/aprender-test-cli> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-test-cli 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-train-bench/aprender-train-bench> .
@@ -1834,15 +1834,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/command> "cost-performance"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/command> "recommend"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/command> "temperature"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "b5aa1cc255f9c515f81b46bee28321b64bbf1e66cbae739517d188b7dc0ddf6a"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-train-bench"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-train-bench"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/sha256> "056d8f340d7d22a182be7ccf869033513c527d91218df7d9d0cdf77a170e1d4e"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/sha256> "5688d9fe16e1f2adeb033bec1d4579b63a36d53f534d0cf2be3af74f9ff3e292"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-train-bench/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-train-bench"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "1500e4fce255af39f1026cfdb9a0347ad4d81834fd9590fa9d552508b028cff1"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-bench 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "f5a2e0a763b2f61274d72ddec6a8ae83a1744172d7c4735b782262b181c021aa"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-bench/aprender-train-bench> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-bench 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-train-distill/aprender-train-distill> .
@@ -1855,16 +1855,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/command> "export"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/command> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/command> "validate"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "9c48b2c611ef6282ff8ede6d950668f754fe1ed71663a5fa2c50aff8d35a6619"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-train-distill"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-train-distill"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/sha256> "a28c2633f1eb0cdc59740d05428718848e7ca0821c7489256c97e003948e7aba"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/sha256> "472989062de1c3d607617b3d477e8efae92280340bab3b49f351218b03570e95"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-train-distill/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-train-distill"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "47d198202"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "dea595cb552113cc22123332952be20c5066293226a4267f8a2ba366aadac34f"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-distill 0.70.0 (30c82831a)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "4535e3497b510ce3ddaed2e55e64528b776f08d09fb4eec7e14e603b0ac15890"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-distill/aprender-train-distill> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-distill 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-train-inspect/aprender-train-inspect> .
@@ -1881,16 +1880,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/command> "layers"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/command> "memory"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/command> "validate"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "0b114be87b733dc322c8d7951aa8ca796155e44fd63345ca3cd274c01a326807"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-train-inspect"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-train-inspect"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/sha256> "ff02409c717c8fc17cb31bbf1abad35dd5572d63e613801d80b30bd09493f0ae"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/sha256> "ccd52b8b9d8074db1be7872135ebd6cd25f3b53826b0e6c5570d0d8f3a5f4c80"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-train-inspect/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-train-inspect"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "47d198202"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "b542a4039dc8027694cad11f5e67626df29538f338000f1e159ffd3d07f47e06"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-inspect 0.70.0 (30c82831a)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "6b6b3a0ca279550784f73cde1b2ad395caed0475c87c22a81b661a11af264541"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-inspect/aprender-train-inspect> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-inspect 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-train-lora/aprender-train-lora> .
@@ -1903,16 +1901,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/command> "inspect"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/command> "merge"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/command> "plan"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "2db88803c3d4ccf6ba5b28ce8ad22c39496872c8a026bc448a219f4838a5b749"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-train-lora"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-train-lora"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/sha256> "8df40581a5002b99a5b32af40157d1b70d6782a8e9120dbe4a2288138f3a4cd0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/sha256> "f6924d79e4fd34b7542a2706797842d2e2eca2b7244df8b7da22f878a2431100"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-train-lora/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-train-lora"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "47d198202"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "6140671332e554af21451c9cdd1bbedf64ccfcbc7210469d8bff70c2e05ec423"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-lora 0.70.0 (30c82831a)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "5819851c45202df79849928eb10ac9623475c4e369f62416d853692c5af112d8"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-lora/aprender-train-lora> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-lora 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-train-shell/aprender-train-shell> .
@@ -1930,16 +1927,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "repl: memory"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "repl: quit"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "repl: set <key> <value>"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "33befe892dd03f346595dd245b554ee67a1b203e3086835c935320a5d57ebb61"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-train-shell"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-train-shell"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/sha256> "598a25ea9e13bba763e78a0e3c8c83007411597f382fa356e97c2c71695550cc"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/sha256> "a3ba1b9b42785110a86b4b12e27ca00e01524349ac49f6e6ff6047026e0e1040"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-train-shell/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-train-shell"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "47d198202"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "eb96c7b80514044e623eea57073198ad0d4dc9c96d7f5d5626e1c822a467c00e"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-shell 0.70.0 (30c82831a)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "17e56564c25bbb6dde282670ff3534ab54d03ec8b26acf5e26650bd4ee5c78d5"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-train-shell/aprender-train-shell> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-train-shell 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-verify-ml/aprender-verify> .
@@ -1966,16 +1962,15 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/command> "stats"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/command> "train"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/command> "verify"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "9c14999cd467b14fd5eb53f32c76d1b651af4a6de348c68458c55cf16f033a5c"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-verify"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-verify-ml"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/sha256> "48912f807c8e1ece39c3d3bc60d86a0939d5baaabf18a3018836b269cba6a313"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/sha256> "29be42fdf8d04da57f72c41704ad2bda3411fb19105106f71fcef2b2421d16a5"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-verify-ml/src/bin/verificar.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-verify"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "47d198202"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "bfe884f17d58d3eb9b352f93ad94c911c9f37f4e8f625eb11910efeefa1f020f"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-verify 0.70.0 (30c82831a)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "aecc9add867eefd39e189e6af436ee7c14e5f74a6726fdc43e56114933a8b90d"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-verify-ml/aprender-verify> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-verify 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-zram-cli/aprender-zram> .
@@ -1988,31 +1983,29 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/command> "create"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/command> "remove"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/command> "status"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "d0e946e5ddeda21f85994e2e8ad8f6eac5810b54ddf31bf1e1625462d709a754"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-zram"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-zram-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/sha256> "ee0724de3942bb8c552da7e4f3c541c5e9e6db766d75edf636651f8eadba2f91"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/sha256> "ae9bcc0feaf9642f8294dddfeeab05e8d68c304ba8f18a869114b95c256dbe39"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-zram-cli/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-zram"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "47d198202"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "9a028d8fc31d6d781d864695adff182ed2dd60fb1447d286f7823ec8478b3f0b"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-zram 0.70.0 (30c82831a)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "87d5b849040a4ad3006ce501790adfa140920e9576acf98da4782e750c710109"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-cli/aprender-zram> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-zram 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-zram-generator/aprender-zram-generator> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-zram-generator --version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-zram-generator <NORMAL_DIR> (systemd.generator unit emission)"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "fe009e6965a2894e5f381f06dd2440ebc9249c71c718cf52259e1d338eadf591"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-zram-generator"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-zram-generator"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/sha256> "7f854ce96bc21cb53dd6ee8dcce73c8dd2f20521a7e2dae9a493c217a76644ee"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/sha256> "0fa8521bcec5c100d4949cd33081e8d91836b2251137a98935b724667319d130"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-zram-generator/src/main.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-zram-generator"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "47d198202"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "252be0957d56d20f81a305700a7b698cff8e4a48873560e71b167c569fbbcda9"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-zram-generator 0.70.0 (30c82831a)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "22f889bc9f49973cb20a3486577b953c18b8ad56d9c5b49ce33da83e269ffcca"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-zram-generator/aprender-zram-generator> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-zram-generator 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender/apr> .
@@ -2690,7 +2683,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "rag eval metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "rag eval retrieve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/featureGated> "rag eval sample"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "445eb598f9dc0dabc48514f51dfc56344be20e60"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "b7a93598835cd6d0fe750fa42a685a497045bf126c7a0e47533fed7ca5e28b9d"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.finetune"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2744,11 +2737,11 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/route> "POST /v1/explain"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/route> "POST /v1/gpu/warmup"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/route> "POST /v1/predict"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/sha256> "6193c1184ad0e0b43128dbd4a5c89ffa01b576a47241874f9495e3493d5109c8"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/sha256> "98adb62e7cf4d166532c5315af25ab7acc9be583f9e32ab411b4a65f38fc0281"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "src/bin/apr.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/target> "apr"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "9c7d74d55399bdaf139a088a4a021006fdde1a2721d86c333cc890ada9804801"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/versionString> "apr 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "db679cb83f5968a2cbf5dcdcb953d4571b964db333bc6a212ffc280d482f170a"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/versionString> "apr 0.70.0 (445eb598f9)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/APR-ANTIGRAVITY-INTEGRATION-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/APR-ANTIGRAVITY-INTEGRATION-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/APR-ANTIGRAVITY-INTEGRATION-001> <https://ont.paiml.dev/v1alpha1/file> "contracts/work/APR-ANTIGRAVITY-INTEGRATION-001.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
