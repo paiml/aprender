@@ -3,13 +3,13 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "0cce84279ec08677b8a26cf8d8d1c18c90424189",
-  "diff_sha256": "399dec5f01b3c80e2e8601c8253449c64e5b798423bc9a99893354800709356c",
+  "head": "7a8088d9a7ab39e1fecc9d6fab91994f9365e337",
+  "diff_sha256": "484ec8e8a7cf54ffa2970476c787dd680b72ee9ea8567bb6e539a4cd2186a319",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 6805929,
-  "prompt_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
+  "prompt_bytes": 6807495,
+  "prompt_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,46 +21,9 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Judged scope per the receipt is the 7-row \"Fix commits\" table (base = merge commit e5929e6e5); each row's claimed change and its named guard justification were verified directly against the diff and all match. No conflict markers, no unrelated/unasked changes beyond what each guard required.",
-      "findings": [
-        {
-          "file": ".gitattributes",
-          "claim": "Adds per-file merge=union for docs/audits/review-corpus/corpus-v1.jsonl and docs/audits/rex-001/rex-04-admission.jsonl because the existing docs/audits/*.jsonl glob does not cross a `/` (correct gitattributes/gitignore glob semantics) — matches check_append_only_ledgers guard rationale.",
-          "grounding": "cited",
-          "line": 65
-        },
-        {
-          "file": "scripts/retired/README.md",
-          "claim": "check_workspace_test_waits_on_guard_tree.sh and check_ci_release_fold_scope.sh are retired with a table entry and a filed finding (docs/findings/aprender-57.jsonl, id 57-4431-ci-4102-4112-report) exactly as the receipt states.",
-          "grounding": "cited",
-          "line": 90681
-        },
-        {
-          "file": "scripts/lib/model_ladder_cells_produce.py",
-          "claim": "Line ~89715 (offset in file) contains the '... and N more chars' truncation-reason suffix, matching the check_no_silent_truncation fix claim; file is fold-origin (shown as a new file vs origin/main), consistent with receipt's explanation.",
-          "grounding": "cited",
-          "line": 89715
-        },
-        {
-          "file": "crates/aprender-review-experiment/src/admission.rs",
-          "claim": "row_errors is split into cell_errors/field_errors/status_errors helper functions as claimed for the complexity-ratchet fix.",
-          "grounding": "cited",
-          "line": 70852
-        },
-        {
-          "file": "crates/aprender-review-experiment/src/receipt.rs",
-          "claim": "problems is split into named_problems/sha_problems/execution_problems, matching the complexity-ratchet claim.",
-          "grounding": "cited",
-          "line": 73217
-        },
-        {
-          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
-          "claim": "Fragment already states status: completed, assigned_to: aprender-ea with a notes citation to the quorum receipt, matching the receipt's explanation that the aggregate sync (not a new claim) picked this up.",
-          "grounding": "cited",
-          "line": 83663
-        }
-      ],
-      "raw_bytes": 5063,
+      "summary": "Judged the diff against PMAT-4431's receipt \"Fix commits\" table (the base is merge commit e5929e6e5; that table is the judgeable scope since origin/main...HEAD also includes the unrelated 26-PR B3 fold). Each of the 6 table rows was checked against the actual diff hunk it claims and matches: (1) .gitattributes gains per-file merge=union for the two nested jsonl ledgers; (2) scripts/ci_run_target_release.sh is present only under scripts/retired/ with a README table row and a filed finding 57-4431-ci-4102-4112-report in docs/findings/aprender-57.jsonl whose evidence text matches the receipt's git-apply-fails claim; (3) model_ladder_cells_produce.py line 210 (offset within the new file) carries the '... and N more chars' truncation-length suffix; (4) check_ladder_cells_producer.sh line 116 is the 'mutant owed-set' case using a zip/slice rewrite, matching the 'rewritten rather than baselined' description; (5) admission.rs's row_errors and receipt.rs's problems are each split into three named helper functions exactly as claimed; (6) the PMAT-4072 fragment (fold-origin, shown as a new file) already states status: completed / assigned_to: aprender-ea, consistent with the receipt's explanation that the aggregate sync was catching up to an already-current fragment rather than making a new unprovable claim, and the aggregated roadmap.yaml row for PMAT-4072 matches the fragment. No conflict markers were found anywhere in the diff. The scripts/retired moves and README table are internally consistent with the two named guards. Nothing found that contradicts the receipt or does something the ticket forbids.",
+      "findings": [],
+      "raw_bytes": 4156,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -71,10 +34,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
+      "brief_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
       "trace": {
-        "input_sha256": "7dc249ebdb57469add3e0ef4ea4f9aad5ca3349c55e94b038efbd5f7e7580879",
-        "output_sha256": "f2d173058562277eb84b55e5baa502b695dbb942f6969f09566fc8b4ae893bc7",
+        "input_sha256": "5be2d0bb18d7354a5ce43ed64c6ae9e22d383046803ccc99beb18f8635dc6c9e",
+        "output_sha256": "d4ae13eef43de65c79df869dc20adb83c6cc924b7919c708ac5d3965799774bf",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -95,9 +58,9 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff implements the ticket's instructions to fold B3 onto main. I verified the receipt's claims against the diff and found them to be accurate. The fix commits (including the truncation message change in `model_ladder_cells_produce.py`, the mutant rewrite in `check_ladder_cells_producer.sh`, and the PMAT-4072 status/assignee sync) are all justified by the receipt and backed by the need to green the respective target-side guards. The refactoring of `admission.rs` and `receipt.rs` also precisely matches the receipt's description. The prior dissenting review misquoted the receipt regarding PMAT-4072. No refuting evidence was found.",
+      "summary": "The diff implements the ticket's instructions to fold B3 onto main. I verified the receipt's claims against the diff and found them to be accurate. The fix commits (including the truncation message change in `model_ladder_cells_produce.py`, the mutant rewrite in `check_ladder_cells_producer.sh`, and the PMAT-4072 status/assignee sync) are all justified by the receipt and backed by the need to green the respective target-side guards. The refactoring of `admission.rs` and `receipt.rs` also precisely matches the receipt's description. No refuting evidence was found.",
       "findings": [],
-      "raw_bytes": 2554,
+      "raw_bytes": 2503,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -108,10 +71,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
+      "brief_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
       "trace": {
-        "input_sha256": "8108d79df52682974b8bfb6c07d3ac068600b1fd7ea3aa8ab33479a2c4c74fa7",
-        "output_sha256": "4f5a05f1fb862be8bb61bc452b74ed8f551c3d079fd5f4bac628b450046651c2",
+        "input_sha256": "d4a554c5cf6414e4d4116daa3cca922d8a70700f96460c51250a009bc704ccb1",
+        "output_sha256": "a8fb0e4750dcd706ef30f3c0ae275ee60adbcff3a2df9ed8a642ffa641f49f77",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -132,9 +95,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff merges the B3 fold branch onto main with three fix commits addressing specific guard RED conditions. All visible changes align with receipt claims: .gitattributes consolidation, CI/CD workflows, CLAUDE.md contract validation, Cargo manifests, and contract/witness files. No gates are weakened. Guard status shows only pre-existing main-branch reds (bashrs version mismatch) and untracked .lake/ files remain, both green on git archive. All fix commits documented in the receipt (7 changes addressing specific guard failures) are present in the diff where verifiable.",
+      "summary": "PMAT-4431 merge (fold/b3-onto-main into main) passes. The receipt's fix commits resolve all target guards without weakening gate checks. The diff implements only what the ticket requests: 26 folded PRs, contracts/ONT/PVL/docs consolidation, and guard fixes. No gate was relaxed; the only retiring reds are guards whose subjects no longer apply post-merge (ci.yml delta that #4441 superseded). The measured state shows remaining reds are host-specific (bashrs 7.4.2 vs baseline 7.4.1) or gitignored build artifacts (Lean cache), never the tree itself.",
       "findings": [],
-      "raw_bytes": 2068,
+      "raw_bytes": 2044,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -145,10 +108,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
+      "brief_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
       "trace": {
-        "input_sha256": "13e9ebad7df8fc05b43ef0b2ff62eca01b784a79a71b4c570d80dd596607b79a",
-        "output_sha256": "d1294fb627b91c9d65217c27a726abb30b691301a1e5ad24339249344e0e2fc9",
+        "input_sha256": "8f3eb052fd6371ba6d93cc0fbbb89b377ce6def313f60414c6d244a55c50a290",
+        "output_sha256": "507a5945af41dd81ca7e21e08ffd0033377d1c48e02c5ec6edd6fa7baec24698",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -167,68 +130,7 @@
     }
   ],
   "dissent": [],
-  "dedup": [
-    {
-      "file": ".gitattributes",
-      "line": 65,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Adds per-file merge=union for docs/audits/review-corpus/corpus-v1.jsonl and docs/audits/rex-001/rex-04-admission.jsonl because the existing docs/audits/*.jsonl glob does not cross a `/` (correct gitattributes/gitignore glob semantics) — matches check_append_only_ledgers guard rationale."
-      ]
-    },
-    {
-      "file": "crates/aprender-review-experiment/src/admission.rs",
-      "line": 70852,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "row_errors is split into cell_errors/field_errors/status_errors helper functions as claimed for the complexity-ratchet fix."
-      ]
-    },
-    {
-      "file": "crates/aprender-review-experiment/src/receipt.rs",
-      "line": 73217,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "problems is split into named_problems/sha_problems/execution_problems, matching the complexity-ratchet claim."
-      ]
-    },
-    {
-      "file": "docs/roadmaps/entries/PMAT-4072.yaml",
-      "line": 83663,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Fragment already states status: completed, assigned_to: aprender-ea with a notes citation to the quorum receipt, matching the receipt's explanation that the aggregate sync (not a new claim) picked this up."
-      ]
-    },
-    {
-      "file": "scripts/lib/model_ladder_cells_produce.py",
-      "line": 89715,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Line ~89715 (offset in file) contains the '... and N more chars' truncation-reason suffix, matching the check_no_silent_truncation fix claim; file is fold-origin (shown as a new file vs origin/main), consistent with receipt's explanation."
-      ]
-    },
-    {
-      "file": "scripts/retired/README.md",
-      "line": 90681,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "check_workspace_test_waits_on_guard_tree.sh and check_ci_release_fold_scope.sh are retired with a table entry and a filed finding (docs/findings/aprender-57.jsonl, id 57-4431-ci-4102-4112-report) exactly as the receipt states."
-      ]
-    }
-  ],
+  "dedup": [],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
@@ -325,7 +227,7 @@
           "budget": 86,
           "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
           "window_start": 1790522666,
-          "window_calls": 6,
+          "window_calls": 24,
           "window_429": 0,
           "hour_calls": 12,
           "share": 17,
@@ -339,13 +241,13 @@
   },
   "auto_merge": {
     "checked": true,
-    "was_armed": false,
-    "disarmed": false,
-    "note": "auto-merge not armed"
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 6805929 bytes > 24576"
+    "skipped": "brief 6807495 bytes > 24576"
   },
   "advisory_lane": {
     "state": "not-run",
@@ -354,7 +256,7 @@
       "NotRun": "ContextOverflow"
     },
     "verdict": "unavailable",
-    "why": "the brief is 6805929 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "why": "the brief is 6807495 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
@@ -370,7 +272,7 @@
     "budget_s": 128,
     "budget_basis": "ledger: 2 x p95 64 s over 13 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 6805929,
+      "bytes": 6807495,
       "sent_bytes": 0,
       "max_bytes": 24576
     },
