@@ -26,36 +26,148 @@ pub fn extract(contract_dir: &Path) -> Graph {
     g
 }
 
-/// Every contract document under `contract_dir` (Σ excluded), in byte order: `(stem, path relative to the
-/// repository root, raw YAML)`. The one walk every extractor shares, so they all see the same corpus.
+/// A crate-local contract that shares a stem with a different-content copy (#4538, PV-DUP-001). It is refused
+/// by name and never unioned into the graph: `paths` are every copy of `stem`, repository-relative, byte order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefusedStem {
+    pub stem: String,
+    pub paths: Vec<String>,
+}
+
+/// The files Σ extracts and the crate copies it refused.
+#[derive(Debug, Clone, Default)]
+pub struct Corpus {
+    /// Contract files, byte order: every top-level file first, then the admitted crate files.
+    pub files: Vec<std::path::PathBuf>,
+    pub refused: Vec<RefusedStem>,
+}
+
+/// `<repo>/crates/*/contracts` for every crate that has a `Cargo.toml` (a directory is not a crate: the manifest-less
+/// staging tree is excluded), byte order.
+#[must_use]
+pub fn crate_contract_dirs(contract_dir: &Path) -> Vec<std::path::PathBuf> {
+    let crates = super::repo_root(contract_dir).join("crates");
+    let Ok(entries) = std::fs::read_dir(&crates) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<_> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|c| c.join("Cargo.toml").is_file() && c.join("contracts").is_dir())
+        .map(|c| c.join("contracts"))
+        .collect();
+    dirs.sort();
+    dirs
+}
+
+fn stem_of(file: &Path) -> String {
+    file.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn rel_of(root: &Path, file: &Path) -> String {
+    file.strip_prefix(root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// The one corpus walk (#4538). Top-level `contract_dir` is authoritative and taken whole, as before. A crate-local
+/// contract is admitted when no other copy of its stem has different bytes; a copy byte-identical to one already
+/// admitted is skipped; a stem with more than one distinct content among its crate copies and the top level is
+/// refused by name — its crate copies are dropped and the top level, if it has the stem, keeps its own.
+#[must_use]
+pub fn corpus(contract_dir: &Path) -> Corpus {
+    let root = super::repo_root(contract_dir);
+    let sigma_path = contract_dir.join("ontology.yaml");
+    let mut top = Vec::new();
+    crate::lint::collect_yaml_files(contract_dir, &mut top);
+    top.retain(|f| f != &sigma_path);
+    top.sort();
+    // stem -> distinct contents seen so far (top level first).
+    let mut contents: std::collections::BTreeMap<String, Vec<Vec<u8>>> =
+        std::collections::BTreeMap::new();
+    let mut paths: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for f in &top {
+        let bytes = std::fs::read(f).unwrap_or_default();
+        let seen = contents.entry(stem_of(f)).or_default();
+        if !seen.contains(&bytes) {
+            seen.push(bytes);
+        }
+        paths.entry(stem_of(f)).or_default().push(rel_of(&root, f));
+    }
+    let mut crate_files = Vec::new();
+    for dir in crate_contract_dirs(contract_dir) {
+        let mut files = Vec::new();
+        crate::lint::collect_yaml_files(&dir, &mut files);
+        files.retain(|f| f.file_name().is_some_and(|n| n != "ontology.yaml"));
+        crate_files.extend(files);
+    }
+    crate_files.sort();
+    let top_stems: std::collections::BTreeSet<String> = top.iter().map(|f| stem_of(f)).collect();
+    let mut crate_contents: std::collections::BTreeMap<String, Vec<Vec<u8>>> =
+        std::collections::BTreeMap::new();
+    for f in &crate_files {
+        let Ok(bytes) = std::fs::read(f) else {
+            continue;
+        };
+        let stem = stem_of(f);
+        paths
+            .entry(stem.clone())
+            .or_default()
+            .push(rel_of(&root, f));
+        let seen = crate_contents.entry(stem).or_default();
+        if !seen.contains(&bytes) {
+            seen.push(bytes);
+        }
+    }
+    let mut refused = Vec::new();
+    let mut admitted = std::collections::BTreeSet::new();
+    for (stem, crate_seen) in &crate_contents {
+        let top_seen = contents.get(stem).map_or(&[][..], Vec::as_slice);
+        // A crate copy only conflicts when it brings bytes the top level does not have: a top-level duplicate
+        // is the existing PV-DUP-001 baseline's business, not this walk's.
+        let new = crate_seen.iter().filter(|c| !top_seen.contains(c)).count();
+        if new > 0 && new + top_seen.len() > 1 {
+            let mut p = paths.remove(stem).unwrap_or_default();
+            p.sort();
+            refused.push(RefusedStem {
+                stem: stem.clone(),
+                paths: p,
+            });
+        } else if !top_stems.contains(stem) {
+            admitted.insert(stem.clone());
+        }
+    }
+    let mut files = top;
+    let mut taken = std::collections::BTreeSet::new();
+    for f in crate_files {
+        let stem = stem_of(&f);
+        if admitted.contains(&stem) && taken.insert(stem) {
+            files.push(f);
+        }
+    }
+    Corpus { files, refused }
+}
+
+/// Every contract document of the [`corpus`] (Σ excluded, refused crate copies excluded), in byte order:
+/// `(stem, path relative to the repository root, raw YAML)`. The one walk every extractor shares, so they all see
+/// the same corpus.
 #[must_use]
 pub fn documents(contract_dir: &Path) -> Vec<(String, String, serde_yaml::Value)> {
-    let sigma_path = contract_dir.join("ontology.yaml");
-    let mut files = Vec::new();
-    crate::lint::collect_yaml_files(contract_dir, &mut files);
-    files.sort();
+    let root = super::repo_root(contract_dir);
     let mut out = Vec::new();
-    for file in &files {
-        if file == &sigma_path {
-            continue;
-        }
+    for file in &corpus(contract_dir).files {
         let Ok(raw) = std::fs::read_to_string(file) else {
             continue;
         };
         let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&raw) else {
             continue;
         };
-        let stem = file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_string();
-        let rel = file
-            .strip_prefix(contract_dir.parent().unwrap_or(contract_dir))
-            .unwrap_or(file)
-            .to_string_lossy()
-            .replace('\\', "/");
-        out.push((stem, rel, doc));
+        out.push((stem_of(file), rel_of(&root, file), doc));
     }
     out
 }
@@ -410,3 +522,7 @@ mod tests {
         assert!(positive_control());
     }
 }
+
+#[cfg(test)]
+#[path = "crate_corpus_tests.rs"]
+mod crate_corpus_tests;

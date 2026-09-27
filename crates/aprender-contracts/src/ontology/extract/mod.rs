@@ -48,6 +48,8 @@ pub struct Extraction {
     pub parity: parity_receipt::ParityStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
+    /// #4538: crate-local contracts refused by name (PV-DUP-001) — a stem whose copies differ is never unioned.
+    pub refused: Vec<pv_contract::RefusedStem>,
 }
 
 /// What a walk could not do. Every variant is the DECLARATION's fault (exit 3), never a corpus verdict.
@@ -99,6 +101,7 @@ pub fn all_with(
 ) -> Result<Extraction, ExtractFailure> {
     let mut out = Extraction {
         graph: pv_contract::extract(contract_dir),
+        refused: pv_contract::corpus(contract_dir).refused,
         ..Extraction::default()
     };
     let root = contract_dir.parent().unwrap_or(contract_dir);
