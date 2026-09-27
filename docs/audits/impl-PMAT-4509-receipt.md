@@ -2,6 +2,18 @@
 
 Base: origin/car/0.70.0 @ 1274d040de, merged into this branch. Measured 2026-09-27T07:33:52Z in this worktree. Each block is the command's FULL output.
 
+## Scope of the judged diff (read before judging)
+
+This branch is a FOLD, not a single-file fix. Acceptance criterion 4 of `docs/roadmaps/entries/PMAT-4509.yaml` reads: "folded onto car/0.70.0 together with its base (e6 carry-forward gate da88d81d1: carry_forward_gate.py, decode_floor.py, rc_cut.sh wiring), whose self-tests also PASS". The #4509 fix (infra-64, 0c4f9b88f8) was authored ON TOP of e6's branch `e6/rc-carry-forward-gate` @ da88d81d1, and that base is not yet on car/0.70.0, so `car...HEAD` necessarily contains it:
+
+| Files | Origin | Why it is here |
+|---|---|---|
+| `scripts/release/carry_forward_gate.py`, `carry-forward-drops.tsv`, `decode_floor.py`, `scripts/perf-matrix.yaml`, `rc_cut.sh` (12 lines) | e6 commits e0ec2d6dfd, da88d81d17 | the base the #4509 fix is built on (AC 4); self-tests below, rc=0 |
+| `scripts/release/rc_fleet_stage.sh` | infra-64 0c4f9b88f8 + aprender-57 3cafab5852 | the #4509 fix proper (AC 1-3) |
+| `docs/roadmaps/entries/PMAT-4509.yaml`, `roadmap.yaml` (+21) | aprender-57 | the ticket fragment; roadmap.yaml adds only the PMAT-4509 block over car |
+
+Correction: commit 78c45809ef's subject says "the judged diff adds only PMAT-4509". That is true of `docs/roadmaps/roadmap.yaml` only (car's file + the PMAT-4509 block). The judged diff as a whole is the fold in the table above.
+
 ## `bash scripts/release/rc_fleet_stage.sh --self-test` → rc=0
 
 ```
