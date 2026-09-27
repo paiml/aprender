@@ -487,12 +487,17 @@ impl Qwen35CudaModel<'_> {
     pub(crate) fn warm_prefill_weights(&mut self) -> usize {
         use crate::cuda::{qwen35_prefill_gemm_mode, Qwen35PrefillGemm};
         self.executor.set_qwen35_prefill_f16(false);
-        if qwen35_prefill_gemm_mode() != Qwen35PrefillGemm::F16 {
+        // #4376: the mmq leg covers Q4K only; every other projection (Q5_K qkv and
+        // ssm_out, Q6_K ffn_down and attn_v: ~32% of Qwen3.5-4B Q4_K_M prefill FLOPs)
+        // runs f16, so only those are prewarmed.
+        let mode = qwen35_prefill_gemm_mode();
+        if mode != Qwen35PrefillGemm::F16 && mode != Qwen35PrefillGemm::Mmq {
             return 0;
         }
         let weights: Vec<(WeightQuantType, u64, u32, u32)> = self
             .projection_weights()
             .iter()
+            .filter(|w| mode == Qwen35PrefillGemm::F16 || w.qtype != WeightQuantType::Q4K)
             .map(|w| (w.qtype, w.ptr, w.n, w.k))
             .collect();
         let bytes: usize = weights

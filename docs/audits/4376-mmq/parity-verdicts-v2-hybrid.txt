@@ -1,0 +1,10 @@
+p1_short f16 vs f32: identical
+p1_short mmq vs f32: identical
+p2_2k f16 vs f32: identical
+p2_2k mmq vs f32: identical
+p3_8k f16 vs f32: identical
+p3_8k mmq vs f32: identical
+p4_16k f16 vs f32: identical
+p4_16k mmq vs f32: identical
+p5_30k f16 vs f32: identical
+p5_30k mmq vs f32: differs at byte 155

@@ -183,6 +183,10 @@ impl CudaExecutor {
             Qwen35PrefillGemm::Mmq if qtype == WeightQuantType::Q4K && ldc == n && k % 256 == 0 => {
                 return self.launch_mma_q4k_gemm(w_ptr, x_ptr, y_ptr, rows, n, k);
             },
+            // #4376: the mmq leg's non-Q4K weights, prewarmed f16 at load.
+            Qwen35PrefillGemm::Mmq if self.qwen35_prefill_f16 => {
+                return self.qwen35_project_rows_f16(qtype, w_ptr, x_ptr, y_ptr, rows, n, k, ldc);
+            },
             _ => {},
         }
         let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
