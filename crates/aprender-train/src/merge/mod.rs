@@ -18,6 +18,9 @@ mod tests;
 #[cfg(test)]
 mod commutativity;
 
+#[cfg(test)]
+mod shape_witness_tests;
+
 pub use dare::{dare_merge, DareConfig};
 pub use ensemble::{ensemble_merge, EnsembleConfig, EnsembleStrategy};
 pub use slerp::{slerp_merge, SlerpConfig};
