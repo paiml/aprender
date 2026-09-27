@@ -1,0 +1,111 @@
+# ──────────────────────────────────────────────
+# bin-aprender-compute-xtask--aprender-compute-xtask-v1 — the `aprender-compute-xtask` bin target of package
+# aprender-compute-xtask (ONT-10 slice S19 2/3)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml (ONT-4g, dafb8194f).
+# MEASURED 2026-09-26, batch/ont-10 @ dafb8194f, release build, default features:
+#   --help rc 0; --no-such-flag rc 2; --version = "aprender-compute-xtask 0.69.3"; options -h/-V only;
+#   3 subcommands, and surface_audit.csv has exactly those 3 rows (set-equal).
+# LIVE RED: G0.1 (no sha). No subcommand takes an enumerated value, so G1.3 is vacuous here.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-compute-xtask--aprender-compute-xtask-v1
+version: "1.0.0"
+scope: >
+  The command surface of the `aprender-compute-xtask` binary (package aprender-compute-xtask, the trueno developer
+  task runner): its help, its usage errors, its version string, its subcommand set, and its surface-audit rows.
+  Out of scope: what each task checks.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    aprender-compute-xtask answers --help, rejects an unknown flag as a usage error, names the commit it was built
+    from, exposes exactly the 3 subcommands the snapshot records, and has an audited ledger row for each.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'crates/aprender-compute-xtask/src/main.rs — the clap Commands enum'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is aprender-compute-xtask'
+    - 'aprender#4502 — ONT-10, slice S19'
+
+entity:
+  type: binary
+  ref: binary/aprender-compute-xtask/aprender-compute-xtask
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-compute-xtask-surface
+    targetClass: bin:target/aprender-compute-xtask/aprender-compute-xtask
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-compute-xtask"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-compute-xtask"]}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-compute-xtask [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - path: bin:command
+        minCount: 3
+        maxCount: 3
+        in:
+          - "check-simd"
+          - "install-hooks"
+          - "validate-examples"
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(aprender-compute-xtask)) = subcommands(clap(Cli)) ∧ commands(snapshot(aprender-compute-xtask)) ⊆ {f.feature : f ∈ surface_audit, f.binary = aprender-compute-xtask}"
+    domain: "the aprender-compute-xtask line of the tracked snapshot, the clap Commands enum, and the ledger rows with binary = aprender-compute-xtask"
+    codomain: "set equality, or a Fail naming each command in the symmetric difference"
+    invariants:
+      - "a subcommand clap accepts and the snapshot omits is an unaudited surface"
+    preconditions:
+      - "the snapshot was written at this commit"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `aprender-compute-xtask --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APRENDER-COMPUTE-XTASK-INV-001
+    property: every aprender-compute-xtask subcommand has an audited ledger row
+    formal: '∀ c ∈ commands(aprender-compute-xtask): |{r ∈ surface_audit : r.binary = aprender-compute-xtask ∧ r.feature = "aprender-compute-xtask " ++ c}| ≥ 1'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER-COMPUTE-XTASK-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-compute-xtask --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-compute-xtask'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-COMPUTE-XTASK-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-compute-xtask --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-compute-xtask'
+    if_fails: 'a typo is silently ignored (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-COMPUTE-XTASK-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`aprender-compute-xtask --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-26: `aprender-compute-xtask 0.69.3` — no sha'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-COMPUTE-XTASK-004
+    rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
+    prediction: 'subcommands(clap) = commands(snapshot); no flag takes an enumerated value (only -h/-V)'
+    test: 'NOT YET WRITTEN — S19 (aprender-5d)'
+    if_fails: 'a subcommand shipped without being snapshotted (observed 2026-09-26: 3 = 3, GREEN)'
+    mutation: 'add a subcommand without re-snapshotting; must turn RED naming it'
+  - id: FALSIFY-BIN-APRENDER-COMPUTE-XTASK-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = aprender-compute-xtask per subcommand (3 on 2026-09-26)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'a shipped command has no audited row (observed 2026-09-26: 3 of 3 ledgered, GREEN)'
+    mutation: 'delete every aprender-compute-xtask row; must turn RED naming aprender-compute-xtask'

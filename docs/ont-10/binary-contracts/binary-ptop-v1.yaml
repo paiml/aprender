@@ -1,0 +1,109 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-ptop-v1 — ONT-10 slice S13 (2/2): the `ptop` target of package `aprender-present-terminal` as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b6cf6d2ed, release build, private CARGO_TARGET_DIR). ptop declares
+# `required-features = ["ptop"]` and the package's default features are empty, so a default build does not produce
+# it at all; it was built with `--features ptop`, the smallest build that has it.
+#   `ptop --version` = "ptop 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   --help: no subcommands (0 commands) and 10 long options, --help/--version excluded: --config, --deterministic,
+#   --dump-config, --explode, --height, --no-color, --qa-timing, --refresh, --render-once, --width. The --help
+#   description line is the library's ("Terminal backend for Presentar UI framework…"), not ptop's; not shaped.
+#   surface_audit.csv holds 4 rows with binary=ptop (ledger at cf038d37f): the bare entry row `ptop (interactive TUI
+#   system monitor)`, and `ptop --dump-config`, `ptop --render-once`, `ptop --render-once --explode <PANEL>`. Every
+#   option a row names is in --help: GREEN today apart from G0.1.
+#
+# CONVENTION (S15's option join, plus one rule): a row whose feature after the binary name starts with `-` joins
+# bin:option on its first long option; a row that is the bare binary name (optionally with a parenthetical) is the
+# default mode and resolves to the focus node itself.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-ptop
+version: "0.1.0"
+scope: >
+  The built `ptop` target of package `aprender-present-terminal` (features = ["ptop"], its required feature) as the
+  focus node binary/aprender-present-terminal/ptop: its identity, its options, and the surface_audit.csv rows that
+  must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S13 (ptop, package aprender-present-terminal). Per-binary shapes over the node
+    extract:binary (ONT-4g, #4476) draws for binary/aprender-present-terminal/ptop. DRAFT: binary-surface-v1 (the
+    bin: vocabulary) and extract:binary do not exist on this branch yet, so this contract goes green only after
+    ONT-4g lands. extract:binary must build this target with its required feature, or it has no node to draw.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = ptop)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'crates/aprender-present-terminal/Cargo.toml ([[bin]] ptop, required-features = ["ptop"])'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: ptop-identity
+    targetClass: bin:target/aprender-present-terminal/ptop
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["ptop"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-present-terminal"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^ptop [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: ptop-options
+    targetClass: bin:target/aprender-present-terminal/ptop
+    properties:
+      - {path: bin:command, maxCount: 0}
+      - path: bin:option
+        minCount: 10
+        maxCount: 10
+        in:
+          - "--config"
+          - "--deterministic"
+          - "--dump-config"
+          - "--explode"
+          - "--height"
+          - "--no-color"
+          - "--qa-timing"
+          - "--refresh"
+          - "--render-once"
+          - "--width"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  option_set:
+    formula: "commands(binary/aprender-present-terminal/ptop) = ∅; options = O, |O| = 10, O = the long options of --help of the --features ptop build, --help and --version excluded"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:option literal per long option; no bin:command literal"
+    invariants:
+      - "in + minCount 10 + maxCount 10 is set equality on options: an added, dropped or renamed option is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = ptop ∧ key(r) ≠ ⊤ ∧ key(r) ∉ O }; key(r) = ⊤ (the node) for the bare entry row, else the first long option of r.feature"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is ptop (4 on 2026-09-26)"
+    codomain: "literals on the focus node, one per orphan row"
+    invariants:
+      - "a ledgered option the built binary does not accept is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-PTOP-001
+    name: ledgered_option_removed_is_red
+    prediction: "deleting --render-once from the snapshot's option list makes ptop-options RED: |O| = 9 and the two --render-once rows become bin:ledgerOrphan"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with --render-once removed"
+    expected_output: "verdict Fail, results on binary/aprender-present-terminal/ptop paths bin:option and bin:ledgerOrphan"
+    if_fails: "ptop's headless render mode, the one CI can exercise, could vanish with the ontology green."
+  - id: FALSIFY-BIN-PTOP-002
+    name: default_feature_build_has_no_node
+    prediction: "an extractor that builds aprender-present-terminal with default features produces no ptop target, so no focus node exists and the 4 ledger rows resolve to nothing"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot from a default-feature build"
+    expected_output: "the ONT-4g surface_audit_bins gate names ptop as a ledgered binary with no node"
+    if_fails: "A binary the ledger lists could drop out of the ontology silently because its feature is opt-in."

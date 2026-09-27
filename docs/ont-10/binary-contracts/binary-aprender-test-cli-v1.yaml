@@ -1,0 +1,130 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-aprender-test-cli-v1 — ONT-10 slice S2: the `aprender-test-cli` binary as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, LC_ALL=C recursive --help walk):
+#   - `aprender-test-cli --version` prints "probador 0.69.3": the pre-monorepo name, so the identity shape is RED today.
+#     G0.1 (git sha in --version) is a warning and RED today.
+#   - the walk gives 34 leaves; `comply` and `serve` take an OPTIONAL subcommand (Usage `[COMMAND]`) and run on
+#     their own, so C = 36 invocable paths. `llm experiment` REQUIRES one (`<COMMAND>`) and is not invocable.
+#   - surface_audit.csv: 39 rows = the 36 + `llm experiment` (an orphan: RED today) + 2 HTTP routes of the dev
+#     server (GET /, GET /ws), which are the route kind and out of this CLI shape.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): nodes also typed bin:target/<package>/<target>
+# (no targetNode in pv's subset); commands as bin:command literals (full path below the binary name, space-joined);
+# the csv join yields bin:ledgerOrphan / bin:unledgeredCommand.
+# A group whose Usage line shows `[COMMAND]` is itself a command path (it runs without a subcommand); one showing
+# `<COMMAND>` is not.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-aprender-test-cli
+version: "0.1.0"
+scope: >
+  The built `aprender-test-cli` target of package `aprender-test-cli` (default features) as the focus node binary/aprender-test-cli/aprender-test-cli:
+  its identity and its exact command surface, and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S2 (aprender-test-cli, the probador CLI). DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on this branch yet,
+    so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - "crates/aprender-test-cli/src/main.rs"
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: aprender-test-cli-identity
+    targetClass: bin:target/aprender-test-cli/aprender-test-cli
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-test-cli"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-test-cli"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-test-cli [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: aprender-test-cli-commands
+    targetClass: bin:target/aprender-test-cli/aprender-test-cli
+    properties:
+      - path: bin:command
+        minCount: 36
+        maxCount: 36
+        in:
+          - "animation check"
+          - "audio check"
+          - "av-sync check"
+          - "av-sync report"
+          - "build"
+          - "comply"
+          - "comply check"
+          - "comply diff"
+          - "comply enforce"
+          - "comply migrate"
+          - "comply report"
+          - "config"
+          - "coverage"
+          - "init"
+          - "llm bench"
+          - "llm data-audit"
+          - "llm experiment compare"
+          - "llm experiment init"
+          - "llm experiment status"
+          - "llm gen-dataset"
+          - "llm load"
+          - "llm report"
+          - "llm score"
+          - "llm sweep"
+          - "llm test"
+          - "playbook"
+          - "record"
+          - "report"
+          - "serve"
+          - "serve score"
+          - "serve tree"
+          - "serve viz"
+          - "stress"
+          - "test"
+          - "video check"
+          - "watch"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-test-cli/aprender-test-cli) = C, |C| = 36, where C = the invocable command paths of the recursive --help walk of the default-feature build"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per command path, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount 36 + maxCount 36 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = aprender-test-cli ∧ strip(r.feature) ∉ C }; unledgeredCommand = C ∖ { strip(r.feature) : r.binary = aprender-test-cli }"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is aprender-test-cli; strip removes the leading binary name"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-TEST_CLI-001
+    name: dropped_command_is_red
+    prediction: "deleting one command from the snapshot's command list makes the command-set shape RED naming it (minCount 36)"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one command removed"
+    expected_output: "verdict Fail, one result on binary/aprender-test-cli/aprender-test-cli path bin:command"
+    if_fails: "A command could vanish from the shipped aprender-test-cli with the ontology green."
+  - id: FALSIFY-BIN-TEST_CLI-002
+    name: ledger_row_deleted_is_red
+    prediction: "deleting one surface_audit.csv row for a live aprender-test-cli command makes bin:unledgeredCommand non-empty, RED naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the csv with one row deleted"
+    expected_output: "verdict Fail naming the command"
+    if_fails: "The dogfood coverage ratio would be computed over a ledger that silently omits a shipped command."

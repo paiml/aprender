@@ -1,0 +1,164 @@
+# ──────────────────────────────────────────────
+# bin-aprender-contracts-cli--pv-v1 — the `pv` bin target of package aprender-contracts-cli (ONT-10 slice S1)
+#
+# THE EXEMPLAR. Every ONT-10 slice drafts its per-binary contract to this file:
+#   · file name   contracts/bin-<package>--<target>-v1.yaml   (package and target exactly as cargo metadata spells them)
+#   · entity      {type: binary, ref: binary/<package>/<target>}
+#   · depends_on  [binary-surface-v1] — the shared shapes live there; do NOT restate them here
+#   · shapes      ONE shape, targetClass bin:target/<package>/<target>, pinning bin:name, bin:package, bin:versionString
+#                 (G0.1 as severity: warning while RED), bin:command / bin:route / bin:mcpTool with in: + exact
+#                 min/maxCount, and bin:unledgered{Command,Route,Tool} + bin:ledgerOrphan{,Route} at maxCount 0
+#   · equations   surface_equals_snapshot (the command set), plus one per surface kind the binary has (http, mcp)
+#   · falsifiers  FALSIFY-BIN-<TARGET>-001..005, one per gate below; each names a planted mutation that turns it RED
+#       001 G1.2  --help exits 0 and is non-empty
+#       002 G1.2  an unknown flag exits 2 (clap usage error), never 0 or a panic
+#       003 G0.1  --version names the commit (first 9 hex of git_sha)
+#       004 G1.3/G1.4  every enumerated flag value is a clap value_parser; the command set equals the snapshot
+#       005 ledger  ≥1 docs/audits/surface_audit.csv row per command, `binary` column = the bin name
+# A gate that is live RED today stays in the contract, RED, with the observed value in `if_fails` — never dropped.
+# Slices staged under docs/ont-10/binary-contracts/ move here with `git mv` once Σ binary + this vocabulary are on
+# the batch (they are, as of this commit); `pv lint contracts/` must stay PASS after the move.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-contracts-cli--pv-v1
+version: "1.0.0"
+scope: >
+  The command surface of the `pv` binary (package aprender-contracts-cli, src crates/aprender-contracts-cli/src/main.rs):
+  its help, its usage errors, its version string, its subcommand set, and its surface-audit rows. Out of scope: what
+  each subcommand computes (the contract that subcommand implements).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    pv answers --help, rejects an unknown flag as a usage error, names the commit it was built from, exposes exactly
+    the subcommands the snapshot records, and has an audited ledger row for each.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'crates/aprender-contracts-cli/src/cli.rs — the clap Command enum'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is pv'
+    - 'aprender#4502 — ONT-10, slice S1'
+
+entity:
+  type: binary
+  ref: binary/aprender-contracts-cli/pv
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-pv-surface
+    targetClass: bin:target/aprender-contracts-cli/pv
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["pv"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-contracts-cli"]}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^pv [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - path: bin:command
+        minCount: 44
+        maxCount: 44
+        in:
+          - "audit"
+          - "book"
+          - "census"
+          - "certify"
+          - "challenge"
+          - "check-parity"
+          - "codegen"
+          - "coq"
+          - "coverage"
+          - "diff"
+          - "discharge"
+          - "equations"
+          - "explain"
+          - "extract"
+          - "extract-pytorch"
+          - "flux"
+          - "fuzz"
+          - "generate"
+          - "graph"
+          - "infer"
+          - "invariants"
+          - "kaizen"
+          - "kani"
+          - "lean"
+          - "lean-status"
+          - "lint"
+          - "migrate"
+          - "mirai"
+          - "obligations"
+          - "ontology"
+          - "pipeline"
+          - "probar"
+          - "proof-status"
+          - "query"
+          - "roofline"
+          - "scaffold"
+          - "score"
+          - "status"
+          - "tla"
+          - "unlock"
+          - "validate"
+          - "verify-bindings"
+          - "verify-pipeline"
+          - "verify-structure"
+      # LIVE RED 2026-09-26: census, challenge, discharge, extract, obligations, ontology have no ledger row
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(pv)) = subcommands(clap(Cli)) ∧ commands(snapshot(pv)) ⊆ {f.feature : f ∈ surface_audit, f.binary = pv}"
+    domain: "the pv line of the tracked snapshot, the clap Command enum, and the ledger rows with binary = pv"
+    codomain: "set equality, or a Fail naming each command in the symmetric difference"
+    invariants:
+      - "a subcommand clap accepts and the snapshot omits is an unaudited surface"
+    preconditions:
+      - "the snapshot was written at this commit"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `pv --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-PV-INV-001
+    property: every pv subcommand has an audited ledger row
+    formal: '∀ c ∈ commands(pv): |{r ∈ surface_audit : r.binary = pv ∧ r.feature = "pv " ++ c}| ≥ 1'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-PV-001
+    rule: 'G1.2 help answers'
+    prediction: '`pv --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli pv'
+    if_fails: 'the binary cannot describe its own surface'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-PV-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`pv --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli pv'
+    if_fails: 'a typo is silently ignored (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-PV-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`pv --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-26: `pv 0.69.3 (aprender provable-contracts verifier)` — no sha; a stale pv reads as HEAD'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-PV-004
+    rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
+    prediction: '`pv lint contracts/ --format nosuch` exits 2 naming the allowed values; subcommands(clap) = commands(snapshot)'
+    test: 'NOT YET WRITTEN — S1 (aprender-60)'
+    if_fails: 'LIVE RED 2026-09-26: `--format nosuch` exits 1, not 2 — format is parsed after clap, so the help does not list the values'
+    mutation: 'add a subcommand without re-snapshotting; must turn RED naming it'
+  - id: FALSIFY-BIN-PV-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = pv (38 on 2026-09-26)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'LIVE RED 2026-09-26: 6 of 44 commands have no row (census, challenge, discharge, extract, obligations, ontology)'
+    mutation: 'delete every pv row; must turn RED naming pv'

@@ -1411,6 +1411,12 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *generate_card,
                 cli.json,
             ),
+            // #4476: the parser admits `classify` in every build; without the
+            // feature it used to fall to the `_` arm and run perplexity instead.
+            #[cfg(not(feature = "training"))]
+            Some("classify") => Err(crate::error::CliError::FeatureDisabled(
+                "--task classify needs apr built with the `training` feature".to_string(),
+            )),
             Some("code") => {
                 eval::run_code_eval(&r, data.as_deref(), *max_tokens, *threshold, cli.json)
             }

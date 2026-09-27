@@ -182,17 +182,17 @@ apr,apr embed,6,x86_64-linux,huggingface-transformers,yes,1,apr-lint-diag,crates
 apr,apr embed-viz-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1053,low
 apr,apr embeddings-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1172,high
 apr,apr encrypt,4,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:121,high
-apr,apr eval,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:121,high
-apr,apr eval --task classify,6,x86_64-linux,scikit-learn,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1405 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task code,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1413 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task compare,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1437 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task contamination,6,x86_64-linux,huggingface-transformers,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1434 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task correlation,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1439 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task human,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1440 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task humaneval,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1416 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task mbpp,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1425 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task plan,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1441 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task verify,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1438 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:124,high
+apr,apr eval --task classify,6,x86_64-linux,scikit-learn,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1406 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task code,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1420 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task compare,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1444 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task contamination,6,x86_64-linux,huggingface-transformers,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1441 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task correlation,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1446 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task human,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1447 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task humaneval,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1423 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task mbpp,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1432 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task plan,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1448 (flag crates/apr-cli/src/extended_commands.rs:145),high
+apr,apr eval --task verify,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1445 (flag crates/apr-cli/src/extended_commands.rs:145),high
 apr,apr experiment view,6,x86_64-linux,pytorch,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1567,low
 apr,apr explain,6,x86_64-linux,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:447,high
 apr,apr explain-token-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1065,low
