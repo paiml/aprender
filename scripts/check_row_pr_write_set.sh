@@ -79,7 +79,8 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
         printf 'FAIL  %s: row PR %s writes docs/roadmaps/roadmap.yaml — pmat work complete and the ticket edits belong to the orchestrator docs commit\n' "$PROG" "$branch"; rc=1
     fi
     if printf '%s\n' "$changed" | grep -qxF -- "$readme"; then
-        local hits; hits=$(git -C "$repo" diff "$base" "$head" -- "$readme" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE" || true)
+        local hits; hits=$(git -C "$repo" diff "$base" "$head" -- "$readme" | grep -E '^[-+][^-+]' \
+            | sed -E 's/<!-- [A-Z_]+_COUNT_(START|END) -->//g' | grep -E -- "$COUNT_RE" || true)   # GEN-001 wraps counts in markers: strip them or the claim is invisible
         if [ -n "$hits" ]; then
             printf 'FAIL  %s: row PR %s edits a README count line (the orchestrator docs commit regenerates counts; check_readme_claims.sh lets the README lag, never overstate):\n' "$PROG" "$branch"
             printf '%s\n' "$hits" | head -6 | sed 's|^|        |'; rc=1
@@ -111,7 +112,7 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'rows:\n- {id: G-11, pmat_id: PMAT-1062}\n- {id: R-0, pmat_id: PMAT-989}\n' > "$R/docs/specifications/pp-066-dag.yaml"
     printf -- '- id: PMAT-1\n  title: a\n' > "$R/docs/roadmaps/roadmap.yaml"
     printf '# spec\n' > "$R/docs/specifications/PP-066-release-spec.md"
-    printf '# apr\n\n**78** workspace crates and **1812** provable contracts across 111 CLI commands.\n\nprose line\n' > "$R/README.md"
+    printf '# apr\n\n**78** workspace crates and **1812** provable contracts across 111 CLI commands.\n\n**<!-- CRATE_COUNT_START -->81<!-- CRATE_COUNT_END -->** workspace crates (generated)\n\nprose line\n' > "$R/README.md"
     printf 'fn main() {}\n' > "$R/crates/x/src/lib.rs"
     ( cd "$R" && git add -A && git commit -qm base )
     BASE=$(git -C "$R" rev-parse HEAD)
@@ -137,6 +138,7 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "a row PR RENAMING the DAG away: RED (the source path is a write; --no-renames)" agent/G-11 pull_request 'git mv docs/specifications/pp-066-dag.yaml docs/specifications/moved.yaml'
     row 0 "merge_group shape: REPORT (judged on the pull_request run), exit 0"        agent/G-11 merge_group 'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml'
     row 0 "push shape: REPORT, exit 0"                                                agent/G-11 push        'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml'
+    row 1 "row PR bumping a MARKER-WRAPPED count (GEN-001 block): RED, the markers do not hide it" agent/G-11 pull_request 'sed -i "s/-->81<!--/-->82<!--/" README.md'
     for i in 12 13; do grep -q '^REPORT' "$TD/out.$i" || { printf 'FAIL  row %-2s printed no REPORT line: a silent skip\n' "$i"; red=1; }; done
     grep -q 'pp-066-dag.yaml' "$TD/out.11" || { printf 'FAIL  row 11 did not name the renamed file\n'; red=1; }
     n2=$((n + 1)); rc=0; judge "$R" "$BASE" "$BASE" agent/G-11 pull_request docs/specifications/nope.yaml README.md >"$TD/out.$n2" 2>&1 || rc=$?

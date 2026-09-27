@@ -57,7 +57,7 @@
 #   --check    exit 0 if README.md already equals what --write would produce,
 #              1 otherwise, naming both numbers. Writes nothing.
 #
-# A README missing ANY owned block is exit 3 under --write, never a silent no-op:
+# A README missing ANY owned block is exit 3 under --write AND --check, never a silent no-op:
 # "rewrote 0 blocks" over a file whose count is stale is the vacuous-scan class
 # this repository keeps finding in its own guards.
 
@@ -80,7 +80,7 @@ usage: bash scripts/readme_sync.sh [--write|--print|--print-all|--list-blocks|--
   --print        print the CONTRACT_COUNT block bytes --write would produce
   --print-all    print NAME=N for every owned block
   --list-blocks  print the owned block names
-  --check        exit 0 iff README.md already matches; 1 otherwise
+  --check        exit 0 iff README.md already matches; 1 otherwise; 3 an owned block is missing
 USAGE
     exit 2
 }
@@ -195,6 +195,20 @@ fi
 build_sed
 summary() { local name out=""; for name in "${BLOCKS[@]}"; do out="$out $name=${VAL[$name]}"; done; printf '%s' "${out# }"; }
 
+# A missing block is refused by --check as well as --write: a README with a block deleted
+# (markers and all) has nothing for the rewrite to match, so a bare cmp would call it exact.
+missing=""
+for name in "${BLOCKS[@]}"; do
+    [ "$(occurrences "$name")" -gt 0 ] || missing="$missing $name"
+done
+if [ -n "$missing" ]; then
+    printf 'FAIL readme_sync: %s carries no block for:%s — that count is AUTHORED, not derived.\n' "$README" "$missing" >&2
+    for name in $missing; do
+        printf '     Add the markers around the number, inline:  <!-- %s_START -->%s<!-- %s_END -->\n' "$name" "${VAL[$name]}" "$name" >&2
+    done
+    exit 3
+fi
+
 case "$mode" in
     check)
         tmp="$(mktemp "${TMPDIR:-/tmp}/readme-sync-check.XXXXXX")"
@@ -210,17 +224,6 @@ case "$mode" in
         exit 1
         ;;
     write)
-        missing=""
-        for name in "${BLOCKS[@]}"; do
-            [ "$(occurrences "$name")" -gt 0 ] || missing="$missing $name"
-        done
-        if [ -n "$missing" ]; then
-            printf 'FAIL readme_sync: %s carries no block for:%s — that count is AUTHORED, not derived.\n' "$README" "$missing" >&2
-            for name in $missing; do
-                printf '     Add the markers around the number, inline:  <!-- %s_START -->%s<!-- %s_END -->\n' "$name" "${VAL[$name]}" "$name" >&2
-            done
-            exit 3
-        fi
         tmp="$(mktemp "${TMPDIR:-/tmp}/readme-sync.XXXXXX")"
         # shellcheck disable=SC2064
         trap "rm -f '$tmp'" EXIT

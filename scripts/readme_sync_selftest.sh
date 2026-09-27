@@ -87,6 +87,8 @@ gen --check; [ "$RC" = 0 ];                                                row "
 readme; sed -i 's|<!-- CRATES_DIR_COUNT_START -->9<!-- CRATES_DIR_COUNT_END -->|9|' "$TD/README.md"
 gen --write; [ "$RC" = 3 ] && grep -q 'CRATES_DIR_COUNT' "$TD/out"
 row "a README missing an owned block is exit 3 naming it -- the count is authored (rc=$RC)" $?
+gen --check; [ "$RC" = 3 ] && grep -q 'CRATES_DIR_COUNT' "$TD/out"
+row "--check on a README missing an owned block is exit 3 too, never a vacuous ok (rc=$RC)" $?
 
 readme; rm -f -- "${TD:?}/t/book/src/lib/core.md"
 gen --write; [ "$RC" = 2 ] && grep -q 'BOOK_LIB_CHAPTER_COUNT: measured 0' "$TD/out" && grep -q 'hand-typed prose' "$TD/README.md"
