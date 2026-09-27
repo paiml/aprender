@@ -7,6 +7,7 @@
 #   symbols: the `formal:` token vocabulary is a lexicon, not a TBox
 #   worlds: worlds scope contracts; OWL 2 EL has no modal or context construct
 Ontology(<https://ont.paiml.dev/v1alpha1/sigma>
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/AprModel>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Code>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Contract>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Dataset>))
@@ -16,10 +17,13 @@ Declaration(Class(<https://ont.paiml.dev/v1alpha1/Example>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Issue>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Json>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Kernel>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/LadderRung>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/LlmContext>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Milestone>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Model>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Proof>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/PullRequest>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Readme>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Repo>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Statement>))
 Declaration(Class(<https://ont.paiml.dev/v1alpha1/Symbol>))

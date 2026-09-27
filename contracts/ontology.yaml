@@ -198,6 +198,11 @@ entity_type_target_class:
   lean: ~
   parity-receipt: ~
   release-evidence: ~
+  example: ont:Example
+  repo: ont:Repo
+  issue: ont:Issue
+  pull-request: ont:PullRequest
+  milestone: ont:Milestone
 
 # v4.16 D5b (qd4c3): which `## ` headings of an llm-context file satisfy each role. extract:llm-context emits
 # llm:purposeSection / rulesSection / commandsSection / layoutSection per match; an unlisted heading is no error.

@@ -148,6 +148,8 @@ pub fn export(sigma: &Sigma) -> Result<OwlExport, OwlError> {
         extractors,
         not_expressible,
         subsumes, // ONT-4d → SubClassOf, and the intended subsumptions the TBox measures against
+        entity_type_target_class: _, // ONT-4c: which class a shape with no targetClass targets — shape wiring
+        llm_context_role_synonyms: _, // ONT-4c: which headings extract:llm-context reads as a role — a reader's input
         readers: _, // Σ bookkeeping: which reader claims which key
         metadata: _, // Σ bookkeeping: the contract schema's block, opaque to Σ
     } = sigma;

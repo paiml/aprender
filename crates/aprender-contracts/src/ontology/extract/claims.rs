@@ -406,17 +406,16 @@ fn disabled(step: &serde_yaml::Value) -> bool {
     }
 }
 
-/// The normalised `run:` lines of one workflow document (empty unless it is on the merge path).
-#[must_use]
-pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    if !on_merge_path(doc) {
-        return out;
-    }
+/// The raw `run:` bodies of the enabled steps of the jobs `keep` accepts, by job name.
+fn job_runs<'a>(doc: &'a serde_yaml::Value, keep: impl Fn(&str) -> bool) -> Vec<&'a str> {
     let Some(jobs) = doc.get("jobs").and_then(serde_yaml::Value::as_mapping) else {
-        return out;
+        return Vec::new();
     };
-    for job in jobs.values() {
+    let mut out = Vec::new();
+    for (name, job) in jobs {
+        if !name.as_str().is_some_and(&keep) {
+            continue;
+        }
         let Some(steps) = job.get("steps").and_then(serde_yaml::Value::as_sequence) else {
             continue;
         };
@@ -425,18 +424,80 @@ pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
                 continue;
             }
             if let Some(run) = step.get("run").and_then(serde_yaml::Value::as_str) {
-                out.extend(normalise(run));
+                out.push(run);
             }
         }
     }
     out
 }
 
-/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`. Unparseable files contribute
-/// nothing (a workflow GitHub cannot parse runs nothing either).
+/// The normalised `run:` lines of one workflow document (empty unless it is on the merge path).
+#[must_use]
+pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
+    if !on_merge_path(doc) {
+        return BTreeSet::new();
+    }
+    job_runs(doc, |_| true).into_iter().flat_map(normalise).collect()
+}
+
+/// #4433: the five fat CI jobs run the job bodies of `ci/sections.yml` through
+/// `scripts/ci/fat_driver.py run --sections '<spec>'`. The spec parts a merge-path workflow names, in order.
+#[must_use]
+pub fn section_specs(doc: &serde_yaml::Value) -> Vec<String> {
+    if !on_merge_path(doc) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for run in job_runs(doc, |_| true) {
+        if !run.contains("fat_driver.py") {
+            continue;
+        }
+        let mut words = run.split_whitespace();
+        while let Some(w) = words.next() {
+            if w == "--sections" {
+                if let Some(spec) = words.next() {
+                    let spec = spec.trim_matches(|c| c == '\'' || c == '"');
+                    out.extend(spec.split(',').map(str::trim).filter(|p| !p.is_empty()).map(String::from));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// fat_driver's `fnmatch` over a section name, for the `*` and `?` its specs use. A matrix pin
+/// (`determinism[X64]`) selects its job (`determinism`), whose steps are the pin's.
+fn section_selected(name: &str, part: &str) -> bool {
+    fn glob(n: &[u8], p: &[u8]) -> bool {
+        match (p.first(), n.first()) {
+            (None, None) => true,
+            (Some(b'*'), _) => glob(n, &p[1..]) || (!n.is_empty() && glob(&n[1..], p)),
+            (Some(b'?'), Some(_)) => glob(&n[1..], &p[1..]),
+            (Some(a), Some(b)) if a == b => glob(&n[1..], &p[1..]),
+            _ => false,
+        }
+    }
+    let part = part.split('[').next().unwrap_or(part);
+    glob(name.as_bytes(), part.as_bytes())
+}
+
+/// The normalised `run:` lines of the `ci/sections.yml` jobs that `specs` select. A section no merge-path fat
+/// job names contributes nothing: a claim it "runs" is not run.
+#[must_use]
+pub fn section_run_lines(sections: &serde_yaml::Value, specs: &[String]) -> BTreeSet<String> {
+    job_runs(sections, |name| specs.iter().any(|p| section_selected(name, p)))
+        .into_iter()
+        .flat_map(normalise)
+        .collect()
+}
+
+/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`, plus the `run:` lines of the
+/// `<root>/ci/sections.yml` jobs a merge-path workflow runs through `fat_driver.py --sections` (#4433). Unparseable
+/// files contribute nothing (a workflow GitHub cannot parse runs nothing either).
 #[must_use]
 pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
+    let mut specs = Vec::new();
     let Ok(rd) = std::fs::read_dir(root.join(".github/workflows")) else {
         return out;
     };
@@ -452,7 +513,14 @@ pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
         };
         if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) {
             out.extend(workflow_run_lines(&doc));
+            specs.extend(section_specs(&doc));
         }
+    }
+    if let Some(sections) = std::fs::read_to_string(root.join("ci/sections.yml"))
+        .ok()
+        .and_then(|t| serde_yaml::from_str::<serde_yaml::Value>(&t).ok())
+    {
+        out.extend(section_run_lines(&sections, &specs));
     }
     out
 }
@@ -597,6 +665,30 @@ mod tests {
             wf("on: [pull_request_target]\njobs:\n  a:\n    steps:\n      - run: x\n").len(),
             1
         );
+    }
+
+    #[test]
+    fn a_section_counts_only_when_a_merge_path_fat_job_names_it() {
+        let ci: serde_yaml::Value = serde_yaml::from_str(
+            "on: [pull_request]\njobs:\n  x86:\n    steps:\n      - run: >-\n          python3 scripts/ci/fat_driver.py run\n          --sections 'sov.*,guard-*,determinism[X64]'\n          --results r.json\n",
+        )
+        .unwrap();
+        let nightly: serde_yaml::Value = serde_yaml::from_str(
+            "on: [schedule]\njobs:\n  n:\n    steps:\n      - run: python3 scripts/ci/fat_driver.py run --sections 'nightly-only'\n",
+        )
+        .unwrap();
+        let specs = section_specs(&ci);
+        assert_eq!(specs, vec!["sov.*", "guard-*", "determinism[X64]"]);
+        assert!(section_specs(&nightly).is_empty());
+        let sections: serde_yaml::Value = serde_yaml::from_str(
+            "jobs:\n  guard-tree:\n    steps:\n      - run: make readme\n      - if: false\n        run: make off\n  determinism:\n    steps:\n      - run: make det\n  nightly-only:\n    steps:\n      - run: make nightly\n",
+        )
+        .unwrap();
+        assert_eq!(
+            section_run_lines(&sections, &specs),
+            BTreeSet::from(["make readme".to_string(), "make det".to_string()])
+        );
+        assert!(section_run_lines(&sections, &[]).is_empty());
     }
 
     #[test]
