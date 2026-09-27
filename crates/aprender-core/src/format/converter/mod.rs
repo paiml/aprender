@@ -469,3 +469,4 @@ include!("convert_report.rs");
 include!("f16_convert.rs");
 include!("infer_q4k_config.rs");
 include!("streaming_quantize.rs");
+include!("gdn_quant_policy.rs");

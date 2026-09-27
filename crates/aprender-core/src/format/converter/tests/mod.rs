@@ -29,3 +29,5 @@ mod coverage_gap_quantized_save;
 /// #2392 — falsifiers for the convert/quantize/export defects found by
 /// dogfooding the crates.io 0.63.0 binary.
 mod dogfood_2392;
+/// R8 (la-0.72) — GDN quantize policy + cosine gate.
+mod gdn_quant_policy;

@@ -371,7 +371,7 @@ pub(crate) fn quantize_tensors(
         // (especially when weight-tied). Quantization causes 4:1 packing / all-zeros.
         let is_lm_head = name.contains("lm_head") || name == "output.weight";
 
-        let quantized_data = if is_embedding || is_lm_head {
+        let quantized_data = if is_embedding || is_lm_head || gdn_keeps_full_precision(name) {
             // Keep embeddings and lm_head in original F32 - no quantization
             data.clone()
         } else {

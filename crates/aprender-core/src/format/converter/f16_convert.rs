@@ -143,6 +143,7 @@ const NORM_BIAS_PATTERNS: &[&str] = &["bias", "layernorm", "layer_norm", "norm.w
 /// - Biases are too small and precision-sensitive
 /// - LayerNorm/RMSNorm weights are critical for numerical stability
 /// - Small tensors (<1024 elements) don't benefit from quantization
+/// - R8: GDN `conv1d`/`A_log`/`dt_bias` (`gdn_keeps_full_precision`)
 ///
 /// GH-88: Embeddings and lm_head are NO LONGER skipped. GGUF files quantize
 /// both to Q4K/Q6K, and realizar's GPU-resident kernel requires Q4K weight
@@ -153,7 +154,9 @@ const NORM_BIAS_PATTERNS: &[&str] = &["bias", "layernorm", "layer_norm", "norm.w
 /// Used by both the convert path (`add_tensor_with_quantization`) and the
 /// import path (`add_f32_tensor_to_writer` in write.rs).
 pub(super) fn should_skip_quantization(name: &str, element_count: usize) -> bool {
-    name_matches_any(name, NORM_BIAS_PATTERNS) || element_count < 1024
+    name_matches_any(name, NORM_BIAS_PATTERNS)
+        || gdn_keeps_full_precision(name)
+        || element_count < 1024
 }
 
 /// GH-237: Write a tensor to the APR writer with correct dtype dispatch.

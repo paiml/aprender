@@ -105,6 +105,7 @@ fn should_quantize_tensor(name: &str, shape: &[usize], data_len: usize) -> bool 
         && !name.contains("norm")
         && !name.contains("scale")
         && !name.contains("embed") // Keep embeddings as F32 for now
+        && !gdn_keeps_full_precision(name) // R8: GDN conv1d/A_log/dt_bias
 }
 
 /// Serialize APR writer output and write the resulting bytes to a file.
