@@ -225,8 +225,9 @@ pub enum Commands {
         /// Path to binding registry YAML
         #[arg(long)]
         binding: Option<PathBuf>,
-        /// Output format: text (default), json, sarif, github
-        #[arg(short, long)]
+        /// Output format: text (default), json, sarif, github, html.
+        /// G1.3 (#4476): parsed by clap, so an unknown value exits 2 and names these.
+        #[arg(short, long, value_parser = ["text", "json", "sarif", "github", "html"])]
         format: Option<String>,
         /// Minimum severity to report: error, warning, info
         #[arg(long)]

@@ -218,3 +218,17 @@ fn the_liskov_reasoner_decides_each_direction_the_checker_proves() {
         ["a refines b: invariant dropped (INV-1)"]
     );
 }
+
+/// G0.1 (#4476): `pv-sat --version` exists and names the semver and the commit.
+#[test]
+fn g0_1_version_line_names_semver_and_commit() {
+    let v = version_line();
+    let f: Vec<&str> = v.split_whitespace().collect();
+    assert_eq!(f.first(), Some(&"pv-sat"), "{v}");
+    assert_eq!(f.get(1), Some(&env!("CARGO_PKG_VERSION")), "{v}");
+    assert_eq!(
+        f.get(2).copied(),
+        Some(format!("({})", env!("PV_GIT_SHA")).as_str()),
+        "{v}"
+    );
+}
