@@ -22131,3 +22131,19 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4514
+  github_issue: 4514
+  item_type: task
+  title: 'FLOW-003 v1.1: queue/release-cycle model spec with review fixes'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-27T06:56:07Z
+  updated: 2026-09-27T06:56:11.885936345+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
