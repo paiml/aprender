@@ -8,7 +8,6 @@
 //!   - module: ProvableContracts/Theorems/Softmax/Kernel.lean   # relative to the lean dir, as the summary lists it
 //!     model_of: trueno::softmax::softmax_row                   # a Rust path the workspace resolves
 //!     relation: { kind: extraction, evidence: "how the Lean model was obtained from the Rust" }
-//! unrefined_baseline: 42   # theorem-bearing modules with no L4 model; shrink-only
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet};

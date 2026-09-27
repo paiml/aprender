@@ -188,7 +188,6 @@ pub struct ShapesControls {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize)]
 // One value per `pv lint` run, built once and serialised: the Shapes variant's size is not a hot-path cost.
-#[allow(clippy::large_enum_variant)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub enum GateExtra {

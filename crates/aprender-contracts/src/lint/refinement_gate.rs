@@ -1,25 +1,34 @@
 //! ONT-001 ONT-3b (#4073) — the `refinement` gate: every `models:` entry in `formalization.yaml` names a Rust item
-//! the workspace resolves (through ONT-3a's `syn` walk), and the count of theorem-bearing Lean modules with no L4
-//! model is held by a shrink-only `unrefined_baseline`. See [`crate::discharge::refinement`] for what a model earns.
+//! the workspace resolves (through ONT-3a's `syn` walk), and two counts that must never get worse are checked HEAD
+//! against BASE in the same run, by the same scanner: the theorem-bearing Lean modules with no L4 model
+//! (`unrefined`), and the contract-bound theorems outside the root's import cone (`orphaned_roots`). See
+//! [`crate::discharge::refinement`] for what a model earns.
+//!
+//! There is no stored limit. The operator's ruling (2026-09-27, relayed by the cop): "counts that must never get
+//! worse are checked head against base, not against a number committed to the repo". BASE is
+//! merge-base(HEAD, origin/main), else the origin/main tip (`lib_baseline_ratchet.sh`'s order); its Lean tree and
+//! contracts are read out of git (`git archive`), never out of the work tree.
 //!
 //! Rules (`reject:`, exit 1):
 //!
 //! - PV-ONT-031 — a `model_of` does not resolve: a ghost formalization, named;
 //! - PV-ONT-032 — a `models:` entry is malformed (no module/model_of/evidence, unknown `relation.kind`, a module
-//!   modelled twice) or names a module the discharge summary does not list;
-//! - PV-ONT-033 — `unrefined_baseline` is absent, below the measured count (a new unrefined module), or above it
-//!   (stale: lower it, or the next regression hides under the slack).
+//!   modelled twice) or names a module outside the root's import cone;
+//! - PV-ONT-033 — a module is unrefined at HEAD and was not at BASE (a new unproven module, or one that lost its
+//!   model), named;
+//! - PV-ONT-034 — a contract-bound theorem is outside the cone at HEAD and was not at BASE (ORPHANED-ROOT), named.
 //!
-//! Declines (exit 2): no Lean tree or discharge summary beside the corpus (the fixture corpora), or the resolver's
-//! positive control did not fire.
+//! Declines (exit 2): no Lean tree or `formalization.yaml` beside the corpus (the fixture corpora), no BASE to
+//! compare with, or the resolver's positive control did not fire.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use serde::Serialize;
 
-use crate::discharge::{refinement, summary};
+use crate::discharge::{self, refinement, summary, Tree};
 use crate::ontology::extract::code::positive_control;
 use crate::ontology::verdict::Verdict;
 
@@ -34,27 +43,92 @@ pub const GATE: &str = "refinement";
 /// The Lean tree, relative to the corpus's parent.
 pub const LEAN_DIR: &str = "crates/aprender-contracts-staging/lean";
 
+/// How many modules or roots a finding names before it says "and N more".
+const NAMED: usize = 12;
+
 /// The counters `--gate refinement` reports, flattened into [`GateExtra::Refinement`]'s JSON.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RefinementCounters {
     /// Well-formed `models:` entries.
     pub models: usize,
     pub resolved: usize,
-    /// Models granting L4 (`extraction`/`simulation`, resolving, in the tree).
+    /// Models granting L4 (`extraction`/`simulation`, resolving, in the cone).
     pub l4_models: usize,
-    /// Models granting L3 (`test_witnessed`, resolving, in the tree).
+    /// Models granting L3 (`test_witnessed`, resolving, in the cone).
     pub l3_models: usize,
     /// `model_of` that does not resolve (PV-ONT-031).
     pub ghosts: usize,
-    /// Modules the discharge summary lists with at least one theorem.
+    /// HEAD: modules in the root's import cone with at least one theorem.
     pub theorem_modules: usize,
-    /// Of those, the ones no L4 model covers.
+    /// HEAD: of those, the ones no L4 model covers.
     pub unrefined: usize,
-    /// `formalization.yaml`'s shrink-only ceiling on `unrefined`; `null` when it declares none.
-    pub unrefined_baseline: Option<usize>,
+    /// HEAD: contract-bound theorems outside the cone.
+    pub orphaned_roots: usize,
+    /// What HEAD was compared with (`merge-base(HEAD, origin/main) <sha>`).
+    pub base: String,
+    pub base_theorem_modules: usize,
+    pub base_unrefined: usize,
+    pub base_orphaned_roots: usize,
+    /// Unrefined at HEAD, not at BASE (PV-ONT-033).
+    pub new_unrefined: usize,
+    /// Orphaned at HEAD, not at BASE (PV-ONT-034).
+    pub new_orphaned_roots: usize,
     /// `fired` — the resolver found a present item and refused an absent one this run.
     pub pc_resolver: String,
     pub violations: usize,
+}
+
+/// One side (HEAD or BASE), measured from source by one scanner.
+#[derive(Debug, Clone, Default)]
+pub struct Side {
+    /// Modules in the root's import cone (paths relative to the lean dir).
+    pub cone: BTreeSet<String>,
+    /// Theorem-bearing modules in the cone, with their theorems.
+    pub theorem_modules: BTreeMap<String, Vec<String>>,
+    /// Theorem-bearing modules no L4 model covers.
+    pub unrefined: BTreeSet<String>,
+    /// Contract-bound theorems (fully qualified) whose module is outside the cone.
+    pub orphaned: BTreeSet<String>,
+    pub judged: Vec<refinement::Judged>,
+    pub malformed: Vec<String>,
+}
+
+/// Measure the tree at `lean_dir` against the contracts at `contract_dir`, with `rec`'s models. `Err` is a decline.
+pub fn measure(
+    lean_dir: &Path,
+    contract_dir: &Path,
+    rec: refinement::Record,
+    resolve: impl FnMut(&str) -> Result<(), String>,
+) -> Result<Side, String> {
+    let tree = Tree::load(lean_dir)?;
+    let modules = summary::modules(&tree);
+    let cone: BTreeSet<String> = modules.iter().map(|m| m.path.clone()).collect();
+    let theorem_modules: BTreeMap<String, Vec<String>> = modules
+        .into_iter()
+        .filter(|m| !m.theorems.is_empty())
+        .map(|m| (m.path, m.theorems))
+        .collect();
+    let judged = refinement::judge(&rec.models, &cone, resolve);
+    let l4 = refinement::l4_modules(&judged);
+    let unrefined = refinement::unrefined(&theorem_modules, &l4)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let cone_mods = tree.cone();
+    let orphaned = discharge::bind(&tree, contract_dir)
+        .roots
+        .into_iter()
+        .filter(|r| !cone_mods.contains(&r.module))
+        .map(|r| r.fqn)
+        .collect();
+    Ok(Side {
+        cone,
+        theorem_modules,
+        unrefined,
+        orphaned,
+        judged,
+        malformed: rec.malformed,
+    })
 }
 
 fn finding(rule: &str, msg: String) -> LintFinding {
@@ -66,17 +140,49 @@ fn finding(rule: &str, msg: String) -> LintFinding {
     )
 }
 
-/// Run the gate over `contract_dir`.
+/// `a, b, c and N more`.
+fn named(items: &[&String]) -> String {
+    let shown: Vec<&str> = items.iter().take(NAMED).map(|s| s.as_str()).collect();
+    let rest = items.len().saturating_sub(NAMED);
+    if rest == 0 {
+        shown.join(", ")
+    } else {
+        format!("{} and {rest} more", shown.join(", "))
+    }
+}
+
+/// Run the gate over `contract_dir`: HEAD is the work tree, BASE comes out of git.
 #[must_use]
 pub fn run_refinement_gate(contract_dir: &Path) -> RatchetOutcome {
     let root = crate::ontology::extract::repo_root(contract_dir);
-    run_with(&root.join(LEAN_DIR), refinement::workspace_resolver(&root))
+    if !root.join(LEAN_DIR).join("formalization.yaml").is_file() {
+        return RatchetOutcome::Declined(format!(
+            "no {LEAN_DIR}/formalization.yaml beside the corpus"
+        ));
+    }
+    let base = match BaseTree::extract(&root, contract_dir) {
+        Ok(b) => b,
+        Err(e) => return RatchetOutcome::Declined(format!("no BASE to compare with: {e}")),
+    };
+    run_with(
+        &root.join(LEAN_DIR),
+        contract_dir,
+        &base.lean,
+        &base.contracts,
+        &base.label,
+        refinement::workspace_resolver(&root),
+    )
 }
 
-/// The gate over the Lean tree at `lean_dir`, resolving `model_of` with `resolve`.
+/// The gate: HEAD's tree at `lean_dir` + `contract_dir` against BASE's at `base_lean` + `base_contracts`, one
+/// scanner and one resolver for both.
 pub fn run_with(
     lean_dir: &Path,
-    resolve: impl FnMut(&str) -> Result<(), String>,
+    contract_dir: &Path,
+    base_lean: &Path,
+    base_contracts: &Path,
+    base_label: &str,
+    mut resolve: impl FnMut(&str) -> Result<(), String>,
 ) -> RatchetOutcome {
     let start = Instant::now();
     if !positive_control() {
@@ -85,36 +191,43 @@ pub fn run_with(
                 .into(),
         );
     }
-    let s = match summary::load(&summary::summary_path(lean_dir)) {
+    let head = match refinement::load(lean_dir)
+        .map_err(|e| format!("no formalization.yaml: {e}"))
+        .and_then(|rec| measure(lean_dir, contract_dir, rec, &mut resolve))
+    {
         Ok(s) => s,
-        Err(e) => return RatchetOutcome::Declined(format!("no discharge summary to refine: {e}")),
+        Err(e) => return RatchetOutcome::Declined(format!("HEAD: {e}")),
     };
-    let rec = match refinement::load(lean_dir) {
-        Ok(r) => r,
-        Err(e) => return RatchetOutcome::Declined(format!("no formalization.yaml: {e}")),
+    // A BASE with no formalization.yaml yet has no models: every theorem-bearing module there is unrefined.
+    let base_rec = if base_lean.join("formalization.yaml").exists() {
+        refinement::load(base_lean)
+    } else {
+        Ok(refinement::Record::default())
     };
-    let theorem_modules: BTreeMap<String, Vec<String>> = s
-        .modules
-        .iter()
-        .filter(|m| !m.theorems.is_empty())
-        .map(|m| (m.path.clone(), m.theorems.clone()))
-        .collect();
-    let tree: BTreeSet<String> = s.modules.iter().map(|m| m.path.clone()).collect();
-    let judged = refinement::judge(&rec.models, &tree, resolve);
+    let base = match base_rec.and_then(|rec| measure(base_lean, base_contracts, rec, &mut resolve))
+    {
+        Ok(s) => s,
+        Err(e) => return RatchetOutcome::Declined(format!("BASE {base_label}: {e}")),
+    };
 
-    let mut findings: Vec<LintFinding> = rec
+    let mut findings: Vec<LintFinding> = head
         .malformed
         .iter()
         .map(|m| finding("PV-ONT-032", m.clone()))
         .collect();
     let mut c = RefinementCounters {
-        models: judged.len(),
-        theorem_modules: theorem_modules.len(),
-        unrefined_baseline: rec.unrefined_baseline,
+        models: head.judged.len(),
+        theorem_modules: head.theorem_modules.len(),
+        unrefined: head.unrefined.len(),
+        orphaned_roots: head.orphaned.len(),
+        base: base_label.to_string(),
+        base_theorem_modules: base.theorem_modules.len(),
+        base_unrefined: base.unrefined.len(),
+        base_orphaned_roots: base.orphaned.len(),
         pc_resolver: crate::ontology::witness::FIRED.to_string(),
         ..RefinementCounters::default()
     };
-    for j in &judged {
+    for j in &head.judged {
         let m = &j.model;
         match &j.resolved {
             Ok(()) => c.resolved += 1,
@@ -132,7 +245,7 @@ pub fn run_with(
         if !j.in_tree {
             findings.push(finding(
                 "PV-ONT-032",
-                format!("{}: not a module the discharge summary lists", m.module),
+                format!("{}: not a module in the root's import cone", m.module),
             ));
         }
         match j.level() {
@@ -141,31 +254,33 @@ pub fn run_with(
             _ => {}
         }
     }
-    let l4 = refinement::l4_modules(&judged);
-    c.unrefined = refinement::unrefined(&theorem_modules, &l4).len();
-    match rec.unrefined_baseline {
-        None => findings.push(finding(
+    let new_unrefined: Vec<&String> = head.unrefined.difference(&base.unrefined).collect();
+    c.new_unrefined = new_unrefined.len();
+    if !new_unrefined.is_empty() {
+        findings.push(finding(
             "PV-ONT-033",
             format!(
-                "no unrefined_baseline: {} theorem-bearing modules have no L4 model; declare it",
-                c.unrefined
+                "{} unrefined at HEAD vs {} at BASE {base_label}: {} module(s) with no L4 model that BASE did not have: {}",
+                c.unrefined,
+                c.base_unrefined,
+                new_unrefined.len(),
+                named(&new_unrefined)
             ),
-        )),
-        Some(b) if c.unrefined > b => findings.push(finding(
-            "PV-ONT-033",
+        ));
+    }
+    let new_orphaned: Vec<&String> = head.orphaned.difference(&base.orphaned).collect();
+    c.new_orphaned_roots = new_orphaned.len();
+    if !new_orphaned.is_empty() {
+        findings.push(finding(
+            "PV-ONT-034",
             format!(
-                "{} modules are unrefined, above unrefined_baseline {b}: a module lost its model or a new one has none",
-                c.unrefined
+                "{} ORPHANED-ROOT at HEAD vs {} at BASE {base_label}: {} contract-bound theorem(s) outside the root's import cone that BASE did not have: {}",
+                c.orphaned_roots,
+                c.base_orphaned_roots,
+                new_orphaned.len(),
+                named(&new_orphaned)
             ),
-        )),
-        Some(b) if c.unrefined < b => findings.push(finding(
-            "PV-ONT-033",
-            format!(
-                "unrefined_baseline {b} is stale: {} modules are unrefined; lower it (shrink-only)",
-                c.unrefined
-            ),
-        )),
-        Some(_) => {}
+        ));
     }
 
     c.violations = findings.len();
@@ -192,6 +307,140 @@ pub fn run_with(
         result: Box::new(result),
         findings,
     }
+}
+
+/// BASE's Lean tree and contracts, extracted from git into a scratch dir that is removed on drop.
+struct BaseTree {
+    dir: PathBuf,
+    lean: PathBuf,
+    contracts: PathBuf,
+    label: String,
+}
+
+impl BaseTree {
+    fn extract(root: &Path, contract_dir: &Path) -> Result<Self, String> {
+        let (commit, label) = default_commit(root)
+            .ok_or("neither merge-base(HEAD, origin/main) nor origin/main resolves")?;
+        let top = git(root, &["rev-parse", "--show-toplevel"]).ok_or("not a git work tree")?;
+        let top = PathBuf::from(top);
+        let rel = |p: &Path| -> Result<String, String> {
+            let abs = p
+                .canonicalize()
+                .map_err(|e| format!("{}: {e}", p.display()))?;
+            let top = top
+                .canonicalize()
+                .map_err(|e| format!("{}: {e}", top.display()))?;
+            abs.strip_prefix(&top)
+                .map(|r| r.to_string_lossy().replace('\\', "/"))
+                .map_err(|_| format!("{} is outside the work tree", abs.display()))
+        };
+        let lean_rel = rel(&root.join(LEAN_DIR))?;
+        let contracts_rel = rel(contract_dir)?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let dir =
+            std::env::temp_dir().join(format!("pv-refinement-base-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let me = Self {
+            lean: dir.join(&lean_rel),
+            contracts: dir.join(&contracts_rel),
+            dir,
+            label,
+        };
+        me.archive(&top, &commit, &[&lean_rel, &contracts_rel])?;
+        Ok(me)
+    }
+
+    /// `git archive <commit> -- <paths> | tar -x -C <dir>`. A path BASE does not have is not an error: that
+    /// side is then empty.
+    fn archive(&self, top: &Path, commit: &str, paths: &[&str]) -> Result<(), String> {
+        for p in paths {
+            let present = git(top, &["cat-file", "-e", &format!("{commit}:{p}")]).is_some();
+            if !present {
+                continue;
+            }
+            let mut git_archive = Command::new("git")
+                .arg("-C")
+                .arg(top)
+                .args(["archive", "--format=tar", commit, "--", p])
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .env_remove("GIT_INDEX_FILE")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| format!("git archive: {e}"))?;
+            let out = git_archive.stdout.take().ok_or("git archive: no stdout")?;
+            let tar = Command::new("tar")
+                .arg("-x")
+                .arg("-C")
+                .arg(&self.dir)
+                .stdin(out)
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|e| format!("tar: {e}"))?;
+            let ga = git_archive
+                .wait()
+                .map_err(|e| format!("git archive: {e}"))?;
+            if !ga.success() || !tar.success() {
+                return Err(format!("git archive {commit} -- {p} | tar -x failed"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for BaseTree {
+    fn drop(&mut self) {
+        if self
+            .dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("pv-refinement-base-"))
+        {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+}
+
+/// merge-base(HEAD, origin/main), else the origin/main tip — `lib_baseline_ratchet.sh`'s order.
+fn default_commit(root: &Path) -> Option<(String, String)> {
+    if let Some(commit) = git(root, &["merge-base", "HEAD", "origin/main"]) {
+        let label = format!("merge-base(HEAD, origin/main) {}", short(&commit));
+        return Some((commit, label));
+    }
+    let commit = git(
+        root,
+        &["rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+    )?;
+    let label = format!("origin/main {}", short(&commit));
+    Some((commit, label))
+}
+
+fn short(commit: &str) -> &str {
+    commit.get(..12).unwrap_or(commit)
+}
+
+fn git(dir: &Path, args: &[&str]) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .trim_end_matches('\n')
+            .to_string(),
+    )
 }
 
 #[cfg(test)]
