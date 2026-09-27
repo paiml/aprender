@@ -19,7 +19,12 @@
 # model this host holds that the run did not prove.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
-#                                      [--only <rung-id>] [--no-cache]
+#                                      [--only <rung-id>] [--cells]
+#   --cells measure every owed (model, verb, thinking, context rung) cell into the
+#           receipt's `cells[]` (#3712 row B; also MODEL_LADDER_CELLS=1). Hours of
+#           GPU per host (a 148k-token prefill per long cell): nightly / release
+#           train only. Without it the inventory is still ENRICHED with the terms
+#           the owed set is derived from, and no `cells` key is written.
 #   --no-cache  re-measure every cell. By default a cell that THIS binary (same bytes, same HEAD)
 #           already proved green on this host under this contract, against the same model sha256,
 #           is copied from <dir>/<host>.json with "cached_from" and not re-read (#4520 step 5).
@@ -49,6 +54,7 @@ HOST_ID=""
 OUT_DIR=""
 DRY=0
 ONLY=""
+CELLS="${MODEL_LADDER_CELLS:-0}"
 NO_CACHE=0
 ORIG_ARGS=("$@")
 while [ $# -gt 0 ]; do
@@ -56,6 +62,7 @@ while [ $# -gt 0 ]; do
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "model_ladder: --out needs a value" >&2; exit 2; };  OUT_DIR="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
+    --cells) CELLS=1; shift ;;
     # #4520 step 5: measure every cell even when this binary already proved it green on this host
     --no-cache) NO_CACHE=1; shift ;;
     --only) [ $# -ge 2 ] || { echo "model_ladder: --only needs a value" >&2; exit 2; }; ONLY="$2"; shift 2 ;;
@@ -1449,8 +1456,34 @@ mkdir -p "$OUT_DIR"
 # (check_no_shipped_machine_paths) and says nothing about what was run.
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
 RECEIPT_TMP="$OUT_DIR/.$RECEIPT_BASE.json.tmp.$$"
+# ---- 3. #3712 row B: the owed-set terms on every inventory row, and (--cells) the cells
+# scripts/lib/model_ladder_cells_produce.py; the owed set it measures is the JUDGE'S
+# (model_ladder_cells.owed_rungs), imported, never re-derived here.
+PRODUCE=scripts/lib/model_ladder_cells_produce.py
+GPU_MEM=$(python3 "$PRODUCE" gpumem 2>/dev/null) || GPU_MEM='{}'   # BEFORE the cells: free as found
+printf '%s\n' "$INVENTORY" > "$WORK/models.txt"
+if python3 "$PRODUCE" enrich --apr "$APR" --inventory "$INV_ROWS" --models "$WORK/models.txt" \
+     --out "$WORK/inventory.enriched.jsonl" > "$WORK/enrich.log" 2>&1; then
+  INV_RECEIPT="$WORK/inventory.enriched.jsonl"
+else
+  # Not a decline: the rows are still true, only thinner. The judge names every missing term.
+  echo "model_ladder: inventory enrichment failed ($(tail -1 "$WORK/enrich.log")) -- rows carry file/sha256/bytes only" >&2
+  INV_RECEIPT="$INV_ROWS"
+fi
+CELLS_JSON=""
+if [ "$CELLS" = 1 ]; then
+  CELLS_JSON="$WORK/cells.json"
+  python3 "$PRODUCE" measure --apr "$APR" --inventory "$INV_RECEIPT" --models "$WORK/models.txt" \
+      --ladder "$LADDER" --rungs evidence/release/context-rungs.json --work "$WORK" \
+      --lock "$GPU_LOCK" --lock-wait "$LOCK_WAIT" --only "$ONLY" --out "$CELLS_JSON" > "$WORK/cells.log" 2>&1
+  cells_rc=$?
+  tail -1 "$WORK/cells.log"
+  # A crashed producer writes NO cells key and says why: a partial cells block would read as
+  # "these are all the cells" to the judge, which is worse than none (it FAILS a receipt without).
+  [ "$cells_rc" = 0 ] || { echo "model_ladder: cells producer rc=$cells_rc: $(tail -1 "$WORK/cells.log")" >&2; CELLS_JSON=""; RED=$((RED + 1)); }
+fi
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
-LADDER_CONTRACT="$LADDER" LADDER_APR_BIN_SHA="$APR_BIN_SHA" LADDER_CONTRACT_SHA="$CONTRACT_SHA" python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
+LADDER_CONTRACT="$LADDER" LADDER_APR_BIN_SHA="$APR_BIN_SHA" LADDER_CONTRACT_SHA="$CONTRACT_SHA" python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_RECEIPT" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$GPU_MEM" "$CELLS_JSON" <<'PY'
 import json, os, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 _bx = os.environ.get("LADDER_BOX_EVENTS")
@@ -1464,19 +1497,27 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
        "host_box": host_box, "rungs": rows}
+try:
+    out.update({k: v for k, v in json.loads(sys.argv[16]).items() if k in ("gpu_mem_total_bytes", "gpu_mem_free_bytes")})
+except ValueError:
+    pass
+if sys.argv[17]:
+    out["cells"] = json.load(open(sys.argv[17]))
 # #4520 step 4: every metered apr call, and every budget it broke. A row with a violation is not green,
-# and `red` is recounted from the rows so the judge's red==non-green reconciliation (#3842) still holds.
+# and `red` gains one per row a budget newly turned, so the judge's red==non-green reconciliation (#3842) still holds.
 sys.path.insert(0, "scripts/lib"); import ladder_budget, yaml
 _mf = os.environ.get("LADDER_METER")
 meter = [json.loads(l) for l in open(_mf) if l.strip()] if _mf and os.path.isfile(_mf) else []
 budgets = ladder_budget.load_budgets(yaml.safe_load(open(os.environ["LADDER_CONTRACT"])))
 viol = ladder_budget.judge(meter, budgets)
+newly_red = 0
 for r in rows:
     mine = [v for v in viol if v["cell"] == r.get("id")]
     if mine:
+        newly_red += 1 if r.get("green") else 0
         r["budget_violations"] = mine; r["green"] = False
 out["budgets"] = budgets; out["meter"] = meter; out["budget_violations"] = viol
-out["red"] = sum(1 for r in rows if not r.get("green"))
+out["red"] = int(sys.argv[9]) + newly_red   # keeps any red the rows do not carry (a crashed cells producer)
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 open(sys.argv[2] + ".red", "w").write(str(out["red"]))
 PY

@@ -81,3 +81,11 @@ Every conjunct before `merged ONT-4c` is GREEN. The measured values:
 | `cargo clippy -p aprender-contracts -p aprender-contracts-cli --all-targets -D warnings` · `cargo fmt --all --check` · `cargo deny check advisories` | clean · 0 · ok |
 | `make contracts` (pv lint 11/11 armed, census, `pv extract --check`, readme_sync, provenance, engine tests) | PASS |
 | check_ont_ratchet --check · explicit_test_commands · tree_reader_tests · readme_claims · package_includes | all PASS |
+
+## Batch scope (batch/ont-10, #4502) vs base car/0.70.0
+This receipt was written for the B2 batch and landed on `car/0.70.0` in `2dcf2eef80`
+(receipt, `530-aprender-contracts-cli-ont4c-doc-contracts.cmd`, fixtures, `ont4c_doc_contracts.rs`,
+and the CLAUDE.md frontmatter). Judged against
+`car/0.70.0`, those files are therefore absent from the #4502 diff by construction.
+The only PMAT-3847 surface #4502 carries is README.md (5 lines): `contract_count`
+1844 → 1890 (written by `readme_sync.sh`) and two claim fences relabelled `bash` → `text`.

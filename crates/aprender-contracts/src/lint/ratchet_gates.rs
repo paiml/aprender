@@ -5,6 +5,11 @@
 //!   (`ProvableContracts.Theorems.Softmax.PartitionOfUnity`). It is PAIRED when that full name appears, on
 //!   identifier boundaries, in a `.md` file under `book/` or `crates/aprender-contracts-staging/book/` of the repo
 //!   root (the contract dir's parent). The debt `unpaired_theorem_modules` may not rise.
+//! - `proved-is-derived` (PV-RAT-003, EV-8a #4202): a `proof_obligations[].lean.status: proved` claim is UNDERIVED
+//!   unless the GREEN `discharge-summary.json` beside the Lean base lists its theorem
+//!   ([`crate::discharge::summary`]). The summary is the gate's ONE input: absent, unreadable or not green, it derives
+//!   nothing, so every claim counts. The debt `underived_proved_claims` may not rise, and it MUST reach 0 — a claim
+//!   still underived when its row is due is downgraded to `status: sorry`, never re-baselined upward (A-7b.2).
 //! - `depends-on-present` (PV-RAT-002): a kernel-kind contract (the effective `kind()`, which reads registries as Registry — the class
 //!   the valid-under gate obliges) with an empty `metadata.depends_on`. The debt `contracts_without_depends_on`
 //!   may not rise.
@@ -23,8 +28,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::discharge::summary;
 use crate::ontology::extract::lean::base_under;
-use crate::schema::{parse_contract, ContractKind};
+use crate::schema::{parse_contract, ContractKind, LeanStatus};
 
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
@@ -35,6 +41,8 @@ use crate::ontology::verdict::Reason;
 pub const UNPAIRED_KEY: &str = "unpaired_theorem_modules";
 /// Top-level `lint-baseline.json` key for the depends_on debt.
 pub const WITHOUT_DEPENDS_ON_KEY: &str = "contracts_without_depends_on";
+/// Top-level `lint-baseline.json` key for the underived `status: proved` debt.
+pub const UNDERIVED_KEY: &str = "underived_proved_claims";
 /// The book roots a theorem module is paired against, relative to the repo root.
 pub const BOOK_ROOTS: [&str; 2] = ["book", "crates/aprender-contracts-staging/book"];
 
@@ -299,6 +307,81 @@ pub fn run_depends_on_present_gate(contract_dir: &Path) -> RatchetOutcome {
     RatchetOutcome::Ran {
         result: result_of(
             "depends-on-present",
+            checked,
+            &findings,
+            baseline,
+            start,
+            extra,
+        ),
+        findings,
+    }
+}
+
+/// The `proved-is-derived` gate over `contract_dir`: its one input is the summary beside the repo's Lean base.
+#[must_use]
+pub fn run_proved_is_derived_gate(contract_dir: &Path) -> RatchetOutcome {
+    let start = Instant::now();
+    let root = repo_root(contract_dir);
+    let path = base_under(&root).map(|b| summary::summary_path(&b));
+    let loaded = path
+        .as_deref()
+        .map_or_else(|| Err("no Lean theorem base".to_string()), summary::load);
+    let (green, derived) = match &loaded {
+        Ok(s) => (s.is_green(), s.derived()),
+        Err(_) => (false, std::collections::BTreeSet::new()),
+    };
+    let mut files = Vec::new();
+    super::collect_yaml_files(contract_dir, &mut files);
+    files.sort();
+    let (mut checked, mut claims) = (0usize, 0usize);
+    let mut underived = Vec::new();
+    for file in &files {
+        let Ok(contract) = parse_contract(file) else {
+            continue;
+        };
+        checked += 1;
+        let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+        for ob in &contract.proof_obligations {
+            let Some(lean) = ob.lean.as_ref().filter(|l| l.status == LeanStatus::Proved) else {
+                continue;
+            };
+            claims += 1;
+            if !summary::claim_derived(&derived, &lean.theorem) {
+                underived.push(format!("{stem}: {}", lean.theorem));
+            }
+        }
+    }
+    if checked == 0 {
+        return RatchetOutcome::Declined(format!(
+            "no contract parsed under {}: nothing was measured",
+            contract_dir.display()
+        ));
+    }
+    let baseline = baseline_of(contract_dir, UNDERIVED_KEY);
+    let findings: Vec<LintFinding> = ratchet_finding(
+        "PV-RAT-003",
+        UNDERIVED_KEY,
+        baseline,
+        underived.len(),
+        "a `lean.status: proved` claim was added that no green discharge-summary.json derives — `status: proved` is \
+         read-only output of `pv discharge run`; write `status: sorry` until the summary lists the theorem",
+    )
+    .into_iter()
+    .collect();
+    let extra = GateExtra::ProvedIsDerived {
+        summary: path.map(|p| p.display().to_string()),
+        summary_error: loaded.as_ref().err().cloned(),
+        summary_green: green,
+        contracts_checked: checked,
+        proved_claims: claims,
+        underived_proved_claims: underived.len(),
+        baseline,
+        underived,
+        violations: findings.len(),
+    };
+    RatchetOutcome::Ran {
+        result: result_of(
+            "proved-is-derived",
             checked,
             &findings,
             baseline,

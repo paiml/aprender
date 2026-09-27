@@ -15,11 +15,13 @@ use crate::ontology::rdf::Graph;
 use crate::ontology::receipts;
 
 pub mod apr_model;
+pub mod binary;
 pub mod claims;
 pub mod cli_surface;
 pub mod code;
 pub mod covering;
 pub mod csv;
+pub mod example;
 pub mod gguf;
 pub mod json;
 pub mod kernel;
@@ -53,10 +55,16 @@ pub struct Extraction {
     pub code: code::CodeStats,
     /// ONT-4b2: the in-tree Lean theorems and the contracts that cite them.
     pub lean: lean::LeanStats,
+    /// #3560 R1: the cargo example targets of the workspace members, and what they name.
+    pub example: example::ExampleStats,
+    /// ONT-4g: the cargo bin targets, read from the tracked snapshot and joined to the surface-audit ledger.
+    pub binary: binary::BinaryStats,
     /// ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`, and their kernel receipts.
     pub kernel: kernel::KernelStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
+    /// ONT-4f: the GitHub snapshots under `evidence/github/<type>/`, per Σ snapshot type, and the refused files.
+    pub github: json::github::GithubStats,
     /// ONT-4c: `README.md` — files read, the claim commands CI runs (the MEASURED set), refusals.
     pub readme: claims::DocStats,
     /// ONT-4c: `CLAUDE.md` (`llm-context`) — the same.
@@ -65,6 +73,39 @@ pub struct Extraction {
     pub csv: claims::DocStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
+    /// ONT-4d: how many `rdf:type` triples the Σ closure added.
+    pub type_closure_added: usize,
+}
+
+/// Σ from `<contract_dir>/ontology.yaml`, when it parses and is well-formed. A malformed Σ is the `sigma`
+/// gate's to report (exit 3). Here it just means "no closure", which that gate's refusal already surfaces.
+#[must_use]
+pub fn sigma_of(contract_dir: &Path) -> Option<crate::ontology::sigma::Sigma> {
+    let text = std::fs::read_to_string(contract_dir.join("ontology.yaml")).ok()?;
+    let s = crate::ontology::sigma::Sigma::from_yaml(&text).ok()?;
+    s.check_integrity().ok()?;
+    Some(s)
+}
+
+/// ONT-4d: for every `?x rdf:type ont:C` where `C` is a Σ concept, add `?x rdf:type ont:S` for every strict
+/// super-concept `S` of `C`. Returns the number of triples added. Idempotent: a second pass adds none.
+pub fn materialize_type_closure(graph: &mut Graph, sigma: &crate::ontology::sigma::Sigma) -> usize {
+    use crate::ontology::rdf::{ont, Term, RDF_TYPE};
+    let mut adds: Vec<(String, String)> = Vec::new();
+    for c in sigma.concepts.keys() {
+        let supers = sigma.supers(c);
+        if supers.is_empty() {
+            continue;
+        }
+        for x in graph.instances_of(&ont(c)) {
+            adds.extend(supers.iter().map(|s| (x.to_string(), s.clone())));
+        }
+    }
+    let before = graph.len();
+    for (x, s) in adds {
+        graph.insert(x, RDF_TYPE, Term::iri(ont(&s)));
+    }
+    graph.len() - before
 }
 
 /// What a walk could not do. Every variant is the DECLARATION's fault (exit 3), never a corpus verdict.
@@ -143,12 +184,28 @@ pub fn all_with(
     out.kernel = kernel::extract(&repo_root(contract_dir), &mut out.graph)
         .map_err(ExtractFailure::Kernel)?;
     out.lean = lean::extract(contract_dir, &mut out.graph);
+    out.example = example::extract(contract_dir, &mut out.graph);
+    out.binary = binary::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
+    // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone), read by extract:json from the committed
+    // snapshots only. No Σ is no snapshot types, so nothing under evidence/github/ is read — the sigma gate reports it.
+    let sigma = sigma_of(contract_dir);
+    let snapshot_types = sigma
+        .as_ref()
+        .map(json::github::snapshot_types)
+        .unwrap_or_default();
+    out.github = json::github::extract(&repo_root(contract_dir), &snapshot_types, &mut out.graph);
     // ONT-4c: the claim fences resolve against the merge-path `run:` lines, computed once per walk
     let ci = claims::ci_run_lines(&repo_root(contract_dir));
     out.readme = readme::extract(contract_dir, &mut out.graph, &ci);
     out.llm_context = llm_context::extract(contract_dir, &mut out.graph, &ci);
     out.csv = csv::extract(contract_dir, &mut out.graph);
+    // ONT-4d (R-19): the rdf:type closure over Σ's `subsumes`, materialized AFTER every extractor has run, so a
+    // focus node an extractor typed with a sub-concept is also an instance of every super-concept. This is
+    // how a shape on a super-concept reaches it (shapes.rs selects focus nodes by rdf:type).
+    out.type_closure_added = sigma
+        .as_ref()
+        .map_or(0, |s| materialize_type_closure(&mut out.graph, s));
     if let Some(subject) = release {
         out.release = Some(
             release_evidence::extract(&mut out.graph, contract_dir, subject)

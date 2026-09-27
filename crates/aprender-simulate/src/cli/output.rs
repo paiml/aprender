@@ -7,7 +7,7 @@ use crate::edd::{EmcComplianceReport, ExperimentResult};
 
 /// Print version information.
 pub fn print_version() {
-    println!("simular {}", env!("CARGO_PKG_VERSION"));
+    println!("simular {}", super::args::VERSION);
 }
 
 /// Print help message.

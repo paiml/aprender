@@ -331,3 +331,216 @@ fn neither_gate_writes_the_baseline() {
         json
     );
 }
+
+// ── proved-is-derived (EV-8a): the summary derives, the YAML only claims ──────────────────────────────────
+
+const SUMMARY: &str = "crates/aprender-contracts-staging/discharge-summary.json";
+
+/// A contract with one `lean.status: <status>` obligation on `theorem`.
+fn claim(theorem: &str, status: &str) -> String {
+    format!(
+        "metadata:\n  version: \"1.0.0\"\n  description: EV-8a fixture\n\
+         equations:\n  identity:\n    formula: \"y = x\"\n\
+         proof_obligations:\n- type: invariant\n  property: p\n  lean:\n    theorem: {theorem}\n    status: {status}\n"
+    )
+}
+
+/// A summary over one module listing `theorems`; green unless `leanchecker_exit` says otherwise.
+fn summary_json(leanchecker_exit: &str, theorems: &[&str]) -> String {
+    let list: Vec<String> = theorems.iter().map(|t| format!("\"{t}\"")).collect();
+    format!(
+        "{{\"tree_sha\": \"t\", \"toolchain\": \"l\", \"mathlib_rev\": \"m\", \"build_exit\": 0, \"lake_exit\": 0, \
+         \"leanchecker_exit\": {leanchecker_exit}, \"axioms_ok\": true, \"escapes_ok\": true, \
+         \"challenges_closed\": \"1/1\", \"modules\": [{{\"path\": \"P.lean\", \"blake3\": \"b\", \"theorems\": [{}]}}]}}",
+        list.join(", ")
+    )
+}
+
+/// Two proved claims (one named without the root namespace, one exactly) and one sorry, over a Lean base.
+fn derived_repo() -> tempfile::TempDir {
+    let t = tempfile::tempdir().expect("tempdir");
+    write(
+        t.path(),
+        &format!("{THEOREMS}/Softmax/P.lean"),
+        "theorem p : True := trivial\n",
+    );
+    write(
+        t.path(),
+        "contracts/a-v1.yaml",
+        &claim("Softmax.partition_of_unity", "proved"),
+    );
+    write(
+        t.path(),
+        "contracts/b-v1.yaml",
+        &claim("ProvableContracts.Gelu.gelu_zero", "proved"),
+    );
+    write(
+        t.path(),
+        "contracts/c-v1.yaml",
+        &claim("Relu.relu_nonneg", "sorry"),
+    );
+    t
+}
+
+fn derived_gate(root: &Path) -> (GateResult, Vec<String>) {
+    match run_proved_is_derived_gate(&root.join("contracts")) {
+        RatchetOutcome::Ran { result, findings } => {
+            (*result, findings.into_iter().map(|f| f.rule_id).collect())
+        }
+        RatchetOutcome::Declined(why) => panic!("expected a verdict, got a decline: {why}"),
+    }
+}
+
+/// (proved claims, underived, summary green)
+fn underived_of(r: &GateResult) -> (usize, Vec<String>, bool) {
+    match r.extra.as_ref() {
+        Some(GateExtra::ProvedIsDerived {
+            proved_claims,
+            underived,
+            summary_green,
+            underived_proved_claims,
+            ..
+        }) => {
+            assert_eq!(*underived_proved_claims, underived.len());
+            (*proved_claims, underived.clone(), *summary_green)
+        }
+        other => panic!("expected ProvedIsDerived, got {other:?}"),
+    }
+}
+
+#[test]
+fn with_no_summary_every_proved_claim_is_underived() {
+    let t = derived_repo();
+    baseline(t.path(), "{\"underived_proved_claims\": 2}");
+    let (r, rules) = derived_gate(t.path());
+    let (claims, under, green) = underived_of(&r);
+    assert_eq!(
+        (claims, under.len(), green),
+        (2, 2, false),
+        "the sorry is no claim"
+    );
+    assert!(r.passed && rules.is_empty(), "2 <= 2: at the baseline");
+}
+
+#[test]
+fn a_green_summary_derives_the_theorems_it_lists() {
+    let t = derived_repo();
+    baseline(t.path(), "{\"underived_proved_claims\": 2}");
+    write(
+        t.path(),
+        SUMMARY,
+        &summary_json(
+            "0",
+            &[
+                "ProvableContracts.Softmax.partition_of_unity",
+                "ProvableContracts.Gelu.gelu_zero",
+            ],
+        ),
+    );
+    let (r, _) = derived_gate(t.path());
+    assert_eq!(underived_of(&r), (2, vec![], true));
+    assert!(r.passed);
+}
+
+#[test]
+fn a_summary_that_is_not_green_derives_nothing() {
+    let t = derived_repo();
+    baseline(t.path(), "{\"underived_proved_claims\": 0}");
+    let all = [
+        "ProvableContracts.Softmax.partition_of_unity",
+        "ProvableContracts.Gelu.gelu_zero",
+    ];
+    write(t.path(), SUMMARY, &summary_json("0", &all));
+    assert!(derived_gate(t.path()).0.passed, "green: 0 underived");
+    for bad in ["1", "124", "null"] {
+        write(t.path(), SUMMARY, &summary_json(bad, &all));
+        let (r, rules) = derived_gate(t.path());
+        let (_, under, green) = underived_of(&r);
+        assert!(
+            !green && under.len() == 2,
+            "leanchecker_exit {bad}: {under:?}"
+        );
+        assert!(
+            !r.passed && rules == ["PV-RAT-003"],
+            "leanchecker_exit {bad} rose 0 -> 2"
+        );
+    }
+    write(t.path(), SUMMARY, "{\"tree_sha\": ");
+    let (r, _) = derived_gate(t.path());
+    assert_eq!(
+        underived_of(&r).1.len(),
+        2,
+        "an unreadable summary derives nothing"
+    );
+}
+
+#[test]
+fn a_theorem_the_summary_does_not_list_by_its_name_stays_underived() {
+    let t = derived_repo();
+    baseline(t.path(), "{\"underived_proved_claims\": 1}");
+    // a suffix, a longer name and a different namespace are not the claim's theorem
+    write(
+        t.path(),
+        SUMMARY,
+        &summary_json(
+            "0",
+            &[
+                "partition_of_unity",
+                "X.Softmax.partition_of_unity",
+                "ProvableContracts.Gelu.gelu_zero_x",
+            ],
+        ),
+    );
+    let (r, rules) = derived_gate(t.path());
+    let (_, under, _) = underived_of(&r);
+    assert_eq!(
+        under,
+        [
+            "a-v1: Softmax.partition_of_unity",
+            "b-v1: ProvableContracts.Gelu.gelu_zero"
+        ]
+    );
+    assert_eq!(rules, ["PV-RAT-003"], "1 -> 2");
+}
+
+#[test]
+fn adding_a_proved_claim_no_summary_derives_is_red() {
+    let t = derived_repo();
+    baseline(t.path(), "{\"underived_proved_claims\": 2}");
+    assert!(derived_gate(t.path()).0.passed);
+    write(
+        t.path(),
+        "contracts/d-v1.yaml",
+        &claim("Silu.silu_zero", "proved"),
+    );
+    let (r, rules) = derived_gate(t.path());
+    assert!(!r.passed);
+    assert_eq!(rules, ["PV-RAT-003"]);
+    let GateDetail::Validate { error_messages, .. } = &r.detail else {
+        panic!("expected a Validate detail, got {:?}", r.detail);
+    };
+    assert!(
+        error_messages
+            .iter()
+            .any(|m| m.contains("underived_proved_claims rose 2 -> 3")),
+        "{error_messages:?}"
+    );
+}
+
+#[test]
+fn proved_is_derived_without_a_baseline_is_reported_never_a_pass() {
+    let t = derived_repo();
+    let (r, rules) = derived_gate(t.path());
+    assert!(!r.passed && r.skipped && rules.is_empty());
+    assert_eq!(r.verdict, Verdict::Unknown(Reason::Report));
+}
+
+#[test]
+fn proved_is_derived_declines_on_an_empty_corpus() {
+    let t = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(t.path().join("contracts")).expect("mkdir");
+    assert!(matches!(
+        run_proved_is_derived_gate(&t.path().join("contracts")),
+        RatchetOutcome::Declined(_)
+    ));
+}

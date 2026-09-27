@@ -250,11 +250,7 @@ mod gemv_entry_name_tests_3477 {
             // MY comments did to the F16 and IQ4_XS kernels (#3477, caught by
             // aprender-45's A/B on its first real run, not by this guard).
             if let Some(bad) = ptx.chars().find(|c| !c.is_ascii()) {
-                let line = ptx
-                    .lines()
-                    .find(|l| !l.is_ascii())
-                    .unwrap_or("")
-                    .trim();
+                let line = ptx.lines().find(|l| !l.is_ascii()).unwrap_or("").trim();
                 broken.push(format!(
                     "\n  - {kt:?}: emitted PTX contains U+{:04X}, which ptxas refuses \
                      even inside a comment, so the module never assembles: {line:?}",

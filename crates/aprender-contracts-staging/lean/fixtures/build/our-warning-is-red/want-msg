@@ -1,0 +1,1 @@
+FAIL  warning in our tree: ProvableContracts/Theorems/Foo.lean:3: declaration uses 'sorry'

@@ -1665,9 +1665,9 @@ jobs:
       # read an empty key and Arm 4 went RED on every new PR. A section's
       # secrets.NAME reaches it only through ci.yml's FAT_SECRET_NAME. Case table first.
       - name: "Fat-job secret pass-through case table (6 rows)"
-        run: bash scripts/check_fat_secrets_passed.sh --self-test
+        run: setsid --wait bash scripts/check_fat_secrets_passed.sh --self-test
       - name: Every secret a section reads is passed to the fat job under its own name
-        run: bash scripts/check_fat_secrets_passed.sh
+        run: setsid --wait bash scripts/check_fat_secrets_passed.sh
       # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
       # defined by the base — a workflow on pull_request_target + merge_group, never
       # pull_request — and `gate` must not wait on a head-defined receipt job. Case
@@ -3499,7 +3499,6 @@ jobs:
     env:
       LEAN: crates/aprender-contracts-staging/lean
       SUMMARY: crates/aprender-contracts-staging/discharge-summary.json
-      ELAN_HOME: /home/noah/.elan
       LEAN_CACHE_ROOT: /mnt/nvme-raid0/lean-cache
       CARGO_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder
       PV: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder/debug/pv
@@ -3527,6 +3526,9 @@ jobs:
           done
           # summary-fresh diffs a TRACKED file: `git diff` exits 0 on an untracked path.
           git ls-files --error-unmatch -- "$SUMMARY" >/dev/null 2>&1 || skip "$SUMMARY is not tracked"
+          # elan's own default, from the runner user's $HOME: no machine-specific literal.
+          ELAN_HOME="${ELAN_HOME:-$HOME/.elan}"
+          echo "ELAN_HOME=$ELAN_HOME" >> "$GITHUB_ENV"
           export PATH="$ELAN_HOME/bin:$PATH"
           command -v elan >/dev/null || decline "no elan in $ELAN_HOME on $(hostname) (proof-toolchain, infra)"
           [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
@@ -3656,8 +3658,20 @@ jobs:
         # cargo-mutants --in-diff takes a unified diff and mutates ONLY the
         # lines it adds/changes. We diff the PR head against the merge-base with
         # the target branch so the scope is exactly "what this PR introduces".
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # Rule 0 (operator 2026-09-27, verbatim "exempt the car"): a car/* PR of this repo is judged by
+          # mutants-nightly (uncapped) after it lands; every other PR keeps MUTANTS_CAP. Case table:
+          # scripts/mutants_diff_gate.sh --self-test (car, non-car, nested, fork rows).
+          if bash scripts/mutants_diff_gate.sh --exempt-ref "$HEAD_REF" "$HEAD_REPO" "$BASE_REPO"; then
+            echo "has_rs=false" >> "$GITHUB_OUTPUT"
+            : > pr.diff
+            exit 0
+          fi
           BASE_REF="${{ github.event.pull_request.base.ref }}"
           # NOT --depth=1: a shallow base commit has no shared ancestor with the
           # fetch-depth:0 PR head, so `git merge-base` finds none and (under

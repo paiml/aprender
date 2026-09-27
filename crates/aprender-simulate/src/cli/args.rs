@@ -23,11 +23,18 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+/// The version line of `simular --version` and `simular version`.
+///
+/// The semver and the first 9 hex of the
+/// commit it was built from (G0.1, #4476) — the semver is a workspace version shared
+/// by every worktree, so without the sha a stale simular reads as HEAD.
+pub const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")");
+
 /// CLI arguments container.
 #[derive(Debug, Clone, PartialEq, Parser)]
 #[command(
     name = "aprender-simulate",
-    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
+    version = VERSION,
     about = "Unified Simulation Engine for the Sovereign AI Stack",
     // `help` and `version` are real subcommands below, so that `aprender-simulate help`
     // keeps printing simular's own help text (see `output::print_help`) rather
@@ -70,7 +77,7 @@ pub enum Commands {
     /// Render simulation to SVG + keyframes
     Render {
         /// Simulation domain (orbit, `bouncing_balls`).
-        #[arg(long, default_value = "orbit")]
+        #[arg(long, default_value = "orbit", value_parser = ["orbit", "bouncing_balls"])]
         domain: String,
         /// Output format: svg-frames or svg-keyframes.
         #[arg(long, value_enum, default_value = "svg-keyframes")]

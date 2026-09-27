@@ -470,8 +470,9 @@ fn main() {
             use std::path::Path;
 
             let input_path = Path::new(&input);
-            if !input_path.exists() {
-                eprintln!("Error: Input directory '{input}' does not exist");
+            if !input_path.is_dir() {
+                // A file here used to reach read_dir's expect() and panic (exit 101).
+                eprintln!("Error: Input directory '{input}' does not exist or is not a directory");
                 std::process::exit(1);
             }
 
@@ -551,6 +552,12 @@ fn main() {
             split,
         } => {
             use indicatif::{ProgressBar, ProgressStyle};
+
+            // A missing input used to "train" and write a model anyway, exit 0.
+            if !std::path::Path::new(&input).exists() {
+                eprintln!("Error: Training input '{input}' does not exist");
+                std::process::exit(1);
+            }
 
             println!("Model Training Pipeline");
             println!("=======================");

@@ -1,0 +1,181 @@
+{
+  "ticket": "PMAT-4070",
+  "base": "9fad260dc",
+  "base_resolved": "9fad260dc",
+  "base_note": "no origin/9fad260dc exists; judged against the local ref",
+  "head": "e12b1a77e1f5046a4264842b69e48c9d2e34af4f",
+  "diff_sha256": "fd37c08dd551ed7124e0c54309987270defb615eff9596381faf10ce6556e895",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 1056903,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements subsumption in Σ and shape inheritance down the hierarchy as requested by ticket PMAT-4070. All acceptance criteria and tests are fulfilled. SubClassOf axioms are emitted, the rdf:type closure is materialized, and cycle detection and weakening checks are correctly implemented. No forbidden changes were introduced.",
+      "findings": [],
+      "raw_bytes": 3068,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Verified the full diff of 33 files (2475 insertions, 23 deletions) against ticket PMAT-4070 (ONT-4d), spec row ONT-4d from docs/specifications/paiml-ontology.md, and the implementation receipt. All five RED clauses are implemented and verified with passing integration tests in tests/ont4d_subsumption.rs: subsumption cycle detection resulting in exit 3 naming the cycle path, shape inheritance through the materialized type closure in extract/mod.rs where focus nodes include sub-concept instances, rejection of sub-shape constraint weakening under PV-ONT-013 with exit 1, presence of the rdf:type closure in contracts.nt, and idempotent byte-identical extraction across runs. Ran and measured test suites (8/8 in ont4d_subsumption, 8/8 ont4d unit tests in aprender-contracts), clippy clean with --all-targets -D warnings, cargo fmt --check passing, check_complexity_ratchet.sh PASS against merge-base 49fe19c28, check_tree_reader_tests.sh PASS (146 targets), check_explicit_test_commands.sh PASS (lane 470), and the ONT-4d probe passing with inherited_shapes_applied > 0 and verdict Pass. Found no weakened gates, no contradictory assertions, no unbacked receipt claims, and no out-of-scope changes.",
+      "findings": [],
+      "raw_bytes": 3691,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All ticket requirements and receipt claims for PMAT-4070 (ONT-4d) were verified against the full diff and tested in the workspace. Subsumption in Σ with cycle detection (exit code 3), rdf:type closure materialization in extraction, shape targetClass resolution across the subsumption hierarchy, sub-concept weakening detection (PV-ONT-013, exit code 1), OWL SubClassOf axiom generation, and census by_concept reporting were all verified and confirmed with 8 CLI integration tests and 8 unit tests passing without errors or gate weakening.",
+      "findings": [],
+      "raw_bytes": 2657,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

@@ -388,3 +388,42 @@ metadata:
             "a valid beat block must raise no BEAT-* violations: {violations:?}"
         );
     }
+
+    /// #2648 VS-COUNT-001: case table. Each row gives the stated total, the list
+    /// length, the kind, and the expected severity (None means no finding).
+    #[test]
+    fn vs_count_001_case_table() {
+        fn yaml(total: u32, n: usize, kind: &str) -> String {
+            let obligations: String = (0..n)
+                .map(|i| format!("  - type: invariant\n    property: \"p{i}\"\n"))
+                .collect();
+            let kind_line = if kind.is_empty() {
+                String::new()
+            } else {
+                format!("  kind: {kind}\n")
+            };
+            format!(
+                "metadata:\n  version: \"1.0.0\"\n  description: \"t\"\n{kind_line}\
+                 equations:\n  f:\n    formula: \"f(x) = x\"\n\
+                 proof_obligations:\n{obligations}\
+                 verification_summary:\n  total_obligations: {total}\n\
+                 falsification_tests: []\n"
+            )
+        }
+        let rows: &[(u32, usize, &str, Option<Severity>)] = &[
+            (2, 2, "", None),                          // agrees
+            (16, 9, "", Some(Severity::Error)),        // overstated
+            (1, 3, "", Some(Severity::Error)),         // understated
+            (6, 0, "", Some(Severity::Error)),         // claims obligations it has none of
+            (47, 0, "schema", Some(Severity::Warning)), // work-ticket shape
+            (0, 0, "schema", None),
+        ];
+        for &(total, n, kind, want) in rows {
+            let c = parse_contract_str(&yaml(total, n, kind)).expect("fixture parses");
+            let got = validate_contract(&c)
+                .into_iter()
+                .find(|v| v.rule == "VS-COUNT-001")
+                .map(|v| v.severity);
+            assert_eq!(got, want, "row total={total} n={n} kind={kind:?}");
+        }
+    }

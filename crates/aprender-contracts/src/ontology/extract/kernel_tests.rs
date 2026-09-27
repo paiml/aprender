@@ -174,6 +174,21 @@ fn a_row_naming_no_kernel_is_an_orphan() {
     assert_eq!((stats.witnesses, stats.orphan_rows), (0, 1));
 }
 
+/// ont-kernel-receipts-v1 `witness`: `row.kernel ∈ {name(k), module(k)::name(k)}`. A row naming only the
+/// module (`k`) would witness every kernel in it, so it is an orphan; the qualified name is a witness.
+#[test]
+fn a_row_naming_only_the_module_is_an_orphan_the_qualified_name_is_a_witness() {
+    let mut r = row("lambda", 1.0, 0.0, 10.0, 10.0);
+    r.kernel = "k".into();
+    let (_, stats) = run(vec![receipt("lambda", r)], None, false);
+    assert_eq!((stats.witnesses, stats.orphan_rows), (0, 1));
+
+    let mut r = row("lambda", 1.0, 0.0, 10.0, 10.0);
+    r.kernel = "k::gated_rmsnorm".into();
+    let (_, stats) = run(vec![receipt("lambda", r)], None, false);
+    assert_eq!((stats.witnesses, stats.orphan_rows), (1, 0));
+}
+
 #[test]
 fn the_ladder_schema_under_the_kernel_root_is_refused_by_name() {
     let v = serde_json::json!({"schema": "apr-model-ladder-receipt/v1", "sha": SHA, "rows": []});

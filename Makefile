@@ -592,6 +592,7 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: oracle-owl oracle-owl-check
 .PHONY: roadmap-aggregate roadmap-aggregate-check
 roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
 	@python3 scripts/lib/roadmap_fragments.py aggregate --write
@@ -609,6 +610,12 @@ ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 # enforces COV_FLOOR, so this is a name, not a new policy.
 coverage-check: coverage
 
+# PVL-001 EV-6a (#4139): the ONLY writer of the Lean label ratchet. `pv discharge check` never writes
+# unresolved-labels.json; this rewrites it DOWNWARD (a label that resolves now leaves; a new one is never added).
+.PHONY: label-ratchet
+label-ratchet:
+	@. scripts/pv_bin.sh && "$$PV" discharge label-ratchet crates/aprender-contracts-staging/lean --contracts contracts
+
 # Ditto for `contracts`. The provable-contract tier is a HARD release gate per
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
@@ -623,22 +630,20 @@ census:
 # EXIT PROPAGATION (PVL-001 EV-4, aprender#4168). Under .ONESHELL this whole
 # recipe is ONE shell script, so without errexit its status is the LAST line's
 # and every earlier step -- `pv lint` included -- was advisory: a failing lint
-# printed its tail and the gate exited 0. `set -e` stops at a failing step.
-# It is NOT enough on the pv lines: errexit ignores a failure on the LEFT of
-# `&&`, so a pv_bin.sh that REFUSES the binary (stale, wrong identity) would
-# fall through to the next step. Hence `|| exit` there as well, which exits
-# with that list's own status (pv's rc through the pipe, via -o pipefail).
-# Case table + mutants: scripts/tests/make_contracts_propagates.sh.
+# printed its tail and the gate exited 0. So every line that can fail ends in
+# `|| exit`, which ends the recipe with that line's own status.
+# Case table + mutants: scripts/tests/make_contracts_propagates.sh (this recipe)
+# and `scripts/contracts_gate.sh --self-test` (the gate's steps).
 contracts:
 # #4475: the steps live in scripts/contracts_gate.sh. The recipe used to hold them as lines, and under
 # `.ONESHELL` + `.SHELLFLAGS := -o pipefail -c` (no -e) the whole recipe is ONE bash script: the lint line's
 # unconditional `exit $$rc` ended it on a GREEN lint, so the census diff, `extract --check`, the README sync
 # and provenance never ran — and had they run, a failing middle line would not have failed the recipe. The
-# gate runs EVERY step, prints `N of 6 step(s) RAN, M FAILED`, fails closed on a shapes verdict it cannot
+# gate runs EVERY step, prints `N of 8 step(s) RAN, M FAILED` (ONT-10 added the pv-sat consistency step), fails closed on a shapes verdict it cannot
 # measure, and regenerates census.json / contracts.nt / shapes.ttl then asks `git diff --exit-code`.
 	@bash scripts/contracts_gate.sh || exit 1
 	@echo "== contract engine tests =="
-	@# Same shape as pv lint above: the old `| grep | tail -1` printed the verdict and
+	@# The old `| grep | tail -1` printed the verdict and
 	@# discarded it (the exit status was tail's), so a failing engine test passed the gate.
 	@t=$$(mktemp) && ( cargo test -p aprender-contracts --lib > "$$t" 2>&1; rc=$$?; grep -E "test result" "$$t" | tail -1; [ $$rc -eq 0 ] || tail -30 "$$t"; rm -f "$${t:?}"; exit $$rc ) || exit
 
@@ -1531,3 +1536,22 @@ oracle:
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
+
+# ONT-001 §3.8 / ONT-2c — the OWL oracle (release gate only, R-13; never per PR). Three arms:
+# horned-owl re-parses the fixture's written .ofn and must equal the HAND-WRITTEN axiom list; every live
+# axiom must be a told-closure-admitted kind; ELK 0.4.3 (pinned by sha256, needs a JVM) must agree with
+# contracts/tbox-report.json, with a planted positive control turning it RED every run. No JVM exits 2 with
+# `decline: NOT MEASURED`, which is RED at the release gate and never a skip. The crate is detached from the
+# workspace AND from tests/oracle's SHACL crate (feature unification breaks horned-owl there).
+oracle-owl:
+	@echo "== OWL oracle: horned-owl round-trip + admitted kinds + ELK TBox differential (out of gate) =="
+	@. scripts/pv_bin.sh && "$$PV" ontology export --owl tests/fixtures/ont/owl/ontology.yaml > "$${TMPDIR:-/tmp}/ont2c-fixture.ofn"
+	@cargo build --release --quiet --manifest-path tests/oracle/owl/Cargo.toml
+	@O="$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/owl/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/owl-oracle"; \
+	"$$O" roundtrip "$${TMPDIR:-/tmp}/ont2c-fixture.ofn" tests/fixtures/ont/owl/axioms.txt && \
+	"$$O" kinds contracts/ontology.ofn && \
+	"$$O" elk .
+
+oracle-owl-check: oracle-owl
+	@git diff --exit-code tests/oracle/tbox-differential.json \
+	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }

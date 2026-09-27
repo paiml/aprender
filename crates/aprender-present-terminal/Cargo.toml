@@ -32,6 +32,7 @@ thiserror = "2.0"
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
+provable-contracts = { workspace = true }  # #4175: the shared in-tree rule (tree.rs); versioned, so it survives `cargo package`
 proptest = { workspace = true }
 criterion = { workspace = true }
 
@@ -113,3 +114,9 @@ required-features = ["ptop"]
 
 [lints]
 workspace = true
+
+# ONT-10 surface gate (#4079): the bin it runs exists only with `ptop`.
+[[test]]
+name = "cli_surface_gate"
+path = "tests/cli_surface_gate.rs"
+required-features = ["ptop"]
