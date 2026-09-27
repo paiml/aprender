@@ -95,3 +95,18 @@ aprender-contracts lib 0 (1728 passed), readme_contract 0, check_baseline_ratche
 
 Not done here: the crate `binding.yaml` `../X` path handling overlaps 0d's #3559 (out-of-census rows). It was
 coordinated, not changed.
+
+## Quorum round 1 → fix
+
+Round 1 (on 0cfb192a1b) returned sonnet FAIL, sonnet FAIL, haiku PASS. Both FAILs make the same claim: the
+refused-binding lookup compared `dir.join(b.contract)` against the refused paths by `Path` equality, which works
+component by component and does not resolve anything. A binding that reaches a refused copy through `../` (for example
+`../../k/contracts/./diff-v1.yaml` from another crate) therefore missed the refusal. The fix is `code.rs::lexical`,
+which normalizes `.`/`..` lexically on both sides. The test is
+`a_binding_that_reaches_a_refused_copy_through_dot_dot_is_still_refused`.
+
+```
+M0 fixed                                         rc 0    8 passed
+M4 lookup without lexical() (the round-1 code)   rc 101  a_binding_that_reaches_a_refused_copy_through_dot_dot_is_still_refused FAILED
+clippy -p aprender-contracts --lib --tests -D warnings rc 0; fmt rc 0; pv extract contracts --check rc 0
+```
