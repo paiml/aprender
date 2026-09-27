@@ -56,3 +56,14 @@ Honest limit: the route prints no per-request CUDA line, so the evidence is resi
 ## Out of scope, noted
 - `apr code -p --output-format json` printed nothing on a driver error: #3775 (aprender-f8, separate branch).
 - `--emit-trace` never records tool calls: filed by the cop for 0.70.0.
+
+## Re-measured after the orphan port (aprender-c1, 2026-09-27)
+
+The branch was orphaned on 2026-09-22 and carried onto main 761d6247d as `c1/3719-on-main` (merge bb79ae2c6; code_tests.rs resolved as main's file plus this branch's appended #3719 block). Binary `apr 0.69.3 (bb79ae2c66)`, `--features cuda`, sha256 prefix `ac4808c04195adbd`, built from that commit in a private target dir. RTX 4090 sm_89. Evidence: `evidence/apr-code-3719/v7-bb79ae2c6/`.
+
+| Cell | Verdict | Backend (from the serve child) | Agent ran the test | Test re-run here |
+|------|---------|--------------------------------|--------------------|------------------|
+| lambda · Qwen3.5-4B-Q4_K_M | PASS | cuda, 32 layers resident, no fallback | yes (shim log) | rc 0 |
+| lambda · Qwen3.5-9B-Q4_K_M | PASS | cuda, 32 layers resident, no fallback | yes (shim log) | rc 0 |
+
+**Not re-measured:** the two gx10 cells. They still stand on the v6 binary `apr 0.69.0 (7b161d743)`.
