@@ -407,7 +407,7 @@ fn disabled(step: &serde_yaml::Value) -> bool {
 }
 
 /// The raw `run:` bodies of the enabled steps of the jobs `keep` accepts, by job name.
-fn job_runs<'a>(doc: &'a serde_yaml::Value, keep: impl Fn(&str) -> bool) -> Vec<&'a str> {
+fn job_runs(doc: &serde_yaml::Value, keep: impl Fn(&str) -> bool) -> Vec<&str> {
     let Some(jobs) = doc.get("jobs").and_then(serde_yaml::Value::as_mapping) else {
         return Vec::new();
     };
@@ -437,7 +437,10 @@ pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
     if !on_merge_path(doc) {
         return BTreeSet::new();
     }
-    job_runs(doc, |_| true).into_iter().flat_map(normalise).collect()
+    job_runs(doc, |_| true)
+        .into_iter()
+        .flat_map(normalise)
+        .collect()
 }
 
 /// #4433: the five fat CI jobs run the job bodies of `ci/sections.yml` through
@@ -457,7 +460,12 @@ pub fn section_specs(doc: &serde_yaml::Value) -> Vec<String> {
             if w == "--sections" {
                 if let Some(spec) = words.next() {
                     let spec = spec.trim_matches(|c| c == '\'' || c == '"');
-                    out.extend(spec.split(',').map(str::trim).filter(|p| !p.is_empty()).map(String::from));
+                    out.extend(
+                        spec.split(',')
+                            .map(str::trim)
+                            .filter(|p| !p.is_empty())
+                            .map(String::from),
+                    );
                 }
             }
         }
@@ -485,10 +493,12 @@ fn section_selected(name: &str, part: &str) -> bool {
 /// job names contributes nothing: a claim it "runs" is not run.
 #[must_use]
 pub fn section_run_lines(sections: &serde_yaml::Value, specs: &[String]) -> BTreeSet<String> {
-    job_runs(sections, |name| specs.iter().any(|p| section_selected(name, p)))
-        .into_iter()
-        .flat_map(normalise)
-        .collect()
+    job_runs(sections, |name| {
+        specs.iter().any(|p| section_selected(name, p))
+    })
+    .into_iter()
+    .flat_map(normalise)
+    .collect()
 }
 
 /// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`, plus the `run:` lines of the
