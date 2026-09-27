@@ -5,7 +5,8 @@
 //! second copy of the tree, and no contract constrains a symbol nothing binds). Each is resolved by a `syn`
 //! **module-tree walk**: the crate root from the workspace's `Cargo.toml`s (`[package] name` and `[lib] name`,
 //! both spellings), then one `mod` per path segment — inline, `mod x;` as `x.rs` / `x/mod.rs` / `#[path]`, or a
-//! `pub use` re-export followed once — and finally a free `fn` or an `impl` method of that name. Only the files
+//! `pub use` re-export followed once — and finally a free `fn` or an `impl` method of that name. A last segment
+//! that is no module may name the self type of an impl in the module reached (`Type::method`). Only the files
 //! on the walk are parsed, so the cost is bindings × depth, not the workspace.
 //!
 //! **Fail-closed, said in the graph.** A symbol the walk cannot find is still a node — `sym:resolved false`
@@ -349,7 +350,21 @@ impl<'a> Resolver<'a> {
     ) -> Result<Resolved, Unresolved> {
         let mut module = self.file_module(root, root.parent().unwrap_or(root).to_path_buf())?;
         for (i, seg) in segs.iter().enumerate() {
-            match self.step(&module, seg)? {
+            let step = match self.step(&module, seg) {
+                Ok(step) => step,
+                // `Type::method`: the last segment may name an impl's self type, not a module.
+                Err(e) if i + 1 == segs.len() => {
+                    return match find_impl_method(&module.items, seg, function) {
+                        Some(mut r) => {
+                            r.file = self.rel(&module.file);
+                            Ok(r)
+                        }
+                        None => Err(e),
+                    };
+                }
+                Err(e) => return Err(e),
+            };
+            match step {
                 Step::Module(next) => module = next,
                 Step::ReExport(target) => {
                     let rest = segs[i + 1..].join("::");
@@ -476,6 +491,19 @@ fn find_item(items: &[syn::Item], name: &str) -> Option<Resolved> {
             Some(found("fn", &f.vis, &f.attrs, &f.sig, &f.block))
         }
         syn::Item::Impl(im) => find_method(&im.items, name),
+        _ => None,
+    })
+}
+
+/// The `fn name` of an `impl Type` or `impl Trait for Type` block among `items`.
+fn find_impl_method(items: &[syn::Item], ty: &str, name: &str) -> Option<Resolved> {
+    items.iter().find_map(|item| match item {
+        syn::Item::Impl(im)
+            if matches!(&*im.self_ty, syn::Type::Path(p)
+                if p.path.segments.last().is_some_and(|s| s.ident == ty)) =>
+        {
+            find_method(&im.items, name)
+        }
         _ => None,
     })
 }
@@ -822,6 +850,26 @@ mod tests {
         let no_mod = r.resolve("kern::nope", "f").unwrap_err();
         assert!(no_mod.reason.contains("no `mod nope`"), "{}", no_mod.reason);
         assert_eq!(r.files_parsed(), 3);
+    }
+
+    #[test]
+    fn a_type_qualified_method_resolves_in_its_impl_and_only_there() {
+        let ws = Workspace::scan(&fixture());
+        let mut r = Resolver::new(&ws);
+        let forward = r
+            .resolve("kern::nn::Layer", "forward")
+            .expect("Layer::forward");
+        assert_eq!(forward.kind, "method");
+        assert_eq!(forward.file, "crates/kern/src/nn.rs");
+        let wrong_type = r.resolve("kern::nn::Other", "forward").unwrap_err();
+        assert!(
+            wrong_type.reason.contains("no `mod Other`"),
+            "{}",
+            wrong_type.reason
+        );
+        assert!(r.resolve("kern::nn::Layer", "backward").is_err());
+        // Only the last segment may be a type: `Layer::x::forward` is still a ghost.
+        assert!(r.resolve("kern::nn::Layer::x", "forward").is_err());
     }
 
     #[test]
