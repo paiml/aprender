@@ -295,8 +295,7 @@
         sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:pattern "[0-9a-f]{9}" ;
-        sh:severity sh:Warning ;
+        sh:pattern "\\([0-9a-f]{9}\\)" ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
