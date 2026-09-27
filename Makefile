@@ -633,7 +633,7 @@ contracts:
 	@# `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
 	@# result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
 	@# is Verification Discipline #1 in the release's own contract gate, and
-	@# contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
+	@# contracts-exit-integrity does not catch it -- it looks for or-true swallows and bare for-loops,
 	@# not for a pipe. The output is kept to a tail for readability by writing it to a file and
 	@# tailing THAT, so the exit status belongs to pv and nothing else.
 	@. scripts/pv_bin.sh && ( "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc ) || exit
@@ -652,7 +652,9 @@ contracts:
 	@bash scripts/lint-provenance.sh --self-test
 	@bash scripts/lint-provenance.sh contracts/external-corpora.yaml
 	@echo "== contract engine tests =="
-	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
+	@# Same shape as pv lint above: the old `| grep | tail -1` printed the verdict and
+	@# discarded it (the exit status was tail's), so a failing engine test passed the gate.
+	@t=$$(mktemp) && ( cargo test -p aprender-contracts --lib > "$$t" 2>&1; rc=$$?; grep -E "test result" "$$t" | tail -1; [ $$rc -eq 0 ] || tail -30 "$$t"; rm -f "$${t:?}"; exit $$rc ) || exit
 
 # #3839: skips are EXACT full test paths from scripts/coverage-skips.txt, one reason
 # per entry. They used to be 19 --skip substrings that removed 2,713 tests (2,702 of
