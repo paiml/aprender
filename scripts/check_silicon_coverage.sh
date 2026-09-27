@@ -379,27 +379,40 @@ build_jobs() {
     # One newest-first list across the axis workflows, deduplicated by run id.
     sort -t"$TAB" -u -k1,1 "$_bj_runs" | sort -t"$TAB" -k2,2r > "${_bj_runs}.s" && mv "${_bj_runs}.s" "$_bj_runs"
     runs_seen=0; runs_scanned=0; runs_old=0
+    # Pass 1 picks the in-window runs; pass 2 fetches their jobs SILICON_GH_JOBS
+    # (default 8) at a time -- one serial `gh api` per run was most of this
+    # guard's ~58 s (#4527); pass 3 reads every result back in pass-1 order, so
+    # the ledger and the unread rows are what the serial loop wrote.
+    _bj_dir="$(mktemp -d)" || return 1
+    : > "$_bj_dir/scan"
     while IFS="$TAB" read -r _bj_id _bj_created _bj_name; do
         [ -n "$_bj_id" ] || continue
         runs_seen=$((runs_seen + 1))
         _bj_ts=$(iso_epoch "$_bj_created") || continue
         if [ "$_bj_ts" -lt "$_bj_cut" ]; then runs_old=$((runs_old + 1)); continue; fi
         runs_scanned=$((runs_scanned + 1))
-        _bj_jf="$(mktemp)" || return 1
         api_calls=$((api_calls + 1))
-        if gh api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
-            --jq '.jobs[] | select(.conclusion=="success" or .conclusion=="failure")
-                          | [.completed_at, .conclusion, ([.labels[]] | join(",")), .name] | @tsv' \
-            > "$_bj_jf" 2>/dev/null; then
+        printf '%s\t%s\n' "$_bj_id" "$_bj_name" >> "$_bj_dir/scan"
+    done < "$_bj_runs"
+    rm -f "${_bj_runs:?}"
+    if [ -s "$_bj_dir/scan" ]; then
+        cut -f1 "$_bj_dir/scan" | xargs -n 1 -P "${SILICON_GH_JOBS:-8}" bash -c '
+            gh api "repos/$1/actions/runs/$2/jobs?per_page=100" \
+                --jq ".jobs[] | select(.conclusion==\"success\" or .conclusion==\"failure\")
+                          | [.completed_at, .conclusion, ([.labels[]] | join(\",\")), .name] | @tsv" \
+                > "$0/$2.tsv" 2>/dev/null && : > "$0/$2.ok"
+            exit 0' "$_bj_dir" "$REPO"
+    fi
+    while IFS="$TAB" read -r _bj_id _bj_name; do
+        if [ -e "$_bj_dir/$_bj_id.ok" ]; then
             awk -v wf="$_bj_name" -v rid="$_bj_id" -F'\t' 'NF >= 4 { print $0 "\t" wf "\t" rid }' \
-                "$_bj_jf" >> "$_bj_out"
+                "$_bj_dir/$_bj_id.tsv" >> "$_bj_out"
         else
             # An unread run is a hole in the window, not a run without the job.
             printf '%s\tjobs\t%s\t0\tunread\n' "$_bj_name" "$_bj_id" >> "$_bj_lst"
         fi
-        rm -f "$_bj_jf"
-    done < "$_bj_runs"
-    rm -f "$_bj_runs"
+    done < "$_bj_dir/scan"
+    rm -rf "${_bj_dir:?}"
     return 0
 }
 
