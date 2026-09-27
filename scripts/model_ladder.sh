@@ -46,6 +46,7 @@ HOST_ID=""
 OUT_DIR=""
 DRY=0
 ONLY=""
+ORIG_ARGS=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
@@ -67,6 +68,17 @@ done
 # MODEL_LADDER_ROOT tells a mutant copy (in a temp dir) which tree it runs against.
 cd "${MODEL_LADDER_ROOT:-$(dirname "$0")/..}" || exit 2
 [ -f "$LADDER" ] || { echo "decline: $LADDER not found" >&2; exit 2; }
+
+# #4520 step 1 — a gate may make its host slower, never unusable. A measuring run happens only inside
+# scripts/lib/ladder_box.sh (transient unit: IOReadBandwidthMax/MemoryMax/CPUQuota/IOWeight=10, and an
+# IO-PSI brake that SIGSTOPs the unit above 30% `some avg10`). An unboxed call re-execs itself boxed, so
+# every caller (release models_t1.sh, a hand run) is boxed without knowing; the brake events land in the
+# receipt as `host_box`. A box that cannot be built declines (2) — the ladder never falls back to unboxed.
+if [ "$DRY" = 0 ] && [ "${LADDER_BOXED:-0}" != 1 ]; then
+  export LADDER_BOX_EVENTS="${LADDER_BOX_EVENTS:-${TMPDIR:-/tmp}/ladder-box-${HOST_ID:-local}-$$.jsonl}"
+  exec bash scripts/lib/ladder_box.sh --events "$LADDER_BOX_EVENTS" --io-path "$HOME/models" --io-path . \
+    -- bash scripts/model_ladder.sh "${ORIG_ARGS[@]}"
+fi
 
 # Step 0 — pin the binary. A diagnostic against the wrong apr is worse than none.
 if [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ] && [ -n "${APR:-}" ]; then
@@ -1406,8 +1418,10 @@ APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
 RECEIPT_TMP="$OUT_DIR/.$RECEIPT_BASE.json.tmp.$$"
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
 python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
-import json, sys, datetime, platform
+import json, os, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+_bx = os.environ.get("LADDER_BOX_EVENTS")
+host_box = [json.loads(l) for l in open(_bx) if l.strip()] if _bx and os.path.isfile(_bx) else None
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
 out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
@@ -1415,7 +1429,7 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),
        "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
-       "rungs": rows}
+       "host_box": host_box, "rungs": rows}
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY
 receipt_rc=$?
