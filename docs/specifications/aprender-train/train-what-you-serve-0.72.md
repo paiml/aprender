@@ -97,7 +97,8 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
 - **Cell:** NF4 base; LoRA r16 on attention, MLP and GDN projections; 1,000-sample pinned set; seed 42; 200 steps; RTX 4090.
 - **Gates:** loss(last 10) ≤ 0.9 × loss(first 10), all finite. Served base+adapter equals the training-side merged forward
   (cos ≥ 0.999, equal argmax).
-- **Planted:** lr = 0 must FAIL the loss gate. The receipt names the device from a trace line (CLAUDE.md verification rule 2).
+- **Planted:** a zero step (lr = `f32::MIN_POSITIVE`) must FAIL the loss gate with bit-identical losses. Not lr = 0: the
+  in-tree AdamW panics on lr = 0, and a crash reads as the falsifier firing (S-R4a). The receipt names the device from a trace line (CLAUDE.md verification rule 2).
 - **Spike S-R4a (2026-09-27, `la-72/r3-backward` @045a7edb73) — does LoRA + AdamW over the R3 backward train the real
   0.8B? Yes, monotone.** `[V]`
   - `transformer::Qwen35Lora`: r16, alpha 32, on all 150 attention/GDN/MLP projections (10.2M params, 1.3% of 0.8B).
@@ -110,6 +111,9 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - Gates: FALSIFY-QTG-009 (finite-difference check per adapter tensor, 2 seeds; base never written; a zero step is
     exact) with 6 planted mutants RED.
   - What R4 on CUDA still needs: an NF4 base, and adapter gradients that never materialise `dW'`.
+- **Oracle and pre-flight (from S-R4a):** QQE-005 holds the CUDA adapter gradients to the CPU `Qwen35Lora` reference
+  (rel ≤ 1e-2 per tensor, 0.8B, B randomised). QQE-006 is the CPU pre-flight (0.8B, 8 AdamW steps, monotone, < ½ start),
+  which must be green before GPU time is spent. The target set is pinned by GGUF tensor name.
 - **Existing surface `[V]`:** QLoRA path at `crates/apr-cli/src/commands/finetune.rs:270-336`. The contract it cites,
   `qlora-training-loop-v1` (`finetune.rs:349`), has no file (row R16).
 

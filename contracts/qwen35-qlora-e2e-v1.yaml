@@ -13,6 +13,7 @@ metadata:
   - contracts/qwen35-train-gdn-v1.yaml
   - contracts/cuda-nf4-train-loss-parity-v1.yaml
   - contracts/lora-merge-forward-equivalence-v1.yaml
+  - 'aprender-train transformer::Qwen35Lora (CPU reference adapter gradient, FALSIFY-QTG-009)'
   depends_on:
   - qwen35-train-gdn-v1
   - train-arch-honesty-v1
@@ -33,6 +34,14 @@ equations:
     - The adapter file is standard PEFT layout (lora-merge-peft-layout-v1)
     preconditions:
     - adapter written by the run under test
+  adapter_gradient_reference:
+    formula: "∂L/∂A = s·Bᵀ·∂L/∂W',  ∂L/∂B = s·∂L/∂W'·Aᵀ  (W' = W + s·B·A, s = alpha/r)"
+    domain: 'targets per layer, by GGUF tensor: attn_q, attn_k, attn_v, attn_output (attention layers); attn_qkv, attn_gate, ssm_out (GDN layers); ffn_gate, ffn_up, ffn_down (all layers)'
+    invariants:
+    - The CPU reference (Qwen35Lora::set_grads over the gradchecked full backward) is the oracle; the CUDA path must not materialise dW' (memory) and must still equal it
+    - B = 0 at init, so step 0's adapted forward is bit-equal to the base
+    preconditions:
+    - same base weights on both sides (the CUDA side dequantises NF4 to the values the CPU reference loads)
 proof_obligations:
 - type: bound
   property: Training makes progress
@@ -42,6 +51,11 @@ proof_obligations:
   property: What we train is what we serve
   formal: 'argmax^{train,merged} = argmax^{serve} ∧ cos ≥ 0.999 per position'
   tolerance: 1.0e-03
+  applies_to: all
+- type: equivalence
+  property: CUDA adapter gradients equal the CPU reference
+  formal: '‖g^{cuda} − g^{cpu}‖ / ‖g^{cpu}‖ ≤ 1e-2 per adapter tensor, step 0 with B randomised'
+  tolerance: 1.0e-02
   applies_to: all
 - type: invariant
   property: Zero refusals on the canonical cell
@@ -55,8 +69,8 @@ falsification_tests:
   if_fails: 'training diverged, refused, or silently fell back to CPU (the receipt must name the device that ran, CLAUDE.md verification rule 2)'
 - id: FALSIFY-QQE-002
   rule: Planted falsifier — frozen adapters
-  prediction: 'with lr = 0 the loss criterion FAILS'
-  test: 'same cell, lr 0, 20 steps'
+  prediction: 'with a step too small to move any f32 weight (lr = f32::MIN_POSITIVE) the 20 losses are bit-identical and the loss criterion FAILS'
+  test: 'same cell, lr = f32::MIN_POSITIVE, 20 steps. Not lr = 0: the in-tree AdamW rejects lr = 0 with a precondition panic, and a crash would read as the falsifier firing (measured in S-R4a, 2026-09-27)'
   if_fails: 'the loss criterion is vacuous (e.g. reads a smoothed or eval loss that moves without training)'
 - id: FALSIFY-QQE-003
   rule: Trained adapter is served identically
@@ -71,6 +85,16 @@ falsification_tests:
     Unsloth's Qwen3.5 guide advises against QLoRA for "higher than normal quantization differences"
     (read 2026-09-27). If this fails, `apr finetune -m qlora` must refuse qwen3.5 by name and point
     to -m lora. It must not train a worse adapter silently.
+- id: FALSIFY-QQE-005
+  rule: CUDA adapter gradients equal the CPU reference
+  prediction: 'on Qwen3.5-0.8B (3 fixed tokens, r16, B randomised with a fixed seed) every CUDA dA/dB tensor is within rel 1e-2 of Qwen35Lora::set_grads'
+  test: 'desk-ready reference: aprender-train transformer::qwen35_model::tests::lora (FALSIFY-QTG-009, 6 planted mutants RED). CUDA side: NOT run while train-active'
+  if_fails: 'the CUDA LoRA backward optimises a different function from the gradchecked reference (scale, transpose, or a GDN target missing from the CUDA target set)'
+- id: FALSIFY-QQE-006
+  rule: CPU pre-flight — LoRA plus AdamW trains the real 0.8B before any GPU time is spent
+  prediction: 'r16, alpha 32, all 150 targets, AdamW lr 1e-4, one 5-token sentence, 8 steps: the loss falls every step and ends below half the start (measured 8.881 → 0.002, about 7.2 s per step on CPU)'
+  test: 'aprender-train transformer::qwen35_model::tests::lora::real_model_lora_adamw_descends (ignored; QWEN35_GGUF)'
+  if_fails: 'a regression in the backward, the merge or the optimiser: fix it on CPU before spending GPU time'
 qa_gate:
   certeza:
     min_score: 0.0
