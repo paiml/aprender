@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
-# check_nextest_ci_profile_no_fail_fast.sh -- nextest's [profile.ci] must declare
-# fail-fast = false, explicitly (PMAT-3587, the nextest half).
+# check_nextest_ci_profile.sh -- nextest's [profile.ci] must declare fail-fast = false
+# and retries = 0, explicitly (PMAT-3587, the nextest half; FLAKE-0, #4515 QM-02).
 #
-# THE DEFECT. fail-fast is a verdict-discarding default: on the first failing test
+# RETRIES HIDE FLAKES. With retries = 2 a test that fails and then passes is reported
+# FLAKY and the run is GREEN: the flake is in the log and in no verdict. The 7-day
+# harvest that opened FLAKE-0 found one (aprender-serve falsify_h3_attention_correctness,
+# FLAKY 2/3 twice) that no gate had ever reported. Operator ruling 2026-09-27: "zero
+# tolerance flaky test". With retries = 0 a flaky test is a RED run on its first failure,
+# so a FLAKY result cannot exist. nextest profiles inherit from [profile.default] and its
+# overrides also apply under --profile ci, so the guard judges `retries` in all four
+# places: [profile.ci] (must be present and 0), [profile.default], and each entry of
+# [[profile.ci.overrides]] and [[profile.default.overrides]] (absent or 0). A table form
+# `{ count = N, ... }` is judged by its count.
+#
+# FAIL-FAST DISCARDS VERDICTS. fail-fast is a verdict-discarding default: on the first failing test
 # nextest cancels every test still queued, and the shard reports the one failure with
 # no count of what it did not measure. Measured on a 6-test probe whose 2nd test fails:
 #     fail-fast = true    Summary  3/6 tests run: 2 passed, 1 failed
@@ -31,8 +42,8 @@
 # the fleet is python-free for automation (infra#708), so that runner prints one
 # UNMEASURED line and exits 0 (scripts/lib/python_fleet_state.sh), never a verdict.
 #
-#   check_nextest_ci_profile_no_fail_fast.sh              judge .config/nextest.toml
-#   check_nextest_ci_profile_no_fail_fast.sh --self-test  the case table (fixtures, no cargo)
+#   check_nextest_ci_profile.sh              judge .config/nextest.toml
+#   check_nextest_ci_profile.sh --self-test  the case table (fixtures, no cargo)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 CONF="${NEXTEST_CONF_OVERRIDE:-$ROOT/.config/nextest.toml}"
@@ -42,14 +53,15 @@ CONF="${NEXTEST_CONF_OVERRIDE:-$ROOT/.config/nextest.toml}"
 # interpreter (a dead one reproduces the intel shape); NEXTEST_GUARD_FORCE_FALLBACK=1, a
 # real import failure of both TOML libraries (reproduces an old python on a new one).
 
-# judge <toml> -> 0 when [profile.ci].fail-fast is literally false; 1 otherwise; 2 ENV;
+# judge <toml> -> 0 when [profile.ci].fail-fast is literally false and no retries apply
+# under --profile ci; 1 otherwise; 2 ENV;
 # 3 UNMEASURED: this runner has no python3 at all (#3697). The fleet is python-free for
 # automation (infra#708), so that is fleet state, never a verdict; a python3 that exists
 # and dies is still ENV.
 judge() {
     local f=$1 out rc=0 PYTHON="${NEXTEST_GUARD_PYTHON:-python3}" pyrc=0
     [ -r "$f" ] || { printf 'ENV   %s: not readable -- cannot judge, not a pass\n' "$f" >&2; return 2; }
-    PY_FLEET_PYTHON="$PYTHON" py_fleet_state check_nextest_ci_profile_no_fail_fast || pyrc=$?
+    PY_FLEET_PYTHON="$PYTHON" py_fleet_state check_nextest_ci_profile || pyrc=$?
     [ "$pyrc" -eq 0 ] || return "$pyrc"
     out=$(NEXTEST_GUARD_RUNNER="${RUNNER_NAME:-unknown}" "$PYTHON" - "$f" 2>&1 <<'PY'
 import os, re, sys
@@ -65,8 +77,22 @@ def verdict(code, tag, msg):
     print("VERDICT %s %s: %s" % (tag, p, msg))
     sys.exit(code)
 
+def split(d):
+    """{profile.ci, profile.default, profile.ci.overrides[], profile.default.overrides[]} of a parsed doc."""
+    out = {}
+    for prof in ("ci", "default"):
+        t = d.get("profile", {}).get(prof)
+        if t is not None and not isinstance(t, dict):
+            raise ValueError("profile.%s is a %s, not a table" % (prof, type(t).__name__))
+        ov = (t or {}).get("overrides", [])
+        if not isinstance(ov, list) or not all(isinstance(o, dict) for o in ov):
+            raise ValueError("profile.%s.overrides is not an array of tables" % prof)
+        out["profile." + prof] = t
+        out["profile.%s.overrides[]" % prof] = ov
+    return out
+
 def load_with_lib(path):
-    """(profile.ci table or None, reader name) via tomllib/tomli; None,None when neither imports."""
+    """(tables, reader name) via tomllib/tomli; None,None when neither imports."""
     for name in ("tomllib", "tomli"):
         try:
             mod = __import__(name)
@@ -74,10 +100,7 @@ def load_with_lib(path):
             continue
         with open(path, "rb") as fh:
             d = mod.load(fh)
-        ci = d.get("profile", {}).get("ci")
-        if ci is not None and not isinstance(ci, dict):
-            raise ValueError("profile.ci is a %s, not a table" % type(ci).__name__)
-        return ci, name
+        return split(d), name
     return None, None
 
 _QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
@@ -85,13 +108,15 @@ _HEADER = re.compile(r'^\[(\[)?\s*([A-Za-z0-9_.\-"\' ]+?)\s*\](\])?$')
 _KEY = re.compile(r'^([A-Za-z0-9_\-]+|"[^"]+"|\'[^\']+\')\s*=\s*(.*)$')
 
 def load_minimal(path):
-    """Purpose-built reader for ONE question: under the table [profile.ci], what is the
-    value of fail-fast? Table headers set the current table; every other line must be a
+    """Purpose-built reader for TWO questions: under [profile.ci], what is fail-fast, and
+    what retries apply under --profile ci? Table headers set the current table; every other line must be a
     single-line `key = value` that is balanced and opens no multi-line construct -- such
-    lines are only SKIPPED unless they are the judged key. Anything it does not
-    understand raises, and the caller reports ENV: it never guesses. Returns
-    (None, ...) when no [profile.ci] table exists, else the dict of judged keys."""
+    lines are only SKIPPED unless they are a judged key in a judged table. Anything it
+    does not understand raises, and the caller reports ENV: it never guesses. Returns the
+    same shape as split()."""
+    judged = ("profile.ci", "profile.default")
     tables = {}
+    overrides = {"profile.ci.overrides[]": [], "profile.default.overrides[]": []}
     cur = None
     with open(path, "r", encoding="utf-8") as fh:
         for n, raw in enumerate(fh, 1):
@@ -110,6 +135,8 @@ def load_minimal(path):
                 if not aot and cur in tables:
                     raise ValueError("line %d: duplicate table [%s]" % (n, name))
                 tables.setdefault(cur, {})
+                if cur in overrides:
+                    overrides[cur].append({})
                 continue
             m = _KEY.match(line)
             if not m:
@@ -126,8 +153,12 @@ def load_minimal(path):
                 raise ValueError("line %d: unterminated string" % n)
             if cur is None:
                 raise ValueError("line %d: top-level key %r is outside this reader's scope" % (n, key))
-            if cur != "profile.ci":
+            if cur not in judged and cur not in overrides:
                 continue
+            if cur != "profile.ci" and key != "retries":
+                continue
+            if key == "retries" and val.lstrip().startswith("{"):
+                raise ValueError("line %d: retries as an inline table is outside this reader's scope" % n)
             v = bare.split("#", 1)[0].strip() if not val.lstrip().startswith(('"', "'")) else val.strip()
             if v == "true":
                 v = True
@@ -137,18 +168,30 @@ def load_minimal(path):
                 v = int(v)
             elif len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
                 v = v[1:-1]
-            elif key == "fail-fast":
-                raise ValueError("line %d: fail-fast = %r is not a value this reader can type" % (n, v))
-            if key in tables[cur]:
+            elif key in ("fail-fast", "retries"):
+                raise ValueError("line %d: %s = %r is not a value this reader can type" % (n, key, v))
+            t = overrides[cur][-1] if cur in overrides else tables[cur]
+            if key in t:
                 raise ValueError("line %d: duplicate key %r" % (n, key))
-            tables[cur][key] = v
-    return tables.get("profile.ci")
+            t[key] = v
+    out = {t: tables.get(t) for t in judged}
+    out.update(overrides)
+    return out
+
+def retry_count(v):
+    """The number of retries a `retries` value asks for; None when it is not a value nextest takes."""
+    if isinstance(v, dict):
+        v = v.get("count")
+    if isinstance(v, bool) or not isinstance(v, int):
+        return None
+    return v
 
 try:
     try:
-        prof, how = load_with_lib(p)
+        tabs, how = load_with_lib(p)
         if how is None:
-            prof, how = load_minimal(p), "purpose-built reader (no tomllib/tomli on this interpreter)"
+            tabs, how = load_minimal(p), "purpose-built reader (no tomllib/tomli on this interpreter)"
+        prof = tabs["profile.ci"]
     except Exception as e:
         verdict(2, "ENV", "cannot be parsed on runner=%s (%s: %s) -- cannot judge, not a pass and not a fail"
                 % (runner, type(e).__name__, e))
@@ -162,8 +205,25 @@ try:
     if v is not False:
         verdict(1, "FAIL", "[profile.ci].fail-fast = %r -- a failing test cancels every test still queued and "
                 "their verdicts are discarded (reader=%s)" % (v, how))
-    verdict(0, "ok", "[profile.ci].fail-fast = false -- a red run still measures everything else "
-            "(reader=%s, runner=%s)" % (how, runner))
+    if "retries" not in prof:
+        verdict(1, "FAIL", "[profile.ci] does not set retries -- it inherits [profile.default]; declare "
+                "retries = 0 so a flaky test is RED, not FLAKY (reader=%s)" % how)
+    where = [("[profile.ci]", prof), ("[profile.default]", tabs["profile.default"] or {})]
+    for t in ("profile.ci", "profile.default"):
+        where += [("[[%s.overrides]] #%d" % (t, i + 1), o)
+                  for i, o in enumerate(tabs["%s.overrides[]" % t])]
+    for label, t in where:
+        if "retries" not in t:
+            continue
+        c = retry_count(t["retries"])
+        if c is None:
+            verdict(1, "FAIL", "%s retries = %r is not a count nextest takes (reader=%s)"
+                    % (label, t["retries"], how))
+        if c != 0:
+            verdict(1, "FAIL", "%s retries = %d -- a test that fails and then passes reports FLAKY and the "
+                    "run stays GREEN; FLAKE-0 is zero tolerance (reader=%s)" % (label, c, how))
+    verdict(0, "ok", "[profile.ci].fail-fast = false and retries = 0 everywhere --profile ci reads -- a red "
+            "run still measures everything else, and a flaky test is RED (reader=%s, runner=%s)" % (how, runner))
 except SystemExit:
     raise
 except BaseException as e:  # the judge itself died: say so, as ENV
@@ -187,10 +247,10 @@ PY
     return "$rc"
 }
 
-case "${1:-}" in -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
 
 if [ "${1:-}" = "--self-test" ]; then
-    echo "=== nextest [profile.ci] fail-fast guard: case table ==="
+    echo "=== nextest [profile.ci] fail-fast + retries guard: case table ==="
     d=$(mktemp -d) || exit 2
     rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
     trap 'rmtree "${d:-}"' EXIT
@@ -203,19 +263,32 @@ if [ "${1:-}" = "--self-test" ]; then
         else printf 'FAIL  row %-2s rc=%s (wanted %s)  [%s] %s\n' "$n" "$rc" "$want" "$READER" "$label" >&2; bad=1; fi
     }
     table() { # the same table under BOTH readers; an old-python runner must judge the same property
-        row 0 "fail-fast = false under [profile.ci] -> PASS"              $'[profile.ci]\nretries = 2\nfail-fast = false\n'
-        row 1 "fail-fast = true under [profile.ci] -> RED"                $'[profile.ci]\nretries = 2\nfail-fast = true\n'
-        row 1 "key ABSENT under [profile.ci] -> RED (nextest default is ON)" $'[profile.ci]\nretries = 2\n'
-        row 1 "false under a DIFFERENT profile only -> RED"               $'[profile.default]\nfail-fast = false\n[profile.ci]\nretries = 2\n'
+        row 0 "fail-fast = false under [profile.ci] -> PASS"              $'[profile.ci]\nretries = 0\nfail-fast = false\n'
+        row 1 "fail-fast = true under [profile.ci] -> RED"                $'[profile.ci]\nretries = 0\nfail-fast = true\n'
+        row 1 "key ABSENT under [profile.ci] -> RED (nextest default is ON)" $'[profile.ci]\nretries = 0\n'
+        row 1 "false under a DIFFERENT profile only -> RED"               $'[profile.default]\nfail-fast = false\n[profile.ci]\nretries = 0\n'
         row 1 "no [profile.ci] at all -> RED"                             $'[profile.default]\nfail-fast = false\n'
         row 1 "false in a COMMENT, true in the key -> RED (not a substring test)" $'[profile.ci]\n# fail-fast = false\nfail-fast = true\n'
         row 1 "the string \"false\" (a string, not a bool) -> RED"        $'[profile.ci]\nfail-fast = "false"\n'
         row 1 "false under [[profile.ci.overrides]] only -> RED (an override entry is not the profile)" \
-            $'[profile.ci]\nretries = 2\n[[profile.ci.overrides]]\nfilter = "test(/x/)"\nfail-fast = false\n'
+            $'[profile.ci]\nretries = 0\n[[profile.ci.overrides]]\nfilter = "test(/x/)"\nfail-fast = false\n'
         row 0 "false after an inline table and before a sub-table -> PASS (the real file's shape)" \
-            $'[profile.ci]\nretries = 2\nfail-fast = false\nslow-timeout = { period = "60s", terminate-after = 20 }\nstatus-level = "slow"\n[profile.ci.junit]\npath = "junit.xml"\n'
+            $'[profile.ci]\nretries = 0\nfail-fast = false\nslow-timeout = { period = "60s", terminate-after = 20 }\nstatus-level = "slow"\n[profile.ci.junit]\npath = "junit.xml"\n'
         row 2 "[[profile.ci]] (an array of tables, not the profile) -> ENV rc=2, never a pass" $'[[profile.ci]]\nfail-fast = false\n'
         row 2 "unparseable TOML -> ENV rc=2, never a pass"                $'[profile.ci\nfail-fast = false\n'
+        # FLAKE-0 (#4515): the planted retries = 2 is RED, and so is every place --profile ci inherits one from
+        row 1 "retries = 2 under [profile.ci] -> RED (the planted pre-FLAKE-0 value)" $'[profile.ci]\nretries = 2\nfail-fast = false\n'
+        row 1 "retries = 1 under [profile.ci] -> RED"                     $'[profile.ci]\nretries = 1\nfail-fast = false\n'
+        row 1 "retries ABSENT under [profile.ci] -> RED (it inherits [profile.default])" $'[profile.ci]\nfail-fast = false\n'
+        row 1 "retries = 0 in ci but 2 in [profile.default] -> RED"       $'[profile.default]\nretries = 2\n[profile.ci]\nretries = 0\nfail-fast = false\n'
+        row 1 "retries = 2 in a [[profile.ci.overrides]] entry -> RED"    $'[profile.ci]\nretries = 0\nfail-fast = false\n[[profile.ci.overrides]]\nfilter = "test(/x/)"\nretries = 2\n'
+        row 1 "retries = 2 in a [[profile.default.overrides]] entry -> RED (default overrides apply under ci)" \
+            $'[profile.ci]\nretries = 0\nfail-fast = false\n[[profile.default.overrides]]\nfilter = "test(/x/)"\nretries = 2\n'
+        row 1 "retries = \"0\" (a string, not a count) -> RED"             $'[profile.ci]\nretries = "0"\nfail-fast = false\n'
+        row 0 "retries = 0 everywhere, an override with retries = 0 and one without -> PASS" \
+            $'[profile.default]\nretries = 0\n[profile.ci]\nretries = 0\nfail-fast = false\n[[profile.ci.overrides]]\nfilter = "test(/x/)"\nretries = 0\n[[profile.ci.overrides]]\nfilter = "test(/y/)"\nthreads-required = 2\n'
+        row 0 "retries = 2 in an UNRELATED profile only -> PASS (--profile ci never reads it)" \
+            $'[profile.local]\nretries = 2\n[profile.ci]\nretries = 0\nfail-fast = false\n'
         # and the real config, so a red tree cannot hide behind green fixtures
         n=$((n + 1)); rc=0; judge "$CONF" > /dev/null 2>&1 || rc=$?
         [ "$rc" -eq 0 ] && printf 'ok    row %-2s rc=0  [%s] the real %s is GREEN\n' "$n" "$READER" "${CONF#"$ROOT/"}" \
@@ -223,9 +296,11 @@ if [ "${1:-}" = "--self-test" ]; then
     }
     # the readers are python: on a runner with none, the table is fleet state (#3697), and the
     # python-free rows below still run
-    pyrc=0; PY_FLEET_PYTHON="${NEXTEST_GUARD_PYTHON:-python3}" py_fleet_state check_nextest_ci_profile_no_fail_fast 2> "$d/py.state" || pyrc=$?
+    pyrc=0; PY_FLEET_PYTHON="${NEXTEST_GUARD_PYTHON:-python3}" py_fleet_state check_nextest_ci_profile 2> "$d/py.state" || pyrc=$?
     if [ "$pyrc" -eq 0 ]; then
         READER=library;  table
+        row 1 "retries = { count = 2 } (the table form) -> RED"       $'[profile.ci]\nretries = { backoff = "fixed", count = 2 }\nfail-fast = false\n'
+        row 0 "retries = { count = 0 } (the table form) -> PASS"      $'[profile.ci]\nretries = { backoff = "fixed", count = 0 }\nfail-fast = false\n'
         READER=fallback; NEXTEST_GUARD_FORCE_FALLBACK=1 table
         # what the purpose-built reader must REFUSE rather than guess (ENV, never a pass)
         READER=fallback
@@ -235,6 +310,8 @@ if [ "${1:-}" = "--self-test" ]; then
             $'[profile.ci]\nfail-fast = false\nslow-timeout = { period = "60s",\n  terminate-after = 20 }\n'
         NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "fail-fast = fals (not a value it can type) -> ENV, never a guess" \
             $'[profile.ci]\nfail-fast = fals\n'
+        NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "retries as an inline table -> ENV, never a guess" \
+            $'[profile.ci]\nretries = { backoff = "fixed", count = 0 }\nfail-fast = false\n'
     elif [ "$pyrc" -eq 3 ]; then
         cat "$d/py.state"
         printf 'UNMEASURED runner=%s reason=no-interpreter -- the reader case table (both readers) needs python3 and did not run here (#3697)\n' "${RUNNER_NAME:-unknown}"
@@ -243,7 +320,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fi
     py_fleet_state_self_test "$d" || bad=1
     # the death rows: the shape that read as RED on intel-clean-room-6
-    n=$((n + 1)); rc=0; printf '[profile.ci]\nfail-fast = false\n' > "$d/c.toml"
+    n=$((n + 1)); rc=0; printf '[profile.ci]\nretries = 0\nfail-fast = false\n' > "$d/c.toml"
     NEXTEST_GUARD_PYTHON=/bin/false judge "$d/c.toml" > /dev/null 2>&1 || rc=$?
     [ "$rc" -eq 2 ] && printf 'ok    row %-2s rc=2  interpreter exits 1 with no verdict -> ENV rc=2, never 1\n' "$n" \
         || { printf 'FAIL  row %-2s rc=%s (wanted 2)  interpreter exits 1 with no verdict must be ENV, not RED\n' "$n" "$rc" >&2; bad=1; }
@@ -267,7 +344,7 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'SELF-TEST FAILED\n' >&2; exit 1
 fi
 
-echo "=== nextest [profile.ci] must not discard verdicts on the first failure (check_nextest_ci_profile_no_fail_fast.sh) ==="
+echo "=== nextest [profile.ci]: no verdict discarded on the first failure, no flake hidden by a retry (check_nextest_ci_profile.sh) ==="
 judge "$CONF"; rc=$?
 [ "$rc" -eq 3 ] && exit 0   # UNMEASURED: the line is printed, fleet state, never a pass line (#3697)
 [ "$rc" -eq 0 ] && echo "PASS" || echo "FAIL (rc=$rc)" >&2
