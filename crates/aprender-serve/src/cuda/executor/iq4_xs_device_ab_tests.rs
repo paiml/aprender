@@ -69,9 +69,15 @@ mod iq4_xs_device_ab_tests {
         n: usize,
     ) -> f32 {
         assert_eq!(k % QK, 0, "{label}: k={k} is not a multiple of 256");
-        assert_eq!(weights.len(), n * (k / QK) * IQ4_XS_BLOCK_BYTES, "{label}: byte count");
+        assert_eq!(
+            weights.len(),
+            n * (k / QK) * IQ4_XS_BLOCK_BYTES,
+            "{label}: byte count"
+        );
 
-        let input: Vec<f32> = (0..k).map(|i| (((i * 7 + 3) % 17) as f32 - 8.0) / 4.0).collect();
+        let input: Vec<f32> = (0..k)
+            .map(|i| (((i * 7 + 3) % 17) as f32 - 8.0) / 4.0)
+            .collect();
 
         let expected = crate::quantize::iq_parallel_matvec(GGML_TYPE_IQ4_XS, weights, &input, k, n)
             .expect("CPU IQ4_XS matvec");
@@ -118,7 +124,10 @@ mod iq4_xs_device_ab_tests {
              pre-filled with NaN, so these rows were never written"
         );
         let nonzero = expected.iter().filter(|v| v.abs() > 1e-6).count();
-        assert!(nonzero >= n / 2, "{label}: only {nonzero}/{n} reference rows non-zero — vacuous");
+        assert!(
+            nonzero >= n / 2,
+            "{label}: only {nonzero}/{n} reference rows non-zero — vacuous"
+        );
         eprintln!(
             "#3951 {label:<22} k={k:5} n={n:5} blocks/row={:2}  worst={worst:.3e} (row {worst_row}: GPU {} CPU {})",
             k / QK,
@@ -183,7 +192,10 @@ mod iq4_xs_device_ab_tests {
             .filter(|p| p.extension().is_some_and(|x| x == "bin"))
             .collect();
         entries.sort();
-        assert!(!entries.is_empty(), "no .bin tensors in {dir} — would pass vacuously");
+        assert!(
+            !entries.is_empty(),
+            "no .bin tensors in {dir} — would pass vacuously"
+        );
         let mut failures = Vec::new();
         for p in &entries {
             let stem = p.file_stem().unwrap().to_string_lossy().into_owned();
@@ -196,7 +208,10 @@ mod iq4_xs_device_ab_tests {
                 failures.push(format!("{} k={k} n={n}: worst {worst:.3e}", parts[0]));
             }
         }
-        assert!(failures.is_empty(), "#3951 real tensors disagree: {failures:?}");
+        assert!(
+            failures.is_empty(),
+            "#3951 real tensors disagree: {failures:?}"
+        );
     }
 
     /// NEGATIVE CONTROL. A green comparison licenses nothing until it has been seen to go
