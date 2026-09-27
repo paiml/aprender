@@ -1,0 +1,4 @@
+# The ghost is excused with a reason and a real ticket number: bound-symbols-resolve passes, the ledger is clean.
+schema: ont.paiml.dev/binding-allowlist/v1alpha1
+entries:
+  - {symbol: "kern::nn::functional::no_such_function", reason: "the contract claims it; not written yet", ticket: "#3559"}

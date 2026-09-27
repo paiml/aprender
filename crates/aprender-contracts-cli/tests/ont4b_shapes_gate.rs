@@ -89,11 +89,13 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     assert_eq!(v["extra"]["pc_shape"], "fired", "{}", show(&r));
     // ONT-4b: exactly one, from ont:id minCount. ONT-4c1 plants a bare model:Model too, which draws
     // ladder-measured's two minCounts: three. ONT-4c (#3847) arms readme-root, claude-md, model-setfit-slice and csv-train, and
-    // their plants add sixteen (measured on its branch, 0 real violations): nineteen, never zero.
+    // their plants add sixteen (measured on its branch, 0 real violations): nineteen, never zero. #3559 arms
+    // bound-symbols-resolve (5 minCounts), allowlisted-symbols-ticketed (4) and out-of-census-contracts-ticketed
+    // (3), each drawn by the plant: thirty-one.
     assert_eq!(
         v["extra"]["plant_violations"],
-        19,
-        "ont:id minCount + ladder-measured's two (ONT-4c1) + the ONT-4c plants against readme-root, claude-md, model-setfit-slice, csv-train\n{}",
+        31,
+        "ont:id minCount + ladder-measured's two (ONT-4c1) + the ONT-4c plants against readme-root, claude-md, model-setfit-slice, csv-train + the #3559 plants against bound-symbols-resolve, allowlisted-symbols-ticketed, out-of-census-contracts-ticketed\n{}",
         show(&r)
     );
 }
@@ -237,11 +239,12 @@ fn the_tracked_repo_graph_is_fresh() {
     // and a8's sampling controls (sampling), and ONT-4c5 (PMAT-3972) added `capability-cells`, bringing car's line
     // to 26 (18+8). #4069 (ONT-4c4) added kernel-parity, kernel-timing and kernel-safety. The branches added
     // disjoint shapes, so the union is 18 + 4 (ONT-4c) + 8 (car) + 3 (ONT-4c4) = 33. #3559 added
-    // allowlisted-symbols-ticketed, the binding-allowlist ledger's own shape: 34.
+    // allowlisted-symbols-ticketed, the binding-allowlist ledger's own shape: 34,
+    // and out-of-census-contracts-ticketed, the crate-local contract declaration's: 35.
     assert_eq!(
         v["shapes_n"],
-        34,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + allowlisted-symbols-ticketed (#3559)\n{}",
+        35,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + allowlisted-symbols-ticketed + out-of-census-contracts-ticketed (#3559)\n{}",
         show(&r)
     );
 }

@@ -1,0 +1,7 @@
+# A crate-local contract: real, but outside the walked contracts/ dir.
+metadata:
+  version: "1.0.0"
+  description: fixture gemm
+equations:
+  gemm:
+    formula: C = A B

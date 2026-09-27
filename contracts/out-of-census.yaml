@@ -1,0 +1,14 @@
+# Contracts a binding row implements that live OUTSIDE the walked Σ corpus (#3559).
+# Σ walks contracts/ minus kaizen/, legacy/, …, and never crates/*/contracts/
+# (FND-20260927-sigma-skips-crate-contracts). Each entry is typed
+# ont:OutOfCensusContract ⊑ ont:Contract ONLY if `file` is on disk and its stem is
+# the contract; `out-of-census-contracts-ticketed` requires finding + ticket.
+# Delete this file (and the class) when the crate-dir walk lands.
+schema: ont.paiml.dev/out-of-census/v1alpha1
+entries:
+  - {contract: forward-pass-v1, file: crates/aprender-serve/contracts/forward-pass-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts, ticket: "#3559"}
+  - {contract: gemm-v1, file: crates/aprender-serve/contracts/gemm-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts, ticket: "#3559"}
+  - {contract: sampling-v1, file: crates/aprender-serve/contracts/sampling-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts, ticket: "#3559"}
+  - {contract: backward-pass-v1, file: crates/aprender-train/contracts/backward-pass-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts, ticket: "#3559"}
+  - {contract: wgpu-forward-pass-v1, file: crates/aprender-contracts-staging/contracts/legacy/wgpu-forward-pass-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts, ticket: "#3559"}
+  - {contract: wgpu-transformer-trainer-v1, file: contracts/entrenar/kaizen/wgpu-transformer-trainer-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts, ticket: "#3559"}

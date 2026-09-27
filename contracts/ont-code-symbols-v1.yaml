@@ -156,6 +156,15 @@ shapes:
       - {path: sym:resolved, minCount: 1, maxCount: 1, in: [false]}
       - {path: sym:allowlistReason, minCount: 1, maxCount: 1, minLength: 1}
       - {path: sym:allowlistTicket, minCount: 1, maxCount: 1, pattern: '^(paiml/[A-Za-z0-9._-]+)?#[0-9]+$'}
+  # #3559: a contract a bound row implements whose file lives outside the walk (crates/*/contracts, legacy/,
+  # kaizen/) is declared in out-of-census.yaml and typed OutOfCensusContract ⊑ Contract. extract refuses an entry
+  # whose file is not on disk; this shape requires the file, the finding and a real ticket on every node it types.
+  - id: out-of-census-contracts-ticketed
+    targetClass: ont:OutOfCensusContract
+    properties:
+      - {path: ont:file, minCount: 1, maxCount: 1, minLength: 1}
+      - {path: ont:outOfCensusFinding, minCount: 1, maxCount: 1, pattern: '^FND-[0-9]{8}-[A-Za-z0-9_-]+$'}
+      - {path: ont:outOfCensusTicket, minCount: 1, maxCount: 1, pattern: '^(paiml/[A-Za-z0-9._-]+)?#[0-9]+$'}
   # REPORTED, not armed: three theorem files carry `sorry`.
   - id: lean-statements-grounded
     targetClass: ont:Statement

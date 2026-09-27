@@ -356,6 +356,11 @@ pub enum GateExtra {
         symbols_unresolved: usize,
         /// Unresolved symbols `contracts/binding-allowlist.yaml` excuses — the debt ledger, never counted as resolved.
         symbols_allowlisted: usize,
+        /// #3559: contracts outside the walk that `contracts/out-of-census.yaml` declares and extract typed
+        /// `ont:OutOfCensusContract`, and the declarations it refused (file absent, stem mismatch, already in the
+        /// census). A debt ledger, deleted when the walk covers crate-local contract dirs.
+        out_of_census_n: usize,
+        out_of_census_refused: usize,
         /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
         lean_statements: usize,
         lean_refs_unresolved: usize,

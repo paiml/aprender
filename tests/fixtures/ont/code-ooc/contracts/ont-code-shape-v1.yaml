@@ -1,0 +1,32 @@
+# #3559 fixture: a row bound to gemm-v1, which lives in crates/kern/contracts/ (outside the walk) and is
+# declared in out-of-census.yaml. bound-symbols-resolve (with the class check), the ledger shape and the
+# out-of-census shape are all armed.
+name: ont-code-shape
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: the armed form of bound-symbols-resolve
+shapes:
+  - id: bound-symbols-resolve
+    targetClass: ont:Symbol
+    properties:
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [true]}
+      - {path: sym:implements, minCount: 1, nodeKind: IRI, class: ont:Contract}
+  - id: allowlisted-symbols-ticketed
+    targetClass: ont:AllowlistedSymbol
+    properties:
+      - {path: sym:implements, minCount: 1, nodeKind: IRI, class: ont:Contract}
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [false]}
+      - {path: sym:allowlistReason, minCount: 1, maxCount: 1, minLength: 1}
+      - {path: sym:allowlistTicket, minCount: 1, maxCount: 1, pattern: '^(paiml/[A-Za-z0-9._-]+)?#[0-9]+$'}
+  - id: out-of-census-contracts-ticketed
+    targetClass: ont:OutOfCensusContract
+    properties:
+      - {path: ont:file, minCount: 1, maxCount: 1, minLength: 1}
+      - {path: ont:outOfCensusFinding, minCount: 1, maxCount: 1, pattern: '^FND-[0-9]{8}-[A-Za-z0-9_-]+$'}
+      - {path: ont:outOfCensusTicket, minCount: 1, maxCount: 1, pattern: '^(paiml/[A-Za-z0-9._-]+)?#[0-9]+$'}

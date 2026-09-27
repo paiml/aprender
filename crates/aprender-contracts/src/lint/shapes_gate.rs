@@ -402,6 +402,8 @@ fn run_or_answer(
             symbols_resolved: extraction.code.resolved,
             symbols_unresolved: extraction.code.unresolved,
             symbols_allowlisted: extraction.code.allowlisted,
+            out_of_census_n: extraction.out_of_census.emitted,
+            out_of_census_refused: extraction.out_of_census.refused.len(),
             lean_statements: extraction.lean.statements,
             lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
             release: extraction.release.clone().map(Box::new),

@@ -25,6 +25,7 @@ pub mod json;
 pub mod kernel;
 pub mod lean;
 pub mod llm_context;
+pub mod out_of_census;
 pub mod parity_receipt;
 pub mod pv_contract;
 pub mod readme;
@@ -51,6 +52,8 @@ pub struct Extraction {
     pub resolve: receipts::ResolveStats,
     /// ONT-4b2: the bound Rust symbols, resolved by the `syn` walk or not.
     pub code: code::CodeStats,
+    /// #3559: contracts bound rows implement that live outside the walk, as declared in `out-of-census.yaml`.
+    pub out_of_census: out_of_census::OutOfCensusStats,
     /// ONT-4b2: the in-tree Lean theorems and the contracts that cite them.
     pub lean: lean::LeanStats,
     /// ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`, and their kernel receipts.
@@ -140,6 +143,7 @@ pub fn all_with(
     out.receipts = receipts::read_all(root).map_err(ExtractFailure::Receipt)?;
     out.resolve = receipts::resolve(&mut out.graph, &out.gguf.rungs, &out.receipts);
     out.code = code::extract(contract_dir, &mut out.graph);
+    out.out_of_census = out_of_census::extract(contract_dir, &mut out.graph);
     out.kernel = kernel::extract(&repo_root(contract_dir), &mut out.graph)
         .map_err(ExtractFailure::Kernel)?;
     out.lean = lean::extract(contract_dir, &mut out.graph);

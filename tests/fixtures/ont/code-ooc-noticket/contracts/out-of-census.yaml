@@ -1,0 +1,4 @@
+# The entry carries no ticket: out-of-census-contracts-ticketed fails naming contract/gemm-v1.
+schema: ont.paiml.dev/out-of-census/v1alpha1
+entries:
+  - {contract: gemm-v1, file: crates/kern/contracts/gemm-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts}

@@ -121,6 +121,55 @@ fn an_allowlisted_ghost_is_counted_apart_and_passes_the_armed_resolve_shape() {
     assert_eq!(v["symbols_unresolved"], 0, "{}", show(&r));
 }
 
+/// Whether any finding names `needle` under shape `shape`.
+fn finding_names(r: &Run, shape: &str, needle: &str) -> bool {
+    json_of(r)["findings"].as_array().is_some_and(|fs| {
+        fs.iter().any(|f| {
+            f["message"]
+                .as_str()
+                .is_some_and(|m| m.contains(shape) && m.contains(needle))
+        })
+    })
+}
+
+#[test]
+fn a_declared_out_of_census_contract_is_a_contract_and_is_counted_apart() {
+    // #3559: a row bound to gemm-v1, which lives in crates/kern/contracts/ — outside the walk — and is declared in
+    // out-of-census.yaml with its file, finding and ticket. The class check passes; the debt is reported apart.
+    let r = gate("code-ooc");
+    assert_eq!(r.code, 0, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Pass", "{}", show(&r));
+    assert_eq!(v["out_of_census_n"], 1, "{}", show(&r));
+    assert_eq!(v["out_of_census_refused"], 0, "{}", show(&r));
+}
+
+#[test]
+fn an_out_of_census_declaration_whose_file_is_absent_is_refused_and_the_row_fails() {
+    let r = gate("code-ooc-nofile");
+    assert_eq!(r.code, 1, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["out_of_census_n"], 0, "{}", show(&r));
+    assert_eq!(v["out_of_census_refused"], 1, "{}", show(&r));
+    assert!(
+        finding_names(&r, "bound-symbols-resolve", "contract/gemm-v1"),
+        "the row bound to the refused contract fails `class`: {}",
+        show(&r)
+    );
+}
+
+#[test]
+fn an_out_of_census_declaration_without_a_ticket_fails_naming_the_contract() {
+    let r = gate("code-ooc-noticket");
+    assert_eq!(r.code, 1, "{}", show(&r));
+    assert_eq!(json_of(&r)["out_of_census_n"], 1, "{}", show(&r));
+    assert!(
+        finding_names(&r, "out-of-census-contracts-ticketed", "contract/gemm-v1"),
+        "{}",
+        show(&r)
+    );
+}
+
 #[test]
 fn a_stale_or_placeholder_allowlist_line_fails_naming_the_symbol() {
     let r = gate("code-allow-stale");

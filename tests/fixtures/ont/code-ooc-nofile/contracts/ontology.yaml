@@ -1,0 +1,9 @@
+version: 1
+concepts:
+  - {name: Contract, doc: a contract}
+  - {name: Symbol, doc: a Rust symbol}
+  - {name: OutOfCensusContract, doc: a bound contract outside the walk, declared in out-of-census.yaml}
+  - {name: AllowlistedSymbol, doc: an unresolved bound symbol the allowlist excuses}
+extractors:
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
+  - {name: code, reader: ontology/extract/code.rs, implemented: true}

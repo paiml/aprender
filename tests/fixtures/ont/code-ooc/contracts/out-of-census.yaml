@@ -1,0 +1,4 @@
+# gemm-v1 is declared with its file, finding and ticket: every armed shape passes.
+schema: ont.paiml.dev/out-of-census/v1alpha1
+entries:
+  - {contract: gemm-v1, file: crates/kern/contracts/gemm-v1.yaml, finding: FND-20260927-sigma-skips-crate-contracts, ticket: "#3559"}
