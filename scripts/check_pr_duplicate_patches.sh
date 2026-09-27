@@ -8,9 +8,9 @@
 # they diverge nobody knows which one is the fix. Target: 0 duplicated
 # changes across open PRs.
 #
-# How: every commit and every hunk of the PR (commits in base...head, minus
-# merges and minus commits already on base under another sha, plus the PR's
-# cumulative diff) is hashed with `git patch-id --stable`, which ignores the
+# How: every commit and every hunk of the PR (commits in base...head minus
+# merges, plus the PR's cumulative diff; minus any hunk base already gained
+# since the PR forked, under whatever sha) is hashed with `git patch-id --stable`, which ignores the
 # commit message, line numbers and whitespace but not the file path. Any id
 # shared with another open PR fails the check, naming both PRs, both shas,
 # and the file + hunk. The engine is scripts/lib/pr_dup_patches.py.
@@ -124,8 +124,9 @@ self_test() {
               -c core.hooksPath=/dev/null "$@"; }
     # (git commit/cherry-pick print a summary even with --quiet on some paths)
     commit() { g add -A && g commit --quiet -m "$1"; }
-    seq 1 40 > "$r/a.txt"; seq 1 40 > "$r/b.txt"
+    seq 1 40 > "$r/a.txt"; seq 1 40 > "$r/b.txt"; seq 1 300 > "$r/c.txt"
     printf 'x\n<!-- CONTRACT_COUNT_START -->10<!-- CONTRACT_COUNT_END -->\ny\n' > "$r/README.md"
+    cp "$r/README.md" "$r/notes.md"
     mkdir -p "$r/docs/roadmaps"; echo 'n: 1' > "$r/docs/roadmaps/roadmap.yaml"
     commit init
 
@@ -172,13 +173,29 @@ self_test() {
     g checkout --quiet -b landedA main; g cherry-pick --quiet "$fix" >/dev/null
     g commit --quiet --amend >/dev/null -m "re-carried"
     g checkout --quiet -b landedB main2; sed -i 's/^2$/two/' "$r/b.txt"; commit "after landing"
+    # many: 25 separate hunks carried by two PRs -- more than the detail cap
+    g checkout --quiet -b many1 main; sed -i '0~10s/$/ edited/' "$r/c.txt"; commit many
+    g checkout --quiet -b many2 main; sed -i '0~10s/$/ edited/' "$r/c.txt"; commit "many again"
+    # landedC: a second stale PR that ALSO still carries the since-landed fix
+    g checkout --quiet -b landedC main; g cherry-pick --quiet "$fix" >/dev/null
+    g commit --quiet --amend >/dev/null -m "also re-carried"
+    sed -i 's/^3$/three/' "$r/b.txt"; commit "own work"
+    # twostep: the same end state as A's line-5 hunk, reached in two commits --
+    # only the PR's cumulative diff carries the finished hunk
+    g checkout --quiet -b twostep main; sed -i 's/^5$/fiv/' "$r/a.txt"; commit "step 1"
+    sed -i 's/^fiv$/five/' "$r/a.txt"; commit "step 2"
+    # block-elsewhere: a START/END block outside README.md is NOT generated
+    g checkout --quiet -b blk1 main; sed -i 's/START -->10</START -->11</' "$r/notes.md"; commit blk
+    g checkout --quiet -b blk2 main; sed -i 's/START -->10</START -->11</' "$r/notes.md"; commit "blk again"
     # whitespace-only: identical whitespace hunks on two PRs are ignored
     g checkout --quiet -b ws1 main; sed -i 's/^17$/17 /' "$r/a.txt"; commit ws
     g checkout --quiet -b ws2 main; sed -i 's/^17$/17 /' "$r/a.txt"; commit "ws again"
 
     # row <expect-rc> <expect-level|-> <name> <base> <subject> <subject-body> <other> <other-body>
+    #     [<output must match ERE|-> [<output must NOT match ERE>]]
     row() {
-        local want="$1" level="$2" name="$3" base="$4" s="$5" sb="$6" o="$7" ob="$8" out rc=0
+        local want="$1" level="$2" name="$3" base="$4" s="$5" sb="$6" o="$7" ob="$8"
+        local must="${9:--}" mustnt="${10:-}" out rc=0
         total=$((total + 1))
         python3 -c '
 import json,sys
@@ -192,6 +209,12 @@ json.dump({"base":b,"subject":{"number":1,"head":s,"body":sb},"others":[{"number
         if [ "$level" != - ] && ! printf '%s\n' "$out" | grep -q "PR #1 $level .*duplicates PR #2"; then
             echo "  FAIL [$name] no '$level' row naming both PRs: $out"; fail=$((fail + 1)); return
         fi
+        if [ "$must" != - ] && ! printf '%s\n' "$out" | grep -Eq -- "$must"; then
+            echo "  FAIL [$name] output lacks /$must/: $out"; fail=$((fail + 1)); return
+        fi
+        if [ -n "$mustnt" ] && printf '%s\n' "$out" | grep -Eq -- "$mustnt"; then
+            echo "  FAIL [$name] output has /$mustnt/: $out"; fail=$((fail + 1)); return
+        fi
         echo "  ok   [$name] rc=$rc"
     }
     echo "must-match:"
@@ -200,7 +223,14 @@ json.dump({"base":b,"subject":{"number":1,"head":s,"body":sb},"others":[{"number
     row 1 hunk   "copy then edit (hunk kept)"       main edit "" A ""
     row 1 hunk   "squashed into a bigger commit"    main squash "" A ""
     row 1 hunk   "README prose outside a block"     main prose2 "" prose1 ""
-    row 1 commit "stack declared by the WRONG pr#"  main stack "stacked-on: #9" A ""
+    row 1 commit "stack declared by the WRONG pr#"  main stack "stacked-on: #9" A "" \
+        'SUMMARY: PR #1 vs PR #2: 1 commit\(s\), .* 1 under the SAME sha.*stacked-on: #2'
+    row 1 commit "copy is summarized, not called a stack" main pick "" A "" \
+        'SUMMARY: PR #1 vs PR #2: 1 commit\(s\), 2 hunk\(s\) in 1 file\(s\)$' 'SAME sha'
+    row 1 hunk   "detail capped, summary counts all" main many2 "" many1 "" \
+        'SUMMARY: PR #1 vs PR #2: 1 commit\(s\), 30 hunk\(s\) in 1 file\(s\); 11 more row\(s\) not printed'
+    row 1 hunk   "same end state in two commits"    main twostep "" A ""
+    row 1 hunk   "START/END block outside README"   main blk2 "" blk1 ""
     echo "must-not-match:"
     row 0 - "identical generated regen"             main regen2 "" regen1 ""
     row 0 - "same edit, different file"             main elsewhere "" A ""
@@ -208,7 +238,42 @@ json.dump({"base":b,"subject":{"number":1,"head":s,"body":sb},"others":[{"number
     row 0 - "declared stack (subject body)"         main stack "stacked-on: #2" A ""
     row 0 - "declared stack (other body)"           main A "" stack "Stacked-on: #1"
     row 0 - "fix already on base under other sha"   main2 landedA "" landedB ""
+    row 0 - "two stale PRs both carry a landed fix" main2 landedA "" landedC ""
     row 0 - "whitespace-only hunk"                  main ws2 "" ws1 ""
+
+    echo "output and wrapper:"
+    # The cap: exactly DETAIL_PER_PAIR detail rows for a pair that has more.
+    local n rc
+    python3 -c '
+import json,sys
+json.dump({"base":"main","subject":{"number":1,"head":"many2","body":""},"others":[{"number":2,"head":"many1","body":""}]},open(sys.argv[1],"w"))
+' "$td/spec.json"
+    n="$(python3 "$ENGINE" check "$r" "$td/spec.json" | grep -c '^DUP-001: PR #1 ')" || true
+    total=$((total + 1))
+    if [ "$n" = 20 ]; then echo "  ok   [detail rows capped at 20] n=$n"
+    else echo "  FAIL [detail rows capped at 20] n=$n"; fail=$((fail + 1)); fi
+    # gh cannot list the open PRs: refuse (2), never pass unread (0) or blame the PR (1).
+    mkdir -p "$td/bin"; printf '#!/bin/sh\nexit 1\n' > "$td/bin/gh"; chmod +x "$td/bin/gh"
+    rc=0; (cd "$r" && PATH="$td/bin:$PATH" bash "$HERE/check_pr_duplicate_patches.sh" --pr 1) >/dev/null 2>&1 || rc=$?
+    total=$((total + 1))
+    if [ "$rc" = 2 ]; then echo "  ok   [gh fails -> rc 2] rc=$rc"
+    else echo "  FAIL [gh fails -> rc 2] rc=$rc"; fail=$((fail + 1)); fi
+    # No PR under test (push / merge_group): nothing to compare, and it says so.
+    printf '{"ref":"refs/heads/main"}' > "$td/event.json"
+    local out; rc=0
+    out="$(cd "$r" && GITHUB_EVENT_PATH="$td/event.json" GITHUB_EVENT_NAME=push PATH="$td/bin:$PATH" \
+           bash "$HERE/check_pr_duplicate_patches.sh" 2>&1)" || rc=$?
+    total=$((total + 1))
+    if [ "$rc" = 0 ] && [[ "$out" == *"no pull request under test (event: push)"* ]]; then
+        echo "  ok   [no PR in event -> rc 0, says why] rc=$rc"
+    else echo "  FAIL [no PR in event -> rc 0, says why] rc=$rc: $out"; fail=$((fail + 1)); fi
+    # A pull_request event names the PR: it reaches the gh read (and so refuses here).
+    printf '{"pull_request":{"number":7}}' > "$td/event.json"; rc=0
+    (cd "$r" && GITHUB_EVENT_PATH="$td/event.json" PATH="$td/bin:$PATH" \
+        bash "$HERE/check_pr_duplicate_patches.sh") >/dev/null 2>&1 || rc=$?
+    total=$((total + 1))
+    if [ "$rc" = 2 ]; then echo "  ok   [PR read from event -> checked] rc=$rc"
+    else echo "  FAIL [PR read from event -> checked] rc=$rc"; fail=$((fail + 1)); fi
 
     if [ "$fail" -ne 0 ]; then
         echo "FAIL: DUP-001 self-test $fail of $total row(s) failed"; exit 1

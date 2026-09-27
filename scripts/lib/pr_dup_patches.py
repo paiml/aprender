@@ -48,6 +48,10 @@ BLOCK_END = re.compile(r"\b([A-Z][A-Z0-9_]*)_END\s*-->")
 STACKED_ON = re.compile(r"^\s*stacked-on:\s*#(\d+)\s*$", re.I | re.M)
 HUNK_HDR = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 ZERO = "0" * 40
+# Detail rows printed per PR pair; the SUMMARY line always carries the full
+# count. A fold can share ~1,000 hunks with its twin, which buries every other
+# guard's row in the guard-tree log without adding a fact the summary lacks.
+DETAIL_PER_PAIR = 20
 
 
 def git(repo, *args, stdin=None):
@@ -148,13 +152,24 @@ def blank_only(hunk):
     return side("-") == side("+")
 
 
-def ids_of(repo, base, head, gen):
-    """{patch_id: [where, ...]} for one PR; `where` is (level, sha, path)."""
-    # --cherry-pick drops a commit whose change is already on base under
-    # another sha, so a PR that re-carries a landed fix is not a duplicate of
-    # every other PR that merged main.
-    log = git(repo, "log", "-p", "--no-merges", "--cherry-pick", "--right-only",
-              "--format=commit %H", f"{base}...{head}")
+def hunk_text(header, hunk):
+    return "\n".join(header + hunk) + "\n"
+
+
+def patch_ids(repo, patches):
+    """[patch text] -> [patch-id, or None for a patch with no change], in order."""
+    if not patches:
+        return []
+    out = [None] * len(patches)
+    feed = "".join(f"commit {i:040x}\n{p}" for i, p in enumerate(patches))
+    for row in git(repo, "patch-id", "--stable", stdin=feed).splitlines():
+        pid, key = row.split()
+        out[int(key, 16)] = pid
+    return out
+
+
+def commits_of(log):
+    """[(sha, patch text)] from `git log -p --format='commit %H'`."""
     commits, cur = [], None
     for line in log.splitlines(keepends=True):
         if line.startswith("commit ") and len(line.strip()) == 47:
@@ -162,37 +177,60 @@ def ids_of(repo, base, head, gen):
             commits.append(cur)
         elif cur:
             cur[1].append(line)
+    return [(sha, "".join(body)) for sha, body in commits]
+
+
+def landed_ids(repo, mb, base, paths):
+    """Hunk patch-ids of every change `base` gained since the PR forked (mb),
+    on the PR's own paths. A change already on base is no PR's duplicate,
+    whatever sha carries it: two stale PRs that both still carry a fix which
+    has since landed are behind main, not copies of each other."""
+    ids, chunk = set(), 200  # paths per `git log` call: keep argv bounded
+    for i in range(0, len(paths), chunk):
+        log = git(repo, "log", "-p", "--no-merges", "--format=commit %H",
+                  f"{mb}..{base}", "--", *paths[i:i + chunk])
+        texts = [hunk_text(header, h)
+                 for _, diff in commits_of(log)
+                 for _, header, hunks in split_files(diff) for h in hunks]
+        ids.update(pid for pid in patch_ids(repo, texts) if pid)
+    return ids
+
+
+def ids_of(repo, base, head, gen):
+    """{patch_id: [where, ...]} for one PR; `where` is (level, sha, path, hunk)."""
+    commits = commits_of(git(repo, "log", "-p", "--no-merges", "--right-only",
+                             "--format=commit %H", f"{base}...{head}"))
     mb = git(repo, "merge-base", base, head).strip()
-    sources = [(sha, f"{sha}^", sha, "".join(body)) for sha, body in commits]
+    sources = [(sha, f"{sha}^", sha, body) for sha, body in commits]
     sources.append(("cumulative", mb, head,
                     git(repo, "diff", "--no-color", f"{mb}..{head}")))
 
-    feed, where = [], {}
+    items = []  # (label, path, header, hunk) that count
     for label, old_rev, new_rev, diff in sources:
-        kept = []
         for path, header, hunks in split_files(diff):
             if path in GENERATED_PATHS:
                 continue
             for h in hunks:
                 if blank_only(h) or (path == README and gen.hunk(old_rev, new_rev, h)):
                     continue
-                kept.append((path, header, h))
-                key = f"{len(where):040x}"
-                where[key] = ("hunk", label, path, h[0])
-                feed.append(f"commit {key}\n" + "\n".join(header + h) + "\n")
-        if label != "cumulative" and kept:
-            # The commit id is taken over the kept hunks only, so a commit
-            # that also touched a generated file still matches its twin.
-            key = f"{len(where):040x}"
-            where[key] = ("commit", label, "", "")
-            feed.append(f"commit {key}\n" + "".join(
-                "\n".join(header + h) + "\n" for _, header, h in kept))
+                items.append((label, path, header, h))
 
-    out = {}
-    if feed:
-        for row in git(repo, "patch-id", "--stable", stdin="".join(feed)).splitlines():
-            pid, key = row.split()
-            out.setdefault(pid, []).append(where[key])
+    landed = landed_ids(repo, mb, base, sorted({it[1] for it in items}))
+    out, per_commit = {}, {}
+    for (label, path, header, h), pid in zip(
+            items, patch_ids(repo, [hunk_text(hd, h) for _, _, hd, h in items])):
+        if pid is None or pid in landed:
+            continue
+        out.setdefault(pid, []).append(("hunk", label, path, h[0]))
+        if label != "cumulative":
+            per_commit.setdefault(label, []).append(hunk_text(header, h))
+    # The commit id is taken over the commit's COUNTED hunks only, so a commit
+    # that also touched a generated file, or re-carried a landed hunk, still
+    # matches its twin.
+    labels = list(per_commit)
+    for label, pid in zip(labels, patch_ids(repo, ["".join(per_commit[l]) for l in labels])):
+        if pid:
+            out.setdefault(pid, []).append(("commit", label, "", ""))
     return out
 
 
@@ -221,12 +259,43 @@ def find_dups(repo, base, subject, others):
     return rows
 
 
-def render(rows):
+def summarize(rows):
+    """{other_pr: {commits, same_sha, hunks, files}} -- one line per PR pair.
+
+    `same_sha` counts commits both PRs carry under the SAME sha: one branch was
+    built on the other (an undeclared stack), not a copy. The remedy differs --
+    declare `stacked-on:` or rebase off it -- so the summary names it."""
+    out = {}
     for r in rows:
+        s = out.setdefault(r["other"], {"commits": 0, "same_sha": 0, "hunks": 0, "files": set()})
+        if r["level"] == "commit":
+            s["commits"] += 1
+            if r["sha"] == r["other_sha"]:
+                s["same_sha"] += 1
+        else:
+            s["hunks"] += 1
+            s["files"].add(r["path"])
+    return out
+
+
+def render(rows, per_pair=DETAIL_PER_PAIR):
+    shown = {}
+    for r in rows:
+        n = shown[r["other"]] = shown.get(r["other"], 0) + 1
+        if n > per_pair:
+            continue
         tail = f" {r['path']} {r['hunk']}" if r["level"] == "hunk" else ""
         print(f"DUP-001: PR #{r['pr']} {r['level']} {r['sha'][:10]}{tail} "
               f"duplicates PR #{r['other']} {r['other_level']} {r['other_sha'][:10]} "
               f"(patch-id {r['patch_id'][:12]})")
+    for other, s in sorted(summarize(rows).items()):
+        hidden = shown[other] - per_pair
+        more = f"; {hidden} more row(s) not printed" if hidden > 0 else ""
+        stack = (f" -- {s['same_sha']} under the SAME sha: one branch is built on the"
+                 f" other; declare 'stacked-on: #{other}' or rebase off it"
+                 if s["same_sha"] else "")
+        print(f"DUP-001 SUMMARY: PR #{rows[0]['pr']} vs PR #{other}: {s['commits']} commit(s),"
+              f" {s['hunks']} hunk(s) in {len(s['files'])} file(s){more}{stack}")
 
 
 def main(argv):
