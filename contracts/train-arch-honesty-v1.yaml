@@ -1,0 +1,80 @@
+metadata:
+  kind: training-precondition-gate
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The training crate (aprender-train / entrenar) builds a model ONLY for an architecture it
+    actually models. An architecture it does not model — today every hybrid linear-attention
+    family, Qwen 3.5 (Gated DeltaNet) first — is refused BY NAME before any weight is read,
+    never silently coerced to a dense neighbour. Measured at origin/main aca6f2d7f6:
+    `pretrain_real.rs:230` maps qwen3_5/qwen3.5 to qwen3, `config.rs:246` presets Qwen 3.5 as
+    a dense Decoder with no GDN layers, and `config.rs:297-301` forces head_dim=128 on any
+    arch prefixed qwen3. `apr finetune` / `apr distill` on a qwen35 .apr therefore train the
+    wrong network or fail late on a shape mismatch. 0.72 exit criterion T1 (APR-LOOKAHEAD-001
+    §2a) removes the refusal by modelling GDN; until then the refusal is the honest state.
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R1
+  - contracts/model-families/qwen3_5.yaml
+  - contracts/qwen35-hybrid-forward-v1.yaml
+  depends_on:
+  - qwen35-hybrid-forward-v1
+status: PROPOSED
+equations:
+  arch_admission:
+    formula: build(cfg) = Ok(model) ⇔ arch(cfg) ∈ MODELLED; otherwise Err(UnsupportedArch{arch, missing})
+    domain: arch(cfg) read from .apr metadata (general.architecture) or --model-size
+    invariants:
+    - No arch outside MODELLED reaches weight loading
+    - The refusal names the arch and the missing layer kind (e.g. "gated_delta_net")
+    - An arch alias never maps a hybrid family onto a dense family
+    preconditions:
+    - '!arch.is_empty()'
+  head_dim_resolution:
+    formula: head_dim(cfg) = metadata.head_dim if present, else family_contract.head_dim, else hidden/heads
+    domain: every family in contracts/model-families/
+    invariants:
+    - A family prefix (qwen3) never overrides a sibling family's own head_dim (qwen3_5)
+    preconditions:
+    - hidden_size > 0
+    - num_attention_heads > 0
+proof_obligations:
+- type: invariant
+  property: Hybrid families are refused, not coerced
+  formal: '∀ a ∈ {qwen3_5, qwen3.5, qwen3_next}: a ∉ MODELLED ⇒ build(a) = Err(UnsupportedArch{a, ..}) ∧ family_slug(a) ≠ qwen3'
+  applies_to: all
+- type: invariant
+  property: head_dim comes from the family contract, not a prefix match
+  formal: '∀ family f: head_dim(f) = contracts/model-families/f.yaml head_dim'
+  applies_to: all
+- type: invariant
+  property: The refusal fires before any tensor is read
+  formal: 'UnsupportedArch ⇒ bytes_read(weights) = 0'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TAH-001
+  rule: qwen35 is refused by name at the verb
+  prediction: "`apr finetune <qwen35.apr> -m qlora` and `apr distill --student <qwen35.apr>` exit non-zero, stderr contains \"qwen3_5\" and \"gated_delta_net\", and no training step is logged"
+  test: 'unit test on TransformerConfig::from_apr_metadata with a qwen3_5 metadata fixture + CLI smoke on a 2-layer synthetic qwen35 .apr'
+  if_fails: the hybrid arch was coerced to a dense family (pretrain_real.rs alias or config.rs preset) and would train the wrong network
+- id: FALSIFY-TAH-002
+  rule: Planted falsifier — re-adding the alias turns the gate RED
+  prediction: 'restoring `"qwen3_5" | "qwen3.5" => Some("qwen3")` in the family-slug map makes FALSIFY-TAH-001 fail'
+  test: 'mutation: apply the one-line alias, run the TAH-001 test, expect FAIL; revert'
+  if_fails: the test does not actually exercise the alias map (vacuous gate)
+- id: FALSIFY-TAH-003
+  rule: head_dim follows the family contract
+  prediction: 'for every family YAML under contracts/model-families/ that declares head_dim, from_apr_metadata(family) yields that head_dim; qwen3 (128) unchanged'
+  test: 'table test over contracts/model-families/*.yaml'
+  if_fails: a prefix rule overrides a sibling family (the qwen3 → qwen3_5 head_dim=128 class)
+- id: FALSIFY-TAH-004
+  rule: Refusal precedes I/O
+  prediction: 'a qwen35 .apr whose tensor section is truncated still yields UnsupportedArch, not an I/O or shape error'
+  test: 'fixture with valid metadata header and zero-length tensor data'
+  if_fails: the arch check runs after weight loading, so the user sees a shape mismatch instead of the real cause
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality gate is claimed: this contract governs a boolean refusal. The measured
+      gates for GDN training live in qwen35-train-gdn-v1.

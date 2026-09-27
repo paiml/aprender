@@ -1,0 +1,93 @@
+metadata:
+  kind: training-loop
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    Gated DeltaNet (GDN) forward AND backward in the TRAINING crate (aprender-train), so that
+    Qwen 3.5 can be fine-tuned, distilled and merged as the network it is (0.72 exit criterion
+    T1). Today GDN exists only on the inference side (aprender-serve forward_qwen35 / gdn_ops);
+    aprender-train has no GDN layer at all (origin/main aca6f2d7f6). Two gates: (1) the
+    training forward equals the serving forward — the model we train IS the model we serve;
+    (2) the backward equals finite differences. LoRA over a frozen base still back-propagates
+    through every GDN layer, so (2) is required even for adapter-only training.
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R2 §R3
+  - contracts/gated-delta-net-v1.yaml (recurrence equations, shared)
+  - contracts/qwen35-hybrid-forward-v1.yaml (layer schedule, shared)
+  - Yang et al. (2024) Gated Delta Networks
+  depends_on:
+  - gated-delta-net-v1
+  - qwen35-hybrid-forward-v1
+  - train-arch-honesty-v1
+status: PROPOSED
+equations:
+  gdn_recurrence:
+    formula: 'S_{t+1} = α_t S_t + k_t ⊗ β_t (v_t − S_tᵀ k_t);  o_t = (S_{t+1}ᵀ q_t) ⊙ z_t'
+    domain: per head, S ∈ R^{d_k × d_v}; α_t = sigmoid(exp(A_log)·dt_t + dt_bias) (gated-delta-net-v1)
+    invariants:
+    - Identical equations to gated-delta-net-v1; the training crate re-uses them, never re-derives them
+    preconditions:
+    - d_k > 0
+    - d_v > 0
+  train_serve_forward_identity:
+    formula: 'cos(logits^{train}(x), logits^{serve}(x)) ≥ 0.9999 ∧ argmax equal, ∀ positions of x'
+    domain: Qwen3.5-4B, dequantized-f32 weights, CPU, 3 fixed prompts ≤ 64 tokens
+    invariants:
+    - Both sides load the same .apr bytes (sha recorded)
+    preconditions:
+    - same tokenizer ids fed to both sides
+  gdn_backward:
+    formula: '∀ θ ∈ {q,k,v,z,β,dt projections, A_log, dt_bias, conv1d, norm}: |∂L/∂θ_analytic − (L(θ+ε) − L(θ−ε))/2ε| ≤ 1e-3 · max(1, |∂L/∂θ_fd|)'
+    domain: f64 reference on a 2-head, d_k=d_v=8, T=16 GDN layer with causal conv1d; ε = 1e-4
+    invariants:
+    - Gradient w.r.t. the carried state S_0 is also checked (chunked training passes state across chunks)
+    preconditions:
+    - T ≥ 2
+proof_obligations:
+- type: equivalence
+  property: The trained forward equals the served forward
+  formal: '∀ x ∈ P: argmax(logits^{train}(x)) = argmax(logits^{serve}(x)) ∧ cos ≥ 0.9999'
+  tolerance: 1.0e-04
+  applies_to: all
+- type: bound
+  property: GDN analytic gradient equals central finite differences
+  formal: 'max_θ rel_err(∂L/∂θ) ≤ 1e-3 (f64 reference)'
+  tolerance: 1.0e-03
+  applies_to: all
+- type: invariant
+  property: Layer schedule matches the family contract
+  formal: '∀ l: layer_kind^{train}(l) = layer_kind^{serve}(l) (attention XOR gdn)'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QTG-001
+  rule: Train forward = serve forward on Qwen3.5-4B
+  prediction: 'per-position cosine ≥ 0.9999 and identical argmax between aprender-train and aprender-serve logits on 3 fixed prompts'
+  test: 'integration test loading one .apr into both crates (CPU, no GPU needed; allowed while train-active)'
+  if_fails: 'the training model is not the served model — the class this whole train exists to remove'
+- id: FALSIFY-QTG-002
+  rule: Planted falsifier — the sigmoid-gate mutant
+  prediction: 'replacing sigmoid(·) with identity in α_t in the TRAINING GDN turns QTG-001 RED (the same mutant scores 0.7656 on the serving side, qwen35-hybrid-forward-v1)'
+  test: 'mutation run over the training GDN forward'
+  if_fails: 'QTG-001 is vacuous (compares serve to serve, or tolerance too loose)'
+- id: FALSIFY-QTG-003
+  rule: GDN gradcheck
+  prediction: 'every parameter and S_0 passes central-difference gradcheck at rel err ≤ 1e-3 in f64'
+  test: 'unit gradcheck on a tiny GDN layer (2 heads, d=8, T=16)'
+  if_fails: 'a backward term is missing or wrong (typically the S_tᵀk_t read-out term or the conv1d causal shift)'
+- id: FALSIFY-QTG-004
+  rule: Planted falsifier — drop the delta read-out gradient
+  prediction: 'zeroing the ∂/∂k contribution through r_t = S_tᵀ k_t makes QTG-003 RED'
+  test: 'mutation run over the GDN backward'
+  if_fails: 'gradcheck does not exercise the read-out path'
+- id: FALSIFY-QTG-005
+  rule: Layer schedule identity
+  prediction: 'the training model reports the same attention/GDN layer indices as contracts/model-families/qwen3_5.yaml and aprender-serve'
+  test: 'table test over the 0.8B, 4B, 9B, 27B configs'
+  if_fails: 'layer interleaving drifted between crates'
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      Gates are the tolerances above (cos ≥ 0.9999, gradcheck rel err ≤ 1e-3). No composite
+      score is claimed until the tests exist.

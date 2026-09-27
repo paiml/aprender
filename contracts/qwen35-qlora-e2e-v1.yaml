@@ -1,0 +1,69 @@
+metadata:
+  kind: training-loop
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    `apr finetune -m qlora` completes end to end on Qwen3.5-4B on CUDA (NF4 frozen base, LoRA
+    adapters on attention, MLP and GDN projections), with 0 refusals, and the adapter it
+    writes is served by `apr serve` with the same outputs as the training-side merged forward.
+    This is the 0.72 T1 cell for finetune; distill and merge get sibling cells (R6, R7).
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
+  - contracts/qwen35-train-gdn-v1.yaml
+  - contracts/cuda-nf4-train-loss-parity-v1.yaml
+  - contracts/lora-merge-forward-equivalence-v1.yaml
+  depends_on:
+  - qwen35-train-gdn-v1
+  - train-arch-honesty-v1
+status: PROPOSED
+equations:
+  loss_decrease:
+    formula: 'mean(L[steps 191..200]) ≤ 0.9 · mean(L[steps 1..10])'
+    domain: fixed 1,000-sample instruct set (sha pinned), seed 42, rank 16, lr 2e-4, 200 steps, batch 4, seq 512
+    invariants:
+    - The run is reproducible from (recipe, data sha, seed, binary sha)
+    - Every loss value finite
+    preconditions:
+    - base is Qwen3.5-4B .apr imported by a released apr (sha recorded)
+  adapter_serve_identity:
+    formula: 'cos(logits^{train, merged}(x), logits^{serve, base+adapter}(x)) ≥ 0.999 ∧ argmax equal'
+    domain: 3 fixed prompts, after training
+    invariants:
+    - The adapter file is standard PEFT layout (lora-merge-peft-layout-v1)
+    preconditions:
+    - adapter written by the run under test
+proof_obligations:
+- type: bound
+  property: Training makes progress
+  formal: 'mean(L_last10) ≤ 0.9 · mean(L_first10) ∧ ∀ s: is_finite(L_s)'
+  applies_to: all
+- type: equivalence
+  property: What we train is what we serve
+  formal: 'argmax^{train,merged} = argmax^{serve} ∧ cos ≥ 0.999 per position'
+  tolerance: 1.0e-03
+  applies_to: all
+- type: invariant
+  property: Zero refusals on the canonical cell
+  formal: 'exit(apr finetune qwen3.5-4b -m qlora) = 0 ∧ refusals = 0'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QQE-001
+  rule: End-to-end QLoRA on Qwen3.5-4B completes and learns
+  prediction: 'exit 0; loss criterion holds; receipt carries binary sha, data sha, seed, GPU name'
+  test: 'apr finetune on the canonical cell (CUDA, lambda RTX 4090) — NOT run while train-active'
+  if_fails: 'training diverged, refused, or silently fell back to CPU (the receipt must name the device that ran, CLAUDE.md verification rule 2)'
+- id: FALSIFY-QQE-002
+  rule: Planted falsifier — frozen adapters
+  prediction: 'with lr = 0 the loss criterion FAILS'
+  test: 'same cell, lr 0, 20 steps'
+  if_fails: 'the loss criterion is vacuous (e.g. reads a smoothed or eval loss that moves without training)'
+- id: FALSIFY-QQE-003
+  rule: Trained adapter is served identically
+  prediction: 'apr serve base+adapter matches the training-side merged forward (cos ≥ 0.999, argmax equal)'
+  test: 'post-train parity check on 3 prompts'
+  if_fails: 'adapter layout, scaling (alpha/r) or GDN-projection target naming differs between train and serve'
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: Gates are the loss and parity bounds above; no composite score is claimed.
