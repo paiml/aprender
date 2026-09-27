@@ -65,8 +65,9 @@ fn test_thread_config_equal_values_threads_for() {
 fn test_thread_config_auto_decode_calculation() {
     let config = ThreadConfig::auto();
 
-    // Decode threads should be batch / 2, minimum 1
-    let expected_decode = (config.n_threads_batch / 2).max(1);
+    // Decode threads should be batch / 2 rounded up (>= 1). Floor division here
+    // contradicted test_auto_config_at_least_half_for_decode on odd pools.
+    let expected_decode = config.n_threads_batch.div_ceil(2).max(1);
     assert_eq!(config.n_threads_decode, expected_decode);
 }
 

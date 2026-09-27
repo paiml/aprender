@@ -44,13 +44,20 @@ impl ThreadConfig {
     /// Create optimal thread config based on available cores
     ///
     /// - Batch: Uses all available cores
-    /// - Decode: Uses half cores (min 1) to reduce cache contention
+    /// - Decode: Uses half cores, rounded up (min 1), to reduce cache contention
     #[must_use]
     pub fn auto() -> Self {
-        let num_cpus = rayon::current_num_threads();
+        Self::for_cpus(rayon::current_num_threads())
+    }
+
+    /// The `auto` split for a given core count. Decode rounds UP: `num_cpus / 2`
+    /// gave 1 of 3 cores, less than half, and failed
+    /// `test_auto_config_at_least_half_for_decode` on any odd-sized rayon pool.
+    pub(crate) fn for_cpus(num_cpus: usize) -> Self {
+        let num_cpus = num_cpus.max(1);
         Self {
             n_threads_batch: num_cpus,
-            n_threads_decode: (num_cpus / 2).max(1),
+            n_threads_decode: num_cpus.div_ceil(2),
         }
     }
 
