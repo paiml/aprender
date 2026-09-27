@@ -207,7 +207,10 @@ fn test_help_command() {
 fn test_version_command() {
     let mut cmd = batuta_cmd();
 
-    cmd.arg("--version").assert().success().stdout(predicate::str::contains("batuta"));
+    cmd.arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("aprender-orchestrate"));
 }
 
 /// Test Renacer syscall tracing validation (BATUTA-011)
