@@ -1,0 +1,6 @@
+p1_short DIFFER at byte 47,
+p2_2k DIFFER at byte 3,
+p3_8k DIFFER at byte 40,
+p4_16k DIFFER at byte 40,
+p5_30k DIFFER at byte 29,
+parity=0/5
