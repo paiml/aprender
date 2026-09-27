@@ -282,10 +282,7 @@ fn test_auto_config_at_least_half_for_decode() {
 
     // Decode is floor(batch / 2), min 1. The old `decode * 2 >= batch` check
     // failed on any odd rayon pool (5 threads -> decode 2, and 4 < 5).
-    assert_eq!(
-        config.n_threads_decode,
-        (config.n_threads_batch / 2).max(1)
-    );
+    assert_eq!(config.n_threads_decode, (config.n_threads_batch / 2).max(1));
 }
 
 #[test]
