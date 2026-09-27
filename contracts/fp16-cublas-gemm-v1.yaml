@@ -19,6 +19,11 @@ equations:
     description: "∀ i,j: |fp16_result[i,j] - fp32_result[i,j]| < ε where ε = 1e-2"
     formula: "∀ i,j: |fp16_result[i,j] - fp32_result[i,j]| < ε where ε = 1e-2"
 
+  f16_input_rounding_bound:
+    description: "A length-k dot product of F16-rounded inputs, accumulated exactly, is within k·(2u+u²)·maxA·maxB of the exact one (u = 2⁻¹¹ for F16 round-to-nearest). Covers input rounding only; F32 accumulation rounding is not modelled."
+    formula: "|Σ_i fl(a_i)·fl(b_i) − Σ_i a_i·b_i| ≤ k·(2u + u²)·maxA·maxB, given |fl x − x| ≤ u·|x|, |a_i| ≤ maxA, |b_i| ≤ maxB"
+    lean_theorem: ProvableContracts.F16Rounding.f16_input_rounding_error_bound
+
   throughput_gain:
     description: "throughput(fp16) ≥ 1.5 × throughput(fp32) for M,N ≥ 512"
     formula: "throughput(fp16) ≥ 1.5 × throughput(fp32) for M,N ≥ 512"

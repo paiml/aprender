@@ -83,6 +83,7 @@ import ProvableContracts.Theorems.LayerNorm.Idempotency
 import ProvableContracts.Theorems.LayerNorm.ShiftInvariance
 import ProvableContracts.Theorems.LayerNorm.Standardization
 import ProvableContracts.Theorems.MatMul.Associativity
+import ProvableContracts.Theorems.MatMul.F16Rounding
 import ProvableContracts.Theorems.MatMul.Identity
 import ProvableContracts.Theorems.QR.Orthogonality
 import ProvableContracts.Theorems.Quantization.RoundtripBound
