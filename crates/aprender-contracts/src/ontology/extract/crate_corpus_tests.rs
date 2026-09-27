@@ -181,3 +181,25 @@ fn a_crate_yaml_that_is_not_a_typed_contract_is_skipped_by_name_not_admitted() {
         .unparsed
         .contains(&"crates/k/contracts/cgp-v1.yaml".to_string()));
 }
+
+#[test]
+fn a_binding_that_reaches_a_refused_copy_through_dot_dot_is_still_refused() {
+    let t = fixture();
+    write(t.path(), "crates/j/Cargo.toml", "[package]\nname = \"j\"\n");
+    write(
+        t.path(),
+        "crates/j/contracts/binding.yaml",
+        "version: \"1.0.0\"\ntarget_crate: j\nbindings:\n\
+         - contract: ../../k/contracts/./diff-v1.yaml\n  equation: e\n  module_path: j::m\n  function: f\n  status: implemented\n",
+    );
+    let mut g = crate::ontology::rdf::Graph::new();
+    let stats = code::extract(&t.path().join("contracts"), &mut g);
+    assert!(
+        stats.refused_bindings.contains(
+            &"crates/j/contracts/binding.yaml: crates/k/contracts/diff-v1.yaml -> j::m::f"
+                .to_string()
+        ),
+        "{:?}",
+        stats.refused_bindings
+    );
+}

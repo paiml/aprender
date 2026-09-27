@@ -670,7 +670,7 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> CodeStats {
     let refused: std::collections::BTreeSet<PathBuf> = super::pv_contract::corpus(contract_dir)
         .refused
         .iter()
-        .flat_map(|r| r.paths.iter().map(|p| root.join(p)))
+        .flat_map(|r| r.paths.iter().map(|p| lexical(&root.join(p))))
         .collect();
     for (file, registry) in registries(contract_dir) {
         stats.registries += 1;
@@ -678,7 +678,7 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> CodeStats {
         for mut b in bound_of(&registry) {
             if let Some(hit) = ["yaml", "yml"]
                 .iter()
-                .map(|ext| dir.join(format!("{}.{ext}", b.contract)))
+                .map(|ext| lexical(&dir.join(format!("{}.{ext}", b.contract))))
                 .find(|p| refused.contains(p))
             {
                 stats.refused_bindings.push(format!(
@@ -730,6 +730,25 @@ pub fn positive_control() -> bool {
         find_item(&ast.items, "absent").is_none() && use_target(&ast.items, "absent").is_none();
     let aliased = use_target(&ast.items, "alias").as_deref() == Some("m::present");
     present && ghost && aliased
+}
+
+/// `a/b/../c` → `a/c`, `./` dropped, without touching the filesystem: a binding that reaches a refused copy through
+/// `../` must compare equal to the refused path, and `Path` equality is component-wise, not resolved (#4538 quorum).
+fn lexical(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
