@@ -31,7 +31,9 @@ fn cld(a: &CellBuffer, b: &CellBuffer) -> f64 {
     let ca = buf_to_chars(a);
     let cb = buf_to_chars(b);
     let total = ca.len();
-    if total == 0 { return 0.0; }
+    if total == 0 {
+        return 0.0;
+    }
     let diffs = ca.iter().zip(cb.iter()).filter(|(a, b)| a != b).count();
     diffs as f64 / total as f64
 }
@@ -48,7 +50,10 @@ fn parity_deterministic_80x24() {
     ui::draw(&app, &mut buf1);
     ui::draw(&app, &mut buf2);
     let diff = cld(&buf1, &buf2);
-    assert!(diff < 0.001, "CLD {diff:.6} exceeds 0.1% threshold at 80x24");
+    assert!(
+        diff < 0.001,
+        "CLD {diff:.6} exceeds 0.1% threshold at 80x24"
+    );
 }
 
 #[test]
@@ -59,7 +64,10 @@ fn parity_deterministic_120x40() {
     ui::draw(&app, &mut buf1);
     ui::draw(&app, &mut buf2);
     let diff = cld(&buf1, &buf2);
-    assert!(diff < 0.001, "CLD {diff:.6} exceeds 0.1% threshold at 120x40");
+    assert!(
+        diff < 0.001,
+        "CLD {diff:.6} exceeds 0.1% threshold at 120x40"
+    );
 }
 
 #[test]
@@ -70,7 +78,10 @@ fn parity_deterministic_200x60() {
     ui::draw(&app, &mut buf1);
     ui::draw(&app, &mut buf2);
     let diff = cld(&buf1, &buf2);
-    assert!(diff < 0.001, "CLD {diff:.6} exceeds 0.1% threshold at 200x60");
+    assert!(
+        diff < 0.001,
+        "CLD {diff:.6} exceeds 0.1% threshold at 200x60"
+    );
 }
 
 // ============================================================================
@@ -88,8 +99,10 @@ fn parity_cross_invocation_120x40() {
     ui::draw(&app1, &mut buf1);
     ui::draw(&app2, &mut buf2);
     let diff = cld(&buf1, &buf2);
-    assert!(diff < 0.20,
-        "Cross-invocation CLD {diff:.6} exceeds 20% — frames wildly different");
+    assert!(
+        diff < 0.20,
+        "Cross-invocation CLD {diff:.6} exceeds 20% — frames wildly different"
+    );
 }
 
 // ============================================================================
@@ -130,7 +143,10 @@ fn parity_exploded_memory() {
     ui::draw(&app, &mut buf1);
     ui::draw(&app, &mut buf2);
     let diff = cld(&buf1, &buf2);
-    assert!(diff < 0.001, "Exploded Memory CLD {diff:.6} exceeds threshold");
+    assert!(
+        diff < 0.001,
+        "Exploded Memory CLD {diff:.6} exceeds threshold"
+    );
 }
 
 // ============================================================================
@@ -146,10 +162,15 @@ fn parity_title_bar_position() {
     let mut row0_content = 0;
     for x in 0..120u16 {
         if let Some(cell) = buf.get(x, 0) {
-            if cell.symbol.as_str() != " " { row0_content += 1; }
+            if cell.symbol.as_str() != " " {
+                row0_content += 1;
+            }
         }
     }
-    assert!(row0_content > 20, "Title bar (row 0) must have content: {row0_content} chars");
+    assert!(
+        row0_content > 20,
+        "Title bar (row 0) must have content: {row0_content} chars"
+    );
 }
 
 #[test]
@@ -170,8 +191,11 @@ fn parity_panel_borders_aligned() {
         }
     }
     // Should have at least 2 vertical border columns (panel separators)
-    assert!(border_cols.len() >= 2,
-        "Must have vertical panel borders: found {} columns", border_cols.len());
+    assert!(
+        border_cols.len() >= 2,
+        "Must have vertical panel borders: found {} columns",
+        border_cols.len()
+    );
 }
 
 #[test]
@@ -183,8 +207,10 @@ fn parity_no_truncated_unicode() {
     for y in 0..40u16 {
         for x in 0..120u16 {
             if let Some(cell) = buf.get(x, y) {
-                assert!(!cell.symbol.contains('\u{FFFD}'),
-                    "Replacement char at ({x},{y}): truncated unicode");
+                assert!(
+                    !cell.symbol.contains('\u{FFFD}'),
+                    "Replacement char at ({x},{y}): truncated unicode"
+                );
             }
         }
     }
