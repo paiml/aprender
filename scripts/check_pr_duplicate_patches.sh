@@ -64,8 +64,12 @@ check_pr() {
         echo "DUP-001: cannot list open PRs (gh failed) -- refusing to pass unread" >&2
         exit 2
     fi
+    # A failed fetch is rc 2 like a failed gh read: under `set -e` it would exit with
+    # git's own status (1 or 128), and rc 1 means "duplicate found" (quorum, 2026-09-27).
     if [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = true ]; then
-        git -C "$repo" fetch --quiet --no-tags --unshallow origin
+        git -C "$repo" fetch --quiet --no-tags --unshallow origin || {
+            echo "DUP-001: cannot unshallow the checkout (git fetch failed) -- refusing to pass unread" >&2
+            exit 2; }
     fi
     # One fetch for every open PR head and every base branch they target.
     local -a refspecs
@@ -79,7 +83,9 @@ for p in prs: n = p["number"]; print(f"+refs/pull/{n}/head:refs/dup001/pr/{n}")
         echo "DUP-001: no refs to fetch from the open-PR list -- refusing to pass unread" >&2
         exit 2
     fi
-    git -C "$repo" fetch --quiet --no-tags origin "${refspecs[@]}"
+    git -C "$repo" fetch --quiet --no-tags origin "${refspecs[@]}" || {
+        echo "DUP-001: cannot fetch the open PR heads (git fetch failed) -- refusing to pass unread" >&2
+        exit 2; }
     base="$(python3 -c '
 import json,sys
 pr=int(sys.argv[2])
@@ -258,6 +264,15 @@ json.dump({"base":"main","subject":{"number":1,"head":"many2","body":""},"others
     total=$((total + 1))
     if [ "$rc" = 2 ]; then echo "  ok   [gh fails -> rc 2] rc=$rc"
     else echo "  FAIL [gh fails -> rc 2] rc=$rc"; fail=$((fail + 1)); fi
+    # gh answers but the fetch fails (the scratch repo has no `origin`): rc 2, never
+    # rc 1 (a duplicate) and never 0.
+    mkdir -p "$td/binf"
+    printf '#!/bin/sh\necho %s\n' "'[{\"number\":1,\"headRefOid\":\"x\",\"baseRefName\":\"main\",\"body\":\"\"}]'" > "$td/binf/gh"
+    chmod +x "$td/binf/gh"
+    rc=0; (cd "$r" && PATH="$td/binf:$PATH" bash "$HERE/check_pr_duplicate_patches.sh" --pr 1) >/dev/null 2>&1 || rc=$?
+    total=$((total + 1))
+    if [ "$rc" = 2 ]; then echo "  ok   [git fetch fails -> rc 2] rc=$rc"
+    else echo "  FAIL [git fetch fails -> rc 2] rc=$rc"; fail=$((fail + 1)); fi
     # No PR under test (push / merge_group): nothing to compare, and it says so.
     printf '{"ref":"refs/heads/main"}' > "$td/event.json"
     local out; rc=0

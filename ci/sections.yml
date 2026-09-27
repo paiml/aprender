@@ -1507,7 +1507,7 @@ jobs:
       #
       # The case table runs on every event; the cross-PR check only on pull_request
       # (merge_group has no PR payload, and a queued batch is checked as its PRs were).
-      - name: "DUP-001 case table: 22 rows, must-match and must-not-match"
+      - name: "DUP-001 case table: 23 rows, must-match and must-not-match"
         if: "!cancelled()"
         run: setsid --wait bash scripts/check_pr_duplicate_patches.sh --self-test
       - name: A PR may not carry a change another open PR already carries (DUP-001)
