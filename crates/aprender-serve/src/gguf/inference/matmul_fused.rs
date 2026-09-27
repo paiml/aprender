@@ -149,7 +149,7 @@ impl OwnedQuantizedModel {
         // tensor was registered with empty data because the actual weights
         // live in per-expert slices the loader hasn't wired in. Bail early
         // with an actionable error instead of letting rayon workers crash.
-        validate_matmul_weight_shape(weight)?;
+        admit_cpu_weight(weight)?;
 
         // #3975: the `cuda_executor` dispatch that stood here was deleted. Nothing
         // ever set `cuda_executor` to Some, and its dequant + `gemm` fallback read
@@ -388,6 +388,15 @@ impl OwnedQuantizedModel {
 ///
 /// Extracted as a free function so the validation logic is unit-testable
 /// without constructing a full `OwnedQuantizedModel`.
+/// KREG-001 (aprender#4539): the CPU selector's entry check. The weight's qtype must have a
+/// row in the kernel registry before any arm below dispatches it, then its shape is checked.
+/// A helper, not two lines in `fused_matmul`, so that function's complexity does not rise.
+fn admit_cpu_weight(weight: &OwnedQuantizedTensor) -> Result<()> {
+    use crate::kernel_registry::{admit, Backend, Layout};
+    admit(Backend::Cpu, weight.qtype, Layout::RowMajor)?;
+    validate_matmul_weight_shape(weight)
+}
+
 fn validate_matmul_weight_shape(weight: &OwnedQuantizedTensor) -> Result<()> {
     if weight.data.is_empty() {
         return Err(RealizarError::InvalidShape {
@@ -538,5 +547,20 @@ mod tests {
         let err = validate_matmul_weight_shape(&t).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("overflows usize"), "got: {msg}");
+    }
+
+    /// KREG-001: the CPU selector refuses an unregistered qtype before any arm runs, even when
+    /// the weight's shape is fine — and still runs the shape check for a registered one.
+    #[test]
+    fn admit_cpu_weight_refuses_an_unregistered_qtype_by_the_registry() {
+        let t = mk_tensor(vec![0u8; 64], 4, 4, 99);
+        let msg = format!("{}", admit_cpu_weight(&t).unwrap_err());
+        assert!(msg.contains("kernel_registry::admit"), "got: {msg}");
+        assert!(msg.contains("ggml_type=99"), "got: {msg}");
+
+        let t = mk_tensor(vec![0u8; 64], 4, 4, GGUF_TYPE_F32);
+        assert!(admit_cpu_weight(&t).is_ok());
+        let t = mk_tensor(vec![], 4, 4, GGUF_TYPE_F32);
+        assert!(format!("{}", admit_cpu_weight(&t).unwrap_err()).contains("EMPTY"));
     }
 }
