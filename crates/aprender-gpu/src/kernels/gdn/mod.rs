@@ -48,6 +48,7 @@ mod decode_attention;
 mod decode_attention_split;
 mod delta_rule;
 mod delta_rule_scan;
+mod delta_rule_split_scan;
 mod gated_rmsnorm;
 mod gdn_gates;
 mod kv_row_scatter;
@@ -69,6 +70,7 @@ pub use decode_attention_split::{
 };
 pub use delta_rule::DeltaRuleRecurrenceKernel;
 pub use delta_rule_scan::DeltaRuleChunkScanKernel;
+pub use delta_rule_split_scan::DeltaRuleSplitScanKernel;
 pub use gated_rmsnorm::GatedRmsNormKernel;
 pub use gdn_gates::GdnGatesKernel;
 pub use kv_row_scatter::KvRowScatterIndirectKernel;
