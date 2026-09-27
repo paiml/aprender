@@ -150,13 +150,14 @@ impl MergeEngine {
             });
         }
 
-        // In real implementation, would load SafeTensors and perform merge
-        // For now, return a placeholder result
-        Ok(MergeResult {
-            output_path: output_path.to_path_buf(),
-            merged_params: 0,
-            base_size_bytes: 0,
-            output_size_bytes: 0,
+        // The SafeTensors load-and-merge is not written yet. This used to return a
+        // placeholder Ok, so the CLI printed "Merged adapter into base model" with exit 0
+        // and wrote no file (ONT-10 S16 surface probe). Fail until it is real.
+        Err(EntrenarError::Internal {
+            message: format!(
+                "adapter merge is not implemented; nothing was written to {}",
+                output_path.display()
+            ),
         })
     }
 }
@@ -411,6 +412,22 @@ mod tests {
         if let Err(EntrenarError::ModelNotFound { path }) = result {
             assert!(path.to_string_lossy().contains("base.safetensors"));
         }
+    }
+
+    #[test]
+    fn test_merge_from_file_existing_inputs_is_an_error_not_a_fake_success() {
+        let dir = std::env::temp_dir().join(format!("lora-merge-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let base = dir.join("base.safetensors");
+        let adapter = dir.join("adapter.safetensors");
+        std::fs::write(&base, b"garbage").expect("write base");
+        std::fs::write(&adapter, b"garbage").expect("write adapter");
+        let output = dir.join("merged.safetensors");
+
+        let result = MergeEngine::new().merge_from_file(&base, &adapter, &output);
+
+        assert!(matches!(result, Err(EntrenarError::Internal { .. })));
+        assert!(!output.exists());
     }
 
     #[test]
