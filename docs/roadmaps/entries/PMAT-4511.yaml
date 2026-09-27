@@ -1,0 +1,22 @@
+- id: PMAT-4511
+  github_issue: 4511
+  item_type: task
+  title: 'ttop quality: in-workspace CI, leak soak gate, defect fixes, pv ontology (0.70 candidate)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-57
+  created: 2026-09-27 07:00:00+00:00
+  updated: '2026-09-27T11:45:00Z'
+  spec: docs/specifications/aprender-monorepo-consolidation.md
+  acceptance_criteria:
+  - 'aprender-viz-ttop is a workspace member: CI builds, tests and lints it'
+  - 'scripts/ttop_soak_gate.sh: headless RSS soak of the real loop is GREEN; --self-test PASS; --mutant (planted 64 KiB/frame leak) is RED'
+  - 'each runtime defect fix has a test that its planted mutant fails (D3 D4 D5 D6); D1 D2 fail-first; D7 pty proof in the receipt'
+  - 'contracts/aprender-viz-ttop-surface-v1.yaml passes pv validate; tests/ttop_surface_gate.rs checks flags, keys and panels both ways plus a surface_audit.csv row per flag'
+  - 'ttop --timings (off by default, zero-cost when off): tracing spans plus per-phase p50/p99; scripts/ttop_timings_gate.sh --mutant finds a planted 25 ms sleep in its own phase; no timing assertion in required CI'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Own batch on main (57/ttop-quality-main), never folded into the release car. Fleet dogfood (item 5) is a fleet-bins handoff after merge. Receipt: docs/audits/impl-PMAT-4511-receipt.md.'
