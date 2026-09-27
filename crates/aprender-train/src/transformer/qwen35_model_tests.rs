@@ -236,3 +236,39 @@ fn real_model_dequant_equals_serve_dequant() {
     );
     assert!(worst.0 <= 1e-6, "dequant disagrees: {} at {}", worst.0, worst.1);
 }
+
+/// R3 on the real 0.8B: the backward runs at full shape (24 layers, the real vocab),
+/// its loss is the cross-entropy of `forward`'s own logits, and every gradient is
+/// finite with a non-zero embedding/head gradient.
+#[test]
+#[ignore = "needs a Qwen3.5 GGUF: QWEN35_GGUF=/path/to/Qwen3.5-0.8B-Q4_K_M.gguf"]
+fn real_model_loss_and_grads_are_consistent_and_finite() {
+    let path = std::env::var("QWEN35_GGUF").expect("set QWEN35_GGUF");
+    let model = Qwen35Model::from_gguf(&path).expect("train loads");
+    let (tokens, targets) = ([9_707_u32, 11, 1_879, 374, 264], [11_u32, 1_879, 374, 264, 1_273]);
+    let (loss, g) = model.loss_and_grads(&tokens, &targets);
+    let vocab = model.vocab_size();
+    let want: f64 = model
+        .forward(&tokens)
+        .chunks_exact(vocab)
+        .zip(&targets)
+        .map(|(row, &t)| {
+            let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let lse =
+                f64::from(max) + row.iter().map(|&x| f64::from(x - max).exp()).sum::<f64>().ln();
+            lse - f64::from(row[t as usize])
+        })
+        .sum::<f64>()
+        / tokens.len() as f64;
+    eprintln!("loss {loss} (independent {want:.6}), ln vocab {:.3}", (vocab as f64).ln());
+    assert!((f64::from(loss) - want).abs() <= 1e-4 * want, "loss {loss} vs {want}");
+    assert!(want < (vocab as f64).ln(), "a trained model beats uniform on real text");
+    assert_eq!(g.layers.len(), model.num_layers());
+    let finite = |v: &[f32]| v.iter().all(|x| x.is_finite());
+    assert!(finite(&g.embed) && finite(&g.final_norm), "embed/final_norm grads finite");
+    assert!(g.embed.iter().any(|&x| x != 0.0), "embedding gradient is zero");
+    for (i, l) in g.layers.iter().enumerate() {
+        let all = [&l.attn_norm, &l.post_norm, &l.ffn_gate, &l.ffn_up, &l.ffn_down];
+        assert!(all.iter().all(|v| finite(v)), "layer {i} grads finite");
+    }
+}

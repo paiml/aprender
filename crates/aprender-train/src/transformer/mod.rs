@@ -23,6 +23,7 @@ mod model;
 mod norm;
 mod qwen35_layer;
 mod qwen35_layer_backward;
+mod qwen35_lm;
 mod qwen35_model;
 pub(crate) mod weights;
 #[cfg(feature = "gpu")]
@@ -58,6 +59,7 @@ pub use qwen35_layer::{
 pub use qwen35_layer_backward::{
     gated_attn_backward, qwen35_block_backward, GatedAttnGrads, Qwen35BlockGrads, Qwen35MixerGrads,
 };
+pub use qwen35_lm::{Qwen35LayerRef, Qwen35LmGrads, Qwen35LmRef};
 pub use qwen35_model::Qwen35Model;
 pub use weights::{load_safetensors_weights, validate_weights, Architecture};
 #[cfg(feature = "gpu")]
