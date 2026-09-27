@@ -35,7 +35,7 @@ fn run(args: &[&str]) -> Run {
 #[test]
 fn unknown_flag_fails_the_process() {
     let r = run(&["analyze", "kernel.ptx", "--seed", "42"]);
-    assert_eq!(r.code, Some(1), "stderr: {}", r.stderr);
+    assert_eq!(r.code, Some(2), "stderr: {}", r.stderr);
     assert!(
         r.stderr.contains("--seed"),
         "the rejected flag should be named; stderr: {}",
@@ -49,9 +49,9 @@ fn unknown_flag_fails_the_process() {
 }
 
 #[test]
-fn no_arguments_exits_one() {
+fn no_arguments_exits_two() {
     let r = run(&[]);
-    assert_eq!(r.code, Some(1));
+    assert_eq!(r.code, Some(2));
 }
 
 #[test]

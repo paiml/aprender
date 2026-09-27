@@ -6,10 +6,14 @@
 # keyed `binary/<package>/<target>`, NEVER by name alone: `apr` is declared by two packages (apr-cli and the root
 # facade aprender), so 29 bin targets carry 28 names. Each exposed surface — a cli:Command, an http route, an mcp
 # tool — is a sibling Entity reached by the role `bin:exposes`.
+# bin:command is every command PATH under the binary, space-joined, without the binary name (`ontology tbox`): each
+# leaf, plus each non-leaf whose Usage shows `[COMMAND]` (it runs on its own). clap's auto `help` is excluded; a
+# user-defined `help` is a command (S9 convention). Shapes count paths, not top-level subcommands.
 # Each node is ALSO typed `bin:target/<package>/<target>`, the class a per-binary contract's shapes target.
 #
 # A SNAPSHOT, NEVER A LIVE BINARY. extract:binary reads the tracked record `scripts/dogfood_surfaces.sh --snapshot`
-# writes (one JSON line per bin target, LC_ALL=C sorted by package,target, no timestamps, `--twice` byte-identical).
+# writes to evidence/binary/snapshot.jsonl (one JSON line per bin target, schema "binary-snapshot/v1", LC_ALL=C
+# sorted by package,target, no timestamps, `--snapshot --twice` byte-identical; key list in the script's header).
 # The gate never execs a binary, so its verdict is a function of the tree.
 #
 # PER-BINARY CONTRACTS. Each bin target ALSO gets one contract of its own, drafted by its ONT-10 slice owner to the
@@ -73,6 +77,11 @@ shapes:
       - {path: bin:command}
       - {path: bin:route}
       - {path: bin:mcpTool}
+      # top-level long options, --help/--version excluded (S13 ptop, S15 aprender-profile are option-only binaries)
+      - {path: bin:option}
+      # top-level positionals, as the `Arguments:` section of --help names them, brackets and `...` stripped
+      # (aprender-profile `-- <COMMAND>...` → COMMAND; zram-generator EARLY_DIR, LATE_DIR, NORMAL_DIR)
+      - {path: bin:positional}
       - {path: bin:exposes, nodeKind: IRI}
       # ledger reconciliation, materialized by the extractor against docs/audits/surface_audit.csv
       - {path: bin:unledgeredCommand, maxCount: 0}
