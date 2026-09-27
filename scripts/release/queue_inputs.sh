@@ -694,7 +694,7 @@ ROWS
 J
     printf '%s\n' '[{"number":4,"createdAt":"2026-01-07T00:00:00Z","headRefName":"b4","baseRefName":"main","isDraft":false,"mergeable":"CONFLICTING"}]' > "$dd/open.json"
     cat > "$dd/pr_dora.jsonl" <<'J'
-{"number":1,"changedFiles":1,"files":["a.rs"],"armed":"2026-01-02T00:30:00Z","queued":null,"last_push":"2026-01-02T00:00:00Z","merge_commits":[{"date":"2026-01-02T00:10:00Z","headline":"Merge branch 'main' into b1"},{"date":"2025-12-30T00:00:00Z","headline":"merge origin/main (before the window)"}]}
+{"number":1,"changedFiles":1,"files":["a.rs"],"armed":"2026-01-02T00:30:00Z","queued":"2026-01-02T00:40:00Z","last_push":"2026-01-02T00:00:00Z","merge_commits":[{"date":"2026-01-02T00:10:00Z","headline":"Merge branch 'main' into b1"},{"date":"2025-12-30T00:00:00Z","headline":"merge origin/main (before the window)"}]}
 {"number":2,"changedFiles":1,"files":["README.md"],"armed":null,"queued":"2026-01-02T22:00:00Z","last_push":"2026-01-02T00:00:00Z","merge_commits":[]}
 {"number":3,"changedFiles":2,"files":["a.rs","b.rs"],"armed":"2026-01-02T11:00:00Z","queued":null,"last_push":"2026-01-02T10:00:00Z","merge_commits":[{"date":"2026-01-02T10:00:00Z","headline":"fold b9 into fold/x"}]}
 {"number":4,"changedFiles":1,"files":["a.rs"],"armed":null,"queued":null,"last_push":"2026-01-07T00:00:00Z","merge_commits":[]}
@@ -704,6 +704,9 @@ J
 {"id":2,"event":"pull_request","head_branch":"b2","conclusion":"success","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:03:00Z"}
 {"id":3,"event":"pull_request","head_branch":"fold/x","conclusion":"failure","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:20:00Z"}
 {"id":4,"event":"pull_request","head_branch":"b1","conclusion":"cancelled","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T09:00:00Z"}
+{"id":5,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-1-x","conclusion":"success","created_at":"2026-01-02T00:40:00Z","updated_at":"2026-01-02T00:55:00Z"}
+{"id":6,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-2-x","conclusion":"failure","created_at":"2026-01-02T22:00:00Z","updated_at":"2026-01-02T23:30:00Z"}
+{"id":7,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-2-y","conclusion":"success","created_at":"2026-01-02T23:30:00Z","updated_at":"2026-01-02T23:55:00Z"}
 J
     : > "$dd/main_commits.jsonl"
     for i in $(seq 1 19); do printf '{"sha":"s%s","date":"2026-01-02T00:00:00Z","subject":"feat %s","parents":1}\n' "$i" "$i" >> "$dd/main_commits.jsonl"; done
@@ -716,6 +719,9 @@ J
     check "dora: 1 revert in 20 = 0.05 misses < 5%" '.metrics.change_fail_rate.value == 0.05 and .metrics.change_fail_rate.ok == false' "$uo"
     check "dora: release cycle from the fold branch run" '.metrics.release_cycle_p50_min.value == 20 and .metrics.release_cycle_p50_min.ok == true' "$uo"
     check "dora: main-in merge counted, fold merge and pre-window merge not" '.metrics.merge_commit_resolutions.value == 1 and .metrics.fold_merges.value == 1' "$uo"
+    check "dora: MQ wait = first queue add -> merged; [20,120] p50 20 (lower rank), PR 3 never queued" '.metrics.mq_wait_p50_min.value == 20 and .metrics.mq_wait_p50_min.n == 2 and .metrics.mq_wait_p90_min.ok == true' "$uo"
+    check "dora: MQ entry = successful merge_group runs only; [15,25] p50 15, failure excluded" '.metrics.mq_entry_p50_min.value == 15 and .metrics.mq_entry_p50_min.n == 2' "$uo"
+    check "dora: open PRs counted (1 <= 10)" '.metrics.open_prs.value == 1 and .metrics.open_prs.ok == true' "$uo"
     check "dora: verdict names the misses" '.verdict | startswith("MISSED") and test("change_fail_rate")' "$uo"
     for f in ci_runs.jsonl pr_dora.jsonl main_commits.jsonl; do : > "$dd/$f"; done
     printf '[]\n' > "$dd/merged.json"; printf '[]\n' > "$dd/open.json"
@@ -913,6 +919,11 @@ $merged[0] as $mg | $open[0] as $op
 # PR age: merged PRs created -> merged; open non-draft PRs created -> window end.
 | [$mg[] | mins(.createdAt; .mergedAt) / 60] as $age_merged
 | [$op[] | select(.isDraft | not) | mins(.createdAt; $end) / 60] as $age_open
+# Merge-queue wait: first queue add -> merged, PRs into main (includes re-entries after an ejection).
+| [$mg[] | select(.baseRefName == "main") | . as $p | $by[$p.number | tostring].queued as $q
+   | select($q != null) | mins($q; $p.mergedAt)] as $mqwait
+# Merge-queue entry build: successful merge_group ci.yml runs, created -> updated (T in queue-inputs-v1).
+| [$ci[] | select(.event == "merge_group" and .conclusion == "success") | mins(.created_at; .updated_at)] as $mqentry
 # Conflicted > 4 h: open PRs GitHub reports CONFLICTING whose last push is > 4 h before window end.
 | [$op[] | select(.mergeable == "CONFLICTING") | . as $p | $by[$p.number | tostring].last_push as $lp
    | select($lp != null and mins($lp; $end) > 240) | $p.number] as $conflicted
@@ -939,6 +950,15 @@ $merged[0] as $mg | $open[0] as $op
                             "merged PRs, createdAt -> mergedAt"),
      pr_age_p90_h_open: m($age_open | pct(0.9); ($age_open | length); "< 24"; (($age_open | pct(0.9)) < 24);
                           "open non-draft PRs at window end"),
+     mq_wait_p50_min: m($mqwait | pct(0.5); ($mqwait | length); "report"; true;
+                        "first AddedToMergeQueue -> mergedAt, merged PRs into main"),
+     mq_wait_p90_min: m($mqwait | pct(0.9); ($mqwait | length); "<= 120"; (($mqwait | pct(0.9)) <= 120);
+                        "same, p90 (operator stop rule: p90 > 120 m)"),
+     mq_entry_p50_min: m($mqentry | pct(0.5); ($mqentry | length); "report"; true;
+                         "successful merge_group ci.yml runs, created -> updated"),
+     mq_entry_p90_min: m($mqentry | pct(0.9); ($mqentry | length); "report"; true; "same, p90"),
+     open_prs: m($op | length; ($op | length); "<= 10"; (($op | length) <= 10);
+                 "open PRs at fetch time, drafts included (operator cap 10); \([$op[] | select(.isDraft)] | length) draft"),
      conflicted_over_4h: m($conflicted | length; ($op | length); "0"; (($conflicted | length) == 0);
                            "open PRs mergeable=CONFLICTING with last push > 4 h ago (GitHub: \($unknown_mergeable | length) UNKNOWN)"),
      change_fail_rate: m(if ($main | length) > 0 then ($reverts | length) / ($main | length) else null end; ($main | length);
@@ -959,7 +979,7 @@ JQ
 }
 
 dora_line() {  # one inbox-sized line from dora_compute JSON on stdin
-    jq -r '.metrics as $m | "DORA 7d: lead p50 \($m.lead_time_p50_min.value)m (n\($m.lead_time_p50_min.n)) | CI p50 code \($m.ci_p50_code_min.value)m docs \($m.ci_p50_docs_min.value)m | PR age p90 merged \($m.pr_age_p90_h_merged.value)h open \($m.pr_age_p90_h_open.value)h | conflicted>4h \($m.conflicted_over_4h.value) | change-fail \($m.change_fail_rate.value) | release p50 \($m.release_cycle_p50_min.value)m | main-merges \($m.merge_commit_resolutions.value) (+\($m.fold_merges.value) fold) -> \(.verdict)"'
+    jq -r '.metrics as $m | "DORA 7d: lead p50 \($m.lead_time_p50_min.value)m (n\($m.lead_time_p50_min.n)) | CI p50 code \($m.ci_p50_code_min.value)m docs \($m.ci_p50_docs_min.value)m | MQ wait p50 \($m.mq_wait_p50_min.value)m p90 \($m.mq_wait_p90_min.value)m (n\($m.mq_wait_p50_min.n)) | MQ entry p50 \($m.mq_entry_p50_min.value)m p90 \($m.mq_entry_p90_min.value)m (n\($m.mq_entry_p50_min.n)) | PR age p90 merged \($m.pr_age_p90_h_merged.value)h open \($m.pr_age_p90_h_open.value)h | open PRs \($m.open_prs.value) | conflicted>4h \($m.conflicted_over_4h.value) | change-fail \($m.change_fail_rate.value) | release p50 \($m.release_cycle_p50_min.value)m | main-merges \($m.merge_commit_resolutions.value) (+\($m.fold_merges.value) fold) -> \(.verdict)"'
 }
 
 case "${1:-}" in
