@@ -280,9 +280,24 @@ fn test_auto_config_at_least_half_for_decode() {
     // Decode should be at least 1
     assert!(config.n_threads_decode >= 1);
 
-    // If batch is >= 2, decode should be at least half
-    if config.n_threads_batch >= 2 {
-        assert!(config.n_threads_decode * 2 >= config.n_threads_batch);
+    // Decode is floor(batch / 2), min 1. The old `decode * 2 >= batch` check
+    // failed on any odd rayon pool (5 threads -> decode 2, and 4 < 5).
+    assert_eq!(
+        config.n_threads_decode,
+        (config.n_threads_batch / 2).max(1)
+    );
+}
+
+#[test]
+fn test_auto_config_decode_is_floor_half_on_odd_pools() {
+    for n in [1usize, 2, 3, 5, 7, 9] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .expect("build rayon pool");
+        let config = pool.install(ThreadConfig::auto);
+        assert_eq!(config.n_threads_batch, n);
+        assert_eq!(config.n_threads_decode, (n / 2).max(1), "pool of {n}");
     }
 }
 
