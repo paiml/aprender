@@ -3137,6 +3137,24 @@ jobs:
             *) echo "::error::cargo's target runner does not take $l: '$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER'"; exit 1 ;;
           esac
           echo "GPU lock: $l (host bind mount); test binaries run under: $CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER"
+      # FAIL-FAST (operator 2026-09-26 "why is yoga not fail fast"): the lint
+      # runs BEFORE the test builds. At the end it reached RED only after the
+      # release test builds and runs (#4429: 85 s + 603 s, then clippy 72 s RED).
+      # A lint failure now skips the tests; a test failure on a lint-clean tree
+      # is unchanged.
+      # #3636: `clippy --features cuda` was never run by any gate, and 62 findings
+      # piled up in cuda-gated code (compute, train, serve) before anyone looked.
+      # This is the only job with nvcc, so the lint lives here. The script runs its
+      # own planted-mutant self-test first: an unused import under
+      # #[cfg(feature = "cuda")] must turn it RED, or the gate is refused as vacuous.
+      # No step `if:`: this step runs whenever the job does, including on an
+      # apr-cli-only diff (cuda_lint=1, gpu_touched=0) — apr-cli has 30 files of
+      # #[cfg(feature = "cuda")] code that only this lint builds (#4336).
+      - name: "clippy --features cuda is clean (#3636)"
+        run: |
+          set -euo pipefail
+          bash scripts/check_clippy_cuda.sh --self-test
+          nice -n 19 bash scripts/check_clippy_cuda.sh
       # No yield-to-training step here, and that is a decision rather than an
       # omission: yoga is a rack-mounted CI box that runs basic CUDA unit tests
       # (operator, 2026-09-09), not a training host. Nothing to yield to. The
@@ -3228,19 +3246,6 @@ jobs:
           echo "$summary"
           printf 'cuda-only: %s passed + %s ignored = %s derived, 0 device skips, %s model-absent skip line(s)\n' \
             "$passed" "$ignored" "$n_only" "${model_skips:-0}"
-      # #3636: `clippy --features cuda` was never run by any gate, and 62 findings
-      # piled up in cuda-gated code (compute, train, serve) before anyone looked.
-      # This is the only job with nvcc, so the lint lives here. The script runs its
-      # own planted-mutant self-test first: an unused import under
-      # #[cfg(feature = "cuda")] must turn it RED, or the gate is refused as vacuous.
-      # No step `if:`: this step runs whenever the job does, including on an
-      # apr-cli-only diff (cuda_lint=1, gpu_touched=0) — apr-cli has 30 files of
-      # #[cfg(feature = "cuda")] code that only this lint builds (#4336).
-      - name: "clippy --features cuda is clean (#3636)"
-        run: |
-          set -euo pipefail
-          bash scripts/check_clippy_cuda.sh --self-test
-          nice -n 19 bash scripts/check_clippy_cuda.sh
 
   # APEX-001 EV-2a: the same figure, rendered on two architectures, must be the same bytes.
   #
