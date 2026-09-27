@@ -18191,6 +18191,31 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-3149
+  github_issue: 3149
+  item_type: task
+  title: 'P0: spatial neighbor index substrate (kd-tree + ball-tree) — KNN/DBSCAN/LOF/t-SNE/spectral all scan linearly'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-6b
+  created: 2026-09-27T12:12:18.658784+00:00
+  updated: 2026-09-27T12:12:18.658784+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] **Exactness**: proptest over random point clouds (n in 10..2000, d in 1..30) asserts `KdTree` and `BallTree` return the *identical* k-nearest set as `BruteForce`, including correct tie handling. This is the criterion that matters — a fast index that returns different neighbours is a defect, not an optimization.'
+  - '[ ] Radius queries agree with brute force on the same generated data.'
+  - '[ ] **Asymptotics are proven, not asserted in prose**: a test measures query *node visits* (not wall-clock — see the repo rule against wall-clock in required checks) and asserts visits grow sub-linearly in n across n = 1e3, 1e4, 1e5.'
+  - '[ ] Degenerate inputs do not panic and are covered: n=1, n=0, all-identical points, k > n, duplicate coordinates, single dimension.'
+  - '[ ] Each metric has a property test for the metric axioms it claims (identity, symmetry, triangle inequality where applicable).'
+  - '[ ] `DBSCAN`, `LOF`, and `KNearestNeighbors` produce **identical labels/scores** before and after the rewire on pinned fixtures — the index is an optimization, and a changed clustering is a regression.'
+  - '[ ] Contract YAML under `contracts/` with the exactness equation as a proof obligation.'
+  - '[ ] Mutation-verified: perturbing the kd-tree splitting plane turns the exactness proptest RED.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: GH-4129
   github_issue: 4129
   item_type: task
