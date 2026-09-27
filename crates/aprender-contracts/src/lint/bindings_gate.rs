@@ -7,7 +7,10 @@
 //! - PV-ONT-028 — an `implemented`/`partial` binding does not resolve, and the allowlist does not name it;
 //! - PV-ONT-029 — an allowlist entry names a symbol that now resolves, or that no registry binds. The allowlist is
 //!   shrink-only: a fixed ghost must leave it, or the next ghost at that path would pass unseen;
-//! - PV-ONT-030 — `binding-allowlist.json` is not `{"entries": [{symbol, reason, ticket}]}`, or names a symbol twice.
+//! - PV-ONT-030 — `binding-allowlist.json` is not `{"entries": [{symbol, reason, ticket}]}`, or names a symbol twice;
+//! - PV-ONT-031 — a `module_path` is written as a file path (`krate::src::…`, a `mod` segment, a `.rs` segment)
+//!   instead of the module path the resolver walks. An allowlisted ghost is exempt: the allowlist only shrinks, and
+//!   the entry leaves it when the row is rewritten to a path that resolves (infra-83 ruling on #4502).
 //!
 //! `not_implemented` and `pending` bindings claim no code and are not resolved. Declines (exit 2, `NoCheckable`): the
 //! corpus's parent has no `[workspace]` manifest (the fixture corpora), no registry binds an `implemented`/`partial`
@@ -62,6 +65,16 @@ pub struct BindingsCounters {
     pub allowlisted: usize,
     /// Unresolved and not allowlisted (PV-ONT-028).
     pub ghosts: usize,
+    /// `allowlisted`, by why the walk stopped: the module exists and the leaf does not ...
+    pub allowlisted_absent_leaf: usize,
+    /// ... a module segment names no `mod`, `use` or included file ...
+    pub allowlisted_no_module: usize,
+    /// ... or the path's crate is not a workspace member (a crate renamed or excluded since the row was written).
+    pub allowlisted_not_member: usize,
+    /// Any other reason (a type used as a module, a re-export cycle, a file that does not parse).
+    pub allowlisted_other: usize,
+    /// Rows whose `module_path` is a file path and not allowlisted (PV-ONT-031).
+    pub file_path_form: usize,
     /// Allowlist entries that no longer name an unresolved binding (PV-ONT-029).
     pub stale_allowlist: usize,
     /// Distinct crate roots the walk entered: one would mean the workspace was never walked.
@@ -98,6 +111,31 @@ fn read_allowlist(contract_dir: &Path) -> Result<Vec<AllowEntry>, String> {
         }
     }
     Ok(file.entries)
+}
+
+/// True when `module_path` is written as a file path rather than a module path: a `src` segment after the crate,
+/// a `mod` segment (`…::ops::mod`), or a segment ending `.rs`. A module named `src` or `mod` cannot be declared
+/// (`mod` is a keyword; a crate-root `mod src` is never the layout here), so none of these is a real path.
+#[must_use]
+pub fn is_file_path_form(module_path: &str) -> bool {
+    module_path
+        .split("::")
+        .enumerate()
+        .any(|(i, seg)| (i > 0 && seg == "src") || seg == "mod" || seg.ends_with(".rs"))
+}
+
+/// Which allowlist class an unresolved reason from [`crate::ontology::extract::code`] falls in.
+fn count_allowlisted(c: &mut BindingsCounters, reason: &str) {
+    c.allowlisted += 1;
+    if reason.contains("is not a workspace member") {
+        c.allowlisted_not_member += 1;
+    } else if reason.starts_with("no `fn ") {
+        c.allowlisted_absent_leaf += 1;
+    } else if reason.starts_with("no `mod ") {
+        c.allowlisted_no_module += 1;
+    } else {
+        c.allowlisted_other += 1;
+    }
 }
 
 /// Run the gate over `contract_dir`.
@@ -159,10 +197,26 @@ pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
     let mut reported: BTreeSet<String> = BTreeSet::new();
     for (b, found) in claimed {
         let symbol = format!("{}::{}", b.module_path, b.function);
+        let is_allowed = allowed.contains_key(symbol.as_str());
+        if !is_allowed && is_file_path_form(&b.module_path) {
+            c.file_path_form += 1;
+            if reported.insert(format!("031 {symbol}")) {
+                findings.push(LintFinding::new(
+                    "PV-ONT-031",
+                    RuleSeverity::Error,
+                    format!(
+                        "`{}` ({} {}) is a file path, not a module path — write the path the code is reached by \
+                         (drop `src`, `mod` and `.rs`)",
+                        b.module_path, b.contract, b.equation
+                    ),
+                    b.contract.clone(),
+                ));
+            }
+        }
         match found {
             Ok(_) => c.resolved += 1,
-            Err(_) if allowed.contains_key(symbol.as_str()) => {
-                c.allowlisted += 1;
+            Err(u) if is_allowed => {
+                count_allowlisted(&mut c, &u.reason);
                 unresolved.insert(symbol);
             }
             Err(u) => {

@@ -338,7 +338,7 @@ fn run_or_answer(
             .iter()
             .flat_map(|cc| cells_gate::findings(cc, &arming)),
     );
-    refuse_vacuous_kernels(&mut counted, &shapes, extraction.kernel.kernels);
+    refuse_vacuous_kernels(&mut counted, &shapes, &arming, extraction.kernel.kernels);
     let passed = counted.violations == 0;
     let verdict = verdict_of(&counted, armed_vacuity);
     let by_shape = by_shape(&focus_of);
@@ -868,27 +868,49 @@ struct Counted {
 }
 
 /// A kernel shape over zero `#[kernel]` symbols is not a pass: every one of its constraints held over nothing
-/// (#3522 ruling). The count of `ont:KernelSymbol` focus nodes is the measurement, so zero is a violation.
-fn refuse_vacuous_kernels(c: &mut Counted, shapes: &[NodeShape], kernels: usize) {
+/// (#3522 ruling). The count of `ont:KernelSymbol` focus nodes is the measurement, so zero is a violation —
+/// from an ARMED shape. An unarmed kernel shape's vacuity is named as a warning and counted with the other
+/// unarmed results: ont-kernel-receipts-v1 "an unarmed shape never feeds the meet" (ONT-4c4, #4502).
+fn refuse_vacuous_kernels(
+    c: &mut Counted,
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+    kernels: usize,
+) {
     let kernel_class = crate::ontology::rdf::ont("KernelSymbol");
-    let kernel_shapes: Vec<&str> = shapes
+    let (armed, unarmed): (Vec<&str>, Vec<&str>) = shapes
         .iter()
         .filter(|s| s.target_class == kernel_class)
         .map(|s| s.id.as_str())
-        .collect();
-    if kernels > 0 || kernel_shapes.is_empty() {
+        .partition(|id| arming.is_armed(id));
+    if kernels > 0 {
         return;
     }
-    c.violations += 1;
-    c.findings.push(LintFinding::new(
+    if !armed.is_empty() {
+        c.violations += 1;
+        c.findings
+            .push(vacuous_kernel_finding(&armed, RuleSeverity::Error, ""));
+    }
+    if !unarmed.is_empty() {
+        c.unarmed_violations += 1;
+        c.findings.push(vacuous_kernel_finding(
+            &unarmed,
+            RuleSeverity::Warning,
+            " [not armed]",
+        ));
+    }
+}
+
+fn vacuous_kernel_finding(ids: &[&str], severity: RuleSeverity, note: &str) -> LintFinding {
+    LintFinding::new(
         "PV-ONT-012",
-        RuleSeverity::Error,
+        severity,
         format!(
-            "0 #[kernel] symbols extracted: kernel shape(s) {} graded nothing — vacuous, not a pass",
-            kernel_shapes.join(", ")
+            "0 #[kernel] symbols extracted: kernel shape(s) {}{note} graded nothing — vacuous, not a pass",
+            ids.join(", ")
         ),
         "contracts/ont-kernel-receipts-v1.yaml".to_string(),
-    ));
+    )
 }
 
 fn findings_of(
@@ -1065,6 +1087,63 @@ mod tests {
             ),
             other => panic!("{other:?}"),
         }
+    }
+
+    fn kernel_shape(id: &str) -> NodeShape {
+        NodeShape {
+            id: id.to_string(),
+            target_class: crate::ontology::rdf::ont("KernelSymbol"),
+            closed: false,
+            ignored_properties: Vec::new(),
+            properties: Vec::new(),
+            allow_empty: None,
+        }
+    }
+
+    fn empty_counted() -> Counted {
+        Counted {
+            findings: Vec::new(),
+            violations: 0,
+            warnings: 0,
+            unarmed_violations: 0,
+        }
+    }
+
+    /// ONT-4c4 (#4502): an UNARMED kernel shape over zero `#[kernel]` symbols is named, never in the meet;
+    /// an ARMED one is still RED; any kernel symbol clears both.
+    #[test]
+    fn falsify_ont4c4_unarmed_kernel_vacuity_never_feeds_the_meet() {
+        let shapes = [kernel_shape("kernel-parity"), kernel_shape("kernel-timing")];
+        let none = ArmedShapes::Listed(Vec::new());
+        let mut c = empty_counted();
+        refuse_vacuous_kernels(&mut c, &shapes, &none, 0);
+        assert_eq!(c.violations, 0, "{:?}", c.findings);
+        assert_eq!(c.unarmed_violations, 1);
+        assert_eq!(c.findings.len(), 1);
+        assert_eq!(c.findings[0].severity, RuleSeverity::Warning);
+        assert!(c.findings[0].message.contains("[not armed]"));
+        assert_eq!(verdict_of(&c, false), Verdict::Pass);
+
+        let one = ArmedShapes::Listed(vec!["kernel-parity".to_string()]);
+        let mut c = empty_counted();
+        refuse_vacuous_kernels(&mut c, &shapes, &one, 0);
+        assert_eq!(c.violations, 1);
+        assert_eq!(c.unarmed_violations, 1);
+        let err = c
+            .findings
+            .iter()
+            .find(|f| f.severity == RuleSeverity::Error)
+            .expect("armed vacuity is an Error");
+        assert!(err.message.contains("kernel-parity"), "{}", err.message);
+        assert!(!err.message.contains("kernel-timing"), "{}", err.message);
+        assert_eq!(verdict_of(&c, false), Verdict::Fail);
+
+        let mut c = empty_counted();
+        refuse_vacuous_kernels(&mut c, &shapes, &ArmedShapes::All, 3);
+        assert_eq!(
+            (c.violations, c.unarmed_violations, c.findings.len()),
+            (0, 0, 0)
+        );
     }
 
     #[test]
