@@ -1,0 +1,23 @@
+- id: PMAT-711
+  github_issue: null
+  item_type: task
+  title: QLoRA 4-bit + LoRA fine-tune (apr finetune -m qlora) — CRUX-D QLoRA (NF4 path EXISTS for the InstructPipeline transformer; Qwen3.5 QLoRA = 0.72 R4, open)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-06-11 06:10:08+00:00
+  updated: 2026-09-27T20:30:00+00:00
+  spec: docs/specifications/aprender-train/train-what-you-serve-0.72.md
+  acceptance_criteria:
+  - 'Core Unsloth feature. qlora/qlora_default exist in aprender-train; wire the 4-bit NF4 base + LoRA
+    adapter path into apr finetune. Falsifier: loss-monotone over N steps on a tiny fixture; 4-bit base
+    footprint vs f16. CPU-falsifiable math + single-GPU run (lambda-vector).'
+  - 'Qwen3.5 (Gated DeltaNet hybrid) QLoRA end to end on CUDA per contracts/qwen35-qlora-e2e-v1.yaml (0.72 R4): CUDA adapter dA/dB match the CPU Qwen35Lora reference (QQE-005), CPU pre-flight descends (QQE-006), planted zero step leaves loss unchanged (QQE-002)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux-d
+  - unsloth
+  - qlora
+  notes: 'R19 correction (la-72, 2026-09-27, d1 dispatch): "currently MISSING" was stale. MEASURED on origin/main aca6f2d7f6: apr finetune -m qlora sets InstructConfig.quantize_nf4 (crates/apr-cli/src/commands/finetune.rs:336) and gpu_backend_notice routes it to the CUDA cuBLAS backward or WGPU (finetune.rs:260-311); instruct_pipeline/cuda_init.rs initialises CUDA only when quantize_nf4. What is still open is QLoRA on Qwen3.5: the InstructPipeline transformer has no Gated DeltaNet layer. CPU prep on branch-only la-72/r3-backward @045a7edb73: Qwen35Model backward (gradchecked), Qwen35Lora (FALSIFY-QTG-009 adapter grad vs finite difference, 6/6 planted mutants RED) + AdamW; spike S-R4a on the real 0.8B, LoRA r16 on 150 projections (10.2M params), loss 8.881→0.002 in 8 steps, monotone, ~7.2 s/step CPU. Contract: la-72/0.72-shaping @2f2e289ede (qwen35-qlora-e2e-v1). FINDING R15 (still true on aca6f2d7f6): plain LoRA (-m lora) never engages the GPU. --gpu-backend cuda only prints a WARNING (finetune.rs:280) and trains on the CPU F32 path, because CUDA is initialised for QLoRA/NF4 only. PMAT-726 ("wire QLoRALayer into InstructPipeline, mod.rs:176") should be re-measured against constructors.rs/cuda_init.rs before it is worked.'
