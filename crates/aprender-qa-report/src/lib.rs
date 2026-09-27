@@ -44,6 +44,7 @@ pub mod junit;
 pub mod markdown;
 pub mod mqs;
 pub mod popperian;
+pub mod probe_decision;
 pub mod proof_status;
 pub mod ticket;
 
