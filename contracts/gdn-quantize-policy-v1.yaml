@@ -1,0 +1,160 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  registry: true
+  description: |
+    GatedDeltaNet quantize policy (la-0.72 R8). Names the GDN tensors that are
+    never block-quantized, and gates the dequantized layer output by cosine.
+
+    Three tensors in every Qwen3.5 linear-attention layer stay F32 under
+    Int8 / Int4 / Q4K, on every converter path (import, convert/quantize, export):
+
+        | tensor  | HF name                     | GGUF name                 |
+        | conv1d  | linear_attn.conv1d.weight   | blk.N.ssm_conv1d.weight   |
+        | A_log   | linear_attn.A_log           | blk.N.ssm_a               |
+        | dt_bias | linear_attn.dt_bias         | blk.N.ssm_dt.bias         |
+
+    Everything else in the layer (in_proj_qkvz, in_proj_ba, out_proj, ssm_alpha,
+    ssm_beta, ssm_out) stays quantizable. Matching is by dotted segment, so
+    `ssm_alpha` is not `ssm_a` and Mamba's `ssm_dt.weight` projection is not
+    `ssm_dt.bias`. Out of scope: an explicit whole-model Fp16 request, which
+    applies to every tensor by design (f16_convert.rs).
+
+    Before this contract the converter's three rules disagreed. conv1d matched
+    no norm/bias pattern and has >= 256 elements, so Rule A (import/convert),
+    Rule B (Q4K convert) and Rule C (export) all quantized it. Rule C also
+    fake-quantized A_log. The runtime already treated all three as F32
+    (aprender-serve gguf/dtype.rs), so a converted file disagreed with its
+    loader.
+
+    Cosine gate, measured on a synthetic GDN layer at Qwen3.5 value ranges
+    (A = exp(A_log) in [1,16], dt = softplus(dt_bias) in [0.001,0.1]; T=256,
+    D=256, 16 heads x 8 channels, K=4). The layer is
+    u = W_qkvz x, a = W_ba x, c = silu(causal conv1d(u)),
+    g = -exp(A_log) softplus(a + dt_bias), s_t = exp(g_t) s_{t-1} + c_t.
+    With the projections Q4K round-tripped by the real Q4K rule, the output
+    cosine against all-F32 is 0.998951 (gate 0.998).
+
+    Planted falsifier: Q4K on ONE protected tensor, measured as damage
+    (1 - cos) relative to the policy's own damage. The bar, fixed before
+    measuring, is x1.5:
+
+        | planted | cosine   | damage | bytes f32 -> q4k | verdict                    |
+        | conv1d  | 0.997404 | x2.48  | 2048 -> 288      | RED on damage              |
+        | dt_bias | 0.996838 | x3.02  |   64 -> 144      | RED on damage              |
+        | A_log   | 0.998731 | x1.21  |   64 -> 144      | under the bar; kept on bytes |
+
+    A_log is kept on the second ground, and is named here rather than hidden: it
+    misses the damage bar in this layer, but Q4K on a 16-float vector still
+    writes one 144-byte super-block, so quantizing it makes the file LARGER
+    while still adding damage (x1.21 > 1). It loses on both axes.
+
+    Code mutants, each RED: the policy returning false (5/5 tests fail),
+    dropping it from Rule A (1 fails), Rule B (3 fail), Rule C (1 fails).
+  references:
+  - 'crates/aprender-core/src/format/converter/gdn_quant_policy.rs — gdn_keeps_full_precision'
+  - 'crates/aprender-core/src/format/converter/f16_convert.rs — should_skip_quantization (Rule A)'
+  - 'crates/aprender-core/src/format/converter/infer_q4k_config.rs — should_quantize_tensor (Rule B)'
+  - 'crates/aprender-core/src/format/converter/convert_report.rs — quantize_tensors (Rule C)'
+  - 'crates/aprender-core/src/format/converter/tests/gdn_quant_policy.rs — falsifiers'
+  - 'crates/aprender-serve/src/gguf/dtype.rs — runtime side: ssm_conv1d/ssm_a/ssm_dt are F32'
+  - contracts/gated-delta-net-v1.yaml
+
+name: gdn-quantize-policy
+version: 1.0.0
+scope: crates/aprender-core format::converter — which GDN tensors are block-quantized
+
+equations:
+  keep_set:
+    formula: keep(name) <=> some dotted segment s of name has s ⊇ "conv1d" or s ∈ {A_log, ssm_a, dt_bias, ssm_dt_bias}, or name ⊇ "ssm_dt.bias"
+    domain: tensor names, HF and GGUF spellings
+    invariants:
+    - Every converter rule (A, B, C) leaves keep(name) tensors F32 under Int8/Int4/Q4K
+    - No quantizable projection (ssm_alpha, ssm_beta, ssm_out, in_proj_*, out_proj) is in the keep set
+    preconditions:
+    - name is a tensor name from an HF or GGUF GDN layer
+    lean_theorem: Theorems.Gdn_Quant_Keep_Set
+  layer_cosine_gate:
+    formula: cos(layer_f32(x), layer_policy(x)) >= 0.998
+    domain: GDN layer, projections Q4K round-tripped by should_quantize_tensor, keep set F32
+    invariants:
+    - The projections are really quantized (the gate is not vacuous)
+    preconditions:
+    - layer weights at Qwen3.5 value ranges
+    lean_theorem: Theorems.Gdn_Quant_Cosine_Gate
+  planted_damage:
+    formula: for t in keep set, r_t = (1 - cos_planted(t)) / (1 - cos_policy); r_t > 1 and (r_t >= 1.5 or q4k_bytes(t) >= f32_bytes(t))
+    domain: the same layer with ONE keep-set tensor also Q4K round-tripped
+    invariants:
+    - Each keep-set entry is justified by its own measurement, not by the others
+    preconditions:
+    - 1 - cos_policy > 0
+    lean_theorem: Theorems.Gdn_Quant_Planted_Damage
+
+proof_obligations:
+- id: GQP-INV-001
+  type: invariant
+  property: The keep set names conv1d, A_log and dt_bias in both HF and GGUF spellings, and no projection
+  formal: keep(n) for n in KEEP; not keep(n) for n in QUANTIZE
+  applies_to: all
+- id: GQP-INV-002
+  type: invariant
+  property: Rules A, B and C all honour the keep set, regardless of size or rank
+  formal: should_skip_quantization(n, big) and not should_quantize_tensor(n, [64,4096], big) and quantize_tensors keeps n bit-exact, for n in KEEP
+  applies_to: all
+- id: GQP-INV-003
+  type: bound
+  property: The policy-quantized GDN layer clears the cosine gate
+  formal: cos(layer_f32, layer_policy) >= 0.998
+  applies_to: all
+- id: GQP-INV-004
+  type: invariant
+  property: Quantizing any one keep-set tensor adds damage, and either adds at least x1.5 of it or saves no bytes
+  formal: r_t > 1 and (r_t >= 1.5 or q4k_bytes(t) >= f32_bytes(t))
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-GQP-001
+  rule: The keep-set name table
+  prediction: 8 HF/GGUF spellings of conv1d/A_log/dt_bias match; 10 projections (incl. ssm_alpha, ssm_dt.weight) do not.
+  if_fails: |
+    gdn_keeps_full_precision matches by substring instead of dotted segment
+    (ssm_a would swallow ssm_alpha), or a spelling is missing.
+  test: cargo test -p aprender-core --lib falsify_gqp_001
+  evidence: cargo test -p aprender-core --lib falsify_gqp_001
+- id: FALSIFY-GQP-002
+  rule: Every converter rule honours the keep set
+  prediction: |
+    Rule A skips, Rule B refuses, and Rule C export returns every keep-set
+    tensor bit-exact, at a 64x4096 shape so size and rank excuse nothing.
+    Dropping the policy from any one rule turns this RED.
+  if_fails: A converter rule no longer calls gdn_keeps_full_precision.
+  test: cargo test -p aprender-core --lib falsify_gqp_002
+  evidence: cargo test -p aprender-core --lib falsify_gqp_002
+- id: FALSIFY-GQP-003
+  rule: Cosine gate on the dequantized GDN layer
+  prediction: 'Policy layer cosine 0.998951 >= 0.998, with in_proj_qkvz and in_proj_ba really Q4K-quantized.'
+  if_fails: |
+    Either a keep-set tensor is being quantized (Rule B mutant turns it RED),
+    or Q4K fidelity regressed (see quant-roundtrip-fidelity-v1).
+  test: cargo test -p aprender-core --lib falsify_gqp_003
+  evidence: cargo test -p aprender-core --lib falsify_gqp_003
+- id: FALSIFY-GQP-004
+  rule: Planted falsifier — quantizing any one keep-set tensor
+  prediction: |
+    conv1d x2.48 and dt_bias x3.02 clear the x1.5 damage bar; A_log x1.21
+    misses it and is kept because Q4K grows it 64 -> 144 bytes.
+  if_fails: |
+    A keep-set entry no longer earns its place. Remove it from the policy
+    (and this contract) rather than lowering the bar.
+  test: cargo test -p aprender-core --lib falsify_gqp_004
+  evidence: cargo test -p aprender-core --lib falsify_gqp_004
+
+qa_gate:
+  id: F-GQP-001
+  name: gdn-quantize-policy-v1 Contract
+  description: GDN conv1d/A_log/dt_bias are never block-quantized on any converter path; the dequantized GDN layer clears a 0.998 cosine gate and each kept tensor is justified by a planted falsifier (la-0.72 R8).
+  checks:
+  - validation
+  - falsification
