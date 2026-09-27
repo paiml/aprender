@@ -75,21 +75,6 @@ const ALLOWED_GAPS: &[(&str, &str)] = &[
     ("ssm-kernel-v1", "ssm_discretize"),
     ("ssm-kernel-v1", "ssm_scan"),
     ("ssm-kernel-v1", "selective_gate"),
-    // #4369: recorded `not_implemented` in contracts/aprender/binding.yaml
-    // while this build script read a path that no longer existed, so the
-    // policy never saw them. Listed as found; each is an open gap under #4369.
-    ("apr-cli-operations-v1", "inference_determinism"),
-    ("apr-data-pipeline-v1", "streaming_data_loader"),
-    ("apr-format-safety-v1", "header_integrity"),
-    ("apr-format-safety-v1", "magic_byte_validation"),
-    ("apr-gpu-backend-v1", "generation_temperature_zero"),
-    ("bidirectional-attention-v1", "bidirectional_attention"),
-    ("encoder-forward-v1", "cls_pooling"),
-    ("format-parity-v1", "element_count"),
-    ("format-parity-v1", "transpose_involution"),
-    ("linear-probe-classifier-v1", "linear_probe"),
-    ("setfit-apr-v1", "doc_bundle_bijection"),
-    ("setfit-apr-v1", "selection_lock_lifecycle"),
 ];
 
 /// Returns true if the new status is dominated by what we already have.
