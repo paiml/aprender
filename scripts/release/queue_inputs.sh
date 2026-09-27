@@ -563,6 +563,11 @@ cmd_compute() {
     out=$(compute "$1")
     printf '%s\n' "$out"
     printf '%s' "$out" | prop12_lines >&2
+    # The receipt must pass its own pv binding (#4519) before the weekly run may call it GREEN.
+    if ! printf '%s' "$out" | receipt_check | jq -e '.verdict == "OK"' >/dev/null; then
+        printf '%s' "$out" | receipt_check | jq -r '.errors[] | "queue_inputs: receipt-check RED: \(.)"' >&2
+        return 1
+    fi
     case "$(printf '%s' "$out" | jq -r .verdict)" in
         GREEN) return 0 ;;
         *) printf '%s\n' "$out" | jq -r '"queue_inputs: \(.verdict)"' >&2; return 1 ;;
