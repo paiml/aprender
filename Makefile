@@ -630,29 +630,13 @@ census:
 # with that list's own status (pv's rc through the pipe, via -o pipefail).
 # Case table + mutants: scripts/tests/make_contracts_propagates.sh.
 contracts:
-	@set -e
-	@echo "== provable contracts: pv lint contracts/ =="
-	@# `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
-	@# result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
-	@# is Verification Discipline #1 in the release's own contract gate, and
-	@# contracts-exit-integrity does not catch it -- it looks for or-true swallows and bare for-loops,
-	@# not for a pipe. The output is kept to a tail for readability by writing it to a file and
-	@# tailing THAT, so the exit status belongs to pv and nothing else.
-	@. scripts/pv_bin.sh && ( "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc ) || exit
-	@echo "== census: a FRESH pv census holds its invariants (ONT-001 ONT-1, F-1; #3569) =="
-	@# The tracked contracts/census.json is a release-train snapshot (its one writer,
-	@# `make census`) and is expected to lag; a PR may not edit it
-	@# (scripts/check_census_derived.sh). So the census is computed fresh into a temp
-	@# file, its identities are checked there, and the README count (readme_sync's
-	@# tree listing) must equal its n_files — the tracked file is not rewritten.
-	@. scripts/pv_bin.sh && t=$$(mktemp) && ( "$$PV" census contracts --format json > "$$t" && bash scripts/check_census_derived.sh --census "$$t" && CENSUS_JSON="$$t" bash scripts/readme_sync.sh --check; rc=$$?; rm -f "$$t"; exit $$rc ) || exit
-	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
-	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null || exit
-	@echo "== README states the tree's count (the listing readme_sync uses; the fresh census was held to it above) =="
-	@bash scripts/readme_sync.sh --check
-	@echo "== provenance marks, interim (ONT-001 R-10) =="
-	@bash scripts/lint-provenance.sh --self-test
-	@bash scripts/lint-provenance.sh contracts/external-corpora.yaml
+# #4475: the steps live in scripts/contracts_gate.sh. The recipe used to hold them as lines, and under
+# `.ONESHELL` + `.SHELLFLAGS := -o pipefail -c` (no -e) the whole recipe is ONE bash script: the lint line's
+# unconditional `exit $$rc` ended it on a GREEN lint, so the census diff, `extract --check`, the README sync
+# and provenance never ran — and had they run, a failing middle line would not have failed the recipe. The
+# gate runs EVERY step, prints `N of 6 step(s) RAN, M FAILED`, fails closed on a shapes verdict it cannot
+# measure, and regenerates census.json / contracts.nt / shapes.ttl then asks `git diff --exit-code`.
+	@bash scripts/contracts_gate.sh || exit 1
 	@echo "== contract engine tests =="
 	@# Same shape as pv lint above: the old `| grep | tail -1` printed the verdict and
 	@# discarded it (the exit status was tail's), so a failing engine test passed the gate.

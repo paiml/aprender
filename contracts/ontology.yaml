@@ -19,6 +19,10 @@ concepts:
   Entity: {doc: "anything the ontology can name"}
   Contract: {doc: "a pv contract file under contracts/"}
   Kernel: {doc: "a contract whose kind is kernel: it carries equations and proof obligations"}
+  # ONT-001 v4.15: one IRI, one class. The Rust #[kernel] fn is NOT Kernel (a Contract); it is KernelSymbol, a
+  # Symbol, on the symbol's own IRI. extract:kernel emits `KernelSymbol rdfs:subClassOf Symbol` and refuses any
+  # subject typed both Symbol and Contract.
+  KernelSymbol: {doc: "a Rust #[kernel] fn — cuda-oxide, pure Rust to PTX — graded by its apr-kernel-receipt/v1 receipts; a Symbol, never a Contract"}
   Code: {doc: "a Rust item — a function, type or module — in this workspace"}
   Test: {doc: "a test function a contract cites as its falsifier"}
   Proof: {doc: "a Kani harness or Lean theorem discharging an obligation"}
@@ -154,6 +158,9 @@ entity_types:
   # aprender#3745 S2 (#3777): the release candidate's own interface (`apr surface --json`, apr-cli-surface/v1),
   # extracted ONLY under a release subject with --surface; the release cells are derived from it.
   - {name: cli-surface, extractor: cli_surface, implemented: true}
+  # ONT-4c4 (aprender#4069): the bound #[kernel] symbols over extract:code, joined to evidence/kernels/<k>/<host>.json
+  # (apr-kernel-receipt/v1 — the ladder schema there, or this one under the ladder root, is refused by name).
+  - {name: kernel, extractor: kernel, implemented: true}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -168,6 +175,7 @@ extractors:
   - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
   - {name: cli_surface, reader: ontology/extract/cli_surface.rs, implemented: true}
+  - {name: kernel, reader: ontology/extract/kernel.rs, implemented: true}
 
 # v4.16 D-T1 (qd4c4): the class a shape with no `targetClass` targets, by `entity.type` (shapes.rs::default_target).
 # A type absent here has no default: its shape is malformed, exit 3, named. The sigma gate cross-checks the map
@@ -186,6 +194,7 @@ entity_type_target_class:
   parity-receipt: ~
   release-evidence: ~
   cli-surface: ~
+  kernel: ~
 
 # v4.16 D5b (qd4c3): which `## ` headings of an llm-context file satisfy each role. extract:llm-context emits
 # llm:purposeSection / rulesSection / commandsSection / layoutSection per match; an unlisted heading is no error.
