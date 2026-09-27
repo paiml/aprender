@@ -3,13 +3,13 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "7a8088d9a7ab39e1fecc9d6fab91994f9365e337",
-  "diff_sha256": "484ec8e8a7cf54ffa2970476c787dd680b72ee9ea8567bb6e539a4cd2186a319",
+  "head": "76d6f4886b775d07d5d8d7acdec976563e7d3aeb",
+  "diff_sha256": "4050ec186301ae484a6089a963fcc34db33b986e2d86f5545cd74536f4bf3b1c",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 6807495,
-  "prompt_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
+  "prompt_bytes": 6799861,
+  "prompt_sha256": "93086839856ab8efbf7c60b686133e73a7716330a84216fdae78d26b50b96964",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,9 +21,17 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Judged the diff against PMAT-4431's receipt \"Fix commits\" table (the base is merge commit e5929e6e5; that table is the judgeable scope since origin/main...HEAD also includes the unrelated 26-PR B3 fold). Each of the 6 table rows was checked against the actual diff hunk it claims and matches: (1) .gitattributes gains per-file merge=union for the two nested jsonl ledgers; (2) scripts/ci_run_target_release.sh is present only under scripts/retired/ with a README table row and a filed finding 57-4431-ci-4102-4112-report in docs/findings/aprender-57.jsonl whose evidence text matches the receipt's git-apply-fails claim; (3) model_ladder_cells_produce.py line 210 (offset within the new file) carries the '... and N more chars' truncation-length suffix; (4) check_ladder_cells_producer.sh line 116 is the 'mutant owed-set' case using a zip/slice rewrite, matching the 'rewritten rather than baselined' description; (5) admission.rs's row_errors and receipt.rs's problems are each split into three named helper functions exactly as claimed; (6) the PMAT-4072 fragment (fold-origin, shown as a new file) already states status: completed / assigned_to: aprender-ea, consistent with the receipt's explanation that the aggregate sync was catching up to an already-current fragment rather than making a new unprovable claim, and the aggregated roadmap.yaml row for PMAT-4072 matches the fragment. No conflict markers were found anywhere in the diff. The scripts/retired moves and README table are internally consistent with the two named guards. Nothing found that contradicts the receipt or does something the ticket forbids.",
-      "findings": [],
-      "raw_bytes": 4156,
+      "summary": "The judged diff is the three fix commits documented in the PMAT-4431 receipt (base e5929e6e5), layered on the resolved merge of origin/main into fold/b3-onto-main. I checked each row of the receipt's fix-commit table against the actual diff content: .gitattributes merge=union additions, retirement of scripts/ci_run_target_release.sh + the two ci.yml-scoped guards (with the aprender-57 finding filed as claimed), the truncation-format fix in model_ladder_cells_produce.py, the owed-set mutant rewrite in check_ladder_cells_producer.sh (zip/range(1) in place of a slice, same first-rung semantics), the admission.rs/receipt.rs helper split, and the roadmap.yaml regeneration. All match what the receipt says line-for-line where the diff lets me see it. The one item I could not independently verify is the historical claim that entries/PMAT-4072.yaml already carried status:completed/assigned_to:aprender-ea at merge commit e5929e6e5 via an out-of-band commit 5c1dbe01f — the diff is against origin/main, so that fragment appears as a wholesale new file and I have no shell access to git-show the intermediate commit. The document embeds several earlier quorum rounds on this same ticket that FAILed specifically because an older draft of this receipt falsely claimed the roadmap.yaml PMAT-4072 row was untouched; the current receipt (lines 44-45) has since been corrected to explicitly disclose and explain the status/assigned_to change as an aggregate-regeneration sync rather than a new editorial claim, which is internally consistent (the entries/ fragment and the roadmap.yaml aggregate agree with each other and with the notes citation) even though I can't replay the git history myself. No guard in this receipt's table is weakened, no test asserts the opposite of the ticket, and nothing in the fix-commit diffs does something the ticket forbids -- each is tied to a named guard that was RED without it.",
+      "findings": [
+        {
+          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+          "line": 18,
+          "claim": "The receipt's claim that this fragment already carried status:completed/assigned_to:aprender-ea at merge commit e5929e6e5 (via commit 5c1dbe01f, prior to and independent of this fold) cannot be verified from the origin/main...HEAD diff alone -- the fragment is a wholesale new file relative to main. Earlier embedded quorum rounds in this same document FAILed a prior draft of this receipt for making a materially false claim about this exact row ('status/assignee untouched'); the current wording has been corrected to disclose the change, but the underlying historical claim is still asserted, not diff-backed, from this reviewer's vantage.",
+          "grounding": "asserted",
+          "fix": "Not blocking given the corrected disclosure and internal consistency between the entries/ fragment, the roadmap.yaml aggregate, and the notes citation; a reviewer with git-show access to e5929e6e5 and 5c1dbe01f could upgrade this to measured."
+        }
+      ],
+      "raw_bytes": 6721,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -34,10 +42,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
+      "brief_sha256": "93086839856ab8efbf7c60b686133e73a7716330a84216fdae78d26b50b96964",
       "trace": {
-        "input_sha256": "5be2d0bb18d7354a5ce43ed64c6ae9e22d383046803ccc99beb18f8635dc6c9e",
-        "output_sha256": "d4ae13eef43de65c79df869dc20adb83c6cc924b7919c708ac5d3965799774bf",
+        "input_sha256": "dc97266991ea43c86fee19d9233a1a8d500633d811537ebe4c461e2d4b29f78b",
+        "output_sha256": "84a473eef2c12918ef056a2a69f58ace82ef880c8683df2b28dacfdb0cc4f291",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -58,9 +66,9 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff implements the ticket's instructions to fold B3 onto main. I verified the receipt's claims against the diff and found them to be accurate. The fix commits (including the truncation message change in `model_ladder_cells_produce.py`, the mutant rewrite in `check_ladder_cells_producer.sh`, and the PMAT-4072 status/assignee sync) are all justified by the receipt and backed by the need to green the respective target-side guards. The refactoring of `admission.rs` and `receipt.rs` also precisely matches the receipt's description. No refuting evidence was found.",
+      "summary": "The diff implements the B3 fold as requested in PMAT-4431. The receipt explicitly lists the 7 fix commits that were required to resolve target-side guard failures (such as the truncation formatting in model_ladder_cells_produce.py, the slice rewrite in check_ladder_cells_producer.sh, and the PMAT-4072 fragment cite updates). These are not drive-by changes; they are explicitly documented in the receipt as necessary to achieve green target-side guards, which is required by the ticket. All claims in the receipt match the diff exactly, and the rest of the diff contains the 26 PRs comprising the B3 fold. I found nothing that refutes the ticket.",
       "findings": [],
-      "raw_bytes": 2503,
+      "raw_bytes": 2672,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -71,10 +79,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
+      "brief_sha256": "93086839856ab8efbf7c60b686133e73a7716330a84216fdae78d26b50b96964",
       "trace": {
-        "input_sha256": "d4a554c5cf6414e4d4116daa3cca922d8a70700f96460c51250a009bc704ccb1",
-        "output_sha256": "a8fb0e4750dcd706ef30f3c0ae275ee60adbcff3a2df9ed8a642ffa641f49f77",
+        "input_sha256": "65adf28b6229746e5f6505e3fe164fbeca77e975626164280f663228da874c87",
+        "output_sha256": "1fc478469d1d3a41e5328781658a6a71ec2937f7d1fff01fe5e12bb62402a5af",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -95,9 +103,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "PMAT-4431 merge (fold/b3-onto-main into main) passes. The receipt's fix commits resolve all target guards without weakening gate checks. The diff implements only what the ticket requests: 26 folded PRs, contracts/ONT/PVL/docs consolidation, and guard fixes. No gate was relaxed; the only retiring reds are guards whose subjects no longer apply post-merge (ci.yml delta that #4441 superseded). The measured state shows remaining reds are host-specific (bashrs 7.4.2 vs baseline 7.4.1) or gitignored build artifacts (Lean cache), never the tree itself.",
+      "summary": "PMAT-4431 fold of B3 onto main successfully delivers 26 folded PRs + EV-6c part 2, with target-side guards green (guard_tree.sh passes; remaining reds pre-existing or in gitignored artifacts). Receipt claims are fully backed by diff: 18 contracts added, 1 crate added, complexity refactored, guards retired, roadmap consistent. CI conflict with #4441 documented as finding. No gates weakened, no tests refute ticket.",
       "findings": [],
-      "raw_bytes": 2044,
+      "raw_bytes": 1790,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -108,10 +116,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "a99f732f5c3904a49891bbd8c25d93f783db2cb437d9083cd8a01af322bd54ce",
+      "brief_sha256": "93086839856ab8efbf7c60b686133e73a7716330a84216fdae78d26b50b96964",
       "trace": {
-        "input_sha256": "8f3eb052fd6371ba6d93cc0fbbb89b377ce6def313f60414c6d244a55c50a290",
-        "output_sha256": "507a5945af41dd81ca7e21e08ffd0033377d1c48e02c5ec6edd6fa7baec24698",
+        "input_sha256": "02e80c720abcb1eb40df67fbc0c14cb8d1bf8e4070b3bae35f86c2d527af3875",
+        "output_sha256": "e4a72b906cf9447bbb224fb29e8abe741b4dae43464497f7fab3ed97528cd8f0",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -130,7 +138,18 @@
     }
   ],
   "dissent": [],
-  "dedup": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+      "line": 18,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The receipt's claim that this fragment already carried status:completed/assigned_to:aprender-ea at merge commit e5929e6e5 (via commit 5c1dbe01f, prior to and independent of this fold) cannot be verified from the origin/main...HEAD diff alone -- the fragment is a wholesale new file relative to main. Earlier embedded quorum rounds in this same document FAILed a prior draft of this receipt for making a materially false claim about this exact row ('status/assignee untouched'); the current wording has been corrected to disclose the change, but the underlying historical claim is still asserted, not diff-backed, from this reviewer's vantage."
+      ]
+    }
+  ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
@@ -185,7 +204,6 @@
       "agy_tier1_only": true,
       "tier1": true,
       "matched": [
-        ".github/workflows/conleche-nightly.yml",
         "contracts/release-readiness-v1.yaml",
         "contracts/softmax-kernel-v1.yaml",
         "crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/pmat/contracts/macs-ladder-kernel-v1.yaml",
@@ -204,9 +222,10 @@
         "crates/aprender-contracts-staging/lean/challenge/gqa-kernel-v1.lean",
         "crates/aprender-contracts-staging/lean/challenge/kernel-fusion-v1.lean",
         "crates/aprender-contracts-staging/lean/challenge/layernorm-kernel-v1.lean",
-        "crates/aprender-contracts-staging/lean/challenge/matmul-kernel-v1.lean"
+        "crates/aprender-contracts-staging/lean/challenge/matmul-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/rmsnorm-kernel-v1.lean"
       ],
-      "paths": 732,
+      "paths": 731,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -227,9 +246,9 @@
           "budget": 86,
           "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
           "window_start": 1790522666,
-          "window_calls": 24,
+          "window_calls": 32,
           "window_429": 0,
-          "hour_calls": 12,
+          "hour_calls": 8,
           "share": 17,
           "want": 2,
           "state": "open",
@@ -241,13 +260,13 @@
   },
   "auto_merge": {
     "checked": true,
-    "was_armed": true,
-    "disarmed": true,
-    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 6807495 bytes > 24576"
+    "skipped": "brief 6799861 bytes > 24576"
   },
   "advisory_lane": {
     "state": "not-run",
@@ -256,7 +275,7 @@
       "NotRun": "ContextOverflow"
     },
     "verdict": "unavailable",
-    "why": "the brief is 6807495 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "why": "the brief is 6799861 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
@@ -270,9 +289,9 @@
     "wall_s": 0,
     "collected_s": 0,
     "budget_s": 128,
-    "budget_basis": "ledger: 2 x p95 64 s over 13 gx10-cuda Verdict rows",
+    "budget_basis": "ledger: 2 x p95 64 s over 16 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 6807495,
+      "bytes": 6799861,
       "sent_bytes": 0,
       "max_bytes": 24576
     },
