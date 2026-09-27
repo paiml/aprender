@@ -35,9 +35,9 @@
 
 use super::*;
 use trueno_gpu::kernels::gdn::{
-    CausalConv1dSiluSeqKernel, DeltaRuleChunkScanKernel, GdnGatesRowsKernel,
-    PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel, PrefillFlashAttention256Kernel,
-    FLASH_HEAD_DIM,
+    CausalConv1dSiluSeqKernel, DeltaRuleChunkScanKernel, DeltaRuleSplitScanKernel,
+    GdnGatesRowsKernel, PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel,
+    PrefillFlashAttention256Kernel, FLASH_HEAD_DIM,
 };
 use trueno_gpu::kernels::{
     Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel, Q8_0DequantKernel,
@@ -451,6 +451,20 @@ impl CudaExecutor {
         rows: u32,
     ) -> Result<(), GpuError> {
         let (nk, dk, nv, dv) = dims;
+        let mut args = [q, k, v, beta, gate, state, output, u64::from(rows)];
+        // #4376: the split scan unless it cannot take these heads or `bitwise` is asked.
+        let split_fits = dk % 8 == 0 && dv % 32 == 0;
+        if split_fits && !qwen35_scan_bitwise() {
+            let kern = DeltaRuleSplitScanKernel::new(nk, dk, nv, dv, qkv_row_stride, nv * dv);
+            let key = format!("qp_split_scan_{nk}_{dk}_{nv}_{dv}_{qkv_row_stride}");
+            self.qp_prepare(&key, &kern)?;
+            let config = LaunchConfig {
+                grid: kern.grid(),
+                block: kern.block(),
+                shared_mem: 0, // static: the kernel declares its k/q staging buffer
+            };
+            return self.qp_launch(&key, kern.name(), config, &mut args, 7);
+        }
         let kern = DeltaRuleChunkScanKernel::new(nk, dk, nv, dv, qkv_row_stride, nv * dv);
         let key = format!("qp_scan_{nk}_{dk}_{nv}_{dv}_{qkv_row_stride}");
         self.qp_prepare(&key, &kern)?;
@@ -461,7 +475,6 @@ impl CudaExecutor {
             block: (bx, 1, 1),
             shared_mem: 0, // static: the kernel declares its k/q staging buffer
         };
-        let mut args = [q, k, v, beta, gate, state, output, u64::from(rows)];
         self.qp_launch(&key, kern.name(), config, &mut args, 7)
     }
 
@@ -700,6 +713,13 @@ pub(crate) enum Qwen35PrefillGemm {
     F32,
     F16,
     Dp4a,
+}
+
+/// `APR_QWEN35_SCAN=bitwise` selects the chunk scan that is bitwise-identical to the
+/// per-token decode kernel (#3596) instead of the faster split scan (#4376).
+pub(crate) fn qwen35_scan_bitwise() -> bool {
+    static BITWISE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *BITWISE.get_or_init(|| std::env::var("APR_QWEN35_SCAN").as_deref() == Ok("bitwise"))
 }
 
 pub(crate) fn qwen35_prefill_gemm_mode() -> Qwen35PrefillGemm {
