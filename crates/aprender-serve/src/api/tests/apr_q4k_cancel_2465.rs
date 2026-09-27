@@ -15,63 +15,99 @@
 //! pass because generation produced nothing at all, which is indistinguishable
 //! from "cancellation worked".
 //!
-//! # Why these drive `q4k_decode` rather than `generate_q4k`
+//! # What these drive (#4269 M2b)
 //!
-//! `generate_q4k` needs a live `CudaExecutor` and a GPU-resident Q4K model, so it
-//! cannot run in the default test job. `q4k_decode` **is** its decode loop — the
-//! same control flow, with only the CUDA forward pass moved behind a closure —
-//! and it is not feature-gated, so these run under `cargo test -p aprender-serve
-//! --lib` with no `cuda` feature and no GPU. FALSIFY-SERVE-CANCEL-011 covers the
-//! part that cannot be executed here: that the three `#[cfg(feature = "cuda")]`
-//! submission sites hand the loop the request's live token.
+//! Since M2b a Q4K request decodes through the one engine: `generate_q4k` builds a
+//! [`Session`](crate::session::Session) over [`AprQ4kForward`] and calls
+//! `generate` with [`q4k_generate_config`]. These drive that same session, the
+//! same `ArchForward` impl and the same config; only the per-token
+//! [`Q4kStep`] is a counting fake instead of `CudaQ4kStep`, so they run under
+//! `cargo test -p aprender-serve --lib` with no `cuda` feature and no GPU.
+//! FALSIFY-SERVE-CANCEL-011 covers the part that cannot be executed here: that
+//! the three `#[cfg(feature = "cuda")]` submission sites hand the session the
+//! request's live token.
+//!
+//! The session emits no token before its first poll, so a request cancelled
+//! before decode returns nothing (the pre-M2b loop returned the prefill's token
+//! unpolled), and a request cancelled mid-decode returns one token per poll that
+//! passed.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
-use crate::api::apr_q4k_scheduler::q4k_decode;
+use crate::api::apr_q4k_forward::{AprQ4kForward, AprQ4kSession, Q4kStep};
+use crate::api::apr_q4k_scheduler::q4k_generate_config;
+use crate::error::Result;
 use crate::generate::CancelToken;
 
-/// Records every decode step the loop actually performed.
-///
-/// The step count is the falsifiable quantity: it is one GPU forward pass per
-/// entry, i.e. the work an abandoned request was burning.
+const VOCAB: usize = 1024;
+
+/// A deterministic stand-in for `forward_token_apr_q4k`: the logits put all
+/// their mass on `token + 1`, so a greedy run emits a strictly increasing
+/// sequence and a cancelled run is comparable to the uncancelled one token by
+/// token. Every step is recorded — one entry is one GPU forward pass, the work
+/// an abandoned request was burning.
 #[derive(Default)]
-struct StepLog {
-    positions: RefCell<Vec<usize>>,
+struct Counting {
+    log: Rc<RefCell<Log>>,
+    /// When set, every step returns these logits instead (the sampled tests).
+    fixed: Option<Vec<f32>>,
 }
 
-impl StepLog {
-    fn count(&self) -> usize {
-        self.positions.borrow().len()
+/// What the step saw, read back after the session is gone.
+#[derive(Default, Clone)]
+struct Log {
+    positions: Vec<usize>,
+    resets: usize,
+}
+
+impl Q4kStep for Counting {
+    fn reset(&mut self) {
+        self.log.borrow_mut().resets += 1;
+    }
+
+    fn step(&mut self, token: u32, position: usize) -> Result<Vec<f32>> {
+        self.log.borrow_mut().positions.push(position);
+        if let Some(fixed) = &self.fixed {
+            return Ok(fixed.clone());
+        }
+        let mut logits = vec![0.0; VOCAB];
+        logits[(token as usize + 1) % VOCAB] = 1.0;
+        Ok(logits)
     }
 }
 
-/// A deterministic stand-in for `forward_token_apr_q4k` + sampling: emits a
-/// strictly increasing token sequence so a cancelled run is comparable to the
-/// uncancelled one token by token.
+/// One Q4K request as `generate_q4k` runs it: prompt `1..=prompt_len`, a fresh
+/// session, the scheduler's config. Returns the generated tokens (what
+/// `AprQ4kResponse::output_tokens` carries) and the step log.
 fn run(
-    first_token: u32,
     prompt_len: usize,
     max_tokens: usize,
+    temperature: f32,
+    seed: u64,
     eos_ids: &[u32],
     cancel: &CancelToken,
-    log: &StepLog,
-) -> Vec<u32> {
-    q4k_decode(
-        first_token,
-        prompt_len,
-        max_tokens,
-        eos_ids,
-        cancel,
-        |token, position, _step| {
-            log.positions.borrow_mut().push(position);
-            Ok(token.wrapping_add(1))
-        },
-    )
-    .expect("the fake decode step never fails")
+    step: Counting,
+) -> (Vec<u32>, Log) {
+    let log = Rc::clone(&step.log);
+    let prompt: Vec<u32> = (1..=prompt_len as u32).collect();
+    let mut session = AprQ4kSession::new(AprQ4kForward::new(step, true, Some(4096)));
+    let config = q4k_generate_config(max_tokens, temperature, seed, eos_ids, cancel);
+    let turn = session
+        .generate(&prompt, &config, &mut |_| true)
+        .expect("the fake step never fails");
+    let generated = turn.tokens[prompt.len()..].to_vec();
+    let seen = log.borrow().clone();
+    (generated, seen)
+}
+
+/// The decode forwards: every step after the prompt's prefill.
+fn decode_steps(log: &Log, prompt_len: usize) -> Vec<usize> {
+    log.positions[prompt_len..].to_vec()
 }
 
 // ---------------------------------------------------------------------------
-// FALSIFY-SERVE-CANCEL-009 — the Q4K decode loop stops at the cancel point
+// FALSIFY-SERVE-CANCEL-009 — the Q4K decode stops at the cancel point
 // ---------------------------------------------------------------------------
 
 /// Pre-fix behaviour: `AprQ4kRequest` had no `cancel` field and the loop's only
@@ -81,71 +117,64 @@ fn run(
 #[test]
 fn q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens() {
     const PROMPT_LEN: usize = 5;
-    const FIRST_TOKEN: u32 = 100;
     const MAX_TOKENS: usize = 64;
     const BUDGET: usize = 8;
 
     // Uncancelled control FIRST. If this does not run the full budget then the
     // cancelled assertion below is not measuring cancellation.
-    let control_log = StepLog::default();
-    let uncancelled = run(
-        FIRST_TOKEN,
+    let (uncancelled, control) = run(
         PROMPT_LEN,
         MAX_TOKENS,
+        0.0,
+        42,
         &[],
         &CancelToken::never(),
-        &control_log,
+        Counting::default(),
     );
     assert_eq!(
         uncancelled.len(),
         MAX_TOKENS,
-        "control: with no cancellation the Q4K loop must emit its full {MAX_TOKENS}-token \
-         budget (the prefill token plus {} decode steps)",
-        MAX_TOKENS - 1
+        "control: with no cancellation the Q4K session must emit its full \
+         {MAX_TOKENS}-token budget"
     );
     assert_eq!(
-        control_log.count(),
-        MAX_TOKENS - 1,
-        "control: the uncancelled loop must perform one forward pass per decode step"
-    );
-    assert_eq!(
-        *control_log.positions.borrow(),
-        (PROMPT_LEN..PROMPT_LEN + MAX_TOKENS - 1).collect::<Vec<_>>(),
-        "control: decode positions must continue contiguously from the end of the prompt"
+        control.positions,
+        (0..PROMPT_LEN + MAX_TOKENS - 1).collect::<Vec<_>>(),
+        "control: one forward per prompt token, then one per decode step at \
+         positions contiguous from the end of the prompt"
     );
 
-    // Cancelled: the token trips after BUDGET polls, and the loop polls once per
-    // decode step, so it stops after exactly BUDGET steps.
+    // Cancelled: the token trips after BUDGET polls, and the session polls once
+    // per generated token, so it emits exactly BUDGET.
     let token = CancelToken::with_budget(BUDGET);
-    let cancelled_log = StepLog::default();
-    let cancelled = run(
-        FIRST_TOKEN,
+    let (cancelled, log) = run(
         PROMPT_LEN,
         MAX_TOKENS,
+        0.0,
+        42,
         &[],
         &token,
-        &cancelled_log,
+        Counting::default(),
     );
-
     assert_eq!(
         cancelled.len(),
-        BUDGET + 1,
-        "the Q4K loop must stop at the cancel point ({BUDGET} decode steps after the \
-         prefill token), not run to max_tokens ({MAX_TOKENS}); it emitted {} tokens",
+        BUDGET,
+        "the Q4K session must stop at the cancel point ({BUDGET} tokens), not run to \
+         max_tokens ({MAX_TOKENS}); it emitted {} tokens",
         cancelled.len()
     );
     assert_eq!(
-        cancelled_log.count(),
+        decode_steps(&log, PROMPT_LEN).len(),
         BUDGET,
-        "the cancelled run must perform exactly {BUDGET} GPU forward passes; it \
-         performed {}",
-        cancelled_log.count()
+        "the cancelled run must perform exactly {BUDGET} decode forward passes (one \
+         after each emitted token); it performed {}",
+        decode_steps(&log, PROMPT_LEN).len()
     );
     assert_eq!(
         token.polls(),
         BUDGET + 1,
-        "the loop must poll exactly once per decode step ({BUDGET} polls that returned \
-         false, plus the one that returned true and broke the loop)"
+        "the session must poll exactly once per generated token ({BUDGET} polls that \
+         returned false, plus the one that returned true and broke the loop)"
     );
     assert_eq!(
         cancelled,
@@ -156,34 +185,30 @@ fn q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens() {
 }
 
 // ---------------------------------------------------------------------------
-// FALSIFY-SERVE-CANCEL-010 — the poll is at the TOP of the loop body
+// FALSIFY-SERVE-CANCEL-010 — a request already cancelled does no decode work
 // ---------------------------------------------------------------------------
 
-/// A request whose client is already gone must cost **zero** GPU forward passes.
-///
-/// This is what distinguishes a poll at the top of the loop body from a poll at
-/// the bottom: the latter costs one wasted forward pass per cancelled request,
-/// and on a 7B Q4K model that is not free.
+/// A request whose client is already gone must cost **zero** decode forward
+/// passes: only the prompt's prefill, which ran before the first poll.
 #[test]
 fn q4k_scheduler_decode_cancelled_before_start_does_no_forward_passes() {
     const PROMPT_LEN: usize = 3;
-    const FIRST_TOKEN: u32 = 42;
     const MAX_TOKENS: usize = 64;
 
     // Control first: the same call with a live, uncancelled token does the work.
-    let control_log = StepLog::default();
-    let uncancelled = run(
-        FIRST_TOKEN,
+    let (uncancelled, control) = run(
         PROMPT_LEN,
         MAX_TOKENS,
+        0.0,
+        42,
         &[],
         &CancelToken::new(),
-        &control_log,
+        Counting::default(),
     );
     assert_eq!(
-        control_log.count(),
+        decode_steps(&control, PROMPT_LEN).len(),
         MAX_TOKENS - 1,
-        "control: an uncancelled request must perform all {} forward passes",
+        "control: an uncancelled request must perform all {} decode forward passes",
         MAX_TOKENS - 1
     );
     assert_eq!(
@@ -194,58 +219,121 @@ fn q4k_scheduler_decode_cancelled_before_start_does_no_forward_passes() {
 
     let token = CancelToken::new();
     token.cancel();
-    let log = StepLog::default();
-    let out = run(FIRST_TOKEN, PROMPT_LEN, MAX_TOKENS, &[], &token, &log);
-
+    let (out, log) = run(
+        PROMPT_LEN,
+        MAX_TOKENS,
+        0.0,
+        42,
+        &[],
+        &token,
+        Counting::default(),
+    );
     assert_eq!(
-        log.count(),
-        0,
-        "an already-cancelled request must perform no forward passes at all; it \
-         performed {}",
-        log.count()
+        decode_steps(&log, PROMPT_LEN),
+        Vec::<usize>::new(),
+        "an already-cancelled request must perform no decode forward passes at all"
     );
     assert_eq!(
         out,
-        vec![FIRST_TOKEN],
-        "the response may still carry the token already sampled from the prefill \
-         logits, and nothing more"
+        Vec::<u32>::new(),
+        "an already-cancelled request emits nothing: the session polls before its \
+         first token"
     );
 }
 
 // ---------------------------------------------------------------------------
-// The refactor must not have changed the pre-existing EOS exit
+// The port must not have changed the pre-existing exits and token choice
 // ---------------------------------------------------------------------------
 
-/// ALB-109's configurable EOS still ends the loop, and the EOS token is still the
-/// last token in the output. Guards the extraction of the loop into `q4k_decode`.
+/// ALB-109's configurable EOS still ends the decode, and the EOS token is still
+/// the last token in the output.
 #[test]
 fn q4k_scheduler_decode_still_stops_at_eos() {
-    const PROMPT_LEN: usize = 2;
-    const FIRST_TOKEN: u32 = 10;
-    const MAX_TOKENS: usize = 64;
-    // The fake step emits 11, 12, 13 …, so this is reached after 4 steps.
-    const EOS: u32 = 14;
-
-    let log = StepLog::default();
-    let out = run(
-        FIRST_TOKEN,
-        PROMPT_LEN,
-        MAX_TOKENS,
-        &[EOS],
+    // Prompt 1..=5, so the greedy fake emits 6, 7, 8, ...
+    let (out, log) = run(
+        5,
+        64,
+        0.0,
+        42,
+        &[9],
         &CancelToken::never(),
-        &log,
+        Counting::default(),
     );
-
     assert_eq!(
         out,
-        vec![10, 11, 12, 13, 14],
-        "the loop must stop once EOS is produced, with EOS as the final token"
+        vec![6, 7, 8, 9],
+        "EOS must end the decode and be emitted"
     );
     assert_eq!(
-        log.count(),
-        4,
-        "reaching EOS from token 10 takes exactly 4 decode steps"
+        decode_steps(&log, 5).len(),
+        3,
+        "no forward pass after the EOS token"
     );
+}
+
+/// The Q4K path has always decoded greedily at `temperature <= 0.01`; the
+/// session alone would sample there.
+#[test]
+fn q4k_temperature_at_or_below_the_greedy_threshold_decodes_greedily() {
+    let (out, _) = run(
+        5,
+        8,
+        0.01,
+        7,
+        &[],
+        &CancelToken::never(),
+        Counting::default(),
+    );
+    assert_eq!(out, (6..14).collect::<Vec<u32>>());
+}
+
+/// A fresh session per request starts from a reset cache and prefills from 0.
+#[test]
+fn q4k_request_prefills_from_a_reset_cache() {
+    let (_, log) = run(
+        4,
+        2,
+        0.0,
+        42,
+        &[],
+        &CancelToken::never(),
+        Counting::default(),
+    );
+    assert_eq!(log.resets, 1);
+    assert_eq!(log.positions, vec![0, 1, 2, 3, 4]);
+}
+
+// ---------------------------------------------------------------------------
+// #3786 — a sampled Q4K request draws from the request's seeded RNG
+// ---------------------------------------------------------------------------
+
+const LOGITS: [f32; 6] = [1.0, 0.9, 1.1, 0.95, 1.05, 0.85];
+
+fn sampled(seed: u64) -> Vec<u32> {
+    let step = Counting {
+        fixed: Some(LOGITS.to_vec()),
+        ..Counting::default()
+    };
+    run(3, 32, 1.0, seed, &[], &CancelToken::never(), step).0
+}
+
+/// The same seed reproduces the draws byte for byte: the wall-clock sampler the
+/// Q4K path once had could not, whatever the request said.
+#[test]
+fn the_same_seed_reproduces_the_sampled_tokens() {
+    assert_eq!(sampled(7), sampled(7));
+}
+
+/// A different seed changes them, so the seed is actually read.
+#[test]
+fn a_different_seed_changes_the_sampled_tokens() {
+    assert_ne!(sampled(7), sampled(8));
+}
+
+/// It is a draw, not the argmax (index 2) in disguise.
+#[test]
+fn a_sampled_step_draws_off_the_argmax() {
+    assert!(sampled(7).iter().any(|&t| t != 2));
 }
 
 // ---------------------------------------------------------------------------

@@ -13,12 +13,16 @@ name = "pv"
 path = "src/main.rs"
 
 [dependencies]
-aprender-contracts = { path = "../aprender-contracts", version = "0.69.0" }
+aprender-contracts = { path = "../aprender-contracts", version = "0.69.3" }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
+aprender-update = { workspace = true }
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
 tempfile = "3"

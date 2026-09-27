@@ -2,6 +2,7 @@ use std::path::Path;
 
 use provable_contracts::lint::config::{find_config, load_config};
 use provable_contracts::lint::rules::RuleSeverity;
+use provable_contracts::lint::shapes_gate::ShapesOptions;
 use provable_contracts::lint::trend;
 use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
 use provable_contracts::ontology::verdict::Verdict;
@@ -48,6 +49,7 @@ pub fn run(
     strict_test_binding: bool,
     armed_baseline_ref: Option<&str>,
     gate: Option<&str>,
+    shapes_opts: ShapesOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
     // Both preconditions before any dispatch: a single file under
@@ -56,7 +58,7 @@ pub fn run(
     // missing on exactly the input the refusal exists for.
     refuse_single_file_strict_binding(contract_dir, strict_test_binding)?;
     if let Some(name) = gate {
-        return run_single_gate(contract_dir, name);
+        return run_single_gate(contract_dir, name, &shapes_opts);
     }
     if watch {
         return run_watch(
@@ -160,6 +162,28 @@ fn report_coverage(
     }
 }
 
+/// aprender#3715: `--shape` and `--release-*` as the shapes gate's options. They mean something ONLY under
+/// `--gate shapes`; anywhere else they are refused (exit 3), because a release flag that was silently ignored is
+/// a release gate that silently did not run.
+pub fn shapes_options(
+    gate: Option<&str>,
+    shape: Option<String>,
+    release: &crate::cli::ReleaseArgs,
+) -> Result<ShapesOptions, crate::contract_walk::ReleaseArgsRefused> {
+    use crate::contract_walk::ReleaseArgsRefused;
+    if (shape.is_some() || release.any()) && gate != Some("shapes") {
+        return Err(ReleaseArgsRefused(
+            "--shape and --release-* / --receipts* / --kernel-receipts / --dogfood-receipt apply only to \
+             `--gate shapes`"
+                .into(),
+        ));
+    }
+    Ok(ShapesOptions {
+        only: shape,
+        release: release.subject().map_err(ReleaseArgsRefused)?,
+    })
+}
+
 /// One gate's report. NOT a `LintReport`: `--gate` answers about one gate, and a reader must be able to tell the
 /// two apart without counting keys.
 #[derive(serde::Serialize)]
@@ -187,8 +211,12 @@ struct SingleGateFinding<'a> {
 
 /// ONT-2b: `--gate <name>` runs ONE gate and reports only it, mapping its verdict through ONT-6's lattice —
 /// Pass 0 · Fail 1 `reject:` · no Σ 2 `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
-fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let (result, findings) = decide_named_gate(contract_dir, name)?;
+fn run_single_gate(
+    contract_dir: &Path,
+    name: &str,
+    shapes_opts: &ShapesOptions,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (result, findings) = decide_named_gate(contract_dir, name, shapes_opts)?;
 
     let report = SingleGateReport {
         gate: &result.name,
@@ -235,12 +263,14 @@ type NamedGateAnswer = (
 fn decide_named_gate(
     contract_dir: &Path,
     name: &str,
+    shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
-        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome, NamedGateOutcome, NAMED_GATES,
+        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
+        valid_under_gate::ValidUnderOutcome, NamedGateOutcome, NAMED_GATES,
     };
 
-    match provable_contracts::lint::run_named_gate(contract_dir, name) {
+    match provable_contracts::lint::run_named_gate_with(contract_dir, name, shapes_opts) {
         NamedGateOutcome::UnknownGate => Err(crate::contract_walk::UnknownGate {
             asked: name.to_string(),
             known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
@@ -263,8 +293,25 @@ fn decide_named_gate(
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
+        NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoSigma) => Err(LintDeclined {
+            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+        }
+        .into()),
+        NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoKernels { contracts_checked }) => {
+            eprintln!(
+                "valid-under: no kernel-kind contract and no valid_under in {contracts_checked} contract(s) — nothing was measured"
+            );
+            Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
+        NamedGateOutcome::ValidUnder(ValidUnderOutcome::Malformed(e)) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
+        | NamedGateOutcome::ValidUnder(ValidUnderOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
     }
 }

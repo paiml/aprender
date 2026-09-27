@@ -33,6 +33,7 @@ pub type ArgResult<T> = Result<Option<T>, String>;
 
 /// Early-return an `isError` [`crate::types::ToolCallResult`] when an
 /// argument is present with an unusable type.
+#[cfg(feature = "apr-tools")] // used only by the apr tool modules
 macro_rules! try_arg {
     ($expr:expr) => {
         match $expr {
@@ -41,6 +42,7 @@ macro_rules! try_arg {
         }
     };
 }
+#[cfg(feature = "apr-tools")]
 pub(crate) use try_arg;
 
 fn type_error(name: &str, expected: &str, value: &Value) -> String {

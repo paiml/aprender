@@ -831,7 +831,7 @@ fn qe2e_inv_006_every_block_preserves_d_model() -> Result<()> {
 
 /// QE2E-CON-007 `shape(model(tokens)) = [seq_len, V]`, `tolerance: 0.0` (FALSIFY-QE2E-007).
 /// A token sequence is run through the full hybrid stack (`forward_single_qwen35` per
-/// position, as `run_qwen35_generate` prefills) from a state sized for exactly `seq_len`
+/// position, as `qwen35_reference_generate` prefills) from a state sized for exactly `seq_len`
 /// positions. The result must be `seq_len` rows of exactly `V` logits, each one finite and
 /// written (a logit buffer wider than `V` leaves coordinates at exactly zero; a narrower one
 /// fails the width). Sequence lengths 1, 3 and 6 over two vocabularies, every token id in

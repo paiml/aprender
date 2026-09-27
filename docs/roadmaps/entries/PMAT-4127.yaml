@@ -1,0 +1,16 @@
+- id: PMAT-4127
+  github_issue: 4127
+  item_type: task
+  title: '#4127: drop unmaintained proc-macro-error/-error2 from published aprender (tabled 0.22, validator 0.21)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:51:52Z
+  updated: 2026-09-24T04:51:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

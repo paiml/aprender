@@ -105,6 +105,7 @@
             summary: "Failed gates: throughput".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string_pretty(&report).expect("serialize");
@@ -237,6 +238,7 @@
             summary: "ok".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize unicode path");
@@ -257,6 +259,7 @@
             summary: "ok".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize long path");
@@ -276,6 +279,7 @@
             summary: "ok".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize empty model");
@@ -345,7 +349,7 @@
             GateResult::skipped("gpu_speedup", "no GPU"),
             GateResult::skipped("format_parity", "no path"),
         ];
-        let passed = gates.iter().all(|g| g.passed);
+        let passed = gates_pass(&gates); // #3965: the production verdict, not a copy
         assert!(passed);
     }
 

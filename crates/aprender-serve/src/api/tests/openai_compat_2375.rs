@@ -141,6 +141,7 @@ async fn completion_sse_frames_reassemble_to_the_completion_text() {
 
     let text = "The quick brown fox\njumps over the lazy dog.";
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-test".to_string(),
         object: "text_completion".to_string(),
         created: 1,

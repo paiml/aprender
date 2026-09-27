@@ -191,7 +191,9 @@ mod forward_error_tests {
         let result = super::run_format_parity_gate(tmp.path(), &config).expect("gate ran");
 
         assert!(result.skipped, "non-GGUF primary must SKIP, not FAIL/PASS");
-        assert!(result.passed, "skipped gates count as passed in summary");
+        // #3965: a skip is not a pass; it does not FAIL the run either.
+        assert!(!result.passed, "a skipped gate must not claim passed");
+        assert!(super::gates_pass(std::slice::from_ref(&result)), "a skip must not fail the run");
         assert!(
             result.message.contains("Non-GGUF"),
             "skip reason should say Non-GGUF, got: {}",
@@ -215,7 +217,9 @@ mod forward_error_tests {
         let result = super::run_format_parity_gate(tmp.path(), &config).expect("gate ran");
 
         assert!(result.skipped, "APR primary must SKIP, not FAIL");
-        assert!(result.passed, "skipped gates count as passed");
+        // #3965: a skip is not a pass; it does not FAIL the run either.
+        assert!(!result.passed, "a skipped gate must not claim passed");
+        assert!(super::gates_pass(std::slice::from_ref(&result)), "a skip must not fail the run");
         assert!(result.message.contains("Non-GGUF"), "got: {}", result.message);
     }
 
@@ -324,9 +328,11 @@ mod forward_error_tests {
                     "absent reference must SKIP, not FAIL (got skipped={}, passed={}, msg={})",
                     gate.skipped, gate.passed, gate.message
                 );
+                // #3965: a skip is not a pass; it does not FAIL the run either.
                 assert!(
+                    !gate.passed && super::gates_pass(std::slice::from_ref(&gate)),
+                    "a SKIPPED gate must not claim passed, and must not fail the run (got passed={}, msg={})",
                     gate.passed,
-                    "a SKIPPED gate counts as passed in the summary (got passed=false, msg={})",
                     gate.message
                 );
                 assert!(

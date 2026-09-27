@@ -175,6 +175,7 @@ fn test_completion_request_deserialize_cov() {
 #[test]
 fn test_completion_response_full_cov2() {
     let resp = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-123".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,
@@ -200,6 +201,7 @@ fn test_completion_response_full_cov2() {
 #[test]
 fn test_completion_response_multiple_choices_cov() {
     let resp = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-456".to_string(),
         object: "text_completion".to_string(),
         created: 1700000001,

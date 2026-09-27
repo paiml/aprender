@@ -49,6 +49,10 @@ pub struct OllamaChatRequest {
     /// Optional Ollama `options` block (temperature, num_predict, top_k, top_p, seed).
     #[serde(default)]
     pub options: Option<OllamaOptions>,
+    /// #3723: Ollama's thinking toggle (`"think": true`), rendered as the model's own
+    /// template's `enable_thinking`. Absent = OFF.
+    #[serde(default)]
+    pub think: Option<bool>,
 }
 
 /// Ollama message (`role` + `content`).
@@ -624,7 +628,8 @@ pub async fn ollama_chat_handler(
 ) -> Response {
     let model = model_label(&request.model);
     let stream = request.stream;
-    let chat_req = to_chat_request(&model, request.messages, &request.options);
+    let mut chat_req = to_chat_request(&model, request.messages, &request.options);
+    chat_req.think = request.think;
 
     let inner =
         openai_chat_completions_handler(State(state), headers, Extension(cancel), Json(chat_req))

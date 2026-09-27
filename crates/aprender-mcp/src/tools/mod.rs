@@ -10,27 +10,49 @@
 //!   SIGTERM→SIGKILL for `apr.run` (FALSIFY-MCP-006).
 
 pub mod args;
+#[cfg(feature = "apr-tools")]
 pub mod bench;
+#[cfg(feature = "apr-tools")]
 pub mod finetune;
+#[cfg(feature = "apr-tools")]
 pub mod port_owner;
+#[cfg(feature = "apr-tools")]
 pub mod qa;
 pub mod registry;
+#[cfg(feature = "apr-tools")]
 pub mod run;
+#[cfg(feature = "apr-tools")]
 pub mod serve;
+#[cfg(feature = "apr-tools")]
 pub mod subprocess;
+#[cfg(feature = "apr-tools")]
 pub mod tensors;
+#[cfg(feature = "apr-tools")]
 pub mod trace;
+#[cfg(feature = "apr-tools")]
 pub mod validate;
+#[cfg(feature = "apr-tools")]
 pub mod version;
 
-pub use registry::{DispatchFn, McpToolEntry, ToolIndex};
+#[cfg(feature = "apr-tools")]
+pub use registry::McpToolEntry;
+pub use registry::{DispatchFn, ToolIndex};
 
+#[cfg(feature = "apr-tools")]
 pub use bench::bench_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use finetune::finetune_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use qa::qa_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use run::run_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use serve::serve_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use tensors::tensors_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use trace::trace_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use validate::validate_tool_definition;
+#[cfg(feature = "apr-tools")]
 pub use version::version_tool_definition;

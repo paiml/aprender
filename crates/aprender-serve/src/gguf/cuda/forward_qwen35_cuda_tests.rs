@@ -283,7 +283,7 @@ fn load_cpu_model(mapped: &crate::gguf::MappedGGUFModel) -> crate::gguf::OwnedQu
 fn qwen35_cuda_deltanet_layers_match_cpu_on_the_real_file() {
     let executor = qwen35_cuda_fixture_or_skip!();
 
-    // Load exactly as run_qwen35_generate does.
+    // Load exactly as qwen35_reference_generate does.
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
     let base = load_cpu_model(&mapped);
     let qwen =
@@ -1230,21 +1230,22 @@ fn qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants() {
     );
 }
 
-/// WHY THE PIN EXISTS (PMAT-3477 / #3090): with the DP4A GEMV kernels armed,
-/// the same forward that matches the CPU token for token produces a DIFFERENT
-/// token, or a direction nowhere near the CPU's.
+/// DP4A through the recurrence holds the parity contract (#4258).
 ///
-/// This is a falsifier, not a bug reproduction: it asserts the failure, so if a
-/// future DP4A activation-quantization change makes the path correct, this test
-/// goes RED and the pin (and the DP4A-through-recurrence ticket, 0.69.0) can be
-/// reconsidered on evidence.
+/// This was the falsifier `qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`
+/// (PMAT-3477 / #3090), which asserted the opposite: 1.656 relative away and a wrong
+/// argmax under `HwDp4a`. That reading was not Q8_1 quantization error. No qwen35
+/// writer kernel ever cleared `q8_activation_valid`, so every DP4A GEMV after the
+/// first reused the FIRST token's Q8_1 activation (#4258). With the activation cache
+/// keyed to its input and invalidated by the writers, the same run passes at every
+/// position. So this now guards the fix: if the stale-activation reuse comes back,
+/// the argmax breaks here.
 ///
-/// Measured on the real 0.8B file at position 0: see the printed reading. The
-/// DeltaNet-only path is 1.656 relative away from the CPU under `HwDp4a` versus
-/// 0.000 float-vs-float; end to end the argmax is simply wrong.
+/// The float pin in `Qwen35CudaModel::with_max_seq_len` stays until DP4A is
+/// re-measured on 2B/4B (#4030). This test only says the pin's stated reason is gone.
 #[test]
 #[serial_test::serial]
-fn qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence() {
+fn qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence() {
     use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
     let executor = qwen35_cuda_fixture_or_skip!();
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
@@ -1289,11 +1290,12 @@ fn qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence() {
         }
     }
 
-    assert!(
-        broken > 0,
-        "the DP4A GEMV path passed the parity contract at every position — it is no longer \
-         catastrophic through the recurrence, so re-measure and revisit the pin in \
-         Qwen35CudaModel::with_max_seq_len (DP4A-through-recurrence ticket, 0.69.0)"
+    assert_eq!(
+        broken,
+        0,
+        "the DP4A GEMV path broke the parity contract at {broken} of {} positions: a stale \
+         Q8_1 activation is being reused again (#4258)",
+        LONG_PROMPT.len()
     );
 }
 
@@ -1710,4 +1712,24 @@ fn qwen35_cuda_refuses_only_value_heads_that_do_not_group() {
     // Zero key heads would be a division by zero, not merely a bad grouping.
     Qwen35CudaModel::check_head_grouping(dims(0, 16, 128, 128))
         .expect_err("zero key heads must be refused, not divided by");
+}
+
+/// #3595 done_when 3: the upload refusal names the tensor, the dtype BY NAME,
+/// and the build that would upload — one message with the actionable half.
+/// Pure: no device, no model file.
+#[test]
+fn qwen35_cuda_refusal_names_the_tensor_the_dtype_and_the_eligible_build() {
+    let msg = super::no_gemv_kernel_reason("qwen35.blk.0.ssm_alpha.weight", 1);
+    assert!(msg.contains("'qwen35.blk.0.ssm_alpha.weight'"), "{msg}");
+    assert!(
+        msg.contains("is F16 (GGML type 1)"),
+        "the dtype by name: {msg}"
+    );
+    assert!(msg.contains("Q4_K_M"), "what to use instead: {msg}");
+    // An id no ggml table knows is not given a plausible name.
+    let unknown = super::no_gemv_kernel_reason("t", 9999);
+    assert!(
+        unknown.contains("is an unknown type (GGML type 9999)"),
+        "{unknown}"
+    );
 }

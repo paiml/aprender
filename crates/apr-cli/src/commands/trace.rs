@@ -417,6 +417,10 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF: {e}")))?;
 
+    if realizar::gguf::hybrid_forward_handles(mapped.model.architecture().unwrap_or_default()) {
+        return run_traced_inference_qwen35(&mapped, "What is 2+2?");
+    }
+
     // Create quantized model
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to create quantized model: {e}")))?;
@@ -522,7 +526,15 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
         .generate_with_cache(&test_tokens, &gen_config)
         .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?;
 
-    let generated = &output_tokens[test_tokens.len()..];
+    report_generation(&mapped, &output_tokens[test_tokens.len()..]);
+    Ok(())
+}
+
+/// Print generated ids, a per-token decode, the full text and the garbage verdict.
+/// Shared by the dense path and the Qwen3.5 session path (#4270).
+#[cfg(feature = "inference")]
+fn report_generation(mapped: &realizar::gguf::MappedGGUFModel, generated: &[u32]) {
+    use colored::Colorize;
     println!("  Generated token IDs: {:?}", generated);
 
     // Decode each token individually to see where garbage starts
@@ -567,7 +579,55 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     } else {
         println!("{}", "✓ Output appears reasonable".green());
     }
+}
 
+/// #4270: trace a Qwen3.5 hybrid. `forward_traced` is the dense layer walk and has
+/// no Gated DeltaNet layers, so there is no per-layer section; the generation runs
+/// through the one engine (`Qwen35Session`) exactly as `apr run` does.
+#[cfg(feature = "inference")]
+fn run_traced_inference_qwen35(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    test_prompt: &str,
+) -> Result<(), CliError> {
+    use colored::Colorize;
+    use realizar::gguf::qwen35_session::Qwen35Session;
+    use realizar::gguf::QuantizedGenerateConfig;
+
+    let arch = mapped.model.architecture().unwrap_or_default();
+    println!("Architecture: {arch} (hybrid: Gated DeltaNet + attention)");
+    println!();
+    let mut session = Qwen35Session::load(mapped, false)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Qwen3.5 hybrid: {e}")))?;
+    for notice in session.notices() {
+        println!("{notice}");
+    }
+    let test_tokens = mapped
+        .model
+        .encode(test_prompt)
+        .unwrap_or_else(|| vec![1u32]);
+    println!("{}", format!("Test prompt: {:?}", test_prompt).cyan());
+    println!("{}", format!("Encoded tokens: {:?}", test_tokens).cyan());
+    println!();
+    println!(
+        "{}",
+        "FORWARD PASS: per-layer tracing is dense-only; not available for the hybrid".yellow()
+    );
+    println!();
+    println!(
+        "{}",
+        "GENERATION (max 8 tokens, qwen35 session):".green().bold()
+    );
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: 8,
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
+    let turn = session
+        .generate(&test_tokens, &gen_config, &mut |_| true)
+        .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?;
+    println!("  Backend: {}", if turn.used_gpu { "GPU" } else { "CPU" });
+    report_generation(mapped, &turn.tokens[test_tokens.len()..]);
     Ok(())
 }
 
@@ -774,3 +834,7 @@ include!("vector_stats.rs");
 include!("trace_likely_has_repeated.rs");
 include!("layer.rs");
 include!("trace_05.rs");
+
+#[cfg(all(test, feature = "inference"))]
+#[path = "trace_qwen35_tests.rs"]
+mod trace_qwen35_tests;

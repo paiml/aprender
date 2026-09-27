@@ -73,11 +73,7 @@ impl CudaExecutor {
         let cache_key = format!("gemm_fused_{}_{}_{}_{}", m, n, k, activation);
 
         // Load module if not cached (falls back to tiled for now)
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -145,11 +141,7 @@ impl CudaExecutor {
             let epilogue_name = self.kernels.kernel_name(&epilogue_type);
             let epilogue_key = format!("bias_act_{}_{}", total_elements, activation);
 
-            if !self.modules.contains_key(&epilogue_key) {
-                let ptx = self.kernels.generate_ptx(&epilogue_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(epilogue_key.clone(), module);
-            }
+            self.ensure_kernel_module(&epilogue_key, &epilogue_type)?;
 
             let epilogue_module = self
                 .modules
@@ -203,11 +195,7 @@ impl CudaExecutor {
         let cache_key = format!("softmax_{}", dim);
 
         // Load module if not cached
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -273,11 +261,7 @@ impl CudaExecutor {
         let cache_key = format!("q4k_ggml_{}_{}", m, k);
 
         // Load module if not cached
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -372,11 +356,7 @@ impl CudaExecutor {
         let cache_key = format!("q4k_gemv_{}_{}", k, n);
 
         // Load module if not cached
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules

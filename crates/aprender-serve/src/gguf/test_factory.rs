@@ -412,6 +412,19 @@ impl GGUFBuilder {
         self
     }
 
+    /// Add an i32 array metadata value (type 9, element_type 5), e.g. `tokenizer.ggml.token_type`
+    #[must_use]
+    pub fn add_i32_array(mut self, key: &str, values: &[i32]) -> Self {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&5u32.to_le_bytes()); // element type = int32
+        bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
+        for &val in values {
+            bytes.extend_from_slice(&val.to_le_bytes());
+        }
+        self.metadata.push((key.to_string(), 9, bytes));
+        self
+    }
+
     // =========================================================================
     // Build
     // =========================================================================

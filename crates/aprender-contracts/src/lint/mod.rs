@@ -25,6 +25,7 @@ pub mod sigma_gate;
 pub mod sigma_symbols;
 mod strict_test_binding;
 pub mod trend;
+pub mod valid_under_gate;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -198,6 +199,26 @@ pub enum GateExtra {
         /// Findings.
         violations: usize,
     },
+    /// ONT-7: kernel-kind contracts carry a world index (`metadata.valid_under.world`, a key of Σ's `worlds`).
+    #[serde(rename = "valid_under")]
+    ValidUnder {
+        /// The worlds Σ declares — the index a `valid_under.world` must resolve into.
+        worlds: Vec<String>,
+        /// Contract files read.
+        contracts_checked: usize,
+        /// Of those, kernel-kind and not a registry — the class the row obliges.
+        kernel_contracts: usize,
+        /// Contracts (any kind) carrying `metadata.valid_under`.
+        contracts_with_valid_under: usize,
+        /// Kernel-kind contracts carrying none — the debt, shrink-only against the baseline.
+        contracts_without_valid_under: usize,
+        /// The top-level `contracts_without_valid_under` in `lint-baseline.json`; `None` = not recorded.
+        baseline: Option<usize>,
+        /// `world=count` over the contracts whose `valid_under` passed every rule.
+        by_world: Vec<String>,
+        /// Findings.
+        violations: usize,
+    },
     /// ONT-4b: the shapes gate — every `shape:` block over the extracted graph, with the plant.
     #[serde(rename = "shapes")]
     Shapes {
@@ -244,6 +265,9 @@ pub enum GateExtra {
         /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
         lean_statements: usize,
         lean_refs_unresolved: usize,
+        /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,
     },
 }
 
@@ -553,6 +577,12 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(shapes_gate_result);
     all_findings.append(&mut shapes_findings);
 
+    // Gate 13: valid-under (ONT-7). Same R-8 shape: computed in every run, armed per repo.
+    let (valid_under_gate_result, mut valid_under_findings) =
+        valid_under_result(config.contract_dir, validation_passed);
+    gates.push(valid_under_gate_result);
+    all_findings.append(&mut valid_under_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -632,6 +662,8 @@ pub enum NamedGateOutcome {
     Relations(relations_gate::RelationsOutcome),
     /// The `shapes` gate (ONT-4b), with four non-verdict answers (unsupported shape, no shapes, no focus, control failed).
     Shapes(shapes_gate::ShapesOutcome),
+    /// The `valid-under` gate (ONT-7), with three non-verdict answers (no Σ, malformed Σ, no kernel contract).
+    ValidUnder(valid_under_gate::ValidUnderOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -646,12 +678,26 @@ pub enum NamedGateOutcome {
 /// report a verdict whose precondition nobody checked — `UnknownGate` is the honest answer, not a silent pass.
 #[must_use]
 pub fn run_named_gate(contract_dir: &Path, name: &str) -> NamedGateOutcome {
+    run_named_gate_with(contract_dir, name, &shapes_gate::ShapesOptions::default())
+}
+
+/// [`run_named_gate`] with the shapes gate's `--shape` / `--release-*` options (aprender#3715).
+pub fn run_named_gate_with(
+    contract_dir: &Path,
+    name: &str,
+    shapes_opts: &shapes_gate::ShapesOptions,
+) -> NamedGateOutcome {
     match name {
         "relations" => {
             NamedGateOutcome::Relations(relations_gate::run_relations_gate(contract_dir))
         }
-        "shapes" => NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate(contract_dir)),
+        "shapes" => {
+            NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate_with(contract_dir, shapes_opts))
+        }
         "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
+        "valid-under" => {
+            NamedGateOutcome::ValidUnder(valid_under_gate::run_valid_under_gate(contract_dir))
+        }
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -665,7 +711,7 @@ pub fn run_named_gate(contract_dir: &Path, name: &str) -> NamedGateOutcome {
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 4] = ["relations", "shapes", "sigma", "validate"];
+pub const NAMED_GATES: [&str; 5] = ["relations", "shapes", "sigma", "valid-under", "validate"];
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
@@ -682,6 +728,35 @@ fn sigma_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Ve
         ),
         sigma_gate::SigmaOutcome::Malformed(e) => (
             skipped_gate("sigma", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+    }
+}
+
+/// The `valid-under` gate as `run_lint` reports it (ONT-7). Its three non-verdict answers become SKIPPED gates
+/// here, as sigma's do — under `--gate valid-under` they are exits of their own (decline / error).
+fn valid_under_result(
+    contract_dir: &Path,
+    validation_passed: bool,
+) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate("valid-under", "validation failed"), Vec::new());
+    }
+    match valid_under_gate::run_valid_under_gate(contract_dir) {
+        valid_under_gate::ValidUnderOutcome::Ran { result, findings } => (*result, findings),
+        valid_under_gate::ValidUnderOutcome::NoSigma => (
+            skipped_gate("valid-under", "no contracts/ontology.yaml"),
+            Vec::new(),
+        ),
+        valid_under_gate::ValidUnderOutcome::Malformed(e) => (
+            skipped_gate("valid-under", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+        valid_under_gate::ValidUnderOutcome::NoKernels { contracts_checked } => (
+            skipped_gate(
+                "valid-under",
+                &format!("no kernel-kind contract and no valid_under in {contracts_checked} contracts — R-2: zero is a decline"),
+            ),
             Vec::new(),
         ),
     }

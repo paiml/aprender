@@ -207,7 +207,7 @@ fn falsify_moe_sub_002_cpu_gpu_traced_per_stage_diff() {
 
     let gpu_inner_model =
         OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #2");
-    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner_model, 0)
+    let mut gpu_model = OwnedQuantizedModelCuda::new_for_moe_forward(gpu_inner_model, 0)
         .expect("OwnedQuantizedModelCuda::new(model, 0) on RTX 4090");
     eprintln!("  running GPU traced forward...");
     let gpu_start = std::time::Instant::now();

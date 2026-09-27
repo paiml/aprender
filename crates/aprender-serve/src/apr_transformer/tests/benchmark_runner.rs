@@ -431,6 +431,7 @@ fn test_generate_with_cache_top_k_sampling() {
         max_tokens: 3,
         temperature: 1.0,
         top_k: 10, // Top-k sampling
+        seed: crate::apr_transformer::DEFAULT_SEED,
         top_p: 1.0,
         repetition_penalty: 1.0,
         trace: false,
@@ -451,6 +452,7 @@ fn test_generate_with_cache_top_p_sampling() {
         max_tokens: 3,
         temperature: 1.0,
         top_k: 0,
+        seed: crate::apr_transformer::DEFAULT_SEED,
         top_p: 0.5, // Nucleus sampling
         repetition_penalty: 1.0,
         trace: false,

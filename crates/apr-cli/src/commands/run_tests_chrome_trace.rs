@@ -22,8 +22,10 @@
             tokens_generated: Some(3),
             tok_per_sec: Some(1.5),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 16, true);
@@ -52,8 +54,10 @@
             tokens_generated: Some(0),
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
 
         let json = build_chrome_trace_events(&result, "empty.gguf", 0, false);
@@ -71,8 +75,10 @@
             tokens_generated: None,
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -90,8 +96,10 @@
             tokens_generated: Some(1),
             tok_per_sec: Some(10.0),
             used_gpu: Some(true),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
 
         let json = build_chrome_trace_events(&result, "my-model.gguf", 64, true);
@@ -109,8 +117,10 @@
             tokens_generated: Some(2),
             tok_per_sec: Some(2.0),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -138,8 +148,10 @@
             tokens_generated: Some(10),
             tok_per_sec: Some(2.0),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -157,8 +169,10 @@
             tokens_generated: Some(1),
             tok_per_sec: Some(1.0),
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         let json = build_chrome_trace_events(&result, "m.gguf", 1, false);
         assert_eq!(json["displayTimeUnit"], "ms");
@@ -176,8 +190,10 @@
             tokens_generated: Some(5),
             tok_per_sec: Some(5.0),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         // Just ensure no panic; file creation is best-effort
         print_chrome_trace(&result, "test-model.gguf", 32, false, None);
@@ -208,8 +224,10 @@
             tokens_generated: Some(3),
             tok_per_sec: Some(3.0),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         print_chrome_trace(&result, "test-model.gguf", 32, false, Some(&target));
 
@@ -237,8 +255,10 @@
             tokens_generated: Some(100),
             tok_per_sec: Some(50.0),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         print_benchmark_results(&result, "model.gguf", "text", 100);
     }
@@ -252,8 +272,10 @@
             tokens_generated: Some(50),
             tok_per_sec: Some(50.0),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         print_benchmark_results(&result, "model.gguf", "json", 50);
     }
@@ -267,8 +289,10 @@
             tokens_generated: Some(10),
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         print_benchmark_results(&result, "model.gguf", "text", 10);
     }

@@ -1,0 +1,23 @@
+{
+  "model": "$HOME/models/Qwen3.5-9B-Q4_K_M.gguf",
+  "text": "The",
+  "tokens": [
+    760
+  ],
+  "tokens_generated": 1,
+  "max_tokens": 1,
+  "tok_per_sec": 0.0,
+  "inference_time_ms": 59102.06,
+  "used_gpu": true,
+  "cached": true,
+  "backend": {
+    "requested": "gpu",
+    "ran": "gpu",
+    "fell_back": false
+  }
+}
+Collecting data...
+Generating '/tmp/nsys-report-ed28.qdstrm'
+[1/1] [0%                          ] prof9b4k.nsys-rep[1/1] [0%                          ] prof9b4k.nsys-rep[1/1] [5%                          ] prof9b4k.nsys-rep[1/1] [6%                          ] prof9b4k.nsys-rep[1/1] [7%                          ] prof9b4k.nsys-rep[1/1] [==21%                       ] prof9b4k.nsys-rep[1/1] [======35%                   ] prof9b4k.nsys-rep[1/1] [==========49%               ] prof9b4k.nsys-rep[1/1] [===========53%              ] prof9b4k.nsys-rep[1/1] [========================100%] prof9b4k.nsys-rep[1/1] [========================100%] prof9b4k.nsys-rep
+Generated:
+	/mnt/nvme-raid0/agent-wt/3596-meas-gx10/prof9b4k.nsys-rep

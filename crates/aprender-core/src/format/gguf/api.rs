@@ -339,9 +339,11 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
     // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
     // Propagate raw GGUF KV metadata to downstream consumers (inspect/rosetta) so they
     // can display authentic on-disk keys instead of fabricated ML-shorthand names.
+    // #3733: EVERY header key, including those outside the reader's parse allowlist.
     let raw_metadata: BTreeMap<String, String> = reader
         .metadata
         .iter()
+        .chain(&reader.display_only_metadata)
         .map(|(k, v)| (k.clone(), gguf_value_display(v)))
         .collect();
 

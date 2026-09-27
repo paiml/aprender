@@ -85,6 +85,12 @@ Options:
           Wraps prompt in ChatML format for Qwen2, LLaMA, Mistral Instruct models. Format:
           <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
 
+      --thinking <MODE>
+          Thinking mode for a thinking-capable model: on or off. Absent: the default (off for
+          Qwen3/Qwen3.5). `on` on a model with no thinking template is refused (#3723)
+          
+          [possible values: on, off]
+
       --temperature <TEMPERATURE>
           Sampling temperature (0.0 = greedy, default: 0.0)
           

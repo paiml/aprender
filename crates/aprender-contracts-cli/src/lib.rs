@@ -22,12 +22,16 @@ use cli::Commands;
 /// Glance form, printed by `pv -V`. One line, and it names the tool.
 ///
 /// clap renders `{name} {version}`, so this yields
-/// `pv 0.63.0 (aprender provable-contracts verifier)`. The bare semver stays the
-/// SECOND whitespace field because `scripts/pv_bin.sh` reads it positionally to
-/// prove a resolved binary was built from HEAD.
+/// `pv 0.69.0 (aa7c6ef03) (aprender provable-contracts verifier)` — the build
+/// SHA from `aprender-build-sha` (#4219), as every workspace binary prints.
+/// The bare semver stays the SECOND whitespace field because
+/// `scripts/pv_bin.sh` reads it positionally to prove a resolved binary was
+/// built from HEAD.
 const SHORT_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
-    " (aprender provable-contracts verifier)"
+    " (",
+    env!("APR_GIT_SHA"),
+    ") (aprender provable-contracts verifier)"
 );
 
 /// Full form, printed by `pv --version`.
@@ -41,7 +45,9 @@ const SHORT_VERSION: &str = concat!(
 /// `tests/version_identity.rs`.
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
-    " (aprender provable-contracts verifier)\n",
+    " (",
+    env!("APR_GIT_SHA"),
+    ") (aprender provable-contracts verifier)\n",
     "crate aprender-contracts-cli — ",
     env!("CARGO_PKG_REPOSITORY"),
     "\n",
@@ -125,7 +131,14 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         Commands::Extract {
             contract_dir,
             check,
-        } => commands::extract_rdf::run(&contract_dir, check),
+            out,
+            release,
+        } => {
+            let subject = release
+                .subject()
+                .map_err(crate::contract_walk::ReleaseArgsRefused)?;
+            commands::extract_rdf::run(&contract_dir, check, subject.as_ref(), out.as_deref())
+        }
         Commands::Coverage {
             contract_dir,
             binding,
@@ -205,6 +218,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             strict_test_binding,
             armed_baseline_ref,
             gate,
+            shape,
+            release,
             ..
         } => {
             if let Some(ref rule_id) = explain {
@@ -236,6 +251,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 strict_test_binding,
                 armed_baseline_ref.as_deref(),
                 gate.as_deref(),
+                commands::lint::shapes_options(gate.as_deref(), shape, &release)?,
             )
         }
         Commands::Score {

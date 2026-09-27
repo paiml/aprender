@@ -38,11 +38,28 @@
     // clean_chat_response: whitespace normalization
     // =========================================================================
 
+    /// Runs of spaces are CONTENT and survive. This test used to assert the collapse to
+    /// "Hello world test" -- the defect the 0.69.1 CRUX sweep measured as Python indentation
+    /// arriving as one space (ctl-code-add RED).
     #[test]
     fn test_clean_chat_response_many_spaces() {
         let raw = "Hello     world     test";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Hello world test");
+        assert_eq!(cleaned, "Hello     world     test");
+    }
+
+    /// Must-RED (0.69.1 sweep): an indented line round-trips byte-identical, first line included.
+    #[test]
+    fn test_clean_chat_response_keeps_indentation_byte_identical() {
+        assert_eq!(clean_chat_response("    return a + b"), "    return a + b");
+        let code = "def add(a, b):\n    return a + b\n\nclass C:\n    def f(self):\n        return 1";
+        assert_eq!(clean_chat_response(code), code);
+        assert_eq!(clean_chat_response(&format!("{code}<|im_end|>")), code);
+        assert_eq!(clean_chat_response(&format!("\n\n{code}\n\n")), code);
+        assert_eq!(clean_chat_response("```python\n\tx = 1\n```"), "```python\n\tx = 1\n```");
+        // ...and punctuation is VERBATIM (cop ruling): chat must print what run prints.
+        assert_eq!(clean_chat_response("Wait...."), "Wait....");
+        assert_eq!(clean_chat_response("!!!!"), "!!!!");
     }
 
     #[test]
@@ -249,8 +266,11 @@
             system: Some("Expert mode".to_string()),
             inspect: true,
             force_cpu: true,
+            accel_forced: false,
+            json: false,
             trace: true,
             trace_output: Some(PathBuf::from("/tmp/all_fields.json")),
+            thinking: None,
         };
         assert!((config.temperature - 1.5).abs() < f32::EPSILON);
         assert!((config.top_p - 0.95).abs() < f32::EPSILON);
@@ -330,8 +350,10 @@
     fn test_run_nonexistent_path_without_trace() {
         let path = Path::new("/definitely/not/a/real/path/model.apr");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -346,8 +368,10 @@
     fn test_run_nonexistent_safetensors() {
         let path = Path::new("/no/such/model.safetensors");
         let result = run(
-            path, 0.5, 0.8, 256, None, false, false, false, None, false, None, "info", false,
+            path, 0.5, 0.8, 256, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -356,8 +380,10 @@
     fn test_run_nonexistent_apr() {
         let path = Path::new("/no/such/model.apr");
         let result = run(
-            path, 1.0, 1.0, 1024, None, true, true, false, None, false, None, "warn", false,
+            path, 1.0, 1.0, 1024, None, true, true, false /* #3955 accel_forced */, false, None, false, None, "warn", false,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -380,7 +406,7 @@
             128,
             Some("System prompt"),
             true,
-            false,
+            false, false /* #3955 accel_forced */,
             true,
             Some(&steps),
             true,
@@ -388,6 +414,8 @@
             "debug",
             true,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -396,8 +424,10 @@
     fn test_run_nonexistent_no_system_inspect_off() {
         let path = Path::new("/no/model.bin");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -413,7 +443,7 @@
             512,
             None,
             false,
-            false,
+            false, false /* #3955 accel_forced */,
             true,
             Some(&steps),
             false,
@@ -421,6 +451,8 @@
             "info",
             false,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -429,12 +461,14 @@
     fn test_run_nonexistent_trace_without_output() {
         let path = Path::new("/no/model.apr");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, true,  // trace enabled
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, true,  // trace enabled
             None,  // no trace steps
             false, // not verbose
             None,  // no trace output
             "info", false, // no profile
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -443,10 +477,12 @@
     fn test_run_nonexistent_with_profile_only() {
         let path = Path::new("/no/model.gguf");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */,
             true, // trace must be on for profile to print
             None, false, None, "info", true, // profile enabled
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }

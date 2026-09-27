@@ -177,6 +177,8 @@ struct InferenceOutput {
     inference_ms: Option<f64>,
     tok_per_sec: Option<f64>,
     used_gpu: Option<bool>,
+    /// #3826: whether a GPU backend was ATTEMPTED, whatever the outcome.
+    gpu_attempted: Option<bool>,
     /// GH-250: Generated token IDs for parity checking
     generated_tokens: Option<Vec<u32>>,
     /// Decoded text for each entry of `generated_tokens`, in the same order.
@@ -184,6 +186,8 @@ struct InferenceOutput {
     /// Populated only when `--stream` asked for it (see
     /// [`decode_token_pieces`]) — every other mode renders the whole `text`.
     token_texts: Option<Vec<String>>,
+    /// Prompt and completion counts plus the finish reason (#3718).
+    usage: RunUsage,
 }
 
 /// Execute inference on model
@@ -229,8 +233,10 @@ fn execute_inference(
             inference_ms: None,
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: RunUsage::default(),
         })
     }
 }
@@ -287,19 +293,19 @@ fn inference_error<E: std::fmt::Display>(e: E) -> CliError {
     CliError::InferenceFailed(e.to_string())
 }
 
-/// Execute inference using realizar engine
+/// The realizar config `apr run` builds from its options (#3743).
 ///
-/// Per spec APR-CLI-DELEGATE-001: All inference delegates to realizar's
-/// high-level API. This eliminates ~1500 lines of duplicated code.
-/// BUG-RUN-001 FIX: Now returns InferenceOutput with actual token count
+/// The prompt is the `--prompt`/positional text or the `-i` file's contents, verbatim;
+/// whether the model's chat template applies travels as `force_chat_template`, never
+/// as a pre-wrapped prompt (#3672). Split out so the three spellings of a chat prompt
+/// can be checked to reach realizar identically.
 #[cfg(feature = "inference")]
-fn execute_with_realizar(
+pub(crate) fn realizar_config(
     model_path: &Path,
     input_path: Option<&PathBuf>,
     options: &RunOptions,
-    _use_mmap: bool,
-) -> Result<InferenceOutput> {
-    use realizar::{run_inference, InferenceConfig};
+) -> Result<realizar::InferenceConfig> {
+    use realizar::InferenceConfig;
 
     // Get prompt from options or input file
     let prompt = if let Some(ref p) = options.prompt {
@@ -327,11 +333,18 @@ fn execute_with_realizar(
         .with_top_p(options.top_p)
         .with_seed(options.seed)
         .with_repeat_penalty(options.repeat_penalty)
-        .with_repeat_last_n(options.repeat_last_n);
+        .with_repeat_last_n(options.repeat_last_n)
+        .with_force_chat_template(options.chat_template)
+        .with_thinking(options.thinking);
 
     if options.no_gpu {
         config = config.without_gpu();
     }
+
+    // #3757: the wgpu fallback is attempted only on an explicit accelerator
+    // request, so the bare `apr run model.gguf` no longer pays a 1.7 GB F32
+    // dequant for a backend that fails its own cpu-parity gate.
+    config = config.with_accel_forced(options.accel_forced);
 
     if options.trace {
         config = config.with_trace(true);
@@ -341,9 +354,30 @@ fn execute_with_realizar(
     if let Some(ref trace_path) = options.trace_output {
         config = config.with_trace_output(trace_path);
     }
+    Ok(config)
+}
+
+/// Execute inference using realizar engine
+///
+/// Per spec APR-CLI-DELEGATE-001: All inference delegates to realizar's
+/// high-level API. This eliminates ~1500 lines of duplicated code.
+/// BUG-RUN-001 FIX: Now returns InferenceOutput with actual token count
+#[cfg(feature = "inference")]
+fn execute_with_realizar(
+    model_path: &Path,
+    input_path: Option<&PathBuf>,
+    options: &RunOptions,
+    _use_mmap: bool,
+) -> Result<InferenceOutput> {
+    use realizar::infer::run_inference_report;
+
+    let config = realizar_config(model_path, input_path, options)?;
 
     // Run inference via realizar
-    let result = run_inference(&config).map_err(inference_error)?;
+    // #3718: the report carries what only the decode path knows (finish reason,
+    // context window); the prompt count is `input_token_count`, taken after the
+    // chat template, so it is the number the model actually read.
+    let (result, report) = run_inference_report(&config).map_err(inference_error)?;
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -379,8 +413,20 @@ fn execute_with_realizar(
         inference_ms: Some(result.inference_ms),
         tok_per_sec: Some(result.tok_per_sec),
         used_gpu: Some(result.used_gpu),
+        gpu_attempted: Some(result.gpu_attempted),
         generated_tokens,
         token_texts,
+        usage: RunUsage {
+            prompt_tokens: Some(result.input_token_count),
+            completion_tokens: Some(result.generated_token_count),
+            finish_reason: report.finish_reason.map(|r| r.as_str()),
+            context_length: report.context_length,
+            // #3981: realizar's generation window, and what the rest of its window was.
+            generation_ms: result.generation_ms.map(|g| g.round() as u64),
+            setup_ms: result
+                .generation_ms
+                .map(|g| (result.inference_ms - g).max(0.0).round() as u64),
+        },
     })
 }
 

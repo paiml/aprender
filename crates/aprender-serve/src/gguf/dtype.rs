@@ -33,9 +33,41 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 /// this whitelist is SILENTLY decoded as Q4_K → garbage logits.
 ///
 /// The whitelist of GPU-eligible types is exactly:
-///   0=F32, 2=Q4_0, 3=Q4_1, 6=Q5_0, 8=Q8_0, 12=Q4_K, 13=Q5_K, 14=Q6_K.
-/// Everything else — F16(1), Q5_1(7), Q8_1(9), Q2_K(10), Q3_K(11), Q8_K(15),
-/// the IQ* families, BF16(30), unknown — is gated to CPU.
+///   0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 10=Q2_K, 12=Q4_K,
+///   13=Q5_K, 14=Q6_K, 16=IQ2_XXS, 18=IQ3_XXS, 20=IQ4_NL, 21=IQ3_S, 22=IQ2_S,
+///   23=IQ4_XS, 30=BF16.
+/// Everything else — Q8_1(9), Q3_K(11), Q8_K(15), the rest of the IQ*
+/// families, unknown — is gated to CPU.
+///
+/// #3931: this list is PARSED by `the_prose_whitelist_equals_the_expression`
+/// and compared against the `matches!` below, so the two cannot drift again.
+/// It had drifted: the prose named ten types and declared `Q5_1(7)` gated,
+/// while the expression permitted thirteen including 7, 20 and 21 — so a
+/// reader of the file that calls itself the single source of truth would have
+/// concluded both that IQ3_S still needed a kernel (it does not, #3884) and
+/// that Q5_1 was unsupported (it is permitted). Add a type here and to the
+/// `matches!` together, or the test fails naming the difference.
+///
+/// #3477: each of these was admitted only once its GEMV kernel existed AND had
+/// been measured against the CPU decoder on real model bytes. Never on the
+/// kernel's existence alone — a whitelist entry without a working kernel is
+/// what `resolve_qtype` used to turn into a silent Q4_K decode (#3850).
+///
+///   F16(1)     217/217 tensors exact, worst cosine 1.00000000, measured at
+///              `88d25d265` — 169 in Qwen2.5-0.5B-Instruct-f16, 48 in
+///              Qwen3.5-4B-UD-Q4_K_XL, enumerated from the files.
+///   IQ4_XS(23) 10/10 tensors exact, cosine 1.00000000, measured at
+///              `b782b4257` — every IQ4_XS tensor in Qwen3.5-4B-UD-Q4_K_XL,
+///              `[2560, 9216]` each.
+///   BF16(30)   0 ULP — BIT-EXACT, 64 rows, RTX 4090 sm_89 (#3908). The only
+///              entry here that is exact rather than within a tolerance, because
+///              bf16 decoding is `bits << 16` reinterpreted and rounds nothing.
+///              Held well-posed by integer-exact data so summation order cannot
+///              matter; ordinary values measured separately at 1.468e-5.
+///
+/// Both families carry their own planted-fault control that goes RED on a
+/// tensor OF THAT TYPE, so the greens are licensed rather than merely
+/// reported: a harness returning MATCH for everything would look identical.
 ///
 /// `inference_result::is_legacy_gguf_quant` (the primary `apr run`/`apr serve`
 /// path gate) and `OwnedQuantizedModel::has_gpu_unsupported_quant` (the
@@ -44,7 +76,10 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 #[inline]
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
-    !matches!(qtype, 0 | 2 | 3 | 6 | 8 | 12 | 13 | 14)
+    !matches!(
+        qtype,
+        0 | 1 | 2 | 3 | 6 | 7 | 8 | 10 | 12 | 13 | 14 | 16 | 18 | 20 | 21 | 22 | 23 | 30
+    )
 }
 
 /// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid
@@ -117,10 +152,11 @@ mod hybrid_gpu_unsupported_quant_tests {
     fn every_deltanet_projection_is_gpu_unsupported_quant_checked() {
         for stem in ["attn_qkv", "ssm_alpha", "ssm_beta", "attn_gate", "ssm_out"] {
             let name = format!("blk.7.{stem}.weight");
+            // Was Q2_K(10) until #3960 measured Q2_K's kernel; IQ1_S(19) has none.
             assert_eq!(
-                hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 10u32)]),
-                Some((name.clone(), 10)),
-                "{stem}: Q2_K has no GPU GEMV kernel"
+                hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 19u32)]),
+                Some((name.clone(), 19)),
+                "{stem}: IQ1_S has no GPU GEMV kernel"
             );
             assert_eq!(
                 hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 12u32)]),
@@ -541,3 +577,80 @@ include!("loader_apr_quantized.rs");
 #[cfg(test)]
 #[path = "dtype_characterization_tests.rs"]
 mod dtype_characterization_tests;
+
+// #3931: the prose whitelist above and the `matches!` below are two recordings of
+// one fact, and they had drifted. This is the third instance of that class in the
+// tree (#3894 is the first two). A comment cannot be compiled, so it is parsed.
+#[cfg(test)]
+mod prose_whitelist_tests_3931 {
+    use super::gpu_unsupported_quant_qtype;
+
+    /// Every `N=NAME` pair in the doc comment's "whitelist of GPU-eligible types
+    /// is exactly:" sentence, as a set of type numbers.
+    fn prose_whitelist() -> std::collections::BTreeSet<u32> {
+        let src = include_str!("dtype.rs");
+        let after = src
+            .split("The whitelist of GPU-eligible types is exactly:")
+            .nth(1)
+            .expect("the doc comment's whitelist sentence must exist — if it was \
+                     renamed, rename it here too rather than deleting this test");
+        // The list runs to the sentence that follows it.
+        let list = after
+            .split("Everything else")
+            .next()
+            .expect("the list is terminated by the 'Everything else' sentence");
+        let mut out = std::collections::BTreeSet::new();
+        for tok in list.split(|c: char| c == ',' || c == '.' || c.is_whitespace()) {
+            if let Some((n, name)) = tok.split_once('=') {
+                if let Ok(n) = n.trim().parse::<u32>() {
+                    assert!(!name.is_empty(), "type {n} in the prose has no name");
+                    out.insert(n);
+                }
+            }
+        }
+        assert!(
+            out.len() >= 5,
+            "parsed only {} entries from the prose — the format changed and this \
+             test would have passed vacuously",
+            out.len()
+        );
+        out
+    }
+
+    /// The set the CODE permits, over every type id ggml defines.
+    fn expression_whitelist() -> std::collections::BTreeSet<u32> {
+        (0..=39u32).filter(|&q| !gpu_unsupported_quant_qtype(q)).collect()
+    }
+
+    #[test]
+    fn the_prose_whitelist_equals_the_expression() {
+        let prose = prose_whitelist();
+        let code = expression_whitelist();
+        let prose_only: Vec<_> = prose.difference(&code).copied().collect();
+        let code_only: Vec<_> = code.difference(&prose).copied().collect();
+        assert!(
+            prose_only.is_empty() && code_only.is_empty(),
+            "the doc comment and the `matches!` disagree.\n  \
+             named in the prose but NOT permitted by the code: {prose_only:?}\n  \
+             permitted by the code but NOT named in the prose: {code_only:?}\n\
+             Update both together — this file calls itself the single source of truth."
+        );
+    }
+
+    /// The parser must be able to SEE a difference, or the test above is a
+    /// count of nothing. Feeding it a set that differs by one must fail.
+    #[test]
+    fn the_comparison_can_detect_a_difference() {
+        let mut tampered = expression_whitelist();
+        tampered.insert(99);
+        assert_ne!(
+            tampered,
+            expression_whitelist(),
+            "the set comparison cannot distinguish two different sets"
+        );
+        let real = expression_whitelist();
+        assert!(!real.contains(&99), "99 is not a real ggml type");
+        assert!(real.contains(&21), "IQ3_S(21) is permitted — #3884 admitted it");
+        assert!(!real.contains(&17), "IQ2_XS(17) is NOT permitted — no kernel");
+    }
+}

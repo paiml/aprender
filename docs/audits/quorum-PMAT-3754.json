@@ -1,0 +1,175 @@
+{
+  "ticket": "PMAT-3754",
+  "base": "52f43da71",
+  "base_resolved": "52f43da71",
+  "base_note": "no origin/52f43da71 exists; judged against the local ref",
+  "head": "344f3fe0cc540dfb1693c4d52692a830a90cd33b",
+  "diff_sha256": "5dacc98c31b8968ebfde7ca8a56a1099f12aa719613a6b79e37f8067434f649f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 28162,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly addresses PMAT-3754 by consolidating the default `top_k` value to a single `DEFAULT_TOP_K` constant (`40`) under `realizar::infer` and using it consistently for `run`, `chat`, and `serve` commands. A new helper function `sampling_top_k` is introduced to correctly handle the fallback to greedy (`top_k = 1`) when `temperature == 0.0`. The `apr code` driver now delegates to `sampling_top_k` appropriately. Tests confirm that the new default behavior correctly parses from clap, generates non-deterministic output with `temperature > 0` alone, remains greedy with explicit `top_k=1` or `temperature=0`, correctly documents the default in `--help`, and produces reproducible results with explicit seeds. All acceptance criteria from the ticket are fulfilled without regressions or omissions.",
+      "findings": [],
+      "raw_bytes": 2993,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-3754. The default `top_k` constant `DEFAULT_TOP_K = 40` and helper function `sampling_top_k` have been introduced in `aprender-serve/src/infer/mod.rs` (realizar) and reused correctly across run, chat, serve, and code paths. The tests strictly verify that `--temperature > 0` alone triggers sampling and explicit `top_k` 1 retains greedy determinism. The clap default is dynamically tied to the constant as requested. No requirements are missed or weakened.",
+      "findings": [],
+      "raw_bytes": 2281,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-3754.\n\n- `done_when 1`: The test `a_temperature_given_alone_samples` in `tests_sampling_default_3754.rs` verifies that temperature alone results in sampling (differs from greedy output on at least one seed) by leaving `--top-k` unspecified.\n- `done_when 2`: The tests `explicit_top_k_one_and_temperature_zero_stay_greedy` in `tests_sampling_default_3754.rs` and `run_explicit_top_k_one_and_default_temperature_are_greedy` in `run_tests_top_k_default_3754.rs` verify that `--top-k 1` or `--temperature 0` keep the output greedy and byte-deterministic.\n- `done_when 3`: The test `run_help_default_top_k_is_the_constant` in `run_tests_top_k_default_3754.rs` validates that `--help` uses the `DEFAULT_TOP_K` constant. The single shared `DEFAULT_TOP_K` constant covers chat, serve, and code correctly as outlined in the ticket notes. \n- `done_when 4`: The test `a_seeded_sample_is_reproducible_and_the_seed_is_used` in `tests_sampling_default_3754.rs` verifies that identical seeds generate identical byte outputs, while different seeds alter the output.\n\nAll changes are fully supported by tests and align exactly with the acceptance criteria and root cause analysis in the ticket. No regressions or undocumented side effects were observed.",
+      "findings": [],
+      "raw_bytes": 3848,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

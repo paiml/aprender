@@ -21,42 +21,92 @@
     // find_qwen_tokenizer: error paths
     // =========================================================================
 
+    /// An EMPTY cache root: the clean-machine answer.
+    ///
+    /// #3917. This asserted `InvalidFormat` and passed on developer boxes while
+    /// failing on both CI platforms — and the PASSING answer was the wrong one. The
+    /// function searches two MACHINE-GLOBAL caches under `$HOME`; on a box with a
+    /// Qwen model cached, the search SUCCEEDS on some other model's tokenizer and
+    /// the subsequent load of the nonexistent model fails with `InvalidFormat`. On a
+    /// clean machine nothing is found and the error is `MissingCompanionFile`, which
+    /// is also the correct error for a path that does not exist.
+    ///
+    /// The old test's own comment admitted the dependency — "may succeed on dev
+    /// machines with cached Qwen models" — and tolerated it instead of removing it.
+    /// Passing `home` explicitly makes the assertion about the FUNCTION rather than
+    /// about the machine that ran it.
     #[test]
-    fn test_find_qwen_tokenizer_nonexistent_path() {
-        // Path with no parent directory containing tokenizer.json.
-        // Note: This function also searches HuggingFace cache and APR cache,
-        // so it may succeed on dev machines with cached Qwen models.
+    fn find_qwen_tokenizer_on_a_clean_machine_reports_a_missing_companion() {
+        let empty_home = tempfile::tempdir().expect("tempdir");
         let path = Path::new("/nonexistent/deeply/nested/model.safetensors");
-        let result = find_qwen_tokenizer(path);
-        // Result depends on system state: Ok if cache has tokenizer, Err otherwise
-        // We just verify it doesn't panic and returns a valid Result
-        match result {
-            Ok(Some(tok)) => {
-                // Found in cache - verify it's a valid tokenizer
-                assert!(tok.vocab_size() > 0);
-            }
-            Ok(None) => {
-                // This shouldn't happen: function returns Err, not Ok(None) on failure
-                panic!("Expected Err or Ok(Some), got Ok(None)");
-            }
-            Err(CliError::InvalidFormat(msg)) => {
+
+        match find_qwen_tokenizer_from(path, Some(empty_home.path())) {
+            Err(CliError::MissingCompanionFile(msg)) => {
                 assert!(
                     msg.contains("No Qwen tokenizer found"),
-                    "Expected helpful error message, got: {}",
-                    msg
+                    "the error must name what it searched for: {msg}"
                 );
-            }
-            Err(other) => panic!("Expected InvalidFormat error, got: {:?}", other),
+                assert!(
+                    msg.contains("Pacha cache"),
+                    "the error must list the concrete candidates it tried: {msg}"
+                );
+            },
+            other => panic!(
+                "a clean machine has no tokenizer to find, so this must be \
+                 MissingCompanionFile; got {other:?}"
+            ),
         }
     }
 
+    /// A model at the filesystem root, whose parent is `/`. Same clean-machine
+    /// answer, and it exists to pin the parent-is-root path rather than to repeat
+    /// the case above.
+    ///
+    /// REPLACES a tautology. The previous body was
+    /// `assert!(result.is_ok() || result.is_err())` with the comment "depends on
+    /// system cache state" — an assertion that cannot fail for any input, on any
+    /// machine, under any change to the function.
     #[test]
-    fn test_find_qwen_tokenizer_root_path() {
-        // Path at root level - parent is "/"
+    fn find_qwen_tokenizer_at_the_filesystem_root_also_reports_a_missing_companion() {
+        let empty_home = tempfile::tempdir().expect("tempdir");
         let path = Path::new("/model.safetensors");
-        let result = find_qwen_tokenizer(path);
-        // Same as above: depends on system cache state
-        assert!(result.is_ok() || result.is_err());
+        assert!(
+            matches!(
+                find_qwen_tokenizer_from(path, Some(empty_home.path())),
+                Err(CliError::MissingCompanionFile(_))
+            ),
+            "a root-level model with no tokenizer anywhere is a missing companion"
+        );
+    }
+
+    /// THE MUST-RED FOR THE TWO ABOVE, and it is a real configuration rather than a
+    /// contrived one: it is the state every developer box that has pulled a Qwen
+    /// model is permanently in.
+    ///
+    /// With a POPULATED APR cache the function finds a tokenizer and does NOT return
+    /// `MissingCompanionFile` — so the assertions above can fail, and they are about
+    /// the empty-cache case specifically rather than about `find_qwen_tokenizer`
+    /// always erroring.
+    #[test]
+    fn a_populated_cache_changes_the_answer_so_the_clean_machine_assertion_is_not_vacuous() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let cache = home.path().join(".apr/tokenizers/qwen2");
+        std::fs::create_dir_all(&cache).expect("cache dir");
+        // Minimal HuggingFace tokenizer.json: a vocab and a (possibly empty) merge list.
+        std::fs::write(
+            cache.join("tokenizer.json"),
+            r#"{"model":{"vocab":{"ZZ_CACHE_SENTINEL":0,"a":1,"b":2},"merges":[]},"added_tokens":[]}"#,
+        )
+        .expect("write cache tokenizer");
+
+        let path = Path::new("/nonexistent/deeply/nested/model.safetensors");
+        let got = find_qwen_tokenizer_from(path, Some(home.path()));
+
+        assert!(
+            !matches!(got, Err(CliError::MissingCompanionFile(_))),
+            "with a cache present the function must NOT report a missing companion — \
+             if it does, the clean-machine tests above prove nothing"
+        );
     }
 
     /// The message must name the file the user has to produce.
@@ -135,8 +185,11 @@
     fn test_clean_chat_response_complex_combined() {
         let raw = "<|im_start|>assistant\nĠĠHello!!!!!!ĠĠworld<|im_end|><|endoftext|>";
         let cleaned = clean_chat_response(raw);
-        // Ġ -> space, multiple spaces -> single, !!!!!! -> !!!, markers removed, trimmed
-        assert_eq!(cleaned, "Hello!!! world");
+        // Ġ -> space (each one), punctuation VERBATIM, markers removed, trailing whitespace trimmed.
+        // 0.69.1 CRUX sweep: runs of spaces are content (byte-level BPE `ĠĠ` IS two spaces -- the tokens
+        // Python indentation is made of), so they survive; only surrounding blank lines and trailing
+        // whitespace go. This test used to assert the collapse, i.e. the ctl-code-add defect.
+        assert_eq!(cleaned, "  Hello!!!!!!  world");
     }
 
     #[test]

@@ -51,6 +51,7 @@ mod tests_28; // Coverage: realize_handlers pure functions, ContextWindow, clean
 mod chat_template_contract; // PMAT-187: chat-template-v1.yaml contract enforcement (FALSIFY-CT-002)
 mod embeddings_pmat803; // PMAT-803: model-backed embeddings (semantic-similarity falsifier, dim==hidden_size)
 mod sse_stream_whitespace; // Dogfood 0.63.0: SSE deltas must reassemble with whitespace intact
+mod serve_dead_routes_3991; // aprender#3991: every generation route GET / lists must generate; text is the completion
 mod native_routes_2376; // aprender#2376: native routes on a quantized server, KV-cache budget, sampling fields
 mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not just the banner
 mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version routed, stream:true is NDJSON, /realize/* stops fabricating
@@ -66,3 +67,5 @@ mod chat_stream_route_2375; // aprender#2375(4): POST /v1/chat/completions/strea
 mod apr_model_routes_2609; // aprender#2609: routed endpoints on an AprTransformer server; one condition, one status
 mod effective_config_route_pp2; // PP-LLAMA-001 §12 row 6 / PP-2 / PP-13 / PP-14 / PP-24 / PP-30: GET /v1/effective-config reports residency, not cfg!
 mod stream_mode_pp27; // PP-LLAMA-001 PP-27 / §3: an SSE stream declares live vs replayed, and the terminal chunk carries usage + measured timings
+#[cfg(feature = "gpu")] // create_test_quantized_model is gpu-gated
+mod usage_finish_3718; // aprender#3718: a context-clamped cut is "length", an unfittable prompt is 400

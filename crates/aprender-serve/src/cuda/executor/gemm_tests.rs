@@ -52,8 +52,12 @@ mod tests {
         let b = vec![1.0, 0.5, 0.25, 0.125, 2.0, 1.0, 0.5, 0.25]; // 4x2
         let mut c = vec![0.0; 2]; // 1x2
         exec.gemm(&a, &b, &mut c, 1, 2, 4).unwrap();
-        // dot(a, b[:, 0]) = 1*1 + 2*0.5 + 3*0.25 + 4*0.125 = 1+1+0.75+0.5 = 3.25
-        assert!(c[0] > 0.0);
+        // #3975: B is [k=4, n=2] row-major, so column 0 is b[0], b[2], b[4], b[6]:
+        //   c[0] = 1*1 + 2*0.25 + 3*2 + 4*0.5  = 9.5
+        //   c[1] = 1*0.5 + 2*0.125 + 3*1 + 4*0.25 = 4.75
+        // This comment used to say 3.25 (B read as [n,k]) and the test asserted only
+        // `c[0] > 0.0`, which the misread also satisfies.
+        assert_eq!(c, vec![9.5, 4.75], "gemm at m=1 must honour its [k,n] contract for B");
     }
 
     #[test]

@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-003 — `apr.run` returns a JSON body whose shape matches
 //! `apr run --json` (model+text+tokens+tok_per_sec+...).
 //!

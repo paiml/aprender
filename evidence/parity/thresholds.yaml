@@ -96,7 +96,11 @@ models:
   #               on lambda: cosine 0.466 down to -0.246; on gx10 (peer session, same
   #               head, 16:03Z): +0.179 down to -0.765 with the GPU argmax stuck at one
   #               token at every position (the model pins the float GEMV for exactly
-  #               this reason; the test is the standing falsifier on both hosts)
+  #               this reason; the test is the standing falsifier on both hosts).
+  #               #4258: that reading was a stale Q8_1 activation, not DP4A error. The
+  #               test is now `qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence`
+  #               (0.8B, lambda: cosine 0.997423..0.999476, argmax 6/6). The numbers above
+  #               stay as a known-bad record of a real stale-activation defect.
   #   margin: 0.998971 - 0.99 = 0.008971 under the lower good floor; 0.99 - 0.466 = 0.524 over the higher bad ceiling
   qwen3.5-0.8b:
     compute_class: gpu

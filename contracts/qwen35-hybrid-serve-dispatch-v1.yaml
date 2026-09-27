@@ -1,0 +1,154 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-22"
+  updated: "2026-09-22"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "paiml/aprender#3571 — the resident Qwen35Session apr serve builds at startup"
+    - "paiml/aprender#3715 — report that /api/chat could not reach the hybrid; MEASURED FALSE, see empirical_status"
+    - "paiml/aprender#3825 — the tool_calls gap: the SECOND independent divergence of the ollama-compat translation layer"
+    - "paiml/aprender#3090 — the hybrid has no GPU forward; it is CPU-resident by design"
+    - "contracts/qwen3-moe-serve-dispatch-v1.yaml — the precedent this mirrors"
+  description: "apr serve dispatch contract for qwen35-arch hybrid GGUF models, over BOTH the OpenAI-compat and ollama-compat wires"
+
+name: qwen35-hybrid-serve-dispatch
+version: "1.0.0"
+scope: "crates/aprender-serve/src/api/qwen35_chat_backend.rs + cuda_chat_backend.rs + ollama_handlers.rs"
+
+description: |
+  When `apr serve` holds a resident `Qwen35Session`, EVERY generation route
+  MUST answer from that session, and none may decode through a dense model.
+
+  The mechanism is two-part and both parts are load-bearing:
+
+    1. `try_qwen35_backend` is the FIRST arm of the chat backend chain
+       (cuda_chat_backend.rs, inside `openai_chat_completions_handler`),
+       unconditional and not cfg-gated. It returns `Some(response)` whenever
+       `state.qwen35_session()` is `Some`, so the rest of the chain is
+       unreachable for a hybrid.
+
+    2. `AppState::with_qwen35_session` sets `model: None`
+       (mod_app_state_qwen35.rs). A hybrid state holds no dense model, so the
+       downstream dense/CUDA/batch-scheduler arms have nothing to decode
+       through even if they were reached.
+
+  The ollama-compat wire reaches the hybrid by DELEGATION:
+  `ollama_chat_handler` and `ollama_generate_handler` both call
+  `openai_chat_completions_handler` and re-shape its response. They therefore
+  contain no reference to `qwen35` — correctly — and a reference count is not
+  evidence about routing.
+
+  WHY THIS CONTRACT EXISTS. The delegation is an invariant nothing asserted.
+  `/api/chat` has its own translation layer, and that layer has diverged from
+  the OpenAI one twice independently: the `tool_calls` plumbing gap (#3825),
+  and #3715's report. A future refactor giving `/api/chat` its own generation
+  path would be a silent regression on the route Ollama-compatible harnesses
+  actually hit. One predicate, two callers — asserted here.
+
+empirical_status: |
+  #3715's premise was MEASURED FALSE before this contract was written.
+
+  `apr serve run "$APR_MODELS_DIR"/Qwen3.5-0.8B-Q4_K_M.gguf`, commit
+  `71421b6e5`, RTX 4090 host, on BOTH a default-features build
+  (sha256 41662d2619e4192c812ae134) and a `--features cuda` build
+  (sha256 e89a9d80538553f5f83c5d1a). Server log: "Model ready: Qwen3.5 hybrid,
+  24 layers resident on the CPU".
+
+    POST /v1/chat/completions   200   content "4"
+    POST /api/chat              200   content "4"
+    POST /api/generate          200   response "4"
+    POST /api/chat stream=true  200   NDJSON fragments
+    GET  /api/tags              200
+
+  The report's evidence was a reference count: `ollama_handlers.rs` holds zero
+  references to `qwen35` while `cuda_chat_backend.rs` holds one. That count is
+  accurate and the conclusion does not follow from it, because the Ollama wire
+  delegates rather than naming the session.
+
+  The risk the report identifies is real even though the defect was not
+  present, which is what this contract is for.
+
+equations:
+  hybrid_is_answered_from_its_session:
+    description: "A resident hybrid answers every generation route, on both wires"
+    formula: "qwen35_session(S) = Some(_) → forall r in GENERATION_ROUTES: answered_by(r, S) = qwen35_session(S)"
+    domain: "S an AppState built by AppState::with_qwen35_session; GENERATION_ROUTES enumerated from the router, not hand-listed"
+    codomain: "the backend that produced each route's tokens"
+    invariants:
+      - "the ollama-compat wire is in GENERATION_ROUTES: /api/chat and /api/generate, streaming and not"
+      - "a reference to `qwen35` in the handler's own file is NOT required — delegation satisfies this, and a grep is not a routing proof"
+
+  no_dense_path_for_a_hybrid:
+    description: "Dense `Arc<Model>::generate()` MUST NOT be called for a hybrid"
+    formula: "qwen35_session(S) = Some(_) → ¬(Arc<Model>::generate(...) called)"
+    invariants:
+      - "structurally guaranteed: AppState::with_qwen35_session sets model: None"
+      - "cuda_batch_scheduler's two unguarded generate_gpu_resident_streaming calls take &mut OwnedQuantizedModelCuda and sit downstream of the try_qwen35_backend early return, so they are unreachable for a hybrid"
+
+  the_two_wires_agree:
+    description: "One request, one model, two wires, one answer"
+    formula: "content(POST /api/chat, m) = content(POST /v1/chat/completions, m)"
+    invariants:
+      - "equality of CONTENT, not merely of status — a divergence whose symptom is a wrong answer is invisible to a status assertion, and #3825's tool_calls gap had exactly that shape"
+
+falsification:
+  - id: FALSIFY-QWEN35-HYBRID-SERVE-DISPATCH-V1-001
+    description: "/api/chat answers from the hybrid, not an error and not a dense decode"
+    test: |
+      crates/aprender-serve/src/api/qwen35_chat_backend_tests.rs::
+      the_ollama_chat_wire_answers_from_the_hybrid — boots the in-process axum
+      router over a real Qwen3.5 hybrid, POSTs /api/chat, asserts 200 AND that
+      the content equals what `apr run`'s one-shot path produces for the same
+      prompt.
+    evidence: |
+      cargo test -p aprender-serve --lib qwen35_serve_tests
+      PASS 2026-09-22 on 71421b6e5 (Qwen3.5-0.8B-Q4_K_M, CPU-resident).
+      MUTANT: make ollama_chat_handler stop delegating and answer 500 directly.
+      RED, with the production symptom:
+        assertion `left == right` failed: #3715: /api/chat must reach the
+        Qwen3.5 hybrid, not fail
+          left: 500
+         right: 200
+      The OpenAI-wire test stays green under that mutant, so this row covers
+      the ollama wire specifically rather than the chain in general.
+
+  - id: FALSIFY-QWEN35-HYBRID-SERVE-DISPATCH-V1-002
+    description: "/api/generate answers from the hybrid"
+    test: |
+      qwen35_chat_backend_tests.rs::the_ollama_generate_wire_answers_from_the_hybrid
+      — 200 and a non-empty `response` field.
+    evidence: "cargo test -p aprender-serve --lib qwen35_serve_tests — PASS 2026-09-22 on 71421b6e5."
+
+  - id: FALSIFY-QWEN35-HYBRID-SERVE-DISPATCH-V1-003
+    description: "The two chat wires return IDENTICAL content for one request"
+    test: |
+      qwen35_chat_backend_tests.rs::both_chat_wires_agree_on_the_same_request —
+      POSTs the same messages to /v1/chat/completions and /api/chat and asserts
+      the assistant content is equal. This is the row that catches a divergence
+      whose symptom is a WRONG answer rather than an error.
+    evidence: |
+      cargo test -p aprender-serve --lib qwen35_serve_tests — PASS 2026-09-22.
+      RED under the same non-delegation mutant as V1-001.
+
+  - id: FALSIFY-QWEN35-HYBRID-SERVE-DISPATCH-V1-004
+    description: "A dense endpoint does not decode through the zero-layer base"
+    test: |
+      qwen35_chat_backend_tests.rs::
+      a_dense_endpoint_no_longer_decodes_through_the_zero_layer_base — the
+      pre-existing #3571 row, cited here because it discharges
+      `no_dense_path_for_a_hybrid` and this contract must not claim it twice.
+    evidence: "cargo test -p aprender-serve --lib qwen35_serve_tests — PASS 2026-09-22."
+
+open_obligations:
+  - |
+    The GENERATION_ROUTES quantifier is discharged today by three named routes
+    (/v1/chat/completions, /api/chat, /api/generate), not by enumeration from
+    the router. A route mounted later is NOT covered until it is added here.
+    apr-serve-model-backend-coverage-v1's `routed_endpoint_coverage` is the
+    contract that enumerates from the router; this one admits the hybrid as a
+    resident backend so that obligation reaches it.
+  - |
+    Streaming is asserted for /api/chat only through the #3571 OpenAI-wire
+    streaming row and a manual NDJSON probe recorded in empirical_status. A
+    cargo-level streaming row for the ollama wire is owed.

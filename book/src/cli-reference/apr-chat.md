@@ -28,6 +28,9 @@ Options:
       --trace-level <LEVEL>        Trace detail level (none, basic, layer, payload) [default: basic]
       --profile                    Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
       --backend <BACKEND>          PMAT-488: Compute backend override (cuda, cpu, wgpu)
+      --thinking <MODE>            Thinking mode for a thinking-capable model: on or off. Absent: the
+                                   default (off for Qwen3/Qwen3.5). `on` on a model with no thinking
+                                   template is refused (#3723) [possible values: on, off]
       --json                       Output as JSON
   -v, --verbose                    Verbose output
   -q, --quiet                      Quiet mode (errors only)

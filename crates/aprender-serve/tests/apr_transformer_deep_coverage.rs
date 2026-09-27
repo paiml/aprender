@@ -496,7 +496,8 @@ fn test_kv_cache_clear() {
 fn test_generate_config_default() {
     let config = GenerateConfig::default();
     assert_eq!(config.max_tokens, 32);
-    assert!((config.temperature - 1.0).abs() < f32::EPSILON);
+    // #3760: greedy by default; the sampler draws now, so 1.0 would randomize every default caller.
+    assert!((config.temperature - 0.0).abs() < f32::EPSILON);
     assert!((config.top_p - 0.9).abs() < f32::EPSILON);
     assert_eq!(config.top_k, 0);
     assert!((config.repetition_penalty - 1.0).abs() < f32::EPSILON);
@@ -509,6 +510,7 @@ fn test_generate_config_clone() {
         temperature: 0.5,
         top_p: 0.8,
         top_k: 20,
+        seed: realizar::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.2,
         trace: false,
         stop_tokens: vec![],

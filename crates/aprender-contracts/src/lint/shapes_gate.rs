@@ -33,8 +33,10 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
+use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, ExtractFailure,
+    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
+    ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -196,28 +198,60 @@ fn w3c_checked(shapes_n: usize, focus_nodes_n: usize) -> Result<w3c::W3cRun, Sha
     })
 }
 
+/// What `pv lint --gate shapes` is asked beyond the corpus (aprender#3715).
+#[derive(Debug, Clone, Default)]
+pub struct ShapesOptions {
+    /// `--shape <id>`: grade only that shape FAMILY — the shape `<id>` and every shape whose id starts with
+    /// `<id>.` — and arm it whatever `armed_shapes` says: a caller that names a shape is asking for its verdict,
+    /// and "computed and reported" would let a release gate print violations and exit 0.
+    pub only: Option<String>,
+    /// `--release-*`: the release subject `extract:release-evidence` reads. `None` → no release graph at all.
+    pub release: Option<Subject>,
+}
+
+/// The shapes `only` selects, in declaration order; a name that selects nothing is the CALLER's error (exit 3),
+/// never an empty pass.
+fn select_family(
+    declared: Vec<(NodeShape, String)>,
+    only: Option<&str>,
+) -> Result<Vec<NodeShape>, ShapeError> {
+    let Some(id) = only else {
+        return Ok(declared.into_iter().map(|(s, _)| s).collect());
+    };
+    let prefix = format!("{id}.");
+    let family: Vec<NodeShape> = declared
+        .into_iter()
+        .map(|(s, _)| s)
+        .filter(|s| s.id == id || s.id.starts_with(&prefix))
+        .collect();
+    if family.iter().any(|s| s.id == id) {
+        Ok(family)
+    } else {
+        Err(ShapeError::Malformed {
+            shape: id.to_string(),
+            what: "--shape names no declared shape".into(),
+        })
+    }
+}
+
 /// Run the gate over `contract_dir`.
 #[must_use]
 pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
+    run_shapes_gate_with(contract_dir, &ShapesOptions::default())
+}
+
+/// [`run_shapes_gate`] with `--shape` / `--release-*` (aprender#3715).
+#[must_use]
+pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> ShapesOutcome {
     let start = Instant::now();
-    let (declared, checked) = match collect_shapes(contract_dir) {
+    let (shapes, arming, checked) = match prepare(contract_dir, opts) {
         Ok(x) => x,
-        Err(e) => return ShapesOutcome::Unsupported(e),
+        Err(answer) => return answer,
     };
-    if declared.is_empty() {
-        return ShapesOutcome::NoShapes {
-            contracts_checked: checked,
-        };
-    }
-    let arming = match armed_shapes_of(contract_dir) {
-        Ok(a) => a,
-        Err(e) => return ShapesOutcome::Unsupported(e),
-    };
-    let shapes: Vec<NodeShape> = declared.into_iter().map(|(s, _)| s).collect();
 
     // ONE walk (R-18): every extractor, the json documents, the ladder receipts joined to the rungs — the same
-    // graph `pv extract` writes.
-    let extraction = match extract::all(contract_dir) {
+    // graph `pv extract` writes — plus, when a release subject is given, the release evidence (#3715).
+    let extraction = match extract::all_with(contract_dir, opts.release.as_ref()) {
         Ok(x) => x,
         Err(e) => return ShapesOutcome::ExtractFailed(e),
     };
@@ -225,17 +259,15 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
         return refusal;
     }
-    let graph = extraction.graph;
-    let needs_receipts = shapes.iter().any(|s| {
-        s.properties
-            .iter()
-            .any(|p| p.resolves.as_deref() == Some("receipt"))
-    });
+    let graph = &extraction.graph;
 
-    let (mut report, plant_violations) = validate_with_plant(&graph, &shapes, &arming);
+    let (mut report, plant_violations) = validate_with_plant(graph, &shapes, &arming);
+    if opts.only.is_some() {
+        order_by_family(&mut report, &shapes);
+    }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
-    let unmeasured = needs_receipts && extraction.receipts.is_empty();
+    let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
     if let Some(d) = decline(
         shapes.len(),
         &report,
@@ -253,53 +285,18 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     let counted = findings_of(
         &report,
         &arming,
-        &graph,
+        graph,
         &extraction.gguf,
         &extraction.apr_model,
     );
     let passed = counted.violations == 0;
-    let verdict = if !passed {
-        Verdict::Fail
-    } else if counted.warnings > 0 {
-        Verdict::Unknown(Reason::Warn)
-    } else {
-        Verdict::Pass
-    };
-    let mut by_shape: Vec<String> = shapes
-        .iter()
-        .map(|s| {
-            let n = shapes::instances_closed(&graph, &s.target_class).len();
-            format!("{}={}", s.id, n)
-        })
-        .collect();
-    by_shape.sort();
+    let verdict = verdict_of(&counted);
+    let by_shape = by_shape(graph, &shapes);
     let (armed_names, not_armed): (Vec<String>, Vec<String>) = shapes
         .iter()
         .map(|s| s.id.clone())
         .partition(|id| arming.is_armed(id));
-    let by_entity_type: BTreeMap<String, usize> = [
-        (
-            "pv-contract",
-            graph
-                .instances_of(&crate::ontology::rdf::ont("Contract"))
-                .len(),
-        ),
-        (
-            "gguf",
-            extraction.gguf.rungs.len() + extraction.gguf.files_read,
-        ),
-        ("apr-model", extraction.apr_model.files_read),
-        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
-        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
-        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
-        // calls it a pass. The same shape as #3610, one map over.
-        ("parity-receipt", extraction.parity.records),
-        ("code", extraction.code.symbols),
-        ("lean", extraction.lean.statements),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v))
-    .collect();
+    let by_entity_type = by_entity_type(&extraction);
     let duration = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let result = GateResult {
         name: "shapes".into(),
@@ -342,12 +339,106 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             symbols_unresolved: extraction.code.unresolved,
             lean_statements: extraction.lean.statements,
             lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+            release: extraction.release.clone().map(Box::new),
         }),
     };
     ShapesOutcome::Ran {
         result: Box::new(result),
         findings: counted.findings,
     }
+}
+
+/// The shape set this run grades and its arming, or the answer that stands in for a verdict (unsupported or
+/// malformed shapes, no shapes at all, a `--shape` naming nothing). A named family is armed whatever
+/// `armed_shapes` says (#3715).
+fn prepare(
+    contract_dir: &Path,
+    opts: &ShapesOptions,
+) -> Result<(Vec<NodeShape>, ArmedShapes, usize), ShapesOutcome> {
+    let (declared, checked) = collect_shapes(contract_dir).map_err(ShapesOutcome::Unsupported)?;
+    if declared.is_empty() {
+        return Err(ShapesOutcome::NoShapes {
+            contracts_checked: checked,
+        });
+    }
+    let baseline = armed_shapes_of(contract_dir).map_err(ShapesOutcome::Unsupported)?;
+    let arming = if opts.only.is_some() {
+        ArmedShapes::All
+    } else {
+        baseline
+    };
+    let shapes =
+        select_family(declared, opts.only.as_deref()).map_err(ShapesOutcome::Unsupported)?;
+    Ok((shapes, arming, checked))
+}
+
+/// A named family reports in the order its contract declares it: the release, its hosts, its context, its
+/// kernels, THEN its model cells (#3715: a kernel that diverges across arches is named before any model cell it
+/// breaks). Stable, so the validator's order holds within a shape.
+fn order_by_family(report: &mut Report, shapes: &[NodeShape]) {
+    let rank = |id: &str| shapes.iter().position(|s| s.id == id).unwrap_or(usize::MAX);
+    report.results.sort_by_key(|r| rank(&r.shape));
+}
+
+/// Does any shape resolve its values against the tracked ladder receipts?
+fn needs_receipts(shapes: &[NodeShape]) -> bool {
+    shapes.iter().any(|s| {
+        s.properties
+            .iter()
+            .any(|p| p.resolves.as_deref() == Some("receipt"))
+    })
+}
+
+/// Violations fail; warnings alone are `Unknown{Warn}`, never a pass; nothing is `Pass`.
+fn verdict_of(counted: &Counted) -> Verdict {
+    if counted.violations > 0 {
+        Verdict::Fail
+    } else if counted.warnings > 0 {
+        Verdict::Unknown(Reason::Warn)
+    } else {
+        Verdict::Pass
+    }
+}
+
+/// `shape=focus-count` per shape, sorted.
+fn by_shape(graph: &Graph, shapes: &[NodeShape]) -> Vec<String> {
+    let mut out: Vec<String> = shapes
+        .iter()
+        .map(|s| {
+            let n = shapes::instances_closed(graph, &s.target_class).len();
+            format!("{}={}", s.id, n)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Focus nodes each extractor produced.
+fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
+    [
+        (
+            "pv-contract",
+            extraction
+                .graph
+                .instances_of(&crate::ontology::rdf::ont("Contract"))
+                .len(),
+        ),
+        (
+            "gguf",
+            extraction.gguf.rungs.len() + extraction.gguf.files_read,
+        ),
+        ("apr-model", extraction.apr_model.files_read),
+        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
+        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
+        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
+        // calls it a pass. The same shape as #3610, one map over.
+        ("parity-receipt", extraction.parity.records),
+        ("code", extraction.code.symbols),
+        ("lean", extraction.lean.statements),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
 }
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
@@ -399,6 +490,8 @@ fn extract_controls() -> BTreeMap<String, String> {
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
         ),
+        // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
+        ("release-evidence", release_evidence::positive_control()),
     ]
     .into_iter()
     .map(|(k, fired)| {

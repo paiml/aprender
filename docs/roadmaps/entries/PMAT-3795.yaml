@@ -1,0 +1,22 @@
+- id: PMAT-3795
+  github_issue: 3795
+  item_type: task
+  title: 'CRUX slice 3 (#3739): the chat verb — a two-turn conversation through apr chat, llama.cpp and ollama (pty-driven), hf and llamafile; judged on the final turn'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-76
+  created: 2026-09-21T23:00:00Z
+  updated: 2026-09-21T23:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3795 done_when 1, verbatim: "`scripts/crux_inference_dogfood.sh <version> --verbs run,chat` runs a multi-turn conversation per model through every engine. A `chat` request without `run` declines, because the positive control lives in `run`." The prompt is `chat-arith-2turn`, the user turns "What is 2+2?" then "Now multiply that by 3.", judged on the FINAL reply (`expect_any ["12"]`); every reply is recorded.'
+  - 'done_when 2, verbatim: apr runs through `apr chat`, one user turn per stdin line; llama.cpp and ollama through `scripts/lib/crux_pty_chat.py`, a stdlib pseudo-terminal driver, because they do not take turns from a pipe. MEASURED before building it: llama-cli fed a pipe loops on empty `> ` prompts until killed; `ollama run` reads the whole pipe as ONE prompt and answers both turns in one reply. Driven through the pty helper, each held the conversation: llama-cli and ollama both gave ["2 + 2 equals 4.", "4 * 3 equals 12."]. hf and llamafile use `gen --verb chat` with the user turns (infra-3c, a3eecfe2d).'
+  - 'done_when 3, verbatim: "The judge scores the final turn with the same RED rule. `apr chat` reports no backend (#3794), so apr''s chat cells carry `backend_verified: false` and the receipt''s `not_covered` names it. The run-verb token-parity field isn''t reported as measured for chat."'
+  - 'done_when 4, MEASURED: `bash scripts/check_crux_inference_judge.sh` gives 42 ok, 0 broke. The chat rows: a GREEN chat; apr losing the first turn''s answer ("9") while llama.cpp carries it ("12") is RED; an apr transcript with no `Assistant:` turn is RED; and the record of every turn, `backend_verified: false`, and "not measured for the chat verb". Mutants: judging apr chat on the FIRST turn breaks 1; not recording backend_verified breaks 1; measuring chat as run breaks 1.'
+  - 'done_when 5, MEASURED on lambda (cpu lane, qwen2.5-coder-1.5b Q4_K_M, `--verbs run,chat`): PASS, 4 cells (3 run + 1 chat), 4 GREEN. In the chat cell apr, llama.cpp@d1d3c3396 and ollama 0.33.2 each gave ["2 + 2 equals 4.", "4 * 3 equals 12."]. hf and llamafile were refused by name (their drivers are on PMAT-3778, not yet merged). `not_covered` names apr chat''s unverified backend (#3794). No ollama import was left behind.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs #3739 (slice 3; not a closing keyword for the parent). Closes #3795 when this merges. STACKED on crux-3774-verb-correspondence (#3789), so the diff to judge is `origin/crux-3774-verb-correspondence...HEAD`. SCOPE: scripts/crux_inference_dogfood.sh (the chat verb), scripts/lib/crux_pty_chat.py (new), scripts/lib/crux_inference_judge.py (chat parsing), scripts/check_crux_inference_judge.sh (chat rows), scripts/crux_inference_prompts.json (the chat prompt; the golden drift check covers only the golden rung), and this fragment. FOUND while building it: #3794, where `apr chat --no-gpu` still uploads the GGUF to CUDA (VRAM held outside the GPU lock; generation honours force_cpu, the load path does not) and apr chat reports no machine-readable backend. The pty helper starts only the argv it is given and reads no clock for a metric (its per-turn timeout is a bound), so the competing-harness count stays 0.'

@@ -69,8 +69,8 @@
             GateResult::skipped("golden_output", "no model"),
             GateResult::skipped("throughput", "no engine"),
         ];
-        let passed = gates.iter().all(|g| g.passed);
-        assert!(passed, "All-skipped should be passed");
+        let passed = gates_pass(&gates); // #3965: the production verdict, not a copy
+        assert!(passed, "All-skipped should be passed (production bounds it with check_min_executed)");
     }
 
     // ========================================================================
@@ -310,6 +310,7 @@
             summary: "No gates run".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         assert!(report.passed);
@@ -342,6 +343,7 @@
             summary: "All passed".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize many gates");

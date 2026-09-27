@@ -8,6 +8,8 @@ use super::helpers::{
 };
 use super::{DecisionTreeClassifier, DecisionTreeRegressor};
 use crate::error::Result;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;

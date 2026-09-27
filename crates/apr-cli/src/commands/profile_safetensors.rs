@@ -29,7 +29,7 @@ fn profile_safetensors_real(
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     let report = rosetta
         .inspect(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Inspection failed: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Inspection failed", &e))?;
 
     let num_layers = report
         .tensors
@@ -117,22 +117,15 @@ fn profile_gguf_real(
     };
     let tokens_per_pass = test_tokens.len();
 
-    let gen_config = QuantizedGenerateConfig {
-        max_tokens: 1, // Just one token to profile forward pass
-        temperature: 0.0,
-        top_k: 1,
-        stop_tokens: vec![],
-        trace: false,
-        ..Default::default()
-    };
-
     // Warmup passes (discard timing)
     eprintln!(
         "{}",
         format!("Running {} warmup passes...", warmup_passes).dimmed()
     );
     for _ in 0..warmup_passes {
-        let _ = model.generate(&test_tokens, &gen_config);
+        // #4270: the warmup is the forward pass being profiled. It used the no-KV
+        // `OwnedQuantizedModel::generate`, a second decode loop, for one token.
+        let _ = model.forward(&test_tokens);
     }
 
     // Measurement passes with per-operation profiler

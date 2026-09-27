@@ -503,6 +503,7 @@ fn test_generate_config_custom_values() {
         temperature: 0.5,
         top_p: 0.8,
         top_k: 50,
+        seed: realizar::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.2,
         trace: false,
         stop_tokens: vec![],

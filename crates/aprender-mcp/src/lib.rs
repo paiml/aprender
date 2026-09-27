@@ -9,13 +9,13 @@
 //! # Example
 //!
 //! ```no_run
-//! # #[cfg(feature = "native")]
-//! # fn main() -> anyhow::Result<()> {
+//! # #[cfg(all(feature = "native", feature = "apr-tools"))]
+//! # fn main() -> std::io::Result<()> {
 //! let mut server = aprender_mcp::AprMcpServer::new();
 //! server.run_stdio()?;
 //! # Ok(())
 //! # }
-//! # #[cfg(not(feature = "native"))]
+//! # #[cfg(not(all(feature = "native", feature = "apr-tools")))]
 //! # fn main() {}
 //! ```
 //!
@@ -54,6 +54,7 @@ pub mod types;
 /// Tools MUST source both fields from this module — hand-coding either in
 /// the tool's source file is caught by `tests/falsify_mcp_008.rs`
 /// (PMAT-514, 2026-04-18).
+#[cfg(feature = "apr-tools")]
 pub mod schemas {
     include!(concat!(env!("OUT_DIR"), "/schemas.rs"));
 }

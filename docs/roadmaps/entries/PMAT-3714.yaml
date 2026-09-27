@@ -1,0 +1,21 @@
+- id: PMAT-3714
+  github_issue: 3714
+  item_type: task
+  title: 'qwen3moe (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B, Q4_K_M) has NO working CUDA path: apr run --gpu falls back to CPU (rc 14), apr qa emits no gates — blocks 0.69.1 under the all-Q4_K-CUDA rule'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-eb
+  created: 2026-09-21T16:40:00Z
+  updated: 2026-09-21T16:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3714 done_when 1, verbatim: "`apr run --gpu` on both qwen3moe Q4_K_M files runs on CUDA with no fallback on **lambda AND gx10**, and `apr qa` capability_match plus golden_output PASS (not skipped). The 30B-A3B at Q4_K_M (~18 GB) must fit the 4090''s 24 GB with KV, or the refusal names the memory arithmetic, and the operator rules."'
+  - 'done_when 2, verbatim: "GPU vs CPU parity on the qwen3moe forward (`apr parity` must no longer refuse it as UNMEASURED-TOOL, #3367''s residual) at ≥ 64 positions"'
+  - 'done_when 3, verbatim: "`apr qa` on qwen3moe emits its gates, never an empty report (an empty gate list is a FAIL of qa itself)"'
+  - 'done_when 4, verbatim: "both files added as REQUIRED ladder rungs (#3712)"'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator, verbatim (issue body): "you must ensure all models Q4_K CUDA work; the end. on gx10 and lambda-labs". Cop ruling relayed by aprender-04 (operator "yes, to all"): NEW kernels are cuda-oxide first, each with a CPU twin and a per-kernel differential test on sm_89 and sm_121; if oxide cannot express one, say which and why on #3714 before any hand PTX. Gap list, measured on 225b2a9ab cuda builds on both hosts before any code: https://github.com/paiml/aprender/issues/3714#issuecomment-5763628862. The issue is delivered as four rows, each its own PR, each `Refs #3714` until the last. R1 (this PR) = done_when 1 and 3. It adds NO kernel, so the oxide ruling does not apply to it: a device-resident Qwen3MoeCudaModel (gguf/cuda/forward_qwen3_moe_resident.rs) on the #3090 Qwen35CudaModel pattern, built from existing executor kernels (Q4_K/Q6_K/F32 GEMV, experts at base + e*stride in one stacked allocation, SwiGLU, RMSNorm, per-head RMSNorm, NEOX rope, GQA decode attention, residual add, and elementwise_mul_into, an allocation-free wrapper over the existing ElementwiseMul kernel), routing on the host through route_top_k, the one routing rule shared with the CPU layers; wired where the gap list showed CUDA was never tried (infer/inference_result.rs -> infer/qwen3_moe_dispatch.rs) behind the runtime F2 rule, whose CPU reference runs with FP32 activations (quantize::with_fp32_activations, a dedicated rayon pool); the fit check calls realizar::capacity::plan, lifted byte-identical from #3596 (aprender-3e) so one fit computation serves both paths; and qa: a gate that errors is a FAILED row and the report is always written (qa.rs dispatch_gate), qwen3moe routes golden/throughput through the runtime entry point (qa_gguf.rs), and the dense-instrument gates skip naming the MoE placeholder. Chat/serve --gpu (api/cuda_chat_backend.rs) keep the CPU chain in R1: they need a persistent resident model, a named remainder. R2 = done_when 2 (apr parity for qwen3moe at >= 64 positions, plus per-op rows for #3715). R3 = the v2 kernels (device top-k, fused scaled accumulate, expert gather), oxide first. R4 = done_when 4 with aprender-62 (#3712). Files owned by other sessions and not touched: crates/apr-cli/src/commands/golden_output.rs and output_verification.rs (aprender-0e #3711, aprender-fd), cuda/executor/layers/cublas_prefill* (aprender-37).'

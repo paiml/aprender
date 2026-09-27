@@ -1,0 +1,409 @@
+{
+  "version": "0.69.0",
+  "host": "lambda",
+  "backend": "gpu",
+  "isa": "x86_64",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "engines": [
+    "apr",
+    "llama.cpp",
+    "ollama"
+  ],
+  "verbs": [
+    "run"
+  ],
+  "thinking": [
+    "off"
+  ],
+  "sampling": {
+    "temperature": 0.0,
+    "seed": 42,
+    "context": 4096,
+    "max_tokens": 64,
+    "source": "scripts/llama_pin.toml [protocol]"
+  },
+  "apr": {
+    "version_line": "apr 0.69.0 (afb05a3de)"
+  },
+  "harness": {
+    "sha": "afb05a3de",
+    "driver": "scripts/crux_inference_dogfood.sh"
+  },
+  "llama_cpp": {
+    "build": "version: 0.4.1-dev (build 10987, commit d1d3c3396)",
+    "pin": "d1d3c3396",
+    "unavailable": null
+  },
+  "ollama": {
+    "server_version": "0.5.7",
+    "client_version": "0.5.7",
+    "unavailable": null
+  },
+  "models": [
+    {
+      "name": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+      "thinking_capable": false,
+      "ollama": {
+        "blob_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+        "blob_is_input": true,
+        "template_sha256": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
+        "refused": "ollama 0.5.7 imported the GGUF with no chat template (TEMPLATE {{ .Prompt }}), so it would complete the raw text rather than chat"
+      },
+      "tokenization": {
+        "refused": null
+      }
+    }
+  ],
+  "not_covered": [
+    "verbs chat, serve and code (the next slices of #3739)",
+    "thinking ON (apr has no toggle until #3723)",
+    "consumer-brief context rungs (#3716) and each engine's max accepted context",
+    "TTFT, which belongs to the serve verb's single OpenAI client"
+  ],
+  "schema": "crux-inference-receipt/v1",
+  "judged_at": "2026-09-21T18:15Z",
+  "cells": [
+    {
+      "key": {
+        "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+        "host": "lambda",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "golden",
+        "prompt_id": "golden-2plus2"
+      },
+      "verdict": "RED",
+      "expect_any": [
+        "4"
+      ],
+      "engines": {
+        "apr": {
+          "answered": false,
+          "rc": 14,
+          "why": "exit 14",
+          "answer": "4",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": 46,
+            "completion_tokens": 1,
+            "decode_rate_tokens_per_second": 0.1,
+            "inference_ms": 11280.96
+          },
+          "backend": {
+            "requested": "gpu",
+            "ran": "cpu",
+            "fell_back": true
+          },
+          "prompt_ids": [
+            151644,
+            872,
+            198,
+            27,
+            0,
+            0,
+            0,
+            96136,
+            76,
+            4906,
+            91,
+            29,
+            872,
+            198,
+            3838,
+            374,
+            220,
+            17,
+            10,
+            17,
+            75414,
+            0,
+            0,
+            0,
+            96136,
+            76,
+            6213,
+            91,
+            397,
+            27
+          ],
+          "prompt_token_count": 46,
+          "rendered_prompt": "<|im_start|>user\\n<\\u{200b}|im_start|>user\\nWhat is 2+2?<\\u{200b}|im_end|>\\n<\\u{200b}|im_start|>assistant\\n<|im_end|>\\n<|im_start|>assistant\\n",
+          "correct": false
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "2 + 2 equals 4.",
+          "reported": {
+            "reported_by": "llama.cpp",
+            "prompt_rate_tokens_per_second": 1455.4,
+            "decode_rate_tokens_per_second": 125.6,
+            "prompt_tokens": null,
+            "completion_tokens": null
+          },
+          "correct": true
+        },
+        "ollama": {
+          "answered": false,
+          "rc": null,
+          "why": "refused: ollama 0.5.7 imported the GGUF with no chat template (TEMPLATE {{ .Prompt }}), so it would complete the raw text rather than chat",
+          "answer": null,
+          "reported": {},
+          "correct": false
+        }
+      },
+      "agreement": {
+        "answered": [
+          "llama.cpp"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": true,
+        "apr_count": 46,
+        "llama_cpp_count": 36,
+        "apr_ids_compared": 30,
+        "apr_ids_complete": false,
+        "first_divergence": 1,
+        "parity": false
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+        "host": "lambda",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "golden",
+        "prompt_id": "golden-greeting"
+      },
+      "verdict": "GREEN",
+      "expect_any": [
+        "Hello",
+        "Hi",
+        "hey",
+        "hello",
+        "well",
+        "!"
+      ],
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "Hello! I'm just a computer program, so I don't have feelings, but I'm here to help you. How can I assist you today?",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": 50,
+            "completion_tokens": 31,
+            "decode_rate_tokens_per_second": 9.2,
+            "inference_ms": 5655.37
+          },
+          "backend": {
+            "requested": "gpu",
+            "ran": "gpu",
+            "fell_back": false
+          },
+          "prompt_ids": [
+            151644,
+            872,
+            198,
+            27,
+            0,
+            0,
+            0,
+            96136,
+            76,
+            4906,
+            91,
+            29,
+            872,
+            198,
+            9707,
+            1052,
+            11,
+            1246,
+            525,
+            498,
+            3730,
+            3351,
+            847,
+            4238,
+            75414,
+            0,
+            0,
+            0,
+            96136,
+            76
+          ],
+          "prompt_token_count": 50,
+          "rendered_prompt": "<|im_start|>user\\n<\\u{200b}|im_start|>user\\nHello there, how are you doing today my friend?<\\u{200b}|im_end|>\\n<\\u{200b}|im_start|>assistant\\n<|im_end|>\\n<|im_start|>assistant\\n",
+          "correct": true
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "Hello! I'm doing well, thank you. How about yourself?",
+          "reported": {
+            "reported_by": "llama.cpp",
+            "prompt_rate_tokens_per_second": 1535.5,
+            "decode_rate_tokens_per_second": 193.4,
+            "prompt_tokens": null,
+            "completion_tokens": null
+          },
+          "correct": true
+        },
+        "ollama": {
+          "answered": false,
+          "rc": null,
+          "why": "refused: ollama 0.5.7 imported the GGUF with no chat template (TEMPLATE {{ .Prompt }}), so it would complete the raw text rather than chat",
+          "answer": null,
+          "reported": {},
+          "correct": false
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "llama.cpp"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": true,
+        "apr_count": 50,
+        "llama_cpp_count": 40,
+        "apr_ids_compared": 30,
+        "apr_ids_complete": false,
+        "first_divergence": 1,
+        "parity": false
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+        "host": "lambda",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "golden",
+        "prompt_id": "golden-paris"
+      },
+      "verdict": "RED",
+      "expect_any": [
+        "Paris"
+      ],
+      "engines": {
+        "apr": {
+          "answered": false,
+          "rc": 14,
+          "why": "exit 14",
+          "answer": "The capital of France is Paris.",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": 46,
+            "completion_tokens": 7,
+            "decode_rate_tokens_per_second": 0.8,
+            "inference_ms": 11645.83
+          },
+          "backend": {
+            "requested": "gpu",
+            "ran": "cpu",
+            "fell_back": true
+          },
+          "prompt_ids": [
+            151644,
+            872,
+            198,
+            27,
+            0,
+            0,
+            0,
+            96136,
+            76,
+            4906,
+            91,
+            29,
+            872,
+            198,
+            3838,
+            374,
+            279,
+            6722,
+            315,
+            9625,
+            75414,
+            0,
+            0,
+            0,
+            96136,
+            76,
+            6213,
+            91,
+            397,
+            27
+          ],
+          "prompt_token_count": 46,
+          "rendered_prompt": "<|im_start|>user\\n<\\u{200b}|im_start|>user\\nWhat is the capital of France?<\\u{200b}|im_end|>\\n<\\u{200b}|im_start|>assistant\\n<|im_end|>\\n<|im_start|>assistant\\n",
+          "correct": false
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "The capital of France is Paris.",
+          "reported": {
+            "reported_by": "llama.cpp",
+            "prompt_rate_tokens_per_second": 516.3,
+            "decode_rate_tokens_per_second": 306.5,
+            "prompt_tokens": null,
+            "completion_tokens": null
+          },
+          "correct": true
+        },
+        "ollama": {
+          "answered": false,
+          "rc": null,
+          "why": "refused: ollama 0.5.7 imported the GGUF with no chat template (TEMPLATE {{ .Prompt }}), so it would complete the raw text rather than chat",
+          "answer": null,
+          "reported": {},
+          "correct": false
+        }
+      },
+      "agreement": {
+        "answered": [
+          "llama.cpp"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": true,
+        "apr_count": 46,
+        "llama_cpp_count": 36,
+        "apr_ids_compared": 30,
+        "apr_ids_complete": false,
+        "first_divergence": 1,
+        "parity": false
+      }
+    }
+  ],
+  "summary": {
+    "RED": 2,
+    "GREEN": 1,
+    "UNJUDGED": 0,
+    "ALL_WRONG": 0,
+    "cells": 3,
+    "judged": 3,
+    "verdict": "RED",
+    "all_wrong_by_model": {},
+    "controls": [
+      "golden-2plus2"
+    ],
+    "declined_because": null
+  }
+}

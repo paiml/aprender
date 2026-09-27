@@ -1,0 +1,5 @@
+Backend override: cuda
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+F2 guard: validating on this run (receipt schema 1, this build writes 2) [source=fresh]
+F2 guard: passed in 24547 ms on 65 positions; receipt written to /home/noah/.cache/apr/f2-receipts/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8.json — the next run of this (model, apr, device) skips it.
+[qwen35] batched prefill: 6472 tokens in 3971 ms (1630 tok/s, chunk 512 rows)

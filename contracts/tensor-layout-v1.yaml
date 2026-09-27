@@ -47,26 +47,37 @@ type_enforcement:
       - Bias vectors
   enforcement_locations:
     aprender:
-    - src/format/validated_tensors.rs
-    - src/format/converter/write.rs (uses ValidatedTensor)
+    - crates/aprender-core/src/format/validated_tensors.rs
+    - crates/aprender-core/src/format/converter/write.rs (uses ValidatedTensor)
     realizar:
-    - src/validated_tensors.rs
-    - src/apr_transformer/mod.rs (requires ValidatedEmbedding)
-    - src/safetensors_infer.rs (produces ValidatedTensor)
-  compiler_guarantee: 'It is IMPOSSIBLE to construct AprTransformer with unvalidated data because:
+    - crates/aprender-serve/src/safetensors/validation.rs
+    - crates/aprender-serve/src/apr_transformer/mod.rs (requires ValidatedEmbedding)
+    - crates/aprender-serve/src/safetensors_infer.rs (produces ValidatedTensor)
+  compiler_guarantee: |
+    NOT IN PLACE. This section describes an INTENDED design, not the shipped code.
+    Measured for aprender#3868 at crates/aprender-serve/src/apr_transformer/mod.rs:407:
 
-    1. AprTransformer fields are ValidatedEmbedding, not Vec<f32>
+      #[derive(Debug, Clone, Serialize, Deserialize)]
+      pub struct AprTransformer {
+          pub token_embedding: Vec<f32>,   // NOT ValidatedEmbedding, and NOT private
+          ...
 
-    2. ValidatedEmbedding::new() is the ONLY constructor (no Default, no unsafe)
+    Of the four claims this field used to make:
+      1. FALSE  - the field is Vec<f32>, not ValidatedEmbedding.
+      2. DEFEATED - #[derive(Deserialize)] builds the struct from bytes with no
+         constructor at all, so ValidatedEmbedding::new() is not the only path even
+         where that type IS used.
+      3. Untestable as stated - the checks run only if the constructor is called.
+      4. FALSE  - the field is `pub`.
 
-    3. ValidatedEmbedding::new() runs ALL validation checks
+    ValidatedEmbedding still exists (aprender-core/src/format/validated_tensors.rs,
+    aprender-serve/src/safetensors/validation.rs); it is simply not what
+    AprTransformer is made of. `ValidatedEmbedding` appears ZERO times anywhere under
+    crates/aprender-serve/src/apr_transformer/.
 
-    4. Inner data field is private - cannot be accessed without validation
-
-
-    This is Poka-Yoke: the mistake (using unvalidated data) is physically impossible.
-
-    '
+    Do NOT read this contract as evidence that an embedding reaching inference has
+    been validated. It has not been, and the absence of a layout failure here has
+    never been a signal about any model.
 formats:
   gguf:
     layout: column-major
@@ -629,16 +640,20 @@ falsification_tests:
   if_test_fails: GH-88 regression - SafeTensors GPU not using fused Q4K kernel path
   reference: GH-88, LAYOUT-002
 toyota_way_principles:
-  jidoka: '"Automation with a human touch" - The validation stops the line immediately
-
-    when a defect is detected. No garbage data propagates to inference.
-
-    '
-  poka_yoke: '"Mistake-proofing" - The type system makes it physically impossible to
-
-    use unvalidated data. This is not a warning or a lint - it''s a compile error.
-
-    '
+  jidoka: |
+    NOT IN PLACE (aprender#3868). This claimed validation "stops the line
+    immediately" so no garbage propagates to inference. The runtime half does not
+    run: four of the six enforcers in
+    crates/aprender-core/src/format/layout_contract_enforce.rs have ZERO production
+    callers - enforce_embedding_contract (documented "MANDATORY ... prevents garbage
+    inference output"), enforce_matmul_contract, enforce_load_contract and
+    validate_ffn_shape_symmetry. Every external reference to the first is a test.
+  poka_yoke: |
+    NOT IN PLACE (aprender#3868). This claimed the type system makes unvalidated
+    data "physically impossible" and that using it is a compile error. It is not:
+    AprTransformer.token_embedding is a `pub Vec<f32>` and the struct derives
+    Deserialize, so unvalidated data is constructible in safe code with no error at
+    any stage. The newtypes exist but AprTransformer does not use them.
   genchi_genbutsu: '"Go and see" - The falsification tests require actually running the code
 
     with known-bad data. We don''t assume validation works - we prove it fails

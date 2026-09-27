@@ -1,0 +1,2 @@
+Backend override: cuda
+error: Inference failed: GPU capacity refused: an empty device of this size could hold this context at F32, but other processes hold 896 MiB of it (free < need <= total): weights 4861 MiB + KV 16376 MiB (262013 positions x 65536 B at F32) + workspace 1593 MiB + overhead 512 MiB = 23342 MiB, against 23140 MiB free of 24036 MiB (discrete GPU: cuMemGetInfo). Pass --no-gpu to run the CPU forward instead

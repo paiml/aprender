@@ -1,0 +1,1 @@
+{"text": "```python\ndef add(a, b):\n    return a + b\n```", "turns": ["```python\ndef add(a, b):\n    return a + b\n```"], "reported": {"interface": "LLM.chat", "thinking_requested": "off", "thinking_emitted": false, "prompt_tokens": 42, "completion_tokens": 18, "device": "cuda:0 NVIDIA GeForce RTX 4090"}}

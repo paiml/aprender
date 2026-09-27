@@ -155,6 +155,8 @@ pub mod pruning;
 pub mod qa;
 pub mod recommend;
 pub mod regularization;
+/// #3769: the README's release matrix, rendered from the ladder receipts (never typed).
+pub mod release_section;
 /// 100-point model quality scoring system (spec §7)
 pub mod scoring;
 pub mod serialization;
@@ -164,6 +166,7 @@ pub mod serialization;
 /// dependency (D-06: a build without it has no `tokenizers` node).
 #[cfg(feature = "setfit")]
 pub mod setfit;
+
 /// GPU Inference Showcase with PMAT verification (PAR-040)
 ///
 /// Benchmark harness for Qwen2.5-Coder showcase demonstrating >2x performance:
@@ -178,6 +181,9 @@ pub mod speech;
 pub mod stack;
 pub mod stats;
 pub mod synthetic;
+/// Test-only helpers shared by unit tests (#4130).
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod text;
 pub mod time_series;
 pub mod traits;

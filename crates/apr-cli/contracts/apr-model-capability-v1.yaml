@@ -1,0 +1,541 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-model-capability-v1 — the model-capability facts, as DATA
+#
+# TWO COPIES, ONE SOURCE. This file exists at two paths and they are BYTE-IDENTICAL:
+#
+#   SOURCE  contracts/apr-model-capability-v1.yaml
+#           The one to edit. Linted by `pv lint contracts/` (Makefile:587,
+#           dogfood_surfaces.sh:270), which reads the workspace root ONLY.
+#
+#   MIRROR  crates/apr-cli/contracts/apr-model-capability-v1.yaml
+#           Generated — do NOT edit. It exists because `include_str!` cannot
+#           escape a crate directory at package time, so the shipped binary can
+#           only embed a file inside `apr-cli`. The workspace-root `contracts/`
+#           is not in any crate's package.
+#
+# This provenance block is in BOTH copies deliberately: byte-equality is the
+# guarantee, so the mirror cannot carry a header the source lacks. Whichever path
+# you opened, the two names above tell you which one you are looking at — a
+# shadowed artifact is worse than a missing one, and two files with the same bytes
+# are a shadow unless the file itself says which is real (CLAUDE.md #8).
+#
+# `apr_model_capability_mirror::the_mirror_is_byte_identical_to_the_source`
+# enforces it, and is proven in BOTH directions: editing the source turns it RED,
+# and so does editing the mirror. A test comparing A to B can be written to read
+# only one side and pass forever; one direction green is an anecdote.
+#
+# Operator, verbatim (2026-09-22): "capability.rs need deep pv SHACL support and
+# exposure on all surfaces verb + transport (http/mcp/cli)".
+#
+# WHY THIS EXISTS. These facts live in `crates/aprender-serve/src/capability.rs`
+# as Rust — and, for every NEGATIVE fact, as a COMMENT. `gpu_supported_ops()`
+# inserts the eight supported ops as code; the five unsupported ones exist only
+# in a comment trailing the `QkNorm` insert line. So the positive facts are data
+# and the negative facts are prose attached to the wrong statement. Every
+# consumer then re-derives its own copy:
+#
+#   #3418/#3421  quant-type dispatch duplicated across ~30 files, no single source
+#   #3850        the whitelist is not on `apr qa`'s path — an unknown quant is
+#                silently decoded as Q4_K
+#   #3852        a refusal message enumerates `IQ*` in PROSE while the code
+#                enumerates in a `match`, and the two can disagree
+#   #3077        a generated doc derives these facts a second way — two
+#                representations that can disagree
+#   #3075        LayerNorm declared unsupported in a comment, implementation
+#                wired to nothing
+#
+# This file is the single declaration. `capability.rs` becomes its CONSUMER.
+#
+# ON `kind: registry`. Measured, not assumed: `ContractKind::Registry` exists
+# (`aprender-contracts/src/schema/kind.rs:57` — "a data registry (lookup tables,
+# enum definitions, config"), five contracts already use it, and
+# `pv validate contracts/apr-mcp-tool-inventory-v1.yaml` returns
+# "0 error(s), 0 warning(s) / Contract is valid." So a fact table fits the
+# existing schema and no new `kind` was minted.
+#
+# A NOTE ON A PRECEDENT THAT DOES NOT APPLY. `contracts/apr-verb-classification-v1.yaml`
+# (#3642) is a derived fact table under `contracts/` with a bare `schema:` string
+# and NO `metadata:` block. `pv validate` refuses it — "missing field `metadata`
+# at line 2 column 1" — and because that is a PARSE error rather than a lint
+# finding, `pv lint` over a directory containing it returns
+# "1 errors ... Result: FAIL". Its derivation discipline is worth copying; its
+# file shape is not.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-09-22'
+  author: apr-cli team
+  kind: registry
+  description: >
+    The model-capability registry: the architecture → required-op mapping, the
+    op → GPU-support facts with their reasons and citations, the op →
+    implementing-symbol mapping with its wiring status, and the ggml quant type
+    → GPU-support table with one row per type and its numeric id. Declared as
+    data so that no consumer re-derives it and no negative fact lives in a
+    comment.
+  references:
+    - crates/aprender-serve/src/capability.rs (the facts this file replaces as origin)
+    - crates/aprender-serve/src/capability.rs:611 (QUANTS_GPU — the grouped prose rows, #3852's shape)
+    - 'crates/aprender-serve/src/cuda/executor/layer_norm_gpu.rs (#3075: the unwired LayerNorm symbol)'
+    - crates/aprender-serve/src/cuda/executor/kernel.rs:105 (gelu_host, one of two definitions)
+    - crates/aprender-serve/src/cuda/executor/rope_indirect.rs:112 (gelu_host, the other)
+    - 'contracts/apr-mcp-tool-inventory-v1.yaml (kind: registry, the shape this follows)'
+    - 'https://github.com/ggerganov/ggml (ggml_type numeric ids)'
+    - 'aprender#3075, #3077, #3418, #3421, #3850, #3852, #3853 (the symptoms this registry removes)'
+
+# ANCHOR (#3863). Without a top-level `entity:` this contract counted as
+# `unanchored_but_bindable` and pushed the ont ratchet 297 -> 298. The disjunct that
+# fired is "names a file", whose predicate is `^[[:space:]]*(file|path|source_file):`
+# — and `^[[:space:]]*` matches ANY indentation, so the two `path:` lines nested inside
+# `op_implementation` rows counted as if a file were this contract's SUBJECT. It is not:
+# those two paths are EVIDENCE (the unwired `layer_norm_gpu`, the wired
+# `batched_swiglu_into`), cited inside a list item.
+#
+# Declaring the real subject fixes it honestly rather than by deleting the evidence.
+# The predicate's over-match is a separate defect and belongs on #3863, not here.
+entity:
+  # `pv-contract`, NOT `gguf`. The `type` tells the ONT extractor HOW to read `ref`:
+  # `gguf` makes it open the file as a GGUF binary and refuse on the magic bytes
+  # ("extractor refused ...: magic is not GGUF"). This contract IS a pv contract, so
+  # that is what it declares -- the same value `ont-shapes-v1` uses.
+  #
+  # The ratchet went 298 -> 297 because the block EXISTS; the type VALUE is a second,
+  # independent thing and it was wrong. A green ratchet and a red extractor,
+  # disagreeing about one edit -- neither gate alone would have shown it (#3863).
+  type: pv-contract
+  ref: contracts/apr-model-capability-v1.yaml
+name: apr-model-capability
+version: 1.0.0
+status: ACTIVE
+scope: >
+  GPU/CPU capability facts for GGUF model execution — what an architecture
+  requires, what the GPU path supports, which symbol implements each op and
+  whether anything calls it, and which quantisation types have a verified GPU
+  kernel.
+binary: apr
+crate: aprender-serve
+
+spec: >
+  capability.rs is the CONSUMER of this file, not its origin. Drift between the
+  two is a lint failure rather than a silent disagreement. Every fact below is
+  either transcribed from the current source or marked `unestablished`; nothing
+  here is inferred.
+
+# ── the ops an architecture can require ──────────────────────────────────────
+# Transcribed from `RequiredOp` (capability.rs). `gpu_supported` is transcribed
+# from `gpu_supported_ops()`: the eight `ops.insert(...)` lines are `true`, and
+# the five named in the trailing comment are `false` WITH the comment's own
+# reason and citation, which is the point — a negative fact stops being prose.
+ops:
+  - op: RoPE
+    gpu_supported: true
+  - op: GQA
+    gpu_supported: true
+  - op: MHA
+    gpu_supported: true
+  - op: SwiGLU
+    gpu_supported: true
+  - op: RMSNorm
+    gpu_supported: true
+  - op: BiasAdd
+    gpu_supported: true
+  - op: CausalMask
+    gpu_supported: true
+  - op: QkNorm
+    gpu_supported: true
+    note: 'GH-280: trueno PerHeadRmsNormKernel'
+  - op: GeluMlp
+    gpu_supported: false
+    reason: GPU uses the SwiGLU path; GELU-MLP models fall back to CPU
+  - op: LayerNorm
+    gpu_supported: false
+    reason: GPU uses the RMSNorm path; LayerNorm models fall back to CPU
+  - op: AbsolutePos
+    gpu_supported: false
+    reason: GPU uses RoPE; absolute-position models fall back to CPU
+  - op: AttnFinalSoftcap
+    gpu_supported: false
+    reason: >
+      CUDA forward_gpu_resident applies NO tanh attention/final-logit
+      softcapping, so Gemma2/Gemma3 fall back to CPU
+    citation: PMAT-824
+  - op: PostAttnFfnNorm
+    gpu_supported: false
+    reason: >
+      CUDA forward applies only the two LLaMA-style norms, not the
+      four-per-block Gemma2/Gemma3 norms, so those fall back to CPU
+    citation: PMAT-824
+
+# ── op → implementing symbol, and whether anything calls it ──────────────────
+# Three states, because they are three different facts and only the first can be
+# believed to work:
+#
+#   wired         a symbol exists AND a non-test caller reaches it
+#   unwired       a symbol exists and NOTHING outside tests calls it (#3075)
+#   unimplemented no symbol exists
+#   unestablished NOT YET MEASURED — a TODO, never a claim
+#
+# `unestablished` is deliberate. The first pass classified these by counting
+# `grep` hits, which called `layer_norm_gpu` "wired" on a single reference that
+# turned out to be a test. A count of a symbol name is not a call graph, so only
+# rows verified by READING their references are stated here.
+op_implementation:
+  # ONLY ROWS ESTABLISHED BY READING THE CALL GRAPH. aprender-5e owns the measured
+  # op → symbol map (`scripts/capability_op_impl_map.txt`, maintained by the gate
+  # that checks it) and their standard is the right one: a row that is neither
+  # measured nor checked does not belong in a contract. So the eleven
+  # `unestablished` placeholders this section first carried are GONE rather than
+  # committed — the op UNIVERSE is already enumerated in `ops:` above, and
+  # completeness of the implementation map is their gate's map-completeness check,
+  # not a second list here.
+  #
+  # These two rows are a DERIVED MIRROR, not a second home: 5e's gate gains a mode
+  # that fails when they disagree with what it measures. That is the same
+  # arrangement as #3077's GPU-SUPPORT.md, committed prose whose byte-equality
+  # with the rendered table is asserted in CI.
+  - op: LayerNorm
+    symbol: Executor::layer_norm_gpu
+    path: crates/aprender-serve/src/cuda/executor/layer_norm_gpu.rs
+    status: unwired
+    evidence: >
+      Every reference is a test or a comment, and two of those comments say why:
+      "layer_norm_gpu tests removed — kernel function naming issue
+      (FunctionNotFound)" (tests_cov005_incremental.rs:360) and "layer_norm_gpu
+      requires the \"layernorm\" kernel which isn't available"
+      (tests_cov017_residual.rs:323). The symbol exists; the kernel it needs does
+      not. This is #3075's instance, and it is why `unwired` must be
+      distinguishable from `unimplemented`. First classified `wired` off a grep
+      COUNT; reading the references corrected it, because a count of a symbol name
+      is not a call graph.
+    refs: ['#3075']
+  - op: SwiGLU
+    symbol: Executor::batched_swiglu_into
+    path: crates/aprender-serve/src/cuda/executor/residual.rs
+    status: wired
+    evidence: >
+      Called from production at cuda/executor/graph_dispatch.rs:395
+      (`self.batched_swiglu_into(&gate_buf, &up_buf, &out_buf, ...)`), inside graph
+      dispatch rather than a test. Verified by reading the call site, not by
+      counting references.
+
+# ── ggml quantisation type → GPU support ─────────────────────────────────────
+# ONE ROW PER TYPE, each with its numeric ggml id. `capability.rs:611`'s
+# `QUANTS_GPU` groups the unsupported ones into PROSE STRINGS —
+# "Q5_1 / Q8_1 / Q2_K / Q3_K / Q8_K" and "IQ2_XXS / IQ3_* / IQ4_NL / IQ4_XS" —
+# carrying no type numbers at all, while `F16` beside them carries "ggml type 1".
+# That is #3852's shape exactly: the message enumerates in prose while the code
+# enumerates in a `match`. One row per type makes the divergence unrepresentable
+# and the set machine-checkable against the `match`.
+#
+# `IQ3_*` in the source is a WILDCARD standing for several distinct ggml types.
+# It is expanded here to the ids it covers; a wildcard is not a fact.
+quant_types:
+  - name: F32
+    ggml_type: 0
+    gpu_supported: true
+  - name: F16
+    ggml_type: 1
+    gpu_supported: true
+    note: >
+      Opened in the GPU whitelist on the 0.69.1 release branch. This row read
+      `false` with reason "no GPU GEMV kernel" until FALSIFY-CAP-002 caught the
+      disagreement with `gpu_unsupported_quant_qtype` after the kernel landed.
+    refs: ['#3846', '#3850']
+  - name: Q4_0
+    ggml_type: 2
+    gpu_supported: true
+  - name: Q4_1
+    ggml_type: 3
+    gpu_supported: true
+  - name: Q5_0
+    ggml_type: 6
+    gpu_supported: true
+  - name: Q5_1
+    ggml_type: 7
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3885). Device A/B against `dequantize_q5_1` plus
+    # an explicit row-major dot: 64 rows, worst relative disagreement 0.000e0 on
+    # RTX 4090 sm_89. Proved able to fail first on the two mechanisms that define
+    # the format -- 5th bit dropped (i.e. Q4_1): row 41 GPU 288 vs CPU -24;
+    # affine min `m` dropped: row 34 GPU -13.5 vs CPU -9.
+    # Q5_1 is the only AFFINE type here (`w = q*d + m`), so a kernel that drops
+    # the min gives the right spread around the wrong centre.
+    reason: ''
+  - name: Q8_0
+    ggml_type: 8
+    gpu_supported: true
+  - name: Q8_1
+    ggml_type: 9
+    gpu_supported: false
+    reason: no GPU GEMV kernel
+  - name: Q2_K
+    ggml_type: 10
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3960, aprender-f5). CPU decoder (dequantize_q2_k)
+    # BITWISE vs llama.cpp gguf-py on every real Q2_K value of
+    # Qwen3.5-0.8B-UD-IQ2_XXS.gguf, 11,010,048 of 11,010,048. Device A/B vs that
+    # decoder with an f64 dot, RTX 4090 sm_89: synthetic k=512 n=48 0.000e0, k=3584
+    # n=1024 3.994e-9; every real tensor at the one shape the file uses,
+    # (k,n)=(3584,1024): blk.0 4.301e-9, blk.4 0.000e0, blk.5 4.342e-9 -- bar 1e-5.
+    # Planted faults RED on real bytes: scale/min nibbles swapped; half selector
+    # L&1 not (L&3)>>1 (the decoder's own historical bug class); affine min dropped;
+    # shift from h not s. Every run exclusive via scripts/lib/gpu_exclusive_run.sh.
+    reason: ''
+  - name: Q3_K
+    ggml_type: 11
+    gpu_supported: false
+    reason: no GPU GEMV kernel
+  - name: Q4_K
+    ggml_type: 12
+    gpu_supported: true
+    note: the release matrix's quant
+  - name: Q5_K
+    ggml_type: 13
+    gpu_supported: true
+  - name: Q6_K
+    ggml_type: 14
+    gpu_supported: true
+  - name: Q8_K
+    ggml_type: 15
+    gpu_supported: false
+    reason: no GPU GEMV kernel
+  - name: IQ2_XXS
+    ggml_type: 16
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3950). Device A/B against `iq_parallel_matvec`
+    # on RTX 4090 sm_89. Synthetic k=512 n=64 and k=300 n=16 (padded tail):
+    # EXACT, 0.000e0. Real bytes, EVERY IQ2_XXS tensor of
+    # Qwen3.5-0.8B-UD-IQ2_XXS.gguf (sha256 a369165c8ec45a92), 95/95 over all
+    # 6 shapes it uses -- (k,n) = (512,1024) (1024,2048) (1024,3584)
+    # (3584,1024) (4096,1024) (6144,1024) -- worst |err|/sum|w||x| 2.713e-7
+    # against a 1e-5 bar, output NaN-prefilled with 0 rows unwritten; positive
+    # control on the real bytes (corrupted block scales) -> 4.156e3, RED.
+    # Proved able to fail first on four
+    # mechanisms: sign-code width 7->8: GPU 378.9 vs CPU -2.6; aux1 u16 halves
+    # swapped: GPU 2753.4 vs CPU -2.6; row stride 66->64: GPU -10820048 vs
+    # CPU 4815.1; scale nibble dropped: GPU 351.4 vs CPU -2.6.
+    # "IQ also fails the CPU dequant path" was about aprender-CORE; the
+    # aprender-SERVE decoder (the A/B oracle) has worked since PMAT-3477.
+    reason: ''
+  - name: IQ2_XS
+    ggml_type: 17
+    gpu_supported: false
+    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+  - name: IQ3_XXS
+    ggml_type: 18
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3963). CPU decoder BIT-EXACT vs llama.cpp gguf-py
+    # on all 24 real IQ3_XXS tensors of Qwen3.5-0.8B-UD-IQ2_XXS.gguf (sha256
+    # a369165c8ec45a92), 40,894,464 elements. Device A/B vs that decoder, RTX
+    # 4090 sm_89: synthetic k=512 n=64 and k=300 n=16 EXACT 0.000e0; every real
+    # tensor, 24/24, both shapes -- (k,n) (512,1024) worst |err|/sum|w||x| 2.381e-7,
+    # (2048,1024) 2.346e-7 -- bar 1e-5, NaN-prefilled, 0 unwritten; positive
+    # control on real bytes 8.005e3 RED. Planted faults RED first: sign-code width
+    # 7->8, aux u16 halves swapped, row stride 98->96, 2nd grid index reads 1st.
+    reason: ''
+  - name: IQ1_S
+    ggml_type: 19
+    gpu_supported: false
+    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+  - name: IQ4_NL
+    ggml_type: 20
+    gpu_supported: true
+    # Implemented for 0.69.1. The dispatch predicate
+    # (`gguf/dtype.rs::gpu_unsupported_quant_qtype`) admits 20, and this row was
+    # stale against it until the contract test caught the divergence — which is
+    # what a co-evolution guard is for: the kernel landed, the fact about the
+    # kernel did not, and nothing else in the tree would have noticed.
+    # IQ4_NL needed elements-per-block as a TYPE PROPERTY (32/18), not the
+    # hardcoded 256 the dispatch assumed, or every row would be under-read 8x.
+    reason: ''
+  - name: IQ3_S
+    ggml_type: 21
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3884). Device A/B against `iq_parallel_matvec`:
+    # 48 rows, worst relative disagreement 0.000e0 on RTX 4090 sm_89, at
+    # in_dim=512 so the row stride spans two super-blocks. Proved able to fail
+    # first on the three mechanisms this format has -- scale nibble inverted:
+    # row 13 GPU 9311 vs CPU 1209; 9th grid bit from 2l+1: row 13 GPU 11085 vs
+    # CPU 1209; sign bits ignored: row 1 GPU -17453 vs CPU 1523.
+    # The CPU dequant path has worked since PMAT-3477; only the GEMV was absent.
+    reason: ''
+  - name: IQ2_S
+    ggml_type: 22
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3953, aprender-f5). CPU decoder BIT-EXACT vs
+    # llama.cpp gguf-py on all 5 real IQ2_S tensors of Qwen3.5-0.8B-UD-IQ2_XXS.gguf,
+    # 18,350,080 elements -- confirmed by two independent methods (gguf-py's
+    # reader; aprender's mmap with a raw-byte sha256 manifest). Device A/B, RTX
+    # 4090 sm_89: synthetic k=512 and k=3584 EXACT 0.000e0; every real tensor at
+    # the one shape the file uses, (k,n)=(3584,1024), 14 super-blocks: worst
+    # |err|/sum|w||x| 1.903e-7, bar 1e-5, NaN-prefilled. Planted faults RED:
+    # sign bits ignored, qh high bits dropped, scale nibble by l&1 not l>>1,
+    # grid lo/hi words swapped. Runs via scripts/lib/gpu_exclusive_run.sh.
+    reason: ''
+  - name: IQ4_XS
+    ggml_type: 23
+    gpu_supported: true
+    note: >
+      Opened in the GPU whitelist on the 0.69.1 release branch. The CPU dequant
+      path has existed all along (`iq_dispatch.rs`); only the GPU side was shut.
+    refs: ['#3870']
+  - name: BF16
+    ggml_type: 30
+    gpu_supported: true
+    reason: >-
+      #3908: GEMV kernel measured BIT-EXACT against the CPU decoder on device
+      (RTX 4090 sm_89) - 0 ULP over 64 rows on integer-exact data, where every
+      partial sum is exact in f32 so summation order cannot matter, and
+      1.468e-5 worst relative on ordinary bf16 values. The only type in this
+      table measured exactly rather than within a tolerance, because bf16
+      decoding is `bits << 16` reinterpreted and rounds nothing. Planted faults
+      RED first: shift 8 not 16, byte-swapped halfword, row stride k not k*2.
+    refs: ['#3908']
+  # IQ1_M is covered by the source's `IQ*` WILDCARD and is therefore one of the
+  # types that wildcard silently stood for. Naming it is the point of the table.
+  - name: IQ1_M
+    ggml_type: 29
+    gpu_supported: false
+    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+  # The remainder are in the ggml enum but are NOT named by `QUANTS_GPU` at all.
+  # They are listed because the whitelist is an ALLOWLIST: a type it does not
+  # name is not supported, and #3850 is what happens when such a type is neither
+  # allowed nor refused but silently decoded as Q4_K. A type absent from this
+  # table is the hole; there is now no absent type.
+  - name: I8
+    ggml_type: 24
+    gpu_supported: false
+    reason: integer storage type, not a weight quantisation for inference
+  - name: I16
+    ggml_type: 25
+    gpu_supported: false
+    reason: integer storage type, not a weight quantisation for inference
+  - name: I32
+    ggml_type: 26
+    gpu_supported: false
+    reason: integer storage type, not a weight quantisation for inference
+  - name: I64
+    ggml_type: 27
+    gpu_supported: false
+    reason: integer storage type, not a weight quantisation for inference
+  - name: F64
+    ggml_type: 28
+    gpu_supported: false
+    reason: not named by the GPU whitelist
+  - name: TQ1_0
+    ggml_type: 34
+    gpu_supported: false
+    reason: not named by the GPU whitelist
+  - name: TQ2_0
+    ggml_type: 35
+    gpu_supported: false
+    reason: not named by the GPU whitelist
+  - name: MXFP4
+    ggml_type: 39
+    gpu_supported: false
+    reason: not named by the GPU whitelist
+  - name: NVFP4
+    ggml_type: 40
+    gpu_supported: false
+    reason: not named by the GPU whitelist
+  - name: Q1_0
+    ggml_type: 41
+    gpu_supported: false
+    reason: not named by the GPU whitelist
+  - name: Q2_0
+    ggml_type: 42
+    gpu_supported: false
+    reason: not named by the GPU whitelist
+
+# ── how an architecture's required ops are derived ───────────────────────────
+# Transcribed from `required_ops()` / `required_ops_for_model()`. Declared so a
+# consumer can compute the same set without re-reading Rust.
+op_derivation:
+  positional_encoding:
+    Rope: [RoPE]
+    Absolute: [AbsolutePos]
+    Alibi: [AbsolutePos]          # ALiBi adds bias to attention scores
+    Relative: []                  # T5: handled by the attention layer
+    None: []
+  norm_type:
+    RmsNorm: [RMSNorm]
+    LayerNorm: [LayerNorm]
+  mlp_type:
+    SwiGlu: [SwiGLU]
+    GatedMlp: [SwiGLU]
+    GeluMlp: [GeluMlp]
+  conditional:
+    has_bias: [BiasAdd]
+    has_qk_norm: [QkNorm]
+  always: [CausalMask]
+  per_architecture:
+    softcap_postnorm: [AttnFinalSoftcap, PostAttnFfnNorm]
+
+falsification_conditions:
+  - id: FALSIFY-CAP-001
+    description: >
+      `gpu_supported_ops()` returns exactly the set of ops this file marks
+      `gpu_supported: true`. A test reads this contract and compares the two
+      sets by equality. Falsifiable: adding an op to the Rust set without adding
+      it here, or vice versa, fails.
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::the_contract_and_gpu_supported_ops_are_the_same_set -- --exact'
+  - id: FALSIFY-CAP-002
+    description: >
+      Every quant type the GPU dispatch accepts appears here with
+      `gpu_supported: true`, and every type it refuses appears with
+      `gpu_supported: false`. Falsifiable: the #3852 divergence — a refusal
+      message naming a type the `match` does not, or the reverse — fails,
+      because both sides are compared against one list keyed by ggml id rather
+      than against each other's prose.
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::every_quant_row_agrees_with_the_gpu_dispatch_predicate -- --exact'
+  - id: FALSIFY-CAP-004
+    description: >
+      EXHAUSTIVE over the ggml type enum. Every variant of
+      `aprender-quant::ggml_type` appears in `quant_types` with the same numeric
+      id. Falsifiable: a type added upstream and pulled into the enum, but not
+      declared here, fails — which is #3850's hole ("an unknown quant is
+      silently decoded as Q4_K") turned into a build failure. All 35 ids were
+      checked against that enum when this file was written; 0 mismatched.
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::the_quant_table_is_exhaustive_over_the_ggml_enum -- --exact'
+  - id: FALSIFY-CAP-003
+    description: >
+      No `op_implementation` row may claim `wired` while every reference to its
+      symbol is a test. Falsifiable by construction against #3075's LayerNorm:
+      marking it `wired` fails. `unestablished` is not a claim and is exempt.
+
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::an_implementation_row_claiming_wired_names_a_symbol -- --exact'
+qa_gate:
+  id: F-CAP-GATE
+  name: model capability registry contract
+  pass_criteria: >
+    `pv validate contracts/apr-model-capability-v1.yaml` reports 0 errors, and
+    the FALSIFY-CAP-* tests pass.
+  run: pv validate contracts/apr-model-capability-v1.yaml
+
+toyota_way_principles:
+  - genchi_genbutsu: >
+      Every row is transcribed from the source or marked `unestablished`. The
+      `unwired` rows carry the comment that proves them — the LayerNorm tests
+      were removed because the kernel is missing, which is the difference
+      between "not supported" and "supported by something nothing calls".
+  - jidoka: >
+      A negative fact in a comment cannot stop a build. A negative fact in this
+      file can.
+
+# #4046 merge-back: the contract-integrity ratchet requires every contract to state its
+# equations. These two are the invariants FALSIFY-CAP-001 and FALSIFY-CAP-002 already test
+# (crates/aprender-serve/src/capability.rs).
+equations:
+  gpu_ops_set_equality:
+    formula: "{ o in ops | gpu_supported(o) } = gpu_supported_ops()"
+    domain: "o in the ops rows of this contract"
+    codomain: "{true, false}"
+    invariants:
+      - "FALSIFY-CAP-001: equality in both directions; the contract is the single declaration"
+  gpu_quant_row_agreement:
+    formula: "forall q in quant_types . gpu_supported(q) = not gpu_unsupported_quant_qtype(q.ggml_type)"
+    domain: "q in the quant_types rows, keyed on the ggml type id, never the name"
+    codomain: "{true, false}"
+    invariants:
+      - "FALSIFY-CAP-002: every row agrees with the one predicate the GPU dispatch uses"

@@ -549,3 +549,99 @@ fn test_documented_paths_exist() {
          absent path `[gitignored]` on the same line."
     );
 }
+// ============================================================================
+// FALSIFY-DOCS-VALIDATE-SCORE-001 (#3935)
+
+/// Every published surface that tells a user what `apr validate --quality`
+/// scores. A file listed here must not describe the RETIRED 100-point
+/// denominator anywhere in it.
+const DOCS_DESCRIBING_VALIDATE_QUALITY: [&str; 9] = [
+    "README.md",
+    "book/src/cli-reference/apr-validate.md",
+    "book/src/tools/apr-cli.md",
+    "book/src/examples/apr-cli-commands.md",
+    "docs/specifications/aprender-spec.md",
+    "docs/specifications/components/cli.md",
+    "docs/specifications/components/inspection.md",
+    "docs/specifications/components/merge.md",
+    // The flag's own help text, transcribed into the book above. It is listed
+    // as a SOURCE file because the two must not drift apart again: the book
+    // page is a copy of what this line makes clap print.
+    "crates/apr-cli/src/commands_enum.rs",
+];
+
+/// Spellings of the retired denominator, as they were actually found in the
+/// tree on 2026-09-23 — not a guess at what someone might write.
+const RETIRED_SCORE_WORDINGS: [&str; 4] = ["100-point", "100-pt", "100 point", "/100 points"];
+
+/// FALSIFY-DOCS-VALIDATE-SCORE-001: no published doc advertises the 100-point
+/// denominator that #1870 (closing #1866) and #2394 finding 12 retired.
+///
+/// **The producer was guarded; the docs were not, and that is the whole
+/// defect.** `apr validate --quality` stopped scoring out of 100 because the
+/// report declares 26 checks of which 5 run on the `.apr` path — `✓ VALID
+/// 3/100 points` put a green badge next to what reads as 3%, against a
+/// denominator nothing was measured on. It now prints `SCORE: 80% of the
+/// checks that ran`, and TWO tests hold that line
+/// (`apr-cli/tests/cli_integration.rs::test_qa_016_validate_quality_score` and
+/// `apr-cli/tests/command_coverage.rs::test_coverage_validate_quality_rich`,
+/// both asserting `/100 points` is ABSENT from the output).
+///
+/// Neither reads a document, and neither reads `--help`. So the retired scale
+/// survived in 13 places across 9 files — including the `--quality` help string
+/// itself, the book page transcribing it, and README's `# 100-pt structural
+/// audit`, which is what #3935 was filed about. The fix a guard has to prevent
+/// re-acquiring is the DOCUMENTED claim, not the printed one.
+///
+/// ## Deliberately NOT in scope, because both are real
+///
+/// * `book/src/examples/apr-scoring.md` and `book/src/examples/model-zoo.md`
+///   describe a DIFFERENT 100-point rubric — the six-dimension model scorer in
+///   `crates/aprender-core/examples/apr_scoring.rs`, which has its own enforced
+///   contract (`contracts/apr-page-examples-apr-scoring-v1.yaml`). Its 100
+///   points are real and it is not `apr validate`.
+/// * `docs/specifications/archive/**` is history and is left as written.
+/// * `book/src/tools/apr-spec.md` is the APR spec's own checklist design text.
+#[test]
+fn test_no_doc_advertises_the_retired_100_point_validate_score() {
+    let mut checked = 0usize;
+    let mut violations: Vec<String> = Vec::new();
+
+    for rel in DOCS_DESCRIBING_VALIDATE_QUALITY {
+        let body = read_doc(rel);
+        assert!(
+            !body.trim().is_empty(),
+            "FALSIFY-DOCS-VALIDATE-SCORE-001: {rel} is empty — a guard that reads \
+             nothing cannot fail. Fix the path or drop it from the list."
+        );
+        checked += 1;
+
+        for (i, line) in body.lines().enumerate() {
+            for wording in RETIRED_SCORE_WORDINGS {
+                if line.contains(wording) {
+                    violations.push(format!("{rel}:{}: {}", i + 1, line.trim()));
+                }
+            }
+        }
+    }
+
+    assert_eq!(
+        checked,
+        DOCS_DESCRIBING_VALIDATE_QUALITY.len(),
+        "FALSIFY-DOCS-VALIDATE-SCORE-001: vacuity floor — only {checked} of {} listed \
+         documents were read",
+        DOCS_DESCRIBING_VALIDATE_QUALITY.len()
+    );
+
+    assert!(
+        violations.is_empty(),
+        "FALSIFY-DOCS-VALIDATE-SCORE-001: {} document line(s) still advertise the \
+         retired 100-point score for `apr validate --quality`:\n{}\n\n\
+         The command scores the checks that RAN (5 of 26 declared, on the .apr path). \
+         Describe that, e.g. \"structural quality score over the checks that ran\". \
+         If the line is about the SEPARATE `apr_scoring` example's 100-point rubric, \
+         it does not belong in DOCS_DESCRIBING_VALIDATE_QUALITY.",
+        violations.len(),
+        violations.join("\n")
+    );
+}

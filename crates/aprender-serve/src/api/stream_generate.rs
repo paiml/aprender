@@ -57,6 +57,59 @@ fn dense_stream_tokens(
     Ok((token_ids, prompt_len, tokenizer))
 }
 
+/// CUDA GGUF backend for `POST /stream/generate` and `/realize/generate` (#3991).
+///
+/// `apr serve --gpu model.gguf` holds a `cuda_model` and no `quantized_model`, so
+/// this handler fell through to the dense registry and answered 503 "No model
+/// available" while `GET /` listed both routes. Same generation call and config as
+/// `/generate`'s `try_cuda_generate`; the whole sequence is produced before the SSE
+/// stream is built, exactly as for the other backends here.
+#[cfg(feature = "cuda")]
+fn try_cuda_stream_tokens(
+    state: &AppState,
+    request: &GenerateRequest,
+    cancel: &CancelToken,
+) -> Result<Option<(Vec<u32>, usize, std::sync::Arc<BPETokenizer>)>, ApiErr> {
+    use crate::gguf::QuantizedGenerateConfig;
+
+    let Some(cuda_model_lock) = state.cuda_model() else {
+        return Ok(None);
+    };
+    let tokenizer = require_tok(state)?;
+    let prompt_ids = tokenize_prompt(&tokenizer, &request.prompt)?;
+    let prompt_len = prompt_ids.len();
+
+    let q_config = QuantizedGenerateConfig {
+        max_tokens: request.max_tokens,
+        temperature: request.temperature,
+        top_k: if request.temperature == 0.0 {
+            1
+        } else {
+            request.top_k
+        },
+        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
+        trace: false,
+        cancel: cancel.clone(),
+        ..Default::default()
+    };
+
+    let mut cuda_model = cuda_model_lock.write().map_err(|_| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to acquire CUDA model lock",
+        )
+    })?;
+    let generated = cuda_model
+        .generate_gpu_resident(&prompt_ids, &q_config)
+        .map_err(|e| {
+            api_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("CUDA generation failed: {e}"),
+            )
+        })?;
+    Ok(Some((generated, prompt_len, tokenizer)))
+}
+
 /// Quantized (GGUF / APR Q4_K) backend for `POST /stream/generate` and
 /// `/realize/generate`.
 ///
@@ -150,6 +203,27 @@ fn try_apr_stream_tokens(
     Ok(Some((generated, prompt_len, tokenizer)))
 }
 
+/// The `event: token` payloads for generated ids, never split inside a character.
+///
+/// Decoding each id alone turned a character spanning two byte tokens into two
+/// U+FFFD (the defect a29989039 fixed on the chat SSE path). A held id emits no
+/// event; the event that completes the character carries the text of every id
+/// it covers and the LAST id's `token_id`.
+fn raw_stream_token_events(tokenizer: &BPETokenizer, generated: &[u32]) -> Vec<StreamTokenEvent> {
+    let mut utf8 = crate::api::LiveUtf8Deltas::new();
+    let mut events: Vec<StreamTokenEvent> = generated
+        .iter()
+        .filter_map(|&token_id| {
+            utf8.push(tokenizer, token_id)
+                .map(|text| StreamTokenEvent { token_id, text })
+        })
+        .collect();
+    if let (Some(text), Some(&token_id)) = (utf8.finish(tokenizer), generated.last()) {
+        events.push(StreamTokenEvent { token_id, text });
+    }
+    events
+}
+
 /// Stream generate handler — generates tokens one by one via Server-Sent Events.
 ///
 /// Tries the quantized backend first (the `apr serve run model.gguf` path), then
@@ -165,17 +239,24 @@ pub async fn stream_generate_handler(
     Extension(cancel): Extension<CancelToken>,
     Json(request): Json<GenerateRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<ErrorResponse>)> {
-    // NOTE: Streaming via CUDA model uses /v1/chat/completions endpoint with stream=true
-    // This handler uses the CPU model path; for GPU streaming use OpenAI-compatible endpoint
+    // #3991: CUDA first, as `/generate` does — a `--gpu` GGUF server has no
+    // `quantized_model`, and this handler used to fall through to a 503.
+    #[cfg(feature = "cuda")]
+    let cuda = try_cuda_stream_tokens(&state, &request, &cancel)?;
+    #[cfg(not(feature = "cuda"))]
+    let cuda = None;
 
-    let (token_ids, prompt_len, tokenizer_clone) =
-        if let Some(resolved) = try_quantized_stream_tokens(&state, &request, &cancel)? {
-            resolved
-        } else if let Some(resolved) = try_apr_stream_tokens(&state, &request, &cancel)? {
-            resolved
-        } else {
-            dense_stream_tokens(&state, &request, &cancel)?
-        };
+    let (token_ids, prompt_len, tokenizer_clone) = if let Some(resolved) = cuda {
+        resolved
+    } else if let Some(resolved) = try_quantized_stream_tokens(&state, &request, &cancel)? {
+        resolved
+    } else if let Some(resolved) = try_apr_stream_tokens(&state, &request, &cancel)? {
+        resolved
+    } else if let Some(resolved) = try_qwen35_stream_tokens(&state, &request, &cancel)? {
+        resolved
+    } else {
+        dense_stream_tokens(&state, &request, &cancel)?
+    };
 
     // Create stream that emits tokens one by one
     let stream = async_stream::stream! {
@@ -183,14 +264,7 @@ pub async fn stream_generate_handler(
         // on the first sampled token returns the prompt alone, so clamp rather
         // than slice past the end.
         let generated_start = prompt_len.min(token_ids.len());
-        for &token_id in &token_ids[generated_start..] {
-            // Decode single token
-            let text = match tokenizer_clone.decode(&[token_id]) {
-                Ok(t) => t,
-                Err(_) => String::from("<error>"),
-            };
-
-            let event = StreamTokenEvent { token_id, text };
+        for event in raw_stream_token_events(&tokenizer_clone, &token_ids[generated_start..]) {
             // Serialization of simple struct should not fail, but handle gracefully
             let data = serde_json::to_string(&event)
                 .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());

@@ -52,6 +52,10 @@ pub struct ServerConfig {
     /// Neither comparator has a boolean — llama.cpp takes `-ngl` as an integer,
     /// `auto` or `all` and then reports what it resolved.
     pub gpu_layers: Option<GpuLayerRequest>,
+    /// #4089: `gpu_layers` came from the build's default, not from a flag the
+    /// user typed. A defaulted accelerator may fall back to the CPU (warned);
+    /// an EXPLICIT one that cannot engage is a hard error.
+    pub gpu_layers_defaulted: bool,
     /// Enable batched GPU inference for 2X+ throughput
     pub batch: bool,
     /// Enable inference tracing (PMAT-SHOWCASE-METHODOLOGY-001)
@@ -92,6 +96,7 @@ impl Default for ServerConfig {
             no_gpu: false,
             gpu: false,
             gpu_layers: None,
+            gpu_layers_defaulted: false,
             batch: false,
             trace: false,
             trace_level: "basic".to_string(),
@@ -179,6 +184,44 @@ impl ServerConfig {
         }
         // `fits = total_layers`: see the note above. This is all-or-nothing.
         resolve_gpu_layers(request, total_layers, total_layers)
+    }
+
+    /// #4089: the accelerator was ASKED FOR — `--gpu`, `--gpu-layers all|N`,
+    /// or `--backend cuda` — not merely defaulted on by a cuda build. Such a
+    /// request that cannot engage is a hard error, never a silent CPU server.
+    ///
+    /// Classified by the SAME `registry::Request::wanted` that `apr run` uses
+    /// (#3602), so the two verbs cannot disagree on what "forced" means.
+    /// `--gpu-layers auto` asks to fit what fits, so zero is an answer, not a
+    /// failure.
+    pub(crate) fn accelerator_is_explicit(&self) -> bool {
+        use crate::registry::{Request, Wanted};
+        let wanted = Request {
+            gpu: self.gpu,
+            no_gpu: self.no_gpu,
+            backend: self.backend.as_deref(),
+            layers_want_accelerator: !self.gpu_layers_defaulted
+                && self
+                    .gpu_layers
+                    .is_some_and(|r| r.wants_accelerator() && !r.may_autofit()),
+        }
+        .wanted();
+        self.wants_accelerator() && matches!(wanted, Wanted::Kind(_) | Wanted::AnyAccelerator)
+    }
+
+    /// #4089: the refusal an explicit accelerator request gets when it did
+    /// not engage (`why` is the loader's own reason).
+    pub(crate) fn refuse_unengaged_accelerator(&self, why: &str) -> Result<()> {
+        if !self.accelerator_is_explicit() {
+            return Ok(());
+        }
+        Err(CliError::InvalidInput(format!(
+            "the GPU was requested explicitly (--gpu-layers {}{}) and could not be used:              {why}\n\nRefusing to serve on the CPU instead (#4089). Pass `--no-gpu` or              `--backend cpu` to serve on the CPU.",
+            self.gpu_layers.map_or_else(|| "none".to_string(), |r| r.to_string()),
+            self.backend
+                .as_deref()
+                .map_or_else(String::new, |b| format!(", --backend {b}")),
+        )))
     }
 
     pub(crate) fn wants_accelerator(&self) -> bool {
@@ -618,6 +661,31 @@ impl GpuLayerRequest {
             other => other.parse::<u32>().map(Self::Exact).map_err(|_| {
                 format!("--gpu-layers expects a number, `auto`, `all`, or `0`; got {other:?}")
             }),
+        }
+    }
+
+    /// #4089: the request `apr serve run` makes when the user passed no
+    /// `--gpu-layers`/`--gpu`. It is `apr run`'s: on a cuda build the default
+    /// is the GPU (`all` — this loader has no partial offload), and `--no-gpu`
+    /// or `--backend cpu|wgpu` keep it off. `--backend cuda` asks for it on any
+    /// build (a build without cuda then refuses by name).
+    ///
+    /// Before this, no flag meant `None` on every build, so the same binary and
+    /// file ran on the GPU under `apr run` and on the CPU under `apr serve`.
+    #[must_use]
+    pub fn serve_default(no_gpu: bool, backend: Option<&str>) -> Option<Self> {
+        use crate::registry::{Request, Wanted};
+        let wanted = Request {
+            no_gpu,
+            backend,
+            ..Request::default()
+        }
+        .wanted();
+        match wanted {
+            Wanted::Kind("cuda") | Wanted::AnyAccelerator => Some(Self::All),
+            Wanted::Default => cfg!(feature = "cuda").then_some(Self::All),
+            // cpu; wgpu/metal/hip select no CUDA layers (unchanged).
+            Wanted::Cpu | Wanted::Kind(_) => None,
         }
     }
 

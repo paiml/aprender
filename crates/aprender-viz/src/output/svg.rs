@@ -23,6 +23,8 @@ pub struct SvgEncoder {
     background: Option<Rgba>,
     /// SVG elements
     elements: Vec<SvgElement>,
+    /// The `<metadata>` payload, emitted as the first child of `<svg>` (APEX-001 EV-2e)
+    metadata: Option<String>,
 }
 
 /// An SVG element.
@@ -78,7 +80,7 @@ impl SvgEncoder {
     /// Create a new SVG encoder with given dimensions.
     #[must_use]
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, background: Some(Rgba::WHITE), elements: Vec::new() }
+        Self { width, height, background: Some(Rgba::WHITE), elements: Vec::new(), metadata: None }
     }
 
     /// Create from a framebuffer (embeds as raster image).
@@ -104,6 +106,28 @@ impl SvgEncoder {
         });
 
         Ok(encoder)
+    }
+
+    /// Attach one `<metadata>` block, the first child of `<svg>` (APEX-001 EV-2e, #4067).
+    ///
+    /// The emitted bytes are exactly `<metadata>` + `xml` + `</metadata>`: no timestamp, encoder
+    /// name or version is added, so two renders of the same inputs are byte-identical. What the
+    /// payload says is the caller's business. A second call replaces the payload; there is never
+    /// more than one block.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::SvgMetadataRefused`] if `<metadata>xml</metadata>` is not a
+    /// well-formed XML element: unbalanced or mismatched tags, a bare `&` or `<`, a DTD, an XML
+    /// declaration, or a payload that closes the wrapper early. A refused payload is never emitted.
+    pub fn metadata(mut self, xml: &str) -> Result<Self> {
+        let wrapped = format!("<metadata>{xml}</metadata>");
+        // The wrapper is the document's start, so a payload's DTD or XML declaration can never
+        // be in the prolog: both are parse errors, with no option to remember to set.
+        roxmltree::Document::parse(&wrapped)
+            .map_err(|e| crate::error::Error::SvgMetadataRefused { reason: e.to_string() })?;
+        self.metadata = Some(xml.to_owned());
+        Ok(self)
     }
 
     /// Set background color (None for transparent).
@@ -341,6 +365,11 @@ impl SvgEncoder {
             r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{}" height="{}" viewBox="0 0 {} {}">"#,
             self.width, self.height, self.width, self.height
         );
+
+        // Metadata: the first child, so readers find it without walking the drawing (EV-2e)
+        if let Some(xml) = &self.metadata {
+            let _ = writeln!(svg, "  <metadata>{xml}</metadata>");
+        }
 
         // Background
         if let Some(bg) = self.background {

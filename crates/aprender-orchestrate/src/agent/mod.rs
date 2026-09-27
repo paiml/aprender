@@ -30,6 +30,7 @@
 pub mod auto_memory;
 pub mod capability;
 pub mod code;
+mod code_envelope;
 mod code_prompts;
 pub mod contracts;
 pub mod custom_agents;

@@ -349,8 +349,17 @@ fn test_apr_arch_no_match_defaults_to_llama() {
 
 #[test]
 fn test_is_legacy_quant_boundary_below() {
-    // PMAT-783: F16 has no GGUF GPU GEMV kernel → fail closed (would be Q4K garbage).
-    assert!(is_legacy_gguf_quant(1)); // F16, no GPU kernel → gated
+    // PMAT-783 gated F16 here because it had no GGUF GPU GEMV kernel and would
+    // have been read as Q4K garbage. #3477 wrote that kernel and measured it
+    // (217/217 exact at `88d25d265`), so F16 stopped being the boundary case and
+    // BF16(30) became it. #3908 has now measured BF16's kernel too (0 ULP,
+    // bit-exact), so the boundary MOVES AGAIN rather than the row being deleted:
+    // BF16(30) is eligible and its immediate neighbour IQ1_M(29) is not.
+    // Adjacent ids on opposite sides of the predicate is the strongest form of
+    // the boundary property this test owns.
+    assert!(!is_legacy_gguf_quant(1)); // F16 — now has a measured GPU kernel
+    assert!(!is_legacy_gguf_quant(30)); // BF16 — measured GPU kernel (#3908)
+    assert!(is_legacy_gguf_quant(29)); // IQ1_M — no kernel, the new boundary
 }
 
 #[test]
@@ -400,6 +409,7 @@ fn test_prefault_mmap_single_byte() {
 #[test]
 fn test_inference_result_debug_contains_all_fields() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "generated_text_here".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,
@@ -409,6 +419,7 @@ fn test_inference_result_debug_contains_all_fields() {
         load_ms: 45.678,
         format: "TestFormat".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     };
     let debug = format!("{:?}", result);
     assert!(

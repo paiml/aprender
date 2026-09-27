@@ -1,0 +1,21 @@
+- id: PMAT-3693
+  github_issue: 3693
+  item_type: task
+  title: 'Qwen3.5-9B Q4_K_M on CUDA at ~12k-token context corrupts identifiers it quotes from the prompt and runs at 1.0 tok/s: discriminate model weakness from long-context CUDA divergence'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-c3
+  created: 2026-09-21T15:55:00Z
+  updated: 2026-09-21T15:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3693 done_when 1, verbatim: "**discriminate first, then fix.** The same prompt, same seed, temperature 0: CPU (`--no-gpu`) vs CUDA, token by token. Identical corruption means model/quant weakness (document it, then compare a Q8_0/F16 9B); divergence means a CUDA path defect."'
+  - 'done_when 2, verbatim: "`apr parity` (or `--per-op`) at ≥ 8k positions, CPU vs CUDA, with the first position where cosine drops below the C14 floor named. C14''s corpus gains a long-context row, so the gate covers the context length the product is used at."'
+  - 'done_when 3, verbatim: "decode rate at 12k context measured separately from prefill, with `--json` timing fields. 1.0 tok/s end-to-end has to be attributed (prefill vs decode, and KV-cache growth)."'
+  - 'done_when 4, verbatim: "if CUDA diverges: the fix plus a falsifier that goes RED on the 12k-position corpus"'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Routed by the cop (aprender-04) at 2026-09-21 ~15:45Z onto the 0.69.1 path (#3710 bar, context row: "each of the four at the largest prompt the three consumers actually send, derived from their measured traffic, never picked here", with RAH''s review lane measured at ~44 KB, about 12k tokens). The input is paiml-implement-c9''s prompt at /mnt/nvme-raid0/agent-wt/gtmp-318/apr-lane/lane.json.prompt.txt on lambda (44667 bytes, sha256 ed8b3007…). Model /home/noah/models/Qwen3.5-9B-Q4_K_M.gguf, sha256 03b74727…, identical on lambda and gx10. Binary: the 0.69.0 release build, `apr 0.69.0 (225b2a9ab)`, at /mnt/nvme-raid0/targets/ladder-069/release/apr on each host. Measurements are recorded on the issue as they land. DISCRIMINATION RESULT (aprender-c3, 2026-09-21): not a CUDA defect and not model weakness. (a) The gdn_decode_attention multi-pass path (>4096 positions) is correct: a new device test at the default cap, seq_len up to 12,288, passes against the CPU port. (b) RoPE is ruled out: rope.dimension_sections [11,11,10,0] make IMROPE equal NeoX for text. (c) On arbiter''s r891 prompt, apr CPU and apr CUDA BOTH lose to the pinned llama.cpp at copy positions from about 250 tokens (pos 252: llama.cpp 17114 `maps` at logprob -0.001, apr 2117 `map`). (d) The cause both share is the tokenizer: apr''s GGUF encoder is greedy longest-match, so the prompt reaches the model as ids it never saw. That is #3726, which carries the fix. This row closes as #3726 if the re-measure after the fix shows no corruption; any remainder stays here. The 1.0 tok/s is serial prefill (qwen35 CUDA has no batched prefill), owned by #3596.'

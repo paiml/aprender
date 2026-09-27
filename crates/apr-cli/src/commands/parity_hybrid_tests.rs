@@ -19,6 +19,21 @@ mod parity_arm_tests {
         );
     }
 
+    /// #3714 R2: the spellings the runtime dispatches to the routed-expert
+    /// forward take the MoE arm; `qwen35moe` (the GGUF Qwen3.5-MoE tag) reaches
+    /// no MoE forward and does not.
+    #[test]
+    fn qwen3moe_is_measured_by_the_moe_arm() {
+        for arch in ["qwen3moe", "qwen3_moe"] {
+            assert_eq!(
+                parity_arm(arch),
+                ParityArm::Moe,
+                "{arch}: both routed-expert forwards exist (#3367 CPU, #3714 CUDA)"
+            );
+        }
+        assert_ne!(parity_arm("qwen35moe"), ParityArm::Moe);
+    }
+
     #[test]
     fn every_other_architecture_keeps_the_dense_arm() {
         for arch in ["llama", "qwen2", "qwen3", "gemma", "phi3", ""] {
@@ -53,20 +68,65 @@ mod hybrid_quant_refusal_tests {
 
     /// GGML type 23 is IQ4_XS (`gguf::ggml_type_table`) — what
     /// `Qwen3.5-0.8B-IQ4_XS.gguf`, the file the C14 manifest row resolves to on
-    /// this box, stores `blk.0.attn_gate.weight` as. Before this refusal that
-    /// row read `FAIL … Operation 'qwen35_cuda_upload' not supported` — a red
-    /// row naming the MODEL for a missing kernel.
+    /// this box, stores `blk.0.attn_gate.weight` as. Before the refusal existed
+    /// that row read `FAIL … Operation 'qwen35_cuda_upload' not supported` — a
+    /// red row naming the MODEL for a missing kernel.
+    ///
+    /// #3869: IQ4_XS now HAS a GPU GEMV kernel and is in the upload whitelist,
+    /// so it is no longer an example of an unsupported type — it is an example
+    /// of a supported one, and it is used as such below.
     const IQ4_XS: u32 = 23;
     /// Q4_K: a type the GPU GEMV kernels do cover.
     const Q4_K: u32 = 12;
 
+    /// A GGML type that genuinely has no GPU GEMV kernel **today**, found by
+    /// ASKING the production refusal rather than by naming one.
+    ///
+    /// This test used to hardcode IQ4_XS as its example of an unsupported type.
+    /// Then IQ4_XS got a kernel (#3850) and the row panicked in
+    /// `.expect("no GPU GEMV kernel for IQ4_XS")` — a test named for an absence
+    /// that no longer held. The guard it provides is still worth having, so the
+    /// fix is to stop naming the example.
+    ///
+    /// Derived this way the row self-heals: give IQ2_XXS a kernel tomorrow and
+    /// it simply moves to the next uncovered type. It fails only when EVERY
+    /// ggml type has a kernel — at which point the refusal is genuinely dead
+    /// code and deleting it is the right answer, which is what the panic says.
+    fn a_type_the_gpu_has_no_kernel_for() -> u32 {
+        // The candidate set is `GgmlType::ALL` — "every LIVE variant, in id
+        // order" — and not `0..=39`. A bare numeric range picks id 4 first,
+        // which is Q4_2: one of the eight ids upstream REMOVED
+        // (`ggml_type.rs::REMOVED_IDS = [4, 5, 31, 32, 33, 36, 37, 38]`). The
+        // refusal fires on it, so the row would be green while asserting that
+        // parity refuses a type no GGUF on earth can contain. Green on a
+        // fiction is worse than red.
+        trueno_quant::ggml_type::ALL
+            .iter()
+            .map(|t| t.as_id())
+            .find(|&t| {
+                hybrid_quant_refusal("qwen35", [("blk.0.ssm_beta.weight", t)]).is_some()
+            })
+            .expect(
+                "every LIVE ggml type now has a GPU GEMV kernel, so the hybrid quant \
+                 refusal can never fire and this guard is dead code — delete it rather \
+                 than weaken it",
+            )
+    }
+
     #[test]
     fn a_deltanet_projection_with_no_gpu_kernel_is_refused() {
-        let r = hybrid_quant_refusal("qwen35", [("blk.0.ssm_beta.weight", IQ4_XS)])
-            .expect("no GPU GEMV kernel for IQ4_XS: parity cannot build the GPU half");
+        let qtype = a_type_the_gpu_has_no_kernel_for();
+        assert_ne!(
+            qtype, IQ4_XS,
+            "IQ4_XS has a kernel since #3850; if the refusal still fires on it, the \
+             whitelist and the GEMV dispatch disagree"
+        );
+        assert_ne!(qtype, Q4_K, "Q4_K has had a kernel throughout");
+        let r = hybrid_quant_refusal("qwen35", [("blk.0.ssm_beta.weight", qtype)])
+            .expect("just established that this type is refused");
         assert_eq!(r.architecture, "qwen35");
         assert!(
-            r.reason.contains("blk.0.ssm_beta.weight") && r.reason.contains("23"),
+            r.reason.contains("blk.0.ssm_beta.weight") && r.reason.contains(&qtype.to_string()),
             "the refusal must name the tensor and its type: {}",
             r.reason
         );
@@ -93,6 +153,32 @@ mod hybrid_quant_refusal_tests {
             )
             .is_none(),
             "Q4_K has a verified kernel — this file is measurable and must be measured"
+        );
+    }
+
+    /// The converse of `a_deltanet_projection_with_no_gpu_kernel_is_refused`,
+    /// and the row that would have caught #3850 inverting that test's premise.
+    ///
+    /// A refusal that fires on everything is not a refusal. IQ4_XS gained a GPU
+    /// GEMV kernel and entered the upload whitelist in #3850, so parity must now
+    /// MEASURE an IQ4_XS hybrid rather than refuse it — that file is exactly the
+    /// `Qwen3.5-0.8B-IQ4_XS.gguf` the C14 manifest row resolves to, and refusing
+    /// it after the kernel landed would report UNMEASURED-TOOL for a file the GPU
+    /// can take.
+    #[test]
+    fn iq4_xs_has_a_kernel_now_and_must_be_measured_not_refused() {
+        assert!(
+            hybrid_quant_refusal(
+                "qwen35",
+                [
+                    ("token_embd.weight", IQ4_XS),
+                    ("blk.0.ssm_beta.weight", IQ4_XS),
+                    ("blk.0.attn_qkv.weight", IQ4_XS),
+                ]
+            )
+            .is_none(),
+            "#3850 gave IQ4_XS a GPU GEMV kernel and opened qtype 23 in the upload \
+             whitelist — parity must measure this file, not refuse it"
         );
     }
 

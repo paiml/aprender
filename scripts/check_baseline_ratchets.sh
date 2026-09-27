@@ -77,23 +77,77 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassified
     case "$1" in
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
+        bin_cli_unwired_baseline.txt)            printf 'set\n' ;;   # spawning test targets no lane runs (scripts/check_bin_cli_tests_wired.sh, #4059): may only shrink
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
         hand_rolled_parsers_baseline.txt)        printf 'set\n' ;;
+        include_fmt_baseline.txt)                printf 'set\n' ;;   # include!d .rs files rustfmt would change (scripts/include_fmt_ratchet.sh, #4151); instrument pinned in its own header
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
         perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
+        # aprender#3686, scripts/check_unwired_capabilities.sh. Three files, three
+        # DIFFERENT contracts -- classified by what each one actually does, which
+        # is not the same answer for all three.
+        #
+        # A shrink-only integer: rule 1's site count. `--update` REFUSES to raise
+        # it ("--update may only lower the rule-1 baseline"), so `count` is exact.
+        unwired_doc_assert_baseline.txt)         printf 'count\n' ;;
+        # NOT a ratchet. This is a derived registry: every RequiredOp variant must
+        # appear exactly once, and the guard FAILS with "MAP INCOMPLETE" when the
+        # enum grows past it (case rows W1/W2, proven by planting a variant). It
+        # MUST grow when the enum grows, so freezing it against main would forbid
+        # adding an op. Enforced one way today -- a missing variant fails, a row
+        # naming a variant that no longer exists is dead data nothing consults.
+        capability_op_impl_map.txt)
+            printf 'none\tderived registry of op -> implementing symbol; exact-match against the RequiredOp enum, a missing variant FAILS as MAP INCOMPLETE (scripts/check_unwired_capabilities.sh)\n' ;;
+        # NOT a ratchet, and it must not become one. This is a SUPPRESSION LEDGER:
+        # each row names an unwired capability and the OPEN ISSUE that excuses it,
+        # and every row is printed on every run so a suppression cannot go quiet.
+        # Adding a row is a reviewed decision (it costs an issue number), and
+        # REMOVING a row is mandatory when its issue closes -- a row that outlives
+        # its defect silently exempts the next instance of that op. Freezing it
+        # against main would forbid acknowledging a newly-found capability; a
+        # count would say nothing about whether the rows are still true.
+        unwired_capabilities_acknowledged.txt)
+            printf 'none\tsuppression ledger; each row names an open issue and is printed every run, and a row MUST be deleted when its issue closes or it exempts the next instance (scripts/check_unwired_capabilities.sh)\n' ;;
+        # NOT a ratchet. The exact test paths `make coverage` excludes (`--exact --skip <line>`,
+        # #3839): each row is a reviewed exclusion with its reason in the file's own comments, and
+        # the set must be free to grow when a new flaky or host-bound test is excluded.
+        coverage-skips.txt)
+            printf 'none\tcoverage exclusion list, one exact test path per line with its reason (Makefile coverage target, #3839); not a ratchet\n' ;;
         pipe_grep_q_baseline.txt)                printf 'count\n' ;;   # `producer | grep -q` sites under pipefail (scripts/check_no_pipe_into_grep_q.sh)
         pathonly_devdeps_baseline.txt)           printf 'set\n' ;;   # (manifest,alias) pairs whose src/ uses a publish-stripped dev-dep (scripts/check_pathonly_devdeps_unused_in_src.sh, #3305/#3306)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
+        # #3904's surface. Rows are <class>TAB<file>|<hash>|<idx>TAB<text>, and the
+        # KEY already carries a content hash, so a text edit produces a new entry
+        # rather than a moved one -- which is what `set` wants.
+        #
+        # CLASSIFIED `set` DELIBERATELY, AND CONSERVATIVELY. Its own header states
+        # the laundering vector it exists to close: "a baseline regenerated to clear
+        # churn takes any genuine new truncation in the same commit with it", which
+        # is why it has no `--update` and "deliberately will not get one". `set`
+        # refuses every addition, so it cannot open that vector. The header also
+        # says "Add a row by hand, with its class and a reason" -- under `set` such
+        # an addition is REFUSED against origin/main, and that friction is the
+        # intended cost: a new silent truncation should be argued, not appended.
+        #
+        # If hand-additions must be admitted, the upgrade is `set-aperture` with
+        # scripts/check_no_silent_truncation.sh as the owning guard, NOT a loosening
+        # of this arm -- and it needs the (a1)/(a2) aperture argument in
+        # lib_baseline_ratchet.sh's header, since from the working tree an aperture
+        # reveal and a fresh violation look identical. Erring toward the kind that
+        # refuses more is the safe direction for a release gate: a wrong `set` costs
+        # an author one conversation, a wrong `set-aperture` costs a hole.
+        silent_truncation_baseline.txt)          printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
         unwired_guards_baseline.txt)             printf 'set-aperture\tscripts/check_guards_are_wired.sh\n' ;;   # NAME entries: a guard file that predates the comparand may be ledgered when the meta-guard itself widens (#3644)
+        wallclock_assert_baseline.txt)           printf 'keyed\n' ;;   # #3703: <assertion text><TAB><count>; keyed on TEXT so a line moving is not growth
         # NOT a ratchet either, and for the same reason one level along: this
         # registry is DERIVED from the test sources on every run
         # (scripts/check_tree_reader_tests.sh) and must equal that derivation
@@ -119,6 +173,16 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
             printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
+        # #4023. coverage-solo.txt EXCLUDES NOTHING: its tests still run and are still
+        # measured, each in its own process, so growth cannot hide a line of coverage.
+        coverage-solo.txt)
+            printf 'none\tprocess-isolation list for make coverage; every entry still runs and is measured\n' ;;
+        # coverage-skips.txt DOES remove tests from coverage. Its own header requires a
+        # MEASURED reason written next to each entry, and entries are exact test paths, so
+        # each line is a reviewed claim. A shrink-only ratchet would be stricter; it can
+        # only be armed once the file exists on origin/main (#4023 adds it there).
+        coverage-skips.txt)
+            printf 'none\tintent model: exact test paths, each with a measured reason in the file (reviewed per entry)\n' ;;
         *) return 1 ;;
     esac
 }

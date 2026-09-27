@@ -76,6 +76,7 @@
     #[test]
     fn test_inference_result_format_string_gguf_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -85,6 +86,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.format, "GGUF");
     }
@@ -92,6 +94,7 @@
     #[test]
     fn test_inference_result_format_string_apr_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -101,6 +104,7 @@
             load_ms: 1.0,
             format: "APR".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.format, "APR");
     }
@@ -108,6 +112,7 @@
     #[test]
     fn test_inference_result_format_string_safetensors_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -117,6 +122,7 @@
             load_ms: 1.0,
             format: "SafeTensors".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.format, "SafeTensors");
     }
@@ -126,6 +132,7 @@
     #[test]
     fn test_inference_result_used_gpu_true_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -135,6 +142,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert!(result.used_gpu);
     }
@@ -142,6 +150,7 @@
     #[test]
     fn test_inference_result_used_gpu_false_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -151,6 +160,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert!(!result.used_gpu);
     }

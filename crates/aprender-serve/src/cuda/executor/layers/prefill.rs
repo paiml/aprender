@@ -909,6 +909,8 @@ impl CudaExecutor {
                 intermediate_dim,
                 hidden_dim,
             )?;
+            // #3727: up reads the same hidden_buf1 gate just read — FP8 may reuse gate's conversion.
+            self.fp8_act_cache.share_next();
             self.batched_gemv_or_gemm(
                 layer_weights.ffn_up_qtype,
                 layer_weights.ffn_up_ptr,
@@ -1055,7 +1057,7 @@ impl CudaExecutor {
     /// 5. Why not batch all launches? → CUDA graph: capture 728 launches, replay as 1.
     ///
     /// Expected: 47ms CPU overhead → ~1ms graph launch overhead.
-    /// TTFT: 78ms → ~32ms (within 2x of llama.cpp's 17ms).
+    // TTFT: 78ms → ~32ms (within 2x of llama.cpp's 17ms).
     #[allow(clippy::too_many_arguments)]
     fn try_prefill_graph_capture(
         &mut self,
@@ -1545,9 +1547,14 @@ impl CudaExecutor {
 
         // 3. LM head GEMV (vocab_size × hidden_dim → vocab_size logits)
         let lm_head_ptr = self.lm_head_ptr;
-        let lm_head_qtype =
-            WeightQuantType::from_size(self.lm_head_len, vocab_size as usize, hidden_dim as usize)
-                .unwrap_or(self.lm_head_qtype);
+        // #3908: a consistent declaration wins over the size guess (BF16 == F16 in size).
+        let lm_head_qtype = WeightQuantType::resolve_declared_or_sized(
+            Some(self.lm_head_qtype),
+            self.lm_head_len,
+            vocab_size as usize,
+            hidden_dim as usize,
+        )
+        .unwrap_or(self.lm_head_qtype);
 
         if lm_head_ptr == 0 {
             return Err(GpuError::InvalidLaunchConfig(

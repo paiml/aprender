@@ -324,6 +324,21 @@ impl AprV2Model {
         self.tensors.iter().map(|t| t.name.as_str()).collect()
     }
 
+    /// The tensor index, read-only (#3885).
+    ///
+    /// `tensor_names` above gives names; this gives the ENTRIES, because the
+    /// question a caller needs answered is about `dtype`, not identity.
+    ///
+    /// Exposed so a CALLER can decide whether this model belongs on a path before
+    /// that path commits to it. The Q4K serve dispatch accepted an all-f16 `.apr`,
+    /// spawned its thread, answered `/health`, and discovered the mismatch per
+    /// request at prefill — far too late for its documented fallback to fire,
+    /// because the only weight-format check lived inside the upload.
+    #[must_use]
+    pub fn tensor_index(&self) -> &[TensorEntry] {
+        &self.tensors
+    }
+
     /// Get metadata
     #[must_use]
     pub fn metadata(&self) -> &AprMetadata {

@@ -32,24 +32,13 @@ pub(crate) async fn safetensors_generate_handler(
         prompt.chars().map(|c| c as u32).collect()
     };
 
-    // PMAT-103 FIX: Use generate_with_cache for O(n) generation
-    // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
-    // generate_with_cache() uses KV cache for incremental generation = O(n)
+    // #4269: generation goes through `st_cpu_generate` (safetensors.rs), the
+    // engine's Session over the KV-cached StCpuForward — O(n), as PMAT-103 required.
     let start = Instant::now();
     let temperature = request
         .get("temperature")
         .and_then(|t| t.as_f64())
         .unwrap_or(0.0) as f32;
-    let gen_config = realizar::apr_transformer::GenerateConfig {
-        max_tokens,
-        temperature,
-        top_p: 0.9,
-        top_k: 0,
-        repetition_penalty: 1.0,
-        trace: false,
-        stop_tokens: vec![],
-        cancel: realizar::generate::CancelToken::never(),
-    };
     let output_ids = {
         // PMAT-189: Handle transformer lock poisoning gracefully
         let t = match transformer.lock() {
@@ -64,7 +53,7 @@ pub(crate) async fn safetensors_generate_handler(
                     .into_response();
             }
         };
-        match t.generate_with_cache(&input_ids, &gen_config) {
+        match st_cpu_generate(&t, &input_ids, max_tokens, temperature) {
             Ok(ids) => ids,
             Err(e) => {
                 return (

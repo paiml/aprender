@@ -264,7 +264,7 @@ fn trace_gguf(path: &Path, layer_filter: Option<&str>) -> Result<TracedLayers, C
 
     let data = std::fs::read(path)?;
     let reader = GgufReader::from_bytes(data)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to parse GGUF: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Failed to parse GGUF", &e))?;
 
     // BUG-TRACE-001 FIX: Compute total params from tensor dimensions
     let total_params: usize = reader
@@ -329,7 +329,7 @@ fn trace_safetensors(path: &Path, layer_filter: Option<&str>) -> Result<TracedLa
     let rosetta = RosettaStone::new();
     let report = rosetta
         .inspect(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect SafeTensors: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Failed to inspect SafeTensors", &e))?;
 
     let format_name = "SafeTensors".to_string();
     let tensor_names: Vec<&str> = report.tensors.iter().map(|t| t.name.as_str()).collect();

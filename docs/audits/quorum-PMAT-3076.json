@@ -1,0 +1,177 @@
+{
+  "ticket": "PMAT-3076",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "97093d2a573519c57dd8e345ee50ef3f030eb643",
+  "diff_sha256": "6beb7cd6319eee4785b396de9ac1d8b8bc2c6bf42c6b260c592fd9ca3f0aa526",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 61337,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have thoroughly evaluated the diff against PMAT-3076. The PR faithfully implements the SIMD F16/BF16 CPU matvec via AVX2 with a comprehensive set of unit tests in `float16_dot_tests.rs` verifying everything from subnormals and NaN/Inf handling to truncated buffer safety. \n\nCrucially, it adds a robust gate in `float16_greedy_parity.sh` (executed at release time through Cargo dogfood) to guarantee output parity against `llama.cpp`. The parity script safely handles differences using `--baseline` to differentiate pre-existing discrepancies from new divergences. The PR-time suite `check_float16_greedy_parity.sh` performs an excellent anti-vacuous self-test of the string manipulation and text diffing logic.\n\nI checked the awk implementation of `first_diff`, the regex logic in `trim`, and the JSON escaping mechanism in `json_str` locally and found them to be perfectly correct. Negative controls supplied in the PR receipts effectively demonstrate that broken kernels would have correctly been caught by the gate (12/12 FAIL). No gates were weakened and all functionality aligns meticulously with the ticket.",
+      "findings": [
+        {
+          "claim": "The SIMD CPU matvec implementation tests and comparison scripts comprehensively fulfill the ticket's behavioral gate requirement and token rate measurement, completely avoiding any fragile wall-clock assertions. The avx2 pointer arithmetic handles all lengths exactly without out-of-bounds reads.",
+          "file": "crates/aprender-serve/src/gguf/inference/float16_dot.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 5203,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the SIMD path for F16/BF16 CPU matmul, introduces the greedy-parity gate, and reports the measured tokens per second as instructed in the PMAT-3076 ticket. No regressions or unrelated changes were found.",
+      "findings": [
+        {
+          "claim": "The F16/BF16 CPU matmul gets a SIMD path and parity checks.",
+          "file": "crates/aprender-serve/src/gguf/inference/float16_dot.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 2944,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "As Lane 3 reviewer, I judged diff (origin/main...HEAD) against ticket PMAT-3076. The diff successfully implements an AVX2/FMA/F16C SIMD vectorised dot product for F16 and BF16 GGUF CPU matvecs (with a chunked auto-vectorised portable fallback), replaces the scalar indirect function pointer loop in float16_matmul, adds comprehensive unit/edge-case tests, wires the float16 greedy parity release gate in Cargo.toml dogfood.gates, and provides the PR-time case table checker script. No gates are weakened, no tests assert opposite behavior, no forbidden changes were introduced, and all receipt claims are backed by the diff. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "PR-time check scripts/check_float16_greedy_parity.sh case table passes clean with 0 failures.",
+          "command": "bash test_exact.sh",
+          "file": "scripts/check_float16_greedy_parity.sh",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 49,
+          "output": "--- case table: 0 failure(s) ---"
+        },
+        {
+          "claim": "Runtime feature detection for AVX2, FMA, and F16C correctly guards invocation of unsafe AVX2 SIMD dot kernels in float16_row_dot.",
+          "file": "crates/aprender-serve/src/gguf/inference/float16_dot.rs",
+          "grounding": "cited",
+          "line": 24
+        },
+        {
+          "claim": "float16_matmul delegates row dot products to float16_row_dot, eliminating per-element indirect fn pointer calls.",
+          "file": "crates/aprender-serve/src/gguf/inference/matmul_fused.rs",
+          "grounding": "cited",
+          "line": 27
+        },
+        {
+          "claim": "scripts/float16_greedy_parity.sh added to package.metadata.dogfood.gates in Cargo.toml without weakening existing gates.",
+          "file": "Cargo.toml",
+          "grounding": "cited",
+          "line": 634
+        }
+      ],
+      "raw_bytes": 5473,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "Cargo.toml",
+      "line": 634,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "scripts/float16_greedy_parity.sh added to package.metadata.dogfood.gates in Cargo.toml without weakening existing gates."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/float16_dot.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The F16/BF16 CPU matmul gets a SIMD path and parity checks.",
+        "The SIMD CPU matvec implementation tests and comparison scripts comprehensively fulfill the ticket's behavioral gate requirement and token rate measurement, completely avoiding any fragile wall-clock assertions. The avx2 pointer arithmetic handles all lengths exactly without out-of-bounds reads."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/float16_dot.rs",
+      "line": 24,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Runtime feature detection for AVX2, FMA, and F16C correctly guards invocation of unsafe AVX2 SIMD dot kernels in float16_row_dot."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/matmul_fused.rs",
+      "line": 27,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "float16_matmul delegates row dot products to float16_row_dot, eliminating per-element indirect fn pointer calls."
+      ]
+    },
+    {
+      "file": "scripts/check_float16_greedy_parity.sh",
+      "line": 49,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "PR-time check scripts/check_float16_greedy_parity.sh case table passes clean with 0 failures."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

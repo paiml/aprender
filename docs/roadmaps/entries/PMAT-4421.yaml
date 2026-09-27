@@ -1,0 +1,22 @@
+- id: PMAT-4421
+  github_issue: 4421
+  item_type: task
+  title: 'P0: bind the pr-review-sign receipt by diff patch-id (git patch-id --verbatim) so it verifies on the merge-queue sha; fail closed'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-5d
+  created: 2026-09-25 14:00:00+00:00
+  updated: '2026-09-25T16:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'the signer stamps predicate.diff_patch_id (git patch-id --verbatim of the pinned base_sha..head_sha diff, evidence/pr-review/<pr>/ excluded) before signing'
+  - 'Arm 4 recomputes the id from the subject (merge_group: sha^1..sha; else merge-base(origin/main,sha)..sha) and fails closed on empty diff, two parents, missing id, or mismatch'
+  - 'negative arm: a 1-byte change and a trailing-space change to the squash no longer verify (self-test rows)'
+  - 'works on git 2.34 (no --verbatim) via a byte-exact port checked against golden ids and native git'
+  - 'legacy (pre-#4421) receipts are exempt only for PRs < 4427 and only until 2026-09-26T16:00Z (operator ruling via cop, FLOW-04); branch events keep the ancestor rule; each bound has a negative self-test row'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'

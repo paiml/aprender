@@ -1,0 +1,23 @@
+{
+  "model": "$HOME/models/Qwen3.5-9B-Q4_K_M.gguf",
+  "text": "The",
+  "tokens": [
+    760
+  ],
+  "tokens_generated": 1,
+  "max_tokens": 1,
+  "tok_per_sec": 0.0,
+  "inference_time_ms": 80896.95,
+  "used_gpu": true,
+  "cached": true,
+  "backend": {
+    "requested": "gpu",
+    "ran": "gpu",
+    "fell_back": false
+  }
+}
+Collecting data...
+Generating '/tmp/nsys-report-494b.qdstrm'
+[1/1] [0%                          ] prof9b60k.nsys-rep[1/1] [0%                          ] prof9b60k.nsys-rep[1/1] [9%                          ] prof9b60k.nsys-rep[1/1] [12%                         ] prof9b60k.nsys-rep[1/1] [14%                         ] prof9b60k.nsys-rep[1/1] [11%                         ] prof9b60k.nsys-rep[1/1] [10%                         ] prof9b60k.nsys-rep[1/1] [8%                          ] prof9b60k.nsys-rep[1/1] [11%                         ] prof9b60k.nsys-rep[1/1] [13%                         ] prof9b60k.nsys-rep[1/1] [12%                         ] prof9b60k.nsys-rep[1/1] [11%                         ] prof9b60k.nsys-rep[1/1] [12%                         ] prof9b60k.nsys-rep[1/1] [13%                         ] prof9b60k.nsys-rep[1/1] [==18%                       ] prof9b60k.nsys-rep[1/1] [==19%                       ] prof9b60k.nsys-rep[1/1] [=17%                        ] prof9b60k.nsys-rep[1/1] [==18%                       ] prof9b60k.nsys-rep[1/1] [=17%                        ] prof9b60k.nsys-rep[1/1] [=15%                        ] prof9b60k.nsys-rep[1/1] [14%                         ] prof9b60k.nsys-rep[1/1] [13%                         ] prof9b60k.nsys-rep[1/1] [12%                         ] prof9b60k.nsys-rep[1/1] [11%                         ] prof9b60k.nsys-rep[1/1] [10%                         ] prof9b60k.nsys-rep[1/1] [9%                          ] prof9b60k.nsys-rep[1/1] [8%                          ] prof9b60k.nsys-rep[1/1] [7%                          ] prof9b60k.nsys-rep[1/1] [6%                          ] prof9b60k.nsys-rep[1/1] [8%                          ] prof9b60k.nsys-rep[1/1] [9%                          ] prof9b60k.nsys-rep[1/1] [11%                         ] prof9b60k.nsys-rep[1/1] [12%                         ] prof9b60k.nsys-rep[1/1] [14%                         ] prof9b60k.nsys-rep[1/1] [=16%                        ] prof9b60k.nsys-rep[1/1] [=17%                        ] prof9b60k.nsys-rep[1/1] [==19%                       ] prof9b60k.nsys-rep[1/1] [==20%                       ] prof9b60k.nsys-rep[1/1] [===22%                      ] prof9b60k.nsys-rep[1/1] [===24%                      ] prof9b60k.nsys-rep[1/1] [====25%                     ] prof9b60k.nsys-rep[1/1] [====27%                     ] prof9b60k.nsys-rep[1/1] [====28%                     ] prof9b60k.nsys-rep[1/1] [=====30%                    ] prof9b60k.nsys-rep[1/1] [=====32%                    ] prof9b60k.nsys-rep[1/1] [======33%                   ] prof9b60k.nsys-rep[1/1] [======35%                   ] prof9b60k.nsys-rep[1/1] [=======36%                  ] prof9b60k.nsys-rep[1/1] [=======38%                  ] prof9b60k.nsys-rep[1/1] [=======39%                  ] prof9b60k.nsys-rep[1/1] [========41%                 ] prof9b60k.nsys-rep[1/1] [=========43%                ] prof9b60k.nsys-rep[1/1] [=========44%                ] prof9b60k.nsys-rep[1/1] [=========46%                ] prof9b60k.nsys-rep[1/1] [==========47%               ] prof9b60k.nsys-rep[1/1] [==========49%               ] prof9b60k.nsys-rep[1/1] [===========51%              ] prof9b60k.nsys-rep[1/1] [========================100%] prof9b60k.nsys-rep[1/1] [========================100%] prof9b60k.nsys-rep
+Generated:
+	/mnt/nvme-raid0/agent-wt/3596-meas/prof9b60k.nsys-rep

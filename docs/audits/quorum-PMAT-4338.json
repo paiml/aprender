@@ -1,0 +1,60 @@
+{
+ "ticket": "PMAT-4338",
+ "pr": 4338,
+ "base": "74b77fd119c15f0e518ff36eab97b392cb6da79c",
+ "head": "dc1628670063dde2347b8a4114e15ee5900eb0e5",
+ "scope": "layernorm tolerance delta only (74b77fd11..dc1628670), per cop aprender-77 03:12Z/04:xxZ",
+ "diff_sha256": "ee27628f9b2bb739bb14e731868278cb45d1ac421dec5727e6a8905608464215",
+ "brief_sha256": "b0b94c3e856af1cb195f66d7e85cc040c935a3b8ec8569ab0db14d14000f2266",
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "executor": "manual: agy -p --mode plan + claude -p --permission-mode plan --allowedTools Read, read-only snapshot",
+ "shape": "sonnet-5 + agy gemini-3.1-pro-high + haiku-4-5 (operator default 2026-09-24)",
+ "agreed": true,
+ "lanes": [
+  {
+   "lane": "sonnet",
+   "model": "claude-sonnet-5",
+   "model_source": "measured",
+   "family": "claude",
+   "conversation_id": "4acac99e-8a38-4a45-8493-d7d8f910316d",
+   "verdict": "PASS",
+   "summary": "1) Sound: output_i = (x_i - mean_f32) * inv_std when gamma=1/beta=0, so sum(output) = (sum(x_i) - n*mean_f32) * inv_std = n*(mean_true - mean_f32) * inv_std exactly. Naive-summation error bounds mean_f32 error by (n-1)*u*max|x| (Higham), and the test's (n+1)*EPSILON*max_abs*inv_std is a slightly-conservative superset of that (n+1 > n-1), so the widening term correctly bounds the dominant first-order error source. It omits smaller phase-4 (subtract/mul rounding) and test's-own-final-sum rounding terms, but those are O(u)*O(output magnitude) without the inv_std multiplier and are provably negligible next to the 1e-4 floor for the value ranges in play (verified numerically for the reported CI case: computed tol=8.78e-4 against actual mean=-1.104e-4, matches receipt). 2) Plausible defects were checked by hand-derivation, not just the one mutant in the receipt: because inv_std is a scalar factor that multiplies out of the mean-of-output sum, off-by-one/wrong-mean/dropped-term bugs produce errors that scale with the actual data magnitude (e.g. skipping the last element gives ~|x_last|/n * inv_std, tens in magnitude for typical inputs), which stays orders of magnitude above even the worst-case widened tolerance (~0.017-0.024 for n=64, max_abs=10, var_in\u2192eps). Wrong-eps-placement/dropped-variance-term bugs perturb inv_std only mildly relative to the correct value in non-catastrophic cases, and since the mean-error factor being multiplied is itself tiny (~1e-4 scale), the resulting perturbation to the mean check is negligible; such bugs are the job of prop_layernorm_unit_variance (separately present, unmodified) rather than this test, so this isn't a new gap opened by the diff. Catastrophic inv_std blowups (e.g. missing +eps entirely) would produce non-finite output, caught by the separate prop_layernorm_finite_output test. 3) Confirmed: for var_in>>eps (e.g. the mutant-test point var_in=20.2), the widening term is ~1e-7-1e-5 scale, so tol collapses to ~1e-4 exactly as claimed; the receipt's own mutant-test number (tol=0.00010071525) is consistent with this. One non-blocking gap: the receipt's mutation kill was demonstrated at a 'typical' var_in=20.2 point, not at the loosest-tolerance corner (large n, max_abs near 10, var_in near eps) where the tolerance is ~200x the floor; my own derivation above indicates the same mutant would still be caught there, but the receipt does not demonstrate this directly, so that specific corner's detection strength is asserted by analysis rather than measured by the receipt's own mutation run.",
+   "findings": [
+    {
+     "file": "crates/aprender-contracts/src/kernels/layernorm.rs",
+     "line": 258,
+     "claim": "Mutation testing (verification section) proves the widened tolerance can't mask kernel defects across the proptest input space, including the loosest-tolerance corner (large n, max_abs near 10, var_in near eps).",
+     "grounding": "asserted",
+     "fix": "Optional strengthening, not required for this PR: add a targeted unit-test mutant run (or a proptest regression case) at large n with values clustered tightly near the input range boundary (e.g. n=64, v_i ~ 10 with var_in ~ 1e-5) to empirically confirm the ~0.017-0.024 widened tolerance still kills representative mean/centering mutants there, rather than relying on the single var_in=20.2 mutant point already in the receipt."
+    }
+   ]
+  },
+  {
+   "lane": "agy",
+   "model": "gemini-3.1-pro-high",
+   "model_source": "declared",
+   "family": "gemini",
+   "conversation_id": "64130c17-42b0-4143-881e-bda6ed5589bb",
+   "verdict": "PASS",
+   "summary": "1. Yes, the bound is sound. The error in computing the mean `m` in f32 is proportional to `n * EPSILON * max|x|`. Since the output is scaled by `inv_std`, the absolute error in the output mean scales by this exact factor. The bound `(n+1) * EPSILON * max|x| * inv_std` accurately models this propagation.\n2. No, a real kernel defect affecting the mean calculation could not pass. The test derives `tol` using its own correctly computed `inv_std`, so a kernel bug cannot maliciously inflate the tolerance. A structural flaw (like dropping a term or missing `beta`) creates an output mean offset of `O(inv_std / n)` or `O(inv_std)`. For `n <= 64`, this error is roughly 10^4 times larger than the `O(n * EPSILON * inv_std)` tolerance, ensuring the test stays RED. Defects in variance (like wrong eps placement) might technically pass this specific zero-mean test, but they would correctly be caught by the unit-variance test.\n3. Yes. For typical uniform `[-10, 10]` inputs, `var_in` is ~33 and `inv_std` is ~0.17. The added dynamic term evaluates to roughly `65 * 1.19e-7 * 10 * 0.17 \u2248 1.3e-5`, keeping `tol` extremely close to the original `1e-4`. The tolerance only widens significantly when `var_in` drops near `eps`.",
+   "findings": []
+  },
+  {
+   "lane": "haiku",
+   "model": "claude-haiku-4-5-20251001",
+   "model_source": "measured",
+   "family": "claude",
+   "conversation_id": "b4915d5d-7404-4eea-8e92-61d736a303d2",
+   "verdict": "PASS",
+   "summary": "The tolerance formula is mathematically sound, though conservative by roughly a factor of n (should ideally divide by n per standard error analysis). However, Higham's summation bounds and floating-point division error combine to justify the conservative approach. Empirical validation (20 runs \u00d7 5000 cases, zero failures; mutation test caught a 0.1% error) confirms the tolerance is tight enough to catch realistic kernel defects. The widening is indeed concentrated near var_in \u2248 eps: typical cases (~var \u2248 10\u2013100) add only ~3\u201312 \u03bc-ulps, while edge cases (var < eps) add ~1 m-ulp, mitigating false positives without hiding bugs.",
+   "findings": []
+  }
+ ],
+ "notes": [
+  "agy envelope carries no model field; gemini lane model is DECLARED, not measured",
+  "sonnet asserted finding (loosest corner n=64,|x|~10,var_in~0 -> tol~0.025) checked by author: 0.1% mean bias there gives output offset ~3.2 >> tol, still caught"
+ ]
+}

@@ -1,0 +1,280 @@
+{
+  "ticket": "PMAT-4268",
+  "base": "origin/feat/4263-one-engine",
+  "base_resolved": "origin/feat/4263-one-engine",
+  "base_note": "no origin/origin/feat/4263-one-engine exists; judged against the local ref",
+  "head": "1528c4f85d88b5ce7f242de1280bd3824214e132",
+  "diff_sha256": "b25c4ec9bbf31ab177281816057142552f6665e2db9431d9660f0c13473a53bf",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 53849,
+  "author": {
+    "model": "Opus 5.5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements `DenseForward` as the unified engine backend for `apr run` and `run --batch` on both CPU and CUDA, satisfying all conditions in PMAT-4268 (D1). The GPU fallback logic elegantly transitions the backend to CPU upon failure and replays the turn. Context error handling, stop token dropping, and prefix caching accurately match the legacy loops (as verified by the newly added tests), and the `--trace` bypass operates as requested. No defects or unbacked claims were found.",
+      "findings": [],
+      "raw_bytes": 4195,
+      "err_bytes": 103,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-4268 (Workstream D, Phase D1) fulfills all requirements specified in the ticket and its roadmap notes without violating any constraints:\n1. `DenseForward` implements `ArchForward` for both CPU (`Backend::Cpu`) and CUDA (`Backend::Cuda`) behind `realizar::session::Session` in `crates/aprender-serve/src/gguf/inference/forward/dense_session.rs`.\n2. Both `apr run` (`run_gguf_generate`) and `apr run --batch` (`BatchModel`) route dense GGUF inference through `DenseSession` via `dense_turn`.\n3. Parity with `generate_with_cache` is preserved: token-for-token output matches on greedy and seeded sampling, stop tokens are dropped from output like the reference loop, and `ContextLimitExceeded` errors are preserved for oversized prompts.\n4. Witness guards in `infer/tests_dense_session_4268.rs` assert that `run` and `run --batch` register engine entries, and turn RED if either route bypasses the session.\n5. `--trace` explicitly preserves the instrumented loops for both CPU and CUDA to maintain the brick profiler.\n6. The `wgpu` batch fallback remains unchanged as scoped.\n7. Free functions `cuda_reset`, `cuda_forward`, and `cuda_forward_greedy` are exposed for `#4280`.\n8. CUDA forward failures trigger loud fallback to CPU (`[dense] GPU forward failed, falling back to CPU`), recording the notice and replaying from position 0 on the host model.\n9. No test asserts the opposite of the ticket, no gate is weakened, receipt claims are backed by the diff, and no unrequested changes were introduced.",
+      "findings": [],
+      "raw_bytes": 4827,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff origin/feat/4263-one-engine...HEAD for PMAT-4268 (Workstream D1) correctly implements the dense GGUF forward behind the single engine (Session<DenseForward>). apr run and apr run --batch routes drive DenseSession via dense_turn, matching generate_with_cache token-for-token while preserving legacy loops for --trace. All unit tests and engine witness tests pass cleanly, and cargo check --features cuda compiles without error. No ticket requirements are violated or gates weakened.",
+      "findings": [
+        {
+          "claim": "DenseForward implements ArchForward for Session-based dense execution across CPU and CUDA backends",
+          "file": "crates/aprender-serve/src/gguf/inference/forward/dense_session.rs",
+          "grounding": "cited",
+          "line": 429
+        },
+        {
+          "claim": "apr run (run_gguf_generate) routes dense CPU and CUDA generation through DenseSession and dense_turn, preserving the instrumented loop when --trace is requested",
+          "file": "crates/aprender-serve/src/infer/gguf_gpu_generate.rs",
+          "grounding": "cited",
+          "line": 528
+        },
+        {
+          "claim": "apr run --batch (BatchModel) routes dense batch generation through DenseSession and dense_turn",
+          "file": "crates/aprender-serve/src/infer/batch.rs",
+          "grounding": "cited",
+          "line": 104
+        },
+        {
+          "claim": "DenseSession and dense_turn match generate_with_cache token-for-token (verifying greedy, sampled, stop-token dropping, repeat-penalty, cache-extension, and ContextLimitExceeded handling)",
+          "file": "crates/aprender-serve/src/gguf/inference/forward/dense_session_tests.rs",
+          "grounding": "measured",
+          "line": 57
+        },
+        {
+          "claim": "Witness guards in infer/tests_dense_session_4268.rs verify that apr run and apr run --batch drive DenseSession, while --trace avoids the engine witness",
+          "file": "crates/aprender-serve/src/infer/tests_dense_session_4268.rs",
+          "grounding": "measured",
+          "line": 46
+        },
+        {
+          "claim": "CUDA arms cuda_reset, cuda_forward, and cuda_forward_greedy are exposed as crate-visible free functions for downstream scheduler integration (#4280)",
+          "file": "crates/aprender-serve/src/gguf/inference/forward/dense_session.rs",
+          "grounding": "cited",
+          "line": 345
+        }
+      ],
+      "raw_bytes": 5749,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/forward/dense_session.rs",
+      "line": 345,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "CUDA arms cuda_reset, cuda_forward, and cuda_forward_greedy are exposed as crate-visible free functions for downstream scheduler integration (#4280)"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/forward/dense_session.rs",
+      "line": 429,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "DenseForward implements ArchForward for Session-based dense execution across CPU and CUDA backends"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/forward/dense_session_tests.rs",
+      "line": 57,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "DenseSession and dense_turn match generate_with_cache token-for-token (verifying greedy, sampled, stop-token dropping, repeat-penalty, cache-extension, and ContextLimitExceeded handling)"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/batch.rs",
+      "line": 104,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "apr run --batch (BatchModel) routes dense batch generation through DenseSession and dense_turn"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/gguf_gpu_generate.rs",
+      "line": 528,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "apr run (run_gguf_generate) routes dense CPU and CUDA generation through DenseSession and dense_turn, preserving the instrumented loop when --trace is requested"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/tests_dense_session_4268.rs",
+      "line": 46,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Witness guards in infer/tests_dense_session_4268.rs verify that apr run and apr run --batch drive DenseSession, while --trace avoids the engine witness"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (103 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5.5 (1M context)/claude"
+  }
+}

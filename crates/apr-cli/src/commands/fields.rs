@@ -183,48 +183,75 @@
     }
 
     // ========================================================================
-    // strip_thinking_blocks Tests (GH-279-4)
+    // split_thinking_blocks Tests (GH-279-4, reshaped by #3724)
     // ========================================================================
+
+    fn answer(input: &str) -> String {
+        match split_thinking_blocks(input) {
+            ThinkingSplit::Answer(a) => a,
+            ThinkingSplit::Unclosed => panic!("expected an answer, got an unclosed think block"),
+        }
+    }
 
     #[test]
     fn strip_thinking_no_tags() {
         // Non-thinking model output: passthrough unchanged
-        assert_eq!(strip_thinking_blocks("The answer is 4."), "The answer is 4.");
+        assert_eq!(answer("The answer is 4."), "The answer is 4.");
     }
 
     #[test]
     fn strip_thinking_complete_block() {
         // Thinking block followed by answer
         let input = "<think>Let me calculate 2+2. That's 4.</think>4";
-        assert_eq!(strip_thinking_blocks(input), "4");
+        assert_eq!(answer(input), "4");
     }
 
     #[test]
     fn strip_thinking_unclosed() {
-        // Model ran out of tokens during reasoning (unclosed <think>)
+        // #3724: the model ran out of budget mid-reasoning. This used to truncate
+        // at `<think>` and return "", which the gate reported as "Empty output" —
+        // the lambda qwen3-8b stopper. It is now a distinct outcome.
         let input = "<think>Let me think about this carefully...";
-        assert_eq!(strip_thinking_blocks(input), "");
+        assert_eq!(split_thinking_blocks(input), ThinkingSplit::Unclosed);
+    }
+
+    #[test]
+    fn an_unclosed_block_after_a_closed_one_is_still_unclosed() {
+        // #3724: the model answered, thought again, and was cut mid-thought. The
+        // remainder is not an answer to judge.
+        let input = "<think>first</think>4 <think>wait, let me reconsider";
+        assert_eq!(split_thinking_blocks(input), ThinkingSplit::Unclosed);
+    }
+
+    #[test]
+    fn the_unclosed_reason_names_the_budget_and_never_says_empty() {
+        // #3724 done_when: "REPORTED by name with the budget", never stripped to
+        // an empty answer. The reader must be able to tell the two apart.
+        let reason = unclosed_think_reason("golden_output", 512, 1873);
+        assert!(reason.contains("think block unclosed within 512 tokens"), "{reason}");
+        assert!(reason.contains("1873"), "{reason}");
+        assert!(!reason.contains("Empty output"), "{reason}");
     }
 
     #[test]
     fn strip_thinking_multiline() {
         // Multi-line thinking block
         let input = "<think>\nStep 1: 2+2\nStep 2: =4\n</think>\nThe answer is 4.";
-        assert_eq!(strip_thinking_blocks(input), "The answer is 4.");
+        assert_eq!(answer(input), "The answer is 4.");
     }
 
     #[test]
     fn strip_thinking_multiple_blocks() {
         // Multiple thinking blocks
         let input = "<think>first thought</think>Hello <think>second thought</think>world";
-        assert_eq!(strip_thinking_blocks(input), "Hello world");
+        assert_eq!(answer(input), "Hello world");
     }
 
     #[test]
     fn strip_thinking_preserves_surrounding() {
         // Only think tags are stripped, surrounding content preserved
         let input = "Before <think>reasoning</think> After";
-        assert_eq!(strip_thinking_blocks(input), "Before  After");
+        assert_eq!(answer(input), "Before  After");
     }
 
     // ========================================================================

@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-INVENTORY-001 — the inventory-built tool set is exactly the
 //! pre-migration Phase-1 9-tool set, in deterministic alphabetical
 //! order. No tool dropped, no duplicate, no name drift.

@@ -10,12 +10,14 @@ fn stream_output_emits_n_plus_one_json_lines() {
         tokens_generated: Some(3),
         tok_per_sec: Some(12.0),
         used_gpu: Some(false),
+        gpu_attempted: None,
         generated_tokens: Some(vec![100, 200, 300]),
         token_texts: Some(vec![
             "Hello".to_string(),
             " world".to_string(),
             "!".to_string(),
         ]),
+        usage: Default::default(),
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -78,6 +80,7 @@ fn stream_token_events_carry_their_own_decoded_text() {
         tokens_generated: Some(4),
         tok_per_sec: Some(4.0),
         used_gpu: Some(false),
+        gpu_attempted: None,
         generated_tokens: Some(vec![40, 2776, 1588, 311]),
         token_texts: Some(vec![
             "I".to_string(),
@@ -85,6 +88,7 @@ fn stream_token_events_carry_their_own_decoded_text() {
             " here".to_string(),
             " to help".to_string(),
         ]),
+        usage: Default::default(),
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -123,8 +127,10 @@ fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
         tokens_generated: Some(2),
         tok_per_sec: Some(2.0),
         used_gpu: Some(false),
+        gpu_attempted: None,
         generated_tokens: Some(vec![7, 9]),
         token_texts: None,
+        usage: Default::default(),
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -148,8 +154,10 @@ fn stream_output_no_tokens_emits_only_final() {
         tokens_generated: Some(0),
         tok_per_sec: Some(0.0),
         used_gpu: Some(false),
+        gpu_attempted: None,
         generated_tokens: Some(Vec::new()),
         token_texts: None,
+        usage: Default::default(),
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -173,8 +181,10 @@ fn stream_output_none_tokens_emits_only_final() {
         tokens_generated: None,
         tok_per_sec: None,
         used_gpu: None,
+        gpu_attempted: None,
         generated_tokens: None,
         token_texts: None,
+        usage: Default::default(),
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -197,8 +207,10 @@ fn build_final_json_matches_legacy_json_shape() {
         tokens_generated: Some(10),
         tok_per_sec: Some(99.99),
         used_gpu: Some(true),
+        gpu_attempted: None,
         generated_tokens: Some(vec![1, 2, 3]),
         token_texts: None,
+        usage: Default::default(),
     };
     let v = build_final_json(&result, "src.apr", 100, false);
     assert_eq!(v["model"], "src.apr");

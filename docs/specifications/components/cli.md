@@ -75,7 +75,7 @@ Each dispatcher is in its own module (`dispatch.rs`, `dispatch_analysis.rs`,
 | `runs` | Training | List/compare training runs |
 | `inspect` | Analysis | Model metadata and structure |
 | `debug` | Analysis | Drama mode, hex dump, ASCII extraction |
-| `validate` | Analysis | Integrity check, 100-point quality score |
+| `validate` | Analysis | Integrity check, structural quality score |
 | `diff` | Analysis | Two-model comparison |
 | `tensors` | Analysis | Tensor names, shapes, statistics |
 | `trace` | Observe | Layer-by-layer state machine tracing |

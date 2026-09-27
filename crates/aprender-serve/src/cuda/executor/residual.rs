@@ -26,11 +26,7 @@ impl CudaExecutor {
         // GH-129: PTX depends on n (immediate) but NOT batch_size (grid dim).
         let cache_key = format!("batched_swiglu_{}", n);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -257,11 +253,7 @@ impl CudaExecutor {
         // Prevents JIT recompilation for different n values on memory-constrained devices.
         let cache_key = "residual_add".to_string();
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -309,20 +301,17 @@ impl CudaExecutor {
         output: &GpuBuffer<f32>,
         n: u32,
     ) -> Result<(), GpuError> {
+        self.q8_activation_written(output.as_ptr()); // #4258
         let kernel_type = KernelType::ResidualAdd { n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         // GH-129: PTX is n-independent (n is a runtime param), so use constant cache key.
-        let cache_key = "residual_add".to_string();
+        let cache_key = "residual_add";
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads_per_block = 256u32;
@@ -351,7 +340,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -392,13 +381,9 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_residual_rmsnorm_{}", hidden_size);
+        let cache_key = format!("fused_residual_rmsnorm_{}_{}", hidden_size, Self::f32_bits_tag(epsilon));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -459,13 +444,9 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_residual_rmsnorm_{}", hidden_size);
+        let cache_key = format!("fused_residual_rmsnorm_{}_{}", hidden_size, Self::f32_bits_tag(epsilon));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules

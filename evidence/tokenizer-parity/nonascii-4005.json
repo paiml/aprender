@@ -1,0 +1,125 @@
+{
+ "schema": "apr-tokenizer-nonascii-parity/v1",
+ "ticket": "#4005 (re-verifies #3726; twin of #3992)",
+ "text": "水 café naïve 日本語",
+ "reference": {
+  "engine": "llama-tokenize",
+  "version": "0.4.1-dev (build 10987, commit d1d3c3396)",
+  "argv": "llama-tokenize -m <reference_gguf> -p <text> --ids --no-bos --log-disable"
+ },
+ "measured_on": "lambda, 2026-09-23",
+ "cases": [
+  {
+   "family": "qwen2.5",
+   "path": "gguf_bpe",
+   "subject": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+   "subject_sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+   "subject_sha256_of": "the file",
+   "reference_gguf": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+   "reference_sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+   "ids": [
+    52510,
+    51950,
+    94880,
+    586,
+    75402,
+    21894,
+    102819
+   ]
+  },
+  {
+   "family": "qwen3",
+   "path": "gguf_bpe",
+   "subject": "Qwen3-1.7B-Q4_K_M.gguf",
+   "subject_sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+   "subject_sha256_of": "the file",
+   "reference_gguf": "Qwen3-1.7B-Q4_K_M.gguf",
+   "reference_sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+   "ids": [
+    52510,
+    51950,
+    94880,
+    586,
+    75402,
+    21894,
+    102819
+   ]
+  },
+  {
+   "family": "qwen3.5",
+   "path": "gguf_bpe",
+   "subject": "Qwen3.5-0.8B-Q4_K_M.gguf",
+   "subject_sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+   "subject_sha256_of": "the file",
+   "reference_gguf": "Qwen3.5-0.8B-Q4_K_M.gguf",
+   "reference_sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+   "ids": [
+    95936,
+    50203,
+    91603,
+    571,
+    220,
+    247359
+   ]
+  },
+  {
+   "family": "tinyllama",
+   "path": "gguf_spm",
+   "subject": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+   "subject_sha256": "9fecc3b3cd76bba89d504f29b616eedf7da85b96540e490ca5824d3f7d2776a0",
+   "subject_sha256_of": "the file",
+   "reference_gguf": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+   "reference_sha256": "9fecc3b3cd76bba89d504f29b616eedf7da85b96540e490ca5824d3f7d2776a0",
+   "ids": [
+    29871,
+    30716,
+    5777,
+    29888,
+    29948,
+    1055,
+    30085,
+    345,
+    29871,
+    30325,
+    30346,
+    30968
+   ]
+  },
+  {
+   "family": "qwen2.5",
+   "path": "safetensors_hf",
+   "subject": "qwen2.5-coder-1.5b-instruct-safetensors/model.safetensors",
+   "subject_sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+   "subject_sha256_of": "tokenizer.json",
+   "reference_gguf": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "reference_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+   "ids": [
+    52510,
+    51950,
+    94880,
+    586,
+    75402,
+    21894,
+    102819
+   ]
+  },
+  {
+   "family": "qwen2.5",
+   "path": "apr_embedded",
+   "subject": "qwen2.5-coder-1.5b-instruct-q4k.apr",
+   "subject_sha256": "187234f417d5c387230f4a0d513d96440633ef4b6a92d7053182a17ac40fd421",
+   "subject_sha256_of": "the file",
+   "reference_gguf": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "reference_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+   "ids": [
+    52510,
+    51950,
+    94880,
+    586,
+    75402,
+    21894,
+    102819
+   ]
+  }
+ ]
+}

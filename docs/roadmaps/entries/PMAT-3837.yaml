@@ -1,0 +1,20 @@
+- id: PMAT-3837
+  github_issue: 3837
+  item_type: task
+  title: 'The --features cuda lint surface has never been gated: clippy -p apr-cli --lib --features cuda is RED'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-dd
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --features cuda -- -D warnings exits 0'
+  - 'a gate that runs in a workflow lints the cuda axis, with flags passed literally and a planted RED proving it'
+  - 'other feature axes enumerated; any excluded one is named with a ticket'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

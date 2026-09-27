@@ -129,7 +129,6 @@ performance:
 # =============================================================================
 
 falsification:
-  tests_file: "src/primitives/matrix_tests.rs"
 
   FALSIFY-TR-001:
     name: "Involution"
@@ -169,3 +168,137 @@ qa_gate:
     - "All FALSIFY tests pass"
     - "No naive (non-tiled) transpose in production code"
   pass_criteria: "All checks pass"
+
+proof_obligations:
+- id: TPB2E0-INV-001
+  type: invariant
+  property: Shape correctness
+  formal: shape(transpose(A[m,n])) = (n, m)
+  applies_to: all
+  lean:
+    theorem: TensorTranspose.transpose_shape
+    module: ProvableContracts.TensorTranspose
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). transpose swaps dims — (t.transpose.rows =
+      t.cols ∧ t.transpose.cols = t.rows) by rfl. Theorems/TensorTranspose/Roundtrip.lean
+- id: TPB2E0-IDEM-002
+  type: idempotency
+  property: Involution (self-inverse)
+  formal: transpose(transpose(A)) = A (bitwise exact)
+  applies_to: all
+  lean:
+    theorem: TensorTranspose.transpose_involution
+    module: ProvableContracts.TensorTranspose
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). (Aᵀ)ᵀ = A bit-for-bit by rfl over the
+      Tensor2D model. Theorems/TensorTranspose/Roundtrip.lean
+- id: TPB2E0-EQ-003
+  type: equivalence
+  property: AVX2 matches scalar
+  formal: '|transpose_avx2(A) - transpose_scalar(A)| = 0 (bitwise exact)'
+  tolerance: 0.0
+  applies_to: simd
+- id: TPB2E0-INV-004
+  type: invariant
+  property: Element correctness
+  formal: B[j][i] = A[i][j] for all valid i,j
+  applies_to: all
+  lean:
+    theorem: TensorTranspose.transpose_element
+    module: ProvableContracts.TensorTranspose
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). Bᵀ j i = A i j is definitional equality
+      (rfl). Theorems/TensorTranspose/Roundtrip.lean
+- id: TPB2E0-INV-005
+  type: invariant
+  property: All elements transposed
+  formal: No element lost or duplicated — bijection on index pairs
+  prose: true
+  applies_to: all
+  lean:
+    theorem: TensorTranspose.swapIdx_injective
+    module: ProvableContracts.TensorTranspose
+    status: proved
+    depends_on:
+    - TensorTranspose.swapIdx_surjective
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). The index swap (i,j)↦(j,i) is a bijection on
+      Nat×Nat — injective (no duplication) + surjective (no loss). Both proved in
+      Theorems/TensorTranspose/Roundtrip.lean
+
+kani_harnesses:
+- id: KANI-TP-001
+  obligation: TP-INV-001
+  property: Shape correctness for bounded dimensions
+  bound: 16
+  strategy: exhaustive
+  harness: verify_transpose_shape
+- id: KANI-TP-002
+  obligation: TP-IDEMP-001
+  property: 'Involution: transpose(transpose(x)) == x'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_transpose_involution
+- id: KANI-TRANSP-003
+  obligation: Shape correctness
+  property: Shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-004
+  obligation: Involution (self-inverse)
+  property: Involution (self-inverse)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-005
+  obligation: AVX2 matches scalar
+  property: AVX2 matches scalar
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-006
+  obligation: Element correctness
+  property: Element correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-007
+  obligation: All elements transposed
+  property: All elements transposed
+  bound: 8
+  strategy: exhaustive
+
+falsification_tests:
+- id: FALSIFY-TP-001
+  rule: Element correctness
+  prediction: transpose(A)[j][i] == A[i][j] for random A
+  test: proptest with random matrices up to 256×256
+  if_fails: Index computation error in micro-kernel
+- id: FALSIFY-TP-002
+  rule: Involution
+  prediction: transpose(transpose(A)) == A (bitwise exact)
+  test: proptest with random matrices, assert bitwise equality
+  if_fails: Asymmetric load/store pattern in shuffle phases
+- id: FALSIFY-TP-003
+  rule: Non-8-aligned dimensions
+  prediction: Correct for 7×13, 17×3, 1×N, N×1
+  test: Explicit edge cases with non-aligned dims
+  if_fails: Remainder handling bug — edge elements skipped
+- id: FALSIFY-TP-004
+  rule: AVX2 vs scalar parity
+  prediction: AVX2 output == scalar output (bitwise exact, no FP rounding)
+  test: proptest comparing avx2 vs scalar at 2048×128
+  if_fails: Shuffle phase error — wrong permute immediate
+- id: FALSIFY-TP-005
+  rule: Identity matrix
+  prediction: transpose(I) == I for square identity
+  test: Explicit test with identity matrices of various sizes
+  if_fails: Off-by-one in diagonal element indexing
+- id: FALSIFY-TP-006
+  rule: Attention shape
+  prediction: 2048×128 transpose matches naive reference
+  test: Deterministic 2048×128 matrix, compare against double-loop
+  if_fails: Block boundary error at non-square dimensions

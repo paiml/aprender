@@ -1,0 +1,18 @@
+{
+  "model": "$HOME/models/Qwen3.5-9B-Q4_K_M.gguf",
+  "text": "The",
+  "tokens": [
+    760
+  ],
+  "tokens_generated": 1,
+  "max_tokens": 1,
+  "tok_per_sec": 0.0,
+  "inference_time_ms": 38445.41,
+  "used_gpu": true,
+  "cached": true,
+  "backend": {
+    "requested": "gpu",
+    "ran": "gpu",
+    "fell_back": false
+  }
+}

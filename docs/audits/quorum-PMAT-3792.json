@@ -1,0 +1,193 @@
+{
+  "ticket": "PMAT-3792",
+  "base": "ded8a932a",
+  "base_resolved": "ded8a932a",
+  "base_note": "no origin/ded8a932a exists; judged against the local ref",
+  "head": "f523c8889789399a33c6f1d06c67363246f1e0b2",
+  "diff_sha256": "cfbc45719554983e0046af8c06cec04b60ca8f44c02a8e3aa467e6b1eddf9a3f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 19278,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR is a pure refactor that extracts parts of `run_shapes_gate_with` into helper functions (`prepare`, `order_by_family`, `needs_receipts`, `verdict_of`, `by_shape`, and `by_entity_type`). I have verified that the logic of the helper functions maps exactly to the original logic byte-for-byte in behavior. Variable bindings, error early-returns, and execution order are preserved. The failure in `check_complexity_ratchet.sh` was accurately addressed by the author as belonging to an unrelated function (`generate_intent`). Therefore, the implementation exactly fulfills PMAT-3792 without introducing any unrequested feature changes or behavior regressions.",
+      "findings": [],
+      "raw_bytes": 2681,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully performs a pure refactor of `run_shapes_gate_with` to reduce complexity (extracting out `prepare`, `order_by_family`, `needs_receipts`, `verdict_of`, `by_shape`, and `by_entity_type`), with absolutely zero changes to the underlying logic or behavior. The extracted functions execute the exact same steps in the exact same order. The receipt file is properly added and the ticket requirements are fully met.",
+      "findings": [],
+      "raw_bytes": 2104,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 1699,
+      "err_bytes": 140,
+      "envelope_status": "ERROR",
+      "transport_status": "ERROR",
+      "transport_error": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 30h27m26s.",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/9c134b73-a54f-43c3-b5f4-d1208362785f (1476159 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "other",
+            "reason": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 30h27m26s."
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 3,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 3: non-empty .err (140 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: lane envelope status=ERROR transport_error=Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 30h27m26s. salvageable=/home/noah/.gemini/antigravity-cli/brain/9c134b73-a54f-43c3-b5f4-d1208362785f (1476159 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

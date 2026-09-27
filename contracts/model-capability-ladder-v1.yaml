@@ -44,10 +44,196 @@ entity:
 # for that arch; a claimed backend that falls back is RED.
 # sha256 pins the exact file: a rung measured on a different file is a different
 # measurement (Q5_K taught us three readers can each invent a layout).
+#
+# #3712 (operator 2026-09-21: "you must ensure all models Q4_K CUDA work; the end";
+# publishing with "most working" is a "p0 tire fire"):
+#   * NO Q4_K rung is optional. `required: false` on a Q4_K rung is refused by the
+#     gate, and so is a Q4_K rung whose `backends` does not claim cuda.
+#   * The universe is what each host HOLDS, not this list. `inventory` names where
+#     and what to look for; scripts/model_ladder.sh measures every match on the host
+#     (on `inventory.backends`) and writes the list into the receipt (schema v2).
+#     An inventory model missing from the run, or not green on CUDA, is a FAIL
+#     naming it. A rung is still how a model gets a pinned sha256 and a host list.
 ladder:
   hosts:
     - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true }
     - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
+  # #3943 (b), cop ruling 2026-09-23: the `serve` probe waits on the SERVER, not a clock.
+  # It waits while the process is alive AND making progress (serve log growing, or the
+  # process tree's CPU time growing). A load quiet on both for stall_s is HUNG -> RED.
+  # ceiling_s is the one hard bound on the whole wait, for every rung. A process that
+  # dies mid-load is RED at once. The old fixed 90 s was shorter than a 27B load on
+  # gx10 (the server reached "listening" after the probe had given up), so stall_s keeps
+  # the old number as a window of NO PROGRESS instead of a total.
+  serve_health:
+    stall_s: 90
+    ceiling_s: 900
+  # #3710 ruling 3 / #4022 (operator 2026-09-23, relayed by aprender-cf; "recommended for all questions"):
+  # the release commit X = 4f81bdea7 + #4022, a scoped hotfix. A receipt measured at `receipts_at`
+  # binds X ONLY when every path of the diff matches `paths` AND Cargo.lock changes no dependency
+  # (scripts/lib/ladder_equiv.py). The gate prints the diff it accepted; anything outside is STALE BY SHA.
+  hotfix_scope:
+    receipts_at: 4f81bdea7bdc17da7a4b22823ef000671b78a435
+    paths: ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**",
+            # #4032 (X2 = 1eb1fe808 + one commit, aprender-6c [3ada9a]): its two files EXACTLY -- a
+            # Qwen3.5-0.8B load-time known-issue warning. No lock or manifest change. Cop ruling 2026-09-23.
+            "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+            "crates/aprender-serve/src/gguf/inference/forward/qwen35_known_issue.rs"]
+    ruling: "#3710 ruling 3 / #4022 + #4032"
+    # OPERATOR OVERRIDE, 2026-09-23, relayed verbatim by the release cop aprender-cf: "nope, override.  I am
+    # the boss". #4022 (X = 1eb1fe808) removes aprender-mcp's `anyhow` edge -- a dependency change that
+    # ruling 3 excludes. The override is pinned to EXACTLY that Cargo.lock delta: its canonical JSON
+    # (ladder_equiv.lock_delta) hashes to delta_sha256 below. Any other lock change hashes differently
+    # and stays RED; the gate prints "OPERATOR OVERRIDE (#4022 lock delta)", never plain green.
+    lock_overrides:
+      - delta_sha256: d387a7e50c91b0f13ec1c924c06b9dcc46716cebf935357a8b9c6c0f9ee8f079
+        delta: '{"changed":{"aprender-mcp":{"attrs":null,"edges_added":[],"edges_removed":["anyhow"]}},"packages_added":[],"packages_removed":[]}'
+        ticket: "#4022"
+        date: "2026-09-23"
+        ruling: '"nope, override.  I am the boss" (operator, verbatim, via aprender-cf)'
+  # OPERATOR EMERGENCY SCOPE for 0.69.1 ONLY (relayed verbatim by the release cop aprender-cf,
+  # 2026-09-23). `check_model_ladder.sh --scope crux-smoke` judges CRUX smoke receipts from the RELEASE
+  # BINARY instead of the ladder (scripts/lib/crux_smoke_scope.py): every host below, every certified
+  # model (from the prompt certification), every thinking mode below, all GREEN with a GREEN positive
+  # control, receipts bound to the cut exactly. Refused for any other release.
+  emergency_scopes:
+    - name: crux-smoke
+      release: "0.69.1"
+      date: "2026-09-23"
+      quote: '"for this particular release we need emergency surgery.  after a binary is build we really only care about CRUX on gx10 and lambda (but "smoke test") style.  anything huge, must be nightly only"'
+      hosts: [lambda, gx10]
+      thinking: ["off", "on"]
+  # KNOWN REDs that ship with their ticket (operator selection via the release cop aprender-cf,
+  # 2026-09-23: "Ship as known RED + ticket"; recorded on #3907). check_model_ladder.sh covers a row
+  # only when EVERY reason it fails matches a clause pinned to this rung + sha256; anything else on it,
+  # or this clause on any other model, is RED. An entry that covers nothing on a sweep is STALE and
+  # RED, so it retires itself when #4030 lands.
+  known_red:
+    - rung: qwen35-0.8b-q4km
+      sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
+      clause:
+        - '^golden_output FAIL: golden_output_thinking_on: think block unclosed within 2048 tokens\b'
+        - '^apr qa exited \d+ — gates_failed: golden_output \(#3898\)$'
+      ticket: "#4030"
+      ruling: "operator selection via aprender-cf 2026-09-23 on #3907: ship as known RED + ticket"
+  inventory:
+    # #3957 F2: `apr_sha_drift` (#3940) is DELETED. It declared, in prose no code read, that
+    # receipts measured at 9b7739951 stood for the cut 28c24207a. check_model_ladder.sh now
+    # binds every receipt to the cut by `apr_sha` (equal, or equal-tree outside evidence/)
+    # and refuses this key by name, so a delta is re-measured, never declared.
+    dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
+    # WIDENED 2026-09-22 by operator ruling: "don't leave behind. if it fits on this machine
+    # and/or gx10 with CUDA we must support for Qwen 3.5 and 2.5. we kick the MoE work to later".
+    # MEASURED before the change: 28 models held on lambda, 18 swept, 10 INVISIBLE TO EVERY GATE,
+    # because the universe was a filename glob over q4_k/q4k only. That is #3712's own defect in a
+    # new form -- it replaced a hand-picked list with a glob, which has the same omission property,
+    # moved from a human decision to a string match nobody reviews (#3846). Escapees included
+    # Qwen3-Coder-30B-A3B-Instruct-Q4_0 (a Q4 quant `*q4_k*` does not match) and
+    # Qwen3.5-35B-A3B-UD-IQ4_XS (a 35B Qwen3.5 no gate had ever loaded). The two `.apr` files
+    # escaped in PRINCIPLE rather than by accident: an .apr filename need not carry its
+    # quantisation at all, so a name-based universe cannot see them. The durable fix is to derive
+    # the universe from the file HEADER, which `apr inspect --json` already reports (#3846); these
+    # four patterns close the 2.5/3.5 hole now. Adds 7 measurable models (0.34-7.11 GB: IQ2_XXS,
+    # IQ3_M, IQ4_XS x2, f16, and both .apr) plus one deferred MoE.
+    patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr",
+               "*qwen2.5*.gguf", "*qwen3.5*.gguf", "*qwen2.5*.apr", "*qwen3.5*.apr"]   # case-insensitive
+    # DEFERRED, per the same ruling's "we kick the MoE work to later". A match is printed DEFERRED
+    # and NEVER counted green: this build has no CUDA forward for qwen3moe at all (#3714), so an
+    # A3B model owes cells no code can satisfy. This is a DECLARED deferral carrying a reason, not
+    # an exemption -- an inventory model that fails and is not named here is still refused, which
+    # the case table proves. Delete this key when #3714 lands.
+    # EMPTY. The last deferral, "*A3B*", is RETIRED with this fold: the qwen3moe CUDA forward
+    # (#3714 R2, PMAT-3714-r2-on-v2@6f6fa9a83) is folded into 0.69.1 on the operator ruling of
+    # 2026-09-23, relayed verbatim by aprender-6a (cop): "fold in MoE". An A3B model now owes
+    # every cell like any other rung, and #3817 (run --gpu silently falling back to CPU) must be
+    # shown fixed by the envelope, not assumed from parity.
+    deferred: {}
+      # THE THREE FILENAME DEFERRALS DECLARED HERE ON 2026-09-23 ARE RETIRED.
+      # Operator doctrine, same day, verbatim: "no defer; from now forward we practice
+      # toyota way and oracle approach of crux with capabiltiy report style from Alfredo".
+      # A capability is ORACLE-PROVEN or it is RED; there is no third state, so
+      # "the model runs but tensor_contract cannot inspect it" is RED and the work is the
+      # missing IQ dequantizer in aprender-core (#3850), not a declaration. Stop the line.
+      #   retired: Qwen2.5-0.5B-Instruct-IQ3_M.gguf
+      #            Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
+      #            Qwen3.5-4B-UD-Q4_K_XL.gguf
+      # *A3B* was the one deferral kept past that doctrine, as an explicit operator ruling of
+      # 2026-09-22 ("we kick the MoE work to later"). It is retired by the ruling of 2026-09-23
+      # above, which makes #3714 a 0.69.1 requirement.
+    # #3957 F9/F10: NAMED RED verdicts. Unlike `deferred`, they are not declarations. Each one is
+    # a claim about CAUSE that check_model_ladder.sh admits only when THIS sweep re-proves it
+    # (scripts/lib/model_ladder_redmodel.py); otherwise the row is plain FAIL and blocks. A proven
+    # cell prints RED-MODEL / RED-UNSUPPORTED, is never counted green, and does not block. A key
+    # matching no held file, or matching a green row, is refused.
+    #
+    # F9, operator ruling 2026-09-23 on #3957 (verbatim): "proceed with (a)". The FILE is
+    # defective, as proven each sweep by llama.cpp on the identical GGUF (the CRUX greedy rows),
+    # a positive control on the sibling, and apr CPU == GPU. Covers thinking ON only.
+    # red_model: EMPTY. Both candidates were REFUTED by the F9 oracle itself (aprender-83,
+    # evidence/crux/0.69.1/f9-greedy-apr-70d20d44c on PMAT-3952-crux-greedy2@a78301558): on the
+    # model's OFFICIAL thinking-ON template, llama.cpp closes the think block and answers
+    # correctly for Qwen3.5-0.8B-IQ4_XS (332 tok) and 0.8B-Q4_K_M (241 tok). The "never closes" /
+    # "closes empty" behaviour came from apr's non-official ON prompt (#3990), in BOTH engines.
+    # That is an apr defect, and a key for it would have laundered one into RED-MODEL.
+    #
+    # wrong_answer (cop ruling 2026-09-23, within ruling (a)): Qwen3.5-0.8B-UD-IQ2_XXS answers
+    # "What is 2+2?" without "4" on the OFFICIAL template, in apr AND llama.cpp (aprender-6c
+    # [3ada9a], #4004), while its Q4_K_M sibling answers "4". The key is INERT until a sweep
+    # re-proves it, all on the official ids: apr's first divergence from the llama.cpp CPU reference
+    # comes NO EARLIER than the reference's own CUDA leg diverges from it (parity calibrated per
+    # sweep against the oracle's noise; 6c measured oracle step 2, apr step 4); apr and both llama.cpp
+    # backends wrong; the control right in both engines; apr CPU == GPU. Until then the row is plain
+    # RED, as it would be without the key.
+    red_model:
+      Qwen3.5-0.8B-UD-IQ2_XXS.gguf:
+        ticket: "#4004"
+        defect: wrong_answer
+        thinking: "off"
+        expect: "4"
+        # the certified v2 2+2 control the sweep runs (dd's set; `golden-2plus2` is v1, not in it --
+        # aprender-83). The claim is re-proven on the prompt the sweep measures, never on the v1 text.
+        prompts: [ctl-2plus2]
+        control: Qwen3.5-0.8B-Q4_K_M.gguf
+    # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
+    # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
+    # output (aprender-serve capability::no_cuda_forward_reason). The CUDA forward is 0.70.0 work.
+    red_unsupported:
+      "Qwen3.5-35B-A3B*.gguf":
+        architecture: qwen35moe
+        ticket: "#3977"
+    backends: [cuda]
+  # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
+  # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
+  # thinking, context rung). The RUNGS are not declared here: ids and token counts live in ONE file,
+  # evidence/release/context-rungs.json (apr-release-context-rungs/v1, #3715), which pv reads too;
+  # consumer-max is the max over its consumers[].max_prompt_tokens. Thinking modes are derived per model
+  # from its chat template (#3723). A cell fits a host iff weights + kv_bytes_per_token * tokens + workspace
+  # <= the host's TOTAL GPU memory (operator "a", #3710): a fitting cell must pass, a non-fitting one must be
+  # an honest pre-load refusal, and every owed cell must pass on >= 1 required host. Long rungs are owed by
+  # the families below plus ONE representative per other arch, named here by file (cop 2026-09-21).
+  cells:
+    verbs: [run, chat, serve, code]
+    # #3828: a removal from this block must be DECLARED here with a reason, or the
+    # anti-shrink floor in check_model_ladder.sh refuses it as a silent shrink. The
+    # declaration is printed on every run, so a withdrawal cannot decay into an absence
+    # nobody re-reads. This is the mechanism #3817 needed and did not have.
+    withdrawn:
+      representatives:
+        qwen3moe: >-
+          #3817, 0.69.1: not a fit question and not a regression — this build has NO CUDA
+          forward for the qwen3moe architecture at all (#3714, lands 0.70.0). `apr run --gpu`
+          now refuses it by name at pre-load rather than silently falling back to CPU, so a
+          long-rung representative for it would owe cells no code can satisfy and a
+          RefusalCell would be a false arithmetic claim. Restore this key with #3714.
+    long_rungs_for:
+      families: [qwen35]                      # every consumer's family: the full rung set, through declared
+      representatives:                        # one file per other arch the fleet holds
+        qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda + gx10
+        qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda + gx10
+        # qwen3moe: REMOVED for 0.69.1 (#3817). Not a fit question — this build has no CUDA
+        # forward for the architecture at all (#3714, lands 0.70.0), so `apr run --gpu` refuses
+        # pre-load by name and there is no GPU cell to owe. The CPU path is unchanged and works.
+        # Restore this line with the GPU forward, not before.
   rungs:
     - id: qwen2-1.5b-q4km
       family: qwen2.5
@@ -71,8 +257,11 @@ ladder:
       gguf: Qwen3-8B-Q4_K_M.gguf
       sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
       backends: [cpu, cuda]
-      required: false
-      note: "second dense-Qwen3 size; required once #3413 lands so the fix is proved at two widths"
+      required: true    # flipped 2026-09-22 (#3724): the empty-output defect this key was hiding is FIXED
+                        # and MEASURED green 8/8 on BOTH lambda (where it failed) and gx10 at 3ebb1c61e.
+                        # `required: false` on a Q4_K rung is what let 0.69.0 ship it as a note instead of a
+                        # failure -- FALSIFY-MCL-011's own if_fails says so -- and no Q4_K model is optional.
+      note: "second dense-Qwen3 size. No Q4_K model is optional (#3712), so the release gate refuses this key and the release cannot ship on it. FLIPPED to true for 0.69.1: the condition this note used to name as the reason for deferring — 'the flip lands with the Qwen3-8B CUDA fix and a committed green lambda receipt' — is the release's own work, not a reason to wait. Arming it surfaced what the key had masked since 0.69.0: the committed 0.68.2 lambda receipt carries qa_rc 5 / golden_output 'Empty output' / green false, so ladder-green fires missingGreenHost: lambda and takes contracts, pv lint, check_model_ladder and clean-room red together — ONE cause, four gates. resolve() unions green witnesses ACROSS versions, so a green 0.69.1 lambda receipt closes all four and no committed receipt is edited"
     - id: qwen35-0.8b-q4km
       family: qwen3.5
       arch: qwen35
@@ -124,21 +313,24 @@ equations:
       - "a rung the host does not hold is absent, and absent is FAIL for a required rung: an unmeasured claim is not a passed claim"
     preconditions:
       - "binary pinned via scripts/apr_bin.sh (built from HEAD) or DOGFOOD_ALLOW_UNPINNED=1 for the published-crate mode"
+      - "every apr call runs through apr_locked: the fleet GPU lock (flock, bounded wait; a held lock is an ENV decline naming its holder) and choom -n 1000, so a measurement and never a CI job is the OOM victim (#3712; gx10 global OOM 2026-09-21 15:56:08Z killed CI containers)"
   host_receipt:
-    formula: "receipt(host) = {host, version, sha, gpu, cc, rungs: [{id, present, capability_match, golden_output, backends: {b: {ran, fallback}}}]}"
+    formula: "receipt(host) = {schema: apr-model-ladder-receipt/v2, host, version, sha, apr_sha, gpu, cc, inventory: [{file, sha256, bytes}], rungs: [{id, file, present, capability_match, golden_output, backends: {b: {ran, fallback, rc}}}]}"
     domain: "evidence/dogfood/models/<version>/<host>.json, written only by scripts/model_ladder.sh"
     invariants:
       - "receipt.version equals the cargo root version of the tree it was measured on"
       - "receipt.sha equals the git HEAD the binary was built from"
       - "receipt.executed >= 1 — a receipt that measured nothing is a decline (exit 2), never a pass"
+      - "receipt.inventory is MEASURED on the host (every file under inventory.dirs matching inventory.patterns), never copied from the ladder; an empty inventory is FAIL"
     preconditions:
       - "python3 with json on the host (yaml is read by python3 too)"
   gate_verdict:
-    formula: "T2_models = ∀ host required: receipt(host) fresh(version) ∧ ∀ rung required: green(rung, host)"
+    formula: "T2_models = ∀ host required: receipt(host) fresh(version) ∧ ∀ rung required: green(rung, host) ∧ ∀ f ∈ receipt(host).inventory: green(f, host, inventory.backends)"
     domain: "scripts/check_model_ladder.sh, invoked by scripts/dogfood.sh through [package.metadata.dogfood]"
     invariants:
       - "the rung list at origin/main is the floor: a PR may add rungs, hosts or backends and may not remove any (same construction as check_multiplatform_dogfood.sh layer 2)"
       - "a missing receipt is FAIL, not DEFER: unlike the multiplatform gate this needs no published crate, a dev build measures it"
+      - "a Q4_K rung (file or id matches q4_?k) is required and claims cuda — the key `required: false` on one is refused, not tolerated (#3712)"
     preconditions:
       - "git can read origin/main:contracts/model-capability-ladder-v1.yaml, or the run is the bootstrap"
 
@@ -168,6 +360,21 @@ proof_obligations:
     property: "The ladder can grow and cannot shrink in the same PR that reads it"
     formal: "rungs(origin/main) ⊆ rungs(HEAD) ∧ hosts(origin/main) ⊆ hosts(HEAD) ∧ ∀ rung: backends_main(rung) ⊆ backends_head(rung)"
     applies_to: gate_verdict
+  - id: MCL-INV-006
+    type: invariant
+    property: "No Q4_K rung is optional, and every one claims CUDA"
+    formal: "∀ rung ∈ ladder.rungs: q4k(rung) ⟹ rung.required = true ∧ cuda ∈ rung.backends"
+    applies_to: gate_verdict
+  - id: MCL-INV-008
+    type: invariant
+    property: "Every owed (model, verb, thinking, rung) cell is proved: pass where it fits, an honest refusal where it does not, and a pass on at least one required host"
+    formal: "∀ host, m ∈ inventory(host), v ∈ cells.verbs, t ∈ modes(template(m)), r ∈ rungs(m): |rows(host, m, v, t, r)| = 1 ∧ (fits(m, r, total(host)) ⟹ pass(row) ∧ backend = cuda ∧ ¬fallback ∧ prompt_tokens ≥ tokens(r) ∧ answer_chars > 0 ∧ (t = on ⟹ think_closed)) ∧ (¬fits ⟹ refused(row) ∧ required_bytes(row) > total(host)) ∧ ∃ host': pass(host', m, v, t, r)"
+    applies_to: gate_verdict
+  - id: MCL-INV-007
+    type: invariant
+    property: "The universe is the host's measured inventory — every Q4_K model it holds is in the run and green on CUDA"
+    formal: "∀ host required, ∀ f ∈ receipt(host).inventory: ∃ row ∈ receipt(host).rungs: row.file = f ∧ row.present ∧ (f ∈ files(ladder) ∨ green(row, inventory.backends)) ∧ receipt(host).inventory ≠ ∅"
+    applies_to: host_receipt
 
 falsification_tests:
   - id: FALSIFY-MCL-001
@@ -220,6 +427,37 @@ falsification_tests:
     prediction: "narrowing a rung from every host at origin/main to hosts: [gx10] makes the gate exit 1 with 'hosts DROPPED'"
     test: "bash scripts/check_model_ladder.sh --self-test --case red-dropped-host-on-rung"
     if_fails: "a required (rung, host) pair could be dropped by adding a key instead of removing one"
+  - id: FALSIFY-MCL-011
+    rule: "A Q4_K rung cannot be made optional or CPU-only"
+    prediction: "`required: false` on a Q4_K rung exits 1 naming the rung (case red-q4k-required-false); a Q4_K rung with backends [cpu] exits 1 (case red-q4k-rung-cpu-only)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-q4k-required-false && bash scripts/check_model_ladder.sh --self-test --case red-q4k-rung-cpu-only"
+    if_fails: "the 0.69.0 hold: qwen3-8b-q4km was required: false, so an empty-output CUDA model was a note, not a failure"
+  - id: FALSIFY-MCL-012
+    rule: "An inventory model missing from the run is named"
+    prediction: "a receipt whose inventory lists a file with no present row exits 1 with 'is MISSING from the run' naming the file (case red-inventory-model-missing)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-inventory-model-missing"
+    if_fails: "the universe is the list again: a model the host holds is never measured"
+  - id: FALSIFY-MCL-013
+    rule: "An inventory model beyond the ladder is judged on CUDA like a rung"
+    prediction: "an inventory-only row whose golden_output is skipped, or whose cuda fell back, exits 1 naming inv:<file> (cases red-inventory-model-golden-skipped, red-inventory-model-fell-back); green on cuda exits 0 (case green-inventory-beyond-ladder)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-inventory-model-golden-skipped && bash scripts/check_model_ladder.sh --self-test --case red-inventory-model-fell-back && bash scripts/check_model_ladder.sh --self-test --case green-inventory-beyond-ladder"
+    if_fails: "an unlisted model is recorded but never judged — present is not green"
+  - id: FALSIFY-MCL-014
+    rule: "A receipt without a measured inventory is not evidence"
+    prediction: "a v1 receipt (no inventory) exits 1; an empty inventory exits 1; a ladder with no inventory block exits 1 (cases red-receipt-v1-no-inventory, red-inventory-empty, red-ladder-without-inventory)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-receipt-v1-no-inventory && bash scripts/check_model_ladder.sh --self-test --case red-inventory-empty && bash scripts/check_model_ladder.sh --self-test --case red-ladder-without-inventory"
+    if_fails: "absence scored as conformance: a host that listed nothing proved nothing and passed"
+  - id: FALSIFY-MCL-015
+    rule: "Every GPU apr call runs under the fleet lock, choom'd to 1000, with a bounded wait"
+    prediction: "check_model_ladder.sh --self-test: model_ladder.sh makes no \"$APR\" <subcommand> call outside apr_locked; a fake apr called through --lock-probe sees the lock held and oom_score_adj 1000; a lock held elsewhere declines with exit 2 naming the holder's pid; four producer mutants (raw call, no flock, no choom, no -w) are each killed. The real run is RED when the audit finds a raw call"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "a ladder run on gx10's unified memory OOM-kills the CI pool (15:56:08Z, 18 kills in 10 s) or hangs a release on a stuck lock"
+
+  - id: FALSIFY-MCL-016
+    rule: "Cells: verbs x thinking x context rung, derived and proved"
+    prediction: "check_model_ladder.sh --self-test: green-cells passes (20 owed on lambda, 12 pass, 8 honest refusals); a missing cell, a duplicate row, a fallback, a thinking block that never closed, a prompt under its rung, an empty answer, a co-tenant refusal, an OOM instead of a refusal, a rung that passes nowhere, thinking_modes that disagree with the template, a missing context_length (#3733), no cells, a consumer without a number, a missing context-rungs file, a dropped cells block or verb, a rung id or consumer dropped from context-rungs.json vs origin/main, an arch with no held representative, and a pass where the declared arithmetic says the cell cannot fit (the arithmetic decides what is owed, so it must be right) are each RED naming it; 11 module mutants are each killed by their case"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "a release dogfoods one verb at one short prompt with thinking off and calls the model family working"
 
 qa_gate:
   id: F-MCL-001
@@ -231,5 +469,7 @@ qa_gate:
     - required_rungs_present_and_green
     - claimed_backends_ran_without_fallback
     - ladder_not_shrunk_vs_origin_main
-  pass_criteria: "check_model_ladder.sh exits 0 with executed >= 1 on every required host"
+    - q4k_rungs_required_and_claim_cuda
+    - every_inventory_model_measured_and_green_on_cuda
+  pass_criteria: "check_model_ladder.sh exits 0 with executed >= 1 and a non-empty measured inventory on every required host"
   falsification: "plant a receipt with cuda.fallback=true → exit 1"

@@ -240,7 +240,7 @@ impl OwnedQuantizedModelCuda {
     ///
     /// GH-94: Batched prefill is now default (2x throughput vs serial).
     /// Set `BATCHED_PREFILL=0` for serial fallback.
-    fn run_prefill(
+    pub(crate) fn run_prefill(
         &mut self,
         prompt: &[u32],
         cache: &mut OwnedQuantizedKVCache,

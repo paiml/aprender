@@ -16,6 +16,13 @@ build; the crate-local *_tests.rs files legitimately read
 `../../../../contracts/*.yaml`) and wasm32-only files (`use wasm_bindgen`),
 which the host verification build never compiles either -- those are printed
 on stderr as SKIPPED so the residual is visible, never silent.
+
+A whole FILE is test code too when its parent declares it out of line under a
+test-only cfg -- `#[cfg(test)] mod guard;` -- and so is every module that file
+declares in turn (#4048: aprender-serve's fusion_call_site_guard_3985.rs, whose
+own text carries no cfg at all). Those are SKIPPED on stderr, by name. A module
+declared under `#[cfg(any(test, ...))]`, or with a test cfg on only SOME of its
+items, is compiled by the host build and still judged.
 """
 import os
 import re
@@ -33,6 +40,11 @@ BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 # `#[cfg(test)]` and `#[cfg(all(test, …))]` are test-only; `any(test, …)` is not.
 CFG_TEST = re.compile(r"#\[cfg\((?:test|all\(\s*test\b[^)]*\))\)\]")
 WASM_USE = re.compile(r"^\s*use\s+wasm_bindgen", re.M)
+# An out-of-line module declaration, possibly behind more attributes (`#[path = "…"]`,
+# `#[allow(…)]`) after the cfg: `#[cfg(test)] #[path = "g.rs"] pub(crate) mod guard;`
+ATTR = re.compile(r"\s*#\[[^\]]*\]")
+MOD_DECL = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;")
+PATH_ATTR = re.compile(r'#\[\s*path\s*=\s*"([^"]+)"\s*\]')
 
 
 def is_test_file(rel):
@@ -93,8 +105,64 @@ def host_body(text):
     return "".join(out)
 
 
+def child_module_files(path, text):
+    """[(child_file, test_only)] for every out-of-line `mod x;` in `path`, resolved the way
+    rustc resolves it (`x.rs` / `x/mod.rs` beside a lib.rs/main.rs/mod.rs, under `<stem>/`
+    otherwise, or `#[path]`)."""
+    text = strip_comments(text)
+    d = os.path.dirname(path)
+    base = os.path.basename(path)
+    sub = d if base in ("lib.rs", "main.rs", "mod.rs") else os.path.join(d, base[:-3])
+    out = []
+    for m in MOD_DECL.finditer(text):
+        # the attributes directly above this declaration
+        attrs, j = [], m.start()
+        head = text[:j]
+        while True:
+            a = re.search(r"#\[[^\]]*\]\s*$", head)
+            if not a:
+                break
+            attrs.insert(0, a.group(0).strip())
+            head = head[: a.start()]
+        test_only = any(CFG_TEST.fullmatch(a) for a in attrs)
+        name = m.group(1)
+        pa = next((PATH_ATTR.fullmatch(a) for a in attrs if PATH_ATTR.fullmatch(a)), None)
+        if pa:
+            cands = [os.path.normpath(os.path.join(d, pa.group(1)))]
+        else:
+            cands = [os.path.join(sub, name + ".rs"), os.path.join(sub, name, "mod.rs")]
+        f = next((c for c in cands if os.path.isfile(c)), None)
+        if f:
+            out.append((os.path.normpath(f), test_only))
+    return out
+
+
+def test_only_module_files(src):
+    """Every file compiled only under a test cfg: declared `#[cfg(test)] mod x;`, or declared
+    (any way) by such a file."""
+    kids = {}
+    for _root, path in rust_files(src):
+        text = read(path)
+        if text is not None:
+            kids[os.path.normpath(path)] = child_module_files(path, text)
+    test_only, frontier = set(), [c for cs in kids.values() for c, t in cs if t]
+    while frontier:
+        f = frontier.pop()
+        if f in test_only:
+            continue
+        test_only.add(f)
+        frontier.extend(c for c, _t in kids.get(f, []))
+    return test_only
+
+
+TEST_ONLY = set()
+
+
 def escapes_in(crate, root, rel_path, text):
     if is_test_file(rel_path):
+        return []
+    if os.path.normpath(os.path.join(crate, rel_path)) in TEST_ONLY:
+        print(f"SKIPPED (cfg(test)-only module, not in the host verification build): {rel_path}", file=sys.stderr)
         return []
     body = host_body(text)
     if WASM_USE.search(body):  # a real `use wasm_bindgen` line, not one in a comment
@@ -123,6 +191,8 @@ def main():
     crate = sys.argv[1]
     escape_mode = "--escapes" in sys.argv[2:]
     judge = escapes_in if escape_mode else includes_in
+    if escape_mode:
+        TEST_ONLY.update(test_only_module_files(os.path.join(crate, "src")))
     for root, path in rust_files(os.path.join(crate, "src")):
         text = read(path)
         if text is None:

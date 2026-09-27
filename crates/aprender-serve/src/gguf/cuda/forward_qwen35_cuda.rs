@@ -257,9 +257,38 @@ pub struct Qwen35CudaModel<'a> {
     out_normed: GpuBuffer<f32>,
     /// `[vocab_size]`, the logits — the ONE buffer a token's forward downloads.
     logits_buf: GpuBuffer<f32>,
+    /// `[hidden_dim]`, the token's residual stream (#4215): the embedding row is
+    /// copied in, every layer updates it in place. `None` only while a forward
+    /// has it out.
+    hidden_buf: Option<GpuBuffer<f32>>,
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
+    /// Rows per batched-prefill GEMM chunk (#3596): 512 by default, more where the
+    /// device has memory to spare (a unified-memory GB10), because every chunk
+    /// dequantizes every weight once.
+    prefill_rows: usize,
+    /// The batched prefill's attention path (#3596): cuBLAS f32 unless only flash
+    /// fits, as the capacity plan decides.
+    prefill_attention: prefill::PrefillAttention,
+}
+
+/// Why a projection cannot go on the GPU, stated so the user can act on it
+/// (#3595 done_when 3): which tensor, which dtype by NAME, and what to use
+/// instead.
+///
+/// It used to say only "GGML type 1 has no verified GPU GEMV kernel". Unsloth's
+/// dynamic `UD-Q4_K_XL` keeps sensitive tensors (`ssm_alpha`, …) at F16, so its
+/// upload is correctly refused — and the one useful fact, that a plain `Q4_K_M`
+/// build uploads whole, was nowhere in the message.
+fn no_gemv_kernel_reason(name: &str, ggml_type: u32) -> String {
+    let dtype = trueno_quant::GgmlType::from_id(ggml_type)
+        .map_or("an unknown type", trueno_quant::GgmlType::as_str);
+    format!(
+        "'{name}' is {dtype} (GGML type {ggml_type}), which has no verified GPU GEMV kernel — \
+         the file is fine and runs on the CPU; a Q4_K_M build of this model keeps every \
+         projection in a GPU-eligible type"
+    )
 }
 
 /// Map a GPU error into the crate error type with the operation that raised it.
@@ -281,10 +310,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let qtype = WeightQuantType::from_ggml_type(tensor.qtype).ok_or_else(|| {
             RealizarError::UnsupportedOperation {
                 operation: "qwen35_cuda_upload".to_string(),
-                reason: format!(
-                    "'{name}': GGML type {} has no verified GPU GEMV kernel",
-                    tensor.qtype
-                ),
+                reason: no_gemv_kernel_reason(name, tensor.qtype),
             }
         })?;
         if tensor.data.is_empty() {
@@ -322,6 +348,22 @@ impl<'a> Qwen35CudaModel<'a> {
     fn zeros(executor: &CudaExecutor, len: usize) -> Result<GpuBuffer<f32>> {
         GpuBuffer::from_host(executor.context(), &vec![0.0f32; len])
             .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))
+    }
+
+    /// Zero-filled device buffer of `len` f32, zeroed ON the device.
+    ///
+    /// For the K/V caches, whose size is `max_seq_len` rows: [`Self::zeros`]
+    /// stages a host vector of the same size, which at a long context is
+    /// gigabytes of transient host memory — on GB10's unified memory, drawn from
+    /// the pool the device is allocating from (#3595). The memset is queued on
+    /// the compute stream; [`Self::build_state`] synchronizes it before the
+    /// state is handed out.
+    fn zeros_on_device(executor: &CudaExecutor, len: usize) -> Result<GpuBuffer<f32>> {
+        let mut buf = GpuBuffer::new(executor.context(), len)
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
+        buf.zero_async(executor.compute_stream())
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
+        Ok(buf)
     }
 
     /// The shapes, read from the model — never hard-coded.
@@ -519,21 +561,16 @@ impl<'a> Qwen35CudaModel<'a> {
 
         // PRODUCTION DEFAULT, not a test affordance (PMAT-3477 / #3090): this
         // architecture runs the FLOAT Q4_K/Q6_K GEMV kernels, never the DP4A
-        // ones `GpuProfile::detect` picks for a dense decode. The DP4A kernels
-        // quantize the ACTIVATION to int8, and Qwen3.5 feeds its projections
-        // straight into a recurrence, which compounds that error instead of
-        // absorbing it. Measured on the real 0.8B file: with the float variants
-        // pinned, a whole DeltaNet layer's output is 0.000 relative from a
-        // second float run and inside the layer budget against the CPU; with
-        // `HwDp4a` the DeltaNet-only path lands **1.656 relative** away, and the
-        // end-to-end argmax is garbage — a wrong token at position 0, not a
-        // rounding difference. The falsifier lives in the tests file
-        // (`qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`).
+        // ones `GpuProfile::detect` picks for a dense decode.
         //
-        // Recovering the DP4A throughput for this architecture (a higher-
-        // precision activation quantization, or DP4A only on the layers that do
-        // not feed the recurrence) is the DP4A-through-recurrence ticket,
-        // 0.69.0. Until it lands, correctness is not optional here.
+        // The pin's original reason, "DP4A is catastrophic through the
+        // recurrence" (1.656 relative, a wrong argmax at position 0), was
+        // #4258: no qwen35 writer kernel cleared `q8_activation_valid`, so
+        // every DP4A GEMV reused the first Q8_1 activation. With that fixed,
+        // DP4A holds the parity contract on 0.8B
+        // (`qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence`). The pin
+        // stays until DP4A is re-measured on 2B/4B (#4030). Lifting it is a
+        // perf decision to make on that evidence, not a side effect of this fix.
         Self::pin_float_gemv(&mut executor.gpu_profile);
 
         let mut layers = Vec::with_capacity(model.layers.len());
@@ -589,7 +626,19 @@ impl<'a> Qwen35CudaModel<'a> {
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
-        let state = Self::build_state(&executor, &layers, dims, max_seq_len)?;
+        let hidden_buf = Some(Self::zeros(&executor, dims.hidden_dim as usize)?);
+        let prefill_attention = prefill::default_prefill_attention(&executor, dims);
+        // #3596: the model's OWN state serves only the single-layer handles
+        // (`forward_attention_layer`, `upload_attention_kv`, …), never a generation —
+        // `qwen35_gpu_decode` and the F2 probe each allocate theirs. Sizing it to the
+        // request's `max_seq_len` put a second full-length KV on the device next to the
+        // decode state: 2 × 16 GiB on the 9B at 262,144 positions.
+        let state = Self::build_state(
+            &executor,
+            &layers,
+            dims,
+            max_seq_len.min(DEFAULT_MAX_SEQ_LEN),
+        )?;
         Ok(Self {
             model,
             executor,
@@ -601,8 +650,11 @@ impl<'a> Qwen35CudaModel<'a> {
             lm_head,
             out_normed,
             logits_buf,
+            hidden_buf,
             dims,
             max_seq_len,
+            prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
+            prefill_attention,
         })
     }
 
@@ -630,11 +682,15 @@ impl<'a> Qwen35CudaModel<'a> {
             kv.push(match layer {
                 CudaLayer::DeltaNet(_) => None,
                 CudaLayer::Attention(_) => Some((
-                    Self::zeros(executor, kv_row * max_seq_len)?,
-                    Self::zeros(executor, kv_row * max_seq_len)?,
+                    Self::zeros_on_device(executor, kv_row * max_seq_len)?,
+                    Self::zeros_on_device(executor, kv_row * max_seq_len)?,
                 )),
             });
         }
+        executor
+            .compute_stream()
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
         Ok(Qwen35CudaState {
             conv,
             ssm,
@@ -656,6 +712,81 @@ impl<'a> Qwen35CudaModel<'a> {
     /// Any CUDA allocation failure.
     pub fn new_state(&self) -> Result<Qwen35CudaState> {
         Self::build_state(&self.executor, &self.layers, self.dims, self.max_seq_len)
+    }
+
+    /// Make this model's CUDA context current on the calling thread.
+    ///
+    /// A context is current per THREAD. A model built on one thread and driven
+    /// from another — `apr serve` runs each request on a blocking-pool worker —
+    /// fails its first allocation there with `CUDA_ERROR_INVALID_CONTEXT` (201)
+    /// unless this runs first: measured on #3571, where a decode state for 4096
+    /// positions "would not allocate" and the session fell back to the CPU.
+    /// The dense path learned the same lesson as GH-282.
+    ///
+    /// # Errors
+    /// `cuCtxSetCurrent` failed.
+    pub fn make_current(&self) -> Result<()> {
+        self.executor
+            .make_current()
+            .map_err(|e| gpu_err("qwen35_cuda_make_current", &e))
+    }
+
+    /// A fresh decode state with room for `max_seq_len` positions, whatever
+    /// this model was built with (#3595).
+    ///
+    /// A session that outlives one generation sizes its state to the
+    /// conversation, not to the model: the model is built once with a
+    /// probe-sized state and the session grows its own. Capacity is a property
+    /// of the state — [`Self::forward_single`] bounds-checks the state it is
+    /// given, never the model's.
+    ///
+    /// # Errors
+    /// A `max_seq_len` of zero, or any CUDA allocation failure.
+    pub fn new_state_with_capacity(&self, max_seq_len: usize) -> Result<Qwen35CudaState> {
+        if max_seq_len == 0 {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_cuda: max_seq_len must be at least 1".to_string(),
+            });
+        }
+        Self::build_state(&self.executor, &self.layers, self.dims, max_seq_len)
+    }
+
+    /// A fresh decode state holding `max_seq_len` positions — for a caller that
+    /// needs fewer than the model was built for (#3596: the F2 probe needs its
+    /// probe plus one decode step, not the whole request's KV).
+    ///
+    /// # Errors
+    /// A `max_seq_len` of zero, or any CUDA allocation failure.
+    pub fn new_state_with_len(&self, max_seq_len: usize) -> Result<Qwen35CudaState> {
+        if max_seq_len == 0 {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_cuda: a state must hold at least one position".to_string(),
+            });
+        }
+        Self::build_state(&self.executor, &self.layers, self.dims, max_seq_len)
+    }
+
+    /// Return `state` to position 0 in place, keeping its allocation (#3595).
+    ///
+    /// The conv windows and recurrent states are zeroed on the device — the
+    /// values a fresh state starts from. The K/V caches are only marked empty:
+    /// attention at `position` writes row `position` and reads rows
+    /// `0..=position`, so a row past `kv_len` is always written before it is
+    /// read.
+    ///
+    /// # Errors
+    /// Any CUDA memset or synchronization failure.
+    pub fn reset_state(&self, state: &mut Qwen35CudaState) -> Result<()> {
+        let stream = self.executor.compute_stream();
+        for buf in state.conv.iter_mut().chain(state.ssm.iter_mut()) {
+            buf.zero_async(stream)
+                .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
+        }
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
+        state.kv_len = 0;
+        Ok(())
     }
 
     /// Run `f` with the model's own state detached.
@@ -1388,6 +1519,51 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<Vec<f32>> {
+        self.forward_to_logits(token, state, position)?;
+        // The ONE sync of the whole token, in front of the ONE download.
+        self.executor
+            .sync_stream()
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+        let mut logits = vec![0.0f32; self.dims.vocab_size as usize];
+        self.logits_buf
+            .copy_to_host(&mut logits)
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+
+        state.kv_len = state.kv_len.max(position + 1);
+        Ok(logits)
+    }
+
+    /// The token temperature 0 picks after `token` at `position` (#4215): the
+    /// argmax runs on the device over `logits_buf`, so the token downloads its
+    /// 4-byte id instead of the whole logits vector. Ties go to the LOWEST
+    /// index, as [`crate::gguf::ops::argmax`] does.
+    ///
+    /// # Errors
+    /// As [`Self::forward_single`].
+    pub fn forward_single_greedy(
+        &mut self,
+        token: u32,
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<u32> {
+        self.forward_to_logits(token, state, position)?;
+        let next = self
+            .executor
+            .gpu_argmax(self.logits_buf.as_ptr(), self.dims.vocab_size)
+            .map_err(|e| gpu_err("qwen35_cuda_greedy", &e))?;
+        state.kv_len = state.kv_len.max(position + 1);
+        Ok(next)
+    }
+
+    /// Enqueue one token at `position` through every layer, the output norm and
+    /// the `lm_head` into `logits_buf`. Nothing is synced or downloaded, and the
+    /// caller advances `state.kv_len` once it has read the result.
+    fn forward_to_logits(
+        &mut self,
+        token: u32,
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<()> {
         let hidden_dim = self.dims.hidden_dim as usize;
         let embedding = self.model.base.token_embedding();
         let start = (token as usize) * hidden_dim;
@@ -1408,15 +1584,37 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        let dev = GpuBuffer::from_host(
-            self.executor.context(),
+        // #4215: the residual stream lives in one persistent buffer; taking it
+        // out of `self` lets the layers borrow `self` mutably beside it.
+        let mut dev = self
+            .hidden_buf
+            .take()
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: "qwen35_cuda: the hidden buffer is already in use".to_string(),
+            })?;
+        let run = self.run_layers_and_head(
+            &mut dev,
             &embedding[start..start + hidden_dim],
-        )
-        .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+            state,
+            position,
+        );
+        self.hidden_buf = Some(dev);
+        run
+    }
+
+    fn run_layers_and_head(
+        &mut self,
+        dev: &mut GpuBuffer<f32>,
+        embedding_row: &[f32],
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<()> {
+        dev.copy_from_host(embedding_row)
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
         for il in 0..self.layers.len() {
             match self.layers[il] {
-                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, &dev)?,
-                CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position)?,
+                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, dev)?,
+                CudaLayer::Attention(_) => self.attention_layer(state, il, dev, position)?,
             }
         }
         // The tail stays on the device (#3090 review). `hidden_to_logits` would
@@ -1429,7 +1627,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let d = self.dims;
         self.executor
             .rmsnorm_into(
-                &dev,
+                dev,
                 &self.output_norm,
                 &self.out_normed,
                 d.hidden_dim,
@@ -1446,18 +1644,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 self.lm_head.k,
             )
             .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
-
-        // The ONE sync of the whole token, in front of the ONE download.
-        self.executor
-            .sync_stream()
-            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
-        let mut logits = vec![0.0f32; d.vocab_size as usize];
-        self.logits_buf
-            .copy_to_host(&mut logits)
-            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
-
-        state.kv_len = state.kv_len.max(position + 1);
-        Ok(logits)
+        Ok(())
     }
 
     /// Run every Gated `DeltaNet` layer over a host hidden state and read the
@@ -1495,7 +1682,20 @@ impl<'a> Qwen35CudaModel<'a> {
     }
 }
 
+/// PMAT-3596 (#3596): the batched (chunked) prefill — [`Qwen35CudaModel::prefill`].
+#[path = "forward_qwen35_cuda_prefill.rs"]
+mod prefill;
+pub use prefill::{
+    PrefillAttention, PREFILL_ATTENTION_ENV, PREFILL_MAX_CHUNK_ROWS, PREFILL_SCORES_BUDGET_BYTES,
+    UNIFIED_PREFILL_CHUNK_ROWS,
+};
+
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_tests.rs"]
 mod qwen35_cuda_tests;
+
+/// #4215: host allocations, device allocations and D2H bytes per decode token.
+#[cfg(test)]
+#[path = "forward_qwen35_decode_overhead_tests.rs"]
+mod qwen35_decode_overhead_tests;

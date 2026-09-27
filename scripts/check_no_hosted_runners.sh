@@ -28,44 +28,50 @@ PROG=check_no_hosted_runners
 usage() { printf 'usage: %s [--dir <workflows dir>] [--baseline <file>] | --self-test | --help\n' "$PROG"; }
 
 scan() { # scan <workflows dir> <baseline file> -> prints violations, rc 0/1/2
-    python3 - "$1" "$2" <<'PY'
-import glob, os, re, sys
-d, base = sys.argv[1], sys.argv[2]
-files = sorted(glob.glob(os.path.join(d, "*.yml")) + glob.glob(os.path.join(d, "*.yaml")))
-if not files:
-    print(f"ENV: no workflow files under {d}: a guard with nothing to read is exit 2, never a pass")
-    sys.exit(2)
-tok = re.compile(r"\b(?:ubuntu|macos|windows)-(?:latest|\d+(?:\.\d+)*(?:-arm)?)\b")
-allowed = set()
-if os.path.exists(base):
-    for l in open(base, encoding="utf-8"):
-        l = l.split("#", 1)[0].strip()
-        if l:
-            allowed.add(l)
-hits, used = [], set()
-for f in files:
-    job = "<top>"
-    for n, raw in enumerate(open(f, encoding="utf-8"), 1):
-        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", raw)
-        if m:
-            job = m.group(1)
-        line = raw.split("#", 1)[0]
-        if not tok.search(line):
-            continue
-        key = f"{os.path.basename(f)}:{job}"
-        if key in allowed:
-            used.add(key)
-            continue
-        hits.append(f"{os.path.relpath(f)}:{n}: job `{job}` names a GitHub-hosted image: {line.strip()}")
-stale = sorted(allowed - used)
-for h in hits:
-    print(f"VIOLATION {h}")
-for s in stale:
-    print(f"STALE baseline entry `{s}` matches no hosted line any more: delete it from {base}")
-if hits or stale:
-    sys.exit(1)
-print(f"OK: {len(files)} workflow files, no GitHub-hosted image outside {len(allowed)} baseline entr{'y' if len(allowed) == 1 else 'ies'}")
-PY
+    # awk, not python (#3697): the fleet is python-free for automation (infra#708), and this is a
+    # line scan, so it needs no interpreter. POSIX ERE has no \b, so the token's word boundaries
+    # are spelled out: an ASCII word character may not touch it on either side.
+    local d=$1 base=$2 f files=()
+    for f in "$d"/*.yml "$d"/*.yaml; do [ -f "$f" ] && files+=("$f"); done
+    if [ "${#files[@]}" -eq 0 ]; then
+        printf 'ENV: no workflow files under %s: a guard with nothing to read is exit 2, never a pass\n' "$d"
+        return 2
+    fi
+    mapfile -t files < <(printf '%s\n' "${files[@]}" | LC_ALL=C sort)
+    LC_ALL=C awk -v base="$base" -v nfiles="${#files[@]}" -v pwd="$PWD" '
+        BEGIN {
+            tok = "(^|[^A-Za-z0-9_])(ubuntu|macos|windows)-(latest|[0-9]+(\\.[0-9]+)*(-arm)?)([^A-Za-z0-9_]|$)"
+            while ((getline l < base) > 0) {
+                sub(/#.*/, "", l); gsub(/^[[:space:]]+|[[:space:]]+$/, "", l)
+                if (l != "") allowed[l] = 1
+            }
+        }
+        FNR == 1 {
+            job = "<top>"; bn = FILENAME; sub(/.*\//, "", bn)
+            rel = FILENAME; if (index(rel, pwd "/") == 1) rel = substr(rel, length(pwd) + 2)
+        }
+        /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $0; sub(/^  /, "", job); sub(/:[[:space:]]*$/, "", job) }
+        {
+            line = $0; sub(/#.*/, "", line)
+            if (line !~ tok) next
+            key = bn ":" job
+            if (key in allowed) { used[key] = 1; next }
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            hits[++nh] = rel ":" FNR ": job `" job "` names a GitHub-hosted image: " line
+        }
+        END {
+            for (i = 1; i <= nh; i++) print "VIOLATION " hits[i]
+            na = 0; ns = 0
+            for (k in allowed) { na++; if (!(k in used)) stale[++ns] = k }
+            for (i = 2; i <= ns; i++) {          # sorted, as the report always was
+                k = stale[i]
+                for (j = i - 1; j >= 1 && stale[j] > k; j--) stale[j + 1] = stale[j]
+                stale[j + 1] = k
+            }
+            for (i = 1; i <= ns; i++) print "STALE baseline entry `" stale[i] "` matches no hosted line any more: delete it from " base
+            if (nh || ns) exit 1
+            printf "OK: %d workflow files, no GitHub-hosted image outside %d baseline entr%s\n", nfiles, na, (na == 1 ? "y" : "ies")
+        }' "${files[@]}"
 }
 
 if [ "${1:-}" = "--help" ]; then usage; printf 'modes: default scan, --self-test (case table)\n'; exit 0; fi
@@ -98,6 +104,11 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "a baseline entry for ANOTHER job does not excuse it"  "${J}    runs-on: ubuntu-latest\n" "ci.yml:deploy\n"
     row 1 "a stale baseline entry (no hosted line left) is RED"  "${J}    runs-on: [self-hosted, Linux, X64, clean-room]\n" "ci.yml:build\n"
     row 2 "no workflow files at all is ENV, never a pass"        ""
+    # the token's word boundaries, spelled out for ERE (#3697): an ASCII word character touching it
+    # makes it another word; any other byte (punctuation, a non-ASCII letter) does not
+    row 0 "a word character BEFORE the token is GREEN (xubuntu-latest is not an image)"   "${J}    runs-on: [self-hosted, xubuntu-latest]\n"
+    row 0 "a word character AFTER the token is GREEN (ubuntu-latest_2 is not an image)"   "${J}    runs-on: [self-hosted, ubuntu-latest_2]\n"
+    row 1 "a non-ASCII letter touching the token is RED (the boundary is ASCII)"           "${J}    runs-on: ubuntu-latest\xc3\xa9\n"
     printf '%s/%s rows\n' "$((n - red))" "$n"; [ "$red" = 0 ] || exit 1; exit 0
 fi
 

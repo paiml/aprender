@@ -81,6 +81,7 @@
     #[test]
     fn test_completion_response_basic() {
         let response = CompletionResponse {
+            used_gpu: None,
             id: "cmpl-123".to_string(),
             object: "text_completion".to_string(),
             created: 1234567890,
@@ -105,6 +106,7 @@
     #[test]
     fn test_completion_response_serialization() {
         let response = CompletionResponse {
+            used_gpu: None,
             id: "cmpl-test".to_string(),
             object: "text_completion".to_string(),
             created: 1000,
@@ -130,6 +132,7 @@
     #[test]
     fn test_completion_response_clone() {
         let response = CompletionResponse {
+            used_gpu: None,
             id: "test".to_string(),
             object: "text_completion".to_string(),
             created: 0,
@@ -148,6 +151,7 @@
     #[test]
     fn test_completion_response_debug() {
         let response = CompletionResponse {
+            used_gpu: None,
             id: "debug-id".to_string(),
             object: "text_completion".to_string(),
             created: 0,
@@ -260,6 +264,7 @@
             5,
             100, // max_tokens = 100, completion_tokens = 5 < 100 => "stop"
             None,
+            None,
         );
         assert_eq!(resp.choices[0].finish_reason, "stop");
         assert_eq!(resp.usage.prompt_tokens, 10);
@@ -280,6 +285,7 @@
             100,
             100, // max_tokens = 100, completion_tokens = 100 >= 100 => "length"
             None,
+            None,
         );
         assert_eq!(resp.choices[0].finish_reason, "length");
     }
@@ -294,13 +300,14 @@
             200,
             100, // completion_tokens = 200 > max_tokens = 100 => "length"
             None,
+            None,
         );
         assert_eq!(resp.choices[0].finish_reason, "length");
     }
 
     #[test]
     fn test_completion_resp_zero_tokens() {
-        let resp = completion_resp("cmpl", "m".to_string(), String::new(), 0, 0, 100, None);
+        let resp = completion_resp("cmpl", "m".to_string(), String::new(), 0, 0, 100, None, None);
         assert_eq!(resp.choices[0].finish_reason, "stop");
         assert_eq!(resp.usage.total_tokens, 0);
         assert!(resp.choices[0].text.is_empty());
@@ -315,6 +322,7 @@
             1,
             1,
             10,
+            None,
             None,
         );
         assert_eq!(resp.choices.len(), 1);
@@ -338,6 +346,7 @@
             100,
             100, // budget exhausted: without a stop match this would be "length"
             Some(&stops),
+            None,
         );
         assert_eq!(resp.choices[0].text, "a0");
         assert_eq!(resp.choices[0].finish_reason, "stop");

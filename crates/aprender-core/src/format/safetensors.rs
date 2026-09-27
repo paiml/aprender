@@ -18,8 +18,13 @@ fn ggml_dtype_element_size(dtype: u32) -> f64 {
 
 /// List tensors from GGUF file bytes
 fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
+    // #3661: a FormatError contributes its message, not its Display, or the
+    // result reads "Invalid model format: Failed to parse GGUF: Invalid model format: …".
     let reader = GgufReader::from_bytes(data.to_vec()).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to parse GGUF: {e}"),
+        message: match e {
+            AprenderError::FormatError { message } => format!("Failed to parse GGUF: {message}"),
+            other => format!("Failed to parse GGUF: {other}"),
+        },
     })?;
 
     // #2569: every row below asserts that `size_bytes` of tensor data exist at a

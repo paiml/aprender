@@ -199,7 +199,7 @@ fn falsify_qw3_moe_per_layer_001_cosine_per_layer() {
     // ----- GPU traced forward -----
     let gpu_inner =
         OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #2");
-    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner, 0)
+    let mut gpu_model = OwnedQuantizedModelCuda::new_for_moe_forward(gpu_inner, 0)
         .expect("OwnedQuantizedModelCuda::new(model, 0) must succeed on RTX 4090");
     eprintln!("FALSIFY-QW3-MOE-PER-LAYER-001: running GPU traced forward...");
     let gpu_start = std::time::Instant::now();
@@ -378,7 +378,7 @@ fn falsify_qw3_moe_l47_router_probe() {
     // ----- GPU traced forward -----
     let gpu_inner =
         OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #2");
-    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner, 0)
+    let mut gpu_model = OwnedQuantizedModelCuda::new_for_moe_forward(gpu_inner, 0)
         .expect("OwnedQuantizedModelCuda::new(model, 0) must succeed on RTX 4090");
     eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-PROBE: running GPU traced forward...");
     let _gpu_trace = gpu_model
@@ -537,7 +537,7 @@ fn falsify_qw3_moe_l47_router_indices() {
     // ----- GPU traced forward -----
     let gpu_inner =
         OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #2");
-    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner, 0)
+    let mut gpu_model = OwnedQuantizedModelCuda::new_for_moe_forward(gpu_inner, 0)
         .expect("OwnedQuantizedModelCuda::new(model, 0) must succeed on RTX 4090");
     eprintln!("FALSIFY-QW3-MOE-L47-ROUTER-INDICES: running GPU traced forward...");
     let _gpu_trace = gpu_model

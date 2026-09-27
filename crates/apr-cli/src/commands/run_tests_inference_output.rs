@@ -13,8 +13,10 @@
             inference_ms: Some(10.0),
             tok_per_sec: Some(500.0),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: Some(vec![1, 2, 3, 4, 5]),
             token_texts: None,
+            usage: Default::default(),
         };
         assert_eq!(output.text, "hello");
         assert_eq!(output.tokens_generated, Some(5));
@@ -30,8 +32,10 @@
             inference_ms: None,
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         assert!(output.tokens_generated.is_none());
         assert!(output.inference_ms.is_none());

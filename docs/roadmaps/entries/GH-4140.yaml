@@ -1,0 +1,19 @@
+- id: GH-4140
+  github_issue: 4140
+  item_type: task
+  kind: code
+  title: '#4129 on the 0.69.1 lineage: apr-cli and aprender-orchestrate tests include #3990 fixtures / thinking-budgets source from outside their crate'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:53:51.420416768+00:00
+  updated: 2026-09-24T04:53:51.420416768+00:00
+  spec: null
+  acceptance_criteria:
+  - 'apr-cli and aprender-orchestrate are absent from the #4114 tarball gate RED rows on this lineage'
+  - 'in tree each converted test RUNS (no out-of-tree SKIP) and a moved fixture FAILS it; out of tree it SKIPs by name'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'

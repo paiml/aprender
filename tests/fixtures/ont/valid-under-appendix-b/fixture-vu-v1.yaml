@@ -1,0 +1,21 @@
+name: fixture-vu
+version: "1.0.0"
+metadata:
+  version: "1.0.0"
+  kind: kernel
+  author: PAIML Engineering
+  description: ONT-7 fixture
+  valid_under:
+    toolchain: { rust: "1.93" }
+    host_class: [x86_64-linux]
+    backend: [cpu, cuda]
+    features: [cuda]
+equations:
+  identity:
+    formal: "len(out) = len(x)"
+    domain: x
+    codomain: out
+    invariants: ["len(out) = len(x)"]
+    preconditions: ["len(x) > 0"]
+    postconditions: ["len(out) = len(x)"]
+    lean_theorem: none

@@ -1,0 +1,5 @@
+{
+  "_spec": "fixture: contracts_without_valid_under is shrink-only (ONT-7, PV-ONT-016)",
+  "armed_gates": [],
+  "contracts_without_valid_under": 0
+}

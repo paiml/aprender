@@ -67,11 +67,7 @@ impl CudaExecutor {
         let cache_key = format!("gemm_fp16_{}_{}_{}", m, n, k);
 
         // Load module if not cached
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules

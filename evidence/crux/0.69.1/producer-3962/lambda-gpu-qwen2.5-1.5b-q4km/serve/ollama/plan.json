@@ -1,0 +1,398 @@
+{
+ "generation": [
+  {
+   "route": "POST /v1/chat/completions",
+   "kind": "chat_messages",
+   "modes": [
+    "nonstream",
+    "stream"
+   ]
+  }
+ ],
+ "not_generation": [],
+ "unclassified": [],
+ "index": null,
+ "pinned": true,
+ "cells": [
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/ollama/POST__v1_chat_completions-stream-long-countdown-15.json",
+   "rc": 0
+  }
+ ],
+ "prompts": [
+  [
+   "ctl-2plus2",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "ctl-recall-7",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "fact-capital-japan",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "fact-capital-france",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "golden-paris",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "fact-water-formula",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "arith-17x23",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "arith-precedence",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "arith-word-apples",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-add-4digit",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-not-prime",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-reverse-word",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-count-letters",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "recall-cats",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "recall-name",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "recall-arith-chain",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "long-primes-10",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "long-countdown-15",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ]
+ ]
+}

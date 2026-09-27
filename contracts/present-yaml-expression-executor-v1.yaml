@@ -1,0 +1,131 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-09-22"
+  updated: "2026-09-22"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#3839 — the 0.69.1 coverage row this contract co-evolved with (CLAUDE.md Rule 7)"
+    - "crates/aprender-present-yaml/src/executor.rs — the executor this pins"
+  description: >
+    The YAML transform executor decides, for every document, which rows survive
+    a filter and what a window or an aggregate means. It had ZERO tests: 850
+    executable lines at 0% coverage. These are the invariants a document author
+    relies on without being able to see them.
+
+name: present-yaml-expression-executor
+version: "1.0.0"
+scope: >
+  `ExpressionExecutor`'s comparison table, window parsing and numeric
+  aggregation in crates/aprender-present-yaml/src/executor.rs, plus `Value`'s
+  length and array accessors. Out of scope: the transform pipeline's
+  orchestration (apply_join, apply_pivot, apply_suggest), which needs fixture
+  documents rather than unit inputs and is a named follow-up.
+status: active
+
+contract: |
+  (1) OPERATOR SPELLINGS ARE ALIASES, NOT VARIANTS. Each comparison operator
+      has two or three spellings ("gte" / ">="), and every spelling of one
+      operator must decide identically on every input. Nothing else pins them
+      to each other.
+
+  (2) THE TABLE FAILS CLOSED. An operator not in the table matches NOTHING.
+      A filter that stops filtering returns MORE rows than the document asked
+      for and still looks like success.
+
+  (3) ORDERING NEEDS TWO NUMBERS. `gt`/`lt`/`gte`/`lte` are false unless both
+      the value and the target parse as numbers — so for a string `gt` and
+      `lte` are BOTH false and are not complements. `eq`/`ne` remain exact
+      complements on every input.
+
+  (4) WINDOW SUFFIXES ARE ORDERED. "ms" is stripped before the bare "s". The
+      reverse order silently destroys the millisecond unit and nothing else.
+
+  (5) AGGREGATES DROP WHAT THEY CANNOT READ. `extract_numbers` is a
+      filter_map: rows missing the field, or holding a non-number in it, are
+      discarded rather than zero-filled or refused. `mean` therefore divides by
+      the number of READABLE rows, not the number supplied.
+
+  (6) THE MEAN OF NOTHING IS ZERO. An empty set returns 0.0, never NaN — NaN
+      serializes as null and propagates silently through the rest of a
+      document.
+
+equations:
+  alias_equivalence:
+    description: "Every spelling of an operator decides the same way"
+    formula: "forall op, forall s1 s2 in spellings(op), forall v t: compare(v, s1, t) = compare(v, s2, t)"
+    domain: "v a Value, t a string target"
+    codomain: "bool"
+    invariants:
+      - "an unrecognised spelling is false for every input — the table fails closed"
+      - "compare(v, 'ne', t) = not compare(v, 'eq', t), on every Value variant including Null and Array"
+
+  window_units:
+    description: "A window string converts to milliseconds by an exact multiple"
+    formula: "parse_window(n <> u) = n * factor(u), factor = {ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000}"
+    domain: "n a non-negative integer literal, u in {ms, s, m, h, d} or absent"
+    codomain: "milliseconds, or a refusal"
+    invariants:
+      - "the 'ms' suffix is matched BEFORE the bare 's', or '500ms' strips to '500m' and fails"
+      - "no unit at all means milliseconds"
+      - "empty, whitespace-only, unit-only and non-integer windows are refused, never defaulted to 0"
+
+  readable_rows_only:
+    description: "Aggregation is over the readable subset, and says so"
+    formula: "sum(A, f) = sum { x | row in A, row[f] = Number(x) }; mean over the same set"
+    domain: "A an array of objects"
+    codomain: "Value::Number"
+    invariants:
+      - "rows lacking f, or holding a non-number in f, are DROPPED — not zero-filled, not an error"
+      - "mean of the empty set is 0.0, never NaN"
+      - "a non-array input is refused by require_array rather than coerced"
+
+falsification:
+  - id: FALSIFY-PRESENT-YAML-EXEC-V1-001
+    description: "Operator spellings cannot drift apart, and the table fails closed"
+    test: |
+      crates/aprender-present-yaml/src/executor.rs::tests::
+      every_spelling_of_an_operator_decides_the_same_way,
+      ::equality_and_inequality_are_exact_complements,
+      ::an_unrecognised_operator_matches_nothing,
+      ::ordering_against_a_non_number_is_false_in_both_directions
+    evidence: |
+      cargo test -p aprender-present-yaml --lib executor — 12 passed, 2026-09-22.
+      MUTANT: drop the ">=" alias from the "gte" arm — RED.
+      MUTANT: make the fallthrough arm return true instead of false — RED, and
+      this is the dangerous direction: a typo'd operator would match every row.
+
+  - id: FALSIFY-PRESENT-YAML-EXEC-V1-002
+    description: "The ms suffix is read before the bare s, and units are exact"
+    test: |
+      ::the_ms_suffix_is_read_before_the_bare_s,
+      ::window_units_convert_by_their_exact_multiple,
+      ::an_empty_or_unparseable_window_is_refused
+    evidence: |
+      MUTANT: swap the "ms" and 's' arms of the suffix ladder — RED on 2 rows,
+      "500ms" parses as neither.
+      MUTANT: hour factor 60*60*1000 -> 60*1000 — RED.
+
+  - id: FALSIFY-PRESENT-YAML-EXEC-V1-003
+    description: "Aggregates drop unreadable rows, and the empty mean is 0.0"
+    test: |
+      ::rows_that_cannot_be_read_are_dropped_from_an_aggregate,
+      ::the_mean_of_nothing_is_zero_rather_than_not_a_number,
+      ::a_transform_that_needs_an_array_refuses_anything_else
+    evidence: |
+      MUTANT: remove apply_mean's is_empty guard — RED, the result is NaN.
+      The drop behaviour is asserted as the MEASURED behaviour, not endorsed:
+      mean over four rows where two are unreadable divides by 2, and no part of
+      the output says so. Recorded as an open obligation below.
+
+open_obligations:
+  - |
+    A caller cannot distinguish "the mean of your four rows" from "the mean of
+    the two I could read". The aggregate carries no count of what it dropped.
+    Pinned as current behaviour here so a change is deliberate; making it
+    visible is a separate row.
+  - |
+    apply_join, apply_pivot, apply_group_by, apply_rank and apply_suggest are
+    NOT covered by this contract. They need fixture documents rather than unit
+    inputs and remain at 0%.

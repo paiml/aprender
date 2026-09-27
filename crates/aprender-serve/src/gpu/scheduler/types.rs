@@ -334,6 +334,8 @@ pub struct GpuGenerateConfig {
     pub temperature: f32,
     /// Top-k sampling (1 = greedy)
     pub top_k: usize,
+    /// RNG seed for a sampled step (#3760): the same seed gives the same tokens.
+    pub seed: u64,
     /// Stop token IDs
     pub stop_tokens: Vec<usize>,
     /// Enable debug tracing (F-COV-95: Added for cli/inference.rs compatibility)
@@ -352,6 +354,7 @@ impl Default for GpuGenerateConfig {
             max_tokens: 64,
             temperature: 0.0,
             top_k: 1,
+            seed: crate::sampling::DEFAULT_SEED,
             stop_tokens: Vec::new(),
             trace: false,
             cancel: crate::generate::CancelToken::never(),
@@ -367,6 +370,7 @@ impl GpuGenerateConfig {
             max_tokens,
             temperature: 0.0,
             top_k: 1,
+            seed: crate::sampling::DEFAULT_SEED,
             stop_tokens: Vec::new(),
             trace: false,
             cancel: crate::generate::CancelToken::never(),
@@ -380,6 +384,7 @@ impl GpuGenerateConfig {
             max_tokens,
             temperature,
             top_k,
+            seed: crate::sampling::DEFAULT_SEED,
             stop_tokens: Vec::new(),
             trace: false,
             cancel: crate::generate::CancelToken::never(),

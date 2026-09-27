@@ -27,14 +27,18 @@ impl CudaExecutor {
         // PAR-058: Detect LM head quantization type using size-based detection
         // ALB-098: Use pool-aware lookup (pool entries or individual cache)
         let (lm_head_ptr, lm_head_buf_size) = self.get_quantized_weight_ptr_and_size(&lm_head_name)?;
-        let lm_head_qtype =
-            WeightQuantType::from_size(lm_head_buf_size, vocab_size as usize, hidden_dim as usize)
-                .unwrap_or_else(|| {
-                    self.quantized_weight_types
-                        .get(&lm_head_name)
-                        .and_then(|&t| WeightQuantType::from_ggml_type(t))
-                        .unwrap_or(WeightQuantType::Q4K)
-                });
+        // #3908: a consistent declaration wins over the size guess (BF16 == F16 in size).
+        let declared = self
+            .quantized_weight_types
+            .get(&lm_head_name)
+            .and_then(|&t| WeightQuantType::from_ggml_type(t));
+        let lm_head_qtype = WeightQuantType::resolve_declared_or_sized(
+            declared,
+            lm_head_buf_size,
+            vocab_size as usize,
+            hidden_dim as usize,
+        )
+        .unwrap_or(WeightQuantType::Q4K);
 
         // CORRECTNESS-002: Debug LM head weight buffer
         if debug_enabled {
@@ -123,6 +127,56 @@ impl CudaExecutor {
             },
             WeightQuantType::F32 => {
                 self.f32_gemv_into(lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim)?;
+            },
+            // #3477: reachable — Qwen2.5-0.5B-Instruct-f16 is F16 throughout,
+            // lm_head included.
+            WeightQuantType::F16 => {
+                self.f16_gemv_into(lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim)?;
+            },
+            // #3908: reachable -- qwen2.5-coder-0.5b-instruct.apr is BF16
+            // throughout, lm_head included.
+            WeightQuantType::BF16 => {
+                self.bf16_gemv_into(lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim)?;
+            },
+            WeightQuantType::IQ4XS => {
+                self.iq4_xs_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
+            WeightQuantType::IQ4NL => {
+                self.iq4_nl_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
+            WeightQuantType::IQ3S => {
+                self.iq3_s_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
+            WeightQuantType::IQ2XXS => {
+                self.iq2_xxs_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
+            WeightQuantType::IQ2S => {
+                self.iq2_s_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
+            WeightQuantType::IQ3XXS => {
+                self.iq3_xxs_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
+            WeightQuantType::Q2K => {
+                self.q2_k_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
+            WeightQuantType::Q5_1 => {
+                self.q5_1_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
             },
         }
         Ok(())

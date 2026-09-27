@@ -447,7 +447,7 @@ async fn every_advertised_route_is_alive_on_an_apr_transformer_server() {
     use crate::api::{advertised_routes, RouterConfig};
 
     let config = RouterConfig::default();
-    let advertised = advertised_routes(&config);
+    let advertised = advertised_routes(&config, &apr_transformer_state());
     assert!(
         advertised.len() > 20,
         "the banner list collapsed to {} entries; the probe below would prove nothing: {advertised:?}",
@@ -491,7 +491,7 @@ fn serve_model_banner_is_derived_from_the_route_table() {
     const SOURCE: &str = include_str!("../../cli/mod_server_commands.rs");
 
     assert_eq!(
-        SOURCE.matches("crate::api::advertised_routes(&router_config)").count(),
+        SOURCE.matches("crate::api::advertised_routes(&router_config, &state)").count(),
         2,
         "both `serve_model` and `serve_demo` must print the router's own table"
     );

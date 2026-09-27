@@ -2,16 +2,17 @@
   "_spec": "APR-RELEASE-001 §11.2 — moves only through `make ont-ratchet` (ONT R-6)",
   "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes"],
   "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green"],
+  "contracts_without_valid_under": 386,
   "ont": {
     "consumer_present": true,
-    "contracts_total": 1881,
-    "entity_types_registered": 10,
-    "extractors_implemented": 7,
-    "contracts_anchored": 6,
-    "contracts_shaped": 5,
+    "contracts_total": 1889,
+    "entity_types_registered": 11,
+    "extractors_implemented": 8,
+    "contracts_anchored": 8,
+    "contracts_shaped": 6,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
-    "shapes_unarmed": 6
+    "shapes_unarmed": 15
   }
 }

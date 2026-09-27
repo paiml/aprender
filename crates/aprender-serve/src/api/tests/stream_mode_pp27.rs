@@ -314,6 +314,7 @@ async fn nonstream_response_carries_timings_when_measured() {
         None,
         None,
         Some(timings),
+        None,
     );
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await

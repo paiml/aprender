@@ -79,6 +79,51 @@ fn calculate_apr_perplexity(
     Ok((perplexity, cross_entropy))
 }
 
+/// #4270: teacher-forced perplexity through any one-engine `Session` — the logits
+/// after position `pos` score `tokens[pos + 1]`. Every architecture that implements
+/// `ArchForward` gets the same arithmetic as `calculate_gguf_perplexity`.
+#[cfg(feature = "inference")]
+pub(crate) fn session_perplexity<F: realizar::session::ArchForward>(
+    session: &mut realizar::session::Session<F>,
+    tokens: &[u32],
+) -> Result<(f32, f32)> {
+    let mut total_log_prob = 0.0f64;
+    let mut count = 0usize;
+    session
+        .score(tokens, &mut |pos, logits| {
+            let Some(&target) = tokens.get(pos + 1) else {
+                return false;
+            };
+            if let Some(lp) = log_softmax_at(logits, target as usize) {
+                total_log_prob += lp;
+                count += 1;
+            }
+            true
+        })
+        .map_err(|e| CliError::ValidationFailed(format!("Forward pass failed: {e}")))?;
+    if count == 0 {
+        return Err(CliError::ValidationFailed(
+            "No tokens scored for perplexity".to_string(),
+        ));
+    }
+    let cross_entropy = (-total_log_prob / count as f64) as f32;
+    Ok((cross_entropy.exp(), cross_entropy))
+}
+
+/// `log softmax(logits)[target]`, or `None` when `target` is outside the vocab.
+#[cfg(feature = "inference")]
+fn log_softmax_at(logits: &[f32], target: usize) -> Option<f64> {
+    let target_logit = *logits.get(target)?;
+    let max_logit = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let log_sum_exp = logits
+        .iter()
+        .map(|&l| f64::from(l - max_logit).exp())
+        .sum::<f64>()
+        .ln()
+        + f64::from(max_logit);
+    Some(f64::from(target_logit) - log_sum_exp)
+}
+
 /// PMAT-128: Calculate perplexity using realizar's GGUF inference
 #[cfg(feature = "inference")]
 fn calculate_gguf_perplexity(

@@ -7,9 +7,10 @@ impl CudaExecutor {
         hidden_dim: u32,
         intermediate_dim: u32,
         vocab_size: u32,
+        epsilon: f32,
     ) -> Result<(), GpuError> {
         // Reuse existing preload_modules_for_capture which loads all needed kernels
-        self.preload_modules_for_capture(num_layers, hidden_dim, intermediate_dim, vocab_size)
+        self.preload_modules_for_capture(num_layers, hidden_dim, intermediate_dim, vocab_size, epsilon)
     }
 
     /// PAR-121: Try to capture batched forward pass into CUDA graph

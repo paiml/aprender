@@ -59,6 +59,7 @@
 
 mod dequantize;
 pub mod ggml_type;
+pub mod iq;
 mod quantize;
 mod transpose;
 
@@ -75,6 +76,8 @@ pub use quantize::{
     quantize_q6_k_matrix,
 };
 pub use transpose::{transpose_q4k_for_matmul, transpose_q5k_for_matmul, transpose_q6k_for_matmul};
+// #3947: IQ4_NL / IQ3_S / IQ4_XS, so aprender-core can inspect IQ tensors.
+pub use iq::{dequantize_iq_to_f32, iq_block_layout, IqDequantError};
 
 // PMAT-3430: the one ggml tensor-type enum and its upstream-extracted table.
 // Re-exported at the crate root so a consumer writes `trueno_quant::GgmlType`

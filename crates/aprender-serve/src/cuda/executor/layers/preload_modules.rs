@@ -19,6 +19,7 @@ impl CudaExecutor {
         hidden_dim: u32,
         intermediate_dim: u32,
         vocab_size: u32,
+        epsilon: f32,
     ) -> Result<(), GpuError> {
         let num_heads = self.kv_num_heads as u32;
         let num_kv_heads = self.kv_num_kv_heads as u32;
@@ -29,7 +30,7 @@ impl CudaExecutor {
         let nw = self.gpu_profile.mwv_warps;
 
         // 1. RMSNorm kernel (used for attn_norm, ffn_norm, output_norm)
-        self.preload_rmsnorm_module(hidden_dim)?;
+        self.preload_rmsnorm_module(hidden_dim, epsilon)?;
 
         // 2-4. Q/K/V, output projection, and FFN GEMV kernels
         self.preload_gemv_modules(hidden_dim, intermediate_dim, q_dim, kv_dim, nw)?;
@@ -40,7 +41,7 @@ impl CudaExecutor {
         // 5-9. LM head, RoPE, SwiGLU, residual, scatter, attention kernels
         self.preload_lm_head_and_utility_modules(
             num_layers, hidden_dim, intermediate_dim, vocab_size,
-            num_heads, num_kv_heads, head_dim, max_len, q_dim, kv_dim, nw,
+            num_heads, num_kv_heads, head_dim, max_len, q_dim, kv_dim, nw, epsilon,
         )
     }
 }

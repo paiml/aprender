@@ -18,7 +18,7 @@
 #![allow(clippy::ref_as_ptr)]
 
 #[cfg(feature = "cuda")]
-use trueno_gpu::driver::{CublasHandle, CudaStream, GemmOp, GpuBuffer};
+use trueno_gpu::driver::{CudaStream, GemmOp, GpuBuffer};
 
 use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 
@@ -68,74 +68,6 @@ pub fn gemm_forward_f16(
         .map_err(|e| {
             CudaTensorError::KernelError(format!("cuBLAS fp16 GEMM forward failed: {e:?}"))
         })
-}
-
-/// FP16 cuBLAS backward A: grad_A[M,K] = grad_C[M,N] @ B[K,N]^T (tensor cores)
-///
-/// Contract: fp16-cublas-gemm-v1.yaml C-FP16GEMM-002 (PMAT-458)
-/// Gradient GEMM uses fp16 for memory bandwidth savings. Gradient accumulation
-/// should be promoted to fp32 in the caller to prevent underflow.
-/// Note: trueno gemm_f16 uses CUBLAS_COMPUTE_32F (fp32 accumulation), which
-/// is safe for transposed backward GEMMs (unlike TF32 per ALB-076).
-#[cfg(feature = "cuda")]
-pub(crate) fn cublas_gemm_backward_a_f16(
-    cublas: &CublasHandle,
-    grad_output: &GpuBuffer<u16>,
-    b: &GpuBuffer<u16>,
-    grad_a: &mut GpuBuffer<u16>,
-    m: u32,
-    k: u32,
-    n: u32,
-) -> Result<()> {
-    cublas
-        .gemm_f16(
-            GemmOp::Trans,
-            GemmOp::NoTrans,
-            k as i32,
-            m as i32,
-            n as i32,
-            1.0,
-            b.as_ptr(),
-            n as i32,
-            grad_output.as_ptr(),
-            n as i32,
-            0.0,
-            grad_a.as_ptr(),
-            k as i32,
-        )
-        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS fp16 backward_a failed: {e:?}")))
-}
-
-/// FP16 cuBLAS backward B: grad_B[K,N] = A[M,K]^T @ grad_C[M,N] (tensor cores)
-///
-/// Contract: fp16-cublas-gemm-v1.yaml C-FP16GEMM-002 (PMAT-458)
-#[cfg(feature = "cuda")]
-pub(crate) fn cublas_gemm_backward_b_f16(
-    cublas: &CublasHandle,
-    a: &GpuBuffer<u16>,
-    grad_output: &GpuBuffer<u16>,
-    grad_b: &mut GpuBuffer<u16>,
-    m: u32,
-    k: u32,
-    n: u32,
-) -> Result<()> {
-    cublas
-        .gemm_f16(
-            GemmOp::NoTrans,
-            GemmOp::Trans,
-            n as i32,
-            k as i32,
-            m as i32,
-            1.0,
-            grad_output.as_ptr(),
-            n as i32,
-            a.as_ptr(),
-            k as i32,
-            0.0,
-            grad_b.as_ptr(),
-            n as i32,
-        )
-        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS fp16 backward_b failed: {e:?}")))
 }
 
 /// Mixed-precision backward_a: grad_A(fp32) = grad_C(fp16) @ B(fp16)^T (tensor cores)

@@ -324,6 +324,7 @@
             batch_jsonl: None,
             verbose: false,
             backend: BackendArg::default(),
+            thinking: ThinkingArg::default(),
         };
         let paths = extract_model_paths(&cmd);
         assert!(

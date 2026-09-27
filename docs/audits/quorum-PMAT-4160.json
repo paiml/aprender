@@ -1,0 +1,128 @@
+{
+  "ticket": "PMAT-4160",
+  "pr": 4169,
+  "base": "aa7c6ef03",
+  "head": "5edc52df3",
+  "diff_sha256": "85534f27fe85323518f8634b8d732ce7b9cf1bfabedf29c46fd265e3693c00c9",
+  "author": "claude-opus-5-5",
+  "degraded": "same-family",
+  "fallback": "OPERATOR, verbatim (relayed by the cop aprender-cf, 2026-09-24): \"if gemini returns 429 I want fallback sonnet + haiku + opus5.5\". The author is opus-5.5, so the opus seat is a second claude-sonnet-5 sample (cop ruling).",
+  "rounds": [
+    {
+      "round": 1,
+      "lanes": [
+        "agy gemini-3.1-pro-high x2 (conversations 96357b94, 88499098)",
+        "claude-haiku-4-5"
+      ],
+      "findings_fixed": [
+        "iri() percent-encodes while expand() does not: entity_class now uses format! plus a test over space, slash, ?#, non-ASCII, % and colon (1158324cf)",
+        "a \u03a3 entity type named `entity` collides with the entity/ class namespace: \u03a3 integrity class 5, RESERVED_ENTITY_TYPE (48988156b)",
+        "the CLI tests wrote into the tracked fixtures: scratch_copy tempdir (48988156b)"
+      ]
+    },
+    {
+      "round": 2,
+      "lanes": [
+        "agy gemini-3.1-pro-high (conversation d036e376-311a-4ef2-8b8b-6737bf699d9b)"
+      ],
+      "findings_fixed": [
+        "contracts/contracts.nt was stale: regenerated, 7 additive rdf:type lines (c5b2dae55). The first regeneration was contaminated by a kept lane clone under .claude/worktrees; the clone was moved out and the graph regenerated clean"
+      ]
+    },
+    {
+      "round": 3,
+      "head": "c5b2dae55",
+      "brief_sha256": "9bb495aa664302014ada1a7bafd239e8562701aff3d1655c894557cd1e3a54c7",
+      "diff_sha256": "480a7ac57d060a0043684d5a869895a4733d18f3b81bee592963c9ad7dc9c1a9",
+      "lanes": [
+        {
+          "seat": "claude-sonnet-5",
+          "agent": "a7208ddd03748acfb",
+          "verdict": "PASS"
+        },
+        {
+          "seat": "claude-haiku-4-5",
+          "agent": "a8172088b372685b0",
+          "verdict": "PASS"
+        },
+        {
+          "seat": "agy gemini-3.1-pro-high",
+          "verdict": "NO-VERDICT",
+          "reason": "429 quota (artifact /run/user/1000/paiml-implement/agy/PMAT-4160-r3)"
+        },
+        {
+          "seat": "claude-sonnet-5 (sample 2, substituting for opus-5.5)",
+          "agent": "a07c47acb2fdfa4d5",
+          "verdict": "FAIL",
+          "finding": "high, measured: a contract carrying entity.type: entity passed `pv extract` and `pv lint --gate shapes`, which never consult \u03a3, and emitted entity/entity/<key> predicates aliasing the class IRI of <key>"
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "head": "5edc52df3",
+      "scope": "delta c5b2dae55..5edc52df3 only. The judged diff grew by the fix alone, so the round-3 PASS lanes stand (cop ruling)",
+      "brief_sha256": "4087311a504107c289384bfbdb412ffa477ebc0948e756920ab2baa68bb3f6fe",
+      "delta_sha256": "bcc3692173d083bddf2b2c7fd1a8a42afea000b290b0374d3bc9bffd8ee087dc",
+      "lanes": [
+        {
+          "seat": "claude-sonnet-5 (sample 2, the seat that failed)",
+          "agent": "a50b5901f1db82d80",
+          "verdict": "PASS",
+          "summary": "Measured on both surfaces: exit 3, no graph written. The release path goes through the same all_with walk. Quoted YAML is identical. Case variants cannot collide because IRIs are case-sensitive. Failing the whole extraction matches the other ExtractFailure variants. Own mutant (entity.type lookup to entity.kind) turned the test RED."
+        }
+      ]
+    }
+  ],
+  "final_seats": {
+    "claude-sonnet-5": "PASS (r3, head c5b2dae55; delta unchanged since)",
+    "claude-haiku-4-5": "PASS (r3, head c5b2dae55; delta unchanged since)",
+    "claude-sonnet-5 sample 2": "PASS (r4, head 5edc52df3)"
+  },
+  "agreed": "3/3 PASS",
+  "mutants": [
+    {
+      "mutant": "extract emission of rdf:type entity/<t> deleted",
+      "result": "RED: 12 lib and 7 CLI tests fail (measured by the r3 sonnet sample 2)"
+    },
+    {
+      "mutant": "entity_class 'entity/' changed to 'etype/'",
+      "result": "RED: 2 lib and 3 CLI tests fail (r3 sonnet sample 2)"
+    },
+    {
+      "mutant": "iri() form of entity_class",
+      "result": "RED: the_entity_class_is_the_expansion_of_the_prefixed_form"
+    },
+    {
+      "mutant": "\u03a3 reserved-name check removed",
+      "result": "RED: an_entity_type_named_entity_is_reserved"
+    },
+    {
+      "mutant": "all_with refusal guarded by `if false &&`",
+      "result": "RED: 10 passed, 1 failed (author)"
+    },
+    {
+      "mutant": "all_with refusal reads entity.kind instead of entity.type",
+      "result": "RED (r4 sonnet sample 2)"
+    }
+  ],
+  "pre_existing_failures_not_caused_by_this_diff": {
+    "note": "identical at the merge-base aa7c6ef03",
+    "tests": [
+      "ont6_lint_verdict::control_default_arming_passes_and_prints_the_armed_meet",
+      "ont6_lint_verdict::json_report_carries_the_lattice",
+      "pvl_zero_contracts::control_one_contract_is_reported_not_refused",
+      "aprender-contracts lint::tests::lint_empty_dir"
+    ]
+  },
+  "advisory": [
+    "The \u03a3 gate is armed per repo, not in ArmedGates::default_set; the extract refusal now covers the surfaces that bypass it."
+  ],
+  "gates_rerun_by_author": {
+    "ont_entity_properties": "11 passed",
+    "clippy -D warnings (aprender-contracts, aprender-contracts-cli, all targets)": "rc 0",
+    "cargo fmt --check": "rc 0",
+    "pv extract contracts --check": "rc 0"
+  },
+  "auto_merge": "not armed by the author; the cop arms"
+}

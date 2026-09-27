@@ -74,8 +74,14 @@ pub(crate) fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsToken
     let mut vocab = vocab;
     let (bos_token_id, eos_token_id) = merge_special_tokens_into_vocab(added_tokens, &mut vocab);
 
-    // Create BPE tokenizer with vocab and merge rules
-    let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, "<unk>").ok()?;
+    // Create BPE tokenizer with vocab and merge rules. #3609: the unknown token is the one
+    // tokenizer.json DECLARES (`model.unk_token`, null for byte-level models like Qwen),
+    // not a literal "<unk>" every model is assumed to have.
+    let unk_token = json
+        .get("model")
+        .and_then(|m| m.get("unk_token"))
+        .and_then(|v| v.as_str());
+    let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, unk_token).ok()?;
 
     Some(SafeTensorsTokenizerInfo {
         tokenizer: std::sync::Arc::new(tokenizer),
@@ -253,24 +259,13 @@ pub(crate) async fn safetensors_chat_completions_handler(
         prompt.chars().map(|c| c as u32).collect()
     };
 
-    // PMAT-103 FIX: Use generate_with_cache for O(n) generation
-    // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
-    // generate_with_cache() uses KV cache for incremental generation = O(n)
+    // #4269: generation goes through `st_cpu_generate` (safetensors.rs), the
+    // engine's Session over the KV-cached StCpuForward — O(n), as PMAT-103 required.
     let start = Instant::now();
     let temperature = request
         .get("temperature")
         .and_then(|t| t.as_f64())
         .unwrap_or(0.0) as f32;
-    let gen_config = realizar::apr_transformer::GenerateConfig {
-        max_tokens,
-        temperature,
-        top_p: 0.9,
-        top_k: 0,
-        repetition_penalty: 1.0,
-        trace: false,
-        stop_tokens: vec![],
-        cancel: realizar::generate::CancelToken::never(),
-    };
     let output_ids = {
         // PMAT-189: Handle transformer lock poisoning gracefully
         let t = match transformer.lock() {
@@ -285,7 +280,7 @@ pub(crate) async fn safetensors_chat_completions_handler(
                     .into_response();
             }
         };
-        match t.generate_with_cache(&input_ids, &gen_config) {
+        match st_cpu_generate(&t, &input_ids, max_tokens, temperature) {
             Ok(ids) => ids,
             Err(e) => {
                 return (
@@ -451,9 +446,13 @@ fn build_chat_response(
             "model": "safetensors",
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]
         });
-        let stream = stream::once(async move {
-            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
-        });
+        // #3979: the OpenAI stream terminal is the finish_reason chunk AND `data: [DONE]`.
+        // This sent the chunk and stopped, so a client could not tell a complete stream
+        // from a truncated one (CRUX `stream_truncated`).
+        let stream = stream::iter([
+            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
+            Ok(Event::default().data("[DONE]")),
+        ]);
         Sse::new(stream).into_response()
     } else {
         let message = if has_tool_calls {
@@ -762,4 +761,34 @@ mod chat_helper_tests {
             "streaming mode is SSE, got {ct}"
         );
     }
+
+    /// #3979: a streamed OpenAI chat response ENDS with its terminal pair, a chunk
+    /// carrying `finish_reason` then `data: [DONE]`. It sent the chunk and stopped, so
+    /// a client could not tell a complete stream from a truncated one.
+    #[tokio::test]
+    async fn a_streamed_safetensors_chat_ends_with_finish_reason_then_done() {
+        let resp = build_chat_response(
+            "hi".to_string(),
+            None,
+            true,
+            1,
+            1,
+            std::time::Duration::from_millis(1),
+            1.0,
+        );
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.expect("body");
+        let events: Vec<String> = String::from_utf8_lossy(&body)
+            .lines()
+            .filter_map(|l| l.strip_prefix("data: ").map(str::to_string))
+            .collect();
+        assert_eq!(events.last().map(String::as_str), Some("[DONE]"), "must end with [DONE]: {events:?}");
+        let finish: Vec<serde_json::Value> = events
+            .iter()
+            .filter_map(|e| serde_json::from_str::<serde_json::Value>(e).ok())
+            .map(|v| v["choices"][0]["finish_reason"].clone())
+            .filter(|f| !f.is_null())
+            .collect();
+        assert_eq!(finish, vec![serde_json::json!("stop")], "exactly one finish_reason before [DONE]: {events:?}");
+    }
 }
+

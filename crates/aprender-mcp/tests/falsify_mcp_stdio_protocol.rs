@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-010/-011 — stdio TRANSPORT conformance for `apr mcp`.
 //!
 //! These two defects are invisible to an in-process dispatcher test, because

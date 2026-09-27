@@ -49,7 +49,7 @@ async fn handle_gpu_completion(
 
             // CPU fallback also in spawn_blocking
             let result = tokio::task::spawn_blocking(move || {
-                run_apr_cpu_inference(&s, &prompt, max_tokens, 0.0)
+                run_apr_cpu_inference(&s, &prompt, max_tokens, 0.0, None)
             })
             .await;
 
@@ -116,6 +116,7 @@ async fn gpu_cpu_fallback(
     prompt: String,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
     start: Instant,
 ) -> axum::response::Response {
     use axum::{response::IntoResponse, Json};
@@ -132,7 +133,7 @@ async fn gpu_cpu_fallback(
     };
 
     let result = tokio::task::spawn_blocking(move || {
-        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature)
+        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature, top_p)
     })
     .await;
 
@@ -266,6 +267,7 @@ async fn handle_gpu_chat_completion(
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
     let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
     let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
+    let top_p = req.get("top_p").and_then(serde_json::Value::as_f64).map(|v| v as f32);
 
     let Some(msgs) = messages else {
         return Json(serde_json::json!({"error": "Missing messages"})).into_response();
@@ -289,7 +291,7 @@ async fn handle_gpu_chat_completion(
     let output_tokens = match gen_result {
         Ok(Ok(t)) => t,
         Ok(Err(gpu_err)) => {
-            return gpu_cpu_fallback(gpu_err, &cpu_state, prompt, max_tokens_clamped, temperature, start).await;
+            return gpu_cpu_fallback(gpu_err, &cpu_state, prompt, max_tokens_clamped, temperature, top_p, start).await;
         }
         Err(e) => {
             return Json(serde_json::json!({"error": format!("GPU task failed: {e}")})).into_response();
@@ -356,11 +358,10 @@ fn print_gpu_server_banner(bind_addr: &str) {
 // GGUF server handlers
 // ============================================================================
 
-/// Start GGUF model inference server with Ollama-parity performance
+/// Start GGUF model inference server
 ///
 /// Uses realizar's full inference API for text generation, streaming, and batch inference.
-/// Achieves Ollama-parity: 100+ tok/s CPU, 500+ tok/s GPU.
-/// With --gpu --batch flags: 800+ tok/s (2.8x Ollama) via batched GPU inference.
+/// Measured throughput against Ollama lives in `docs/BEATS.md`, not here.
 #[cfg(feature = "inference")]
 fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
@@ -386,26 +387,17 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .dimmed()
     );
 
+    // #3571: the Qwen3.5 hybrid (Gated Delta Net) has no dense layers, so it is served from a
+    // resident session — and it is routed there BEFORE `build_serve_model`, whose zero-layer
+    // refusal its generic base would (rightly) fail. #3608 routed it to that base, which loaded
+    // and then decoded nothing: the routing gap was one verb deep, and every gate we own is
+    // single-stream `apr run` (#3555).
+    if realizar::gguf::hybrid_forward_handles(mapped_model.model.architecture().unwrap_or_default()) {
+        return start_qwen35_server(mapped_model, config);
+    }
+
     println!("{}", "Building quantized inference model...".dimmed());
-    // #3571: the Qwen3.5 hybrid (Gated Delta Net) has no dense layers, so `from_mapped` refuses
-    // it by name and `apr serve` could not load the architecture the last release shipped — while
-    // `apr run` loaded it fine, because `run_gguf_inference` has carried exactly this branch since
-    // #3091. The routing gap was in ONE verb, and it was invisible because every gate we own is
-    // single-stream `apr run`: no ladder rung, parity record or dogfood row has ever asked
-    // `apr serve` to load a model (#3555).
-    let is_qwen35 = mapped_model.model.architecture() == Some("qwen35");
-    let quantized_model = if is_qwen35 {
-        realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
-            &mapped_model.model,
-            mapped_model.data(),
-        )
-        .map_err(|e| {
-            CliError::ModelLoadFailed(format!("Failed to build the Qwen3.5 base model: {e}"))
-        })?
-    } else {
-        OwnedQuantizedModel::from_mapped(&mapped_model)
-            .map_err(|e| CliError::ModelLoadFailed(format!("Failed to build quantized model: {e}")))?
-    };
+    let quantized_model = build_serve_model(&mapped_model)?;
 
     println!(
         "{}",
@@ -418,7 +410,7 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .green()
     );
 
-    let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
+    let vocab = extract_gguf_vocab(&mapped_model)?;
 
     // PERF-021 / N4 / I-2: a request has a RESOLUTION, and it is reported.
     //
@@ -463,26 +455,89 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     run_cpu_server(quantized_model, vocab, Some(mapped_model), config, Some(offload))
 }
 
-/// Extract vocabulary from GGUF model, falling back to placeholder tokens.
+/// Build the model `apr serve` hands its routes, or refuse it (#3571).
 ///
-/// GH-226: When the GGUF lacks `tokenizer.ggml.tokens` metadata, the placeholder
-/// vocabulary must include `<unk>` so that `BPETokenizer::new` can find it.
-/// Without this, the serve path fails with "Unknown token '<unk>' not in vocabulary"
-/// and the server exits before binding — causing "Server failed to become ready".
-fn extract_gguf_vocab(
+/// Every GGUF serve route — `--gpu`, `--gpu --batch`, the CPU server — takes the model this
+/// returns, so the zero-layer refusal here is the one no route can walk around.
+fn build_serve_model(
     mapped_model: &realizar::gguf::MappedGGUFModel,
-    vocab_size: usize,
-) -> Vec<String> {
-    mapped_model.model.vocabulary().unwrap_or_else(|| {
-        eprintln!("Warning: No vocabulary in GGUF, using placeholder tokens");
-        let mut vocab: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        // GH-226: Ensure <unk> is present for BPETokenizer compatibility.
-        // Use slot 0 (standard convention for unknown token).
-        if !vocab.is_empty() {
-            vocab[0] = "<unk>".to_string();
-        }
-        vocab
+) -> Result<realizar::gguf::OwnedQuantizedModel> {
+    use realizar::gguf::OwnedQuantizedModel;
+    // #3571: the Qwen3.5 hybrid (Gated Delta Net) has no dense layers, so `from_mapped` refuses
+    // it by name and `apr serve` could not load the architecture the last release shipped — while
+    // `apr run` loaded it fine, because `run_gguf_inference` has carried exactly this branch since
+    // #3091. The routing gap was in ONE verb, and it was invisible because every gate we own is
+    // single-stream `apr run`: no ladder rung, parity record or dogfood row has ever asked
+    // `apr serve` to load a model (#3555).
+    let is_qwen35 = mapped_model.model.architecture() == Some("qwen35");
+    let quantized_model = if is_qwen35 {
+        realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
+            &mapped_model.model,
+            mapped_model.data(),
+        )
+        .map_err(|e| {
+            CliError::ModelLoadFailed(format!("Failed to build the Qwen3.5 base model: {e}"))
+        })?
+    } else {
+        OwnedQuantizedModel::from_mapped(mapped_model)
+            .map_err(|e| CliError::ModelLoadFailed(format!("Failed to build quantized model: {e}")))?
+    };
+    // #3571: before ANY route is chosen — --gpu, --gpu --batch or the CPU server — so no
+    // request handler can be handed a stack with nothing in it.
+    if let Some(refusal) = zero_layer_refusal(
+        &quantized_model.config().architecture,
+        quantized_model.layers().len(),
+    ) {
+        return Err(refusal);
+    }
+    Ok(quantized_model)
+}
+
+/// #3571: a model whose decoder stack resolved to zero layers is refused at load, whatever
+/// its architecture, on every serve route.
+///
+/// Measured on #3571: the Qwen3.5 hybrid reached the servers as its BASE — embeddings, final
+/// norm and `lm_head`, no layers, because its Gated-DeltaNet and attention layers live in
+/// `Qwen35Model`, which no serve handler calls. With the `<unk>` refusal removed (#3609) the
+/// CPU route answered HTTP 200 with 1024 tokens of `"\n"` in 6 s and the GPU route HTTP 500.
+/// A stack with nothing in it has no answer to give, so the server does not start: an error
+/// at load is the one a user can act on, and a 200 of nothing is the one they cannot see.
+pub(super) fn zero_layer_refusal(architecture: &str, layers: usize) -> Option<CliError> {
+    (layers == 0).then(|| {
+        let hybrid = if architecture == "qwen35" {
+            " The Qwen3.5 hybrid's layers are served by `apr run` and `apr chat` today."
+        } else {
+            ""
+        };
+        CliError::ModelLoadFailed(format!(
+            "'{architecture}' resolved to 0 transformer layers, so no serve route can answer \
+             from it — it would decode through the embeddings and lm_head alone. Refused at \
+             load (#3571).{hybrid}"
+        ))
     })
+}
+
+/// Extract the vocabulary from a GGUF model, or refuse to serve it (#3609).
+///
+/// GH-226 once filled a missing `tokenizer.ggml.tokens` with `token0..tokenN` and put
+/// `<unk>` in slot 0, because `BPETokenizer::new` required one. So a model with NO
+/// vocabulary loaded, while a model with a real vocabulary that lacked `<unk>` (Qwen3.5)
+/// was refused: the less-specified input was the one accepted. The unknown token is
+/// now optional, and a model with no vocabulary refuses by name. Placeholder tokens
+/// are not a tokenizer.
+fn extract_gguf_vocab(mapped_model: &realizar::gguf::MappedGGUFModel) -> Result<Vec<String>> {
+    mapped_model
+        .model
+        .vocabulary()
+        .ok_or_else(|| no_vocabulary("the GGUF (no tokenizer.ggml.tokens)"))
+}
+
+/// #3609: the refusal every serve path gives for a model with no vocabulary.
+fn no_vocabulary(what: &str) -> CliError {
+    CliError::ModelLoadFailed(format!(
+        "{what} has no vocabulary to tokenize with, so there is nothing to serve; \
+         refusing to substitute placeholder tokens (#3609)"
+    ))
 }
 
 /// #2762: resolve the KV-cache context length for the GGUF + CUDA serve path.
@@ -537,6 +592,33 @@ fn start_gguf_server_cuda(
 ) -> Result<()> {
     use realizar::api::{create_router_with_config, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
+
+    // #3987: a qwen3moe file has no DENSE FFN, only per-expert tensors, so the dense
+    // `OwnedQuantizedModelCuda` built below dereferences a null `ffn_gate` on its first
+    // forward (measured through `apr chat`: "ffn_gate_ptr is null (0)"), and the state it
+    // makes has no quantized model, so the MoE chat backend answered 501. Serve it from
+    // the state the CPU server builds (quantized model + retained map) and opt its MoE
+    // backend into the ONE dispatch `apr run` uses. Qwen3.5-MoE spellings are excluded:
+    // they are folded into `qwen3_moe` by the normaliser but carry SSM layers the
+    // qwen3moe forward does not run, and the capability refusal names them.
+    let arch = quantized_model.config().architecture.clone();
+    if realizar::gguf::moe_forward_handles(&arch)
+        && realizar::capability::no_cuda_forward_reason(&arch).is_none()
+    {
+        println!(
+            "{}",
+            "qwen3moe: serving through the MoE CUDA dispatch (#3714, #3987)".cyan()
+        );
+        let model_source = measured_model_source(&quantized_model, config);
+        let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
+            .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+            .with_model_source(model_source)
+            .with_mapped_gguf_model(mapped_model)
+            .with_moe_gpu()
+            .with_offload_report(offload)
+            .with_verbose(config.verbose);
+        return serve_router(state, config);
+    }
 
     println!(
         "{}",
@@ -644,14 +726,15 @@ fn start_gguf_server_cuda(
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
         }
         Err(e) => {
+            // #4089: an explicit request does not fall back.
+            config.refuse_unengaged_accelerator(&format!("CUDA init failed: {e}"))?;
             eprintln!(
                 "{}",
                 format!("CUDA init failed, falling back to CPU: {e}").yellow()
             );
-            let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model).map_err(|e| {
-                CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
-            })?;
-            let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
+            // #3571: the rebuild goes through the one GGUF serve loader and its refusal.
+            let quantized_model = build_serve_model(&mapped_model)?;
+            let vocab = extract_gguf_vocab(&mapped_model)?;
             // CUDA init failed and this process fell back to CPU. The offload
             // report travels with it UNCHANGED, so `/v1/effective-config` shows
             // `gpu_layers_resolved` beside `backend_loaded: ["cpu"]` — which is
@@ -727,5 +810,126 @@ mod ctx_length_2762_tests {
         assert_eq!(resolve_serve_max_seq_len(None, Some("banana")), 2048);
         assert_eq!(resolve_serve_max_seq_len(None, Some("0")), 2048);
         assert_eq!(resolve_serve_max_seq_len(Some("0"), None), 2048);
+    }
+}
+
+// The zero-layer refusal tests sit at the END, after every shipping item: the context-length
+// guard (serve/mod.rs, accelerator_guard_tests) scans this file up to its FIRST `#[cfg(test)]`,
+// and a test module above the REALIZR_CONTEXT_LENGTH read hid the read from it (batch-1 fold).
+#[cfg(test)]
+mod zero_layer_refusal_tests {
+    use super::*;
+
+    /// The case table: zero layers is refused naming the architecture and #3571; any layer
+    /// at all is admitted.
+    #[test]
+    fn zero_layers_is_refused_by_name_and_any_layer_is_admitted() {
+        let cases: [(&str, usize, bool); 5] = [
+            ("qwen35", 0, true),
+            ("llama", 0, true),
+            ("qwen2", 1, false),
+            ("qwen3", 28, false),
+            ("qwen35", 24, false),
+        ];
+        for (arch, layers, refused) in cases {
+            let got = zero_layer_refusal(arch, layers);
+            assert_eq!(got.is_some(), refused, "({arch}, {layers})");
+            if let Some(CliError::ModelLoadFailed(msg)) = got {
+                assert!(msg.contains(&format!("'{arch}' resolved to 0 transformer layers")), "{msg}");
+                assert!(msg.contains("#3571"), "{msg}");
+                assert_eq!(msg.contains("apr chat"), arch == "qwen35", "the hint is the hybrid's: {msg}");
+            }
+        }
+    }
+
+    /// A synthetic Qwen3.5 header: its config declares a block, and it carries only the
+    /// embeddings, final norm and `lm_head` — so its BASE is the zero-layer stack #3571 found,
+    /// built from nothing but the writer, and CI (which has no model files) exercises the call
+    /// site too. It has to be the hybrid: the dense loader already refuses `block_count = 0`
+    /// at config validation ("num_layers must be > 0"), so the hybrid base — config says N,
+    /// layers are empty — is the one zero-layer stack this tree can build.
+    fn zero_block_gguf() -> tempfile::NamedTempFile {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+        let (hidden, vocab) = (8u64, 4u64);
+        let f32s = |n: u64| vec![0u8; (n * 4) as usize];
+        let tensors = vec![
+            GgufTensor {
+                name: "token_embd.weight".to_string(),
+                shape: vec![hidden, vocab],
+                dtype: GgmlType::F32,
+                data: f32s(hidden * vocab),
+            },
+            GgufTensor {
+                name: "output_norm.weight".to_string(),
+                shape: vec![hidden],
+                dtype: GgmlType::F32,
+                data: f32s(hidden),
+            },
+            GgufTensor {
+                name: "output.weight".to_string(),
+                shape: vec![hidden, vocab],
+                dtype: GgmlType::F32,
+                data: f32s(hidden * vocab),
+            },
+        ];
+        let u = |k: &str, v: u32| (k.to_string(), GgufValue::Uint32(v));
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("qwen35".to_string())),
+            u("qwen35.block_count", 1),
+            u("qwen35.embedding_length", 8),
+            u("qwen35.feed_forward_length", 16),
+            u("qwen35.attention.head_count", 2),
+            u("qwen35.attention.head_count_kv", 2),
+            u("qwen35.context_length", 32),
+            u("qwen35.rope.dimension_count", 4),
+            (
+                "qwen35.attention.layer_norm_rms_epsilon".to_string(),
+                GgufValue::Float32(1e-5),
+            ),
+            (
+                "tokenizer.ggml.tokens".to_string(),
+                GgufValue::ArrayString(["<unk>", "a", "b", "c"].map(String::from).to_vec()),
+            ),
+        ];
+        let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
+        let mut writer = std::io::BufWriter::new(&file);
+        export_tensors_to_gguf(&mut writer, &tensors, &metadata).expect("write GGUF");
+        drop(writer);
+        file
+    }
+
+    /// CI's row for the call site: needs no model file. Delete the check in
+    /// `build_serve_model` and this goes RED — the zero-layer base loads.
+    #[test]
+    fn serve_refuses_a_synthetic_zero_layer_hybrid_base_at_load() {
+        let file = zero_block_gguf();
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
+        }
+    }
+
+    /// The load path itself refuses, before any route is chosen. Delete the check in
+    /// `build_serve_model` and this goes RED: the zero-layer base loads. Needs the real
+    /// Qwen3.5 file, whose base IS a zero-layer stack.
+    #[test]
+    fn serve_refuses_the_qwen35_base_at_load() {
+        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
+        }
     }
 }

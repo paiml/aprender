@@ -183,6 +183,7 @@ fn test_chat_message_debug() {
 #[test]
 fn test_chat_completion_response_serialization() {
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "chatcmpl-test-123".to_string(),
         object: "chat.completion".to_string(),
         created: 1700000000,
@@ -234,6 +235,7 @@ fn test_chat_completion_response_with_traces() {
     };
 
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "chatcmpl-test".to_string(),
         object: "chat.completion".to_string(),
         created: 1700000000,

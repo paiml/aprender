@@ -6,6 +6,7 @@
 #[test]
 fn test_chat_completion_response_multiple_choices() {
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "chatcmpl-multi".to_string(),
         object: "chat.completion".to_string(),
         created: 1700000000,

@@ -1,0 +1,1 @@
+{"text": "<answer>Paris</answer>", "turns": ["<answer>Paris</answer>"], "reported": {"interface": "generate", "thinking_requested": "off", "thinking_emitted": false, "prompt_tokens": 30, "completion_tokens": 10, "device": "cuda:0 NVIDIA GeForce RTX 4090"}}

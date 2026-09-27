@@ -1,0 +1,207 @@
+{
+  "ticket": "PMAT-3673",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "eebd642c85a3cbe974d8177a58c72b6c0d0e1801",
+  "diff_sha256": "33accb56a764c6bc6884689eff02ff0eb49f61261d941278d7aad0d1bbae58f8",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 37168,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR successfully implements the integration batching procedure. `scripts/batch_fold.sh` accurately implements the fold rules, strictly distinguishing between generated/non-generated conflicts. The `--regen` flag executes correctly and checks fixed points. The comprehensive `scripts/check_batch_fold.sh` correctly prevents tampering through its self-test mutation capability. `APR-RELEASE-001` documentation covers all procedures accurately.",
+      "findings": [
+        {
+          "claim": "The script resolves ONLY the specified generated set on conflicts, takes '--theirs' for them, and skips on any other real conflicts.",
+          "command": "bash check_batch_fold.sh",
+          "file": "scripts/batch_fold.sh",
+          "grounding": "measured",
+          "line": 139,
+          "output": "=== batch_fold.sh folds only what it may, and says so (check_batch_fold.sh) ===\nok    row 1  a branch touching no generated path folds, generated=[]\nok    row 2  a conflict ONLY in roadmap.yaml folds, marked for regeneration\nok    row 3  an independent code change folds\nok    row 4  a conflict in real code is SKIPPED, never resolved by picking a side"
+        },
+        {
+          "claim": "README conflicts are strictly partitioned using readme_counts_only to fold only CONTRACT_COUNT block differences and SKIP prose conflicts.",
+          "command": "bash check_batch_fold.sh",
+          "file": "scripts/batch_fold.sh",
+          "grounding": "measured",
+          "line": 61,
+          "output": "ok    row 8  a README conflict ONLY in a CONTRACT_COUNT block folds, marked for regeneration\nok    row 9    ...and the other side's clean README prose edit is kept\nok    row 10   ...and the count block stays numeric (well-formed for readme_sync)\nok    row 11 a folded, unregenerated generated set is never silent: REGEN REQUIRED, exit 3 (rc=3)\nok    row 12 a README conflict OUTSIDE a count block is a real conflict: SKIP"
+        },
+        {
+          "claim": "§13 explicitly defines the batching procedure as default, covers generated-set regeneration, assembly, what needs a new quorum, and red batches.",
+          "file": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md",
+          "grounding": "cited",
+          "line": 1001
+        },
+        {
+          "claim": "The self-test case table exists, tests exact mutant cases that would violate the ticket (like taking all conflicts or ignoring README prose conflicts), and successfully fails on them.",
+          "command": "bash check_batch_fold.sh --self-test",
+          "file": "scripts/check_batch_fold.sh",
+          "grounding": "measured",
+          "line": 150,
+          "output": "=== check_batch_fold.sh --self-test: each wrong folder must turn the table RED ===\nok    mutant RED: README treated as wholly generated (the draft's rule)      (row 8  a README conflict ONLY in a CONTRACT_COUNT block folds, marked for regenerati)\nok    mutant RED: every conflict taken, as if generated                      (row 4  a conflict in real code is SKIPPED, never resolved by picking a side)\nok    mutant RED: a clean fold never marks the set stale                     (row 14 a CLEAN fold that touches the census still marks the set stale (exit 3, rc=0))\nok    mutant RED: a failed fixed-point check ignored                         (row 21 a failed fixed-point check is exit 2 and names the check (rc=0))\nSELF-TEST PASSED: 4 mutants, all RED"
+        }
+      ],
+      "raw_bytes": 8554,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements PMAT-3673. `scripts/batch_fold.sh` correctly resolves only the generated set and the README `CONTRACT_COUNT` blocks, skipping branches with real conflicts and leaving no half-merged state. The regeneration mechanism (`--regen`) correctly asserts the three fixed points and commits. The required exit codes are implemented, and an unregenerated set gracefully fails with exit code 3. The `check_batch_fold.sh` table properly covers these cases and is wired into CI as a `check_*.sh` script. The updates to the release specification fully define all requested rules (assembly, left-out, quorum, push/disarm, red batch, and the VOID rule).",
+      "findings": [],
+      "raw_bytes": 3477,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Independent Review Lane 3: Verdict PASS for PMAT-3673.\n\nThe diff completely satisfies all ticket requirements:\n1. `scripts/batch_fold.sh` correctly implements folding of receipted PR branches into `release/<train>-batch`, resolving only conflicts in the generated set ({roadmap.yaml, census.json, contracts.nt, shapes.ttl, README.md CONTRACT_COUNT blocks}) and aborting/reporting SKIP (exit 1) for any real conflict elsewhere. Fixed points are asserted upon `--regen`, returning exit 0 on clean completion, exit 2 on usage/git/regen error, and exit 3 when regeneration is required.\n2. `scripts/check_batch_fold.sh` provides a comprehensive 21-row test table verifying all folding and regeneration edge cases, along with a self-test verifying 4 mutants are caught (RED).\n3. `APR-RELEASE-001-train-and-build-kaizen.md` is updated with Revision 2026-09-21, amended Rule 9, amended §8 stop, and full §13 integration batch specifications (including VOID review lane rules and falsifiers FX-B1..FX-B3).\n4. All shell scripts pass `bash -n` and `shellcheck -S error`.",
+      "findings": [
+        {
+          "claim": "check_batch_fold.sh test table passes all 21 test rows and --self-test catches all 4 mutants",
+          "command": "bash /tmp/test_batch_fold/check_batch_fold.sh && bash /tmp/test_batch_fold/check_batch_fold.sh --self-test",
+          "file": "scripts/check_batch_fold.sh",
+          "grounding": "measured",
+          "output": "=== batch_fold.sh folds only what it may, and says so (check_batch_fold.sh) ===\nok    row 1  a branch touching no generated path folds, generated=[]\nok    row 2  a conflict ONLY in roadmap.yaml folds, marked for regeneration\nok    row 3  an independent code change folds\nok    row 4  a conflict in real code is SKIPPED, never resolved by picking a side\nok    row 5  any SKIP makes the exit 1 (rc=1)\nok    row 6  the aborted merge leaves no half-merged state (dirty=0)\nok    row 7  the skipped branch's code did not leak in (lib=y)\nok    row 8  a README conflict ONLY in a CONTRACT_COUNT block folds, marked for regeneration\nok    row 9    ...and the other side's clean README prose edit is kept\nok    row 10   ...and the count block stays numeric (well-formed for readme_sync)\nok    row 11 a folded, unregenerated generated set is never silent: REGEN REQUIRED, exit 3 (rc=3)\nok    row 12 a README conflict OUTSIDE a count block is a real conflict: SKIP\nok    row 13   ...and the README keeps the side already in the batch\nok    row 14 a CLEAN fold that touches the census still marks the set stale (exit 3, rc=3)\nok    row 15 a dirty batch worktree is refused (exit 2, rc=2)\nok    row 16 a branch that does not exist is ERROR, exit 2 (rc=2)\nok    row 17 --regen regenerates once, asserts the fixed points, commits (rc=0)\nok    row 18   ...the last commit is the regeneration (batch: regenerate the generated set once (batch_fold.sh --regen))\nok    row 19   ...roadmap aggregated and README counts rewritten\nok    row 20   ...and the tree is clean after it (dirty=0)\nok    row 21 a failed fixed-point check is exit 2 and names the check (rc=2)\n21 rows, PASS\nPASS\n=== check_batch_fold.sh --self-test: each wrong folder must turn the table RED ===\nok    mutant RED: README treated as wholly generated (the draft's rule)      (row 8  a README conflict ONLY in a CONTRACT_COUNT block folds, marked for regenerati)\nok    mutant RED: every conflict taken, as if generated                      (row 4  a conflict in real code is SKIPPED, never resolved by picking a side)\nok    mutant RED: a clean fold never marks the set stale                     (row 14 a CLEAN fold that touches the census still marks the set stale (exit 3, rc=0))\nok    mutant RED: a failed fixed-point check ignored                         (row 21 a failed fixed-point check is exit 2 and names the check (rc=0))\nSELF-TEST PASSED: 4 mutants, all RED"
+        },
+        {
+          "claim": "scripts/batch_fold.sh and scripts/check_batch_fold.sh pass bash syntax checking and shellcheck with zero errors",
+          "command": "bash -n /tmp/test_batch_fold/batch_fold.sh /tmp/test_batch_fold/check_batch_fold.sh && shellcheck -S error /tmp/test_batch_fold/batch_fold.sh /tmp/test_batch_fold/check_batch_fold.sh",
+          "file": "scripts/batch_fold.sh",
+          "grounding": "cited",
+          "output": "",
+          "grounding_downgraded": "measured-without-command-or-output"
+        },
+        {
+          "claim": "APR-RELEASE-001 is updated with §13 defining batching procedure, disarm/close rules, VOID review-lane rule, and falsifiers FX-B1..FX-B3",
+          "file": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 11296,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md",
+      "line": null,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "APR-RELEASE-001 is updated with §13 defining batching procedure, disarm/close rules, VOID review-lane rule, and falsifiers FX-B1..FX-B3"
+      ]
+    },
+    {
+      "file": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md",
+      "line": 1001,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "§13 explicitly defines the batching procedure as default, covers generated-set regeneration, assembly, what needs a new quorum, and red batches."
+      ]
+    },
+    {
+      "file": "scripts/batch_fold.sh",
+      "line": null,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "scripts/batch_fold.sh and scripts/check_batch_fold.sh pass bash syntax checking and shellcheck with zero errors"
+      ]
+    },
+    {
+      "file": "scripts/batch_fold.sh",
+      "line": 61,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "README conflicts are strictly partitioned using readme_counts_only to fold only CONTRACT_COUNT block differences and SKIP prose conflicts."
+      ]
+    },
+    {
+      "file": "scripts/batch_fold.sh",
+      "line": 139,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The script resolves ONLY the specified generated set on conflicts, takes '--theirs' for them, and skips on any other real conflicts."
+      ]
+    },
+    {
+      "file": "scripts/check_batch_fold.sh",
+      "line": null,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_batch_fold.sh test table passes all 21 test rows and --self-test catches all 4 mutants"
+      ]
+    },
+    {
+      "file": "scripts/check_batch_fold.sh",
+      "line": 150,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The self-test case table exists, tests exact mutant cases that would violate the ticket (like taking all conflicts or ignoring README prose conflicts), and successfully fails on them."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

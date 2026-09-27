@@ -207,10 +207,10 @@ fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
         QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
     let tokens_a = gguf
@@ -227,21 +227,19 @@ fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
         ..Default::default()
     };
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+    let cuda_model = OwnedQuantizedModelCuda::new(model, 0)
         .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+    // #4270 V2b: three turns on ONE engine session — the state-leak check is
+    // now a check of the session's reset between turns.
+    let mut session = qa_dense_cuda(cuda_model);
 
-    let output_a = cuda_model
-        .generate_gpu_resident(&tokens_a, &gen_config)
+    let output_a = qa_dense_generate(&mut session, &tokens_a, &gen_config, true)
         .map_err(|e| CliError::ValidationFailed(format!("Gen 1 failed: {e}")))?;
-    let output_b = cuda_model
-        .generate_gpu_resident(&tokens_b, &gen_config)
+    let output_b = qa_dense_generate(&mut session, &tokens_b, &gen_config, true)
         .map_err(|e| CliError::ValidationFailed(format!("Gen 2 failed: {e}")))?;
-    let output_a2 = cuda_model
-        .generate_gpu_resident(&tokens_a, &gen_config)
+    let output_a2 = qa_dense_generate(&mut session, &tokens_a, &gen_config, true)
         .map_err(|e| CliError::ValidationFailed(format!("Gen 3 failed: {e}")))?;
 
     if output_a != output_a2 {

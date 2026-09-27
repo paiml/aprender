@@ -8,6 +8,7 @@ fn test_generate_with_cache_repetition_penalty() {
         max_tokens: 5,
         temperature: 1.0,
         top_k: 0,
+        seed: crate::apr_transformer::DEFAULT_SEED,
         top_p: 1.0,
         repetition_penalty: 1.5, // Strong repetition penalty
         trace: false,

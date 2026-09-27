@@ -1,4 +1,16 @@
 impl CudaExecutor {
+    /// aprender#3759: the module-cache suffix for an f32 a kernel bakes into its PTX as an
+    /// immediate (an RMSNorm epsilon, a RoPE theta). Two values are two different kernels.
+    ///
+    /// The norm keys used to carry only the shape, and `preload_rmsnorm_module` /
+    /// `preload_batched_prefill_modules` compiled them with a hardcoded 1e-5, so a model asking for
+    /// its own 1e-6 got the cached 1e-5 kernel. qwen2.5-coder-7b's near-zero `<|im_start|>`
+    /// embedding came out of RMSNorm at 0.431x, and the F2 gate rejected the GPU at that position.
+    /// The RoPE keys omitted theta the same way. The exact bits, not a rounded print, so 1.5e-6
+    /// and 2e-6 cannot collide.
+    pub(crate) fn f32_bits_tag(value: f32) -> String {
+        format!("b{:08x}", value.to_bits())
+    }
 
     /// PAR-014: Apply LayerNorm on GPU
     ///
@@ -21,13 +33,9 @@ impl CudaExecutor {
             affine: true,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("layernorm_{}_{}", hidden_size, batch_size);
+        let cache_key = format!("layernorm_{}_{}_{}", hidden_size, batch_size, Self::f32_bits_tag(epsilon));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -91,13 +99,9 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("rmsnorm_{}", hidden_size);
+        let cache_key = format!("rmsnorm_{}_{}", hidden_size, Self::f32_bits_tag(epsilon));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -136,7 +140,7 @@ impl CudaExecutor {
     ///
     /// Like `rmsnorm_gpu` but writes into a pre-allocated output buffer.
     ///
-    /// PAR-081: Uses VectorizedRmsNorm with 256 threads for ~8x speedup
+    // PAR-081: Uses VectorizedRmsNorm with 256 threads for ~8x speedup
     /// over single-warp kernel (23µs → ~3µs for hidden_size=1536)
     ///
     /// CORRECTNESS-013: When CORRECTNESS_MODE=1, uses PreciseRmsNorm kernel
@@ -150,6 +154,7 @@ impl CudaExecutor {
         hidden_size: u32,
         epsilon: f32,
     ) -> Result<(), GpuError> {
+        self.q8_activation_written(output.as_ptr()); // #4258
         // GH-559 DIAGNOSTIC: CPU RMSNorm bypass for Blackwell
         static CPU_RMSNORM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let use_cpu_rmsnorm = *CPU_RMSNORM.get_or_init(|| {
@@ -208,7 +213,7 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_simple_{}", hidden_size),
+                module_key!(self, "rmsnorm_simple_{}_b{:08x}", hidden_size, epsilon.to_bits()),
             )
         } else if use_precise {
             (
@@ -216,7 +221,7 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_precise_{}", hidden_size),
+                module_key!(self, "rmsnorm_precise_{}_b{:08x}", hidden_size, epsilon.to_bits()),
             )
         } else {
             (
@@ -224,24 +229,24 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_vectorized_{}", hidden_size),
+                module_key!(self, "rmsnorm_vectorized_{}_b{:08x}", hidden_size, epsilon.to_bits()),
             )
         };
 
         let kernel_name = self.kernels.kernel_name(&kernel_type);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             if use_simple {
                 eprintln!("[GH-559] RmsNorm PTX ({} bytes)", ptx.len());
             }
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // PAR-081: 256 threads for vectorized, 32 threads for simple
@@ -268,7 +273,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -304,23 +309,26 @@ impl CudaExecutor {
         num_heads: u32,
         epsilon: f32,
     ) -> Result<(), GpuError> {
+        self.q8_activation_written(output.as_ptr()); // #4258
         let kernel_type = KernelType::PerHeadRmsNorm {
             head_dim,
             num_heads,
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("per_head_rmsnorm_{}_{}", head_dim, num_heads);
+        let cache_key = module_key!(
+            self,
+            "per_head_rmsnorm_{}_{}_b{:08x}",
+            head_dim,
+            num_heads,
+            epsilon.to_bits()
+        );
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // One warp (32 threads) per head, one block per head
@@ -350,7 +358,7 @@ impl CudaExecutor {
         // diverged at position 1 on sm_89 and GB10 alike (position 0 is immune:
         // attention over one key is V, and RoPE(0) is the identity).
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -409,13 +417,9 @@ impl CudaExecutor {
         // GH-129: the PTX depends on head_dim/num_heads/epsilon (immediates) but
         // NOT on batch_size (grid dim only) — keep it out of the cache key so a
         // new prompt length does not force a JIT recompile.
-        let cache_key = format!("batched_per_head_rmsnorm_{}_{}", head_dim, num_heads);
+        let cache_key = format!("batched_per_head_rmsnorm_{}_{}_{}", head_dim, num_heads, Self::f32_bits_tag(epsilon));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -489,13 +493,10 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         // GH-129: PTX depends on hidden_size + epsilon (immediates) but NOT batch_size (grid dim only).
         // Remove batch_size from cache key to prevent JIT recompilation per prompt length.
-        let cache_key = format!("batched_rmsnorm_vectorized_{}", hidden_size);
+        // #3759: epsilon IS in the key now — it was omitted, and the preload's 1e-5 won.
+        let cache_key = format!("batched_rmsnorm_vectorized_{}_{}", hidden_size, Self::f32_bits_tag(epsilon));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -580,13 +581,9 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         // GH-129: PTX depends on num_heads, head_dim, theta (immediates) but NOT batch_size (grid dim).
         // Remove batch_size from cache key to prevent JIT recompilation per prompt length.
-        let cache_key = format!("batched_rope_{}_{}", num_heads, head_dim);
+        let cache_key = format!("batched_rope_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -644,11 +641,7 @@ impl CudaExecutor {
         // Remove batch_size from cache key to prevent JIT recompilation per prompt length.
         let cache_key = format!("batched_residual_add_{}", n);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -709,13 +702,9 @@ impl CudaExecutor {
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         // PTX depends on hidden_size + epsilon (immediates) but NOT batch_size (grid dim only).
-        let cache_key = format!("batched_fused_residual_rmsnorm_{}", hidden_size);
+        let cache_key = format!("batched_fused_residual_rmsnorm_{}_{}", hidden_size, Self::f32_bits_tag(epsilon));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -875,7 +864,7 @@ DONE:
         theta: f32,
     ) -> Result<(), GpuError> {
         let half_dim = head_dim / 2;
-        let cache_key = format!("batched_rope_neox_{}_{}", num_heads, head_dim);
+        let cache_key = format!("batched_rope_neox_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
 
         if !self.modules.contains_key(&cache_key) {
             // Precompute log2(theta) for ex2-based frequency calculation

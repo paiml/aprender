@@ -81,17 +81,6 @@ impl KernelCache {
         self.modules.get_mut(name)
     }
 
-    /// JIT compiles seen since construction or the last reset (R-3).
-    pub(super) fn jit_compiles(&self) -> usize {
-        self.jit_compiles
-    }
-
-    /// Zero the JIT counter. Call AFTER the backward pre-warm; see the forward
-    /// cache for why the reset boundary IS the assertion.
-    pub(super) fn reset_jit_counter(&mut self) {
-        self.jit_compiles = 0;
-    }
-
     pub(super) fn get_or_compile(&mut self, name: &str, ptx: &str) -> Result<&mut CudaModule> {
         use std::collections::hash_map::Entry;
 

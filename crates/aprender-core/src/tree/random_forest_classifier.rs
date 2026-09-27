@@ -28,75 +28,128 @@ impl RandomForestClassifier {
         self
     }
 
+    /// Builds one tree of the ensemble: bootstrap sample, OOB complement, fit.
+    ///
+    /// Free of `&self` so the ensemble loop can hand it to rayon (#3816).
+    /// `seed` is `random_state + i`, so tree `i` gets the same bootstrap sample
+    /// whatever order the trees are built in.
+    fn build_one_tree(
+        x: &crate::primitives::Matrix<f32>,
+        y: &[usize],
+        max_depth: Option<usize>,
+        seed: Option<u64>,
+    ) -> Result<(Vec<usize>, DecisionTreeClassifier)> {
+        let (n_samples, n_features) = x.shape();
+        let bootstrap_indices = bootstrap_sample(n_samples, seed);
+
+        // Compute OOB indices (samples NOT in bootstrap sample)
+        let bootstrap_set: HashSet<usize> = bootstrap_indices.iter().copied().collect();
+        let oob_for_tree: Vec<usize> = (0..n_samples)
+            .filter(|idx| !bootstrap_set.contains(idx))
+            .collect();
+
+        // Extract bootstrap sample
+        let mut bootstrap_x_data = Vec::with_capacity(n_samples * n_features);
+        let mut bootstrap_y = Vec::with_capacity(n_samples);
+
+        for &idx in &bootstrap_indices {
+            for j in 0..n_features {
+                bootstrap_x_data.push(x.get(idx, j));
+            }
+            bootstrap_y.push(y[idx]);
+        }
+
+        let bootstrap_x =
+            crate::primitives::Matrix::from_vec(n_samples, n_features, bootstrap_x_data)
+                .map_err(|_| "Failed to create bootstrap matrix")?;
+
+        // Create and train a decision tree
+        let mut tree = if let Some(max_depth) = max_depth {
+            DecisionTreeClassifier::new().with_max_depth(max_depth)
+        } else {
+            DecisionTreeClassifier::new()
+        };
+
+        tree.fit(&bootstrap_x, &bootstrap_y)?;
+        Ok((oob_for_tree, tree))
+    }
+
     /// Fits the random forest to training data.
     ///
     /// # Errors
     ///
     /// Returns an error if fitting fails.
     pub fn fit(&mut self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> Result<()> {
-        let (n_samples, n_features) = x.shape();
-        self.trees = Vec::with_capacity(self.n_estimators);
-        self.oob_indices = Vec::with_capacity(self.n_estimators);
-
         // Store training data for OOB evaluation
         self.x_train = Some(x.clone());
         self.y_train = Some(y.to_vec());
 
-        // Train each tree on a bootstrap sample
-        for i in 0..self.n_estimators {
-            // Get bootstrap sample indices
-            let seed = self.random_state.map(|s| s + i as u64);
-            let bootstrap_indices = bootstrap_sample(n_samples, seed);
+        let max_depth = self.max_depth;
+        let random_state = self.random_state;
+        let seed_for = |i: usize| random_state.map(|s| s + i as u64);
 
-            // Compute OOB indices (samples NOT in bootstrap sample)
-            let bootstrap_set: HashSet<usize> = bootstrap_indices.iter().copied().collect();
-            let oob_for_tree: Vec<usize> = (0..n_samples)
-                .filter(|idx| !bootstrap_set.contains(idx))
-                .collect();
+        // Each tree's bootstrap sample and fit are independent, so the ensemble
+        // is embarrassingly parallel — it was a plain sequential loop, one core
+        // out of however many the box has (#3816). `collect` keeps index order,
+        // so tree `i` still carries seed `random_state + i` and the OOB set that
+        // goes with it: a fixed `random_state` stays reproducible however rayon
+        // schedules the work (FALSIFY-RF-003, FALSIFY-RF-005).
+        #[cfg(feature = "parallel")]
+        let built = (0..self.n_estimators)
+            .into_par_iter()
+            .map(|i| Self::build_one_tree(x, y, max_depth, seed_for(i)))
+            .collect::<Result<Vec<_>>>()?;
+
+        // Sequential fallback for builds without rayon (e.g. WASM), per the
+        // `parallel` feature's own doc comment.
+        #[cfg(not(feature = "parallel"))]
+        let built = (0..self.n_estimators)
+            .map(|i| Self::build_one_tree(x, y, max_depth, seed_for(i)))
+            .collect::<Result<Vec<_>>>()?;
+
+        self.trees = Vec::with_capacity(self.n_estimators);
+        self.oob_indices = Vec::with_capacity(self.n_estimators);
+        for (oob_for_tree, tree) in built {
             self.oob_indices.push(oob_for_tree);
-
-            // Extract bootstrap sample
-            let mut bootstrap_x_data = Vec::with_capacity(n_samples * n_features);
-            let mut bootstrap_y = Vec::with_capacity(n_samples);
-
-            for &idx in &bootstrap_indices {
-                for j in 0..n_features {
-                    bootstrap_x_data.push(x.get(idx, j));
-                }
-                bootstrap_y.push(y[idx]);
-            }
-
-            let bootstrap_x =
-                crate::primitives::Matrix::from_vec(n_samples, n_features, bootstrap_x_data)
-                    .map_err(|_| "Failed to create bootstrap matrix")?;
-
-            // Create and train a decision tree
-            let mut tree = if let Some(max_depth) = self.max_depth {
-                DecisionTreeClassifier::new().with_max_depth(max_depth)
-            } else {
-                DecisionTreeClassifier::new()
-            };
-
-            tree.fit(&bootstrap_x, &bootstrap_y)?;
             self.trees.push(tree);
         }
 
         Ok(())
     }
 
+    /// Scores every row of `x` once per tree.
+    ///
+    /// Returns one prediction vector per tree, in tree order. This is the pass
+    /// `predict`/`predict_proba` used to redo for every single sample (#3816).
+    fn predict_per_tree(&self, x: &crate::primitives::Matrix<f32>) -> Vec<Vec<usize>> {
+        #[cfg(feature = "parallel")]
+        let per_tree: Vec<Vec<usize>> = self.trees.par_iter().map(|tree| tree.predict(x)).collect();
+
+        #[cfg(not(feature = "parallel"))]
+        let per_tree: Vec<Vec<usize>> = self.trees.iter().map(|tree| tree.predict(x)).collect();
+
+        per_tree
+    }
+
     /// Makes predictions for input data.
-    #[allow(clippy::needless_range_loop)]
+    ///
+    /// `tree.predict(x)` already scores every row of `x`, so calling it inside
+    /// a per-sample loop redid the whole pass to read one element — quadratic
+    /// in sample count. Predict once per tree, then tally votes from those
+    /// vectors: `O(n_samples * n_trees)`, was `O(n_samples^2 * n_trees)`
+    /// (#3816). The vote tally and its tie-break are unchanged.
     #[must_use]
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Vec<usize> {
         let n_samples = x.shape().0;
+        let tree_predictions = self.predict_per_tree(x);
+
         let mut predictions = vec![0; n_samples];
 
-        for sample_idx in 0..n_samples {
+        for (sample_idx, prediction) in predictions.iter_mut().enumerate() {
             let mut votes: HashMap<usize, usize> = HashMap::new();
 
-            for tree in &self.trees {
-                let tree_prediction = tree.predict(x)[sample_idx];
-                *votes.entry(tree_prediction).or_insert(0) += 1;
+            for tree_prediction in &tree_predictions {
+                *votes.entry(tree_prediction[sample_idx]).or_insert(0) += 1;
             }
 
             let mut max_votes = 0;
@@ -108,7 +161,7 @@ impl RandomForestClassifier {
                 }
             }
 
-            predictions[sample_idx] = predicted_class;
+            *prediction = predicted_class;
         }
 
         predictions
@@ -143,11 +196,14 @@ impl RandomForestClassifier {
         let mut proba_data = vec![0.0f32; n_samples * n_classes];
         let n_trees = self.trees.len() as f32;
 
+        // Same per-tree-once pass as `predict` — see #3816.
+        let tree_predictions = self.predict_per_tree(x);
+
         for sample_idx in 0..n_samples {
             let mut votes = vec![0usize; n_classes];
 
-            for tree in &self.trees {
-                let tree_prediction = tree.predict(x)[sample_idx];
+            for tree_prediction in &tree_predictions {
+                let tree_prediction = tree_prediction[sample_idx];
                 if tree_prediction < n_classes {
                     votes[tree_prediction] += 1;
                 }

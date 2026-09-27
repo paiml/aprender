@@ -119,7 +119,7 @@ pub(crate) fn run(
 
     // Call library function
     let result = list_tensors(path, options)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to list tensors: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Failed to list tensors", &e))?;
 
     // Output results
     if json_output {

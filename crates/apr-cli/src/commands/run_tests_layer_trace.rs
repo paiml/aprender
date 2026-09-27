@@ -1,6 +1,6 @@
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Layer trace honesty (gguf_generate_result.rs::render_layer_trace)
+    // Layer trace honesty (run_trace_print.rs::render_layer_trace)
     //
     // `apr run --trace --trace-level layer` printed a table headed `Time` whose
     // per-step values were `wall_ms / tokens * <fixed share>` — the same
@@ -18,8 +18,10 @@
             tokens_generated: Some(tokens),
             tok_per_sec: Some(tokens as f64 / duration_secs),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         }
     }
 
@@ -52,8 +54,11 @@
     }
 
     /// The run total and the decode rate must be labelled, or the table
-    /// contradicts the profiler block printed a few lines above it (1.0 tok/s
-    /// vs 19.2 tok/s for the identical run, neither labelled).
+    /// contradicts the profiler block printed a few lines above it: the same
+    /// run reports an end-to-end rate and a decode rate that differ by more
+    /// than an order of magnitude, and neither one says which it is. The
+    /// assertions below are the check; no rate literal belongs in this
+    /// comment, because a number here is a claim no measurement resolves.
     #[test]
     fn layer_trace_labels_wall_clock_and_end_to_end_rate() {
         let out = render_layer_trace(&layer_trace_result(2.0, 4), 4);

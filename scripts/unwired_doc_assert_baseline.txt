@@ -1,0 +1,5 @@
+# tool_version=none (measured by awk/grep over tracked crates/**/*.rs)
+# Rule 1 (aprender#3686): EXPORTED fns whose doc asserts a defect and that have
+# ZERO production callers. This number may only FALL.
+# Re-stamp with: bash scripts/check_unwired_capabilities.sh --update
+3

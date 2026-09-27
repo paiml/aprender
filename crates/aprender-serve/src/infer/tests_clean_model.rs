@@ -51,6 +51,7 @@
     #[test]
     fn test_inference_result_debug_ext_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -60,6 +61,7 @@
             load_ms: 2.0,
             format: "APR".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         let debug_str = format!("{:?}", result);
         assert!(debug_str.contains("text"));
@@ -71,6 +73,7 @@
     #[test]
     fn test_inference_result_zero_values_ext_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: String::new(),
             tokens: vec![],
             input_token_count: 0,
@@ -80,6 +83,7 @@
             load_ms: 0.0,
             format: String::new(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert!(result.text.is_empty());
         assert!(result.tokens.is_empty());
@@ -89,6 +93,7 @@
     #[test]
     fn test_inference_result_large_values_ext_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "A".repeat(10000),
             tokens: vec![1; 1000],
             input_token_count: 100,
@@ -98,6 +103,7 @@
             load_ms: 5000.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert_eq!(result.text.len(), 10000);
         assert_eq!(result.tokens.len(), 1000);
@@ -108,6 +114,7 @@
     fn test_inference_result_formats_ext_cov() {
         for fmt in ["GGUF", "APR", "SafeTensors"] {
             let result = InferenceResult {
+                generation_ms: None,
                 text: "test".to_string(),
                 tokens: vec![1],
                 input_token_count: 1,
@@ -117,6 +124,7 @@
                 load_ms: 1.0,
                 format: fmt.to_string(),
                 used_gpu: false,
+                gpu_attempted: false,
             };
             assert_eq!(result.format, fmt);
         }

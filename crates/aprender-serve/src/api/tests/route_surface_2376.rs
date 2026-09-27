@@ -18,7 +18,8 @@ use axum::{
 use tower::util::ServiceExt;
 
 use crate::api::{
-    advertised_routes, create_router_with_config, AppState, RouterConfig,
+    advertised_routes, advertised_routes_for, create_router_with_config, AppState,
+    RouteCapabilities, RouterConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -141,7 +142,9 @@ async fn advertised_routes_answer_under_every_config() {
 async fn unadvertised_routes_do_not_answer() {
     let universe: std::collections::BTreeSet<String> = all_configs()
         .iter()
-        .flat_map(advertised_routes)
+        // #3991: the universe is every route ANY state can mount, so a route gated on
+        // a capability this fixture lacks is still probed — and must then 404.
+        .flat_map(|config| advertised_routes_for(config, RouteCapabilities::all()))
         .collect();
 
     for config in all_configs() {
@@ -206,7 +209,7 @@ async fn no_metrics_stops_advertising_metrics() {
 async fn banner_source_agrees_with_live_server() {
     for config in all_configs() {
         assert_eq!(
-            advertised_routes(&config),
+            advertised_routes(&config, &AppState::with_cache(10)),
             advertised_over_http(&config).await,
             "openai_api={} metrics={}: the banner list and the 404 list disagree",
             config.openai_api,

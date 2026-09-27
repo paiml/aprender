@@ -198,6 +198,51 @@ pub fn fused_q4k_parallel_matvec(
     Ok(output)
 }
 
+thread_local! {
+    /// Set on every worker of the pool [`with_fp32_activations`] runs its
+    /// computation on: that thread's Q4_K matvecs take the direct FP32 path,
+    /// as `DIRECT_FP32_GEMV=1` makes every thread's do.
+    static FP32_ACTIVATIONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Is the calling thread running inside [`with_fp32_activations`]?
+#[must_use]
+pub fn fp32_activations_scoped() -> bool {
+    FP32_ACTIVATIONS.with(std::cell::Cell::get)
+}
+
+/// Run `f` with every Q4_K matvec it reaches on the direct FP32 path instead
+/// of the default Q8_K activation quantization — an exact-activation
+/// reference, scoped to one computation instead of the process-wide
+/// `DIRECT_FP32_GEMV`.
+///
+/// #3714: the qwen3moe CUDA forward runs float GEMVs. On
+/// Qwen3-Coder-30B-A3B, after a `<|im_start|>`, it matched the CPU forward
+/// with FP32 activations (`DIRECT_FP32_GEMV=1`) at cosine 1.000000 on all 65
+/// positions, and the default Q8_K reference only at 0.985 — the reference was
+/// the noisier side. On Qwen3-30B-A3B-Instruct-2507 the runtime parity guard,
+/// judging against Q8_K, rejected the GPU at position 1 (cosine 0.873). The
+/// guard judges the GPU against this reference instead.
+///
+/// `f` runs on a DEDICATED rayon pool whose every worker has the flag set, so
+/// the scope reaches every fan-out inside it — the CPU forward runs q, k and v
+/// through `rayon::join` and the routed experts through `par_iter`, and a
+/// thread-local set on the caller alone reached neither (measured: cosine
+/// 0.9954 with one argmax flip, where the process-wide switch gave 1.000000).
+/// The pool is as wide as the global one and lives for this call only.
+///
+/// # Panics
+/// If the pool cannot be built (the OS refused to spawn its threads).
+pub fn with_fp32_activations<R: Send>(f: impl FnOnce() -> R + Send) -> R {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(rayon::current_num_threads())
+        .thread_name(|i| format!("fp32-activations-{i}"))
+        .start_handler(|_| FP32_ACTIVATIONS.with(|c| c.set(true)))
+        .build()
+        .expect("spawn the FP32-activation reference pool");
+    pool.install(f)
+}
+
 /// Parallel fused Q4_K matrix-vector multiply - writes to pre-allocated buffer
 ///
 /// IMP-131: Zero-allocation variant for hot-path inference.
@@ -255,7 +300,8 @@ pub fn fused_q4k_parallel_matvec_into(
     // PMAT-305: Direct FP32 FALSIFIED (-17%, 25.4 vs 30.8 tok/s).
     // Q8K + maddubs (32 muls/insn) beats FP32 fmadd (8 muls/insn).
     // The Q8K quantize overhead is small vs 4x multiply throughput gain.
-    let use_direct_fp32 = std::env::var("DIRECT_FP32_GEMV").as_deref() == Ok("1");
+    let use_direct_fp32 =
+        fp32_activations_scoped() || std::env::var("DIRECT_FP32_GEMV").as_deref() == Ok("1");
 
     if use_direct_fp32 {
         use rayon::prelude::*;
@@ -451,3 +497,48 @@ pub fn fused_q5k_parallel_matvec(
 
 include!("q5k_q6k_matvec.rs");
 include!("parallel_k_fused_q4k.rs");
+
+#[cfg(test)]
+mod fp32_activation_scope_tests {
+    use super::{fp32_activations_scoped, with_fp32_activations};
+    use rayon::prelude::*;
+
+    /// Inside the scope EVERY thread the computation fans out to has the flag —
+    /// `rayon::join` on both arms (the CPU QKV projection) and `par_iter`
+    /// tasks (the routed experts, a matvec's own row chunks). Outside, none.
+    /// A thread-local set on the caller alone failed exactly this (#3714).
+    #[test]
+    fn every_fan_out_inside_the_scope_sees_it_and_nothing_outside_does() {
+        assert!(!fp32_activations_scoped());
+        let (joined, tasks, nested) = with_fp32_activations(|| {
+            let joined = rayon::join(fp32_activations_scoped, fp32_activations_scoped);
+            let tasks: Vec<bool> = (0..256)
+                .into_par_iter()
+                .map(|_| fp32_activations_scoped())
+                .collect();
+            let nested: Vec<bool> = (0..16)
+                .into_par_iter()
+                .map(|_| rayon::join(fp32_activations_scoped, fp32_activations_scoped))
+                .map(|(a, b)| a && b)
+                .collect();
+            (joined, tasks, nested)
+        });
+        assert_eq!(joined, (true, true), "both arms of a join");
+        assert!(tasks.iter().all(|&b| b), "every par_iter task");
+        assert!(nested.iter().all(|&b| b), "joins inside tasks");
+        assert!(!fp32_activations_scoped(), "the caller is untouched");
+        let outside: Vec<bool> = (0..256)
+            .into_par_iter()
+            .map(|_| fp32_activations_scoped())
+            .collect();
+        assert!(outside.iter().all(|&b| !b), "the global pool never sees it");
+    }
+
+    /// A panic inside the scope propagates and leaves nothing on.
+    #[test]
+    fn a_panic_inside_the_scope_leaves_nothing_on() {
+        let unwound = std::panic::catch_unwind(|| with_fp32_activations(|| panic!("inside")));
+        assert!(unwound.is_err());
+        assert!(!fp32_activations_scoped());
+    }
+}

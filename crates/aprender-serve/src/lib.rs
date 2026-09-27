@@ -160,6 +160,9 @@ mod generated_contracts;
 #[cfg(all(test, feature = "cuda"))]
 #[macro_use]
 mod test_cuda_macros;
+// #3975: assemble emitted PTX with ptxas portably across CUDA toolchains (test-only).
+#[cfg(all(test, feature = "cuda"))]
+pub(crate) mod test_ptxas;
 // PMAT-779: process-global, cross-backend GPU-test concurrency cap (test-only).
 #[cfg(feature = "server")]
 pub mod api;
@@ -226,6 +229,8 @@ pub mod cache;
 /// Models declare required operations via `ArchConstraints`; GPU backends
 /// declare supported operations. Mismatch = refuse at load time.
 pub mod capability;
+/// PMAT-3596: will a request fit on the GPU — decided before loading (#3596).
+pub mod capacity;
 /// FALSIFY-CB-008 (aprender#2753): "No frozen slots — all M slots produce distinct
 /// tokens per decode step (not constant)", as a checker whose discrimination controls
 /// run in the ordinary workspace `--lib` line rather than only on a nightly GPU lane.
@@ -239,6 +244,9 @@ pub mod chat_template;
 /// CLI command implementations (extracted for testability)
 #[cfg(feature = "cli")]
 pub mod cli;
+/// Schema-constrained decoding (#3568): the `TokenConstraint` hook every
+/// generation loop calls, and the llguidance engine behind it (`structured-output`).
+pub mod constrain;
 /// GGUF to APR Transformer converter
 ///
 /// Converts GGUF models to APR format for fair comparison.
@@ -285,6 +293,8 @@ pub mod fixtures;
 /// Per spec §3: Format Support Matrix - auto-detect from magic bytes.
 /// APR is first-class, GGUF and SafeTensors are backwards-compatible.
 pub mod format;
+#[cfg(test)]
+mod fusion_call_site_guard_3985;
 pub mod generate;
 pub mod gguf;
 /// GPU acceleration module (Phase 4: ≥100 tok/s target)
@@ -411,6 +421,8 @@ pub mod safetensors_cuda;
 /// Converts HuggingFace SafeTensors models to AprTransformer for inference.
 /// Requires config.json and tokenizer.json in the same directory.
 pub mod safetensors_infer;
+/// The one token sampler every format shares (#3760).
+pub mod sampling;
 /// Continuous batching scheduler
 ///
 /// Per spec §8: Implements continuous batching for LLM serving based on vLLM/Orca.
@@ -421,6 +433,7 @@ pub mod safetensors_infer;
 pub mod scheduler;
 #[cfg(feature = "aprender-serve")]
 pub mod serve;
+pub mod session;
 /// Speculative decoding for LLM inference acceleration
 ///
 /// Per spec §8.3: Implements speculative decoding based on SGLang/DeepMind research.

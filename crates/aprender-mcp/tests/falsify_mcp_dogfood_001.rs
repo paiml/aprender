@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-DOGFOOD-001 — End-to-end Claude Code dogfood conformance.
 //!
 //! Spec: `docs/specifications/apr-mcp-server-spec.md` M4 acceptance bullet

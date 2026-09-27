@@ -72,11 +72,13 @@ date: 2026-08-22
 equations:
   routed_endpoint_coverage:
     formula: 'forall r in GENERATION_ROUTES, forall b in resident_backends(S): status(r, S) = 200 whenever model_loaded(S)'
-    domain: S an AppState whose only resident model is an AprTransformer (the third backend — the one the quantized and CUDA fixes of aprender#2375/#2376 did not reach); GENERATION_ROUTES enumerated from the router, not from a hand-written list
+    domain: 'S an AppState holding any ONE resident backend; GENERATION_ROUTES enumerated from the router, not from a hand-written list. The original domain named only the AprTransformer — the third backend, the one the quantized and CUDA fixes of aprender#2375/#2376 did not reach. aprender#3715 widened it. A Qwen3.5 hybrid built by AppState::with_qwen35_session is a FOURTH resident backend, and it is the one whose state holds no dense model at all, so a coverage obligation written over dense/quantized/APR alone cannot see it'
     codomain: the HTTP status and body of each routed generation endpoint
     invariants:
     - 'no response body contains "No model available" while model_loaded(S) is true'
-    - 'every handler walks the same backend chain /generate walks, in the same order: CUDA (cfg), quantized, APR, dense'
+    - 'every handler walks the same backend chain /generate walks, in the same order: hybrid (qwen35), CUDA (cfg), quantized, APR, dense'
+    - 'aprender#3715: a handler may satisfy this by DELEGATION rather than by naming the backend — /api/chat and /api/generate reach the hybrid through openai_chat_completions_handler. A reference count in the handler''s own file is not evidence about routing, in either direction'
+    - 'aprender#3715: the ollama-compat wire is part of the SURFACE. A route that answers correctly on /v1/chat/completions and wrongly on /api/chat fails this equation, and content is compared, not only status — see contracts/qwen35-hybrid-serve-dispatch-v1.yaml'
     - 'the obligation is over the SURFACE, not a route list: statuses are compared to each other, so one route disagreeing with the rest fails even where its own status is defensible alone'
   model_resolution_status:
     formula: model_resolution_status(e) = 404 if e = ModelNotFound else 503

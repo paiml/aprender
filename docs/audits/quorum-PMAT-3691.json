@@ -1,0 +1,267 @@
+{
+  "ticket": "PMAT-3691",
+  "base": "0517e75a7",
+  "base_resolved": "0517e75a7",
+  "base_note": "no origin/0517e75a7 exists; judged against the local ref",
+  "head": "fc54dd6091afc33dcf149e5ec4e20aa0671d8cc5",
+  "diff_sha256": "09ec169a578cd1b507f301310f7b22b4aa03a64c0b20d8a91217e989cd1d10cc",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 39401,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly replaces `CliError::InvalidFormat` with `CliError::invalid_model_file` (or the new variant `CliError::invalid_model_bytes`) at the six sites explicitly listed in the ticket, plus four more related sites in the SafeTensors header reader for completeness. A comprehensive test suite is added to verify that each error correctly identifies the file format (GGUF, SafeTensors, or unrecognised model) without incorrectly claiming it's an \"Invalid APR\" file, and confirms the exit code remains 4. Finally, the classification of the remaining sites is well-documented in the roadmap notes as required.",
+      "findings": [],
+      "raw_bytes": 2552,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all criteria specified in PMAT-3691. The six identified `InvalidFormat` sites have been migrated to `CliError::invalid_model_file` or a new memory-based variant `invalid_model_bytes`. This ensures the errors appropriately name the underlying format (GGUF, SafeTensors, or \"model\" fallback) rather than erroneously stating \"Invalid APR format\". A comprehensive test file with 13 cases is added to assert that the formats are reported accurately and exit code 4 is maintained. No unauthorized changes were found.",
+      "findings": [
+        {
+          "claim": "hex.rs sites 323 and 350 use `CliError::invalid_model_file(path, context, &e)` as requested.",
+          "file": "crates/apr-cli/src/commands/hex.rs",
+          "grounding": "cited",
+          "line": 327
+        },
+        {
+          "claim": "safe_tensors_header.rs sites 180 and 182 use the new `CliError::invalid_model_bytes` variant, avoiding \"Invalid APR format\" by reading the format from memory.",
+          "file": "crates/apr-cli/src/commands/safe_tensors_header.rs",
+          "grounding": "cited",
+          "line": 166
+        },
+        {
+          "claim": "trace_likely_has_repeated.rs sites 267 and 332 use `CliError::invalid_model_file` to accurately name the format on parse/inspect failures.",
+          "file": "crates/apr-cli/src/commands/trace_likely_has_repeated.rs",
+          "grounding": "cited",
+          "line": 267
+        },
+        {
+          "claim": "A comprehensive test row per command on a truncated GGUF and malformed SafeTensors is provided, asserting that \"Invalid APR\" is not emitted and exit codes remain 4.",
+          "file": "crates/apr-cli/src/commands/model_file_error_tests_3691.rs",
+          "grounding": "cited",
+          "line": 83
+        }
+      ],
+      "raw_bytes": 4362,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all acceptance criteria of PMAT-3691 cleanly and completely:\n1. Replaces `CliError::InvalidFormat` with `CliError::invalid_model_file` (or `CliError::invalid_model_bytes` when bytes are already in memory) across all six specified sites in `hex.rs`, `safe_tensors_header.rs`, and `trace_likely_has_repeated.rs`, plus four directly related sites in `safe_tensors_header.rs`.\n2. Preserves exit code 4 via `CliError::InvalidModelFile`.\n3. Adds a comprehensive test suite in `model_file_error_tests_3691.rs` testing `hex`, `hex --slice`, `trace`, and direct SafeTensors header parsing on truncated/malformed GGUF and SafeTensors fixtures, verifying proper format identification, absence of misleading \"Invalid APR\" messages, no leakage of core error prefixes, and an APR control.\n4. Includes the comprehensive classification of all 126 `CliError::InvalidFormat` sites in the roadmap entry notes.\n5. No gates weakened, no out-of-scope modifications made, and all stop list rules are respected.",
+      "findings": [],
+      "raw_bytes": 3384,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/hex.rs",
+      "line": 327,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "hex.rs sites 323 and 350 use `CliError::invalid_model_file(path, context, &e)` as requested."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/model_file_error_tests_3691.rs",
+      "line": 83,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "A comprehensive test row per command on a truncated GGUF and malformed SafeTensors is provided, asserting that \"Invalid APR\" is not emitted and exit codes remain 4."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/safe_tensors_header.rs",
+      "line": 166,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "safe_tensors_header.rs sites 180 and 182 use the new `CliError::invalid_model_bytes` variant, avoiding \"Invalid APR format\" by reading the format from memory."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/trace_likely_has_repeated.rs",
+      "line": 267,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "trace_likely_has_repeated.rs sites 267 and 332 use `CliError::invalid_model_file` to accurately name the format on parse/inspect failures."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.7-flash-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server); gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 2,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

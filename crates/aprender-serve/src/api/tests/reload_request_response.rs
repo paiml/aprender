@@ -41,6 +41,7 @@ fn test_completion_request_serde() {
 #[test]
 fn test_completion_response_serde() {
     let resp = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-123".to_string(),
         object: "text_completion".to_string(),
         created: 1234567890,

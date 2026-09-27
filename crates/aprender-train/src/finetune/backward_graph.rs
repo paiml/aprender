@@ -14,7 +14,7 @@
 //! - F-GRAPH-BWD-003: Throughput >= 1.10x ungraphed at batch=4
 
 #[cfg(feature = "cuda")]
-use trueno_gpu::driver::{CaptureMode, CudaGraphExec, CudaStream};
+use trueno_gpu::driver::{CudaGraphExec, CudaStream};
 
 /// Cached backward graph state.
 #[cfg(feature = "cuda")]
@@ -30,56 +30,6 @@ pub(crate) struct BackwardGraphState {
 pub(crate) fn use_backward_graph() -> bool {
     static USE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *USE.get_or_init(|| std::env::var("CUDA_GRAPH").as_deref() == Ok("1"))
-}
-
-/// Try to capture the backward loop into a CUDA graph.
-///
-/// Called on the first backward at a given seq_len. Records all kernel
-/// launches (backward + fused_clip + optimizer per layer) into a graph.
-///
-/// # Returns
-///
-/// `Some(BackwardGraphState)` on successful capture, `None` on failure.
-#[cfg(feature = "cuda")]
-pub(crate) fn try_capture_backward<F>(
-    stream: &CudaStream,
-    seq_len: usize,
-    backward_fn: F,
-) -> Option<BackwardGraphState>
-where
-    F: FnOnce() -> Option<()>,
-{
-    // Pre-allocate cuBLAS workspace must have happened before this point (PMAT-063)
-    stream
-        .begin_capture(CaptureMode::ThreadLocal)
-        .map_err(|e| eprintln!("[CUDA] Backward graph capture begin failed: {e}"))
-        .ok()?;
-
-    let result = backward_fn();
-
-    if result.is_none() {
-        // Backward failed during capture — abort
-        let _ = stream.end_capture();
-        eprintln!("[CUDA] Backward graph capture aborted: backward failed");
-        return None;
-    }
-
-    match stream.end_capture() {
-        Ok(graph) => match graph.instantiate() {
-            Ok(exec) => {
-                eprintln!("[CUDA] Backward graph captured: seq_len={seq_len}");
-                Some(BackwardGraphState { exec, cached_seq_len: seq_len })
-            }
-            Err(e) => {
-                eprintln!("[CUDA] Backward graph instantiate failed: {e}");
-                None
-            }
-        },
-        Err(e) => {
-            eprintln!("[CUDA] Backward graph end_capture failed: {e}");
-            None
-        }
-    }
 }
 
 /// Replay a previously captured backward graph.

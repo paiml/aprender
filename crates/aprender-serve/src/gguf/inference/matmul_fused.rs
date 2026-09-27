@@ -1,15 +1,22 @@
+include!("float16_dot.rs");
+
 /// CPU matmul for 2-byte-per-element float formats (BF16, F16)
 /// Shared by BF16 and F16 paths — same structure, different decode.
-fn float16_matmul(
+///
+/// #3076: each row is one `float16_row_dot` over the row's bytes. The per-element loop it
+/// replaces called the decode through a `fn` pointer. A row that runs past the end of `data`
+/// is dotted over the whole elements that exist, as that loop's per-element bounds check did.
+pub(super) fn float16_matmul(
     input: &[f32],
     data: &[u8],
     in_dim: usize,
     out_dim: usize,
     seq_len: usize,
-    decode: fn(u16) -> f32,
+    kind: Float16Kind,
 ) -> Vec<f32> {
     use rayon::prelude::*;
 
+    let row_bytes = in_dim * 2;
     let mut all_output = Vec::with_capacity(seq_len * out_dim);
     for s in 0..seq_len {
         let x = &input[s * in_dim..(s + 1) * in_dim];
@@ -17,16 +24,9 @@ fn float16_matmul(
         let row_output: Vec<f32> = (0..out_dim)
             .into_par_iter()
             .map(|row| {
-                let row_byte_start = row * in_dim * 2;
-                let mut sum = 0.0f32;
-                for col in 0..in_dim {
-                    let offset = row_byte_start + col * 2;
-                    if offset + 1 < data.len() {
-                        let bits = u16::from_le_bytes([data[offset], data[offset + 1]]);
-                        sum += decode(bits) * x[col];
-                    }
-                }
-                sum
+                let start = (row * row_bytes).min(data.len());
+                let end = (start + row_bytes).min(data.len());
+                float16_row_dot(kind, &data[start..end], x)
             })
             .collect();
 
@@ -129,14 +129,14 @@ impl OwnedQuantizedModel {
 
     /// Fused dequantize + matmul for quantized weights
     ///
-    /// Supports F32, BF16, F16, Q4_0, Q8_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K formats.
+    /// Supports F32, BF16, F16, Q4_0, Q8_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K formats.
     /// Uses SIMD-accelerated implementations for optimal performance.
     pub(crate) fn fused_matmul(
         &self,
         input: &[f32],
         weight: &OwnedQuantizedTensor,
     ) -> Result<Vec<f32>> {
-        use crate::quantize::{dequantize_q4_1, dequantize_q5_0};
+        use crate::quantize::{dequantize_q4_1, dequantize_q5_0, dequantize_q5_1};
 
         let in_dim = weight.in_dim;
         let out_dim = weight.out_dim;
@@ -151,11 +151,10 @@ impl OwnedQuantizedModel {
         // with an actionable error instead of letting rayon workers crash.
         validate_matmul_weight_shape(weight)?;
 
-        // CUDA path when enabled
-        #[cfg(feature = "cuda")]
-        if let Some(ref executor_mutex) = self.cuda_executor {
-            return self.fused_matmul_cuda(input, weight, executor_mutex);
-        }
+        // #3975: the `cuda_executor` dispatch that stood here was deleted. Nothing
+        // ever set `cuda_executor` to Some, and its dequant + `gemm` fallback read
+        // the [out, in] weight as [k, n] for m > 1. GPU inference goes through
+        // `OwnedQuantizedModelCuda`.
 
         // CPU paths, one arm per storage format:
         //   F32        rayon parallel dot products, zero-copy on the raw bytes
@@ -169,12 +168,22 @@ impl OwnedQuantizedModel {
         let data = &weight.data;
         match weight.qtype {
             GGUF_TYPE_F32 => Ok(self.fused_matmul_f32(input, data, in_dim, out_dim, seq_len)),
-            GGUF_TYPE_BF16 => Ok(float16_matmul(input, data, in_dim, out_dim, seq_len, |b| {
-                f32::from_bits((b as u32) << 16)
-            })),
-            GGUF_TYPE_F16 => Ok(float16_matmul(input, data, in_dim, out_dim, seq_len, |b| {
-                half::f16::from_bits(b).to_f32()
-            })),
+            GGUF_TYPE_BF16 => Ok(float16_matmul(
+                input,
+                data,
+                in_dim,
+                out_dim,
+                seq_len,
+                Float16Kind::Bf16,
+            )),
+            GGUF_TYPE_F16 => Ok(float16_matmul(
+                input,
+                data,
+                in_dim,
+                out_dim,
+                seq_len,
+                Float16Kind::F16,
+            )),
             GGUF_TYPE_Q4_0 | GGUF_TYPE_Q8_0 => {
                 self.fused_matmul_q4_q8(input, weight, in_dim, out_dim, seq_len)
             },
@@ -190,6 +199,25 @@ impl OwnedQuantizedModel {
                 input,
                 dequantize_q5_0(data)?,
                 "Q5_0",
+                in_dim,
+                out_dim,
+                seq_len,
+            ),
+            // #3869: Q5_1 sat in the gap between its two siblings. The
+            // dequantizer has always been here (`quantize::dequantize_q5_1`,
+            // `pub`), and the GPU-side `acceleration.rs::dequantize_weight`
+            // already dispatched to it — only this CPU arm was missing, so a
+            // Q5_1 tensor fell through to `dequant_fallback_or_refuse`, whose
+            // admission is `iq_block_bytes.is_some() || Q2_K || Q3_K`, and was
+            // refused as "got type 7".
+            //
+            // Real cost: Qwen2.5-0.5B-Instruct-IQ4_XS.gguf carries 24 Q5_1
+            // tensors, so the whole file was unrunnable on CPU for one missing
+            // three-line arm while its other 266 tensors were all supported.
+            GGUF_TYPE_Q5_1 => dequant_f32_matmul(
+                input,
+                dequantize_q5_1(data)?,
+                "Q5_1",
                 in_dim,
                 out_dim,
                 seq_len,
@@ -343,150 +371,6 @@ impl OwnedQuantizedModel {
                 _ => self.dequant_fallback_or_refuse(input, weight, in_dim, out_dim, 1),
             }
         }
-    }
-
-    /// CUDA path for fused matmul
-    #[cfg(feature = "cuda")]
-    fn fused_matmul_cuda(
-        &self,
-        input: &[f32],
-        weight: &OwnedQuantizedTensor,
-        executor_mutex: &std::sync::Mutex<crate::cuda::CudaExecutor>,
-    ) -> Result<Vec<f32>> {
-        use tracing::info_span;
-
-        let in_dim = weight.in_dim;
-        let out_dim = weight.out_dim;
-        let seq_len = input.len() / in_dim;
-        let gemm_start = std::time::Instant::now();
-        let mut output = vec![0.0f32; seq_len * out_dim];
-
-        // Use native quantized GEMV kernels for single-token generation
-        if seq_len == 1 {
-            let cache_key = format!(
-                "{}_{:016x}",
-                match weight.qtype {
-                    GGUF_TYPE_Q4_K => "q4k",
-                    GGUF_TYPE_Q5_K => "q5k",
-                    GGUF_TYPE_Q6_K => "q6k",
-                    _ => "unknown",
-                },
-                weight.data.as_ptr() as usize
-            );
-
-            if weight.qtype == GGUF_TYPE_Q4_K
-                || weight.qtype == GGUF_TYPE_Q5_K
-                || weight.qtype == GGUF_TYPE_Q6_K
-            {
-                let mut executor =
-                    executor_mutex
-                        .lock()
-                        .map_err(|e| RealizarError::UnsupportedOperation {
-                            operation: "cuda_lock".to_string(),
-                            reason: format!("Failed to acquire CUDA executor lock: {e}"),
-                        })?;
-
-                executor
-                    .make_current()
-                    .map_err(|e| RealizarError::UnsupportedOperation {
-                        operation: "cuda_make_current".to_string(),
-                        reason: format!("Failed to set CUDA context current: {e}"),
-                    })?;
-
-                if !executor.has_quantized_weights(&cache_key) {
-                    executor
-                        .load_quantized_weights(&cache_key, &weight.data)
-                        .map_err(|e| RealizarError::UnsupportedOperation {
-                            operation: "cuda_cache".to_string(),
-                            reason: format!("Failed to cache weights: {e}"),
-                        })?;
-                }
-
-                let result = match weight.qtype {
-                    GGUF_TYPE_Q4_K => executor.q4k_gemv_cached(
-                        &cache_key,
-                        input,
-                        &mut output,
-                        out_dim as u32,
-                        in_dim as u32,
-                    ),
-                    GGUF_TYPE_Q5_K => executor.q5k_gemv_cached(
-                        &cache_key,
-                        input,
-                        &mut output,
-                        out_dim as u32,
-                        in_dim as u32,
-                    ),
-                    GGUF_TYPE_Q6_K => executor.q6k_gemv_cached(
-                        &cache_key,
-                        input,
-                        &mut output,
-                        out_dim as u32,
-                        in_dim as u32,
-                    ),
-                    _ => unreachable!(),
-                };
-
-                result.map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "cuda_gemv".to_string(),
-                    reason: format!("CUDA GEMV failed: {e}"),
-                })?;
-
-                let gemm_duration_us = gemm_start.elapsed().as_micros() as u64;
-                let _span = info_span!(
-                    "gpu_kernel:gemv",
-                    gpu.backend = "cuda",
-                    gpu.dimensions.n = out_dim,
-                    gpu.dimensions.k = in_dim,
-                    duration_us = gemm_duration_us,
-                )
-                .entered();
-
-                self.cuda_kernel_count
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                return Ok(output);
-            }
-        }
-
-        // Fallback: Dequantize and use FP32 GEMM
-        let dequant_weight = self.dequantize_weight_for_cuda(weight)?;
-
-        {
-            let mut executor =
-                executor_mutex
-                    .lock()
-                    .map_err(|e| RealizarError::UnsupportedOperation {
-                        operation: "cuda_gemm_lock".to_string(),
-                        reason: format!("Failed to acquire CUDA executor lock: {e}"),
-                    })?;
-
-            executor
-                .make_current()
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "cuda_make_current".to_string(),
-                    reason: format!("Failed to set CUDA context current: {e}"),
-                })?;
-
-            executor
-                .gemm(
-                    input,
-                    &dequant_weight,
-                    &mut output,
-                    seq_len as u32,
-                    out_dim as u32,
-                    in_dim as u32,
-                )
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "cuda_gemm".to_string(),
-                    reason: format!("CUDA GEMM failed: {e}"),
-                })?;
-        }
-
-        self.cuda_kernel_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        Ok(output)
     }
 }
 

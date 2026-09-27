@@ -22,9 +22,24 @@ fn test_is_legacy_gguf_quant_q5_0_gh219() {
     assert!(!is_legacy_gguf_quant(6)); // Q5_0 — fixed candle layout, GPU-eligible
 }
 
+/// #3885: this row asserted Q5_1 was gated to CPU, which was true until Q5_1
+/// got a GEMV kernel measured EXACT against the CPU decoder on device (64 rows,
+/// 0.000e0, with the 5th bit and the affine min each planted and proven RED).
+/// It is now the CONVERSE: Q5_1 is GPU-eligible, on the same terms that moved
+/// Q4_1 and Q5_0 above it. The row is re-aimed, not deleted — the property it
+/// guards (a type without a verified kernel must gate to CPU) still needs an
+/// example, and IQ3_XXS below carries it.
 #[test]
 fn test_is_legacy_gguf_quant_q5_1_gh219() {
-    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel → gated
+    assert!(!is_legacy_gguf_quant(7)); // Q5_1 — #3885 GEMV kernel, GPU-eligible
+}
+
+/// The property `test_is_legacy_gguf_quant_q5_1_gh219` used to carry, on a type
+/// that genuinely has no kernel. It was IQ3_XXS(18) until #3963 measured
+/// IQ3_XXS's kernel; re-aimed at IQ2_XS(17), a real ggml type with no GPU kernel.
+#[test]
+fn test_is_legacy_gguf_quant_gates_a_type_with_no_kernel() {
+    assert!(is_legacy_gguf_quant(17)); // IQ2_XS — no GPU GEMV kernel
 }
 
 #[test]
@@ -36,8 +51,13 @@ fn test_is_legacy_gguf_quant_non_legacy_types_gh219() {
     assert!(!is_legacy_gguf_quant(12)); // Q4_K
     assert!(!is_legacy_gguf_quant(13)); // Q5_K
     assert!(!is_legacy_gguf_quant(14)); // Q6_K
-    // PMAT-783: F16(1) has no GGUF GPU GEMV kernel → gated (would be Q4K garbage).
-    assert!(is_legacy_gguf_quant(1));
+    // PMAT-783 gated F16(1) because no GGUF GPU GEMV kernel existed and
+    // resolve_qtype would have read it as Q4K garbage. #3477 wrote that kernel
+    // and measured it (217/217 exact, `88d25d265`), and #3850 replaced the
+    // silent Q4K fallback with a refusal, so both halves of that reasoning are
+    // now addressed rather than assumed.
+    assert!(!is_legacy_gguf_quant(1));
+    assert!(!is_legacy_gguf_quant(30)); // BF16 — #3908 GEMV kernel, measured 0 ULP
 }
 
 #[test]
@@ -45,7 +65,7 @@ fn test_is_legacy_gguf_quant_edge_values_gh219() {
     // PMAT-783: every type WITHOUT a verified GPU kernel fails closed to CPU.
     assert!(is_legacy_gguf_quant(4)); // Q4_2 (removed) — no kernel
     assert!(is_legacy_gguf_quant(5)); // Q4_3 (removed) — no kernel
-    assert!(is_legacy_gguf_quant(10)); // Q2_K — no kernel
+    assert!(!is_legacy_gguf_quant(10)); // Q2_K — #3960 GEMV kernel
     assert!(is_legacy_gguf_quant(11)); // Q3_K — no kernel
     assert!(is_legacy_gguf_quant(100)); // IQ* / unknown — no kernel
     assert!(is_legacy_gguf_quant(u32::MAX));
@@ -181,6 +201,7 @@ fn test_tok_per_sec_single_token_gh219() {
 #[test]
 fn test_inference_result_debug_gh219() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "Hello".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,
@@ -190,6 +211,7 @@ fn test_inference_result_debug_gh219() {
         load_ms: 10.0,
         format: "Mock".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     };
     let debug = format!("{:?}", result);
     assert!(debug.contains("Hello"));
@@ -199,6 +221,7 @@ fn test_inference_result_debug_gh219() {
 #[test]
 fn test_inference_result_clone_gh219() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "test".to_string(),
         tokens: vec![100, 101],
         input_token_count: 0,
@@ -208,6 +231,7 @@ fn test_inference_result_clone_gh219() {
         load_ms: 5.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     };
     let cloned = result.clone();
     assert_eq!(cloned.text, result.text);

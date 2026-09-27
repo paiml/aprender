@@ -80,11 +80,16 @@ BASELINE="${REPO_ROOT}/scripts/unwired_guards_baseline.txt"
 # A `name:` line is documentation whatever it contains; drop it before matching.
 _not_a_name_line() { grep -vE '^[[:space:]]*-?[[:space:]]*name:' || true; }
 
+# #4433: the CI job bodies moved verbatim into ci/sections.yml, which the fat jobs
+# in ci.yml run; a guard invoked there is wired. One path per line.
+_surfaces() { printf '%s\n' "$1/.github/workflows/"; [ ! -f "$1/ci/sections.yml" ] || printf '%s\n' "$1/ci/sections.yml"; }
+
 dispatcher_wired() {
     local root="$1" lines modes mode flag out
+    local surf; mapfile -t surf < <(_surfaces "$root")
     [ -f "$root/scripts/guard_tree.sh" ] || return 0
     lines=$(grep -rh --include='*.yml' --include='*.yaml' -- 'guard_tree.sh' \
-                "$root"/.github/workflows/ 2>/dev/null | sed 's/#.*$//' | _not_a_name_line) || lines=''
+                "${surf[@]}" 2>/dev/null | sed 's/#.*$//' | _not_a_name_line) || lines=''
     # Invocation, not mention -- same test as the scan below.
     lines=$(grep -E "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*guard_tree\\.sh([[:space:]]|$|['\"])" \
                 <<< "$lines") || lines=''
@@ -109,10 +114,36 @@ dispatcher_wired() {
     done | LC_ALL=C sort -u
 }
 
+# dogfood_declared ROOT -- the gates the RELEASE runs, derived from Cargo.toml.
+#
+# #4005, cop ruling (C) 2026-09-23: a host-bound release gate (it needs model files, a
+# GPU, or the published crate) cannot run in CI, and its decision surface is the release
+# pre-publish dogfood, which runs every entry of [package.metadata.dogfood] `gates`
+# (scripts/dogfood.sh). CLAUDE.md verification rule 5: a guard must scan the surface
+# where the decision is made. So a gate DECLARED there is wired -- read from Cargo.toml,
+# never a hand-kept list here. Only the quoted "scripts/*.sh" strings on the code part
+# of each line count: a `#` comment naming a script declares nothing.
+dogfood_declared() {
+    local root="$1"
+    [ -f "$root/Cargo.toml" ] || return 0
+    awk '/^\[package\.metadata\.dogfood\]/{f=1; next} /^\[/{f=0} f' "$root/Cargo.toml" \
+        | sed 's/#.*$//' | grep -oE '"scripts/[^"]+\.sh"' | tr -d '"' | LC_ALL=C sort -u
+}
+
+# Declared dogfood gates that do not exist on disk -- a gate the release would try to run
+# and cannot. RED on its own, so a declaration can never stand in for a deleted guard.
+dogfood_declared_missing() {
+    local root="$1" g
+    dogfood_declared "$root" | while IFS= read -r g; do
+        [ -n "$g" ] && [ ! -f "$root/$g" ] && printf '%s\n' "$g"
+    done
+}
+
 # Guards named by no workflow, one per line, sorted.
 unwired_in() {
-    local root="$1" g base seen="" dispatched
+    local root="$1" g base seen="" dispatched declared
     dispatched=" $(dispatcher_wired "$root" | tr '\n' ' ') "
+    declared=" $(dogfood_declared "$root" | sed 's|.*/||' | tr '\n' ' ') "
     # THE UNIVERSE WAS BUILT FROM THE FILENAME, AND A GUARD HID BEHIND ITS OWN.
     #
     # This globbed scripts/check_*.sh only. scripts/perf_gate.sh — which
@@ -147,6 +178,10 @@ unwired_in() {
         case "$dispatched" in
             *" $base "*) continue ;;
         esac
+        # Wired by the release: declared in [package.metadata.dogfood] (#4005, ruling C).
+        case "$declared" in
+            *" $base "*) continue ;;
+        esac
         # EXECUTION, not mention. `grep -rqF -- "$base"` matched the script's
         # NAME anywhere in the workflows tree -- including inside a `#` comment.
         # So a guard could be documented and never run, and this meta-guard,
@@ -165,9 +200,10 @@ unwired_in() {
         # rather than by reading it. Erring strict is correct here: a `#` inside
         # a quoted YAML string would make a wired guard look unwired, which is a
         # loud false alarm rather than a silent miss.
-        local mentions
+        local mentions surf
+        mapfile -t surf < <(_surfaces "$root")
         mentions=$(grep -rh --include='*.yml' --include='*.yaml' -- "$base" \
-                "$root"/.github/workflows/ 2>/dev/null \
+                "${surf[@]}" 2>/dev/null \
              | sed 's/#.*$//' | _not_a_name_line) || mentions=''
         if ! grep -qE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*${base}([[:space:]]|$|['\"])" <<< "$mentions" ; then
             printf '%s\n' "$base"
@@ -286,6 +322,19 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 7 got [%s], expected [check_nightly_only.sh check_nowhere.sh ]\n' "$got7"; fails=1
     fi
 
+    # Row 7s (#4433): wired ONLY in ci/sections.yml -> wired; delete that file and
+    # the guard is reported again (the control).
+    mkdir -p "$TD3/ci"
+    printf 'jobs:\n  guard-tree:\n    steps:\n      - run: bash scripts/check_nightly_only.sh\n' > "$TD3/ci/sections.yml"
+    got7s=$(unwired_in "$TD3" | tr '\n' ' ')
+    rm -f "$TD3/ci/sections.yml"
+    got7c=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got7s" = "check_nowhere.sh " ] && [ "$got7c" = "check_nightly_only.sh check_nowhere.sh " ]; then
+        printf 'ok    row 7s a guard wired only in ci/sections.yml counts as wired; without the file it does not\n'
+    else
+        printf 'FAIL  row 7s got [%s] / [%s]\n' "$got7s" "$got7c"; fails=1
+    fi
+
     # ── Rows 8-10: A STEP NAME IS NOT AN INVOCATION (#3644) ─────────────────
     #
     # Row 8 is the exact ci.yml shape that hid four guards: a step NAMED
@@ -317,12 +366,48 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 10 got [%s], expected [check_dark.sh ]\n' "$got10"; fails=1
     fi
 
+    # Rows 11-13 (#4005, ruling C): the release dogfood is a wiring surface, derived from
+    # Cargo.toml. TD3 has a workflow wiring NOTHING, so any "wired" here comes from the metadata.
+    TD3="$TD/r11"; mkdir -p "$TD3/scripts" "$TD3/.github/workflows"
+    : > "$TD3/scripts/check_release_gate.sh"; : > "$TD3/scripts/check_dark.sh"
+    printf 'jobs:\n  x:\n    steps:\n      - run: echo nothing\n' > "$TD3/.github/workflows/ci.yml"
+    printf '[package]\nname = "x"\n\n[package.metadata.dogfood]\ngates = [\n    # "scripts/check_dark.sh" is only NAMED in a comment\n    "scripts/check_release_gate.sh",\n]\n\n[dependencies]\n' \
+        > "$TD3/Cargo.toml"
+    got11=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got11" = "check_dark.sh " ]; then
+        printf 'ok    row 11 a gate declared in [package.metadata.dogfood] is wired; a commented name wires nothing\n'
+    else
+        printf 'FAIL  row 11 got [%s], expected [check_dark.sh ]\n' "$got11"; fails=1
+    fi
+    sed -i 's|    "scripts/check_release_gate.sh",|    "scripts/check_release_gate.sh",\n    "scripts/check_deleted.sh",|' "$TD3/Cargo.toml"
+    got12=$(dogfood_declared_missing "$TD3" | tr '\n' ' ')
+    if [ "$got12" = "scripts/check_deleted.sh " ]; then
+        printf 'ok    row 12 a declared gate absent from disk is reported missing\n'
+    else
+        printf 'FAIL  row 12 got [%s], expected [scripts/check_deleted.sh ]\n' "$got12"; fails=1
+    fi
+    sed -i '/check_release_gate.sh",$/d' "$TD3/Cargo.toml"
+    got13=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got13" = "check_dark.sh check_release_gate.sh " ]; then
+        printf 'ok    row 13 un-declaring the gate brings it back as unwired (the control for row 11)\n'
+    else
+        printf 'FAIL  row 13 got [%s], expected [check_dark.sh check_release_gate.sh ]\n' "$got13"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (10/10)\n'
+    printf '\nSELF-TEST PASSED (13/13)\n'
     exit 0
 fi
 
 printf '=== every check_*.sh must be named by a workflow (check_guards_are_wired.sh) ===\n'
+
+# #4005: a declared release gate that is not on disk is RED, whatever else holds.
+missing=$(dogfood_declared_missing "$REPO_ROOT")
+if [ -n "$missing" ]; then
+    printf '\nFAIL: [package.metadata.dogfood] declares gate(s) that do not exist:\n'
+    printf '  MISSING: %s\n' $missing
+    exit 1
+fi
 
 # COUNT THE UNIVERSE THAT WAS ACTUALLY SCANNED, not a proxy for it. This
 # counted check_*.sh only, so after the universe was widened it printed

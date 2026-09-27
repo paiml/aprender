@@ -6,6 +6,38 @@ mod inspect_tests {
     use std::path::Path;
 
     // ========================================================================
+    // rosetta_json (#3733): --json shows every metadata key, unfiltered
+    // ========================================================================
+
+    #[test]
+    fn rosetta_json_emits_every_metadata_key() {
+        use aprender::format::rosetta::{FormatType, InspectionReport};
+        let keys = [
+            "general.architecture",
+            "qwen35.context_length",
+            "qwen35.full_attention_interval",
+            "quantize.imatrix.file",
+            "zzz_never_heard_of.depth",
+            "tokenizer.ggml.model",
+        ];
+        let report = InspectionReport {
+            format: FormatType::Gguf,
+            file_size: 1,
+            metadata: keys.iter().map(|k| ((*k).to_string(), "v".to_string())).collect(),
+            tensors: vec![],
+            total_params: 0,
+            quantization: None,
+            architecture: Some("qwen35".to_string()),
+        };
+        let v = rosetta_json(Path::new("m.gguf"), &report);
+        let shown = v["metadata"].as_object().expect("metadata object");
+        assert_eq!(shown.len(), keys.len());
+        for k in keys {
+            assert!(shown.contains_key(k), "--json dropped {k}");
+        }
+    }
+
+    // ========================================================================
     // validate_path
     // ========================================================================
 

@@ -258,6 +258,7 @@ fn test_generate_config_greedy() {
         temperature: 0.0, // Greedy
         top_p: 1.0,
         top_k: 1,
+        seed: crate::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
@@ -274,6 +275,7 @@ fn test_generate_config_with_nucleus_sampling() {
         temperature: 0.7,
         top_p: 0.9, // Nucleus sampling
         top_k: 40,
+        seed: crate::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.1,
         trace: false,
         stop_tokens: vec![],
@@ -289,6 +291,7 @@ fn test_generate_config_with_trace() {
         temperature: 0.5,
         top_p: 1.0,
         top_k: 0,
+        seed: crate::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.0,
         trace: true,
         stop_tokens: vec![],

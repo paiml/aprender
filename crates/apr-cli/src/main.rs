@@ -73,6 +73,9 @@ fn main() -> ExitCode {
         apr_cli::emit_version_json();
         return ExitCode::SUCCESS;
     }
+    if let Some(rc) = apr_cli::update_or_check(&raw) {
+        return rc;
+    }
 
     let cli = Cli::parse();
     match execute_command(&cli) {

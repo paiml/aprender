@@ -115,7 +115,7 @@ pub fn gemm_forward(
     }
 
     // PTX fallback
-    let key = keys::gemm_forward(m as u32, k as u32, n as u32);
+    let key = keys::gemm_forward(m, k, n);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -396,7 +396,7 @@ pub fn batched_4d_gemm_forward(
     let kernel = Batched4DGemmKernel::new(batch, heads, m, n, k);
     let tile_size = kernel.config.tile_size;
 
-    let key = keys::batched_4d_gemm(batch as u32, heads as u32, m as u32, n as u32, k as u32);
+    let key = keys::batched_4d_gemm(batch, heads, m, n, k);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -477,7 +477,7 @@ pub fn gemm_nf4_forward(
     // runtime params, only tile_size is baked in). Including M causes cache misses
     // when actual seq_len differs from max_seq_len used during pre-warming,
     // triggering on-demand JIT that fails on Blackwell (trueno#184).
-    let key = keys::nf4_gemm_forward(k as u32, n as u32);
+    let key = keys::nf4_gemm_forward(k, n);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -618,7 +618,7 @@ pub fn gemm_nf4_gate_up_forward(
 
     let kernel = FusedNf4GateUpGemmKernel::new(m, n, k);
     let tile = kernel.tile_size;
-    let key = keys::fused_nf4_gate_up(k as u32, n as u32);
+    let key = keys::fused_nf4_gate_up(k, n);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -1020,7 +1020,7 @@ pub fn gemm_nf4_backward_a(
     let tile_size = kernel.tile_size;
 
     // Cache key excludes M (seq_len) — PTX is shape-independent (trueno#184).
-    let key = keys::nf4_gemm_transpose(n as u32, k as u32);
+    let key = keys::nf4_gemm_transpose(n, k);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {

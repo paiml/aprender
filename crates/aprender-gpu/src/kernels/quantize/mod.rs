@@ -45,6 +45,7 @@ mod q4k;
 mod q5k;
 mod q6k;
 mod q8;
+mod q8_0_dequant;
 
 pub use dot::{PackedDp4aQ4KQ8Kernel, Q4KQ8DotKernel};
 pub use dp4a_gemm::Dp4aQ4KGemmKernel;
@@ -74,12 +75,13 @@ pub use q4k::{
     Q4KDequantFp16Kernel, Q4KDequantKernel, Q4KGemvKernel, TiledQ4KGemvKernel,
     TrueDp4aQ4KGemvKernel, VectorizedQ4KGemvKernel, WideQ4KGemvKernel,
 };
-pub use q5k::{Q5KGemvKernel, Q5KKernel};
+pub use q5k::{Q5KDequantKernel, Q5KGemvKernel, Q5KKernel};
 pub use q6k::{
     BatchedQ6KGemvKernel, CoalescedQ6KGemvKernel, Dp4aQ6KGemvKernel, HalfWarpDp4aQ6KGemvKernel,
     MultiWarpQ6KGemvKernel, Q6KDequantKernel, Q6KGemvKernel, Q6KKernel,
 };
 pub use q8::Q8QuantizeKernel;
+pub use q8_0_dequant::Q8_0DequantKernel;
 
 /// Q4_K sub-block size (number of weights per sub-block)
 const Q4K_BLOCK_SIZE: u32 = 32;
@@ -93,7 +95,8 @@ const Q4K_BLOCK_BYTES: u32 = 18;
 /// Q5_K super-block size (number of weights per super-block)
 pub(crate) const Q5K_SUPER_BLOCK_SIZE: u32 = 256;
 /// Bytes per Q5_K super-block (2 + 2 + 12 + 128 + 32 = 176 bytes)
-/// Layout: d(2) + dmin(2) + scales(12) + qs(128) + qh(32)
+/// Layout: d(2) + dmin(2) + scales(12) + qh(32) + qs(128) — ggml `block_q5_K`, the
+/// order the Q5_K GEMV reads (qh at 16, qs at 48) and gguf-py writes
 pub(crate) const Q5K_SUPER_BLOCK_BYTES: u32 = 176;
 
 /// Q6_K super-block size (number of weights per super-block)
@@ -103,10 +106,10 @@ pub(crate) const Q6K_SUPER_BLOCK_SIZE: u32 = 256;
 pub(crate) const Q6K_SUPER_BLOCK_BYTES: u32 = 210;
 
 /// Q8_0 block size (number of weights per block)
-const Q8_0_BLOCK_SIZE: u32 = 32;
+pub(crate) const Q8_0_BLOCK_SIZE: u32 = 32;
 /// Bytes per Q8_0 block (2 + 32 = 34 bytes)
 /// Layout: d(2 bytes, fp16) + qs[32] (32 int8 values)
-const Q8_0_BLOCK_BYTES: u32 = 34;
+pub(crate) const Q8_0_BLOCK_BYTES: u32 = 34;
 
 /// Q5_0 block size (number of weights per block)
 const Q5_0_BLOCK_SIZE: u32 = 32;

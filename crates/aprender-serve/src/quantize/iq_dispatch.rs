@@ -16,9 +16,18 @@ use crate::quantize::iq2_s::{dequantize_iq2_s_block, GGML_TYPE_IQ2_S, IQ2_S_BLOC
 use crate::quantize::iq2_xxs::{dequantize_iq2_xxs_block, GGML_TYPE_IQ2_XXS, IQ2_XXS_BLOCK_BYTES};
 use crate::quantize::iq3_s::{dequantize_iq3_s_block, GGML_TYPE_IQ3_S, IQ3_S_BLOCK_BYTES};
 use crate::quantize::iq3_xxs::{dequantize_iq3_xxs_block, GGML_TYPE_IQ3_XXS, IQ3_XXS_BLOCK_BYTES};
+use crate::quantize::iq4_nl::{
+    dequantize_iq4_nl_block, GGML_TYPE_IQ4_NL, IQ4_NL_BLOCK_BYTES, IQ4_NL_BLOCK_ELEMS,
+};
 use crate::quantize::iq4_xs::{dequantize_iq4_xs_block, GGML_TYPE_IQ4_XS, IQ4_XS_BLOCK_BYTES};
 
-/// Elements in every IQ super-block (`QK_K`).
+/// Elements in an IQ **super**-block (`QK_K`), and the scratch size every type
+/// here fits in.
+///
+/// #3869: this is NO LONGER "elements per block for every IQ type". `IQ4_NL` is
+/// 32 elements in 18 bytes (`ggml-common.h`: `#define QK4_NL 32`), and it is the
+/// only one. Ask [`iq_block_elems`] for a type's element count; this constant is
+/// now only the upper bound used to size the per-row scratch.
 pub const IQ_BLOCK_ELEMS: usize = 256;
 
 /// Bytes per super-block for an IQ type, or `None` if `qtype` is not one.
@@ -33,6 +42,28 @@ pub const fn iq_block_bytes(qtype: u32) -> Option<usize> {
         GGML_TYPE_IQ3_XXS => Some(IQ3_XXS_BLOCK_BYTES),
         GGML_TYPE_IQ3_S => Some(IQ3_S_BLOCK_BYTES),
         GGML_TYPE_IQ4_XS => Some(IQ4_XS_BLOCK_BYTES),
+        GGML_TYPE_IQ4_NL => Some(IQ4_NL_BLOCK_BYTES),
+        _ => None,
+    }
+}
+
+/// Elements per block for an IQ type, or `None` if `qtype` is not one.
+///
+/// #3869. Every type here except one is a 256-element super-block, and the
+/// dispatch used to hardcode that in three places: `blocks_per_row =
+/// in_dim.div_ceil(256)`, `col0 = b * 256`, and `n = 256.min(in_dim - col0)`.
+///
+/// `IQ4_NL` is **32 elements in 18 bytes**. Wiring it in without this accessor
+/// does not produce an error — it produces `blocks_per_row = in_dim/256`, so a
+/// row that occupies 8 blocks is read as 1, every row after the first lands at
+/// the wrong offset, and the untouched scratch tail silently contributes zeros.
+/// A plausible-looking wrong answer where a refusal belongs.
+#[must_use]
+pub const fn iq_block_elems(qtype: u32) -> Option<usize> {
+    match qtype {
+        GGML_TYPE_IQ2_XXS | GGML_TYPE_IQ2_S | GGML_TYPE_IQ3_XXS | GGML_TYPE_IQ3_S
+        | GGML_TYPE_IQ4_XS => Some(IQ_BLOCK_ELEMS),
+        GGML_TYPE_IQ4_NL => Some(IQ4_NL_BLOCK_ELEMS),
         _ => None,
     }
 }
@@ -49,6 +80,7 @@ pub fn dequantize_iq_block(qtype: u32, block: &[u8], out: &mut [f32]) -> Result<
         GGML_TYPE_IQ3_XXS => dequantize_iq3_xxs_block(block, out),
         GGML_TYPE_IQ3_S => dequantize_iq3_s_block(block, out),
         GGML_TYPE_IQ4_XS => dequantize_iq4_xs_block(block, out),
+        GGML_TYPE_IQ4_NL => dequantize_iq4_nl_block(block, out),
         other => {
             return Err(RealizarError::UnsupportedOperation {
                 operation: "dequantize_iq_block".to_string(),
@@ -77,14 +109,11 @@ pub fn dequantize_iq_tensor(qtype: u32, data: &[u8]) -> Result<Vec<f32>> {
             ),
         });
     }
+    let elems = iq_block_elems(qtype).unwrap_or(IQ_BLOCK_ELEMS);
     let nb = data.len() / block_bytes;
-    let mut out = vec![0.0f32; nb * IQ_BLOCK_ELEMS];
+    let mut out = vec![0.0f32; nb * elems];
     for (i, block) in data.chunks_exact(block_bytes).enumerate() {
-        dequantize_iq_block(
-            qtype,
-            block,
-            &mut out[i * IQ_BLOCK_ELEMS..(i + 1) * IQ_BLOCK_ELEMS],
-        )?;
+        dequantize_iq_block(qtype, block, &mut out[i * elems..(i + 1) * elems])?;
     }
     Ok(out)
 }
@@ -121,7 +150,8 @@ pub fn iq_parallel_matvec_into(
             ),
         });
     }
-    let blocks_per_row = in_dim.div_ceil(IQ_BLOCK_ELEMS);
+    let elems = iq_block_elems(qtype).unwrap_or(IQ_BLOCK_ELEMS);
+    let blocks_per_row = in_dim.div_ceil(elems);
     let row_bytes = blocks_per_row * block_bytes;
     let needed = row_bytes * out_dim;
     if data.len() < needed {
@@ -141,10 +171,10 @@ pub fn iq_parallel_matvec_into(
             let mut scratch = [0.0f32; IQ_BLOCK_ELEMS];
             let mut sum = 0.0f32;
             for (b, block) in row_data.chunks_exact(block_bytes).enumerate() {
-                dequantize_iq_block(qtype, block, &mut scratch)?;
-                let col0 = b * IQ_BLOCK_ELEMS;
+                dequantize_iq_block(qtype, block, &mut scratch[..elems])?;
+                let col0 = b * elems;
                 // The last block of a row may be padding past `in_dim`.
-                let n = IQ_BLOCK_ELEMS.min(in_dim - col0);
+                let n = elems.min(in_dim - col0);
                 for (j, w) in scratch[..n].iter().enumerate() {
                     sum += w * x[col0 + j];
                 }
@@ -175,12 +205,13 @@ pub fn iq_parallel_matvec(
 mod tests {
     use super::*;
 
-    const IQ_TYPES: [u32; 5] = [
+    const IQ_TYPES: [u32; 6] = [
         GGML_TYPE_IQ2_XXS,
         GGML_TYPE_IQ2_S,
         GGML_TYPE_IQ3_XXS,
         GGML_TYPE_IQ3_S,
         GGML_TYPE_IQ4_XS,
+        GGML_TYPE_IQ4_NL,
     ];
 
     /// A deterministic, well-formed super-block: an f16 scale of 0.0234375 and
@@ -199,12 +230,15 @@ mod tests {
     }
 
     #[test]
-    fn iq_block_bytes_knows_the_five_types_and_refuses_others() {
+    fn iq_block_bytes_knows_the_six_types_and_refuses_others() {
         assert_eq!(iq_block_bytes(GGML_TYPE_IQ2_XXS), Some(66));
         assert_eq!(iq_block_bytes(GGML_TYPE_IQ2_S), Some(82));
         assert_eq!(iq_block_bytes(GGML_TYPE_IQ3_XXS), Some(98));
         assert_eq!(iq_block_bytes(GGML_TYPE_IQ3_S), Some(110));
         assert_eq!(iq_block_bytes(GGML_TYPE_IQ4_XS), Some(136));
+        // #3869: 18, and 32 elements — the only type here that is not a 256
+        // element super-block.
+        assert_eq!(iq_block_bytes(GGML_TYPE_IQ4_NL), Some(18));
         // Q4_K (12) has its own fused kernel and must NOT be claimed here.
         assert_eq!(iq_block_bytes(12), None);
         assert_eq!(iq_block_bytes(0), None);
@@ -215,12 +249,15 @@ mod tests {
     #[test]
     fn matvec_with_a_one_hot_input_reads_the_dequantized_weight() {
         for qtype in IQ_TYPES {
+            let elems = expected_block_elems(qtype);
             let data = block_of(qtype, 7);
             let dequantized = dequantize_iq_tensor(qtype, &data).expect("dequant");
-            for col in [0usize, 1, 31, 130, 255] {
-                let mut x = vec![0.0f32; IQ_BLOCK_ELEMS];
+            // #3869: probe columns that EXIST for this type. IQ4_NL blocks are 32
+            // elements, so 130 and 255 are past the end of one block.
+            for col in [0usize, 1, 31, 130, 255].into_iter().filter(|c| *c < elems) {
+                let mut x = vec![0.0f32; elems];
                 x[col] = 1.0;
-                let got = iq_parallel_matvec(qtype, &data, &x, IQ_BLOCK_ELEMS, 1).expect("matvec");
+                let got = iq_parallel_matvec(qtype, &data, &x, elems, 1).expect("matvec");
                 assert!(
                     (got[0] - dequantized[col]).abs() <= 1e-6 * dequantized[col].abs().max(1.0),
                     "type {qtype} col {col}: matvec {} vs dequant {}",
@@ -239,8 +276,9 @@ mod tests {
             let mut data = block_of(qtype, 1);
             let row1 = block_of(qtype, 2);
             data.extend_from_slice(&row1);
-            let x = vec![1.0f32; IQ_BLOCK_ELEMS];
-            let got = iq_parallel_matvec(qtype, &data, &x, IQ_BLOCK_ELEMS, 2).expect("matvec");
+            let elems = expected_block_elems(qtype);
+            let x = vec![1.0f32; elems];
+            let got = iq_parallel_matvec(qtype, &data, &x, elems, 2).expect("matvec");
             let d0: f32 = dequantize_iq_tensor(qtype, &data[..data.len() / 2])
                 .expect("dequant")
                 .iter()
@@ -274,5 +312,164 @@ mod tests {
         let err = iq_parallel_matvec(GGML_TYPE_IQ4_XS, &data, &[0.0; 256], 256, 2)
             .expect_err("one block cannot feed two rows");
         assert!(format!("{err}").contains("needs"));
+    }
+
+    /// #3869: a row that spans MORE THAN ONE block, which is what every real
+    /// tensor has and what no existing row here had.
+    ///
+    /// `rows_are_read_at_their_own_stride` passes for IQ4_NL even with the
+    /// arithmetic wrong, because it builds one block per row and calls the
+    /// matvec with `in_dim = 256`. For a 32-element type that is not one row of
+    /// 256 — it is 8 blocks. With `blocks_per_row = in_dim.div_ceil(256) = 1`
+    /// the length check still passes, both rows still land on their own block,
+    /// the 224 unwritten scratch slots are zero, and an all-ones activation
+    /// makes them contribute nothing. Green, about nothing.
+    ///
+    /// This row builds `in_dim = 2 * elems_per_block` so the stride is actually
+    /// exercised, and uses a POSITION-DEPENDENT activation so a block read at
+    /// the wrong offset cannot coincidentally sum the same.
+    #[test]
+    fn a_row_spanning_two_blocks_is_read_at_the_types_own_stride() {
+        for qtype in IQ_TYPES {
+            let elems = expected_block_elems(qtype);
+            let bytes = iq_block_bytes(qtype).expect("iq type");
+            let in_dim = 2 * elems;
+            let out_dim = 2;
+
+            // Four blocks: rows [b0 b1] and [b2 b3], laid out exactly as a GGUF
+            // row-major tensor does.
+            let mut data = Vec::new();
+            for salt in 1..=4u8 {
+                data.extend_from_slice(&block_of(qtype, salt));
+            }
+            assert_eq!(data.len(), 4 * bytes);
+
+            let x: Vec<f32> = (0..in_dim).map(|i| ((i % 11) as f32) - 5.0).collect();
+            let got = iq_parallel_matvec(qtype, &data, &x, in_dim, out_dim)
+                .unwrap_or_else(|e| panic!("type {qtype}: {e}"));
+
+            // The answer, computed independently of the matvec's own arithmetic.
+            let flat = dequantize_iq_tensor(qtype, &data).expect("dequant");
+            for row in 0..out_dim {
+                let want: f32 = (0..in_dim).map(|j| flat[row * in_dim + j] * x[j]).sum();
+                assert!(
+                    (got[row] - want).abs() <= 1e-3 * want.abs().max(1.0),
+                    "type {qtype} ({elems} elems/{bytes} B per block), row {row}: matvec {} vs \
+                     dequantized dot {want} — the row stride is wrong for this type",
+                    got[row]
+                );
+            }
+        }
+    }
+
+    /// The refusal that used to be a wrong answer.
+    ///
+    /// Two rows of 256 elements in IQ4_NL is 8 blocks per row — 144 bytes a row,
+    /// 288 in total. Handed 36 bytes, the dispatch now says so:
+    ///
+    /// ```text
+    /// IQ weight has 36 bytes, needs 288 for 2x256 (type 20)
+    /// ```
+    ///
+    /// Before elements-per-block became a property of the type, the same call
+    /// computed `blocks_per_row = 256.div_ceil(256) = 1`, decided 36 bytes were
+    /// exactly enough, read one 18-byte block per row and summed it against 256
+    /// activations — 224 of them against scratch it never wrote. It returned a
+    /// float. That is the failure mode this whole change exists to remove: not a
+    /// crash, not an error, a plausible number.
+    #[test]
+    fn a_short_iq4_nl_weight_is_refused_with_the_right_arithmetic() {
+        let mut data = block_of(GGML_TYPE_IQ4_NL, 1);
+        data.extend_from_slice(&block_of(GGML_TYPE_IQ4_NL, 2));
+        assert_eq!(data.len(), 36);
+
+        let err = iq_parallel_matvec(GGML_TYPE_IQ4_NL, &data, &[0.0; 256], 256, 2)
+            .expect_err("36 bytes cannot be two 256-element rows of a 32-element type");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("needs 288"),
+            "the refusal must name the size the TYPE requires (8 blocks x 18 B x 2 rows), \
+             not the size a 256-element type would: {msg}"
+        );
+    }
+
+    /// `iq_block_elems` and `iq_block_bytes` must agree about which types exist,
+    /// or a type gets a byte size and no element count and silently falls back
+    /// to 256 via `unwrap_or`.
+    #[test]
+    fn every_type_with_a_block_size_has_an_element_count() {
+        for qtype in 0u32..=40 {
+            assert_eq!(
+                iq_block_bytes(qtype).is_some(),
+                iq_block_elems(qtype).is_some(),
+                "type {qtype}: iq_block_bytes and iq_block_elems disagree about whether \
+                 this is an IQ type, so one of them would fall back to a default"
+            );
+        }
+        assert_eq!(iq_block_elems(GGML_TYPE_IQ4_NL), Some(32));
+        assert_eq!(iq_block_elems(GGML_TYPE_IQ4_XS), Some(256));
+    }
+
+    /// #3869: the LOADER and the DISPATCH must agree about every type's block
+    /// layout, because they are two tables of the same facts and nothing
+    /// compared them.
+    ///
+    /// This is the guard the IQ4_NL defect walked straight through. The tree
+    /// already held the right numbers in TWO places — `ggml_type_table.rs:150`
+    /// (`blck_size: 32, type_size: 18`, which is how the loader sized the
+    /// tensor correctly) and `aprender-quant/src/ggml_type.rs:177`. Only this
+    /// module assumed 256. The loader read a row of 144 bytes and the matvec
+    /// read 18 of them, and no test in the tree could see the disagreement
+    /// because neither side ever looked at the other.
+    ///
+    /// A type is sized by the loader and decoded by the dispatch. If those two
+    /// answers differ, one of them is reading the file wrong, and which one
+    /// does not matter — the pair is unusable either way.
+    #[test]
+    fn the_dispatch_agrees_with_the_loader_about_every_block_layout() {
+        use crate::gguf::ggml_type_table;
+
+        let mut checked = 0usize;
+        for qtype in 0u32..=40 {
+            let Some(bytes) = iq_block_bytes(qtype) else {
+                continue;
+            };
+            let elems = iq_block_elems(qtype).expect("every sized type has an element count");
+            let loader = ggml_type_table::traits(qtype).unwrap_or_else(|| {
+                panic!(
+                    "type {qtype} has a dequantizer here but NO row in the loader's table, so \
+                     the loader cannot size a tensor this module claims it can decode"
+                )
+            });
+            assert_eq!(
+                bytes, loader.type_size,
+                "type {qtype} ({}): dispatch says {bytes} bytes per block, loader says {} — the \
+                 loader sizes the tensor and this module walks it, so they cannot differ",
+                loader.name, loader.type_size
+            );
+            assert_eq!(
+                elems, loader.blck_size,
+                "type {qtype} ({}): dispatch says {elems} elements per block, loader says {} — \
+                 this is exactly the IQ4_NL defect, where the tree held the right number and \
+                 the dispatch assumed 256",
+                loader.name, loader.blck_size
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 6,
+            "expected at least the six IQ types to be compared, compared {checked} — a loop \
+             that checks nothing is not a guard"
+        );
+    }
+
+    /// Elements per block, stated independently of the production code so this
+    /// file's tests cannot be satisfied by agreeing with the thing they check.
+    fn expected_block_elems(qtype: u32) -> usize {
+        if qtype == GGML_TYPE_IQ4_NL {
+            32
+        } else {
+            256
+        }
     }
 }

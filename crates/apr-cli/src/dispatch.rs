@@ -134,6 +134,91 @@ fn run_accelerator_forced(gpu: bool, no_gpu: bool, backend: Option<&str>) -> boo
     )
 }
 
+/// GH-614: announce a `--backend` override, and refuse `--backend cuda` on a build
+/// without the `cuda` feature (FALSIFY-BACKEND-CUDA-HONESTY-001). Extracted from
+/// `dispatch_runtime_commands` unchanged, to keep that function under the complexity
+/// ratchet.
+fn check_run_backend(backend: Option<&str>) -> Result<(), CliError> {
+    if let Some(b) = backend {
+        if b != "cpu" {
+            eprintln!("Backend override: {b}");
+        }
+    }
+    // FALSIFY-BACKEND-CUDA-HONESTY-001: refuse `--backend cuda` on a build
+    // that has no CUDA compiled in, instead of silently serving wgpu/CPU.
+    //
+    // The CUDA generate path is behind `#[cfg(feature = "cuda")]`
+    // (aprender-serve/src/infer/gguf_gpu_generate.rs:356). On a build without
+    // that feature the whole block VANISHES, control falls through to the
+    // GH-559 wgpu fallback, and the run prints:
+    //     Backend override: cuda
+    //     Backend: wgpu (Vulkan)
+    // wgpu then fails its own cpu-parity gate (cosine 0.884 < 0.99) and
+    // degrades again — ~20 tok/s where CUDA gives ~400. Measured 2026-07-27
+    // on an RTX 4090 with nvcc 12.8 present, so this is NOT a
+    // missing-hardware case; it is a build that cannot honour the flag
+    // reporting success anyway.
+    //
+    // This silently invalidates any measurement taken through it. The
+    // Pillar-4 decode beat run against such a binary reports
+    // `ratio_median=0.070x` and a BEAT-REGRESSION panic — a fabricated 14x
+    // regression with nothing wrong in apr's decode path.
+    //
+    // A 20x silent downgrade is never what the caller asked for. Fail.
+    //
+    // NOTE: this checks build capability only. When CUDA *is* compiled in
+    // but fails at runtime (e.g. the Blackwell sm_121 JIT), the GH-559
+    // wgpu fallback is deliberate and stays.
+    if backend == Some("cuda") && !cfg!(feature = "cuda") {
+        return Err(CliError::ValidationFailed(
+            "--backend cuda requested, but this `apr` was built WITHOUT the \
+`cuda` feature, so the CUDA backend does not exist in this binary. \
+Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
+(~20 tok/s vs ~400) and makes any throughput measurement taken through it \
+meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
+--features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
+binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
+chain enables this path). To run on this build anyway, pass `--backend cpu` \
+or drop `--backend`."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Batch JSONL mode: load the model once and process every prompt. #3723: the batch path
+/// renders its own prompts, so `--thinking`, which it cannot honour, is refused by name
+/// rather than ignored. Extracted from `dispatch_runtime_commands` unchanged.
+#[cfg(feature = "inference")]
+#[allow(clippy::too_many_arguments)]
+fn run_batch_jsonl(
+    source: &str,
+    batch_file: &std::path::Path,
+    thinking_requested: bool,
+    max_tokens: usize,
+    temperature: f32,
+    top_k: usize,
+    no_gpu: bool,
+    verbose: bool,
+) -> Result<(), CliError> {
+    if thinking_requested {
+        return Err(CliError::ValidationFailed(
+            "--thinking is not supported with --batch-jsonl (#3723): the batch path \
+renders its own prompts. Run the prompts through `apr run --thinking` instead."
+                .to_string(),
+        ));
+    }
+    run::run_batch(
+        source,
+        batch_file,
+        max_tokens,
+        temperature,
+        top_k,
+        no_gpu,
+        verbose,
+    )
+}
+
 /// Dispatch runtime commands: check, run, serve.
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
@@ -173,53 +258,13 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             batch_jsonl,
             verbose,
             backend: BackendArg { backend },
+            thinking,
         } => {
             request_f2_revalidate(*revalidate);
             // GH-614: --backend cpu forces CPU-only inference
             let backend_forces_cpu = backend.as_deref() == Some("cpu");
-            if let Some(ref b) = backend {
-                if b != "cpu" {
-                    eprintln!("Backend override: {b}");
-                }
-            }
-            // FALSIFY-BACKEND-CUDA-HONESTY-001: refuse `--backend cuda` on a build
-            // that has no CUDA compiled in, instead of silently serving wgpu/CPU.
-            //
-            // The CUDA generate path is behind `#[cfg(feature = "cuda")]`
-            // (aprender-serve/src/infer/gguf_gpu_generate.rs:356). On a build without
-            // that feature the whole block VANISHES, control falls through to the
-            // GH-559 wgpu fallback, and the run prints:
-            //     Backend override: cuda
-            //     Backend: wgpu (Vulkan)
-            // wgpu then fails its own cpu-parity gate (cosine 0.884 < 0.99) and
-            // degrades again — ~20 tok/s where CUDA gives ~400. Measured 2026-07-27
-            // on an RTX 4090 with nvcc 12.8 present, so this is NOT a
-            // missing-hardware case; it is a build that cannot honour the flag
-            // reporting success anyway.
-            //
-            // This silently invalidates any measurement taken through it. The
-            // Pillar-4 decode beat run against such a binary reports
-            // `ratio_median=0.070x` and a BEAT-REGRESSION panic — a fabricated 14x
-            // regression with nothing wrong in apr's decode path.
-            //
-            // A 20x silent downgrade is never what the caller asked for. Fail.
-            //
-            // NOTE: this checks build capability only. When CUDA *is* compiled in
-            // but fails at runtime (e.g. the Blackwell sm_121 JIT), the GH-559
-            // wgpu fallback is deliberate and stays.
-            if backend.as_deref() == Some("cuda") && !cfg!(feature = "cuda") {
-                return Some(Err(CliError::ValidationFailed(
-                    "--backend cuda requested, but this `apr` was built WITHOUT the \
-`cuda` feature, so the CUDA backend does not exist in this binary. \
-Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
-(~20 tok/s vs ~400) and makes any throughput measurement taken through it \
-meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
---features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
-binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
-chain enables this path). To run on this build anyway, pass `--backend cpu` \
-or drop `--backend`."
-                        .to_string(),
-                )));
+            if let Err(e) = check_run_backend(backend.as_deref()) {
+                return Some(Err(e));
             }
             // PERF-021: `apr run` is the surface #2696 was MEASURED through —
             // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
@@ -248,9 +293,10 @@ or drop `--backend`."
             // Batch JSONL mode: load model once, process all prompts
             #[cfg(feature = "inference")]
             if let Some(ref batch_file) = batch_jsonl {
-                return Some(run::run_batch(
+                return Some(run_batch_jsonl(
                     source,
                     batch_file,
+                    thinking.mode().is_some(),
                     *max_tokens,
                     *temperature,
                     *top_k,
@@ -292,13 +338,13 @@ or drop `--backend`."
                 *repeat_penalty,
                 *repeat_last_n,
                 *split_prompt,
+                thinking.mode(),
             )
         }
 
         Commands::Serve { command } => dispatch_serve_command(command, cli),
 
         // PMAT-182: apr code — sovereign coding assistant
-        
         Commands::Code {
             model,
             project,
@@ -310,6 +356,10 @@ or drop `--backend`."
             emit_trace,
             output_format,
             input_format,
+            no_gpu,
+            gpu: _,
+            max_tokens,
+            thinking,
         } => dispatch_code_command(CodeArgs {
             model,
             project,
@@ -321,6 +371,9 @@ or drop `--backend`."
             emit_trace,
             output_format: *output_format,
             input_format: *input_format,
+            no_gpu: *no_gpu,
+            max_tokens: *max_tokens,
+            think: thinking.as_deref(),
         }),
 
         _ => return None,
@@ -340,6 +393,9 @@ struct CodeArgs<'a> {
     emit_trace: &'a Option<PathBuf>,
     output_format: crate::CodeOutputFormat,
     input_format: crate::CodeInputFormat,
+    no_gpu: bool,
+    max_tokens: Option<u32>,
+    think: Option<&'a str>,
 }
 
 /// Dispatch `apr code` (PMAT-182): the sovereign coding assistant.
@@ -364,7 +420,29 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
     {
         print_code_help_and_exit();
     }
-    batuta::agent::code::cmd_code(
+    // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001: forward as
+    // `&str` so the orchestrate crate need not depend on the apr-cli
+    // ValueEnum types.
+    let output_format = match args.output_format {
+        crate::CodeOutputFormat::Text => "text",
+        crate::CodeOutputFormat::Json => "json",
+    };
+    let started = std::time::Instant::now();
+    // #3978: the serve child's backend, generation length and thinking mode.
+    let serve_opts = batuta::agent::code::CodeServeOptions {
+        serve: batuta::agent::driver::apr_serve::ServeLaunchOptions {
+            backend: if args.no_gpu {
+                batuta::agent::driver::apr_serve::ServeBackend::Cpu
+            } else {
+                batuta::agent::driver::apr_serve::ServeBackend::Gpu
+            },
+            max_tokens: args.max_tokens,
+            // #3723: sent per request as chat_template_kwargs.enable_thinking.
+            think: args.think.map(|t| t == "on"),
+        },
+        think: args.think.map(|t| t == "on"),
+    };
+    batuta::agent::code::cmd_code_with(
         args.model.clone(),
         args.project.to_path_buf(),
         args.resume.clone(),
@@ -373,19 +451,27 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
         args.max_turns,
         args.manifest.clone(),
         args.emit_trace.clone(),
-        // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001: forward as
-        // `&str` so the orchestrate crate need not depend on the apr-cli
-        // ValueEnum types.
-        match args.output_format {
-            crate::CodeOutputFormat::Text => "text",
-            crate::CodeOutputFormat::Json => "json",
-        },
+        output_format,
         match args.input_format {
             crate::CodeInputFormat::Text => "text",
             crate::CodeInputFormat::Json => "json",
         },
+        serve_opts,
     )
-    .map_err(|e| CliError::Aprender(e.to_string()))
+    .map_err(|e| {
+        let err = CliError::Aprender(e.to_string());
+        // #3775: an error cmd_code returns still owes a -p json run its one
+        // JSON document, carrying the exit code this error becomes.
+        batuta::agent::code::emit_error_document(
+            args.print,
+            args.prompt,
+            output_format,
+            &e,
+            i32::from(err.exit_code_value()),
+            started.elapsed(),
+        );
+        err
+    })
 }
 
 /// #2607: render the real `apr code --help` and leave, without running the
@@ -447,9 +533,7 @@ fn dispatch_debug(
     })?;
     let (drama, hex, strings, limit) = flags;
     let (j, verb) = (cli.json, cli.verbose);
-    crate::pipe::with_stdin_support(file, |p| {
-        debug::run(p, drama, hex, strings, limit, j, verb)
-    })
+    crate::pipe::with_stdin_support(file, |p| debug::run(p, drama, hex, strings, limit, j, verb))
 }
 
 /// Dispatch inspection commands: inspect, debug, validate, lint, explain, canary.

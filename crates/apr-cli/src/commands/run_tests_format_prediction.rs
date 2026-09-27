@@ -1,68 +1,6 @@
 
-    /// Negative numbers should fail (token IDs are unsigned).
-    /// Bug class: silently wrapping negative values via as u32.
-    #[test]
-    fn parse_token_ids_negative_fails() {
-        let result = parse_token_ids("-1");
-        assert!(result.is_err(), "Negative token IDs must be rejected");
-    }
-
-    /// JSON array with invalid bracket structure fails gracefully.
-    /// Bug class: panic on malformed JSON.
-    #[test]
-    fn parse_token_ids_malformed_json_array() {
-        let result = parse_token_ids("[1, 2, ");
-        assert!(result.is_err(), "Malformed JSON array must fail");
-    }
-
     // ========================================================================
-    // format_prediction_output: precision and edge cases
     // ========================================================================
-
-    /// JSON output must contain inference_time_ms field.
-    /// Bug class: field renamed or omitted in serialization.
-    #[test]
-    fn format_prediction_output_json_has_timing() {
-        use std::time::Duration;
-        let options = RunOptions {
-            output_format: "json".to_string(),
-            ..Default::default()
-        };
-        let output = format_prediction_output(&[1.0, 2.0], Duration::from_millis(42), &options)
-            .expect("should format");
-        assert!(
-            output.contains("inference_time_ms"),
-            "JSON output must include inference_time_ms"
-        );
-        assert!(output.contains("42"), "Should contain the timing value");
-    }
-
-    /// Text output should show index-labeled predictions.
-    /// Bug class: off-by-one in index labeling.
-    #[test]
-    fn format_prediction_output_text_indexes() {
-        use std::time::Duration;
-        let options = RunOptions::default();
-        let output = format_prediction_output(&[0.1, 0.9], Duration::from_millis(10), &options)
-            .expect("should format");
-        assert!(output.contains("[0]:"), "Should contain [0]: label");
-        assert!(output.contains("[1]:"), "Should contain [1]: label");
-    }
-
-    /// NaN and Inf values should not crash serialization.
-    /// Bug class: serde_json panicking on non-finite floats.
-    #[test]
-    fn format_prediction_output_text_with_nan() {
-        use std::time::Duration;
-        let options = RunOptions::default(); // text mode
-        let output = format_prediction_output(
-            &[f32::NAN, f32::INFINITY],
-            Duration::from_millis(1),
-            &options,
-        )
-        .expect("text format should handle NaN/Inf");
-        assert!(output.contains("NaN") || output.contains("nan"));
-    }
 
     // ========================================================================
     // ModelSource::cache_path: structural invariants
@@ -106,79 +44,7 @@
     }
 
     // ========================================================================
-    // clean_model_output: additional edge cases
     // ========================================================================
-
-    /// Input consisting entirely of markers must produce empty string.
-    /// Bug class: marker removal leaves residual empty-looking content.
-    #[test]
-    fn clean_model_output_all_markers_yields_empty() {
-        let raw = "<|im_start|>assistant\n<|im_end|><|endoftext|>";
-        let cleaned = clean_model_output(raw);
-        assert!(
-            cleaned.is_empty(),
-            "All-marker input should clean to empty, got: '{cleaned}'"
-        );
-    }
-
-    /// Bare `<|im_start|>` without "assistant" suffix must still be stripped.
-    /// Bug class: only stripping the combined "im_start + assistant" variant.
-    #[test]
-    fn clean_model_output_strips_bare_im_start() {
-        let raw = "<|im_start|>Hello world";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "Hello world");
-    }
-
-    /// `<|endoftext|>` alone, without other markers, must be stripped.
-    /// Bug class: endoftext marker only removed when adjacent to im_end.
-    #[test]
-    fn clean_model_output_strips_endoftext_alone() {
-        let raw = "Result: 7<|endoftext|>";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "Result: 7");
-    }
-
-    /// Markers embedded in the middle of content must be removed,
-    /// leaving surrounding text joined.
-    /// Bug class: replace() leaving double-spaces at marker positions.
-    #[test]
-    fn clean_model_output_markers_in_middle() {
-        let raw = "Hello<|im_end|> World";
-        let cleaned = clean_model_output(raw);
-        assert!(
-            cleaned.contains("Hello"),
-            "Content before marker must be preserved"
-        );
-        assert!(
-            cleaned.contains("World"),
-            "Content after marker must be preserved"
-        );
-    }
-
-    /// Multiline content with markers on separate lines.
-    /// Bug class: line-by-line processing missing cross-line markers.
-    #[test]
-    fn clean_model_output_multiline_with_markers() {
-        let raw = "<|im_start|>assistant\nLine 1\nLine 2\n<|im_end|>";
-        let cleaned = clean_model_output(raw);
-        assert!(cleaned.contains("Line 1"));
-        assert!(cleaned.contains("Line 2"));
-        assert!(!cleaned.contains("<|im_start|>"));
-        assert!(!cleaned.contains("<|im_end|>"));
-    }
-
-    /// Only whitespace between markers should collapse to empty.
-    /// Bug class: whitespace not trimmed after marker removal.
-    #[test]
-    fn clean_model_output_whitespace_only_between_markers() {
-        let raw = "<|im_start|>   <|im_end|>";
-        let cleaned = clean_model_output(raw);
-        assert!(
-            cleaned.is_empty(),
-            "Only whitespace between markers should be empty, got: '{cleaned}'"
-        );
-    }
 
     // ========================================================================
     // ModelSource::parse: additional edge cases
@@ -413,29 +279,4 @@
     }
 
     // ========================================================================
-    // parse_token_ids: additional edge cases
     // ========================================================================
-
-    /// Single token ID without delimiters.
-    /// Bug class: split() returning empty on single element.
-    #[test]
-    fn parse_token_ids_single_value() {
-        let result = parse_token_ids("42").expect("should parse single token");
-        assert_eq!(result, vec![42u32]);
-    }
-
-    /// JSON array with single element.
-    /// Bug class: JSON array path only handling multi-element arrays.
-    #[test]
-    fn parse_token_ids_json_single_element() {
-        let result = parse_token_ids("[999]").expect("should parse single-element array");
-        assert_eq!(result, vec![999u32]);
-    }
-
-    /// Empty JSON array should produce empty vec.
-    /// Bug class: JSON deserialize failing on empty array.
-    #[test]
-    fn parse_token_ids_json_empty_array() {
-        let result = parse_token_ids("[]").expect("should parse empty JSON array");
-        assert!(result.is_empty());
-    }

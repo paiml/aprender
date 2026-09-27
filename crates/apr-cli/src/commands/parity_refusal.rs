@@ -151,6 +151,16 @@ pub(crate) fn parity_refusal_for<'n>(
 ) -> Option<ParityRefusal> {
     use realizar::gguf::{unsupported_architecture_reason, ArchConstraints};
 
+    // #3714 R2: the spellings the runtime dispatches to the routed-expert
+    // forward have BOTH forwards — CPU (#3367) and CUDA (`Qwen3MoeCudaModel`,
+    // #3714) — so parity measures them (the MoE arm) and must stop refusing
+    // them. `moe_forward_handles` is realizar's own dispatch predicate, the
+    // same one `apr run` and `apr qa` ask. Every OTHER spelling `is_moe`
+    // matches reaches no MoE forward and keeps the refusal below.
+    if realizar::gguf::moe_forward_handles(architecture) {
+        return None;
+    }
+
     if ArchConstraints::from_architecture(architecture).is_moe {
         // `normalize_architecture` is not total over the MoE spellings
         // `ArchConstraints` accepts (`qwen3_5moe` hits its `_ => "llama"`

@@ -253,6 +253,7 @@
             trace_level: "basic".to_string(),
             profile: false,
             backend: BackendArg::default(),
+            thinking: ThinkingArg::default(),
         });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);

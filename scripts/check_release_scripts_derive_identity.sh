@@ -18,6 +18,11 @@
 #       on a non-comment line: a value with no `$` in it. `MS=$V`, `T="v$V"` and
 #       `AP="${RELEASE_AP:-...}"` are derivations; `V=0.69.0` and `EPIC=3477` are not.
 #       scripts/release/lib_release_params.sh is where the identity is derived.
+#   R3  no numeric test against an integer literal of two or more digits, on a non-comment
+#       line (#3657): `[ "${#ORDER[@]}" -eq 74 ]`, `[ 74 -eq "$n" ]`, `(( n == 74 ))`. A crate
+#       count belongs to the universe (cascade_universe.py), not to the script. 0.68.2's 74
+#       would have stopped a later cascade for a reason unrelated to publish safety. A retry
+#       bound or an exit code is one digit (`-lt 3`, `-eq 0`); a crate universe is not.
 # Zero files scanned is ENV rc=2, never a pass.
 #
 #   check_release_scripts_derive_identity.sh              judge scripts/release/
@@ -28,6 +33,7 @@ DIR="${RELEASE_SCRIPTS_DIR:-$ROOT/scripts/release}"
 
 R1_RE='(^|[^A-Za-z0-9_.$}-])/(mnt|home|Users|opt|srv|media|root)/'
 R2_RE='(^|[;&|[:space:]])(V|T|MS|EPIC|LAST_TAG|AP)=[^[:space:];$]*([[:space:];]|$)'
+R3_RE='(-(eq|ne|lt|le|gt|ge)|==|!=)[[:space:]]*["'"'"']?[0-9][0-9]+([^0-9.]|$)|(^|[^0-9.$#{])[0-9][0-9]+["'"'"']?[[:space:]]*(-(eq|ne|lt|le|gt|ge)|==|!=)[[:space:]]'
 
 # judge <dir> -> 0 clean, 1 a finding (each printed), 2 ENV
 judge() {
@@ -48,13 +54,21 @@ judge() {
             printf 'FAIL  R2 %s: a release identity assigned a literal (derive it: lib_release_params.sh):\n' "${f#"$ROOT/"}"
             printf '%s\n' "$hits" | sed 's/^/        /'
         fi
+        hits=$(awk -v re="$R3_RE" '!/^[[:space:]]*#/ && $0 ~ re { printf "%d:%s\n", NR, $0 }' "$f")
+        if [ -n "$hits" ]; then
+            bad=1
+            printf 'FAIL  R3 %s: a count asserted against a literal (derive it from the universe: cascade_universe.py):\n' "${f#"$ROOT/"}"
+            printf '%s\n' "$hits" | sed 's/^/        /'
+        fi
     done < <(find "$dir" -maxdepth 1 -type f -print0)
     [ "$n" -gt 0 ] || { printf 'ENV   %s: zero files scanned -- a scan of nothing is not a pass\n' "$dir" >&2; return 2; }
-    [ "$bad" -eq 0 ] && printf 'ok    %s file(s) under %s: no out-of-repo path, no literal release identity\n' "$n" "${dir#"$ROOT/"}"
+    [ "$bad" -eq 0 ] && printf 'ok    %s file(s) under %s: no out-of-repo path, no literal release identity, no literal count\n' "$n" "${dir#"$ROOT/"}"
     return "$bad"
 }
 
-case "${1:-}" in -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+# The header is every leading comment line, found rather than counted (a range like '2,24p'
+# goes stale the moment a rule is added).
+case "${1:-}" in -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;; esac
 
 if [ "${1:-}" = "--self-test" ]; then
     echo "=== release scripts derive their identity: case table ==="
@@ -83,6 +97,17 @@ if [ "${1:-}" = "--self-test" ]; then
     row 0 "an assignment in a COMMENT is documentation -> clean (R2 skips comments)" $'# V=0.68.2 was the old literal\n'
     row 0 "lowercase locals and names that merely end in V/T -> clean"  $'local v=$1 t=$2\nENV=prod\nPLOT=1\n'
     row 0 "/dev/null, /tmp and \$HOME paths are not operator-box literals -> clean" $'x > /dev/null\nmktemp -p /tmp\nls "$HOME/.cargo/bin"\n'
+    # R3 (#3657): the planted literal is 0.68.2's own line from publish_strict.sh, verbatim
+    row 1 "PLANTED: publish_strict.sh's 0.68.2 universe-size assertion -> RED (R3)" \
+        $'[ "${#ORDER[@]}" -eq 74 ] && [ "${#EXPECT[@]}" -eq 74 ] || die "order=${#ORDER[@]} universe=${#EXPECT[@]}, expected 74/74"\n'
+    row 1 "a wc -l count against a literal -> RED (R3)"                  $'[ "$(sort -u order.txt | wc -l)" -eq 74 ] || die dup\n'
+    row 1 "a counter against a literal, unquoted -> RED (R3)"            $'[ $n -eq 74 ] || die "final verification"\n'
+    row 1 "the literal on the LEFT -> RED (R3)"                          $'[ 74 -eq "$n" ] || die x\n'
+    row 1 "arithmetic (( n == 74 )) -> RED (R3)"                         $'(( ${#ORDER[@]} == 74 )) || die x\n'
+    row 1 "a quoted literal -eq \"74\" -> RED (R3)"                     $'[ "$n" -eq "74" ] || die x\n'
+    row 0 "a count against the DERIVED size, a retry bound, an exit code -> clean" $'[ "$n" -eq "$N" ] || die x\n[ $a -lt 3 ] && retry\n[ $rc -eq 0 ] && break\n[ "$N" -gt 0 ] || die empty\n'
+    row 0 "numbers that are not compared: sleep, seq, cut, arithmetic -> clean" $'sleep $((a*120))\nfor _ in $(seq 1 30); do :; done\ncut -c1-300\nprintf "%02d" $i\n'
+    row 0 "a literal count in a COMMENT is documentation -> clean (R3 skips comments)" $'# 0.68.2 asserted -eq 74 here\n'
     n=$((n + 1)); rc=0; rmtree "$d/empty"; mkdir -p "$d/empty"; judge "$d/empty" > /dev/null 2>&1 || rc=$?
     [ "$rc" -eq 2 ] && printf 'ok    row %-2s rc=2  zero files -> ENV, never a pass\n' "$n" \
         || { printf 'FAIL  row %-2s rc=%s (wanted 2)  zero files\n' "$n" "$rc" >&2; bad=1; }

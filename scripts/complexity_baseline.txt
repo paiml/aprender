@@ -417,7 +417,6 @@ crates/aprender-serve/examples/trace_hidden_flow.rs::main 22 42
 crates/aprender-serve/src/api/cuda_batch_scheduler.rs::cuda_batch_scheduler_loop 18 85
 crates/aprender-serve/src/api/cuda_batch_scheduler.rs::process_cuda_batch 25 72
 crates/aprender-serve/src/api/cuda_chat_backend.rs::try_cuda_backend 14 43
-crates/aprender-serve/src/api/cuda_chat_backend.rs::try_qwen3_moe_backend 10 26
 crates/aprender-serve/src/api/gpu_completions_handler.rs::completions_inner 10 28
 crates/aprender-serve/src/api/iteration_scheduler.rs::process_iteration_batch 30 101
 crates/aprender-serve/src/api/tests/openai_compat_2375.rs::no_shipped_string_leaks_an_internal_rust_constructor 9 31

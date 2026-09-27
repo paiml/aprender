@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-INVENTORY-002 — two tools registered with the same `name`
 //! MUST cause `ToolIndex::from_inventory` to panic with a clear
 //! diagnostic, never silently shadow one of the registrations.

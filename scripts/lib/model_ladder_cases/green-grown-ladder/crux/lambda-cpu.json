@@ -1,0 +1,146 @@
+{
+ "schema": "crux-inference-receipt/v1",
+ "host": "lambda",
+ "backend": "cpu",
+ "apr": {
+  "sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
+ },
+ "cells": [
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  }
+ ],
+ "summary": {
+  "verdict": "PASS",
+  "cells": 12
+ }
+}

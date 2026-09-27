@@ -208,7 +208,10 @@ fn profile_gpu_or_cpu(
             eprintln!("{line}");
         }
 
-        match profile_gpu_generation(path, warmup, measure, tokens) {
+        // #4270: the signature is (path, tokens_per_pass, warmup, measure). This call
+        // passed (warmup, measure, tokens), so `--compare` profiled a `warmup`-token
+        // prompt, warmed up `measure` times and measured `tokens` passes.
+        match profile_gpu_generation(path, tokens, warmup, measure) {
             Ok(r) => return Ok(r),
             Err(e) => {
                 output::info(&format!("GPU profiling failed: {e}, falling back to CPU"));

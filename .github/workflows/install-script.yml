@@ -31,6 +31,11 @@ on:
       - ".github/workflows/install-script.yml"
       - ".github/workflows/binary-release.yml"
       - ".github/workflows/nightly.yml"
+  # #3676 rule 3 (scripts/check_workflow_path_filters.sh): a path filter is a
+  # claim that nothing outside these paths can break this gate; the nightly run
+  # re-checks the claim every day. Set ~5h early for the dispatch delay (#3292).
+  schedule:
+    - cron: '0 23 * * *'
 
 permissions:
   contents: read
@@ -45,7 +50,7 @@ jobs:
       # pmat/bashrs are pinned-fleet tools, never installed per-job (BSE-10a,
       # PMAT-1066) — see ci.yml's identical step for why.
       - name: pmat/bashrs must match the pinned fleet versions (never install)
-        run: bash scripts/check_tool_versions.sh
+        run: setsid --wait bash scripts/check_tool_versions.sh
 
       - name: "bashrs SEC/DET/IDEM (scripts/install.sh, scripts/tests/install_test.sh)"
         run: |

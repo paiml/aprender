@@ -34,10 +34,21 @@ if [ -z "$APR_BINARY" ] && . "$(dirname "$0")/../apr_bin.sh" 2>/dev/null; then
     APR_BINARY="$APR"
 fi
 MODEL="${MODEL:-paiml/qwen2.5-coder-7b-apache-q4k-v1}"
-REQUIRED_GATE_COUNT=8
+# #3965: the gates AC-SHIP1-006 REQUIRES, by the names apr qa reports (qa.md §3:
+# golden, throughput, ollama parity, gpu speedup, tensor contracts, format parity,
+# ptx parity, metadata). This used to be REQUIRED_GATE_COUNT=8, a count, while apr qa
+# emitted 12. So the discharge compared 12 to 8 and could never pass, and when it did
+# "pass" (the contract's 2026-05-10 note: "All 12 gates pass (6 executed, 6 skipped)")
+# the skips were being counted as passes. Now: every REQUIRED gate must be REGISTERED
+# by the binary, EMITTED, EXECUTED and PASSED. Every OTHER registered gate must be
+# emitted and not FAILED; a skip there is neutral (cop ruling, 2026-09-23). The count
+# is derived, never typed.
+REQUIRED_GATES=(golden_output throughput ollama_parity gpu_speedup tensor_contract format_parity ptx_parity metadata_plausibility)
+REQUIRED_GATE_COUNT=${#REQUIRED_GATES[@]}
 EVIDENCE_DIR="evidence/ship-006-full-discharge"
 EVIDENCE_FILE="${EVIDENCE_DIR}/discharge-evidence-v1.json"
 QA_RAW_FILE="${EVIDENCE_DIR}/qa-raw.json"
+QA_ERR_FILE="${EVIDENCE_DIR}/qa-stderr.log"
 
 # --- Arg parsing --------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -81,33 +92,50 @@ echo "Step 1: apr qa $MODEL --json"
 # for a reproducible discharge run rather than a live-timed one.
 START_EPOCH="${SOURCE_DATE_EPOCH:-$(date -u +%s)}"
 QA_EXIT=0
-"$APR_BINARY" qa "$MODEL" --json > "$QA_RAW_FILE" 2>&1 || QA_EXIT=$?
+# #3965: stderr goes to its OWN file. `2>&1` merged diagnostics into the JSON, so
+# one stray stderr line made jq fail and every gate read as absent.
+"$APR_BINARY" qa "$MODEL" --json > "$QA_RAW_FILE" 2> "$QA_ERR_FILE" || QA_EXIT=$?
 END_EPOCH="${SOURCE_DATE_EPOCH:-$(date -u +%s)}"
 DURATION_SEC=$(( END_EPOCH - START_EPOCH ))
 
 echo "  raw output -> $QA_RAW_FILE (${DURATION_SEC} sec, exit=$QA_EXIT)"
 
-# --- Step 2: parse 8-gate boolean array ---------------------------------
-echo "Step 2: parse 8 gates from JSON"
-
-# apr qa --json shape varies; try common shapes:
-#   { "gates": [ {"name": "...", "pass": true}, ... ] }
-#   { "gates": { "golden": {"pass": true}, ... } }
-#   { "results": [ {"name": "...", "pass": true}, ... ] }
-# Normalize to a flat boolean array via jq.
-JQ_QUERY_GATES='( .gates // .results // [] ) as $g | if ($g | type) == "array" then ($g | map(.pass // .passed // false)) elif ($g | type) == "object" then ($g | to_entries | map(.value.pass // .value.passed // false)) else [] end'
-GATE_BOOLS_JSON="$(jq -r "$JQ_QUERY_GATES" "$QA_RAW_FILE" 2>/dev/null || echo '[]')"
-
-GATE_COUNT="$(printf '%s' "$GATE_BOOLS_JSON" | jq 'length')"
+# --- Step 2: judge against the binary's own gate registry (#3965) --------
+echo "Step 2: required gates vs the registry apr qa publishes"
+REGISTERED_JSON="$(jq -c '.gates_registered // []' "$QA_RAW_FILE" 2>/dev/null || echo '[]')"
+REQUIRED_JSON="$(printf '%s\n' "${REQUIRED_GATES[@]}" | jq -R . | jq -s -c .)"
+# One verdict object; every reason it is not a PASS is named in `why`.
+# The judge is jq, kept in a quoted heredoc so no shell tool mistakes jq's `$req[]`
+# for a bash array (bashrs did).
+JQ_JUDGE=$(cat <<'JQ'
+  (.gates // []) as $g
+  | def one($n): ($g | map(select(.name == $n)));
+  { registered: ($reg | length),
+    why: (
+      (if ($reg | length) == 0 then ["the report has no gates_registered: this apr predates the registry, so what it should have run cannot be derived"] else [] end)
+      + [ $req[] | select(. as $n | ($reg | index($n)) == null) | "required gate \(.) is not in the binary registry" ]
+      + [ $reg[] as $n | select((one($n) | length) != 1) | "registered gate \($n) was emitted \(one($n) | length) times, not once" ]
+      + [ $req[] as $n | one($n) | select(length == 1) | .[0] | select(.skipped == true) | "required gate \(.name) was SKIPPED: a skip is not a pass" ]
+      + [ $req[] as $n | one($n) | select(length == 1) | .[0] | select(.skipped != true and .passed != true) | "required gate \(.name) FAILED" ]
+      + [ $g[] | select((.name as $n | $req | index($n)) == null) | select(.skipped != true and .passed != true) | "gate \(.name) FAILED" ]
+    ),
+    required_pass: [ $req[] as $n | one($n) | (length == 1 and .[0].passed == true and .[0].skipped != true) ]
+  }
+JQ
+)
+JUDGE="$(jq -c --argjson reg "$REGISTERED_JSON" --argjson req "$REQUIRED_JSON" "$JQ_JUDGE" "$QA_RAW_FILE" 2>/dev/null || echo '{"registered":0,"why":["qa output is not valid JSON (see '"$QA_ERR_FILE"')"],"required_pass":[]}')"
+GATE_COUNT="$(printf '%s' "$JUDGE" | jq '.registered')"
+GATE_BOOLS_JSON="$(printf '%s' "$JUDGE" | jq -c '.required_pass')"
 PASS_COUNT="$(printf '%s' "$GATE_BOOLS_JSON" | jq '[.[] | select(. == true)] | length')"
+WHY="$(printf '%s' "$JUDGE" | jq -r '.why[]')"
 
-echo "  gate_count=$GATE_COUNT (required=$REQUIRED_GATE_COUNT)"
-echo "  pass_count=$PASS_COUNT"
-echo "  gates: $GATE_BOOLS_JSON"
+echo "  registered=$GATE_COUNT required=$REQUIRED_GATE_COUNT required_passing=$PASS_COUNT"
+echo "  required gates: ${REQUIRED_GATES[*]}"
+[ -n "$WHY" ] && printf '  NOT PASS: %s\n' "$WHY" | sed '2,$s/^/  NOT PASS: /'
 
 # --- Step 3: verdict (aggregate-AND) ------------------------------------
 if [[ "$QA_EXIT" -eq 0 \
-   && "$GATE_COUNT" == "$REQUIRED_GATE_COUNT" \
+   && -z "$WHY" \
    && "$PASS_COUNT" == "$REQUIRED_GATE_COUNT" ]]; then
     VERDICT="PASS"
     EXIT_CODE=0
@@ -140,6 +168,7 @@ cat > "$EVIDENCE_FILE" <<JSON
   "duration_seconds": ${DURATION_SEC},
   "apr_qa_exit_code": ${QA_EXIT},
   "required_gate_count": ${REQUIRED_GATE_COUNT},
+  "required_gates": ${REQUIRED_JSON},
   "gate_count": ${GATE_COUNT},
   "pass_count": ${PASS_COUNT},
   "gate_pass_array": ${GATE_BOOLS_JSON},
@@ -154,7 +183,7 @@ echo "Verdict: $VERDICT"
 echo "Evidence: $EVIDENCE_FILE"
 
 if [[ "$VERDICT" == "PASS" ]]; then
-    echo "SHIP-006 DISCHARGED (live): all 8 qa gates pass"
+    echo "SHIP-006 DISCHARGED (live): all ${REQUIRED_GATE_COUNT} required qa gates executed and passed; no registered gate failed"
 else
     echo "SHIP-006 still PARTIAL_ALGORITHM_LEVEL: gate_count=$GATE_COUNT pass_count=$PASS_COUNT exit=$QA_EXIT"
 fi

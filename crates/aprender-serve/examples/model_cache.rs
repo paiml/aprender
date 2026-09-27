@@ -35,7 +35,10 @@ fn create_demo_model(vocab_size: usize) -> (Model, BPETokenizer) {
             }
         })
         .collect();
-    let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>").expect("Failed to create tokenizer");
+    // This demo vocabulary declares `<unk>` at id 0, so it passes it. The unknown token is
+    // the model's own: a byte-level vocabulary (GPT-2, Qwen) has none and passes `None` (#3609).
+    let tokenizer =
+        BPETokenizer::new(vocab, vec![], Some("<unk>")).expect("Failed to create tokenizer");
 
     (model, tokenizer)
 }

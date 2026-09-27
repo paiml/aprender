@@ -1,0 +1,32 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Import Pipeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬───────────────────────────────────────────────────────────╮
+│ Source │ /home/noah/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf │
+│ Output │ r2/coder.apr                                              │
+╰────────┴───────────────────────────────────────────────────────────╯
+
+╭──────────────┬───────╮
+│ Architecture │ Auto  │
+│   Validation │ Basic │
+╰──────────────┴───────╯
+
+  ◉ Importing
+[PMAT-232] Tokenizer validated: 151936 vocab tokens, 151387 merge rules
+[PMAT-222] Auto-detected architecture: Qwen2 (tensor names will be mapped)
+[CONTRACT-ENFORCED] 291 tensors transformed via tensor-layout-v1.yaml (vocab=151936, hidden=896)
+[GH-185] Embedding 151387 BPE merge rules into APR metadata
+[GH-375] Raw import failed (Invalid model format: GGUF tensor 'lm_head.weight' uses Q8_0 quantization which APR cannot represent exactly. Import requires exact format preservation. Use `apr convert --quantize q6_k` to convert to a supported format.), falling back to dequant→requant path
+[BUG-IMPORT-001] Applied GGUF→APR shape contract to 291 tensors (dequant fallback path)
+[CONTRACT] Validated 291 tensors against tensor-layout-v1.yaml (vocab=151936, hidden=896)
+[PMAT-221] Embedding 151387 BPE merge rules into APR metadata (SafeTensors path)
+
+
+  ─── Validation Report
+╭───────┬─────────────────────────────────────────────────────────────────────────╮
+│ Score │ 4/4 checks that ran (71 of 75 not implemented — not evidence of health) │
+│ Grade │ A+                                                                      │
+╰───────┴─────────────────────────────────────────────────────────────────────────╯
+
+  ✓ Import successful

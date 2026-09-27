@@ -80,9 +80,9 @@ provable-contracts-macros = { workspace = true }
 # Core PAIML stack
 ndarray = "0.16"
 trueno = { workspace = true, features = ["parallel"] }
-trueno-gpu = { version = "0.69.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
+trueno-gpu = { version = "0.69.3", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
 realizar = { workspace = true, optional = true }
-aprender = { path = "../aprender-core", version = "0.69.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
+aprender = { path = "../aprender-core", version = "0.69.3", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { workspace = true, features = ["terminal"] }
 batuta-common = { workspace = true, optional = true }  # WithDimensions trait for `viz` feature (APR-MONO §S #1978)
 presentar-terminal = { workspace = true, optional = true }
@@ -118,7 +118,7 @@ regex = "1.10"  # ORCID/ROR validation
 ed25519-dalek = "2.1"  # Ed25519 signing for pre-registration
 bytemuck = { version = "1.19", features = ["derive"] }  # Safe byte casting for tensor data
 jsonschema = "0.28"  # JSON Schema validation for declarative config (AI-05)
-validator = { version = "0.20", features = ["derive"] }  # Declarative struct validation (AI-05)
+validator = { version = "0.21", features = ["derive"] }  # Declarative struct validation (AI-05)
 schemars = "0.8"  # JSON Schema generation from Rust structs (AI-05)
 fs4 = "0.13"  # Cross-platform file locking for VRAM ledger (GPU-SHARE-001)
 arrow = { version = "59", default-features = false, optional = true }  # Arrow array types for alimentar integration

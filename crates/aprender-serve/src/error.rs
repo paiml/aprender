@@ -171,6 +171,12 @@ pub enum RealizarError {
         /// Actionable suggestion (e.g., "Use CPU inference")
         suggestion: String,
     },
+
+    /// PMAT-3596: the request cannot fit the GPU, decided BEFORE loading — with the
+    /// arithmetic (weights + KV + workspace + overhead against the measured free
+    /// memory) as a typed budget, so `--json` prints numbers rather than prose.
+    #[error("GPU capacity refused: {0}. Pass --no-gpu to run the CPU forward instead")]
+    CapacityRefused(Box<crate::capacity::CapacityRefusal>),
 }
 
 #[cfg(test)]

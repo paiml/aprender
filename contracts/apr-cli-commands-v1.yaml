@@ -299,7 +299,7 @@ commands:
     description: "Tokenizer training pipeline (plan/apply)"
     requires_model: false
     side_effects: [filesystem]
-    subcommands: [apply, encode-corpus, import-hf, plan, repair-manifest, train]
+    subcommands: [apply, encode, encode-corpus, import-hf, plan, repair-manifest, train]
 
   - name: tune
     category: training
@@ -364,6 +364,11 @@ commands:
     requires_model: false
     side_effects: [gpu]
 
+  - name: capability
+    category: inspection
+    description: What this build can and cannot do, and why (from apr-model-capability-v1)
+    requires_model: false
+    side_effects: []
   - name: devices
     category: hardware
     description: "Backend discovery: probe, enumerate, print (PP-066 R-0)"

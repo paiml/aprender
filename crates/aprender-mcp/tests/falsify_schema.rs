@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-002 (strict slice) — every registered tool's `inputSchema` must
 //! compile as a valid JSON Schema Draft 7 document.
 //!

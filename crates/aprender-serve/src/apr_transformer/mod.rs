@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{RealizarError, Result};
 
 // PMAT-802: Extracted modules
+mod apr_cpu_forward;
 mod config;
 mod convert;
 mod dequant;
@@ -42,8 +43,10 @@ mod generation;
 mod helpers;
 mod loader;
 mod q4_simd;
+pub use apr_cpu_forward::AprCpuForward;
 pub use config::{
     AprKVCache, AprTransformerConfig, AprTransformerLayer, GenerateConfig, Q4KLayerWeights,
+    DEFAULT_SEED,
 };
 use dequant::{
     dequantize_apr_q4_native, dequantize_apr_q8_native, dequantize_q4_k_apr, dequantize_q6_k_apr,

@@ -35,6 +35,7 @@ use std::process::Command;
 fn registered_commands() -> Vec<&'static str> {
     vec![
         "run",
+        "capability",
         "devices",
         "serve",
         "chat",

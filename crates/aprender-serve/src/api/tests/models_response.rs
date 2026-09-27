@@ -251,6 +251,7 @@ fn test_completion_request_cov() {
 #[test]
 fn test_completion_response_cov() {
     let resp = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-123".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,

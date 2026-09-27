@@ -140,7 +140,7 @@ fn falsify_qw3_moe_gpu_parity_001_cosine_vs_cpu() {
     // PR #1477 (M-GPU-MOE-1.1.2) flips forward_qwen3_moe_cuda's receiver to
     // `&mut self` (kernel cache mutation); the `mut` here is forward-looking.
     #[allow(unused_mut)]
-    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner_model, 0)
+    let mut gpu_model = OwnedQuantizedModelCuda::new_for_moe_forward(gpu_inner_model, 0)
         .expect("OwnedQuantizedModelCuda::new(model, 0) should succeed on RTX 4090");
 
     eprintln!(
@@ -348,7 +348,7 @@ fn falsify_qw3_moe_gpu_argmax_agreement() {
         OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #1");
     let gpu_inner =
         OwnedQuantizedModel::from_mapped(&mapped).expect("OwnedQuantizedModel::from_mapped #2");
-    let mut gpu_model = OwnedQuantizedModelCuda::new(gpu_inner, 0)
+    let mut gpu_model = OwnedQuantizedModelCuda::new_for_moe_forward(gpu_inner, 0)
         .expect("OwnedQuantizedModelCuda::new(model, 0) must succeed on RTX 4090");
 
     let mut results: Vec<(String, u32, u32, f32, f32)> = Vec::new();

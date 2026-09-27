@@ -128,6 +128,19 @@ impl GgufReader {
                 // Q6_K - dequantize (super blocks of 256 elements, 210 bytes/block)
                 dequantize_q6_k(&self.data, tensor_start, num_elements)?
             }
+            // #3947: IQ4_NL (20), IQ3_S (21) and IQ4_XS (23) have real decoders in
+            // trueno_quant, bit-exact against gguf-py on every IQ tensor of the three
+            // #3947 release models. Every other IQ type still reaches the refusal below.
+            20 | 21 | 23 => {
+                trueno_quant::dequantize_iq_to_f32(
+                    meta.dtype,
+                    self.data.get(tensor_start..).unwrap_or(&[]),
+                    num_elements,
+                )
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("GGUF tensor '{name}': {e}"),
+                })?
+            }
             // #3656: IQ types (16..=23) used to go to `dequantize_iq_approximate`, which
             // mapped each raw byte to `(b - 128) * 0.01` and returned Ok — `apr convert`
             // wrote those invented weights (std 36.6x the real tensor) and exited 0. With
@@ -162,6 +175,22 @@ impl GgufReader {
         &self,
         progress: impl Fn(usize, usize, &str),
     ) -> Result<TensorDataMap> {
+        // #3947 quorum (PR #3958): IQ4_NL / IQ3_S / IQ4_XS decode per tensor so
+        // inspection (`apr qa` tensor_contract, validate) can read them, but the ticket
+        // asked for inspection only. Every whole-model F32 load (`apr import`'s GH-375
+        // fallback, `apr convert`) goes through here, so it keeps refusing them, as it
+        // did under #3656. Checked before any decoding so nothing partial is produced.
+        if let Some(meta) = self.tensors.iter().find(|t| matches!(t.dtype, 20 | 21 | 23)) {
+            let type_name = trueno_quant::GgmlType::from_id(meta.dtype)
+                .map_or("an IQ type", trueno_quant::GgmlType::as_str);
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "GGUF tensor '{}' is {type_name} (ggml type {}): aprender-core decodes it \
+                     for inspection only and does not convert IQ models to F32 (#3947)",
+                    meta.name, meta.dtype
+                ),
+            });
+        }
         let total = self.tensors.len();
         let mut result = BTreeMap::new();
         for (i, meta) in self.tensors.iter().enumerate() {

@@ -1,0 +1,21 @@
+{
+ "schema": "apr-tokenizer-parity-receipt/v1",
+ "version": "0.69.1",
+ "apr_sha": "1111111111111111111111111111111111111111",
+ "host": "lambda",
+ "rows": [
+  {
+   "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "file": "tiny-qwen35.gguf",
+   "family": "qwen35",
+   "corpus_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "comparator": "llama.cpp",
+   "comparator_sha": "60b06ab9a",
+   "tokens_compared": 5000,
+   "mismatches": 0,
+   "roundtrip_ok": true,
+   "verdict": "pass",
+   "reason": ""
+  }
+ ]
+}

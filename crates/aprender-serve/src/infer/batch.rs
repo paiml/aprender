@@ -77,11 +77,14 @@ pub struct BatchStats {
 /// Loaded batch model: holds GPU and/or CPU model handles.
 struct BatchModel {
     #[cfg(feature = "cuda")]
-    gpu: Option<crate::gguf::OwnedQuantizedModelCuda>,
+    gpu: Option<crate::gguf::dense_session::DenseSession>,
     /// GH-560: wgpu (Vulkan) fallback for batch inference
     #[cfg(feature = "gpu")]
     wgpu: Option<WgpuBatchState>,
-    cpu: Option<crate::gguf::OwnedQuantizedModel>,
+    /// #4268: both dense backends are the one engine now. A session keeps the
+    /// state of the prompt before, so a prompt sharing its prefix (a system
+    /// prompt, a template header) prefills only the rest.
+    cpu: Option<crate::gguf::dense_session::DenseSession>,
 }
 
 // GH-560: wgpu batch state extracted to batch_wgpu.rs (< 500 line gate)
@@ -96,12 +99,11 @@ impl BatchModel {
     ) -> std::result::Result<(Vec<u32>, bool), RealizarError> {
         #[cfg(feature = "cuda")]
         if let Some(ref mut gpu) = self.gpu {
-            return gpu
-                .generate_gpu_resident(input_tokens, config)
-                .map(|tokens| (tokens, true))
-                .map_err(|e| {
-                    RealizarError::InferenceError(format!("GPU generation failed: {}", e))
-                });
+            // #4268: a GPU failure leaves this prompt (and the rest of the
+            // batch) on the CPU, loudly, where it used to fail the prompt.
+            return crate::gguf::dense_session::dense_turn(gpu, input_tokens, config).map_err(
+                |e| RealizarError::InferenceError(format!("GPU generation failed: {}", e)),
+            );
         }
 
         // GH-560: wgpu fallback before CPU
@@ -111,10 +113,9 @@ impl BatchModel {
                 .map(|tokens| (tokens, true));
         }
 
-        if let Some(ref cpu) = self.cpu {
-            return cpu
-                .generate_with_cache(input_tokens, config)
-                .map(|tokens| (tokens, false))
+        if let Some(ref mut cpu) = self.cpu {
+            return crate::gguf::dense_session::dense_turn(cpu, input_tokens, config)
+                .map(|(tokens, _)| (tokens, false))
                 .map_err(|e| {
                     RealizarError::InferenceError(format!("CPU generation failed: {}", e))
                 });
@@ -207,7 +208,7 @@ where
         BatchModel {
             #[cfg(feature = "cuda")] gpu: None,
             #[cfg(feature = "gpu")] wgpu: None,
-            cpu: Some(m),
+            cpu: Some(dense_cpu(m)),
         }
     } else {
         batch_model
@@ -274,7 +275,7 @@ where
         BatchModel {
             #[cfg(feature = "cuda")] gpu: None,
             #[cfg(feature = "gpu")] wgpu: None,
-            cpu: Some(m),
+            cpu: Some(dense_cpu(m)),
         }
     } else {
         batch_model
@@ -300,6 +301,68 @@ where
 
 
 /// Initialize batch model with GPU/CPU fallback.
+/// CUDA loaded: report it, run the first-token probe, and keep the GPU unless the probe MISMATCHED
+/// (then wgpu, then CPU). Extracted from `init_batch_model` (complexity ratchet, #4046); behaviour unchanged.
+#[cfg(feature = "cuda")]
+fn batch_from_cuda(
+    mut cuda_model: crate::gguf::OwnedQuantizedModelCuda,
+    stop_tokens: &[u32],
+    config: &BatchInferenceConfig,
+) -> BatchModel {
+    use crate::gguf::QuantizedGenerateConfig;
+    if config.verbose {
+        eprintln!(
+            "[batch] GPU: {} ({} MB VRAM)",
+            cuda_model.device_name(), cuda_model.vram_mb()
+        );
+    }
+    let probe_config = QuantizedGenerateConfig {
+        max_tokens: 1, temperature: 0.0, top_k: 1,
+        stop_tokens: stop_tokens.to_vec(), trace: false,
+        ..Default::default()
+    };
+    // batch model-init has no prompt yet → BOS-probe fallback (PMAT-742).
+    // #3973: a BOS-only probe has no real position, so this is ALWAYS
+    // NotMeasured: batch serving was gated on a check that could not fail.
+    // Routing is unchanged (it still serves on the GPU), and it now SAYS
+    // it is unvalidated instead of passing silently.
+    match validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
+        crate::infer::F2Outcome::Mismatch => {},
+        outcome => {
+            if let crate::infer::F2Outcome::NotMeasured { reason } = &outcome {
+                eprintln!("[batch] F2 validation NOT MEASURED at model init — {reason}. GPU serving is UNVALIDATED (#3973)");
+            }
+            let gpu = crate::gguf::dense_session::DenseSession::new(
+                crate::gguf::dense_session::DenseForward::cuda(cuda_model),
+            );
+            return BatchModel { gpu: Some(gpu), #[cfg(feature = "gpu")] wgpu: None, cpu: None };
+        },
+    }
+    eprintln!("[batch] CUDA validation failed, trying wgpu...");
+    batch_wgpu_or_cpu(cuda_model.into_model(), config)
+}
+
+/// No usable CUDA model: wgpu if it initialises, else the CPU.
+/// GH-560 FIXED: wgpu batch works. Try wgpu before CPU fallback.
+/// Extracted from `init_batch_model` (complexity ratchet, #4046); behaviour unchanged.
+#[cfg(feature = "cuda")]
+fn batch_wgpu_or_cpu(model: crate::gguf::OwnedQuantizedModel, config: &BatchInferenceConfig) -> BatchModel {
+    #[cfg(feature = "gpu")]
+    if let Some(wgpu_state) = try_init_wgpu_batch(&model, config) {
+        return BatchModel { gpu: None, wgpu: Some(wgpu_state), cpu: None };
+    }
+    #[cfg(not(feature = "gpu"))]
+    let _ = config;
+    BatchModel { gpu: None, #[cfg(feature = "gpu")] wgpu: None, cpu: Some(dense_cpu(model)) }
+}
+
+/// #4268: a dense CPU model as a session of the one engine.
+fn dense_cpu(model: crate::gguf::OwnedQuantizedModel) -> crate::gguf::dense_session::DenseSession {
+    crate::gguf::dense_session::DenseSession::new(crate::gguf::dense_session::DenseForward::cpu(
+        std::sync::Arc::new(model),
+    ))
+}
+
 fn init_batch_model(
     model: crate::gguf::OwnedQuantizedModel,
     stop_tokens: &[u32],
@@ -325,44 +388,14 @@ fn init_batch_model(
     #[cfg(feature = "cuda")]
     {
         if !config.no_gpu && !model_has_legacy_quant(&model) {
-            use crate::gguf::{OwnedQuantizedModelCuda, QuantizedGenerateConfig};
+            use crate::gguf::OwnedQuantizedModelCuda;
             match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
-                Ok(mut cuda_model) => {
-                    if config.verbose {
-                        eprintln!(
-                            "[batch] GPU: {} ({} MB VRAM)",
-                            cuda_model.device_name(), cuda_model.vram_mb()
-                        );
-                    }
-                    let probe_config = QuantizedGenerateConfig {
-                        max_tokens: 1, temperature: 0.0, top_k: 1,
-                        stop_tokens: stop_tokens.to_vec(), trace: false,
-            ..Default::default()
-                    };
-                    // batch model-init has no prompt yet → BOS-probe fallback (PMAT-742)
-                    if validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
-                        return Ok(BatchModel { gpu: Some(cuda_model), #[cfg(feature = "gpu")] wgpu: None, cpu: None });
-                    }
-                    eprintln!("[batch] CUDA validation failed, trying wgpu...");
-                    let model = cuda_model.into_model();
-                    // GH-560 FIXED: wgpu batch works. Try wgpu before CPU fallback.
-                    #[cfg(feature = "gpu")]
-                    if let Some(wgpu_state) = try_init_wgpu_batch(&model, config) {
-                        return Ok(BatchModel { gpu: None, wgpu: Some(wgpu_state), cpu: None });
-                    }
-                    return Ok(BatchModel { gpu: None, #[cfg(feature = "gpu")] wgpu: None, cpu: Some(model) });
-                }
+                Ok(cuda_model) => return Ok(batch_from_cuda(cuda_model, stop_tokens, config)),
                 Err(e) => {
                     if config.verbose {
                         eprintln!("[batch] CUDA unavailable: {}, trying wgpu...", e);
                     }
-                    let model = e.into_model();
-                    // GH-560 FIXED: wgpu batch works. Try wgpu before CPU fallback.
-                    #[cfg(feature = "gpu")]
-                    if let Some(wgpu_state) = try_init_wgpu_batch(&model, config) {
-                        return Ok(BatchModel { gpu: None, wgpu: Some(wgpu_state), cpu: None });
-                    }
-                    return Ok(BatchModel { gpu: None, #[cfg(feature = "gpu")] wgpu: None, cpu: Some(model) });
+                    return Ok(batch_wgpu_or_cpu(e.into_model(), config));
                 }
             }
         }
@@ -387,14 +420,14 @@ fn init_batch_model(
             gpu: None,
             #[cfg(feature = "gpu")]
             wgpu: None,
-            cpu: Some(model),
+            cpu: Some(dense_cpu(model)),
         })
     }
 
     #[cfg(not(feature = "cuda"))]
     {
         let _ = (stop_tokens, config);
-        Ok(BatchModel { #[cfg(feature = "gpu")] wgpu: None, cpu: Some(model) })
+        Ok(BatchModel { #[cfg(feature = "gpu")] wgpu: None, cpu: Some(dense_cpu(model)) })
     }
 }
 

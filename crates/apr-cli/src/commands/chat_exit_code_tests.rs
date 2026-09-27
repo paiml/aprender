@@ -76,3 +76,47 @@ fn chat_exit_code_end_to_end_of_the_flag() {
         8
     );
 }
+
+// #3881 — a missing companion file is not a malformed model.
+//
+// `apr chat` reported an absent `tokenizer.json` as `CliError::InvalidFormat`,
+// whose Display hardcodes "Invalid APR format: " and whose exit code is 4 —
+// the class that means "this input could not be parsed". The model parsed
+// fine; a file beside it was absent. A gate keyed on 4 reads that as a corrupt
+// artifact and a human reads it as "my model is broken".
+//
+// Both halves are asserted: the CODE (3, the FileNotFound class) and the
+// WORDING (the message reaches the user unprefixed, because it already names
+// every path searched).
+#[test]
+fn a_missing_companion_file_exits_3_and_does_not_blame_the_model() {
+    let msg = "No Qwen tokenizer found for m.apr. Searched:\n1. …";
+    let err = CliError::MissingCompanionFile(msg.to_string());
+
+    assert_eq!(
+        err.exit_code_value(),
+        3,
+        "a missing companion file is the FileNotFound class (3), not the \
+         unparseable-input class (4)"
+    );
+
+    let shown = err.to_string();
+    assert!(
+        !shown.contains("Invalid APR format"),
+        "the message must not blame the model: {shown}"
+    );
+    assert!(
+        shown.starts_with("No Qwen tokenizer found"),
+        "the message must reach the user unprefixed: {shown}"
+    );
+}
+
+/// The contrast that gives the test above its meaning: `InvalidFormat` still
+/// exits 4 and still names the APR format. If these two ever agree, the
+/// distinction #3881 introduced has been lost.
+#[test]
+fn invalid_format_still_exits_4_and_still_names_the_format() {
+    let err = CliError::InvalidFormat("truncated header".to_string());
+    assert_eq!(err.exit_code_value(), 4);
+    assert!(err.to_string().contains("Invalid APR format"));
+}

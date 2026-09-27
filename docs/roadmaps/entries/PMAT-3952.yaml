@@ -1,0 +1,37 @@
+- id: PMAT-3952
+  github_issue: 3952
+  item_type: task
+  title: 'CRUX: vLLM as a pre-release comparator engine; #3971 source-weight cache verification; #3964 ollama loads only inside
+    the GPU lock'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-83
+  created: '2026-09-23T08:40:00Z'
+  updated: '2026-09-23T13:10:00Z'
+  spec: null
+  acceptance_criteria:
+  - '#3952 done_when: --engines ...,vllm produces vLLM gen rows on at least one host, judged by the unchanged rule; each host
+    where it cannot run records a named refusal; a planted mismatch (vLLM right, apr wrong) is RED in the judge case table'
+  - '#3971: both source-weight drivers (hf, vllm) hash every cached file against the name it promises and refuse by name on
+    mismatch; CRUX uses its own HF_HOME'
+  - '#3964 (operator: ''yes you may change ollama''): every CRUX ollama model load runs while the GPU lock is held, proven
+    by a behavioural check that catches a no-lock mutant'
+  - 'cop ruling: an unpinned comparator makes the cell RED (''oracle unpinned''), never a third state'
+  - 'cop (critical path): both source-weight drivers run in BATCH mode — one engine load per gen-batch call, row contract
+    v1 per item; plus `serve stream` for #3962 (aprender-19)'
+  - a stopped driver takes its engine children with it (SIGTERM left VLLM::EngineCore on gx10's card, aprender-dd) — including
+    under a pid namespace with the host's /proc (quorum lane 2)
+  - 'thinking-ON rows from hf/vllm split correctly when the official template prefills <think> (Qwen3.5, #3990)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Fold, per the cop (aprender-6a): #3781 (PMAT-3778 hf+llamafile drivers) + PMAT-3952-crux-vllm (vLLM driver, #3971
+    verification, batch mode, serve stream) + PMAT-3952-crux-vllm-judge (vllm comparator, unpinned-oracle RED, #3964 lock
+    check), on top of aprender-6c''s fix/3957-gate-hardening (F6), which this depends on. Stops at the receipt. | STATUS 2026-09-23:
+    the original done_when (vLLM gen rows on a host, a named refusal where it cannot run, planted vLLM-right/apr-wrong RED)
+    and the #3971/#3964/unpinned criteria were MET by fold2 (PMAT-3952-crux-fold2, folded into release/0.69.1-batch-2 at 66c911359;
+    quorum receipt docs/audits/quorum-PMAT-3952.json, 3/3 PASS). The follow-on branch PMAT-3952-crux-greedy2 carries driver
+    fixes under this ticket — the Qwen3.5 prefilled-<think> split, the SIGTERM engine orphan, batch/serve-stream hardening,
+    the keep_alive lock check — and the F9 producer under PMAT-3957.'
