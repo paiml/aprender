@@ -121,6 +121,7 @@
 #   ap-255-is-a-host     ssh rc 255 counted as a host failure                      -> B5
 #   ap-drop-nogo-stop    the post-publish NO-GO `die` deleted                      -> B7
 #   ap-drop-receipt-read the post-publish receipt never read                       -> B8
+#   ap-defer-passes      only the DEFER exit neutralised; every other check kept   -> B8 (#3544 item 1)
 #   ap-install-dogfood   the pre-#3731 dogfood line restored in `install`          -> B10
 #   ap-drop-notes        the release-notes edit deleted                            -> B12
 #   ap-ledger-no-push    the ledger push deleted                                   -> L1
@@ -227,6 +228,8 @@ mutate "$AUTOPILOT" "$M/ap-drop-nogo-stop.sh" \
     '  [ $rc -eq 0 ] || die "post-publish dogfood NO-GO rc=$rc' '  true || die "post-publish dogfood NO-GO rc=$rc'
 mutate "$AUTOPILOT" "$M/ap-drop-receipt-read.sh" \
     '  ) || die "post-publish dogfood refused on its receipt: $line"' '  ) || true'
+mutate "$AUTOPILOT" "$M/ap-defer-passes.sh" \
+    "still DEFERS {', '.join(r['deferred'])} after the publish\"); sys.exit(1)" "still DEFERS {', '.join(r['deferred'])} after the publish\"); pass"
 mutate "$AUTOPILOT" "$M/ap-drop-notes.sh" \
     '      gh release edit "$T" --repo $REPO --notes-file "$AP/release-notes.md" >> "$LOG" 2>&1' '      true'
 mutate "$GATE" "$M/gate-any-version.sh" \
@@ -299,7 +302,11 @@ case "${1:-}" in
     [ "$rc" = 0 ] || { printf 'error: failed to compile `aprender v9.9.9`\n'; exit "$rc"; }
     mkdir -p "$root/bin" "$CARGO_HOME/registry/cache/index.crates.io-fixture" || exit 1
     cp "$FX_APR_STUB" "$root/bin/apr" && chmod +x "$root/bin/apr" || exit 1
-    printf 'fixture crate bytes\n' > "$CARGO_HOME/registry/cache/index.crates.io-fixture/aprender-9.9.9.crate"
+    # renamed into place, never truncated there: autopilot runs the hosts' receipts in parallel and
+    # the fake hosts share this CARGO_HOME, so a `>` onto the live path let a concurrent host hash
+    # 0 bytes (e3b0c442...) and fail B1 about one run in three
+    c="$CARGO_HOME/registry/cache/index.crates.io-fixture/aprender-9.9.9.crate"
+    printf 'fixture crate bytes\n' > "$c.$$" && mv -f "$c.$$" "$c" || exit 1
     printf '  Installed package `aprender v9.9.9` (executable `apr`)\n' ;;
   *) exit 0 ;;
 esac
@@ -1147,6 +1154,7 @@ spawn killed ap-no-receipt-to b3_dir_vanishes m13 "$M/ap-no-receipt-to.sh" "$HOS
 spawn killed ap-255-is-a-host b5_unreachable m14 "$M/ap-255-is-a-host.sh" "$HOST_RECEIPT"
 spawn killed ap-drop-nogo-stop postpub_row m15 "$M/ap-drop-nogo-stop.sh" "post-publish dogfood NO-GO rc=1" FX_DOGFOOD_VERDICT=NO-GO
 spawn killed ap-drop-receipt-read postpub_row m16 "$M/ap-drop-receipt-read.sh" "post-publish dogfood refused on its receipt" 'FX_DEFERRED=["declared:check_multiplatform_dogfood"]'
+spawn killed ap-defer-passes postpub_row m16b "$M/ap-defer-passes.sh" "post-publish dogfood refused on its receipt" 'FX_DEFERRED=["declared:check_multiplatform_dogfood"]'
 spawn killed ap-install-dogfood b10_install_only m17 "$M/ap-install-dogfood.sh"
 spawn killed ap-drop-notes b12_report_notes m18 "$M/ap-drop-notes.sh"
 spawn killed ap-ledger-no-push l1_ledger_pr m24 "$M/ap-ledger-no-push.sh"
