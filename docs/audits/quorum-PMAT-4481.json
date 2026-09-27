@@ -3,13 +3,13 @@
   "base": "c074ace09d",
   "base_resolved": "c074ace09d",
   "base_note": "no origin/c074ace09d exists; judged against the local ref",
-  "head": "19826dc60dfdd4fac17fb0f8f722487e926f6d98",
+  "head": "51c1490e84fbb7387425ad12e11fcb4369f5fa3f",
   "diff_sha256": "182b3f1115c0ec52f530d12ffb1d183d97cd8b0f111e8eaa464783ae0a2beab3",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 44786,
-  "prompt_sha256": "0fe92dd272adbc62f2c49f5c034bee9ad91a586b1dcdcaeec78211e7bc0eb627",
+  "prompt_bytes": 39581,
+  "prompt_sha256": "daf1dab2f16dc5fbaf6761d71fea330cca7908057d5c6957dc736f4ba199c426",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -19,41 +19,44 @@
   "lanes": [
     {
       "lane": 1,
-      "status": "NO-VERDICT",
-      "verdict": "NO-VERDICT",
-      "summary": "",
-      "findings": [],
-      "raw_bytes": 617,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I found nothing that refutes the delta. I judged it from the diff and ran no builds. The delta does what the receipt and the new acceptance criterion say. `KernelBinding.kernel` (default false) is added, and BINDING-006 now keys on (contract, equation, kernel). `find_binding` skips kernel entries, so a reference still resolves to the reference. `contracts/binding.yaml` marks only the oxide entry `kernel: true`. The new test `a_reference_and_its_kernel_share_an_equation` covers all four cases the receipt lists: a reference+kernel pair passes, two kernels are RED, two references are RED, and a kernel-only equation resolves to no reference. The diff shows 16 `kernel: false` literal edits (binding.rs 2, explain_tests.rs 5, readme_gen.rs 1, codebase_tests.rs 2, scoring_probe_tests.rs 2, scoring_tests.rs 2, plus the binding.rs test at ~508), so the receipt's \"16 literals\" holds. The `contracts_gate.sh` heredoc change keeps the same jq program, its `# probe:shapes_n` marker line and its `$json` input, so behaviour is unchanged. No gate is weakened. The one thing to note is the quorum artifact below; it is not a refutation.",
+      "findings": [
+        {
+          "file": "docs/audits/quorum-PMAT-4481.json",
+          "line": 1,
+          "claim": "The diff overwrites the prior 3/3 AGREED artifact with a round where lanes 1 and 3 got 429 with no verdict, so `agreed:false`, `partial:true` and `lint.ok:false`. The receipt's 3/3 claim over 367ae45bd6 now has no artifact in the tree, and this file cannot arm a merge. It needs a completed delta round, or the earlier artifact kept beside it, before `--match-head-commit` arming.",
+          "grounding": "cited",
+          "fix": "Re-run the delta quorum once lanes are available, or keep the 367ae45bd6 artifact under a separate name."
+        }
+      ],
+      "raw_bytes": 4359,
       "err_bytes": 0,
-      "envelope_status": "ERROR",
-      "transport_status": "ERROR",
-      "transport_error": "429",
-      "salvageable": "",
-      "carried_verdict": "",
-      "blind_reason": "",
-      "agy_exit": "",
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
       "role": "counted",
       "model": "claude-sonnet-5",
-      "model_measured": null,
-      "model_source": "declared",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
       "family": "claude",
-      "executor": "claude-code",
-      "brief_sha256": "0fe92dd272adbc62f2c49f5c034bee9ad91a586b1dcdcaeec78211e7bc0eb627",
+      "brief_sha256": "daf1dab2f16dc5fbaf6761d71fea330cca7908057d5c6957dc736f4ba199c426",
       "trace": {
-        "input_sha256": "d55f6c9743f114875db7fc95d071bc669e3156960d40838259b7b6d2cac35b4f",
-        "output_sha256": "a30c71fa229d348a8c88e11937a8bf4d519b89feb6df91576430e65f21d8045f",
+        "input_sha256": "919be902be580a7e0d1b45379ae175d3470a182e5364245749c5b2591abd1743",
+        "output_sha256": "6d54b5529451a4cf58d4411936b7d130e4c0bc414733b04f1611878fe0fb60a7",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": null,
+        "judged_by": "claude-sonnet-5",
         "exhausted": false,
         "attempts": [
           {
             "model": "claude-sonnet-5",
             "family": "claude",
-            "outcome": "other",
-            "reason": "429"
+            "outcome": "answered"
           }
         ],
         "skipped": []
@@ -63,9 +66,9 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff cleanly implements the CI fixes necessitated by the fold. BINDING-006 duplicate detection now correctly keys on `(contract, equation, kernel)`, allowing a reference and its `#[kernel]` to share an equation. The test `a_reference_and_its_kernel_share_an_equation` accurately asserts all 4 scenarios as claimed. The `kernel: false` struct literal additions exactly number 16. The `jq` invocation in `contracts_gate.sh` is cleanly refactored to use a heredoc via `-f /dev/stdin`, satisfying SC2171. All changes align perfectly with the updated PMAT-4481 ticket criteria and the receipt. No refutations found.",
+      "summary": "The diff accurately implements the CI-fix delta described in the updated ticket and receipt. BINDING-006 validation now correctly keys on the tuple `(contract, equation, kernel)` allowing an equation to have both a reference and a kernel, while `find_binding` properly excludes kernel entries. The 4 edge cases described in the receipt are verified comprehensively by the new test `a_reference_and_its_kernel_share_an_equation`. The 16 required test struct literals are correctly padded with `kernel: false`. The `contracts_gate.sh` SC2171 fix successfully refactors the `jq` invocation to use a heredoc via `/dev/stdin`. The diff does exactly what is claimed without weakening any gates. No refutations found.",
       "findings": [],
-      "raw_bytes": 2488,
+      "raw_bytes": 2782,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -76,10 +79,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "0fe92dd272adbc62f2c49f5c034bee9ad91a586b1dcdcaeec78211e7bc0eb627",
+      "brief_sha256": "daf1dab2f16dc5fbaf6761d71fea330cca7908057d5c6957dc736f4ba199c426",
       "trace": {
-        "input_sha256": "928fc970da47aa279533eb887d54ef04bf9942c154d0ff575564122d06c6ee0f",
-        "output_sha256": "6bb2f49a0b2bc152ff5841aeca0d938bfa3e90b6e3199ff2b2daeb4c9b69352b",
+        "input_sha256": "296452bcbe31e8b75606e483871702d7d9878d5e082d817f9846ef131b18de1c",
+        "output_sha256": "d4145dea821bf257eeaab00a4638a1a933334e24292ec56895855b3e80f2c883",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -98,41 +101,56 @@
     },
     {
       "lane": 3,
-      "status": "NO-VERDICT",
-      "verdict": "NO-VERDICT",
-      "summary": "",
-      "findings": [],
-      "raw_bytes": 618,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff violates PMAT-4481's acceptance criteria. The first criterion (unchanged in roadmap) states \"the only other change is this ticket's roadmap entry and receipt,\" but the diff contains significant code changes: KernelBinding.kernel field addition, BINDING-006 revalidation logic changes, find_binding modification, 16 struct literal updates, and a new test. A third criterion was added retroactively to justify this scope creep, but it contradicts the first criterion which remains unmet. Additionally, the quorum receipt shows this round has NOT achieved 3/3 agreement (2/3 with rate-limit errors on lanes 1 and 3); only lane 2 (Gemini) succeeded. Receipt lint explicitly rejected the artifact for unmeasured declared models. The prior quorum at 367ae45bd6 may have been valid, but this delta has no valid quorum backing it.",
+      "findings": [
+        {
+          "file": "docs/roadmaps/entries/PMAT-4481.yaml",
+          "line": 13,
+          "claim": "First acceptance criterion claims 'the only other change is this ticket's roadmap entry and receipt', but the diff includes 16+ code changes (KernelBinding.kernel field, BINDING-006 revalidation logic, find_binding modification, 16 struct literals, new test) beyond cherry-picks",
+          "grounding": "cited",
+          "fix": "Either revert the code changes (keeping only the three cherry-picks + roadmap/receipt) or update the first criterion to acknowledge the CI-fix delta scope. Currently first criterion contradicts the newly-added third criterion."
+        },
+        {
+          "file": "docs/audits/quorum-PMAT-4481.json",
+          "line": 1,
+          "claim": "Quorum receipt shows 'agreed': false and 'partial': true with 2/3 lanes succeeded (only gemini lane 2 passed; lanes 1 and 3 got 429 rate-limit errors). Receipt lint failed: 'lane 1 model claude-sonnet-5 is DECLARED, never measured'. This round did not achieve 3/3 agreement required to back the diff.",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/aprender-contracts/src/binding.rs",
+          "line": 52,
+          "claim": "KernelBinding.kernel field addition (lines 52-57) and related BINDING-006 revalidation (line 293), find_binding modification (line 127), and 16 struct literal updates are code changes outside the three cherry-picks specified in the original acceptance criteria",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 5300,
       "err_bytes": 0,
-      "envelope_status": "ERROR",
-      "transport_status": "ERROR",
-      "transport_error": "429",
-      "salvageable": "",
-      "carried_verdict": "",
-      "blind_reason": "",
-      "agy_exit": "",
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
       "role": "counted",
       "model": "claude-haiku-4-5",
-      "model_measured": null,
-      "model_source": "declared",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
       "family": "claude",
-      "executor": "claude-code",
-      "brief_sha256": "0fe92dd272adbc62f2c49f5c034bee9ad91a586b1dcdcaeec78211e7bc0eb627",
+      "brief_sha256": "daf1dab2f16dc5fbaf6761d71fea330cca7908057d5c6957dc736f4ba199c426",
       "trace": {
-        "input_sha256": "3a94bbaff27337f05034e60c68472656ba52c2d0447b66a66a74d0ae074ef510",
-        "output_sha256": "c2b38af1a0fcf1db84f3d64a39430ffe7d0960d26c61630128ebcc68ff2f2895",
+        "input_sha256": "234bd27b02b782c873e52013941565603a6d5d42338344cfcf4d22e177f3845c",
+        "output_sha256": "93f30bcd4a29184abf50d886bb2a623b7a656d3121099c588190a2122aa33fcd",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": null,
+        "judged_by": "claude-haiku-4-5",
         "exhausted": false,
         "attempts": [
           {
             "model": "claude-haiku-4-5",
             "family": "claude",
-            "outcome": "other",
-            "reason": "429"
+            "outcome": "answered"
           }
         ],
         "skipped": []
@@ -141,27 +159,70 @@
   ],
   "dissent": [
     {
-      "lane": 1,
-      "verdict": "NO-VERDICT",
-      "summary": "",
-      "findings": []
-    },
-    {
       "lane": 3,
-      "verdict": "NO-VERDICT",
-      "summary": "",
-      "findings": []
+      "verdict": "FAIL",
+      "summary": "The diff violates PMAT-4481's acceptance criteria. The first criterion (unchanged in roadmap) states \"the only other change is this ticket's roadmap entry and receipt,\" but the diff contains significant code changes: KernelBinding.kernel field addition, BINDING-006 revalidation logic changes, find_binding modification, 16 struct literal updates, and a new test. A third criterion was added retroactively to justify this scope creep, but it contradicts the first criterion which remains unmet. Additionally, the quorum receipt shows this round has NOT achieved 3/3 agreement (2/3 with rate-limit errors on lanes 1 and 3); only lane 2 (Gemini) succeeded. Receipt lint explicitly rejected the artifact for unmeasured declared models. The prior quorum at 367ae45bd6 may have been valid, but this delta has no valid quorum backing it.",
+      "findings": [
+        {
+          "file": "docs/roadmaps/entries/PMAT-4481.yaml",
+          "line": 13,
+          "claim": "First acceptance criterion claims 'the only other change is this ticket's roadmap entry and receipt', but the diff includes 16+ code changes (KernelBinding.kernel field, BINDING-006 revalidation logic, find_binding modification, 16 struct literals, new test) beyond cherry-picks",
+          "grounding": "cited",
+          "fix": "Either revert the code changes (keeping only the three cherry-picks + roadmap/receipt) or update the first criterion to acknowledge the CI-fix delta scope. Currently first criterion contradicts the newly-added third criterion."
+        },
+        {
+          "file": "docs/audits/quorum-PMAT-4481.json",
+          "line": 1,
+          "claim": "Quorum receipt shows 'agreed': false and 'partial': true with 2/3 lanes succeeded (only gemini lane 2 passed; lanes 1 and 3 got 429 rate-limit errors). Receipt lint failed: 'lane 1 model claude-sonnet-5 is DECLARED, never measured'. This round did not achieve 3/3 agreement required to back the diff.",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/aprender-contracts/src/binding.rs",
+          "line": 52,
+          "claim": "KernelBinding.kernel field addition (lines 52-57) and related BINDING-006 revalidation (line 293), find_binding modification (line 127), and 16 struct literal updates are code changes outside the three cherry-picks specified in the original acceptance criteria",
+          "grounding": "cited"
+        }
+      ]
     }
   ],
-  "dedup": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-contracts/src/binding.rs",
+      "line": 52,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "KernelBinding.kernel field addition (lines 52-57) and related BINDING-006 revalidation (line 293), find_binding modification (line 127), and 16 struct literal updates are code changes outside the three cherry-picks specified in the original acceptance criteria"
+      ]
+    },
+    {
+      "file": "docs/audits/quorum-PMAT-4481.json",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "Quorum receipt shows 'agreed': false and 'partial': true with 2/3 lanes succeeded (only gemini lane 2 passed; lanes 1 and 3 got 429 rate-limit errors). Receipt lint failed: 'lane 1 model claude-sonnet-5 is DECLARED, never measured'. This round did not achieve 3/3 agreement required to back the diff.",
+        "The diff overwrites the prior 3/3 AGREED artifact with a round where lanes 1 and 3 got 429 with no verdict, so `agreed:false`, `partial:true` and `lint.ok:false`. The receipt's 3/3 claim over 367ae45bd6 now has no artifact in the tree, and this file cannot arm a merge. It needs a completed delta round, or the earlier artifact kept beside it, before `--match-head-commit` arming."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-4481.yaml",
+      "line": 13,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "First acceptance criterion claims 'the only other change is this ticket's roadmap entry and receipt', but the diff includes 16+ code changes (KernelBinding.kernel field, BINDING-006 revalidation logic, find_binding modification, 16 struct literals, new test) beyond cherry-picks"
+      ]
+    }
+  ],
   "uncovered": [],
   "coverage_source": "lanes",
-  "partial": true,
-  "partial_reasons": [
-    "lane 1: lane envelope status=ERROR transport_error=429 salvageable=none",
-    "lane 3: lane envelope status=ERROR transport_error=429 salvageable=none",
-    "receipt-lint refused the artifact (PMAT-124/#128): FAIL quorum artifact: lane 1 model 'claude-sonnet-5' is DECLARED, never measured (model_measured is null or empty: no lane log line) — a declared family is not a proof of independence (#128)"
-  ],
+  "partial": false,
+  "partial_reasons": [],
   "fallback": {
     "same_family_width": 2,
     "chain": [
@@ -234,14 +295,14 @@
           "bucket": "gemini",
           "budget": 67,
           "basis": "[U] default 30, raised to the 67 calls a window has made without a 429; no window reached one",
-          "window_start": 1790441558,
-          "window_calls": 64,
+          "window_start": 1790486460,
+          "window_calls": 2,
           "window_429": 0,
-          "hour_calls": 26,
+          "hour_calls": 2,
           "share": 13,
           "want": 2,
-          "state": "hour",
-          "reason": "agy bucket gemini: 26 calls in the last hour + 2 this round exceed the hour share 13 (1/5 of the budget 67, [U] default 30, raised to the 67 calls a window has made without a 429; no window reached one)"
+          "state": "open",
+          "reason": ""
         }
       },
       "closed": []
@@ -255,7 +316,7 @@
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 44786 bytes > 24576"
+    "skipped": "brief 39581 bytes > 24576"
   },
   "advisory_lane": {
     "state": "not-run",
@@ -264,7 +325,7 @@
       "NotRun": "ContextOverflow"
     },
     "verdict": "unavailable",
-    "why": "the brief is 44786 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "why": "the brief is 39581 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
@@ -276,7 +337,7 @@
     "budget_s": 300,
     "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
     "brief": {
-      "bytes": 44786,
+      "bytes": 39581,
       "sent_bytes": 0,
       "max_bytes": 24576
     },
@@ -288,7 +349,7 @@
     "counted": "NOT-AGREED"
   },
   "lint": {
-    "ok": false,
-    "output": "FAIL quorum artifact: lane 1 model 'claude-sonnet-5' is DECLARED, never measured (model_measured is null or empty: no lane log line) — a declared family is not a proof of independence (#128)\nFAIL quorum artifact: lane 3 model 'claude-haiku-4-5' is DECLARED, never measured (model_measured is null or empty: no lane log line) — a declared family is not a proof of independence (#128)"
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
   }
 }
