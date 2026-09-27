@@ -121,6 +121,9 @@ pub struct RunReport {
     pub finish_reason: Option<FinishReason>,
     /// The model's context window, from its metadata.
     pub context_length: Option<usize>,
+    /// TR-09 (#4564): transformer layers, from its metadata. `apr run`'s
+    /// `apr-trace-v1` needs it to say the same thing serve says for the request.
+    pub num_layers: Option<usize>,
 }
 
 #[cfg(test)]

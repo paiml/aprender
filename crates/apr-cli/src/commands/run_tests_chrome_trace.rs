@@ -37,12 +37,11 @@
             .filter_map(|e| e["cat"].as_str())
             .collect();
 
-        assert!(categories.contains("lifecycle"), "missing lifecycle category");
-        assert!(categories.contains("tokenize"), "missing tokenize category");
-        assert!(categories.contains("embed"), "missing embed category");
-        assert!(categories.contains("layer"), "missing layer category");
-        assert!(categories.contains("sample"), "missing sample category");
-        assert!(categories.contains("decode"), "missing decode category");
+        // TR-09 (#4564): the categories are the apr-trace-v1 document's — one
+        // `request` span and the `layer` level's rows. The invented
+        // tokenize/embed/sample spans (fixed fractions of the total) are gone.
+        let want: std::collections::HashSet<&str> = ["request", "layer"].into_iter().collect();
+        assert_eq!(categories, want, "chrome categories must be the document's");
     }
 
     #[test]
@@ -62,8 +61,8 @@
 
         let json = build_chrome_trace_events(&result, "empty.gguf", 0, false);
         let events = json["traceEvents"].as_array().expect("events array");
-        // With 0 tokens: model_load + tokenize + embed = 3 events
-        assert_eq!(events.len(), 3);
+        // The request span + the document's one wall-clock row.
+        assert_eq!(events.len(), 2);
     }
 
     #[test]
@@ -83,8 +82,7 @@
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
         let events = json["traceEvents"].as_array().expect("events array");
-        // tokens_generated is None => no token events
-        assert_eq!(events.len(), 3);
+        assert_eq!(events.len(), 2);
     }
 
     #[test]
@@ -139,6 +137,7 @@
         }
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_chrome_trace_token_count() {
         let result = RunResult {
@@ -156,8 +155,46 @@
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
         let events = json["traceEvents"].as_array().expect("events array");
-        // 3 base events + 10 tokens * 3 events each (layer, sample, decode) = 33
-        assert_eq!(events.len(), 3 + 10 * 3);
+        // TR-09: the events are the apr-trace-v1 rows, not a fabricated
+        // layer/sample/decode triple per token. Same set, same durations.
+        let doc = run_apr_trace(&result, "layer").expect("layer document");
+        let rows: Vec<(&str, u64)> = events
+            .iter()
+            .filter(|e| e["cat"] == "layer")
+            .map(|e| (e["name"].as_str().expect("name"), e["dur"].as_u64().expect("dur")))
+            .collect();
+        let want: Vec<(&str, u64)> = doc.breakdown.iter().map(|o| (o.name.as_str(), o.time_us)).collect();
+        assert_eq!(rows, want, "chrome rows must be the document's rows");
+        assert_eq!(events.len(), 1 + doc.breakdown.len());
+    }
+
+    /// FALSIFY-TRACE-005 (apr side, CRUX F-07): every duration is a
+    /// non-negative integer, and the rows end inside the request span.
+    #[test]
+    fn falsify_trace_005_chrome_durations_are_sane_and_inside_the_request() {
+        for secs in [0.0, 0.25, 5.0] {
+            let result = RunResult {
+                text: String::new(),
+                duration_secs: secs,
+                cached: false,
+                tokens_generated: Some(3),
+                tok_per_sec: None,
+                used_gpu: None,
+                gpu_attempted: None,
+                generated_tokens: None,
+                token_texts: None,
+                usage: Default::default(),
+            };
+            let json = build_chrome_trace_events(&result, "m.gguf", 3, false);
+            let events = json["traceEvents"].as_array().expect("events");
+            let span = events[0]["dur"].as_u64().expect("request dur is a u64");
+            for e in &events[1..] {
+                let ts = e["ts"].as_u64().expect("ts is a non-negative integer");
+                let dur = e["dur"].as_u64().expect("dur is a non-negative integer");
+                assert!(ts + dur <= span, "row {e} ends past the request span {span}");
+            }
+            assert_eq!(json["metadata"]["schema"], "apr-trace-v1");
+        }
     }
 
     #[test]

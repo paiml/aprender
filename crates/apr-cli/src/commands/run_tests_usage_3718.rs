@@ -24,6 +24,7 @@ fn json_carries_the_engine_counts_and_the_finish() {
         completion_tokens: Some(32),
         finish_reason: Some("length"),
         context_length: Some(262_144),
+        num_layers: None,
         generation_ms: None,
         setup_ms: None,
     };
@@ -55,6 +56,7 @@ fn stream_final_event_carries_them_too() {
         completion_tokens: Some(3),
         finish_reason: Some("stop"),
         context_length: Some(4096),
+        num_layers: None,
         generation_ms: None,
         setup_ms: None,
     };

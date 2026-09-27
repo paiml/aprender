@@ -1,13 +1,11 @@
-
     // ═══════════════════════════════════════════════════════════════════════════
-    // Layer trace honesty (run_trace_print.rs::render_layer_trace)
+    // Layer trace = the apr-trace-v1 document (TR-09, #4564)
     //
-    // `apr run --trace --trace-level layer` printed a table headed `Time` whose
+    // `apr run --trace --trace-level layer` used to print an 8-step table whose
     // per-step values were `wall_ms / tokens * <fixed share>` — the same
-    // 85/8/2/1.7 split for every model and every prompt. TOKENIZE, EMBED and
-    // DECODE came out identical to the hundredth of a millisecond in every run,
-    // and the table "proved" TRANSFORMER was 85% while the real [BRICK-PROFILE]
-    // block in the same output said FFN 42% / Qkv 21% / LmHead 4.5%.
+    // 85/8/2/1.7 split for every model and every prompt — while serve answered
+    // `X-Trace-Level: layer` for the same request with a different schema. Both
+    // now come from `realizar::api::apr_trace`.
     // ═══════════════════════════════════════════════════════════════════════════
 
     fn layer_trace_result(duration_secs: f64, tokens: usize) -> RunResult {
@@ -21,84 +19,73 @@
             gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            usage: RunUsage {
+                prompt_tokens: Some(4),
+                completion_tokens: Some(tokens),
+                num_layers: Some(2),
+                ..RunUsage::default()
+            },
         }
     }
 
-    /// A derived number must never be printed as if it were measured.
-    #[test]
-    fn layer_trace_marks_derived_timings_as_estimates() {
-        let out = render_layer_trace(&layer_trace_result(2.0, 4), 4);
-
-        assert!(
-            out.contains("ESTIMATED"),
-            "the table must say the per-step values are estimated; got:\n{out}"
-        );
-        assert!(
-            out.contains("Est. Time"),
-            "the column heading must not be a bare `Time`; got:\n{out}"
-        );
-        assert!(
-            out.contains("~"),
-            "each derived value must be marked approximate; got:\n{out}"
-        );
-        assert!(
-            out.contains("Share"),
-            "the fixed share used to derive each value must be shown, so the \
-             three equal rows are explicable; got:\n{out}"
-        );
-        assert!(
-            out.contains("85.0%"),
-            "TRANSFORMER's assumed 85% share must be visible; got:\n{out}"
-        );
+    /// Zero out the fields that are timings, so two documents compare on schema
+    /// and content only ("byte-identical modulo timestamps").
+    #[cfg(feature = "inference")]
+    fn untimed(t: &realizar::api::TraceData) -> String {
+        let mut v = serde_json::to_value(t).expect("apr-trace-v1 serializes");
+        v["total_time_us"] = 0.into();
+        for row in v["breakdown"].as_array_mut().expect("breakdown") {
+            row["time_us"] = 0.into();
+        }
+        serde_json::to_string(&v).expect("serializes")
     }
 
-    /// The run total and the decode rate must be labelled, or the table
-    /// contradicts the profiler block printed a few lines above it: the same
-    /// run reports an end-to-end rate and a decode rate that differ by more
-    /// than an order of magnitude, and neither one says which it is. The
-    /// assertions below are the check; no rate literal belongs in this
-    /// comment, because a number here is a claim no measurement resolves.
+    /// FALSIFY-TRACE-004: the same request through `apr run` and through serve
+    /// yields byte-identical apr-trace-v1, modulo timestamps. Serve's input here
+    /// is what its handler passes for an untraced backend (no events, no layer
+    /// timings) with the same token and layer counts.
+    #[cfg(feature = "inference")]
     #[test]
-    fn layer_trace_labels_wall_clock_and_end_to_end_rate() {
-        let out = render_layer_trace(&layer_trace_result(2.0, 4), 4);
-
-        assert!(
-            out.contains("incl. model load"),
-            "TOTAL must state that it includes model load; got:\n{out}"
-        );
-        assert!(
-            out.contains("end-to-end"),
-            "the rate must be labelled end-to-end, not left to be read as decode \
-             throughput; got:\n{out}"
-        );
-        assert!(
-            out.contains("BRICK-PROFILE"),
-            "the table must point at the measured decode-rate figure; got:\n{out}"
-        );
+    fn falsify_trace_004_run_and_serve_emit_one_schema() {
+        for level in ["brick", "step", "layer"] {
+            let run = run_apr_trace(&layer_trace_result(2.0, 3), level).expect("run document");
+            let serve = realizar::api::apr_trace(&realizar::api::ServeTrace {
+                level: Some(level),
+                events: &[],
+                layers: None,
+                wall_us: 1_234,
+                prompt_tokens: 4,
+                completion_tokens: 3,
+                num_layers: 2,
+            })
+            .expect("serve document");
+            assert_eq!(untimed(&run), untimed(&serve), "level {level}");
+        }
     }
 
-    /// The estimate itself must still be arithmetically what it claims: the
-    /// stated share of per-token wall time.
+    /// The table is the document: no fixed-share row survives, the provenance is
+    /// printed, and the last line is the document itself.
+    #[cfg(feature = "inference")]
     #[test]
-    fn layer_trace_estimates_match_their_stated_share() {
-        // 2.0s wall / 4 tokens = 500ms per token; TRANSFORMER's share is 85%.
-        let out = render_layer_trace(&layer_trace_result(2.0, 4), 4);
-        assert!(
-            out.contains("425.00ms"),
-            "TRANSFORMER must be 0.85 * 500ms = 425.00ms; got:\n{out}"
-        );
-        // 1.7% of 500ms = 8.50ms, shared by TOKENIZE/EMBED/DECODE.
-        assert!(
-            out.contains("8.50ms"),
-            "the 1.7%-share steps must be 8.50ms; got:\n{out}"
-        );
+    fn layer_trace_renders_the_document_and_invents_nothing() {
+        let result = layer_trace_result(2.0, 4);
+        let out = render_layer_trace(&result);
+        for invented in ["TRANSFORMER", "LM_HEAD", "85.0%", "Est. Time"] {
+            assert!(!out.contains(invented), "`{invented}` is a fabricated row; got:\n{out}");
+        }
+        assert!(out.contains("provenance: wall_clock_total"), "got:\n{out}");
+        let doc = run_apr_trace(&result, "layer").expect("layer document");
+        let line = format!("apr-trace-v1: {}", serde_json::to_string(&doc).expect("json"));
+        assert!(out.contains(&line), "the document line must be emitted verbatim; got:\n{out}");
     }
 
     /// Zero tokens must not divide by zero or print NaN.
     #[test]
     fn layer_trace_zero_tokens_is_finite() {
-        let out = render_layer_trace(&layer_trace_result(1.0, 0), 0);
-        assert!(!out.contains("NaN"), "got:\n{out}");
-        assert!(!out.contains("inf"), "got:\n{out}");
+        let out = render_layer_trace(&layer_trace_result(1.0, 0));
+        // Check the rendered numbers, not prose: the row `total_inference`
+        // contains "inf" and is not a non-finite value.
+        for bad in ["NaNms", "infms", "NaN ", "-0.00ms"] {
+            assert!(!out.contains(bad), "`{bad}` in:\n{out}");
+        }
     }

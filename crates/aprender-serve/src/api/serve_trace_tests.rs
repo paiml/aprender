@@ -157,3 +157,55 @@ fn falsify_trace_002_sum_at_wall_is_measured_one_over_is_not() {
     assert_eq!(case(0), (Measured, Measured), "sum == wall");
     assert_eq!(case(1), (WallClockTotal, WallClockTotal), "sum == wall + 1");
 }
+
+/// FALSIFY-TRACE-005 (TR-09, CRUX F-07): chrome is a format of the apr-trace-v1
+/// document. Its rows are exactly the document's rows (names and durations, in
+/// order), every duration is a non-negative integer, and the rows end inside the
+/// `request` span — for a measured layer trace and an unmeasured one alike.
+#[test]
+fn falsify_trace_005_chrome_is_a_format_of_the_document() {
+    let layers = [layer(300, 3), layer(500, 3)];
+    let docs = [
+        apr_trace(&serve("layer", &[], Some(&layers), 1_000)).expect("measured"),
+        apr_trace(&serve("layer", &[], None, 1_000)).expect("wall clock"),
+    ];
+    for doc in &docs {
+        let chrome = chrome_trace(doc);
+        let events = chrome["traceEvents"].as_array().expect("traceEvents");
+        let span = events[0]["dur"].as_u64().expect("request dur");
+        assert_eq!(span, doc.total_time_us);
+        let rows: Vec<(String, u64)> = events[1..]
+            .iter()
+            .map(|e| {
+                let ts = e["ts"].as_u64().expect("ts is a non-negative integer");
+                let dur = e["dur"].as_u64().expect("dur is a non-negative integer");
+                assert!(ts + dur <= span, "row {e} ends past the request span");
+                (e["name"].as_str().expect("name").to_string(), dur)
+            })
+            .collect();
+        let want: Vec<(String, u64)> = doc
+            .breakdown
+            .iter()
+            .map(|o| (o.name.clone(), o.time_us))
+            .collect();
+        assert_eq!(rows, want);
+        assert_eq!(
+            chrome["metadata"]["provenance"],
+            serde_json::to_value(doc.provenance).expect("provenance")
+        );
+    }
+}
+
+/// `apr_trace` is the one level's document `traces_for` answers with.
+#[test]
+fn apr_trace_is_the_requested_levels_document() {
+    assert!(apr_trace(&serve("none", &[], None, 10)).is_none());
+    for level in ["brick", "step", "layer"] {
+        assert_eq!(
+            apr_trace(&serve(level, &[], None, 10))
+                .expect("document")
+                .level,
+            level
+        );
+    }
+}

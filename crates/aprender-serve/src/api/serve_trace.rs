@@ -30,7 +30,11 @@ pub(crate) fn tracer_for(level: Option<&str>) -> Option<InferenceTracer> {
 }
 
 /// What one traced request measured, and what it cost end to end.
-pub(crate) struct ServeTrace<'a> {
+///
+/// TR-09 (#4564): `apr run` builds one of these too, so a request traced
+/// through `apr run` and through serve goes through the same [`apr_trace`].
+pub struct ServeTrace<'a> {
+    /// The requested trace level (`brick`, `step`, `layer`).
     pub level: Option<&'a str>,
     /// The tracer's events; empty when it did not run.
     pub events: &'a [TraceEvent],
@@ -38,8 +42,11 @@ pub(crate) struct ServeTrace<'a> {
     pub layers: Option<&'a [LayerTiming]>,
     /// The request's wall clock, microseconds.
     pub wall_us: u64,
+    /// Tokens fed to the model.
     pub prompt_tokens: usize,
+    /// Tokens generated.
     pub completion_tokens: usize,
+    /// Transformer layers in the model.
     pub num_layers: usize,
 }
 
@@ -61,6 +68,59 @@ pub(crate) fn traces_for(
             t.completion_tokens,
             t.num_layers,
         )
+    })
+}
+
+/// TR-09 (#4564): the ONE `apr-trace-v1` document for `t.level` — what serve
+/// puts in its reply and what `apr run --trace-level` renders. `None` for a
+/// level that has no trace.
+#[must_use]
+pub fn apr_trace(t: &ServeTrace<'_>) -> Option<TraceData> {
+    let (brick, step, layer) = traces_for(t);
+    brick.or(step).or(layer)
+}
+
+/// TR-09 (#4564): chrome://tracing is a FORMAT of an `apr-trace-v1` document,
+/// never a second measurement. One `request` span holds the whole wall clock;
+/// the breakdown rows are laid end to end under it, each as long as its
+/// `time_us`. Because apr-trace-v1 caps the rows at the wall clock
+/// (C-TRACE-002), they end inside the span; durations are `u64`, so none is
+/// negative or NaN (CRUX F-07). Nothing here is invented: an unmeasured trace
+/// renders as its one wall-clock row and says `wall_clock_total`.
+#[must_use]
+pub fn chrome_trace(t: &TraceData) -> serde_json::Value {
+    let mut events = vec![serde_json::json!({
+        "name": "request",
+        "cat": "request",
+        "ph": "X",
+        "ts": 0,
+        "dur": t.total_time_us,
+        "pid": 1,
+        "tid": 1,
+    })];
+    let mut ts: u64 = 0;
+    for op in &t.breakdown {
+        events.push(serde_json::json!({
+            "name": op.name,
+            "cat": t.level,
+            "ph": "X",
+            "ts": ts,
+            "dur": op.time_us,
+            "pid": 1,
+            "tid": 2,
+            "args": {"details": op.details},
+        }));
+        ts = ts.saturating_add(op.time_us);
+    }
+    serde_json::json!({
+        "traceEvents": events,
+        "displayTimeUnit": "ms",
+        "metadata": {
+            "schema": "apr-trace-v1",
+            "level": t.level,
+            "operations": t.operations,
+            "provenance": t.provenance,
+        },
     })
 }
 

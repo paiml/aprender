@@ -1,11 +1,12 @@
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   created: "2026-04-08"
   author: PAIML Engineering
   registry: true
   references:
   - "https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview"
   - "crates/apr-cli/src/commands/run.rs"
+  - "contracts/apr-trace-v1.yaml (TR-09, aprender#4564: chrome is a format of it)"
   description: >
     Chrome Trace Event Format (JSON) for apr run --tracing.
     Output loadable in chrome://tracing, Perfetto, and speedscope.
@@ -30,22 +31,22 @@ equations:
     - "Output is valid JSON parseable by jq"
     - "traceEvents array contains at least 1 event per inference step"
     - "Timestamps (ts) are monotonically non-decreasing within a thread"
-    - "Duration events (ph=X) have dur > 0"
+    - "Duration events (ph=X) have integer dur >= 0 — never negative or NaN (CRUX F-07); a zero-time row is still a row"
 
   trace_event_categories:
     formula: |
-      Categories (cat field) MUST include:
-        "tokenize" — tokenization step
-        "embed"    — embedding lookup
-        "layer"    — transformer layer (includes layer index in name)
-        "sample"   — token sampling
-        "decode"   — token decoding
+      v2.0.0 (TR-09, #4564): the events ARE the run's apr-trace-v1 layer document.
+        one "request" span   — cat "request", dur = total_time_us
+        one event per row    — cat = the document's level, name/dur = the row's
+      The v1 list (tokenize, embed, layer_{i%28}, sample, decode) was a fixed
+      split of the run total, the same for every model, labelled "derived". It
+      is withdrawn: a category exists only where the document has a row.
     domain: trace event categories
     codomain: string enum
     invariants:
-    - "Every inference run produces tokenize + embed + layer(s) + sample + decode events"
-    - "Layer events include layer index: 'layer_0', 'layer_1', etc."
-    - "Events are nested: layer contains attention + ffn sub-events"
+    - "categories = {request} ∪ {level(document)}"
+    - "rows(chrome) = breakdown(document), in order, same durations"
+    - "metadata.provenance = provenance(document)"
 
   output_format_flag:
     formula: |
@@ -71,13 +72,12 @@ falsification_tests:
   if_fails: "trace output not valid JSON or empty"
 
 - id: FALSIFY-TRACE-002
-  rule: required categories present
-  prediction: "trace contains tokenize, layer, sample events"
+  rule: categories are the apr-trace-v1 document's
+  prediction: "chrome rows equal the document's rows; no invented tokenize/sample spans"
   test: |
-    apr run --tracing model.gguf "test" --max-tokens 4 2>/dev/null
-    CATS=$(jq -r '.traceEvents[].cat' trace.json | sort -u)
-    echo "$CATS" | grep -q "tokenize" && echo "$CATS" | grep -q "layer"
-  if_fails: "missing required trace categories"
+    cargo test -p apr-cli --lib test_chrome_trace_event_categories
+    cargo test -p apr-cli --lib test_chrome_trace_token_count
+  if_fails: "chrome carries a row the apr-trace-v1 document does not"
 
 - id: FALSIFY-TRACE-003
   rule: timestamps monotonic
@@ -94,7 +94,7 @@ proof_obligations:
   property: "output is valid Chrome Trace Event Format JSON"
 - id: ACTE66C-INV-002
   type: invariant
-  property: "all required categories present"
+  property: "chrome rows are exactly the apr-trace-v1 document's rows"
 - id: ACTE66C-INV-003
   type: invariant
   property: "timestamps monotonically non-decreasing"

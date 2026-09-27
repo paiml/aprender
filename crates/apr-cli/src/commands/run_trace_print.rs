@@ -1,143 +1,91 @@
-/// Print layer-level trace timing breakdown.
+/// TR-09 (#4564): the `apr-trace-v1` document for this run at `level`, built by
+/// the SAME function serve answers `X-Trace-Level` with
+/// ([`realizar::api::apr_trace`]). One builder is the only way "the same request
+/// through `apr run` and through serve yields the same trace" can stay true.
 ///
-/// Only reports measurable wall-clock totals. Per-layer breakdown is not
-/// available without BrickProfiler instrumentation — use `apr profile --granular`
-/// for real per-operation telemetry.
-///
-/// PMAT-480: Layer trace shows the 8-step inference state machine with
-/// per-step timing. When realizar provides TensorStats (min/max/mean/std/
-/// NaN/Inf counts), those are printed per layer. Otherwise falls back to
-/// aggregate timing from RunResult.
-fn print_layer_trace(result: &RunResult, max_tokens: usize) {
-    eprint!("{}", render_layer_trace(result, max_tokens));
+/// `apr run` has no tracer over its forwards yet, so the document is the
+/// wall-clock row and says `wall_clock_total` — which is what it always
+/// measured. The table it replaces split that one total by fixed shares
+/// (TRANSFORMER 85%, LM_HEAD 8%, ...) for every model and prompt.
+#[cfg(feature = "inference")]
+pub(crate) fn run_apr_trace(result: &RunResult, level: &str) -> Option<realizar::api::TraceData> {
+    let u = result.usage;
+    realizar::api::apr_trace(&realizar::api::ServeTrace {
+        level: Some(level),
+        events: &[],
+        layers: None,
+        wall_us: run_wall_us(result),
+        prompt_tokens: u.prompt_tokens.unwrap_or(0),
+        completion_tokens: u.completion_tokens.or(result.tokens_generated).unwrap_or(0),
+        num_layers: u.num_layers.unwrap_or(0),
+    })
 }
 
-/// Fixed share of per-token wall time attributed to each step of the 8-step
-/// state machine. These are ASSUMPTIONS, not measurements — see
-/// [`render_layer_trace`].
-fn layer_trace_share(step: &str) -> f64 {
-    match step {
-        "TRANSFORMER" => 0.85,
-        "LM_HEAD" => 0.08,
-        "SAMPLE" => 0.02,
-        _ => 0.017,
+/// The run's generation window in µs when the backend marked it (the part a
+/// serve request's wall clock also covers); the whole run otherwise.
+fn run_wall_us(result: &RunResult) -> u64 {
+    match result.usage.generation_ms {
+        Some(ms) => ms.saturating_mul(1000),
+        None => (result.duration_secs.max(0.0) * 1_000_000.0) as u64,
     }
 }
 
-/// Render the layer-trace table.
+/// Print the layer trace: the `apr-trace-v1` document, as a table and as JSON.
+fn print_layer_trace(result: &RunResult) {
+    eprint!("{}", render_layer_trace(result));
+}
+
+/// Render `apr run --trace-level layer` from its `apr-trace-v1` document.
 ///
-/// # These numbers are ESTIMATES and the table says so
-///
-/// The per-step figures are `wall_ms / tokens * <fixed share>` — a constant
-/// split of one measured total, identical for every model and every prompt.
-/// The table used to head that column `Time` and print the values bare, so it
-/// read as a measurement: it always "proved" TRANSFORMER was 85% of the run,
-/// while the real `[BRICK-PROFILE]` block a few lines above the same output
-/// reported FFN 42% / Qkv 21% / LmHead 4.5% for that identical run. TOKENIZE,
-/// EMBED and DECODE came out equal to the hundredth of a millisecond in every
-/// run, which is the tell.
-///
-/// Two things follow, and both are in the rendered output now:
-///
-/// 1. The column is `Est. Time`, each value is prefixed `~`, and the share used
-///    to derive it is printed next to it. A reader cannot mistake a derived
-///    number for a measured one.
-/// 2. `TOTAL` is labelled wall-clock **including model load**, and its rate is
-///    labelled end-to-end. An unlabelled end-to-end rate printed next to the
-///    profiler's decode rate for the same run disagrees with it by more than an
-///    order of magnitude, a contradiction inside one screen of output.
-///
-/// Returned as a `String` so the rendering is directly assertable; the caller
-/// prints it to stderr.
-fn render_layer_trace(result: &RunResult, max_tokens: usize) -> String {
+/// Every row is a row of that document; nothing is derived here. The last line
+/// is the document itself, so a script reads exactly what serve would return.
+#[cfg(feature = "inference")]
+fn render_layer_trace(result: &RunResult) -> String {
     use std::fmt::Write as _;
-
-    let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
-    let total_ms = result.duration_secs * 1000.0;
-    let tok_per_sec = if result.duration_secs > 0.0 {
-        tokens_generated as f64 / result.duration_secs
-    } else {
-        0.0
-    };
-
-    // 8-step inference state machine trace
-    let steps = [
-        ("TOKENIZE", "Text → Token IDs"),
-        ("EMBED", "Token IDs → Vectors"),
-        ("TRANSFORMER", "Vectors → Vectors (×N layers)"),
-        ("LM_HEAD", "Hidden → Logits"),
-        ("SAMPLE", "Logits → Token ID"),
-        ("DECODE", "Token ID → Text"),
-    ];
-
-    let per_token_ms = if tokens_generated > 0 {
-        total_ms / tokens_generated as f64
-    } else {
-        total_ms
-    };
 
     let mut out = String::new();
     let _ = writeln!(out);
-    let _ = writeln!(out, "{}", "=== Layer Trace (APR-TRACE-001) ===".cyan().bold());
-    let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "  {}",
-        "ESTIMATED — per-step values are a fixed share of measured wall time,".yellow()
-    );
-    let _ = writeln!(
-        out,
-        "  {}",
-        "NOT per-step measurements. Same ratios for every model and prompt.".yellow()
-    );
-    let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "  {:<16} {:<12} {:<8} {}",
-        "Step".bold(),
-        "Est. Time".bold(),
-        "Share".bold(),
-        "Description".bold()
-    );
-    let _ = writeln!(out, "  {}", "─".repeat(66));
-
-    for (name, desc) in &steps {
-        let share = layer_trace_share(name);
+    let _ = writeln!(out, "{}", "=== Layer Trace (apr-trace-v1) ===".cyan().bold());
+    let Some(t) = run_apr_trace(result, "layer") else {
+        let _ = writeln!(out, "  no apr-trace-v1 document for level `layer`");
+        return out;
+    };
+    let provenance = serde_json::to_value(t.provenance)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default();
+    let _ = writeln!(out, "  provenance: {provenance}");
+    if t.provenance != realizar::api::TraceProvenance::Measured {
         let _ = writeln!(
             out,
-            "  {:<16} ~{:>8.2}ms  {:>6.1}%  {}",
-            name,
-            per_token_ms * share,
-            share * 100.0,
-            desc.dimmed()
+            "  {}",
+            "Only the wall clock is measured; no per-layer row is invented. \
+             For measured per-brick timing: `apr profile <model> --granular`."
+                .yellow()
         );
     }
-
+    let _ = writeln!(out);
+    let _ = writeln!(out, "  {:<24} {:>12}  {}", "Row".bold(), "Time".bold(), "Details".bold());
     let _ = writeln!(out, "  {}", "─".repeat(66));
-    let _ = writeln!(
-        out,
-        "  {:<16} {:>9.2}ms  measured wall clock, incl. model load",
-        "TOTAL", total_ms
-    );
-    let _ = writeln!(
-        out,
-        "  {:<16} {:>9.1} tok/s  end-to-end ({} tokens / total wall clock);",
-        "RATE", tok_per_sec, tokens_generated
-    );
-    let _ = writeln!(
-        out,
-        "  {:<16} {}",
-        "",
-        "decode-only throughput is the [BRICK-PROFILE] figure, which excludes load".dimmed()
-    );
+    for op in &t.breakdown {
+        let _ = writeln!(
+            out,
+            "  {:<24} {:>10.2}ms  {}",
+            op.name,
+            op.time_us as f64 / 1000.0,
+            op.details.as_deref().unwrap_or("").dimmed()
+        );
+    }
+    let _ = writeln!(out, "  {}", "─".repeat(66));
+    let _ = writeln!(out, "  {:<24} {:>10.2}ms  wall clock", "TOTAL", t.total_time_us as f64 / 1000.0);
     let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "  {}",
-        "For measured per-brick µs timing: `apr profile <model> --granular`.".dimmed()
-    );
-    let _ = writeln!(out);
+    let _ = writeln!(out, "apr-trace-v1: {}", serde_json::to_string(&t).unwrap_or_default());
     out
+}
+
+#[cfg(not(feature = "inference"))]
+fn render_layer_trace(_result: &RunResult) -> String {
+    "apr-trace-v1 needs the `inference` feature\n".to_string()
 }
 
 /// Print payload trace with activation statistics (TensorStats per layer).

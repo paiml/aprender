@@ -1,18 +1,19 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-09-26"
   author: PAIML Engineering
   registry: true
   references:
     - "handoff/APR-OBS-001-dogfood-observability.md OBS-09"
     - "aprender#4496"
+    - "aprender#4564 (TR-09: apr run renders the same document)"
   description: |
     apr-trace-v1: what an `apr serve` reply may claim about its own timing when a
     client sends `X-Trace-Level`. A trace is `provenance: measured` only when the
     inference tracer ran over that request, and its parts never sum past the
     request's own wall clock.
 name: apr-trace
-version: "1.0.0"
+version: "1.1.0"
 scope: "crates/aprender-serve/src/api/serve_trace.rs"
 description: |
   APR-OBS-001 OBS-09 (#4496). Before this contract every serve backend answered a
@@ -28,6 +29,10 @@ description: |
   `provenance: measured`. Where nothing was measured (a CPU turn asked for layers,
   a level this path does not trace) the reply keeps the wall-clock row and says
   `wall_clock_total`.
+
+  TR-09 (#4564, v1.1.0): `apr run --trace-level layer|chrome` renders the same
+  document, built by the same `realizar::api::apr_trace`, and chrome is a format of
+  it (`realizar::api::chrome_trace`), not a second set of numbers.
 equations:
   C-TRACE-001:
     description: "A trace claims a measurement only when the tracer produced one for this request."
@@ -35,6 +40,12 @@ equations:
   C-TRACE-002:
     description: "The measured parts of a trace never exceed the request's wall clock."
     formula: "provenance(trace) = measured ⟹ Σ breakdown.time_us ≤ wall_us(request)"
+  C-TRACE-003:
+    description: "One schema: the same request through apr run and through serve yields the same apr-trace-v1 document, modulo timings."
+    formula: "untimed(apr_trace(run(r))) = untimed(apr_trace(serve(r)))"
+  C-TRACE-004:
+    description: "Chrome is a format of the document: its rows are the document's rows, none negative or NaN, all inside the request span."
+    formula: "rows(chrome(t)) = breakdown(t) ∧ ∀e: 0 ≤ ts(e) ∧ ts(e) + dur(e) ≤ total_time_us(t)"
 proof_obligations:
   - id: PO-TRACE-001
     kind: correctness
@@ -44,6 +55,14 @@ proof_obligations:
     kind: correctness
     statement: "traces_for refuses measured when the per-layer (or per-step) sum exceeds the request's wall clock."
     discharged_by: FALSIFY-TRACE-002
+  - id: PO-TRACE-003
+    kind: correctness
+    statement: "apr run's layer/step/brick document equals serve's for the same token and layer counts once timings are zeroed."
+    discharged_by: FALSIFY-TRACE-004
+  - id: PO-TRACE-004
+    kind: correctness
+    statement: "chrome_trace emits exactly the document's rows, with non-negative integer durations ending inside the request span."
+    discharged_by: FALSIFY-TRACE-005
 falsification:
   - id: FALSIFY-TRACE-001
     description: "A trace returned with provenance measured when the tracer did not run. Discharges C-TRACE-001 and PO-TRACE-001."
@@ -51,3 +70,9 @@ falsification:
   - id: FALSIFY-TRACE-002
     description: "A per-layer (or per-step) sum greater than the request's wall clock reported as measured. Discharges C-TRACE-002 and PO-TRACE-002."
     test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_trace_002"
+  - id: FALSIFY-TRACE-004
+    description: "apr run and serve emit different apr-trace-v1 documents for the same request (modulo timings). Discharges C-TRACE-003 and PO-TRACE-003."
+    test: "cargo test -p apr-cli --lib falsify_trace_004"
+  - id: FALSIFY-TRACE-005
+    description: "A chrome trace with a row the document lacks, a negative/NaN duration, or a row past the request span. Discharges C-TRACE-004 and PO-TRACE-004."
+    test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_trace_005 && cargo test -p apr-cli --lib falsify_trace_005"

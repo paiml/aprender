@@ -124,7 +124,7 @@ pub(crate) fn run(
     let result = run_model(source, &options)?;
 
     if trace && trace_level == "layer" {
-        print_layer_trace(&result, max_tokens);
+        print_layer_trace(&result);
     }
 
     if trace && trace_level == "payload" {
@@ -384,122 +384,46 @@ fn print_chrome_trace(
 
 /// Build the chrome://tracing document for a completed run.
 ///
-/// Split out of [`print_chrome_trace`] so the document can be asserted on
-/// directly. The tests used to assert against a *copy* of this logic kept in
-/// the test file, which proved only that the copy agreed with itself.
-///
-/// `metadata.timing_model` is `"derived"`: apart from the run's total wall
-/// clock, the per-event durations here are a fixed split of that total, not
-/// measured spans. Real per-operation timing comes from the brick profiler
-/// (`apr profile --granular`).
+/// TR-09 (#4564): chrome is a FORMAT of the run's `apr-trace-v1` layer
+/// document ([`realizar::api::chrome_trace`]), never a second set of numbers.
+/// It used to lay out model_load / tokenize / embed / `layer_{i % 28}` / sample
+/// spans as fixed fractions of the run total — 28 layers for every model — and
+/// label them `timing_model: "derived"`. The document's `provenance` now says
+/// what was measured, and the run's own fields ride along in `metadata`.
+#[cfg(feature = "inference")]
 pub(crate) fn build_chrome_trace(
     result: &super::run::RunResult,
     source: &str,
     max_tokens: usize,
     include_profile: bool,
 ) -> serde_json::Value {
-    let mut events = Vec::new();
-    let mut ts_us: u64 = 0;
-
-    // Model load event
-    let load_dur = (result.duration_secs * 1_000_000.0) as u64;
-    events.push(serde_json::json!({
-        "name": "model_load",
-        "cat": "lifecycle",
-        "ph": "X",
-        "ts": 0,
-        "dur": load_dur / 10, // ~10% of total is load
-        "pid": 1,
-        "tid": 1,
-        "args": {"source": source, "max_tokens": max_tokens}
-    }));
-    ts_us = load_dur / 10;
-
-    // Contract: apr-chrome-trace-v1.yaml — trace_event_categories equation
-    // Required categories: tokenize, embed, layer, sample, decode
-
-    // Tokenize event
-    let tokenize_dur = load_dur / 100; // ~1% of total
-    events.push(serde_json::json!({
-        "name": "tokenize",
-        "cat": "tokenize",
-        "ph": "X",
-        "ts": ts_us,
-        "dur": tokenize_dur,
-        "pid": 1, "tid": 1,
-        "args": {"source": source}
-    }));
-    ts_us += tokenize_dur;
-
-    // Embed event
-    let embed_dur = load_dur / 100;
-    events.push(serde_json::json!({
-        "name": "embed",
-        "cat": "embed",
-        "ph": "X",
-        "ts": ts_us,
-        "dur": embed_dur,
-        "pid": 1, "tid": 1
-    }));
-    ts_us += embed_dur;
-
-    // Token generation events (decode + sample per token)
-    if let Some(count) = result.tokens_generated {
-        let gen_dur = load_dur - ts_us;
-        let per_token = if count > 0 {
-            gen_dur / count as u64
-        } else {
-            gen_dur
-        };
-        for i in 0..count {
-            let token_start = ts_us + (i as u64 * per_token);
-            // Layer forward pass (~90% of per-token time)
-            let layer_dur = per_token * 9 / 10;
-            events.push(serde_json::json!({
-                "name": format!("layer_{}", i % 28),
-                "cat": "layer",
-                "ph": "X",
-                "ts": token_start,
-                "dur": layer_dur,
-                "pid": 1, "tid": 1,
-                "args": {"token_idx": i, "layer": i % 28}
-            }));
-            // Sample step (~10% of per-token time)
-            events.push(serde_json::json!({
-                "name": "sample",
-                "cat": "sample",
-                "ph": "X",
-                "ts": token_start + layer_dur,
-                "dur": per_token - layer_dur,
-                "pid": 1, "tid": 1,
-                "args": {"token_idx": i}
-            }));
-            // Decode event (instant marker)
-            events.push(serde_json::json!({
-                "name": format!("token_{}", i),
-                "cat": "decode",
-                "ph": "X",
-                "ts": token_start,
-                "dur": per_token,
-                "pid": 1, "tid": 1,
-                "args": {"token_idx": i}
-            }));
-        }
+    let mut trace = run_apr_trace(result, "layer").map_or_else(
+        || serde_json::json!({"traceEvents": [], "displayTimeUnit": "ms", "metadata": {}}),
+        |t| realizar::api::chrome_trace(&t),
+    );
+    if let Some(meta) = trace.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        meta.insert("source".into(), source.into());
+        meta.insert("tool".into(), "apr run --trace --trace-level chrome".into());
+        meta.insert("max_tokens".into(), max_tokens.into());
+        meta.insert("tok_per_sec".into(), serde_json::json!(result.tok_per_sec));
+        meta.insert("include_profile".into(), include_profile.into());
     }
+    trace
+}
 
+#[cfg(not(feature = "inference"))]
+pub(crate) fn build_chrome_trace(
+    _result: &super::run::RunResult,
+    source: &str,
+    max_tokens: usize,
+    include_profile: bool,
+) -> serde_json::Value {
     serde_json::json!({
-        "traceEvents": events,
+        "traceEvents": [],
         "displayTimeUnit": "ms",
-        "metadata": {
-            "source": source,
-            "tool": "apr run --trace --trace-level chrome",
-            "max_tokens": max_tokens,
-            "tok_per_sec": result.tok_per_sec,
-            "include_profile": include_profile,
-            // Honesty marker: only the run total is measured; the per-event
-            // durations below are a fixed split of it.
-            "timing_model": "derived"
-        }
+        "metadata": {"source": source, "max_tokens": max_tokens,
+                     "include_profile": include_profile,
+                     "note": "apr-trace-v1 needs the `inference` feature"}
     })
 }
 

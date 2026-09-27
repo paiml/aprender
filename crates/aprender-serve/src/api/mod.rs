@@ -80,6 +80,7 @@ pub(crate) use openai_handlers::LiveUtf8Deltas;
 pub(crate) use openai_handlers::{
     openai_chat_completions_handler, openai_chat_completions_stream_handler, openai_models_handler,
 };
+pub use serve_trace::{apr_trace, chrome_trace, ServeTrace};
 // PMAT-923: Ollama HTTP compat (/api/chat, /api/generate) — delegates to the
 // OpenAI chat path so `apr serve` is a drop-in Ollama HTTP replacement.
 mod ollama_handlers;

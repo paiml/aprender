@@ -233,6 +233,8 @@ pub(crate) struct RunUsage {
     pub finish_reason: Option<&'static str>,
     /// The model's context window, from its metadata.
     pub context_length: Option<usize>,
+    /// TR-09 (#4564): transformer layers, from its metadata; feeds `apr-trace-v1`.
+    pub num_layers: Option<usize>,
     /// #3981: generation wall time (prefill + decode), in ms, when the backend marked
     /// where generation began. `None` means the path did not measure it, and then
     /// `tok_per_sec` still includes setup.
