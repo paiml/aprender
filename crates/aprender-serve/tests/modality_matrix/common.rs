@@ -549,7 +549,9 @@ mod tests {
         assert_eq!(trace.total_tokens, 100);
         assert_eq!(trace.total_duration_ms, 500);
 
-        eprintln!("QA-A08 PASS (mock self-test): mock_trace::capture() returned the recorded spans");
+        eprintln!(
+            "QA-A08 PASS (mock self-test): mock_trace::capture() returned the recorded spans"
+        );
     }
 
     // ========================================================================

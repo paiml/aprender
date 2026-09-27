@@ -32,12 +32,12 @@ proof_obligations:
   - id: STP-INV-001
     type: invariant
     property: "The payload's layer count is the model's"
-    formal: "∀ L ≠ 28: trace(level, …, L) never reports 28 layers ∧ trace(layer, …, L).operations = L"
+    formal: "∀ L ≠ 28: trace(level, L) never reports 28 layers ∧ trace(layer, L).operations = L"
     applies_to: payload
   - id: STP-INV-002
     type: invariant
     property: "Every payload carries provenance and no hand-built literal remains"
-    formal: "trace(level, …).provenance = wall_clock_total ∧ git grep '\"layers\": 28' crates = ∅"
+    formal: "trace(level).provenance = wall_clock_total ∧ git grep '\"layers\": 28' crates = ∅"
     applies_to: payload
 
 falsification_tests:

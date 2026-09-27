@@ -48,7 +48,7 @@ proof_obligations:
   - id: TRES-INV-003
     type: invariant
     property: "No unresolved renacer invocation in scripts/ or the Makefile"
-    formal: "|violations(git ls-files -- scripts Makefile)| = 0"
+    formal: "violations(git ls-files -- scripts Makefile) = ∅"
     applies_to: unresolved_invocation
 
 falsification_tests:
