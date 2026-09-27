@@ -15,14 +15,19 @@
 # no test; the queue entry was evicted 31 seconds later. `check_nextest_config_keys.sh`
 # now fails on any key nextest ignores.
 [profile.ci]
-retries = 2
+# 0, not 2 (FLAKE-0, #4515). A retry turns a test that fails then passes into FLAKY on a
+# GREEN run: the 7-day harvest found one (aprender-serve falsify_h3_attention_correctness,
+# FLAKY 2/3 twice) that no gate ever reported. Operator: "zero tolerance flaky test".
+# scripts/check_nextest_ci_profile.sh requires 0 here and forbids a nonzero retries in
+# [profile.default] and in every ci/default override, since --profile ci reads all four.
+retries = 0
 # false, not true (PMAT-3587). fail-fast is a verdict-discarding default: on the first
 # failing test nextest cancels every test still queued and reports the one failure with
 # no count of what it did not measure. Measured on a 6-test probe whose 2nd test fails:
 # true -> "3/6 tests run ... Cancelling due to test failure"; false -> "6 tests run:
 # 5 passed, 1 failed" (still rc 100 -- a failure is still a failure, it is just no
 # longer the only thing measured). An ABSENT key is the same as true: nextest's default
-# is ON, so scripts/check_nextest_ci_profile_no_fail_fast.sh requires this line to be
+# is ON, so scripts/check_nextest_ci_profile.sh requires this line to be
 # present and literally false. The tree paid for the old value once: "nextest fail-fast
 # hid every other dark failure: 7 rounds for 4 tests."
 fail-fast = false
