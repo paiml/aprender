@@ -261,3 +261,102 @@ fn falsify_neon_q4k_002_trace_reports_kernel_paths() {
     off.trace_cpu_kernel_paths();
     assert!(off.events().is_empty());
 }
+
+type DotF = fn(&[u8], &[f32]) -> crate::error::Result<f32>;
+type DotQ8 = fn(&[u8], &[f32], &[i8]) -> crate::error::Result<f32>;
+
+/// The fixed block set behind FALSIFY-NEON-Q4K-003: 16 seeded super-blocks per kernel.
+fn golden_inputs() -> Vec<(Vec<u8>, Vec<u8>, Vec<f32>, Vec<f32>, Vec<i8>)> {
+    let mut rng = Rng(0x0073_0003_0003);
+    (0..GOLDEN_N)
+        .map(|_| {
+            let w4 = q4k_block(&mut rng);
+            let w6 = q6k_block(&mut rng);
+            let x = activations(&mut rng, QK_K);
+            let (s, q) = q8k_row(&mut rng, 1);
+            (w4, w6, x, s, q)
+        })
+        .collect()
+}
+
+const GOLDEN_N: usize = 16;
+
+fn golden_dots(f4: DotF, f6: DotF, f8: DotQ8) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let mut out = (Vec::new(), Vec::new(), Vec::new());
+    for (w4, w6, x, s, q) in golden_inputs() {
+        out.0.push(f4(&w4, &x).expect("q4k"));
+        out.1.push(f6(&w6, &x).expect("q6k"));
+        out.2.push(f8(&w4, &s, &q).expect("q4k-q8k"));
+    }
+    out
+}
+
+// f32 bit patterns of the scalar oracles over `golden_inputs()`, recorded on x86_64
+// (lambda, 2026-09-27). Bits, not decimals, so the record is exact.
+const GOLDEN_Q4K: [u32; GOLDEN_N] = [
+    1091465154, 3268411074, 3247193292, 3244384784, 1104167786, 3260468216, 3248360639, 1124313389,
+    3255737371, 3239006023, 3264770284, 1127373061, 1125195115, 1119038079, 1136639230, 1095670283,
+];
+const GOLDEN_Q6K: [u32; GOLDEN_N] = [
+    1115696371, 3248413440, 3254860063, 1107157746, 3254407772, 3258858128, 1100833005, 1022079872,
+    1117845229, 3274817917, 1107324509, 3278881325, 1126503027, 1096839219, 3273857476, 3268516951,
+];
+const GOLDEN_Q4K_Q8K: [u32; GOLDEN_N] = [
+    3215061748, 1143897628, 3269246872, 3251172614, 3290279773, 1122482246, 3191881834, 1110911686,
+    3240944031, 1109969311, 3232123399, 1110321032, 3270785095, 3251673576, 3258759606, 1133203616,
+];
+
+fn golden_mismatches(got: &[f32], golden: &[u32]) -> usize {
+    got.iter()
+        .zip(golden)
+        .filter(|(g, &w)| !within(**g, f32::from_bits(w)))
+        .count()
+}
+
+/// FALSIFY-NEON-Q4K-003: the dispatched kernels on this arch (NEON on aarch64) and the
+/// scalar oracles here both reproduce the x86 scalar record.
+#[test]
+fn falsify_neon_q4k_003_cross_arch_golden() {
+    for (label, (a, b, c)) in [
+        (
+            "simd",
+            golden_dots(
+                fused_q4k_dot_simd,
+                fused_q6k_dot_simd,
+                fused_q4k_q8k_dot_simd,
+            ),
+        ),
+        (
+            "scalar",
+            golden_dots(fused_q4k_dot, fused_q6k_dot, fused_q4k_q8k_dot),
+        ),
+    ] {
+        assert_eq!(golden_mismatches(&a, &GOLDEN_Q4K), 0, "{label} q4k {a:?}");
+        assert_eq!(golden_mismatches(&b, &GOLDEN_Q6K), 0, "{label} q6k {b:?}");
+        assert_eq!(
+            golden_mismatches(&c, &GOLDEN_Q4K_Q8K),
+            0,
+            "{label} q4k-q8k {c:?}"
+        );
+    }
+}
+
+/// FALSIFY-NEON-Q4K-003 planted mutant: one perturbed scale byte breaks the golden.
+#[test]
+fn falsify_neon_q4k_003_planted_scale_byte_is_caught() {
+    let (mut hit4, mut hit8) = (0, 0);
+    for (k, (mut w4, _, x, s, q)) in golden_inputs().into_iter().enumerate() {
+        w4[4] ^= 0x15; // scales[0]: 6-bit scale of sub-block 0
+        let want = f32::from_bits(GOLDEN_Q4K[k]);
+        hit4 += usize::from(!within(fused_q4k_dot_simd(&w4, &x).expect("q4k"), want));
+        let want = f32::from_bits(GOLDEN_Q4K_Q8K[k]);
+        hit8 += usize::from(!within(
+            fused_q4k_q8k_dot_simd(&w4, &s, &q).expect("q8k"),
+            want,
+        ));
+    }
+    assert!(
+        hit4 >= GOLDEN_N - 2 && hit8 >= GOLDEN_N - 2,
+        "caught {hit4}, {hit8} of {GOLDEN_N}"
+    );
+}
