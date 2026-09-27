@@ -240,23 +240,31 @@ rule1_scan() {
   : > "$findings"
   cands=$(mktemp) || return 2
   trap 'rm -f "$cands"' RETURN
+  # The file filter stays in bash (no forks); the scan is ONE awk over every
+  # kept file, not one awk per file -- 10k forks were ~30 s of this guard.
+  # FNR / FILENAME give each file's own line numbers and path, and `doc` is
+  # reset at each file's first line, exactly as a fresh awk per file had it.
+  local kept=()
   while IFS= read -r rel; do
     f="$ROOT/$rel"
     [ -r "$f" ] || continue
     is_test_path "$rel" && continue
     files=$((files + 1))
-    awk -v rx="$DOC_ASSERT" -v rel="$rel" \
-        '/^[[:space:]]*\/\/\//   { doc = doc " " $0; next }
+    kept+=("$f")
+  done < <(cd "$ROOT" && git ls-files 'crates/*.rs' 2>/dev/null)
+  [ "${#kept[@]}" -eq 0 ] || printf '%s\0' "${kept[@]}" \
+    | xargs -0 awk -v rx="$DOC_ASSERT" -v root="$ROOT/" \
+        'FNR == 1                  { doc = ""; rel = substr(FILENAME, length(root) + 1) }
+         /^[[:space:]]*\/\/\//   { doc = doc " " $0; next }
          /^[[:space:]]*#\[/      { next }
          /^[[:space:]]*$/        { next }
          {
            if (doc != "" && $0 ~ /^[[:space:]]*pub([[:space:]]*\([^)]*\))?[[:space:]]+([a-z]+[[:space:]]+)*fn[[:space:]]+/) {
              low = tolower(doc)
-             if (low ~ rx) { n = $0; sub(/.*fn[[:space:]]+/, "", n); sub(/[^A-Za-z0-9_].*/, "", n); print rel "|" NR "|" n }
+             if (low ~ rx) { n = $0; sub(/.*fn[[:space:]]+/, "", n); sub(/[^A-Za-z0-9_].*/, "", n); print rel "|" FNR "|" n }
            }
            doc = ""
-         }' "$f" >> "$cands"
-  done < <(cd "$ROOT" && git ls-files 'crates/*.rs' 2>/dev/null)
+         }' >> "$cands"
 
   if [ "$files" -lt 100 ]; then
     echo "VACUOUS: rule 1 reached $files source files; this tree has thousands" >&2
