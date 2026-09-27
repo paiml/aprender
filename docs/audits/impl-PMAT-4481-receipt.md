@@ -31,3 +31,14 @@ Checks: `cargo test -p aprender-contracts --lib binding` passes 131, and `pv lin
 
 - The #4475 coverage floor stays open (#4480 said the same).
 - The per-origin PR CI runs are not re-cited here; this PR's own CI is the gate.
+
+## Fix after CI, round 2 (delta over 1cdb4a68cf)
+
+CI run 36298850626 failed guard-cargo on the contracts gate's provenance step:
+`scripts/lint-provenance.sh: line 23: rg: command not found`. Since #4480 the
+gate fails closed on every step, so this was the first run to report it. The four
+`rg` calls became `grep -E`/`grep -q`, with the same patterns. `--self-test` passes
+with rg removed from PATH (`env PATH=/usr/bin:/bin`). guard-tree failed only on
+`FAIL (ENV): scripts/pmat_bin.sh found no analyser at its pin`, on runner
+framework16-2, which was never converged (infra#708). That is not this diff, and
+main is green.
