@@ -1,0 +1,69 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-27"
+  author: PAIML Engineering
+  kind: pattern
+  references:
+  - "APR-OBS-001 dogfood observability §5.2 (perf PRs carry a trace diff), row OBS-11"
+  - "https://github.com/paiml/aprender/issues/4498"
+  - "apr-obs-row-identity-v1 (§2.1 identity block), apr-trace-v1 (realizar TraceData)"
+  description: >
+    APR-OBS-001 OBS-11. Every 0.71 performance PR carries a before/after
+    apr-trace-v1 diff for the layers it claims to change, measured on the same
+    host at the same identity; a perf PR without it does not merge. The evidence
+    is evidence/perf-pr-trace/*.json in the PR, checked by
+    `apr perf-pr-trace-lint FILE --base B --head H`. A PR is a perf PR when its
+    title is a conventional `perf` commit or it carries the `perf` label
+    (scripts/check_perf_pr_trace.sh). The PR check is report-only (R-6) until
+    first green plus 7 green nights; PERF_PR_TRACE_ENFORCE=1 makes it blocking.
+
+equations:
+  admissible_evidence:
+    formula: |
+      ok(d) ⇔ d.schema = apr-perf-pr-trace-v1 ∧ d.claimed ≠ ∅
+            ∧ ∀ s ∈ {before, after}: IDENTITY_FIELDS ⊆ keys(d.s.identity) ∧ gpu_rule(d.s.identity)
+                                     ∧ d.s.identity.backend ≠ backend_unproven
+                                     ∧ d.s.trace.provenance = measured
+                                     ∧ Σ d.s.trace.breakdown.time_us ≤ d.s.trace.total_time_us
+                                     ∧ claimed ⊆ names(d.s.trace.breakdown)
+            ∧ same(host, model_sha256, backend, build_identity.{target_triple, rustc_vv, features, accelerator, driver})
+            ∧ d.before.commit = base ∧ d.after.commit = head ∧ base ≠ head
+    domain: one apr-perf-pr-trace-v1 JSON document
+    codomain: bool
+    invariants:
+    - "an absent identity key is never a pass (R-2)"
+    - "crate_tarball_sha256 and binary_sha256 are NOT compared: the PR changed the code"
+    - "wall_clock_total or estimated timings are not per-layer evidence"
+  perf_pr_gate:
+    formula: |
+      perf(pr) ⇔ title ~ ^perf(\(|:|!) ∨ perf ∈ labels(pr)
+      perf(pr) ⇒ ∃ f ∈ changed(pr): f ~ ^evidence/perf-pr-trace/[^/]+\.json$ ∧ ∀ such f: ok(f)
+    domain: one pull request
+    codomain: bool
+    invariants:
+    - "a PR that is not a perf PR is never blocked by this gate"
+    - "evidence present but no pinned $APR is RED, never GREEN"
+
+proof_obligations:
+- type: invariant
+  property: every merged 0.71 perf PR carries admissible before/after trace evidence
+  formal: "∀ pr merged in 0.71: perf(pr) ⇒ perf_pr_gate(pr)"
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-OBS11-001
+  rule: the lint turns RED on every planted defect and names it
+  prediction: "check() reports a finding for a missing identity key, a host/model/backend/build mismatch, a null gpu_proof on cuda, backend_unproven, wall_clock_total or estimated provenance, a breakdown past its total, a claimed layer absent, and before.commit = after.commit; the valid document and a changed uname_a/binary_sha256 stay GREEN"
+  test: "cargo test -p apr-cli --lib perf_pr_trace"
+  if_fails: "a perf claim measured on a different host, binary build or weights, or without per-layer timings, would pass"
+- id: FALSIFY-OBS11-002
+  rule: a planted perf PR without evidence is blocked
+  prediction: "check_perf_pr_trace.sh --self-test: perf:/perf(scope):/perf!:/perf-label PRs with no evidence are RED, fix: and perfect: are GREEN, nested or non-json evidence does not count, evidence with no $APR is RED"
+  test: "bash scripts/check_perf_pr_trace.sh --self-test"
+  if_fails: "a perf PR could merge with no trace diff"
+
+verification_summary:
+  total_obligations: 1
+  proven: 0
+  tested: 1
+  status: partial

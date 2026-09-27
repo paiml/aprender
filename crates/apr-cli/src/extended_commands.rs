@@ -967,6 +967,18 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "I32")]
         expected_exit_code: Option<i32>,
     },
+    /// Lint a perf PR's before/after apr-trace-v1 evidence (APR-OBS-001 OBS-11, §5.2)
+    PerfPrTraceLint {
+        /// Path to the `apr-perf-pr-trace-v1` evidence JSON committed with the PR
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// The PR's base commit; `before.commit` must name it
+        #[arg(long, value_name = "SHA")]
+        base: Option<String>,
+        /// The PR's head commit; `after.commit` must name it
+        #[arg(long, value_name = "SHA")]
+        head: Option<String>,
+    },
     /// Lint two externally captured DDP metrics JSONs, N=1 and N=k (CRUX-D-11 — no apr producer yet)
     DdpMetricsLint {
         /// Path to N=1 metrics JSON

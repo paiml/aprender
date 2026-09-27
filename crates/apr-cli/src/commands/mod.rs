@@ -137,6 +137,7 @@ pub(crate) mod parity;
 pub(crate) mod parity_admission;
 pub(crate) mod parity_per_op;
 pub(crate) mod parity_per_op_table;
+pub(crate) mod perf_pr_trace_lint;
 pub(crate) mod pipeline;
 pub(crate) mod png_encode;
 pub(crate) mod ppl;

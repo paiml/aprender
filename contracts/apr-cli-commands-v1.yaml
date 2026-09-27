@@ -675,6 +675,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: perf-pr-trace-lint
+    category: inspection
+    description: "Validate a perf PR's before/after apr-trace-v1 evidence (APR-OBS-001 OBS-11, §5.2, contract apr-perf-pr-trace-v1): same host + §2.1 identity on both sides, measured per-layer timings, every claimed layer present, before/after = base/head; prints per-layer deltas"
+    requires_model: false
+    side_effects: []
+
   - name: ddp-metrics-lint
     category: inspection
     description: "Validate two externally captured DDP metrics JSONs, N=1 and N=k (CRUX-D-11; no apr producer yet): scaling efficiency T_N/(N*T_1) >= 0.85 + loss parity |L_N - L_1|/L_1 <= 0.01 + per-step allreduce bandwidth > 0"

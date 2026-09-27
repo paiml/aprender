@@ -347,6 +347,10 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::PerfPrTraceLint { file, base, head } => {
+            commands::perf_pr_trace_lint::run(file, base.as_deref(), head.as_deref(), cli.json)
+        }
+
         ExtendedCommands::HangTraceLint {
             trace_dir,
             mode,

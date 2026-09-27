@@ -132,6 +132,7 @@ fn registered_commands() -> Vec<&'static str> {
         "nccl-diag-lint",
         "react-trace-lint",
         "hang-trace-lint",
+        "perf-pr-trace-lint",
         "ddp-metrics-lint",
         "audio-inspect-lint",
         "attn-parity-lint",
