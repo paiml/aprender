@@ -10,6 +10,7 @@
 #   `--help` exits 0. `--no-such-flag` exits 1, not 2 (G1.2 LIVE RED): src/cli.rs exit_code_for_parse_error maps every
 #   parse failure except help/version to 1 on purpose ("preserving the exit status" of the pre-clap parser), and
 #   tests/cli_args.rs pins it. Turning it GREEN is a code + test change, not a contract edit.
+#   FIXED in the same PR: usage errors now exit 2 (measured after the fix: `--no-such-flag` rc=2).
 #   Commands: analyze, gen-fkr, version (clap's `help` excluded); no nested subcommands; no enumerated flag values.
 #   surface_audit.csv: 3 rows, set-equal to the commands.
 #
@@ -95,8 +96,8 @@ falsification_tests:
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`aprender-ptx-debug --no-such-flag` exits 2'
     test: 'scripts/dogfood_surfaces.sh --cli aprender-ptx-debug'
-    if_fails: 'LIVE RED 2026-09-27: exits 1 — exit_code_for_parse_error maps every parse error to 1 by design, pinned by tests/cli_args.rs; a wrapper cannot tell a typo from an analysis failure'
-    mutation: 'after the fix, map ErrorKind::UnknownArgument back to 1; must turn RED'
+    if_fails: 'a wrapper cannot tell a typo from an analysis failure (was RED at 8e88b8fc5d: exit 1 by design; FIXED on batch/ont-10: usage errors exit 2, a failed analysis keeps 1; tests/cli_args.rs + cli_binary.rs pin it)'
+    mutation: 'map the usage-error arm of exit_code_for_parse_error back to 1; cli_args.rs and cli_binary.rs must turn RED'
   - id: FALSIFY-BIN-APRENDER-PTX-DEBUG-003
     rule: 'G0.1 the version names the commit'
     prediction: '`aprender-ptx-debug --version` contains the first 9 hex of the git sha it was built from'
