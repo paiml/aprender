@@ -1,0 +1,308 @@
+{
+  "ticket": "GH-3150",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "e6f9ecb08bb53675ec465ff1d87d2bedd9ad3980",
+  "diff_sha256": "eca2c42ca73bea18918b0841d0300e954e474372ddc6dae76b5a7009c8ff79a6",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 63789,
+  "prompt_sha256": "99067d0e7c25a495c69f4719cffeb8f2bcb6d80aee750ba19a27a8880108a0da",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements RankedTensor<D, L> as described, migrates the crate's own dynamic matmul onto the typed kernel, adds 12 trybuild compile-fail cases (exceeds the ≥8 requirement) plus a pass-suite, adds the CLAUDE.md line with correctly scoped language, and the error-message-preservation test genuinely covers the rank-mismatch and contraction-mismatch paths against the old einsum route. No unrelated or forbidden changes found; aprender-tensor remains an unconsumed workspace member (confirmed via grep), which the receipt's CLAUDE.md text is careful to scope correctly (\"the type covers only this crate\"), so it isn't overclaiming a broader LAYOUT-001 fix.",
+      "findings": [
+        {
+          "file": "docs/audits/impl-GH-3150-receipt.md",
+          "line": 15,
+          "claim": "Acceptance table marks 'Zero runtime cost for the migrated path' as MET, but the receipt's own benchmark shows the migrated `matmul` (dynamic path) is ~14% slower than the typed `Matrix::matmul` kernel at n=16 and n=256 due to the `from_dynamic` copy.",
+          "failure_scenario": "A caller invoking the migrated `aprender_tensor::matmul(&Tensor, &Tensor)` on small/large matrices pays a measurable copy overhead vs. calling `Matrix::matmul` directly — contradicting a literal reading of 'zero runtime cost' / 'compiles to the same code as the untyped one', even though the receipt discloses the gap in prose one line down.",
+          "grounding": "cited",
+          "fix": "Either mark this criterion 'PARTIALLY MET' instead of 'MET', or narrow the acceptance criterion in the roadmap entry to 'the typed kernel itself pays no rank-check cost' (which is what's actually proven)."
+        }
+      ],
+      "raw_bytes": 4092,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "99067d0e7c25a495c69f4719cffeb8f2bcb6d80aee750ba19a27a8880108a0da",
+      "trace": {
+        "input_sha256": "6c9dead39b394001f949573fd11575ff4317e088229ed8155713699d1403094a",
+        "output_sha256": "c7f8aae393296132aeef210b654baeeb7f298bbb5ae2240506535667a434a85e",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "test",
+      "findings": [],
+      "raw_bytes": 923,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "99067d0e7c25a495c69f4719cffeb8f2bcb6d80aee750ba19a27a8880108a0da",
+      "trace": {
+        "input_sha256": "df45da47dab94c7dbdfe95dcaca34c51eb1ac3de969537e58590622255c67e6b",
+        "output_sha256": "c3a855618c20e48612c29d933d23788d09c81a151b83e89ce7556ee2efd7500a",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "GH-3150 is correctly implemented: RankedTensor<D, L> with sealed Layout trait, 12 compile-fail cases (exceeds ≥8), matching pass-suite, zero runtime cost (with acknowledged boundary copy), byte-identical output on migrated path, CLAUDE.md documentation of statically unrepresentable errors, and mutation-verified guards. No bugs or violations found.",
+      "findings": [],
+      "raw_bytes": 1844,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "99067d0e7c25a495c69f4719cffeb8f2bcb6d80aee750ba19a27a8880108a0da",
+      "trace": {
+        "input_sha256": "2a177898c4a38d935269c65a1707ba5efb6dda66f73e174fe2822b16ab09e7ad",
+        "output_sha256": "a23ff94b37185aeb869fcf514e9ebac52abfc77e7525fc209682369068864380",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/audits/impl-GH-3150-receipt.md",
+      "line": 15,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Acceptance table marks 'Zero runtime cost for the migrated path' as MET, but the receipt's own benchmark shows the migrated `matmul` (dynamic path) is ~14% slower than the typed `Matrix::matmul` kernel at n=16 and n=256 due to the `from_dynamic` copy."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 40,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 63789 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 63789 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 63789,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
