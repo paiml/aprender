@@ -15,7 +15,7 @@
 
 **Changes from v2.0 (v2.1, infra-5a; full record in §12):**
 - Part I: the rest of the v1.1 review is applied: R-3 (Q1–Q3 are `[U]` against GitHub), R-4 (Theorem 8's citations and its $\underline E_{ff}$), R-5 (§6 rows fully parameterised), R-6 (QM-04 is QM-00's oracle), R-7 (Q5), R-8 (Theorem 2's scope), R-9 (Cor. 4), R-10 (§7 retries basis), R-11 ($\rho_{\text{rel}}$ vs $\rho_{\text{MQ}}$) and R-12 (the measurements behind $q'$ and $\lambda'$).
-- Parts II–III: review findings R2-1..R2-14 are applied. Two of them affect soundness: $\mathcal I$ goes stale between nightlies (R2-8), and directory listings and failed lookups are invisible to an `openat` trace (R2-9). A third, the doctests that nextest archives cannot run, can drop doctests without anyone noticing (R2-10). Prop. 18 measured the wrong escape rate (R2-12).
+- Parts II–III: review findings R2-1..R2-14 are applied, and the v2.1 quorum added R2-15 (QM-00's mutant list restored). Two of them affect soundness: $\mathcal I$ goes stale between nightlies (R2-8), and directory listings and failed lookups are invisible to an `openat` trace (R2-9). A third, the doctests that nextest archives cannot run, can drop doctests without anyone noticing (R2-10). Prop. 18 measured the wrong escape rate (R2-12).
 - New: Prop. 19 (what tiering does to the merge queue), §11 (the `pv` contracts) and §12 (the review record).
 - Operator ruling 2026-09-27: the lighter review tier (Prop. 18, §7 row 12) is **approved** for docs-only PRs and vouched contributors. It is gated on the measured escape bound and reverts automatically on an escape.
 - Operator amendment 2026-09-27: **rebase before arm** joins the author checklist (§7 row 14), and **PR age** becomes a model input. Prop. 20 gives $P(\text{conflict}) \approx 1 - e^{-\mu_D a}$. Short PRs keep the queue model's $q$ stationary. Group 1, retries 0, compile once and tiered tests are unchanged.
@@ -519,7 +519,7 @@ where $\bar q'$ is the defective fraction of entries, which routing does not cha
 
 | EV | Row | Work | Contract | Done when (all must hold) | K̂ |
 |---|---|---|---|---|---|
-| 0 | **QM-00** model xtask | `cargo xtask queue-model`: Lemma 1, Thm 1, Cor. 3, Lemma 5, Thm 6, Thm 8, Prop. 9, Prop. 10 (v2.0 form), Prop. 19, Prop. 20 | `queue-model-v1` | golden tests reproduce §6 to 4 significant figures **and agree with QM-04's simulation within 3 standard errors** on every §6 row (R-6: §6 has no other oracle); mutants RED: drop $d = 0$ in $E_f$; `max` → `sum` in Lemma 1; re-add the double-counted $\varphi^2\rho$ | 150 |
+| 0 | **QM-00** model xtask | `cargo xtask queue-model`: Lemma 1, Thm 1, Cor. 3, Lemma 5, Thm 6, Thm 8, Prop. 9, Prop. 10 (v2.0 form), Prop. 19, Prop. 20 | `queue-model-v1` | golden tests reproduce §6 to 4 significant figures **and agree with QM-04's simulation within 3 standard errors** on every §6 row (R-6: §6 has no other oracle); mutants RED (six; R2-15): drop $d = 0$ in $E_f$; `max` → `sum` in Lemma 1; use $1/(1-\varphi)$ for every $r$ (Thm 1's $S_r$); use $\varphi$ instead of $\varphi(1-\varphi)$ for the rescued-flake probability in Prop. 10 (the v1.0 error, R-1); re-add the double-counted $\varphi^2\rho$ (v2.0 correction); linearise Prop. 20 to $\kappa\mu_D a$ (RED at $\mu_D = 0.05$/h, $a = 24$ h: 1.2 against 0.70) | 150 |
 | 0 | **QM-01** queue inputs | #4513: 7-day $T, C, q, q', \varphi, \lambda, \lambda', f, F, \rho_{\text{rel}}, \rho_{\text{MQ}}, R$ and identification rate (§9.1), plus $\mu_D$ (per merged PR: `main` commits touching its files while it was open), PR age p90 and base age at merge-group entry p90 (Prop. 20) | `queue-inputs-v1` | 0 `[U]`; empty window RED | 120 |
 | 0 | **QM-04** queue sim (moved from EV 3; QM-00's oracle, R-6) | `cargo xtask queue-sim` (§6 model), independent code path from QM-00 | `queue-sim-v1` | §6 p50 within ±10%; "no cancellation" mutant changes the current-config p90 by > 5× | 180 |
 | 0 | **QM-08** fleet inputs | Per host: threads, RAM, arch (forjar facts). Per workload: $W$ and $L_c$ from `cargo build --timings` (unit graph), peak cgroup anon RAM per compile width {8, 16, 24}, per-test durations from nextest JUnit, cache hit rate $\eta$ | `fleet-inputs-v1` | G7 RAM and G12 filled; ≥ 5 samples each; receipts carry host and sha | 150 |
@@ -654,7 +654,7 @@ invariants:
 shape:
   properties:
     - { path: ont:binds,     minCount: 1, resolves: symbol }
-    - { path: ont:falsifier, minCount: 3 }             # QM-00's planted mutants
+    - { path: ont:falsifier, minCount: 6 }             # QM-00's planted mutants (R2-15)
 proof:
   status: declared
   tests: { golden: "§6 rows, 4 s.f.", oracle: queue-sim-v1, tolerance: "3 standard errors" }
@@ -801,3 +801,4 @@ All arithmetic in §H.1–§H.6 and §T was recomputed. The LP ratios (7.0, 8.6,
 | R2-12 | major | Prop. 18 | $e_\kappa$ counted only what full review missed, which biases the bound low | measurand includes quorum-caught findings |
 | R2-13 | major | §7.9 | the merge-group diff must be taken against `merge_group.base_sha` | row 9; Prop. 19 |
 | R2-14 | process | §9 | QM-08 means "fleet inputs" in v2.0, but aprender#4519 was minted as QM-08 for v1.1's per-class $q$, which maps to v2.0's QM-15 | **not renumbered here.** Flagged to the cop, the single minter, for re-mapping |
+| R2-15 | major | §9 QM-00; §11.2 | v2.0 cut QM-00's planted mutants from v1.1's four to three (dropping the $1/(1-\varphi)$ retry mutant and the Prop. 10 rescued-flake mutant), and nothing recorded it: a gate weakened silently. Found by the v2.1 quorum (lane 2) | restored as the union of v1.1's four and v2.0's double-count mutant, plus one for Prop. 20; `ont:falsifier minCount` 3 → 6 |
