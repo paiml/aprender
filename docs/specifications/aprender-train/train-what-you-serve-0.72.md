@@ -155,6 +155,21 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   (about 9 GB), because the S-R4a approach at 4B needs about 50 GB of host RAM.
 - **Not measured:** activation memory (it depends on sequence length and checkpointing). R17 owns it.
 
+### Spike S-R4c — can QQE-005 compare a Q4_K CPU base with the NF4 CUDA base? · `[V]` (2026-09-27, measured, CPU)
+- **Method:** Qwen3.5-0.8B, r16 alpha 32 over all 150 targets, `B` randomised (scale 0.01, fixed seed), tokens
+  `[9707, 11, 1879]`. Adapter grads from `Qwen35Lora::set_grads` on the Q4_K-dequantized base, then on the same base with every
+  target round-tripped through `trueno_gpu::kernels::quantize_nf4`/`dequantize_nf4` (the quantizer the CUDA QLoRA path uses).
+  Test: `real_model_nf4_base_gradient_gap` (ignored; `QWEN35_GGUF`), branch `la-72/r3-backward` @8a9f4f0104.
+- **Result:** loss 9.179 (Q4_K) vs 9.692 (NF4). The per-tensor relative gap over 300 adapter tensors is min 0.332, median 0.710,
+  p90 0.872 and max 1.195. **All 300 are above QQE-005's 1e-2.** The control (same base twice) is 0.
+- **Answer:** no. The base difference is 30–120× the tolerance, so QQE-005 is meaningful only if the CPU reference loads the NF4
+  round-tripped base (the K12 fix, now in the contract). The round trip itself is pinned by
+  `nf4_round_trip_base_is_idempotent_and_bounded`: it moves the weights, each 64-block error is at most 0.16·absmax, and a
+  second trip is bit-identical. A planted no-op round trip turns it RED.
+- **Finding:** the tree has three NF4 quantizers, and they do not agree on nibble order: aprender-gpu `kernels::quantize_nf4`
+  (low nibble first), trueno `brick::quant_ops::nf4` (high first) and a private copy in aprender-train `wgpu_nf4.rs`. The CPU
+  `QLoRALayer` (`lora/qlora.rs`) uses symmetric int4 (`quant4bit`), which is not NF4. QQE-005 must name the CUDA path's quantizer.
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
