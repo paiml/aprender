@@ -116,9 +116,9 @@ pub struct CiAssertions {
     pub max_p99_ms: Option<f64>,
     /// Maximum p50 latency in ms (fail if above)
     pub max_p50_ms: Option<f64>,
-    /// Maximum memory in MB (fail if above)
-    /// Reserved for future memory assertion support
-    #[allow(dead_code)]
+    /// Maximum peak resident memory in MB (2^20 B; fail if above). An
+    /// unmeasurable peak FAILS the assertion: "could not measure" is not
+    /// "under budget" (#4522 R2 — this field was dead code until then).
     pub max_memory_mb: Option<f64>,
 }
 
@@ -139,12 +139,43 @@ pub struct CiProfileReport {
     pub throughput_tok_s: f64,
     pub latency_p50_ms: f64,
     pub latency_p99_ms: f64,
+    /// Peak resident set of the profiling process, MB (2^20 B); None = unmeasured
+    pub peak_rss_mb: Option<f64>,
     pub assertions: Vec<AssertionResult>,
+}
+
+/// Peak resident set size of THIS process in bytes: `VmHWM` from
+/// `/proc/self/status` (the kernel's RSS high-water mark, the value
+/// `getrusage` reports as `ru_maxrss`). None where procfs is absent — the
+/// caller treats that as unmeasured, never as zero (#4522 R2).
+pub(crate) fn peak_rss_bytes() -> Option<u64> {
+    parse_vm_hwm_bytes(&std::fs::read_to_string("/proc/self/status").ok()?)
+}
+
+/// Parse the `VmHWM:  <n> kB` line of a `/proc/<pid>/status` body.
+pub(crate) fn parse_vm_hwm_bytes(status: &str) -> Option<u64> {
+    let line = status.lines().find(|l| l.starts_with("VmHWM:"))?;
+    let mut parts = line["VmHWM:".len()..].split_whitespace();
+    let kib: u64 = parts.next()?.parse().ok()?;
+    match parts.next() {
+        Some("kB") => kib.checked_mul(1024),
+        _ => None,
+    }
 }
 
 impl CiProfileReport {
     /// Create report from profile results and assertions
     pub(crate) fn from_results(results: &RealProfileResults, assertions: &CiAssertions) -> Self {
+        Self::from_results_with_peak_rss(results, None, assertions)
+    }
+
+    /// As [`Self::from_results`], with the measured peak RSS in bytes (None =
+    /// unmeasured, which FAILS a `max_memory_mb` assertion).
+    pub(crate) fn from_results_with_peak_rss(
+        results: &RealProfileResults,
+        peak_rss_bytes: Option<u64>,
+        assertions: &CiAssertions,
+    ) -> Self {
         let mut assertion_results = Vec::new();
         let mut all_passed = true;
 
@@ -210,12 +241,32 @@ impl CiProfileReport {
             });
         }
 
+        #[allow(clippy::cast_precision_loss)]
+        let peak_rss_mb = peak_rss_bytes.map(|b| b as f64 / (1024.0 * 1024.0));
+        // #4522 R2: the memory ceiling. Unmeasured is a FAIL, not a pass.
+        if let Some(max_mb) = assertions.max_memory_mb {
+            let passed = peak_rss_mb.is_some_and(|mb| mb <= max_mb);
+            if !passed {
+                all_passed = false;
+            }
+            assertion_results.push(AssertionResult {
+                name: "peak_rss".to_string(),
+                expected: format!("<= {max_mb:.1} MB"),
+                actual: peak_rss_mb.map_or_else(
+                    || "unmeasured (no VmHWM in /proc/self/status)".to_string(),
+                    |mb| format!("{mb:.1} MB"),
+                ),
+                passed,
+            });
+        }
+
         CiProfileReport {
             model_path: results.model_path.clone(),
             passed: all_passed,
             throughput_tok_s: results.throughput_tok_s,
             latency_p50_ms: p50_ms,
             latency_p99_ms: p99_ms,
+            peak_rss_mb,
             assertions: assertion_results,
         }
     }
@@ -230,6 +281,10 @@ impl CiProfileReport {
         println!("  Throughput:  {:.1} tok/s", self.throughput_tok_s);
         println!("  Latency p50: {:.2} ms", self.latency_p50_ms);
         println!("  Latency p99: {:.2} ms", self.latency_p99_ms);
+        match self.peak_rss_mb {
+            Some(mb) => println!("  Peak RSS:    {mb:.1} MB"),
+            None => println!("  Peak RSS:    unmeasured"),
+        }
         println!();
 
         if !self.assertions.is_empty() {
@@ -275,8 +330,13 @@ impl CiProfileReport {
         .expect("write to String is infallible");
         writeln!(json, "    \"latency_p50_ms\": {:.2},", self.latency_p50_ms)
             .expect("write to String is infallible");
-        writeln!(json, "    \"latency_p99_ms\": {:.2}", self.latency_p99_ms)
+        writeln!(json, "    \"latency_p99_ms\": {:.2},", self.latency_p99_ms)
             .expect("write to String is infallible");
+        match self.peak_rss_mb {
+            Some(mb) => writeln!(json, "    \"peak_rss_mb\": {mb:.1}"),
+            None => writeln!(json, "    \"peak_rss_mb\": null"),
+        }
+        .expect("write to String is infallible");
         json.push_str("  },\n");
         json.push_str("  \"assertions\": [\n");
         for (i, assertion) in self.assertions.iter().enumerate() {

@@ -417,6 +417,7 @@
             throughput_tok_s: 100.0,
             latency_p50_ms: 10.0,
             latency_p99_ms: 20.0,
+            peak_rss_mb: None,
             assertions: vec![],
         };
         let debug = format!("{report:?}");
@@ -431,6 +432,7 @@
             throughput_tok_s: 100.0,
             latency_p50_ms: 10.0,
             latency_p99_ms: 20.0,
+            peak_rss_mb: None,
             assertions: vec![],
         };
         let cloned = report.clone();

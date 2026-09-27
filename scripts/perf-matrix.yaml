@@ -290,6 +290,37 @@ arms:
     note_kv_utilization_below: 0.5
     threshold_class: policy
     author: perf-gate
+  # ---------------------------------------------------------------- Arm R ----
+  # aprender#4522 R2. Resource CEILINGS: the first resource number any gate
+  # enforces. Before this arm, every receipt was timing-only and C1's RSS check
+  # only WARNed. It reads the `resources{}` block R1 (#4522, aprender-52) adds to
+  # the receipt: `resources.peak_rss_bytes` and `resources.vram_peak_bytes`, and
+  # a field that is null must name why in `resources.null_reasons.<field>`.
+  R:
+    name: resource-ceilings
+    phase: both
+    comparator_required: false
+    # TRANSITIONAL, like OBS-11's pre-0.71 line: no receipt producer emits
+    # `resources{}` until R1 lands, so an ABSENT block reports n/a. Flip to true
+    # in the same PR that makes R1's producer write it; from then an absent block
+    # is RED. A PRESENT block is judged in full either way.
+    require_resources: false
+    # RSS: F-CHAOS-001 / AQC-BND-001 (contracts/apr-qa-chaos-v1.yaml), the bound
+    # the dogfood C1 check already cited:  peak_rss < 3 * size(M) + 512 MiB.
+    # KV lives in host RAM on a cpu-class run, so its reservation is added there
+    # and only there (on cuda it is VRAM and counted below).
+    rss_model_multiple: 3
+    rss_overhead_bytes: 536870912
+    rss_kv_host_resident_classes: [cpu]
+    # VRAM: a leak or a runaway allocation ends in OOM, so the ceiling is a
+    # fraction of the device. Measured capacity, not a datasheet: lambda's
+    # 24564 MiB is evidence/task-132/rtx4090-370m-residency.json vram_total_mib.
+    # A host with no measured capacity has no VRAM ceiling and reports n/a; gx10
+    # (GB10) is unified memory, where RSS is the bound that applies.
+    vram_device_fraction: 0.95
+    vram_device_mib: {lambda: 24564}
+    threshold_class: policy
+    author: aprender-5d
   # ---------------------------------------------------------------- Arm E ----
   E:
     name: prefill-decode-interference

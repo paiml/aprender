@@ -556,6 +556,8 @@
             "100",
             "--assert-p99",
             "50",
+            "--assert-memory",
+            "2048",
             "--format",
             "json",
         ];
@@ -566,6 +568,7 @@
                 ci,
                 assert_throughput,
                 assert_p99,
+                assert_memory,
                 format,
                 ..
             }) => {
@@ -573,6 +576,7 @@
                 assert!(ci);
                 assert_eq!(assert_throughput, Some(100.0));
                 assert_eq!(assert_p99, Some(50.0));
+                assert_eq!(assert_memory, Some(2048.0)); // #4522 R2
                 assert_eq!(format, "json");
             }
             _ => panic!("Expected Profile command"),

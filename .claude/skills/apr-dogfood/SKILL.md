@@ -1016,22 +1016,23 @@ PASS requires V1+V3. V2 (SATD) and V4 (complexity) demote PASS → WARN.
 
 Contract: `contracts/apr-qa-chaos-v1.yaml`
 
-### C1. Memory budget (RSS sanity check)
+### C1. Memory budget (peak RSS of a real `apr run`) — FAILS over budget (#4522 R2)
 ```bash
-M=$(find ~/models -maxdepth 2 -name "*.gguf" -type f -size -1G | head -1)
-if [ -n "$M" ]; then
-  MODEL_KB=$(du -k "$M" | cut -f1)
-  RSS_KB=$(/usr/bin/time -v timeout 30 apr inspect "$M" 2>&1 | grep "Maximum resident" | awk '{print $NF}' 2>/dev/null || echo 0)
-  if [ "$RSS_KB" -gt 0 ]; then
-    BUDGET_KB=$(( MODEL_KB * 3 + 524288 ))
-    echo "C1: model=${MODEL_KB}KB RSS=${RSS_KB}KB budget=${BUDGET_KB}KB"
-    [ "$RSS_KB" -lt "$BUDGET_KB" ] && echo "C1 PASS" || echo "C1 WARN: RSS exceeds 3x model + 512MB"
-  else
-    echo "C1 SKIP: /usr/bin/time not available"
-  fi
-else
-  echo "C1 SKIP: no small GGUF model"
-fi
+# Budget = 3 x model + 512 MiB (F-CHAOS-001), read from scripts/perf-matrix.yaml arms.R.
+# Exit 0 PASS, 1 over budget or run failed, 2 cannot measure -- both non-zero are C1 FAIL.
+bash scripts/check_rss_budget.sh; C1=$?
+[ "$C1" -eq 0 ] && echo "C1 PASS" || echo "C1 FAIL (rc $C1)"
+```
+The old snippet could never fail: it printed WARN over budget, measured `apr inspect`
+(a header read), and its `find -size -1G` matched only empty files, so it always SKIPped.
+
+### C1b. `apr profile --assert-memory` — the same ceiling, asserted by apr itself
+```bash
+. scripts/apr_bin.sh || exit 1
+M=$(find "$HOME/models/" -maxdepth 2 -name '*.gguf' -type f -size -1024M | sort | head -1)
+BUDGET_MB=$(( ($(stat -c %s "$M") * 3 + 536870912) / 1048576 ))
+"$APR" profile "$M" --ci --assert-memory "$BUDGET_MB"; C1B=$?
+[ "$C1B" -eq 0 ] && echo "C1b PASS" || echo "C1b FAIL (rc $C1B)"   # unmeasured peak RSS fails too
 ```
 
 ### C2. Overwrite protection
@@ -1060,7 +1061,7 @@ else
 fi
 ```
 
-PASS if C1+C2+C3 all pass. WARN on skips.
+PASS if C1+C1b+C2+C3 all pass. C1/C1b are never a skip: over budget or unmeasurable is FAIL. WARN on C2/C3 skips.
 
 ### Gate 12: Differential Testing (F-DIFF-001 through F-DIFF-005)
 
@@ -1591,7 +1592,7 @@ The nine clusters at zero, largest first: `http-orchestrate-banco` (95),
 `test-harness` (49), `rag-eval` (44), `qa-cgp` (37), `simulation` (18),
 `orchestrate-pacha-secrets` (17).
 
-**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "144 of 838 features gated (17.2%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
+**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "145 of 839 features gated (17.3%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
 
 The rule is about the NUMBER, not about a phrasing, and it is enforced on every
 surface that can emit one: the gate's own report, the receipt, the output of

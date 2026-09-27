@@ -1,0 +1,117 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "MEAS-001 R2 (aprender#4522): resource CEILINGS. The first resource numbers any gate enforces: peak RSS against F-CHAOS-001's 3 x model + 512 MiB (perf_gate Arm R, dogfood C1), peak VRAM against a fraction of the MEASURED device capacity (Arm R), and `apr profile --assert-memory` (CiAssertions.max_memory_mb, dead code until now). A null measurement passes only with a stated reason; an uncomputable ceiling or an unmeasurable peak fails closed."
+  kind: pattern
+  references:
+    - "scripts/perf-matrix.yaml arms.R — every threshold here, with threshold_class/author (PP-33)"
+    - "scripts/perf_gate.sh arm_r_resources — Arm R, phase both; case table rows armr_* in --selftest"
+    - "scripts/check_rss_budget.sh — dogfood C1, WARN -> FAIL; --self-test"
+    - "crates/apr-cli/src/commands/profile.rs CiProfileReport::from_results_with_peak_rss, peak_rss_bytes, parse_vm_hwm_bytes"
+    - "contracts/apr-qa-chaos-v1.yaml F-CHAOS-001 / AQC-BND-001 — the RSS bound, reused not restated"
+    - "evidence/task-132/rtx4090-370m-residency.json vram_total_mib — lambda's measured VRAM capacity"
+    - "paiml/aprender#4522"
+
+five_whys:
+  symptom: "No resource number was gated. Every receipt was timing-only, CiAssertions.max_memory_mb was #[allow(dead_code)], and dogfood C1 printed WARN over budget and exited 0."
+  why_1: "A memory regression (a leak, a second weight copy, an f32 upcast) ships green when the only gates measure time."
+  why_2: "C1 could never fail: over budget it printed WARN; it measured `apr inspect`, a header read, not `apr run`; it called a bare `apr`."
+  why_3: "C1 also never ran: `find -size -1G` matches only empty files (find rounds sizes UP to whole GiB) and ~/models is a symlink find does not descend, so it SKIPped on every host that has models."
+  why_4: "`apr profile` parsed three assertions and reserved a fourth field with no flag, no check and no measurement."
+  why_5: "The bound existed (F-CHAOS-001) but no gate read it, and no receipt field existed for a gate to read (R1 adds resources{})."
+  root_cause: "A resource bound needs a measured field, a threshold with an author, and a gate whose RED path is proven by a planted over-budget run."
+
+equations:
+  rss_ceiling:
+    formula: "fail iff peak_rss_bytes >= rss_model_multiple * model_file.bytes + rss_overhead_bytes (+ kv.bytes_reserved when compute_class in rss_kv_host_resident_classes)"
+    domain: "receipt resources.peak_rss_bytes (R1), provenance.model_file.bytes, kv.bytes_reserved; arms.R thresholds (3, 536870912, [cpu])"
+    codomain: "PASS | FAIL ArmR rss over ceiling | FAIL ArmR rss ceiling uncomputable"
+    invariants:
+      - "strict <, as F-CHAOS-001 states it: peak == ceiling is RED"
+      - "no model_file.bytes => no ceiling => RED (fail closed)"
+  vram_ceiling:
+    formula: "fail iff vram_peak_bytes > vram_device_fraction * vram_device_mib[host] * 2^20"
+    domain: "receipt resources.vram_peak_bytes (R1); arms.R.vram_device_fraction 0.95, vram_device_mib {lambda: 24564}"
+    codomain: "PASS | FAIL ArmR vram over ceiling | REPORT n/a (host with no measured capacity)"
+    invariants:
+      - "capacity is measured on the host, never a datasheet figure"
+  null_rule:
+    formula: "field = null => REPORT iff resources.null_reasons.<field> is a non-blank string, else FAIL"
+    domain: "resources.peak_rss_bytes, resources.vram_peak_bytes"
+    codomain: "REPORT | FAIL"
+    invariants:
+      - "0, negative, bool or non-number is not a measurement => FAIL"
+      - "an absent resources{} is REPORT n/a while arms.R.require_resources is false, FAIL once true"
+  cli_memory_assertion:
+    formula: "apr profile --assert-memory M: pass iff VmHWM(self) / 2^20 <= M; unmeasured => fail"
+    domain: "/proc/self/status VmHWM after load + every measure pass"
+    codomain: "exit 0 | ValidationFailed"
+  dogfood_c1:
+    formula: "exit 1 iff apr run fails or peak RSS >= 3 * size(M) + 512 MiB; exit 2 iff unmeasurable (no model, no GNU time, no RSS line)"
+    domain: "GNU time -v of one pinned `apr run` (scripts/apr_bin.sh), budget read from arms.R"
+    codomain: "0 | 1 | 2 (2 is a failure, never a skip)"
+
+proof_obligations:
+  - id: ARC-INV-001
+    type: invariant
+    property: "An over-budget RSS is RED in the perf gate"
+    formal: "peak_rss_bytes >= ceiling => Arm R exit 1"
+    applies_to: rss_ceiling
+  - id: ARC-INV-002
+    type: invariant
+    property: "An over-ceiling VRAM peak is RED on a host with measured capacity"
+    formal: "host in vram_device_mib AND vram_peak_bytes > ceiling => Arm R exit 1"
+    applies_to: vram_ceiling
+  - id: ARC-INV-003
+    type: invariant
+    property: "Null needs a reason; unmeasurable fails closed"
+    formal: "field = null AND no non-blank null_reasons.<field> => FAIL; model_file.bytes absent => FAIL"
+    applies_to: null_rule
+  - id: ARC-INV-004
+    type: invariant
+    property: "max_memory_mb is enforced and fails closed"
+    formal: "max_memory_mb = Some(M) AND (peak = None OR peak > M) => report.passed = false"
+    applies_to: cli_memory_assertion
+  - id: ARC-INV-005
+    type: invariant
+    property: "Dogfood C1 can fail"
+    formal: "rss >= budget => exit 1; unmeasurable => exit 2; never WARN-and-exit-0"
+    applies_to: dogfood_c1
+
+falsification_tests:
+  - id: FALSIFY-ARC-001
+    rule: "A planted over-budget run goes RED (#4522 R2 done-when)"
+    prediction: "perf_gate --selftest rows armr_planted_rss_over_budget_is_red (15e9 B for a 4.7e9 B model) and armr_rss_at_ceiling_is_red_strict_lt fail as expected; mutating `rss>=ceil` to `rss>=ceil*10` BREAKS exactly those 2 rows"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "A memory regression would pass the perf gate"
+  - id: FALSIFY-ARC-002
+    rule: "VRAM ceiling is live on lambda"
+    prediction: "Row armr_planted_vram_over_ceiling_is_red (24.5e9 B > 0.95 x 24564 MiB) fails as expected"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "A VRAM leak would pass until OOM"
+  - id: FALSIFY-ARC-003
+    rule: "Null without a reason, zero, and an uncomputable ceiling are RED"
+    prediction: "Rows armr_null_without_reason_is_red, armr_blank_reason_is_no_reason, armr_zero_is_not_a_measurement, armr_uncomputable_ceiling_fails_closed fail; armr_null_with_reason_reports passes"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "An instrument that stopped measuring would read as under budget"
+  - id: FALSIFY-ARC-004
+    rule: "apr profile --assert-memory is live"
+    prediction: "test_gh4522_planted_over_budget_peak_rss_fails and test_gh4522_unmeasured_peak_rss_fails_closed pass; replacing `mb <= max_mb` with `true` fails 2 of the 7 gh4522 tests"
+    test: "cargo test -p apr-cli --lib -- gh4522"
+    if_fails: "max_memory_mb is dead code again"
+  - id: FALSIFY-ARC-005
+    rule: "Dogfood C1 fails over budget"
+    prediction: "check_rss_budget.sh --self-test: planted_over_budget_is_red exits 1, no_gnu_time_cannot_measure exits 2; weakening the budget x10 BREAKS 2 rows"
+    test: "bash scripts/check_rss_budget.sh --self-test"
+    if_fails: "C1 is a WARN again"
+
+qa_gate:
+  id: F-ARC-001
+  name: "Resource ceilings — RSS and VRAM are gated, not reported"
+  description: "Arm R of the perf gate, dogfood C1 and apr profile --assert-memory enforce the F-CHAOS-001 RSS bound and a measured-capacity VRAM ceiling; each has a planted over-budget case that goes RED."
+  checks:
+    - "rss_ceiling"
+    - "vram_ceiling"
+    - "cli_memory_assertion"
+    - "dogfood_c1"

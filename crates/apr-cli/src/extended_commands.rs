@@ -217,6 +217,10 @@ pub enum ExtendedCommands {
         /// Maximum p50 latency in ms (CI assertion, exits 1 if above)
         #[arg(long, value_parser = commands::threshold_arg::parse_tolerance)]
         assert_p50: Option<f64>,
+        /// Maximum peak resident memory in MB (CI assertion, exits 1 if above,
+        /// or if peak RSS cannot be measured on this platform) (#4522)
+        #[arg(long, value_parser = commands::threshold_arg::parse_tolerance)]
+        assert_memory: Option<f64>,
         /// Warmup passes before measurement (default: 3)
         #[arg(long, default_value = "3")]
         warmup: usize,

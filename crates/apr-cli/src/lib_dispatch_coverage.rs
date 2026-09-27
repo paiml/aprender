@@ -527,6 +527,7 @@
             assert_throughput: None,
             assert_p99: None,
             assert_p50: None,
+            assert_memory: None,
             warmup: 3,
             measure: 10,
             tokens: 32,

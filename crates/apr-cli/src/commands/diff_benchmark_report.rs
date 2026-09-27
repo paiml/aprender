@@ -287,7 +287,9 @@ pub(crate) fn run_ci(
         let results = profile_real_inference_cpu(path, warmup, measure)?;
 
         // Build CI report with assertion checks
-        let report = CiProfileReport::from_results(&results, assertions);
+        // #4522 R2: the process high-water mark AFTER load + every pass.
+        let report =
+            CiProfileReport::from_results_with_peak_rss(&results, peak_rss_bytes(), assertions);
 
         // Output based on format
         match format {

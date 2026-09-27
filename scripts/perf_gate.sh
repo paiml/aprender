@@ -1031,6 +1031,83 @@ print(f"PASS cells host={host} all bands {sorted(want)} present")
 PY_CELLS
 }
 
+arm_r_resources() {
+  # aprender#4522 R2: the RSS and VRAM ceilings. The first resource number a gate
+  # enforces. A null field passes only when it NAMES why it is null; a ceiling
+  # that cannot be computed fails closed (no model size => no RSS bound => RED).
+  local receipt="$1" host="$2"
+  python3 - "$receipt" "$host" "$MATRIX" <<'PY_R'
+import json,sys,yaml
+r=json.load(open(sys.argv[1])); host=sys.argv[2]
+m=yaml.safe_load(open(sys.argv[3])) or {}
+a=((m.get("arms") or {}).get("R")) or {}
+res=r.get("resources")
+if res is None:
+    if a.get("require_resources"):
+        print("FAIL ArmR resources{} absent and arms.R.require_resources is true (#4522)")
+        sys.exit(1)
+    print("REPORT ArmR n/a: receipt carries no resources{} (R1 #4522 not yet producing; arms.R.require_resources=false)")
+    sys.exit(0)
+if not isinstance(res,dict):
+    print("FAIL ArmR resources is not an object"); sys.exit(1)
+reasons=res.get("null_reasons") or {}
+def reason(f):
+    v=reasons.get(f) if isinstance(reasons,dict) else None
+    return v.strip() if isinstance(v,str) and v.strip() else None
+def num(f):
+    v=res.get(f)
+    if v is None: return None
+    if isinstance(v,bool) or not isinstance(v,(int,float)) or v<=0:
+        print(f"FAIL ArmR resources.{f}={v!r} is not a positive number"); sys.exit(1)
+    return v
+fail=False
+prov=r.get("provenance") or {}
+klass=prov.get("compute_class")
+MiB=1<<20
+rss=num("peak_rss_bytes")
+if rss is None:
+    if reason("peak_rss_bytes"):
+        print(f"REPORT ArmR peak_rss_bytes null: {reason('peak_rss_bytes')}")
+    else:
+        print("FAIL ArmR resources.peak_rss_bytes is null with no null_reasons entry"); fail=True
+else:
+    mb=(prov.get("model_file") or {}).get("bytes")
+    if not isinstance(mb,int) or mb<=0:
+        print("FAIL ArmR rss ceiling uncomputable: provenance.model_file.bytes absent"); fail=True
+    else:
+        ceil=a["rss_model_multiple"]*mb+a["rss_overhead_bytes"]
+        if klass in (a.get("rss_kv_host_resident_classes") or []):
+            kvr=(r.get("kv") or {}).get("bytes_reserved")
+            if not isinstance(kvr,int) or kvr<0:
+                print(f"FAIL ArmR rss ceiling uncomputable: {klass} run with no kv.bytes_reserved"); fail=True; ceil=None
+            else: ceil+=kvr
+        if ceil is not None:
+            if rss>=ceil:
+                print(f"FAIL ArmR rss over ceiling: peak_rss_bytes={rss} >= {ceil} "
+                      f"({a['rss_model_multiple']}x model {mb} + overhead, F-CHAOS-001)"); fail=True
+            else:
+                print(f"PASS ArmR rss peak_rss_bytes={rss} < ceiling {ceil} ({rss/ceil:.2f} of it)")
+dev=(a.get("vram_device_mib") or {}).get(host)
+vram=num("vram_peak_bytes")
+if vram is None:
+    if reason("vram_peak_bytes"):
+        print(f"REPORT ArmR vram_peak_bytes null: {reason('vram_peak_bytes')}")
+    elif klass=="cpu" and dev is None:
+        print("REPORT ArmR vram n/a: cpu-class run on a host with no device")
+    else:
+        print("FAIL ArmR resources.vram_peak_bytes is null with no null_reasons entry"); fail=True
+elif dev is None:
+    print(f"REPORT ArmR vram n/a: host {host} has no measured device capacity in arms.R.vram_device_mib (vram_peak_bytes={vram})")
+else:
+    ceil=int(a["vram_device_fraction"]*dev*MiB)
+    if vram>ceil:
+        print(f"FAIL ArmR vram over ceiling: vram_peak_bytes={vram} > {ceil} "
+              f"({a['vram_device_fraction']} x {dev} MiB measured on {host})"); fail=True
+    else:
+        print(f"PASS ArmR vram vram_peak_bytes={vram} <= ceiling {ceil}")
+sys.exit(1 if fail else 0)
+PY_R
+}
 run_gate() {
   local host="$1" phase="$2" workload="$3" receipt="$4" commit="${5:-}" rc=0
   [ -f "$receipt" ] || die "receipt not found: $receipt"
@@ -1045,6 +1122,7 @@ run_gate() {
   run_phased L3    "$phase" arm_l3_parity       "$receipt" "$host" "$workload" || rc=1
   run_phased D     "$phase" arm_d_memory        "$receipt" "$phase" "$cell" "$hist" || rc=1
   run_phased E     "$phase" arm_e_interference  "$receipt" "$phase" "$workload" || rc=1
+  run_phased R     "$phase" arm_r_resources     "$receipt" "$host" || rc=1
   run_phased cells "$phase" cell_completeness   "$receipt" "$host" "$workload" || rc=1
   if [ "$rc" = 0 ]; then echo "VERDICT PASS host=$host phase=$phase workload=$workload"
   else echo "VERDICT FAIL host=$host phase=$phase workload=$workload"; fi
@@ -1897,6 +1975,37 @@ PY_CONC
   _row expiry_merged_without_date_is_fatal "$EXP" merge W2 lambda "$MX_MERGEDNULL" fail "cannot start from null" 2026-08-29
   _row expiry_no_deadline_at_all_is_fatal  "$EXP" merge W2 lambda "$MX_NEITHER" fail "never expires" 2026-08-29
   _row expiry_days_must_be_an_integer      "$EXP" merge W2 lambda "$MX_BADDAYS" fail "non-negative integer" 2026-08-29
+
+  # ---- Arm R: resource ceilings (aprender#4522 R2) --------------------------
+  # The fixture's model is 4.7e9 B, so the RSS ceiling is 3*4.7e9 + 512 MiB =
+  # 14,636,870,912 B; lambda's VRAM ceiling is 0.95 * 24564 MiB = 24,469,140,357 B.
+  # `_rok` is a within-budget block every row starts from, so each row changes ONE thing.
+  local _rok='r["resources"]={"peak_rss_bytes":8000000000,"vram_peak_bytes":9000000000,"null_reasons":{}}'
+  MX_RREQ="$(_mx rreq "    require_resources: false"$'\x1f'"    require_resources: true")"
+  F="$(_mut r_absent "$OK3" 'pass')"
+  _row armr_absent_reports_na_while_transitional "$F" merge W1 lambda "" pass "REPORT ArmR n/a"
+  _row armr_absent_is_red_once_required          "$F" merge W1 lambda "$MX_RREQ" fail "FAIL ArmR resources{} absent"
+  F="$(_mut r_ok "$OK3" "$_rok")"
+  _row armr_within_budget_passes                 "$F" merge W1 lambda "" pass "PASS ArmR vram"
+  # THE PLANTED OVER-BUDGET RUN (#4522 done-when): 15e9 B resident for a 4.7e9 B model.
+  F="$(_mut r_rss_over "$OK3" "$_rok"'; r["resources"]["peak_rss_bytes"]=15000000000')"
+  _row armr_planted_rss_over_budget_is_red       "$F" merge W1 lambda "" fail "FAIL ArmR rss over ceiling"
+  F="$(_mut r_rss_at "$OK3" "$_rok"'; r["resources"]["peak_rss_bytes"]=14636870912')"
+  _row armr_rss_at_ceiling_is_red_strict_lt      "$F" merge W1 lambda "" fail "FAIL ArmR rss over ceiling"
+  F="$(_mut r_rss_under "$OK3" "$_rok"'; r["resources"]["peak_rss_bytes"]=14636870911')"
+  _row armr_rss_one_byte_under_passes            "$F" merge W1 lambda "" pass "PASS ArmR rss"
+  F="$(_mut r_vram_over "$OK3" "$_rok"'; r["resources"]["vram_peak_bytes"]=24500000000')"
+  _row armr_planted_vram_over_ceiling_is_red     "$F" merge W1 lambda "" fail "FAIL ArmR vram over ceiling"
+  F="$(_mut r_rss_null "$OK3" "$_rok"'; r["resources"]["peak_rss_bytes"]=None')"
+  _row armr_null_without_reason_is_red           "$F" merge W1 lambda "" fail "null with no null_reasons entry"
+  F="$(_mut r_rss_nullr "$OK3" "$_rok"'; r["resources"]["peak_rss_bytes"]=None; r["resources"]["null_reasons"]["peak_rss_bytes"]="getrusage unavailable in sandbox"')"
+  _row armr_null_with_reason_reports             "$F" merge W1 lambda "" pass "REPORT ArmR peak_rss_bytes null: getrusage"
+  F="$(_mut r_vram_blank "$OK3" "$_rok"'; r["resources"]["vram_peak_bytes"]=None; r["resources"]["null_reasons"]["vram_peak_bytes"]="  "')"
+  _row armr_blank_reason_is_no_reason            "$F" merge W1 lambda "" fail "vram_peak_bytes is null with no null_reasons entry"
+  F="$(_mut r_zero "$OK3" "$_rok"'; r["resources"]["peak_rss_bytes"]=0')"
+  _row armr_zero_is_not_a_measurement            "$F" merge W1 lambda "" fail "is not a positive number"
+  F="$(_mut r_nomodel "$OK3" "$_rok"'; r["provenance"]["model_file"].pop("bytes")')"
+  _row armr_uncomputable_ceiling_fails_closed    "$F" merge W1 lambda "" fail "rss ceiling uncomputable"
 
   # main() must refuse `--phase release` with no `--commit` as a USAGE error
   # (exit 2), in a subshell because `die` exits. A gate that silently accepts a

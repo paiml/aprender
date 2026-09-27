@@ -432,3 +432,83 @@
         assert_eq!(filtered.per_layer_us.len(), results.per_layer_us.len());
         assert_eq!(filtered.is_real_data, results.is_real_data);
     }
+
+    // ========================================================================
+    // #4522 R2: `max_memory_mb` is enforced (it was dead code). Case table.
+    // ========================================================================
+
+    const MIB: u64 = 1024 * 1024;
+
+    fn mem_report(peak_bytes: Option<u64>, max_mb: Option<f64>) -> CiProfileReport {
+        let results = RealProfileResults {
+            model_path: "m.gguf".to_string(),
+            throughput_tok_s: 100.0,
+            total_inference_us: 1000.0,
+            ..Default::default()
+        };
+        let assertions = CiAssertions {
+            max_memory_mb: max_mb,
+            ..Default::default()
+        };
+        CiProfileReport::from_results_with_peak_rss(&results, peak_bytes, &assertions)
+    }
+
+    #[test]
+    fn test_gh4522_planted_over_budget_peak_rss_fails() {
+        let report = mem_report(Some(2048 * MIB), Some(1024.0));
+        assert!(!report.passed, "2048 MB peak against a 1024 MB ceiling must FAIL");
+        let a = &report.assertions[0];
+        assert_eq!(a.name, "peak_rss");
+        assert!(!a.passed);
+        assert_eq!(a.actual, "2048.0 MB");
+    }
+
+    #[test]
+    fn test_gh4522_peak_rss_under_and_at_ceiling_pass() {
+        assert!(mem_report(Some(512 * MIB), Some(1024.0)).passed);
+        assert!(mem_report(Some(1024 * MIB), Some(1024.0)).passed, "<= is inclusive");
+        assert!(!mem_report(Some(1024 * MIB + 1), Some(1024.0)).passed);
+    }
+
+    #[test]
+    fn test_gh4522_unmeasured_peak_rss_fails_closed() {
+        let report = mem_report(None, Some(1024.0));
+        assert!(!report.passed, "an unmeasured peak is not under budget");
+        assert!(report.assertions[0].actual.starts_with("unmeasured"));
+        assert_eq!(report.peak_rss_mb, None);
+    }
+
+    #[test]
+    fn test_gh4522_no_ceiling_no_assertion_but_peak_reported() {
+        let report = mem_report(Some(300 * MIB), None);
+        assert!(report.passed);
+        assert!(report.assertions.is_empty());
+        assert_eq!(report.peak_rss_mb, Some(300.0));
+    }
+
+    #[test]
+    fn test_gh4522_from_results_without_peak_fails_a_memory_ceiling() {
+        let results = RealProfileResults::default();
+        let assertions = CiAssertions {
+            max_memory_mb: Some(1.0e9),
+            ..Default::default()
+        };
+        assert!(!CiProfileReport::from_results(&results, &assertions).passed);
+    }
+
+    #[test]
+    fn test_gh4522_parse_vm_hwm() {
+        let body = "Name:\tapr\nVmPeak:\t  999 kB\nVmHWM:\t  123456 kB\nVmRSS:\t 1 kB\n";
+        assert_eq!(parse_vm_hwm_bytes(body), Some(123_456 * 1024));
+        assert_eq!(parse_vm_hwm_bytes("VmRSS:\t 1 kB\n"), None, "no VmHWM line");
+        assert_eq!(parse_vm_hwm_bytes("VmHWM:\t 12 MB\n"), None, "unknown unit");
+        assert_eq!(parse_vm_hwm_bytes("VmHWM:\t x kB\n"), None, "not a number");
+        assert_eq!(parse_vm_hwm_bytes("VmHWM:\n"), None, "empty");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_gh4522_peak_rss_is_measured_on_linux() {
+        let b = peak_rss_bytes().expect("VmHWM must be readable on linux");
+        assert!(b > MIB, "a test process has more than 1 MiB resident, got {b}");
+    }

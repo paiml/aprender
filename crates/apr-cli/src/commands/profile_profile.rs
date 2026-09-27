@@ -7,6 +7,7 @@
             throughput_tok_s: 50.0,
             latency_p50_ms: 100.0,
             latency_p99_ms: 200.0,
+            peak_rss_mb: None,
             assertions: vec![AssertionResult {
                 name: "throughput".to_string(),
                 expected: ">= 100.0 tok/s".to_string(),
@@ -25,6 +26,7 @@
             throughput_tok_s: 100.0,
             latency_p50_ms: 10.0,
             latency_p99_ms: 20.0,
+            peak_rss_mb: None,
             assertions: vec![],
         };
         report.print_human();

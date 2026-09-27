@@ -427,6 +427,7 @@ fn dispatch_profile(
     assert_throughput: Option<f64>,
     assert_p99: Option<f64>,
     assert_p50: Option<f64>,
+    assert_memory: Option<f64>,
     warmup: usize,
     measure: usize,
     tokens: usize,
@@ -448,6 +449,7 @@ fn dispatch_profile(
     )?;
     threshold_arg::guard_opt("--assert-p99", assert_p99, threshold_arg::TOLERANCE)?;
     threshold_arg::guard_opt("--assert-p50", assert_p50, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard_opt("--assert-memory", assert_memory, threshold_arg::TOLERANCE)?;
 
     // GH-2395: `--json` is a global flag that `apr profile` parsed and ignored, and
     // an unparseable `--format` silently degraded to the human table. See
@@ -455,12 +457,17 @@ fn dispatch_profile(
     let output_format = profile::resolve_output_format(format, json)?;
 
     // PMAT-192: CI mode takes precedence
-    if ci || assert_throughput.is_some() || assert_p99.is_some() || assert_p50.is_some() {
+    if ci
+        || assert_throughput.is_some()
+        || assert_p99.is_some()
+        || assert_p50.is_some()
+        || assert_memory.is_some()
+    {
         let assertions = profile::CiAssertions {
             min_throughput: assert_throughput,
             max_p99_ms: assert_p99,
             max_p50_ms: assert_p50,
-            max_memory_mb: None,
+            max_memory_mb: assert_memory,
         };
         match profile::run_ci(file, output_format, &assertions, warmup, measure) {
             Ok(true) => Ok(()),
