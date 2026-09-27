@@ -84,15 +84,59 @@ pub struct GdnWeights<'a> {
 
 /// The result of [`gated_delta_scan`].
 #[derive(Debug, Clone, PartialEq)]
-pub struct GdnScan {
+pub struct GdnScan<T = f32> {
     /// Read-out `o_t` for every position: `[seq_len × v_dim]`.
-    pub out: Vec<f32>,
+    pub out: Vec<T>,
     /// State after the last position: `[state_len]`. Passing it as the next call's
     /// `s0` continues the sequence exactly (chunked training carries it across chunks).
-    pub final_state: Vec<f32>,
+    pub final_state: Vec<T>,
     /// With `keep_history`, the state after every position, `[seq_len × state_len]`
     /// (what the backward reads); empty otherwise.
-    pub history: Vec<f32>,
+    pub history: Vec<T>,
+}
+
+/// The float types the scan runs in: `f32` for training, `f64` for the gradcheck
+/// (`FALSIFY-QTG-003` checks the backward in f64 so finite differences resolve 1e-3).
+pub trait GdnFloat:
+    Copy
+    + PartialEq
+    + std::fmt::Debug
+    + std::ops::Add<Output = Self>
+    + std::ops::Sub<Output = Self>
+    + std::ops::Mul<Output = Self>
+    + std::ops::Div<Output = Self>
+    + std::ops::AddAssign
+    + std::ops::MulAssign
+    + std::iter::Sum
+{
+    /// Additive identity.
+    const ZERO: Self;
+    /// `eˣ`.
+    #[must_use]
+    fn exp(self) -> Self;
+    /// `1/√n`, the read-out scale.
+    #[must_use]
+    fn inv_sqrt(n: usize) -> Self;
+}
+
+impl GdnFloat for f32 {
+    const ZERO: Self = 0.0;
+    fn exp(self) -> Self {
+        f32::exp(self)
+    }
+    fn inv_sqrt(n: usize) -> Self {
+        1.0 / (n as f32).sqrt()
+    }
+}
+
+impl GdnFloat for f64 {
+    const ZERO: Self = 0.0;
+    fn exp(self) -> Self {
+        f64::exp(self)
+    }
+    fn inv_sqrt(n: usize) -> Self {
+        1.0 / (n as f64).sqrt()
+    }
 }
 
 pub(super) fn silu(x: f32) -> f32 {
@@ -160,15 +204,15 @@ fn l2_norm_heads(x: &mut [f32], head_dim: usize, eps: f32) {
 /// One step of one value head: decay, delta-rule write, read-out. `s` is that head's
 /// `[hv × hk]` state block; returns `o = scale · Sᵀ q` into `o`.
 #[allow(clippy::too_many_arguments)]
-fn step_head(
-    s: &mut [f32],
-    q: &[f32],
-    k: &[f32],
-    v: &[f32],
-    beta: f32,
-    g: f32,
-    scale: f32,
-    o: &mut [f32],
+fn step_head<T: GdnFloat>(
+    s: &mut [T],
+    q: &[T],
+    k: &[T],
+    v: &[T],
+    beta: T,
+    g: T,
+    scale: T,
+    o: &mut [T],
 ) {
     let hk = k.len();
     let decay = g.exp();
@@ -176,10 +220,10 @@ fn step_head(
         *x *= decay;
     }
     for (j, row) in s.chunks_exact_mut(hk).enumerate() {
-        let pred: f32 = row.iter().zip(k).map(|(a, b)| a * b).sum();
+        let pred: T = row.iter().zip(k).map(|(&a, &b)| a * b).sum();
         let delta = (v[j] - pred) * beta;
-        row.iter_mut().zip(k).for_each(|(x, ki)| *x += ki * delta);
-        o[j] = row.iter().zip(q).map(|(a, b)| a * b).sum::<f32>() * scale;
+        row.iter_mut().zip(k).for_each(|(x, &ki)| *x += ki * delta);
+        o[j] = row.iter().zip(q).map(|(&a, &b)| a * b).sum::<T>() * scale;
     }
 }
 
@@ -192,16 +236,16 @@ fn step_head(
 /// If a length disagrees with `dims`, or `num_v_heads` is not a multiple of `num_k_heads`.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
-pub fn gated_delta_scan(
-    q: &[f32],
-    k: &[f32],
-    v: &[f32],
-    beta: &[f32],
-    g: &[f32],
+pub fn gated_delta_scan<T: GdnFloat>(
+    q: &[T],
+    k: &[T],
+    v: &[T],
+    beta: &[T],
+    g: &[T],
     dims: &GdnDims,
-    s0: Option<&[f32]>,
+    s0: Option<&[T]>,
     keep_history: bool,
-) -> GdnScan {
+) -> GdnScan<T> {
     let (nk, hk, nv, hv) = (dims.num_k_heads, dims.head_k_dim, dims.num_v_heads, dims.head_v_dim);
     assert!(
         nk > 0 && nv % nk == 0,
@@ -211,10 +255,10 @@ pub fn gated_delta_scan(
     assert_eq!(v.len(), seq_len * dims.v_dim());
     assert_eq!((q.len(), k.len()), (seq_len * dims.k_dim(), seq_len * dims.k_dim()));
     assert_eq!((beta.len(), g.len()), (seq_len * nv, seq_len * nv));
-    let mut state = s0.map_or_else(|| vec![0.0; dims.state_len()], <[f32]>::to_vec);
+    let mut state = s0.map_or_else(|| vec![T::ZERO; dims.state_len()], <[T]>::to_vec);
     assert_eq!(state.len(), dims.state_len());
-    let scale = 1.0 / (hk as f32).sqrt();
-    let mut out = vec![0.0; v.len()];
+    let scale = T::inv_sqrt(hk);
+    let mut out = vec![T::ZERO; v.len()];
     let mut history = Vec::with_capacity(if keep_history { seq_len * state.len() } else { 0 });
     for t in 0..seq_len {
         for h in 0..nv {
