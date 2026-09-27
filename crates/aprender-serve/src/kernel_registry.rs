@@ -338,6 +338,49 @@ mod tests {
         assert!(r.admit(Backend::Cuda, 12, Layout::RowMajor).is_err());
     }
 
+    /// KREG coverage (CUDA): the registry's `cuda` rows and the ids `WeightQuantType` declares
+    /// (one `gemv_dispatch` arm each — that match is exhaustive) are the same set, derived here
+    /// over every id rather than from a hand-kept count. A variant with no row would be
+    /// unreachable; a row with no variant would claim a kernel that does not exist.
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn cuda_rows_equal_the_declared_weight_quant_types() {
+        use crate::cuda::types::WeightQuantType;
+        let r = registry().expect("registry");
+        let mut declared = 0;
+        for t in 0..=u32::try_from(MAX_TYPE_ID).expect("fits") {
+            let has_arm = WeightQuantType::declared(t).is_some();
+            let has_row = r.admit(Backend::Cuda, t, Layout::RowMajor).is_ok();
+            assert_eq!(
+                has_arm, has_row,
+                "ggml type {t}: gemv arm={has_arm}, registry row={has_row}"
+            );
+            assert_eq!(
+                WeightQuantType::from_ggml_type(t).is_some(),
+                has_row,
+                "ggml type {t}"
+            );
+            declared += usize::from(has_arm);
+        }
+        let rows = r.rows().iter().filter(|k| k.backend == "cuda").count();
+        assert_eq!(declared, rows);
+        assert!(rows > 0);
+    }
+
+    /// KREG gate (CUDA): removing a row makes that type unloadable on CUDA even though
+    /// `WeightQuantType` still declares it — the registry is the authority, not the enum.
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn a_cuda_type_with_no_row_is_not_loadable() {
+        use crate::cuda::types::WeightQuantType;
+        let only_q4k =
+            Registry::parse(&doc(&[row_json("cuda.gemv.q4_k", "cuda", 12, "row_major")]))
+                .expect("parses");
+        assert!(WeightQuantType::declared(GGUF_TYPE_Q6_K).is_some());
+        assert!(WeightQuantType::admitted_by(&only_q4k, GGUF_TYPE_Q6_K).is_none());
+        assert!(WeightQuantType::admitted_by(&only_q4k, GGUF_TYPE_Q4_K).is_some());
+    }
+
     /// FALSIFY-KREG-005: every row names a function that exists in its source file.
     #[test]
     fn falsify_kreg_005_every_row_names_a_real_fn() {
