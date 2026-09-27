@@ -1,0 +1,45 @@
+# ladder-nightly.yml -- the full provable ladder once a day (PVL-001 EV-9, FLOW-003 Thm 15).
+#
+# ci/sections.yml `provable-ladder` SKIPs a PR or queue batch that changes none of its
+# inputs (scripts/ci/ladder_touched.sh). This run is the other half of that trade: it runs
+# the section in full on main every day, with LADDER_FORCE=1, through the same fat driver
+# and on the same runner pin as x86-main, so the host's .lake cache entry and the shared pv
+# target dir are warm when the next PR that does touch the ladder arrives.
+#
+# ADVISORY, as the section is: a red run here is a finding, not a blocked merge.
+name: ladder-nightly
+
+on:
+  schedule:
+    - cron: '40 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ladder-nightly
+  cancel-in-progress: false
+
+jobs:
+  ladder:
+    # Same pin as ci.yml x86-main: the cache it warms is the one the PR runs read.
+    runs-on: [self-hosted, Linux, X64, clean-room, intel]
+    timeout-minutes: 120
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      LADDER_FORCE: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: fat_driver case table must still turn RED
+        run: python3 scripts/ci/fat_driver.py self-test
+      - name: The ladder selector's case table must still turn RED
+        run: bash scripts/ci/ladder_touched.sh --self-test
+      - name: provable-ladder (full, LADDER_FORCE=1)
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'provable-ladder'
+          --results "$RUNNER_TEMP/fat/results.json"

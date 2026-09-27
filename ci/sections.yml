@@ -3490,6 +3490,17 @@ jobs:
   # X64 is mandatory: `ci / lint` once landed on aarch64 gx10 and failed on x86-only code.
   # 90 min: under the merge queue's 180 min.
   # build.sh is ~6 min on a warm cache, and the leanchecker arm's own cap is 3600 s.
+  #
+  # EV-9 (operator: cached <=3 min, 0 PRs cold after warm). Three things kept a PR cold:
+  # (1) pv's target dir was keyed per PR, so every PR built pv from nothing; it is now one
+  # shared dir per host (cargo's own build lock serialises two runs on it). (2) The .lake
+  # cache is keyed on lean-toolchain + lake-manifest.json, and the manifest pins the Mathlib
+  # rev, so the key already moves on exactly a toolchain or Mathlib change and on nothing a
+  # branch does; every ref on a host restores the entry main warmed. The formula is kept
+  # byte-for-byte so the entries already warm on the pool stay valid. (3) FLOW-003 Thm 15: a
+  # PR or queue batch that changes none of the ladder's inputs SKIPs
+  # (scripts/ci/ladder_touched.sh); push to main runs it in full, and ladder-nightly.yml
+  # runs it daily to keep the caches warm. An undecidable diff RUNS the ladder.
   provable-ladder:
     runs-on: [self-hosted, Linux, clean-room, X64]
     timeout-minutes: 90
@@ -3500,8 +3511,8 @@ jobs:
       LEAN: crates/aprender-contracts-staging/lean
       SUMMARY: crates/aprender-contracts-staging/discharge-summary.json
       LEAN_CACHE_ROOT: /mnt/nvme-raid0/lean-cache
-      CARGO_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder
-      PV: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder/debug/pv
+      CARGO_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/_shared/provable-ladder
+      PV: /mnt/nvme-raid0/targets/aprender-ci/_shared/provable-ladder/debug/pv
     steps:
       - uses: actions/checkout@v7
         with:
@@ -3526,14 +3537,42 @@ jobs:
           done
           # summary-fresh diffs a TRACKED file: `git diff` exits 0 on an untracked path.
           git ls-files --error-unmatch -- "$SUMMARY" >/dev/null 2>&1 || skip "$SUMMARY is not tracked"
+          # FLOW-003 Thm 15: skip a PR / queue batch that changes none of the ladder's inputs.
+          # The selector's case table runs first, so a stale selector goes RED here.
+          bash scripts/ci/ladder_touched.sh --self-test
+          base=""
+          case "${GITHUB_EVENT_NAME:-}" in
+            pull_request) base="refs/heads/${GITHUB_BASE_REF:-}" ;;
+            merge_group) base=$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"])).get("merge_group", {}).get("base_sha", ""))') ;;
+            *) ;;
+          esac
+          if [ -n "$base" ] && [ "${LADDER_FORCE:-0}" != 1 ]; then
+            # Shallow checkout: tip vs tip is a SUPERSET of the change, the safe direction.
+            rc=0
+            if git fetch --no-tags --depth=1 origin "$base" >/dev/null 2>&1; then
+              git diff --name-only FETCH_HEAD HEAD > "$RUNNER_TEMP/ladder-touched.txt" || rc=2
+              bash scripts/ci/ladder_touched.sh --diff-from "$RUNNER_TEMP/ladder-touched.txt" > "$RUNNER_TEMP/ladder.txt" || rc=$?
+              cat "$RUNNER_TEMP/ladder.txt"
+            else
+              rc=2; echo "reason=could not fetch $base: undecidable"
+            fi
+            if [ "$rc" -eq 0 ] && grep -qx 'ladder_touched=0' "$RUNNER_TEMP/ladder.txt"; then
+              skip "no ladder input changed ($(sed -n 's/^reason=//p' "$RUNNER_TEMP/ladder.txt"))"
+            fi
+            [ "$rc" -eq 0 ] || echo "path filter undecidable (rc $rc): running the ladder" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           # elan's own default, from the runner user's $HOME: no machine-specific literal.
           ELAN_HOME="${ELAN_HOME:-$HOME/.elan}"
           echo "ELAN_HOME=$ELAN_HOME" >> "$GITHUB_ENV"
           export PATH="$ELAN_HOME/bin:$PATH"
           command -v elan >/dev/null || decline "no elan in $ELAN_HOME on $(hostname) (proof-toolchain, infra)"
           [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
+          # The Mathlib rev is inside lake-manifest.json, so it is part of this key.
           key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
           cache=$LEAN_CACHE_ROOT/$key
+          mathlib=$(python3 -c 'import json,sys; print(next((p.get("rev", "?") for p in json.load(open(sys.argv[1])).get("packages", []) if p.get("name") == "mathlib"), "none"))' "$LEAN/lake-manifest.json")
+          if [ -d "$cache/build" ] || [ -d "$cache/packages" ]; then warm=warm; else warm=COLD; fi
+          echo "lean cache: key=$key toolchain=$(cat "$LEAN/lean-toolchain") mathlib=$mathlib host=$(hostname) $warm" | tee -a "$GITHUB_STEP_SUMMARY"
           mkdir -p "$cache"
           flock "$cache.lock" elan toolchain install "$(cat "$LEAN/lean-toolchain")"
           # A real .lake dir would make `ln` write the link INSIDE it instead of replacing it.
