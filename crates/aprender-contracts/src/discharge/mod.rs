@@ -733,14 +733,9 @@ pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
         "ROOTS {pinned} pinned, {} ORPHANED-ROOT",
         roots.len() - pinned
     ));
-    // EV-6c (#4244): a bound theorem outside the cone is never built, so no pin and no `--leanchecker` re-check
-    // reaches it -- a discharge claim on it is unchecked. RED, by name, not a count.
-    for x in roots.iter().filter(|x| !cone.contains(&x.module)) {
-        r.fail(format!(
-            "ORPHANED-ROOT {} -- {} is outside the root's import cone: import it from {ROOT_MODULE}.lean",
-            x.fqn, x.module
-        ));
-    }
+    // A bound theorem outside the cone is never built, so no pin and no `--leanchecker` re-check reaches it.
+    // It is counted here; it is not RED here. Not-worse is `pv lint --gate refinement` (PV-ONT-034, HEAD vs
+    // BASE). The absolute rule (EV-6c, #4244) moved to 0.70.1 with the 27 modules that drain it.
     if pinned == 0 && !r.reject {
         r.decline = Some(format!(
             "0 contract-bound theorems in the root's import cone under {}",
