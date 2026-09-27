@@ -66,7 +66,7 @@ pub struct GatedAttnWeights<'a> {
 }
 
 /// `RMSNorm(x) · weight` over each `weight.len()`-wide chunk of `x`, in place.
-fn rms_norm_chunks(x: &mut [f32], weight: &[f32], eps: f32) {
+pub(super) fn rms_norm_chunks(x: &mut [f32], weight: &[f32], eps: f32) {
     let n = weight.len();
     for c in x.chunks_exact_mut(n) {
         let inv_rms = 1.0 / (c.iter().map(|v| v * v).sum::<f32>() / n as f32 + eps).sqrt();
