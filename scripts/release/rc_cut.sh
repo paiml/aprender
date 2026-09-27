@@ -214,6 +214,15 @@ for ref in json.load(sys.stdin):
     rm -f -- "$cells"
     summary "fleet cells: $gate"
     [ "$rc" = 0 ] || { echo "$PROG: REFUSED to cut $tag -- $gate (#4328 C4)" >&2; emit result fleet-red; return 1; }
+
+    # 0b. Carry-forward: #4273 (~20x decode) shipped in v0.69.5-rc.1 and never reached the
+    #     0.70.0 line. No rc is cut while a commit of the previous release line's newest tag
+    #     is missing from this commit, unless scripts/release/carry-forward-drops.tsv lists
+    #     it as intentionally dropped, with a reason. ENV (exit 2) refuses too.
+    gate=$(python3 "$(dirname -- "${BASH_SOURCE[0]}")/carry_forward_gate.py" --cand "$D_HEAD_SHA" \
+        --drops "$(dirname -- "${BASH_SOURCE[0]}")/carry-forward-drops.tsv" 2>&1); rc=$?
+    summary "carry-forward: $gate"
+    [ "$rc" = 0 ] || { echo "$PROG: REFUSED to cut $tag -- carry-forward gate exit $rc" >&2; emit result carry-forward-red; return 1; }
     if [ "$dry" = 1 ]; then summary "(dry run: no tag, release or dispatch written)"; emit result dry-run; return 0; fi
 
     # 1. The tag. Creating the ref first makes the name the lock: a concurrent cut of
@@ -253,7 +262,8 @@ main() {
     local run_id='' dry=0
     while [ $# -gt 0 ]; do
         case "$1" in
-            --self-test) self_test; return $? ;;
+            --self-test) self_test || return 1
+                python3 "$(dirname -- "${BASH_SOURCE[0]}")/carry_forward_gate.py" --self-test; return $? ;;
             --source-only) return 0 ;;
             --run-id) run_id=${2:-}; shift 2 || return 2 ;;
             --dry-run) dry=1; shift ;;

@@ -1,0 +1,7 @@
+# Commits of the previous release line that an rc may cut WITHOUT, read by
+# scripts/release/carry_forward_gate.py (rc_cut.sh step 0b). One row each, TAB-separated:
+#   sha<TAB><7-40 hex prefix><TAB><reason, who ruled, when>
+#   subject<TAB><python regex on the subject><TAB><reason, who ruled, when>
+# A row is a ruling that the change is not wanted on the new line, or is already there
+# in a rewritten form the content check cannot see. It is never a way to make the gate green.
+subject	^(release: bump|chore\(release\): bump|bump [0-9])	version bumps belong to their own release line; car bumps itself (aprender-e6, 2026-09-26)
