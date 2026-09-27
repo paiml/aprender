@@ -37,7 +37,7 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, csv, example, gguf, json, lean, llm_context, parity_receipt,
+    self, apr_model, binary, code, csv, example, gguf, json, lean, llm_context, parity_receipt,
     pv_contract, readme, release_evidence, ExtractFailure,
 };
 use crate::ontology::measured_sets;
@@ -460,6 +460,7 @@ const COUNTED_ENTITY_TYPES: &[&str] = &[
     "code",
     "lean",
     "example",
+    "binary",
     "release-evidence",
 ];
 
@@ -484,6 +485,8 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
         "code" => extraction.code.symbols,
         "lean" => extraction.lean.statements,
         "example" => extraction.example.examples,
+        // ONT-4g: one per bin target, keyed binary/<package>/<target> — 29 targets, not 28 names
+        "binary" => extraction.binary.targets,
         // 0 by rule when no release subject was given (an ordinary PR has none): the extractor did not run.
         "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
         // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone). The extractor seeds every
@@ -579,6 +582,7 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
         ("example", example::positive_control()),
+        ("binary", binary::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
@@ -717,7 +721,8 @@ fn findings_of(
         .chain(&extraction.example.errors)
         .chain(&extraction.readme.errors)
         .chain(&extraction.llm_context.errors)
-        .chain(&extraction.csv.errors);
+        .chain(&extraction.csv.errors)
+        .chain(&extraction.binary.errors);
     for e in refusals {
         c.violations += 1;
         let mut f = LintFinding::new(
