@@ -34,7 +34,7 @@
   },
   "by_concept": {
     "AprModel": 0,
-    "Binary": 0,
+    "Binary": 30,
     "Code": 161,
     "Contract": 1823,
     "Dataset": 0,
