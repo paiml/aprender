@@ -24,7 +24,26 @@ PCA is built on #3147's SVD (`impl-GH-3147-receipt.md`), which is why the two sh
 `.github/workflows/beat-speed-nightly.yml` gains one step, "Pillar-1 — apr vs scikit-learn PCA speed
 (re-measurement, #3148)". It runs `cargo test -p aprender-core --release --test beat_sklearn_pca_speed
 -- --ignored --nocapture` and appends to `$BEAT_LOG`. It mirrors the GMM step above it, and no other line of
-the workflow changes. The ticket needs it: "must be re-measured, not deleted". Without the step, the contract's
+the workflow changes. The two steps differ only in the step name and the test target; both open with
+`set -o pipefail`, so `tee` cannot mask a failing test:
+
+```
+176  - name: Pillar-1 — apr vs scikit-learn GaussianMixture (GMM) speed beat      (existing, on main)
+177    if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+178    run: |
+179      set -o pipefail
+180      cargo test -p aprender-core --release \
+181        --test beat_sklearn_gmm_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
+183  - name: Pillar-1 — apr vs scikit-learn PCA speed (re-measurement, #3148)     (added)
+184    if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+185    run: |
+186      set -o pipefail
+187      cargo test -p aprender-core --release \
+188        --test beat_sklearn_pca_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
+```
+
+A round-1 lane (gemini) FAILed this claim, saying the GMM step lacks `pipefail`. Line 179 above shows that it
+does not lack it. The ticket needs it: "must be re-measured, not deleted". Without the step, the contract's
 nightly measurement never runs.
 
 ## Acceptance, criterion by criterion
