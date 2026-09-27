@@ -170,6 +170,30 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   (low nibble first), trueno `brick::quant_ops::nf4` (high first) and a private copy in aprender-train `wgpu_nf4.rs`. The CPU
   `QLoRALayer` (`lora/qlora.rs`) uses symmetric int4 (`quant4bit`), which is not NF4. QQE-005 must name the CUDA path's quantizer.
 
+### Spike S-R15 — is CUDA LoRA (the T2 cell) a routing fix or new code? · `[V]` (2026-09-27, desk read at shaping @5826e292bb)
+- **Question:** `-m lora --gpu-backend cuda` prints a warning and trains on the CPU (`finetune.rs:280`). Would setting the CUDA init
+  gate for plain LoRA be enough?
+- **Answer: no. Flipping the gate alone would train nothing on the GPU, silently.**
+  - `InstructPipeline` calls `init_cuda` only when `quantize_nf4` is set (`instruct_pipeline/constructors.rs:56,173,293`).
+    `init_cuda` has an FP32 branch (`CudaTransformerBlock`, `cuda_init.rs:304`), but the LoRA grad workspace and optimizer states are
+    created only for NF4 (`cuda_init.rs:66`), and the block backward runs only for NF4 (`training.rs:309`). With the gate flipped,
+    LoRA would get a CUDA forward and no adapter gradient, and the loss would stay flat.
+  - The FP32 `CudaTransformerBlock::backward`/`optimizer_step` (`transformer/cuda_block.rs:1276,2248`) is full-weight fine-tuning
+    (`cuda_trainer.rs:868`), not LoRA.
+  - **The CUDA LoRA path adapts Q and V only:** `constructors.rs:383,397` build two adapters per layer, and
+    `CudaLoraGradWorkspace` (`cuda_block.rs:3853`) holds `A_q, B_q, A_v, B_v` plus two norm grads. The T2 cell needs Unsloth's
+    seven targets (q, k, v, o, gate, up, down), and R4 needs those plus the GDN projections (Qwen35Lora: 150 slots at 0.8B).
+  - The pipeline's `Transformer` has no GDN layer, so Qwen3.5 on CUDA also needs R2/R3's GDN forward and backward as CUDA blocks.
+- **Consequences:**
+  - R15 is new CUDA work: a non-quantized (bf16) frozen-base variant of the NF4 block's LoRA backward, extended from 2 to 7 (T2)
+    and 10 (R4) target kinds. It is not a one-line gate. Its K̂ should be re-sized, and R4 shares the same target extension.
+  - `beat-unsloth-finetune-throughput-v1` already requires the same targets on both sides (its planted half-targets
+    row), so today's Q+V path would correctly fail SAME-WORK.
+  - QQE-005 would have passed vacuously on a Q+V-only CUDA side ("every tensor it emits" matches). The contract now requires
+    the same 300-tensor adapter set, with a planted drop-to-Q/V row.
+  - R15's own falsifier, for whoever takes it: after N CUDA steps of `-m lora`, the adapters must have changed and the loss
+    must have moved. A CUDA forward with frozen adapters is RED.
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
