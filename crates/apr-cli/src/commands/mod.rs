@@ -107,6 +107,7 @@ pub(crate) mod hf_http;
 pub(crate) mod hf_publish;
 #[cfg(feature = "training")]
 pub(crate) mod hf_token;
+pub(crate) mod model_card;
 #[cfg(feature = "training")]
 pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
