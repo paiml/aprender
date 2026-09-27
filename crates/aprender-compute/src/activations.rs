@@ -710,3 +710,32 @@ mod silu_contract_tests {
         }
     }
 }
+
+/// ONT-10 L4 simulation witness for `f16_to_f32` (activations.rs:119).
+///
+/// The Lean model `f16ToF32Bits` (`ProvableContracts/Theorems/F16/Conversion.lean`) transcribes
+/// every branch of `f16_to_f32` as an f32 bit pattern. This test runs the Rust fn on ALL 65536
+/// `u16` inputs and requires the FNV-1a/64 hash of the returned bit patterns to equal the Lean
+/// `#eval f16TableHash`, so the Lean model and the Rust item cannot drift apart silently.
+#[cfg(test)]
+mod f16_l4_witness {
+    use super::f16_to_f32;
+
+    /// `#eval f16TableHash` — Lean output, verbatim.
+    const LEAN_F16_TABLE_HASH: u64 = 2_272_049_955_290_916_805;
+
+    #[test]
+    fn f16_to_f32_matches_lean_on_all_65536_patterns() {
+        let hash = (0..=u16::MAX).fold(0xcbf2_9ce4_8422_2325_u64, |acc, b| {
+            f16_to_f32(b)
+                .to_bits()
+                .to_le_bytes()
+                .iter()
+                .fold(acc, |a, &byte| (a ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3))
+        });
+        assert_eq!(hash, LEAN_F16_TABLE_HASH);
+        // `#eval (f16ToF32Bits 0x3C00, 0x8000, 0x0001, 0x7C00, 0x7E00)`: one row per arm.
+        let rows = [0x3C00_u16, 0x8000, 0x0001, 0x7C00, 0x7E00].map(|b| f16_to_f32(b).to_bits());
+        assert_eq!(rows, [1_065_353_216, 2_147_483_648, 864_026_624, 2_139_095_040, 2_143_289_344]);
+    }
+}
