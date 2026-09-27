@@ -4,7 +4,7 @@
 //! Demonstrates real-time network RX/TX monitoring with dual graphs.
 //! Similar to btop/nethogs network visualization.
 //!
-//! Run with: cargo run -p presentar-terminal --example `network_traffic`
+//! Run with: cargo run -p aprender-present-terminal --example `network_traffic`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

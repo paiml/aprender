@@ -6,7 +6,7 @@ Tabular data display with sorting and filtering.
 
 ```bash
 # Run the demo
-cargo run -p presentar --example apr_ald_display
+cargo run -p aprender-present-lib --example apr_ald_display
 ```
 
 ## Loading .ald Files

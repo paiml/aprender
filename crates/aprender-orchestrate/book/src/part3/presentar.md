@@ -41,10 +41,10 @@ Presentar auto-generates UIs from Sovereign AI Stack file formats:
 
 ```bash
 # Point at a directory, get an app
-presentar --serve ./fraud-detector/
+aprender-present --serve ./fraud-detector/
 
 # Bundle for deployment
-presentar --bundle ./fraud-detector/ -o app.wasm
+aprender-present --bundle ./fraud-detector/ -o app.wasm
 ```
 
 ## YAML App Configuration
@@ -107,11 +107,11 @@ Every Presentar app receives a TDG score (0-100, F-A):
 Presentar apps integrate with Batuta's 5-phase workflow:
 
 ```
-Phase 1: Analysis    → presentar analyze app.yaml
+Phase 1: Analysis    → aprender-present analyze app.yaml
 Phase 2: Transpile   → (N/A - pure Rust)
-Phase 3: Optimize    → presentar optimize --wasm-opt
-Phase 4: Validate    → presentar test (zero-dep harness)
-Phase 5: Deploy      → presentar --bundle → pacha publish
+Phase 3: Optimize    → aprender-present optimize --wasm-opt
+Phase 4: Validate    → aprender-present test (zero-dep harness)
+Phase 5: Deploy      → aprender-present --bundle → pacha publish
 ```
 
 ## presentar-test: Zero-Dependency E2E Testing

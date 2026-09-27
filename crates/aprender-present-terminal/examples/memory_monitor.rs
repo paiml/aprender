@@ -4,7 +4,7 @@
 //! Demonstrates memory usage visualization with meters and graphs.
 //! Similar to btop/htop memory panels.
 //!
-//! Run with: cargo run -p presentar-terminal --example `memory_monitor`
+//! Run with: cargo run -p aprender-present-terminal --example `memory_monitor`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

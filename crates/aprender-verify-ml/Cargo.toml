@@ -12,6 +12,12 @@ readme = "README.md"
 keywords = ["testing", "code-generation", "transpiler", "verification", "synthetic-data"]
 categories = ["development-tools::testing", "compilers"]
 
+
+[[bin]]
+# #4430: every shipped [[bin]] is aprender-* (was the auto-discovered `verificar`)
+name = "aprender-verify"
+path = "src/bin/verificar.rs"
+
 [lints.rust]
 unsafe_code = "allow"
 

@@ -223,7 +223,7 @@ fn apr_zram_benchmark_runs_instead_of_panicking() {
     );
 }
 
-// A cross-binary byte-identity check (`apr rag query` vs `trueno-rag query`)
+// A cross-binary byte-identity check (`apr rag query` vs `aprender-rag query`)
 // belongs here in spirit, but `CARGO_BIN_EXE_*` only exposes the binaries of
 // THIS package, so writing it from apr-cli yields an apr-vs-apr comparison --
 // an oracle that agrees with itself by construction. The structural guarantee
