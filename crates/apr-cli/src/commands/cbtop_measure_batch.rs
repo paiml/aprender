@@ -122,37 +122,63 @@ fn print_profiler_brick_stats(cuda_model: &realizar::gguf::OwnedQuantizedModelCu
     }
 }
 
-/// PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection.
-/// Per Mace et al. (2015): Only trace when anomalies detected to avoid overhead.
+/// PMAT-PERF-009: anomaly escalation, keyed on the run's own CV.
+///
+/// TRACE-001 TR-02 (`contracts/no-false-escalation-v1.yaml`). No tracer runs
+/// here, so the report says `escalation: not traced` with provenance
+/// `NotInstrumented`. It used to print "BrickTracer: Enabled for syscall
+/// breakdown" over a tracer that was built and dropped (F2). The efficiency arm
+/// is gone too: it divided tok/s by an undeclared 976 literal (F3). CV is
+/// dimensionless and computed from this run's samples, so it needs no basis.
 #[cfg(all(feature = "inference", feature = "visualization"))]
-fn check_renacer_escalation(tokens_per_sec: f64, cv_percent: f64) {
-    use renacer::brick_tracer::{BrickEscalationThresholds, BrickTracer};
-
-    let thresholds = BrickEscalationThresholds::default();
-    let efficiency = tokens_per_sec / 976.0 * 100.0;
-
-    if cv_percent > thresholds.cv_percent || efficiency < thresholds.efficiency_percent {
+fn check_renacer_escalation(cv_percent: f64) {
+    let threshold = renacer::brick_tracer::BrickEscalationThresholds::default().cv_percent;
+    if let Some(report) = escalation_report(cv_percent, threshold) {
         eprintln!();
-        eprintln!(
-            "cbtop: Anomaly detected (CV: {:.1}%, efficiency: {:.1}%) - escalating to renacer",
-            cv_percent, efficiency
-        );
-        eprintln!(
-            "  Threshold: CV > {:.1}% or efficiency < {:.1}%",
-            thresholds.cv_percent, thresholds.efficiency_percent
-        );
-        let _tracer = BrickTracer::new_local();
-        let reason =
-            if cv_percent > thresholds.cv_percent && efficiency < thresholds.efficiency_percent {
-                "cv_and_efficiency"
-            } else if cv_percent > thresholds.cv_percent {
-                "cv_exceeded"
-            } else {
-                "efficiency_low"
-            };
-        eprintln!("  BrickTracer: Enabled for syscall breakdown");
-        eprintln!("  Escalation reason: {reason}");
+        eprintln!("{report}");
         eprintln!();
+    }
+}
+
+/// The escalation report for one run, or `None` when CV is within threshold.
+/// Pure so the falsifiers can hold it: it never claims a trace it did not take.
+#[cfg(any(test, all(feature = "inference", feature = "visualization")))]
+fn escalation_report(cv_percent: f64, cv_threshold: f64) -> Option<String> {
+    if cv_percent.is_nan() || cv_percent <= cv_threshold {
+        return None;
+    }
+    Some(format!(
+        "cbtop: Anomaly detected (CV: {cv_percent:.1}% > {cv_threshold:.1}%)\n  \
+         escalation: not traced (provenance: NotInstrumented; reason: cv_exceeded)\n  \
+         to trace: re-run the step under the in-tree renacer (scripts/renacer_bin.sh)"
+    ))
+}
+
+#[cfg(test)]
+mod tr02_no_false_escalation {
+    use super::escalation_report;
+
+    #[test]
+    fn falsify_ne_001_no_claimed_breakdown_without_a_tracer() {
+        let r = escalation_report(40.0, 15.0).expect("CV above threshold escalates");
+        assert!(!r.contains("Enabled for syscall breakdown"), "{r}");
+        assert!(!r.contains("BrickTracer"), "{r}");
+        assert!(r.contains("provenance: NotInstrumented"), "{r}");
+        assert!(r.contains("escalation: not traced"), "{r}");
+    }
+
+    #[test]
+    fn falsify_ne_002_no_efficiency_arm() {
+        // Low throughput alone no longer escalates: there is no tok/s input.
+        assert!(escalation_report(1.0, 15.0).is_none());
+        let r = escalation_report(40.0, 15.0).expect("escalates");
+        assert!(!r.contains("efficiency"), "{r}");
+    }
+
+    #[test]
+    fn falsify_ne_003_nan_cv_never_escalates_silently_as_measured() {
+        assert!(escalation_report(f64::NAN, 15.0).is_none());
+        assert!(escalation_report(15.0, 15.0).is_none(), "threshold is strict");
     }
 }
 

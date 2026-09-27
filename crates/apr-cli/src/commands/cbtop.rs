@@ -246,7 +246,6 @@ struct PipelineState {
     total_layers: usize,
     tokens_generated: usize,
     total_us: f64,
-    target_tok_s: f64,
     current_tok_s: f64,
 }
 
@@ -269,7 +268,6 @@ impl PipelineState {
             total_layers: 28, // Default for 1.5B
             tokens_generated: 0,
             total_us: 0.0,
-            target_tok_s: 976.0, // 2x llama.cpp for 1.5B
             current_tok_s: 0.0,
         }
     }

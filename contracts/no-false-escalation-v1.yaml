@@ -1,0 +1,63 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "cbtop's anomaly escalation (TRACE-001 TR-02, #4557) never claims a trace it did not take and never escalates on an undeclared literal. It used to print 'BrickTracer: Enabled for syscall breakdown' over a tracer that was built and dropped (TRACE-001 F2), and it computed an efficiency as tok/s ÷ 976 with no basis (F3). Escalation now keys on the run's own CV, and the report says 'escalation: not traced' with provenance NotInstrumented."
+  kind: pattern
+  references:
+    - "docs/specifications/TRACE-001-tracing-consumers.md — §1.3 F2/F3, §3, §4 TR-02"
+    - "crates/apr-cli/src/commands/cbtop_measure_batch.rs — escalation_report, check_renacer_escalation"
+
+five_whys:
+  symptom: "cbtop printed 'BrickTracer: Enabled for syscall breakdown' and an efficiency percentage on every anomalous run."
+  why_1: "The tracer was constructed as `let _tracer = BrickTracer::new_local();` and dropped on the next line; nothing ran under it."
+  why_2: "The message was written for the design (escalate to syscall tracing), not for what the code does."
+  why_3: "Efficiency divided tok/s by 976.0, a hard-coded '2x llama.cpp for 1.5B' target, whatever the model or host."
+  why_4: "No test held the report text, so the claim and the behaviour could drift apart silently."
+  why_5: "The escalation was a side-effecting eprintln block with no pure function to test."
+  root_cause: "A diagnostic emitted claims it never measured (CF-5 class). The remedy is a pure escalation_report whose falsifiers forbid the claim and the literal."
+
+equations:
+  escalation:
+    formula: "report(cv, θ) = Some(not_traced(cv, θ)) iff cv > θ (strict; NaN → None); report never mentions a tracer, a breakdown or an efficiency"
+    domain: "cv = the run's coefficient of variation in percent, θ = BrickEscalationThresholds::default().cv_percent"
+    codomain: "Option<String>"
+    invariants:
+      - "an escalation report carries provenance NotInstrumented while no tracer runs"
+      - "no input is a throughput divided by an undeclared literal"
+
+proof_obligations:
+  - id: NFE-INV-001
+    type: invariant
+    property: "No escalation report claims a syscall breakdown"
+    formal: "∀ cv, θ: report(cv, θ) = Some(r) ⇒ 'Enabled for syscall breakdown' ∉ r ∧ 'provenance: NotInstrumented' ∈ r"
+    applies_to: escalation
+  - id: NFE-INV-002
+    type: invariant
+    property: "Escalation has no efficiency arm and no 976 literal in apr-cli"
+    formal: "report depends on cv only ∧ git grep '976\\.0' crates/apr-cli = ∅"
+    applies_to: escalation
+
+falsification_tests:
+  - id: FALSIFY-NFE-001
+    rule: "A report with no tracer run does not claim a breakdown"
+    prediction: "the escalation report omits 'Enabled for syscall breakdown' and states NotInstrumented"
+    test: "cargo test -p apr-cli --lib tr02_no_false_escalation::falsify_ne_001"
+    if_fails: "cbtop claims a syscall trace that never ran"
+  - id: FALSIFY-NFE-002
+    rule: "No efficiency arm"
+    prediction: "low CV never escalates and the report never mentions efficiency"
+    test: "cargo test -p apr-cli --lib tr02_no_false_escalation::falsify_ne_002"
+    if_fails: "escalation still keys on a throughput ratio"
+  - id: FALSIFY-NFE-003
+    rule: "The undeclared literal is gone from apr-cli"
+    prediction: "git grep finds no 976.0 in crates/apr-cli"
+    test: "! git grep -n '976\\.0' -- crates/apr-cli"
+    if_fails: "an efficiency or target is still computed from an undeclared literal"
+
+qa_gate:
+  id: F-NFE-001
+  name: "cbtop escalation is honest"
+  description: "The tr02_no_false_escalation unit tests run in CI's workspace-test job (apr-cli --lib)."
+  checks:
+    - "escalation"
