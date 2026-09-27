@@ -38,7 +38,7 @@ equations:
     formula: "∂L/∂A = s·Bᵀ·∂L/∂W',  ∂L/∂B = s·∂L/∂W'·Aᵀ  (W' = W + s·B·A, s = alpha/r)"
     domain: 'targets per layer, by GGUF tensor: attn_q, attn_k, attn_v, attn_output (attention layers); attn_qkv, attn_gate, ssm_out (GDN layers); ffn_gate, ffn_up, ffn_down (all layers)'
     invariants:
-    - The CPU reference (Qwen35Lora::set_grads over the gradchecked full backward) is the oracle; the CUDA path must not materialise dW' (memory) and must still equal it
+    - The CPU reference (Qwen35Lora::set_grads over the gradchecked full backward) is the oracle; the CUDA path must not hold every target's dW' at once (14.3 GB f32 at 4B; streaming one matrix = 94 MB, spike S-R17) and must still equal it
     - B = 0 at init, so step 0's adapted forward is bit-equal to the base
     preconditions:
     - same base weights on both sides (the CUDA side dequantises NF4 to the values the CPU reference loads)
@@ -87,9 +87,9 @@ falsification_tests:
     to -m lora. It must not train a worse adapter silently.
 - id: FALSIFY-QQE-005
   rule: CUDA adapter gradients equal the CPU reference
-  prediction: 'on Qwen3.5-0.8B (3 fixed tokens, r16, B randomised with a fixed seed) every CUDA dA/dB tensor is within rel 1e-2 of Qwen35Lora::set_grads'
+  prediction: 'on Qwen3.5-0.8B (3 fixed tokens, r16, B randomised with a fixed seed) every CUDA dA/dB tensor is within rel 1e-2 of Qwen35Lora::set_grads, both sides on the SAME base: the CPU reference loads the target weights round-tripped through the NF4 quantize/dequantize the CUDA path uses, so the tolerance measures the backward and not NF4 error (a Q4_K-dequantized CPU base vs an NF4 CUDA base would differ for a non-bug reason)'
   test: 'desk-ready reference: aprender-train transformer::qwen35_model::tests::lora (FALSIFY-QTG-009, 6 planted mutants RED). CUDA side: NOT run while train-active'
-  if_fails: 'the CUDA LoRA backward optimises a different function from the gradchecked reference (scale, transpose, or a GDN target missing from the CUDA target set)'
+  if_fails: 'the CUDA LoRA backward optimises a different function from the gradchecked reference (scale, transpose, or a GDN target missing from the CUDA target set); planted: running the CPU side on the un-round-tripped Q4_K base must be reported as a base mismatch, not a pass or a backward defect'
 - id: FALSIFY-QQE-006
   rule: CPU pre-flight — LoRA plus AdamW trains the real 0.8B before any GPU time is spent
   prediction: 'r16, alpha 32, all 150 targets, AdamW lr 1e-4, one 5-token sentence, 8 steps: the loss falls every step and ends below half the start (measured 8.881 → 0.002, about 7.2 s per step on CPU)'

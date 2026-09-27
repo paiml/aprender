@@ -110,7 +110,7 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - This answers S-R3b: AdamW does not bounce the way fixed-step SGD did.
   - Gates: FALSIFY-QTG-009 (finite-difference check per adapter tensor, 2 seeds; base never written; a zero step is
     exact) with 6 planted mutants RED.
-  - What R4 on CUDA still needs: an NF4 base, and adapter gradients that never materialise `dW'`.
+  - What R4 on CUDA still needs: an NF4 base, and adapter gradients that never hold all of `dW'` at once (14.3 GB at 4B; per-matrix streaming costs 94 MB, S-R17).
 - **Oracle and pre-flight (from S-R4a):** QQE-005 holds the CUDA adapter gradients to the CPU `Qwen35Lora` reference
   (rel ≤ 1e-2 per tensor, 0.8B, B randomised). QQE-006 is the CPU pre-flight (0.8B, 8 AdamW steps, monotone, < ½ start),
   which must be green before GPU time is spent. The target set is pinned by GGUF tensor name.
@@ -129,10 +129,31 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   quantization differences"). Its default targets are `q,k,v,o,gate,up,down`, with no GDN projections. It lists 10 GB
   for 4B bf16 LoRA. Source: unsloth.ai/docs/models/qwen3.5/fine-tune. **Therefore the T2 cell is bf16 LoRA, not QLoRA**,
   with Unsloth's default targets on both sides. The contract is updated to match.
-- **Consequence for the ranking:** R15 ("`-m lora` is CPU F32 today", `finetune.rs:281`) moves onto the critical path,
+- **Consequence for the ranking:** R15 ("`-m lora` is CPU F32 today", `finetune.rs:280` on main aca6f2d7f6, re-measured by R19) moves onto the critical path,
   because bf16 LoRA on CUDA IS the T2 cell. R4 stays the T1 finetune cell, but NF4 quality on Qwen3.5 is now a known risk
   (K10). R4 adds a gate: QLoRA's final loss is within 5% of bf16 LoRA's on the same cell, or QLoRA is documented as
   unsupported for qwen3.5 (an honest refusal, not a silent quality loss).
+
+### Spike S-R17 — does the 4B fit a 24 GB RTX 4090, and must R4 avoid `dW'`? · `[V]` (2026-09-27, desk, GGUF shapes)
+- **Method:** tensor shapes read from `~/models/Qwen3.5-{0.8B,4B}-Q4_K_M.gguf` (python `gguf`). Targets are the GGUF names
+  pinned in `qwen35-qlora-e2e-v1`. Cross-check: the 0.8B gives 150 slots and 10.2M r16 adapter params, the same as S-R4a.
+- **4B:** 4.206B params, 200 target slots holding 3.565B of them, r16 adapters 30.5M.
+
+  | Plan | Weights-side bytes |
+  |---|---|
+  | S-R4a CPU approach (f32 base + f32 work copy + full f32 grads) | 16.8 + 16.8 + 16.8 ≈ 50 GB host RAM |
+  | all target `dW'` at once, f32 | 14.3 GB |
+  | `dW'` streamed one matrix / one layer at a time | 0.094 GB / 0.451 GB |
+  | NF4 targets (4 bit + f32 absmax per 64) + non-target bf16 | 2.01 + 1.28 = 3.3 GB |
+  | bf16 base (the T2 bf16-LoRA cell) | 8.4 GB |
+  | adapters + grad + AdamW m, v (f32) | 0.49 GB |
+
+- **Answers:** (a) R4 QLoRA leaves about 20 GB for activations on a 4090, and the T2 bf16 cell leaves about 15 GB. (b) The
+  memory constraint is "never all of `dW'` at once" (14.3 GB), not "never `dW'`": a per-matrix `dW'` costs 94 MB. Streaming
+  it costs compute (a rows×cols GEMM per matrix, which the adapter-only path avoids), not memory. So R4 may stream `dW'`
+  first and treat the adapter-only backward as an R14 throughput item. (c) The QQE-006 CPU pre-flight stays on the 0.8B
+  (about 9 GB), because the S-R4a approach at 4B needs about 50 GB of host RAM.
+- **Not measured:** activation memory (it depends on sequence length and checkpointing). R17 owns it.
 
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
