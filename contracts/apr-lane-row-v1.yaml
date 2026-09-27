@@ -1,0 +1,103 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §2.2, §2.3 (this ledger), §3 (its falsifiers), §7 OBS-01 (its writer row)'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries; not restated here'
+  - 'aprender#4487 — OBS-00: this schema'
+  description: >
+    The lane ledger: one row per review-lane call to apr serve, appended by the
+    lane client (OBS-01) to lane.jsonl under the forjar-declared fleet_perf_dir.
+    Each row is the §2.1 identity block (apr-obs-row-identity-v1, schema =
+    "apr-lane-row-v1") plus the fields below. A row missing any of them is
+    inadmissible and counts as a missing row.
+
+    Fields beyond the identity block (every one REQUIRED):
+      prompt_n            prompt tokens, from the usage the server returned
+      completion_n        completion tokens, from the same usage
+      prompt_sha256       ^[0-9a-f]{64}$ of the exact prompt bytes sent
+      wall_ms             client-measured request wall time
+      ttft_ms             client-measured time to first token when streaming; null otherwise
+      ttft_reason         null when ttft_ms is measured; "non-streaming" when it is not
+      prefill_ms_per_tok  prefill ms / prompt_n
+      decode_ms_per_tok   decode ms / completion_n
+      ok                  bool
+      error               null iff ok
+      load1               /proc/loadavg first field at request start
+      cold                true for the first request after unit start
+
+    Lane rows are OPERATIONAL data, not benchmark data: they feed failure
+    detection and per-token p50/p95. No apr/llama ratio is ever computed from a
+    lane row (§2.3); ratios come from apr-perf-ledger-v1 (aprender#4551).
+
+equations:
+  row_admissible:
+    formula: |
+      LANE = {prompt_n, completion_n, prompt_sha256, wall_ms, ttft_ms, ttft_reason,
+              prefill_ms_per_tok, decode_ms_per_tok, ok, error, load1, cold}
+      admissible_lane(r) ⇔ admissible_identity(r) ∧ r.schema = "apr-lane-row-v1" ∧ LANE ⊆ keys(r)
+    domain: 'one line of lane.jsonl'
+    codomain: bool
+    invariants:
+    - 'admissible_identity is apr-obs-row-identity-v1 §admissible; this contract does not restate it.'
+
+  ttft_honesty:
+    formula: |
+      streaming(call)  ⇒ ttft_ms ≠ null ∧ ttft_reason = null
+      ¬streaming(call) ⇒ ttft_ms = null ∧ ttft_reason = "non-streaming"
+      REQUIRE: ¬streaming(call) ⇒ ttft_ms ≠ wall_ms
+    domain: 'the ttft_ms/ttft_reason/wall_ms triple of one row'
+    codomain: bool
+    invariants:
+    - 'A non-streaming client cannot observe the first token. Copying wall_ms into ttft_ms reports a latency nobody measured.'
+
+  every_call_writes:
+    formula: |
+      |rows(lane.jsonl, window)| = |lane calls(window)|
+      REQUIRE: no gap > 24 h while the lane unit is active (R-2)
+    domain: 'the lane ledger of one host over a 24 h window'
+    codomain: bool
+    invariants:
+    - 'A call that wrote no row is a missing row, not an absent one. Empty is RED.'
+
+falsification_tests:
+  - id: FALSIFY-OBS-LANE-001
+    rule: every_call_writes
+    prediction: 'a lane client with its write step removed turns the every-call check RED (rows < calls)'
+    test: 'planted RED→GREEN in the OBS-01 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a lane that stopped recording reads as a lane with nothing to record'
+  - id: FALSIFY-OBS-LANE-002
+    rule: row_admissible
+    prediction: 'a row missing model_sha256 is inadmissible and counted as missing'
+    test: 'planted RED→GREEN in the OBS-01 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a row that cannot name its weights feeds the p50/p95 series'
+  - id: FALSIFY-OBS-LANE-003
+    rule: ttft_honesty
+    prediction: 'a non-streaming row with ttft_ms == wall_ms is refused'
+    test: 'planted RED→GREEN in the OBS-01 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'wall time is published as time to first token'
+
+proof_obligations:
+  - type: invariant
+    property: 'every lane row carries the identity block and every lane field'
+    formal: '∀ r ∈ lane.jsonl: admissible_lane(r) ∨ counted_missing(r)'
+    applies_to: all
+  - type: invariant
+    property: 'ttft is never fabricated from wall time'
+    formal: '¬streaming(r) ⇒ r.ttft_ms = null'
+    applies_to: all
+  - type: invariant
+    property: 'one row per lane call'
+    formal: '|rows| = |calls|'
+    applies_to: all
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: >
+    Schema only (OBS-00). The writer is OBS-01 (owner 60); its PR plants the
+    three §3 falsifiers RED→GREEN. Nothing is tested here and the count says so.

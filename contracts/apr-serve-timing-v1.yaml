@@ -1,0 +1,96 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §2.2 (this ledger), §3 (SRV-TIM-001 F1–F5), §7 OBS-03 (its writer row)'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries; not restated here'
+  - 'contracts/apr-serve-timings-v1.yaml (SRV-TIM-001, owner 2e; on origin/fold/srv-tim-001-into-b1r at the time of writing) — owns the timing VALUES, the [request] log line and F1–F5; not restated here'
+  - 'aprender#4487 — OBS-00: this schema'
+  description: >
+    The serve ledger: one row per apr serve request, in serve.jsonl under the
+    forjar-declared fleet_perf_dir (journal → per-host file, §2.2).
+
+    This contract is deliberately THIN. The timing split, the per-request log
+    record and the five falsifiers F1–F5 belong to SRV-TIM-001
+    (apr-serve-timings-v1, plural, owner 2e), which already writes one JSON
+    record per request to `--timings-log`. This contract does not restate that
+    record; it states only what makes that record an APR-OBS-001 ledger row:
+
+      row = identity block (apr-obs-row-identity-v1, schema = "apr-serve-timing-v1")
+          ∪ the apr-serve-timings-v1 request record
+
+    and the two joins the ledger exists for. The identity request_id is the
+    record's client_request_id (the X-Request-ID the lane client sent), so
+    OBS-04 can join a lane row to its serve row.
+
+    Known gap, recorded rather than papered over: at the time of writing the
+    --timings-log record carries `build` and `host` but not the full §2.1 block
+    (no crate_tarball_sha256, binary_sha256, model_sha256, gpu_proof), so its
+    rows are INADMISSIBLE here until OBS-03 adds them.
+
+equations:
+  row_admissible:
+    formula: |
+      admissible_serve(r) ⇔ admissible_identity(r)
+                          ∧ r.schema = "apr-serve-timing-v1"
+                          ∧ admissible_request_record(r)       # apr-serve-timings-v1 §request_log_line
+    domain: 'one line of serve.jsonl'
+    codomain: bool
+    invariants:
+    - 'Neither half is restated here. A field added to either contract is picked up by reference, never copied.'
+
+  request_join:
+    formula: |
+      r.request_id = r.client_request_id
+      join(lane, serve) on request_id; OBS-04 compares serve total_ms with lane wall_ms
+      REQUIRE: client_request_id = null ⇒ row is unjoinable and counted, never silently dropped
+    domain: 'a serve row and the lane row that sent it'
+    codomain: 'a joined pair, or a counted unjoinable row'
+    invariants:
+    - 'The server never invents a request_id for the join. An absent header is an unjoinable row, visible in the count.'
+
+  one_row_per_request:
+    formula: '|rows(serve.jsonl, window)| = |requests served(window)|'
+    domain: 'the serve ledger of one host over a window'
+    codomain: bool
+    invariants:
+    - 'apr-serve-timings-v1 postcondition "exactly one line per request" is the writer side of this; empty is RED (R-2).'
+
+falsification_tests:
+  - id: FALSIFY-OBS-SERVE-001
+    rule: row_admissible
+    prediction: 'a serve row carrying only the SRV-TIM-001 record (build, host) and no model_sha256 / crate_tarball_sha256 is inadmissible'
+    test: 'planted RED→GREEN in the OBS-03 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a timing row that cannot name its binary or weights feeds the serve series'
+  - id: FALSIFY-OBS-SERVE-002
+    rule: request_join
+    prediction: 'a request sent without X-Request-ID produces a row counted as unjoinable, not a row with a server-generated join key'
+    test: 'planted RED→GREEN in the OBS-03 / OBS-04 PRs; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'OBS-04 joins rows that never belonged together'
+  - id: FALSIFY-OBS-SERVE-003
+    rule: row_admissible
+    prediction: 'SRV-TIM-001 F1–F5 (contracts/apr-serve-timings-v1.yaml FALSIFY-SRV-TIM-*) each turn RED on their planted mutation'
+    test: 'owned and run by contracts/apr-serve-timings-v1.yaml; this contract claims no result of its own for them'
+    if_fails: 'the timing values are wrong, whatever the row shape says'
+
+proof_obligations:
+  - type: invariant
+    property: 'every serve row carries the identity block and the SRV-TIM-001 request record'
+    formal: '∀ r ∈ serve.jsonl: admissible_serve(r) ∨ counted_missing(r)'
+    applies_to: all
+  - type: invariant
+    property: 'the join key is the client request id, never a server-generated one'
+    formal: 'r.request_id = r.client_request_id'
+    applies_to: all
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: >
+    Schema only (OBS-00). The writer is OBS-03 (owner 2e, SRV-TIM-001), whose
+    contract already holds the timing obligations; this one adds the ledger
+    shape. Nothing is tested here.

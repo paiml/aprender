@@ -1,0 +1,96 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §2.2 (this ledger), §3 (its falsifiers), §5.2, §7 OBS-09 (its writer row), OBS-11'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries; not restated here'
+  - 'crates/aprender-serve/src/inference_trace/mod.rs — TraceStep, the tracer apr serve runs on X-Trace-Level'
+  - 'aprender#4487 — OBS-00: this schema'
+  description: >
+    The trace ledger: one row per traced apr serve request, written when a
+    request carries `X-Trace-Level: step|layer` (OBS-09) and once per nightly.
+    Rows go in trace.jsonl under the forjar-declared fleet_perf_dir; the trace
+    payload itself exceeds the 4096-byte line limit and is a side file under
+    trace/, referenced by path + sha256 (§2.2).
+
+    Each row is the §2.1 identity block (apr-obs-row-identity-v1, schema =
+    "apr-trace-v1") plus (every one REQUIRED):
+      trace_level     step | layer
+      provenance      Measured | NotRun{reason}
+      wall_ms         request wall time
+      steps           [{step: TraceStep name, ms}] — per-step durations; per-layer when trace_level = layer
+      payload_path    side-file path under trace/
+      payload_sha256  ^[0-9a-f]{64}$ of the side file
+
+    The ledger exists for OBS-11: every 0.71 perf PR carries a before/after
+    apr-trace-v1 diff. A trace that says Measured when the tracer did not run
+    would make that diff a fabrication, so provenance is the load-bearing field.
+
+equations:
+  row_admissible:
+    formula: |
+      TRACE = {trace_level, provenance, wall_ms, steps, payload_path, payload_sha256}
+      admissible_trace(r) ⇔ admissible_identity(r) ∧ r.schema = "apr-trace-v1" ∧ TRACE ⊆ keys(r)
+                          ∧ sha256(read(r.payload_path)) = r.payload_sha256
+    domain: 'one line of trace.jsonl and the side file it names'
+    codomain: bool
+    invariants:
+    - 'A row whose side file is missing or whose sha does not match is inadmissible: the payload is the evidence, the row only points at it.'
+
+  provenance_honesty:
+    formula: |
+      provenance = Measured ⇔ tracer_ran(request)
+      ¬tracer_ran(request)  ⇒ provenance = NotRun{reason} ∧ steps = []
+    domain: 'one traced request'
+    codomain: bool
+    invariants:
+    - 'The header being present is not the tracer running. Measured requires the tracer to have emitted at least one step for this request.'
+
+  steps_within_wall:
+    formula: 'Σ_{s ∈ steps} s.ms ≤ wall_ms'
+    domain: 'the steps of one Measured row, at one trace_level'
+    codomain: bool
+    invariants:
+    - 'Steps at one level partition (part of) the request. A sum above wall means a step was double-counted or invented.'
+
+falsification_tests:
+  - id: FALSIFY-OBS-TRACE-001
+    rule: provenance_honesty
+    prediction: 'a trace returned with provenance Measured when the tracer did not run is refused'
+    test: 'planted RED→GREEN in the OBS-09 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'an OBS-11 before/after diff compares two fabrications'
+  - id: FALSIFY-OBS-TRACE-002
+    rule: steps_within_wall
+    prediction: 'a row whose per-layer sum exceeds the request wall is refused'
+    test: 'planted RED→GREEN in the OBS-09 PR (spec §3); NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a double-counted layer is read as the hot spot to optimise'
+  - id: FALSIFY-OBS-TRACE-003
+    rule: row_admissible
+    prediction: 'a row whose payload_sha256 does not match its side file is inadmissible'
+    test: 'planted RED→GREEN in the OBS-09 PR; NotRun{NoDeclaredExecutor} until then'
+    if_fails: 'a rewritten trace payload is cited as the original (no ledger is rewritten, §2.2)'
+
+proof_obligations:
+  - type: invariant
+    property: 'Measured iff the tracer ran'
+    formal: 'r.provenance = Measured ⇔ tracer_ran(r.request_id)'
+    applies_to: all
+  - type: invariant
+    property: 'step durations never exceed wall'
+    formal: 'r.provenance = Measured ⇒ Σ r.steps.ms ≤ r.wall_ms'
+    applies_to: all
+  - type: invariant
+    property: 'the row pins its payload'
+    formal: 'sha256(r.payload_path) = r.payload_sha256'
+    applies_to: all
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: >
+    Schema only (OBS-00). The writer is OBS-09, the first row of the 0.71 serve
+    epic; its PR plants the §3 falsifiers RED→GREEN. Nothing is tested here.
