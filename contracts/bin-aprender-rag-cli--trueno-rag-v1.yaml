@@ -16,7 +16,9 @@
 #   after clap, `--mode` before the index loads and the other three not at all until the index is read. LIVE RED.
 #   surface_audit.csv holds 13 rows: 6 are set-equal to the walk; 7 name `eval compare|gate|generate|judge|metrics|
 #   retrieve|sample`, behind `#[cfg(feature = "eval")]` (lib.rs:309) which the default build lacks. LIVE RED:
-#   7 bin:ledgerOrphan, until the rows name their feature or the release build enables it (as S10 alimentar).
+#   7 bin:ledgerOrphan on a default snapshot. All 7 are in scripts/dogfood_reconcile.py FEATURE_GATED (the
+#   enumerated, rebuild-proven allowance the dogfood gate already honours); extract:binary must honour it too.
+# G1.3 FIXED on d1/ont10-s12-trueno-rag-g13 @134e256bb9 (value_parser lists; live exit 2), pending fold into car.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
@@ -125,5 +127,5 @@ falsification_tests:
     rule: 'the command set equals the snapshot and every ledger row resolves'
     prediction: 'commands = {demo, extract-frames, index, info, query, transcribe}; the 13 ledger rows minus the 7 `eval *` rows are set-equal to it'
     test: 'pv lint contracts/ --gate shapes on the snapshot (ONT-4g extract:binary)'
-    if_fails: 'LIVE RED 2026-09-27: 7 `eval *` rows are bin:ledgerOrphan — the ledger claims a shipped `trueno-rag eval` the release binary does not have'
+    if_fails: 'LIVE RED 2026-09-27 on a default-feature snapshot: 7 `eval *` rows are bin:ledgerOrphan. They are NOT a ledger defect: all 7 are enumerated in scripts/dogfood_reconcile.py FEATURE_GATED (proven by rebuilding with --features eval), so the RED clears when extract:binary reads that enumerated set as an allowance (same fix clears the S9 apr and S10 alimentar feature-gated rows) — never by a count tolerance, and never by deleting the rows'
     mutation: 'delete `query` from the snapshot; must turn RED on bin:command (5) and bin:ledgerOrphan naming `trueno-rag query`'
