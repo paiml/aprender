@@ -106,6 +106,16 @@ fn analyze_ptx_file(file_path: &str) -> Result<AnalysisResult, String> {
     let mut parser = Parser::new(&ptx_source).map_err(|e| format!("Parse error: {}", e))?;
     let module = parser.parse().map_err(|e| format!("Parse error: {}", e))?;
 
+    // A PTX module opens with `.version`. Without it (an empty or comment-only
+    // file) there is nothing to analyze; scoring it printed "Score: 97.1/100" and
+    // exited 0 (#4079).
+    if module.version.0 == 0 {
+        return Err(format!(
+            "{}: not a PTX module (no .version directive)",
+            file_path
+        ));
+    }
+
     let module_name = std::path::Path::new(file_path)
         .file_stem()
         .and_then(|s| s.to_str())
