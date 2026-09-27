@@ -1,6 +1,6 @@
-//! ONT-10 S11 surface gate for the `verificar` binary: `contracts/bin-aprender-verify-ml--verificar-v1.yaml`.
+//! ONT-10 S11 surface gate for the `aprender-verify` binary: `contracts/bin-aprender-verify-ml--aprender-verify-v1.yaml`.
 //!
-//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_verificar`), which
+//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_aprender-verify`), which
 //! cannot fall back to a stale copy on PATH. A test that only asserted success on good
 //! input would pass against `fn main() {}`, so each invariant here is one the binary
 //! can actually fail: a rejected input must exit non-zero AND must not be a panic.
@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-const BIN: &str = env!("CARGO_BIN_EXE_verificar");
+const BIN: &str = env!("CARGO_BIN_EXE_aprender-verify");
 
 /// The pinned surface. Adding or removing a subcommand edits this list and the
 /// contract's `surface_equals_snapshot` formula together.
@@ -39,7 +39,7 @@ fn advertised() -> Vec<String> {
 
 /// Three inputs no subcommand can process: a missing path, an empty file, garbage bytes.
 fn unusable_inputs() -> [String; 3] {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("verificar-surface-gate");
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-verify-surface-gate");
     std::fs::create_dir_all(&dir).expect("create fixture dir");
     let empty = dir.join("empty.bin");
     let garbage = dir.join("garbage.bin");
@@ -58,7 +58,7 @@ fn assert_rejected(args: &[&str]) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         matches!(code, Some(c) if c != 0 && c != 101) && !stderr.contains("panicked"),
-        "`verificar {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
+        "`aprender-verify {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
         args.join(" ")
     );
 }
@@ -91,7 +91,7 @@ fn every_advertised_subcommand_is_reachable() {
         let out = run(&[cmd, "--help"]);
         assert!(
             out.status.success(),
-            "`verificar {cmd} --help` exited {:?}",
+            "`aprender-verify {cmd} --help` exited {:?}",
             out.status.code()
         );
     }

@@ -1,18 +1,18 @@
-//! ONT-10 surface gate for the `ptop` binary: `contracts/bin-aprender-present-terminal--ptop-v1.yaml` (aprender#4079).
+//! ONT-10 surface gate for the `aprender-ptop` binary: `contracts/bin-aprender-present-terminal--aprender-ptop-v1.yaml` (aprender#4079).
 //!
-//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_ptop`), which
+//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_aprender-ptop`), which
 //! cannot fall back to a stale copy on PATH. A test that only asserted success on good
 //! input would pass against `fn main() {}`, so each invariant here is one the binary
 //! can actually fail: a rejected input must exit non-zero AND must not be a panic.
 
 use std::process::{Command, Output};
 
-const BIN: &str = env!("CARGO_BIN_EXE_ptop");
+const BIN: &str = env!("CARGO_BIN_EXE_aprender-ptop");
 
 /// An argument list the parser must refuse as an unknown subcommand or extra positional.
 const UNKNOWN_SUB: &[&str] = &["no-such-subcommand"];
 
-/// The pinned surface: `ptop` has no subcommands, so its options are the command set.
+/// The pinned surface: `aprender-ptop` has no subcommands, so its options are the command set.
 /// Adding or removing an option edits this list and the contract's FALSIFY-BIN-*-004
 /// prediction together. `--help`/`--version` are clap's and are not listed.
 const OPTIONS: &[&str] = &[
@@ -62,7 +62,7 @@ fn assert_usage_error(args: &[&str]) {
     assert_eq!(
         out.status.code(),
         Some(2),
-        "`ptop {}` must be a usage error (exit 2)\nstderr: {}",
+        "`aprender-ptop {}` must be a usage error (exit 2)\nstderr: {}",
         args.join(" "),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -73,7 +73,7 @@ fn version_reports_the_crate_version() {
     let out = run(&["--version"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let want = format!("ptop {}", env!("CARGO_PKG_VERSION"));
+    let want = format!("aprender-ptop {}", env!("CARGO_PKG_VERSION"));
     assert!(
         stdout.starts_with(&want),
         "--version printed {stdout:?}, not {want:?}"
@@ -106,7 +106,7 @@ fn malformed_arguments_are_usage_errors() {
     assert_usage_error(&["--explode", "nosuch"]);
 }
 
-/// ptop reads no input it could reject: a missing or unreadable `-c` config warns and
+/// aprender-ptop reads no input it could reject: a missing or unreadable `-c` config warns and
 /// falls back to the defaults (finding a01-ont10-ptop-config-falls-back), so its
 /// unusable input is a malformed option value, which clap must refuse.
 #[test]

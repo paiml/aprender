@@ -1,6 +1,6 @@
-//! ONT-10 surface gate for the `simular` binary: `contracts/bin-aprender-simulate--simular-v1.yaml` (aprender#4079).
+//! ONT-10 surface gate for the `aprender-simulate` binary: `contracts/bin-aprender-simulate--aprender-simulate-v1.yaml` (aprender#4079).
 //!
-//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_simular`), which
+//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_aprender-simulate`), which
 //! cannot fall back to a stale copy on PATH. A test that only asserted success on good
 //! input would pass against `fn main() {}`, so each invariant here is one the binary
 //! can actually fail: a rejected input must exit non-zero AND must not be a panic.
@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-const BIN: &str = env!("CARGO_BIN_EXE_simular");
+const BIN: &str = env!("CARGO_BIN_EXE_aprender-simulate");
 
 /// An argument list the parser must refuse as an unknown subcommand or extra positional.
 const UNKNOWN_SUB: &[&str] = &["no-such-subcommand"];
@@ -56,7 +56,7 @@ fn advertised() -> Vec<String> {
 
 /// Three inputs no command can process: a missing path, an empty file, garbage bytes.
 fn unusable_inputs() -> Vec<String> {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("simular-surface-gate");
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-simulate-surface-gate");
     std::fs::create_dir_all(&dir).expect("create fixture dir");
     let empty = dir.join("empty.bin");
     let garbage = dir.join("garbage.bin");
@@ -78,7 +78,7 @@ fn assert_rejected(args: &[&str]) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         matches!(code, Some(c) if c != 0 && c != 101) && !stderr.contains("panicked"),
-        "`simular {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
+        "`aprender-simulate {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
         args.join(" ")
     );
 }
@@ -88,7 +88,7 @@ fn assert_usage_error(args: &[&str]) {
     assert_eq!(
         out.status.code(),
         Some(2),
-        "`simular {}` must be a usage error (exit 2)\nstderr: {}",
+        "`aprender-simulate {}` must be a usage error (exit 2)\nstderr: {}",
         args.join(" "),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -99,7 +99,7 @@ fn version_reports_the_crate_version() {
     let out = run(&["--version"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let want = format!("simular {}", env!("CARGO_PKG_VERSION"));
+    let want = format!("aprender-simulate {}", env!("CARGO_PKG_VERSION"));
     assert!(
         stdout.starts_with(&want),
         "--version printed {stdout:?}, not {want:?}"
@@ -122,7 +122,7 @@ fn every_advertised_subcommand_is_reachable() {
         let out = run(&[cmd, "--help"]);
         assert!(
             out.status.success(),
-            "`simular {cmd} --help` exited {:?}",
+            "`aprender-simulate {cmd} --help` exited {:?}",
             out.status.code()
         );
     }

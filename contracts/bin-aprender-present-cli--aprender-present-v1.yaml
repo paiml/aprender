@@ -1,21 +1,23 @@
 # ──────────────────────────────────────────────
-# bin-aprender-present-cli--presentar-v1 — the `presentar` bin target of package aprender-present-cli (ONT-10 slice S14 (2/2))
+# RENAMED 2026-09-27 (untangle, #4430 bin renames): bin `presentar` -> `aprender-present`. Measurements quoted below
+# were taken on the old name and are re-taken by the next snapshot.
+# bin-aprender-present-cli--aprender-present-v1 — the `aprender-present` bin target of package aprender-present-cli (ONT-10 slice S14 (2/2))
 #
 # Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha, helpSha,
 # gitSha, …) live in binary-surface-v1 and are not restated. Moved from docs/ont-10/binary-contracts/ (aprender-bb).
 #
-# binary-presentar-v1 — ONT-10 slice S14 (2/2): the `presentar` binary (package aprender-present-cli) as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+# binary-aprender-present-v1 — ONT-10 slice S14 (2/2): the `aprender-present` binary (package aprender-present-cli) as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
 #
 # MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, LC_ALL=C recursive --help walk):
-#   - `presentar --version` = "presentar 0.69.3"; G0.1 (git sha) is a warning and RED today.
+#   - `aprender-present --version` = "aprender-present 0.69.3"; G0.1 (git sha) is a warning and RED today.
 #   - the walk gives 7 leaves, set-equal to surface_audit.csv's 7 rows.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
-name: bin-aprender-present-cli--presentar-v1
+name: bin-aprender-present-cli--aprender-present-v1
 version: "1.0.0"
 scope: >
-  The built `presentar` target of package `aprender-present-cli` (default features) as the focus node binary/aprender-present-cli/presentar: its identity and its exact command surface, and the surface_audit.csv rows that must resolve to it.
+  The built `aprender-present` target of package `aprender-present-cli` (default features) as the focus node binary/aprender-present-cli/aprender-present: its identity and its exact command surface, and the surface_audit.csv rows that must resolve to it.
 status: active
 
 metadata:
@@ -25,8 +27,8 @@ metadata:
   last_modified: '2026-09-27'
   author: PAIML Engineering
   description: >
-    ONT-10 binary slice S14 (2/2) (presentar). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
-    for binary/aprender-present-cli/presentar, on the binary-surface-v1 vocabulary.
+    ONT-10 binary slice S14 (2/2) (aprender-present). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender-present-cli/aprender-present, on the binary-surface-v1 vocabulary.
   references:
     - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
     - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
@@ -37,18 +39,18 @@ metadata:
 
 entity:
   type: binary
-  ref: binary/aprender-present-cli/presentar
+  ref: binary/aprender-present-cli/aprender-present
 
 relations:
   depends_on: [binary-surface-v1]
 
 shapes:
-  - id: binary-presentar-surface
-    targetClass: bin:target/aprender-present-cli/presentar
+  - id: binary-aprender-present-surface
+    targetClass: bin:target/aprender-present-cli/aprender-present
     properties:
-      - {path: bin:name, minCount: 1, maxCount: 1, in: ["presentar"]}
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-present"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-present-cli"]}
-      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^presentar [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^aprender-present [0-9]+\\.[0-9]+\\.[0-9]+"}
       # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
       - path: bin:command
@@ -67,8 +69,8 @@ shapes:
 
 equations:
   surface_equals_snapshot:
-    formula: "commands(binary/aprender-present-cli/presentar) = C, |C| = 7, where C = the invocable command paths of the recursive --help walk of the default-feature build ∧ ledgerOrphan = { r ∈ csv : r.binary = presentar ∧ strip(r.feature) ∉ C }; unledgeredCommand = C ∖ { strip(r.feature) : r.binary = presentar }"
-    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is presentar; strip removes the leading binary name"
+    formula: "commands(binary/aprender-present-cli/aprender-present) = C, |C| = 7, where C = the invocable command paths of the recursive --help walk of the default-feature build ∧ ledgerOrphan = { r ∈ csv : r.binary = aprender-present ∧ strip(r.feature) ∉ C }; unledgeredCommand = C ∖ { strip(r.feature) : r.binary = aprender-present }"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is aprender-present; strip removes the leading binary name"
     codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan row or unledgered command"
     invariants:
       - "in + minCount 7 + maxCount 7 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
@@ -76,13 +78,13 @@ equations:
     preconditions:
       - "the snapshot was written at this commit, default features"
     postconditions:
-      - "help_sha256 in the snapshot is the sha256 of `presentar --help` at this commit"
+      - "help_sha256 in the snapshot is the sha256 of `aprender-present --help` at this commit"
     lean_theorem: none — L4 not declared
 
 invariants:
   - id: BIN-PRESENTAR-INV-001
-    property: every presentar surface member has an audited ledger row, and every ledger row names one
-    formal: '∀ c ∈ surface(presentar): ∃ r ∈ surface_audit : r.binary = presentar ∧ path(r) = c; ∀ r with r.binary = presentar: path(r) ∈ surface(presentar)'
+    property: every aprender-present surface member has an audited ledger row, and every ledger row names one
+    formal: '∀ c ∈ surface(aprender-present): ∃ r ∈ surface_audit : r.binary = aprender-present ∧ path(r) = c; ∀ r with r.binary = aprender-present: path(r) ∈ surface(aprender-present)'
     prose: false
   - id: BIN-PRESENTAR-INV-002
     property: unusable input is a clean rejection, never a success and never a panic
@@ -92,21 +94,21 @@ invariants:
 falsification_tests:
   - id: FALSIFY-BIN-PRESENTAR-001
     rule: 'G1.2 help answers'
-    prediction: '`presentar --help` exits 0 with non-empty stdout'
+    prediction: '`aprender-present --help` exits 0 with non-empty stdout'
     test: 'cargo test -p aprender-present-cli --test cli_surface_gate every_advertised_subcommand_is_reachable'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
     mutation: 'make the top-level --help return an error; must turn RED'
   - id: FALSIFY-BIN-PRESENTAR-002
     rule: 'G1.2 an unknown flag is a usage error'
-    prediction: '`presentar --no-such-flag` exits 2'
+    prediction: '`aprender-present --no-such-flag` exits 2'
     test: 'cargo test -p aprender-present-cli --test cli_surface_gate unknown_'
     if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
     mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
   - id: FALSIFY-BIN-PRESENTAR-003
     rule: 'G0.1 the version names the commit'
-    prediction: '`presentar --version` contains the first 9 hex of the git sha it was built from'
+    prediction: '`aprender-present --version` contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-27: "presentar 0.69.3" — no sha; a stale presentar reads as HEAD'
+    if_fails: 'LIVE RED 2026-09-27: "aprender-present 0.69.3" — no sha; a stale aprender-present reads as HEAD'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-PRESENTAR-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
@@ -116,10 +118,10 @@ falsification_tests:
     mutation: 'remove `bundle` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
   - id: FALSIFY-BIN-PRESENTAR-005
     rule: 'ledger rows exist'
-    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = presentar (7 rows on 2026-09-27)'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = aprender-present (7 rows on 2026-09-27)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
-    mutation: 'delete every presentar row; must turn RED naming presentar'
+    mutation: 'delete every aprender-present row; must turn RED naming aprender-present'
   - id: FALSIFY-BIN-PRESENTAR-006
     rule: 'unusable input is rejected cleanly'
     prediction: '`check`, `score` and `gate` on a missing, empty and garbage manifest: each exits non-zero, not 101, with no "panicked" on stderr'

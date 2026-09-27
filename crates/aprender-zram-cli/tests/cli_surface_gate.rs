@@ -1,6 +1,6 @@
-//! ONT-10 S11 surface gate for the `trueno-zram` binary: `contracts/bin-aprender-zram-cli--trueno-zram-v1.yaml`.
+//! ONT-10 S11 surface gate for the `aprender-zram` binary: `contracts/bin-aprender-zram-cli--aprender-zram-v1.yaml`.
 //!
-//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_trueno-zram`), which
+//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_aprender-zram`), which
 //! cannot fall back to a stale copy on PATH. A test that only asserted success on good
 //! input would pass against `fn main() {}`, so each invariant here is one the binary
 //! can actually fail: a rejected input must exit non-zero AND must not be a panic.
@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-const BIN: &str = env!("CARGO_BIN_EXE_trueno-zram");
+const BIN: &str = env!("CARGO_BIN_EXE_aprender-zram");
 
 /// The pinned surface. Adding or removing a subcommand edits this list and the
 /// contract's `surface_equals_snapshot` formula together.
@@ -36,7 +36,7 @@ fn advertised() -> Vec<String> {
 
 /// Three inputs no subcommand can process: a missing path, an empty file, garbage bytes.
 fn unusable_inputs() -> [String; 3] {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("trueno-zram-surface-gate");
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-zram-surface-gate");
     std::fs::create_dir_all(&dir).expect("create fixture dir");
     let empty = dir.join("empty.bin");
     let garbage = dir.join("garbage.bin");
@@ -55,7 +55,7 @@ fn assert_rejected(args: &[&str]) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         matches!(code, Some(c) if c != 0 && c != 101) && !stderr.contains("panicked"),
-        "`trueno-zram {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
+        "`aprender-zram {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
         args.join(" ")
     );
 }
@@ -88,7 +88,7 @@ fn every_advertised_subcommand_is_reachable() {
         let out = run(&[cmd, "--help"]);
         assert!(
             out.status.success(),
-            "`trueno-zram {cmd} --help` exited {:?}",
+            "`aprender-zram {cmd} --help` exited {:?}",
             out.status.code()
         );
     }
@@ -107,7 +107,7 @@ fn unknown_flag_is_a_usage_error() {
 #[test]
 fn unusable_input_is_rejected() {
     let bad = unusable_inputs();
-    // `bad` is unused here: no trueno-zram subcommand takes a file. The rejections are
+    // `bad` is unused here: no aprender-zram subcommand takes a file. The rejections are
     // clap-level so they never reach a device; create/remove are never run with valid
     // arguments by this gate because they change the host's zram devices.
     let _ = bad;

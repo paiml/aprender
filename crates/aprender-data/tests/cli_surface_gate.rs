@@ -1,6 +1,6 @@
-//! ONT-10 S10 surface gate for the `alimentar` binary: `contracts/bin-aprender-data--alimentar-v1.yaml`.
+//! ONT-10 S10 surface gate for the `aprender-data` binary: `contracts/bin-aprender-data--aprender-data-v1.yaml`.
 //!
-//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_alimentar`), which
+//! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_aprender-data`), which
 //! cannot fall back to a stale copy on PATH. A test that only asserted success on good
 //! input would pass against `fn main() {}`, so each invariant here is one the binary
 //! can actually fail: a rejected input must exit non-zero AND must not be a panic.
@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-const BIN: &str = env!("CARGO_BIN_EXE_alimentar");
+const BIN: &str = env!("CARGO_BIN_EXE_aprender-data");
 
 /// The pinned surface. Adding or removing a subcommand edits this list and the
 /// contract's `surface_equals_snapshot` formula together.
@@ -52,7 +52,7 @@ fn advertised() -> Vec<String> {
 
 /// Three inputs no subcommand can process: a missing path, an empty file, garbage bytes.
 fn unusable_inputs() -> [String; 3] {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("alimentar-surface-gate");
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-data-surface-gate");
     std::fs::create_dir_all(&dir).expect("create fixture dir");
     let empty = dir.join("empty.bin");
     let garbage = dir.join("garbage.bin");
@@ -71,7 +71,7 @@ fn assert_rejected(args: &[&str]) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         matches!(code, Some(c) if c != 0 && c != 101) && !stderr.contains("panicked"),
-        "`alimentar {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
+        "`aprender-data {}` must reject its input with a clean non-zero exit, got {code:?}\nstderr: {stderr}",
         args.join(" ")
     );
 }
@@ -104,7 +104,7 @@ fn every_advertised_subcommand_is_reachable() {
         let out = run(&[cmd, "--help"]);
         assert!(
             out.status.success(),
-            "`alimentar {cmd} --help` exited {:?}",
+            "`aprender-data {cmd} --help` exited {:?}",
             out.status.code()
         );
     }
@@ -123,7 +123,7 @@ fn unknown_flag_is_a_usage_error() {
 #[test]
 fn unusable_input_is_rejected() {
     let bad = unusable_inputs();
-    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("alimentar-surface-gate-out.parquet");
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-data-surface-gate-out.parquet");
     let out = out.display().to_string();
     for b in &bad {
         assert_rejected(&["info", b]);
