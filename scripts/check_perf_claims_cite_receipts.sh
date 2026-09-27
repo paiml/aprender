@@ -368,8 +368,17 @@ fi
 printf 'universe: %s markdown + %s Rust file(s) (doc comments only)\n' \
     "${#MD[@]}" "${#RS[@]}"
 
+# A file with no CLAIM_RE line emits nothing from scan_file, so one batched
+# `grep -l` over the universe picks the candidates and the loop skips the rest;
+# the per-file forks for ~5,000 claim-free files were most of this step's ~200 s
+# (#4527). Same pattern, same grep, so the candidate set is exactly the set of
+# files scan_file would have found a line in.
+declare -A HASCLAIM=()
+while IFS= read -r -d '' c; do HASCLAIM[$c]=1; done < <(
+    printf '%s\0' "${SRC[@]}" | xargs -0 grep -lsZE "$CLAIM_RE" -- 2>/dev/null)
 records=""
 for rel in "${SRC[@]}"; do
+    [ -n "${HASCLAIM[$rel]:-}" ] || continue
     r=$(scan_file "." "$rel")
     [ -n "$r" ] && records="${records}${r}"$'\n'
 done
