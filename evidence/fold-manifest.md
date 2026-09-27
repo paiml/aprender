@@ -86,3 +86,92 @@ suite for main `761d6247de` itself. It is marked PRE-EXISTING below and is not c
 - **F8** (gdn + 4486): 49fb4bb4cf depends on #4273 split-decode, which is car-only. It applies after car lands.
 - **F10** (2530 + df/2556): the ratchet ceiling was measured on batch/0.70.0: `kernel contracts self-exempted by registry: true rose to 513 (ceiling 512)`. Owner df re-measures on main.
 - **F13** (0d/3559 + 98 ont4g): the binding.yaml files are car-only and ont4g needs batch/ont-10 files. Both apply after car and ont-10 land.
+
+---
+
+# Part 2 — post-LIFT fold plan for the OPEN PRs (aprender-3d, 2026-09-27 17:16Z)
+
+Scope: the 21 open PRs against a cap of 10. Part 1 above drains branches that have **no** PR; this part
+drains the PR list itself. Nothing here is executed before LIFT: no new PRs, no closes, no pushes to
+anyone's PR branch. Snapshot: origin/main `aca6f2d7f6`, car/0.70.0 `f2f6f8c965`. Every PR head was
+fetched as `refs/pull/N/head`.
+
+**Method (re-run these, do not trust the numbers):**
+- Patch-id dup check: for each PR, `git rev-list --no-merges origin/main..HEAD`, then per commit
+  `git show C | git patch-id --stable`, then count the patch-ids shared between PRs. Also
+  `git cherry origin/main HEAD` and `git cherry origin/car/0.70.0 HEAD` (a `-` means the patch is already there).
+- Quorum: a ticket quorum is a `docs/audits/quorum-*.json` added by the PR's own diff. A PR receipt is
+  `evidence/pr-review/N/<sha>/` on the head. **No open PR has a receipt for its current head.**
+  `present` is RED on 20/21: A2 "no receipt directory", or A3/Arm-4 "binds a DIFFERENT diff / no
+  diff_patch_id" (signed before #4421). So every PR, folded or not, needs a re-signed receipt on the
+  head that actually merges.
+- File overlap: `git diff --name-only $(git merge-base origin/main HEAD) HEAD`, then pairwise intersection.
+
+## Excluded (not folded)
+
+| PR | Why |
+|---|---|
+| #4429 car/0.70.0 | the release car |
+| #4502 batch/ont-10 | ONT-10. Carries #4122 EV-5a, which closes on its merge with a receipt (owner 3d, no auto-Closes) |
+| #4448 readme-tweak (spudnic) | a contributor PR in its own slot. `present` is GREEN; it is BEHIND, so update the branch, then land |
+| #4428 B1r serve/perf | an already-quorumed batch; 59 folds into it. 3 of its commits already have patch-ids on car (`git cherry origin/car/0.70.0` shows `-`); drop them when it is re-cut after car |
+| #4431 fold/b3 | already quorumed; 59's plan is to close it after #4502 (MOVE). **Blocker, see D1** |
+| #4459 rex/001 | held under PRM v3 (owner 84). It shares session.rs/session_tests.rs with #4577, and infer/{mod,inference_result}.rs with #4506: rebase it after those land |
+| already-quorumed singles | #4506, #4532, #4534, #4535, #4550, #4554, #4576: each carries its own ticket quorum. Folding voids it, so they land alone (section 3) |
+
+## Duplicate / move findings
+
+- **D1: #4431 cannot be closed as "moved into #4502" yet.** Of its 732 files, 152 differ at #4502 head
+  and 21 are absent there. 13 of the absent files are Lean `Challenge/*.lean` files that #4502 removed
+  on purpose (66's cross-contract dedup, 16:1xZ). That is forward. **The real residue is #4197 EV-6c
+  (Kani assume baseline, 0d):** `crates/aprender-contracts-cli/src/commands/discharge_kani.rs`,
+  `crates/aprender-contracts-cli/tests/pvl_kani_assume.rs`, `contracts/kani-assume-baseline.json`,
+  `ci/explicit-test-commands.d/464-aprender-contracts-cli-pvl-kani-assume.cmd`, `contracts/witness/bb2825…json`.
+  These exist only on #4431. Before #4431 closes, 0d/59 must MOVE them onto a branch that lands. The
+  131 other differing files need the same "forward, or lost?" check. Command:
+  `for f in $(git diff --name-only $(git merge-base origin/main A) A); do git cat-file -e B:$f || echo $f; done`
+- **D2: #4506 is 50/53 car commits.** It is based on an old car `11bcf6c2ba`. Only 3 commits are its own:
+  `36fc26df7f`, `fd5961ad8a`, `4fffd71d7c` (3/3 quorum on `f1810100d8`). After #4429 merges, re-cut it
+  fresh from main with only those 3, or it re-carries car.
+- **D3: #4429 x #4502 share 199 patch-ids, and #4431 x #4502 share 33.** Expected (stacked batches), so no action.
+  No other pair of open PRs shares a patch. `docs/roadmaps/roadmap.yaml` is the only file shared across
+  unrelated PRs (#4501/#4503/#4506/#4512/#4534), so resolve it as the union.
+
+## Landing order at LIFT
+
+**1. CI fixes (first; each unblocks the rest)**
+
+| Step | PR(s) | k | Note |
+|---|---|---|---|
+| 1a | #4512 signing-secret name (4 files) | 1 | Shares ci.yml with #4457, so it lands first. Workflow change: 3/3 agy quorum |
+| 1b | FOLD **CI-PR-REVIEW**: #4503 (diff classifier + docs tier) + #4517 (fork attest label) | 2 | Same workstream: they share 7 files (pr-review SKILL.md, ci/sections.yml, contracts/binding.yaml, pr-review-skill-v2.yaml, PR-REVIEW-SKILL-002-v2.md…). **#4503 first**, #4517 rebased onto it. Both unquorumed, so one 3/3 agy quorum covers the fold |
+| 1c | #4457 guards run-all (12 files) | 1 | Rebase it after 1a (ci.yml) and give it its own quorum. Kept apart from 1b because it is a different workstream (guards, not pr-review) |
+
+**2. #4448** (spudnic README): update the branch, and it lands on its own green.
+
+**3. Singles, already quorumed.** Order: smallest diff first, and 4554 before 4414 because they share present-cli main.rs.
+Each needs a re-signed receipt on the head that merges.
+
+| Order | PR | Files | Note |
+|---|---|---|---|
+| 3a | #4535 pv proof_status Lean scan | 4 | contracts-only |
+| 3b | #4550 serve over-length refusal | 5 | |
+| 3c | #4532 qwen35 per-arch logits budget | 5 | touches cuda-nightly.yml (workflow): its quorum must be 3/3 agy |
+| 3d | #4576 inspect header-only read | 34 | BEHIND: update the branch |
+| 3e | #4554 build reads in-tree contracts | 39 | before #4414 |
+| 3f | #4534 apr code tools / Qwen3.5 | 162 | biggest single, last |
+| 3g | #4506 F2 dense receipt | 11 | only after #4429 merges, and only the re-cut (D2) |
+
+**4. Folds and singles, not yet quorumed**
+
+| Fold | PRs | k | Note |
+|---|---|---|---|
+| F-OBS | #4501 OBS-10 loop admission + Part 1 F4 (cb/4493-obs06, bb/4491-obs04; no PR) | ≤3 | same epic, APR-OBS-001. F4's base fold/88-obs00-on-b3 must land or be folded first (Part 1) |
+| F-SERVE-BENCH | #4577 qwen35 bench session prefix | 1 | no like-kind open partner; it could ride #4428 B1r (serve/perf). Land it before #4459 (session.rs) |
+| S-UPDATE | #4414 update check (58 files) | 1 | has a quorum on the old head `3a75d9b93b`, stale; re-quorum on its head. After 3e |
+| S-DOCS | #4533 FLOW-003 v2.1 (1 file) | 1 | docs tier: land it after 1b so the docs-tier quorum applies |
+
+**Projected count:** steps 1–3 close 11 PRs: 1a, 1b ×2, 1c, #4448 and 3a–3f. 3g is a re-cut (close 1, open 1).
+That leaves 10: car, #4502, #4428, #4431, #4459, #4506', #4501, #4577, #4414, #4533. It drops to 9 when #4431
+closes after D1. That is at the cap, not over it. Section 4 then
+adds at most 1 new fold PR (F-OBS) and closes 3 (#4501, #4577, #4414 as they land).
