@@ -41,3 +41,38 @@ runs, merged and open PRs, each PR's arm/queue events, files and branch commits,
 
 The method for each metric is written in `dora.json` `.metrics.<key>.method`. A metric with n = 0 is
 `ok: null` (NO-DATA), never a pass.
+
+## Baseline: the exact command behind each number
+
+This week is the **baseline**: 7 of 9 targets missed. The raw inputs were fetched once, read-only:
+
+```bash
+scripts/release/queue_inputs.sh dora-fetch evidence/flow-003/dora-2026-09-27/raw 7
+#  ci_runs.jsonl      gh api repos/paiml/aprender/actions/workflows/ci.yml/runs?created=<12h slice>   (fetch_ci_runs)
+#  merged.json        gh pr list --state merged --search "merged:<start>..<end>" --limit 1000 --json number,createdAt,mergedAt,headRefName,baseRefName,title
+#  open.json          gh pr list --state open --limit 500 --json number,createdAt,headRefName,baseRefName,isDraft,mergeable
+#  main_commits.jsonl gh api --paginate "repos/paiml/aprender/commits?sha=main&since=<start>&until=<end>"
+#  pr_dora.jsonl      gh api graphql: per PR files, AUTO_MERGE_ENABLED / ADDED_TO_MERGE_QUEUE events, last 100 commits (parents)
+```
+
+Each number below comes from `Q=scripts/release/queue_inputs.sh; R=evidence/flow-003/dora-2026-09-27/raw`. It is re-derived
+offline by `bash $Q dora $R | jq '<filter>'`, and the rule behind it is in `dora_compute`:
+
+| number | filter | rule |
+|---|---|---|
+| 223.8 min | `.metrics.lead_time_p50_min` | p50 of mergedAt − (first AutoMergeEnabled, else first AddedToMergeQueue), base = main |
+| 61.5 min | `.metrics.ci_p50_code_min` | p50 of updated_at − created_at, ci.yml `pull_request` runs, success/failure, non-release branch, PR not all-`.md` |
+| 15.3 min | `.metrics.ci_p50_docs_min` | same, PR whose every file is `.md` |
+| 13.1 h / 43.6 h | `.metrics.pr_age_p90_h_merged` / `_open` | p90 of mergedAt − createdAt; open non-draft: window end − createdAt |
+| 5 | `.metrics.conflicted_over_4h`, `.detail.conflicted_prs` | open, `mergeable == CONFLICTING`, last branch commit > 4 h before window end |
+| 0 | `.metrics.change_fail_rate`, `.detail.reverts` | main commits whose subject starts `Revert` / all main commits in the window |
+| 43.6 min | `.metrics.release_cycle_p50_min` | p50 ci.yml `pull_request` run time on `RELEASE_BRANCH_RE` branches |
+| 104 | `.metrics.merge_commit_resolutions`, `.detail.merge_resolutions_by_pr` | two-parent PR-branch commits in the window whose headline names `main` |
+
+## Weekly re-measure and next checkpoint
+
+The `untangle-weekly.timer` (Mon 07:05 Madrid) runs `dora-fetch` + `dora` on a fresh 7-day window. It posts one
+`dora weekly` inbox line and keeps the raw receipt under `~/.local/state/dora/<date>/raw`.
+
+**Checkpoint QM-09 (#4527):** code CI p50 should drop from 61.5 min to about 15 min. The weekly line after #4527 lands
+measures it with `.metrics.ci_p50_code_min`, the same filter and the same rule as above.
