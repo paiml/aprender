@@ -3,8 +3,8 @@
 //! Analytics database server with HTTP API for SQL queries.
 //!
 //! Usage:
-//!   trueno-db --config /path/to/config.yaml
-//!   trueno-db --version
+//!   aprender-db --config /path/to/config.yaml
+//!   aprender-db --version
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -22,7 +22,7 @@ use trueno_db::storage::StorageEngine;
 
 /// trueno-db: GPU-first embedded analytics database server.
 #[derive(Parser)]
-#[command(name = "trueno-db", version, about)]
+#[command(name = "aprender-db", version, about)]
 struct Cli {
     /// Path to YAML configuration file.
     #[arg(long)]
