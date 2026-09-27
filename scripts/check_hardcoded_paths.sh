@@ -202,6 +202,20 @@ if [ "${1:-}" = "--self-test" ]; then
     bl() { printf 'count: %s\npmat_version: %s\nbasis: $PMAT analyze hardcoded-paths -p . -f json | jq .shipped_count (fixture)\n' "$1" "$2"; }
     R="$TD/repo"; mkdir -p "$R/scripts"
     ( cd "$R" && git init -q . && git config user.email t@t && git config user.name t && git config core.hooksPath /dev/null && git commit -q --allow-empty -m root )
+    # hp_has TEXT SUB -- SUB occurs in TEXT, literally. No pipe: `printf | grep -q`
+    # under this file's pipefail reported a present match as absent whenever grep
+    # exited before printf finished (SIGPIPE 141). #4525: R5 went FAIL with its
+    # wanted text in the output, CI run 36308554238, and passed on a rerun.
+    hp_has() { case "$1" in *"$2"*) return 0 ;; esac; return 1; }
+    # The early-exit shape, forced: the match is the first line of 256 KiB, four
+    # pipe buffers, so a piped grep -q exits long before printf is done.
+    hp_big="BASELINE-INVALID{stamp=none}"$'\n'"$(head -c 262144 /dev/zero | tr '\0' x)"
+    if hp_has "$hp_big" "BASELINE-INVALID" && ! hp_has "$hp_big" "BASELINE-STALE" && hp_has 'a*b' '*'; then
+        printf 'ok    matcher: an early match in 256 KiB is found, an absent one is not, SUB is literal\n'
+    else printf 'FAIL  matcher: hp_has on the early-exit shape\n'; fails=1; fi
+    if printf '%s' "$hp_big" | grep -qF -- "BASELINE-INVALID"; then
+        printf 'note  matcher: the piped form happened to survive this run (the race is scheduler-dependent)\n'
+    else printf 'ok    matcher: the piped form this replaces reports the early match ABSENT (rc %s), the #4525 flake\n' "${PIPESTATUS[0]}"; fi
     hp_row() { # hp_row <want rc> <label> <base n> <base baseline> <head n> <head baseline> [<wanted text>] [<env>]
         local want=$1 label=$2 bn=$3 bbl=$4 hn=$5 hbl=$6 sub=${7:-} env=${8:-} rc=0 out
         ( cd "$R" && git checkout -q --detach && git reset -q --hard "$(git rev-list --max-parents=0 HEAD)" ) || return 1
@@ -219,7 +233,7 @@ if [ "${1:-}" = "--self-test" ]; then
                 git -C "$R.shallow" config core.hooksPath /dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD; root="$R.shallow" ;;
         esac
         out=$(HP_REPO_ROOT="$root" PMAT_BIN_OVERRIDE="${FAKE_BIN:-$FAKE}" PMAT_BIN_NO_FALLBACK=1 MIN_FILES_SCANNED=1 bash "${BASH_SOURCE[0]}" --full-if-capable 2>&1) || rc=$?
-        if [ "$rc" = "$want" ] && { [ -z "$sub" ] || printf '%s' "$out" | grep -qF -- "$sub"; }; then printf 'ok    ratchet %s (rc=%s)\n' "$label" "$rc"
+        if [ "$rc" = "$want" ] && { [ -z "$sub" ] || hp_has "$out" "$sub"; }; then printf 'ok    ratchet %s (rc=%s)\n' "$label" "$rc"
         else printf 'FAIL  ratchet %s (rc=%s, wanted %s%s)\n' "$label" "$rc" "$want" "${sub:+; wanted text: $sub}"; printf '%s\n' "$out" | tail -6 | sed 's|^|        |'; fails=1; fi
     }
     hp_row 0 "R1 stamp == pin, 8 <= 8: PASS by the absolute compare"                   8 "$(bl 8 "$pin")" 8 "$(bl 8 "$pin")" "matches the pin"
