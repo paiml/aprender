@@ -214,7 +214,37 @@ impl GgufReader {
             .ok_or_else(|| AprenderError::FormatError {
                 message: format!("Tensor '{name}' not found in GGUF"),
             })?;
+        let (tensor_start, byte_size, shape) = self.tensor_extent(meta, self.data.len())?;
+        let bytes = self.data[tensor_start..tensor_start + byte_size].to_vec();
+        Ok((bytes, shape, meta.dtype))
+    }
 
+    /// Every tensor's (shape, ggml dtype, byte size) by name, from the header alone.
+    ///
+    /// The same sizing and refusals as [`Self::get_tensor_raw`], with each tensor's
+    /// extent checked against `file_len` instead of the bytes in memory, so a reader
+    /// from [`Self::header_from_file`] refuses a truncated file exactly as a whole-file
+    /// one does, without reading any tensor data (#4520 step 2).
+    pub fn tensor_extents(
+        &self,
+        file_len: u64,
+    ) -> Result<BTreeMap<String, (Vec<usize>, u32, usize)>> {
+        let file_len = usize::try_from(file_len).unwrap_or(usize::MAX);
+        let mut result = BTreeMap::new();
+        for meta in &self.tensors {
+            let (_, byte_size, shape) = self.tensor_extent(meta, file_len)?;
+            result.insert(meta.name.clone(), (shape, meta.dtype, byte_size));
+        }
+        Ok(result)
+    }
+
+    /// (start, byte size, shape) of one tensor, refused when it ends past `limit`.
+    fn tensor_extent(
+        &self,
+        meta: &GgufTensorMeta,
+        limit: usize,
+    ) -> Result<(usize, usize, Vec<usize>)> {
+        let name = meta.name.as_str();
         let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
 
         // BUG-GGUF-002 FIX: Use checked multiplication to prevent integer overflow
@@ -260,14 +290,13 @@ impl GgufReader {
             ),
         })?;
 
-        if tensor_start + byte_size > self.data.len() {
+        if tensor_start + byte_size > limit {
             return Err(AprenderError::FormatError {
                 message: format!("Tensor '{name}' data exceeds file size"),
             });
         }
 
-        let bytes = self.data[tensor_start..tensor_start + byte_size].to_vec();
-        Ok((bytes, shape, meta.dtype))
+        Ok((tensor_start, byte_size, shape))
     }
 
     /// Get all tensors as raw bytes (preserves quantization)

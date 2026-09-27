@@ -170,10 +170,16 @@ fn peak_rss_probe() {
     crate::format::rosetta::RosettaStone::new()
         .inspect(apr)
         .expect("inspect the APR");
+    // #4520 step 2: `apr inspect` on a GGUF read the whole file and copied every tensor.
+    let inspected_gguf = crate::format::rosetta::RosettaStone::new()
+        .inspect(gguf)
+        .expect("inspect the GGUF");
     let onnx = crate::format::onnx::is_onnx_file(gguf);
     // Reported before the result checks, so a whole-file read fails the row on its peak
     report_peak();
     assert_eq!(listed.tensor_count, 1);
+    assert_eq!(inspected_gguf.tensors.len(), 1);
+    assert_eq!(inspected_gguf.tensors[0].size_bytes, 128);
     assert_eq!(listed_v1.format_version, "v1");
     assert_eq!(listed_v1.tensor_count, 1);
     assert_eq!(&st_header[8..9], b"{");

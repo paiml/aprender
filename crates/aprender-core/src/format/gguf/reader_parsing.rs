@@ -7,6 +7,34 @@ impl GgufReader {
         Self::from_bytes(data)
     }
 
+    /// Parse ONLY the header (metadata + tensor infos) of a GGUF file, never its tensor data.
+    ///
+    /// #4520 step 2 / #3761: `apr inspect --json` on Qwen3.5-27B-Q4_K_M read all 16.7 GB
+    /// and peaked at 32.8 GB RSS (`from_file`, then a copy of every tensor) to report
+    /// numbers the header holds. The header is read as a prefix that doubles until it
+    /// parses; only a file whose header does not parse reads to EOF, and that error is
+    /// final. The reader's `data` is the prefix, so tensor bytes are NOT available from
+    /// it: size tensors with [`Self::tensor_extents`] against the returned file length.
+    pub fn header_from_file<P: AsRef<Path>>(path: P) -> Result<(Self, u64)> {
+        const FIRST_PREFIX: u64 = 8 << 20;
+        let mut file = File::open(path.as_ref()).map_err(AprenderError::Io)?;
+        let file_len = file.metadata().map_err(AprenderError::Io)?.len();
+        let mut data = Vec::new();
+        let mut want = FIRST_PREFIX.min(file_len);
+        loop {
+            let more = want - data.len() as u64;
+            (&mut file)
+                .take(more)
+                .read_to_end(&mut data)
+                .map_err(AprenderError::Io)?;
+            match Self::from_bytes(data.clone()) {
+                Ok(reader) => return Ok((reader, file_len)),
+                Err(e) if want >= file_len || (data.len() as u64) < want => return Err(e),
+                Err(_) => want = want.saturating_mul(2).min(file_len),
+            }
+        }
+    }
+
     /// Load a GGUF file preserving ALL metadata keys (no architecture
     /// whitelist).
     ///
