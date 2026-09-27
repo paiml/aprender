@@ -95,8 +95,9 @@ pub struct GdnScan<T = f32> {
     pub history: Vec<T>,
 }
 
-/// The float types the scan runs in: `f32` for training, `f64` for the gradcheck
-/// (`FALSIFY-QTG-003` checks the backward in f64 so finite differences resolve 1e-3).
+/// The float types the Qwen3.5 layers run in: `f32` for training, `f64` for the
+/// gradcheck (`FALSIFY-QTG-003` checks every backward in f64 so finite differences
+/// resolve 1e-3). The f32 instantiation is operation-for-operation serve's arithmetic.
 pub trait GdnFloat:
     Copy
     + PartialEq
@@ -126,6 +127,17 @@ pub trait GdnFloat:
     /// `ln x`.
     #[must_use]
     fn ln(self) -> Self;
+    /// `−∞`, the empty max of a softmax.
+    const NEG_INFINITY: Self;
+    /// `(sin x, cos x)`.
+    #[must_use]
+    fn sin_cos(self) -> (Self, Self);
+    /// `xᵉ`.
+    #[must_use]
+    fn powf(self, e: Self) -> Self;
+    /// The larger of two (IEEE `maxNum`, as `f32::max`).
+    #[must_use]
+    fn max(self, other: Self) -> Self;
     /// `eˣ`.
     #[must_use]
     fn exp(self) -> Self;
@@ -149,6 +161,16 @@ impl GdnFloat for f32 {
     fn ln(self) -> Self {
         f32::ln(self)
     }
+    const NEG_INFINITY: Self = f32::NEG_INFINITY;
+    fn sin_cos(self) -> (Self, Self) {
+        f32::sin_cos(self)
+    }
+    fn powf(self, e: Self) -> Self {
+        f32::powf(self, e)
+    }
+    fn max(self, other: Self) -> Self {
+        f32::max(self, other)
+    }
     fn exp(self) -> Self {
         f32::exp(self)
     }
@@ -171,6 +193,16 @@ impl GdnFloat for f64 {
     }
     fn ln(self) -> Self {
         f64::ln(self)
+    }
+    const NEG_INFINITY: Self = f64::NEG_INFINITY;
+    fn sin_cos(self) -> (Self, Self) {
+        f64::sin_cos(self)
+    }
+    fn powf(self, e: Self) -> Self {
+        f64::powf(self, e)
+    }
+    fn max(self, other: Self) -> Self {
+        f64::max(self, other)
     }
     fn exp(self) -> Self {
         f64::exp(self)
