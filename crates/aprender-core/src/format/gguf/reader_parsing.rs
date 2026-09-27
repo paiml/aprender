@@ -35,9 +35,17 @@ impl GgufReader {
     ) -> Result<(Self, u64)> {
         let path = path.as_ref();
         let file_len = std::fs::metadata(path).map_err(AprenderError::Io)?.len();
-        let reader =
-            crate::format::prefix::parse_growing_prefix_within(path, first, cap, Self::from_bytes)
-                .map_err(|message| AprenderError::FormatError { message })?;
+        // A FormatError contributes its message, not its Display: the prefix policy
+        // wraps it in its own FormatError, and "Invalid model format: … Invalid model
+        // format: …" is the core prefix leaking under the CLI's (#3661).
+        let parse = |bytes: Vec<u8>| {
+            Self::from_bytes(bytes).map_err(|e| match e {
+                AprenderError::FormatError { message } => message,
+                other => other.to_string(),
+            })
+        };
+        let reader = crate::format::prefix::parse_growing_prefix_within(path, first, cap, parse)
+            .map_err(|message| AprenderError::FormatError { message })?;
         Ok((reader, file_len))
     }
 
