@@ -338,6 +338,9 @@ fn test_every_subcommand_is_reachable() {
         (vec!["simular", "list-emc"], |c| {
             matches!(c, Commands::ListEmc)
         }),
+        (vec!["simular", "serve"], |c| {
+            matches!(c, Commands::Serve { .. })
+        }),
         (vec!["simular", "help"], |c| matches!(c, Commands::Help)),
         (vec!["simular", "version"], |c| {
             matches!(c, Commands::Version)
@@ -347,7 +350,7 @@ fn test_every_subcommand_is_reachable() {
     // Non-vacuity: the table must cover every variant of `Commands`.
     assert_eq!(
         cases.len(),
-        9,
+        10,
         "add the new subcommand to this table when Commands grows"
     );
     assert_eq!(
@@ -1469,4 +1472,44 @@ fn test_run_cli_with_emc_validate_real() {
         let exit = run_cli(args);
         assert_eq!(exit, ExitCode::SUCCESS);
     }
+}
+
+// === serve (#4553) ===
+
+#[test]
+fn test_parse_serve_defaults_to_loopback_8080() {
+    assert_eq!(
+        parse_ok(&["simular", "serve"]),
+        Commands::Serve {
+            host: "127.0.0.1".into(),
+            port: 8080
+        }
+    );
+}
+
+#[test]
+fn test_parse_serve_host_and_port() {
+    assert_eq!(
+        parse_ok(&["simular", "serve", "--host", "0.0.0.0", "--port", "0"]),
+        Commands::Serve {
+            host: "0.0.0.0".into(),
+            port: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_serve_rejects_a_bad_port() {
+    assert_eq!(
+        parse_err(&["simular", "serve", "--port", "70000"]),
+        ErrorKind::ValueValidation
+    );
+}
+
+#[test]
+fn test_help_lists_serve() {
+    assert!(
+        super::output::HELP.contains("serve"),
+        "print_help omits serve"
+    );
 }

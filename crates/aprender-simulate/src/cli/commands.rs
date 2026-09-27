@@ -48,6 +48,7 @@ pub fn run_cli(cli: Cli) -> ExitCode {
         Commands::EmcCheck { experiment_path } => emc_check(&experiment_path),
         Commands::EmcValidate { emc_path } => emc_validate(&emc_path),
         Commands::ListEmc => list_emc(),
+        Commands::Serve { host, port } => serve(&host, port),
         Commands::Help => {
             print_help();
             ExitCode::SUCCESS
@@ -563,4 +564,40 @@ fn render_bouncing_balls(
         }
     }
     Ok(())
+}
+
+/// Serve the web visualization on `host:port` until the process is stopped (#4553).
+///
+/// Prints the bound address first, so `--port 0` tells the caller which port it got.
+#[cfg(feature = "web")]
+#[must_use]
+pub fn serve(host: &str, port: u16) -> ExitCode {
+    let run = async {
+        let listener = tokio::net::TcpListener::bind((host, port)).await?;
+        let addr = listener.local_addr()?;
+        println!("simular serve: listening on http://{addr} (GET /, GET /health, GET /ws)");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        crate::visualization::WebVisualization::new(addr.port())
+            .serve(listener)
+            .await
+    };
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .and_then(|rt| rt.block_on(run));
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("simular serve: {host}:{port}: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Without the `web` feature there is no server to start; say so instead of exiting 0.
+#[cfg(not(feature = "web"))]
+#[must_use]
+pub fn serve(_host: &str, _port: u16) -> ExitCode {
+    eprintln!("simular serve: this simular was built without the `web` feature");
+    ExitCode::FAILURE
 }

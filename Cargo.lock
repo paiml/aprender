@@ -1423,6 +1423,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-present-test",
+ "axum 0.7.9",
  "bincode",
  "bitflags 2.13.0",
  "blake3",

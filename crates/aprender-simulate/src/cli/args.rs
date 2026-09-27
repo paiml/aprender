@@ -113,6 +113,15 @@ pub enum Commands {
     },
     /// List available EMCs in the library
     ListEmc,
+    /// Serve the web visualization: GET /, GET /health, GET /ws (#4553)
+    Serve {
+        /// Address to bind.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port to bind; 0 picks a free one (the bound address is printed).
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+    },
     /// Show help
     Help,
     /// Show version

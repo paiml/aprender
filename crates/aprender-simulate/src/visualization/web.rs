@@ -134,6 +134,15 @@ impl WebVisualization {
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
         self.state.subscribe()
     }
+
+    /// Serve [`Self::router`] on `listener` until the task is dropped (#4553).
+    ///
+    /// # Errors
+    ///
+    /// Returns the I/O error that stops the accept loop.
+    pub async fn serve(self, listener: tokio::net::TcpListener) -> std::io::Result<()> {
+        axum::serve(listener, self.router()).await
+    }
 }
 
 /// Handle individual WebSocket connection.
@@ -378,7 +387,7 @@ mod tests {
 
         let json = serde_json::to_string(&payload).ok();
         assert!(json.is_some());
-        assert!(json.as_ref().map_or(false, |j| j.contains("\"time\":1.0")));
+        assert!(json.as_ref().is_some_and(|j| j.contains("\"time\":1.0")));
     }
 
     #[test]
@@ -544,6 +553,76 @@ mod tests {
 
         let msg = rx.try_recv().unwrap();
         assert!(msg.contains("\"body_count\":2"));
+    }
+
+    /// One raw HTTP/1.1 request against a live listener; returns the whole response.
+    async fn http(addr: std::net::SocketAddr, req: &str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+        s.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = vec![0u8; 8192];
+        let mut out = Vec::new();
+        loop {
+            let n = tokio::time::timeout(std::time::Duration::from_secs(5), s.read(&mut buf))
+                .await
+                .expect("response within 5 s")
+                .unwrap();
+            if n == 0 {
+                break;
+            }
+            out.extend_from_slice(&buf[..n]);
+            // A 101 upgrade never closes: stop at the end of its headers.
+            if out.starts_with(b"HTTP/1.1 101") && out.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    /// #4553: the three routes answer on a real socket, through `serve`, which is what
+    /// `simular serve` runs. Before it, nothing in simular bound a port.
+    #[tokio::test]
+    async fn serve_answers_the_three_routes_on_a_real_socket() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(WebVisualization::new(addr.port()).serve(listener));
+
+        let health = http(
+            addr,
+            "GET /health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(health.starts_with("HTTP/1.1 200"), "{health}");
+        assert!(health.ends_with("{\"status\":\"ok\"}"), "{health}");
+
+        let index = http(
+            addr,
+            "GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(index.starts_with("HTTP/1.1 200"), "{index}");
+        assert!(
+            index.contains("<title>Simular Visualization</title>"),
+            "{index}"
+        );
+
+        let ws = http(
+            addr,
+            "GET /ws HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\
+             Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
+        )
+        .await;
+        assert!(ws.starts_with("HTTP/1.1 101"), "{ws}");
+        // RFC 6455 §1.3's worked example: this key must accept as this value.
+        assert!(ws.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="), "{ws}");
+
+        let missing = http(
+            addr,
+            "GET /nope HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(missing.starts_with("HTTP/1.1 404"), "{missing}");
+        server.abort();
     }
 
     #[test]

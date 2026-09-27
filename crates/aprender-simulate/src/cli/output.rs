@@ -12,8 +12,11 @@ pub fn print_version() {
 
 /// Print help message.
 pub fn print_help() {
-    println!(
-        r"simular - Unified Simulation Engine for the Sovereign AI Stack
+    println!("{HELP}");
+}
+
+/// The text [`print_help`] prints.
+pub const HELP: &str = r"simular - Unified Simulation Engine for the Sovereign AI Stack
 
 USAGE:
     simular <COMMAND> [OPTIONS]
@@ -32,6 +35,10 @@ COMMANDS:
 
     list-emc                    List available EMCs in the library
 
+    serve                       Serve the web visualization (GET /, /health, /ws)
+        --host <ADDR>           Address to bind (default: 127.0.0.1)
+        --port <N>              Port to bind, 0 = any free port (default: 8080)
+
     help                        Show this help message
     version                     Show version information
 
@@ -49,9 +56,7 @@ EDD COMPLIANCE:
     4. Falsify It - Falsification criteria are checked
 
 For more information, see: https://github.com/paiml/simular
-"
-    );
-}
+";
 
 /// Print experiment result.
 ///
