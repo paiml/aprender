@@ -57,8 +57,12 @@ NOUNS='workspace crates|crates|directories|directory|provable contracts|contract
 
 # Emit "line<TAB>normalised whole line" for every line stating a claim. Fenced lines
 # are INCLUDED (see the header): a skip rule here is an unwritten boundary.
+# GEN-001 (#4526): a generated count sits inside `<!-- NAME_START -->N<!-- NAME_END -->`
+# markers, which split the digits from the noun. Strip them first, or every generated
+# claim silently drops out of the enumeration — measured: 6 claims became 1.
 enumerate_claims() {
-  grep -nE "(\*\*)?[0-9][0-9,]*(\*\*)? (${NOUNS})\b" "$README" \
+  sed -E 's/<!-- [A-Z_]+_COUNT_(START|END) -->//g' "$README" \
+  | grep -nE "(\*\*)?[0-9][0-9,]*(\*\*)? (${NOUNS})\b" \
   | sed -E 's/^([0-9]+):/\1\t/' \
   | while IFS=$'\t' read -r ln text; do
       norm=$(printf '%s\n' "$text" \
@@ -134,6 +138,12 @@ if [[ "$mode" = selftest ]]; then
   # A claim nobody dispositioned.
   printf '# apr\n\nThis repo has 42 recipes.\n' > "$TD/README.md"
   row 1 "an UNDISPOSITIONED claim: RED"
+
+  # GEN-001 (#4526): a claim inside a generated block is still a claim. Without the
+  # marker strip the digits never touch the noun and this row reads GREEN-by-blindness.
+  printf '# apr\n\nThis repo has **<!-- RECIPE_COUNT_START -->42<!-- RECIPE_COUNT_END -->** recipes.\n' > "$TD/README.md"
+  row 1 "an UNDISPOSITIONED claim inside a generated block: RED (markers stripped, not a blind spot)"
+  grep -q 'N\*\* recipes' "$TD/out.$n" || { printf 'FAIL  row %s  RED for the wrong reason: the block claim was never enumerated\n' "$n"; red=1; }
 
   # THE FENCE ROW. This asserts the property that this script's first draft got
   # wrong: a number inside a fenced block IS enumerated, so an undispositioned one

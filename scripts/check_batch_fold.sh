@@ -24,7 +24,8 @@ rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;
 
 # mkfixture DIR -- a repo with a generated set, README count blocks, code, and branches:
 #   plain (no generated path)  gen1/gen2 (roadmap-only conflict)  code1/code2 (real conflict)
-#   rc1/rc2 (README count-only conflict)  rp1/rp2 (README prose conflict)
+#   rc1/rc2 (README count-only conflict)  cc1/cc2 (conflict only in the CRATE_COUNT block, GEN-001)
+#   rp1/rp2 (README prose conflict)
 #   cen (clean census edit)  plus stub tools for --regen
 mkfixture() {
     local d=$1
@@ -39,7 +40,7 @@ mkfixture() {
         printf 't0\n' > contracts/contracts.nt
         printf 's0\n' > contracts/shapes.ttl
         printf 'x\n' > src/lib.rs
-        printf '# T\nprose line one\ncount: <!-- CONTRACT_COUNT_START -->5<!-- CONTRACT_COUNT_END -->\nprose line two\n' > README.md
+        printf '# T\nprose line one\ncount: <!-- CONTRACT_COUNT_START -->5<!-- CONTRACT_COUNT_END -->\nprose line two\ncrates: <!-- CRATE_COUNT_START -->3<!-- CRATE_COUNT_END -->\n' > README.md
         printf 'roadmap-aggregate:\n\t@printf %s > docs/roadmaps/roadmap.yaml\nroadmap-aggregate-check:\n\t@test "$$(cat docs/roadmaps/roadmap.yaml)" = aggregated\n' "'aggregated\\n'" > Makefile
         cat > scripts/readme_sync.sh <<'SH'
 #!/usr/bin/env bash
@@ -57,10 +58,12 @@ SH
         e_code2() { printf 'z\n' > src/lib.rs; }
         e_rc1()   { sed -i 's/-->5<!--/-->10<!--/' README.md; }
         e_rc2()   { sed -i 's/-->5<!--/-->11<!--/; s/prose line two/prose line two, and a clean edit from rc2/' README.md; }
+        e_cc1()   { sed -i 's/-->3<!--/-->30<!--/' README.md; }
+        e_cc2()   { sed -i 's/-->3<!--/-->31<!--/' README.md; }
         e_rp1()   { sed -i 's/prose line one/prose line ONE (rp1)/' README.md; }
         e_rp2()   { sed -i 's/prose line one/prose line uno (rp2)/' README.md; }
         e_cen()   { printf '{"n_files": 6}\n' > contracts/census.json; }
-        for b in plain gen1 gen2 code1 code2 rc1 rc2 rp1 rp2 cen; do
+        for b in plain gen1 gen2 code1 code2 rc1 rc2 cc1 cc2 rp1 rp2 cen; do
             git checkout -q -b "$b" main && "e_$b" && git add -A && git commit -q -m "$b" && git checkout -q main || exit 2
         done
     ) || return 2
@@ -110,6 +113,11 @@ table() {
     grep -q 'and a clean edit from rc2' "$d/r/README.md";                row "  ...and the other side's clean README prose edit is kept" $?
     grep -qE 'CONTRACT_COUNT_START -->[0-9]+<!-- CONTRACT_COUNT_END' "$d/r/README.md"; row "  ...and the count block stays numeric (well-formed for readme_sync)" $?
     [ "$RC" = 3 ] && has '^REGEN REQUIRED';                              row "a folded, unregenerated generated set is never silent: REGEN REQUIRED, exit 3 (rc=$RC)" $?
+
+    fold "$d/r" "$subj" cc1 cc2
+    has '^folded cc2 generated=\[README\.md\]$';                         row "a README conflict ONLY in a CRATE_COUNT block folds too (every *_COUNT block is generated, GEN-001)" $?
+    grep -qE 'CRATE_COUNT_START -->30<!-- CRATE_COUNT_END' "$d/r/README.md"; row "  ...keeping OUR crate count, numeric, for readme_sync to rewrite" $?
+    grep -qE 'CONTRACT_COUNT_START -->[0-9]+<!-- CONTRACT_COUNT_END' "$d/r/README.md"; row "  ...and the untouched CONTRACT_COUNT block survives the normalisation" $?
 
     fold "$d/r" "$subj" rp1 rp2
     has '^SKIP rp2: conflict in README\.md$';                            row "a README conflict OUTSIDE a count block is a real conflict: SKIP" $?

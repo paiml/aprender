@@ -11,7 +11,8 @@
 #   contracts/census.json        pv census
 #   contracts/contracts.nt       pv extract
 #   contracts/shapes.ttl         pv extract (every `shape:` block)
-#   README.md CONTRACT_COUNT     scripts/readme_sync.sh -- the COUNT BLOCKS only
+#   README.md *_COUNT blocks     scripts/readme_sync.sh -- the COUNT BLOCKS only
+#                                (every name `readme_sync.sh --list-blocks` owns, GEN-001 #4526)
 # A conflict in those is taken and marked for regeneration. README.md is merged
 # three-way with the counts normalised out, so a README conflict OUTSIDE a count
 # block is a real conflict, not a generated one. Any real conflict aborts that
@@ -41,7 +42,8 @@
 set -uo pipefail
 
 GENERATED_WHOLE="docs/roadmaps/roadmap.yaml contracts/census.json contracts/contracts.nt contracts/shapes.ttl"
-COUNT_RE='(<!-- CONTRACT_COUNT_START -->)[0-9]+(<!-- CONTRACT_COUNT_END -->)'
+# any generated count block; GNU sed -E back-reference \2 pins the END marker to its START
+COUNT_RE='(<!-- ([A-Z_]+_COUNT)_START -->)[0-9]+(<!-- \2_END -->)'
 
 die() { printf 'ERROR %s\n' "$*" >&2; exit 2; }
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
@@ -60,7 +62,7 @@ touches_generated() { # REV_A REV_B -> prints the generated paths that differ
     done < <(git diff --no-renames --name-only "$1" "$2")
 }
 
-# readme_counts_only -> 0 iff README.md's conflict is ONLY in CONTRACT_COUNT blocks.
+# readme_counts_only -> 0 iff README.md's conflict is ONLY in *_COUNT blocks.
 # On 0 the file is written merged (counts left for readme_sync.sh) and staged.
 readme_counts_only() {
     local t rc=0
@@ -68,13 +70,19 @@ readme_counts_only() {
     if ! { git show :1:README.md > "$t/base" && git show :2:README.md > "$t/ours" && git show :3:README.md > "$t/theirs"; } 2>/dev/null; then
         rmtree "$t"; return 1   # an add/add or delete conflict is not a count conflict
     fi
-    local n
-    n=$(grep -m1 -oE "$COUNT_RE" "$t/ours" | sed -E 's/[^0-9]//g')
-    sed -E -i "s/$COUNT_RE/\\1N\\2/g" "$t/base" "$t/ours" "$t/theirs"
+    local blocks name val
+    # OUR value per block name, captured before the bodies are normalised out
+    blocks=$(grep -oE "$COUNT_RE" "$t/ours" | sed -E 's/^<!-- ([A-Z_]+)_START -->([0-9]+)<.*/\1 \2/' | sort -u)
+    sed -E -i "s/$COUNT_RE/\\1N\\3/g" "$t/base" "$t/ours" "$t/theirs"
     git merge-file -p "$t/ours" "$t/base" "$t/theirs" > "$t/merged" 2>/dev/null || rc=$?
     if [ "$rc" = 0 ]; then
-        # put OUR count back so the file stays well-formed; --regen rewrites every block
-        sed -E -i "s/(<!-- CONTRACT_COUNT_START -->)N(<!-- CONTRACT_COUNT_END -->)/\\1${n:-0}\\2/g" "$t/merged"
+        # put OUR counts back so the file stays well-formed; --regen rewrites every block
+        while read -r name val; do
+            [ -n "$name" ] || continue
+            sed -E -i "s/(<!-- ${name}_START -->)N(<!-- ${name}_END -->)/\\1${val}\\2/g" "$t/merged"
+        done <<< "$blocks"
+        # a block THEIR side added, absent from ours, stays numeric too
+        sed -E -i "s/(<!-- ([A-Z_]+_COUNT)_START -->)N(<!-- \\2_END -->)/\\10\\3/g" "$t/merged"
         cp -- "$t/merged" README.md && git add -- README.md || rc=1
     fi
     rmtree "$t"
@@ -143,7 +151,7 @@ regen() { # regenerate the generated set once, assert the fixed points, commit i
         git -c commit.gpgsign=false commit -q -m "batch: regenerate the generated set once (batch_fold.sh --regen)
 
 roadmap aggregate, pv census, pv extract (contracts.nt + shapes.ttl) and the
-README CONTRACT_COUNT blocks, regenerated with the pv built from this tree;
+README *_COUNT blocks, regenerated with the pv built from this tree;
 fixed points asserted: make roadmap-aggregate-check, pv extract --check,
 readme_sync.sh --check." >/dev/null 2>&1 || die "regen: commit failed"
         printf 'regenerated the generated set and committed it (fixed points asserted)\n'

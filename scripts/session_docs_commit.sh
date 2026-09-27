@@ -24,7 +24,7 @@ DRY=0; ARM=0; KAIZEN=()
 while [ $# -gt 0 ]; do case "$1" in --dry-run) DRY=1; shift ;; --arm) ARM=1; shift ;; --kaizen) KAIZEN+=("$2"); shift 2 ;; *) printf 'usage: %s [--dry-run] [--arm] [--kaizen "<line>"]...\n' "$PROG" >&2; exit 2 ;; esac; done
 BR=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)
 case "$BR" in agent/pp-066-*|agent/pr-triage*) ;; *) printf '%s: refused — %s is not an orchestrator branch (agent/pp-066-*); shared files are written there only (G-11)\n' "$PROG" "$BR" >&2; exit 1 ;; esac
-DAG="$ROOT/docs/specifications/pp-066-dag.yaml"; RM="$ROOT/docs/roadmaps/roadmap.yaml"; README="$ROOT/README.md"
+DAG="$ROOT/docs/specifications/pp-066-dag.yaml"; RM="$ROOT/docs/roadmaps/roadmap.yaml"
 # The date names the status doc; SOURCE_DATE_EPOCH-derived so a reproducible run
 # (bashrs DET002) names the same file — the fleet pattern (dispatch-phase5-humaneval-gx10.sh).
 DATE=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%F)
@@ -77,11 +77,10 @@ PY
 done < "$PLAN"
 rm -f "$PLAN"
 bash "$ROOT/scripts/check_roadmap_diff_additive.sh" >/dev/null || { printf '%s: the roadmap diff is not additive; refusing\n' "$PROG" >&2; exit 1; }
-# 3. README counts: regenerate the three claims-table numbers from the measurement, then verify exactly
-crates=$(bash "$ROOT/scripts/check_readme_claims.sh" --regen 2>/dev/null | awk '/workspace members:/{print $3}')
-contracts=$(bash "$ROOT/scripts/check_readme_claims.sh" --regen 2>/dev/null | awk '/contracts\/ \*\.yaml:/{print $3}')
-[ -n "$crates" ] && sed -i -E "s/\*\*[0-9]+\*\* workspace crates/**${crates}** workspace crates/" "$README"
-[ -n "$contracts" ] && sed -i -E "s/\*\*[0-9]+\*\* provable contracts/**${contracts}** provable contracts/; s/^([0-9]+) contracts across/${contracts} contracts across/" "$README"
+# 3. README counts: the ONE generator writes every count block (GEN-001 #4526) — this
+#    script used to sed-patch two of them, a second writer whose patterns stopped matching
+#    once the counts moved inside markers. Then verify exactly.
+bash "$ROOT/scripts/readme_sync.sh" --write >/dev/null || { printf '%s: readme_sync.sh --write failed\n' "$PROG" >&2; exit 1; }
 README_EXACT=1 bash "$ROOT/scripts/check_readme_claims.sh" --claim crate_count >/dev/null && README_EXACT=1 bash "$ROOT/scripts/check_readme_claims.sh" --claim contract_count >/dev/null || { printf '%s: README counts not exact after regeneration\n' "$PROG" >&2; exit 1; }
 # 4. status doc
 bash "$ROOT/scripts/pp066_state.sh" > "$ROOT/docs/audits/pp-066-status-$DATE.md.tmp" 2>&1 || true

@@ -132,6 +132,8 @@ fn test_readme_crate_count_matches_workspace() {
     // that adds a crate may leave the README LAGGING (claimed < measured); it may never
     // OVERSTATE. The orchestrator docs commit regenerates the counts after each merge
     // and verifies them exactly with `scripts/check_readme_claims.sh --exact`.
+    // GEN-001 (#4526): the number sits in a generated CRATE_COUNT block; read it as a reader sees it.
+    let readme = strip_count_markers(&readme);
     let claimed = number_before(&readme, "** workspace crates |")
         .expect("FALSIFY-README-005: README claims-table row `| Workspace crates | **N** workspace crates |` is missing");
     assert!(
@@ -155,55 +157,155 @@ fn number_before(text: &str, suffix: &str) -> Option<usize> {
     digits.chars().rev().collect::<String>().parse().ok()
 }
 
-/// FALSIFY-README-007: Contract count in README matches `find contracts/ -name '*.yaml'`.
+/// FALSIFY-README-007: the README's contract count never overstates the GENERATOR's.
 ///
-/// The "**M** provable contracts" claim was previously checked ONLY by
-/// `scripts/check_readme_claims.sh`, which is executable but wired into NO
-/// workflow (`grep -rn check_readme_claims .github/workflows` = 0 hits). So the
-/// count drifted freely: README said **1331** while the tree held **1766**
-/// (Fable rank-7, PMAT-DRIFT-GATES-001). This test rides the already-wired
-/// `cargo test` job, so the claim can no longer drift without failing a PR.
-/// Counts `*.yaml` recursively to match the canonical script method.
+/// History: this counted `find contracts/ -name '*.yaml'` — a third instrument, ~51
+/// files wider than the census `n_files` the generator writes and `pv lint` walks — so
+/// the test, the generator and `check_readme_claims.sh` compared three different
+/// numbers. GEN-001 (#4526, G3): the comparand is now `scripts/readme_sync.sh
+/// --print-all`, the one generator, never a count typed or re-derived here.
 #[test]
 fn test_readme_contract_count_matches_workspace() {
-    let readme = read_readme();
-    let contracts_dir = workspace_root().join("contracts");
-
-    fn count_yaml(dir: &Path) -> usize {
-        let mut n = 0;
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    n += count_yaml(&path);
-                } else if path.extension().is_some_and(|ext| ext == "yaml") {
-                    n += 1;
-                }
-            }
-        }
-        n
-    }
-
-    let contract_count = count_yaml(&contracts_dir);
-    // G-11 (PMAT-1062): lag allowed, overstatement RED (see FALSIFY-README-005 above).
-    // BSE-03 phase A (PMAT-1068): the number is DERIVED and sits inside the
-    // generated CONTRACT_COUNT block, so the claim reads
-    // `**<!-- CONTRACT_COUNT_START -->N<!-- CONTRACT_COUNT_END -->** provable contracts`.
-    // Strip the markers before parsing; the universe below is the generator's
-    // (`find contracts/ -name '*.yaml'`), unchanged.
-    let readme = readme
-        .replace("<!-- CONTRACT_COUNT_START -->", "")
-        .replace("<!-- CONTRACT_COUNT_END -->", "");
+    let readme = strip_count_markers(&read_readme());
+    let generated = generator_counts()["CONTRACT_COUNT"];
     let claimed = number_before(&readme, "** provable contracts")
         .expect("FALSIFY-README-007: README lacks a `**M** provable contracts` claim");
     assert!(
-        claimed <= contract_count,
-        "FALSIFY-README-007: README claims {claimed} provable contracts but `find contracts/ -name '*.yaml'` \
-         counts {contract_count} — the README may lag, never overstate; the orchestrator docs commit regenerates it"
+        claimed <= generated,
+        "FALSIFY-README-007: README claims {claimed} provable contracts but the generator measures \
+         {generated} (contracts/census.json .n_files) — the README may lag until the integrated-tree \
+         regeneration, never overstate"
     );
 }
 
-/// FALSIFY-SVG-002: Hero SVG is accessible
+/// Run `scripts/readme_sync.sh <arg>` at the workspace root; a failed generator is a failed test.
+fn readme_sync(arg: &str) -> String {
+    let out = std::process::Command::new("bash")
+        .arg("scripts/readme_sync.sh")
+        .arg(arg)
+        .current_dir(workspace_root())
+        .output()
+        .expect("run bash scripts/readme_sync.sh");
+    assert!(
+        out.status.success(),
+        "GEN-001: `scripts/readme_sync.sh {arg}` failed — the counts are UNMEASURED, which is a \
+         failure, not a pass:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// NAME -> N from `readme_sync.sh --print-all`: what the generator would write for this tree.
+fn generator_counts() -> std::collections::BTreeMap<String, usize> {
+    readme_sync("--print-all")
+        .lines()
+        .map(|l| {
+            let (k, v) = l.split_once('=').expect("--print-all prints NAME=N");
+            (
+                k.to_string(),
+                v.parse().expect("--print-all values are numbers"),
+            )
+        })
+        .collect()
+}
+
+/// Every `<!-- NAME_START -->body<!-- NAME_END -->` block in `text`, in order.
+fn count_blocks(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("<!-- ") {
+        rest = &rest[i + 5..];
+        let Some(close) = rest.find(" -->") else {
+            break;
+        };
+        let tag = &rest[..close];
+        let Some(name) = tag.strip_suffix("_START") else {
+            continue;
+        };
+        if !name.ends_with("_COUNT") {
+            continue;
+        }
+        let body_and_rest = &rest[close + 4..];
+        let end = format!("<!-- {name}_END -->");
+        if let Some(e) = body_and_rest.find(&end) {
+            out.push((name.to_string(), body_and_rest[..e].to_string()));
+            rest = &body_and_rest[e + end.len()..];
+        } else {
+            out.push((name.to_string(), String::from("<unterminated>")));
+        }
+    }
+    out
+}
+
+/// README with every `*_COUNT` marker removed — the text a reader sees.
+fn strip_count_markers(text: &str) -> String {
+    let mut s = text.to_string();
+    for (name, _) in count_blocks(text) {
+        s = s
+            .replace(&format!("<!-- {name}_START -->"), "")
+            .replace(&format!("<!-- {name}_END -->"), "");
+    }
+    s
+}
+
+/// GEN-001 (#4526) G1/G3: every derived README count is a block the ONE generator owns,
+/// and every block agrees with the generator's measurement of this tree.
+///
+/// - every name `readme_sync.sh --list-blocks` owns appears in README.md (a count
+///   outside a block is authored, and authored counts drifted: 4 of 5 were stale);
+/// - every `*_COUNT` block in README.md is one the generator owns (no orphan block
+///   that nothing regenerates);
+/// - every body is a bare number, and it never OVERSTATES the generator's value. It
+///   may lag between merges: PRs never edit blocks (G2), and the integrated tree is
+///   regenerated by `make readme-sync` / `batch_fold.sh --regen` (G4), whose
+///   `readme_sync.sh --check` is the exact-equality gate.
+#[test]
+fn test_readme_counts_are_the_generators() {
+    let readme = read_readme();
+    let owned: Vec<String> = readme_sync("--list-blocks")
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert!(owned.len() >= 6, "GEN-001: --list-blocks printed {owned:?}");
+    let generated = generator_counts();
+    let blocks = count_blocks(&readme);
+    for name in &owned {
+        assert!(
+            blocks.iter().any(|(n, _)| n == name),
+            "GEN-001: README.md has no <!-- {name}_START --> block — that count is authored, not generated"
+        );
+    }
+    for (name, body) in &blocks {
+        assert!(
+            owned.contains(name),
+            "GEN-001: README.md carries a {name} block that scripts/readme_sync.sh does not own"
+        );
+        let claimed: usize = body
+            .parse()
+            .unwrap_or_else(|_| panic!("GEN-001: {name} block body is {body:?}, not a number"));
+        let want = generated[name];
+        assert!(
+            claimed <= want,
+            "GEN-001: README {name} = {claimed} overstates the generator's {want}"
+        );
+    }
+}
+
+#[test]
+fn count_blocks_case_table() {
+    let t = "a **<!-- X_COUNT_START -->7<!-- X_COUNT_END -->** b <!-- RELEASE_MATRIX_START -->m<!-- RELEASE_MATRIX_END --> \
+             <!-- Y_COUNT_START -->x<!-- Y_COUNT_END --> <!-- Z_COUNT_START -->9";
+    assert_eq!(
+        count_blocks(t),
+        [
+            ("X_COUNT".into(), "7".into()),
+            ("Y_COUNT".into(), "x".into()),
+            ("Z_COUNT".into(), "<unterminated>".into())
+        ]
+    );
+    assert!(strip_count_markers(t).starts_with("a **7** b <!-- RELEASE_MATRIX_START -->"));
+}
+
 #[test]
 fn test_hero_svg_accessible() {
     let svg = std::fs::read_to_string(workspace_root().join("docs/hero.svg"))

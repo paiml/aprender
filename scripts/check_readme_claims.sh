@@ -239,9 +239,16 @@ measured_book_cli_chapter_count() { ls "$REPO_ROOT"/book/src/cli/*.md 2>/dev/nul
 measured_book_lib_chapter_count() { ls "$REPO_ROOT"/book/src/lib/*.md 2>/dev/null | grep -c . ; }
 measured_crates_directory_count() { ls -1d "$REPO_ROOT"/crates/*/ 2>/dev/null | grep -c . ; }
 
-claimed_book_cli_chapter_count() { grep -oE '\| Book CLI chapters \| \*\*[0-9]+\*\*' "$README" | grep -oE '[0-9]+' | head -1; }
-claimed_book_lib_chapter_count() { grep -oE '\| Book lib chapters \| \*\*[0-9]+\*\*' "$README" | grep -oE '[0-9]+' | head -1; }
-claimed_crates_directory_count() { grep -oE '\*\*[0-9]+\*\* directories' "$README" | grep -oE '[0-9]+' | head -1; }
+# GEN-001 (#4526): every count in the claims table sits inside a generated block
+# (`**<!-- NAME_START -->N<!-- NAME_END -->** noun`, written by scripts/readme_sync.sh).
+# The claim extractors below read the README with those markers removed, so the
+# phrase they match is the one a reader sees. The CONTRACT_COUNT readers keep the
+# markers: they judge the generated block and the authored prose by different rules.
+unmarked_readme() { sed -E 's/<!-- [A-Z_]+_COUNT_(START|END) -->//g' "$README"; }
+
+claimed_book_cli_chapter_count() { unmarked_readme | grep -oE '\| Book CLI chapters \| \*\*[0-9]+\*\*' | grep -oE '[0-9]+' | head -1; }
+claimed_book_lib_chapter_count() { unmarked_readme | grep -oE '\| Book lib chapters \| \*\*[0-9]+\*\*' | grep -oE '[0-9]+' | head -1; }
+claimed_crates_directory_count() { unmarked_readme | grep -oE '\*\*[0-9]+\*\* directories' | grep -oE '[0-9]+' | head -1; }
 
 check_book_cli_chapter_count() { compare_count FALSIFY-README-009 book_cli_chapter_count "$(claimed_book_cli_chapter_count)" "$(measured_book_cli_chapter_count)" "book/src/cli/*.md"; }
 check_book_lib_chapter_count() { compare_count FALSIFY-README-010 book_lib_chapter_count "$(claimed_book_lib_chapter_count)" "$(measured_book_lib_chapter_count)" "book/src/lib/*.md"; }
@@ -253,7 +260,7 @@ claimed_crate_count() {
   # Look for pattern "**N** workspace crates"
   local crate_re='\*\*[0-9]+\*\* workspace crates'
   local num_re='[0-9]+'
-  grep -oE "$crate_re" "$README" | grep -oE "$num_re" | head -1
+  unmarked_readme | grep -oE "$crate_re" | grep -oE "$num_re" | head -1
 }
 
 # EVERY contract count the README AUTHORS, one per line, deduplicated. The
@@ -293,7 +300,7 @@ claimed_cli_command_count() {
   # Look for pattern "**K** CLI commands"
   local cli_re='\*\*[0-9]+\*\* CLI commands'
   local num_re='[0-9]+'
-  grep -oE "$cli_re" "$README" | grep -oE "$num_re" | head -1
+  unmarked_readme | grep -oE "$cli_re" | grep -oE "$num_re" | head -1
 }
 
 # --- check runners ---
@@ -670,6 +677,10 @@ case "$mode" in
     check_book_lib_chapter_count || fail=1
     check_crates_directory_count || fail=1
     check_install_line      || fail=1
+    # GEN-001 (#4526): every *_COUNT block above is WRITTEN by scripts/readme_sync.sh; its
+    # case table is armed here, on the normal path, for the reason cargo_classify's is.
+    bash "$REPO_ROOT/scripts/readme_sync_selftest.sh" > /dev/null 2>&1 \
+        || { echo "FAIL readme_sync.sh case table (bash scripts/readme_sync_selftest.sh)"; fail=1; }
     exit "$fail"
     ;;
 esac

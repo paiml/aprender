@@ -566,10 +566,11 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts
 
-# BSE-03 phase A (Pmat-Ticket: PMAT-1068). The README's contract count is
-# DERIVED: scripts/readme_sync.sh rewrites the text between the
-# <!-- CONTRACT_COUNT_START/END --> markers with `find contracts/ -name '*.yaml'`
-# and nothing else in the file. Idempotent — running it twice is byte-identical.
+# BSE-03 phase A (Pmat-Ticket: PMAT-1068), widened by GEN-001 (#4526). Every
+# derived README count is WRITTEN: scripts/readme_sync.sh rewrites the text
+# between each <!-- *_COUNT_START/END --> pair (`--list-blocks` names them) from
+# that count's one instrument, and nothing else in the file. Idempotent. A PR
+# never edits a block; run this on the integrated tree (batch_fold.sh --regen).
 #
 # Before this, three literals in three prose sites were maintained by hand and
 # `--regen` only PRINTED the numbers for a human to copy; they sat two behind
@@ -577,7 +578,7 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # README lag. scripts/check_readme_claims.sh judges the generated block by
 # EQUALITY against the MERGE TREE, with origin/main as the comparand.
 .PHONY: readme-sync readme-sync-check
-readme-sync: ## Regenerate the README's derived contract count (BSE-03)
+readme-sync: ## Regenerate every derived README count (BSE-03, GEN-001)
 	@bash scripts/readme_sync.sh --write
 
 readme-sync-check: ## Fail if README.md is not what the generator produces

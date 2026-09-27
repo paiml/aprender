@@ -74,9 +74,15 @@ equations:
       "[`paiml/apr-cookbook`](https://github.com/paiml/apr-cookbook) — **N** worked examples (apr-cookboo":
         gated_by: cookbook_recipe_count
         readme_line_when_written: 93
-      "│ └── ... (**N** directories — NOT the crate count: see the table above)":
+      "| Crate directories | **N** directories | `ls -Nd crates/*/` — NOT the crate count: a directory is":
         gated_by: crates_directory_count
-        readme_line_when_written: 260
+        readme_line_when_written: 59
+      "| Provable contracts | **N** provable contracts | `contracts/census.json` `.n_files` — the set `pv":
+        gated_by: contract_count
+        readme_line_when_written: 55
+      "The tree carries N contracts across inference, training, quantization, attention, FFN,":
+        gated_by: contract_count
+        readme_line_when_written: 336
   # ─────────────────────────────────────────────────────────────────────────
   # THE COOKBOOK RECIPE COUNT IS A PIN, NOT A MEASUREMENT (#3769).
   #
