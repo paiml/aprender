@@ -350,4 +350,35 @@ mod tests {
             "BEAT-NF4-EQUIVALENCE: apr≡bitsandbytes — max|Δrecon|={max_abs_diff:.2e}, apr_MSE={apr_mse:.6} vs bnb_MSE={BNB_MSE:.6}"
         );
     }
+
+    /// L4 witness for `ProvableContracts.NF4.cpuSlots` (NF4Dequant.lean): every byte
+    /// 0..=255 through `dequantize_blockwise`, each output decoded back to its
+    /// (LUT code, absmax block) slot and folded into the checksum the Lean `#eval`
+    /// of `witnessChecksum` prints. A nibble-order or block-index change moves it.
+    #[test]
+    fn l4_witness_blockwise_matches_lean_model() {
+        const LEAN: [(usize, u64); 5] = [
+            (1, 1_222_814_896),
+            (2, 1_201_632_088),
+            (3, 1_194_530_386),
+            (4, 1_191_010_736),
+            (64, 1_181_049_728),
+        ];
+        let packed: Vec<u8> = (0..=255u8).collect();
+        for (bs, want) in LEAN {
+            let blocks = packed.len() * 2 / bs + 1;
+            let mut unit = vec![0.0f32; packed.len() * 2];
+            dequantize_blockwise(&packed, &vec![1.0; blocks], bs, &mut unit);
+            let scales: Vec<f32> = (1..=blocks).map(|j| j as f32).collect();
+            let mut scaled = vec![0.0f32; packed.len() * 2];
+            dequantize_blockwise(&packed, &scales, bs, &mut scaled);
+            let mut sum = 0u64;
+            for (i, (&u, &v)) in unit.iter().zip(&scaled).enumerate() {
+                let code = NF4_LUT.iter().position(|&l| l == u).expect("output is a LUT value");
+                let block = if code == 7 { 0 } else { (v / NF4_LUT[code]).round() as u64 - 1 };
+                sum += (i as u64 + 1) * (code as u64 * 1009 + block);
+            }
+            assert_eq!(sum, want, "blocksize {bs}: Rust diverges from the Lean model");
+        }
+    }
 }
