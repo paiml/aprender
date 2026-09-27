@@ -307,7 +307,8 @@ ROWS
     jq -c '.predicate.attestation_level = "L1-self"' "$good/receipt.intoto.jsonl" > "$st/l1root/$pr/$head/receipt.intoto.jsonl"
     expect 'arm4: only L2 receipts are read from the attest root'       1 "holds no receipt whose" arm4 "$st/empty" "$st/l1root" "$head"
     # an attest signed for ANOTHER PR, copied under this PR's directory (same diff, so same patch-id)
-    mk "$st/xpr/$pr/$head" '.predicate.pr = 5002' || bad 'arm4: the cross-PR attest could not be built'
+    local xpr="$st/xpr/$pr/$head"
+    mk "$xpr" '.predicate.pr = 5002' || bad 'arm4: the cross-PR attest could not be built'
     expect 'arm4: an attest signed for another PR is RED'             1 "signed for PR 5002, not PR $pr" arm4 "$st/empty" "$st/xpr" "$head"
 
     # publish: a bare remote, two attests, fast-forward only.
