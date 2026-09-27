@@ -122,7 +122,8 @@ jobs:
       SHARD: ${{ matrix.shard }}
       SHARDS: ${{ matrix.shards }}
     steps:
-      - name: Pre-checkout ownership restore (EACCES self-heal)
+      - &ws_pre
+        name: Pre-checkout ownership restore (EACCES self-heal)
         # Five-whys: the end-of-job "Fix file ownership" step is
         # `if: always()`, but a hard-killed job (runner death, forced
         # cancel) skips even always() steps → root-owned
@@ -146,7 +147,8 @@ jobs:
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
       - uses: actions/checkout@v7
-      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+      - &ws_pull
+        name: Pull sovereign-ci image (with retry + local-cache fallback)
         # Self-hosted runner's local Docker registry at localhost:5000 is
         # occasionally restarting OR experiencing extended outages
         # (paiml/infra ops). Two layers of resilience:
@@ -191,7 +193,8 @@ jobs:
         # row 2a requires a genuinely orphaned dir to still be reclaimed. A
         # blanket skip passes row 1 and fails row 2.
         run: bash scripts/ci_reclaim_target_dirs.sh --self-test
-      - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
+      - &ws_reclaim
+        name: Reclaim orphaned per-RUN target dirs (never a live sibling)
         # WHAT THIS REPLACED, and why (#2825).
         #
         # This step used to run, whenever the previous run on the branch was
@@ -279,7 +282,8 @@ jobs:
       # parent an earlier run already left root-owned is chowned — that one
       # directory, not its contents — through the image, which runs as root,
       # exactly as the chown step below does for the run dir.
-      - name: Create this run's target dir and registry on the host (before any bind mount)
+      - &ws_mkdir
+        name: Create this run's target dir and registry on the host (before any bind mount)
         run: |
           set -euo pipefail
           # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
@@ -306,7 +310,8 @@ jobs:
           heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
           heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
-      - name: Pre-build chown — fix per-RUN root ownership
+      - &ws_chown
+        name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
         #   1. Why do fresh runs sometimes fail with "failed to create
         #      /workspace/target/debug" / "No such file or directory"?
@@ -348,7 +353,8 @@ jobs:
       # command itself must succeed — an empty diff from a failed git would
       # read as "nothing touched", the fail-open shape. Feature-gated suites
       # (model-tests, setfit) stay in the full tier.
-      - name: Decide the test tier (BSE-17, PMAT-1077)
+      - &ws_tier
+        name: Decide the test tier (BSE-17, PMAT-1077)
         id: tier
         env:
           GH_TOKEN: ${{ github.token }}
@@ -397,7 +403,9 @@ jobs:
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
           grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       - name: Workspace lib tests (25,300+)
-        if: steps.tier.outputs.tier == 'full'
+        # QM-09 (#4527): sharded, the lib tests run from the build job's archive
+        # (the next two steps); this compiling form is the one-shard run's.
+        if: steps.tier.outputs.tier == 'full' && matrix.shards == 1
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
         # -- each runs as its own step below. The GPU crates are `default = []`, but they
         # CANNOT ride this `--workspace` line: cargo unifies features across the whole
@@ -452,6 +460,41 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"
+      # QM-09 (#4527) compile-once: the build job compiled the workspace lib tests
+      # ONCE and archived them; this shard downloads the archive and runs its hash
+      # partition with no compile. Before: every shard compiled the whole
+      # workspace lib itself (4m52s warm on run 36102215061 shard 2, and the four
+      # cold shards of run 36257835805 were cancelled at 15 min still compiling).
+      - name: "Workspace lib tests: fetch the build job's archive (QM-09 #4527)"
+        if: steps.tier.outputs.tier == 'full' && matrix.shards != 1
+        uses: actions/download-artifact@v4
+        with:
+          name: ws-lib-archive
+          path: ws-lib-archive-dl
+      - name: "Workspace lib tests from the compile-once archive (QM-09 #4527)"
+        if: steps.tier.outputs.tier == 'full' && matrix.shards != 1
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          a=ws-lib-archive-dl/ws-lib-archive
+          [ -s "$a/lib.tar.zst" ] || { echo "::error::no archive at $a/lib.tar.zst"; exit 1; }
+          # The two jobs decide the tier on their own; an archive built for another
+          # tier is not this shard's universe.
+          bt=$(cat "$a/tier")
+          [ "$bt" = full ] || { echo "::error::the build job decided tier '$bt', this shard 'full'"; exit 1; }
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e SHARD -e SHARDS -e ARCHIVE="/workspace/$a/lib.tar.zst" \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              mkdir -p /workspace/target/ws-extract
+              cargo nextest run --profile ci --archive-file "$ARCHIVE" --workspace-remap /workspace --extract-to /workspace/target/ws-extract --extract-overwrite --partition "hash:${SHARD}/${SHARDS}"'
       - name: "Σ-executed: keep the workspace lib junit (the next nextest run overwrites it)"
         if: steps.tier.outputs.tier == 'full'
         # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
@@ -616,9 +659,13 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e SHARDS \
             "$IMAGE" \
             bash -c 'set -euo pipefail
-              cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.list.json
+              # QM-09 (#4527): sharded, the lib universe is listed by the build job.
+              if [ "$SHARDS" = 1 ]; then
+                cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.list.json
+              fi
               cargo nextest list --profile ci -p aprender-gpu -p aprender-cuda-edge --lib --message-format json > /sigma/gpu.list.json
               cargo test -p aprender-compute --lib -- --list > /sigma/compute.list.txt
               cargo test -p aprender-compute --lib -- --list --ignored > /sigma/compute.ignored.txt'
@@ -931,7 +978,7 @@ jobs:
             cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
             cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
             if [ "$SHARD" = 1 ]; then
-              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
+              cp "$sig/explicit.list.txt" sigma-shard/
             fi
           fi
           # CI-WIDE: the quick tier is partitioned too, so its executed ids fan in
@@ -995,7 +1042,8 @@ jobs:
             -w /workspace \
             "$IMAGE" \
             bash scripts/check_format_sovereignty.sh
-      - name: Fix file ownership (container runs as root, runner as noah:1000)
+      - &ws_own
+        name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |
           # Five-whys: Docker container creates files as root on bind-mounted
@@ -1016,17 +1064,92 @@ jobs:
   # shards in. `if: always()` so a failed shard still produces a red check here
   # instead of a skipped one (a skipped required check blocks nothing and says
   # nothing). Every non-success matrix result is named.
+  # QM-09 (#4527) compile-once: the workspace lib tests are compiled ONCE per run,
+  # here, and archived (`cargo nextest archive`); the eight workspace-test-shard
+  # jobs need this one and run their hash partition from the archive. The tier is
+  # decided here as in the shards (the same step), and the fan-in checks both
+  # agree. The Σ universe of the lib tests is listed here with its filters written
+  # out again -- never read back from the archive -- so an --exclude added to the
+  # archive line cannot narrow its own yardstick. X64 only: an archive holds
+  # native binaries.
+  workspace-test-build:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 60
+    env:
+      SCCACHE_HOST_DIR: /home/noah/data/sccache
+      IMAGE: localhost:5000/sovereign-ci:stable
+      # Its own cargo state, as each shard has (`-s<N>`): `-sb` for the build.
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}-sb
+    steps:
+      - *ws_pre
+      - uses: actions/checkout@v7
+      - *ws_pull
+      - *ws_reclaim
+      - *ws_mkdir
+      - *ws_chown
+      - *ws_tier
+      - name: "Compile once: archive the workspace lib tests and list their universe (QM-09 #4527)"
+        if: steps.tier.outputs.tier == 'full'
+        timeout-minutes: 50
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ws-lib-archive sigma-build
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=16 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              cargo nextest archive --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --archive-file /workspace/ws-lib-archive/lib.tar.zst
+              cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /workspace/sigma-build/lib.list.json'
+          ls -la ws-lib-archive sigma-build
+      - name: "Stage the tier this job decided (the shards and the fan-in check it)"
+        shell: bash
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          set -euo pipefail
+          mkdir -p ws-lib-archive sigma-build
+          printf '%s\n' "$TIER" > ws-lib-archive/tier
+          printf '%s\n' "$TIER" > sigma-build/tier
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ws-lib-archive
+          path: ws-lib-archive/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sigma-build
+          path: sigma-build/
+          if-no-files-found: error
+      - *ws_own
+
   workspace-test:
-    needs: [workspace-test-shard]
+    needs: [workspace-test-build, workspace-test-shard]
     if: always()
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     steps:
       - name: Every shard passed
         env:
+          BUILD_RESULT: ${{ needs.workspace-test-build.result }}
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
         run: |
           set -euo pipefail
+          printf 'workspace-test-build result: %s\n' "$BUILD_RESULT"
+          [ "$BUILD_RESULT" = success ] || { echo "::error::workspace-test: the build job's result is '$BUILD_RESULT'"; exit 1; }
           printf 'workspace-test-shard matrix result: %s\n' "$SHARD_RESULT"
           case "$SHARD_RESULT" in
             success) echo "workspace-test: all shards green" ;;
