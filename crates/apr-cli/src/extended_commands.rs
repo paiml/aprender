@@ -138,8 +138,10 @@ pub enum ExtendedCommands {
         #[arg(long, default_value = "20.0",
               value_parser = commands::threshold_arg::parse_tolerance_f32)]
         threshold: f32,
-        /// Task type: omit for perplexity, "classify" for classification eval
-        #[arg(long)]
+        /// Task: omit for perplexity on --dataset. classify (needs the
+        /// `training` feature), code, humaneval, mbpp, contamination, compare,
+        /// verify, correlation, human, plan
+        #[arg(long, value_parser = EVAL_TASK_VALUES)]
         task: Option<String>,
         /// Test data file (JSONL) for classification evaluation
         #[arg(long, value_name = "FILE")]
