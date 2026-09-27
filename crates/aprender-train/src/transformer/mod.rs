@@ -17,6 +17,7 @@ mod encoder;
 mod encoder_block;
 mod feedforward;
 mod gdn;
+mod gdn_backward;
 pub mod init;
 mod model;
 mod norm;
@@ -42,8 +43,9 @@ pub use encoder::EncoderModel;
 pub use encoder_block::EncoderBlock;
 pub use feedforward::EncoderFeedForward;
 pub use gdn::{
-    causal_conv1d_seq, gated_delta_scan, gdn_mixer_forward, GdnDims, GdnScan, GdnWeights,
+    causal_conv1d_seq, gated_delta_scan, gdn_mixer_forward, GdnDims, GdnFloat, GdnScan, GdnWeights,
 };
+pub use gdn_backward::{gated_delta_scan_backward, GdnScanGrads};
 pub use model::Transformer;
 pub use norm::LayerNorm;
 pub use qwen35_layer::{
