@@ -1391,22 +1391,7 @@ def cmd_list(a):
             print(f"{n}\t{i}\t{label}")
 
 
-def cmd_self_test(a):
-    """Case table: each row names what it would read if the rule it guards were
-    deleted (AnyShard, implicit success(), the depth-1 cut, the verdict rule)."""
-    import tempfile
-    from types import SimpleNamespace
-    rows = []
-
-    def row(label, got, want):
-        rows.append((label, got == want, got, want))
-
-    def ev(failed=False, **ctx):
-        base = {"github": {"event_name": "pull_request"}, "matrix": {"shard": AnyShard("1"), "shards": 1},
-                "steps": {"tier": {"outputs": {"tier": "full"}}}, "env": {}}
-        base.update(ctx)
-        return Evaluator(base, make_funcs(lambda: failed, lambda: Path(".")))
-
+def _st_vendored(row):
     real = SOV_FILE.read_text()
     hd = sccache_host_dir(load_yaml(SECTIONS_FILE))
 
@@ -1425,6 +1410,14 @@ def cmd_self_test(a):
         vend_rc(real.replace(f"- {SOV_TOKEN}:", "- /elsewhere:", 1)), 1)
     row("vendored sov: MUTANT header without sha256 is refused",
         vend_rc(real.replace("# sha256 of the upstream file:", "# sha:", 1)), 1)
+
+
+def _st_expressions(row):
+    def ev(failed=False, **ctx):
+        base = {"github": {"event_name": "pull_request"}, "matrix": {"shard": AnyShard("1"), "shards": 1},
+                "steps": {"tier": {"outputs": {"tier": "full"}}}, "env": {}}
+        base.update(ctx)
+        return Evaluator(base, make_funcs(lambda: failed, lambda: Path(".")))
 
     e = ev()
     row("event == 'pull_request'", truthy(e.eval("github.event_name == 'pull_request'")), True)
@@ -1457,6 +1450,9 @@ def cmd_self_test(a):
     row("a bracketed name resolves to itself only", resolve_section_names(cat, "determinism[X64]"),
         ["determinism[X64]"])
     row("sov.* globs", resolve_section_names(cat, "sov.*"), ["sov.test", "sov.gate"])
+
+
+def _st_timeouts(row):
     saved = os.environ.pop("FAT_TIMEOUT_SCALE", None)
     try:
         row("timeout: a section's 30 min is scaled x2 on the shared runner", timeout_seconds(30), 3600.0)
@@ -1474,6 +1470,10 @@ def cmd_self_test(a):
         os.environ.pop("FAT_TIMEOUT_SCALE", None)
         if saved is not None:
             os.environ["FAT_TIMEOUT_SCALE"] = saved
+
+
+def _st_artifact(row):
+    import tempfile
     import http.server
     import threading
 
@@ -1505,6 +1505,11 @@ def cmd_self_test(a):
             got = repr(e)
         row("artifact download drops Authorization on the blob redirect", got, b"zipbytes")
     srv.shutdown()
+
+
+def _st_checkout(row):
+    import tempfile
+    from types import SimpleNamespace
     with tempfile.TemporaryDirectory() as td:
         f = Path(td) / "out"
         f.write_text("a=1\nb<<EOF\nx\ny=z\nEOF\nc=3\n")
@@ -1541,6 +1546,10 @@ def cmd_self_test(a):
         row("checkout fetch-depth 0: full history", (ok, cnt), (True, "3"))
         ok, _ = uses_checkout(clone("d2"), {"fetch-depth": 2}, None)
         row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
+
+
+def _st_aside(row):
+    import tempfile
     # #4507: a leftover section tree the runner user cannot delete (root-owned files
     # from a container section). `stubborn` is rmtree on such a tree, whoever runs the
     # self-test: it deletes all but the `rootowned` dir, then raises EACCES as the real
@@ -1616,6 +1625,9 @@ def cmd_self_test(a):
             ok = aside is not None and not d.exists()
             os.chmod((aside or d) / "ws" / "rootowned", 0o700)  # so the tempdir can go
             row("#4507 real EACCES tree (non-root): moved aside, dir free", ok, True)
+
+
+def _st_external(row):
     # --external-job: a need on another job of the run is pending until that
     # job completes, then carries its conclusion; without the flag it is absent.
     x = RunCtx.__new__(RunCtx)
@@ -1637,6 +1649,20 @@ def cmd_self_test(a):
     row("external need: past the deadline and still absent -> failure", x.need_result("workspace-test"), "failure")
     x.external = {}
     row("no --external-job: the need is absent (schedule refuses)", x.members("workspace-test"), [])
+
+
+def cmd_self_test(a):
+    """Case table: each row names what it would read if the rule it guards were
+    deleted (AnyShard, implicit success(), the depth-1 cut, the verdict rule).
+    The rows live in the _st_* section functions above, run in this order."""
+    rows = []
+
+    def row(label, got, want):
+        rows.append((label, got == want, got, want))
+
+    for section in (_st_vendored, _st_expressions, _st_timeouts, _st_artifact, _st_checkout, _st_aside,
+                    _st_external):
+        section(row)
     bad = 0
     for label, good, got, want in rows:
         bad += not good
