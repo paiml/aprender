@@ -160,7 +160,7 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
     let dev = package(&pkgs, "dev", None);
     git(&dev, &["init", "-q"]);
     git(&dev, &["commit", "-q", "--allow-empty", "-m", "dev"]);
-    let head = git(&dev, &["rev-parse", "--short", "HEAD"]);
+    let head = git(&dev, &["rev-parse", "--short=9", "HEAD"]);
     expect("dev-checkout", run(&bin, &dev, None, &[]), &head);
     // the release lane: root in a container over the runner-owned checkout. git's own test knob
     // makes it see another owner; the precondition proves plain git really refuses the repo here
