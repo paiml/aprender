@@ -491,10 +491,27 @@ fn section_selected(name: &str, part: &str) -> bool {
 
 /// The normalised `run:` lines of the `ci/sections.yml` jobs that `specs` select. A section no merge-path fat
 /// job names contributes nothing: a claim it "runs" is not run.
+///
+/// #4415 moved guard-cargo's guard steps into a manifest job, `guard-cargo-steps`, that GitHub never runs:
+/// the selected `guard-cargo` runs them all through its one `bash scripts/ci_guards.sh guard-cargo` step. So a
+/// `<X>-steps` job counts as selected when `X` is selected and one of `X`'s steps runs `ci_guards.sh X`.
 #[must_use]
 pub fn section_run_lines(sections: &serde_yaml::Value, specs: &[String]) -> BTreeSet<String> {
+    let selected = |name: &str| specs.iter().any(|p| section_selected(name, p));
+    let runs_manifest = |base: &str| {
+        let call = format!("scripts/ci_guards.sh {base}");
+        job_runs(sections, |n| n == base).iter().any(|r| {
+            r.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .contains(&call)
+        })
+    };
     job_runs(sections, |name| {
-        specs.iter().any(|p| section_selected(name, p))
+        selected(name)
+            || name
+                .strip_suffix("-steps")
+                .is_some_and(|base| selected(base) && runs_manifest(base))
     })
     .into_iter()
     .flat_map(normalise)
@@ -675,6 +692,24 @@ mod tests {
             wf("on: [pull_request_target]\njobs:\n  a:\n    steps:\n      - run: x\n").len(),
             1
         );
+    }
+
+    #[test]
+    fn a_steps_manifest_counts_only_through_its_selected_guard_call() {
+        // #4415: guard-cargo-steps is `if: false`; guard-cargo runs it via ci_guards.sh.
+        let sections: serde_yaml::Value = serde_yaml::from_str(
+            "jobs:\n  guard-cargo:\n    steps:\n      - run: bash scripts/ci_guards.sh guard-cargo\n  guard-cargo-steps:\n    if: false\n    steps:\n      - run: make m\n  lone:\n    steps:\n      - run: make lone\n  lone-steps:\n    steps:\n      - run: make orphan\n",
+        )
+        .unwrap();
+        let specs = vec!["guard-cargo".to_string(), "lone".to_string()];
+        let got = section_run_lines(&sections, &specs);
+        assert!(got.contains("make m"), "{got:?}");
+        assert!(got.contains("make lone"));
+        assert!(
+            !got.contains("make orphan"),
+            "a -steps job with no ci_guards.sh call is not run"
+        );
+        assert!(!section_run_lines(&sections, &["lone".to_string()]).contains("make m"));
     }
 
     #[test]
