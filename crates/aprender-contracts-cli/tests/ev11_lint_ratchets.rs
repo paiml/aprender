@@ -1,20 +1,18 @@
 //! PVL-001 EV-11 (PMAT-4166) — `pv lint --gate theorem-pairing --gate depends-on-present`: two shrink-only
-//! ratchets read from `contracts/lint-baseline.json`, which the gates never write.
-//!
-//! The row's probe, verbatim (paiml/infra PVL-001 @00553b0b): `json_object contracts/lint-baseline.json && jq -e
-//! '(.unpaired_theorem_modules|numbers) and (.contracts_without_depends_on|numbers) and (.command|strings)'
-//! contracts/lint-baseline.json && "$PV" lint contracts/ --gate theorem-pairing --gate depends-on-present`, and the
-//! accept adds `git diff --exit-code contracts/lint-baseline.json` after it. The first test is that probe on the
-//! real corpus; the rest run on a throwaway repo built in a tempdir, because the gates read the repo ROOT
-//! (`lean/`, `book/`) as well as the contract dir.
+//! ratchets. Since #3569 each baseline is the same gate measured over the comparand (merge-base) tree that
+//! `PV_LINT_COMPARAND` names, in the same run — never a number stored in `contracts/lint-baseline.json`, which a
+//! PR could restamp. The first test is the probe on the real corpus (a hold against itself); the rest run on a
+//! throwaway repo built in a tempdir, because the gates read the repo ROOT (`lean/`, `book/`) as well as the
+//! contract dir.
 //!
 //! | case | expected |
 //! |---|---|
-//! | real corpus, both gates | exit 0, both Pass, the baseline byte-identical after |
-//! | tempdir at the baseline | exit 0 |
+//! | real corpus against itself, both gates | exit 0, both Pass, and no retired key stored |
+//! | tempdir unchanged against its snapshot | exit 0 |
 //! | the spec's mutation: add an unpaired Theorem module | exit 1, PV-RAT-001 — the meet rejects |
-//! | a kernel contract with no `depends_on` above the baseline | exit 1, PV-RAT-002 |
-//! | no baseline key | exit 2, `Unknown(Report)` with the count printed — reported, never a pass |
+//! | a kernel contract with no `depends_on` added | exit 1, PV-RAT-002; the same pair reversed passes |
+//! | a restamped stored count | moves nothing, in either direction |
+//! | no comparand named | exit 2, `Unknown(Report)` with the count printed — reported, never a pass |
 //! | no Lean base | exit 2, decline naming what is missing |
 //! | an unknown name among several | exit 1 before anything runs |
 
@@ -31,13 +29,24 @@ struct Run {
     stderr: String,
 }
 
+const COMPARAND: &str = "PV_LINT_COMPARAND";
+
 fn pv(args: &[&str]) -> Run {
+    pv_against(args, None)
+}
+
+/// `pv` with `comparand` named as the tree the baselines are measured over; `None` names none, whatever the
+/// caller's environment exports.
+fn pv_against(args: &[&str], comparand: Option<&Path>) -> Run {
     let scratch = tempfile::tempdir().expect("scratch cwd is creatable");
-    let out = Command::new(pv_bin())
-        .current_dir(scratch.path())
+    let mut cmd = Command::new(pv_bin());
+    cmd.current_dir(scratch.path())
         .args(args)
-        .output()
-        .expect("failed to spawn pv");
+        .env_remove(COMPARAND);
+    if let Some(dir) = comparand {
+        cmd.env(COMPARAND, dir);
+    }
+    let out = cmd.output().expect("failed to spawn pv");
     Run {
         code: out.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -77,7 +86,7 @@ fn reports(stdout: &str) -> Vec<serde_json::Value> {
 const BOTH: [&str; 4] = ["--gate", "theorem-pairing", "--gate", "depends-on-present"];
 
 /// A repo with one paired theorem module and one kernel contract (the PVL-1 control, which has no
-/// `depends_on`), at baselines 0 and 1.
+/// `depends_on`): 0 unpaired, 1 without depends_on.
 fn repo() -> tempfile::TempDir {
     let t = tempfile::tempdir().expect("tempdir");
     write(
@@ -96,35 +105,57 @@ fn repo() -> tempfile::TempDir {
         t.path().join("contracts/softmax-kernel-v1.yaml"),
     )
     .expect("control contract copies");
-    write(
-        t.path(),
-        "contracts/lint-baseline.json",
-        "{\n  \"unpaired_theorem_modules\": 0,\n  \"contracts_without_depends_on\": 1\n}\n",
-    );
+    t
+}
+
+/// A copy of `root` as it stands now: the comparand (merge-base) tree later edits are judged against.
+fn snapshot(root: &Path) -> tempfile::TempDir {
+    fn copy(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).expect("mkdir");
+        for entry in std::fs::read_dir(from).expect("read_dir") {
+            let entry = entry.expect("entry");
+            let dest = to.join(entry.file_name());
+            if entry.file_type().expect("file type").is_dir() {
+                copy(&entry.path(), &dest);
+            } else {
+                std::fs::copy(entry.path(), dest).expect("copy");
+            }
+        }
+    }
+    let t = tempfile::tempdir().expect("tempdir");
+    copy(root, t.path());
     t
 }
 
 fn lint(root: &Path, gates: &[&str]) -> Run {
+    lint_against(root, None, gates)
+}
+
+/// `pv lint root/contracts` with `base/contracts` named as the comparand.
+fn lint_against(root: &Path, base: Option<&Path>, gates: &[&str]) -> Run {
     let dir = root.join("contracts");
     let mut args = vec!["lint", s(&dir)];
     args.extend_from_slice(gates);
-    pv(&args)
+    let comparand = base.map(|b| b.join("contracts"));
+    pv_against(&args, comparand.as_deref())
 }
 
+/// The keys #3569 retired from the stored file: a comparand is measured, never stored.
+const RETIRED: [&str; 2] = ["unpaired_theorem_modules", "contracts_without_depends_on"];
+
 #[test]
-fn the_probe_passes_on_the_real_corpus_and_writes_nothing() {
+fn the_probe_passes_on_the_real_corpus_against_itself_and_stores_nothing() {
     let baseline = repo_contracts().join("lint-baseline.json");
     let before = std::fs::read(&baseline).expect("baseline readable");
     let doc: serde_json::Value = serde_json::from_slice(&before).expect("baseline is JSON");
-    assert!(doc.is_object());
-    assert!(doc["unpaired_theorem_modules"].is_u64(), "{doc}");
-    assert!(doc["contracts_without_depends_on"].is_u64(), "{doc}");
-    assert_eq!(doc["command"], "make lint-ratchet");
+    for key in RETIRED {
+        assert!(doc.get(key).is_none(), "{key} is measured, not stored: {doc}");
+    }
 
     let dir = repo_contracts();
     let mut args = vec!["lint", s(&dir)];
     args.extend_from_slice(&BOTH);
-    let r = pv(&args);
+    let r = pv_against(&args, Some(&dir));
     assert_eq!(r.code, 0, "{}", show(&r));
     let got = reports(&r.stdout);
     assert_eq!(got.len(), 2, "{}", show(&r));
@@ -132,24 +163,22 @@ fn the_probe_passes_on_the_real_corpus_and_writes_nothing() {
         assert_eq!(g["verdict"], "Pass", "{g}");
     }
     assert_eq!(
-        got[0]["unpaired_theorem_modules"], doc["unpaired_theorem_modules"],
-        "the recorded baseline is the measured count (`make lint-ratchet` wrote it)"
-    );
-    assert_eq!(
-        got[1]["contracts_without_depends_on"],
-        doc["contracts_without_depends_on"]
+        got[0]["baseline"], got[0]["unpaired_theorem_modules"],
+        "the baseline is the comparand measured: {}",
+        got[0]
     );
     assert_eq!(
         std::fs::read(&baseline).expect("baseline readable"),
         before,
-        "a gate wrote the baseline"
+        "a gate wrote the stored file"
     );
 }
 
 #[test]
-fn at_the_baseline_both_gates_pass() {
+fn unchanged_against_its_snapshot_both_gates_pass() {
     let t = repo();
-    let r = lint(t.path(), &BOTH);
+    let base = snapshot(t.path());
+    let r = lint_against(t.path(), Some(base.path()), &BOTH);
     assert_eq!(r.code, 0, "{}", show(&r));
 }
 
@@ -157,12 +186,13 @@ fn at_the_baseline_both_gates_pass() {
 #[test]
 fn adding_an_unpaired_theorem_module_is_red() {
     let t = repo();
+    let base = snapshot(t.path());
     write(
         t.path(),
         "lean/ProvableContracts/Theorems/S/B.lean",
         "theorem b : True := trivial\n",
     );
-    let r = lint(t.path(), &BOTH);
+    let r = lint_against(t.path(), Some(base.path()), &BOTH);
     assert_eq!(r.code, 1, "{}", show(&r));
     assert!(r.stdout.contains("PV-RAT-001"), "{}", show(&r));
     assert!(!r.stdout.contains("PV-RAT-002"), "{}", show(&r));
@@ -174,20 +204,47 @@ fn adding_an_unpaired_theorem_module_is_red() {
 }
 
 #[test]
-fn a_kernel_contract_without_depends_on_above_the_baseline_is_red() {
+fn a_kernel_contract_without_depends_on_added_is_red_and_removed_is_green() {
     let t = repo();
+    let base = snapshot(t.path());
     let text = std::fs::read_to_string(repo_contracts().join("softmax-kernel-v1.yaml"))
         .expect("control contract readable");
     write(t.path(), "contracts/softmax-kernel-copy-v1.yaml", &text);
-    let r = lint(t.path(), &["--gate", "depends-on-present"]);
+    let gate = ["--gate", "depends-on-present"];
+    let r = lint_against(t.path(), Some(base.path()), &gate);
     assert_eq!(r.code, 1, "{}", show(&r));
     assert!(r.stdout.contains("PV-RAT-002"), "{}", show(&r));
+    // the same pair the other way round: head 1, comparand 2 — a fall
+    let r = lint_against(base.path(), Some(t.path()), &gate);
+    assert_eq!(r.code, 0, "{}", show(&r));
 }
 
 #[test]
-fn no_baseline_reports_the_count_and_is_never_a_pass() {
+fn a_restamped_stored_count_moves_nothing() {
     let t = repo();
-    write(t.path(), "contracts/lint-baseline.json", "{}\n");
+    let base = snapshot(t.path());
+    write(
+        t.path(),
+        "lean/ProvableContracts/Theorems/S/B.lean",
+        "theorem b : True := trivial\n",
+    );
+    // the pre-#3569 dodge: restamp the stored number to cover the rise
+    write(
+        t.path(),
+        "contracts/lint-baseline.json",
+        "{\n  \"unpaired_theorem_modules\": 99,\n  \"contracts_without_depends_on\": 99\n}\n",
+    );
+    let r = lint_against(t.path(), Some(base.path()), &BOTH);
+    assert_eq!(r.code, 1, "a restamp does not hide a measured rise: {}", show(&r));
+    assert!(r.stdout.contains("PV-RAT-001"), "{}", show(&r));
+    // and with no comparand the stored number is not a baseline either
+    let r = lint(t.path(), &BOTH);
+    assert_eq!(r.code, 2, "{}", show(&r));
+}
+
+#[test]
+fn no_comparand_reports_the_count_and_is_never_a_pass() {
+    let t = repo();
     let r = lint(t.path(), &BOTH);
     assert_eq!(r.code, 2, "{}", show(&r));
     let got = reports(&r.stdout);
@@ -195,7 +252,6 @@ fn no_baseline_reports_the_count_and_is_never_a_pass() {
     for g in &got {
         assert_eq!(g["verdict"], "Unknown(Report)", "{g}");
     }
-    // the count `make lint-ratchet` records as the first baseline
     assert_eq!(got[0]["unpaired_theorem_modules"], 0);
     assert_eq!(got[1]["contracts_without_depends_on"], 1);
 }

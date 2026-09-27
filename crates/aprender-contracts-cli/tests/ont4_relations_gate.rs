@@ -25,12 +25,21 @@ struct Run {
 }
 
 fn pv(args: &[&str]) -> Run {
+    pv_against(args, None)
+}
+
+/// `pv` with `comparand` named as the tree the legacy ratchet is measured over (#3569); `None` names none,
+/// whatever the caller's environment exports.
+fn pv_against(args: &[&str], comparand: Option<&Path>) -> Run {
     let scratch = tempfile::tempdir().expect("scratch cwd is creatable");
-    let out = Command::new(pv_bin())
-        .current_dir(scratch.path())
+    let mut cmd = Command::new(pv_bin());
+    cmd.current_dir(scratch.path())
         .args(args)
-        .output()
-        .expect("failed to spawn pv");
+        .env_remove("PV_LINT_COMPARAND");
+    if let Some(dir) = comparand {
+        cmd.env("PV_LINT_COMPARAND", dir);
+    }
+    let out = cmd.output().expect("failed to spawn pv");
     Run {
         code: out.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -164,15 +173,26 @@ fn a_malformed_sigma_is_an_error_at_exit_3() {
     assert!(r.stderr.starts_with("error: "), "{}", show(&r));
 }
 
-/// The legacy ratchet: a rise above the recorded baseline is PV-ONT-010; the count itself never rejects.
+/// The legacy ratchet (#3569): a rise over the same count on the comparand tree is PV-ONT-010, a fall or a hold
+/// passes, and with no comparand the count is reported and never rejects.
 #[test]
 fn the_legacy_ratchet_rejects_a_rise_and_passes_a_hold() {
-    let hold = gate(&fixture("relations-legacy"));
+    let gate_against = |head: &str, base: &str| {
+        pv_against(
+            &["lint", &s(&fixture(head)), "--gate", "relations", "--format", "json"],
+            Some(&fixture(base)),
+        )
+    };
+    let alone = gate(&fixture("relations-legacy"));
+    assert_eq!(alone.code, 0, "{}", show(&alone));
+    assert_eq!(json_of(&alone)["extra"]["legacy_unresolved_depends_on"], 1);
+    let hold = gate_against("relations-legacy", "relations-legacy");
     assert_eq!(hold.code, 0, "{}", show(&hold));
-    assert_eq!(json_of(&hold)["extra"]["legacy_unresolved_depends_on"], 1);
-    let rise = gate(&fixture("relations-legacy-rise"));
+    let rise = gate_against("relations-legacy", "relations-ok");
     assert_eq!(rise.code, 1, "{}", show(&rise));
     assert!(rise.stdout.contains("PV-ONT-010"), "{}", show(&rise));
+    let fall = gate_against("relations-ok", "relations-legacy");
+    assert_eq!(fall.code, 0, "{}", show(&fall));
 }
 
 /// R-8: the gate is computed in every `pv lint` run, not only under `--gate`.

@@ -1507,15 +1507,12 @@ ont-ratchet:
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
 
-# PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
-# through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
-# NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
+# PVL-001 EV-11 (PMAT-4166): RETIRED by #3569 part 2. The two `pv lint` ratchets (theorem-pairing,
+# depends-on-present) now read their baseline MEASURED over the comparand tree (PV_LINT_COMPARAND, built by
+# scripts/lib/comparand_tree.sh), never a stored number, so there is nothing left to move by hand.
 .PHONY: lint-ratchet lint-ratchet-self-test
-lint-ratchet:
-	@bash scripts/lint_ratchet.sh
-
-lint-ratchet-self-test:
-	@bash scripts/lint_ratchet.sh --self-test
+lint-ratchet lint-ratchet-self-test:
+	@printf '%s\n' 'lint-ratchet is retired (#3569): the EV-11 baselines are measured over the comparand tree, not stored' >&2; exit 1
 
 # ONT-001 §5 ONT-4b2 / R-13 — the out-of-gate SHACL differential oracle.
 #

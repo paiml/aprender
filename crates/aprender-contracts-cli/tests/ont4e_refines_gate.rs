@@ -16,7 +16,11 @@ struct Run {
 }
 
 fn run(bin: &str, args: &[&str]) -> Run {
-    let out = Command::new(bin).args(args).output().expect("spawn");
+    let out = Command::new(bin)
+        .args(args)
+        .env_remove("PV_LINT_COMPARAND")
+        .output()
+        .expect("spawn");
     Run {
         code: out.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),

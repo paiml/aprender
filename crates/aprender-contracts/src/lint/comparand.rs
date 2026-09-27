@@ -47,6 +47,10 @@ pub fn comparand_dir() -> Option<PathBuf> {
     if let Some(dir) = OVERRIDE.with(|o| o.borrow().clone()) {
         return Some(dir);
     }
+    // the lib tests name a comparand through the seam only, so an exported ENV cannot flip a "no comparand" case
+    if cfg!(test) {
+        return None;
+    }
     std::env::var_os(ENV)
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)

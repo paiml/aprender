@@ -1,8 +1,10 @@
 //! ONT-7 (PMAT-4076) — `pv lint --gate valid-under`: kernel-kind contracts carry a world index.
 //!
-//! The row's probe, verbatim (paiml/infra `docs/specifications/paiml-ontology.md` v4.12 :657):
-//! `jq -e '.contracts_without_valid_under!=null' contracts/lint-baseline.json && pv lint contracts/ --gate
-//! valid-under --format json … jq -e '.verdict=="Pass"'`. The first test is that probe on the real corpus.
+//! The row's probe (paiml/infra `docs/specifications/paiml-ontology.md` v4.12 :657) is `pv lint contracts/ --gate
+//! valid-under --format json … jq -e '.verdict=="Pass"'`; its old `jq -e '.contracts_without_valid_under!=null'
+//! contracts/lint-baseline.json` precondition is retired — since #3569 the baseline is the same count measured over
+//! the comparand (merge-base) tree `PV_LINT_COMPARAND` names, never a stored number. The first test is that probe
+//! on the real corpus, against itself.
 //!
 //! Every rule has a fixture that fires it, because on the real corpus ONE contract carries `valid_under`
 //! (`ont-verdict-lattice-v1`) and a rule that cannot fire there is only observable here:
@@ -17,7 +19,7 @@
 //! | `valid-under-empty` | exit 1, PV-ONT-013 — `valid_under: {}` |
 //! | `valid-under-nonkernel-bad` | exit 1, PV-ONT-014 — no kernel at all, and still a reject, not a decline |
 //! | `valid-under-bad-qualifier` | exit 1, PV-ONT-015 — `backend: []`, non-string toolchain version |
-//! | `valid-under-ratchet-rise` | exit 1, PV-ONT-016 — one kernel without, baseline 0 |
+//! | `valid-under-ratchet-rise` vs comparand `valid-under-ok` | exit 1, PV-ONT-016 — one kernel without, comparand 0; reversed or alone exit 0 |
 //! | `valid-under-no-kernels` | exit 2, decline — nothing the row obliges |
 //! | `sigma-absent` | exit 2, decline — no world index to resolve into |
 //!
@@ -38,12 +40,21 @@ struct Run {
 }
 
 fn pv(args: &[&str]) -> Run {
+    pv_against(args, None)
+}
+
+/// `pv` with `comparand` named as the tree the ratchet is measured over (#3569); `None` names none, whatever
+/// the caller's environment exports.
+fn pv_against(args: &[&str], comparand: Option<&str>) -> Run {
     let scratch = tempfile::tempdir().expect("scratch cwd is creatable");
-    let out = Command::new(pv_bin())
-        .current_dir(scratch.path())
+    let mut cmd = Command::new(pv_bin());
+    cmd.current_dir(scratch.path())
         .args(args)
-        .output()
-        .expect("failed to spawn pv");
+        .env_remove("PV_LINT_COMPARAND");
+    if let Some(dir) = comparand {
+        cmd.env("PV_LINT_COMPARAND", dir);
+    }
+    let out = cmd.output().expect("failed to spawn pv");
     Run {
         code: out.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -100,15 +111,12 @@ fn assert_rejects_with(fixture_name: &str, rule: &str) {
 
 #[test]
 fn the_row_probe_passes_on_the_repo_corpus() {
-    let baseline: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(repo_contracts().join("lint-baseline.json")).expect("baseline"),
-    )
-    .expect("baseline is JSON");
-    assert!(
-        baseline["contracts_without_valid_under"].is_u64(),
-        "the probe reads a TOP-LEVEL contracts_without_valid_under"
+    let dir = repo_contracts();
+    let dir = dir.to_str().expect("utf-8 path");
+    let r = pv_against(
+        &["lint", dir, "--gate", "valid-under", "--format", "json"],
+        Some(dir),
     );
-    let r = gate(repo_contracts().to_str().expect("utf-8 path"));
     assert_eq!(r.code, 0, "{}", show(&r));
     let v = json_of(&r);
     assert_eq!(v["gate"], "valid-under", "{}", show(&r));
@@ -125,11 +133,10 @@ fn the_row_probe_passes_on_the_repo_corpus() {
         "ont-verdict-lattice-v1 carries world: committed\n{}",
         show(&r)
     );
-    // The ratchet's own rule, not equality: a PR that annotates contracts lowers the count and passes whether
-    // or not it also lowers the baseline (as `formal_prose` does), so this never forces a hand-edit.
-    assert!(
-        extra["contracts_without_valid_under"].as_u64() <= extra["baseline"].as_u64(),
-        "the debt may not rise above the recorded baseline\n{}",
+    // Against itself the baseline is the count, measured: nothing to hand-edit, nothing to restamp.
+    assert_eq!(
+        extra["baseline"], extra["contracts_without_valid_under"],
+        "the baseline is the comparand measured\n{}",
         show(&r)
     );
 }
@@ -211,8 +218,25 @@ fn a_malformed_qualifier_rejects() {
 }
 
 #[test]
-fn a_rise_in_the_debt_rejects() {
-    assert_rejects_with("valid-under-ratchet-rise", "PV-ONT-016");
+fn a_rise_in_the_debt_against_the_comparand_rejects_and_a_fall_passes() {
+    let against = |head: &str, base: &str| {
+        pv_against(
+            &["lint", &fixture(head), "--gate", "valid-under", "--format", "json"],
+            Some(&fixture(base)),
+        )
+    };
+    let rise = against("valid-under-ratchet-rise", "valid-under-ok");
+    assert_eq!(rise.code, 1, "{}", show(&rise));
+    assert_eq!(json_of(&rise)["verdict"], "Fail", "{}", show(&rise));
+    assert!(rise.stdout.contains("PV-ONT-016"), "{}", show(&rise));
+    let fall = against("valid-under-ok", "valid-under-ratchet-rise");
+    assert_eq!(fall.code, 0, "{}", show(&fall));
+    let hold = against("valid-under-ratchet-rise", "valid-under-ratchet-rise");
+    assert_eq!(hold.code, 0, "{}", show(&hold));
+    // no comparand named: the debt is reported, never judged
+    let alone = gate(&fixture("valid-under-ratchet-rise"));
+    assert_eq!(alone.code, 0, "{}", show(&alone));
+    assert_eq!(json_of(&alone)["extra"]["baseline"], serde_json::Value::Null);
 }
 
 #[test]
