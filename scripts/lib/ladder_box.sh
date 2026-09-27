@@ -71,6 +71,8 @@ mkdir -p "$(dirname "$EVENTS")"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # some avg10 as an integer percent×100 (bash has no floats); empty on a malformed file
 psi_some() { awk '$1=="some"{for(i=2;i<=NF;i++) if($i ~ /^avg10=/){sub(/^avg10=/,"",$i); printf "%d", $i*100; exit}}' "$PSI_FILE" 2>/dev/null; }
+# some avg60 as a decimal percent (the #4520 acceptance bound, "IO PSI avg60 < 40%"); null when unreadable
+psi_avg60() { awk '$1=="some"{for(i=2;i<=NF;i++) if($i ~ /^avg60=/){sub(/^avg60=/,"",$i); print $i+0; f=1; exit}} END{if(!f) print "null"}' "$PSI_FILE" 2>/dev/null; }
 event() { printf '{"t":"%s","unit":"%s","event":"%s","psi_some_avg10":%s%s}\n' "$(now)" "$UNIT" "$1" "$2" "${3:-}" >> "$EVENTS"; }
 
 devs_json=$(printf '"%s",' "${!seen[@]}"); devs_json="[${devs_json%,}]"
@@ -103,7 +105,7 @@ while kill -0 "$RUN_PID" 2>/dev/null; do
     systemctl --user kill --signal=SIGCONT "$UNIT" 2>/dev/null && { stopped=0; event SIGCONT "$pct"; }
   fi
   n=$((n + 1))
-  [ $((n % TRACE_EVERY)) -eq 0 ] && event trace "$pct" ",\"stopped\":$stopped"
+  [ $((n % TRACE_EVERY)) -eq 0 ] && event trace "$pct" ",\"stopped\":$stopped,\"psi_some_avg60\":$(psi_avg60)"
 done
 wait "$RUN_PID"; rc=$?
 event exit null ",\"rc\":$rc,\"brake_stops\":$stops"
