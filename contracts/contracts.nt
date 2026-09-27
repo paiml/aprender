@@ -2749,6 +2749,268 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> "ptx-debug version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "9c7d74d55399bdaf139a088a4a021006fdde1a2721d86c333cc890ada9804801"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/versionString> "apr 0.70.0 (47d198202)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityRegistry> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.0> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.1> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.10> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.11> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.12> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.2> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.3> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.4> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.5> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.6> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.7> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.8> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/ops> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.9> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.0> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.10> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.11> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.12> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.13> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.14> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.15> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.16> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.17> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.18> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.19> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.2> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.20> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.21> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.22> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.23> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.24> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.25> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.26> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.27> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.28> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.29> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.3> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.30> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.31> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.32> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.33> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.34> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.4> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.5> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.6> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.7> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.8> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/cap/quant_types> <https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.9> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.0> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.0> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.0> <https://ont.paiml.dev/v1alpha1/cap/op> "RoPE"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.1> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.1> <https://ont.paiml.dev/v1alpha1/cap/op> "GQA"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.10> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.10> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.10> <https://ont.paiml.dev/v1alpha1/cap/op> "AbsolutePos"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.10> <https://ont.paiml.dev/v1alpha1/cap/reason> "GPU uses RoPE; absolute-position models fall back to CPU"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.11> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.11> <https://ont.paiml.dev/v1alpha1/cap/citation> "PMAT-824"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.11> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.11> <https://ont.paiml.dev/v1alpha1/cap/op> "AttnFinalSoftcap"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.11> <https://ont.paiml.dev/v1alpha1/cap/reason> "CUDA forward_gpu_resident applies NO tanh attention/final-logit softcapping, so Gemma2/Gemma3 fall back to CPU\n"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.12> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.12> <https://ont.paiml.dev/v1alpha1/cap/citation> "PMAT-824"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.12> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.12> <https://ont.paiml.dev/v1alpha1/cap/op> "PostAttnFfnNorm"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.12> <https://ont.paiml.dev/v1alpha1/cap/reason> "CUDA forward applies only the two LLaMA-style norms, not the four-per-block Gemma2/Gemma3 norms, so those fall back to CPU\n"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.2> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.2> <https://ont.paiml.dev/v1alpha1/cap/op> "MHA"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.3> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.3> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.3> <https://ont.paiml.dev/v1alpha1/cap/op> "SwiGLU"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.4> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.4> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.4> <https://ont.paiml.dev/v1alpha1/cap/op> "RMSNorm"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.5> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.5> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.5> <https://ont.paiml.dev/v1alpha1/cap/op> "BiasAdd"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.6> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.6> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.6> <https://ont.paiml.dev/v1alpha1/cap/op> "CausalMask"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.7> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.7> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.7> <https://ont.paiml.dev/v1alpha1/cap/note> "GH-280: trueno PerHeadRmsNormKernel"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.7> <https://ont.paiml.dev/v1alpha1/cap/op> "QkNorm"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.8> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.8> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.8> <https://ont.paiml.dev/v1alpha1/cap/op> "GeluMlp"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.8> <https://ont.paiml.dev/v1alpha1/cap/reason> "GPU uses the SwiGLU path; GELU-MLP models fall back to CPU"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.9> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.9> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.9> <https://ont.paiml.dev/v1alpha1/cap/op> "LayerNorm"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.ops.9> <https://ont.paiml.dev/v1alpha1/cap/reason> "GPU uses the RMSNorm path; LayerNorm models fall back to CPU"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.0> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.0> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "0"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.0> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.0> <https://ont.paiml.dev/v1alpha1/cap/name> "F32"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> <https://ont.paiml.dev/v1alpha1/cap/name> "F16"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> <https://ont.paiml.dev/v1alpha1/cap/note> "Opened in the GPU whitelist on the 0.69.1 release branch. This row read `false` with reason \"no GPU GEMV kernel\" until FALSIFY-CAP-002 caught the disagreement with `gpu_unsupported_quant_qtype` after the kernel landed.\n"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> <https://ont.paiml.dev/v1alpha1/cap/refs> "#3846"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.1> <https://ont.paiml.dev/v1alpha1/cap/refs> "#3850"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.10> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.10> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "12"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.10> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.10> <https://ont.paiml.dev/v1alpha1/cap/name> "Q4_K"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.10> <https://ont.paiml.dev/v1alpha1/cap/note> "the release matrix's quant"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.11> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.11> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "13"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.11> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.11> <https://ont.paiml.dev/v1alpha1/cap/name> "Q5_K"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.12> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.12> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "14"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.12> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.12> <https://ont.paiml.dev/v1alpha1/cap/name> "Q6_K"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.13> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.13> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "15"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.13> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.13> <https://ont.paiml.dev/v1alpha1/cap/name> "Q8_K"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.13> <https://ont.paiml.dev/v1alpha1/cap/reason> "no GPU GEMV kernel"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.14> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.14> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "16"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.14> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.14> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ2_XXS"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.15> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.15> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "17"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.15> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.15> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ2_XS"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.15> <https://ont.paiml.dev/v1alpha1/cap/reason> "no GPU GEMV kernel; IQ also fails the CPU dequant path"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.16> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.16> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "18"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.16> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.16> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ3_XXS"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.17> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.17> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "19"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.17> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.17> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ1_S"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.17> <https://ont.paiml.dev/v1alpha1/cap/reason> "no GPU GEMV kernel; IQ also fails the CPU dequant path"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.18> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.18> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "20"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.18> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.18> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ4_NL"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.19> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.19> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "21"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.19> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.19> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ3_S"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.2> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "2"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.2> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.2> <https://ont.paiml.dev/v1alpha1/cap/name> "Q4_0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.20> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.20> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "22"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.20> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.20> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ2_S"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.21> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.21> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "23"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.21> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.21> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ4_XS"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.21> <https://ont.paiml.dev/v1alpha1/cap/note> "Opened in the GPU whitelist on the 0.69.1 release branch. The CPU dequant path has existed all along (`iq_dispatch.rs`); only the GPU side was shut.\n"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.21> <https://ont.paiml.dev/v1alpha1/cap/refs> "#3870"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.22> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.22> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.22> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.22> <https://ont.paiml.dev/v1alpha1/cap/name> "BF16"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.22> <https://ont.paiml.dev/v1alpha1/cap/reason> "#3908: GEMV kernel measured BIT-EXACT against the CPU decoder on device (RTX 4090 sm_89) - 0 ULP over 64 rows on integer-exact data, where every partial sum is exact in f32 so summation order cannot matter, and 1.468e-5 worst relative on ordinary bf16 values. The only type in this table measured exactly rather than within a tolerance, because bf16 decoding is `bits << 16` reinterpreted and rounds nothing. Planted faults RED first: shift 8 not 16, byte-swapped halfword, row stride k not k*2."^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.22> <https://ont.paiml.dev/v1alpha1/cap/refs> "#3908"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.23> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.23> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "29"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.23> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.23> <https://ont.paiml.dev/v1alpha1/cap/name> "IQ1_M"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.23> <https://ont.paiml.dev/v1alpha1/cap/reason> "no GPU GEMV kernel; IQ also fails the CPU dequant path"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.24> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.24> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "24"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.24> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.24> <https://ont.paiml.dev/v1alpha1/cap/name> "I8"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.24> <https://ont.paiml.dev/v1alpha1/cap/reason> "integer storage type, not a weight quantisation for inference"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.25> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.25> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "25"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.25> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.25> <https://ont.paiml.dev/v1alpha1/cap/name> "I16"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.25> <https://ont.paiml.dev/v1alpha1/cap/reason> "integer storage type, not a weight quantisation for inference"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.26> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.26> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "26"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.26> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.26> <https://ont.paiml.dev/v1alpha1/cap/name> "I32"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.26> <https://ont.paiml.dev/v1alpha1/cap/reason> "integer storage type, not a weight quantisation for inference"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.27> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.27> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "27"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.27> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.27> <https://ont.paiml.dev/v1alpha1/cap/name> "I64"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.27> <https://ont.paiml.dev/v1alpha1/cap/reason> "integer storage type, not a weight quantisation for inference"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.28> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.28> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "28"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.28> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.28> <https://ont.paiml.dev/v1alpha1/cap/name> "F64"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.28> <https://ont.paiml.dev/v1alpha1/cap/reason> "not named by the GPU whitelist"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.29> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.29> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "34"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.29> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.29> <https://ont.paiml.dev/v1alpha1/cap/name> "TQ1_0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.29> <https://ont.paiml.dev/v1alpha1/cap/reason> "not named by the GPU whitelist"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.3> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.3> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.3> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.3> <https://ont.paiml.dev/v1alpha1/cap/name> "Q4_1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.30> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.30> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "35"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.30> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.30> <https://ont.paiml.dev/v1alpha1/cap/name> "TQ2_0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.30> <https://ont.paiml.dev/v1alpha1/cap/reason> "not named by the GPU whitelist"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.31> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.31> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "39"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.31> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.31> <https://ont.paiml.dev/v1alpha1/cap/name> "MXFP4"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.31> <https://ont.paiml.dev/v1alpha1/cap/reason> "not named by the GPU whitelist"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.32> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.32> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "40"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.32> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.32> <https://ont.paiml.dev/v1alpha1/cap/name> "NVFP4"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.32> <https://ont.paiml.dev/v1alpha1/cap/reason> "not named by the GPU whitelist"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.33> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.33> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "41"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.33> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.33> <https://ont.paiml.dev/v1alpha1/cap/name> "Q1_0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.33> <https://ont.paiml.dev/v1alpha1/cap/reason> "not named by the GPU whitelist"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.34> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.34> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "42"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.34> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.34> <https://ont.paiml.dev/v1alpha1/cap/name> "Q2_0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.34> <https://ont.paiml.dev/v1alpha1/cap/reason> "not named by the GPU whitelist"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.4> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.4> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "6"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.4> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.4> <https://ont.paiml.dev/v1alpha1/cap/name> "Q5_0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.5> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.5> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "7"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.5> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.5> <https://ont.paiml.dev/v1alpha1/cap/name> "Q5_1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.6> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.6> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "8"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.6> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.6> <https://ont.paiml.dev/v1alpha1/cap/name> "Q8_0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.7> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.7> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "9"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.7> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.7> <https://ont.paiml.dev/v1alpha1/cap/name> "Q8_1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.7> <https://ont.paiml.dev/v1alpha1/cap/reason> "no GPU GEMV kernel"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.8> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.8> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "10"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.8> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.8> <https://ont.paiml.dev/v1alpha1/cap/name> "Q2_K"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.9> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/cap/QuantType> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.9> <https://ont.paiml.dev/v1alpha1/cap/ggml_type> "11"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.9> <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.9> <https://ont.paiml.dev/v1alpha1/cap/name> "Q3_K"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/cap/apr-model-capability-shapes-v1.quant_types.9> <https://ont.paiml.dev/v1alpha1/cap/reason> "no GPU GEMV kernel"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/APR-ANTIGRAVITY-INTEGRATION-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/APR-ANTIGRAVITY-INTEGRATION-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/APR-ANTIGRAVITY-INTEGRATION-001> <https://ont.paiml.dev/v1alpha1/file> "contracts/work/APR-ANTIGRAVITY-INTEGRATION-001.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -5398,6 +5660,19 @@
 <https://ont.paiml.dev/v1alpha1/contract/apr-merge-runnable-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-merge-runnable-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-merge-runnable-v1> <https://ont.paiml.dev/v1alpha1/id> "apr-merge-runnable-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-merge-runnable-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/json> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-shapes-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/entityRef> "contracts/apr-model-capability-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/entityType> "json"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-model-capability-shapes-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/id> "apr-model-capability-shapes-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/name> "apr-model-capability-shapes"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/status> "active"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-shapes-v1> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-model-capability-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/pv-contract> .

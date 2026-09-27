@@ -453,6 +453,7 @@ fn emit(
         prefix: t.prefix.clone(),
         root_class: t.root_class.clone(),
         nested: Vec::new(),
+        select: Vec::new(),
     };
     let id = format!("{}@{}", a.r.identity(), a.r.version);
     let mut staged = Graph::new();

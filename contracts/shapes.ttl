@@ -2,6 +2,83 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ont: <https://ont.paiml.dev/v1alpha1/> .
 
+<https://ont.paiml.dev/v1alpha1/shape/capability-op-row> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/cap/CapabilityOp> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/op> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^[A-Z][A-Za-z0-9]*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#boolean> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/reason> ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/note> ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/citation> ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/capability-quant-row> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/cap/QuantType> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/ggml_type> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/gpu_supported> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#boolean> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/reason> ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/note> ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/cap/refs> ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 1 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/binary-apr-http-mcp> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/apr-cli/apr> ;
     sh:property [
