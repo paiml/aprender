@@ -127,4 +127,48 @@ mod tests {
             );
         }
     }
+    /// #2378 finding 10: every CUDA `apr run` printed `[trueno#243] Manual graph
+    /// construction: pos=…` and `✓ Manual graph: N kernels. first_args=…,
+    /// current_logits_buf=0x…` — kernel bookkeeping and raw device pointers,
+    /// on a run that succeeded. Each such line must sit inside a
+    /// `dev_trace_enabled()` block. A FAILURE (`… failed: {:?}`) is left
+    /// visible: it changes the path the run takes.
+    #[test]
+    fn graph_capture_bookkeeping_is_behind_the_dev_trace_gate() {
+        let sources = [
+            (
+                "graphed_capture.rs",
+                include_str!("cuda/executor/layers/graphed_capture.rs"),
+            ),
+            (
+                "manual_graph.rs",
+                include_str!("cuda/executor/layers/manual_graph.rs"),
+            ),
+            (
+                "forward_graphed_decode.rs",
+                include_str!("cuda/executor/layers/forward_graphed_decode.rs"),
+            ),
+        ];
+        let mut checked = 0;
+        for (name, src) in sources {
+            let lines: Vec<&str> = src.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                if !line.contains("\"[trueno#243]") || line.contains("failed: ") {
+                    continue;
+                }
+                checked += 1;
+                let window = &lines[i.saturating_sub(2)..i];
+                assert!(
+                    window.iter().any(|l| l.contains("dev_trace_enabled()")),
+                    "{name}:{}: `{}` prints on every run; gate it behind dev_trace_enabled()",
+                    i + 1,
+                    line.trim()
+                );
+            }
+        }
+        assert_eq!(
+            checked, 5,
+            "expected the 5 graph-capture bookkeeping lines; the scan is stale"
+        );
+    }
 }

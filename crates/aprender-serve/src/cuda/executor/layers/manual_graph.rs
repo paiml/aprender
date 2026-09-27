@@ -97,10 +97,12 @@ impl CudaExecutor {
             .as_ref()
             .map(|b| b.as_ptr())
             .unwrap_or(0);
-        eprintln!(
-            "[trueno#243] ✓ Manual graph: {} kernels. first_args={:?}, last_args={:?}, current_logits_buf={:#x}",
-            num_kernels, first_args, last_args, logits_ptr
-        );
+        if crate::dev_trace::dev_trace_enabled() {
+            eprintln!(
+                "[trueno#243] ✓ Manual graph: {} kernels. first_args={:?}, last_args={:?}, current_logits_buf={:#x}",
+                num_kernels, first_args, last_args, logits_ptr
+            );
+        }
 
         Ok(num_kernels)
     }
