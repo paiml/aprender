@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paiml.dev/aprender/lookahead-state/v1",
+  "title": "cop-state/lookahead.json (APR-LOOKAHEAD-001 §3.1)",
+  "description": "The look-ahead slot state. Single writer: the cop. Workers write heartbeats to their own files (scripts/lookahead/lookahead.py heartbeat), never to this file. scripts/lookahead/lookahead.py loads THIS file and enforces it; the invariants I1 (slot trains = N+1..N+3) and I2 (one worker per slot, no worker in two slots) are checked in code because JSON Schema cannot express them.",
+  "type": "object",
+  "required": ["current_train", "slots"],
+  "additionalProperties": false,
+  "properties": {
+    "current_train": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "slots": {
+      "type": "object",
+      "required": ["L1", "L2", "L3"],
+      "additionalProperties": false,
+      "properties": {
+        "L1": {"$ref": "#/$defs/slot"},
+        "L2": {"$ref": "#/$defs/slot"},
+        "L3": {"$ref": "#/$defs/slot"}
+      }
+    },
+    "pool": {
+      "description": "Workers released from a slot by a rotation (§3.3): the old L1 worker stays on its train as epic lead.",
+      "type": "array",
+      "items": {"type": "object"}
+    }
+  },
+  "$defs": {
+    "slot": {
+      "type": "object",
+      "required": ["train", "worker", "since", "heartbeat", "handoff"],
+      "additionalProperties": false,
+      "properties": {
+        "train": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+        "worker": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "tmux": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "epic": {"type": "integer"},
+        "since": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+        "heartbeat": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+        "handoff": {"type": "string", "pattern": "^docs/lookahead/[0-9]+\\.[0-9]+\\.md$"}
+      }
+    }
+  }
+}

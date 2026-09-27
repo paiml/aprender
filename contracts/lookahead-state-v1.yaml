@@ -1,0 +1,84 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "The look-ahead slot state (APR-LOOKAHEAD-001 §3.1, LA-00 #4541) is a legal state only when its three slots cover exactly trains N+1, N+2 and N+3 of the current train N (I1) and each slot holds exactly one worker that holds no other slot (I2). The operator's directive is 'ONE dedicated worker on the next three epics'; a state file the cop can write with two workers in a slot, or with N+3 missing, is that directive broken in data. scripts/lookahead/lookahead.py validate enforces the committed JSON schema and both invariants, and scripts/check_lookahead.sh plants the broken states."
+  kind: pattern
+  references:
+    - "docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md — §3.1 state, §3.2 invariants I1/I2, §9 LA-00"
+    - "docs/lookahead/lookahead-state.schema.json — the schema the tool loads and enforces"
+    - "scripts/lookahead/lookahead.py — `validate` verb"
+    - "scripts/check_lookahead.sh — the case table and its mutants"
+    - "docs/lookahead/0.71.md, 0.72.md, 0.73.md — the handoff files each slot names"
+
+five_whys:
+  symptom: "The slot model is an operator directive ('ALWAYS ONE dedicated worker on the next three epics') with no object that can be false."
+  why_1: "Slot assignments lived in cop-state prose and chat, so 'two workers on 0.72' or 'nobody on 0.73' could only be noticed by a reader."
+  why_2: "The JSON the cop writes was never validated; json.load silently keeps the LAST of two duplicate keys, so a second worker written into L1 erases the first without a trace."
+  why_3: "Coverage (N+1..N+3) is relative to the current train, which a static schema cannot express, so a schema alone would pass a state whose slots all trail a moved current train."
+  why_4: "Without a planted broken state, a checker that returns 0 on everything is indistinguishable from one that works."
+  why_5: "Nothing refused an illegal state at the point it is written."
+  root_cause: "The invariant lived in prose. The remedy is a committed schema, a validator that also checks the train-relative invariants and duplicate keys, and a case table whose planted two-workers-one-slot and missing-N+3 states must fail."
+
+equations:
+  slot_coverage:
+    formula: "legal(S) ⇒ ∀k∈{1,2,3}: S.slots.L_k.train = S.current_train + k ∧ S.slots.L_k.handoff = docs/lookahead/<train>.md"
+    domain: "a parsed cop-state/lookahead.json"
+    codomain: "exit 0 (legal) | 1 (VIOLATION I1 …) | 2 (cannot judge)"
+    invariants:
+      - "an absent L3 is a violation, not a smaller legal state"
+      - "a current train that moved while the slots did not is a violation (a half-done rotation)"
+  slot_uniqueness:
+    formula: "legal(S) ⇒ |{L1,L2,L3}| = 3 distinct keys ∧ each worker is one string ∧ worker(L_i) ≠ worker(L_j) for i ≠ j"
+    domain: "a parsed cop-state/lookahead.json, duplicate keys preserved"
+    codomain: "exit 0 | 1 (VIOLATION I2 …) | 2"
+    invariants:
+      - "a duplicate slot key is reported, never resolved last-wins"
+      - "a worker that is a list is rejected by the schema"
+
+proof_obligations:
+  - id: LAS-INV-001
+    type: invariant
+    property: "A state with N+3 uncovered is illegal"
+    formal: "∃k: L_k absent ∨ L_k.train ≠ N+k ⇒ validate(S) = 1"
+    applies_to: slot_coverage
+  - id: LAS-INV-002
+    type: invariant
+    property: "A state with two workers in one slot, or one worker in two slots, is illegal"
+    formal: "dup_key(S.slots) ∨ ∃i≠j: worker(L_i) = worker(L_j) ⇒ validate(S) = 1"
+    applies_to: slot_uniqueness
+  - id: LAS-INV-003
+    type: invariant
+    property: "The guard still fails on the defects it names"
+    formal: "∀ m ∈ {dup-keys-ignored, i1-unchecked, i2-unchecked, schema-ignored, cannot-judge-passes}: guard(m) ≠ 0 ∧ guard(subject) = 0"
+    applies_to: slot_uniqueness
+
+falsification_tests:
+  - id: FALSIFY-LAS-001
+    rule: "The schema and the tool are in the tree"
+    prediction: "the schema is valid JSON and the tool is a regular file"
+    test: "python3 -m json.tool docs/lookahead/lookahead-state.schema.json >/dev/null && test -f scripts/lookahead/lookahead.py"
+    if_fails: "The state has no committed shape; the cop writes whatever it writes"
+  - id: FALSIFY-LAS-002
+    rule: "Planted two-workers-one-slot and missing-N+3 states fail; the legal state passes"
+    prediction: "every row of the case table is GREEN"
+    test: "bash scripts/check_lookahead.sh"
+    if_fails: "An illegal slot state is accepted, or a legal one refused"
+  - id: FALSIFY-LAS-003
+    rule: "The guard can still fail"
+    prediction: "every mutant of the tool (duplicate keys ignored, I1 unchecked, I2 unchecked, schema ignored, cannot-judge passes) turns at least one row RED"
+    test: "bash scripts/check_lookahead.sh --self-test"
+    if_fails: "The case table is theater: it would pass a validator that accepts everything"
+  - id: FALSIFY-LAS-004
+    rule: "Each slot's handoff file exists on main"
+    prediction: "docs/lookahead/0.71.md, 0.72.md and 0.73.md exist (I4's precondition)"
+    test: "test -f docs/lookahead/0.71.md && test -f docs/lookahead/0.72.md && test -f docs/lookahead/0.73.md"
+    if_fails: "A respawned worker has nothing to start from"
+
+qa_gate:
+  id: F-LAS-001
+  name: "The look-ahead slot state is legal or refused"
+  description: "scripts/lookahead/lookahead.py validate enforces the committed schema plus I1 and I2; scripts/check_lookahead.sh is in guard_tree.sh's universe (`git ls-files 'scripts/check_*.sh'`), so it runs in the guard-tree job that `ci / gate` reads."
+  checks:
+    - "slot_coverage"
+    - "slot_uniqueness"
