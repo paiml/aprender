@@ -1885,6 +1885,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-viz-ttop"
+version = "0.70.0"
+dependencies = [
+ "anyhow",
+ "aprender-common",
+ "aprender-contracts",
+ "aprender-present-core",
+ "aprender-present-terminal",
+ "aprender-test-lib",
+ "clap",
+ "crossterm 0.28.1",
+ "proptest",
+ "serde",
+ "serde_yaml_ng",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "aprender-zram"
 version = "0.69.3"
 dependencies = [

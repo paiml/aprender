@@ -11,6 +11,8 @@ members = [
     "crates/aprender-tsp",
     "crates/aprender-monte-carlo",
     "crates/apr-cli",
+    # --- #4511: ttop (system monitor, TUI proof) — was excluded, never built by CI ---
+    "crates/aprender-viz-ttop",
     "crates/aprender-bench-tokenizer",
     "crates/aprender-bench-compute",
     # --- APR-MONO Phase 2a: was trueno (compute primitives) ---
@@ -127,7 +129,6 @@ exclude = [
     "tools/ccpa-sft-export",
     "fuzz",
     # Old workspace root shells (no package, just held sub-crates):
-    "crates/aprender-viz-ttop",
     "crates/aprender-present",
     "crates/aprender-test",
     # crates.io compatibility facades for the names APR-MONO renamed
