@@ -1,0 +1,1092 @@
+{
+  "schema": "queue-inputs-v1",
+  "spec": "FLOW-003",
+  "row": "QM-01",
+  "window": {
+    "start": "2026-09-20T18:03:15Z",
+    "end": "2026-09-27T18:03:15Z",
+    "hours": 168
+  },
+  "inputs": {
+    "T": {
+      "value": 43.1333,
+      "n": 43,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "gh api repos/paiml/aprender/actions/runs?event=merge_group (CI, success)",
+      "method": "median created->updated of passed queue entries, min",
+      "mark": "[V]"
+    },
+    "C": {
+      "value": 44.0583,
+      "n": 96,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "gh api repos/paiml/aprender/actions/workflows/ci.yml/runs (pull_request, release branches)",
+      "method": "median CI created->completed per release-PR push, min; branches ~ ^(car/|rc/|release[/-]|batch/|fold/|replace/b[0-9])",
+      "mark": "[V]"
+    },
+    "q": {
+      "value": 0.1395,
+      "n": 49,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "q = q'*f/(1-q'), q' from merge_group CI entries",
+      "method": "per-PR defect rate backed out of per-entry q' (Q4); flaky failed entries removed",
+      "mark": "[C]",
+      "measuredRate": "q"
+    },
+    "phi": {
+      "value": 0.0197,
+      "n": 152,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "gh api repos/paiml/aprender/actions/jobs/<id>/logs | grep ' TRY n '",
+      "method": "share of harvested CI runs (merge_group + release PRs) with a test whose TRY 1 failed and a later TRY passed",
+      "mark": "[V]"
+    },
+    "q_eff": {
+      "value": 0.1224,
+      "n": 49,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "gh api repos/paiml/aprender/actions/runs?event=merge_group (CI, success|failure)",
+      "method": "per-entry failure rate q' (includes re-entries), flaky failed entries removed",
+      "mark": "[V]",
+      "measuredRate": "q_eff"
+    },
+    "lambda_eff_per_h": {
+      "value": 0.3214,
+      "n": 54,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "GraphQL AddedToMergeQueueEvent per queued PR",
+      "method": "lambda': queue entries per hour (includes re-entries)",
+      "mark": "[V]",
+      "measuredRate": "lambda_eff"
+    },
+    "lambda_per_h": {
+      "value": 1.25,
+      "n": 210,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "gh pr list -R paiml/aprender --state all --json createdAt",
+      "method": "lambda: PRs created per hour (not queue entries)",
+      "mark": "[V]",
+      "measuredRate": "lambda"
+    },
+    "f": {
+      "value": 1,
+      "n": 1,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "GraphQL timelineItems (queue events) + commits, merge_group CI runs",
+      "method": "ejected PRs re-entered after a push: share whose next queue CI entry passed",
+      "mark": "[V]"
+    },
+    "F": {
+      "value": 4.0167,
+      "n": 1,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "GraphQL timelineItems (queue events) + commits",
+      "method": "median ejection -> first push after it, min",
+      "mark": "[V]"
+    },
+    "rho_mq": {
+      "value": 0.0014,
+      "n": 1,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "nextest TRY n>=2 durations from job logs",
+      "method": "mean retry-attempt seconds / 60, merge_group runs, min",
+      "mark": "[V]"
+    },
+    "rho_rel": {
+      "value": 0.1259,
+      "n": 83,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "nextest TRY n>=2 durations from job logs",
+      "method": "mean retry-attempt seconds / 60, release-PR runs, min",
+      "mark": "[V]"
+    },
+    "R": {
+      "value": 410.1667,
+      "n": 2,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "GraphQL timelineItems (queue events) + commits",
+      "method": "median false ejection (re-entered with no push, and that entry passed) -> re-entry, min",
+      "mark": "[V]"
+    },
+    "ident_rate": {
+      "value": 0.2841,
+      "n": 88,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "ident.tsv: one row per red release-PR CI run (run id, names culprit yes|no, why)",
+      "method": "red release cycles whose failing tests name the culprit PR / red release cycles",
+      "mark": "[V]"
+    },
+    "window_days": {
+      "value": 7,
+      "n": 1,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "window.txt",
+      "method": "trailing window length",
+      "mark": "[V]"
+    },
+    "n_runs": {
+      "value": 53,
+      "n": 53,
+      "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+      "command": "merge_group CI entries",
+      "method": "queue entries in window",
+      "mark": "[V]"
+    }
+  },
+  "classes": {
+    "d": {
+      "pi": {
+        "value": 0,
+        "n": 53,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries + pr_meta.jsonl class",
+        "method": "class share of queue entries",
+        "mark": "[V]"
+      },
+      "pi_eff": {
+        "value": 0,
+        "n": 53,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries + pr_meta.jsonl class",
+        "method": "C1: class entries with no x-class entry building ahead at creation / all entries (x: 1 - others)",
+        "mark": "[V]"
+      },
+      "q_eff": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries of this class (flakes removed)",
+        "method": "per-entry failure rate q'_c",
+        "mark": "[V]"
+      },
+      "q": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "q_c = q'_c*f/(1-q'_c) with the global f",
+        "method": "per-PR defect rate, backed out per class (Q4)",
+        "mark": "[C]"
+      },
+      "q_upper95": null,
+      "T": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries of this class, success",
+        "method": "median passed-entry build time today (full CI for every class), min",
+        "mark": "[V]"
+      },
+      "Q": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "none: review minutes are not logged",
+        "method": "review cost per PR",
+        "mark": "[U]"
+      },
+      "prop12": {
+        "q_star": 0.25,
+        "mark": "[A]",
+        "verdict": "NOT-DECIDED"
+      }
+    },
+    "a": {
+      "pi": {
+        "value": 0,
+        "n": 53,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries + pr_meta.jsonl class",
+        "method": "class share of queue entries",
+        "mark": "[V]"
+      },
+      "pi_eff": {
+        "value": 0,
+        "n": 53,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries + pr_meta.jsonl class",
+        "method": "C1: class entries with no x-class entry building ahead at creation / all entries (x: 1 - others)",
+        "mark": "[V]"
+      },
+      "q_eff": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries of this class (flakes removed)",
+        "method": "per-entry failure rate q'_c",
+        "mark": "[V]"
+      },
+      "q": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "q_c = q'_c*f/(1-q'_c) with the global f",
+        "method": "per-PR defect rate, backed out per class (Q4)",
+        "mark": "[C]"
+      },
+      "q_upper95": null,
+      "T": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries of this class, success",
+        "method": "median passed-entry build time today (full CI for every class), min",
+        "mark": "[V]"
+      },
+      "Q": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "none: review minutes are not logged",
+        "method": "review cost per PR",
+        "mark": "[U]"
+      },
+      "prop12": {
+        "q_star": 0.25,
+        "mark": "[A]",
+        "verdict": "NOT-DECIDED"
+      }
+    },
+    "x": {
+      "pi": {
+        "value": 1,
+        "n": 53,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries + pr_meta.jsonl class",
+        "method": "class share of queue entries",
+        "mark": "[V]"
+      },
+      "pi_eff": {
+        "value": 1,
+        "n": 53,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries + pr_meta.jsonl class",
+        "method": "C1: class entries with no x-class entry building ahead at creation / all entries (x: 1 - others)",
+        "mark": "[V]"
+      },
+      "q_eff": {
+        "value": 0.1224,
+        "n": 49,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries of this class (flakes removed)",
+        "method": "per-entry failure rate q'_c",
+        "mark": "[V]"
+      },
+      "q": {
+        "value": 0.1395,
+        "n": 49,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "q_c = q'_c*f/(1-q'_c) with the global f",
+        "method": "per-PR defect rate, backed out per class (Q4)",
+        "mark": "[C]"
+      },
+      "q_upper95": 0.32,
+      "T": {
+        "value": 43.1333,
+        "n": 43,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "merge_group CI entries of this class, success",
+        "method": "median passed-entry build time today (full CI for every class), min",
+        "mark": "[V]"
+      },
+      "Q": {
+        "value": null,
+        "n": 0,
+        "window": "2026-09-20T18:03:15Z/2026-09-27T18:03:15Z",
+        "command": "none: review minutes are not logged",
+        "method": "review cost per PR",
+        "mark": "[U]"
+      },
+      "prop12": {
+        "q_star": 0.25,
+        "mark": "[A]",
+        "verdict": "NOT-DECIDED"
+      }
+    }
+  },
+  "review": {
+    "Q_saving": {
+      "value": 30,
+      "mark": "[A]"
+    },
+    "kappa_diff": {
+      "value": 0.5,
+      "mark": "[A]"
+    },
+    "D": {
+      "value": 240,
+      "mark": "[A]"
+    },
+    "kappa_full": {
+      "value": null,
+      "mark": "[U]"
+    },
+    "kappa_cheap": {
+      "value": null,
+      "mark": "[U]"
+    },
+    "source": "FLOW-003 v1.1 §5.1 Prop 12 illustration"
+  },
+  "derived": {
+    "class_of_pr": {
+      "3461": "x",
+      "3491": "x",
+      "3608": "x",
+      "3614": "x",
+      "3616": "x",
+      "3617": "x",
+      "3619": "x",
+      "3621": "x",
+      "3622": "x",
+      "3623": "x",
+      "3626": "x",
+      "3631": "x",
+      "3632": "x",
+      "3633": "x",
+      "3634": "x",
+      "3637": "x",
+      "3638": "x",
+      "3642": "x",
+      "3645": "x",
+      "3647": "x",
+      "3653": "x",
+      "3654": "x",
+      "3655": "x",
+      "3659": "x",
+      "3660": "x",
+      "3664": "x",
+      "3665": "x",
+      "3669": "x",
+      "3674": "x",
+      "3678": "x",
+      "3688": "x",
+      "3689": "x",
+      "3698": "x",
+      "3706": "x",
+      "3707": "x",
+      "3721": "x",
+      "3736": "x",
+      "3737": "x",
+      "3738": "x",
+      "3744": "x",
+      "3753": "x",
+      "3764": "x",
+      "3766": "x",
+      "3767": "x",
+      "3772": "x",
+      "3781": "x",
+      "3784": "x",
+      "3789": "x",
+      "3796": "x",
+      "3802": "x",
+      "3808": "x",
+      "3812": "x",
+      "3813": "x",
+      "3814": "x",
+      "3825": "x",
+      "3835": "x",
+      "3877": "x",
+      "3905": "x",
+      "3926": "x",
+      "3929": "x",
+      "3932": "x",
+      "3934": "x",
+      "3938": "x",
+      "3939": "x",
+      "3944": "x",
+      "3946": "x",
+      "3949": "x",
+      "3958": "x",
+      "3967": "x",
+      "3969": "x",
+      "3983": "x",
+      "4003": "x",
+      "4009": "x",
+      "4010": "x",
+      "4011": "x",
+      "4012": "x",
+      "4013": "x",
+      "4014": "x",
+      "4022": "x",
+      "4023": "x",
+      "4024": "x",
+      "4042": "x",
+      "4046": "x",
+      "4091": "x",
+      "4092": "x",
+      "4093": "x",
+      "4095": "x",
+      "4104": "x",
+      "4107": "x",
+      "4109": "x",
+      "4115": "x",
+      "4119": "x",
+      "4121": "x",
+      "4123": "x",
+      "4135": "x",
+      "4136": "x",
+      "4137": "x",
+      "4141": "x",
+      "4147": "x",
+      "4150": "x",
+      "4163": "x",
+      "4167": "x",
+      "4169": "x",
+      "4170": "x",
+      "4171": "x",
+      "4172": "x",
+      "4174": "x",
+      "4177": "x",
+      "4178": "x",
+      "4180": "x",
+      "4183": "x",
+      "4184": "x",
+      "4185": "x",
+      "4187": "x",
+      "4188": "x",
+      "4195": "x",
+      "4196": "x",
+      "4203": "x",
+      "4204": "x",
+      "4205": "x",
+      "4206": "x",
+      "4208": "x",
+      "4210": "x",
+      "4212": "x",
+      "4213": "x",
+      "4216": "x",
+      "4217": "x",
+      "4224": "x",
+      "4226": "x",
+      "4227": "x",
+      "4229": "x",
+      "4230": "x",
+      "4237": "x",
+      "4243": "x",
+      "4246": "x",
+      "4247": "x",
+      "4248": "x",
+      "4253": "x",
+      "4257": "x",
+      "4267": "x",
+      "4276": "x",
+      "4277": "x",
+      "4278": "x",
+      "4279": "x",
+      "4281": "x",
+      "4282": "x",
+      "4284": "x",
+      "4289": "x",
+      "4291": "x",
+      "4293": "x",
+      "4294": "x",
+      "4296": "x",
+      "4297": "x",
+      "4301": "x",
+      "4302": "x",
+      "4303": "x",
+      "4304": "x",
+      "4305": "x",
+      "4307": "x",
+      "4308": "x",
+      "4309": "x",
+      "4311": "x",
+      "4312": "x",
+      "4314": "x",
+      "4315": "x",
+      "4317": "x",
+      "4318": "x",
+      "4320": "x",
+      "4321": "x",
+      "4322": "x",
+      "4323": "x",
+      "4331": "x",
+      "4332": "x",
+      "4333": "x",
+      "4338": "x",
+      "4372": "x",
+      "4373": "x",
+      "4375": "x",
+      "4414": "x",
+      "4426": "x",
+      "4427": "x",
+      "4428": "x",
+      "4429": "x",
+      "4431": "x",
+      "4437": "x",
+      "4439": "x",
+      "4440": "x",
+      "4441": "x",
+      "4448": "x",
+      "4451": "x",
+      "4452": "x",
+      "4457": "x",
+      "4459": "x",
+      "4461": "x",
+      "4463": "x",
+      "4467": "x",
+      "4468": "x",
+      "4471": "x",
+      "4473": "x",
+      "4479": "x",
+      "4480": "x",
+      "4481": "x",
+      "4482": "x",
+      "4500": "x",
+      "4501": "x",
+      "4502": "x",
+      "4503": "x",
+      "4506": "x",
+      "4512": "x",
+      "4517": "x",
+      "4518": "x",
+      "4532": "x",
+      "4533": "x",
+      "4534": "x",
+      "4535": "x",
+      "4550": "x",
+      "4554": "x",
+      "4576": "x",
+      "4577": "x"
+    },
+    "created_prs_by_class": {
+      "x": 210
+    },
+    "q_prime_raw": 0.1569,
+    "q_prime_defect": 0.1224,
+    "entries": {
+      "passed": 43,
+      "failed": 8,
+      "failed_flaky": 2,
+      "cancelled": 2,
+      "in_progress": 0
+    },
+    "lambda_eff_per_h": 0.3214,
+    "queue_entries_by_event": 54,
+    "ejections": {
+      "total": 9,
+      "fixed_then_reentered": 1,
+      "false": 2,
+      "not_reentered": 5
+    },
+    "retries": {
+      "mq": 1,
+      "release": 83,
+      "all": 84
+    },
+    "release_cycles": {
+      "total": 96,
+      "red": 88,
+      "unclassified_red": []
+    },
+    "ejection_rows": [
+      {
+        "pr": 3614,
+        "ejected": "2026-09-20T20:06:58Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-20T20:47:29Z",
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": "merged",
+        "next_entry": "success"
+      },
+      {
+        "pr": 4022,
+        "ejected": "2026-09-23T17:08:15Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4024,
+        "ejected": "2026-09-23T19:08:19Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4163,
+        "ejected": "2026-09-24T14:23:44Z",
+        "reason": "checks_timed_out",
+        "reentry": null,
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4338,
+        "ejected": "2026-09-25T02:29:17Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-25T03:56:24Z",
+        "fix_push": "2026-09-25T02:33:18Z",
+        "pushed_before_reentry": true,
+        "next_exit": "merge_conflict",
+        "next_entry": "success"
+      },
+      {
+        "pr": 4414,
+        "ejected": "2026-09-25T20:18:14Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-26T04:58:33Z",
+        "fix_push": "2026-09-26T06:31:18Z",
+        "pushed_before_reentry": false,
+        "next_exit": "failed_checks",
+        "next_entry": "failure"
+      },
+      {
+        "pr": 4414,
+        "ejected": "2026-09-26T06:07:52Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": "2026-09-26T06:31:18Z",
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4428,
+        "ejected": "2026-09-26T03:51:26Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": "2026-09-26T06:31:04Z",
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4467,
+        "ejected": "2026-09-26T18:01:10Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-27T07:00:59Z",
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": "merged",
+        "next_entry": "success"
+      }
+    ],
+    "merged_pr_rows": [
+      {
+        "pr": 3461,
+        "class": "x",
+        "mq_wait_min": 60.8167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T05:09:28Z"
+      },
+      {
+        "pr": 3491,
+        "class": "x",
+        "mq_wait_min": 155,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T00:41:10Z"
+      },
+      {
+        "pr": 3608,
+        "class": "x",
+        "mq_wait_min": 443.7333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T05:15:20Z"
+      },
+      {
+        "pr": 3614,
+        "class": "x",
+        "mq_wait_min": 156.85,
+        "entries": 2,
+        "first_try": "fail",
+        "ejects": 1,
+        "merged_at": "2026-09-20T21:14:23Z"
+      },
+      {
+        "pr": 3616,
+        "class": "x",
+        "mq_wait_min": 134.75,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-20T20:52:19Z"
+      },
+      {
+        "pr": 3617,
+        "class": "x",
+        "mq_wait_min": 332.9167,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T03:43:23Z"
+      },
+      {
+        "pr": 3619,
+        "class": "x",
+        "mq_wait_min": 421.7333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T04:53:22Z"
+      },
+      {
+        "pr": 3621,
+        "class": "x",
+        "mq_wait_min": 77.95,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T06:35:54Z"
+      },
+      {
+        "pr": 3623,
+        "class": "x",
+        "mq_wait_min": 373.6333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T03:43:24Z"
+      },
+      {
+        "pr": 3626,
+        "class": "x",
+        "mq_wait_min": 117.1333,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T05:15:54Z"
+      },
+      {
+        "pr": 3631,
+        "class": "x",
+        "mq_wait_min": 135.05,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T03:43:24Z"
+      },
+      {
+        "pr": 3632,
+        "class": "x",
+        "mq_wait_min": 181.6167,
+        "entries": 2,
+        "first_try": "manual",
+        "ejects": 0,
+        "merged_at": "2026-09-21T06:35:53Z"
+      },
+      {
+        "pr": 3633,
+        "class": "x",
+        "mq_wait_min": 115.8667,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T04:27:25Z"
+      },
+      {
+        "pr": 3669,
+        "class": "x",
+        "mq_wait_min": 12.0333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T10:50:29Z"
+      },
+      {
+        "pr": 3689,
+        "class": "x",
+        "mq_wait_min": 16.9,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T12:16:20Z"
+      },
+      {
+        "pr": 3698,
+        "class": "x",
+        "mq_wait_min": 17.55,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T13:47:41Z"
+      },
+      {
+        "pr": 3706,
+        "class": "x",
+        "mq_wait_min": 16.7833,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-21T16:17:54Z"
+      },
+      {
+        "pr": 3707,
+        "class": "x",
+        "mq_wait_min": 91.7167,
+        "entries": 2,
+        "first_try": "merge_conflict",
+        "ejects": 0,
+        "merged_at": "2026-09-21T18:25:24Z"
+      },
+      {
+        "pr": 3737,
+        "class": "x",
+        "mq_wait_min": 18.7167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-23T07:16:59Z"
+      },
+      {
+        "pr": 3772,
+        "class": "x",
+        "mq_wait_min": 15.2333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-22T05:22:07Z"
+      },
+      {
+        "pr": 4042,
+        "class": "x",
+        "mq_wait_min": 35.55,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-24T06:11:15Z"
+      },
+      {
+        "pr": 4312,
+        "class": "x",
+        "mq_wait_min": 43.85,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-25T10:07:04Z"
+      },
+      {
+        "pr": 4338,
+        "class": "x",
+        "mq_wait_min": 245.4667,
+        "entries": 3,
+        "first_try": "fail",
+        "ejects": 1,
+        "merged_at": "2026-09-25T06:17:35Z"
+      },
+      {
+        "pr": 4426,
+        "class": "x",
+        "mq_wait_min": 43.3333,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-25T19:47:04Z"
+      },
+      {
+        "pr": 4427,
+        "class": "x",
+        "mq_wait_min": 57.35,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-27T07:36:25Z"
+      },
+      {
+        "pr": 4439,
+        "class": "x",
+        "mq_wait_min": 43.3167,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T00:42:44Z"
+      },
+      {
+        "pr": 4441,
+        "class": "x",
+        "mq_wait_min": 54.25,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T02:28:13Z"
+      },
+      {
+        "pr": 4452,
+        "class": "x",
+        "mq_wait_min": 28.75,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-25T21:54:07Z"
+      },
+      {
+        "pr": 4461,
+        "class": "x",
+        "mq_wait_min": 40.6667,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T07:40:37Z"
+      },
+      {
+        "pr": 4467,
+        "class": "x",
+        "mq_wait_min": 838.05,
+        "entries": 2,
+        "first_try": "fail",
+        "ejects": 1,
+        "merged_at": "2026-09-27T07:36:25Z"
+      },
+      {
+        "pr": 4468,
+        "class": "x",
+        "mq_wait_min": 27.1833,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T13:48:01Z"
+      },
+      {
+        "pr": 4471,
+        "class": "x",
+        "mq_wait_min": 15.4,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-26T16:26:56Z"
+      },
+      {
+        "pr": 4518,
+        "class": "x",
+        "mq_wait_min": 33.8,
+        "entries": 1,
+        "first_try": "pass",
+        "ejects": 0,
+        "merged_at": "2026-09-27T10:38:14Z"
+      }
+    ],
+    "rho_hol": {
+      "split": 0.0283,
+      "blind": 0.0283,
+      "formula": "FLOW-003 v1.1 Prop 11: lambda' qbar' Tbar, B=1, r=0 (lower bound, Thm 8 tightness)"
+    },
+    "fold": [
+      {
+        "k": 1,
+        "EM": 0.1395,
+        "E_T_fold_by_r": [
+          51.6502,
+          50.8019,
+          50.8028,
+          50.82
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 50.8019,
+        "phi_star_release": 0.0004
+      },
+      {
+        "k": 2,
+        "EM": 0.2595,
+        "E_T_fold_by_r": [
+          57.4211,
+          56.5879,
+          56.6039,
+          56.6362
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 64.7742,
+        "phi_star_release": 0.0007
+      },
+      {
+        "k": 3,
+        "EM": 0.3628,
+        "E_T_fold_by_r": [
+          62.3869,
+          61.5668,
+          61.5958,
+          61.6411
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 84.4553,
+        "phi_star_release": 0.001
+      },
+      {
+        "k": 4,
+        "EM": 0.4517,
+        "E_T_fold_by_r": [
+          66.6601,
+          65.8511,
+          65.8913,
+          65.9478
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 94.3467,
+        "phi_star_release": 0.0013
+      },
+      {
+        "k": 5,
+        "EM": 0.5282,
+        "E_T_fold_by_r": [
+          70.3371,
+          69.5378,
+          69.5876,
+          69.6537
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 119.5186,
+        "phi_star_release": 0.0015
+      },
+      {
+        "k": 6,
+        "EM": 0.594,
+        "E_T_fold_by_r": [
+          73.5012,
+          72.7102,
+          72.7682,
+          72.8427
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 128.9187,
+        "phi_star_release": 0.0017
+      },
+      {
+        "k": 7,
+        "EM": 0.6507,
+        "E_T_fold_by_r": [
+          76.2239,
+          75.44,
+          75.5052,
+          75.5868
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 137.0074,
+        "phi_star_release": 0.0019
+      },
+      {
+        "k": 8,
+        "EM": 0.6994,
+        "E_T_fold_by_r": [
+          78.5667,
+          77.789,
+          77.8603,
+          77.9481
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 143.9678,
+        "phi_star_release": 0.002
+      }
+    ]
+  },
+  "unknown": [],
+  "low_n": [
+    "f",
+    "F",
+    "rho_mq",
+    "R"
+  ],
+  "verdict": "GREEN"
+}

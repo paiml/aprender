@@ -1,0 +1,821 @@
+{
+  "window": "2026-09-20T18:02:18Z/2026-09-27T18:02:18Z",
+  "metrics": {
+    "lead_time_p50_min": {
+      "value": 254.97,
+      "n": 35,
+      "target": "< 60",
+      "ok": false,
+      "method": "first auto-merge arm (else first queue add) -> mergedAt, PRs into main"
+    },
+    "lead_time_p90_min": {
+      "value": 705.48,
+      "n": 35,
+      "target": "report",
+      "ok": true,
+      "method": "same, p90"
+    },
+    "ci_p50_code_min": {
+      "value": 62.75,
+      "n": 74,
+      "target": "<= 10",
+      "ok": false,
+      "method": "completed pull_request ci.yml runs of non-docs PRs, created -> updated"
+    },
+    "ci_p50_docs_min": {
+      "value": 143.02,
+      "n": 1,
+      "target": "<= 2",
+      "ok": false,
+      "method": "same, PRs whose every file is .md"
+    },
+    "pr_age_p90_h_merged": {
+      "value": 13.95,
+      "n": 57,
+      "target": "< 24",
+      "ok": true,
+      "method": "merged PRs, createdAt -> mergedAt"
+    },
+    "pr_age_p90_h_open": {
+      "value": 51.66,
+      "n": 20,
+      "target": "< 24",
+      "ok": false,
+      "method": "open non-draft PRs at window end"
+    },
+    "mq_wait_p50_min": {
+      "value": 60.83,
+      "n": 35,
+      "target": "report",
+      "ok": true,
+      "method": "first AddedToMergeQueue -> mergedAt, merged PRs into main"
+    },
+    "mq_wait_p90_min": {
+      "value": 332.92,
+      "n": 35,
+      "target": "<= 120",
+      "ok": false,
+      "method": "same, p90 (operator stop rule: p90 > 120 m)"
+    },
+    "mq_entry_p50_min": {
+      "value": 43.13,
+      "n": 43,
+      "target": "report",
+      "ok": true,
+      "method": "successful merge_group ci.yml runs, created -> updated"
+    },
+    "mq_entry_p90_min": {
+      "value": 122.32,
+      "n": 43,
+      "target": "report",
+      "ok": true,
+      "method": "same, p90"
+    },
+    "open_prs": {
+      "value": 21,
+      "n": 21,
+      "target": "<= 10",
+      "ok": false,
+      "method": "open PRs at fetch time, drafts included (operator cap 10); 1 draft"
+    },
+    "conflicted_over_4h": {
+      "value": 5,
+      "n": 21,
+      "target": "0",
+      "ok": false,
+      "method": "open PRs mergeable=CONFLICTING with last push > 4 h ago (GitHub: 0 UNKNOWN)"
+    },
+    "change_fail_rate": {
+      "value": 0,
+      "n": 33,
+      "target": "< 0.05",
+      "ok": true,
+      "method": "Revert commits / commits on main"
+    },
+    "release_cycle_p50_min": {
+      "value": 43.57,
+      "n": 96,
+      "target": "<= 30",
+      "ok": false,
+      "method": "ci.yml pull_request runs on release branches, created -> updated"
+    },
+    "merge_commit_resolutions": {
+      "value": 108,
+      "n": 78,
+      "target": "<= 2 (-> 0)",
+      "ok": false,
+      "method": "two-parent commits on PR branches, committed in the window, whose headline pulls in main"
+    },
+    "fold_merges": {
+      "value": 139,
+      "n": 78,
+      "target": "report",
+      "ok": true,
+      "method": "other two-parent commits on PR branches (folds of PR branches into a batch)"
+    }
+  },
+  "detail": {
+    "conflicted_prs": [
+      4512,
+      4459,
+      4457,
+      4428,
+      4414
+    ],
+    "reverts": [],
+    "merge_commits": [
+      {
+        "date": "2026-09-20T18:14:30Z",
+        "headline": "merge origin/main (roadmap 3-way by id)",
+        "pr": 3461
+      },
+      {
+        "date": "2026-09-20T22:28:37Z",
+        "headline": "merge origin/main (roadmap 3-way by id) — picks up 3863d0819/PMAT-3539",
+        "pr": 3461
+      },
+      {
+        "date": "2026-09-21T01:03:40Z",
+        "headline": "Merge branch 'main' into PMAT-3459-register-roadmap",
+        "pr": 3461
+      },
+      {
+        "date": "2026-09-20T21:50:11Z",
+        "headline": "Merge branch 'main' into PMAT-3571-serve-qwen35",
+        "pr": 3608
+      },
+      {
+        "date": "2026-09-21T01:32:45Z",
+        "headline": "Merge branch 'main' into PMAT-3571-serve-qwen35",
+        "pr": 3608
+      },
+      {
+        "date": "2026-09-20T21:20:49Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3459-tag-calls-m…",
+        "pr": 3617
+      },
+      {
+        "date": "2026-09-20T21:50:14Z",
+        "headline": "Merge branch 'main' into PMAT-3545-devices-cuda-source",
+        "pr": 3619
+      },
+      {
+        "date": "2026-09-21T01:32:42Z",
+        "headline": "Merge branch 'main' into PMAT-3545-devices-cuda-source",
+        "pr": 3619
+      },
+      {
+        "date": "2026-09-21T03:49:36Z",
+        "headline": "Merge branch 'main' into PMAT-3430-m1-phases-3-4",
+        "pr": 3621
+      },
+      {
+        "date": "2026-09-21T01:17:44Z",
+        "headline": "Merge branch 'main' into PMAT-3587-nextest-profile-no-fail-fast",
+        "pr": 3626
+      },
+      {
+        "date": "2026-09-21T03:51:09Z",
+        "headline": "merge origin/main into PMAT-3587-nextest-profile-no-fail-fast — roadm…",
+        "pr": 3626
+      },
+      {
+        "date": "2026-09-21T01:03:46Z",
+        "headline": "Merge branch 'main' into PMAT-3629-fleet-utilization-epipe",
+        "pr": 3632
+      },
+      {
+        "date": "2026-09-21T03:52:50Z",
+        "headline": "merge origin/main into PMAT-3629-fleet-utilization-epipe — roadmap.ya…",
+        "pr": 3632
+      },
+      {
+        "date": "2026-09-21T00:07:00Z",
+        "headline": "merge origin/main (roadmap 3-way by id) — one hunk in commands/lint.r…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T01:03:42Z",
+        "headline": "Merge branch 'main' into PMAT-3605-refusal-receipt",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T01:32:50Z",
+        "headline": "Merge branch 'main' into PMAT-3604-f2-receipt-cache",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T01:32:53Z",
+        "headline": "Merge branch 'main' into PMAT-3602-gpu-rejection-visible",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T01:32:56Z",
+        "headline": "Merge branch 'main' into PMAT-3346-gdn-shape-keys",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T01:33:47Z",
+        "headline": "merge origin/main (roadmap 3-way by id) — README count blocks taken f…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T01:39:01Z",
+        "headline": "merge origin/main (roadmap 3-way by id) — re-resolve after #3491",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T02:03:12Z",
+        "headline": "Merge branch 'main' into PMAT-3577-receipts-under-contract",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T03:50:08Z",
+        "headline": "Merge origin/main into roadmap/PMAT-3604 — roadmap.yaml regenerated f…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T03:52:24Z",
+        "headline": "merge origin/main into fix/pathonly-devdeps-guard-tomllib-env — roadm…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T05:20:44Z",
+        "headline": "Merge origin/main into roadmap/PMAT-3604 — aggregate regenerated agai…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T05:20:54Z",
+        "headline": "merge origin/main — roadmap.yaml regenerated from the merged fragment…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T05:21:31Z",
+        "headline": "merge origin/main into crux/autogluon-category-O — roadmap re-aggrega…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T05:22:21Z",
+        "headline": "merge origin/main into roadmap/PMAT-3495-verify-001 (clean)",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T05:22:30Z",
+        "headline": "merge origin/main — both conflicted files are GENERATED; regenerated,…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T05:22:33Z",
+        "headline": "merge origin/main — both conflicted files are GENERATED; regenerated,…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T05:24:49Z",
+        "headline": "merge origin/main (second pass) — main advanced 5 commits while the f…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T07:11:14Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3601-iq-byte-sizes",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T07:19:24Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3662-ggml-name-t…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T07:20:46Z",
+        "headline": "Merge origin/main into fix/3658-tier-squash — roadmap.yaml regenerate…",
+        "pr": 3669
+      },
+      {
+        "date": "2026-09-21T00:07:00Z",
+        "headline": "merge origin/main (roadmap 3-way by id) — one hunk in commands/lint.r…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T01:03:42Z",
+        "headline": "Merge branch 'main' into PMAT-3605-refusal-receipt",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T01:32:50Z",
+        "headline": "Merge branch 'main' into PMAT-3604-f2-receipt-cache",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T01:32:53Z",
+        "headline": "Merge branch 'main' into PMAT-3602-gpu-rejection-visible",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T01:32:56Z",
+        "headline": "Merge branch 'main' into PMAT-3346-gdn-shape-keys",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T01:33:47Z",
+        "headline": "merge origin/main (roadmap 3-way by id) — README count blocks taken f…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T01:39:01Z",
+        "headline": "merge origin/main (roadmap 3-way by id) — re-resolve after #3491",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T02:03:12Z",
+        "headline": "Merge branch 'main' into PMAT-3577-receipts-under-contract",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T03:50:08Z",
+        "headline": "Merge origin/main into roadmap/PMAT-3604 — roadmap.yaml regenerated f…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T03:52:24Z",
+        "headline": "merge origin/main into fix/pathonly-devdeps-guard-tomllib-env — roadm…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T05:20:44Z",
+        "headline": "Merge origin/main into roadmap/PMAT-3604 — aggregate regenerated agai…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T05:20:54Z",
+        "headline": "merge origin/main — roadmap.yaml regenerated from the merged fragment…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T05:21:31Z",
+        "headline": "merge origin/main into crux/autogluon-category-O — roadmap re-aggrega…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T05:22:21Z",
+        "headline": "merge origin/main into roadmap/PMAT-3495-verify-001 (clean)",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T05:22:30Z",
+        "headline": "merge origin/main — both conflicted files are GENERATED; regenerated,…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T05:22:33Z",
+        "headline": "merge origin/main — both conflicted files are GENERATED; regenerated,…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T05:24:49Z",
+        "headline": "merge origin/main (second pass) — main advanced 5 commits while the f…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T07:11:14Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3601-iq-byte-sizes",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T07:19:24Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3662-ggml-name-t…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T07:20:46Z",
+        "headline": "Merge origin/main into fix/3658-tier-squash — roadmap.yaml regenerate…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T11:00:48Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3685-parity-refu…",
+        "pr": 3689
+      },
+      {
+        "date": "2026-09-21T07:20:57Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3646-pr-review-c…",
+        "pr": 3707
+      },
+      {
+        "date": "2026-09-21T10:51:34Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3646-pr-review-c…",
+        "pr": 3707
+      },
+      {
+        "date": "2026-09-21T12:16:55Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into release/0.70-batch-1",
+        "pr": 3707
+      },
+      {
+        "date": "2026-09-21T14:11:21Z",
+        "headline": "Merge origin/main (225b2a9ab, the v0.69.0 bump) into release/0.70-bat…",
+        "pr": 3707
+      },
+      {
+        "date": "2026-09-21T16:56:29Z",
+        "headline": "merge origin/main (#3706) into release/0.70-batch-1 — roadmap resolve…",
+        "pr": 3707
+      },
+      {
+        "date": "2026-09-22T16:15:10Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3666-apex-2d-raster",
+        "pr": 3737
+      },
+      {
+        "date": "2026-09-21T15:31:50Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into PMAT-3676-coverage-on…",
+        "pr": 3772
+      },
+      {
+        "date": "2026-09-21T17:18:55Z",
+        "headline": "Merge origin/main into PMAT-3715 — #3706 ties pc_extract to Σ, so rel…",
+        "pr": 3772
+      },
+      {
+        "date": "2026-09-21T18:28:26Z",
+        "headline": "fold #3726 (5253817e5) into release/0.69.1-batch-1: main + #3726's OW…",
+        "pr": 3772
+      },
+      {
+        "date": "2026-09-24T07:39:46Z",
+        "headline": "PMAT-4067: merge origin/main (aa7c6ef) — roadmap.yaml regenerated by …",
+        "pr": 4312
+      },
+      {
+        "date": "2026-09-24T11:19:29Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into ont7-merge",
+        "pr": 4312
+      },
+      {
+        "date": "2026-09-24T13:51:41Z",
+        "headline": "Merge branch 'main' into fix/3837-cuda-feature-lint-gate",
+        "pr": 4312
+      },
+      {
+        "date": "2026-09-25T06:39:59Z",
+        "headline": "fold b4: merge origin/main (post-#4338 merge-back 5fa13fe8c) into fol…",
+        "pr": 4312
+      },
+      {
+        "date": "2026-09-24T06:57:41Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into chore/0.69.1-merge-back",
+        "pr": 4338
+      },
+      {
+        "date": "2026-09-26T06:31:18Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into feat/4232-on-main",
+        "pr": 4414
+      },
+      {
+        "date": "2026-09-25T19:54:51Z",
+        "headline": "merge origin/main into #4427 — roadmap resolved as the union (PMAT-43…",
+        "pr": 4427
+      },
+      {
+        "date": "2026-09-26T01:35:18Z",
+        "headline": "merge origin/main into #4427 — roadmap resolved as the union",
+        "pr": 4427
+      },
+      {
+        "date": "2026-09-26T14:41:10Z",
+        "headline": "merge origin/main into #4427 — B2's ci.yml hunks replayed onto ci/sec…",
+        "pr": 4427
+      },
+      {
+        "date": "2026-09-25T19:54:25Z",
+        "headline": "Merge branch 'main' into batch/b1r-serve-perf-runtime",
+        "pr": 4428
+      },
+      {
+        "date": "2026-09-25T22:35:40Z",
+        "headline": "Merge branch 'main' into batch/b1r-serve-perf-runtime",
+        "pr": 4428
+      },
+      {
+        "date": "2026-09-26T01:42:15Z",
+        "headline": "merge origin/main into #4428 — roadmap resolved as the union",
+        "pr": 4428
+      },
+      {
+        "date": "2026-09-26T17:36:34Z",
+        "headline": "Merge branch 'main' into fix/fat-signer-secret-b64",
+        "pr": 4429
+      },
+      {
+        "date": "2026-09-26T17:45:28Z",
+        "headline": "merge origin/main (57d7f8edd) into car/0.70.0: #4471 workspace-test s…",
+        "pr": 4429
+      },
+      {
+        "date": "2026-09-27T09:15:58Z",
+        "headline": "merge origin/main (#4467, #4427) into car/0.70.0 — car wins, main's i…",
+        "pr": 4429
+      },
+      {
+        "date": "2026-09-27T10:48:15Z",
+        "headline": "merge origin/main (aca6f2d7f6 FLOW-003 v1.1) into car — roadmap regen…",
+        "pr": 4429
+      },
+      {
+        "date": "2026-09-25T19:48:26Z",
+        "headline": "Merge remote-tracking branch 'origin/fold/b3-onto-main' into fold/b3-…",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-25T20:57:00Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into HEAD",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-26T11:00:33Z",
+        "headline": "merge origin/main (e7a52949d) into fold/b3-onto-main — take main's 5-…",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-27T05:27:38Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into wt4431/b3",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-27T06:30:28Z",
+        "headline": "Merge remote-tracking branch 'origin/fold/b3-onto-main' into apr59/44…",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-27T12:05:58Z",
+        "headline": "merge origin/main aca6f2d7f6 into fold/b3-onto-main (untangle, #4431)",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-25T19:54:22Z",
+        "headline": "Merge branch 'main' into perf/qwen35-dp4a-argmax-decode-replaces-4322…",
+        "pr": 4439
+      },
+      {
+        "date": "2026-09-25T20:26:57Z",
+        "headline": "merge origin/main — carry #4426's signer step rename into ci/sections…",
+        "pr": 4441
+      },
+      {
+        "date": "2026-09-25T23:11:49Z",
+        "headline": "merge origin/main — roadmap regenerated from fragments",
+        "pr": 4441
+      },
+      {
+        "date": "2026-09-26T08:43:46Z",
+        "headline": "Merge branch 'main' into readme-tweak",
+        "pr": 4448
+      },
+      {
+        "date": "2026-09-26T14:46:42Z",
+        "headline": "Merge branch 'main' into readme-tweak",
+        "pr": 4448
+      },
+      {
+        "date": "2026-09-27T09:52:57Z",
+        "headline": "Merge branch 'main' into readme-tweak",
+        "pr": 4448
+      },
+      {
+        "date": "2026-09-25T17:52:40Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into rex/001",
+        "pr": 4459
+      },
+      {
+        "date": "2026-09-26T14:01:40Z",
+        "headline": "Merge branch 'main' into docs-curl-install-paiml",
+        "pr": 4467
+      },
+      {
+        "date": "2026-09-26T14:58:29Z",
+        "headline": "Merge branch 'main' into a2/wt-3shard",
+        "pr": 4471
+      },
+      {
+        "date": "2026-09-25T19:54:51Z",
+        "headline": "merge origin/main into #4427 — roadmap resolved as the union (PMAT-43…",
+        "pr": 4500
+      },
+      {
+        "date": "2026-09-26T01:35:18Z",
+        "headline": "merge origin/main into #4427 — roadmap resolved as the union",
+        "pr": 4500
+      },
+      {
+        "date": "2026-09-27T13:14:36Z",
+        "headline": "merge origin/main into 1c/4497-loop-admission (#4501 DIRTY 18h)",
+        "pr": 4501
+      },
+      {
+        "date": "2026-09-27T09:15:58Z",
+        "headline": "merge origin/main (#4467, #4427) into car/0.70.0 — car wins, main's i…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T09:39:25Z",
+        "headline": "merge origin/main into batch/ont-10 — WIP handoff, NOT pushed (census…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T10:46:33Z",
+        "headline": "merge origin/main (aca6f2d7f6) into batch/ont-10 — 1 conflict, roadma…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T10:48:15Z",
+        "headline": "merge origin/main (aca6f2d7f6 FLOW-003 v1.1) into car — roadmap regen…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T13:56:24Z",
+        "headline": "merge origin/main into #4503 — roadmap resolved as the union",
+        "pr": 4503
+      },
+      {
+        "date": "2026-09-27T07:47:32Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into cb/4462-fork-attest",
+        "pr": 4517
+      },
+      {
+        "date": "2026-09-27T13:12:57Z",
+        "headline": "Merge branch 'main' into cb/4462-fork-attest",
+        "pr": 4517
+      },
+      {
+        "date": "2026-09-27T08:09:27Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into docs/flow-003-v1.1",
+        "pr": 4518
+      },
+      {
+        "date": "2026-09-27T13:28:30Z",
+        "headline": "Merge branch 'main' into fix/4523-sm121-logits-budget",
+        "pr": 4532
+      },
+      {
+        "date": "2026-09-27T09:34:57Z",
+        "headline": "merge origin/main into the #3719 orphan branch — code_tests.rs is the…",
+        "pr": 4534
+      },
+      {
+        "date": "2026-09-27T13:13:37Z",
+        "headline": "Merge branch 'main' into c1/3719-pr",
+        "pr": 4534
+      }
+    ],
+    "merge_resolutions_by_pr": [
+      {
+        "pr": 3689,
+        "n": 21
+      },
+      {
+        "pr": 3669,
+        "n": 20
+      },
+      {
+        "pr": 4431,
+        "n": 6
+      },
+      {
+        "pr": 3707,
+        "n": 5
+      },
+      {
+        "pr": 4312,
+        "n": 4
+      },
+      {
+        "pr": 4429,
+        "n": 4
+      },
+      {
+        "pr": 4502,
+        "n": 4
+      },
+      {
+        "pr": 3461,
+        "n": 3
+      },
+      {
+        "pr": 3772,
+        "n": 3
+      },
+      {
+        "pr": 4427,
+        "n": 3
+      },
+      {
+        "pr": 4428,
+        "n": 3
+      },
+      {
+        "pr": 4448,
+        "n": 3
+      },
+      {
+        "pr": 3608,
+        "n": 2
+      },
+      {
+        "pr": 3619,
+        "n": 2
+      },
+      {
+        "pr": 3626,
+        "n": 2
+      },
+      {
+        "pr": 3632,
+        "n": 2
+      },
+      {
+        "pr": 4441,
+        "n": 2
+      },
+      {
+        "pr": 4500,
+        "n": 2
+      },
+      {
+        "pr": 4517,
+        "n": 2
+      },
+      {
+        "pr": 4534,
+        "n": 2
+      },
+      {
+        "pr": 3617,
+        "n": 1
+      },
+      {
+        "pr": 3621,
+        "n": 1
+      },
+      {
+        "pr": 3737,
+        "n": 1
+      },
+      {
+        "pr": 4338,
+        "n": 1
+      },
+      {
+        "pr": 4414,
+        "n": 1
+      },
+      {
+        "pr": 4439,
+        "n": 1
+      },
+      {
+        "pr": 4459,
+        "n": 1
+      },
+      {
+        "pr": 4467,
+        "n": 1
+      },
+      {
+        "pr": 4471,
+        "n": 1
+      },
+      {
+        "pr": 4501,
+        "n": 1
+      },
+      {
+        "pr": 4503,
+        "n": 1
+      },
+      {
+        "pr": 4518,
+        "n": 1
+      },
+      {
+        "pr": 4532,
+        "n": 1
+      }
+    ],
+    "unarmed_merged_into_main": 0,
+    "ci_runs": {
+      "code": 74,
+      "docs": 1
+    }
+  },
+  "missed": [
+    "lead_time_p50_min",
+    "ci_p50_code_min",
+    "ci_p50_docs_min",
+    "pr_age_p90_h_open",
+    "mq_wait_p90_min",
+    "open_prs",
+    "conflicted_over_4h",
+    "release_cycle_p50_min",
+    "merge_commit_resolutions"
+  ],
+  "no_data": [],
+  "verdict": "MISSED lead_time_p50_min,ci_p50_code_min,ci_p50_docs_min,pr_age_p90_h_open,mq_wait_p90_min,open_prs,conflicted_over_4h,release_cycle_p50_min,merge_commit_resolutions"
+}

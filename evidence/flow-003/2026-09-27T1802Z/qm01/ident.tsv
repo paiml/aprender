@@ -1,0 +1,89 @@
+# run	names_culprit	why
+35579370078	no	release/0.69-batch: no test named in the harvested logs
+35613745899	no	release/0.70-batch-1: no test named in the harvested logs
+35641528830	yes	release/0.69.1-batch-1: test failed every attempt: apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	yes	release/0.69.1-batch-1: test failed every attempt: apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag,apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35682751126	no	release/0.69.1-batch-1: no test named in the harvested logs
+35721789826	yes	release/0.69.1-batch-2: test failed every attempt: aprender-contracts lint::tests::lint_passes_on_real_contracts
+35733346984	yes	release/0.69.1-batch-2: test failed every attempt: aprender-contracts lint::tests::lint_passes_on_real_contracts
+35740094206	yes	release/0.69.1-batch-2: test failed every attempt: aprender-contracts lint::tests::lint_passes_on_real_contracts
+35743104716	no	release/0.69.1-batch-2: no test named in the harvested logs
+35745052504	no	release/0.69.1-batch-2: no test named in the harvested logs
+35747427333	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35759119987	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35760540795	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35762475197	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35766198203	no	release/0.69.1-batch-2: no test named in the harvested logs
+35768077765	no	release/0.69.1-batch-2: no test named in the harvested logs
+35769579058	no	release/0.69.1-batch-2: no test named in the harvested logs
+35775178057	no	release/0.69.1-batch-2: no test named in the harvested logs
+35777366885	no	release/0.69.1-batch-2: no test named in the harvested logs
+35779833261	no	release/0.69.1-batch-2: no test named in the harvested logs
+35781530119	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35783147780	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35785985508	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35787147236	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35797523261	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35799795413	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	yes	release/0.69.1-batch-2: test failed every attempt: apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path,apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35809390226	no	release/0.69.1-batch-2: no test named in the harvested logs
+35813125456	no	release/0.69.1-batch-2: no test named in the harvested logs
+35815472665	no	release/0.69.1-batch-2: no test named in the harvested logs
+35819669051	no	release/0.69.1-batch-2: no test named in the harvested logs
+35826230906	yes	release/0.69.1-batch-2: test failed every attempt: aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35842345102	yes	release/0.69.1-batch-2: test failed every attempt: aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35862380796	no	release/0.69.1-batch-2: no test named in the harvested logs
+35865319039	no	release/0.69.1-batch-2: no test named in the harvested logs
+35868210587	no	release/0.69.1-batch-2: no test named in the harvested logs
+35877627491	no	release/0.69.1-batch-2: no test named in the harvested logs
+35879345679	no	release/0.69.1-batch-2: no test named in the harvested logs
+36010274043	yes	release/0.69.3: test failed every attempt: aprender-serve api::tests_engine_identity::every_arch_forward_is_a_session_row
+36016189093	no	batch/b2-ci-infra: no test named in the harvested logs
+36029839305	no	batch/0.69.4-epic-4249: no test named in the harvested logs
+36032470368	no	batch/b2-ci-infra: no test named in the harvested logs
+36033230005	yes	fold/b3-contracts-ont-docs: test failed every attempt: aprender-contracts kani_assume::tests::baseline_json_has_exactly_the_three_fields_and_refuses_others
+36047728773	no	batch/b2-ci-infra: no test named in the harvested logs
+36054957692	no	batch/b1-serve-perf-runtime: no test named in the harvested logs
+36057175909	no	batch/0.69.4-epic-4249: no test named in the harvested logs
+36058078948	no	batch/b1-serve-perf-runtime: no test named in the harvested logs
+36059999253	no	fold/b3-contracts-ont-docs: no test named in the harvested logs
+36061169963	no	fold/b3-contracts-ont-docs: no test named in the harvested logs
+36078565293	no	fold/b3-contracts-ont-docs: no test named in the harvested logs
+36090274152	no	batch/0.69.4-epic-4249: no test named in the harvested logs
+36090357875	no	batch/b2-ci-infra: no test named in the harvested logs
+36093030783	no	fold/b3-contracts-ont-docs: no test named in the harvested logs
+36105491403	no	fold/b3-contracts-ont-docs: no test named in the harvested logs
+36119195541	no	fold/b3-contracts-ont-docs: no test named in the harvested logs
+36119589864	no	batch/b2-ci-infra: no test named in the harvested logs
+36121962444	no	fold/b3-contracts-ont-docs: no test named in the harvested logs
+36123739017	no	batch/0.69.5: no test named in the harvested logs
+36135459701	yes	batch/0.69.4-epic-4249: test failed every attempt: aprender-serve fusion_call_site_guard_3985::every_active_fusion_call_site_is_a_live_call_of_its_kernel
+36137018658	no	batch/b2-ci-infra: no test named in the harvested logs
+36148145139	no	batch/0.69.4-epic-4249: no test named in the harvested logs
+36161452446	yes	batch/b1r-serve-perf-runtime: test failed every attempt: aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36163449268	no	replace/b2-ci-infra-on-main: no test named in the harvested logs
+36177073451	no	batch/0.69.4-epic-4249: no test named in the harvested logs
+36178171569	no	fold/b3-onto-main: no test named in the harvested logs
+36182523915	yes	batch/b1r-serve-perf-runtime: test failed every attempt: aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36182568927	no	replace/b2-ci-infra-on-main: no test named in the harvested logs
+36189738689	no	fold/b3-onto-main: no test named in the harvested logs
+36197466892	no	batch/b1r-serve-perf-runtime: no test named in the harvested logs
+36199008705	no	replace/b2-ci-infra-on-main: no test named in the harvested logs
+36199175952	no	replace/b2-ci-infra-on-main: no test named in the harvested logs
+36202205613	no	car/0.70.0: no test named in the harvested logs
+36209439730	no	batch/b1r-serve-perf-runtime: no test named in the harvested logs
+36220214999	no	car/0.70.0: no test named in the harvested logs
+36223997268	no	batch/b1r-serve-perf-runtime: no test named in the harvested logs
+36229622731	no	car/0.70.0: no test named in the harvested logs
+36236152298	no	batch/b1r-serve-perf-runtime: no test named in the harvested logs
+36237640401	no	car/0.70.0: no test named in the harvested logs
+36246483181	no	fold/b3-onto-main: no test named in the harvested logs
+36251833352	no	replace/b2-ci-infra-on-main: no test named in the harvested logs
+36255036136	no	replace/b2-ci-infra-on-main: no test named in the harvested logs
+36257329047	yes	batch/ont-4480-4473: test failed every attempt: aprender-contracts schema::artifact::tests::real_binding_registries_validate
+36261955368	yes	batch/b1r-serve-perf-runtime: test failed every attempt: aprender-contracts lint::tests::lint_passes_on_real_contracts
+36264409907	no	fold/b3-onto-main: no test named in the harvested logs
+36265690366	no	car/0.70.0: no test named in the harvested logs
+36266699092	no	batch/ont-4480-4473: no test named in the harvested logs
+36267537295	no	batch/ont-10: no test named in the harvested logs
+36315039764	no	batch/ont-10: no test named in the harvested logs
