@@ -339,6 +339,7 @@ impl OwnedQuantizedModel {
             scale,
             None,
             Self::simd_dot_f32,
+            crate::quantize::softmax_simd,
             Self::simd_axpy_f32,
         );
         output

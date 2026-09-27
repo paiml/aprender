@@ -1265,8 +1265,9 @@ pub struct CachedGqa {
 /// `current_v` are `[num_kv_heads * head_dim]`, `q` and `out` are
 /// `[num_heads * head_dim]`; `out` is zeroed first. Per KV group: scores
 /// `dot(q_h, k_j) * scale` (cached positions, then current), an optional
-/// [`softcap`], [`crate::quantize::softmax_simd`], then `axpy(out_h, w_j, v_j)`
-/// in the same key order. `dot`/`axpy` are the caller's SIMD kernels, so the
+/// [`softcap`], `softmax` over each score row, then `axpy(out_h, w_j, v_j)`
+/// in the same key order. `dot`/`softmax`/`axpy` are the caller's SIMD kernels
+/// (the GGUF sites pass [`crate::quantize::softmax_simd`]), so the
 /// result is bit-identical to the per-site bodies it replaced (per-head
 /// arithmetic does not depend on the loop nesting).
 #[allow(clippy::too_many_arguments)]
@@ -1281,6 +1282,7 @@ pub fn attend_cached_gqa_into(
     scale: f32,
     attn_softcap: Option<f32>,
     dot: impl Fn(&[f32], &[f32]) -> f32,
+    softmax: impl Fn(&mut [f32]),
     axpy: impl Fn(&mut [f32], f32, &[f32]),
 ) {
     let CachedGqa {
@@ -1323,7 +1325,7 @@ pub fn attend_cached_gqa_into(
             if let Some(cap) = attn_softcap {
                 softcap(row, cap);
             }
-            crate::quantize::softmax_simd(row);
+            softmax(row);
         }
 
         // Scan the V cache once per group.
@@ -1487,6 +1489,7 @@ mod attend_cached_gqa_equivalence_tests {
             scale,
             cap,
             M::simd_dot_f32,
+            crate::quantize::softmax_simd,
             M::simd_axpy_f32,
         );
         out

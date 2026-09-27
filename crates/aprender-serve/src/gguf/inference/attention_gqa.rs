@@ -179,6 +179,7 @@ impl OwnedQuantizedModel {
             self.config.attn_scale(),
             self.config.attn_logit_softcap(),
             Self::simd_dot_f32,
+            crate::quantize::softmax_simd,
             Self::simd_axpy_f32,
         );
     }

@@ -696,3 +696,31 @@ body and runs 1125 cases with `to_bits`: 5 head layouts, `head_dim` ∈ {1, 7, 8
 by 1 or 5 elements.
 
 **Rows: 18 → 17.**
+
+### 9.15 Phase 2 step 5f delivered: the scheduler's GQA on the cached-GQA home (2026-09-26)
+
+**Home change:** `attend_cached_gqa_into` now takes a `softmax: impl Fn(&mut [f32])`
+kernel beside `dot` and `axpy`. The three GGUF callers pass
+`crate::quantize::softmax_simd`, which is what the home called before, so they do
+not change.
+
+**Site migrated:** `gpu/scheduler/ops.rs::gqa_multihead_attention`. Its keys are one
+`[kv_len, kv_dim]` buffer, so it passes rows `0..kv_len-1` as the cache and row
+`kv_len-1` as the current position. Its kernels are unchanged, and are now named
+functions next to it:
+- `trueno_dot`: the trueno SIMD dot, with 0.0 on error as before.
+- `trueno_softmax_in_place`: the trueno softmax. If trueno refuses the row, it
+  falls back to the shared `softmax_scalar_in_place`, which is the same arithmetic
+  as the old inline fallback.
+- `scalar_axpy`.
+
+With `kv_len = 0` there are no weights, so the output stays zero. This matches the
+old body, where the empty softmax fell back to an empty row.
+
+**Bit-exact:** `gqa_multihead_equivalence_tests` keeps a frozen copy of the old body
+and runs 900 cases with `to_bits`: 5 head layouts, `head_dim` ∈ {1, 7, 8, 16, 33},
+`kv_len` ∈ {0, 1, 2, 5, 17, 40}, 3 magnitudes, and K/V buffers that are exact or 2
+rows longer than `kv_len`. `attend_cached_gqa_equivalence_tests` (1020 cases) still
+covers the GGUF callers.
+
+**Rows: 17 → 16.**

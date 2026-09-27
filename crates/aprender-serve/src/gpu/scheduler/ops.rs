@@ -37,6 +37,31 @@ pub(super) fn apply_rope_inline(
 
 /// GQA multi-head attention (IMP-089, IMP-092, IMP-094)
 ///
+/// IMP-094: trueno SIMD dot product (0.0 on a length mismatch, as before).
+fn trueno_dot(a: &[f32], b: &[f32]) -> f32 {
+    Vector::from_slice(a)
+        .dot(&Vector::from_slice(b))
+        .unwrap_or(0.0)
+}
+
+/// IMP-094: trueno SIMD softmax, in place; the shared scalar softmax if trueno
+/// refuses the row.
+fn trueno_softmax_in_place(row: &mut [f32]) {
+    match Vector::from_slice(row).softmax() {
+        Ok(w) => row.copy_from_slice(w.as_slice()),
+        Err(_) => {
+            crate::gguf::ops::softmax_scalar_in_place(row, crate::gguf::ops::SoftmaxNorm::Divide);
+        },
+    }
+}
+
+/// `out += w * v`, scalar (the SIMD benefit is marginal for small head_dim).
+fn scalar_axpy(out: &mut [f32], w: f32, v: &[f32]) {
+    for (o, &x) in out.iter_mut().zip(v) {
+        *o += w * x;
+    }
+}
+
 /// Grouped Query Attention where K/V have fewer heads than Q.
 /// Each KV head serves (num_heads / num_kv_heads) Q heads.
 ///
@@ -59,56 +84,31 @@ pub(super) fn gqa_multihead_attention(
     let kv_dim = num_kv_heads * head_dim;
     let scale = 1.0 / (head_dim as f32).sqrt();
 
-    // Number of Q heads per KV head
-    let heads_per_kv = num_heads / num_kv_heads;
-
     let mut output = vec![0.0; hidden_dim];
 
-    // Compute attention for all Q heads
-    for h in 0..num_heads {
-        let q_head = &q[h * head_dim..(h + 1) * head_dim];
-        // IMP-094: Create trueno vector for SIMD dot product
-        let q_vec = Vector::from_slice(q_head);
-
-        // Map Q head to KV head (GQA: multiple Q heads share one KV head)
-        let kv_head = h / heads_per_kv;
-
-        // Compute attention scores for this head using SIMD dot product
-        let mut scores = Vec::with_capacity(kv_len);
-        for pos in 0..kv_len {
-            // K offset: pos * kv_dim + kv_head * head_dim
-            let k_offset = pos * kv_dim + kv_head * head_dim;
-            let cached_key = &k[k_offset..k_offset + head_dim];
-
-            // IMP-094: SIMD dot product via trueno
-            let k_vec = Vector::from_slice(cached_key);
-            let score = q_vec.dot(&k_vec).unwrap_or(0.0) * scale;
-            scores.push(score);
-        }
-
-        // IMP-094: SIMD softmax via trueno
-        let scores_vec = Vector::from_slice(&scores);
-        let attn_weights: Vec<f32> = scores_vec.softmax().map_or_else(
-            |_| {
-                // Fallback to scalar softmax
-                let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
-                let sum_exp: f32 = exp_scores.iter().sum();
-                exp_scores.iter().map(|&e| e / sum_exp).collect()
+    // PP-ARCH-001 §9.15: the shared cached-GQA home, with the last position as
+    // its "current" K/V and trueno's SIMD dot and softmax as the kernels.
+    // No keys means no weights: the output stays zero.
+    if kv_len > 0 {
+        let cached = (kv_len - 1) * kv_dim;
+        crate::gguf::ops::attend_cached_gqa_into(
+            q,
+            &k[..cached],
+            &v[..cached],
+            &k[cached..cached + kv_dim],
+            &v[cached..cached + kv_dim],
+            &mut output,
+            crate::gguf::ops::CachedGqa {
+                num_heads,
+                num_kv_heads,
+                head_dim,
             },
-            |v| v.as_slice().to_vec(),
+            scale,
+            None,
+            trueno_dot,
+            trueno_softmax_in_place,
+            scalar_axpy,
         );
-
-        // Weighted sum of values (still scalar - SIMD benefit is marginal for small head_dim)
-        for (pos, &weight) in attn_weights.iter().enumerate() {
-            // V offset: pos * kv_dim + kv_head * head_dim
-            let v_offset = pos * kv_dim + kv_head * head_dim;
-            let v_head = &v[v_offset..v_offset + head_dim];
-
-            for d in 0..head_dim {
-                output[h * head_dim + d] += weight * v_head[d];
-            }
-        }
     }
 
     contract_post_attention!(&output);
@@ -248,5 +248,102 @@ mod tests {
         // So output should be same as v
         assert!((output[0] - 1.0).abs() < 1e-5);
         assert!((output[1] - 2.0).abs() < 1e-5);
+    }
+}
+
+/// PP-ARCH-001 §9.15: `gqa_multihead_attention` moved onto the cached-GQA home.
+/// The frozen pre-move body must agree bit for bit.
+#[cfg(test)]
+mod gqa_multihead_equivalence_tests {
+    use super::gqa_multihead_attention;
+    use trueno::Vector;
+
+    fn frozen(
+        q: &[f32],
+        k: &[f32],
+        v: &[f32],
+        kv_len: usize,
+        num_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+    ) -> Vec<f32> {
+        let hidden_dim = num_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+        let scale = 1.0 / (head_dim as f32).sqrt();
+        let heads_per_kv = num_heads / num_kv_heads;
+        let mut output = vec![0.0; hidden_dim];
+        for h in 0..num_heads {
+            let q_vec = Vector::from_slice(&q[h * head_dim..(h + 1) * head_dim]);
+            let kv_head = h / heads_per_kv;
+            let mut scores = Vec::with_capacity(kv_len);
+            for pos in 0..kv_len {
+                let k_offset = pos * kv_dim + kv_head * head_dim;
+                let k_vec = Vector::from_slice(&k[k_offset..k_offset + head_dim]);
+                scores.push(q_vec.dot(&k_vec).unwrap_or(0.0) * scale);
+            }
+            let attn_weights: Vec<f32> = Vector::from_slice(&scores).softmax().map_or_else(
+                |_| {
+                    let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                    let exp_scores: Vec<f32> =
+                        scores.iter().map(|&s| (s - max_score).exp()).collect();
+                    let sum_exp: f32 = exp_scores.iter().sum();
+                    exp_scores.iter().map(|&e| e / sum_exp).collect()
+                },
+                |v| v.as_slice().to_vec(),
+            );
+            for (pos, &weight) in attn_weights.iter().enumerate() {
+                let v_offset = pos * kv_dim + kv_head * head_dim;
+                let v_head = &v[v_offset..v_offset + head_dim];
+                for d in 0..head_dim {
+                    output[h * head_dim + d] += weight * v_head[d];
+                }
+            }
+        }
+        output
+    }
+
+    fn fill(n: usize, seed: u32, mag: f32) -> Vec<f32> {
+        let mut x = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+        (0..n)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                ((x as f32 / u32::MAX as f32) * 2.0 - 1.0) * mag
+            })
+            .collect()
+    }
+
+    #[test]
+    fn matches_frozen_body_bit_for_bit() {
+        let mut cases = 0;
+        for &(nh, nkv) in &[(1, 1), (4, 4), (4, 2), (8, 1), (6, 3)] {
+            for &hd in &[1usize, 7, 8, 16, 33] {
+                for &kv_len in &[0usize, 1, 2, 5, 17, 40] {
+                    for &mag in &[0.1f32, 3.0, 40.0] {
+                        // `extra` > 0: K/V buffers longer than kv_len rows.
+                        for &extra in &[0usize, 2] {
+                            let seed = (nh * 1000 + hd * 31 + kv_len * 7 + extra) as u32;
+                            let q = fill(nh * hd, seed, mag);
+                            let n = (kv_len + extra) * nkv * hd;
+                            let k = fill(n, seed + 1, mag);
+                            let v = fill(n, seed + 2, mag);
+                            let got = gqa_multihead_attention(&q, &k, &v, kv_len, nh, nkv, hd);
+                            let want = frozen(&q, &k, &v, kv_len, nh, nkv, hd);
+                            assert_eq!(got.len(), want.len());
+                            for (i, (g, w)) in got.iter().zip(&want).enumerate() {
+                                assert_eq!(
+                                    g.to_bits(),
+                                    w.to_bits(),
+                                    "nh={nh} nkv={nkv} hd={hd} kv_len={kv_len} mag={mag} extra={extra} i={i}: {g} vs {w}"
+                                );
+                            }
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 5 * 5 * 6 * 3 * 2);
     }
 }
