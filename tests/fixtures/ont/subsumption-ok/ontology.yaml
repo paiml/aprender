@@ -10,10 +10,13 @@ subsumes:
   - {sub: Code, sup: Contract}
 entity_types:
   - {name: pv-contract, extractor: pv_contract, implemented: true}
+entity_type_target_class:
+  pv-contract: ont:Contract
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
 readers:
   concepts: ontology/sigma.rs
   subsumes: ontology/sigma.rs, ontology/extract/mod.rs, lint/subsumption.rs
   entity_types: lint/sigma_gate.rs
+  entity_type_target_class: ontology/shapes.rs
   extractors: ontology/sigma.rs
