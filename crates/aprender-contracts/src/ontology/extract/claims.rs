@@ -296,9 +296,20 @@ pub fn normalise(block: &str) -> Vec<String> {
     }
     joined
         .iter()
-        .map(|l| collapse(&drop_comment(l)))
+        .map(|l| drop_launcher(collapse(&drop_comment(l))))
         .filter(|l| !l.is_empty())
         .collect()
+}
+
+/// The line without a leading `setsid [--wait|-w]`. #4427 wrapped the `ci/sections.yml` steps in it so a
+/// cancelled job kills the whole process group; the command it launches is the claim, the wrapper is not.
+fn drop_launcher(line: String) -> String {
+    for prefix in ["setsid --wait ", "setsid -w ", "setsid "] {
+        if let Some(rest) = line.strip_prefix(prefix) {
+            return rest.to_string();
+        }
+    }
+    line
 }
 
 /// The line with a shell comment removed: a `#` at the start or after whitespace, outside quotes.
@@ -597,6 +608,25 @@ mod tests {
             vec!["cargo test -p x", "echo 'a  #b' \"c  d\""]
         );
         assert_eq!(normalise("echo a#b"), vec!["echo a#b"]);
+    }
+
+    /// Case table for the `setsid` launcher (#4427): the launched command is the claim.
+    #[test]
+    fn normalisation_drops_a_leading_setsid_launcher_only() {
+        for (input, want) in [
+            ("setsid --wait bash scripts/a.sh", "bash scripts/a.sh"),
+            (
+                "setsid  --wait   bash scripts/a.sh --self-test",
+                "bash scripts/a.sh --self-test",
+            ),
+            ("setsid -w make x", "make x"),
+            ("setsid make x", "make x"),
+            ("setsidx make x", "setsidx make x"),
+            ("echo setsid --wait make x", "echo setsid --wait make x"),
+            ("setsid", "setsid"),
+        ] {
+            assert_eq!(normalise(input), vec![want], "{input}");
+        }
     }
 
     fn wf(yaml: &str) -> BTreeSet<String> {
