@@ -772,6 +772,85 @@ fields:
       the block with `declared` read from the matrix and the rest null, which
       is the honest shape until a server reports admission.
 
+  resources:
+    class: UNMEASURED
+    source: server
+    required: at-release
+    owner: PERF-018
+    spec: "§3 (PP-2)"
+    needs: >-
+      The measured resources{} block (peak_rss_bytes, vram_peak_bytes,
+      null_reasons) of the SERVER process. R1 (#4522) writes it in apr
+      bench/qa/profile JSON; no perf receipt producer copies it yet, so Arm R
+      reports n/a until arms.R.require_resources flips to true.
+
+  provenance.model_file:
+    class: UNMEASURED
+    source: client
+    required: at-release
+    owner: PERF-004
+    spec: "§4 (PP-23)"
+    needs: >-
+      The GGUF the servers loaded, with its byte size and digest.
+      perf_receipt.py writes it as null with a stated reason; Arm R's RSS
+      ceiling and PP-23's roofline both need it.
+
+  provenance.model_file.bytes:
+    class: UNMEASURED
+    source: client
+    required: at-release
+    owner: PERF-004
+    spec: "§4 (PP-23)"
+    needs: >-
+      Size in bytes of the loaded GGUF. It is the input to Arm R's RSS ceiling
+      (3 x bytes + 512 MiB, F-CHAOS-001). Arm R fails closed without it once
+      resources{} is present.
+
+  resources.peak_rss_bytes:
+    class: UNMEASURED
+    source: server
+    required: at-release
+    owner: PERF-018
+    spec: "§3 (PP-2)"
+    needs: >-
+      Peak resident set of the SERVER process for the run (VmHWM). R1 (#4522) measures it in apr bench/qa/profile JSON through realizar::resources; no perf receipt producer (perf_receipt.py, loadtest.rs) copies it into the receipt yet, so Arm R reports n/a while arms.R.require_resources is false.
+
+  resources.vram_peak_bytes:
+    class: UNMEASURED
+    source: server
+    required: at-release
+    owner: PERF-018
+    spec: "§3 (PP-2)"
+    needs: >-
+      Peak device memory of the SERVER process for the run, the sampled peak (never the recorded-alloc lower bound). R1 (#4522) measures it in apr bench/qa/profile JSON; the perf receipt producers do not carry it yet.
+
+  resources.null_reasons:
+    class: UNMEASURED
+    source: server
+    required: at-release
+    owner: PERF-018
+    spec: "§3 (PP-2)"
+    needs: >-
+      The object of stated reasons for each resources.* field that is null. Written by whoever writes resources{} (R1 #4522); absent from perf receipts until that producer exists.
+
+  resources.null_reasons.peak_rss_bytes:
+    class: UNMEASURED
+    source: server
+    required: at-release
+    owner: PERF-018
+    spec: "§3 (PP-2)"
+    needs: >-
+      Stated reason peak_rss_bytes is null (for example no /proc on the host). Same producer gap as resources.peak_rss_bytes.
+
+  resources.null_reasons.vram_peak_bytes:
+    class: UNMEASURED
+    source: server
+    required: at-release
+    owner: PERF-018
+    spec: "§3 (PP-2)"
+    needs: >-
+      Stated reason vram_peak_bytes is null (for example a CPU-only run). Same producer gap as resources.vram_peak_bytes.
+
   ladder.declared:
     class: UNMEASURED
     source: derived

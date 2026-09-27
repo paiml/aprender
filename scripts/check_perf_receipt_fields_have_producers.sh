@@ -75,7 +75,9 @@ PREFIX = {
     # meaning under DELEGATE.
     GATE: {"r": "", "b": "bands[].", "bands": "bands[].",
            "kv": "kv.", "itl": "itl.", "inj": "injector.",
-           "prov": "provenance.", "sig": "signature."},
+           "prov": "provenance.", "sig": "signature.",
+           # arm_r_resources binds `res=r.get("resources")` (#4522 R2).
+           "res": "resources."},
     DELEGATE: {"receipt": "", "prov": "provenance.",
                "subj_prov": "provenance.", "comp_prov": "provenance."},
 }

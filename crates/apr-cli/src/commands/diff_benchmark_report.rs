@@ -90,7 +90,7 @@ pub(crate) fn run(
     };
 
     #[cfg(not(feature = "inference"))]
-    let mut results = {
+    let mut results: RealProfileResults = {
         let _ = (warmup_passes, measure_passes);
         output::warn("Inference feature not enabled. Cannot run real profiling.");
         output::warn("Build with: cargo build --features inference");

@@ -503,6 +503,7 @@ mod no_regressions_needs_a_comparison_3873 {
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let tmp = tempfile::NamedTempFile::new().expect("tmp");
         std::fs::write(tmp.path(), serde_json::to_string(&report).expect("json")).expect("write");

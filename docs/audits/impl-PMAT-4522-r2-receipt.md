@@ -27,3 +27,23 @@ Measured:
 [U] **Done-when is not met yet.** It needs a nightly and an rc receipt with `resources{}` non-null. That comes from R1; Arm R reports n/a until then. Flip `require_resources: true` in the PR where R1 emits the block.
 [U] **VRAM ceiling is lambda-only.** No other host has a measured capacity in the tree. gx10 is unified memory, so RSS is its ceiling.
 [U] **Coverage gate against origin/main** fails G2.2/G2.3 on this base: main has 864 rows and this base has 838. That is branch age, not this diff. The batch's merge with main must union the ledger.
+
+## Fold: R1 (aprender-52, 52d50d7628) into #4428
+
+- R1 cherry-picked as f16d9b8886 (52's authorship kept). No conflicts.
+- VmHWM dedupe: `profile::peak_rss_bytes()` calls `realizar::resources::peak_rss_bytes()` under `feature = "inference"`. The `/proc/self/status` reader `parse_vm_hwm_bytes` is the fallback without it.
+- **PERF-004 guard fixed.** dfd977618a had broken it, and its rc 1 was hidden behind `| tail`. Arm R read 8 fields the ledger did not classify, through a receiver (`res`) the extractor did not know.
+  - All 8 are now UNMEASURED with an owner and a spec: `resources`, `resources.peak_rss_bytes`, `resources.vram_peak_bytes`, `resources.null_reasons{,.peak_rss_bytes,.vram_peak_bytes}`, `provenance.model_file{,.bytes}`.
+  - `res` is mapped to `resources.`.
+  - Result: `check_perf_receipt_fields_have_producers.sh` rc 0 (118 fields), and its `--self-test` rc 0.
+- R1 fills `resources{}` in apr bench/qa/profile JSON. The perf receipt producers (`perf_receipt.py`, `loadtest.rs`) do not copy it yet, and `perf_receipt.py` writes `provenance.model_file` as null. So `arms.R.require_resources` stays **false**; flipping it now would turn every nightly RED.
+- Two fixes to the fold:
+  - `QaReport` in the #3873 test literal gained `resources: None`.
+  - The no-inference `let mut results` in `diff_benchmark_report.rs` got a type annotation. R1's `results.resources = …` had left it with no type (E0282).
+- Measured:
+  - `cargo test -p apr-cli --lib -- gh4522 meas001 resource_window test_ci_profile no_regressions_needs_a_comparison_3873`: 37 passed.
+  - `cargo test -p aprender-serve --lib resources`: 10 passed.
+  - clippy `-D warnings` apr-cli and aprender-serve: rc 0. `cargo fmt --check`: rc 0.
+  - `perf_gate.sh --selftest`: rc 0.
+  - `DOGFOOD_BASE_REF=HEAD check_dogfood_coverage.sh`: PASS.
+- [U] `cargo check -p apr-cli --no-default-features` still fails (rc 101), and none of the errors are in files this fold touches (chat*, serve/route_index, output_verification, golden_output, run_entry, `dispatch_analysis.rs:492` Devices). So the fallback reader is covered only by its unit tests under the default features.

@@ -149,12 +149,23 @@ pub struct CiProfileReport {
 /// Peak resident set size of THIS process in bytes: `VmHWM` from
 /// `/proc/self/status` (the kernel's RSS high-water mark, the value
 /// `getrusage` reports as `ru_maxrss`). None where procfs is absent — the
-/// caller treats that as unmeasured, never as zero (#4522 R2).
+/// caller treats that as unmeasured, never as zero (#4522 R2). With the
+/// `inference` feature this is R1's reader, the one `resources{}` uses, so the
+/// assertion and the block cannot disagree; without it, the local parser.
 pub(crate) fn peak_rss_bytes() -> Option<u64> {
-    parse_vm_hwm_bytes(&std::fs::read_to_string("/proc/self/status").ok()?)
+    #[cfg(feature = "inference")]
+    {
+        realizar::resources::peak_rss_bytes()
+    }
+    #[cfg(not(feature = "inference"))]
+    {
+        parse_vm_hwm_bytes(&std::fs::read_to_string("/proc/self/status").ok()?)
+    }
 }
 
-/// Parse the `VmHWM:  <n> kB` line of a `/proc/<pid>/status` body.
+/// Parse the `VmHWM:  <n> kB` line of a `/proc/<pid>/status` body — the
+/// fallback reader for builds without `inference` (realizar absent).
+#[cfg_attr(feature = "inference", allow(dead_code))]
 pub(crate) fn parse_vm_hwm_bytes(status: &str) -> Option<u64> {
     let line = status.lines().find(|l| l.starts_with("VmHWM:"))?;
     let mut parts = line["VmHWM:".len()..].split_whitespace();
