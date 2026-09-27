@@ -236,12 +236,14 @@ fn the_tracked_repo_graph_is_fresh() {
     // node to a PR's graph — the release evidence is extracted only under `--release-*`. ONT-4f (#4330) adds
     // `github-entities-v1`'s four armed shapes: 22. #3560 R1 adds `examples-well-formed` (reported, not armed): 23. R4 adds `examples-model-current` (reported): 24.
     // ONT-4c (#3847) adds the four armed non-code shapes readme-root, claude-md, model-setfit-slice, csv-train: 28.
-    // ONT-4g/ONT-10 (#4502) add binary-target, surface-audit-ledger and seven binary-<bin>-surface shapes (apr-cli-apr,
-    // aprender-cbtop, aprender-compute-xtask, aprender-profile, aprender-zram-generator, apr-qa-readme-sync, pv): 37.
+    // ONT-4g/ONT-10 (#4502) add binary-target, surface-audit-ledger, binary-apr-http-mcp and fourteen
+    // binary-<bin>-surface shapes (apr-cli-apr, apr-corpus-ingest, aprender-cbtop, aprender-compute-xtask, aprender-db,
+    // aprender-explain, aprender-profile, aprender-ptx-debug, aprender-test-cli, aprender-zram-generator,
+    // apr-qa-readme-sync, pv, score, trueno-rag): 45. Each new ONT-10 slice raises this — name it here.
     assert_eq!(
         v["shapes_n"],
-        37,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + 7 binary-*-surface (ONT-10, #4502)\n{}",
+        45,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 14 binary-*-surface (ONT-10, #4502)\n{}",
         show(&r)
     );
 }
