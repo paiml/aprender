@@ -4,7 +4,7 @@
 //! contract carries; ONT-4c1 (aprender#3508) implements `gguf` and `apr_model` — the model receipts — and joins
 //! the tracked ladder receipts to the rungs (`resolves: receipt`, [`crate::ontology::receipts`]); the rest are
 //! declared in Σ and arrive with their rows (ONT-4b2 implements `code` — the bound symbols by a `syn` module-tree walk —
-//! and `lean` — the in-tree theorems; ONT-4c: readme, llm_context, csv).
+//! and `lean` — the in-tree theorems); ONT-4c implements `readme`, `llm_context` and `csv`, sharing [`claims`].
 //!
 //! [`all`] is the ONE walk the shapes gate and `pv extract` share, so what the gate grades and what
 //! `contracts.nt` records are the same graph (R-18: files are canonical, the graph is derived — from one place).
@@ -15,13 +15,17 @@ use crate::ontology::rdf::Graph;
 use crate::ontology::receipts;
 
 pub mod apr_model;
+pub mod claims;
 pub mod code;
+pub mod csv;
 pub mod example;
 pub mod gguf;
 pub mod json;
 pub mod lean;
+pub mod llm_context;
 pub mod parity_receipt;
 pub mod pv_contract;
+pub mod readme;
 pub mod release_evidence;
 pub mod release_inputs;
 
@@ -51,6 +55,12 @@ pub struct Extraction {
     pub parity: parity_receipt::ParityStats,
     /// ONT-4f: the GitHub snapshots under `evidence/github/<type>/`, per Σ snapshot type, and the refused files.
     pub github: json::github::GithubStats,
+    /// ONT-4c: `README.md` — files read, the claim commands CI runs (the MEASURED set), refusals.
+    pub readme: claims::DocStats,
+    /// ONT-4c: `CLAUDE.md` (`llm-context`) — the same.
+    pub llm_context: claims::DocStats,
+    /// ONT-4c: CSV datasets read, and the files refused.
+    pub csv: claims::DocStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
     /// ONT-4d: how many `rdf:type` triples the Σ closure added.
@@ -169,6 +179,11 @@ pub fn all_with(
         .map(json::github::snapshot_types)
         .unwrap_or_default();
     out.github = json::github::extract(&repo_root(contract_dir), &snapshot_types, &mut out.graph);
+    // ONT-4c: the claim fences resolve against the merge-path `run:` lines, computed once per walk
+    let ci = claims::ci_run_lines(&repo_root(contract_dir));
+    out.readme = readme::extract(contract_dir, &mut out.graph, &ci);
+    out.llm_context = llm_context::extract(contract_dir, &mut out.graph, &ci);
+    out.csv = csv::extract(contract_dir, &mut out.graph);
     // ONT-4d (R-19): the rdf:type closure over Σ's `subsumes`, materialized AFTER every extractor has run, so a
     // focus node an extractor typed with a sub-concept is also an instance of every super-concept. This is
     // how a shape on a super-concept reaches it (shapes.rs selects focus nodes by rdf:type).

@@ -9,6 +9,7 @@
 #   snapshot must be taken with --features server.
 #   `--version` = "trueno-db 0.69.3": the pre-monorepo name (#[command(name = "trueno-db")]) and no sha. LIVE RED on
 #   the name pattern and on G0.1.
+#   FIXED in the same PR: clap name aprender-db (measured after the fix: "aprender-db 0.69.3").
 #   `--help` exits 0; `--no-such-flag` exits 2. No subcommands; one required option, --config <CONFIG>; no enumerated
 #   flag values.
 #   HTTP: src/main.rs mounts 3 routes via .route() (no nest/merge/fallback/route_service in src/): GET /health,
@@ -57,7 +58,7 @@ shapes:
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-db"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-db"]}
-      # LIVE RED 2026-09-27: "trueno-db 0.69.3" — the version names another program
+      # was RED at 8e88b8fc5d ("trueno-db 0.69.3"); FIXED on batch/ont-10 (clap name = aprender-db)
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-db [0-9]+\\.[0-9]+\\.[0-9]+"}
       # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
@@ -117,7 +118,7 @@ falsification_tests:
     rule: 'G0.1 the version names the binary and the commit'
     prediction: '`aprender-db --version` starts with "aprender-db " and contains the first 9 hex of the git sha'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-27: "trueno-db 0.69.3" — another program''s name and no sha'
+    if_fails: 'name: FIXED on batch/ont-10 (was "trueno-db 0.69.3"); sha: LIVE RED on 0.69.3, clears at rc.1 (car/0.70.0 carries #4219)'
     mutation: 'restore #[command(name = "trueno-db")] after a fix; must turn RED on bin:versionString'
   - id: FALSIFY-BIN-APRENDER-DB-004
     rule: 'G1.3/G1.4 the surface equals the snapshot'

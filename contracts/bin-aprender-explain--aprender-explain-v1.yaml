@@ -12,6 +12,7 @@
 #   Commands: bugs, compare, diff, ptx, simd, tui, wgpu (clap's `help` excluded); no nested subcommands.
 #   `-K/--kernel <NAME>` takes one of 7 kernels, but as a free String checked after clap: `ptx -K nosuch` exits 1
 #   and --help says "see --help for list" without listing them (G1.3 LIVE RED).
+#   FIXED in the same PR: clap name aprender-explain; -K/-a/-b parse through kernel_names() (rc=2 on nosuch).
 #   surface_audit.csv: 7 rows, set-equal to the commands.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
@@ -53,7 +54,7 @@ shapes:
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-explain"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-explain"]}
-      # LIVE RED 2026-09-27: "trueno-explain 0.69.3" — the version names another program
+      # was RED at 8e88b8fc5d ("trueno-explain 0.69.3"); FIXED on batch/ont-10 (clap name = aprender-explain)
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-explain [0-9]+\\.[0-9]+\\.[0-9]+"}
       # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
@@ -107,13 +108,13 @@ falsification_tests:
     rule: 'G0.1 the version names the binary and the commit'
     prediction: '`aprender-explain --version` starts with "aprender-explain " and contains the first 9 hex of the git sha'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-27: "trueno-explain 0.69.3" — another program''s name and no sha'
+    if_fails: 'name: FIXED on batch/ont-10 (was "trueno-explain 0.69.3"); sha: LIVE RED on 0.69.3, clears at rc.1 (car/0.70.0 carries #4219)'
     mutation: 'restore #[command(name = "trueno-explain")] after a fix; must turn RED on bin:versionString'
   - id: FALSIFY-BIN-APRENDER-EXPLAIN-004
     rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
     prediction: '`aprender-explain ptx -K nosuch` exits 2 naming the allowed kernels; subcommands(clap) = the 7 literals above'
     test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
-    if_fails: 'LIVE RED 2026-09-27: `ptx -K nosuch` exits 1 ("Unknown kernel: nosuch. Available: vector_add, gemm_naive, gemm_tiled, softmax, q4k_gemm, q5k_gemm, q6k_gemm") — -K is a String checked after clap, so --help does not list the values'
+    if_fails: 'a bad kernel name runs past clap (was RED at 8e88b8fc5d: exit 1, "Unknown kernel: nosuch. Available: vector_add, gemm_naive, gemm_tiled, softmax, q4k_gemm, q5k_gemm, q6k_gemm"); FIXED on batch/ont-10: kernel_names() value_parser on all 6 kernel flags, exit 2, --help lists them'
     mutation: 'after the fix, turn -K back into a String; must turn RED'
   - id: FALSIFY-BIN-APRENDER-EXPLAIN-005
     rule: 'ledger rows exist'

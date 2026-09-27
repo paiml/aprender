@@ -12,8 +12,8 @@ and re-run `pv lint contracts/ --gate shapes`. Each header records what was meas
 
 | slice | file | binary (package) | commands | RED today |
 |---|---|---|---|---|
-| S4 (orchestrate 1/2) | binary-aprender-orchestrate-cli-v1.yaml | aprender-orchestrate | 86 CLI leaves; MCP tools/list = 4 | `--version` says "batuta"; 4 MCP tools unledgered, 6 `mcp:*` ledger rows are not tools/list tools |
-| S3 (orchestrate 2/2) | binary-aprender-orchestrate-http-v1.yaml | aprender-orchestrate | 92 HTTP routes (banco), set-equal to the ledger | extract gap: dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty |
+| S4 (orchestrate 1/2) | MOVED → contracts/bin-aprender-orchestrate--aprender-orchestrate-v1.yaml (S3 routes folded into the same shape) | aprender-orchestrate | 86 CLI leaves; MCP tools/list = 4 | `--version` says "batuta"; 4 MCP tools unledgered, 6 `mcp:*` ledger rows are not tools/list tools |
+| S3 (orchestrate 2/2) | MOVED → contracts/bin-aprender-orchestrate--aprender-orchestrate-v1.yaml (bin:route in the S4 shape) | aprender-orchestrate | 92 HTTP routes (banco), set-equal to the ledger | extract gap: dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty |
 | S9 (apr(apr-cli) 1/2) | MOVED → contracts/bin-apr-cli--apr-v1.yaml | apr (apr-cli) | 264 (262 leaves + debug + sim help); identity + all CLI — S8 takes the 47 HTTP + mcp rows (split by kind: pv refuses qualifiedValueShape) | 15 ledger rows name feature-gated commands (mono, rag eval, data x doctest/hub); 12 pv/capability commands unledgered |
 | S10 | binary-alimentar-v1.yaml | alimentar (aprender-data) | 31 | 4 ledger rows name feature-gated commands the default build lacks |
 | S16 (1/2) | binary-apr-qa-v1.yaml | apr-qa (aprender-qa-cli) | 15 | none beyond G0.1 |
@@ -45,9 +45,9 @@ green on S7 (`apr 0.69.3 (b6cf6d2ede)`) and RED on simular and ptop.
 
 | slice | file | binary (package) | commands | RED today |
 |---|---|---|---|---|
-| S18 (1/3) | NEW → contracts/bin-aprender-ptx-debug--aprender-ptx-debug-v1.yaml | aprender-ptx-debug | 3 | unknown flag exits 1 by design (`exit_code_for_parse_error`), G1.2 RED |
-| S18 (2/3) | NEW → contracts/bin-aprender-explain--aprender-explain-v1.yaml | aprender-explain | 7 | `--version` says "trueno-explain"; `ptx -K` is a String checked after clap (exit 1), G1.3 RED |
-| S18 (3/3) | NEW → contracts/bin-aprender-db--aprender-db-v1.yaml | aprender-db | 0; `--config`; 3 HTTP routes | `--version` says "trueno-db"; needs `--features server` to exist |
+| S18 (1/3) | NEW → contracts/bin-aprender-ptx-debug--aprender-ptx-debug-v1.yaml | aprender-ptx-debug | 3 | none beyond G0.1 (unknown flag exit 1→2 FIXED) |
+| S18 (2/3) | NEW → contracts/bin-aprender-explain--aprender-explain-v1.yaml | aprender-explain | 7 | none beyond G0.1 (name + `-K` value_parser FIXED) |
+| S18 (3/3) | NEW → contracts/bin-aprender-db--aprender-db-v1.yaml | aprender-db | 0; `--config`; 3 HTTP routes | none beyond G0.1 (name FIXED); needs `--features server` to exist |
 | S12 (1/2) | MOVED → contracts/bin-aprender-rag-cli--trueno-rag-v1.yaml | trueno-rag (aprender-rag-cli) | 6 | 7 ledger rows (`eval compare/gate/generate/judge/metrics/retrieve/sample`) name commands behind non-default feature `eval`; G1.3: `query --format/--mode/--fusion/--rerank` are Strings checked after clap (exit 1) |
 | S12 (2/2) | MOVED → contracts/bin-aprender-present-terminal--score-v1.yaml | score (aprender-present-terminal) | 0; 7 long options + [PATH] | none beyond G0.1. Needs `--features score` to exist at all; bare-row join extended to allow positional placeholders (`score [PATH] (…)`) |
 

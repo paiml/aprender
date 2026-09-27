@@ -668,6 +668,11 @@ gates = [
     # Release time only, like the entry above; the PR-time half (the helpers' case table) is
     # scripts/check_tokenizer_parity.sh, which guard_tree.sh dispatches.
     "scripts/tokenizer_parity.sh",
+    # #4476 ONT-4g: docs/audits/surface_audit.csv has > 0 rows and names exactly the [[bin]]
+    # targets cargo metadata declares at the release sha, printed N/N; any mismatch is RED by
+    # name. The PR-time half is its case table, scripts/check_surface_audit_bins.sh, which
+    # guard_tree.sh dispatches (an empty ledger must turn it RED).
+    "scripts/surface_audit_bins_gate.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves

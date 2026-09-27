@@ -229,9 +229,9 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
-        sh:minCount 44 ;
-        sh:maxCount 44 ;
-        sh:in ( "audit" "book" "census" "certify" "challenge" "check-parity" "codegen" "coq" "coverage" "diff" "discharge" "equations" "explain" "extract" "extract-pytorch" "flux" "fuzz" "generate" "graph" "infer" "invariants" "kaizen" "kani" "lean" "lean-status" "lint" "migrate" "mirai" "obligations" "ontology" "pipeline" "probar" "proof-status" "query" "roofline" "scaffold" "score" "status" "tla" "unlock" "validate" "verify-bindings" "verify-pipeline" "verify-structure" ) ;
+        sh:minCount 49 ;
+        sh:maxCount 49 ;
+        sh:in ( "audit" "book" "census" "certify" "challenge check" "challenge gen" "check-parity" "codegen" "coq" "coverage" "diff" "discharge check" "discharge gen-axioms" "discharge label-ratchet" "discharge run" "equations" "explain" "extract" "extract-pytorch" "flux" "fuzz" "generate" "graph" "infer" "invariants" "kaizen" "kani" "lean" "lean-status" "lint" "migrate" "mirai" "obligations" "ontology export" "ontology tbox" "pipeline" "probar" "proof-status" "query" "roofline" "scaffold" "score" "status" "tla" "unlock" "validate" "verify-bindings" "verify-pipeline" "verify-structure" ) ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
@@ -339,6 +339,73 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/binary-aprender-orchestrate-aprender-orchestrate-surface> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/bin/target/aprender-orchestrate/aprender-orchestrate> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-orchestrate" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/package> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "aprender-orchestrate" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^aprender-orchestrate [0-9]+\\.[0-9]+\\.[0-9]+" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/versionString> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "[0-9a-f]{9}" ;
+        sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
+        sh:minCount 86 ;
+        sh:maxCount 86 ;
+        sh:in ( "agent chat" "agent contracts" "agent pool" "agent run" "agent sign" "agent status" "agent validate" "agent verify-sig" "analyze" "bug-hunter analyze" "bug-hunter deep-hunt" "bug-hunter diff" "bug-hunter ensemble" "bug-hunter falsify" "bug-hunter fuzz" "bug-hunter hunt" "bug-hunter spec" "bug-hunter stack" "bug-hunter ticket" "bug-hunter trend" "bug-hunter triage" "build" "code" "content emit" "content types" "content validate" "data tree" "deploy cloudflare" "deploy docker" "deploy fly" "deploy k8s" "deploy lambda" "experiment tree" "falsify" "hf catalog" "hf course" "hf info" "hf pull" "hf push" "hf search" "hf tree" "init" "mcp" "optimize" "oracle" "pacha alias" "pacha aliases" "pacha decrypt" "pacha encrypt" "pacha keygen" "pacha list" "pacha pin" "pacha prune" "pacha pull" "pacha rm" "pacha run" "pacha search" "pacha show" "pacha sign" "pacha stats" "pacha unpin" "pacha verify" "parf" "playbook lock" "playbook run" "playbook status" "playbook validate" "report" "reset" "serve" "stack check" "stack comply" "stack drift" "stack gate" "stack publish-status" "stack quality" "stack release" "stack status" "stack sync" "stack tree" "stack versions" "status" "transpile" "validate" "viz dashboard" "viz tree" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/mcpTool> ;
+        sh:minCount 4 ;
+        sh:maxCount 4 ;
+        sh:in ( "hf_info" "hf_integration" "hf_search" "hf_tree" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredTool> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/route> ;
+        sh:minCount 92 ;
+        sh:maxCount 92 ;
+        sh:in ( "DELETE /api/delete" "DELETE /api/v1/conversations/:id" "DELETE /api/v1/data/files/:id" "DELETE /api/v1/models/registry/:name" "DELETE /api/v1/prompts/:id" "DELETE /api/v1/rag/index" "DELETE /api/v1/train/runs/:id" "GET /" "GET /api/tags" "GET /api/v1/audio/formats" "GET /api/v1/audit" "GET /api/v1/batch" "GET /api/v1/batch/:id" "GET /api/v1/chat/parameters" "GET /api/v1/config" "GET /api/v1/conversations" "GET /api/v1/conversations/:id" "GET /api/v1/conversations/export" "GET /api/v1/conversations/search" "GET /api/v1/data/datasets" "GET /api/v1/data/datasets/:id/preview" "GET /api/v1/data/files" "GET /api/v1/data/files/:id/info" "GET /api/v1/data/recipes" "GET /api/v1/data/recipes/:id" "GET /api/v1/eval/runs" "GET /api/v1/eval/runs/:id" "GET /api/v1/experiments" "GET /api/v1/experiments/:id/compare" "GET /api/v1/mcp/info" "GET /api/v1/metrics" "GET /api/v1/models" "GET /api/v1/models/merge/strategies" "GET /api/v1/models/registry" "GET /api/v1/models/status" "GET /api/v1/prompts" "GET /api/v1/prompts/:id" "GET /api/v1/rag/search" "GET /api/v1/rag/status" "GET /api/v1/system" "GET /api/v1/tools" "GET /api/v1/train/presets" "GET /api/v1/train/runs" "GET /api/v1/train/runs/:id" "GET /api/v1/train/runs/:id/metrics" "GET /api/v1/ws" "GET /assets/*path" "GET /health" "GET /health/live" "GET /health/ready" "GET /v1/models" "GET /v1/models/:id" "PATCH /api/v1/conversations/:id" "POST /api/chat" "POST /api/generate" "POST /api/pull" "POST /api/show" "POST /api/v1/audio/transcriptions" "POST /api/v1/batch" "POST /api/v1/chat/completions" "POST /api/v1/conversations" "POST /api/v1/conversations/import" "POST /api/v1/data/recipes" "POST /api/v1/data/recipes/:id/run" "POST /api/v1/data/upload" "POST /api/v1/data/upload/json" "POST /api/v1/detokenize" "POST /api/v1/embeddings" "POST /api/v1/eval/perplexity" "POST /api/v1/experiments" "POST /api/v1/experiments/:id/runs" "POST /api/v1/mcp" "POST /api/v1/models/load" "POST /api/v1/models/merge" "POST /api/v1/models/pull" "POST /api/v1/models/unload" "POST /api/v1/prompts" "POST /api/v1/rag/index" "POST /api/v1/tokenize" "POST /api/v1/tools" "POST /api/v1/tools/execute" "POST /api/v1/train/runs/:id/export" "POST /api/v1/train/runs/:id/stop" "POST /api/v1/train/start" "POST /ui/chat" "POST /v1/audio/transcriptions" "POST /v1/chat/completions" "POST /v1/completions" "POST /v1/embeddings" "PUT /api/v1/chat/parameters" "PUT /api/v1/config" "PUT /api/v1/tools/:name/config" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredRoute> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> ;
         sh:maxCount 0 ;
     ] ;
 .
@@ -720,6 +787,12 @@
         sh:path <https://ont.paiml.dev/v1alpha1/bin/mcpTool> ;
     ] ;
     sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/option> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/positional> ;
+    ] ;
+    sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/exposes> ;
         sh:nodeKind sh:IRI ;
     ] ;
@@ -780,6 +853,78 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/claude-md> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/llm/LlmContext> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/section> ;
+        sh:minCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/purposeSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/rulesSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/commandsSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/layoutSection> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/referencedPath> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/command> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/declaredTool> ;
+        sh:in ( "pmat" "pv" "forjar" "bashrs" "cargo" "gh" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/llm/neverRule> ;
+        sh:minCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/csv-train> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/Dataset> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/column> ;
+        sh:minCount 3 ;
+        sh:maxCount 3 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/header> ;
+        sh:in ( "feature1,feature2,label" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/rows> ;
+        sh:minCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/dtype> ;
+        sh:in ( "string" "float" "int" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
@@ -946,6 +1091,35 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/model-setfit-slice> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/AprModel> ;
+    sh:closed true ;
+    sh:ignoredProperties ( <https://ont.paiml.dev/v1alpha1/model/file> <https://ont.paiml.dev/v1alpha1/model/contract> ) ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/format> ;
+        sh:in ( "apr" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/aprVersion> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9]+\\.[0-9]+$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/tensorCount> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e" ) ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
     sh:property [
@@ -1045,7 +1219,7 @@
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/ladder-measured> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/Model> ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/LadderRung> ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/model/sha256> ;
         sh:minCount 1 ;
@@ -1200,6 +1374,37 @@
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/comparatorSha> ;
         sh:minCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/readme-root> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/readme/Readme> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/schemaVersion> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9]+\\.[0-9]+$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/kind> ;
+        sh:in ( "library" "cli" "service" "spec" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/entrypoint> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/section> ;
+        sh:minCount 3 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/readme/contractCount> ;
+        sh:maxCount 1 ;
     ] ;
 .
 

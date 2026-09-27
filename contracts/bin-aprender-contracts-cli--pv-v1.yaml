@@ -61,20 +61,24 @@ shapes:
       # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
       - path: bin:command
-        minCount: 44
-        maxCount: 44
+        minCount: 49
+        maxCount: 49
         in:
           - "audit"
           - "book"
           - "census"
           - "certify"
-          - "challenge"
+          - "challenge check"
+          - "challenge gen"
           - "check-parity"
           - "codegen"
           - "coq"
           - "coverage"
           - "diff"
-          - "discharge"
+          - "discharge check"
+          - "discharge gen-axioms"
+          - "discharge label-ratchet"
+          - "discharge run"
           - "equations"
           - "explain"
           - "extract"
@@ -93,7 +97,8 @@ shapes:
           - "migrate"
           - "mirai"
           - "obligations"
-          - "ontology"
+          - "ontology export"
+          - "ontology tbox"
           - "pipeline"
           - "probar"
           - "proof-status"
@@ -108,7 +113,7 @@ shapes:
           - "verify-bindings"
           - "verify-pipeline"
           - "verify-structure"
-      # LIVE RED 2026-09-26: census, challenge, discharge, extract, obligations, ontology have no ledger row
+      # LIVE RED 2026-09-26: 11 paths have no ledger row (census, challenge *, discharge *, extract, obligations, ontology *)
       - {path: bin:unledgeredCommand, maxCount: 0}
       - {path: bin:ledgerOrphan, maxCount: 0}
 
@@ -160,5 +165,5 @@ falsification_tests:
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = pv (38 on 2026-09-26)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: 'LIVE RED 2026-09-26: 6 of 44 commands have no row (census, challenge, discharge, extract, obligations, ontology)'
+    if_fails: 'LIVE RED 2026-09-26: 11 of 49 command paths have no row (census, challenge check|gen, discharge check|gen-axioms|label-ratchet|run, extract, obligations, ontology export|tbox)'
     mutation: 'delete every pv row; must turn RED naming pv'

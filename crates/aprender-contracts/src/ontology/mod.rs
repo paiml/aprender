@@ -12,6 +12,7 @@
 pub mod arming;
 pub mod extract;
 pub mod liskov;
+pub mod measured_sets;
 pub mod owl;
 pub mod rdf;
 pub mod receipts;
