@@ -775,10 +775,19 @@ snap_options() {
 snap_routes() {
     case "$1/$2" in
         apr-cli/apr|aprender/apr)
+            # ("METHOD", "/path", h) tuples and .route("METHOD", "/path", h) calls. rustfmt splits long
+            # ones over lines, so each file is flattened first. Test files are skipped, and so is
+            # every #[cfg(feature = "cuda")] item: the snapshot is the default-feature build.
             printf 'GET /\n'
-            grep -rhoE '\("(GET|POST|PUT|DELETE|PATCH|HEAD)"[[:space:]]*,[[:space:]]*"/[A-Za-z0-9_/{}.:-]*"' \
-                "$REPO_ROOT"/crates/aprender-serve/src/api/ "$REPO_ROOT"/crates/apr-cli/src/serve/ 2>/dev/null \
-                | sed -E 's/^\("([A-Z]+)"[[:space:]]*,[[:space:]]*"([^"]*)"$/\1 \2/'
+            find "$REPO_ROOT"/crates/aprender-serve/src/api "$REPO_ROOT"/crates/apr-cli/src/commands/serve \
+                -name '*.rs' ! -path '*/tests/*' ! -name 'tests*.rs' ! -name '*_tests.rs' -print0 \
+                | LC_ALL=C sort -z \
+                | while IFS= read -r -d '' f; do
+                    tr '\n' ' ' < "$f" \
+                        | sed -E 's/#\[cfg\(feature = "cuda"\)\][^}]*\}//g' \
+                        | grep -oE '"(GET|POST|PUT|DELETE|PATCH|HEAD)"[[:space:]]*,[[:space:]]*"/[A-Za-z0-9_/{}.:-]*"' \
+                        | sed -E 's/^"([A-Z]+)"[[:space:]]*,[[:space:]]*"([^"]*)"$/\1 \2/'
+                  done
             ;;
         aprender-orchestrate/aprender-orchestrate)
             # axum `.route("/p", get(h).post(h))` chains, joined onto one line per route
