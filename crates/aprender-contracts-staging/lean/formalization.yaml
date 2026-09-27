@@ -54,8 +54,9 @@ models:
     relation:
       kind: simulation
       evidence: >-
-        exportDtype (Roundtrip.lean) is the Rust match (converter/fusion.rs) arm for arm over all 12 TensorDType
-        constructors, and AprDType mirrors TensorDType one to one. Checked on every input, not sampled, by
+        exportDtype (Roundtrip.lean) equals the Rust match (converter/fusion.rs) on all 12 TensorDType constructors:
+        the four accepting arms are identical, and Lean's wildcard is the Rust's explicit eight-variant reject arm.
+        AprDType mirrors TensorDType one to one. Checked on every input, not sampled, by
         converter/fusion_dtype_sim_tests.rs::apr_dtype_to_ggml_is_the_lean_export_dtype_on_every_input, whose
         wildcard-free transcription stops compiling on a new TensorDType variant.
 # There is no stored unrefined count: `pv lint --gate refinement` measures it at HEAD and at BASE
