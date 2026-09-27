@@ -1,0 +1,324 @@
+{
+  "ticket": "GH-3149",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "5d3f1571f9948c31c3c29a65b2377282340a70dd",
+  "diff_sha256": "119029858089eb5124157f131453803fc596de868af1d39abf9759f92cbe1c9c",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 110984,
+  "prompt_sha256": "4cc7991f4d6f0e2265b3df0e290b450cad7b76f65931c4b43c4866ff81c17814",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "test",
+      "findings": [],
+      "raw_bytes": 918,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4cc7991f4d6f0e2265b3df0e290b450cad7b76f65931c4b43c4866ff81c17814",
+      "trace": {
+        "input_sha256": "7ab015f58e23f71d259d3d19ac5ebdec3dea7dfd78833c1f9041cda805c214e4",
+        "output_sha256": "d8b72dc324220f34a153a4c1d9690489af4486783cbf05724e56c78b69026150",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "GH-3149 adds an exact kd-tree/ball-tree/brute-force neighbor index and rewires KNN, DBSCAN and LOF to query through it. I read the full 2603-line brief (ticket, receipt, and the complete diff for neighbors/{mod,kd_tree,ball_tree,brute,metric,tests,tests_rewire,kani_proofs}.rs plus the gaussian_nb.rs/dbscan.rs/lof.rs rewires). The pruning bounds are sound (kd single-coordinate lower bound valid for p>=1/Manhattan/Chebyshev; ball triangle-inequality bound with a slack term that only ever widens the search, never narrows it), tie-breaking is a pure (distance, index) order independent of tree shape, and the exactness/radius/sublinear/degenerate/metric-axiom proptests match their stated bounds. The one disclosed deviation — distance-weighted KNN predict_proba held to 1e-6 instead of bit-identical, because the old code summed 1/d in an unspecified select_nth_unstable partition order — is legitimate: the ticket's \"identical labels/scores\" criterion is satisfied exactly (DBSCAN labels, LOF scores/predict, KNN predict and unweighted proba are all bit-identical per the 153/180 exact pinned digests), and the 27 weighted-proba rows are gated by both a legacy-reference reproduction check and a 1e-6 bound, so the test can still fail. The re-measured kd-tree mutation (split value + 0.5) turns 3 of the 6 exactness tests RED, consistent with the receipt. No unwrap()/panic added; the one non-test `.expect` in lof.rs is argued unreachable (Euclidean+Auto is never refused) and that argument holds given `is_tree_compatible`.",
+      "findings": [
+        {
+          "file": "docs/roadmaps/entries/GH-3149.yaml",
+          "line": 2546,
+          "claim": "The roadmap entry (and roadmap.yaml) records GH-3149 as status: inprogress, progress 0%, with every acceptance-criteria checkbox unchecked ('[ ]'), while the implementation receipt in the same diff declares status: complete and marks every one of those same criteria MET. This is a bookkeeping inconsistency, not a code defect, but it means anyone reading the roadmap alone would not see the ticket as done.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4986,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4cc7991f4d6f0e2265b3df0e290b450cad7b76f65931c4b43c4866ff81c17814",
+      "trace": {
+        "input_sha256": "ac817db64c2330f2e58fc04e4a7486911e0ec52523fa2fc46297f154123d9908",
+        "output_sha256": "fea10121ba26ea1f14983940542fb19b886f02bef735751560b7bf542b94bd36",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "GH-3149 implements exact spatial neighbor index (kd-tree, ball-tree, brute-force) with comprehensive property-based testing covering exactness, sub-linearity, degenerate inputs, and metric axioms. All gates pass. One disclosed exception: distance-weighted KNN predict_proba reorders summation from unspecified partition order (old code) to deterministic (distance, index) order (new code), bounded at 1e-6 tolerance. This is a change from undefined to defined behavior, explicitly disclosed and tested. No refutations found.",
+      "findings": [
+        {
+          "file": "crates/aprender-core/src/neighbors/mod.rs",
+          "line": 1625,
+          "claim": "Weighted KNN predict_proba diverges from pre-rewire code by up to 1e-6 due to reordering sum of 1/d from undefined partition order (select_nth_unstable) to deterministic (distance, index) order",
+          "grounding": "cited",
+          "summary": "The old code summed weights in unspecified order; new code is deterministic. Receipt discloses at tests_rewire.rs:2249-2250, tolerance at 1e-6. This is undefined→defined behavior change, not a correctness bug. Quorum judgment requested and deferred."
+        }
+      ],
+      "raw_bytes": 3082,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4cc7991f4d6f0e2265b3df0e290b450cad7b76f65931c4b43c4866ff81c17814",
+      "trace": {
+        "input_sha256": "45608cea5d020f8c1f64147611461193ebf9a4bc4d838466e2a0e99df67c208f",
+        "output_sha256": "008c409d14a4e47395dde6fe1b9746dbc5a93fc21802abade73269425f0c2cb3",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-core/src/neighbors/mod.rs",
+      "line": 1625,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Weighted KNN predict_proba diverges from pre-rewire code by up to 1e-6 due to reordering sum of 1/d from undefined partition order (select_nth_unstable) to deterministic (distance, index) order"
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/GH-3149.yaml",
+      "line": 2546,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The roadmap entry (and roadmap.yaml) records GH-3149 as status: inprogress, progress 0%, with every acceptance-criteria checkbox unchecked ('[ ]'), while the implementation receipt in the same diff declares status: complete and marks every one of those same criteria MET. This is a bookkeeping inconsistency, not a code defect, but it means anyone reading the roadmap alone would not see the ticket as done."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 19,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 110984 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 110984 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 110984,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
