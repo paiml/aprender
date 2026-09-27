@@ -50,7 +50,7 @@ metadata:
     - 'contracts/refusal-receipt-v1.yaml — the json-entity + shape pattern this reuses unchanged'
     - 'crates/aprender-serve/kernel-registry.json — the rows'
     - 'crates/aprender-serve/src/kernel_registry.rs — the runtime gate'
-    - 'tests/fixtures/ont/kreg-* — the case table, both arms'
+    - 'crates/aprender-contracts/src/lint/kernel_registry_v1_tests.rs — the case table, both arms, on the REAL contract and registry'
 
 entity:
   type: json
@@ -128,17 +128,17 @@ falsification_tests:
   - id: FALSIFY-KREG-001
     rule: a col-major kernel row is refused
     prediction: a registry row declaring layout col_major for Q4_K on GGUF data is a shape violation naming the row
-    test: cargo test -p aprender-contracts-cli --test ont_kernel_registry
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1
     if_fails: the layout set is decoration and LAYOUT-001 can be registered back in
   - id: FALSIFY-KREG-002
     rule: a row with no qtype is refused
     prediction: a row missing qtype (the raw_q4k class — bytes with no declared type) is a shape violation
-    test: cargo test -p aprender-contracts-cli --test ont_kernel_registry
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1
     if_fails: an untagged kernel can be registered and admitted for any qtype
   - id: FALSIFY-KREG-003
     rule: a tolerance typed from memory is refused
     prediction: a row with tolerance 1e-3 and no receipt path is a shape violation
-    test: cargo test -p aprender-contracts-cli --test ont_kernel_registry
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1
     if_fails: unmeasured numbers read as measured
   - id: FALSIFY-KREG-004
     rule: the runtime gate refuses an unregistered combination
