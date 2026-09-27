@@ -40,11 +40,11 @@ fn corpus_3d() -> Vec<(String, Vector<f64>)> {
 
 #[test]
 fn reopen_top_k_matches_in_memory() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("create tempdir");
     let path = dir.path().join("snapshot.bin");
 
     // Build, query, flush, drop.
-    let mut idx = PersistentHnsw::open(&path, 8, 64).unwrap();
+    let mut idx = PersistentHnsw::open(&path, 8, 64).expect("open index");
     for (id, vec) in corpus_3d() {
         idx.add(id, vec);
     }
@@ -55,11 +55,11 @@ fn reopen_top_k_matches_in_memory() {
     ];
     let k = 3;
     let baseline: Vec<Vec<(String, f64)>> = queries.iter().map(|q| idx.search(q, k)).collect();
-    idx.flush().unwrap();
+    idx.flush().expect("flush");
     drop(idx);
 
     // Reopen. Top-k must match byte-for-byte for every query.
-    let reopened = PersistentHnsw::open(&path, 8, 64).unwrap();
+    let reopened = PersistentHnsw::open(&path, 8, 64).expect("open index");
     for (q, want) in queries.iter().zip(baseline.iter()) {
         let got = reopened.search(q, k);
         assert_eq!(
@@ -76,18 +76,18 @@ fn reopen_preserves_size_and_membership() {
     // Auxiliary: a regression-only assertion that len() and the set
     // of returned IDs across many queries match. Catches the case
     // where a node serializes but its item_to_node entry doesn't.
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("create tempdir");
     let path = dir.path().join("members.bin");
 
-    let mut idx = PersistentHnsw::open(&path, 8, 64).unwrap();
+    let mut idx = PersistentHnsw::open(&path, 8, 64).expect("open index");
     for (id, vec) in corpus_3d() {
         idx.add(id, vec);
     }
     let pre_len = idx.len();
-    idx.flush().unwrap();
+    idx.flush().expect("flush");
     drop(idx);
 
-    let reopened = PersistentHnsw::open(&path, 8, 64).unwrap();
+    let reopened = PersistentHnsw::open(&path, 8, 64).expect("open index");
     assert_eq!(reopened.len(), pre_len);
 
     // Every original ID must be reachable as a top-k hit for some
@@ -110,13 +110,13 @@ fn empty_index_round_trips() {
     // Edge case: flushing an empty index and reopening must yield an
     // empty index that returns Vec::new() for any query — never
     // panics, never returns garbage.
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("create tempdir");
     let path = dir.path().join("empty.bin");
-    let mut idx = PersistentHnsw::open(&path, 8, 64).unwrap();
-    idx.flush().unwrap();
+    let mut idx = PersistentHnsw::open(&path, 8, 64).expect("open index");
+    idx.flush().expect("flush");
     drop(idx);
 
-    let reopened = PersistentHnsw::open(&path, 8, 64).unwrap();
+    let reopened = PersistentHnsw::open(&path, 8, 64).expect("open index");
     assert!(reopened.is_empty());
     let hits = reopened.search(&Vector::from_slice(&[1.0, 0.0]), 5);
     assert!(hits.is_empty());

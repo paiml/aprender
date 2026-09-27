@@ -19,22 +19,23 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn write_json(v: &serde_json::Value) -> tempfile::NamedTempFile {
-    let mut f = tempfile::NamedTempFile::new().unwrap();
-    let body = serde_json::to_vec(v).unwrap();
-    f.write_all(&body).unwrap();
-    f.flush().unwrap();
+    let mut f = tempfile::NamedTempFile::new().expect("create temp file");
+    let body = serde_json::to_vec(v).expect("serialise JSON");
+    f.write_all(&body).expect("write");
+    f.flush().expect("flush");
     f
 }
 
 fn write_text(body: &str) -> tempfile::NamedTempFile {
-    let mut f = tempfile::NamedTempFile::new().unwrap();
-    f.write_all(body.as_bytes()).unwrap();
-    f.flush().unwrap();
+    let mut f = tempfile::NamedTempFile::new().expect("create temp file");
+    f.write_all(body.as_bytes()).expect("write");
+    f.flush().expect("flush");
     f
 }
 
 fn well_formed_tool_response() -> serde_json::Value {
-    serde_json::json!({
+    serde_json::from_str::<serde_json::Value>(
+        r#"{
         "model": "tiny",
         "created_at": "2026-04-22T00:00:00Z",
         "message": {
@@ -48,11 +49,14 @@ fn well_formed_tool_response() -> serde_json::Value {
             ]
         },
         "done": true
-    })
+    }"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 fn weather_request() -> serde_json::Value {
-    serde_json::json!({
+    serde_json::from_str::<serde_json::Value>(
+        r#"{
         "model": "tiny",
         "messages": [{"role": "user", "content": "What's the weather in SF?"}],
         "tools": [{
@@ -70,7 +74,9 @@ fn weather_request() -> serde_json::Value {
                 }
             }
         }]
-    })
+    }"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 // ═══ g2_cli_reachable ═══
@@ -78,7 +84,7 @@ fn weather_request() -> serde_json::Value {
 #[test]
 fn falsify_crux_i_04_help_advertises_response_file_flag() {
     Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args(["ollama-tools-lint", "--help"])
         .assert()
         .success()
@@ -88,7 +94,7 @@ fn falsify_crux_i_04_help_advertises_response_file_flag() {
 #[test]
 fn falsify_crux_i_04_help_advertises_request_file_flag() {
     Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args(["ollama-tools-lint", "--help"])
         .assert()
         .success()
@@ -98,7 +104,7 @@ fn falsify_crux_i_04_help_advertises_request_file_flag() {
 #[test]
 fn falsify_crux_i_04_help_advertises_stream_flag() {
     Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args(["ollama-tools-lint", "--help"])
         .assert()
         .success()
@@ -108,7 +114,7 @@ fn falsify_crux_i_04_help_advertises_stream_flag() {
 #[test]
 fn falsify_crux_i_04_rejects_bare_invocation_without_response_file() {
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args(["ollama-tools-lint"])
         .output()
         .expect("apr binary runs");
@@ -125,14 +131,14 @@ fn falsify_crux_i_04_non_streaming_accepts_well_formed_tool_call() {
     let resp_f = write_json(&well_formed_tool_response());
     let req_f = write_json(&weather_request());
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "--json",
             "ollama-tools-lint",
             "--response-file",
-            resp_f.path().to_str().unwrap(),
+            resp_f.path().to_str().expect("temp path is UTF-8"),
             "--request-file",
-            req_f.path().to_str().unwrap(),
+            req_f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -142,7 +148,7 @@ fn falsify_crux_i_04_non_streaming_accepts_well_formed_tool_call() {
         String::from_utf8_lossy(&output.stderr)
     );
     let v: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("parse JSON");
     assert_eq!(v["schema_ok"].as_bool(), Some(true));
     assert_eq!(v["allowlist_ok"].as_bool(), Some(true));
     assert_eq!(v["mode"].as_str(), Some("non_streaming"));
@@ -153,11 +159,11 @@ fn falsify_crux_i_04_without_request_file_flags_no_declared_tools() {
     // Response has tool_calls but no declared tools → NoDeclaredTools.
     let f = write_json(&well_formed_tool_response());
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -178,7 +184,8 @@ fn falsify_crux_i_04_without_request_file_flags_no_declared_tools() {
 fn falsify_crux_i_04_rejects_stringified_arguments() {
     let mut resp = well_formed_tool_response();
     resp["message"]["tool_calls"][0]["function"]["arguments"] =
-        serde_json::json!("{\"location\":\"San Francisco\"}");
+        serde_json::from_str::<serde_json::Value>(r#""{\"location\":\"San Francisco\"}""#)
+            .expect("literal fixture is valid JSON");
     let f = write_json(&resp);
     // #3051: this call omitted --request-file, which the command now REQUIRES in
     // non-streaming mode ("the tool-name allowlist gate has nothing to check a response
@@ -189,13 +196,13 @@ fn falsify_crux_i_04_rejects_stringified_arguments() {
     let req_f = write_json(&weather_request());
 
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
             "--request-file",
-            req_f.path().to_str().unwrap(),
+            req_f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -219,16 +226,16 @@ fn falsify_crux_i_04_rejects_missing_function_name() {
     let mut resp = well_formed_tool_response();
     resp["message"]["tool_calls"][0]["function"]
         .as_object_mut()
-        .unwrap()
+        .expect("is an object")
         .remove("name");
     let f = write_json(&resp);
 
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -240,18 +247,21 @@ fn falsify_crux_i_04_rejects_missing_function_name() {
 
 #[test]
 fn falsify_crux_i_04_rejects_empty_tool_calls_array() {
-    let resp = serde_json::json!({
+    let resp = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "message": {"role": "assistant", "tool_calls": []},
         "done": true
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&resp);
 
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -269,14 +279,14 @@ fn falsify_crux_i_04_allowlist_accepts_declared_tool() {
     let req_f = write_json(&weather_request());
 
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "--json",
             "ollama-tools-lint",
             "--response-file",
-            resp_f.path().to_str().unwrap(),
+            resp_f.path().to_str().expect("temp path is UTF-8"),
             "--request-file",
-            req_f.path().to_str().unwrap(),
+            req_f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -286,9 +296,9 @@ fn falsify_crux_i_04_allowlist_accepts_declared_tool() {
         String::from_utf8_lossy(&output.stderr)
     );
     let v: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("parse JSON");
     assert_eq!(v["allowlist_ok"].as_bool(), Some(true));
-    let declared = v["declared_tool_names"].as_array().unwrap();
+    let declared = v["declared_tool_names"].as_array().expect("is an array");
     assert_eq!(declared.len(), 1);
     assert_eq!(declared[0].as_str(), Some("get_weather"));
 }
@@ -296,18 +306,20 @@ fn falsify_crux_i_04_allowlist_accepts_declared_tool() {
 #[test]
 fn falsify_crux_i_04_allowlist_rejects_hallucinated_tool() {
     let mut resp = well_formed_tool_response();
-    resp["message"]["tool_calls"][0]["function"]["name"] = serde_json::json!("make_coffee");
+    resp["message"]["tool_calls"][0]["function"]["name"] =
+        serde_json::from_str::<serde_json::Value>(r#""make_coffee""#)
+            .expect("literal fixture is valid JSON");
     let resp_f = write_json(&resp);
     let req_f = write_json(&weather_request());
 
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            resp_f.path().to_str().unwrap(),
+            resp_f.path().to_str().expect("temp path is UTF-8"),
             "--request-file",
-            req_f.path().to_str().unwrap(),
+            req_f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -332,12 +344,12 @@ fn falsify_crux_i_04_stream_accepts_well_formed_tool_call_ndjson() {
 "#;
     let f = write_text(body);
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "--json",
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
             "--stream",
         ])
         .output()
@@ -348,7 +360,7 @@ fn falsify_crux_i_04_stream_accepts_well_formed_tool_call_ndjson() {
         String::from_utf8_lossy(&output.stderr)
     );
     let v: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("parse JSON");
     assert_eq!(v["ndjson_ok"].as_bool(), Some(true));
     assert_eq!(v["num_frames"].as_u64(), Some(3));
     assert_eq!(v["mode"].as_str(), Some("streaming_ndjson"));
@@ -363,11 +375,11 @@ fn falsify_crux_i_04_stream_rejects_tool_calls_in_non_terminator() {
 "#;
     let f = write_text(body);
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
             "--stream",
         ])
         .output()
@@ -391,11 +403,11 @@ fn falsify_crux_i_04_stream_rejects_early_done_true() {
 "#;
     let f = write_text(body);
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
             "--stream",
         ])
         .output()
@@ -413,11 +425,11 @@ fn falsify_crux_i_04_stream_rejects_missing_terminator() {
 "#;
     let f = write_text(body);
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
             "--stream",
         ])
         .output()
@@ -432,11 +444,11 @@ fn falsify_crux_i_04_stream_rejects_missing_terminator() {
 fn falsify_crux_i_04_stream_rejects_empty_file() {
     let f = write_text("");
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "ollama-tools-lint",
             "--response-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
             "--stream",
         ])
         .output()

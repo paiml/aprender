@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching captured OTLP/JSON body
 //! that the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_otlp(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-k-08-otlp-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,7 +30,8 @@ fn write_otlp(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_otlp_body() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(
+        r#"{
         "resourceSpans": [{
             "resource": {"attributes": [
                 {"key": "service.name", "value": {"stringValue": "apr-serve"}}
@@ -52,7 +52,9 @@ fn good_otlp_body() -> serde_json::Value {
                 }]
             }]
         }]
-    })
+    }"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -102,7 +104,7 @@ fn falsify_crux_k_08_cli_malformed_json_fails() {
         .prefix("crux-k-08-bad-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(b"{ not json").expect("write");
     f.flush().expect("flush");
     let out = apr_binary()
@@ -133,8 +135,10 @@ fn falsify_crux_k_08_001_span_present_ok_on_apr_inference() {
 
 #[test]
 fn falsify_crux_k_08_001_span_present_reports_missing_apr_inference() {
-    let body =
-        json!({"resourceSpans":[{"scopeSpans":[{"spans":[{"name":"http.server.request"}]}]}]});
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{"resourceSpans":[{"scopeSpans":[{"spans":[{"name":"http.server.request"}]}]}]}"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_otlp(&body);
     let out = apr_binary()
         .args(["otlp-lint", "--otlp-file"])
@@ -171,14 +175,17 @@ fn falsify_crux_k_08_002_genai_attributes_ok_on_full_body() {
 
 #[test]
 fn falsify_crux_k_08_002_genai_attributes_reports_partial_set() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "resourceSpans":[{"scopeSpans":[{"spans":[{
             "name":"apr.inference",
             "attributes":[
                 {"key":"gen_ai.system","value":{"stringValue":"apr"}}
             ]
         }]}]}]
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_otlp(&body);
     let out = apr_binary()
         .args(["otlp-lint", "--otlp-file"])

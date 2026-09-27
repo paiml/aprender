@@ -16,6 +16,7 @@ mod x86 {
     const Q4_BLOCK_BYTES: usize = 18; // 2 bytes scale + 16 bytes quants
 
     fn has_avx_vnni() -> bool {
+        // SAFETY: cpuid exists on every x86_64 CPU; leaf 7 sub-leaf 1 only reads flags.
         let result = unsafe { __cpuid_count(7, 1) };
         (result.eax & (1 << 4)) != 0
     }
@@ -121,6 +122,10 @@ mod x86 {
     }
 
     pub fn main() {
+        if !(is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")) {
+            println!("AVX2+FMA not available; dot_avx2/dot_avx_vnni need both. Skipping.");
+            return;
+        }
         println!("=== SIMD Dot Product Benchmark ===\n");
         println!("CPU: Intel Core Ultra 7 155H");
         println!("AVX-VNNI available: {}", has_avx_vnni());
@@ -143,6 +148,7 @@ mod x86 {
 
         // Warmup
         for _ in 0..1000 {
+            // SAFETY: main() returned early unless avx2 and fma are both detected.
             unsafe {
                 let _ = dot_avx2(&q4_data, &q8_scales, &q8_quants);
             }
@@ -152,6 +158,7 @@ mod x86 {
         let start = Instant::now();
         let mut result_avx2 = 0.0f32;
         for _ in 0..ITERATIONS {
+            // SAFETY: main() returned early unless avx2 and fma are both detected.
             unsafe {
                 result_avx2 = dot_avx2(&q4_data, &q8_scales, &q8_quants);
             }
@@ -164,6 +171,7 @@ mod x86 {
         if has_avx_vnni() {
             // Warmup
             for _ in 0..1000 {
+                // SAFETY: main() returned early unless avx2 and fma are both detected.
                 unsafe {
                     let _ = dot_avx_vnni(&q4_data, &q8_scales, &q8_quants);
                 }
@@ -172,6 +180,7 @@ mod x86 {
             let start = Instant::now();
             let mut r = 0.0f32;
             for _ in 0..ITERATIONS {
+                // SAFETY: main() returned early unless avx2 and fma are both detected.
                 unsafe {
                     r = dot_avx_vnni(&q4_data, &q8_scales, &q8_quants);
                 }

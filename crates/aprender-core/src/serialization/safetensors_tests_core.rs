@@ -568,6 +568,7 @@ fn test_bf16_parity_with_half_crate() {
 // ====================================================================
 
 /// Read the first little-endian u16 produced by `f32_slice_to_f16_bytes`.
+#[cfg(feature = "format-quantize")]
 fn f16_first_u16(bytes: &[u8]) -> u16 {
     u16::from_le_bytes([bytes[0], bytes[1]])
 }

@@ -90,10 +90,8 @@ fn q4_system_prompt_affects_style() {
     // This is a behavioral test - verify architecture supports it
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("Instruct") || spec.contains("chat"),
@@ -134,10 +132,8 @@ fn q7_generation_speed() {
     // Check performance targets
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("tok/s"),
@@ -152,10 +148,8 @@ fn q8_memory_usage() {
     // Check memory constraints
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("512MB") || spec.contains("Memory"),

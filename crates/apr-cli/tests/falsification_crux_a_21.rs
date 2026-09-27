@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching e2e JSON observation
 //! that the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,9 +18,13 @@ fn write_obs(json_body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-a-21-obs-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(json_body).unwrap().as_slice())
-        .expect("write obs");
+        .expect("create temp file");
+    f.write_all(
+        serde_json::to_vec_pretty(json_body)
+            .expect("serialise JSON")
+            .as_slice(),
+    )
+    .expect("write obs");
     f.flush().expect("flush");
     f
 }
@@ -78,12 +81,12 @@ fn falsify_crux_a_21_cli_empty_file_fails() {
         .prefix("crux-a-21-empty-")
         .suffix(".json")
         .tempfile()
-        .unwrap();
+        .expect("create temp file");
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -96,14 +99,14 @@ fn falsify_crux_a_21_cli_invalid_json_fails() {
         .prefix("crux-a-21-bad-")
         .suffix(".json")
         .tempfile()
-        .unwrap();
-    tmp.write_all(b"{not json").unwrap();
-    tmp.flush().unwrap();
+        .expect("create temp file");
+    tmp.write_all(b"{not json").expect("write");
+    tmp.flush().expect("flush");
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -112,12 +115,15 @@ fn falsify_crux_a_21_cli_invalid_json_fails() {
 
 #[test]
 fn falsify_crux_a_21_cli_no_gates_fails() {
-    let tmp = write_obs(&json!({"unrelated": true}));
+    let tmp = write_obs(
+        &serde_json::from_str::<serde_json::Value>(r#"{"unrelated": true}"#)
+            .expect("literal fixture is valid JSON"),
+    );
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -128,22 +134,27 @@ fn falsify_crux_a_21_cli_no_gates_fails() {
 
 #[test]
 fn falsify_crux_a_21_001_dedup_env_wins_and_paths_collapse() {
-    let obs = json!({
+    let mut obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "apr_models_env": "/var/lib/apr/models",
             "home":           "/home/user",
             "expected_root":  "/var/lib/apr/models",
-            "sha256_hex_a":   HEX_A,
-            "sha256_hex_b":   HEX_A,
+            "sha256_hex_a":   "",
+            "sha256_hex_b":   "",
             "expected_same_path": true
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
+    obs["dedup"]["sha256_hex_a"] = HEX_A.into();
+    obs["dedup"]["sha256_hex_b"] = HEX_A.into();
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -158,21 +169,26 @@ fn falsify_crux_a_21_001_dedup_env_wins_and_paths_collapse() {
 
 #[test]
 fn falsify_crux_a_21_001_dedup_home_fallback_when_env_absent() {
-    let obs = json!({
+    let mut obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "home":           "/home/u",
             "expected_root":  "/home/u/.apr/models",
-            "sha256_hex_a":   HEX_A,
-            "sha256_hex_b":   HEX_B,
+            "sha256_hex_a":   "",
+            "sha256_hex_b":   "",
             "expected_same_path": false
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
+    obs["dedup"]["sha256_hex_a"] = HEX_A.into();
+    obs["dedup"]["sha256_hex_b"] = HEX_B.into();
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -181,19 +197,22 @@ fn falsify_crux_a_21_001_dedup_home_fallback_when_env_absent() {
 
 #[test]
 fn falsify_crux_a_21_001_dedup_wrong_expected_root_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "apr_models_env": "/var/lib/apr/models",
             "home":           "/home/u",
             "expected_root":  "/home/u/.apr/models"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -204,22 +223,26 @@ fn falsify_crux_a_21_001_dedup_wrong_expected_root_fails() {
 
 #[test]
 fn falsify_crux_a_21_001_dedup_invalid_hex_fails() {
-    let obs = json!({
+    let mut obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "apr_models_env": "/var/apr",
             "home":           "/home/u",
             "expected_root":  "/var/apr",
             "sha256_hex_a":   "not-hex",
-            "sha256_hex_b":   HEX_A,
+            "sha256_hex_b":   "",
             "expected_same_path": true
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
+    obs["dedup"]["sha256_hex_b"] = HEX_A.into();
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -228,18 +251,21 @@ fn falsify_crux_a_21_001_dedup_invalid_hex_fails() {
 
 #[test]
 fn falsify_crux_a_21_001_dedup_missing_home_errors() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "home": "",
             "expected_root": "/anything"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -250,20 +276,23 @@ fn falsify_crux_a_21_001_dedup_missing_home_errors() {
 
 #[test]
 fn falsify_crux_a_21_002_permission_eacces_exit_13() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "permission": {
             "kind":              "permission_denied",
             "expected_outcome":  "permission_denied",
             "expected_exit_code": 13,
             "expected_hint_substring": "daemon"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -278,19 +307,22 @@ fn falsify_crux_a_21_002_permission_eacces_exit_13() {
 
 #[test]
 fn falsify_crux_a_21_002_permission_not_found_exit_1() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "permission": {
             "kind":              "not_found",
             "expected_outcome":  "not_found",
             "expected_exit_code": 1
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -299,19 +331,22 @@ fn falsify_crux_a_21_002_permission_not_found_exit_1() {
 
 #[test]
 fn falsify_crux_a_21_002_permission_timed_out_is_other() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "permission": {
             "kind":              "timed_out",
             "expected_outcome":  "other",
             "expected_exit_code": 1
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -320,19 +355,22 @@ fn falsify_crux_a_21_002_permission_timed_out_is_other() {
 
 #[test]
 fn falsify_crux_a_21_002_permission_wrong_exit_code_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "permission": {
             "kind":              "permission_denied",
             "expected_outcome":  "permission_denied",
             "expected_exit_code": 1
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -343,20 +381,23 @@ fn falsify_crux_a_21_002_permission_wrong_exit_code_fails() {
 
 #[test]
 fn falsify_crux_a_21_002_permission_wrong_hint_substring_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "permission": {
             "kind":              "permission_denied",
             "expected_outcome":  "permission_denied",
             "expected_exit_code": 13,
             "expected_hint_substring": "kittens"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -365,18 +406,21 @@ fn falsify_crux_a_21_002_permission_wrong_hint_substring_fails() {
 
 #[test]
 fn falsify_crux_a_21_002_permission_declaring_ok_on_eacces_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "permission": {
             "kind":              "permission_denied",
             "expected_outcome":  "ok"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -385,18 +429,21 @@ fn falsify_crux_a_21_002_permission_declaring_ok_on_eacces_fails() {
 
 #[test]
 fn falsify_crux_a_21_002_permission_unknown_kind_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "permission": {
             "kind": "banana",
             "expected_outcome": "other"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -407,13 +454,14 @@ fn falsify_crux_a_21_002_permission_unknown_kind_fails() {
 
 #[test]
 fn falsify_crux_a_21_multi_gate_all_pass() {
-    let obs = json!({
+    let mut obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "apr_models_env": "/var/lib/apr/models",
             "home":           "/home/u",
             "expected_root":  "/var/lib/apr/models",
-            "sha256_hex_a":   HEX_A,
-            "sha256_hex_b":   HEX_A,
+            "sha256_hex_a":   "",
+            "sha256_hex_b":   "",
             "expected_same_path": true
         },
         "permission": {
@@ -422,13 +470,17 @@ fn falsify_crux_a_21_multi_gate_all_pass() {
             "expected_exit_code": 13,
             "expected_hint_substring": "daemon"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
+    obs["dedup"]["sha256_hex_a"] = HEX_A.into();
+    obs["dedup"]["sha256_hex_b"] = HEX_A.into();
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -444,20 +496,23 @@ fn falsify_crux_a_21_multi_gate_all_pass() {
 
 #[test]
 fn falsify_crux_a_21_json_output_shape() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "apr_models_env": "/var/apr",
             "home":           "/home/u",
             "expected_root":  "/var/apr"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "--json",
             "shared-cache-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");

@@ -9,7 +9,8 @@
 //! Uses the root `tokenizer.json` (Qwen2.5 151K vocab) shipped in the repo.
 //! Skips gracefully if the tokenizer file is absent.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 /// Merge-sort payload from `examples/bench_bpe.rs` — 636 chars, representative code.
 const QWEN_PAYLOAD: &str = r#"

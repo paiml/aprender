@@ -226,6 +226,7 @@ fn simd_dot(a: &[f32], b: &[f32]) -> f32 {
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // SAFETY: avx2 and fma were detected at runtime on the line above.
             return unsafe { simd_dot_avx2(a, b) };
         }
     }
@@ -245,6 +246,7 @@ unsafe fn simd_dot_avx2(a: &[f32], b: &[f32]) -> f32 {
     let mut i = 0;
 
     while i + 8 <= len {
+        // SAFETY: i + 8 <= len = min(a.len(), b.len()), so both 8-lane loads are in bounds.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -281,6 +283,7 @@ fn simd_axpy(out: &mut [f32], weight: f32, val: &[f32]) {
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
+            // SAFETY: avx2 was detected at runtime on the line above.
             unsafe {
                 simd_axpy_avx2(out, weight, val);
             }
@@ -300,6 +303,7 @@ unsafe fn simd_axpy_avx2(out: &mut [f32], weight: f32, val: &[f32]) {
     let mut i = 0;
 
     while i + 8 <= len {
+        // SAFETY: i + 8 <= len = min(out.len(), val.len()), so the loads and the store are in bounds.
         unsafe {
             let v_out = _mm256_loadu_ps(out.as_ptr().add(i));
             let v_val = _mm256_loadu_ps(val.as_ptr().add(i));

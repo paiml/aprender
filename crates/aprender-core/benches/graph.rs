@@ -1,5 +1,6 @@
 use aprender::graph::{Graph, GraphCentrality};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 // Benchmark helper functions
 fn generate_random_edges(n_nodes: usize, n_edges: usize, seed: u64) -> Vec<(usize, usize)> {

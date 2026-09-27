@@ -4,7 +4,6 @@
 //! the classifier discharges has a matching captured JSON/HTML body that the
 //! binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-f-17-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -35,7 +34,7 @@ fn write_html(body: &str) -> tempfile::NamedTempFile {
         .prefix("crux-f-17-")
         .suffix(".html")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(body.as_bytes()).expect("write");
     f.flush().expect("flush");
     f
@@ -43,12 +42,15 @@ fn write_html(body: &str) -> tempfile::NamedTempFile {
 
 fn good_attn() -> serde_json::Value {
     // (L=2, H=2, S=3, S=3); rows sum to 1, j > i is zero.
-    let row0 = json!([1.0, 0.0, 0.0]);
-    let row1 = json!([0.4, 0.6, 0.0]);
-    let row2 = json!([0.2, 0.3, 0.5]);
-    let head = json!([row0.clone(), row1.clone(), row2.clone()]);
-    let layer = json!([head.clone(), head.clone()]);
-    json!([layer.clone(), layer.clone()])
+    let row0 = serde_json::from_str::<serde_json::Value>(r#"[1.0, 0.0, 0.0]"#)
+        .expect("literal fixture is valid JSON");
+    let row1 = serde_json::from_str::<serde_json::Value>(r#"[0.4, 0.6, 0.0]"#)
+        .expect("literal fixture is valid JSON");
+    let row2 = serde_json::from_str::<serde_json::Value>(r#"[0.2, 0.3, 0.5]"#)
+        .expect("literal fixture is valid JSON");
+    let head = serde_json::Value::from(vec![row0.clone(), row1.clone(), row2.clone()]);
+    let layer = serde_json::Value::from(vec![head.clone(), head.clone()]);
+    serde_json::Value::from(vec![layer.clone(), layer.clone()])
 }
 
 // ===== g2: CLI shape =====
@@ -105,7 +107,10 @@ fn falsify_crux_f_17_001_row_softmax_ok_on_good_dump() {
 
 #[test]
 fn falsify_crux_f_17_001_row_softmax_rejects_unnormalized() {
-    let bad = json!([[[[0.6, 0.6, 0.0], [0.4, 0.6, 0.0], [0.2, 0.3, 0.5]]]]);
+    let bad = serde_json::from_str::<serde_json::Value>(
+        r#"[[[[0.6, 0.6, 0.0], [0.4, 0.6, 0.0], [0.2, 0.3, 0.5]]]]"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&bad);
     let out = apr_binary()
         .args(["attn-viz-lint", "--attn-file"])
@@ -123,7 +128,10 @@ fn falsify_crux_f_17_001_row_softmax_rejects_unnormalized() {
 #[test]
 fn falsify_crux_f_17_002_causal_mask_rejects_nonzero_future() {
     // Row 0 has weight on column 1 (a future position).
-    let bad = json!([[[[0.5, 0.5, 0.0], [0.4, 0.6, 0.0], [0.2, 0.3, 0.5]]]]);
+    let bad = serde_json::from_str::<serde_json::Value>(
+        r#"[[[[0.5, 0.5, 0.0], [0.4, 0.6, 0.0], [0.2, 0.3, 0.5]]]]"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&bad);
     let out = apr_binary()
         .args(["attn-viz-lint", "--attn-file"])
@@ -179,7 +187,10 @@ fn falsify_crux_f_17_003_html_heatmap_count_rejects_too_few() {
 #[test]
 fn falsify_crux_f_17_tolerance_relaxes_row_softmax_gate() {
     // Causal-mask honored; row 2 sums to 1.01 — strict 1e-5 fails, relaxed 0.05 passes.
-    let body = json!([[[[1.0, 0.0, 0.0], [0.4, 0.6, 0.0], [0.21, 0.30, 0.50]]]]);
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"[[[[1.0, 0.0, 0.0], [0.4, 0.6, 0.0], [0.21, 0.30, 0.50]]]]"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["attn-viz-lint", "--attn-file"])

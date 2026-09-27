@@ -1,7 +1,8 @@
 //! Benchmarks for linear regression.
 
 use aprender::prelude::*;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 fn bench_linear_regression_fit(c: &mut Criterion) {
     let mut group = c.benchmark_group("linear_regression_fit");

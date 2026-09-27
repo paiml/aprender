@@ -88,12 +88,12 @@ fn beat_apr_autograd_matches_pytorch_gradients() {
         .expect("dW1 (Linear weight grad) — backward path broken")
         .data()
         .to_vec();
-    let db1 = get_grad(l1.bias().unwrap().id())
+    let db1 = get_grad(l1.bias().expect("layer has a bias").id())
         .expect("db1")
         .data()
         .to_vec();
     let dw2 = get_grad(l2.weight().id()).expect("dW2").data().to_vec();
-    let db2 = get_grad(l2.bias().unwrap().id())
+    let db2 = get_grad(l2.bias().expect("layer has a bias").id())
         .expect("db2")
         .data()
         .to_vec();

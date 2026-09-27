@@ -33,7 +33,7 @@ mod tests_streaming_quantize {
 
         for name in reader.tensor_names() {
             let f32_data = reader
-                .get_tensor_as_f32(&name)
+                .get_tensor_as_f32(name)
                 .unwrap_or_else(|| panic!("dequant failed for '{name}'"));
             assert!(!f32_data.is_empty(), "empty dequant for '{name}'");
             assert!(
