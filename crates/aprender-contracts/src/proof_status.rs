@@ -454,8 +454,11 @@ fn is_lean_ident_byte(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_' || c == b'\''
 }
 
-/// Whether Lean source admits a proof hole: the token `sorry` outside `--` line comments and
-/// (nested) `/- -/` block comments (#4351).
+/// Whether Lean source admits a proof hole: a [`HOLE_TOKENS`] token outside `--` line comments and
+/// (nested) `/- -/` block comments (#4351). `axiom` is a hole like `sorry` (PV-AXIOM-GAP): a declared
+/// axiom is an unproved assumption, and a theorem resting on it proves nothing about the code. The
+/// kernel's own axioms (`propext`, `Classical.choice`, `Quot.sound`) are never declared in a source
+/// file, so no allowlist is needed; `#print axioms` is the token `axioms`, not `axiom`.
 ///
 /// A doc comment that SAYS "compiles sorry-free" admits nothing, and a byte-level `contains("sorry")`
 /// denied such files every theorem they prove. The scan still fails CLOSED everywhere else:
@@ -497,11 +500,15 @@ enum LeanScan {
     EndsInLineComment,
 }
 
-/// `sorry` as a whole Lean token at byte `i`.
+/// The tokens that leave a proof unfinished: `sorry`, its tactic alias `admit`, and a declared `axiom`.
+pub(crate) const HOLE_TOKENS: [&[u8]; 3] = [b"sorry", b"admit", b"axiom"];
+
+/// A [`HOLE_TOKENS`] token, whole, at byte `i`.
 fn sorry_token_at(b: &[u8], i: usize) -> bool {
-    b[i..].starts_with(b"sorry")
-        && (i == 0 || !is_lean_ident_byte(b[i - 1]))
-        && b.get(i + 5).is_none_or(|&c| !is_lean_ident_byte(c))
+    (i == 0 || !is_lean_ident_byte(b[i - 1]))
+        && HOLE_TOKENS.iter().any(|t| {
+            b[i..].starts_with(t) && b.get(i + t.len()).is_none_or(|&c| !is_lean_ident_byte(c))
+        })
 }
 
 /// Inside `depth` nested `/- -/` comments: returns the next byte and the new depth.
