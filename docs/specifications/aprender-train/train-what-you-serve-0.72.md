@@ -84,6 +84,14 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - **Finding (QTG-008):** a plain f32 softmax denominator over the 248k vocabulary drops the tail, which biased the
     0.8B loss 1.2e-4 low (8.880096 vs 8.881130). The denominator is now a Kahan sum.
   - K1 is retired: the training side has its own f64 reference.
+- **Spike S-R3b (2026-09-27, `la-72/r3-backward` @9af72ac173) — does the R3 backward train the real 0.8B? Yes.** `[V]`
+  - Full-weight normalised descent (step 0.1 in weight space) on one 5-token sentence, CPU release, 32 cores:
+    loss 8.881 → 2.679 → 0.962 → 0.823 → 3.097 → 0.286. That is about 7.1 s per `loss_and_grads`, deterministic
+    across reruns.
+  - The gradient is a strong descent direction: the first step cuts the loss 3.3×.
+  - **Finding (R4 input):** a fixed-length step is not monotone near the minimum (it bounced at step 4). R4 must use
+    AdamW or a decaying schedule, not fixed normalised SGD. The gate is first-step descent plus final < initial/10.
+  - CPU full-weight training of the 0.8B is spike-grade only (7 s per 5 tokens); R4's throughput work stays on CUDA.
 
 ### R4 — QLoRA end to end on Qwen3.5-4B (CUDA) · contract `qwen35-qlora-e2e-v1` · K̂ 90 `[A]`
 - **Cell:** NF4 base; LoRA r16 on attention, MLP and GDN projections; 1,000-sample pinned set; seed 42; 200 steps; RTX 4090.
