@@ -463,6 +463,41 @@ fn elaborate(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
     }
 }
 
+/// The comparator over ONE Challenge file: its NDJSON rows, or `None` after recording why nothing can be judged
+/// (a timeout or a file that did not elaborate rejects; `lake` that cannot run declines).
+fn compare_one(lake: Lake<'_>, lean_dir: &Path, file: &Path, r: &mut Report) -> Option<String> {
+    let what = format!("lake env lean --run {COMPARATOR} {}", file.display());
+    let args: Vec<&OsStr> = ["env", "lean", "--run", COMPARATOR]
+        .map(OsStr::new)
+        .into_iter()
+        .chain(std::iter::once(file.as_os_str()))
+        .collect();
+    let out = match lake.run(&args, lean_dir) {
+        Ok(Bounded::Done(o)) => o,
+        Ok(Bounded::TimedOut(pgid)) => {
+            r.lines.push(lake.timed_out(&what, pgid));
+            r.reject = true;
+            return None;
+        }
+        Err(e) => {
+            r.decline = Some(format!(
+                "lake could not be run ({e}): the comparator did not run"
+            ));
+            return None;
+        }
+    };
+    if !out.status.success() {
+        r.lines.push(format!(
+            "FAIL  {what} exited {} -- the Challenge file did not elaborate; its rows were withheld",
+            raw_exit(out.status)
+        ));
+        r.lines.extend(tail(&String::from_utf8_lossy(&out.stderr)));
+        r.reject = true;
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
 /// `lake env lean --run scripts/Comparator.lean Challenge/*.lean` (PVL-001 EV-7b): the script MEASURES, one NDJSON
 /// row per challenge, and [`comparator::judge_rows`] judges. No Challenge file, no script or no `lake` declines;
 /// a Challenge file that does not elaborate, or output that is not rows, rejects: its rows were never judged.
@@ -486,33 +521,15 @@ fn compare(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
         return;
     }
     let what = format!("lake env lean --run {COMPARATOR} ({} file(s))", files.len());
-    let mut args: Vec<&OsStr> = ["env", "lean", "--run", COMPARATOR]
-        .map(OsStr::new)
-        .to_vec();
-    args.extend(files.iter().map(|f| f.as_os_str()));
-    let out = match lake.run(&args, lean_dir) {
-        Ok(Bounded::Done(o)) => o,
-        Ok(Bounded::TimedOut(pgid)) => {
-            r.lines.push(lake.timed_out(&what, pgid));
-            r.reject = true;
-            return;
+    // ONE process per Challenge file (#4202): each file's header import builds a whole Mathlib environment that
+    // `processHeader` never frees, so one process over all files grew ~4 GB per file (39 files OOM'd at 24 and
+    // 48 GiB). Per file, a run peaks at one import however many files there are.
+    let mut stdout = String::new();
+    for f in &files {
+        match compare_one(lake, lean_dir, f, r) {
+            Some(rows) => stdout.push_str(&rows),
+            None => return,
         }
-        Err(e) => {
-            r.decline = Some(format!(
-                "lake could not be run ({e}): the comparator did not run"
-            ));
-            return;
-        }
-    };
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    if !out.status.success() {
-        r.lines.push(format!(
-            "FAIL  {what} exited {} -- a Challenge file did not elaborate; its rows were withheld",
-            raw_exit(out.status)
-        ));
-        r.lines.extend(tail(&String::from_utf8_lossy(&out.stderr)));
-        r.reject = true;
-        return;
     }
     match comparator::parse_rows(&stdout) {
         Ok(rows) => {
@@ -1512,6 +1529,52 @@ mod tests {
         finish_with(lk(&lake), Report::default(), &lean, false, true, None).expect("accepts");
     }
 
+    /// #4202: one comparator process per Challenge file. One process over all 39 files imported Mathlib once per
+    /// file and never freed it (~4 GB each; OOM at 24 and 48 GiB). The fake `lake` refuses a batched call (exit
+    /// 97), prints the one row of the file it was given, and logs each call; three files are three calls.
+    #[test]
+    fn the_comparator_runs_one_process_per_challenge_file() {
+        let (d, lean, _) = tree();
+        let h = "ab".repeat(32);
+        std::fs::create_dir_all(lean.join(CHALLENGE_DIR)).expect("mkdir");
+        std::fs::create_dir_all(lean.join("scripts")).expect("mkdir");
+        std::fs::write(lean.join(COMPARATOR), "").expect("w");
+        for n in ["a", "b", "c"] {
+            std::fs::write(
+                lean.join(CHALLENGE_DIR).join(format!("{n}-v1.lean")),
+                format!("theorem _root_.PvlChallenge.P.{n} : True := by\n  sorry\n"),
+            )
+            .expect("w");
+            std::fs::write(
+                d.path().join(format!("row-{n}")),
+                cmp_row(&format!("P.{n}"), &h, &format!("\"{h}\""), "[]"),
+            )
+            .expect("w");
+        }
+        let calls = d.path().join("calls");
+        let p = d.path().join("per-file-lake");
+        let script = format!(
+            "#!/bin/sh\n{SELF_TEST_OK}\nif [ \"$3\" = --run ]; then\n  [ -z \"$6\" ] || {{ echo \"batched: $*\" >&2; exit 97; }}\n  echo \"$5\" >> '{calls}'\n  n=$(basename \"$5\" -v1.lean); cat '{dir}'/row-$n; exit 0\nfi\nexit 0\n",
+            calls = calls.display(),
+            dir = d.path().display()
+        );
+        std::fs::write(&p, script).expect("w");
+        let mut perm = std::fs::metadata(&p).expect("meta").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+        std::fs::set_permissions(&p, perm).expect("chmod");
+        let r = compared(&p.to_string_lossy(), &lean);
+        assert!(!r.reject && r.decline.is_none(), "{:?}", r.lines);
+        assert_eq!(
+            r.challenges,
+            Some(comparator::Closure {
+                closed: 3,
+                total: 3
+            })
+        );
+        let log = std::fs::read_to_string(&calls).expect("calls");
+        assert_eq!(log.lines().count(), 3, "{log}");
+    }
+
     /// The spec's RED: a solution of a WEAKER statement is a mismatch, and a sorry'd one closes nothing.
     #[test]
     fn a_mismatched_or_sorry_solution_rejects() {
@@ -1905,7 +1968,7 @@ mod tests {
         assert!(
             r.lines
                 .iter()
-                .any(|l| l.contains("file(s)) timed out after 1s")),
+                .any(|l| l.contains("gelu-v1.lean timed out after 1s")),
             "{:?}",
             r.lines
         );
