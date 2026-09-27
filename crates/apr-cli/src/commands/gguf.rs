@@ -355,9 +355,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 
     let cv_percent = compute_cv_percent(&latencies_us);
 
-    // PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection
-    #[cfg(feature = "visualization")]
-    check_renacer_escalation(tokens_per_sec, cv_percent);
+    // TR-02 (#4557): flag an unstable run from its own samples; nothing is traced
+    report_escalation(&latencies_us);
 
     let gpu_name = cuda_model.device_name().to_string();
     build_and_output_report(

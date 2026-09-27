@@ -1,0 +1,65 @@
+contract: no-false-escalation
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    TR-02 (#4557, TRACE-001 v1.2): `apr cbtop` must not claim a trace it did
+    not take. The old check_renacer_escalation built a BrickTracer it never used
+    and printed "BrickTracer: Enabled for syscall breakdown"; it also escalated
+    on "efficiency" = tok/s / a hardcoded 976 tok/s (a 1.5B target applied to
+    every model and GPU), so every slower model escalated regardless of
+    stability. Fix: the unused tracer, the false message and the efficiency arm
+    are deleted; escalation is decided only by the CV of the run's own latency
+    samples and prints "escalation: not traced".
+  references:
+  - "crates/apr-cli/src/commands/cbtop_escalation.rs (escalation_decision, report_escalation)"
+  - "crates/apr-cli/src/commands/gguf.rs (call site after compute_cv_percent)"
+version: 1
+status: enforced
+date: 2026-09-27
+
+proof_obligations:
+  - id: NFE-INV-001
+    type: invariant
+    property: >
+      NO-FALSE-TRACE-CLAIM: no cbtop escalation message says a tracer is
+      enabled or a trace was captured; every escalation line contains
+      "escalation: not traced".
+  - id: NFE-INV-002
+    type: invariant
+    property: >
+      CV-ONLY: escalation is a function of the run's own latency samples alone
+      (CV strictly above the threshold). Throughput never triggers it, and no
+      hardcoded tok/s target remains (`git grep -n '976\.0' crates/apr-cli`
+      returns nothing).
+  - id: NFE-INV-003
+    type: invariant
+    property: >
+      UNDECIDABLE-IS-SILENT: fewer than two samples, a non-positive or
+      non-finite mean, or a non-finite CV never escalates.
+
+falsification_tests:
+  - id: FALSIFY-NFE-001
+    name: falsify_nfe_001_stable_slow_run_does_not_escalate
+    prediction: "a ~10 tok/s run with CV ~1% does not escalate"
+    test_harness: "cargo test -p apr-cli --lib falsify_nfe_001"
+    expected_output: "test result: ok"
+    if_fails: "a throughput/efficiency arm is back: slow but stable models are flagged as anomalies."
+  - id: FALSIFY-NFE-002
+    name: falsify_nfe_002_unstable_run_escalates_not_traced
+    prediction: "samples [1000,3000,1000,3000] → CV 50%, escalates, message contains 'escalation: not traced' and neither 'Enabled' nor 'efficiency'"
+    test_harness: "cargo test -p apr-cli --lib falsify_nfe_002"
+    expected_output: "test result: ok"
+    if_fails: "cbtop again claims a trace it did not take, or stops flagging unstable runs."
+  - id: FALSIFY-NFE-003
+    name: falsify_nfe_003_degenerate_samples_do_not_escalate
+    prediction: "[], [x], [0,0], [NaN,1] → no escalation"
+    test_harness: "cargo test -p apr-cli --lib falsify_nfe_003"
+    expected_output: "test result: ok"
+    if_fails: "a NaN or empty run produces an escalation line with a meaningless CV."
+  - id: FALSIFY-NFE-004
+    name: falsify_nfe_004_threshold_is_strict
+    prediction: "CV exactly at the threshold does not escalate; just above it does"
+    test_harness: "cargo test -p apr-cli --lib falsify_nfe_004"
+    expected_output: "test result: ok"
+    if_fails: "the comparison drifted from strict '>' — the boundary is untested."

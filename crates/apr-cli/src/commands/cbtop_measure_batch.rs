@@ -122,40 +122,6 @@ fn print_profiler_brick_stats(cuda_model: &realizar::gguf::OwnedQuantizedModelCu
     }
 }
 
-/// PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection.
-/// Per Mace et al. (2015): Only trace when anomalies detected to avoid overhead.
-#[cfg(all(feature = "inference", feature = "visualization"))]
-fn check_renacer_escalation(tokens_per_sec: f64, cv_percent: f64) {
-    use renacer::brick_tracer::{BrickEscalationThresholds, BrickTracer};
-
-    let thresholds = BrickEscalationThresholds::default();
-    let efficiency = tokens_per_sec / 976.0 * 100.0;
-
-    if cv_percent > thresholds.cv_percent || efficiency < thresholds.efficiency_percent {
-        eprintln!();
-        eprintln!(
-            "cbtop: Anomaly detected (CV: {:.1}%, efficiency: {:.1}%) - escalating to renacer",
-            cv_percent, efficiency
-        );
-        eprintln!(
-            "  Threshold: CV > {:.1}% or efficiency < {:.1}%",
-            thresholds.cv_percent, thresholds.efficiency_percent
-        );
-        let _tracer = BrickTracer::new_local();
-        let reason =
-            if cv_percent > thresholds.cv_percent && efficiency < thresholds.efficiency_percent {
-                "cv_and_efficiency"
-            } else if cv_percent > thresholds.cv_percent {
-                "cv_exceeded"
-            } else {
-                "efficiency_low"
-            };
-        eprintln!("  BrickTracer: Enabled for syscall breakdown");
-        eprintln!("  Escalation reason: {reason}");
-        eprintln!();
-    }
-}
-
 /// Load optional draft model for speculative decoding.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]

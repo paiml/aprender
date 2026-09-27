@@ -34,7 +34,6 @@
         assert_eq!(pipeline.total_layers, 28);
         assert_eq!(pipeline.tokens_generated, 0);
         assert!((pipeline.total_us - 0.0).abs() < 0.001);
-        assert!((pipeline.target_tok_s - 976.0).abs() < 0.001);
         assert!((pipeline.current_tok_s - 0.0).abs() < 0.001);
     }
 
