@@ -2,6 +2,8 @@ metadata:
   version: 0.1.0
   kind: kernel
   created: '2026-09-27'
+  valid_under:
+    world: committed
   author: PAIML Engineering
   references:
   - 'docs/lookahead/0.73.md R3: NEON Q4_K / Q6_K kernels (draft: la-73 drafts/R3-neon-q4k-q6k.md)'
@@ -94,20 +96,20 @@ falsification_tests:
 proof_obligations:
 - type: invariant
   property: 'NEON equals scalar within epsilon for all three kernels (FALSIFY-NEON-Q4K-001, 004)'
-  formal: 'forall k, b, x: |neon_k(b,x) - scalar_k(b,x)| < 1e-3 * max(1, |scalar_k(b,x)|)'
+  formal: '∀ k, b, x: |neon_k(b,x) − scalar_k(b,x)| ≤ 1e-3 · max(1, |scalar_k(b,x)|)'
 - type: invariant
   property: 'A kernel label names only a reached kernel (FALSIFY-NEON-Q4K-002)'
-  formal: 'kernel_path(k) = path_of(reached_kernel(k))'
+  formal: '∀ k: kernel_path(k) ≡ path_of(reached_kernel(k))'
 - type: invariant
   property: 'The aarch64 build floor holds (FALSIFY-NEON-Q4K-000)'
-  formal: 'cargo_check(aarch64-unknown-linux-gnu, aprender-serve) = 0'
+  formal: 'rc(cargo_check(aarch64-unknown-linux-gnu, aprender-serve)) ≡ 0'
 - type: invariant
   property: 'C4 E1 leg >= 0.995 on a NEON trace (FALSIFY-NEON-Q4K-005)'
-  formal: 'PASS_leg => min_p cos(c4, c0) >= 0.995 and trace_has(neon)'
+  formal: 'PASS_leg ⇒ min_p cos(c4, c0) ≥ 0.995 ∧ trace_has(neon)'
 
 - type: invariant
   property: 'Integer decode steps the NEON kernels must reproduce are exact and in range (KANI-NEON-Q4K-001..003)'
-  formal: 'forall q in u8: split(q) exact; forall l,h: recombine(l,h) in -32..=31; forall j < 8: unpack reads < 12'
+  formal: '∀ q ∈ u8: split(q) exact ∧ ∀ l, h: recombine(l,h) ∈ [−32, 31] ∧ ∀ j ∈ [0, 8): unpack_reads(j) ⊆ [0, 12)'
 
 kani_harnesses:
 - id: KANI-NEON-Q4K-001
@@ -147,4 +149,4 @@ verification_summary:
   proven: 0
   tested: 0
   status: proposed
-  notes: 'Draft by la-73 (L3), lifted by devont (aprender-00) under PMAT-1027. q4k-f32 and q6k-f32 NEON landed with 001/002/004 tested on gx10; the planted mutants are applied to the block bytes (equivalent to swapping the decode in the kernel) so they run on every arch. q4k-q8k sdot, 003 golden and 005 C4 leg are still open.'
+  notes: 'Draft by la-73 (L3), lifted by devont (aprender-00) under PMAT-1027. q4k-f32 and q6k-f32 NEON landed with 001/002/004 tested on gx10; the planted mutants are applied to the block bytes (equivalent to swapping the decode in the kernel) so they run on every arch. q4k-q8k landed as two kernels (asm sdot under dotprod, vmull/vpadal widen otherwise), both checked directly against the scalar on gx10 (falsify_neon_q4k_001_q8k_parity_10k_blocks, neon_q4k_q8k_widen_and_sdot_match_scalar, falsify_neon_q4k_002_q8k_kernel_path_is_honest). 003 golden and 005 C4 leg are still open.'
