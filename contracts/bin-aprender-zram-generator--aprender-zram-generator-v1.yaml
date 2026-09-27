@@ -1,0 +1,116 @@
+# ──────────────────────────────────────────────
+# bin-aprender-zram-generator--aprender-zram-generator-v1 — the `aprender-zram-generator` bin target of package
+# aprender-zram-generator (ONT-10 slice S15, 2/2)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha256, helpSha256,
+# gitSha, …) live in binary-surface-v1 and are not restated.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features, private CARGO_TARGET_DIR):
+#   A systemd generator (systemd.generator(7)): no subcommands; one required positional NORMAL_DIR and two optional,
+#   EARLY_DIR and LATE_DIR. `--help` exits 0; `--no-such-flag` exits 2.
+#   `aprender-zram-generator --version` = "trueno-zram-generator 0.69.3": the pre-monorepo name and no sha. LIVE RED
+#   on the name pattern and on G0.1.
+#   surface_audit.csv holds 1 row, `<NORMAL_DIR>`.
+#
+# VOCABULARY EXTENSION ASKED OF binary-surface-v1 (aprender-88), as in bin-aprender-profile--aprender-profile-v1:
+# bin:positional, one literal per Usage positional; a ledger row `<NAME> …` keys on positional NAME.
+# No enumerated flag values exist, so G1.3/G1.4 reduces to the command/positional set.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-zram-generator--aprender-zram-generator-v1
+version: "1.0.0"
+scope: >
+  The argv surface of the `aprender-zram-generator` binary (package aprender-zram-generator): its help, its usage
+  errors, its version string, its (empty) command set, the three directories systemd passes, and its surface-audit
+  row. Out of scope: the units it writes.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    aprender-zram-generator answers --help, rejects an unknown flag as a usage error, names itself and the commit it
+    was built from, takes exactly systemd's three generator directories and no subcommand, and has an audited
+    ledger row.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'contracts/bin-aprender-contracts-cli--pv-v1.yaml — the exemplar'
+    - 'docs/audits/surface_audit.csv — the row whose binary column is aprender-zram-generator'
+    - 'systemd.generator(7) — the argv a generator is invoked with'
+    - 'aprender#4502 — ONT-10, slice S15'
+
+entity:
+  type: binary
+  ref: binary/aprender-zram-generator/aprender-zram-generator
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-zram-generator-surface
+    targetClass: bin:target/aprender-zram-generator/aprender-zram-generator
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-zram-generator"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-zram-generator"]}
+      # LIVE RED 2026-09-26: "trueno-zram-generator 0.69.3" — the version names another program
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-zram-generator [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - {path: bin:command, maxCount: 0}
+      - {path: bin:positional, minCount: 3, maxCount: 3, in: ["EARLY_DIR", "LATE_DIR", "NORMAL_DIR"]}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(aprender-zram-generator)) = ∅ ∧ positionals(snapshot) = {NORMAL_DIR, EARLY_DIR, LATE_DIR} ∧ key(r) ∈ positionals for every ledger row r with r.binary = aprender-zram-generator"
+    domain: "the aprender-zram-generator line of the tracked snapshot and its 1 ledger row"
+    codomain: "set equality, or a Fail naming the dropped positional, the added command or the orphan row"
+    invariants:
+      - "systemd calls a generator with three directory arguments; a build that drops one or grows a subcommand is a violation"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "key(`<NORMAL_DIR> …`) = NORMAL_DIR"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APRENDER-ZRAM-GENERATOR-INV-001
+    property: the generator takes exactly systemd's three directories and every ledger row names one of them
+    formal: 'positionals(aprender-zram-generator) = {NORMAL_DIR, EARLY_DIR, LATE_DIR} ∧ ∀ r ∈ surface_audit : r.binary = aprender-zram-generator ⇒ key(r) ∈ positionals'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-zram-generator --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-zram-generator'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-zram-generator --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-zram-generator'
+    if_fails: 'a flag would be taken as NORMAL_DIR and units written under it (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'mark NORMAL_DIR allow_hyphen_values; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-003
+    rule: 'G0.1 the version names the binary and the commit'
+    prediction: '`aprender-zram-generator --version` starts with "aprender-zram-generator " and contains the first 9 hex of the git sha'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-26: "trueno-zram-generator 0.69.3" — another program''s name and no sha'
+    mutation: 'restore the trueno name after a fix; must turn RED on bin:versionString'
+  - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-004
+    rule: 'G1.3/G1.4 the argv surface equals the snapshot'
+    prediction: 'the snapshot has no command and exactly {EARLY_DIR, LATE_DIR, NORMAL_DIR}'
+    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    if_fails: 'the generator could stop accepting systemd''s argv with the ontology green; zram units would silently not be written'
+    mutation: 'remove LATE_DIR from the snapshot, or add a subcommand; each must turn RED'
+  - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = aprender-zram-generator (1 on 2026-09-26)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'the generator would ship unaudited'
+    mutation: 'delete the aprender-zram-generator row; must turn RED naming aprender-zram-generator'
