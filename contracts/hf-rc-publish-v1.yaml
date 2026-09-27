@@ -1,0 +1,70 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-09-28'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The 0.72 R13 cell (HF rc publish of the first improved model, EXT-001): what a reviewer approves is what
+    is uploaded, and what is uploaded loads, is licensed correctly and carries its receipt. Spike S-R13
+    (2026-09-28, apr 0.69.3 @574583d382, --dry-run --offline, no upload) found the dry-run plan omits the
+    companion files the real upload sends (3 for the Qwen3.5 HF source), a trained .apr publishes weights
+    only, and the generated card defaults to license mit with accuracy N/A and no base_model or receipt.
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R13, Spike S-R13
+  - crates/apr-cli/src/commands/publish.rs (find_companion_files, build_dry_run_plan, upload_to_hub_extended)
+  - contracts/qwen35-format-roundtrip-v1.yaml (QFR-003, the export writes no config)
+  - contracts/train-run-receipt-v1.yaml (the receipt the card must carry)
+  - contracts/apr-provenance-v1.yaml (license / data_source in APR metadata)
+  depends_on:
+  - qwen35-format-roundtrip-v1
+  - train-run-receipt-v1
+status: PROPOSED
+equations:
+  plan_is_upload:
+    formula: 'files(plan(dir, --dry-run)) = files(upload(dir)) ∧ files(plan --json) = files(plan text)'
+    domain: 'apr publish, every directory shape (apr only, safetensors only, HF source), manifest and non-manifest mode'
+    invariants:
+    - 'S-R13 measured plan = 1 file vs upload = 1 + 3 companions (config.json, tokenizer.json, tokenizer_config.json)'
+  loadable_and_attributed:
+    formula: 'publish(trained M) uploads {model.safetensors, config.json, tokenizer files, README.md with base_model, license(base), train_receipt}'
+    domain: 'a text-generation model produced by apr finetune / distill / merge'
+    invariants:
+    - 'license = the base model''s license unless --license is given explicitly; an unknown license with no flag is a refusal'
+    - 'model-index carries measured metrics or no model-index; a metric valued N/A is never published'
+    preconditions:
+    - '--dry-run --offline with HF tokens unset for every test; no test uploads'
+proof_obligations:
+- type: equivalence
+  property: The plan is the upload
+  formal: 'files(dry_run_plan) = files(upload_to_hub_extended arguments)'
+  applies_to: all
+- type: invariant
+  property: No default licence for a derivative
+  formal: 'has_base(M) ∧ ¬explicit_license ⇒ card.license = license(base) ∨ refuse'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-HRP-001
+  rule: The dry-run plan lists every uploaded file
+  prediction: 'apr publish <HF source dir> --dry-run --offline --json lists the weights plus config.json, tokenizer.json and tokenizer_config.json'
+  test: 'CPU, S-R10 Qwen3.5-0.8B HF source dir; S-R13 measured 1 file listed, 3 companions visible only under -v'
+  if_fails: 'a quorum approves a plan that is not the upload'
+- id: FALSIFY-HRP-002
+  rule: A trained model publishes as a loadable repo
+  prediction: 'publishing the output directory of a trained .apr plans model.safetensors + config.json + tokenizer files, and `apr import` of exactly the planned files succeeds with the source architecture'
+  test: 'CPU, S-R10 .apr; S-R13 measured the .apr-only and bare-export dirs plan one weights file and no config'
+  if_fails: 'the published repo cannot be loaded without files the publish did not send'
+- id: FALSIFY-HRP-003
+  rule: Planted falsifier — a derivative never defaults to MIT
+  prediction: 'with no --license, publishing a model whose base is Apache-2.0 writes license apache-2.0 in the card, or refuses; the current default (mit) turns this RED'
+  test: 'dry run of the S-R10 dir with the base license available from the source config/LICENSE or the .apr metadata'
+  if_fails: 'an Apache-2.0 derivative ships under a licence its base does not grant'
+- id: FALSIFY-HRP-004
+  rule: The card is attributed and carries no placeholder metrics
+  prediction: 'the card front matter has base_model, the TRR receipt fields (apr_git_sha, recipe_sha256, data_sha256) and no metric valued N/A'
+  test: 'dry-run README of a trained model; S-R13 measured accuracy N/A, no base_model, no git sha'
+  if_fails: 'the rc publish is unattributable, and HF shows a fake metric'
+- id: FALSIFY-HRP-005
+  rule: The usage snippet matches the published formats
+  prediction: 'a safetensors-only publish does not tell users to load model.apr'
+  test: 'dry-run README of the bare safetensors dir; S-R13 measured Model::load("model.apr")'
+  if_fails: 'the first instruction a user reads fails'

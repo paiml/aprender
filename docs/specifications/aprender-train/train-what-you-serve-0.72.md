@@ -294,6 +294,30 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - Decision for R12's owner: whether the data hash covers file bytes (proposed, since it detects a reorder) or parsed
     samples (today's finetune). The contract requires the byte hash and allows the sample hash as an extra key.
 
+### Spike S-R13 — would `apr publish` put a loadable, receipted Qwen3.5 model on HF today? · `[V]` (2026-09-28, measured, `--dry-run --offline`, no upload)
+- **Setup:** apr 0.69.3 @574583d382, run with HF tokens unset. Three input directories: the trained-style `.apr` alone
+  (the S-R10 import), the bare safetensors export from S-R10, and the original HF source (weights, `config.json`,
+  both tokenizer files and the index) as a control. Code read at origin/main aca6f2d7f6 (`commands/publish.rs`).
+  Contract `hf-rc-publish-v1` (HRP-001..005).
+- **The dry-run plan is not the upload.** For the HF source, `--dry-run` and `--dry-run --json` list one file, the
+  weights. The real path (`upload_to_hub_extended`) also sends `find_companion_files`: 3 files here (`config.json` and
+  both tokenizer files). They are printed only under `-v` (`publish.rs:482`), and `build_dry_run_plan` never receives
+  them (`:529` passes `extra_files`). A reviewer who approves the plan approves a different upload.
+- **A trained output publishes weights only.** The `.apr`-only and bare-safetensors directories plan exactly one file.
+  An `.apr` alone is not loadable by HF tooling, and the bare export has no `config.json`, which S-R10 found it never
+  writes (QFR-003). No path takes a trained `.apr` to a loadable HF repo without hand-copying the config and tokenizer.
+  `model.safetensors.index.json` is not a companion; single-shard sources are covered by the `model.safetensors` alias,
+  but multi-shard ones would not be (inferred).
+- **The generated card is wrong for a Qwen3.5 derivative.** It says `license: mit` by default (Qwen3.5 is Apache-2.0),
+  lists `accuracy: N/A` as a metric, has no `base_model`, no receipt, and no git sha (version only). Its usage snippet
+  says `Model::load("model.apr")` even when the upload is safetensors-only.
+- **Consequences:**
+  - R13 (EXT-001 rc publish) needs HRP-001 first: the plan is what a quorum reviews, so it must equal the upload.
+  - A trained model needs a publish directory builder: `.apr` → `model.safetensors`, plus the source `config.json`,
+    tokenizer and chat template, plus the R12 receipt. That builder is the same fix as QFR-003.
+  - The license must come from the base model and must never default for a derivative (HRP-003). Publishing an
+    Apache-2.0 derivative under MIT is a licence error, not a style issue.
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
