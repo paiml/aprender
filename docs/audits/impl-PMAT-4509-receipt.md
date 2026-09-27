@@ -1,10 +1,16 @@
 # PMAT-4509 implementation receipt
 
-Head base: origin/car/0.70.0 @ 1274d040de. Measured 2026-09-27T07:15:02Z in this worktree.
+Base: origin/car/0.70.0 @ 1274d040de, merged into this branch. Measured 2026-09-27T07:33:52Z in this worktree. Each block is the command's FULL output.
 
-## `scripts/release/rc_fleet_stage.sh --self-test` → rc=0
+## `bash scripts/release/rc_fleet_stage.sh --self-test` → rc=0
 
 ```
+rc_fleet_stage self-test: stage_verdict
+  ok   every host passes -> publish
+  ok   ONE host failing holds the rc
+  ok   an unreachable host is RED, never skipped (#4328 C7)
+  ok   a dated waiver through today covers an unreachable host
+  ok   an expired waiver covers nothing
   ok   a waiver never covers a host that was reached and failed
   ok   no hosts is not N/N
   ok   an unknown state holds
@@ -32,9 +38,34 @@ rc_fleet_stage self-test: a fake fleet, end to end
 rc_fleet_stage self-test: PASS
 ```
 
-## `scripts/release/rc_cut.sh --self-test` → rc=0
+## `bash scripts/release/rc_cut.sh --self-test` → rc=0
 
 ```
+rc_cut self-test: rc_decide case table
+  ok   first green run on a fresh release branch -> rc.1 (a red non-required job does not block)
+  ok   rc.1 exists on an older commit -> rc.2
+  ok   gap in numbering -> max+1, never reuse a name
+  ok   numeric max over the API's LEXICAL order (rc.10 sorts before rc.9)
+  ok   other versions, the final tag and near-miss names (dots are literal) do not count
+  ok   re-run on an already-cut commit cuts nothing
+  ok   main is not a release branch
+  ok   suffixed release branch refused
+  ok   two-part version refused
+  ok   fork PR with a release/X.Y.Z head refused
+  ok   red ci / gate cuts nothing
+  ok   cancelled workspace-test cuts nothing
+  ok   a missing required check is not green
+  ok   every job of the name must pass
+  ok   skipped is not success
+  ok   superseded push cuts nothing
+  ok   empty head sha never cuts
+  ok   mutant (check loop deleted) cuts on a red gate: the red-gate row can see that defect
+rc_cut self-test: PASS
+carry_forward_gate self-test
+  ok   prev tag = newest of the lower line, rc.10 > rc.9
+  ok   a final outranks its own rcs
+  ok   the candidate's own line never counts
+  ok   a lower major.minor across a major
   ok   merge-base found
   ok   cherry-pick is carried by patch-id
   ok   squash-merged fix is carried by content
@@ -43,18 +74,18 @@ rc_fleet_stage self-test: PASS
   ok   sha-prefix drop row drops it
   ok   deletion-only commit NOT applied on cand is MISSING
   ok   short-line commit is 'empty', not silently carried
-carry-forward v0.69.5-rc.1 -> main (base 9745278c4): 2 MISSING, 2 carried, 2 dropped, 1 empty
-  MISSING 488b772fa  perf: lost (#4273)  [content 0.00 of 1]
-  dropped bd95d3ce5  release: bump to 0.69.5  [version bumps are per line]
-  dropped 87b7e06e1  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
-  MISSING c8e4ed8f2  refactor: delete the original line  [content 0.00 of 1]
-  empty   1c129aa46  tiny  [no judgeable line]
+carry-forward v0.69.5-rc.1 -> main (base 5515ada29): 2 MISSING, 2 carried, 2 dropped, 1 empty
+  MISSING 07f7378a3  perf: lost (#4273)  [content 0.00 of 1]
+  dropped 9b8a0a77f  release: bump to 0.69.5  [version bumps are per line]
+  dropped 4c9d37a30  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
+  MISSING ffc422a01  refactor: delete the original line  [content 0.00 of 1]
+  empty   6e0af5cc3  tiny  [no judgeable line]
   ok   the gate refuses while anything is MISSING
   ok   without drops, both dropped rows are MISSING
-carry-forward v0.69.5-rc.1 -> main (base 9745278c4): 4 carried, 2 dropped, 1 empty
-  dropped bd95d3ce5  release: bump to 0.69.5  [version bumps are per line]
-  dropped 87b7e06e1  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
-  empty   1c129aa46  tiny  [no judgeable line]
+carry-forward v0.69.5-rc.1 -> main (base 5515ada29): 4 carried, 2 dropped, 1 empty
+  dropped 9b8a0a77f  release: bump to 0.69.5  [version bumps are per line]
+  dropped 4c9d37a30  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
+  empty   6e0af5cc3  tiny  [no judgeable line]
   ok   all carried or dropped -> exit 0
   ok   full history: range is S only, carried
   ok   a boundary on base's ancestry is ENV, never judged
@@ -62,9 +93,14 @@ carry-forward v0.69.5-rc.1 -> main (base 9745278c4): 4 carried, 2 dropped, 1 emp
   ok   unreadable cand is ENV
 ```
 
-## `scripts/release/carry_forward_gate.py --self-test` → rc=0
+## `python3 scripts/release/carry_forward_gate.py --self-test` → rc=0
 
 ```
+carry_forward_gate self-test
+  ok   prev tag = newest of the lower line, rc.10 > rc.9
+  ok   a final outranks its own rcs
+  ok   the candidate's own line never counts
+  ok   a lower major.minor across a major
   ok   merge-base found
   ok   cherry-pick is carried by patch-id
   ok   squash-merged fix is carried by content
@@ -73,18 +109,18 @@ carry-forward v0.69.5-rc.1 -> main (base 9745278c4): 4 carried, 2 dropped, 1 emp
   ok   sha-prefix drop row drops it
   ok   deletion-only commit NOT applied on cand is MISSING
   ok   short-line commit is 'empty', not silently carried
-carry-forward v0.69.5-rc.1 -> main (base 274427b33): 2 MISSING, 2 carried, 2 dropped, 1 empty
-  MISSING 8fde565ad  perf: lost (#4273)  [content 0.00 of 1]
-  dropped 204be241d  release: bump to 0.69.5  [version bumps are per line]
-  dropped 1ce45abfd  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
-  MISSING 39aea7bf0  refactor: delete the original line  [content 0.00 of 1]
-  empty   3f2fb51fa  tiny  [no judgeable line]
+carry-forward v0.69.5-rc.1 -> main (base 4f392faa7): 2 MISSING, 2 carried, 2 dropped, 1 empty
+  MISSING 2245f258b  perf: lost (#4273)  [content 0.00 of 1]
+  dropped 8a28a6609  release: bump to 0.69.5  [version bumps are per line]
+  dropped 4f79a69a6  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
+  MISSING 6ccdfb470  refactor: delete the original line  [content 0.00 of 1]
+  empty   9e138ede7  tiny  [no judgeable line]
   ok   the gate refuses while anything is MISSING
   ok   without drops, both dropped rows are MISSING
-carry-forward v0.69.5-rc.1 -> main (base 274427b33): 4 carried, 2 dropped, 1 empty
-  dropped 204be241d  release: bump to 0.69.5  [version bumps are per line]
-  dropped 1ce45abfd  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
-  empty   3f2fb51fa  tiny  [no judgeable line]
+carry-forward v0.69.5-rc.1 -> main (base 4f392faa7): 4 carried, 2 dropped, 1 empty
+  dropped 8a28a6609  release: bump to 0.69.5  [version bumps are per line]
+  dropped 4f79a69a6  fix: superseded  [superseded by car's rewrite, ruled 2026-09-26]
+  empty   9e138ede7  tiny  [no judgeable line]
   ok   all carried or dropped -> exit 0
   ok   full history: range is S only, carried
   ok   a boundary on base's ancestry is ENV, never judged
@@ -92,7 +128,7 @@ carry-forward v0.69.5-rc.1 -> main (base 274427b33): 4 carried, 2 dropped, 1 emp
   ok   unreadable cand is ENV
 ```
 
-## `scripts/release/decode_floor.py --self-test` → rc=0
+## `python3 scripts/release/decode_floor.py --self-test` → rc=0
 
 ```
   ok   equal speed passes -> pass
@@ -123,4 +159,4 @@ carry-forward v0.69.5-rc.1 -> main (base 274427b33): 4 carried, 2 dropped, 1 emp
 
 ## Roadmap
 
-roadmap.yaml = car's file + the PMAT-4509 block only (21 lines, appended; no re-sort). `aggregate --check` was already RED on car before this branch; re-sorting is left to the car owner.
+`git diff origin/car/0.70.0...HEAD -- docs/roadmaps/roadmap.yaml` adds exactly one entry, `- id: PMAT-4509` (21 lines, appended; no re-sort). `aggregate --check` was already RED on car before this branch; re-sorting is left to the car owner.
