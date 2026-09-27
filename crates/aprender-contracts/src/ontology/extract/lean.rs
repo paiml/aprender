@@ -7,8 +7,8 @@
 //! repo root (the contract dir's parent), never the process cwd.
 //!
 //! Each statement carries `lean:name`, `lean:domain`, `lean:file`, `lean:module`, `lean:sorryFree` (a FILE with
-//! `sorry` grounds nothing — an admitted proof is not a proof, ONT-2a) and `lean:discharge` (`grounded` |
-//! `admitted`). `lean:modelOf` → `contract/<stem>` for every contract whose `lean_theorem:` reference (in
+//! a `sorry`, `admit` or declared `axiom` grounds nothing — an admitted proof is not a proof, ONT-2a; the same
+//! scanner as [`crate::proof_status`]) and `lean:discharge` (`grounded` | `admitted`). `lean:modelOf` → `contract/<stem>` for every contract whose `lean_theorem:` reference (in
 //! `equations.*` or `proof_obligations[]`) names this theorem, its file or its domain in one of ONT-2a's accepted
 //! forms — the reference is the contract's own text, matched, never inferred. A reference matching nothing is
 //! counted (`refs_unresolved`) so a shape can require every claimed theorem to exist; PVL-001's
@@ -114,7 +114,7 @@ pub fn theorems_in(content: &str) -> Vec<String> {
 /// The statements of one file.
 #[must_use]
 pub fn statements_of(domain: &str, stem: &str, rel: &str, content: &str) -> Vec<Statement> {
-    let sorry_free = !content.contains("sorry");
+    let sorry_free = !crate::proof_status::lean_has_sorry(content);
     theorems_in(content)
         .into_iter()
         .map(|name| Statement {
@@ -348,6 +348,29 @@ mod tests {
         assert!(reference_matches("Theorems.ReluNonneg", &names));
         assert!(reference_matches("relu", &names));
         assert!(!reference_matches("Theorems.Gelu", &names));
+    }
+
+    #[test]
+    fn a_declared_axiom_is_admitted_and_a_sorry_in_a_doc_comment_is_not() {
+        let axiom = "axiom f16_bound : False\ntheorem t : False := f16_bound\n";
+        let st = statements_of("Coop", "Tiling", "x.lean", axiom);
+        assert!(
+            !st[0].sorry_free,
+            "a theorem resting on a declared axiom grounds nothing"
+        );
+        let doc = "/-- compiles sorry-free, no axiom -/\ntheorem t : True := trivial\n";
+        let st = statements_of("Coop", "Tiling", "x.lean", doc);
+        assert!(
+            st[0].sorry_free,
+            "the same scanner as proof_status: commentary admits nothing"
+        );
+        let mut g = Graph::new();
+        emit(
+            &mut g,
+            &statements_of("Coop", "Tiling", "x.lean", axiom)[0],
+            &[],
+        );
+        assert!(g.to_ntriples().contains("\"admitted\""));
     }
 
     #[test]
