@@ -86,7 +86,9 @@ fn safetensors_cpu_session_generate_leaves_a_witness_entry() {
 
     let entries = entries_for(&prompt);
     assert!(
-        entries.iter().any(|e| e.arch == "safetensors" && e.kind == EntryKind::Generate),
+        entries
+            .iter()
+            .any(|e| e.arch == "safetensors" && e.kind == EntryKind::Generate),
         "Session::generate must leave a safetensors witness entry, got {entries:?}"
     );
 }

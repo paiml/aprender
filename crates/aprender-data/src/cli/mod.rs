@@ -26,7 +26,7 @@ pub use registry::RegistryCommands;
 /// alimentar - Data Loading, Distribution and Tooling in Pure Rust
 #[derive(Parser)]
 #[command(name = "alimentar")]
-#[command(author, version, about, long_about = None)]
+#[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

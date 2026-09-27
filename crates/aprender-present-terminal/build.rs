@@ -16,6 +16,9 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
+    build_sha::emit();
+
     // Re-run if test files change
     println!("cargo:rerun-if-changed=tests/");
     println!("cargo:rerun-if-changed=src/ptop/");
