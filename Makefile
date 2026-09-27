@@ -819,9 +819,10 @@ coverage-open: ## Open HTML coverage report in browser
 		echo "❌ Run 'make coverage' first"; \
 	fi
 
-# Profiling (requires renacer)
+# Profiling with the IN-TREE renacer (crates/aprender-profile), built from HEAD
+# by scripts/renacer_bin.sh - never a PATH/crates.io copy (TRACE-001 TR-05, #4560)
 profile:
-	renacer --function-time --source -- cargo bench
+	@RENACER="$$(bash scripts/renacer_bin.sh)" && "$$RENACER" --function-time --source -- cargo bench
 
 # Benchmarks
 bench:
