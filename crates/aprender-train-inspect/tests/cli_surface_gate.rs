@@ -1,4 +1,4 @@
-//! ONT-10 S17 surface gate for the `aprender-train-inspect` binary: `contracts/aprender-train-inspect-cli-surface-v1.yaml`.
+//! ONT-10 S17 surface gate for the `aprender-train-inspect` binary: `contracts/bin-aprender-train-inspect--aprender-train-inspect-v1.yaml`.
 //!
 //! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_aprender-train-inspect`), which
 //! cannot fall back to a stale copy on PATH. A test that only asserted success on good
@@ -11,7 +11,7 @@ use std::process::{Command, Output};
 const BIN: &str = env!("CARGO_BIN_EXE_aprender-train-inspect");
 
 /// The pinned surface. Adding or removing a subcommand edits this list and the
-/// contract's `surface_pinned` formula together.
+/// contract's `surface_equals_snapshot` formula together.
 const SUBCOMMANDS: &[&str] = &["info", "layers", "memory", "validate", "convert", "compare"];
 
 fn run(args: &[&str]) -> Output {
@@ -98,6 +98,11 @@ fn every_advertised_subcommand_is_reachable() {
 #[test]
 fn unknown_subcommand_is_a_usage_error() {
     assert_eq!(run(&["no-such-subcommand"]).status.code(), Some(2));
+}
+
+#[test]
+fn unknown_flag_is_a_usage_error() {
+    assert_eq!(run(&["--no-such-flag"]).status.code(), Some(2));
 }
 
 #[test]

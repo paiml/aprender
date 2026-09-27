@@ -1,4 +1,4 @@
-//! ONT-10 S11 surface gate for the `verificar` binary: `contracts/verificar-cli-surface-v1.yaml`.
+//! ONT-10 S11 surface gate for the `verificar` binary: `contracts/bin-aprender-verify-ml--verificar-v1.yaml`.
 //!
 //! Every assertion runs the binary built from this tree (`CARGO_BIN_EXE_verificar`), which
 //! cannot fall back to a stale copy on PATH. A test that only asserted success on good
@@ -11,7 +11,7 @@ use std::process::{Command, Output};
 const BIN: &str = env!("CARGO_BIN_EXE_verificar");
 
 /// The pinned surface. Adding or removing a subcommand edits this list and the
-/// contract's `surface_pinned` formula together.
+/// contract's `surface_equals_snapshot` formula together.
 const SUBCOMMANDS: &[&str] = &[
     "generate", "stats", "corpus", "depyler", "verify", "train", "evaluate", "distill", "codex",
     "export", "mutate",
@@ -100,6 +100,11 @@ fn every_advertised_subcommand_is_reachable() {
 #[test]
 fn unknown_subcommand_is_a_usage_error() {
     assert_eq!(run(&["no-such-subcommand"]).status.code(), Some(2));
+}
+
+#[test]
+fn unknown_flag_is_a_usage_error() {
+    assert_eq!(run(&["--no-such-flag"]).status.code(), Some(2));
 }
 
 #[test]
