@@ -272,3 +272,108 @@ fn real_model_loss_and_grads_are_consistent_and_finite() {
         assert!(all.iter().all(|v| finite(v)), "layer {i} grads finite");
     }
 }
+
+/// `w -= step · g` over one tensor.
+fn descend(w: &mut [f32], g: &[f32], step: f32) {
+    assert_eq!(w.len(), g.len());
+    for (x, d) in w.iter_mut().zip(g) {
+        *x -= step * d;
+    }
+}
+
+/// Spike S-R3b: full-weight normalised gradient descent (fixed step 0.1 in weight space)
+/// on the real 0.8B overfits one sentence — the backward trains the served network.
+/// A fixed-length step is not monotone near the minimum (measured 8.88 → 2.68 → 0.96 →
+/// 0.82 → 3.10 → 0.29), so the gate is: the first step descends, 5 steps reach < 1/10.
+/// Prints seconds per `loss_and_grads` (the CPU step cost R4 plans against).
+#[test]
+#[ignore = "needs a Qwen3.5 GGUF: QWEN35_GGUF=/path/to/Qwen3.5-0.8B-Q4_K_M.gguf"]
+fn real_model_descends_on_one_sentence() {
+    use super::super::qwen35_layer_backward::Qwen35MixerGrads;
+    use super::OwnedMixer;
+    let path = std::env::var("QWEN35_GGUF").expect("set QWEN35_GGUF");
+    let mut m = Qwen35Model::from_gguf(&path).expect("train loads");
+    let (tokens, targets) = ([9_707_u32, 11, 1_879, 374, 264], [11_u32, 1_879, 374, 264, 1_273]);
+    let mut losses = Vec::new();
+    for step in 0..5 {
+        let t0 = std::time::Instant::now();
+        let (loss, g) = m.loss_and_grads(&tokens, &targets);
+        let secs = t0.elapsed().as_secs_f64();
+        losses.push(loss);
+        let mut sq = 0.0_f64;
+        let mut acc = |v: &[f32]| sq += v.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>();
+        acc(&g.embed);
+        acc(&g.final_norm);
+        g.lm_head.iter().for_each(|h| acc(h));
+        for l in &g.layers {
+            for v in [&l.attn_norm, &l.post_norm, &l.ffn_gate, &l.ffn_up, &l.ffn_down] {
+                acc(v);
+            }
+            match &l.mixer {
+                Qwen35MixerGrads::Gdn(x) => {
+                    for v in [
+                        &x.qkv, &x.gate, &x.alpha, &x.beta, &x.a, &x.dt_bias, &x.conv, &x.norm,
+                        &x.out,
+                    ] {
+                        acc(v);
+                    }
+                }
+                Qwen35MixerGrads::Attention(x) => {
+                    for v in [&x.q, &x.k, &x.v, &x.q_norm, &x.k_norm, &x.out] {
+                        acc(v);
+                    }
+                }
+            }
+        }
+        let gnorm = sq.sqrt();
+        eprintln!("step {step}: loss {loss:.5}, |g| {gnorm:.4e}, loss_and_grads {secs:.1} s");
+        let step_size = (0.1 / gnorm) as f32;
+        descend(&mut m.embed, &g.embed, step_size);
+        descend(&mut m.final_norm, &g.final_norm, step_size);
+        if let (Some(w), Some(d)) = (m.lm_head.as_mut(), g.lm_head.as_ref()) {
+            descend(w, d, step_size);
+        }
+        for (l, gl) in m.layers.iter_mut().zip(&g.layers) {
+            descend(&mut l.attn_norm, &gl.attn_norm, step_size);
+            descend(&mut l.post_norm, &gl.post_norm, step_size);
+            descend(&mut l.ffn_gate, &gl.ffn_gate, step_size);
+            descend(&mut l.ffn_up, &gl.ffn_up, step_size);
+            descend(&mut l.ffn_down, &gl.ffn_down, step_size);
+            match (&mut l.mixer, &gl.mixer) {
+                (OwnedMixer::Gdn(w), Qwen35MixerGrads::Gdn(d)) => {
+                    for (w, d) in [
+                        (&mut w.qkv, &d.qkv),
+                        (&mut w.gate, &d.gate),
+                        (&mut w.alpha, &d.alpha),
+                        (&mut w.beta, &d.beta),
+                        (&mut w.a, &d.a),
+                        (&mut w.dt_bias, &d.dt_bias),
+                        (&mut w.conv, &d.conv),
+                        (&mut w.norm, &d.norm),
+                        (&mut w.out, &d.out),
+                    ] {
+                        descend(w, d, step_size);
+                    }
+                }
+                (OwnedMixer::Attention(w), Qwen35MixerGrads::Attention(d)) => {
+                    for (w, d) in [
+                        (&mut w.q, &d.q),
+                        (&mut w.k, &d.k),
+                        (&mut w.v, &d.v),
+                        (&mut w.q_norm, &d.q_norm),
+                        (&mut w.k_norm, &d.k_norm),
+                        (&mut w.out, &d.out),
+                    ] {
+                        descend(w, d, step_size);
+                    }
+                }
+                _ => panic!("gradient mixer kind differs from the layer's"),
+            }
+        }
+    }
+    let last = m.loss_and_grads(&tokens, &targets).0;
+    losses.push(last);
+    eprintln!("losses {losses:?}");
+    assert!(losses[1] < losses[0], "the first step must descend: {losses:?}");
+    assert!(last < losses[0] / 10.0, "5 steps must overfit the sentence: {losses:?}");
+}
