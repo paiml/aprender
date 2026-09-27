@@ -1,0 +1,306 @@
+{
+  "schema": "crux-trace-bind-receipt-v1",
+  "spec": "TRACE-001 v1.2 §2.4",
+  "crux_parsed": 318,
+  "crux_parse_errors": [],
+  "loader_gap": [
+    "metadata.status",
+    "metadata.category",
+    "falsification_tests[].discharge_status"
+  ],
+  "rows": [
+    {
+      "surface": "apr trace --layers, apr run --trace-level",
+      "contract": "crux-F-02-v1",
+      "disposition": "extend",
+      "arms": [
+        {
+          "name": "pytorch-profiler",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "per-layer set equality; sum of layers <= wall",
+      "binding": {
+        "bound": {
+          "status": "partial",
+          "category": "F — Tensor Ops & Low-level",
+          "competitor": "pytorch",
+          "falsifiers": [
+            {
+              "id": "FALSIFY-CRUX-F-02-001",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-F-02-002",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-F-02-003",
+              "discharge_status": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "apr profile --roofline",
+      "contract": "crux-F-05-v1",
+      "disposition": "extend",
+      "arms": [
+        {
+          "name": "pytorch-profiler",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        },
+        {
+          "name": "ncu-roofline",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "arithmetic intensity per op vs ncu on the same kernel",
+      "binding": {
+        "bound": {
+          "status": "partial",
+          "category": "F — Tensor Ops & Low-level",
+          "competitor": "pytorch",
+          "falsifiers": [
+            {
+              "id": "FALSIFY-CRUX-F-05-001",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-F-05-002",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-F-05-003",
+              "discharge_status": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "chrome trace export",
+      "contract": "crux-F-07-v1",
+      "disposition": "reuse",
+      "arms": [
+        {
+          "name": "pytorch-profiler",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "schema validity; no negative or NaN durations",
+      "binding": {
+        "bound": {
+          "status": "partial",
+          "category": "F — Tensor Ops & Low-level",
+          "competitor": "pytorch",
+          "falsifiers": [
+            {
+              "id": "FALSIFY-CRUX-F-07-001",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-F-07-002",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-F-07-003",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-F-07-004",
+              "discharge_status": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "/metrics",
+      "contract": "crux-K-07-v1",
+      "disposition": "reuse",
+      "arms": [
+        {
+          "name": "vllm",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "metric-name set; histogram counts = requests",
+      "binding": {
+        "bound": {
+          "status": "partial",
+          "category": "K — Ecosystem & Integration",
+          "competitor": "vllm",
+          "falsifiers": [
+            {
+              "id": "FALSIFY-CRUX-K-07-001",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-K-07-002",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-K-07-003",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-K-07-004",
+              "discharge_status": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "OTLP spans from apr serve",
+      "contract": "crux-K-08-v1",
+      "disposition": "unblock",
+      "arms": [
+        {
+          "name": "vllm",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        },
+        {
+          "name": "tgi",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "apr otlp-lint --require-apr-span --require-genai-attrs on a captured export",
+      "binding": {
+        "bound": {
+          "status": "partial",
+          "category": "K — Ecosystem & Integration",
+          "competitor": "ecosystem",
+          "falsifiers": [
+            {
+              "id": "FALSIFY-CRUX-K-08-001",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-K-08-002",
+              "discharge_status": null
+            },
+            {
+              "id": "FALSIFY-CRUX-K-08-003",
+              "discharge_status": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "surface": "renacer syscall tracing",
+      "contract": null,
+      "disposition": "new",
+      "arms": [
+        {
+          "name": "strace",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        },
+        {
+          "name": "perf-trace",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        },
+        {
+          "name": "bpftrace",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "E-S1 syscall parity, E-S2 overhead",
+      "binding": {
+        "not_run": {
+          "reason": "contract not yet defined (TR-11)"
+        }
+      }
+    },
+    {
+      "surface": "renacer validate golden traces",
+      "contract": null,
+      "disposition": "new",
+      "arms": [
+        {
+          "name": "strace-c",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "planted-regression detection rate; false-RED rate on unchanged builds",
+      "binding": {
+        "not_run": {
+          "reason": "contract not yet defined (TR-11)"
+        }
+      }
+    },
+    {
+      "surface": "cgp profile (cuda, simd, wgpu)",
+      "contract": null,
+      "disposition": "new",
+      "arms": [
+        {
+          "name": "nsys",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        },
+        {
+          "name": "ncu",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "E-S3 kernel profile agreement",
+      "binding": {
+        "not_run": {
+          "reason": "contract not yet defined (TR-11)"
+        }
+      }
+    },
+    {
+      "surface": "BrickTracer per-op attribution",
+      "contract": null,
+      "disposition": "new",
+      "arms": [
+        {
+          "name": "pytorch-profiler",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        },
+        {
+          "name": "perf-record",
+          "pin": null,
+          "unpinned_reason": "no pinned competitor build yet (TR-11/TR-13)"
+        }
+      ],
+      "metric": "sum of components <= wall; NotInstrumented when unmeasured",
+      "binding": {
+        "not_run": {
+          "reason": "contract not yet defined (TR-11)"
+        }
+      }
+    },
+    {
+      "surface": "external serve witness (TR-07)",
+      "contract": null,
+      "disposition": "instrument",
+      "arms": [],
+      "metric": "governed by APR-OBS OBS-04",
+      "binding": {
+        "not_run": {
+          "reason": "instrument, not a product claim"
+        }
+      }
+    }
+  ],
+  "g14_active_without_discharge": []
+}

@@ -10,7 +10,7 @@ metadata:
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: active
+  status: partial  # TR-10 G14: was active with no discharge_status on any falsifier. Missing: FALSIFY-CRUX-F-02-* re-discharge against apr-trace-v1 (TRACE-001 §2.4).
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"

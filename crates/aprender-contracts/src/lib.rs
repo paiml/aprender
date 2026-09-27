@@ -37,6 +37,7 @@ pub mod build_helper;
 pub mod codegen;
 pub mod coq_gen;
 pub mod coverage;
+pub mod crux_trace_bind;
 pub mod diff;
 pub mod doc_integrity;
 pub mod error;
