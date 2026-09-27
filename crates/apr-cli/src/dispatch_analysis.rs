@@ -957,6 +957,13 @@ fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Re
             state,
             json: *json || cli.json,
         }),
+        ModelCommands::SpeedGate {
+            ledger,
+            tags,
+            cells,
+            rows,
+            llama_pin,
+        } => commands::speed_gate_cli::run(ledger, tags, cells, *rows, llama_pin.as_deref()),
         ModelCommands::GhcrFetch {
             reference,
             to,

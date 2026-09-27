@@ -127,6 +127,8 @@ pub(crate) mod model_pack;
 pub(crate) mod speed_arms;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod speed_gate;
+// `apr model speed-gate` (EXT-19).
+pub(crate) mod speed_gate_cli;
 // EXT-19 reading APR-OBS apr-perf-ledger-v1 rows (#4551).
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod speed_perf_rows;

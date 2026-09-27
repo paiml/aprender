@@ -1621,6 +1621,25 @@ pub enum ModelCommands {
         #[arg(long)]
         json: bool,
     },
+    /// EXT-19: judge the speed ledger — every (tag, cell) has a row, every cell holds its floor
+    SpeedGate {
+        /// Ledger JSONL: apr-perf-ledger-v1 rows (APR-OBS #4551) or EXT-26 rows
+        #[arg(value_name = "LEDGER")]
+        ledger: PathBuf,
+        /// Tags the release requires, comma-separated, in release order
+        #[arg(long, value_delimiter = ',', required = true)]
+        tags: Vec<String>,
+        /// Declared cells, comma-separated: host/backend for perf rows (never read off the rows)
+        #[arg(long, value_delimiter = ',', required = true)]
+        cells: Vec<String>,
+        /// Row shape of LEDGER
+        #[arg(long, value_enum, default_value = "perf")]
+        rows: crate::commands::speed_gate_cli::RowShape,
+        /// llama.cpp build commit the reference arm must match (scripts/llama_pin.toml);
+        /// required for perf rows
+        #[arg(long, value_name = "COMMIT")]
+        llama_pin: Option<String>,
+    },
     /// EXT-17: push a release dir to GHCR as one OCI artifact (idempotent; token file only)
     GhcrPush {
         /// Release directory holding model-release-v1.json and the files it lists

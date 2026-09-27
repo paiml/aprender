@@ -3,17 +3,21 @@
   item_type: task
   kind: code
   title: 'EXT-19: speed ledger (EXT-001 epic #4381)'
-  status: planned
+  status: in_progress
   priority: high
   assigned_to: ext
   created: 2026-09-25T12:28:21Z
-  updated: 2026-09-25T12:28:21Z
+  updated: 2026-09-27T13:30:00Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'apr model speed-gate judges an apr-perf-ledger-v1 ledger (APR-OBS #4551): identity admission, gpu_proof, declared cells, model reset, backfill never a baseline, not_run fills its pair'
+  - 'every (tag, cell) since activation has a row or not_run{reason} (G3); a hole or a RED cell fails the gate'
+  - 'the ratchet arms after 3 records; a planted slowdown turns it RED (FALSIFY-EXT-022)'
+  - 'no ratio or floor appears in any printed surface (T28)'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
   - ext-001
-  notes: null
+  notes: 'aprender-79, branch ext/EXT-19. Gate + CLI landed on the branch; rows come from the #4551 writer (kreg, aprender-85) and the nightly fleet timer (infra-8d). Done needs 3 tags of real rows.'
