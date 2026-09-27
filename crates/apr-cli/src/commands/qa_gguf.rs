@@ -448,6 +448,7 @@ fn finalize_qa_report(
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary,
         system_info: Some(SystemInfo::capture()),
+        resources: None,
     })
 }
 

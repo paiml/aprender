@@ -96,6 +96,8 @@ pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
 pub(crate) mod lint_error;
+/// MEAS-001 R1 (#4522): the measured resources{} block for bench/qa/profile JSON.
+pub(crate) mod resource_window;
 // Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
 // own source so the class cannot be reintroduced by the next copy-paste.
 #[cfg(test)]

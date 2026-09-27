@@ -381,6 +381,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let json = serde_json::to_string_pretty(&report).expect("pretty serialize");
         assert!(json.contains('\n'), "Pretty JSON should contain newlines");
@@ -410,6 +411,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         // This is what run() does: serde_json::to_string_pretty(&report).unwrap_or_default()
         let json = serde_json::to_string_pretty(&report).unwrap_or_default();

@@ -356,14 +356,14 @@
                     ci_95: (throughput * 0.95, throughput * 1.05),
                 },
                 memory_mb: MemoryResults {
-                    model_mb: memory_mb / 2,
+                    model_mb: Some(memory_mb / 2),
                     peak_rss_mb: memory_mb,
                     kv_waste_pct: 3.0,
                 },
                 energy: EnergyResults {
                     total_joules: 50.0,
                     token_joules,
-                    idle_watts: 8.0,
+                    idle_watts: Some(8.0),
                 },
                 cold_start_ms: ColdStartResults {
                     median: 100.0,

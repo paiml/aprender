@@ -429,6 +429,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         assert!(report.passed);
         assert!(

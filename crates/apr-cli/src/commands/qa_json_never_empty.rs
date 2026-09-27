@@ -31,6 +31,7 @@ mod qa_json_never_empty_tests {
             timestamp: "2026-09-22T00:00:00Z".to_string(),
             summary: "ok".to_string(),
             system_info: None,
+            resources: None,
         }
     }
 

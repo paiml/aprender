@@ -1037,11 +1037,13 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             experimental_mps,
             gpu_share,
             profile,
+            report_peak_memory,
         }) => {
             if *profile {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
             }
-            finetune::run(
+            let window = report_peak_memory.then(crate::commands::resource_window::start);
+            let outcome = finetune::run(
                 file.as_deref(),
                 method,
                 *rank,
@@ -1072,7 +1074,14 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 cli.json,
                 *experimental_mps,
                 *gpu_share,
-            )
+            );
+            if let Some(window) = window {
+                println!(
+                    "{}",
+                    crate::commands::resource_window::peak_memory_line(&window.finish())
+                );
+            }
+            outcome
         }
         Commands::ModelOps(ModelOpsCommands::Prune {
             file,

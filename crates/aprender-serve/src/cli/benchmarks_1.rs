@@ -133,8 +133,8 @@ fn make_valid_full_bench_json() -> String {
             ttft_ms: crate::bench::TtftResults { p50: 50.0, p95: 80.0, p99: 100.0, p999: 120.0 },
             itl_ms: crate::bench::ItlResults { median: 10.0, std_dev: 2.0, p99: 20.0 },
             throughput_tok_s: crate::bench::ThroughputResults { median: 100.0, ci_95: (95.0, 105.0) },
-            memory_mb: crate::bench::MemoryResults { model_mb: 500, peak_rss_mb: 1000, kv_waste_pct: 5.0 },
-            energy: crate::bench::EnergyResults { total_joules: 10.0, token_joules: 0.1, idle_watts: 50.0 },
+            memory_mb: crate::bench::MemoryResults { model_mb: Some(500), peak_rss_mb: 1000, kv_waste_pct: 5.0 },
+            energy: crate::bench::EnergyResults { total_joules: 10.0, token_joules: 0.1, idle_watts: Some(50.0) },
             cold_start_ms: crate::bench::ColdStartResults { median: 200.0, p99: 300.0 },
         },
         quality: crate::bench::QualityValidation {

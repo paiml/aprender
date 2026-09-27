@@ -68,6 +68,8 @@ pub(crate) fn run(
 
     // Profile with REAL inference — try GPU first, fall back to CPU
     let start = Instant::now();
+    // MEAS-001 R1 (#4522): the whole window, model load included.
+    let window = super::resource_window::start();
 
     #[cfg(feature = "inference")]
     let mut results = {
@@ -98,6 +100,7 @@ pub(crate) fn run(
     };
 
     let profile_time = start.elapsed();
+    results.resources = Some(window.finish());
 
     // GH-2395: --tokens drives multi-token generation on the GPU path and the
     // ollama comparison only. The CPU per-operation path measures one forward
@@ -284,7 +287,9 @@ pub(crate) fn run_ci(
 
     #[cfg(feature = "inference")]
     {
-        let results = profile_real_inference_cpu(path, warmup, measure)?;
+        let window = super::resource_window::start();
+        let mut results = profile_real_inference_cpu(path, warmup, measure)?;
+        results.resources = Some(window.finish());
 
         // Build CI report with assertion checks
         let report = CiProfileReport::from_results(&results, assertions);

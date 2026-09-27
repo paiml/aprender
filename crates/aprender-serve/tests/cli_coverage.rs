@@ -1000,14 +1000,14 @@ mod benchmark_json_schema_tests {
                     ci_95: (145.0, 155.0),
                 },
                 memory_mb: MemoryResults {
-                    model_mb: 512,
+                    model_mb: Some(512),
                     peak_rss_mb: 1024,
                     kv_waste_pct: 5.0,
                 },
                 energy: EnergyResults {
                     total_joules: 100.0,
                     token_joules: 0.5,
-                    idle_watts: 15.0,
+                    idle_watts: Some(15.0),
                 },
                 cold_start_ms: ColdStartResults {
                     median: 150.0,
@@ -1257,7 +1257,7 @@ mod benchmark_json_schema_tests {
     #[test]
     fn test_memory_results_schema() {
         let memory = MemoryResults {
-            model_mb: 1024,
+            model_mb: Some(1024),
             peak_rss_mb: 2048,
             kv_waste_pct: 3.5,
         };
@@ -1275,7 +1275,7 @@ mod benchmark_json_schema_tests {
         let energy = EnergyResults {
             total_joules: 500.0,
             token_joules: 0.25,
-            idle_watts: 20.0,
+            idle_watts: Some(20.0),
         };
 
         let json = serde_json::to_string(&energy).expect("serialization");
@@ -1283,7 +1283,10 @@ mod benchmark_json_schema_tests {
 
         assert!((parsed.total_joules - energy.total_joules).abs() < f64::EPSILON);
         assert!((parsed.token_joules - energy.token_joules).abs() < f64::EPSILON);
-        assert!((parsed.idle_watts - energy.idle_watts).abs() < f64::EPSILON);
+        assert!(
+            (parsed.idle_watts.expect("idle") - energy.idle_watts.expect("idle")).abs()
+                < f64::EPSILON
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@
     #[test]
     fn test_ci_profile_report_print_human_failed() {
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: false,
             throughput_tok_s: 50.0,
@@ -20,6 +21,7 @@
     #[test]
     fn test_ci_profile_report_print_human_no_assertions() {
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: true,
             throughput_tok_s: 100.0,

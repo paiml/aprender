@@ -39,7 +39,8 @@ pub struct AprBenchmarkResult {
     pub throughput_p99: f64,
     /// Standard deviation of throughput
     pub throughput_std_dev: f64,
-    /// Peak memory usage in MB
+    /// Peak memory usage in MB: the process high-water mark (VmHWM) where
+    /// readable, else the model's own size (MEAS-001, #4522)
     pub peak_memory_mb: f64,
     /// Model memory in MB
     pub model_memory_mb: f64,
@@ -262,7 +263,11 @@ impl AprBenchmarkRunner {
             throughput_p50: p50,
             throughput_p99: p99,
             throughput_std_dev: std_dev,
-            peak_memory_mb: model_memory_mb * 1.5, // Estimate: model + KV cache
+            // MEAS-001 (#4522): the process high-water mark (VmHWM), read after
+            // the measured runs. It was `model * 1.5`, an estimate. Where
+            // VmHWM is unreadable, the resident model itself is the floor.
+            peak_memory_mb: crate::resources::peak_rss_bytes()
+                .map_or(model_memory_mb, |b| b as f64 / (1024.0 * 1024.0)),
             model_memory_mb,
         })
     }

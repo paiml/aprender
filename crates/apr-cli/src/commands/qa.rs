@@ -444,6 +444,10 @@ pub struct QaReport {
     /// System information
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_info: Option<SystemInfo>,
+    /// MEAS-001 R1 (#4522): the measured `resources{}` block of the whole QA
+    /// run. Every field is a reading with a source, or null with a reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<serde_json::Value>,
 }
 
 /// Run the QA command
@@ -535,11 +539,22 @@ pub fn run(
     // failure is evidence, an absence is not, and no per-row judging can find a
     // row that was never written. So the document is emitted on BOTH paths and
     // the error is still returned, preserving the exit code.
-    let report = match run_qa(path, &config) {
-        Ok(report) => report,
+    // MEAS-001 R1 (#4522): measured on both paths — a run that failed still
+    // spent its RSS, CPU and VRAM, and that is part of its evidence.
+    let window = super::resource_window::start();
+    let outcome = run_qa(path, &config);
+    let resources = Some(window.finish());
+    let report = match outcome {
+        Ok(report) => QaReport {
+            resources,
+            ..report
+        },
         Err(e) => {
             if json {
-                emit_qa_json(&qa_report_for_error(path, &e));
+                emit_qa_json(&QaReport {
+                    resources,
+                    ..qa_report_for_error(path, &e)
+                });
             }
             return Err(e);
         }
@@ -650,6 +665,7 @@ pub(crate) fn qa_report_for_error(path: &Path, e: &CliError) -> QaReport {
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary: why,
         system_info: None,
+        resources: None,
     }
 }
 

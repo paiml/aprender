@@ -312,6 +312,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         assert!(report.passed);
         assert!(report.gates.is_empty());
@@ -345,6 +346,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let json = serde_json::to_string(&report).expect("serialize many gates");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize many gates");

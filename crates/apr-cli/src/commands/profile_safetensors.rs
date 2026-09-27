@@ -48,6 +48,7 @@ fn profile_safetensors_real(
         .map_or(0, |t| t.shape.last().copied().unwrap_or(0));
 
     Ok(RealProfileResults {
+        resources: None,
         model_path: path.display().to_string(),
         architecture: report.architecture.unwrap_or_else(|| "unknown".to_string()),
         num_layers,
@@ -248,6 +249,7 @@ fn profile_gguf_real(
     };
 
     Ok(RealProfileResults {
+        resources: None,
         model_path: path.display().to_string(),
         architecture,
         num_layers,
@@ -390,6 +392,7 @@ fn profile_apr_real(
     };
 
     Ok(RealProfileResults {
+        resources: None,
         model_path: path.display().to_string(),
         architecture: "apr".to_string(),
         num_layers,
