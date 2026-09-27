@@ -1,0 +1,66 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-09-28'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The 0.72 R6 cell (distill 27B -> 4B at batch > 1): every row a distill step pays a forward
+    pass for is either trained on or refused. Spike S-R6 (2026-09-28, desk read at origin/main
+    aca6f2d7f6) found `apr distill --backend cuda` accepts the default --batch-size 16, runs teacher
+    and student on all 16 rows, reports a loss averaged over 16, and CudaStudentProvider applies
+    the gradient of the LAST row only (input_ids.last(), gradient.last()). Effective batch 1, silently.
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R6, Spike S-R6
+  - crates/aprender-train-distill/src/student_provider.rs (CudaStudentProvider logits_for_batch / apply_kd_gradient)
+  - crates/aprender-train-distill/src/pipeline.rs (kd_step then apply_kd_gradient per step)
+  - contracts/distill-per-position-kd-v1.yaml
+  - contracts/train-arch-honesty-v1.yaml (branch la-72/4552-train-arch-honesty; qwen35 refusal on distill)
+  depends_on:
+  - distill-per-position-kd-v1
+status: PROPOSED
+equations:
+  batch_update:
+    formula: 'Δθ(step, B rows) = Σ_{i<B} ∂L_i/∂θ · w_i with w_i > 0 for every i, OR the step refuses before any forward'
+    domain: 'any StudentLogitsProvider (CPU, CUDA) under Pipeline, batch_size B ≥ 1, last-position and per-position KD'
+    invariants:
+    - 'A row whose logits enter the reported loss contributes to the update (loss rows = update rows)'
+    - 'A provider that can only apply one row declares max_batch = 1 and the pipeline refuses B > 1 by name before step 0'
+    - 'Per-position KD applies B·P rows or refuses; one row of B·P is a FAIL'
+    preconditions:
+    - the same batch source and seed for the compared runs
+proof_obligations:
+- type: invariant
+  property: No silent row drop
+  formal: '∀ step: rows_updated(step) = rows_in_loss(step) ∨ refused_before_step_0'
+  applies_to: all
+- type: equivalence
+  property: Accumulation matches the mean
+  formal: 'update(B=2, rows a,b) ≈ update from the mean of the per-row gradients (tol 1e-4 relative, f32)'
+  tolerance: 1.0e-04
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-DBH-001
+  rule: batch = 2 with two distinct rows updates from both
+  prediction: 'after one step at B=2 (rows a != b), the student weights differ from the weights after one step on b alone'
+  test: 'CUDA provider: two distinct rows, one step, compare against a B=1 step on the last row; equal weights = RED'
+  if_fails: 'the provider trains on the last row only (the S-R6 behaviour at aca6f2d7f6)'
+- id: FALSIFY-DBH-002
+  rule: A provider that cannot batch refuses batch > 1 by name
+  prediction: '`apr distill --backend cuda --batch-size 16` either trains every row (DBH-001 green) or exits non-zero before step 0 naming the batch limit'
+  test: 'CLI, no GPU needed for the refusal branch: the check sits before provider construction'
+  if_fails: 'rc 0 with effective batch 1 while the log says batch 16'
+- id: FALSIFY-DBH-003
+  rule: Planted falsifier — last-row-only provider
+  prediction: 'a CPU mock StudentLogitsProvider that records the gradient rows it applies, run through Pipeline at B=4, records 4 rows; the planted variant that keeps gradient.last() turns the test RED'
+  test: 'cargo test -p aprender-train-distill --lib falsify_dbh_003 (CPU, mock provider; the planted variant is the current CudaStudentProvider logic)'
+  if_fails: 'the pipeline test cannot tell a last-row provider from a full one'
+- id: FALSIFY-DBH-004
+  rule: Per-position KD applies every position
+  prediction: 'apply_kd_gradient_per_position with B=2, P=3 applies 6 rows on every provider that does not refuse'
+  test: 'same mock as DBH-003, per-position path'
+  if_fails: 'the flattened [B·P] slice is reduced to one row (the S-R6 CUDA override behaviour)'
+- id: FALSIFY-DBH-005
+  rule: Loss telemetry describes the trained rows
+  prediction: 'the per-step loss logged by Pipeline is the mean over exactly the rows the update used'
+  test: 'mock provider at B=4 returning distinct per-row losses; logged loss == mean of the applied rows'
+  if_fails: 'the logged loss averages rows that were never trained on'

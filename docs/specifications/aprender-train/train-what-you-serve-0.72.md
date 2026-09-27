@@ -219,6 +219,31 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - R13 (HF rc publish) needs QFR-003: a published safetensors must re-import without a hand-copied config.
   - Until R10 lands, T5 evidence means "HF safetensors → .apr → safetensors", never "GGUF round-trip".
 
+### Spike S-R6 — is CUDA distill's batch = 1 a hard limit, and what does it do at batch > 1 today? · `[V]` (2026-09-28, desk read at origin/main aca6f2d7f6)
+- **Setup:** desk read of `apr distill --backend cuda` (`crates/apr-cli/src/commands/distill.rs` `run_cuda_backend`), the
+  pipeline (`aprender-train-distill/src/pipeline.rs`), `kd_step.rs` and `CudaStudentProvider` (`student_provider.rs`).
+  Contract `distill-batch-honesty-v1` (DBH-001..005).
+- **batch > 1 is not refused; it silently trains on 1 of B rows.** The CLI default is `--batch-size 16` and the only
+  check is `> 0`. The pipeline draws B rows, runs the teacher and the student on every row, and `kd_step` returns B
+  unscaled gradient rows and a loss averaged over B. `CudaStudentProvider` then caches only `input_ids.last()`, and
+  `apply_kd_gradient` runs `forward_backward_with_grad` on `gradient.last()` alone. So at the default, 15 of 16 rows are
+  thrown away after their forward pass has been paid for, and the logged loss describes 16 rows that were never trained on.
+  The learning rate is not diluted, because the rows are not pre-divided by B. The effective batch is simply 1.
+- **The per-position path is worse.** `apply_kd_gradient_per_position` flattens to `[B·P][vocab]` and calls
+  `apply_kd_gradient`, whose trait doc says it "averages them"; the CUDA override keeps one row of B·P.
+- **It is a known limit that nothing enforces.** The code comments say "Phase 2d … batch_size=1 assumption" and "Future
+  Phase 2e fuses input_ids + gradient", but no refusal, warning or contract pins it
+  (`apr-distill-teacher-backend-selection-v1` even sizes the teacher at batch 32).
+- **qwen35 on this path:** `TransformerConfig::from_apr_metadata` matches `architecture.starts_with("qwen3")`, so a
+  `qwen3_5` .apr (the HF import stamps `qwen3_5` / `Qwen3_5ForConditionalGeneration`, S-R10) builds a dense Qwen3 config
+  with no GDN. On main nothing refuses it. R1 (`la-72/4552-train-arch-honesty`, TAH-001) makes `apr distill` refuse it on the
+  teacher and the student before any read. R6 on qwen35 therefore needs R1 and the CUDA GDN trainer (S-R15), in that order.
+- **Consequences:**
+  - The immediate fix is small and belongs before any R6 run: refuse `--backend cuda` with batch > 1 by name (DBH-002),
+    or accumulate every row (DBH-001). Either turns DBH-003 green; the current code is its planted RED.
+  - Real batch > 1 needs Phase 2e: a fused `(input_ids, gradient)` step on the trainer, sized with R6.
+  - Any CUDA distill loss curve recorded so far at batch > 1 measured effective batch 1. Treat those receipts as batch 1.
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
