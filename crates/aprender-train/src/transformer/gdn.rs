@@ -95,11 +95,11 @@ pub struct GdnScan {
     pub history: Vec<f32>,
 }
 
-fn silu(x: f32) -> f32 {
+pub(super) fn silu(x: f32) -> f32 {
     x / (1.0 + (-x).exp())
 }
 
-fn sigmoid(x: f32) -> f32 {
+pub(super) fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
 
@@ -113,7 +113,7 @@ fn softplus(x: f32) -> f32 {
 }
 
 /// `y = x · Wᵀ` for every position: `x` is `[seq_len × d_in]`, `w` is `[d_out × d_in]`.
-fn project(x: &[f32], w: &[f32], d_in: usize, d_out: usize) -> Vec<f32> {
+pub(super) fn project(x: &[f32], w: &[f32], d_in: usize, d_out: usize) -> Vec<f32> {
     assert_eq!(w.len(), d_out * d_in, "projection weight is not [{d_out} x {d_in}]");
     let mut y = Vec::with_capacity(x.len() / d_in * d_out);
     for row in x.chunks_exact(d_in) {
