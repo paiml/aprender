@@ -1,0 +1,113 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §0.4 — self-reports are cross-checked; §3 falsifiers; §7 OBS-04'
+  - 'contracts/apr-lane-row-v1.yaml — the client measurement (wall_ms)'
+  - 'contracts/apr-serve-timing-v1.yaml — the server self-report (total_ms)'
+  - 'contracts/apr-obs-row-identity-v1.yaml — admissibility and identity_matches_before_any_ratio'
+  - 'crates/aprender-qa-report/src/selfreport_agreement.rs — the checker (Rust, R-5)'
+  - 'aprender#4491 — OBS-04'
+  description: >
+    Server timings (OBS-03) are apr describing itself. They are admissible only where
+    they agree with the lane client's independent wall-clock measurement (OBS-01). This
+    contract joins the two ledgers by request_id and holds the server's total_ms to the
+    client's wall_ms. The checker is outside apr (R-10: the writer is never the subject).
+
+equations:
+  join_by_request_id:
+    formula: |
+      L = { l ∈ lane ledger  : admissible(l), l.schema = "apr-lane-row-v1",     l.wall_ms  > 0 }
+      S = { s ∈ serve ledger : admissible(s), s.schema = "apr-serve-timing-v1", s.total_ms > 0 }
+      REQUIRE: request_id is unique within L and within S          (else RED: the join is ambiguous)
+      J = { (l, s) ∈ L × S : l.request_id = s.request_id }
+      REQUIRE: ∀ (l, s) ∈ J: l.f = s.f  for f ∈ { crate_tarball_sha256, model_sha256, backend }
+                                                                 (else the pair is refused: RED)
+    domain: 'one lane ledger and one serve ledger (JSONL)'
+    codomain: 'the joined pairs J, plus counts of inadmissible and unjoined rows'
+    invariants:
+    - 'An inadmissible row counts as absent (apr-obs-row-identity-v1 identity_is_complete),
+       so a ledger of inadmissible rows joins to nothing.'
+    - 'A mismatched identity pair is refused, not flagged (identity_matches_before_any_ratio).'
+    - 'Unjoined rows are reported, not judged: coverage belongs to OBS-01 rows_equal_calls.'
+
+  total_agrees_with_wall:
+    formula: |
+      tol(l)       = max(0.05 · l.wall_ms, 50 ms)                   [A]
+      agrees(l, s) ⟺ |s.total_ms − l.wall_ms| ≤ tol(l)
+      GREEN        ⟺ |J| ≥ 1  ∧  100 · |{ (l, s) ∈ J : agrees(l, s) }| ≥ 99 · |J|   [A]
+    domain: 'the joined pairs J'
+    codomain: bool
+    invariants:
+    - 'An empty join is RED (R-2), never a vacuous 100%.'
+    - 'Both thresholds are asserted [A] (spec §7), not measured. OBS-05 replaces them
+       with the measured spread (R-9).'
+    - 'Blind spot: below wall_ms = 250 ms the 50 ms floor exceeds 20% of the wall
+       time, so a +20% skew on short requests is not detectable. FALSIFY-OBS-AGREE-001
+       is only sensitive on requests longer than that.'
+
+falsification_tests:
+- id: FALSIFY-OBS-AGREE-001
+  rule: a planted +20% skew in server timings is RED
+  prediction: 'Multiplying every serve row total_ms by 1.2 in a clean 200-pair fixture
+    (wall 1000–4980 ms) makes all 200 pairs disagree, and the report turns RED.'
+  test: 'cargo test -p aprender-qa-report --lib selfreport_agreement::tests::planted_plus_20_percent_skew_is_red'
+  if_fails: 'apr can overstate or understate its own timings and the ledger accepts them (§0.4)'
+  mutation: 'replace the tolerance comparison with `true`; the case turns RED (measured 2026-09-27)'
+- id: FALSIFY-OBS-AGREE-002
+  rule: an empty join is RED
+  prediction: 'Empty ledgers, disjoint request_ids, and a serve ledger of rows with
+    model_sha256 "unknown" all report RED.'
+  test: 'cargo test -p aprender-qa-report --lib selfreport_agreement::tests::empty_join_is_red'
+  if_fails: 'a broken join (header dropped, ids regenerated server-side) reads as 100% agreement'
+  mutation: 'disable the joined == 0 rule; the case turns RED (measured 2026-09-27)'
+- id: FALSIFY-OBS-AGREE-003
+  rule: a pair across mismatched identity is refused
+  prediction: 'A serve row whose backend differs from its lane row is not compared; the
+    refusal names the field and the report is RED.'
+  test: 'cargo test -p aprender-qa-report --lib selfreport_agreement::tests::identity_mismatch_is_refused'
+  if_fails: 'a CPU client wall is compared with a CUDA server total, and the ratio means nothing'
+  mutation: 'drop backend from RATIO_IDENTITY; the case turns RED (measured 2026-09-27)'
+- id: FALSIFY-OBS-AGREE-004
+  rule: the 99% threshold is exact
+  prediction: '100 pairs with 1 disagreeing is GREEN; with 2 disagreeing it is RED.'
+  test: 'cargo test -p aprender-qa-report --lib selfreport_agreement::tests::ninety_nine_percent_boundary'
+  if_fails: 'the gate drifts to a looser threshold than the spec states'
+  mutation: 'lower MIN_AGREEING_PERCENT to 98; the case must turn RED (not yet measured)'
+
+proof_obligations:
+- type: invariant
+  property: 'A +20% server skew on requests over 250 ms is RED (FALSIFY-OBS-AGREE-001)'
+  formal: '∀ J with ∀ l: l.wall_ms > 250 ∧ s.total_ms ≈ l.wall_ms: skew(S, 1.2) ⇒ ¬GREEN'
+- type: invariant
+  property: 'An empty join is never GREEN (FALSIFY-OBS-AGREE-002)'
+  formal: '|J| = 0 ⇒ ¬GREEN'
+- type: invariant
+  property: 'No pair across mismatched identity is compared (FALSIFY-OBS-AGREE-003)'
+  formal: '∀ (l, s) compared: l.f = s.f for f ∈ {crate_tarball_sha256, model_sha256, backend}'
+- type: invariant
+  property: 'GREEN iff at least 99% of joined pairs agree (FALSIFY-OBS-AGREE-004)'
+  formal: 'GREEN ⟺ |J| ≥ 1 ∧ 100·|agree| ≥ 99·|J|'
+
+qa_gate:
+  id: F-OBS-AGREE-GATE-001
+  name: 'server timings agree with the client wall clock'
+  description: 'OBS-04 acceptance: at least 99% of joined lane × serve rows within max(5%, 50 ms) [A]; planted +20% skew RED.'
+  checks:
+  - join_non_empty
+  - request_id_unique
+  - identity_matches
+  - agreeing_at_least_99_percent
+  pass_criteria: 'All checks hold on the real OBS-01 and OBS-03 ledgers of one host. Report-only through 0.70.'
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: proposed
+  notes: 'The checker and its falsifiers are tested on fixtures (9 unit tests; the mutants of
+    001, 002 and 003 measured killed on 2026-09-27; the mutant of 004 not measured, the build timed
+    out twice at host load 158). The GREEN run on real ledgers waits on
+    OBS-01 lane rows and OBS-03 serve timings, which are not yet written anywhere.'

@@ -45,6 +45,7 @@ pub mod markdown;
 pub mod mqs;
 pub mod popperian;
 pub mod proof_status;
+pub mod selfreport_agreement;
 pub mod ticket;
 
 pub use certificate::{Certificate, CertificateGenerator, CertificationStatus};
