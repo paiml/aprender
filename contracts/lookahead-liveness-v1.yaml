@@ -1,0 +1,88 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "Every look-ahead slot (APR-LOOKAHEAD-001 §3.2, LA-02 #4543) has a live worker (I3: heartbeat under 2 h) and a handoff file on main updated within 24 h (I4). The cop's hourly `lookahead.py tick` reports I1-I4 and the actions due; a dead slot is refilled by `respawn` from its handoff file within one tick, and `respawn` refuses a live slot, so a planted duplicate cannot enter. Workers write only their own heartbeat file; the cop stays the single writer of the state."
+  kind: pattern
+  references:
+    - "docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md — §3.2 I3/I4, §4 tick, §9 LA-02"
+    - "scripts/lookahead/lookahead.py — `heartbeat`, `tick`, `respawn` verbs"
+    - "scripts/check_lookahead.sh — LA-02 rows and mutants"
+    - "contracts/lookahead-state-v1.yaml — I1/I2, which tick reuses"
+
+five_whys:
+  symptom: "A look-ahead slot can be empty for days while the state file still names a worker."
+  why_1: "A session that dies (quota, crash, compaction loop) leaves its slot assignment in place; nothing distinguishes a dead holder from a live one."
+  why_2: "Heartbeats were prose in the inbox, not a timestamp a tool compares to a clock."
+  why_3: "Refilling a slot was a manual act, and a manual act can put a second worker on a slot whose first worker was merely slow."
+  why_4: "A handoff file nobody updates gives the replacement nothing to start from, so a respawn restarts the epic from zero."
+  why_5: "No planted dead worker or duplicate ever ran against the refill logic."
+  root_cause: "Liveness lived in attention. The remedy is a tick that reads heartbeats against a pinned clock, a respawn that refuses live slots, and a case table that plants the 3 h dead worker and the duplicate."
+
+equations:
+  slot_liveness:
+    formula: "tick(S, now) ⊇ {RESPAWN L_k} ⇔ now − max(S.L_k.heartbeat, hb_file(L_k).at | hb_file.worker = S.L_k.worker) ≥ 120 min"
+    domain: "a legal lookahead state, the per-slot heartbeat files, a clock"
+    codomain: "exit 0 (no action due) | 1 (actions listed) | 2 (cannot judge)"
+    invariants:
+      - "a heartbeat file written by a different worker than the slot's holder is ignored"
+      - "exactly 120 min is dead: I3 is strictly under 2 h"
+  respawn_refuses_duplicates:
+    formula: "respawn(S, L_k, W) writes S' ⇔ L_k is dead ∧ W holds no slot; otherwise S' = S"
+    domain: "a legal state, a slot, a new worker name"
+    codomain: "exit 0 + LAUNCH line | 1 REFUSED (state untouched)"
+    invariants:
+      - "the written state is legal under lookahead-state-v1"
+      - "the write is one rename (atomic)"
+  handoff_freshness:
+    formula: "tick(S, now) ⊇ {HANDOFF-STALE L_k} ⇔ handoff(L_k) absent ∨ now − handoff.updated ≥ 24 h ∨ handoff.train ≠ L_k.train"
+    domain: "the handoff files under the repo root"
+    codomain: "an I4 action per stale slot"
+
+proof_obligations:
+  - id: LAL-INV-001
+    type: invariant
+    property: "A worker silent for 3 h is respawned within one tick"
+    formal: "age(L_k) = 180 min ⇒ RESPAWN L_k ∈ tick(S) ∧ tick(respawn(S, L_k, W')) has no RESPAWN"
+    applies_to: slot_liveness
+  - id: LAL-INV-002
+    type: invariant
+    property: "A second worker cannot enter a live slot"
+    formal: "age(L_k) < 120 min ⇒ respawn(S, L_k, W) = REFUSED ∧ S unchanged"
+    applies_to: respawn_refuses_duplicates
+  - id: LAL-INV-003
+    type: invariant
+    property: "A handoff not updated for 24 h, or missing, is reported"
+    formal: "stale(handoff(L_k)) ⇒ HANDOFF-STALE L_k ∈ tick(S)"
+    applies_to: handoff_freshness
+  - id: LAL-INV-004
+    type: invariant
+    property: "The guard still fails on the defects it names"
+    formal: "∀ m ∈ {i3-age-unchecked, live-slot-respawnable, foreign-heartbeat-accepted, hb-file-any-worker, i4-unchecked}: guard(m) ≠ 0"
+    applies_to: slot_liveness
+
+falsification_tests:
+  - id: FALSIFY-LAL-001
+    rule: "A planted 3 h dead worker is respawned within one tick; a planted duplicate is refused"
+    prediction: "the LA-02 rows of the case table are GREEN (dead-3h, next-tick-clean, live-slot-duplicate-refused, refusal-left-state-untouched)"
+    test: "bash scripts/check_lookahead.sh"
+    if_fails: "A dead slot stays dead, or a live slot takes a second worker"
+  - id: FALSIFY-LAL-002
+    rule: "The guard can still fail"
+    prediction: "every LA-02 mutant (I3 unchecked, live slot respawnable, foreign heartbeat accepted, any worker's heartbeat file trusted, I4 unchecked) turns at least one row RED"
+    test: "bash scripts/check_lookahead.sh --self-test"
+    if_fails: "The liveness rows are theater"
+  - id: FALSIFY-LAL-003
+    rule: "The tool exposes the tick and respawn verbs"
+    prediction: "`lookahead.py --help` lists heartbeat, tick and respawn"
+    test: "python3 scripts/lookahead/lookahead.py --help | grep -q 'tick STATE' && python3 scripts/lookahead/lookahead.py --help | grep -q 'respawn STATE'"
+    if_fails: "The cop has nothing to run each hour"
+
+qa_gate:
+  id: F-LAL-001
+  name: "Every look-ahead slot is live or being refilled"
+  description: "lookahead.py tick reports I1-I4 against a pinned clock; respawn refills dead slots and refuses live ones. scripts/check_lookahead.sh runs in guard_tree.sh's --no-cargo step."
+  checks:
+    - "slot_liveness"
+    - "respawn_refuses_duplicates"
+    - "handoff_freshness"

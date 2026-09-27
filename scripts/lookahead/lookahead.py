@@ -6,12 +6,16 @@ One tool, one verb per spec row, all reading the same state file
 The cop is the single writer of that file; workers write heartbeat files.
 
   validate STATE                      LA-00  schema + I1 (coverage) + I2 (uniqueness)
+  heartbeat STATE --slot L --worker W LA-02  a worker's own heartbeat file (never the state)
+  tick STATE                          LA-02  I1-I4 report + the actions due this tick
+  respawn STATE --slot L --worker NEW LA-02  refill a dead slot; refuse a live one
 
 Exit codes, shared by every verb:
   0  the property holds (or the action was done)
   1  a violation / a refusal -- printed one per line as `VIOLATION <id>: ...`
   2  cannot judge (file missing, not JSON, schema missing) -- never a silent pass
 """
+import datetime
 import json
 import os
 import re
@@ -138,10 +142,223 @@ def cmd_validate(args):
     return 0
 
 
-VERBS = {"validate": cmd_validate}
+# ---- time, atomic writes, handoff files -------------------------------------------
+TS_FMT = "%Y-%m-%dT%H:%M:%SZ"
+HEARTBEAT_MAX_MIN = 120  # I3: every slot's heartbeat is less than 2 h old
+HANDOFF_MAX_H = 24  # I4: every handoff file updated within 24 h
+
+
+def parse_ts(text, what):
+    try:
+        return datetime.datetime.strptime(text, TS_FMT).replace(tzinfo=datetime.timezone.utc)
+    except (TypeError, ValueError) as exc:
+        raise CannotJudge(f"{what}: {text!r} is not {TS_FMT}") from exc
+
+
+def fmt_ts(when):
+    return when.strftime(TS_FMT)
+
+
+def now_from(opts):
+    """--now pins the clock, so every verb is deterministic under test."""
+    if opts.get("now"):
+        return parse_ts(opts["now"], "--now")
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+
+
+def write_atomic(path, obj):
+    """One rename = one state transition: a reader sees the old state or the new one."""
+    tmp = f"{path}.tmp.{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh, indent=2)
+        fh.write("\n")
+    os.replace(tmp, path)
+
+
+def parse_opts(args, flags, bools=()):
+    """--key value pairs (and bare --flag booleans) after positionals."""
+    pos, opts, i = [], {}, 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("--"):
+            key = a[2:].replace("-", "_")
+            if key in bools:
+                opts[key] = True
+                i += 1
+                continue
+            if key not in flags or i + 1 >= len(args):
+                raise CannotJudge(f"unknown or valueless option {a}")
+            opts[key] = args[i + 1]
+            i += 2
+        else:
+            pos.append(a)
+            i += 1
+    return pos, opts
+
+
+HANDOFF_FENCE = re.compile(r"```json lookahead-handoff\n(.*?)\n```", re.S)
+
+
+def load_handoff(root, rel):
+    path = os.path.join(root, rel)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except FileNotFoundError as exc:
+        raise CannotJudge(f"handoff {rel}: not found") from exc
+    m = HANDOFF_FENCE.search(text)
+    if not m:
+        raise CannotJudge(f"handoff {rel}: no ```json lookahead-handoff block")
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError as exc:
+        raise CannotJudge(f"handoff {rel}: block is not JSON ({exc})") from exc
+
+
+def load_legal_state(path):
+    dups = []
+    state = load_json(path, dups)
+    bad = state_violations(state, dups)
+    return state, bad
+
+
+def hb_dir_for(state_path, opts):
+    return opts.get("hb_dir") or os.path.join(os.path.dirname(os.path.abspath(state_path)), "lookahead-hb")
+
+
+def effective_heartbeat(state, slot, hb_dir):
+    """The newest heartbeat for the slot's CURRENT worker: the cop's record, or the
+    worker's own file. A file written by a different worker (a replaced one) is
+    ignored -- a dead worker's last word must not keep its successor's slot 'live'."""
+    rec = state["slots"][slot]
+    best = parse_ts(rec["heartbeat"], f"{slot}.heartbeat")
+    path = os.path.join(hb_dir, f"{slot}.json")
+    if os.path.exists(path):
+        hb = load_json(path)
+        if isinstance(hb, dict) and hb.get("worker") == rec["worker"]:
+            best = max(best, parse_ts(hb.get("at"), f"{path}.at"))
+    return best
+
+
+def launch_prompt(slot, train):
+    return f"Run docs/prompts/lookahead-worker.md with SLOT={slot} TRAIN={train} autonomously."
+
+
+# ---- LA-02: heartbeat / tick / respawn ----------------------------------------------
+def cmd_heartbeat(args):
+    """A worker writes its own heartbeat file; it never writes the state (single writer)."""
+    pos, opts = parse_opts(args, {"slot", "worker", "now", "hb_dir", "item"})
+    if len(pos) != 1 or not opts.get("slot") or not opts.get("worker"):
+        raise CannotJudge("usage: heartbeat STATE --slot L? --worker NAME [--item TEXT] [--now T] [--hb-dir D]")
+    state, bad = load_legal_state(pos[0])
+    if bad:
+        raise CannotJudge(f"{pos[0]} is not a legal state ({bad[0][0]}: {bad[0][1]})")
+    slot = opts["slot"]
+    if slot not in SLOTS:
+        raise CannotJudge(f"no slot {slot}")
+    owner = state["slots"][slot]["worker"]
+    if opts["worker"] != owner:
+        print(f"REFUSED: {opts['worker']} does not hold {slot} (held by {owner}); a second worker on one slot breaks I2")
+        return 1
+    hb_dir = hb_dir_for(pos[0], opts)
+    os.makedirs(hb_dir, exist_ok=True)
+    rec = {"slot": slot, "worker": owner, "train": state["slots"][slot]["train"],
+           "at": fmt_ts(now_from(opts)), "item": opts.get("item", "")}
+    write_atomic(os.path.join(hb_dir, f"{slot}.json"), rec)
+    print(f"HEARTBEAT {slot} {owner} {rec['at']}")
+    return 0
+
+
+def tick_report(state_path, opts):
+    state, bad = load_legal_state(state_path)
+    now = now_from(opts)
+    hb_dir = hb_dir_for(state_path, opts)
+    root = opts.get("root") or ROOT
+    inv = {"I1": "ok", "I2": "ok", "I3": "ok", "I4": "ok"}
+    actions = []
+    for vid, msg in bad:
+        inv["I1" if vid == "I1" else "I2"] = "fail"
+        actions.append({"action": "REPAIR", "invariant": vid, "detail": msg})
+    if bad:  # an illegal state has no trustworthy slots to judge liveness on
+        return {"invariants": inv, "actions": actions, "slots": []}
+    slots = []
+    for slot in SLOTS:
+        rec = state["slots"][slot]
+        age = int((now - effective_heartbeat(state, slot, hb_dir)).total_seconds() // 60)
+        row = {"slot": slot, "train": rec["train"], "worker": rec["worker"], "heartbeat_age_min": age}
+        if age >= HEARTBEAT_MAX_MIN:
+            inv["I3"] = "fail"
+            actions.append({"action": "RESPAWN", "slot": slot, "train": rec["train"],
+                            "dead_worker": rec["worker"], "heartbeat_age_min": age,
+                            "handoff": rec["handoff"], "prompt": launch_prompt(slot, rec["train"])})
+        try:
+            ho = load_handoff(root, rec["handoff"])
+            ho_age_h = (now - parse_ts(ho.get("updated"), f"{rec['handoff']}.updated")).total_seconds() / 3600
+            row["handoff_age_h"] = round(ho_age_h, 1)
+            stale = ho_age_h >= HANDOFF_MAX_H or ho.get("train") != rec["train"]
+        except CannotJudge as exc:
+            row["handoff_age_h"] = None
+            stale, ho_age_h = True, str(exc)
+        if stale:
+            inv["I4"] = "fail"
+            actions.append({"action": "HANDOFF-STALE", "slot": slot, "worker": rec["worker"],
+                            "handoff": rec["handoff"], "detail": ho_age_h})
+        slots.append(row)
+    return {"current_train": state["current_train"], "invariants": inv, "actions": actions, "slots": slots}
+
+
+def cmd_tick(args):
+    """LA-02: the cop's hourly tick. Prints a JSON report (§10 `invariants`, `slots`)
+    plus the actions the cop must take this tick; exit 1 iff any action is due."""
+    pos, opts = parse_opts(args, {"now", "hb_dir", "root"})
+    if len(pos) != 1:
+        raise CannotJudge("usage: tick STATE [--now T] [--hb-dir D] [--root REPO]")
+    rep = tick_report(pos[0], opts)
+    print(json.dumps(rep, indent=2))
+    for a in rep["actions"]:
+        print(f"ACTION {a['action']} {a.get('slot', a.get('invariant', ''))}")
+    return 1 if rep["actions"] else 0
+
+
+def cmd_respawn(args):
+    """Refill a slot whose worker is dead. Refuses when the slot's worker is live
+    (a planted duplicate) or when the new worker already holds a slot (I2)."""
+    pos, opts = parse_opts(args, {"slot", "worker", "now", "hb_dir"})
+    if len(pos) != 1 or opts.get("slot") not in SLOTS or not opts.get("worker"):
+        raise CannotJudge("usage: respawn STATE --slot L? --worker NEW [--now T] [--hb-dir D]")
+    state, bad = load_legal_state(pos[0])
+    if bad:
+        raise CannotJudge(f"{pos[0]} is not a legal state ({bad[0][0]}: {bad[0][1]}); repair it first")
+    slot, new, now = opts["slot"], opts["worker"], now_from(opts)
+    age = int((now - effective_heartbeat(state, slot, hb_dir_for(pos[0], opts))).total_seconds() // 60)
+    if age < HEARTBEAT_MAX_MIN:
+        print(f"REFUSED: {slot} is held by live worker {state['slots'][slot]['worker']} "
+              f"(heartbeat {age} min old < {HEARTBEAT_MAX_MIN}); a second worker breaks I2")
+        return 1
+    for other in SLOTS:
+        if state["slots"][other]["worker"] == new:
+            print(f"REFUSED: {new} already holds {other}; no worker holds two slots (I2)")
+            return 1
+    rec = state["slots"][slot]
+    dead = rec["worker"]
+    rec.update({"worker": new, "tmux": new, "since": fmt_ts(now), "heartbeat": fmt_ts(now)})
+    after = state_violations(json.loads(json.dumps(state)), [])
+    if after:
+        raise CannotJudge(f"respawn would write an illegal state: {after[0]}")
+    write_atomic(pos[0], state)
+    print(f"RESPAWNED {slot} train {rec['train']}: {dead} -> {new} (dead {age} min)")
+    print(f"LAUNCH tmux={new} handoff={rec['handoff']} prompt={launch_prompt(slot, rec['train'])!r}")
+    return 0
+
+
+VERBS = {"validate": cmd_validate, "heartbeat": cmd_heartbeat, "tick": cmd_tick,
+         "respawn": cmd_respawn}
 
 
 def main(argv):
+    if len(argv) == 2 and argv[1] in ("-h", "--help"):
+        print(__doc__)
+        return 0
     if len(argv) < 2 or argv[1] not in VERBS:
         print("usage: lookahead.py {" + "|".join(VERBS) + "} ...", file=sys.stderr)
         return 2
