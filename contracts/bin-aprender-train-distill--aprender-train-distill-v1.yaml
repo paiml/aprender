@@ -3,7 +3,8 @@
 #
 # Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes live in
 # binary-surface-v1; this file restates none of them. Measured 2026-09-26 on a 0.69.3 build of this tree.
-#   RED today beyond G0.1: the version names "entrenar-distill", not the bin name; 0 ledger rows under that name.
+#   Was RED beyond G0.1: the version named "entrenar-distill", not the bin name. FIXED on batch/ont-10 (2026-09-27):
+#   clap name aprender-train-distill (measured after the fix: "aprender-train-distill 0.69.3"); cli_surface_gate pins the prefix.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
@@ -78,8 +79,8 @@ falsification_tests:
   - id: FALSIFY-BIN-APRENDER-TRAIN-DISTILL-003
     rule: 'G0.1 the version names the commit'
     prediction: '`aprender-train-distill --version` contains the first 9 hex of the git sha it was built from'
-    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands. cargo test -p aprender-train-distill --test cli_surface_gate version_reports_the_crate_version pins only the crate version today'
-    if_fails: 'LIVE RED 2026-09-26: `entrenar-distill 0.69.3` — no sha; a stale aprender-train-distill reads as HEAD; the version names "entrenar-distill", not the bin name'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands. cargo test -p aprender-train-distill --test cli_surface_gate version_reports_the_crate_version pins the "aprender-train-distill <version>" prefix, not the sha'
+    if_fails: 'sha: LIVE RED on 0.69.3 (a stale aprender-train-distill reads as HEAD), clears at rc.1 (car/0.70.0 carries #4219); name: FIXED on batch/ont-10 (was "entrenar-distill 0.69.3")'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-DISTILL-004
     rule: 'G1.3/G1.4 the command set equals the snapshot'

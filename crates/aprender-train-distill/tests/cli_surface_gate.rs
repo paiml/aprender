@@ -66,8 +66,12 @@ fn version_reports_the_crate_version() {
     let out = run(&["--version"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
+    // ONT-10 S17: the version names this binary, not the pre-monorepo `entrenar-distill`.
     assert!(
-        stdout.contains(env!("CARGO_PKG_VERSION")),
+        stdout.starts_with(&format!(
+            "aprender-train-distill {}",
+            env!("CARGO_PKG_VERSION")
+        )),
         "--version printed {stdout:?}, not {}",
         env!("CARGO_PKG_VERSION")
     );

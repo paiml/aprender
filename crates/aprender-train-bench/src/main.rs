@@ -14,7 +14,7 @@ use entrenar_bench::{
 use entrenar_common::cli::{styles, CommonArgs};
 
 #[derive(Parser)]
-#[command(name = "entrenar-bench")]
+#[command(name = "aprender-train-bench")]
 #[command(about = "Distillation benchmarking and hyperparameter sweep tool")]
 #[command(version)]
 struct Cli {

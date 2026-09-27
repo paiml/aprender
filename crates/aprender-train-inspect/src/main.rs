@@ -12,7 +12,7 @@ use entrenar_inspect::{inspect, OutputFormat};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "entrenar-inspect")]
+#[command(name = "aprender-train-inspect")]
 #[command(about = "SafeTensors model inspection and format conversion")]
 #[command(version)]
 struct Cli {
