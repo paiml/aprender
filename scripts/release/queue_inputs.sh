@@ -9,6 +9,8 @@
 #   queue_inputs.sh prop12  <queue-inputs.json> print the Prop 12 verdict per service class (#4519)
 #   queue_inputs.sh untangle [inbox-dir] [days] weekly untangle tally: conflicts per PR + first-CI-run green
 #                                              rate (target >= 0.9) from '| untangle |' inbox lines; no rows = NO-DATA, rc 1
+#   queue_inputs.sh dora-fetch <raw-dir> [days] / dora <raw-dir>   weekly DORA table (lead time, CI p50,
+#                                              PR age, conflicts, change-fail, release cycle, merge commits)
 #   queue_inputs.sh self-test                  planted fixtures, incl. the empty-window and [U] REDs
 #
 # Every input carries {value, n, window, command, method}. The raw files ARE the receipt: compute reads
@@ -81,18 +83,9 @@ ghj() {
     mv -- "$out.tmp" "$out"
 }
 
-fetch() {
-    local d="$1" days="${2:-7}" start end
-    mkdir -p -- "$d"
-    if [ ! -s "$d/window.txt" ]; then             # a resumed fetch keeps its original window
-        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
-        printf '%s %s\n' "$start" "$end" > "$d/window.txt"
-    fi
-    read -r start end < "$d/window.txt"
-    local runq='.workflow_runs[] | {id,name,event,head_sha,head_branch,status,conclusion,created_at,updated_at,run_attempt}'
-
-    ghj "$d/mg_runs.jsonl" api --paginate "repos/$REPO/actions/runs?event=merge_group&created=$start..$end&per_page=100" -q "$runq"
+# fetch_ci_runs <dir> <start> <end> <jq>: every ci.yml run created in the window into <dir>/ci_runs.jsonl.
+fetch_ci_runs() {
+    local d="$1" start="$2" end="$3" runq="$4"
     # The runs API returns at most 1000 rows per filtered query (a 7-day ci.yml window has more), so ask
     # one 12-hour slice at a time and refuse a slice that hit the cap: a truncated slice is not data.
     if [ ! -s "$d/ci_runs.jsonl" ]; then
@@ -112,6 +105,21 @@ fetch() {
         jq -sc 'unique_by(.id) | .[]' "$d/ci_runs.part" > "$d/ci_runs.jsonl"
         rm -f -- "${d:?}/ci_runs.part" "${d:?}/slice.tmp"
     fi
+}
+
+fetch() {
+    local d="$1" days="${2:-7}" start end
+    mkdir -p -- "$d"
+    if [ ! -s "$d/window.txt" ]; then             # a resumed fetch keeps its original window
+        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
+        printf '%s %s\n' "$start" "$end" > "$d/window.txt"
+    fi
+    read -r start end < "$d/window.txt"
+    local runq='.workflow_runs[] | {id,name,event,head_sha,head_branch,status,conclusion,created_at,updated_at,run_attempt}'
+
+    ghj "$d/mg_runs.jsonl" api --paginate "repos/$REPO/actions/runs?event=merge_group&created=$start..$end&per_page=100" -q "$runq"
+    fetch_ci_runs "$d" "$start" "$end" "$runq" || return 1
     ghj "$d/prs_created.json" pr list -R "$REPO" --state all --search "created:>=${start%T*}" --limit 1000 \
         --json number,createdAt,mergedAt,closedAt,state,headRefName,baseRefName
 
@@ -673,6 +681,44 @@ ROWS
     out=$(compute "$t/mut")
     check "mutant: quorum counted as CI flips a passed entry to failed" '.derived.entries.failed == 3' "$out"
 
+    # DORA: planted week with a known answer per metric, then the same files emptied (NO-DATA, never MET).
+    local dd="$t/dora"; mkdir -p "$dd"
+    printf '2026-01-01T00:00:00Z 2026-01-08T00:00:00Z\n' > "$dd/window.txt"
+    cat > "$dd/merged.json" <<'J'
+[{"number":1,"createdAt":"2026-01-02T00:00:00Z","mergedAt":"2026-01-02T01:00:00Z","headRefName":"b1","baseRefName":"main","title":"code"},
+ {"number":2,"createdAt":"2026-01-02T00:00:00Z","mergedAt":"2026-01-03T00:00:00Z","headRefName":"b2","baseRefName":"main","title":"docs"},
+ {"number":3,"createdAt":"2026-01-02T00:00:00Z","mergedAt":"2026-01-02T12:00:00Z","headRefName":"fold/x","baseRefName":"main","title":"fold"}]
+J
+    printf '%s\n' '[{"number":4,"createdAt":"2026-01-07T00:00:00Z","headRefName":"b4","baseRefName":"main","isDraft":false,"mergeable":"CONFLICTING"}]' > "$dd/open.json"
+    cat > "$dd/pr_dora.jsonl" <<'J'
+{"number":1,"changedFiles":1,"files":["a.rs"],"armed":"2026-01-02T00:30:00Z","queued":null,"last_push":"2026-01-02T00:00:00Z","merge_commits":[{"date":"2026-01-02T00:10:00Z","headline":"Merge branch 'main' into b1"},{"date":"2025-12-30T00:00:00Z","headline":"merge origin/main (before the window)"}]}
+{"number":2,"changedFiles":1,"files":["README.md"],"armed":null,"queued":"2026-01-02T22:00:00Z","last_push":"2026-01-02T00:00:00Z","merge_commits":[]}
+{"number":3,"changedFiles":2,"files":["a.rs","b.rs"],"armed":"2026-01-02T11:00:00Z","queued":null,"last_push":"2026-01-02T10:00:00Z","merge_commits":[{"date":"2026-01-02T10:00:00Z","headline":"fold b9 into fold/x"}]}
+{"number":4,"changedFiles":1,"files":["a.rs"],"armed":null,"queued":null,"last_push":"2026-01-07T00:00:00Z","merge_commits":[]}
+J
+    cat > "$dd/ci_runs.jsonl" <<'J'
+{"id":1,"event":"pull_request","head_branch":"b1","conclusion":"success","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:10:00Z"}
+{"id":2,"event":"pull_request","head_branch":"b2","conclusion":"success","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:03:00Z"}
+{"id":3,"event":"pull_request","head_branch":"fold/x","conclusion":"failure","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:20:00Z"}
+{"id":4,"event":"pull_request","head_branch":"b1","conclusion":"cancelled","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T09:00:00Z"}
+J
+    : > "$dd/main_commits.jsonl"
+    for i in $(seq 1 19); do printf '{"sha":"s%s","date":"2026-01-02T00:00:00Z","subject":"feat %s","parents":1}\n' "$i" "$i" >> "$dd/main_commits.jsonl"; done
+    printf '%s\n' '{"sha":"r","date":"2026-01-03T00:00:00Z","subject":"Revert \"feat 1\"","parents":1}' >> "$dd/main_commits.jsonl"
+    uo=$(dora_compute "$dd")
+    check "dora: lead time = first arm (else queue add) -> merged; p50 of 30,60,120 = 60 misses < 60" '.metrics.lead_time_p50_min.value == 60 and .metrics.lead_time_p50_min.n == 3 and .metrics.lead_time_p50_min.ok == false' "$uo"
+    check "dora: CI p50 code 10 min, cancelled run ignored, fold branch not a code PR" '.metrics.ci_p50_code_min.value == 10 and .metrics.ci_p50_code_min.n == 1' "$uo"
+    check "dora: all-.md PR is docs, 3 min misses <= 2" '.metrics.ci_p50_docs_min.value == 3 and .metrics.ci_p50_docs_min.ok == false' "$uo"
+    check "dora: conflicted open PR pushed 24 h ago counts" '.metrics.conflicted_over_4h.value == 1 and .detail.conflicted_prs == [4]' "$uo"
+    check "dora: 1 revert in 20 = 0.05 misses < 5%" '.metrics.change_fail_rate.value == 0.05 and .metrics.change_fail_rate.ok == false' "$uo"
+    check "dora: release cycle from the fold branch run" '.metrics.release_cycle_p50_min.value == 20 and .metrics.release_cycle_p50_min.ok == true' "$uo"
+    check "dora: main-in merge counted, fold merge and pre-window merge not" '.metrics.merge_commit_resolutions.value == 1 and .metrics.fold_merges.value == 1' "$uo"
+    check "dora: verdict names the misses" '.verdict | startswith("MISSED") and test("change_fail_rate")' "$uo"
+    for f in ci_runs.jsonl pr_dora.jsonl main_commits.jsonl; do : > "$dd/$f"; done
+    printf '[]\n' > "$dd/merged.json"; printf '[]\n' > "$dd/open.json"
+    uo=$(dora_compute "$dd")
+    check "dora: empty window is NO-DATA on every metric, never MET" '(.verdict | startswith("NO-DATA")) and ([.metrics[] | select(.ok == true)] | length) == 0' "$uo"
+
     if [ "$fails" -eq 0 ]; then printf 'queue_inputs self-test: PASS\n'; return 0; fi
     printf 'queue_inputs self-test: %s FAIL\n' "$fails"; return 1
 }
@@ -718,6 +764,140 @@ untangle_week() {
     printf '%s' "$out" | jq -e '.verdict == "MET"' >/dev/null
 }
 
+# ---- DORA weekly (operator ask via the cop, 2026-09-27) -------------------------------------------
+# dora_fetch <raw-dir> [days]: merged + open PRs, their arm events / files / branch commits, ci.yml runs
+# and main's commits over the window. Read-only; resumable like fetch.
+dora_fetch() {
+    local d="$1" days="${2:-7}" start end
+    mkdir -p -- "$d"
+    if [ ! -s "$d/window.txt" ]; then
+        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
+        printf '%s %s\n' "$start" "$end" > "$d/window.txt"
+    fi
+    read -r start end < "$d/window.txt"
+    local runq='.workflow_runs[] | {id,name,event,head_sha,head_branch,status,conclusion,created_at,updated_at,run_attempt}'
+    fetch_ci_runs "$d" "$start" "$end" "$runq" || return 1
+    ghj "$d/merged.json" pr list -R "$REPO" --state merged --search "merged:$start..$end" --limit 1000 \
+        --json number,createdAt,mergedAt,headRefName,baseRefName,title || return 1
+    [ "$(jq length "$d/merged.json")" -lt 1000 ] || die "merged PR list hit the 1000-row cap"
+    ghj "$d/open.json" pr list -R "$REPO" --state open --limit 500 \
+        --json number,createdAt,headRefName,baseRefName,isDraft,mergeable || return 1
+    ghj "$d/main_commits.jsonl" api --paginate "repos/$REPO/commits?sha=main&since=$start&until=$end&per_page=100" \
+        -q '.[] | {sha, date: .commit.committer.date, subject: (.commit.message | split("\n")[0]), parents: (.parents | length)}' \
+        || return 1
+    if [ ! -s "$d/pr_dora.jsonl" ]; then
+        local batch q n
+        : > "$d/pr_dora.part"
+        while mapfile -t -n 25 batch && [ "${#batch[@]}" -gt 0 ]; do
+            q='query{repository(owner:"paiml",name:"aprender"){'
+            for n in "${batch[@]}"; do
+                q+="p$n:pullRequest(number:$n){number changedFiles files(first:100){nodes{path}}
+                    timelineItems(first:50,itemTypes:[AUTO_MERGE_ENABLED_EVENT,ADDED_TO_MERGE_QUEUE_EVENT]){
+                      nodes{__typename ... on AutoMergeEnabledEvent{createdAt} ... on AddedToMergeQueueEvent{createdAt}}}
+                    commits(last:100){nodes{commit{committedDate messageHeadline parents{totalCount}}}}}"
+            done
+            q+='}}'
+            gh api graphql -f query="$q" -q '.data.repository[] | select(. != null)
+                | {number, changedFiles, files: [.files.nodes[].path],
+                   armed: ([.timelineItems.nodes[] | select(.__typename == "AutoMergeEnabledEvent") | .createdAt] | min),
+                   queued: ([.timelineItems.nodes[] | select(.__typename == "AddedToMergeQueueEvent") | .createdAt] | min),
+                   last_push: ([.commits.nodes[].commit.committedDate] | max),
+                   merge_commits: [.commits.nodes[].commit | select(.parents.totalCount > 1)
+                                   | {date: .committedDate, headline: .messageHeadline}]}' \
+                >> "$d/pr_dora.part" || return 1
+            sleep 1
+        done < <(jq -r '.[].number' "$d/merged.json" "$d/open.json" | sort -un)
+        jq -c . "$d/pr_dora.part" > "$d/pr_dora.jsonl"
+        rm -f -- "${d:?}/pr_dora.part"
+    fi
+}
+
+# dora_compute <raw-dir>: the weekly DORA table as JSON. Every metric carries {value, n, target, ok};
+# a metric with n = 0 is ok = null (NO-DATA), never a pass. rc 1 when any metric misses or has no data.
+dora_compute() {
+    local d="$1" f
+    for f in window.txt ci_runs.jsonl merged.json open.json main_commits.jsonl pr_dora.jsonl; do
+        [ -f "$d/$f" ] || die "missing $d/$f"
+    done
+    local start end
+    read -r start end < "$d/window.txt"
+    jq -n --arg start "$start" --arg end "$end" --arg relre "$RELEASE_BRANCH_RE" \
+        --slurpfile ci <(cat "$d/ci_runs.jsonl") --slurpfile merged "$d/merged.json" --slurpfile open "$d/open.json" \
+        --slurpfile main <(cat "$d/main_commits.jsonl") --slurpfile pd <(cat "$d/pr_dora.jsonl") -f /dev/stdin <<'JQ'
+def mins($a; $b): (($b | fromdate) - ($a | fromdate)) / 60;
+def pct($p): sort | if length == 0 then null else .[((length - 1) * $p) | floor] end;
+def r2: if . == null then null else (. * 100 | round) / 100 end;
+def m($v; $n; $target; $ok; $method): {value: ($v | r2), n: $n, target: $target, ok: (if $n == 0 or $v == null then null else $ok end), method: $method};
+def inwin: . >= $start and . <= $end;
+$merged[0] as $mg | $open[0] as $op
+| (reduce $pd[] as $p ({}; . + {($p.number | tostring): $p})) as $by
+| (reduce ($mg + $op)[] as $p ({}; . + {($p.headRefName): $p.number})) as $pr_of_branch
+| def docs($n): ($by[$n | tostring]) as $p
+    | $p != null and $p.changedFiles > 0 and $p.changedFiles <= 100 and all($p.files[]; endswith(".md"));
+# Lead time: first auto-merge arm (else first queue add) -> merged, PRs into main.
+  [$mg[] | select(.baseRefName == "main") | . as $p | $by[$p.number | tostring] as $x
+   | ($x.armed // $x.queued) as $arm | select($arm != null) | mins($arm; $p.mergedAt)] as $lead
+| [$mg[] | select(.baseRefName == "main") | select(($by[.number | tostring] | (.armed // .queued)) == null)] as $unarmed
+# CI p50 per class: completed pull_request ci.yml runs of the window's PRs, created -> updated.
+| [$ci[] | select(.event == "pull_request" and (.conclusion == "success" or .conclusion == "failure")
+                  and (.head_branch | test($relre) | not))
+   | $pr_of_branch[.head_branch] as $n | select($n != null)
+   | {docs: docs($n), dur: mins(.created_at; .updated_at)}] as $ciruns
+| [$ciruns[] | select(.docs | not) | .dur] as $ci_code
+| [$ciruns[] | select(.docs) | .dur] as $ci_docs
+# PR age: merged PRs created -> merged; open non-draft PRs created -> window end.
+| [$mg[] | mins(.createdAt; .mergedAt) / 60] as $age_merged
+| [$op[] | select(.isDraft | not) | mins(.createdAt; $end) / 60] as $age_open
+# Conflicted > 4 h: open PRs GitHub reports CONFLICTING whose last push is > 4 h before window end.
+| [$op[] | select(.mergeable == "CONFLICTING") | . as $p | $by[$p.number | tostring].last_push as $lp
+   | select($lp != null and mins($lp; $end) > 240) | $p.number] as $conflicted
+| [$op[] | select(.mergeable == "UNKNOWN")] as $unknown_mergeable
+# Change-fail: reverts landed on main / commits landed on main.
+| [$main[] | select(.subject | test("^(Revert|revert)[ :(\"]"))] as $reverts
+# Release cycle: ci.yml runs on release branches, created -> updated.
+| [$ci[] | select(.event == "pull_request" and (.head_branch | test($relre))
+                  and (.conclusion == "success" or .conclusion == "failure")) | mins(.created_at; .updated_at)] as $rel
+# Merge-commit resolutions: two-parent commits on PR branches, committed in the window.
+# A two-parent commit that pulls main in is a resolution; one that pulls a PR branch into a fold is a fold.
+| [$pd[] | .number as $n | .merge_commits[] | select(.date | inwin) | . + {pr: $n}] as $mc_all
+| [$mc_all[] | select(.headline | test("\\bmain\\b"))] as $mc
+| {window: "\($start)/\($end)",
+   metrics: {
+     lead_time_p50_min: m($lead | pct(0.5); ($lead | length); "< 60"; (($lead | pct(0.5)) < 60);
+                          "first auto-merge arm (else first queue add) -> mergedAt, PRs into main"),
+     lead_time_p90_min: m($lead | pct(0.9); ($lead | length); "report"; true; "same, p90"),
+     ci_p50_code_min: m($ci_code | pct(0.5); ($ci_code | length); "<= 10"; (($ci_code | pct(0.5)) <= 10);
+                        "completed pull_request ci.yml runs of non-docs PRs, created -> updated"),
+     ci_p50_docs_min: m($ci_docs | pct(0.5); ($ci_docs | length); "<= 2"; (($ci_docs | pct(0.5)) <= 2);
+                        "same, PRs whose every file is .md"),
+     pr_age_p90_h_merged: m($age_merged | pct(0.9); ($age_merged | length); "< 24"; (($age_merged | pct(0.9)) < 24);
+                            "merged PRs, createdAt -> mergedAt"),
+     pr_age_p90_h_open: m($age_open | pct(0.9); ($age_open | length); "< 24"; (($age_open | pct(0.9)) < 24);
+                          "open non-draft PRs at window end"),
+     conflicted_over_4h: m($conflicted | length; ($op | length); "0"; (($conflicted | length) == 0);
+                           "open PRs mergeable=CONFLICTING with last push > 4 h ago (GitHub: \($unknown_mergeable | length) UNKNOWN)"),
+     change_fail_rate: m(if ($main | length) > 0 then ($reverts | length) / ($main | length) else null end; ($main | length);
+                         "< 0.05"; (($main | length) > 0 and (($reverts | length) / ($main | length)) < 0.05); "Revert commits / commits on main"),
+     release_cycle_p50_min: m($rel | pct(0.5); ($rel | length); "<= 30"; (($rel | pct(0.5)) <= 30);
+                              "ci.yml pull_request runs on release branches, created -> updated"),
+     merge_commit_resolutions: m($mc | length; ($pd | length); "<= 2 (-> 0)"; (($mc | length) <= 2);
+                                 "two-parent commits on PR branches, committed in the window, whose headline pulls in main"),
+     fold_merges: m(($mc_all | length) - ($mc | length); ($pd | length); "report"; true;
+                    "other two-parent commits on PR branches (folds of PR branches into a batch)")},
+   detail: {conflicted_prs: $conflicted, reverts: [$reverts[] | .subject], merge_commits: $mc, merge_resolutions_by_pr: ($mc | group_by(.pr) | map({pr: .[0].pr, n: length}) | sort_by(-.n)),
+            unarmed_merged_into_main: ($unarmed | length), ci_runs: {code: ($ci_code | length), docs: ($ci_docs | length)}}}
+| .missed = [.metrics | to_entries[] | select(.value.ok == false) | .key]
+| .no_data = [.metrics | to_entries[] | select(.value.ok == null) | .key]
+| .verdict = (if (.missed | length) > 0 then "MISSED \(.missed | join(","))"
+              elif (.no_data | length) > 0 then "NO-DATA \(.no_data | join(","))" else "MET" end)
+JQ
+}
+
+dora_line() {  # one inbox-sized line from dora_compute JSON on stdin
+    jq -r '.metrics as $m | "DORA 7d: lead p50 \($m.lead_time_p50_min.value)m (n\($m.lead_time_p50_min.n)) | CI p50 code \($m.ci_p50_code_min.value)m docs \($m.ci_p50_docs_min.value)m | PR age p90 merged \($m.pr_age_p90_h_merged.value)h open \($m.pr_age_p90_h_open.value)h | conflicted>4h \($m.conflicted_over_4h.value) | change-fail \($m.change_fail_rate.value) | release p50 \($m.release_cycle_p50_min.value)m | main-merges \($m.merge_commit_resolutions.value) (+\($m.fold_merges.value) fold) -> \(.verdict)"'
+}
+
 case "${1:-}" in
     fetch) [ $# -ge 2 ] || die "usage: fetch <raw-dir> [days]"; fetch "$2" "${3:-7}" ;;
     compute) [ $# -eq 2 ] || die "usage: compute <raw-dir>"; cmd_compute "$2" ;;
@@ -725,6 +905,9 @@ case "${1:-}" in
     readset) [ $# -eq 3 ] || die "usage: readset <tree> <raw-dir>"; readset "$2" "$3" ;;
     prop12) [ $# -eq 2 ] || die "usage: prop12 <queue-inputs.json>"; prop12_lines < "$2" ;;
     untangle) shift; untangle_week "$@" ;;
+    dora-fetch) [ $# -ge 2 ] || die "usage: dora-fetch <raw-dir> [days]"; dora_fetch "$2" "${3:-7}" ;;
+    dora) [ $# -eq 2 ] || die "usage: dora <raw-dir>"; out=$(dora_compute "$2"); printf '%s\n' "$out"
+          printf '%s' "$out" | dora_line >&2; printf '%s' "$out" | jq -e '.verdict == "MET"' >/dev/null ;;
     self-test) self_test ;;
     *) die "usage: queue_inputs.sh fetch <raw-dir> [days] | compute <raw-dir> | self-test" ;;
 esac
