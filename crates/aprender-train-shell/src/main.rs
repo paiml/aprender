@@ -5,7 +5,7 @@ use entrenar_shell::{start_with_state, SessionState};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "entrenar-shell")]
+#[command(name = "aprender-train-shell")]
 #[command(about = "Interactive REPL for HuggingFace model exploration and distillation")]
 #[command(version)]
 struct Cli {

@@ -7,12 +7,12 @@
 # binary-aprender-train-shell-v1 — ONT-10 slice S14 (1/2): the `aprender-train-shell` binary as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
 #
 # MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, LC_ALL=C recursive --help walk):
-#   - `aprender-train-shell --version` prints "entrenar-shell 0.69.3": the pre-monorepo name, so the identity shape is
-#     RED today. G0.1 (git sha) is a warning and RED today.
+#   - `aprender-train-shell --version` printed "entrenar-shell 0.69.3", the pre-monorepo name. FIXED 2026-09-27
+#     (clap name; tests/cli_version_name.rs). G0.1 (git sha) is a warning and RED until rc.1.
 #   - no clap subcommands: the surface is the bare REPL, two flags (-c <COMMAND>, -s <SESSION>; -h/-V excluded) and
 #     the REPL's own commands. `-c help` lists 9 REPL commands; the parser (crates/aprender-train-shell/src/
-#     commands.rs:71) also accepts `clear`/`cls`, which help omits. C_repl below is the parser's 10 canonical names,
-#     so a help-walk extractor reads `clear` as a ledger orphan: RED today until help lists it.
+#     commands.rs:71) also accepts `clear`/`cls`, which help omitted. C_repl below is the parser's 10 canonical names;
+#     FIXED 2026-09-27: help lists `clear` (test_general_help_lists_every_parsed_command pins help == parser).
 #   - surface_audit.csv: 13 rows = bare REPL + 2 flag rows + 10 `repl: <cmd>` rows.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
@@ -53,7 +53,6 @@ shapes:
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-train-shell"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-train-shell"]}
-      # LIVE RED 2026-09-27: --version prints "entrenar-shell 0.69.3", not the target name
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^aprender-train-shell [0-9]+\\.[0-9]+\\.[0-9]+"}
       # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
@@ -118,7 +117,7 @@ falsification_tests:
     rule: 'G0.1 the version names the commit'
     prediction: '`aprender-train-shell --version` contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-27: "entrenar-shell 0.69.3" — no sha; a stale aprender-train-shell reads as HEAD'
+    if_fails: 'LIVE RED 2026-09-27: "aprender-train-shell 0.69.3" — no sha; a stale aprender-train-shell reads as HEAD'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'

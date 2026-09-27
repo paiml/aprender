@@ -8,10 +8,10 @@
 # (ONT-001 v4.17 ONT-4g; #4476, #4079)
 #
 # MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features): the --help walk gives 4 leaf
-# commands, set-equal to surface_audit.csv's 4 rows. `aprender-train-lora --version` prints "entrenar-lora 0.69.3":
-# the pre-monorepo name, not the binary's. The identity shape below requires the version string to start with
-# the target name, so it is RED today — a user who runs `aprender-train-lora --version` is told a different
-# program's name. G0.1 (git sha in --version) is a warning and RED today.
+# commands, set-equal to surface_audit.csv's 4 rows. `aprender-train-lora --version` printed "entrenar-lora 0.69.3":
+# the pre-monorepo name. The identity shape below requires the version string to start with the target name;
+# FIXED 2026-09-27 (clap name; tests/cli_surface_gate.rs pins the prefix). G0.1 (git sha in --version) is a
+# warning and RED until rc.1.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
@@ -51,7 +51,6 @@ shapes:
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-train-lora"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-train-lora"]}
-      # LIVE RED 2026-09-27: --version prints "entrenar-lora 0.69.3", not the target name
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^aprender-train-lora [0-9]+\\.[0-9]+\\.[0-9]+"}
       # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
@@ -108,7 +107,7 @@ falsification_tests:
     rule: 'G0.1 the version names the commit'
     prediction: '`aprender-train-lora --version` contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-27: "entrenar-lora 0.69.3" — no sha; a stale aprender-train-lora reads as HEAD'
+    if_fails: 'LIVE RED 2026-09-27: "aprender-train-lora 0.69.3" — no sha; a stale aprender-train-lora reads as HEAD'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-LORA-004
     rule: 'G1.3/G1.4 the command set equals the snapshot'
