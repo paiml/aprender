@@ -244,6 +244,29 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - Real batch > 1 needs Phase 2e: a fused `(input_ids, gradient)` step on the trainer, sized with R6.
   - Any CUDA distill loss curve recorded so far at batch > 1 measured effective batch 1. Treat those receipts as batch 1.
 
+### Spike S-R7 — does `apr merge` keep a Qwen3.5 model a Qwen3.5 model? · `[V]` (2026-09-28, measured, CPU)
+- **Setup:** apr 0.69.3 @574583d382 (private target dir). Inputs are the S-R10 Qwen3.5-0.8B .apr (489 tensors, bf16,
+  2.77 GB) and its bit-identical round-trip copy. Every strategy was run on that identity case: average, weighted 0.7/0.3,
+  slerp, and ties/dare with `--base-model` = the input. Each output was compared with `apr diff --values --limit 1000`
+  and `apr inspect`. Contract `merge-output-fidelity-v1` (MOF-001..005).
+- **Values: correct on the identity case.** All five strategies give 489/489 identical, with no NaN from slerp at angle 0
+  and no drift from ties/dare on a zero task vector. Wall time was 127–472 s for 0.8B on CPU.
+- **Container: wrong for every strategy.** `-o merged.apr` writes a **SafeTensors** file. The first 8 bytes are a header
+  length (`23 eb 00 …`), not `APR\0`. The file has no metadata at all: `architecture`, `hf_architecture`, `model_type` and
+  `rope_theta` are gone, and `apr inspect` guesses `llama`. Tensors are widened from bf16 to F32 (4.51 GB). The writer is
+  `save_safetensors(output_path, …)` (`converter/ties_merge.rs:306`; `merge.rs` imports the same writer), so this is not
+  qwen35-specific. It holds for every architecture.
+- **Why it blocks R7:** a merged Qwen3.5 cannot be served, trained or re-imported as Qwen3.5. S-R10 measured that a bare
+  safetensors without `config.json` re-imports as Qwen2→Qwen3 and fails the GH-279 gate (QFR-003). The hybrid GDN layout
+  survives only as tensor names, and nothing downstream reads it without the config.
+- **Not covered by this spike:** distinct inputs. The identity case cannot tell whether weights are normalised or whether
+  ties trims by the right density. `lora-merge-forward-equivalence-v1` is pure LoRA algebra with no architecture cell. R7's
+  forward-equivalence cell needs a second Qwen3.5 checkpoint (a LoRA-merged 0.8B from R4, or the Base variant).
+- **Consequences:**
+  - Merge must write APR v2 when the output is `.apr` and carry the first input's metadata (MOF-002/003), and it must keep
+    the input dtype unless asked to widen (MOF-004). This comes before any R7 merge receipt, and it is small.
+  - Until then, any "merged model" receipt is a safetensors file that only loads with a hand-copied config.
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
