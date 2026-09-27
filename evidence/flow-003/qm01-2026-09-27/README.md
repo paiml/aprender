@@ -38,3 +38,32 @@ them never re-entered.
   batches, not the queue.
 - `pr-review-quorum` fails on almost every merge_group entry, yet the PRs merge. It is not a required
   queue check, so the queue outcome is `CI` alone.
+
+## QM-08 — q per service class, Prop 12 (aprender#4519)
+
+The classes are FLOW-003 v1.1 §5.1, built from `raw/pr_meta.jsonl` (228 PRs) and `raw/readset.txt`
+(the paths a build/test/doctest reads, taken from tree `8b1efb8dec`). **d**: every file is `.md`,
+the file list is complete, and no file hits the read set. **a**: a fork PR carrying `maintainer-attested`
+(`ATTEST_LABEL`). **x**: everything else. Prop 12 uses q* = 30/(0.5·240) = 0.25 from the [A] inputs.
+The verdict is FAIL if q_c ≥ q*, and PASS if the Wilson 95% upper bound, backed out with f, is below q*.
+Every other case, including n = 0, is NOT-DECIDED.
+
+| class | π | π_eff | n | q_c | q_c 95% upper | T̄_c | Prop 12 |
+|---|---|---|---|---|---|---|---|
+| d docs | 0 | 0 | 0 | — | — | — | NOT-DECIDED |
+| a attested fork | 0 | 0 | 0 | — | — | — | NOT-DECIDED |
+| x full | 1 | 1 | 57 | 0.140 | 0.303 | 44.1 min | NOT-DECIDED |
+
+The self-test plants one docs entry that fails (q_c = 0.5), and it prints **FAIL**. It also plants 21 clean
+docs entries, which print **PASS**.
+
+- **Class d is empty over this window.** Four PRs were all-`.md`: #3566 (CLAUDE.md), #3570
+  (docs/specifications/…), #3572 (docs/roadmaps/…) and #4119 (README.md). Tests or guards read every one of those
+  paths. `toyota_principles_tests.rs:56`, `falsify.rs:394` and `oracle_indexing.rs:277` read
+  `docs/specifications` as a whole directory. `check_roadmap_completion_is_cited.sh` reads `docs/roadmaps`, and
+  tests read README.md and CLAUDE.md. So §5.1 puts all four in x. A docs lane only has traffic if those readers
+  are narrowed, or if §5.1 exempts them.
+- **Class a is empty.** The repo has no attestation label yet.
+- **x is not decided.** With n = 57, its upper bound of 0.30 is above q* = 0.25. It can stay in the full lane.
+- Measure-only: no gate or ruleset changed. The pv binding (`queue-inputs-v1`, §11.3 entity
+  `docs/receipts/flow-003/queue-inputs.json`) waits on QM-00.
