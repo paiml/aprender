@@ -20,10 +20,12 @@
 # THE RULE, over the PR's own diff (base..head):
 #   RED  the diff writes docs/roadmaps/roadmap.yaml (add, edit, delete, or rename
 #        source/destination; --no-renames).
-#   RED  the diff adds or removes a README.md line that is a census line: it
-#        carries a CONTRACT_COUNT marker, or it matches COUNT_RE, the same
-#        extractor check_row_pr_write_set.sh and check_readme_claims.sh read (the
-#        self-test proves the two regexes are byte-identical).
+#   RED  the diff changes a generated README block's BODY (G2, GEN-001 #4526): the
+#        blocks are the names the BASE tree's readme_sync.sh --list-blocks prints
+#        (CONTRACT_COUNT alone before GEN-001); a block added, removed or re-numbered
+#        is a write, prose around it is not. Or it adds or removes a line matching
+#        COUNT_RE, the same extractor check_row_pr_write_set.sh and
+#        check_readme_claims.sh read (the self-test proves the regexes byte-identical).
 #   EXEMPT  a head branch regen/* whose write set is a SUBSET of {roadmap.yaml,
 #        README.md}. That branch is the one writer's post-merge regen PR, and its
 #        content is judged by check_roadmap_fragment_required.sh (== aggregate) and
@@ -54,7 +56,8 @@ ALLOWLIST_DEFAULT="scripts/pr_generated_write_allowlist.tsv"
 ALLOWLIST_CAP="2026-09-26T12:00:00Z"   # cop ruling: no row may outlive the Y4 24h batch limit
 ALLOWLIST_MAX_ROWS=8                    # cop ruling: exactly the 8 PRs in flight at P4; shrink-only
 COUNT_RE='[0-9]+\*{0,2}( +[a-z]+){0,2} +(workspace crates?|contracts?|CLI commands?)\b'   # = check_readme_claims.sh's claim extractors: a line they do not read is not a claim
-MARKER_RE='CONTRACT_COUNT_(START|END)'
+SYNC_FILE="scripts/readme_sync.sh"
+BLOCK_NAME_RE='^[A-Z][A-Z0-9_]*$'
 REGEN_RE='^regen/'
 # OPERATOR A1 (2026-09-25 13:10Z) supersedes the cop's "strict now": REPORT-ONLY for every branch that is
 # not an allowlist row, until ALL of these hold, then ONE commit flips STRICT=1 (the self-test covers both):
@@ -66,6 +69,30 @@ REGEN_RE='^regen/'
 #     any author can name a branch regen/x; its content is still judged by the two content guards).
 # OPERATOR A2 binds in BOTH modes: an allowlist row past its expiry FAILS.
 STRICT=0
+
+# G2 (GEN-001, #4526): the README blocks main regenerates are named by the BASE tree's generator
+# (`readme_sync.sh --list-blocks`) — never by this file, and never by the PR under judgment, which could drop a
+# name from its own copy. A base that predates --list-blocks had one block: CONTRACT_COUNT.
+base_blocks() { # base_blocks <repo> <base> -> block names, one per line; exit 2 when the base's list is unreadable
+    local repo=$1 base=$2 src td out rc=0
+    src=$(git -C "$repo" show "$base:$SYNC_FILE" 2>/dev/null) || { printf 'CONTRACT_COUNT\n'; return 0; }
+    grep -qF -- '--list-blocks' <<<"$src" || { printf 'CONTRACT_COUNT\n'; return 0; }
+    td=$(mktemp -d "${TMPDIR:-/tmp}/prgenws-blocks.XXXXXX")
+    printf '%s\n' "$src" > "$td/readme_sync.sh"   # list mode reads no path; its REPO_ROOT is never used
+    out=$(bash "$td/readme_sync.sh" --list-blocks 2>/dev/null) || rc=$?
+    rm -rf -- "${td:?}"
+    if [ "$rc" != 0 ] || [ -z "$out" ] || grep -qvE -- "$BLOCK_NAME_RE" <<<"$out"; then
+        printf '%s: ENV - %s:%s --list-blocks gave rc=%s and no clean block list (never a pass)\n' "$PROG" "${base:0:9}" "$SYNC_FILE" "$rc" >&2
+        return 2
+    fi
+    printf '%s\n' "$out"
+}
+
+block_bodies() { # block_bodies <repo> <rev> <name>... -> every whole block in <rev>'s README, sorted (a multiset)
+    local repo=$1 rev=$2 text name; shift 2
+    text=$(git -C "$repo" show "$rev:$README_FILE" 2>/dev/null || true)
+    for name in "$@"; do grep -oE -- "<!-- ${name}_START -->[^<]*<!-- ${name}_END -->" <<<"$text" || true; done | LC_ALL=C sort
+}
 
 usage() { printf 'usage: %s [--base <ref>] [--head <ref>] [--branch <name>] [--event <name>] [--pr <N>] [--allowlist <tsv>] | --self-test\n' "$PROG" >&2; exit 2; }
 
@@ -109,7 +136,8 @@ not_allowed() {
 judge() {
     local repo=$1 base=$2 head=$3 branch=$4 event=$5 pr=$6 now=$7 tsv=$8 tag='NOTE '
     [ "$STRICT" = 1 ] && tag='FAIL '
-    local changed hits roadmap_hit=0 f others row rc_l ap ae ae_s
+    local changed hits roadmap_hit=0 f others row rc_l ap ae ae_s blocks block_hits
+    local -a names
     case "$event" in
         merge_group|push)
             printf 'REPORT %s: the %s shape carries no head branch; the write set was judged on the pull_request run (guard_tree in the required `gate`). Not a verdict.\n' "$PROG" "$event"
@@ -119,7 +147,12 @@ judge() {
     git -C "$repo" rev-parse --verify -q "$head^{commit}" >/dev/null || { printf '%s: ENV - head %s is not a commit here (never a pass)\n' "$PROG" "$head" >&2; return 2; }
     changed=$(git -C "$repo" diff --no-renames --name-only "$base" "$head" --) || { printf '%s: ENV - git diff %s %s failed\n' "$PROG" "$base" "$head" >&2; return 2; }
     grep -qxF -- "$ROADMAP_FILE" <<<"$changed" && roadmap_hit=1
-    hits=$(git -C "$repo" diff "$base" "$head" -- "$README_FILE" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE|$MARKER_RE" || true)
+    hits=$(git -C "$repo" diff "$base" "$head" -- "$README_FILE" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE" || true)
+    blocks=$(base_blocks "$repo" "$base") || return 2
+    mapfile -t names <<<"$blocks"
+    # a block is judged by its BODY: prose around it may change, the number inside (or the block itself) may not
+    block_hits=$(diff <(block_bodies "$repo" "$base" "${names[@]}") <(block_bodies "$repo" "$head" "${names[@]}") | sed -n 's/^< /- block /p; s/^> /+ block /p' || true)
+    if [ -n "$block_hits" ]; then hits=$(printf '%s\n%s' "$hits" "$block_hits" | grep . || true); fi
 
     if [ "$roadmap_hit" = 0 ] && [ -z "$hits" ]; then
         printf 'PASS  %s: %s writes no generated file (%s changed path(s))\n' "$PROG" "${branch:-<none>}" "$(grep -c . <<<"$changed" || true)"
@@ -172,7 +205,9 @@ self_test() {
     git -C "$R" init -q; git -C "$R" config user.email t@t; git -C "$R" config user.name t; git -C "$R" config commit.gpgsign false
     printf -- '- id: PMAT-1\n  title: one\n' > "$R/$ROADMAP_FILE"
     printf 'roadmap notes\n' > "$R/docs/roadmaps/README.md"
-    printf '# X\n\nA prose line about contracts and crates.\n| Workspace crates | **80** workspace crates | x |\n| Provable contracts | **<!-- CONTRACT_COUNT_START -->1830<!-- CONTRACT_COUNT_END -->** provable contracts | y |\n| CLI commands | **111** CLI commands | z |\nThe tree carries <!-- CONTRACT_COUNT_START -->1830<!-- CONTRACT_COUNT_END --> contracts across kernels.\n' > "$R/README.md"
+    printf '# X\n\nA prose line about contracts and crates.\n| Workspace crates | **80** workspace crates | x |\n| Provable contracts | **<!-- CONTRACT_COUNT_START -->1830<!-- CONTRACT_COUNT_END -->** provable contracts | y |\n| CLI commands | **111** CLI commands | z |\nThe tree carries <!-- CONTRACT_COUNT_START -->1830<!-- CONTRACT_COUNT_END --> contracts across kernels.\n| Crate dirs | <!-- CRATES_DIR_COUNT_START -->82<!-- CRATES_DIR_COUNT_END --> dirs under crates | w |\n' > "$R/README.md"
+    mkdir -p "$R/scripts"
+    printf '#!/bin/bash\nset -euo pipefail\nBLOCKS=(CONTRACT_COUNT CRATES_DIR_COUNT)\n[ "${1:-}" = --list-blocks ] && { printf "%%s\\n" "${BLOCKS[@]}"; exit 0; }\nexit 2\n' > "$R/$SYNC_FILE"
     printf 'fn main() {}\n' > "$R/crates/x/src/lib.rs"
     ( cd "$R" && git add -A && git commit -qm base )
     BASE=$(git -C "$R" rev-parse HEAD)
@@ -209,6 +244,12 @@ self_test() {
     row 0 "one writer's regen PR" "regen/ branch writing only roadmap.yaml + README: PASS"   regen/roadmap pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml; sed -i "0,/1830/s//1831/" README.md'
     row 1 'AND other paths' "regen/ branch that also writes code: RED"                         regen/roadmap pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml; echo "// x" >> crates/x/src/lib.rs'
     row 1 'a new branch' "a branch merely CONTAINING regen/ is not a regen branch: RED" fix/regen/x pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    # G2 (GEN-001): blocks are named by the BASE generator's --list-blocks and judged by body
+    row 1 'README census' "G2: an owned block body with no count noun (CRATES_DIR_COUNT) bumped: RED" fix/a pull_request '' "$A" 'sed -i "s/-->82</-->83</" README.md'
+    row 1 'README census' "G2: an owned block DELETED (markers and all): RED"                 fix/a pull_request '' "$A" 'sed -i "/Crate dirs/d" README.md'
+    row 1 'README census' "G2: the PR drops the name from ITS generator, then bumps it: RED (base names the blocks)" fix/a pull_request '' "$A" 'sed -i "s/ CRATES_DIR_COUNT)/)/" scripts/readme_sync.sh; sed -i "s/-->82</-->83</" README.md'
+    row 0 'writes no generated file' "G2: prose edited on a block's line, body unchanged: PASS"   fix/a pull_request '' "$A" 'sed -i "s/ contracts across kernels/ contracts across all kernels/" README.md'
+    row 0 'writes no generated file' "G2: the generator itself edited, no README change: PASS"  fix/a pull_request '' "$A" 'echo "# note" >> scripts/readme_sync.sh'
     # the cop's allowlist: live row, expired row, wrong PR, no PR, new branch
     row 0 'ALLOWED' "allowlisted branch + its PR, before expiry: ALLOWED"                     batch/live pull_request 101 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
     row 1 'EXPIRED' "allowlisted branch past its expiry: RED"                                 batch/stale pull_request 102 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
@@ -235,6 +276,23 @@ self_test() {
     n=$((n + 1)); local rc=0
     judge "$R" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef "$BASE" fix/a pull_request '' "$NOW" "$A" > "$TD/out.$n" 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  an unresolvable base is ENV, never a pass\n' "$n"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  unresolvable base\n' "$n" "$rc"; red=1; fi
+
+    # G2: a base whose generator advertises --list-blocks but yields no clean list is ENV, never a pass
+    n=$((n + 1)); rc=0
+    local BROKEN
+    { git -C "$R" checkout -q --detach "$BASE" && printf '#!/bin/bash\n# --list-blocks\nprintf "not a name\\n"\n' > "$R/$SYNC_FILE" && git -C "$R" commit -qam broken; } >/dev/null 2>&1
+    BROKEN=$(git -C "$R" rev-parse HEAD)
+    judge "$R" "$BROKEN" "$BROKEN" fix/a pull_request '' "$NOW" "$A" > "$TD/out.$n" 2>&1 || rc=$?
+    if [ "$rc" = 2 ] && grep -qF 'no clean block list' "$TD/out.$n"; then printf 'ok    row %-2s rc=2  a broken base --list-blocks is ENV, never a pass\n' "$n"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  broken base --list-blocks\n' "$n" "$rc"; sed 's/^/        /' "$TD/out.$n"; red=1; fi
+    # G2: a base with NO generator falls back to the one pre-GEN-001 block, CONTRACT_COUNT
+    n=$((n + 1)); rc=0
+    local NOGEN NOGEN_H
+    { git -C "$R" checkout -q --detach "$BASE" && git -C "$R" update-index --force-remove -- "$SYNC_FILE" && git -C "$R" commit -qm nogen && git -C "$R" checkout -q -- . ; } >/dev/null 2>&1
+    NOGEN=$(git -C "$R" rev-parse HEAD)
+    ( cd "$R" && sed -i "0,/1830/s//1831/" README.md && git commit -qam bump ) >/dev/null 2>&1
+    NOGEN_H=$(git -C "$R" rev-parse HEAD)
+    STRICT=1; judge "$R" "$NOGEN" "$NOGEN_H" fix/a pull_request '' "$NOW" "$A" > "$TD/out.$n" 2>&1 || rc=$?; STRICT=$SHIPPED
+    if [ "$rc" = 1 ] && grep -qF 'CONTRACT_COUNT_START' "$TD/out.$n"; then printf 'ok    row %-2s rc=1  no generator in the base: CONTRACT_COUNT is still a block\n' "$n"; else printf 'FAIL  row %-2s rc=%s (wanted 1)  pre-GEN-001 fallback\n' "$n" "$rc"; sed 's/^/        /' "$TD/out.$n"; red=1; fi
 
     # COUNT_RE must be the SAME extractor the row guard reads (one census definition)
     n=$((n + 1))
