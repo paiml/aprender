@@ -70,6 +70,7 @@ fn ran(o: RatchetOutcome) -> (Verdict, Vec<LintFinding>, RefinementCounters) {
             let Some(GateExtra::Refinement(c)) = result.extra else {
                 panic!("no counters")
             };
+            assert_eq!(result.passed, result.verdict == Verdict::Pass);
             (result.verdict, findings, *c)
         }
         RatchetOutcome::Declined(why) => panic!("declined: {why}"),
@@ -109,6 +110,34 @@ fn equal_head_and_base_pass_and_report_both_counts_for_both_sides() {
         (1, 1, 0, 0)
     );
     assert_eq!(c.base, "base-fixture");
+    assert_eq!(c.base_theorem_modules, 2);
+    assert_eq!(c.pc_resolver, crate::ontology::witness::FIRED);
+}
+
+#[test]
+fn named_lists_twelve_then_counts_the_rest() {
+    let items: Vec<String> = (0..13).map(|i| format!("m{i}")).collect();
+    let refs: Vec<&String> = items.iter().collect();
+    assert_eq!(named(&refs[..1]), "m0");
+    assert!(!named(&refs[..NAMED]).contains("more"));
+    assert!(named(&refs).ends_with("m11 and 1 more"), "{}", named(&refs));
+}
+
+/// The real entry point: no formalization.yaml is one decline, and a formalization outside git is another.
+#[test]
+fn the_entry_point_declines_without_a_formalization_and_without_a_base() {
+    let d = tempfile::tempdir().expect("tmp");
+    let contracts = d.path().join("contracts");
+    std::fs::create_dir_all(&contracts).expect("mkdir");
+    let why = |o: RatchetOutcome| match o {
+        RatchetOutcome::Declined(w) => w,
+        _ => panic!("expected a decline"),
+    };
+    assert!(why(run_refinement_gate(&contracts)).contains("formalization.yaml beside the corpus"));
+    let lean = d.path().join(LEAN_DIR);
+    std::fs::create_dir_all(&lean).expect("mkdir");
+    std::fs::write(lean.join("formalization.yaml"), "models: []\n").expect("write");
+    assert!(why(run_refinement_gate(&contracts)).starts_with("no BASE to compare with"));
 }
 
 #[test]
@@ -255,4 +284,87 @@ fn no_head_tree_no_head_formalization_or_no_base_tree_declines() {
             "{why}"
         );
     }
+}
+
+fn sh_git(dir: &Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+        ])
+        .args(args)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .status()
+        .expect("git")
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+/// A repo whose origin/main holds `formalization.yaml` under LEAN_DIR and one contract.
+fn repo() -> tempfile::TempDir {
+    let d = tempfile::tempdir().expect("tmp");
+    let lean = d.path().join(LEAN_DIR);
+    std::fs::create_dir_all(&lean).expect("mkdir");
+    std::fs::create_dir_all(d.path().join("contracts")).expect("mkdir");
+    std::fs::write(lean.join("formalization.yaml"), "models: []\n").expect("write");
+    std::fs::write(d.path().join("contracts/c.yaml"), "x: 1\n").expect("write");
+    sh_git(d.path(), &["init", "-q"]);
+    sh_git(d.path(), &["add", "."]);
+    sh_git(d.path(), &["commit", "-q", "-m", "base"]);
+    sh_git(
+        d.path(),
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    d
+}
+
+#[test]
+fn base_is_extracted_from_git_at_the_merge_base() {
+    let d = repo();
+    let lean = d.path().join(LEAN_DIR);
+    std::fs::write(lean.join("formalization.yaml"), "models: [head-only]\n").expect("write");
+    let b = BaseTree::extract(d.path(), &d.path().join("contracts")).expect("extract");
+    let head = git(d.path(), &["rev-parse", "HEAD"]).expect("head");
+    assert_eq!(
+        b.label,
+        format!("merge-base(HEAD, origin/main) {}", &head[..12])
+    );
+    let text = std::fs::read_to_string(b.lean.join("formalization.yaml")).expect("base file");
+    assert_eq!(text, "models: []\n");
+    assert!(b.contracts.join("c.yaml").is_file());
+    let scratch = b.dir.clone();
+    drop(b);
+    assert!(
+        !scratch.exists(),
+        "BASE scratch left behind: {}",
+        scratch.display()
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn archive_fails_when_tar_cannot_write() {
+    let d = repo();
+    let commit = git(d.path(), &["rev-parse", "HEAD"]).expect("head");
+    let out = tempfile::tempdir().expect("tmp");
+    // A read-only target: tar fails, git archive does not (one small file fits the pipe).
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(out.path(), std::fs::Permissions::from_mode(0o555)).expect("chmod");
+    let b = BaseTree {
+        dir: out.path().to_path_buf(),
+        lean: out.path().join(LEAN_DIR),
+        contracts: out.path().join("contracts"),
+        label: "t".into(),
+    };
+    let r = b.archive(d.path(), &commit, &[LEAN_DIR]);
+    std::fs::set_permissions(out.path(), std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    assert!(r.is_err(), "{r:?}");
 }
