@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 # rc_cut.sh -- cut vX.Y.Z-rc.N when CI goes green on the tip of release/X.Y.Z (#4285,
-# RC-DOGFOOD-001 §4.1, paiml/infra#1030).
+# RC-DOGFOOD-001 §4.1, paiml/infra#1030), or on the tip of main (#4434).
+#
+# MAIN MODE (#4434, APR-RELEASE-001 rule 17: "rc.N = tag on a queue-green main sha,
+# cut within 5 min of green. No RC branches and no RC CI run.")
+# ---------------------------------------------------------------------------------
+# A merge-queue batch lands on main as a push, and that push re-runs CI on the merged
+# sha. rc-cut.yml also fires on those runs. For main the decider requires, beyond the
+# release/** checks:
+#   - the run's event is `push`. A merge_group run's head branch is
+#     gh-readonly-queue/..., never main, and a pull_request run is not main's sha.
+#   - X.Y.Z is [workspace.package].version at head_sha. A release branch names its
+#     version; main does not, so the version is read, not trusted from a name.
+#   - no final vX.Y.Z tag exists. After the final, main still carries X.Y.Z until the
+#     next bump, and a green push must not mint an rc of a shipped version.
+#   - no vX.Y.Z-rc.* exists yet, unless --next. So every green push on main does not
+#     mint a new rc: the automatic cut is rc.1 only. A promotion failure is answered by
+#     rc.N+1 (rule 17), which a person asks for with --next on the chosen green run.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -36,6 +52,7 @@
 #
 #   rc_cut.sh --run-id <CI run id>      decide, then cut (needs GH_TOKEN, GITHUB_REPOSITORY)
 #   rc_cut.sh --run-id <id> --dry-run   decide and print; write nothing
+#   rc_cut.sh --run-id <id> --next      main only: allow rc.N+1 (a promotion failure)
 #   rc_cut.sh --self-test               case table for the decision, no network
 #
 # EXIT CODES
@@ -55,9 +72,24 @@ rc_version_of_branch() {
     printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+# rc_version_of_run BRANCH EVENT WS_VERSION -> prints X.Y.Z for a candidate run.
+# release/X.Y.Z names its version; main carries it in [workspace.package].version.
+# Returns 1 for anything else. The push-only rule for main is rc_decide's, and run_cut
+# reads WS_VERSION only for a push, so EVENT is not re-checked here.
+rc_version_of_run() {
+    if [ "$1" = main ]; then
+        [[ "$3" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+        printf '%s\n' "$3"; return 0
+    fi
+    rc_version_of_branch "$1"
+}
+
 # rc_decide -- the whole decision, pure. Inputs are named variables so the case table
 # can vary exactly one at a time:
 #   D_REPO D_HEAD_REPO D_BRANCH D_HEAD_SHA D_TIP_SHA
+#   D_EVENT D_WS_VERSION D_NEXT   main mode only: the run's event, the workspace
+#           version at head_sha, and 1 when a person asked for rc.N+1 (--next)
+#   D_FINAL "1" when the final tag v<X.Y.Z> exists (main mode refuses it)
 #   D_JOBS  lines "<job name>\t<conclusion>"
 #   D_TAGS  lines "<tag name>\t<commit sha>" for existing tags matching v<X.Y.Z>-rc.*
 # Prints "cut <tag>" or "skip <reason>". Returns 0 for both.
@@ -66,8 +98,13 @@ rc_decide() {
     if [ "${D_HEAD_REPO:-}" != "${D_REPO:-}" ]; then
         printf 'skip head repository %s is not %s\n' "${D_HEAD_REPO:-?}" "${D_REPO:-?}"; return 0
     fi
-    if ! v=$(rc_version_of_branch "${D_BRANCH:-}"); then
-        printf 'skip branch %s is not release/X.Y.Z\n' "${D_BRANCH:-?}"; return 0
+    if [ "${D_BRANCH:-}" = main ]; then
+        if [ "${D_EVENT:-}" != push ]; then printf 'skip a %s run on main is not a push of a queue-merged sha\n' "${D_EVENT:-?}"; return 0; fi
+        if ! v=$(rc_version_of_run main push "${D_WS_VERSION:-}"); then
+            printf 'skip workspace version %s on main is not X.Y.Z\n' "${D_WS_VERSION:-?}"; return 0
+        fi
+    elif ! v=$(rc_version_of_branch "${D_BRANCH:-}"); then
+        printf 'skip branch %s is not release/X.Y.Z or main\n' "${D_BRANCH:-?}"; return 0
     fi
     for name in "${REQUIRED_CHECKS[@]}"; do
         # Every job with this name must be success, and at least one must exist:
@@ -88,6 +125,12 @@ rc_decide() {
         if [ "$c" = "$D_HEAD_SHA" ]; then printf 'skip %s already points at %s\n' "$name" "$D_HEAD_SHA"; return 0; fi
         [ "$n" -gt "$max" ] && max=$n
     done <<< "${D_TAGS:-}"
+    if [ "$D_BRANCH" = main ]; then
+        if [ "${D_FINAL:-}" = 1 ]; then printf 'skip v%s is already final; main cuts no rc of a shipped version\n' "$v"; return 0; fi
+        if [ "$max" -gt 0 ] && [ "${D_NEXT:-}" != 1 ]; then
+            printf 'skip v%s-rc.%d exists; rc.%d on main is cut only with --next (a promotion failure)\n' "$v" "$max" "$((max + 1))"; return 0
+        fi
+    fi
     printf 'cut v%s-rc.%d\n' "$v" "$((max + 1))"
 }
 
@@ -102,14 +145,29 @@ self_test() {
     base() { D_REPO=paiml/aprender D_HEAD_REPO=paiml/aprender D_BRANCH=release/0.70.0 D_HEAD_SHA=$A D_TIP_SHA=$A D_JOBS=$J_OK D_TAGS=''; }
     echo "$PROG self-test: rc_decide case table"
     base; expect 'cut v0.70.0-rc.1' 'first green run on a fresh release branch -> rc.1 (a red non-required job does not block)'
-    base; D_TAGS=$'v0.70.0-rc.1\t'$B; expect 'cut v0.70.0-rc.2' 'rc.1 exists on an older commit -> rc.2'
+    base; D_TAGS=$'v0.70.0-rc.1\t'"$B"; expect 'cut v0.70.0-rc.2' 'rc.1 exists on an older commit -> rc.2'
     base; D_TAGS=$'v0.70.0-rc.1\tc1\nv0.70.0-rc.3\tc3'; expect 'cut v0.70.0-rc.4' 'gap in numbering -> max+1, never reuse a name'
     base; D_TAGS=$'v0.70.0-rc.1\tc1\nv0.70.0-rc.10\tc10\nv0.70.0-rc.9\tc9'; expect 'cut v0.70.0-rc.11' 'numeric max over the API'"'"'s LEXICAL order (rc.10 sorts before rc.9)'
     base; D_TAGS=$'v0.69.3-rc.7\tc7\nv0.70.0\tcf\nv0.70.00-rc.5\tcx\nv0x70x0-rc.6\tcy'; expect 'cut v0.70.0-rc.1' 'other versions, the final tag and near-miss names (dots are literal) do not count'
     base; D_TAGS=$'v0.70.0-rc.2\t'$A; expect "skip v0.70.0-rc.2 already points at $A" 're-run on an already-cut commit cuts nothing'
-    base; D_BRANCH=main; expect 'skip branch main is not release/X.Y.Z' 'main is not a release branch'
-    base; D_BRANCH=release/0.69.1-batch-2; expect 'skip branch release/0.69.1-batch-2 is not release/X.Y.Z' 'suffixed release branch refused'
-    base; D_BRANCH=release/0.70; expect 'skip branch release/0.70 is not release/X.Y.Z' 'two-part version refused'
+    base; D_BRANCH=release/0.69.1-batch-2; expect 'skip branch release/0.69.1-batch-2 is not release/X.Y.Z or main' 'suffixed release branch refused'
+    base; D_BRANCH=release/0.70; expect 'skip branch release/0.70 is not release/X.Y.Z or main' 'two-part version refused'
+    base; D_BRANCH=gh-readonly-queue/main/pr-1-abc; expect 'skip branch gh-readonly-queue/main/pr-1-abc is not release/X.Y.Z or main' 'a merge_group ref is not main: the cut waits for the push'
+    # main mode (#4434): rc = tag on a queue-green main sha
+    main_base() { base; D_BRANCH=main D_EVENT=push D_WS_VERSION=0.70.0 D_FINAL='' D_NEXT=''; }
+    main_base; expect 'cut v0.70.0-rc.1' 'main: first green push at a new version -> rc.1'
+    main_base; D_EVENT=pull_request; expect 'skip a pull_request run on main is not a push of a queue-merged sha' 'main: a pull_request run cuts nothing'
+    main_base; D_EVENT=merge_group; expect 'skip a merge_group run on main is not a push of a queue-merged sha' 'main: a merge_group run cuts nothing'
+    main_base; D_EVENT=''; expect 'skip a ? run on main is not a push of a queue-merged sha' 'main: an unread event cuts nothing'
+    main_base; D_WS_VERSION=''; expect 'skip workspace version ? on main is not X.Y.Z' 'main: an unread version cuts nothing'
+    main_base; D_WS_VERSION=0.70.0-dev; expect 'skip workspace version 0.70.0-dev on main is not X.Y.Z' 'main: a pre-release workspace version cuts nothing'
+    main_base; D_FINAL=1; expect 'skip v0.70.0 is already final; main cuts no rc of a shipped version' 'main: the final exists -> no rc of a shipped version'
+    main_base; D_TAGS=$'v0.70.0-rc.1\t'"$B"; expect 'skip v0.70.0-rc.1 exists; rc.2 on main is cut only with --next (a promotion failure)' 'main: every green push does not mint an rc'
+    main_base; D_TAGS=$'v0.70.0-rc.1\t'"$B"; D_NEXT=1; expect 'cut v0.70.0-rc.2' 'main: --next after a promotion failure -> rc.N+1'
+    main_base; D_TAGS=$'v0.70.0-rc.1\t'"$A"; D_NEXT=1; expect "skip v0.70.0-rc.1 already points at $A" 'main: --next on an already-cut sha cuts nothing'
+    main_base; D_TIP_SHA="$B"; expect "skip $A is no longer the tip of main (tip $B)" 'main: a superseded push cuts nothing'
+    main_base; D_JOBS=$'ci / gate\tsuccess\nworkspace-test\tfailure'; expect 'skip required check "workspace-test" concluded failure' 'main: red workspace-test cuts nothing'
+    base; D_NEXT=1; D_TAGS=$'v0.70.0-rc.1\t'"$B"; expect 'cut v0.70.0-rc.2' 'release/**: rc.N+1 needs no --next (unchanged)'
     base; D_HEAD_REPO=someone/aprender; expect 'skip head repository someone/aprender is not paiml/aprender' 'fork PR with a release/X.Y.Z head refused'
     base; D_JOBS=$'ci / gate\tfailure\nworkspace-test\tsuccess'; expect 'skip required check "ci / gate" concluded failure' 'red ci / gate cuts nothing'
     base; D_JOBS=$'ci / gate\tsuccess\nworkspace-test\tcancelled'; expect 'skip required check "workspace-test" concluded cancelled' 'cancelled workspace-test cuts nothing'
@@ -158,17 +216,29 @@ post_ok() {  # post_ok <want code> <what> <api_post output>
     return 1
 }
 
+# ws_version_at SHA -> [workspace.package].version of Cargo.toml at SHA, by section
+# (the fleet boxes run python 3.10, which has no tomllib).
+ws_version_at() {
+    local toml
+    toml=$(api_get "contents/Cargo.toml?ref=$1" | json 'import base64; sys.stdout.write(base64.b64decode(d["content"]).decode())') || return 2
+    printf '%s\n' "$toml" | awk -F'"' '/^\[/ { s = $0 } s == "[workspace.package]" && /^version *=/ && !f { print $2; f = 1 }'
+}
+
 run_cut() {
-    local run_id=$1 dry=$2 run v page body n decision tag out merged_at notes ref rc
+    local run_id="$1" dry="$2" next="${3:-0}" run v page body n decision tag out merged_at notes ref rc
     : "${GH_TOKEN:?GH_TOKEN is required}" "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
     run=$(api_get "actions/runs/$run_id") || { echo "$PROG: cannot read run $run_id" >&2; return 2; }
     D_REPO=$GITHUB_REPOSITORY
     D_HEAD_REPO=$(printf '%s' "$run" | json 'print((d.get("head_repository") or {}).get("full_name",""))') || return 2
     D_BRANCH=$(printf '%s' "$run" | json 'print(d.get("head_branch") or "")') || return 2
     D_HEAD_SHA=$(printf '%s' "$run" | json 'print(d.get("head_sha") or "")') || return 2
-    D_JOBS='' D_TAGS='' D_TIP_SHA=''
+    D_EVENT=$(printf '%s' "$run" | json 'print(d.get("event") or "")') || return 2
+    D_JOBS='' D_TAGS='' D_TIP_SHA='' D_WS_VERSION='' D_FINAL='' D_NEXT="$next"
+    if [ "$D_BRANCH" = main ] && [ "$D_EVENT" = push ] && [ "$D_HEAD_REPO" = "$D_REPO" ]; then
+        D_WS_VERSION=$(ws_version_at "$D_HEAD_SHA") || { echo "$PROG: cannot read [workspace.package].version at $D_HEAD_SHA" >&2; return 2; }
+    fi
     # Read the jobs, tip and tags only for a candidate; rc_decide still judges every field.
-    if v=$(rc_version_of_branch "$D_BRANCH") && [ "$D_HEAD_REPO" = "$D_REPO" ]; then
+    if v=$(rc_version_of_run "$D_BRANCH" "$D_EVENT" "$D_WS_VERSION") && [ "$D_HEAD_REPO" = "$D_REPO" ]; then
         page=1
         while :; do  # CI can exceed one page of jobs once shards and matrices are counted: paginate
             body=$(api_get "actions/runs/$run_id/jobs?filter=latest&per_page=$PER_PAGE&page=$page") || { echo "$PROG: cannot read the jobs of run $run_id" >&2; return 2; }
@@ -177,7 +247,7 @@ run_cut() {
             [ "$n" -lt "$PER_PAGE" ] && break
             page=$((page + 1))
         done
-        body=$(api_get "git/ref/heads/release/$v") || { echo "$PROG: cannot read the tip of release/$v" >&2; return 2; }
+        body=$(api_get "git/ref/heads/$D_BRANCH") || { echo "$PROG: cannot read the tip of $D_BRANCH" >&2; return 2; }
         D_TIP_SHA=$(printf '%s' "$body" | json 'print(d["object"]["sha"])') || return 2
         # matching-refs returns [] when nothing matches; an annotated tag is dereferenced to its commit.
         body=$(api_get "git/matching-refs/tags/v$v-rc.") || { echo "$PROG: cannot list the v$v-rc.* tags" >&2; return 2; }
@@ -191,6 +261,10 @@ for ref in json.load(sys.stdin):
     sha = o["sha"] if o["type"] == "commit" else get(o["url"])["object"]["sha"]
     print(ref["ref"][len("refs/tags/"):] + "\t" + sha)
 ') || { echo "$PROG: cannot resolve the v$v-rc.* tags" >&2; return 2; }
+        # The final tag: matching-refs is a PREFIX match, so v0.70.0 also lists v0.70.0-rc.*
+        # and v0.70.01; only the exact ref counts.
+        body=$(api_get "git/matching-refs/tags/v$v") || { echo "$PROG: cannot list the v$v tags" >&2; return 2; }
+        D_FINAL=$(printf '%s' "$body" | V="v$v" json 'import os; print(1 if any(r["ref"] == "refs/tags/" + os.environ["V"] for r in d) else "")') || return 2
     fi
     decision=$(rc_decide)
     summary "### rc-cut: CI run $run_id on ${D_BRANCH:-?} @ ${D_HEAD_SHA:0:9}" "" "$decision"
@@ -231,7 +305,7 @@ for ref in json.load(sys.stdin):
     cut_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002
     notes="Release candidate of ${v}, cut by CI (#4285). Not on crates.io.
 
-Commit \`$D_HEAD_SHA\` on \`release/$v\`, merged $merged_at.
+Commit \`$D_HEAD_SHA\` on \`$D_BRANCH\`, merged $merged_at.
 Gated by CI run https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id (\`ci / gate\` and \`workspace-test\` green).
 Cut at $cut_at. binary-release.yml attaches the apr and pv assets to this DRAFT;
 scripts/release/rc_fleet_stage.sh publishes it only after every reachable fleet host runs it (#4327).
@@ -250,19 +324,20 @@ Install: \`install.sh --version $tag\`, or \`install.sh --channel rc\` for the n
 }
 
 main() {
-    local run_id='' dry=0
+    local run_id='' dry=0 next=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --self-test) self_test; return $? ;;
             --source-only) return 0 ;;
             --run-id) run_id=${2:-}; shift 2 || return 2 ;;
             --dry-run) dry=1; shift ;;
-            -h|--help) sed -n '2,48p' "${BASH_SOURCE[0]}"; return 0 ;;
+            --next) next=1; shift ;;   # main only: allow rc.N+1 after a promotion failure
+            -h|--help) sed -n '2,63p' "${BASH_SOURCE[0]}"; return 0 ;;
             *) echo "$PROG: unknown argument $1" >&2; return 2 ;;
         esac
     done
     [[ "$run_id" =~ ^[0-9]+$ ]] || { echo "$PROG: --run-id <numeric CI run id> is required" >&2; return 2; }
-    run_cut "$run_id" "$dry"
+    run_cut "$run_id" "$dry" "$next"
 }
 
 # Sourced with --source-only (the self-test's mutant): define the functions, run nothing.
