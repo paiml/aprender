@@ -75,6 +75,12 @@
 //!   `apr serve` chat-completion body into a sparse-logits-v1 blob in the local CAS
 //!   under DIR; prints the capture (`logits_sha`, sizes) as JSON for the
 //!   agent-trace-v1 row. Exit 1 on a refused body (nothing is written), 2 on usage.
+//! - `pool-admit ROWS --pool F --quarantine Q` PRM-C6 backfill (contract
+//!   trace-admission-secret-v1): every agent-trace-v1 row through the pool gate
+//!   (sealed-test refusal, G-PROV, both secret scanners); admitted rows to F,
+//!   quarantined rows byte-identical to Q, the per-verdict and per-rule counts as
+//!   JSON. Never overwrites F or Q (exit 1). An empty sealed index is exit 12
+//!   (andon) and writes nothing.
 
 use aprender_review_experiment::b2;
 use aprender_review_experiment::build_corpus::{
@@ -115,6 +121,7 @@ fn main() -> ExitCode {
         Some("lane-kappa") => lane_kappa_cmd(&args[1..]),
         Some("workload") => workload_cmd(&args[1..]),
         Some("sparse-logits") => sparse_logits_cmd(&args[1..]),
+        Some("pool-admit") => pool_admit_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -138,7 +145,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa|workload|sparse-logits> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa|workload|sparse-logits|pool-admit> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -935,19 +942,7 @@ fn b2_cmd(a: &[String]) -> ExitCode {
             });
         }
         let (items, _, _) = corpus()?;
-        let manifest = std::fs::read_to_string(format!("{CORPUS_DIR}/test-manifest-v1.txt"))
-            .map_err(|e| e.to_string())?;
-        let sealed = parse_manifest(&manifest).ok_or("test manifest does not parse")?;
-        let index = match std::fs::read_to_string(format!("{CORPUS_DIR}/test-sketch-v1.txt")) {
-            Ok(t) => Index::new(&sealed)
-                .with_sketches(parse_sketches(&t).ok_or("test sketch file does not parse")?),
-            Err(_) => {
-                eprintln!(
-                    "no test-sketch-v1.txt: exact-hash contamination only (no cluster check)"
-                );
-                Index::new(&sealed)
-            }
-        };
+        let index = sealed_index()?;
         let path = need(&f, "logits")?;
         let jsonl = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
         let k = need(&f, "k")?.parse().map_err(|e| format!("--k: {e}"))?;
@@ -1188,4 +1183,63 @@ fn sparse_logits_cmd(a: &[String]) -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+/// The sealed-test index: the test manifest, plus its cluster sketches when present.
+fn sealed_index() -> Result<Index, String> {
+    let manifest = std::fs::read_to_string(format!("{CORPUS_DIR}/test-manifest-v1.txt"))
+        .map_err(|e| e.to_string())?;
+    let sealed = parse_manifest(&manifest).ok_or("test manifest does not parse")?;
+    Ok(
+        match std::fs::read_to_string(format!("{CORPUS_DIR}/test-sketch-v1.txt")) {
+            Ok(t) => Index::new(&sealed)
+                .with_sketches(parse_sketches(&t).ok_or("test sketch file does not parse")?),
+            Err(_) => {
+                eprintln!(
+                    "no test-sketch-v1.txt: exact-hash contamination only (no cluster check)"
+                );
+                Index::new(&sealed)
+            }
+        },
+    )
+}
+
+fn pool_admit_cmd(a: &[String]) -> ExitCode {
+    use aprender_review_experiment::pool::admit;
+    const USAGE: &str = "usage: rex pool-admit ROWS --pool F --quarantine Q";
+    let (Some(rows_path), Ok(f)) = (a.first(), flags(a.get(1..).unwrap_or_default())) else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    let (Ok(pool), Ok(quarantine)) = (need(&f, "pool"), need(&f, "quarantine")) else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    let run = || -> Result<ExitCode, String> {
+        for out in [pool, quarantine] {
+            if std::path::Path::new(out).exists() {
+                return Err(format!("{out} exists: a backfill never overwrites"));
+            }
+        }
+        let rows = std::fs::read_to_string(rows_path).map_err(|e| format!("{rows_path}: {e}"))?;
+        let adm = admit(&rows, &sealed_index()?);
+        let receipt = adm.receipt();
+        println!(
+            "{}",
+            serde_json::to_string(&receipt).map_err(|e| e.to_string())?
+        );
+        if receipt.unchecked > 0 {
+            eprintln!("rex pool-admit: ANDON sealed index is empty; nothing written");
+            return Ok(ExitCode::from(12));
+        }
+        let lines = |v: Vec<&str>| v.iter().map(|r| format!("{r}\n")).collect::<String>();
+        std::fs::write(pool, lines(adm.pool())).map_err(|e| format!("{pool}: {e}"))?;
+        std::fs::write(quarantine, lines(adm.quarantine()))
+            .map_err(|e| format!("{quarantine}: {e}"))?;
+        Ok(ExitCode::SUCCESS)
+    };
+    run().unwrap_or_else(|e| {
+        eprintln!("rex pool-admit: {e}");
+        ExitCode::from(1)
+    })
 }

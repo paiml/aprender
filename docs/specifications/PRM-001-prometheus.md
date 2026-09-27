@@ -329,7 +329,7 @@ A challenger replaces the champion only if all of these hold on the current seal
 | 1 | PRM-10 | REX-10 | P1 | perf ratchet wired to replay; per-tag issue per worsened stratum; knob sweep per train | `review-lane-perf-ratchet-v1` | 3 real tags recorded; planted +10% RED | 60 | gate landed `634916cbd` |
 | 1 | PRM-02 / 03 | REX-02 / 03 | — | corpus v1; harness + scorer | — | — | — | **DONE** `8185ad1c3` / `0ab6ce731` |
 | 2 | PRM-04 | REX-04 | P2 | cell admission re-run under the `parity.oracle` field | `rex-cell-admission-v1` | ≥ 1 cell `Admitted` or a receipted refusal | 30 | DONE (S-7) → re-run |
-| 2 | PRM-C6 | PRA T6 | P2 | secret gate plus backfill | `trace-admission-secret-v1` | AWS-key literal plus 20 canaries quarantined | 180 | todo |
+| 2 | PRM-C6 | PRA T6 | P2 | secret gate plus backfill | `trace-admission-secret-v1` | AWS-key literal plus 20 canaries quarantined | 180 | gate + `rex pool-admit` backfill on rex/001 (FALSIFY-TAS-001..009); the run over real rows waits on the almacen store (C3–C5, infra) |
 | 2 | PRM-C7–C9 | PRA T7–T9 | P2 | contamination on clusters; MinHash dedup; `repo#PR` time split | `trace-dedup-v1`, `trace-split-guard-v1` | perturbed sealed item refused; 0 cross-split clusters | 360 | todo |
 | 2 | PRM-C10 | PRA T10 | P2 | outcome join (14 d) plus HRQ rulings as gold | `trace-outcome-join-v1` | 3-day-old gold refused; weekly matured count | 150 | todo |
 | 2 | **PRM-C13** | PRA T12–T13 | P2 | G-PROV gate plus κ_err probe (all pairs) | `lane-independence-v1`, `trace-admission-prov-v1` | a planted hosted row in a pool → RED; κ matrix `[V]` | 120 | todo |
@@ -339,7 +339,7 @@ A challenger replaces the champion only if all of these hold on the current seal
 | 4 | PRM-08 | REX-08 | P2 | analysis plus hardware ruling | `prm-001-report-v1` | H1–H7 verdicts; primary/failover or shadow-only with reason | 150 | parked |
 | 5 | **PRM-09** | REX-09 | P3/P4 | ladder: add the **tie-breaker** rung; wire pi (#428) and arbiter (infra#1095) | `rex-promotion-ladder-v2` | planted reports: H4 only → tripwire; H4+H5+H7 → tie-breaker; lambda primary → refused | 60 | gate landed `4a4318f1c` → extend |
 | 6 | PRM-11 | REX-11 | P3 | Q1–Q3 loop (prompt, gold few-shot, json-schema) | `review-champion-challenger-v1` | ≥ 1 challenger end-to-end; counter increments | 120 | gate landed `d8696650e` |
-| 7 | PRM-C11 | PRA T11 | P5 | `sparse-logits-v1` in `apr serve` rows (local only) | `sparse-logits-v1` | header + residual mass round-trip | 180 | todo |
+| 7 | PRM-C11 | PRA T11 | P5 | `sparse-logits-v1` in `apr serve` rows (local only) | `sparse-logits-v1` | header + residual mass round-trip | 180 | `capture` + `rex sparse-logits` on rex/001 (FALSIFY-SPL-005); the rail call in apr-advisory-ask.sh is outside aprender |
 | 7 | PRM-12 | REX-12 | P5 | Q4/Q5: 27B teacher on gx10 → 4B student; gold QLoRA | `review-b2-loop-v1` | teacher dataset receipted (0 test hashes, 0 hosted rows); `NotRun{VerbRefused}` until D-7's train | 180 | gate landed `da7b6386f` |
 
 **Budget:** remaining aprender K̂ = **2,585 min `[A]`** `[C: sum of the rows above]` · **K = 2,840** (1.1 × K̂) · **andon at 2,275** (0.88 × K̂). Foreign rows are outside K.

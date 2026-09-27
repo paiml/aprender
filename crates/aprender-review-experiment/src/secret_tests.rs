@@ -56,7 +56,7 @@ fn planted_aws_key() -> String {
 }
 
 /// The 20 canaries, each labelled with the ONE rule it is planted for.
-fn canaries() -> Vec<(Hit, String)> {
+pub(crate) fn canaries() -> Vec<(Hit, String)> {
     use Scanner::{Builtin as B, Gitleaks as G};
     let mut g = Gen(0x5EC0_0001);
     let pem = |g: &mut Gen, kind: &str| {

@@ -591,4 +591,4 @@ fn is_repetition(s: &str) -> bool {
 
 #[cfg(test)]
 #[path = "secret_tests.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -15,6 +15,9 @@
 //! eligible, whatever else the row claims, and an untagged row cannot be shown
 //! not to be hosted, so it is ineligible too.
 
+use std::collections::BTreeMap;
+
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::contamination::Index;
@@ -70,6 +73,32 @@ impl Admission {
         self.with(|v| matches!(v, Verdict::Quarantined { .. }))
     }
 
+    /// The backfill receipt (PRM-C6): one count per verdict, and how many rows
+    /// each secret rule quarantined, keyed `scanner:rule`.
+    #[must_use]
+    pub fn receipt(&self) -> Backfill {
+        let mut b = Backfill {
+            rows: self.verdicts.len(),
+            ..Backfill::default()
+        };
+        for (_, v) in &self.verdicts {
+            match v {
+                Verdict::Admitted => b.admitted += 1,
+                Verdict::Quarantined { secrets } => {
+                    b.quarantined += 1;
+                    for h in secrets {
+                        let key = format!("{:?}:{}", h.scanner, h.rule).to_lowercase();
+                        *b.rules.entry(key).or_default() += 1;
+                    }
+                }
+                Verdict::Refused { .. } => b.refused += 1,
+                Verdict::Ineligible(_) => b.ineligible += 1,
+                Verdict::Unchecked => b.unchecked += 1,
+            }
+        }
+        b
+    }
+
     fn with(&self, keep: impl Fn(&Verdict) -> bool) -> Vec<&str> {
         self.verdicts
             .iter()
@@ -77,6 +106,19 @@ impl Admission {
             .map(|(r, _)| r.as_str())
             .collect()
     }
+}
+
+/// Counts for one backfill over a JSONL batch ([`Admission::receipt`]).
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+pub struct Backfill {
+    pub rows: usize,
+    pub admitted: usize,
+    pub quarantined: usize,
+    pub refused: usize,
+    pub ineligible: usize,
+    pub unchecked: usize,
+    /// Quarantined rows per `scanner:rule` (a row with two hits counts twice).
+    pub rules: BTreeMap<String, usize>,
 }
 
 /// Admit a JSONL batch of captured rows against the sealed-test index.

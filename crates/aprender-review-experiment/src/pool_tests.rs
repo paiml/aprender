@@ -176,3 +176,54 @@ fn falsify_tap_004_gold_labels_are_eligible_and_only_gold() {
         Verdict::Ineligible(Prov::NotGold("\"quorum_majority\"".into()))
     );
 }
+
+/// FALSIFY-TAS-009 (PRM-C6 acceptance): a backfill over the AWS key literal and
+/// the 20 labelled canaries, each in its own lane row, quarantines all 21
+/// byte-identical, admits the clean neighbour, and the receipt counts every
+/// canary's labelled rule.
+#[test]
+fn falsify_tas_009_backfill_quarantines_the_aws_key_and_twenty_canaries() {
+    let canaries = crate::secret::tests::canaries();
+    assert_eq!(canaries.len(), 20, "precondition: the canary set is 20");
+    let mut planted = vec![row(&format!("key {}", planted_aws_key()))];
+    planted.extend(canaries.iter().map(|(_, text)| row(text)));
+    let clean = row("LGTM: the bound is inclusive, as the test expects.");
+    let batch = format!("{}\n{clean}\n", planted.join("\n"));
+
+    let a = admit(&batch, &index());
+    let r = a.receipt();
+    assert_eq!(
+        (
+            r.rows,
+            r.quarantined,
+            r.admitted,
+            r.refused,
+            r.ineligible,
+            r.unchecked
+        ),
+        (22, 21, 1, 0, 0, 0),
+        "{r:?}"
+    );
+    assert_eq!(
+        a.quarantine(),
+        planted.iter().map(String::as_str).collect::<Vec<_>>()
+    );
+    assert_eq!(a.pool(), vec![clean.as_str()]);
+    for (hit, _) in &canaries {
+        let key = format!("{:?}:{}", hit.scanner, hit.rule).to_lowercase();
+        assert!(
+            r.rules.get(&key).is_some_and(|n| *n >= 1),
+            "{key} not counted: {:?}",
+            r.rules
+        );
+    }
+    assert!(
+        r.rules.keys().any(|k| k.starts_with("builtin:aws")),
+        "the AWS key needs the builtin scanner: {:?}",
+        r.rules
+    );
+
+    // No sealed index: nothing is admitted and every row is counted unchecked.
+    let r = admit(&batch, &Index::new(&[])).receipt();
+    assert_eq!((r.admitted, r.unchecked), (0, 22), "{r:?}");
+}
