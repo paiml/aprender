@@ -1507,6 +1507,15 @@ ont-ratchet:
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
 
+# ONT-3b (#4073): the ONLY writer of formalization.yaml's unrefined_baseline. Down freely; UP only with
+# --remeasure evidence/<quorum receipt> (RATCHET_RECEIPT=...). NEVER in CI.
+.PHONY: refinement-ratchet refinement-ratchet-self-test
+refinement-ratchet:
+	@bash scripts/refinement_ratchet.sh $(if $(RATCHET_RECEIPT),--remeasure $(RATCHET_RECEIPT))
+
+refinement-ratchet-self-test:
+	@bash scripts/refinement_ratchet.sh --self-test
+
 # PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
 # through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
 # NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
