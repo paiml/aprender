@@ -42,3 +42,9 @@ other four.
 
 S1 (pv) is not staged here: it is the ONT-4g exemplar, `contracts/bin-aprender-contracts-cli--pv-v1.yaml`. G0.1 is
 green on S7 (`apr 0.69.3 (b6cf6d2ede)`) and RED on simular and ptop.
+
+| slice | file | binary (package) | commands | RED today |
+|---|---|---|---|---|
+| S18 (1/3) | NEW → contracts/bin-aprender-ptx-debug--aprender-ptx-debug-v1.yaml | aprender-ptx-debug | 3 | unknown flag exits 1 by design (`exit_code_for_parse_error`), G1.2 RED |
+| S18 (2/3) | NEW → contracts/bin-aprender-explain--aprender-explain-v1.yaml | aprender-explain | 7 | `--version` says "trueno-explain"; `ptx -K` is a String checked after clap (exit 1), G1.3 RED |
+| S18 (3/3) | NEW → contracts/bin-aprender-db--aprender-db-v1.yaml | aprender-db | 0; `--config`; 3 HTTP routes | `--version` says "trueno-db"; needs `--features server` to exist |
