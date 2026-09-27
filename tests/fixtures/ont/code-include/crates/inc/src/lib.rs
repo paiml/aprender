@@ -4,3 +4,4 @@ include!("missing.rs");
 pub mod inner {
     include!("inner_body.rs");
 }
+pub mod batch;

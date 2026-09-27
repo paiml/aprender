@@ -377,20 +377,16 @@ impl<'a> Resolver<'a> {
     ) -> Result<Resolved, Unresolved> {
         let mut module = self.file_module(root, root.parent().unwrap_or(root).to_path_buf())?;
         for (i, seg) in segs.iter().enumerate() {
-            let step = match self.step(&module, seg) {
-                Ok(step) => step,
-                // `Type::method`: the last segment may name an impl's self type, not a module.
-                Err(e) if i + 1 == segs.len() => {
-                    return match find_impl_method(&module.items, seg, function) {
-                        Some(mut r) => {
-                            r.file = self.rel(&module.file);
-                            Ok(r)
-                        }
-                        None => Err(e),
-                    };
+            // `Type::method`: the last segment may name an impl's self type, not a module. The impl here wins
+            // over a `use super::Type` here — an impl can sit in any module, and following the `use` would
+            // walk back to where the type is defined and miss this impl.
+            if i + 1 == segs.len() {
+                if let Some(mut r) = find_impl_method(&module.items, seg, function) {
+                    r.file = self.rel(&module.file);
+                    return Ok(r);
                 }
-                Err(e) => return Err(e),
-            };
+            }
+            let step = self.step(&module, seg)?;
             match step {
                 Step::Module(next) => module = next,
                 Step::ReExport(target) => {
@@ -900,6 +896,23 @@ mod tests {
             "{}",
             ghost.reason
         );
+    }
+
+    #[test]
+    fn a_method_resolves_in_the_impl_beside_a_use_of_its_type() {
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/ont/code-include");
+        let ws = Workspace::scan(&root);
+        let mut r = Resolver::new(&ws);
+        let exec = r
+            .resolve("inc::batch::execute::Batch", "execute")
+            .expect("Batch::execute in the child module");
+        assert_eq!(exec.file, "crates/inc/src/batch/execute.rs");
+        assert_eq!(exec.kind, "method");
+        // A method in neither impl is still a ghost, and the defining module's impl still answers for itself.
+        assert!(r.resolve("inc::batch::execute::Batch", "absent").is_err());
+        assert!(r.resolve("inc::batch::Batch", "new").is_ok());
+        assert!(r.resolve("inc::batch::Batch", "execute").is_err());
     }
 
     #[test]
