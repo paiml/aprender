@@ -335,6 +335,10 @@ name = "qwen35_prefill_parity"
 required-features = ["cuda"]
 
 [[example]]
+name = "qwen35_prefill_bench"
+required-features = ["cuda"]
+
+[[example]]
 name = "performance_parity"
 
 [[example]]
