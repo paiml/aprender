@@ -23,6 +23,7 @@
 #       rag eval compare|gate|generate|judge|metrics|retrieve|sample      (aprender-rag-cli feature `eval`)
 #     12 unledgeredCommand: capability, pv census, pv challenge check|gen,
 #       pv discharge check|gen-axioms|label-ratchet|run, pv extract, pv obligations, pv ontology export|tbox.
+#       FIXED 2026-09-27: all 12 now have binary=apr ledger rows (capability by ONT-4g #4476; the 11 `apr pv` mirrors by ONT-10 S9/S7).
 #
 # CONVENTION ASKED OF extract:binary (ONT-4g, aprender-98): (1) a non-leaf whose Usage shows `[COMMAND]` is also a
 # bin:command; (2) only clap's auto-generated `help` is excluded, a user-defined `help` is a command; (3) the
@@ -339,7 +340,7 @@ shapes:
           - "zram create"
           - "zram remove"
           - "zram status"
-      # LIVE RED 2026-09-26: 12 commands with no ledger row, 15 feature-gated ledger rows (header)
+      # LIVE RED: 15 feature-gated ledger rows (header). The 12 unledgered commands are FIXED 2026-09-27
       - {path: bin:unledgeredCommand, maxCount: 0}
       - {path: bin:ledgerOrphan, maxCount: 0}
 
@@ -392,5 +393,5 @@ falsification_tests:
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has ≥1 CLI row per command with binary = apr (318 CLI rows on 2026-09-26)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: 'LIVE RED 2026-09-26: 12 commands unledgered (capability, pv census|challenge *|discharge *|extract|obligations|ontology *), 15 rows orphaned by default-off features (data x doctest|hub|import hf, mono *, rag eval *)'
+    if_fails: 'LIVE RED 2026-09-26: 15 rows orphaned by default-off features (data x doctest|hub|import hf, mono *, rag eval *)'
     mutation: 'delete every apr row; must turn RED naming apr'

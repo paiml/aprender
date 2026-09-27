@@ -14,7 +14,7 @@ and re-run `pv lint contracts/ --gate shapes`. Each header records what was meas
 |---|---|---|---|---|
 | S4 (orchestrate 1/2) | MOVED → contracts/bin-aprender-orchestrate--aprender-orchestrate-v1.yaml (S3 routes folded into the same shape) | aprender-orchestrate | 86 CLI leaves; MCP tools/list = 4 | `--version` says "batuta"; 4 MCP tools unledgered, 6 `mcp:*` ledger rows are not tools/list tools |
 | S3 (orchestrate 2/2) | MOVED → contracts/bin-aprender-orchestrate--aprender-orchestrate-v1.yaml (bin:route in the S4 shape) | aprender-orchestrate | 92 HTTP routes (banco), set-equal to the ledger | extract gap: dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty |
-| S9 (apr(apr-cli) 1/2) | MOVED → contracts/bin-apr-cli--apr-v1.yaml | apr (apr-cli) | 264 (262 leaves + debug + sim help); identity + all CLI — S8 takes the 47 HTTP + mcp rows (split by kind: pv refuses qualifiedValueShape) | 15 ledger rows name feature-gated commands (mono, rag eval, data x doctest/hub); 12 pv/capability commands unledgered |
+| S9 (apr(apr-cli) 1/2) | MOVED → contracts/bin-apr-cli--apr-v1.yaml | apr (apr-cli) | 264 (262 leaves + debug + sim help); identity + all CLI — S8 takes the 47 HTTP + mcp rows (split by kind: pv refuses qualifiedValueShape) | 15 ledger rows name feature-gated commands (mono, rag eval, data x doctest/hub); 12 pv/capability commands unledgered: FIXED 2026-09-27 (ledger rows) |
 | S10 | MOVED → contracts/bin-aprender-data--alimentar-v1.yaml | alimentar (aprender-data) | 31 | 4 ledger rows name feature-gated commands the default build lacks |
 | S16 (1/2) | MOVED → contracts/bin-aprender-qa-cli--apr-qa-v1.yaml | apr-qa (aprender-qa-cli) | 15 | none beyond G0.1 |
 | S16 (2/2) | MOVED → contracts/bin-aprender-train-lora--aprender-train-lora-v1.yaml | aprender-train-lora | 4 | none beyond G0.1 (`--version` said "entrenar-lora" — FIXED) |
@@ -35,7 +35,7 @@ other four.
 
 | slice | file | binary (package) | commands | RED today |
 |---|---|---|---|---|
-| S7 (apr(aprender) 1/2) | MOVED → contracts/bin-aprender--apr-v1.yaml | apr (aprender, the `cargo install aprender` facade) | 264, set-identical to S9; identity + all CLI — S6 takes HTTP + mcp rows | the same 27 paths as S9 (15 feature-gated ledger rows, 12 pv/capability commands unledgered): one ledger fix clears both nodes |
+| S7 (apr(aprender) 1/2) | MOVED → contracts/bin-aprender--apr-v1.yaml | apr (aprender, the `cargo install aprender` facade) | 264, set-identical to S9; identity + all CLI — S6 takes HTTP + mcp rows | the same 27 paths as S9 (15 feature-gated ledger rows, 12 pv/capability commands unledgered, FIXED 2026-09-27 by ledger rows): one ledger fix clears both nodes |
 | S6 (apr(aprender) 2/2) | binary-aprender-apr-2of2-v1.yaml | apr (aprender facade) | 41 HTTP routes + 9 MCP tools, equal to S8; live GGUF 404 index 37 ⊂ 41 (other 4 = other formats/gpu_batch); S7 holds identity + CLI | the same 2 cuda-only ledger rows as S8 (POST /v1/logprobs, /v1/perplexity) |
 | S13 (1/2) | MOVED → contracts/bin-aprender-simulate--simular-v1.yaml | simular (aprender-simulate) | 9, incl. user-defined `help`/`version` | 3 ledger rows (GET /, /health, /ws) are library routes behind feature `web` that no simular command serves |
 | S13 (2/2) | MOVED → contracts/bin-aprender-present-terminal--ptop-v1.yaml | ptop (aprender-present-terminal) | 0; 10 long options | none beyond G0.1. Needs `--features ptop` to exist at all, and `bin:option`, which binary-surface-v1 does not declare yet (S15 uses it too) |

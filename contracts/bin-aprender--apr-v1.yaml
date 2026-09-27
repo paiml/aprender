@@ -26,8 +26,9 @@
 #       data x doctest extract|merge, data x hub push, data x import hf  (aprender-data features doctest / hf-hub)
 #       mono archive|audit|publish|shims                                  (apr-cli feature `dev`)
 #       rag eval compare|gate|generate|judge|metrics|retrieve|sample      (aprender-rag-cli feature `eval`)
-#     12 commands have no ledger row — RED today: capability, pv census, pv challenge check|gen,
+#     12 commands had no ledger row (RED 2026-09-26): capability, pv census, pv challenge check|gen,
 #       pv discharge check|gen-axioms|label-ratchet|run, pv extract, pv obligations, pv ontology export|tbox.
+#       FIXED 2026-09-27: all 12 now have binary=apr ledger rows (capability by ONT-4g #4476; the 11 `apr pv` mirrors by ONT-10 S9/S7).
 #   One fix in the ledger or the build turns both S7 and S9 green: the same 27 paths are named on both nodes.
 #
 # CONVENTION: S9's, unchanged (a runnable non-leaf is a command; only clap's auto help is excluded; the join keys
