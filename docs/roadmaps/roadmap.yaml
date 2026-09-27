@@ -21956,24 +21956,6 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:docs
   notes: null
-- id: PMAT-4261
-  github_issue: 4261
-  item_type: task
-  title: 'Qwen3.5-9B has no temp-0 refs: 0.69.3 G1 shows 9B SKIPPED; refs owed before 0.69.4 acceptance'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-24T16:47:18Z
-  updated: 2026-09-24T16:47:18Z
-  spec: null
-  acceptance_criteria:
-  - 'Temp-0 refs for Qwen3.5-9B-Q4_K_M (sha256 03b74727…) at 850/4k/32k exist and are receipted: apr rc ids per prompt, compared to base 0.69.1 and to llama.cpp on the official template, every divergence measured as a near-tie or reported.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:docs
-  notes: 'evidence/release/0.69.4/refs-qwen35-9b/README.md'
 - id: PMAT-3947
   github_issue: 3947
   item_type: task
@@ -22541,6 +22523,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'
+- id: PMAT-4261
+  github_issue: 4261
+  item_type: task
+  title: 'Qwen3.5-9B has no temp-0 refs: 0.69.3 G1 shows 9B SKIPPED; refs owed before 0.69.4 acceptance'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T16:47:18Z
+  updated: 2026-09-24T16:47:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Temp-0 refs for Qwen3.5-9B-Q4_K_M (sha256 03b74727…) at 850/4k/32k exist and are receipted: apr rc ids per prompt, compared to base 0.69.1 and to llama.cpp on the official template, every divergence measured as a near-tie or reported.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: 'evidence/release/0.69.4/refs-qwen35-9b/README.md'
 - id: PMAT-4263
   github_issue: 4263
   item_type: task
@@ -22792,6 +22792,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Found by aprender-1c while measuring #3714 (cop assignment 2026-09-24). Fix: run_qwen35_generate_dispatch_timed returns setup_ms; inference_result subtracts it.'
+- id: PMAT-4346
+  github_issue: 4346
+  item_type: task
+  title: 'qwen-story-daily builds apr in place instead of cargo-installing into the gx10 host ~/.cargo/bin (fleet-bins clobber) (#4346)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-e6
+  created: 2026-09-25T02:51:16Z
+  updated: 2026-09-25T02:51:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4421
   github_issue: 4421
   item_type: task
@@ -22831,23 +22848,6 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Collapse the ~20 ci.yml jobs into 5 fat jobs; each runs every section (ci/sections.yml, verbatim old job bodies; vendored sovereign-ci verified against its upstream sha256) to completion on the biggest runner in its class via scripts/ci/fat_driver.py. Required contexts gate / workspace-test / ci / gate keep their names. scripts/ci/sigma_executed.py enforces the executed test-id set == the universe listed independently (by id, not count); a dropped test turns it RED. Train-active priority hook kept as a floor. Item 3 (rc.N = tag on queue-green main) and the #4434/#4436 release-rule docs are a follow-up PR. Scope of the driver: fat_driver.py collapses the MULTI-section Linux jobs (x86-main, gx10, yoga, determinism); mac-check is the ruling''s mac-refusal job, already ONE section on the one macOS runner (no docker there), so it keeps its steps and its context name, and as on main it is not in gate.needs.'
-- id: PMAT-4346
-  github_issue: 4346
-  item_type: task
-  title: 'qwen-story-daily builds apr in place instead of cargo-installing into the gx10 host ~/.cargo/bin (fleet-bins clobber) (#4346)'
-  status: in_progress
-  priority: high
-  assigned_to: aprender-e6
-  created: 2026-09-25T02:51:16Z
-  updated: 2026-09-25T02:51:16Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
 - id: PMAT-4453
   github_issue: 4453
   item_type: task
