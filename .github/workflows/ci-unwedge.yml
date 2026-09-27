@@ -65,7 +65,7 @@ jobs:
       # so a broken derivation cancels nothing instead of cancelling the queue.
       # Every guard is mutation-proved load-bearing; see the script header.
       - name: Predicate falsifier (must pass before anything is cancelled)
-        run: bash scripts/check_ci_unwedge.sh --self-test
+        run: setsid --wait bash scripts/check_ci_unwedge.sh --self-test
 
       - name: Scan and free
         env:
@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${DRY_RUN:-false}" = "true" ]; then
-            bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20 --dry-run
+            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20 --dry-run
           else
-            bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20
+            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20
           fi

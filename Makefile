@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
+.PHONY: all build guards-local test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -267,6 +267,8 @@ tier3:
 	@echo "Checking no test asserts about the fd 0 it inherited (aprender#2307)..."
 	@bash scripts/check_hermetic_stdin_tests.sh --self-test
 	@bash scripts/check_hermetic_stdin_tests.sh
+	@echo "Checking fleet hosts accept only the manifest nightly apr/pv (aprender#4186)..."
+	@bash scripts/check_nightly_pin.sh --self-test
 	@echo "Checking no declared-unsupported capability is already implemented (aprender#3686)..."
 	@bash scripts/check_unwired_capabilities.sh --self-test
 	@bash scripts/check_unwired_capabilities.sh
@@ -628,31 +630,17 @@ census:
 # with that list's own status (pv's rc through the pipe, via -o pipefail).
 # Case table + mutants: scripts/tests/make_contracts_propagates.sh.
 contracts:
-	@set -e
-	@echo "== provable contracts: pv lint contracts/ =="
-	@# `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
-	@# result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
-	@# is Verification Discipline #1 in the release's own contract gate, and
-	@# contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
-	@# not for a pipe. The output is kept to a tail for readability by writing it to a file and
-	@# tailing THAT, so the exit status belongs to pv and nothing else.
-	@. scripts/pv_bin.sh && ( "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc ) || exit
-	@echo "== census: a FRESH pv census holds its invariants (ONT-001 ONT-1, F-1; #3569) =="
-	@# The tracked contracts/census.json is a release-train snapshot (its one writer,
-	@# `make census`) and is expected to lag; a PR may not edit it
-	@# (scripts/check_census_derived.sh). So the census is computed fresh into a temp
-	@# file, its identities are checked there, and the README count (readme_sync's
-	@# tree listing) must equal its n_files — the tracked file is not rewritten.
-	@. scripts/pv_bin.sh && t=$$(mktemp) && ( "$$PV" census contracts --format json > "$$t" && bash scripts/check_census_derived.sh --census "$$t" && CENSUS_JSON="$$t" bash scripts/readme_sync.sh --check; rc=$$?; rm -f "$$t"; exit $$rc ) || exit
-	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
-	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null || exit
-	@echo "== README states the tree's count (the listing readme_sync uses; the fresh census was held to it above) =="
-	@bash scripts/readme_sync.sh --check
-	@echo "== provenance marks, interim (ONT-001 R-10) =="
-	@bash scripts/lint-provenance.sh --self-test
-	@bash scripts/lint-provenance.sh contracts/external-corpora.yaml
+# #4475: the steps live in scripts/contracts_gate.sh. The recipe used to hold them as lines, and under
+# `.ONESHELL` + `.SHELLFLAGS := -o pipefail -c` (no -e) the whole recipe is ONE bash script: the lint line's
+# unconditional `exit $$rc` ended it on a GREEN lint, so the census diff, `extract --check`, the README sync
+# and provenance never ran — and had they run, a failing middle line would not have failed the recipe. The
+# gate runs EVERY step, prints `N of 6 step(s) RAN, M FAILED`, fails closed on a shapes verdict it cannot
+# measure, and regenerates census.json / contracts.nt / shapes.ttl then asks `git diff --exit-code`.
+	@bash scripts/contracts_gate.sh || exit 1
 	@echo "== contract engine tests =="
-	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
+	@# Same shape as pv lint above: the old `| grep | tail -1` printed the verdict and
+	@# discarded it (the exit status was tail's), so a failing engine test passed the gate.
+	@t=$$(mktemp) && ( cargo test -p aprender-contracts --lib > "$$t" 2>&1; rc=$$?; grep -E "test result" "$$t" | tail -1; [ $$rc -eq 0 ] || tail -30 "$$t"; rm -f "$${t:?}"; exit $$rc ) || exit
 
 # #3839: skips are EXACT full test paths from scripts/coverage-skips.txt, one reason
 # per entry. They used to be 19 --skip substrings that removed 2,713 tests (2,702 of
@@ -868,6 +856,11 @@ dev: tier1
 
 # Pre-push checks
 pre-push: tier3
+
+# Run CI's guard steps locally, every step, with the SAME script CI runs (#4415, #4416)
+guards-local: ## Run every guard-cargo/guard-tree step CI runs, all of them, streaming
+	@bash scripts/ci_guards.sh --check-coverage
+	@bash scripts/ci_guards.sh
 
 # CI/CD checks
 ci: tier4

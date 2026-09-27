@@ -55,6 +55,9 @@ while [ $# -gt 0 ]; do
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
+    # --fit-probe <gguf>: one fit verdict (#4016), printed as JSON; exit 0 only on "fits". For the
+    # case table in check_model_ladder.sh (fits / does not fit / verdict missing / tool absent).
+    --fit-probe) [ $# -ge 2 ] || { echo "model_ladder: --fit-probe needs a gguf" >&2; exit 2; }; FIT_PROBE="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -424,6 +427,37 @@ if [ "${LOCK_PROBE:-0}" = 1 ]; then
   apr_locked "$@"; rc=$?
   [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $*"
   exit "$rc"
+fi
+
+# THE FIT GATE (#4016, operator 2026-09-23: "use their tool as the guide until we develop a parity tool
+# or better, and require for any model certification and testing"). Before a GPU-claiming cell is
+# measured, llama.cpp's `llama-fit-params` from the PINNED commit must say the model fits FULLY on this
+# host's GPU at ctx >= 4096. Anything else (does not fit, partial offload, no parsable verdict, tool
+# absent, a build of another commit) REFUSES the cell: recorded RED, never skipped. The verdict and its
+# inputs (llama.cpp sha, free MiB, fitted -c/-ngl) go into the receipt row. The probe touches the GPU
+# only to read free memory, and runs under the same fleet lock and choom as every apr call.
+LLAMA_FIT="${MODEL_LADDER_FIT:-$HOME/src/llama.cpp-d1d3c3396/build/bin/llama-fit-params}"
+FIT_PIN="${MODEL_LADDER_FIT_PIN:-d1d3c3396}"
+fit_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$LLAMA_FIT" "$@"; }
+fit_verdict() { # fit_verdict <gguf> -> one JSON fit record on stdout (scripts/lib/llama_fit_verdict.py)
+  local found=0 rc=0 free vf sf
+  vf=$(mktemp) || return 2
+  sf=$(mktemp) || { rm -f "$vf"; return 2; }
+  if [ -x "$LLAMA_FIT" ]; then
+    found=1
+    fit_locked --version > "$vf" 2>&1; rc=$?
+    [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "llama-fit-params --version"
+    fit_locked --model "$1" > "$sf" 2> /dev/null; rc=$?
+    [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "llama-fit-params $1"
+  fi
+  free="${MODEL_LADDER_FREE_MIB:-$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2> /dev/null | head -1 | tr -d ' ')}"
+  # MODEL_LADDER_FIT_LIB: a mutant copy of the verdict module, in check_model_ladder.sh --self-test.
+  python3 "${MODEL_LADDER_FIT_LIB:-scripts/lib}/llama_fit_verdict.py" "$found" "$FIT_PIN" "$rc" "${free:-unknown}" "$vf" "$sf" "$1"
+  rm -f "$vf" "$sf"
+}
+if [ -n "${FIT_PROBE:-}" ]; then
+  rec=$(fit_verdict "$FIT_PROBE"); printf '%s\n' "$rec"
+  grep -q '"verdict": "fits"' <<< "$rec"; exit $?
 fi
 
 host_id() {
@@ -877,6 +911,25 @@ measure() {
   # GPU-capability gate. The judge accepts a SKIPPED capability_match only when cuda is not claimed,
   # and check_model_ladder.sh refuses any Q4_K rung that does not claim cuda (#3712).
   case ",$rbackends," in *,cuda,*|*,gpu,*) ;; *) cap_flag="--skip-capability" ;; esac
+  # #4016: the fit gate, BEFORE any apr call. A GPU-claiming cell llama.cpp does not place fully on
+  # this GPU is refused (RED, recorded with its verdict); a CPU-only cell places nothing on the GPU.
+  local fit_json
+  case ",$rbackends," in
+    *,cuda,*|*,gpu,*)
+      fit_json=$(fit_verdict "$path")
+      if ! grep -q '"verdict": "fits"' <<< "$fit_json"; then
+        python3 - "$rid" "$rfile" "$rinv" "$got" "$rreq" "$fit_json" >> "$ROWS" <<'PY'
+import json, sys
+rid, rfile, inv, sha, req, fit = sys.argv[1:7]
+print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv == "1", "present": True, "sha_ok": True,
+                  "sha256": sha, "required": req == "1", "fit": json.loads(fit), "refused": "fit", "green": False}))
+PY
+        EXECUTED=$((EXECUTED + 1)); RED=$((RED + 1))
+        printf '  [REFUSE] %-30s fit: %s\n' "$rid" "$(python3 -c 'import json,sys; f=json.loads(sys.argv[1]); print(f["verdict"]+" -- "+f["reason"])' "$fit_json")"
+        return
+      fi ;;
+    *) fit_json='{"verdict": "not-applicable", "reason": "cpu-only cell: nothing is placed on the GPU"}' ;;
+  esac
   # shellcheck disable=SC2086
   apr_locked qa "$path" --json --offline --skip-throughput --skip-ollama --skip-gpu-speedup \
       --skip-ptx-parity --skip-gpu-state --skip-format-parity $cap_flag > "$qa_json" 2> "$qa_json.err"; qa_rc=$?
@@ -1075,11 +1128,12 @@ print(json.dumps({"probed": False,
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to
   # this receipt compares two measurements instead of trusting the receipt's own claim that it checked.
   row_err="$WORK/${rid//[^A-Za-z0-9._-]/_}.rowbuild.err"
-  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" "$row_arch" 2>"$row_err" <<'PY'
+  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" "$row_arch" "$fit_json" 2>"$row_err" <<'PY'
 import json, sys
 rid, qa, be, qa_rc = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4])
 req, sha, rfile, inv_only = sys.argv[5] == "1", sys.argv[6], sys.argv[7], sys.argv[8] == "1"
 arch = sys.argv[9]
+fit = json.loads(sys.argv[10])
 cap = qa.get("capability_match", {})
 # `passed` is already normalised (skipped => passed=False) by the gate() reader above, but the
 # judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
@@ -1165,7 +1219,7 @@ print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv_only, "present
                   "golden_output": qa.get("golden_output"), "gates": qa.get("gates"),
                   "gates_failed": gates_failed, "gates_reported": qa.get("gates_reported"),
                   "gates_account_for_rc": accounts_for_rc,
-                  "backends": be, "green": green}))
+                  "backends": be, "fit": fit, "green": green}))
 PY
 )
   # ── #3842: NEVER append an empty line ────────────────────────────────────────

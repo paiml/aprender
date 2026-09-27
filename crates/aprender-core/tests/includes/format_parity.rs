@@ -72,7 +72,9 @@ fn dd5_license_allows_airgap() {
     // `../../` from tests/includes/ was the repo root before APR-MONO moved
     // aprender-core under crates/. It now resolves to crates/aprender-core/,
     // which has no LICENSE - so this target has not compiled since the move.
-    let Some(license) = provable_contracts::workspace_file_or_skip!("dd5_license_allows_airgap", "LICENSE") else {
+    let Some(license) =
+        provable_contracts::workspace_file_or_skip!("dd5_license_allows_airgap", "LICENSE")
+    else {
         return;
     };
 

@@ -13,13 +13,13 @@
 //! cargo build --release --features embeddings
 //!
 //! # Index documents with semantic embeddings
-//! trueno-rag index --path docs/ --output index/ --embedder semantic
+//! aprender-rag index --path docs/ --output index/ --embedder semantic
 //!
 //! # Index with recursive directory walking and subtitle support
-//! trueno-rag index --path /data/ --output index/ --recursive
+//! aprender-rag index --path /data/ --output index/ --recursive
 //!
 //! # Index with timestamp-aware chunking for media transcripts
-//! trueno-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
+//! aprender-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
 //! ```
 
 // APR-MONO §S #1976: this crate joined the workspace via flat-layout relocation, so it now
@@ -87,7 +87,7 @@ pub enum BackendType {
 }
 
 #[derive(Parser)]
-#[command(name = "trueno-rag")]
+#[command(name = "aprender-rag")]
 #[command(author = "Pragmatic AI Labs")]
 #[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 #[command(about = "Pure-Rust RAG pipeline CLI", long_about = None)]
@@ -194,15 +194,15 @@ pub enum Commands {
         top_k: usize,
 
         /// Output format (text, json)
-        #[arg(short, long, default_value = "text")]
+        #[arg(short, long, default_value = "text", value_parser = ["text", "json"])]
         format: String,
 
         /// Retrieval mode: dense, sparse (BM25), hybrid (BM25 + dense RRF)
-        #[arg(long, default_value = "hybrid")]
+        #[arg(long, default_value = "hybrid", value_parser = ["dense", "sparse", "hybrid"])]
         mode: String,
 
         /// Fusion strategy (hybrid mode only): rrf, linear, dbsf
-        #[arg(long, default_value = "rrf")]
+        #[arg(long, default_value = "rrf", value_parser = ["rrf", "linear", "dbsf"])]
         fusion: String,
 
         /// Fusion parameter: RRF k value or Linear dense_weight
@@ -214,7 +214,7 @@ pub enum Commands {
         candidates: usize,
 
         /// Reranking strategy: none, lexical
-        #[arg(long, default_value = "none")]
+        #[arg(long, default_value = "none", value_parser = ["none", "lexical"])]
         rerank: String,
 
         /// Enable HyDE (Hypothetical Document Embeddings) query expansion.
@@ -383,11 +383,11 @@ enum EvalAction {
         top_k: usize,
 
         /// Retrieval mode: dense (TF-IDF only), sparse (BM25 only), hybrid (fused)
-        #[arg(long, default_value = "dense")]
+        #[arg(long, default_value = "dense", value_parser = ["dense", "sparse", "hybrid"])]
         mode: String,
 
         /// Fusion strategy (hybrid mode only): rrf, linear, dbsf
-        #[arg(long, default_value = "rrf")]
+        #[arg(long, default_value = "rrf", value_parser = ["rrf", "linear", "dbsf"])]
         fusion: String,
 
         /// Fusion parameter: RRF k value or Linear dense_weight
@@ -399,7 +399,7 @@ enum EvalAction {
         candidates: usize,
 
         /// Reranking strategy: none, lexical
-        #[arg(long, default_value = "none")]
+        #[arg(long, default_value = "none", value_parser = ["none", "lexical"])]
         rerank: String,
 
         /// Enable HyDE (Hypothetical Document Embeddings) query expansion.
@@ -1131,6 +1131,36 @@ mod tests {
     fn test_parse_fusion_strategy_unknown() {
         let result = parse_fusion_strategy("unknown", None);
         assert!(result.is_err());
+    }
+
+    /// FALSIFY-BIN-TRUENO-RAG-004 (G1.3): an unknown enumerated value is a clap
+    /// usage error (exit 2, possible values listed), not a runtime failure
+    /// after the index loads — and `--format` no longer prints text for any
+    /// value that is not `json`.
+    #[test]
+    fn test_query_enumerated_values_are_parsed_by_clap() {
+        use clap::error::ErrorKind;
+        let base = ["trueno-rag", "query", "q", "--index", "idx"];
+        for flag in ["--format", "--mode", "--fusion", "--rerank"] {
+            let Err(err) = Cli::try_parse_from(base.iter().copied().chain([flag, "nosuch"])) else {
+                panic!("{flag} nosuch was accepted");
+            };
+            assert_eq!(err.kind(), ErrorKind::InvalidValue, "{flag}");
+            assert_eq!(err.exit_code(), 2, "{flag}");
+        }
+        for (flag, v) in [
+            ("--format", "json"),
+            ("--mode", "sparse"),
+            ("--fusion", "dbsf"),
+            ("--rerank", "lexical"),
+        ] {
+            assert!(
+                Cli::try_parse_from(base.iter().copied().chain([flag, v])).is_ok(),
+                "{flag} {v}"
+            );
+        }
+        // the defaults are members of their own sets
+        assert!(Cli::try_parse_from(base).is_ok());
     }
 
     #[test]

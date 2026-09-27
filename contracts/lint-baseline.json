@@ -1,7 +1,9 @@
 {
   "_spec": "APR-RELEASE-001 §11.2 counters are MEASURED comparand->head by scripts/check_ont_ratchet.sh (#3569); this file holds decisions only",
   "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes"],
-  "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green", "capability-cells"],
+  "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green", "readme-root", "claude-md", "model-setfit-slice", "csv-train", "capability-cells"],
+  "readme": {"verified_commands":["setsid --wait bash scripts/check_readme_claims.sh"],"withdrawn":[]},
+  "claude_md": {"verified_commands":["setsid --wait bash scripts/check_package_includes.sh"],"withdrawn":[]},
   "contracts_without_valid_under": 386,
   "command": "make lint-ratchet",
   "unpaired_theorem_modules": 130,

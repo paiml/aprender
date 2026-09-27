@@ -63,14 +63,14 @@ presentar-widgets = "0.2"
 cargo install ttop
 
 # Or run ptop directly from presentar-terminal
-cargo run -p presentar-terminal --features ptop --bin ptop
+cargo run -p aprender-present-terminal --features ptop --bin aprender-ptop
 
 # Run examples
-cargo run --example brick_computer -p presentar
-cargo run --example dashboard -p presentar
+cargo run --example brick_computer -p aprender-present-lib
+cargo run --example dashboard -p aprender-present-lib
 
 # Build for WASM
-cargo build --target wasm32-unknown-unknown -p presentar
+cargo build --target wasm32-unknown-unknown -p aprender-present-lib
 ```
 
 ## Quick Start
@@ -130,7 +130,7 @@ println!("Can render: {}", button.can_render());
 The `brick_computer` example demonstrates Brick Architecture with SIMD lane visualization:
 
 ```bash
-cargo run --example brick_computer -p presentar
+cargo run --example brick_computer -p aprender-present-lib
 ```
 
 **Visual Features (trueno-viz polish):**
@@ -159,7 +159,7 @@ cargo run --example brick_computer -p presentar
 
 ## Examples
 
-Run examples with `cargo run --example <name> -p presentar`:
+Run examples with `cargo run --example <name> -p aprender-present-lib`:
 
 | Example | Description |
 |---------|-------------|
@@ -261,7 +261,7 @@ btop/htop-style terminal UI widgets with full Unicode and color support:
 
 ```bash
 # Run system dashboard example (cbtop)
-cargo run -p presentar-terminal --example system_dashboard
+cargo run -p aprender-present-terminal --example system_dashboard
 ```
 
 ## Architecture

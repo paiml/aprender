@@ -2156,8 +2156,8 @@ mod pmat3477_f2_batched_probe_cuda_tests {
             eprintln!("SKIP: no model at {}", path.display());
             return;
         }
-        let _skip_probe = crate::cuda_executor_or_skip!(0);
-        drop(_skip_probe);
+        let skip_probe = crate::cuda_executor_or_skip!(0);
+        drop(skip_probe);
 
         // Force the batched path so the routing under test is the one taken,
         // regardless of this box's compute capability.

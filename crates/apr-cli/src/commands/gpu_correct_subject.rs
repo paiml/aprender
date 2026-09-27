@@ -40,14 +40,22 @@ impl SurfaceVerdict {
         verdict: provable_contracts::ontology::verdict::Verdict,
         detail: impl Into<String>,
     ) -> Self {
-        Self { surface, verdict, detail: detail.into() }
+        Self {
+            surface,
+            verdict,
+            detail: detail.into(),
+        }
     }
 
     /// A surface that was never evaluated on this subject. Absence is
     /// `Unknown(NotRun)`, never agreement (#3821 done_when 3).
     pub fn not_run(surface: &'static str) -> Self {
         use provable_contracts::ontology::verdict::{Reason, Verdict};
-        Self::new(surface, Verdict::Unknown(Reason::NotRun), "not evaluated on this subject")
+        Self::new(
+            surface,
+            Verdict::Unknown(Reason::NotRun),
+            "not evaluated on this subject",
+        )
     }
 }
 
@@ -80,12 +88,19 @@ pub(crate) fn reconcile_gpu_correct(subject: &str, surfaces: &[SurfaceVerdict]) 
         };
     }
 
-    let verdict = surfaces.iter().map(|s| s.verdict).fold(Verdict::Pass, Verdict::meet);
+    let verdict = surfaces
+        .iter()
+        .map(|s| s.verdict)
+        .fold(Verdict::Pass, Verdict::meet);
 
-    let passed: Vec<&SurfaceVerdict> =
-        surfaces.iter().filter(|s| s.verdict == Verdict::Pass).collect();
-    let failed: Vec<&SurfaceVerdict> =
-        surfaces.iter().filter(|s| s.verdict == Verdict::Fail).collect();
+    let passed: Vec<&SurfaceVerdict> = surfaces
+        .iter()
+        .filter(|s| s.verdict == Verdict::Pass)
+        .collect();
+    let failed: Vec<&SurfaceVerdict> = surfaces
+        .iter()
+        .filter(|s| s.verdict == Verdict::Fail)
+        .collect();
 
     let contradiction = (!passed.is_empty() && !failed.is_empty()).then(|| {
         let mut lines = vec![format!(
@@ -110,7 +125,11 @@ pub(crate) fn reconcile_gpu_correct(subject: &str, surfaces: &[SurfaceVerdict]) 
         .map(|s| s.surface)
         .collect();
 
-    SubjectReport { verdict, contradiction, not_run }
+    SubjectReport {
+        verdict,
+        contradiction,
+        not_run,
+    }
 }
 
 /// The subject tuple, rendered. Keyed on the model's CONTENT, not its path —
@@ -130,7 +149,11 @@ pub(crate) const GOLDEN_SURFACE: &str = "apr qa golden_output";
 pub(crate) fn f2_guard_verdict(admits: bool) -> SurfaceVerdict {
     use provable_contracts::ontology::verdict::Verdict;
     if admits {
-        SurfaceVerdict::new(F2_GUARD_SURFACE, Verdict::Pass, "admitted: GPU first tokens match CPU")
+        SurfaceVerdict::new(
+            F2_GUARD_SURFACE,
+            Verdict::Pass,
+            "admitted: GPU first tokens match CPU",
+        )
     } else {
         SurfaceVerdict::new(
             F2_GUARD_SURFACE,
@@ -209,7 +232,9 @@ impl crate::commands::qa::GpuGoldenLeg {
             Self::Unclosed {
                 budget,
                 generated_chars,
-            } => format!("still reasoning at the {budget}-token budget ({generated_chars} chars, no answer)"),
+            } => format!(
+                "still reasoning at the {budget}-token budget ({generated_chars} chars, no answer)"
+            ),
             Self::NotRun(why) => (*why).to_string(),
         }
     }
@@ -241,9 +266,14 @@ mod subject_verdict_tests {
             ],
         );
         assert_eq!(r.verdict, Verdict::Fail, "the meet still carries the Fail");
-        let msg = r.contradiction.expect("a Pass beside a Fail is a contradiction");
+        let msg = r
+            .contradiction
+            .expect("a Pass beside a Fail is a contradiction");
         assert!(msg.contains("CONTRADICTION"));
-        assert!(msg.contains(RUN) && msg.contains(QA), "both surfaces must be named: {msg}");
+        assert!(
+            msg.contains(RUN) && msg.contains(QA),
+            "both surfaces must be named: {msg}"
+        );
         assert!(
             msg.contains("0.4153") && msg.contains("3 golden test cases passed"),
             "both VALUES must be named, not just the surfaces: {msg}"
@@ -257,10 +287,16 @@ mod subject_verdict_tests {
         for v in [Verdict::Pass, Verdict::Fail] {
             let r = reconcile_gpu_correct(
                 &subject(),
-                &[SurfaceVerdict::new(RUN, v, "x"), SurfaceVerdict::new(QA, v, "y")],
+                &[
+                    SurfaceVerdict::new(RUN, v, "x"),
+                    SurfaceVerdict::new(QA, v, "y"),
+                ],
             );
             assert_eq!(r.verdict, v);
-            assert!(r.contradiction.is_none(), "agreement on {v:?} is not a contradiction");
+            assert!(
+                r.contradiction.is_none(),
+                "agreement on {v:?} is not a contradiction"
+            );
         }
     }
 
@@ -271,7 +307,10 @@ mod subject_verdict_tests {
     fn absence_is_not_agreement() {
         let r = reconcile_gpu_correct(
             &subject(),
-            &[SurfaceVerdict::new(RUN, Verdict::Pass, "admitted"), SurfaceVerdict::not_run(QA)],
+            &[
+                SurfaceVerdict::new(RUN, Verdict::Pass, "admitted"),
+                SurfaceVerdict::not_run(QA),
+            ],
         );
         assert_eq!(
             r.verdict,
@@ -290,8 +329,16 @@ mod subject_verdict_tests {
         let cases: &[(Verdict, Verdict, Verdict)] = &[
             (Verdict::Pass, Verdict::Pass, Verdict::Pass),
             (Verdict::Pass, Verdict::Fail, Verdict::Fail),
-            (Verdict::Fail, Verdict::Unknown(Reason::NotRun), Verdict::Fail),
-            (Verdict::Pass, Verdict::Unknown(Reason::NotRun), Verdict::Unknown(Reason::NotRun)),
+            (
+                Verdict::Fail,
+                Verdict::Unknown(Reason::NotRun),
+                Verdict::Fail,
+            ),
+            (
+                Verdict::Pass,
+                Verdict::Unknown(Reason::NotRun),
+                Verdict::Unknown(Reason::NotRun),
+            ),
             (Verdict::Fail, Verdict::Fail, Verdict::Fail),
         ];
         let wrong: Vec<String> = cases
@@ -299,13 +346,21 @@ mod subject_verdict_tests {
             .filter_map(|(a, b, want)| {
                 let got = reconcile_gpu_correct(
                     &subject(),
-                    &[SurfaceVerdict::new(RUN, *a, ""), SurfaceVerdict::new(QA, *b, "")],
+                    &[
+                        SurfaceVerdict::new(RUN, *a, ""),
+                        SurfaceVerdict::new(QA, *b, ""),
+                    ],
                 )
                 .verdict;
-                (got != *want).then(|| format!("\n  - {a:?} meet {b:?}: expected {want:?}, got {got:?}"))
+                (got != *want)
+                    .then(|| format!("\n  - {a:?} meet {b:?}: expected {want:?}, got {got:?}"))
             })
             .collect();
-        assert!(wrong.is_empty(), "the meet is not the lattice min:{}", wrong.join(""));
+        assert!(
+            wrong.is_empty(),
+            "the meet is not the lattice min:{}",
+            wrong.join("")
+        );
     }
 
     /// Nothing measured is Unknown, never Pass. An empty surface set is how a
@@ -323,12 +378,24 @@ mod subject_verdict_tests {
     #[test]
     fn the_subject_is_keyed_on_content_and_host_and_version() {
         let a = gpu_correct_subject("aaaaaaaaaaaabbbb", "lambda", "0.69.1");
-        assert_eq!(a, gpu_correct_subject("aaaaaaaaaaaabbbb", "lambda", "0.69.1"));
-        assert_ne!(a, gpu_correct_subject("ccccccccccccbbbb", "lambda", "0.69.1"));
+        assert_eq!(
+            a,
+            gpu_correct_subject("aaaaaaaaaaaabbbb", "lambda", "0.69.1")
+        );
+        assert_ne!(
+            a,
+            gpu_correct_subject("ccccccccccccbbbb", "lambda", "0.69.1")
+        );
         assert_ne!(a, gpu_correct_subject("aaaaaaaaaaaabbbb", "gx10", "0.69.1"));
-        assert_ne!(a, gpu_correct_subject("aaaaaaaaaaaabbbb", "lambda", "0.69.0"));
+        assert_ne!(
+            a,
+            gpu_correct_subject("aaaaaaaaaaaabbbb", "lambda", "0.69.0")
+        );
         assert!(a.contains("aaaaaaaaaaaa"), "the sha must appear: {a}");
-        assert!(!a.contains("bbbb"), "only the first 12 hex are printed: {a}");
+        assert!(
+            !a.contains("bbbb"),
+            "only the first 12 hex are printed: {a}"
+        );
     }
 
     /// Only `Passed` and `WrongAnswer` are evidence about the subject. The
@@ -341,8 +408,14 @@ mod subject_verdict_tests {
         let cases: Vec<(GpuGoldenLeg, Verdict)> = vec![
             (GpuGoldenLeg::Passed, Verdict::Pass),
             (GpuGoldenLeg::WrongAnswer("gibberish".into()), Verdict::Fail),
-            (GpuGoldenLeg::Errored("CUDA init".into()), Verdict::Unknown(Reason::NotRun)),
-            (GpuGoldenLeg::NotRun("no device"), Verdict::Unknown(Reason::NotRun)),
+            (
+                GpuGoldenLeg::Errored("CUDA init".into()),
+                Verdict::Unknown(Reason::NotRun),
+            ),
+            (
+                GpuGoldenLeg::NotRun("no device"),
+                Verdict::Unknown(Reason::NotRun),
+            ),
         ];
         let wrong: Vec<String> = cases
             .iter()
@@ -351,7 +424,11 @@ mod subject_verdict_tests {
                 (got != *want).then(|| format!("\n  - {leg:?}: expected {want:?}, got {got:?}"))
             })
             .collect();
-        assert!(wrong.is_empty(), "leg-to-verdict mapping drifted:{}", wrong.join(""));
+        assert!(
+            wrong.is_empty(),
+            "leg-to-verdict mapping drifted:{}",
+            wrong.join("")
+        );
     }
 
     /// The detail is what a contradiction message prints, so a leg that says
@@ -368,9 +445,12 @@ mod subject_verdict_tests {
             let d = leg.subject_detail();
             assert!(!d.trim().is_empty(), "{leg:?} produced an empty detail");
         }
-        assert!(GpuGoldenLeg::WrongAnswer("fragment repeats".into())
-            .subject_detail()
-            .contains("fragment repeats"), "the reason must survive into the detail");
+        assert!(
+            GpuGoldenLeg::WrongAnswer("fragment repeats".into())
+                .subject_detail()
+                .contains("fragment repeats"),
+            "the reason must survive into the detail"
+        );
     }
 
     /// The golden wiring: every (guard, leg) pair, and whether it names a
@@ -395,17 +475,28 @@ mod subject_verdict_tests {
                 got.push((admits, format!("{leg:?}"), c.is_some()));
             }
         }
-        let named: Vec<_> = got.iter().filter(|r| r.2).map(|r| (r.0, r.1.clone())).collect();
+        let named: Vec<_> = got
+            .iter()
+            .filter(|r| r.2)
+            .map(|r| (r.0, r.1.clone()))
+            .collect();
         assert_eq!(
             named,
             vec![
-                (true, format!("{:?}", GpuGoldenLeg::WrongAnswer("fragment repeats".into()))),
+                (
+                    true,
+                    format!("{:?}", GpuGoldenLeg::WrongAnswer("fragment repeats".into()))
+                ),
                 (false, format!("{:?}", GpuGoldenLeg::Passed)),
             ],
             "only guard-admits+wrong-answer and guard-refuses+passed contradict"
         );
-        let text = golden_contradiction(false, &GpuGoldenLeg::Passed, subject).expect("contradiction");
-        assert!(text.contains("REFUSED") && text.contains(QA) && text.contains(RUN), "{text}");
+        let text =
+            golden_contradiction(false, &GpuGoldenLeg::Passed, subject).expect("contradiction");
+        assert!(
+            text.contains("REFUSED") && text.contains(QA) && text.contains(RUN),
+            "{text}"
+        );
     }
 
     /// The subject is hashed only when there is something to report.

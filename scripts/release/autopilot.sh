@@ -104,7 +104,22 @@ if run_step deep; then
   cargo build --workspace --examples > "$AP/deep-examples.log" 2>&1; rc=$?
   say "DEEP examples build rc=$rc"
   [ $rc -eq 0 ] || die "T-1 examples RED ($AP/deep-examples.log)"
-  say "DEEP GO at $MC (doctests, examples green; --no-default-features within #3176)"
+  # Every workspace [[bin]] builds and smokes at THIS commit (#4189, 0.70.0 gate): the set and
+  # its cargo args (incl. required-features, e.g. ptop/score) are derived from cargo metadata by
+  # the same nightly_manifest.py the nightly ships with, and `smoke` applies the nightly's
+  # verdicts -- each bin's --version must print $V and this commit's SHA (#4219).
+  cargo metadata --locked --no-deps --format-version 1 > "$AP/deep-metadata.json" 2>> "$LOG" || die "T-1 cargo metadata failed"
+  BINS=$(python3 scripts/nightly_manifest.py bins --metadata "$AP/deep-metadata.json") || die "T-1 bin derivation failed"
+  BIN_ARGS=$(python3 scripts/nightly_manifest.py bins --metadata "$AP/deep-metadata.json" --format cargo) || die "T-1 bin derivation failed"
+  # shellcheck disable=SC2086  # BIN_ARGS is a flag list; word-splitting is intended
+  cargo build --locked --release $BIN_ARGS > "$AP/deep-bins.log" 2>&1; rc=$?
+  say "DEEP all-bins release build rc=$rc ($(echo "$BINS" | tr ',' '\n' | wc -l) bins)"
+  [ $rc -eq 0 ] || die "T-1 a workspace [[bin]] does not build ($AP/deep-bins.log)"
+  python3 scripts/nightly_manifest.py smoke --sha "$MC" --bins "$BINS" --bin-dir "$CARGO_TARGET_DIR/release" \
+    --version "$V" > "$AP/deep-bins-smoke.json" 2>&1; rc=$?
+  say "DEEP all-bins smoke rc=$rc"
+  [ $rc -eq 0 ] || die "T-1 all-bins smoke RED ($AP/deep-bins-smoke.json)"
+  say "DEEP GO at $MC (doctests, examples, all bins green; --no-default-features within #3176)"
 fi
 
 # 2. dogfood: the R5 receipt, pre-publish, FULL, on THIS commit -- never inherited (#3708)

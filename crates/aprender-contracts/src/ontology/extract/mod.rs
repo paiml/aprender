@@ -4,7 +4,7 @@
 //! contract carries; ONT-4c1 (aprender#3508) implements `gguf` and `apr_model` — the model receipts — and joins
 //! the tracked ladder receipts to the rungs (`resolves: receipt`, [`crate::ontology::receipts`]); the rest are
 //! declared in Σ and arrive with their rows (ONT-4b2 implements `code` — the bound symbols by a `syn` module-tree walk —
-//! and `lean` — the in-tree theorems; ONT-4c: readme, llm_context, csv).
+//! and `lean` — the in-tree theorems); ONT-4c implements `readme`, `llm_context` and `csv`, sharing [`claims`].
 //!
 //! [`all`] is the ONE walk the shapes gate and `pv extract` share, so what the gate grades and what
 //! `contracts.nt` records are the same graph (R-18: files are canonical, the graph is derived — from one place).
@@ -15,14 +15,19 @@ use crate::ontology::rdf::Graph;
 use crate::ontology::receipts;
 
 pub mod apr_model;
+pub mod claims;
 pub mod cli_surface;
 pub mod code;
 pub mod covering;
+pub mod csv;
 pub mod gguf;
 pub mod json;
+pub mod kernel;
 pub mod lean;
+pub mod llm_context;
 pub mod parity_receipt;
 pub mod pv_contract;
+pub mod readme;
 pub mod release_cells;
 pub mod release_crux;
 pub mod release_evidence;
@@ -48,8 +53,16 @@ pub struct Extraction {
     pub code: code::CodeStats,
     /// ONT-4b2: the in-tree Lean theorems and the contracts that cite them.
     pub lean: lean::LeanStats,
+    /// ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`, and their kernel receipts.
+    pub kernel: kernel::KernelStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
+    /// ONT-4c: `README.md` — files read, the claim commands CI runs (the MEASURED set), refusals.
+    pub readme: claims::DocStats,
+    /// ONT-4c: `CLAUDE.md` (`llm-context`) — the same.
+    pub llm_context: claims::DocStats,
+    /// ONT-4c: CSV datasets read, and the files refused.
+    pub csv: claims::DocStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
 }
@@ -68,6 +81,8 @@ pub enum ExtractFailure {
     ///
     /// [`RESERVED_ENTITY_TYPE`]: crate::ontology::sigma::RESERVED_ENTITY_TYPE
     ReservedEntityType { contract: String },
+    /// ONT-4c4: a file under `evidence/kernels/` is unreadable or carries a foreign schema.
+    Kernel(kernel::KernelError),
 }
 
 impl std::fmt::Display for ExtractFailure {
@@ -82,6 +97,7 @@ impl std::fmt::Display for ExtractFailure {
                  the entity classes, so its entity predicates would collide with them (PMAT-4160)",
                 crate::ontology::sigma::RESERVED_ENTITY_TYPE
             ),
+            Self::Kernel(e) => write!(f, "{e}"),
         }
     }
 }
@@ -124,8 +140,15 @@ pub fn all_with(
     out.receipts = receipts::read_all(root).map_err(ExtractFailure::Receipt)?;
     out.resolve = receipts::resolve(&mut out.graph, &out.gguf.rungs, &out.receipts);
     out.code = code::extract(contract_dir, &mut out.graph);
+    out.kernel = kernel::extract(&repo_root(contract_dir), &mut out.graph)
+        .map_err(ExtractFailure::Kernel)?;
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
+    // ONT-4c: the claim fences resolve against the merge-path `run:` lines, computed once per walk
+    let ci = claims::ci_run_lines(&repo_root(contract_dir));
+    out.readme = readme::extract(contract_dir, &mut out.graph, &ci);
+    out.llm_context = llm_context::extract(contract_dir, &mut out.graph, &ci);
+    out.csv = csv::extract(contract_dir, &mut out.graph);
     if let Some(subject) = release {
         out.release = Some(
             release_evidence::extract(&mut out.graph, contract_dir, subject)

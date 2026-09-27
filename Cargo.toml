@@ -898,4 +898,15 @@ debug = "line-tables-only"
 [profile.dev.package.proptest]
 debug-assertions = false
 
+# ----------------------------------------------------------------------------
+# x86-main SLOW tests: debug builds do not inline trueno's SIMD intrinsics
+# ----------------------------------------------------------------------------
+# gdb samples of the LoRA falsify tests sat ~all in gemm_blis ->
+# gemm_small_avx512_16x8 / gemm_direct_rowmajor, each `_mm256_fmadd_ps` an
+# out-of-line call at opt-level 0. Optimizing only the compute crate keeps every
+# other crate debuggable. Interleaved A/B on lambda (aprender-e6, 2026-09-26):
+# f_conv_008 67.5s -> 32.2s, f_conv_003 92.7s -> 47.5s, ship_021 63.3s -> 23.1s.
+[profile.dev.package.aprender-compute]
+opt-level = 3
+
 

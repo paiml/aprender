@@ -29,10 +29,14 @@ apr-cli	--test	backend_refusal_case_table
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	capability_mirror
 apr-cli	--test	cli_commands
+apr-cli	--test	falsification_crux_a_01
+apr-cli	--test	falsification_crux_a_03
+apr-cli	--test	falsification_crux_a_20
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-cli	--test	thinking_budgets_mirror
 apr-format	--lib	falsifiers
+apr-format	--test	golden_fixtures
 aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
@@ -54,7 +58,9 @@ aprender-contracts	--lib	lint::valid_under_gate
 aprender-contracts	--lib	ontology::extract::apr_model
 aprender-contracts	--lib	ontology::extract::code
 aprender-contracts	--lib	ontology::extract::lean
+aprender-contracts	--lib	ontology::extract::llm_context
 aprender-contracts	--lib	ontology::extract::pv_contract
+aprender-contracts	--lib	ontology::extract::readme
 aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	ontology::w3c
 aprender-contracts	--lib	pipeline
@@ -82,6 +88,7 @@ aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contracts-cli	--test	ont4c1_model_receipts
 aprender-contracts-cli	--test	ont4c3_parity_receipts
 aprender-contracts-cli	--test	ont4c5_capability_cells
+aprender-contracts-cli	--test	ont4c_doc_contracts
 aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	ont6b_kind_default
 aprender-contracts-cli	--test	ont7_valid_under_gate
@@ -138,6 +145,7 @@ aprender-orchestrate	--lib	stack::quality_format
 aprender-present-cli	--bins
 aprender-present-lib	--lib	browser::shell_autocomplete
 aprender-present-terminal	--lib	<root>
+aprender-present-terminal	--lib	ptop
 aprender-profile	--lib	cluster::registry
 aprender-qa-certify	--lib	<root>
 aprender-rag	--lib	loader::text

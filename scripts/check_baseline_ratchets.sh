@@ -77,6 +77,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassified
     case "$1" in
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
+        bin_cli_unwired_baseline.txt)            printf 'set\n' ;;   # spawning test targets no lane runs (scripts/check_bin_cli_tests_wired.sh, #4059): may only shrink
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         comparator_consumer_baseline.txt)        printf 'set\n' ;;   # known llama.cpp consumers not resolving through llama_bin.sh, each owned by an issue (scripts/check_comparator_consumers_resolve.sh, #3740)
@@ -85,6 +86,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
         hand_rolled_parsers_baseline.txt)        printf 'set\n' ;;
+        include_fmt_baseline.txt)                printf 'set\n' ;;   # include!d .rs files rustfmt would change (scripts/include_fmt_ratchet.sh, #4151); instrument pinned in its own header
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
         perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
@@ -143,6 +145,8 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # an author one conversation, a wrong `set-aperture` costs a hole.
         silent_truncation_baseline.txt)          printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        guard_fail_fast_baseline.txt)            printf 'keyed\n' ;;   # #4415: <guard section><TAB><fail-fast steps>; no section may rise, none may appear (scripts/check_guard_steps_run_all.sh)
+        ci_guards_uncovered.txt)                 printf 'set\n' ;;   # #4415: guard scripts ci_guards.sh cannot reach, one <section> <script> row each; may only shrink (scripts/ci_guards.sh --check-coverage)
         src_test_files_unwired_baseline.txt)     printf 'set\n' ;;   # dark src test files, SHRINK-ONLY exact set (scripts/check_src_test_files_wired.sh, #3809)
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
