@@ -194,6 +194,31 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - R15's own falsifier, for whoever takes it: after N CUDA steps of `-m lora`, the adapters must have changed and the loss
     must have moved. A CUDA forward with frozen adapters is RED.
 
+### Spike S-R10 — does a Qwen3.5 model round-trip between .apr, safetensors and GGUF today? · `[V]` (2026-09-28, measured, CPU)
+- **Setup:** apr 0.69.3 @574583d382, built in the private target dir. Qwen3.5-0.8B from HF (`Qwen/Qwen3.5-0.8B`, bf16, one
+  shard behind `model.safetensors.index.json`) and the local Qwen3.5 GGUFs. Contract `qwen35-format-roundtrip-v1` (QFR-001..005).
+- **safetensors → .apr: works.** Importing the directory gives 489 tensors (488 plus a materialised `lm_head`), including
+  144 visual and 11 MTP tensors. `apr import hf://Qwen/Qwen3.5-0.8B` fails with a 404: it asks for `model.safetensors`, and the
+  repo ships a single-shard index.
+- **.apr → safetensors → .apr: bit-identical, with one hole.** `apr diff --values` reports 489/489 identical and max diff 0.
+  The export keeps HF names but widens bf16 to F32 (2× size) and writes no config. On its own the output does not re-import
+  (it is detected as Qwen2, overridden to Qwen3, and fails the GH-279 completeness gate, rc 5). It works only once the source
+  `config.json` is copied beside it (QFR-003).
+- **.apr → GGUF: exits 0 with 488/489 tensors unmapped.** Each tensor is "passing through" under its HF name
+  (`model.language_model.…`), so llama.cpp cannot load the file. This is the #4418 class at 0.8B (738/739 at 4B), and rc 0
+  on an unloadable file is its own defect (QFR-004). `apr diff` of .apr vs that GGUF printed nothing in 17 minutes and was stopped.
+- **GGUF → .apr: refused for every real Qwen3.5 GGUF** (0.8B Q4_K_M, 0.8B IQ4_XS, 2B, 4B; rc 5). The reader's config
+  allowlist (`gguf/reader_parsing.rs:93`) has `qwen3.` but not `qwen35.`, so `hidden_dim` reads as 0. **That is deliberate**:
+  `api_tests_all_keys_3733.rs` pins `qwen35.*` off the config accessors, because tensor evidence relabels the file as Qwen3
+  (`[ARCH-EVIDENCE] Override … → Qwen3`) and the importer has no qwen35 name map. Widening the allowlist would import a hybrid
+  model under the Qwen3 map and write a silently wrong .apr. The defect is the message: it says "This GGUF file may be malformed"
+  instead of naming qwen35 as unsupported (QFR-005).
+- **Consequences:**
+  - The T5 gate can arm the safetensors ↔ .apr leg now (QFR-001/002, CPU, 0.8B). The GGUF legs wait for #4418 (export) plus a
+    qwen35 GGUF import path. **That import path is not a row today**; it belongs with R9 and is at least the size of #4418.
+  - R13 (HF rc publish) needs QFR-003: a published safetensors must re-import without a hand-copied config.
+  - Until R10 lands, T5 evidence means "HF safetensors → .apr → safetensors", never "GGUF round-trip".
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
