@@ -165,6 +165,25 @@ pub fn fused_q4k_dot(q4k_data: &[u8], activations: &[f32]) -> Result<f32> {
     Ok(acc)
 }
 
+/// Name of the kernel `fused_q4k_dot_simd` dispatches to on this host (0.73 R3 E-R3-2).
+///
+/// Uses the same predicates as the dispatcher, so it never names a kernel the call
+/// does not reach: `q4k-f32/avx2`, `q4k-f32/neon` or `q4k-f32/scalar`.
+#[must_use]
+pub fn fused_q4k_dot_kernel_path() -> &'static str {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            return "q4k-f32/avx2";
+        }
+    }
+    if cfg!(target_arch = "aarch64") {
+        "q4k-f32/neon"
+    } else {
+        "q4k-f32/scalar"
+    }
+}
+
 /// Fused Q4_K dequantize + dot product with SIMD acceleration
 ///
 /// This is the public, safe API that automatically dispatches to the best
@@ -206,9 +225,15 @@ pub fn fused_q4k_dot_simd(q4k_data: &[u8], activations: &[f32]) -> Result<f32> {
         }
     }
 
+    // 0.73 R3: NEON is aarch64 baseline, so the NEON kernel is unconditional there.
+    // SAFETY: NEON is always present on aarch64; the kernel re-validates shapes.
+    #[cfg(target_arch = "aarch64")]
+    let result = unsafe { super::neon_k::fused_q4k_dot_neon(q4k_data, activations) };
     // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_dot)
     // Fallback to scalar implementation
-    fused_q4k_dot(q4k_data, activations)
+    #[cfg(not(target_arch = "aarch64"))]
+    let result = fused_q4k_dot(q4k_data, activations);
+    result
 }
 
 /// Quantize f32 activations to i8 and compute integer dot product with q_nibbles.

@@ -72,6 +72,11 @@ pub mod fused_gate_up;
 pub mod fused_k;
 pub mod fused_q5k_q6k;
 pub(crate) mod gemv_pool;
+// 0.73 R3: NEON Q4_K/Q6_K dot kernels (aarch64 baseline).
+#[cfg(target_arch = "aarch64")]
+pub(crate) mod neon_k;
+#[cfg(test)]
+mod neon_k_parity_tests;
 // PMAT-3477 / #3091: the IQ formats real unsloth GGUFs ship.
 pub mod generic_dot;
 pub mod generic_matvec;
@@ -130,9 +135,13 @@ pub use iq_dispatch::{
 // Re-export fused K-quant operations (PMAT-802)
 pub mod direct_f32;
 pub use direct_f32::fused_q4k_parallel_matvec_f32_into;
-pub use fused_k::{fused_q4k_dot, fused_q4k_dot_simd, fused_q4k_q8k_dot, fused_q4k_q8k_dot_simd};
+pub use fused_k::{
+    fused_q4k_dot, fused_q4k_dot_kernel_path, fused_q4k_dot_simd, fused_q4k_q8k_dot,
+    fused_q4k_q8k_dot_simd,
+};
 pub use fused_q5k_q6k::{
-    fused_q4k_q8_dot, fused_q5k_dot, fused_q5k_dot_simd, fused_q6k_dot, fused_q6k_dot_simd,
+    fused_q4k_q8_dot, fused_q5k_dot, fused_q5k_dot_simd, fused_q6k_dot, fused_q6k_dot_kernel_path,
+    fused_q6k_dot_simd,
 };
 
 // Re-export parallel K-quant operations (PMAT-802)

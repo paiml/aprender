@@ -97,6 +97,25 @@ pub fn fused_q6k_dot(q6k_data: &[u8], activations: &[f32]) -> Result<f32> {
     Ok(acc)
 }
 
+/// Name of the kernel `fused_q6k_dot_simd` dispatches to on this host (0.73 R3 E-R3-2).
+///
+/// Uses the same predicates as the dispatcher: `q6k-f32/avx2`, `q6k-f32/neon`
+/// or `q6k-f32/scalar`.
+#[must_use]
+pub fn fused_q6k_dot_kernel_path() -> &'static str {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            return "q6k-f32/avx2";
+        }
+    }
+    if cfg!(target_arch = "aarch64") {
+        "q6k-f32/neon"
+    } else {
+        "q6k-f32/scalar"
+    }
+}
+
 /// SIMD-accelerated fused Q6_K dequant+dot (with scalar fallback)
 ///
 /// Per Williams et al. (2009) roofline model, memory bandwidth is the bottleneck.
@@ -125,9 +144,15 @@ pub fn fused_q6k_dot_simd(q6k_data: &[u8], activations: &[f32]) -> Result<f32> {
             return unsafe { fused_q6k_dot_avx2(q6k_data, activations) };
         }
     }
+    // 0.73 R3: NEON is aarch64 baseline, so the NEON kernel is unconditional there.
+    // SAFETY: NEON is always present on aarch64; the kernel re-validates shapes.
+    #[cfg(target_arch = "aarch64")]
+    let result = unsafe { super::neon_k::fused_q6k_dot_neon(q6k_data, activations) };
     // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q6k_dot)
     // Fallback to scalar implementation
-    fused_q6k_dot(q6k_data, activations)
+    #[cfg(not(target_arch = "aarch64"))]
+    let result = fused_q6k_dot(q6k_data, activations);
+    result
 }
 
 /// PAR-126: AVX2 SIMD implementation for Q6_K dot product
