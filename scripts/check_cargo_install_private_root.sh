@@ -74,13 +74,23 @@ is_exempt() {
 # what keeps prose and comments ("# cargo install writes to ~/.cargo/bin") out.
 RE_INSTALL='(^|[;&|]|&&|\|\||run:)[[:space:]]*(sudo[[:space:]]+)?cargo[[:space:]]+install([[:space:]]|$)'
 
+# The classifiers run on every line of every workflow, so they match with bash's
+# own [[ =~ ]] (the same POSIX ERE grep -E uses) rather than a grep fork per line
+# per predicate; that fork storm was most of this guard's ~70 s on CI (#4527).
+# Each pattern lives in a variable so [[ =~ ]] reads it as a regex, not syntax.
+RE_ROOT='--root([[:space:]]|=)'
+RE_PRIV='(CARGO_INSTALL_ROOT|CARGO_HOME)[[:space:]]*[:=]'
+RE_SHARED_HOME='(\$HOME|\$\{HOME\}|~)/\.cargo'
+RE_DOCKER='(^|[[:space:]])docker[[:space:]]+run([[:space:]]|$)'
+RE_CONT='\\[[:space:]]*$'
+
 is_install() {
-    grep -qE "$RE_INSTALL" <<< "$1"
+    [[ $1 =~ $RE_INSTALL ]]
 }
 
 # An explicit `--root <dir>` / `--root=<dir>` on the install itself.
 has_explicit_root() {
-    grep -qE -- '--root([[:space:]]|=)' <<< "$1"
+    [[ $1 =~ $RE_ROOT ]]
 }
 
 # A CARGO_INSTALL_ROOT / CARGO_HOME declaration (YAML `KEY: value`, `export
@@ -89,8 +99,8 @@ has_explicit_root() {
 # already does) and `CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-...` both qualify;
 # `CARGO_INSTALL_ROOT="$HOME/.cargo"` does not.
 declares_private_root() {
-    grep -qE '(CARGO_INSTALL_ROOT|CARGO_HOME)[[:space:]]*[:=]' <<< "$1" || return 1
-    if grep -qE '(\$HOME|\$\{HOME\}|~)/\.cargo' <<< "$1" ; then
+    [[ $1 =~ $RE_PRIV ]] || return 1
+    if [[ $1 =~ $RE_SHARED_HOME ]]; then
         return 1
     fi
     return 0
@@ -100,11 +110,11 @@ declares_private_root() {
 # continuations further down (ci.yml's mutants job is exactly that shape). The
 # caller clears the chain on the first line that does not end in a backslash.
 opens_docker_chain() {
-    grep -qE '(^|[[:space:]])docker[[:space:]]+run([[:space:]]|$)' <<< "$1"
+    [[ $1 =~ $RE_DOCKER ]]
 }
 
 continues_line() {
-    grep -qE '\\[[:space:]]*$' <<< "$1"
+    [[ $1 =~ $RE_CONT ]]
 }
 
 # First component of an `export PATH=...` assignment, or empty if the line is
@@ -231,10 +241,8 @@ check_job() {
     # Pass 1: job-wide facts (runs-on, private-root declarations anywhere in the
     # job - job env, step env, or an inline export).
     while IFS= read -r line; do
-        if grep -q 'runs-on:' <<< "$line" && grep -q 'self-hosted' <<< "$line"; then
-            selfhosted=1
-        fi
-        trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"
+        case "$line" in *runs-on:*self-hosted*|*self-hosted*runs-on:*) selfhosted=1 ;; *) ;; esac
+        trimmed="${line#"${line%%[![:space:]]*}"}"
         case "$trimmed" in '#'*) continue ;; *) ;; esac
         if declares_private_root "$line"; then
             privroot=1
@@ -248,7 +256,7 @@ check_job() {
     lineno=$((start - 1))
     while IFS= read -r line; do
         lineno=$((lineno + 1))
-        trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"
+        trimmed="${line#"${line%%[![:space:]]*}"}"
         case "$trimmed" in
             '#'*)
                 continues_line "$line" || docker_chain=0
