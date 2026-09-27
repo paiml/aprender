@@ -135,6 +135,21 @@ def qualify(chain):
     return out
 
 
+def tail_search(rx, src, end, window=4096):
+    """rx.search over src[:end], reading only its last `window` chars.
+
+    Every receiver pattern is `$`-anchored at the token, so scanning the whole
+    prefix for each token made this guard quadratic in file size (13 s per
+    call on perf_gate.sh's reader). A match that touches the window's left edge
+    may have started earlier, so that one case re-runs over the full prefix,
+    and the answer is the same either way."""
+    start = max(0, end - window)
+    m = rx.search(src, start, end)
+    if start and m and m.start() == start:
+        m = rx.search(src, 0, end)
+    return m
+
+
 def read_set(path):
     """Every receipt field this file reads, as a qualified path."""
     base = os.path.basename(path)
@@ -145,16 +160,16 @@ def read_set(path):
     found = set()
     for match in TOKEN.finditer(src):
         name = match.group(2) or match.group(4)
-        before = src[:match.start()]
-        chain = CHAIN.search(before)
-        coalesce = COALESCE.search(before)
+        end = match.start()
+        chain = tail_search(CHAIN, src, end)
+        coalesce = tail_search(COALESCE, src, end)
         if chain:
             recv, outer = chain.group(1), chain.group(2)
             qualified = outer + "." + name
         elif coalesce:
             recv, qualified = coalesce.group(1), name
         else:
-            plain = RECV.search(before)
+            plain = tail_search(RECV, src, end)
             if not plain:
                 line = src.count("\n", 0, match.start()) + 1
                 errors.append(

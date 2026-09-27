@@ -126,18 +126,17 @@ foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines
 # nothing to anchor); only the bindable ones are the backlog this ↓ counter
 # drains.
 count_unanchored_bindable() {
-    local n=0 f is_kernel has_binding names_file
-    while IFS= read -r f; do
-        grep -qE '^entity:' "$f" 2>/dev/null && continue
-        is_kernel=0; has_binding=0; names_file=0
-        grep -qE '^kind:[[:space:]]*Kernel' "$f" 2>/dev/null && is_kernel=1
-        grep -qE '^[[:space:]]*binding:' "$f" 2>/dev/null && has_binding=1
-        grep -qE '^[[:space:]]*(file|path|source_file):' "$f" 2>/dev/null && names_file=1
-        if { [ "$is_kernel" -eq 1 ] && [ "$has_binding" -eq 1 ]; } || [ "$names_file" -eq 1 ]; then
-            n=$((n+1))
-        fi
-    done < <(find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null)
-    printf '%s\n' "$n"
+    # One awk over every file (flags reset per file at FNR==1), not four greps per
+    # file: the per-file form spent ~100 s of CI on 1,768 contracts. `-exec +` may
+    # split into several awk runs, so their counts are summed.
+    { find "$REPO_ROOT/contracts" -name '*.yaml' -type f -exec awk '
+        FNR == 1 { if (NR > 1 && !e && ((k && b) || f)) n++; e = k = b = f = 0 }
+        /^entity:/ { e = 1 }
+        /^kind:[[:space:]]*Kernel/ { k = 1 }
+        /^[[:space:]]*binding:/ { b = 1 }
+        /^[[:space:]]*(file|path|source_file):/ { f = 1 }
+        END { if (NR > 0 && !e && ((k && b) || f)) n++; print n + 0 }' {} + 2>/dev/null || true; } \
+        | awk '{ s += $1 } END { print s + 0 }'
 }
 
 # ONT-6 (PMAT-3451): `armed_gates` is the arming declaration `pv lint` reads, not
@@ -184,11 +183,15 @@ armed_shapes_of() { # armed_shapes_of FILE -> the one-line JSON array, or nothin
 # RECORDED, not ratcheted: a new shape ships reported-first (ladder-green), so the count may rise; what the
 # baseline gives a reviewer is a diff, not a silence.
 count_shapes_declared() {
-    local n=0 f
-    while IFS= read -r f; do
-        n=$((n + $(awk 'BEGIN{c=0;inl=0} /^shape:/{c++} /^shapes:/{inl=1;next} inl&&/^[^ ]/{inl=0} inl&&/^  - id:/{c++} END{print c}' "$f")))
-    done < <(find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null)
-    printf '%s\n' "$n"
+    { find "$REPO_ROOT/contracts" -name '*.yaml' -type f -exec awk '
+        BEGIN { c = 0 }
+        FNR == 1 { inl = 0 }
+        /^shape:/ { c++ }
+        /^shapes:/ { inl = 1; next }
+        inl && /^[^ ]/ { inl = 0 }
+        inl && /^  - id:/ { c++ }
+        END { print c }' {} + 2>/dev/null || true; } \
+        | awk '{ s += $1 } END { print s + 0 }'
 }
 count_shapes_unarmed() { # count_shapes_unarmed BASELINE_FILE
     local armed declared
