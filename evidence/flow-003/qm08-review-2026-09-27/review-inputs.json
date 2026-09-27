@@ -1,0 +1,82 @@
+{
+ "schema": "flow-003-review-inputs/v1",
+ "spec": "FLOW-003 \u00a75.1 Props 11/12, \u00a710",
+ "row": "QM-08 (#4519) residue on top of QM-01 (#4513)",
+ "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+ "classes": {
+  "x": {
+   "Q": {
+    "value": 46.2,
+    "n": 26,
+    "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+    "command": "rounds/PR (raw/rounds.sh) x round wall-time (raw/units.sh)",
+    "mark": "[V]",
+    "method": "mean quorum rounds per merged PR that had any quorum round x mean round wall-time (systemd Started->Consumed)",
+    "parts": {
+     "rounds_per_pr_mean": 3.69,
+     "rounds_per_pr_median": 3.0,
+     "n_prs": 26,
+     "round_min_mean": 12.51,
+     "round_min_median": 10.24,
+     "round_min_p90": 26.9,
+     "n_rounds_timed": 71,
+     "merged_prs_in_window": 61,
+     "merged_without_quorum_comment": 35
+    }
+   }
+  },
+  "d": {
+   "Q": {
+    "value": null,
+    "n": 0,
+    "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+    "command": "-",
+    "mark": "[U]",
+    "reason": "class empty in window (QM-01: n=0)"
+   }
+  },
+  "a": {
+   "Q": {
+    "value": null,
+    "n": 0,
+    "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+    "command": "-",
+    "mark": "[U]",
+    "reason": "class empty in window (QM-01: n=0)"
+   }
+  }
+ },
+ "review": {
+  "D": {
+   "value": 240,
+   "n": 0,
+   "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+   "command": "git log --grep revert origin/main since 2026-08-01; gh issue list -l regression",
+   "mark": "[A]",
+   "reason": "0 reverts on main since 2026-08-01; 1 regression-labelled issue (#2466) cites no culprit; 1 fix-forward escape (#4308 -> #4309, 'release was RED since #4308'). The repo fixes forward and does not name culprits, so D is not measurable from revert timelines"
+  },
+  "kappa_full": {
+   "value": null,
+   "n": 0,
+   "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+   "command": "-",
+   "mark": "[U]",
+   "reason": "needs escapes attributed to reviewed PRs; n=1 escape total"
+  },
+  "kappa_cheap": {
+   "value": null,
+   "n": 0,
+   "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+   "command": "-",
+   "mark": "[U]",
+   "reason": "no cheap-review class ran in window"
+  }
+ },
+ "prop12": {
+  "q_c_star_at_A": 0.25,
+  "q_c_star_upper_bound_at_measured_Qx": 0.385,
+  "note": "upper bound sets Q_c=0 and keeps kappa_diff=0.5, D=240 [A]",
+  "verdict": "NOT-DECIDED"
+ },
+ "verdict": "NOT-DECIDED: Q_x measured [V]; D, kappa stay [A]/[U]; classes d/a empty"
+}
