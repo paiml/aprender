@@ -142,6 +142,8 @@ pub struct CiProfileReport {
     /// Peak resident set of the profiling process, MB (2^20 B); None = unmeasured
     pub peak_rss_mb: Option<f64>,
     pub assertions: Vec<AssertionResult>,
+    /// MEAS-001 R1 (#4522): the measured `resources{}` block. None = not measured.
+    pub resources: Option<serde_json::Value>,
 }
 
 /// Peak resident set size of THIS process in bytes: `VmHWM` from
@@ -268,6 +270,7 @@ impl CiProfileReport {
             latency_p99_ms: p99_ms,
             peak_rss_mb,
             assertions: assertion_results,
+            resources: results.resources.clone(),
         }
     }
 
@@ -355,7 +358,8 @@ impl CiProfileReport {
                 json.push_str("    }\n");
             }
         }
-        json.push_str("  ]\n");
+        json.push_str("  ]");
+        push_resources_json(&mut json, self.resources.as_ref());
         json.push_str("}\n");
         println!("{json}");
     }
@@ -470,6 +474,9 @@ impl std::fmt::Display for PerfGrade {
 /// Profile results from real inference
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RealProfileResults {
+    /// MEAS-001 R1 (#4522): the measured `resources{}` block of the whole
+    /// profile window (model load included). None = not measured.
+    pub(crate) resources: Option<serde_json::Value>,
     model_path: String,
     architecture: String,
     num_layers: usize,
@@ -546,3 +553,14 @@ include!("profile_safetensors.rs");
 include!("profile_print_hotspot.rs");
 include!("comparison.rs");
 include!("profile_09.rs");
+
+/// MEAS-001 R1 (#4522): append `,\n  "resources": {...}\n` — or just `\n`
+/// when nothing was measured — after the last member of a hand-built document.
+fn push_resources_json(json: &mut String, resources: Option<&serde_json::Value>) {
+    match resources {
+        Some(r) => {
+            writeln!(json, ",\n  \"resources\": {r}").expect("write to String is infallible");
+        }
+        None => json.push('\n'),
+    }
+}

@@ -400,8 +400,10 @@ pub struct ThroughputResults {
 /// Memory results structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryResults {
-    /// Model size (MB)
-    pub model_mb: u64,
+    /// Model size (MB). MEAS-001 (#4522): `None` = not measured. It was
+    /// `peak_rss / 2` ("approximate"), a number no instrument ever read.
+    #[serde(default)]
+    pub model_mb: Option<u64>,
     /// Peak RSS (MB)
     pub peak_rss_mb: u64,
     /// KV-cache waste percentage
@@ -415,8 +417,10 @@ pub struct EnergyResults {
     pub total_joules: f64,
     /// Energy per token (J/tok)
     pub token_joules: f64,
-    /// Idle power (Watts)
-    pub idle_watts: f64,
+    /// Idle power (Watts). MEAS-001 (#4522): `None` = not measured. It was
+    /// a hard-coded `0.0`, which reads as "measured, drew nothing".
+    #[serde(default)]
+    pub idle_watts: Option<f64>,
 }
 
 /// Cold start results structure

@@ -281,6 +281,7 @@ fn filter_results_by_focus(
         .collect();
 
     RealProfileResults {
+        resources: results.resources.clone(),
         model_path: results.model_path.clone(),
         architecture: results.architecture.clone(),
         num_layers: results.num_layers,

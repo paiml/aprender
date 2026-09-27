@@ -68,12 +68,15 @@ falsification_tests:
   prediction: "Peak VRAM with --method qlora --quant nf4 is ≤30% of full-precision finetune at same batch size"
   test: |
     set -euo pipefail
-    # TODO: implement --report-peak-memory flag in apr finetune
+    # --report-peak-memory (MEAS-001, #4522) prints ONE JSON object as the LAST
+    # stdout line: peak_vram_bytes / peak_rss_bytes + the resources{} block.
+    # A null peak carries resources.null_reasons.vram_peak_bytes; `jq -e` refuses
+    # it, so an unmeasured run cannot pass as a budget met.
     BASE_MEM=$(apr finetune model.apr --method full --data tests/fixtures/train.jsonl \
-      --epochs 1 --batch-size 4 --report-peak-memory --json 2>/dev/null | jq '.peak_vram_bytes')
+      --epochs 1 --batch-size 4 --report-peak-memory --json 2>/dev/null | tail -n 1 | jq -e '.peak_vram_bytes')
     QLORA_MEM=$(apr finetune model.apr --method qlora --lora-rank 16 --lora-alpha 32 \
       --quant nf4 --compute-dtype bf16 --data tests/fixtures/train.jsonl \
-      --epochs 1 --batch-size 4 --report-peak-memory --json 2>/dev/null | jq '.peak_vram_bytes')
+      --epochs 1 --batch-size 4 --report-peak-memory --json 2>/dev/null | tail -n 1 | jq -e '.peak_vram_bytes')
     python3 -c "assert $QLORA_MEM <= 0.3 * $BASE_MEM, f'QLoRA used {$QLORA_MEM/$BASE_MEM:.2%} of full baseline (budget 30%)'"
   if_fails: "QLoRA memory budget violated — quantization or adapter allocation wrong"
 

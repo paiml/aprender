@@ -107,6 +107,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let json = serde_json::to_string_pretty(&report).expect("serialize");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize");
@@ -240,6 +241,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let json = serde_json::to_string(&report).expect("serialize unicode path");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize unicode path");
@@ -261,6 +263,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let json = serde_json::to_string(&report).expect("serialize long path");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize long path");
@@ -281,6 +284,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let json = serde_json::to_string(&report).expect("serialize empty model");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize empty model");

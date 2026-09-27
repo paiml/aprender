@@ -47,18 +47,23 @@ impl FullBenchmarkResult {
                     ci_95: summary.throughput_ci_95,
                 },
                 memory_mb: MemoryResults {
-                    model_mb: result.peak_memory_mb / 2, // Approximate model size
+                    // MEAS-001 (#4522): BenchmarkResult carries no model-size
+                    // reading, so there is none to report (was peak_rss / 2).
+                    model_mb: None,
                     peak_rss_mb: result.peak_memory_mb,
                     kv_waste_pct: result.kv_cache_waste_pct,
                 },
                 energy: EnergyResults {
                     total_joules: result.energy_joules,
                     token_joules: summary.token_joules,
-                    idle_watts: 0.0, // Would need separate measurement
+                    // MEAS-001 (#4522): no idle-power reading (was 0.0).
+                    idle_watts: None,
                 },
                 cold_start_ms: ColdStartResults {
                     median: result.cold_start_ms,
-                    p99: result.cold_start_ms * 1.5, // Approximate
+                    // MEAS-001 (#4522): one cold start was measured, and the p99
+                    // of one sample is that sample (was median * 1.5).
+                    p99: result.cold_start_ms,
                 },
             },
             quality: QualityValidation {

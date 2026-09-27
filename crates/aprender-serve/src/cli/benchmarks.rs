@@ -236,14 +236,14 @@
                     ci_95: (95.0, 105.0),
                 },
                 memory_mb: MemoryResults {
-                    model_mb: 512,
+                    model_mb: Some(512),
                     peak_rss_mb: 1024,
                     kv_waste_pct: 3.0,
                 },
                 energy: EnergyResults {
                     total_joules: 50.0,
                     token_joules: 0.5,
-                    idle_watts: 8.0,
+                    idle_watts: Some(8.0),
                 },
                 cold_start_ms: ColdStartResults {
                     median: 100.0,

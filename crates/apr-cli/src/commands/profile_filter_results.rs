@@ -369,6 +369,7 @@
     fn test_ci_profile_report_print_json_no_assertions() {
         // Just verify it doesn't panic
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: true,
             throughput_tok_s: 100.0,
@@ -383,6 +384,7 @@
     #[test]
     fn test_ci_profile_report_print_json_with_assertions() {
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: false,
             throughput_tok_s: 50.0,
@@ -410,6 +412,7 @@
     #[test]
     fn test_ci_profile_report_print_json_single_assertion() {
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: true,
             throughput_tok_s: 200.0,
@@ -433,6 +436,7 @@
     #[test]
     fn test_ci_profile_report_print_human_passed() {
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: true,
             throughput_tok_s: 150.0,

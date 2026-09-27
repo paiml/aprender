@@ -226,6 +226,9 @@ pub(crate) fn run(
         print_header(path, &config);
     }
 
+    // MEAS-001 R1 (#4522): the whole window, model load included.
+    let window = super::resource_window::start();
+
     // Always use realizar for production-quality benchmarks
     #[cfg(feature = "inference")]
     let result = {
@@ -237,15 +240,17 @@ pub(crate) fn run(
     };
 
     #[cfg(not(feature = "inference"))]
-    let result = {
+    let result: BenchResult = {
         return Err(CliError::ValidationFailed(
             "Benchmark requires the 'inference' feature. Build with: cargo build --features inference".to_string()
         ));
     };
 
+    let resources = window.finish();
+
     // GH-254: JSON output mode — always exit 0 with results in JSON body
     if json {
-        return print_bench_json(path, &result, percentiles);
+        return print_bench_json(path, &result, percentiles, &resources);
     }
 
     // Print results
@@ -353,7 +358,12 @@ fn provenance_json() -> serde_json::Value {
 /// CRUX-E-07: emits `latency_p<N>_ms` key per requested percentile point.
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> Result<()> {
+fn print_bench_json(
+    path: &Path,
+    result: &BenchResult,
+    percentiles: &[f64],
+    resources: &serde_json::Value,
+) -> Result<()> {
     let mut output = serde_json::json!({
         "model": path.display().to_string(),
         "tokens_per_second": (result.tokens_per_second * 10.0).round() / 10.0,
@@ -390,6 +400,7 @@ fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> R
         // only correct implementation we have.
         obj.insert("runs_discarded".to_string(), serde_json::json!(0));
         obj.insert("provenance".to_string(), provenance_json());
+        obj.insert("resources".to_string(), resources.clone());
         obj.insert(
             "model_sha256".to_string(),
             serde_json::json!(file_sha256(path)),

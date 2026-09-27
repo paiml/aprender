@@ -108,6 +108,13 @@ pub enum ModelOpsCommands {
         /// PMAT-486: Enable StepProfiler for per-phase wall-clock timing
         #[arg(long)]
         profile: bool,
+
+        /// MEAS-001 (#4522), CRUX-D-03: measure the whole run and print, as the
+        /// LAST stdout line, one JSON object with `peak_vram_bytes`,
+        /// `peak_rss_bytes` and the full `resources{}` block (every field a
+        /// reading with a source, or null with a reason).
+        #[arg(long)]
+        report_peak_memory: bool,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

@@ -228,6 +228,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
 
         let json = serde_json::to_string(&report).expect("serialization failed");
@@ -269,6 +270,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         assert!(!report.passed);
         assert_eq!(report.gates.len(), 1);
@@ -297,6 +299,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         assert_eq!(report.gates.len(), 3);
     }
@@ -314,6 +317,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let cloned = report.clone();
         assert_eq!(cloned.model, report.model);
@@ -332,6 +336,7 @@
             gates_skipped: 0,
             gates_registered: Vec::new(),
             system_info: None,
+            resources: None,
         };
         let debug = format!("{report:?}");
         assert!(debug.contains("QaReport"));

@@ -412,6 +412,7 @@
     #[test]
     fn test_ci_profile_report_debug() {
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: true,
             throughput_tok_s: 100.0,
@@ -427,6 +428,7 @@
     #[test]
     fn test_ci_profile_report_clone() {
         let report = CiProfileReport {
+            resources: None,
             model_path: "model.gguf".to_string(),
             passed: true,
             throughput_tok_s: 100.0,

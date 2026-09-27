@@ -512,7 +512,8 @@ fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
         }
         write!(json, "{:.2}", time).expect("write to String is infallible");
     }
-    json.push_str("]\n");
+    json.push(']');
+    push_resources_json(&mut json, results.resources.as_ref());
 
     json.push_str("}\n");
 

@@ -408,6 +408,8 @@ pub mod quantize;
 pub mod registry;
 #[cfg(all(test, feature = "server"))]
 mod registry_tests;
+/// MEAS-001 R1 (#4522): measured resources{} (RSS, CPU, faults, ctx switches, threads, IO, VRAM, energy)
+pub mod resources;
 pub mod safetensors;
 /// SafeTensors CUDA inference (PMAT-116)
 ///
