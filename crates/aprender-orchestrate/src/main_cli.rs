@@ -15,7 +15,7 @@ use crate::pacha;
 pub(crate) use cli::pipeline_cmds::{OptimizationProfile, ReportFormat};
 
 #[derive(Parser)]
-#[command(name = "batuta")]
+#[command(name = "aprender-orchestrate")]
 #[command(version, about = "Sovereign AI orchestration: agents, ML serving, code analysis, and transpilation", long_about = None)]
 pub(crate) struct Cli {
     #[command(subcommand)]

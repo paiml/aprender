@@ -119,10 +119,10 @@ falsification_tests:
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-SIMULAR-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
-    prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
-    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
-    if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
-    mutation: 'remove `emc-check` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
+    prediction: '`simular render --domain nosuch` and `render --format nosuch` exit 2, and the surface literals in the shape above = the snapshot''s, set-equal'
+    test: 'crates/aprender-simulate/src/cli/tests.rs test_parse_render_unknown_domain_is_an_error; the set: NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    if_fails: 'an added, dropped or renamed surface member ships with the ontology green ; an unknown render --domain parsed and failed at run time with exit 1 after printing the render header (observed 2026-09-26 at b6cf6d2ed; fixed on batch/ont-10 by a clap value_parser, exit 2)'
+    mutation: 'remove the --domain value_parser; the unit test turns RED (checked 2026-09-27). Remove `emc-check` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
   - id: FALSIFY-BIN-SIMULAR-005
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = simular (12 rows on 2026-09-27)'

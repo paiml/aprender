@@ -653,6 +653,10 @@ aprender-orchestrate,aprender-orchestrate viz tree,6,UNKNOWN,claude-code,no,2,or
 aprender-orchestrate,mcp:calculator (banco POST /api/v1/mcp),6,UNKNOWN,claude-code,no,5,http-orchestrate-banco,crates/aprender-orchestrate/src/serve/banco/tools.rs:58,medium
 aprender-orchestrate,mcp:code_execution (banco POST /api/v1/mcp),6,UNKNOWN,claude-code,no,5,http-orchestrate-banco,crates/aprender-orchestrate/src/serve/banco/tools.rs:79,medium
 aprender-orchestrate,mcp:compute (agent tool registry),6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/agent/tool/mcp_server.rs:285,medium
+aprender-orchestrate,mcp:hf_info,6,x86_64-linux,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/mcp/server.rs:132,high
+aprender-orchestrate,mcp:hf_integration,6,x86_64-linux,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/mcp/server.rs:180,high
+aprender-orchestrate,mcp:hf_search,6,x86_64-linux,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/mcp/server.rs:85,high
+aprender-orchestrate,mcp:hf_tree,6,x86_64-linux,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/mcp/server.rs:163,high
 aprender-orchestrate,mcp:memory (agent tool registry),6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/agent/tool/mcp_server.rs:118,medium
 aprender-orchestrate,mcp:rag (agent tool registry),6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/agent/tool/mcp_server.rs:213,medium
 aprender-orchestrate,mcp:web_search (banco POST /api/v1/mcp),6,UNKNOWN,claude-code,no,5,http-orchestrate-banco,crates/aprender-orchestrate/src/serve/banco/tools.rs:105,medium
