@@ -1,0 +1,305 @@
+{
+  "ticket": "PMAT-3719",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "a96772bd0428f10928bc585a2a52167d6dd3caa2",
+  "diff_sha256": "7dde9c5676348b12b449f7d0d6db9db52e3366f2b0e19430a644fc5f03211bab",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 199619,
+  "prompt_sha256": "07b318b67e45863b10cc34ed57def91f7a34fa9f77757c8508d04ffff735823c",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fixes #3719 exactly as scoped: (1) `run_single_prompt` no longer force-overwrites the manifest's system prompt with COMPACT_SYSTEM_PROMPT for every model in `-p` mode, restoring tool visibility for ≥2B models (which get the default full CODE_SYSTEM_PROMPT via `build_default_manifest`/`assemble_system_prompt`, unaffected by the PMAT-198 <2B-only override at code.rs:565-570); (2) the tool-call examples in CODE_SYSTEM_PROMPT are corrected to the tools' actual required fields (`old_string`/`new_string`, `content`); (3) a conservative bracket-repair (`repair_unclosed_tool_call`/`unclosed_brackets`) recovers a `<tool_call>` missing only its closing brace, gated strictly to delimited calls and refusing every other malformation (verified by a negative case table). Each fix is backed by a new falsifier test that is asserted RED on the pre-fix code and is logically sound against the actual driver code read in this review. The evidence artifacts (cell.json, serve-child stdout/stderr, stats.diff, unittest.txt, trace.jsonl) for the two re-measured lambda cells are internally consistent with each other and with the receipt's claims (cuda, 32/32 layers resident, no fallback, rc 0, one-line edit, passing re-run). The judge script (`apr_code_edit_verify.py`) reads artifacts only, matches its documented mechanism-ordering, and its CUDA-vs-CPU/backend logic matches what's cited. The gx10 cells are honestly flagged as \"not re-measured\" rather than claimed. No test asserts the opposite of the ticket, no gate is weakened, and I found no unwrap/todo/ignored-test/vacuous-assertion patterns in the new code.",
+      "findings": [
+        {
+          "file": "crates/aprender-orchestrate/src/agent/code_prompts.rs",
+          "line": 154,
+          "claim": "The MID_SYSTEM_PROMPT tier (2B–7B) documented in scale_prompt_for_model's table is dead code in production: the only call site (code.rs:565-570) gates the call itself on `params_b < 2.0`, so `scale_prompt_for_model`'s 2-7B and 7B+ branches are only ever exercised by direct unit tests, never through `cmd_code`. This diff's own new comment ('COMPACT below 2B, the full tool table otherwise') describes the actual (correct, for #3719's purposes) runtime behavior but glosses over the fact that the MID branch it documents is unreachable.",
+          "grounding": "cited",
+          "fix": "Not a blocker for #3719 (pre-existing, out of ticket scope, and the actual PASS evidence for the 4B/9B cells relies on the default full-prompt path, which does work) — worth a follow-up ticket to either wire MID into the call site or delete the dead branch.",
+          "failure_scenario": "None for this ticket: the 4B/9B models tested get the full CODE_SYSTEM_PROMPT regardless, which is what the falsifier tests check and what the evidence shows worked."
+        }
+      ],
+      "raw_bytes": 6386,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "07b318b67e45863b10cc34ed57def91f7a34fa9f77757c8508d04ffff735823c",
+      "trace": {
+        "input_sha256": "d7725f66b6c1f97bd0c9e05da2db4b43b8354ed0d8de45b0fa8d83e190030518",
+        "output_sha256": "9721bdbd7ffb466bebac3748cba47b309f969f3cf3ac9603468c28faa02dfe8e",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff matches PMAT-3719's ticket and receipt. It restores the manifest's tool-bearing system prompt for `-p` mode (was unconditionally overwritten by COMPACT_SYSTEM_PROMPT, which named no tools), fixes the `file_edit`/`memory` tool-table examples to match the tools' actual required fields, and adds a conservative repair for a delimited `<tool_call>` missing only its closing brackets. Each of the three fixes carries a falsifier test that is shown RED on the pre-fix code (verified by reading the test bodies and the code they exercise), plus a large, well-structured harness/judge (apr_code_edit_verify.sh + apr_code_edit_verify.py) with an extensive case table (check_apr_code_edit_verify.sh) covering PASS, every FAIL mechanism, decline, and the harness's own locking/choom/gpu-q behavior including two named prior judge bugs (zero-layer CUDA-ready misread, trace-based test-run misread). The evidence files are consistent with the receipt's narrative across baseline → route → v6 → v7 stages. The receipt is honest about its limits: gx10 cells were not re-measured after the branch orphan-port and still cite the older v6 binary, and done_when 4 (release-matrix enforcement) is explicitly deferred to dependent tickets (#3712/#3715) rather than falsely claimed as done here. No gate weakening, no test asserting the opposite of the ticket, and no scope creep found.",
+      "findings": [],
+      "raw_bytes": 3660,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "07b318b67e45863b10cc34ed57def91f7a34fa9f77757c8508d04ffff735823c",
+      "trace": {
+        "input_sha256": "39db290cc0b8ad5e30282ab54ea18f6fe485fc586262c68f52488bdf9ff84308",
+        "output_sha256": "3e270b9d70416f949dc65e2d79bcc7c32d8ba2a8842a54c7f9463681676efcb5",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3719 implementation is complete and correct. All three fixes (system prompt, tool call repair, prompt field names) are in place with falsifier tests. Evidence shows lambda cells PASS on v7 (bb79ae2c66) with backend: cuda and 32 layers resident. gx10 cells from v6 also PASS. Baseline demonstrates the gap. No gates weakened, no regressions detected.",
+      "findings": [],
+      "raw_bytes": 1626,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "07b318b67e45863b10cc34ed57def91f7a34fa9f77757c8508d04ffff735823c",
+      "trace": {
+        "input_sha256": "34bfaef107e051e89ef7fb79cbff922c9ce542c4df12f5bc6d81c6566d5aec54",
+        "output_sha256": "3e61d4cc24f44e8af5d512ef16b48df419bab908d09a24f35be28958cf27c413",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-orchestrate/src/agent/code_prompts.rs",
+      "line": 154,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The MID_SYSTEM_PROMPT tier (2B–7B) documented in scale_prompt_for_model's table is dead code in production: the only call site (code.rs:565-570) gates the call itself on `params_b < 2.0`, so `scale_prompt_for_model`'s 2-7B and 7B+ branches are only ever exercised by direct unit tests, never through `cmd_code`. This diff's own new comment ('COMPACT below 2B, the full tool table otherwise') describes the actual (correct, for #3719's purposes) runtime behavior but glosses over the fact that the MID branch it documents is unreachable."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 161,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 199619 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 199619,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
