@@ -428,10 +428,12 @@ fn tokenize_greedy(
 // Format detection and dispatch
 // ============================================================================
 
-/// Model dimensions inferred from the dequantized weight shapes.
+/// Model dimensions inferred from the weight shapes.
 ///
 /// The model config field is private, so the weight shapes are the only
 /// available source (same inference rules as the pre-extraction inline code).
+/// The shapes come from the F32 weights AND the raw Q4_K ones: under `WGPU_Q4K`
+/// the projections are no longer dequantized, so they are not in the F32 list.
 #[cfg(feature = "wgpu")]
 struct WgpuModelDims {
     hidden_dim: usize,
@@ -443,29 +445,17 @@ struct WgpuModelDims {
 
 #[cfg(feature = "wgpu")]
 impl WgpuModelDims {
-    fn from_weights(weights: &[(String, Vec<f32>, usize, usize)]) -> Self {
+    /// `shapes` is `(name, rows, cols)` for every weight, F32 or raw Q4_K.
+    fn from_shapes(shapes: &[(&str, usize, usize)]) -> Self {
+        let find = |suffix: &str| shapes.iter().find(|(n, _, _)| n.ends_with(suffix));
         // The first Q proj weight has shape [q_dim, hidden_dim]
-        let hidden_dim = weights
-            .iter()
-            .find(|(n, _, _, _)| n.ends_with(".q_proj"))
-            .map(|(_, _, _, cols)| *cols)
-            .unwrap_or(1536);
-        let intermediate_dim = weights
-            .iter()
-            .find(|(n, _, _, _)| n.ends_with(".gate_proj"))
-            .map(|(_, _, rows, _)| *rows)
-            .unwrap_or(8960);
+        let hidden_dim = find(".q_proj").map(|(_, _, cols)| *cols).unwrap_or(1536);
+        let intermediate_dim = find(".gate_proj").map(|(_, rows, _)| *rows).unwrap_or(8960);
         // Infer heads from Q proj: q_dim = num_heads * head_dim
-        let q_dim = weights
-            .iter()
-            .find(|(n, _, _, _)| n.ends_with(".q_proj"))
-            .map(|(_, _, rows, _)| *rows)
+        let q_dim = find(".q_proj")
+            .map(|(_, rows, _)| *rows)
             .unwrap_or(hidden_dim);
-        let kv_dim = weights
-            .iter()
-            .find(|(n, _, _, _)| n.ends_with(".k_proj"))
-            .map(|(_, _, rows, _)| *rows)
-            .unwrap_or(256);
+        let kv_dim = find(".k_proj").map(|(_, rows, _)| *rows).unwrap_or(256);
         let head_dim = 128; // Standard for Qwen2
         Self {
             hidden_dim,
@@ -477,57 +467,25 @@ impl WgpuModelDims {
     }
 }
 
-/// PMAT-367: Upload the raw Q4K weights, then every weight Q4K did not cover.
+/// Upload the raw Q4_K weights (empty unless `WGPU_Q4K`), then every F32 weight.
 ///
-/// Q4K mode trades VRAM for decode speed (compute-bound nibble extraction); the
-/// measured ratio lives in the perf-gate receipts under `evidence/`, not here.
-#[cfg(feature = "wgpu")]
-fn upload_wgpu_q4k_weights(
-    fwd: &mut trueno::backends::gpu::WgslForwardPass,
-    quantized: &realizar::gguf::OwnedQuantizedModel,
-    weights: &[(String, Vec<f32>, usize, usize)],
-) {
-    let q4k_raw = realizar::gpu::adapters::wgpu_adapter::raw_q4k_weights(quantized);
-    let q4k_names: std::collections::HashSet<String> =
-        q4k_raw.iter().map(|(n, _, _, _)| n.clone()).collect();
-    for (name, raw_data, _rows, _cols) in &q4k_raw {
-        fwd.upload_q4k_weight(name, raw_data);
-    }
-    for (name, data, _rows, _cols) in weights {
-        if q4k_names.contains(name.as_str()) {
-            continue;
-        }
-        fwd.upload_weight(name, data);
-    }
-    let q4k_mb: f64 = q4k_raw.iter().map(|(_, d, _, _)| d.len()).sum::<usize>() as f64 / 1e6;
-    println!(
-        "{}",
-        format!(
-            "Q4K mode: {} Q4K ({:.0} MB) — 10× VRAM savings",
-            q4k_raw.len(),
-            q4k_mb
-        )
-        .cyan()
-    );
-}
-
-/// Upload every weight to the GPU and allocate the KV cache (PMAT-361).
+/// PMAT-367: Q4K mode trades VRAM for decode speed (compute-bound nibble
+/// extraction); the measured ratio lives in the perf-gate receipts under
+/// `evidence/`, not here. The two lists are disjoint -- the F32 list was
+/// dequantized with the Q4_K names skipped -- so nothing is uploaded twice.
 #[cfg(feature = "wgpu")]
 fn upload_wgpu_weights(
     fwd: &mut trueno::backends::gpu::WgslForwardPass,
-    quantized: &realizar::gguf::OwnedQuantizedModel,
+    q4k_raw: &[(String, Vec<u8>, usize, usize)],
     weights: &[(String, Vec<f32>, usize, usize)],
     num_layers: usize,
 ) {
     let upload_start = std::time::Instant::now();
-    // PMAT-367: Q4K mode saves 10× VRAM but ~3× slower (compute-bound nibble extraction)
-    let use_q4k = std::env::var("WGPU_Q4K").is_ok();
-    if use_q4k {
-        upload_wgpu_q4k_weights(fwd, quantized, weights);
-    } else {
-        for (name, data, _rows, _cols) in weights {
-            fwd.upload_weight(name, data);
-        }
+    for (name, raw_data, _rows, _cols) in q4k_raw {
+        fwd.upload_q4k_weight(name, raw_data);
+    }
+    for (name, data, _rows, _cols) in weights {
+        fwd.upload_weight(name, data);
     }
     // PMAT-361: Allocate GPU KV cache buffers
     fwd.init_kv_cache(num_layers);
@@ -535,7 +493,7 @@ fn upload_wgpu_weights(
         "{}",
         format!(
             "Uploaded {} weights to GPU ({:.1} MB VRAM) in {:.1}ms",
-            weights.len(),
+            q4k_raw.len() + weights.len(),
             fwd.total_vram_bytes() as f64 / 1e6,
             upload_start.elapsed().as_secs_f64() * 1000.0,
         )
@@ -760,17 +718,34 @@ fn run_wgpu_server(app: axum::Router, config: &ServerConfig) -> Result<()> {
 fn serve_wgpu_backend(
     mapped: &realizar::gguf::MappedGGUFModel,
     quantized: &realizar::gguf::OwnedQuantizedModel,
-    weights: &[(String, Vec<f32>, usize, usize)],
     num_layers: usize,
     config: &ServerConfig,
 ) -> Result<bool> {
+    // Step 2: Dequantize. Under WGPU_Q4K the Q4_K projections go up as raw
+    // bytes, so they are skipped here rather than dequantized and dropped
+    // (#2378 finding 8, the serve half of #2513).
+    let q4k_raw = if std::env::var("WGPU_Q4K").is_ok() {
+        realizar::gpu::adapters::wgpu_adapter::raw_q4k_weights(quantized)
+    } else {
+        Vec::new()
+    };
+    let q4k_names: std::collections::HashSet<String> =
+        q4k_raw.iter().map(|(n, _, _, _)| n.clone()).collect();
+    let weights = dequantize_wgpu_weights(quantized, &q4k_names)?;
+    let weights = weights.as_slice();
+
     println!("{}", "Initializing WGPU device...".dimmed());
     let gpu_dev = trueno::backends::gpu::GpuDevice::new()
         .map_err(|e| CliError::ModelLoadFailed(format!("WGPU init: {e}")))?;
     println!("{}", "WGPU device ready (Vulkan/Metal)".green());
 
-    // Get model dims from dequanted weights (avoid private config field)
-    let dims = WgpuModelDims::from_weights(weights);
+    // Get model dims from the weight shapes (avoid private config field)
+    let shapes: Vec<(&str, usize, usize)> = weights
+        .iter()
+        .map(|(n, _, r, c)| (n.as_str(), *r, *c))
+        .chain(q4k_raw.iter().map(|(n, _, r, c)| (n.as_str(), *r, *c)))
+        .collect();
+    let dims = WgpuModelDims::from_shapes(&shapes);
 
     let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
         gpu_dev.device.clone(),
@@ -782,7 +757,8 @@ fn serve_wgpu_backend(
         dims.intermediate_dim,
     );
 
-    upload_wgpu_weights(&mut fwd, quantized, weights, num_layers);
+    upload_wgpu_weights(&mut fwd, &q4k_raw, weights, num_layers);
+    drop(q4k_raw);
 
     // Step 4: Extract CPU-side data for forward_model
     let token_embedding = quantized.token_embedding().to_vec();
@@ -864,12 +840,12 @@ fn serve_wgpu_backend(
 ///
 /// Reports the missing feature and returns `Ok(false)` so the caller continues
 /// with format detection — the same fall-through the inline `#[cfg(not(...))]`
-/// block had.
+/// block had. Nothing is dequantized: it used to dequantize the whole model to
+/// F32 first and then throw it away here (#2378 finding 8).
 #[cfg(all(feature = "inference", not(feature = "wgpu")))]
 fn serve_wgpu_backend(
     _mapped: &realizar::gguf::MappedGGUFModel,
     _quantized: &realizar::gguf::OwnedQuantizedModel,
-    _weights: &[(String, Vec<f32>, usize, usize)],
     _num_layers: usize,
     _config: &ServerConfig,
 ) -> Result<bool> {
@@ -880,14 +856,17 @@ fn serve_wgpu_backend(
     Ok(false)
 }
 
-/// Step 2 of the WGPU path: dequantize every weight to F32 and report timing.
-#[cfg(feature = "inference")]
+/// Step 2 of the WGPU path: dequantize every weight not in `skip` to F32 and
+/// report timing.
+#[cfg(feature = "wgpu")]
 fn dequantize_wgpu_weights(
     quantized: &realizar::gguf::OwnedQuantizedModel,
+    skip: &std::collections::HashSet<String>,
 ) -> Result<Vec<(String, Vec<f32>, usize, usize)>> {
     let dequant_start = std::time::Instant::now();
-    let weights = realizar::gpu::adapters::wgpu_adapter::dequant_model_weights(quantized)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Dequant: {e}")))?;
+    let weights =
+        realizar::gpu::adapters::wgpu_adapter::dequant_model_weights_except(quantized, skip)
+            .map_err(|e| CliError::ModelLoadFailed(format!("Dequant: {e}")))?;
     let total_mb: f64 = weights
         .iter()
         .map(|(_, d, _, _)| d.len() * 4)
@@ -910,9 +889,10 @@ fn dequantize_wgpu_weights(
 ///
 /// `Ok(true)` means the WGPU server ran and the caller must return; `Ok(false)`
 /// means this request is not for WGPU (or this build has no `wgpu` feature) and
-/// format detection should continue. The GGUF load and the dequantization run
-/// even in a build without the feature, exactly as they did inline, so a model
-/// that cannot be loaded still fails here rather than later.
+/// format detection should continue. The GGUF load runs even in a build without
+/// the feature, exactly as it did inline, so a model that cannot be loaded still
+/// fails here rather than later. The dequantization does not: only a build that
+/// can upload the weights pays for them (#2378 finding 8).
 #[cfg(feature = "inference")]
 fn try_start_wgpu_backend(model_path: &Path, config: &ServerConfig) -> Result<bool> {
     if config.backend.as_deref() != Some("wgpu") {
@@ -942,11 +922,8 @@ fn try_start_wgpu_backend(model_path: &Path, config: &ServerConfig) -> Result<bo
         .green()
     );
 
-    // Step 2: Dequantize weights
-    let weights = dequantize_wgpu_weights(&quantized)?;
-
-    // Step 3: WGPU upload + serve
-    serve_wgpu_backend(&mapped, &quantized, &weights, num_layers, config)
+    // Steps 2-6: dequantize, WGPU upload, serve (a no-op without `wgpu`)
+    serve_wgpu_backend(&mapped, &quantized, num_layers, config)
 }
 
 /// Start server using realizar

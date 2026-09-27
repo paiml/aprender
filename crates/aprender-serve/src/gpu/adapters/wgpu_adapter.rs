@@ -77,6 +77,36 @@ pub fn dequant_model_weights_except<S: std::hash::BuildHasher>(
     model: &OwnedQuantizedModel,
     skip: &std::collections::HashSet<String, S>,
 ) -> Result<Vec<(String, Vec<f32>, usize, usize)>> {
+    let mut weights = Vec::new();
+    visit_model_weights_except(model, skip, |n, d, r, c| weights.push((n, d, r, c)))?;
+    Ok(weights)
+}
+
+/// Dequantize every weight EXCEPT those named in `skip`, handing each one to
+/// `sink` as soon as it exists instead of collecting them.
+///
+/// #2378 finding 8, second half. `dequant_model_weights_except` stops the
+/// dequantization of tensors nobody uploads; this stops the rest from all being
+/// alive at once. A caller that uploads (or transposes, then uploads) each tensor
+/// and drops it holds one tensor in F32 at a time, not the whole model -- the
+/// `apr finetune --backend wgpu` path had the full F32 model and a transposed
+/// copy of the current tensor resident together.
+///
+/// `sink` sees tensors in the same order and with the same shapes the `Vec`
+/// functions return. Returns the tensor count and their total F32 bytes.
+///
+/// # Errors
+/// Propagates any tensor that cannot be dequantized; tensors already handed to
+/// `sink` stay handed.
+pub fn visit_model_weights_except<S, F>(
+    model: &OwnedQuantizedModel,
+    skip: &std::collections::HashSet<String, S>,
+    mut sink: F,
+) -> Result<(usize, usize)>
+where
+    S: std::hash::BuildHasher,
+    F: FnMut(String, Vec<f32>, usize, usize),
+{
     let config = &model.config;
     let hidden = config.hidden_dim;
     let num_heads = config.num_heads;
@@ -85,7 +115,7 @@ pub fn dequant_model_weights_except<S: std::hash::BuildHasher>(
     let intermediate = config.intermediate_dim;
     let num_layers = model.layers().len();
 
-    let mut weights = Vec::new();
+    let (mut count, mut total_bytes) = (0usize, 0usize);
 
     // A MACRO, not a helper fn, and that is the whole point: macro arguments
     // expand inside the `if`, so `dequant_tensor_public(..)?` is never evaluated
@@ -95,7 +125,10 @@ pub fn dequant_model_weights_except<S: std::hash::BuildHasher>(
         ($name:expr, $data:expr, $rows:expr, $cols:expr $(,)?) => {{
             let n: String = $name;
             if !skip.contains(&n) {
-                weights.push((n, $data, $rows, $cols));
+                let d: Vec<f32> = $data;
+                count += 1;
+                total_bytes += d.len() * 4;
+                sink(n, d, $rows, $cols);
             }
         }};
     }
@@ -239,10 +272,9 @@ pub fn dequant_model_weights_except<S: std::hash::BuildHasher>(
     //
     // Previous transpose was WRONG — it double-transposed, causing garbled output.
 
-    let total_bytes: usize = weights.iter().map(|(_, d, _, _)| d.len() * 4).sum();
-    eprintln!("{}", dequant_done_message(weights.len(), total_bytes));
+    eprintln!("{}", dequant_done_message(count, total_bytes));
 
-    Ok(weights)
+    Ok((count, total_bytes))
 }
 
 /// PMAT-364: Extract raw Q4K weight bytes for fused dequant+GEMV on GPU.
@@ -502,5 +534,44 @@ mod dequant_skip_2378 {
         let b = dequant_model_weights_except(&model, &std::collections::HashSet::new()).expect("b");
         assert_eq!(a.len(), b.len());
         assert_eq!(f32_elements(&a), f32_elements(&b));
+    }
+
+    #[test]
+    fn the_visitor_hands_over_the_same_tensors_as_the_vec() {
+        let model = create_test_model_with_config(&q4k_config());
+        let want = dequant_model_weights(&model).expect("vec");
+        let mut got = Vec::new();
+        let (count, bytes) =
+            visit_model_weights_except(&model, &std::collections::HashSet::new(), |n, d, r, c| {
+                got.push((n, d, r, c))
+            })
+            .expect("visit");
+        assert_eq!(got, want);
+        assert_eq!(count, want.len());
+        assert_eq!(bytes, f32_elements(&want) * 4);
+    }
+
+    #[test]
+    fn the_visitor_streams_rather_than_collecting_first() {
+        // The finetune path relies on each tensor reaching the sink before the
+        // next one is dequantized -- that is what keeps one tensor, not the whole
+        // model, resident in F32. Observable without measuring memory: corrupt a
+        // LATE tensor. A streaming visitor has already handed over every earlier
+        // tensor when it fails; one that collects first and then replays hands
+        // over none.
+        let mut model = create_test_model_with_config(&q4k_config());
+        model.layers[0].ffn_down_weight.data.truncate(3);
+        let mut seen = Vec::new();
+        let r =
+            visit_model_weights_except(&model, &std::collections::HashSet::new(), |n, _, _, _| {
+                seen.push(n)
+            });
+        assert!(r.is_err(), "the corrupted tensor dequantized fine");
+        assert!(
+            seen.iter().any(|n| n == "layer.0.up_proj"),
+            "no tensor reached the sink before the failure, so the visitor \
+             collected the whole model first: {seen:?}"
+        );
+        assert!(!seen.iter().any(|n| n == "layer.0.down_proj"), "{seen:?}");
     }
 }
