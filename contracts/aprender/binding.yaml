@@ -451,13 +451,13 @@ bindings:
   notes: "P0 invariant \u2014 every APR file embeds tokenizer (PMAT-154 fix, Q4K passthrough/fallback paths)"
 - contract: apr-cli-operations-v1.yaml
   equation: side_effect_classification
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: All 48 commands classified as ReadOnly/Mutating/LongRunning
 - contract: apr-cli-operations-v1.yaml
   equation: resource_cleanup
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: GPU/tmp/thread cleanup on all exit paths via RAII
@@ -481,7 +481,7 @@ bindings:
   notes: Per-request KV cache, immutable model weights
 - contract: apr-cli-v1.yaml
   equation: contract_gate_enforcement
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: execute_command
   status: implemented
   notes: "PMAT-237 contract gate \u2014 extract_model_paths + validate_model_contract before dispatch"
@@ -566,7 +566,7 @@ bindings:
 - contract: apr-data-pipeline-v1.yaml
   equation: data_split_determinism
   module_path: apr_cli::commands::data
-  function: run
+  function: run_split
   status: implemented
   notes: Seed-deterministic train/val/test split
 - contract: apr-data-pipeline-v1.yaml
@@ -637,14 +637,14 @@ bindings:
   notes: Init->WaitInput->Generating->WaitInput->Exit state machine
 - contract: apr-chat-session-v1.yaml
   equation: session_persistence
-  module_path: apr_cli::commands::chat_session
+  module_path: apr_cli::commands::chat
   function: run
   status: implemented
   notes: JSON serialization, KV-cache not persisted (rebuilt from history)
 # --- cli-dispatch-v1 bindings (PMAT-495) ---
 - contract: cli-dispatch-v1.yaml
   equation: dispatch_completeness
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   signature: 'fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -658,21 +658,21 @@ bindings:
   notes: Distinct error classes map to distinct non-zero exit codes (0-11)
 - contract: cli-dispatch-v1.yaml
   equation: output_format_fidelity
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   signature: 'fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
   notes: --json/--yaml/--csv produce parseable output per respective RFC
 - contract: cli-dispatch-v1.yaml
   equation: feature_gated_dispatch
-  module_path: apr_cli::dispatch_analysis
+  module_path: apr_cli
   function: dispatch_extended_command
   signature: 'fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError>'
   status: implemented
   notes: Code variant dispatches to batuta::agent::code::cmd_code (PMAT-182)
 - contract: cli-dispatch-v1.yaml
   equation: idempotent_inspection
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_inspection_commands
   signature: 'fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -867,7 +867,7 @@ bindings:
   notes: decode(encode(text)) == text for valid UTF-8
 - contract: tokenizer-loading-v1.yaml
   equation: byte_encoder_coverage
-  module_path: apr_cli::commands::chat_load_tokenizers
+  module_path: apr_cli::commands::chat
   function: load_tokenizers
   signature: 'fn load_tokenizers(...) -> Result<TokenizerSet>'
   status: implemented
@@ -904,7 +904,7 @@ bindings:
 # --- apr-cli-mutating-v1 bindings (GH-689) ---
 - contract: apr-cli-mutating-v1.yaml
   equation: output_path_validation
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_model_commands
   signature: 'fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -925,7 +925,7 @@ bindings:
   notes: Temp file + rename pattern for atomic writes
 - contract: apr-cli-mutating-v1.yaml
   equation: rm_confirmation_gate
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_model_commands
   signature: 'fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -933,14 +933,14 @@ bindings:
 # --- apr-cli-readonly-v1 bindings (GH-688) ---
 - contract: apr-cli-readonly-v1.yaml
   equation: no_side_effects
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_inspection_commands
   signature: 'fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
   notes: 28 readonly commands never modify filesystem or model state
 - contract: apr-cli-readonly-v1.yaml
   equation: idempotent_output
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_inspection_commands
   signature: 'fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented

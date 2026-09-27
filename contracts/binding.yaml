@@ -283,13 +283,13 @@ bindings:
   notes: "P0 invariant \u2014 every APR file embeds tokenizer (PMAT-154 fix, Q4K passthrough/fallback paths)"
 - contract: apr-cli-operations-v1.yaml
   equation: side_effect_classification
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: All 48 commands classified as ReadOnly/Mutating/LongRunning
 - contract: apr-cli-operations-v1.yaml
   equation: resource_cleanup
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: GPU/tmp/thread cleanup on all exit paths via RAII
@@ -313,7 +313,7 @@ bindings:
   notes: Per-request KV cache, immutable model weights
 - contract: apr-cli-v1.yaml
   equation: contract_gate_enforcement
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: execute_command
   status: implemented
   notes: "PMAT-237 contract gate \u2014 extract_model_paths + validate_model_contract before dispatch"
@@ -398,7 +398,7 @@ bindings:
 - contract: apr-data-pipeline-v1.yaml
   equation: data_split_determinism
   module_path: apr_cli::commands::data
-  function: run
+  function: run_split
   status: implemented
   notes: Seed-deterministic train/val/test split
 - contract: apr-data-pipeline-v1.yaml
@@ -469,7 +469,7 @@ bindings:
   notes: Init->WaitInput->Generating->WaitInput->Exit state machine
 - contract: apr-chat-session-v1.yaml
   equation: session_persistence
-  module_path: apr_cli::commands::chat_session
+  module_path: apr_cli::commands::chat
   function: run
   status: implemented
   notes: JSON serialization, KV-cache not persisted (rebuilt from history)
@@ -529,7 +529,7 @@ bindings:
 - contract: apr-model-security-v1.yaml
   equation: publish_manifest_integrity
   module_path: apr_cli::commands::publish
-  function: run
+  function: execute
   status: implemented
   notes: SHA-256 manifest with signed model publishing
 # --- apr-model-diagnostics-v1 (hex, rosetta, oracle, diagnose) ---

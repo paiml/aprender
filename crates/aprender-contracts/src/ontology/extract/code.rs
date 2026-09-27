@@ -298,11 +298,38 @@ impl<'a> Resolver<'a> {
                 reason: format!("`{}` is missing or does not parse", self.rel(file)),
             });
         };
+        let dir = file.parent().unwrap_or(file).to_path_buf();
         Ok(Module {
-            items: ast.items.clone(),
+            items: self.expand_includes(&ast.items, &dir, 0),
             file: file.to_path_buf(),
             child_dir,
         })
+    }
+
+    /// `items` with every item-position `include!("x.rs")` replaced by the items of `x.rs`, relative to `dir`
+    /// (the including file's directory, as rustc resolves it). The tree splits large modules this way, and a
+    /// walk that stopped at the macro would call every fn in the included file a ghost. An include that is
+    /// missing or does not parse is kept as the macro, so it resolves nothing.
+    fn expand_includes(&mut self, items: &[syn::Item], dir: &Path, depth: usize) -> Vec<syn::Item> {
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            let target = match item {
+                syn::Item::Macro(m) if depth < 8 && m.mac.path.is_ident("include") => m
+                    .mac
+                    .parse_body::<syn::LitStr>()
+                    .ok()
+                    .map(|l| dir.join(l.value())),
+                _ => None,
+            };
+            match target.and_then(|t| self.parse(&t).map(|ast| (t, ast))) {
+                Some((t, ast)) => {
+                    let sub = t.parent().unwrap_or(dir).to_path_buf();
+                    out.extend(self.expand_includes(&ast.items, &sub, depth + 1));
+                }
+                None => out.push(item.clone()),
+            }
+        }
+        out
     }
 
     /// Resolve `module_path::function` to its definition. `depth` bounds re-export chasing.
@@ -411,8 +438,9 @@ impl<'a> Resolver<'a> {
                     continue;
                 }
                 if let Some((_, content)) = &m.content {
+                    let dir = module.file.parent().unwrap_or(&module.file).to_path_buf();
                     return Ok(Step::Module(Module {
-                        items: content.clone(),
+                        items: self.expand_includes(content, &dir, 0),
                         file: module.file.clone(),
                         child_dir: module.child_dir.join(seg),
                     }));
@@ -850,6 +878,28 @@ mod tests {
         let no_mod = r.resolve("kern::nope", "f").unwrap_err();
         assert!(no_mod.reason.contains("no `mod nope`"), "{}", no_mod.reason);
         assert_eq!(r.files_parsed(), 3);
+    }
+
+    #[test]
+    fn the_walk_follows_include_relative_to_the_including_file() {
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/ont/code-include");
+        let ws = Workspace::scan(&root);
+        let mut r = Resolver::new(&ws);
+        r.resolve("inc", "from_a").expect("fn in an included file");
+        // split_a.rs includes nested/split_b.rs: the path is relative to split_a.rs, not to lib.rs.
+        let step = r
+            .resolve("inc::Engine", "step")
+            .expect("method in a nested include");
+        assert_eq!(step.kind, "method");
+        r.resolve("inc::inner", "in_inner")
+            .expect("include inside an inline mod");
+        let ghost = r.resolve("inc", "not_there").unwrap_err();
+        assert!(
+            ghost.reason.contains("no `fn not_there`"),
+            "{}",
+            ghost.reason
+        );
     }
 
     #[test]
