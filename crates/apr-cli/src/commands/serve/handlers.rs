@@ -37,6 +37,8 @@ struct WgpuInferenceState {
     num_layers: usize,
     vocab_size: usize,
     hidden_dim: usize,
+    /// #3718: the model's context window; a prompt that fills it is refused.
+    context_length: usize,
 }
 
 /// PMAT-355: How one character of a GPT-2 byte-level BPE token maps to bytes.
@@ -230,12 +232,13 @@ fn wgpu_stream_done_chunk(
     id: &str,
     prompt_len: usize,
     completion_tokens: u32,
+    finish_reason: &str,
     elapsed: std::time::Duration,
 ) -> String {
     let tok_s = wgpu_tokens_per_second(completion_tokens as f64, elapsed);
     serde_json::json!({
         "id": id, "object": "chat.completion.chunk", "model": "qwen-wgpu",
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
         "usage": {"prompt_tokens": prompt_len, "completion_tokens": completion_tokens,
             "total_tokens": prompt_len as u32 + completion_tokens},
         "x_wgpu_tok_s": tok_s,
@@ -281,7 +284,19 @@ fn wgpu_stream_generate(
         }
     }
 
-    let done = wgpu_stream_done_chunk(id, prompt_ids.len(), completion_tokens, gen_start.elapsed());
+    // #3718: a reply cut at the budget is "length", never "stop".
+    let finish_reason = if completion_tokens as usize >= max_tokens {
+        "length"
+    } else {
+        "stop"
+    };
+    let done = wgpu_stream_done_chunk(
+        id,
+        prompt_ids.len(),
+        completion_tokens,
+        finish_reason,
+        gen_start.elapsed(),
+    );
     let _ = tx.blocking_send(done);
     let _ = tx.blocking_send("[DONE]".to_string());
 }
@@ -376,6 +391,20 @@ async fn wgpu_chat_completion(
     let stream = body["stream"].as_bool().unwrap_or(false);
     let prompt_ids = wgpu_prompt_ids(&state, &body);
     let id = wgpu_completion_id();
+
+    // #3718: refuse a prompt that fills the context window, and clamp the budget
+    // to the room left, before any prefill runs.
+    let max_tokens = match context_token_budget(prompt_ids.len(), max_tokens, state.context_length)
+    {
+        Ok(budget) => budget,
+        Err((prompt_len, context_length)) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                axum::Json(context_length_exceeded_body(prompt_len, context_length)),
+            )
+                .into_response();
+        }
+    };
 
     if stream {
         // PMAT-355: Streaming SSE via spawn_blocking + channel
@@ -854,6 +883,7 @@ fn serve_wgpu_backend(
         num_layers,
         vocab_size,
         hidden_dim: dims.hidden_dim,
+        context_length: quantized.config().context_length,
     });
 
     run_wgpu_server(build_wgpu_router(wgpu_state), config)?;
@@ -1715,6 +1745,7 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
 }
 
+include!("context_budget_3718.rs");
 include!("handler_apr_cpu_completion.rs");
 include!("handler_gpu_completion.rs");
 include!("server.rs");
