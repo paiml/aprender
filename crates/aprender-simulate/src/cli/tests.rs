@@ -105,10 +105,12 @@ fn test_version_flag_names_the_commit() {
         Some(format!("({sha})").as_str()),
         "got `{line}`"
     );
-    let hex9 = sha.len() == 9 && sha.chars().all(|c| c.is_ascii_hexdigit());
+    // git's --short grows with the repo (9 hex until 2026-09, 10 after), so accept any
+    // abbreviation git can print (7..=40 hex), never one fixed length.
+    let short_sha = (7..=40).contains(&sha.len()) && sha.chars().all(|c| c.is_ascii_hexdigit());
     assert!(
-        hex9 || sha.ends_with("+no-git"),
-        "APR_GIT_SHA must be 9 hex or v<ver>+no-git; got `{sha}`"
+        short_sha || sha.ends_with("+no-git"),
+        "APR_GIT_SHA must be 7-40 hex or v<ver>+no-git; got `{sha}`"
     );
 }
 
