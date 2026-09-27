@@ -214,27 +214,26 @@ fn g8_simd_operations() {
 /// G9: Roofline efficiency check
 #[test]
 fn g9_roofline_efficiency() {
-    // Verify operations are compute-bound, not memory-bound
-    use std::time::Instant;
-
-    let sizes = [32, 64, 128];
-    let mut times = Vec::new();
-
-    for &size in &sizes {
+    // Verify matmul does the full inner-product work at every size, not a stub.
+    //
+    // This used to time one matmul per size and assert t(128) > 1.5 * t(32). A single
+    // wall-clock sample on a shared runner is not a verdict: it failed once in the
+    // FLOW-003 QM-01 7-day harvest (1 of 156 runs, passed on retry) and would red a
+    // release PR outright under retries = 0 (FLAKE-0, #4516). ones(n,n) x ones(n,n)
+    // is n in every cell, so a stub that skips or truncates the k-loop is caught
+    // deterministically at each size.
+    for &size in &[32usize, 64, 128] {
         let a = Tensor::ones(&[size, size]);
         let b = Tensor::ones(&[size, size]);
-
-        let start = Instant::now();
-        let _ = a.matmul(&b);
-        times.push(start.elapsed().as_secs_f64());
+        let c = a.matmul(&b);
+        let data = c.data();
+        assert_eq!(data.len(), size * size, "G9: output is {size}x{size}");
+        let expected = size as f32;
+        assert!(
+            data.iter().all(|v| (v - expected).abs() < 1e-3),
+            "G9: every cell of ones({size})^2 is {expected} (full k-loop, not a stub)"
+        );
     }
-
-    // Larger matrices should take longer (not constant time)
-    // This indicates actual computation, not just memory copy
-    assert!(
-        times[2] > times[0] * 1.5,
-        "G9: Computation scales with size (not memory-bound stub)"
-    );
 }
 
 /// G10: HuggingFace baseline comparison structure
