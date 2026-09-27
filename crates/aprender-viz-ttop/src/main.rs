@@ -18,16 +18,26 @@ use crossterm::{
 };
 
 use presentar_terminal::direct::{CellBuffer, DiffRenderer};
-use presentar_terminal::ptop::{config::PtopConfig, ui, App, PanelType};
 use presentar_terminal::ptop::app::MetricsCollector;
+use presentar_terminal::ptop::{config::PtopConfig, ui, App, MetricsSnapshot, PanelType};
 use presentar_terminal::{AsyncCollector, ColorMode};
+
+use aprender_viz_ttop::runtime::{
+    needs_full_repaint, parse_panel_type, rss_kib, spawn_bounded_collector,
+};
+use aprender_viz_ttop::timings::{time, Timings};
 
 /// ttop: Terminal Top - Sovereign AI Stack System Monitor
 #[derive(Parser)]
-#[command(name = "ttop", version, about, long_about = None)]
+#[command(
+    name = "ttop",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
+    about,
+    long_about = None
+)]
 struct Cli {
-    /// Refresh interval in milliseconds
-    #[arg(short, long, default_value = "1000")]
+    /// Refresh interval in milliseconds (>= 1; 0 would spin the collector)
+    #[arg(short, long, default_value = "1000", value_parser = clap::value_parser!(u64).range(1..))]
     refresh: u64,
 
     /// Enable deterministic mode for testing
@@ -59,8 +69,20 @@ struct Cli {
     dump_config: bool,
 
     /// Explode a specific panel (cpu, memory, disk, network, process, gpu, sensors, etc.)
-    #[arg(long, value_name = "PANEL")]
-    explode: Option<String>,
+    #[arg(long, value_name = "PANEL", value_parser = parse_panel_type)]
+    explode: Option<PanelType>,
+
+    /// Headless soak: run N collect+draw+diff frames with no terminal, printing
+    /// one JSON line per 10 frames ({"frame":N,"rss_kib":K}), then exit.
+    /// Used by the #4511 RSS leak gate (scripts/ttop_soak_gate.sh).
+    #[arg(long, value_name = "FRAMES")]
+    soak_frames: Option<u64>,
+
+    /// Time every frame phase (input, apply, layout_render, diff, write) and each
+    /// collector (cpu, mem, process, disk, net, gpu, analyzers); print p50/p99 per
+    /// phase as JSON lines on exit (stderr; stdout under --soak-frames). Off by default.
+    #[arg(long)]
+    timings: bool,
 }
 
 fn load_config(config_path: Option<&std::path::PathBuf>) -> PtopConfig {
@@ -111,31 +133,29 @@ fn cleanup_terminal(stdout: &mut io::Stdout) -> io::Result<()> {
 fn spawn_metrics_collector(
     refresh_ms: u64,
     deterministic: bool,
+    timings: bool,
 ) -> (
-    std::sync::mpsc::Receiver<presentar_terminal::ptop::MetricsSnapshot>,
-    std::sync::Arc<std::sync::atomic::AtomicBool>,
+    std::sync::mpsc::Receiver<MetricsSnapshot>,
+    aprender_viz_ttop::runtime::StopOnDrop,
 ) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{mpsc, Arc};
+    let mut collector = MetricsCollector::new(deterministic);
+    collector.set_timings(timings);
+    spawn_bounded_collector(Duration::from_millis(refresh_ms), move || {
+        collector.collect()
+    })
+}
 
-    let collect_interval = Duration::from_millis(refresh_ms);
-    let bg_running = Arc::new(AtomicBool::new(true));
-    let bg_running_thread = Arc::clone(&bg_running);
-
-    let (tx, rx) = mpsc::channel();
-
-    std::thread::spawn(move || {
-        let mut collector = MetricsCollector::new(deterministic);
-        while bg_running_thread.load(Ordering::Relaxed) {
-            let snapshot = collector.collect();
-            if tx.send(snapshot).is_err() {
-                break;
+/// Apply one snapshot; under --timings also fold in the collector's own phase times.
+fn apply(app: &mut App, mut snapshot: MetricsSnapshot, t: Option<&mut Timings>) {
+    match t {
+        None => app.apply_snapshot(snapshot),
+        Some(t) => {
+            for (phase, us) in std::mem::take(&mut snapshot.collect_phase_us) {
+                t.record_us(phase, us);
             }
-            std::thread::sleep(collect_interval);
+            time(Some(t), "apply", || app.apply_snapshot(snapshot));
         }
-    });
-
-    (rx, bg_running)
+    }
 }
 
 fn process_input(app: &mut App) -> io::Result<bool> {
@@ -154,22 +174,51 @@ fn render_frame(
     app: &App,
     renderer: &mut DiffRenderer,
     mode_changed: bool,
+    t: Option<&mut Timings>,
 ) -> io::Result<()> {
     let (width, height) = terminal::size()?;
+    draw_diff(
+        app,
+        renderer,
+        width,
+        height,
+        mode_changed,
+        &mut Vec::with_capacity(32768),
+        t,
+        |out| {
+            execute!(stdout, cursor::MoveTo(0, 0))?;
+            stdout.write_all(out)?;
+            stdout.flush()
+        },
+    )
+}
+
+/// Draw one frame into a fresh buffer and diff it into `output`, then hand the bytes
+/// to `sink`. Shared by the terminal loop and the headless soak.
+#[allow(clippy::too_many_arguments)]
+fn draw_diff(
+    app: &App,
+    renderer: &mut DiffRenderer,
+    width: u16,
+    height: u16,
+    full: bool,
+    output: &mut Vec<u8>,
+    mut t: Option<&mut Timings>,
+    sink: impl FnOnce(&[u8]) -> io::Result<()>,
+) -> io::Result<()> {
     let mut buffer = CellBuffer::new(width, height);
-    ui::draw(app, &mut buffer);
-
-    execute!(stdout, cursor::MoveTo(0, 0))?;
-    let mut output = Vec::with_capacity(32768);
-
-    if mode_changed {
-        renderer.render_full(&mut buffer, &mut output)?;
-    } else {
-        renderer.flush(&mut buffer, &mut output)?;
-    }
-
-    stdout.write_all(&output)?;
-    stdout.flush()
+    time(t.as_deref_mut(), "layout_render", || {
+        ui::draw(app, &mut buffer)
+    });
+    output.clear();
+    time(t.as_deref_mut(), "diff", || {
+        if full {
+            renderer.render_full(&mut buffer, output)
+        } else {
+            renderer.flush(&mut buffer, output)
+        }
+    })?;
+    time(t, "write", || sink(output))
 }
 
 fn run_app(
@@ -177,27 +226,29 @@ fn run_app(
     mut app: App,
     refresh_ms: u64,
     color_mode: ColorMode,
+    mut t: Option<&mut Timings>,
 ) -> io::Result<()> {
-    use std::sync::atomic::Ordering;
-
     let mut renderer = DiffRenderer::with_color_mode(color_mode);
-    let (rx, bg_running) = spawn_metrics_collector(refresh_ms, app.deterministic);
+    // `_stop` ends the collector on every exit path, `?` errors included (#4511 D6)
+    let (rx, _stop) = spawn_metrics_collector(refresh_ms, app.deterministic, t.is_some());
 
     let render_interval = Duration::from_millis(16);
-    let mut last_render = Instant::now().checked_sub(render_interval).unwrap_or_else(Instant::now);
+    let mut last_render = Instant::now()
+        .checked_sub(render_interval)
+        .unwrap_or_else(Instant::now);
     let mut frame_times: Vec<Duration> = Vec::with_capacity(60);
     let mut was_exploded = false;
     let mut first_frame = true;
+    let mut last_size = (0u16, 0u16);
 
     loop {
-        if process_input(&mut app)? {
-            bg_running.store(false, Ordering::Relaxed);
+        if time(t.as_deref_mut(), "input", || process_input(&mut app))? {
             return Ok(());
         }
 
         // Apply pending metrics snapshots
         while let Ok(snapshot) = rx.try_recv() {
-            app.apply_snapshot(snapshot);
+            apply(&mut app, snapshot, t.as_deref_mut());
         }
 
         if last_render.elapsed() < render_interval {
@@ -207,14 +258,18 @@ fn run_app(
 
         let render_start = Instant::now();
         let is_exploded = app.exploded_panel.is_some();
-        let mode_changed = first_frame || is_exploded != was_exploded;
+        // a resize must repaint everything: the diff only rewrites cells drawn this
+        // frame, so cells outside the new layout kept stale glyphs (#4511 D4)
+        let size = terminal::size()?;
+        let mode_changed =
+            needs_full_repaint(first_frame, is_exploded != was_exploded, size, last_size);
+        last_size = size;
         was_exploded = is_exploded;
         first_frame = false;
 
-        render_frame(stdout, &app, &mut renderer, mode_changed)?;
+        render_frame(stdout, &app, &mut renderer, mode_changed, t.as_deref_mut())?;
 
         if !app.running {
-            bg_running.store(false, Ordering::Relaxed);
             break;
         }
 
@@ -230,25 +285,41 @@ fn run_app(
     Ok(())
 }
 
-fn parse_panel_type(name: &str) -> Option<PanelType> {
-    match name.to_lowercase().as_str() {
-        "cpu" => Some(PanelType::Cpu),
-        "memory" | "mem" => Some(PanelType::Memory),
-        "disk" => Some(PanelType::Disk),
-        "network" | "net" => Some(PanelType::Network),
-        "process" | "proc" | "processes" => Some(PanelType::Process),
-        "gpu" => Some(PanelType::Gpu),
-        "sensors" | "sensor" => Some(PanelType::Sensors),
-        "connections" | "conn" => Some(PanelType::Connections),
-        "psi" | "pressure" => Some(PanelType::Psi),
-        "files" | "file" => Some(PanelType::Files),
-        "battery" | "bat" => Some(PanelType::Battery),
-        "containers" | "container" | "docker" => Some(PanelType::Containers),
-        _ => {
-            eprintln!("[ttop] Unknown panel: {name}. Valid: cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers");
-            None
+/// Headless soak for the #4511 leak gate: the real collector thread, snapshot
+/// apply, draw and diff, with the bytes discarded instead of written to a tty.
+fn soak(
+    mut app: App,
+    frames: u64,
+    refresh_ms: u64,
+    width: u16,
+    height: u16,
+    mut t: Option<&mut Timings>,
+) -> io::Result<()> {
+    let mut renderer = DiffRenderer::with_color_mode(ColorMode::TrueColor);
+    let (rx, _stop) = spawn_metrics_collector(refresh_ms, app.deterministic, t.is_some());
+    let mut output = Vec::with_capacity(32768);
+    let mut stdout = io::stdout();
+    for frame in 1..=frames {
+        while let Ok(snapshot) = rx.try_recv() {
+            apply(&mut app, snapshot, t.as_deref_mut());
         }
+        draw_diff(
+            &app,
+            &mut renderer,
+            width,
+            height,
+            frame == 1,
+            &mut output,
+            t.as_deref_mut(),
+            |_| Ok(()),
+        )?;
+        if frame % 10 == 0 || frame == frames {
+            let rss = rss_kib().map_or_else(|| "null".to_string(), |k| k.to_string());
+            writeln!(stdout, "{{\"frame\":{frame},\"rss_kib\":{rss}}}")?;
+        }
+        std::thread::sleep(Duration::from_millis(16));
     }
+    stdout.flush()
 }
 
 fn main() -> io::Result<()> {
@@ -268,16 +339,37 @@ fn main() -> io::Result<()> {
             std::thread::sleep(Duration::from_millis(100));
             app.collect_metrics();
         }
-        if let Some(ref panel_name) = cli.explode {
-            app.exploded_panel = parse_panel_type(panel_name);
-        }
+        app.exploded_panel = cli.explode;
         return render_once(&app, cli.width, cli.height);
     }
 
-    let mut app = App::with_config(cli.deterministic, config);
-    if let Some(ref panel_name) = cli.explode {
-        app.exploded_panel = parse_panel_type(panel_name);
+    if let Some(frames) = cli.soak_frames {
+        let mut app = App::with_config_lightweight(cli.deterministic, config);
+        app.exploded_panel = cli.explode;
+        let mut timings = cli.timings.then(Timings::new);
+        soak(
+            app,
+            frames,
+            cli.refresh,
+            cli.width,
+            cli.height,
+            timings.as_mut(),
+        )?;
+        if let Some(t) = timings {
+            print!("{}", t.to_json_lines());
+        }
+        return Ok(());
     }
+
+    let mut app = App::with_config(cli.deterministic, config);
+    app.exploded_panel = cli.explode;
+
+    // a panic must not leave the user's terminal raw, hidden-cursor and alt-screen (#4511 D7)
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = cleanup_terminal(&mut io::stdout());
+        default_hook(info);
+    }));
 
     let mut stdout = io::stdout();
     setup_terminal(&mut stdout)?;
@@ -288,7 +380,11 @@ fn main() -> io::Result<()> {
         ColorMode::TrueColor
     };
 
-    let result = run_app(&mut stdout, app, cli.refresh, color_mode);
+    let mut timings = cli.timings.then(Timings::new);
+    let result = run_app(&mut stdout, app, cli.refresh, color_mode, timings.as_mut());
     cleanup_terminal(&mut stdout)?;
+    if let Some(t) = timings {
+        eprint!("{}", t.to_json_lines());
+    }
     result
 }

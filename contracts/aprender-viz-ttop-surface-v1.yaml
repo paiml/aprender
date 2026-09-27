@@ -1,0 +1,71 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    Surface contract for the `aprender-viz-ttop` binary (ttop, the fleet's TUI system
+    monitor, #4511). It declares every CLI flag, every key binding per input mode, and
+    every panel. `crates/aprender-viz-ttop/tests/ttop_surface_gate.rs` checks each list
+    against the code in BOTH directions: a flag, key or panel the code has and this file
+    lacks is RED, and so is one this file declares that the code dropped. Each flag also
+    needs a row in docs/audits/surface_audit.csv.
+
+    Token spelling (the gate parses the formulas as whitespace-separated tokens):
+    a printable key is itself (`q`, `?`, `/`); `Space` is ' '; named keys use the
+    crossterm KeyCode name (`Esc`, `Enter`, `Tab`, `BackTab`, `PageUp`, `F1`, ...);
+    `C-c` is Ctrl+c; `Char(any)` is "any printable character".
+  references:
+    - "docs/audits/surface_audit.csv"
+    - "contracts/tui-rendering-ux-v1.yaml"
+    - "crates/aprender-present-terminal/src/ptop/app.rs"
+
+equations:
+  cli_flags:
+    formula: "--refresh --deterministic --no-color --render-once --width --height --config --dump-config --explode --soak-frames --timings --help --version"
+    domain: "long flags printed by `aprender-viz-ttop --help`"
+  keys_normal:
+    formula: "q Esc C-c Enter z Tab BackTab l H ? h F1 1 2 3 4 5 6 7 8 9 v Down j Up k PageDown PageUp Home g End G c m p s r / f Delete 0 x X"
+    domain: "App::handle_normal_mode_key"
+  keys_help:
+    formula: "Esc ? h F1 q C-c"
+    domain: "App::handle_help_mode_key (every other key is swallowed)"
+  keys_signal_confirmation:
+    formula: "Y Enter n N Esc q C-c x K H i p"
+    domain: "App::handle_signal_confirmation_key"
+  keys_exploded:
+    formula: "Esc z q C-c Left h Right l Enter Space Up k Down j PageUp PageDown Home g End G c m p n r / f"
+    domain: "App::handle_exploded_mode_key"
+  keys_filter_input:
+    formula: "Esc Enter Backspace Char(any)"
+    domain: "App::handle_filter_input_key"
+  panels:
+    formula: "cpu memory disk network process gpu battery sensors files connections psi containers"
+    domain: "PanelType::all(), each accepted by `--explode <PANEL>`"
+
+falsification_tests:
+  - id: FALSIFY-TTOP-SURFACE-001
+    name: flags_match_help
+    prediction: "the long flags in `aprender-viz-ttop --help` equal cli_flags, both directions"
+    test_harness: "cargo test -p aprender-viz-ttop --test ttop_surface_gate -- flags_match_help"
+    expected_output: "exit 0"
+    if_fails: "Declare the new flag here and add its docs/audits/surface_audit.csv row, or restore the dropped flag."
+
+  - id: FALSIFY-TTOP-SURFACE-002
+    name: every_flag_has_a_ledger_row
+    prediction: "every cli_flag has an aprender-viz-ttop row in docs/audits/surface_audit.csv"
+    test_harness: "cargo test -p aprender-viz-ttop --test ttop_surface_gate -- every_flag_has_a_ledger_row"
+    expected_output: "exit 0"
+    if_fails: "Add the surface_audit.csv row for the flag."
+
+  - id: FALSIFY-TTOP-SURFACE-003
+    name: keys_match_handlers
+    prediction: "the KeyCodes each App::handle_*_key matches equal the keys_<mode> formula, both directions"
+    test_harness: "cargo test -p aprender-viz-ttop --test ttop_surface_gate -- keys_match_handlers"
+    expected_output: "exit 0"
+    if_fails: "Declare the new binding under its mode here, or restore the dropped one."
+
+  - id: FALSIFY-TTOP-SURFACE-004
+    name: panels_match_panel_type
+    prediction: "every PanelType::all() entry is a declared panel that --explode parses back to it, and nothing else is declared"
+    test_harness: "cargo test -p aprender-viz-ttop --test ttop_surface_gate -- panels_match_panel_type"
+    expected_output: "exit 0"
+    if_fails: "Declare the new panel here and teach runtime::parse_panel_type its name."

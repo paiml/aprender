@@ -745,6 +745,20 @@ aprender-train-shell,repl: inspect,6,x86_64-linux,pytorch,no,12,test-harness,cra
 aprender-train-shell,repl: memory,6,x86_64-linux,pytorch,no,12,test-harness,crates/aprender-train-shell/src/commands.rs:65,low
 aprender-train-shell,repl: quit,6,x86_64-linux,pytorch,no,12,test-harness,crates/aprender-train-shell/src/commands.rs:72,low
 aprender-train-shell,repl: set <key> <value>,6,x86_64-linux,pytorch,no,12,test-harness,crates/aprender-train-shell/src/commands.rs:66,low
+aprender-viz-ttop,aprender-viz-ttop (interactive TUI system monitor; fleet dogfood target),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:322,high
+aprender-viz-ttop,aprender-viz-ttop --refresh <MS>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:38,high
+aprender-viz-ttop,aprender-viz-ttop --deterministic,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:42,high
+aprender-viz-ttop,aprender-viz-ttop --no-color,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:46,high
+aprender-viz-ttop,aprender-viz-ttop --render-once,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:50,high
+aprender-viz-ttop,aprender-viz-ttop --render-once --width <COLS>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:54,high
+aprender-viz-ttop,aprender-viz-ttop --render-once --height <ROWS>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:58,high
+aprender-viz-ttop,aprender-viz-ttop --config <PATH>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:62,high
+aprender-viz-ttop,aprender-viz-ttop --dump-config,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:66,high
+aprender-viz-ttop,aprender-viz-ttop --render-once --explode <PANEL>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:70,high
+aprender-viz-ttop,aprender-viz-ttop --soak-frames <FRAMES> (headless RSS soak; scripts/ttop_soak_gate.sh),7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:76,high
+aprender-viz-ttop,aprender-viz-ttop --timings (per-phase p50/p99 + tracing spans; scripts/ttop_timings_gate.sh),6,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:82,high
+aprender-viz-ttop,aprender-viz-ttop --help,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:29,high
+aprender-viz-ttop,aprender-viz-ttop --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-viz-ttop/src/main.rs:31,high
 aprender-zram-generator,aprender-zram-generator <NORMAL_DIR> (systemd.generator unit emission),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-zram-generator/src/main.rs:30-60,high
 presentar,presentar bundle,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:67,high
 presentar,presentar check,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:84,high

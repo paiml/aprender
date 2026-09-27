@@ -1889,6 +1889,7 @@ name = "aprender-viz-ttop"
 version = "0.70.0"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-common",
  "aprender-contracts",
  "aprender-present-core",
@@ -1901,6 +1902,7 @@ dependencies = [
  "serde_yaml_ng",
  "tempfile",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

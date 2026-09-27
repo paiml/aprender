@@ -40,7 +40,10 @@ fn process_contract(path: &std::path::Path) -> (usize, usize) {
             pre += eq.preconditions.len();
         }
         if !eq.postconditions.is_empty() {
-            println!("cargo:rustc-env={key}_POST_COUNT={}", eq.postconditions.len());
+            println!(
+                "cargo:rustc-env={key}_POST_COUNT={}",
+                eq.postconditions.len()
+            );
             post += eq.postconditions.len();
         }
     }
@@ -48,6 +51,9 @@ fn process_contract(path: &std::path::Path) -> (usize, usize) {
 }
 
 fn main() {
+    // #4511: stamp APR_GIT_SHA for `--version` before anything can return early
+    build_sha::emit();
+
     let cdir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
     if let Ok(entries) = std::fs::read_dir(&cdir) {
         let (mut tp, mut tq) = (0, 0);

@@ -33,11 +33,15 @@ clap = { version = "4.5", features = ["derive"] }
 # Shared formatting/display utilities (Batuta stack)
 batuta-common = { workspace = true }
 
+# --timings phase spans (#4511 item 6); no subscriber is installed unless one is wired
+tracing = { workspace = true }
+
 # Error handling
 thiserror = "2.0"
 anyhow = "1.0"
 
 [build-dependencies]
+aprender-build-sha = { workspace = true }  # #4511: APR_GIT_SHA for --version (the all-binaries smoke needs it)
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
