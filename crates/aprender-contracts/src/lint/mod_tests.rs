@@ -34,6 +34,7 @@ fn lint_passes_on_real_contracts() {
     lint_cache_populates_stats(&report);
     every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus(&report);
     valid_under_is_computed_on_the_real_corpus(&report);
+    the_refinement_gate_measured_head_against_base(&report);
     assert!(report.passed, "lint should pass: {report:?}");
     // 22 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
     // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
@@ -42,6 +43,31 @@ fn lint_passes_on_real_contracts() {
     // files are real, so `report.passed` requires them fresh), ont-consistency (ONT-5), refines (ONT-4e), bindings (ONT-3a),
     // refinement (ONT-3b), evidence (ONT-8).
     assert_eq!(report.gates.len(), 22);
+}
+
+/// #4502: this test is where CI runs the head-vs-base refinement gate (the workspace-test shards run
+/// `--workspace --lib` on a `fetch-depth: 0` checkout). A declined gate is SKIPPED and `report.passed`
+/// stays true, so a runner where the BASE did not resolve would pass a new unrefined module or a new
+/// orphan in silence. Wherever `origin/main` resolves, and always under CI, the gate must have run.
+fn the_refinement_gate_measured_head_against_base(report: &LintReport) {
+    let gate = report
+        .gates
+        .iter()
+        .find(|g| g.name == refinement_gate::GATE)
+        .expect("the refinement gate is one of the 22");
+    let base_resolves = std::process::Command::new("git")
+        .arg("-C")
+        .arg(contracts_dir())
+        .args(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if base_resolves || std::env::var_os("CI").is_some() {
+        assert!(
+            !gate.skipped,
+            "the refinement gate declined, so nothing compared HEAD with BASE: {:?}",
+            gate.detail
+        );
+    }
 }
 
 fn lint_score_gate_fails_with_high_threshold(report: &LintReport) {
