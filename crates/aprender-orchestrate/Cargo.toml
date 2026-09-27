@@ -321,6 +321,7 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
+provable-contracts = { workspace = true }  # #4175: the shared in-tree rule (tree.rs) for tests; versioned, so it survives `cargo package`
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.23"
