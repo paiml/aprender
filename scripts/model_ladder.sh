@@ -19,7 +19,11 @@
 # model this host holds that the run did not prove.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
-#                                      [--only <rung-id>] [--cells]
+#                                      [--only <rung-id>] [--cells] [--cpu-only]
+#   --cpu-only  measure every cell on the CPU backend ONLY, with no GPU visible to apr
+#           (CUDA_VISIBLE_DEVICES=) and WITHOUT the GPU lock -- for a host whose card a resident
+#           serve holds (gx10's :8091 shadow lane, cop ruling 2026-09-27 #4520). The receipt says
+#           cpu_only: true; it is evidence of host safety and CPU cells, never a full-ladder receipt.
 #   --cells measure every owed (model, verb, thinking, context rung) cell into the
 #           receipt's `cells[]` (#3712 row B; also MODEL_LADDER_CELLS=1). Hours of
 #           GPU per host (a 148k-token prefill per long cell): nightly / release
@@ -56,6 +60,7 @@ DRY=0
 ONLY=""
 CELLS="${MODEL_LADDER_CELLS:-0}"
 NO_CACHE=0
+CPU_ONLY=0
 ORIG_ARGS=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -65,6 +70,7 @@ while [ $# -gt 0 ]; do
     --cells) CELLS=1; shift ;;
     # #4520 step 5: measure every cell even when this binary already proved it green on this host
     --no-cache) NO_CACHE=1; shift ;;
+    --cpu-only) CPU_ONLY=1; shift ;;
     --only) [ $# -ge 2 ] || { echo "model_ladder: --only needs a value" >&2; exit 2; }; ONLY="$2"; shift 2 ;;
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
@@ -117,7 +123,7 @@ command -v flock > /dev/null && command -v choom > /dev/null \
 # #4520 step 4: every apr call is metered (storage bytes_read, peak RSS, wall) into $LADDER_METER and
 # judged against the contract's ladder.budgets when the receipt is written. The meter forwards signals
 # and is one more parent in the tree, which ladder_serve_teardown walks by parentage anyway.
-apr_locked() { python3 scripts/lib/ladder_meter.py "$1" -- flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+apr_locked() { if [ "${CPU_ONLY:-0}" = 1 ]; then CUDA_VISIBLE_DEVICES= python3 scripts/lib/ladder_meter.py "$1" -- choom -n 1000 -- "$APR" "$@"; else python3 scripts/lib/ladder_meter.py "$1" -- flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; fi; }
 # THE LOCK IS NOT EXCLUSIVITY (#3964). The lock serializes only the processes that take it, and
 # Ollama's daemon never does: on lambda it loaded 1328 MiB onto the card in the MIDDLE of a
 # locked device A/B. So a GPU run leg goes through gpu_exclusive_run: the same lock, plus a
@@ -941,6 +947,7 @@ printf '    inventory: %s model(s) matching %s under %s\n' "$(grep -c . <<< "$IN
 #   2. per claimed backend: `apr run` rc 0 and no fallback line (did it stay on that backend?)
 measure() {
   local rid=$1 rfile=$2 path=$3 got=$4 rbackends=$5 rreq=$6 rinv=$7
+  [ "${CPU_ONLY:-0}" = 1 ] && rbackends=cpu   # --cpu-only: no GPU leg, so no fit gate and no GPU lock
   # #4520: the meter attributes every apr call below to this cell and its file size (the budget base)
   export LADDER_METER_CELL="$rid" LADDER_METER_FILE_BYTES; LADDER_METER_FILE_BYTES=$(stat -Lc %s "$path" 2>/dev/null)
   # #4520 step 5: this binary already proved this exact cell green on this host -- copy, do not re-read
@@ -1483,7 +1490,7 @@ if [ "$CELLS" = 1 ]; then
   [ "$cells_rc" = 0 ] || { echo "model_ladder: cells producer rc=$cells_rc: $(tail -1 "$WORK/cells.log")" >&2; CELLS_JSON=""; RED=$((RED + 1)); }
 fi
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
-LADDER_CONTRACT="$LADDER" LADDER_APR_BIN_SHA="$APR_BIN_SHA" LADDER_CONTRACT_SHA="$CONTRACT_SHA" python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_RECEIPT" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$GPU_MEM" "$CELLS_JSON" <<'PY'
+LADDER_CONTRACT="$LADDER" LADDER_CPU_ONLY="$CPU_ONLY" LADDER_APR_BIN_SHA="$APR_BIN_SHA" LADDER_CONTRACT_SHA="$CONTRACT_SHA" python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_RECEIPT" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$GPU_MEM" "$CELLS_JSON" <<'PY'
 import json, os, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 _bx = os.environ.get("LADDER_BOX_EVENTS")
@@ -1491,6 +1498,7 @@ host_box = [json.loads(l) for l in open(_bx) if l.strip()] if _bx and os.path.is
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
 out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
        "apr_bin_sha256": os.environ.get("LADDER_APR_BIN_SHA"), "contract_sha256": os.environ.get("LADDER_CONTRACT_SHA"),
+       "cpu_only": os.environ.get("LADDER_CPU_ONLY") == "1",
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),
