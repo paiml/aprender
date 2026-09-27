@@ -21,6 +21,15 @@
 # Knobs (env): LADDER_IO_READ_MAX (200M) LADDER_MEM_MAX (half of MemTotal) LADDER_CPU_QUOTA (800%)
 #              LADDER_PSI_FILE LADDER_PSI_STOP (30) LADDER_PSI_CONT (15) LADDER_PSI_PERIOD (2)
 #              LADDER_PSI_TRACE_EVERY (15)
+#              LADDER_MEMINFO_FILE (/proc/meminfo) LADDER_MEM_RESERVE_KB (16 GiB) LADDER_MEM_FLOOR_KB (8 GiB)
+#
+# MEMORY (#4520, 2026-09-27 23:1xZ). The IO brake did not see the failure that happened: a 27B CPU
+# cell grew inside a MemoryMax of half of RAM while the host was already 95G into swap, and lambda
+# thrashed on MEMORY with IO PSI at 15%. SIGSTOP frees no memory, so memory gets three hard rules:
+#   1. MemoryMax = min(MemTotal/2, MemAvailable-at-start - reserve); below 4 GiB of room, refuse (exit 2).
+#   2. MemorySwapMax=0: a cell over its box is OOM-killed inside the box (a red cell), never swapped out
+#      onto the operator's desktop.
+#   3. MemAvailable (host-wide) under the floor while running: stop the unit, event mem_floor, exit 75.
 set -uo pipefail
 
 EVENTS="" IO_PATHS=()
@@ -44,7 +53,20 @@ PERIOD="${LADDER_PSI_PERIOD:-2}"
 TRACE_EVERY="${LADDER_PSI_TRACE_EVERY:-15}"
 [ -r "$PSI_FILE" ] || { echo "ladder_box: PSI source $PSI_FILE unreadable — the brake would be blind, refusing" >&2; exit 2; }
 
-props=(-p IOWeight=10 -p "CPUQuota=${LADDER_CPU_QUOTA:-800%}" -p "MemoryMax=${LADDER_MEM_MAX:-$(awk '/^MemTotal:/{printf "%dK", $2/2}' /proc/meminfo)}")
+MEMINFO="${LADDER_MEMINFO_FILE:-/proc/meminfo}"
+MEM_RESERVE_KB="${LADDER_MEM_RESERVE_KB:-16777216}"
+MEM_FLOOR_KB="${LADDER_MEM_FLOOR_KB:-8388608}"
+mem_avail_kb() { awk '$1=="MemAvailable:"{print $2; f=1; exit} END{if(!f) exit 1}' "$MEMINFO" 2>/dev/null; }
+avail0=$(mem_avail_kb) && total_kb=$(awk '$1=="MemTotal:"{print $2}' "$MEMINFO" 2>/dev/null) && [ -n "$total_kb" ] \
+  || { echo "ladder_box: $MEMINFO unreadable — the memory bound would be blind, refusing" >&2; exit 2; }
+if [ -n "${LADDER_MEM_MAX:-}" ]; then mem_max="$LADDER_MEM_MAX"
+else
+  room=$((avail0 - MEM_RESERVE_KB)); half=$((total_kb / 2))
+  [ "$room" -lt "$half" ] || room=$half
+  [ "$room" -ge 4194304 ] || { echo "ladder_box: host MemAvailable ${avail0}K leaves ${room}K after the ${MEM_RESERVE_KB}K reserve (< 4 GiB) — refusing to start" >&2; exit 2; }
+  mem_max="${room}K"
+fi
+props=(-p IOWeight=10 -p "CPUQuota=${LADDER_CPU_QUOTA:-800%}" -p "MemoryMax=$mem_max" -p MemorySwapMax=0)
 declare -A seen=()
 for p in "${IO_PATHS[@]}"; do
   [ -e "$p" ] || continue
@@ -82,7 +104,7 @@ ctl=$(cat "/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/c
 enforced=$(for c in io memory cpu; do case " $ctl " in *" $c "*) printf '"%s",' "$c" ;; esac; done); enforced="[${enforced%,}]"
 case " $ctl " in *" io "*) ;; *) echo "ladder_box: io controller not delegated here — IOReadBandwidthMax/IOWeight are NOT enforced; the PSI brake is the only IO bound" >&2 ;; esac
 skip_json=$(printf '"%s",' "${skipped_env[@]}"); skip_json="[${skip_json%,}]"; [ "$skip_json" = '[""]' ] && skip_json='[]'
-event start null ",\"io_read_max\":\"${LADDER_IO_READ_MAX:-200M}\",\"devices\":$devs_json,\"psi_stop\":$PSI_STOP,\"psi_cont\":$PSI_CONT,\"psi_file\":\"$PSI_FILE\",\"env_skipped\":$skip_json,\"controllers_enforced\":$enforced"
+event start null ",\"io_read_max\":\"${LADDER_IO_READ_MAX:-200M}\",\"devices\":$devs_json,\"psi_stop\":$PSI_STOP,\"psi_cont\":$PSI_CONT,\"psi_file\":\"$PSI_FILE\",\"mem_max\":\"$mem_max\",\"mem_avail_start_kb\":$avail0,\"mem_floor_kb\":$MEM_FLOOR_KB,\"swap_max\":0,\"env_skipped\":$skip_json,\"controllers_enforced\":$enforced"
 
 systemd-run --user --quiet --pipe --wait --collect --same-dir --unit="$UNIT" \
   -E LADDER_BOXED=1 "${pass_env[@]}" \
@@ -96,6 +118,12 @@ trap abort TERM INT HUP
 stopped=0 n=0 stops=0
 while kill -0 "$RUN_PID" 2>/dev/null; do
   sleep "$PERIOD"
+  ma=$(mem_avail_kb)
+  if [ -n "$ma" ] && [ "$ma" -lt "$MEM_FLOOR_KB" ]; then
+    systemctl --user kill --signal=SIGCONT "$UNIT" 2>/dev/null; systemctl --user stop "$UNIT" 2>/dev/null
+    event mem_floor null ",\"mem_avail_kb\":$ma"; wait "$RUN_PID" 2>/dev/null
+    event exit null ",\"rc\":75,\"brake_stops\":$stops"; exit 75
+  fi
   v=$(psi_some)
   if [ -z "$v" ]; then event psi_unreadable null; continue; fi
   pct=$(awk -v v="$v" 'BEGIN{printf "%.2f", v/100}')

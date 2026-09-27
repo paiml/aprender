@@ -9,6 +9,9 @@ trap 'rm -rf "${T:?}"' EXIT
 fail=0
 ok()  { printf 'PASS  %s\n' "$1"; }
 bad() { printf 'FAIL  %s\n' "$1"; fail=1; }
+mi()  { printf 'MemTotal:       %s kB\nMemFree:        1 kB\nMemAvailable:   %s kB\n' "$1" "$2" > "$3"; }
+# every case runs against a PLANTED meminfo with room, so a busy host cannot make a case red or green
+mi 134217728 67108864 "$T/roomy.meminfo"; export LADDER_MEMINFO_FILE="$T/roomy.meminfo"
 psi() { printf 'some avg10=%s avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n' "$1" > "$2"; }
 
 # brake <box> <tag>: planted 50% stops the unit, planted 10% resumes it, exit status passes through
@@ -40,6 +43,25 @@ if [ "$r2" = 2 ] && [ "$r3" = 2 ] && [ ! -e "$T/ran2" ] && [ ! -e "$T/ran3" ]; t
 else bad "refusals (r2=$r2 r3=$r3)"; fi
 : "$r1"
 
+# memory: a host without 4 GiB of room past the reserve refuses to start; nothing runs
+mi 134217728 19922944 "$T/tight.meminfo"
+LADDER_MEMINFO_FILE="$T/tight.meminfo" LADDER_PSI_FILE=/dev/null bash "$BOX" --events "$T/m.jsonl" --io-path "$T" -- touch "$T/ranm" >/dev/null 2>&1; rm_rc=$?
+[ "$rm_rc" = 2 ] && [ ! -e "$T/ranm" ] && ok "MemAvailable 19G - 16G reserve < 4G → exit 2, nothing ran" || bad "tight-host refusal (rc=$rm_rc)"
+# memory floor <box> <tag>: MemAvailable dropping under the floor mid-run stops the unit, exit 75, event mem_floor
+memfloor() {
+  local box="$1" tag="$2" mf="$T/$2.meminfo" rc n
+  mi 134217728 67108864 "$mf"
+  ( sleep 3; mi 134217728 1048576 "$mf" ) &
+  LADDER_MEMINFO_FILE="$mf" LADDER_PSI_FILE=/dev/null LADDER_PSI_PERIOD=1 timeout 60 bash "$box" --events "$T/$tag.jsonl" --io-path "$T" -- \
+    bash -c 'for i in $(seq 60); do echo x >> "$0"; sleep 0.2; done' "$T/$tag.ticks" >/dev/null 2>&1; rc=$?
+  wait
+  n=$(wc -l < "$T/$tag.ticks" 2>/dev/null || echo 0)
+  [ "$rc" = 75 ] && grep -q '"event":"mem_floor"' "$T/$tag.jsonl" && [ "$n" -lt 60 ] \
+    && grep -q '"swap_max":0' "$T/$tag.jsonl"
+}
+if memfloor "$BOX" mf-real; then ok "MemAvailable under the floor mid-run → unit stopped, mem_floor, exit 75"; else bad "memory floor"; cat "$T/mf-real.jsonl" 2>/dev/null; fi
+grep -q -- '-p MemorySwapMax=0' "$BOX" && ok "the box sets MemorySwapMax=0" || bad "MemorySwapMax=0 missing"
+
 # the ladder re-execs itself boxed: an unboxed non-dry call goes through ladder_box.sh
 if grep -q 'exec bash scripts/lib/ladder_box.sh' scripts/model_ladder.sh && grep -q '"host_box": host_box' scripts/model_ladder.sh
 then ok "model_ladder.sh self-boxes and records host_box"; else bad "model_ladder.sh wiring"; fi
@@ -58,4 +80,11 @@ mutant no-stop   '--signal=SIGSTOP "$UNIT"' '--signal=SIGWINCH "$UNIT"'
 mutant no-cont   '[ "$v" -lt $((PSI_CONT * 100)) ]' '[ "$v" -lt 0 ]'
 mutant rc-lost   'exit "$rc"' 'exit 0'
 mutant threshold '[ "$v" -gt $((PSI_STOP * 100)) ]' '[ "$v" -gt 999999 ]'
+mfmutant() {
+  local m="$T/box-mf.sh"
+  python3 -c 'import sys; t=open(sys.argv[1]).read(); a="[ \"$ma\" -lt \"$MEM_FLOOR_KB\" ]"; assert a in t; open(sys.argv[2],"w").write(t.replace(a,"false",1))' "$BOX" "$m" \
+    || { bad "mutant mem-floor: anchor not found"; return; }
+  if memfloor "$m" mut-mf; then bad "mutant mem-floor survived"; else ok "mutant mem-floor killed"; fi
+}
+mfmutant
 exit "$fail"
