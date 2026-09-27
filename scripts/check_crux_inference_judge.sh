@@ -1079,14 +1079,15 @@ expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as wh
 # ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
   # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
+  # Each mutant re-runs the whole table under its own mktemp dir and binds no port, so the runs are
+  # independent: they run CRUX_MUTANT_JOBS at a time (serially they were 24 x ~1 min, the pole of
+  # guard-tree in CI, #4482), and every verdict is still read afterwards, in table order.
+  MUTS="$TMP/mutants.txt"; : > "$MUTS"; : > "$TMP/mutants.run"
   while IFS='|' read -r label must expr; do
     [ -n "$label" ] || continue
+    printf '%s|%s|%s\n' "$label" "$must" "$expr" >> "$MUTS"
     m="$TMP/mut-$label.py"; sed "$expr" "$JUDGE" > "$m"
-    if cmp -s "$JUDGE" "$m"; then broke "F6 mutant $label did not apply"; continue; fi
-    CRUX_JUDGE_OVERRIDE="$m" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$label.log" 2>&1
-    nb=$(grep -c '^  BROKE' "$TMP/mut-$label.log")
-    if grep -q "^  BROKE.*$must" "$TMP/mut-$label.log"; then ok "F6 mutant $label killed by '$must' ($nb row(s) broke)"
-    else broke "F6 mutant $label SURVIVED: '$must' stayed ok ($nb other row(s) broke)"; fi
+    cmp -s "$JUDGE" "$m" || printf '%s\n' "$label" >> "$TMP/mutants.run"
   done <<'MUT'
 bad-control-ignored|the only control a token loop|s/^        if bad:$/        if False:/
 no-control-ok|is no control: RED|s/^    if not ctl:$/    if False:/
@@ -1113,6 +1114,17 @@ admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is 
 admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
+  JOBS="${CRUX_MUTANT_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+  case "$JOBS" in ''|*[!0-9]*|0) JOBS=1 ;; esac
+  TMP="$TMP" ROOT="$ROOT" xargs -a "$TMP/mutants.run" -r -P "$JOBS" -I{} bash -c \
+    'CRUX_JUDGE_OVERRIDE="$TMP/mut-$1.py" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$1.log" 2>&1; :' _ {}
+  while IFS='|' read -r label must expr; do
+    if ! grep -qx -- "$label" "$TMP/mutants.run"; then broke "F6 mutant $label did not apply"; continue; fi
+    if [ ! -s "$TMP/mut-$label.log" ]; then broke "F6 mutant $label never ran: no log"; continue; fi
+    nb=$(grep -c '^  BROKE' "$TMP/mut-$label.log")
+    if grep -q "^  BROKE.*$must" "$TMP/mut-$label.log"; then ok "F6 mutant $label killed by '$must' ($nb row(s) broke)"
+    else broke "F6 mutant $label SURVIVED: '$must' stayed ok ($nb other row(s) broke)"; fi
+  done < "$MUTS"
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
