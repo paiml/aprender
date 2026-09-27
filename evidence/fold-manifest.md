@@ -115,20 +115,20 @@ fetched as `refs/pull/N/head`.
 | #4502 batch/ont-10 | ONT-10. Carries #4122 EV-5a, which closes on its merge with a receipt (owner 3d, no auto-Closes) |
 | #4448 readme-tweak (spudnic) | a contributor PR in its own slot. `present` is GREEN; it is BEHIND, so update the branch, then land |
 | #4428 B1r serve/perf | an already-quorumed batch; 59 folds into it. 3 of its commits already have patch-ids on car (`git cherry origin/car/0.70.0` shows `-`); drop them when it is re-cut after car |
-| #4431 fold/b3 | already quorumed; 59's plan is to close it after #4502 (MOVE). **Blocker, see D1** |
+| #4431 fold/b3 | **Cop ruling 17:2xZ: not folded or MOVEd, and 59 does not close it.** It lands as its own single after #4502, with no workflow changes (conleche split out, see 57). Keeps the #4197 Kani files (D1) |
 | #4459 rex/001 | held under PRM v3 (owner 84). It shares session.rs/session_tests.rs with #4577, and infer/{mod,inference_result}.rs with #4506: rebase it after those land |
 | already-quorumed singles | #4506, #4532, #4534, #4535, #4550, #4554, #4576: each carries its own ticket quorum. Folding voids it, so they land alone (section 3) |
 
 ## Duplicate / move findings
 
-- **D1: #4431 cannot be closed as "moved into #4502" yet.** Of its 732 files, 152 differ at #4502 head
+- **D1 (RESOLVED by cop ruling: #4431 lands as a single after #4502, never closed as moved). Finding kept for the record: #4431 could not be closed as "moved into #4502".** Of its 732 files, 152 differ at #4502 head
   and 21 are absent there. 13 of the absent files are Lean `Challenge/*.lean` files that #4502 removed
   on purpose (66's cross-contract dedup, 16:1xZ). That is forward. **The real residue is #4197 EV-6c
   (Kani assume baseline, 0d):** `crates/aprender-contracts-cli/src/commands/discharge_kani.rs`,
   `crates/aprender-contracts-cli/tests/pvl_kani_assume.rs`, `contracts/kani-assume-baseline.json`,
   `ci/explicit-test-commands.d/464-aprender-contracts-cli-pvl-kani-assume.cmd`, `contracts/witness/bb2825…json`.
-  These exist only on #4431. Before #4431 closes, 0d/59 must MOVE them onto a branch that lands. The
-  131 other differing files need the same "forward, or lost?" check. Command:
+  These exist only on #4431, which is why it must land and not close. When #4431 is
+  rebased onto #4502 after that lands, the 131 other differing files resolve in the rebase. Take #4502's side for the 13 deduped Challenge/*.lean files. Command:
   `for f in $(git diff --name-only $(git merge-base origin/main A) A); do git cat-file -e B:$f || echo $f; done`
 - **D2: #4506 is 50/53 car commits.** It is based on an old car `11bcf6c2ba`. Only 3 commits are its own:
   `36fc26df7f`, `fd5961ad8a`, `4fffd71d7c` (3/3 quorum on `f1810100d8`). After #4429 merges, re-cut it
@@ -172,6 +172,6 @@ Each needs a re-signed receipt on the head that merges.
 | S-DOCS | #4533 FLOW-003 v2.1 (1 file) | 1 | docs tier: land it after 1b so the docs-tier quorum applies |
 
 **Projected count:** steps 1–3 close 11 PRs: 1a, 1b ×2, 1c, #4448 and 3a–3f. 3g is a re-cut (close 1, open 1).
-That leaves 10: car, #4502, #4428, #4431, #4459, #4506', #4501, #4577, #4414, #4533. It drops to 9 when #4431
-closes after D1. That is at the cap, not over it. Section 4 then
+That leaves 10: car, #4502, #4428, #4431, #4459, #4506', #4501, #4577, #4414, #4533, which is at the cap, not over it.
+Order for #4431: after #4502 merges, rebase it onto main and land it as a single (step 3, before 3g). Section 4 then
 adds at most 1 new fold PR (F-OBS) and closes 3 (#4501, #4577, #4414 as they land).
