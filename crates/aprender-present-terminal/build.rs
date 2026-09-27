@@ -16,6 +16,10 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    println!("cargo:rustc-env=PTOP_GIT_SHA={}", resolve_git_sha());
+    register_git_rerun_triggers();
+    println!("cargo:rerun-if-env-changed=APR_GIT_SHA_OVERRIDE");
+    println!("cargo:rerun-if-changed=.git-sha");
     // Re-run if test files change
     println!("cargo:rerun-if-changed=tests/");
     println!("cargo:rerun-if-changed=src/ptop/");
@@ -226,4 +230,55 @@ fn enforce_widget_tests() {
             }
         }
     }
+}
+
+// G0.1 (#4476): the version names the commit. Same resolver and fallback order as
+// crates/aprender-contracts-cli/build.rs (PV_GIT_SHA): APR_GIT_SHA_OVERRIDE, then
+// `git rev-parse --short=9 HEAD`, then a committed .git-sha, then "no-git" — never a made-up sha.
+fn register_git_rerun_triggers() {
+    // In a worktree `.git` is a file pointer, so ask git where HEAD and refs live.
+    if let Some(git_dir) = run_git(&["rev-parse", "--git-dir"]) {
+        let head = format!("{git_dir}/HEAD");
+        if std::path::Path::new(&head).exists() {
+            println!("cargo:rerun-if-changed={head}");
+        }
+    }
+    if let Some(common_dir) = run_git(&["rev-parse", "--git-common-dir"]) {
+        let refs = format!("{common_dir}/refs/heads");
+        if std::path::Path::new(&refs).exists() {
+            println!("cargo:rerun-if-changed={refs}");
+        }
+    }
+}
+
+fn run_git(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("git").args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+fn short9(s: &str) -> String {
+    s.chars().take(9).collect()
+}
+
+fn resolve_git_sha() -> String {
+    if let Ok(s) = std::env::var("APR_GIT_SHA_OVERRIDE") {
+        let s = s.trim();
+        if !s.is_empty() {
+            return short9(s);
+        }
+    }
+    if let Some(sha) = run_git(&["rev-parse", "--short=9", "HEAD"]) {
+        return short9(&sha);
+    }
+    if let Ok(contents) = std::fs::read_to_string(".git-sha") {
+        let s = contents.trim();
+        if !s.is_empty() {
+            return short9(s);
+        }
+    }
+    "no-git".to_string()
 }

@@ -10,6 +10,7 @@
 # MEASURED (2026-09-26, batch/ont-10 @ b6cf6d2ed, release build, default features (none), private
 # CARGO_TARGET_DIR):
 #   `simular --version` = "simular 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   FIXED 2026-09-27 on batch/ont-10: `simular 0.69.3 (<sha9>)`, the semver still field 2 (G0.1 GREEN, now a violation).
 #   Recursive --help walk (S9's convention): 9 commands, all top-level leaves. Two of them are user-defined
 #   `help` ("Show help") and `version` ("Show version") subcommands, not clap's auto help: both are members.
 #   surface_audit.csv holds 12 rows with binary=simular (ledger at cf038d37f): 9 CLI rows, one per command, and 3
@@ -58,8 +59,8 @@ shapes:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["simular"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-simulate"]}
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^simular [0-9]+\\.[0-9]+\\.[0-9]+"}
-      # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
-      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
+      # G0.1 — a violation since batch/ont-10 2026-09-27 (build.rs embeds SIMULAR_GIT_SHA); was a warning while RED
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
       - path: bin:command
         minCount: 9
         maxCount: 9
@@ -114,9 +115,9 @@ falsification_tests:
   - id: FALSIFY-BIN-SIMULAR-003
     rule: 'G0.1 the version names the commit'
     prediction: '`simular --version` contains the first 9 hex of the git sha it was built from'
-    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-27: "simular 0.69.3" — no sha; a stale simular reads as HEAD'
-    mutation: 'drop the sha from the version string; must turn RED'
+    test: 'crates/aprender-simulate/src/cli/tests.rs test_version_flag_names_the_commit; the shape: bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'a stale simular reads as HEAD (observed 2026-09-26 at b6cf6d2ed: "simular 0.69.3", no sha; fixed on batch/ont-10: build.rs embeds SIMULAR_GIT_SHA, same resolver as pv)'
+    mutation: 'set VERSION back to CARGO_PKG_VERSION alone; the unit test turns RED (field 3 missing)'
   - id: FALSIFY-BIN-SIMULAR-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
     prediction: '`simular render --domain nosuch` and `render --format nosuch` exit 2, and the surface literals in the shape above = the snapshot''s, set-equal'
