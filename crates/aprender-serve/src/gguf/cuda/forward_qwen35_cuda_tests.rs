@@ -1053,6 +1053,12 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
                 let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
                 std::fs::write(format!("{dir}/{side}_pos{pos}.f32"), bytes).expect("dump");
             }
+            eprintln!(
+                "[e2e-dump] pos {pos}: cosine {:.6} relative L-inf {:.3e}",
+                cosine(&got, &want),
+                rel_linf(&got, &want)
+            );
+            continue;
         }
         let (cos, linf) =
             assert_forward_parity(&got, &want, LOGITS_BUDGET, &format!("pos {pos} logits"));
