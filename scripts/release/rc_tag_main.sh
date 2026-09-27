@@ -35,8 +35,8 @@ REPO=${RC_TAG_REPO:-paiml/aprender}
 . "$HERE/lib_cut_receipt.sh" || { echo "rc_tag_main: cannot source lib_cut_receipt.sh" >&2; exit 2; }
 # The input overrides are for the self-test's fake only. On a live run, a green cells file, a moved clock or a
 # mutant gate would each write a real tag past the fleet gate, so a live run refuses to start when any is set.
-if [ "${1:-}" != --self-test ] && [ -z "${RC_TAG_FAKE:-}" ] && [ -n "${RC_TAG_HERE:-}${RC_TAG_CELLS:-}${RC_TAG_NOW:-}${RC_CUT_FAULT:-}" ]; then
-    echo "$PROG: RC_TAG_HERE/RC_TAG_CELLS/RC_TAG_NOW/RC_CUT_FAULT are self-test only (RC_TAG_FAKE unset): refusing a live run" >&2; exit 2
+if [ "${1:-}" != --self-test ] && [ -z "${RC_TAG_FAKE:-}" ] && [ -n "${RC_TAG_HERE:-}${RC_TAG_CELLS:-}${RC_TAG_WAIVERS:-}${RC_TAG_NOW:-}${RC_CUT_FAULT:-}" ]; then
+    echo "$PROG: RC_TAG_HERE/RC_TAG_CELLS/RC_TAG_WAIVERS/RC_TAG_NOW/RC_CUT_FAULT are self-test only (RC_TAG_FAKE unset): refusing a live run" >&2; exit 2
 fi
 
 # rc_tag_decide -- pure. Reads D_TAG D_SHA D_ON_MAIN D_GATE D_VERSION D_TAG_AT D_OURS.
@@ -149,7 +149,7 @@ run_tag() {
     cells=$(mktemp) || return 2
     if [ -n "${RC_TAG_CELLS:-}" ]; then cat -- "$RC_TAG_CELLS" > "$cells"
     else api_get "contents/fleet/cells.tsv?ref=fleet-state" 2>/dev/null | b64file > "$cells" || : > "$cells"; fi
-    gate=$(bash "$HERE/fleet_cells_gate.sh" --cells "$cells" --waivers "$HERE/fleet-waivers.tsv" ${RC_TAG_NOW:+--now "$RC_TAG_NOW"}); rc=$?
+    gate=$(bash "$HERE/fleet_cells_gate.sh" --cells "$cells" --waivers "${RC_TAG_WAIVERS:-$HERE/fleet-waivers.tsv}" ${RC_TAG_NOW:+--now "$RC_TAG_NOW"}); rc=$?
     rm -f -- "${cells:?}"
     echo "$PROG: fleet cells: $gate"
     [ "$rc" = 0 ] || { echo "$PROG: REFUSED to cut $tag -- the fleet cells gate refused (#4328 C4)" >&2; return 1; }
@@ -242,9 +242,12 @@ self_test() {
         echo 201 > "$d/api/code/$(fkey git/refs)"; echo 201 > "$d/api/code/releases"
         echo 204 > "$d/api/code/$(fkey actions/workflows/binary-release.yml/dispatches)"
         printf '# measured 2026-09-25T20:00:00Z\nlambda-labs\tapr\t%s\tprobe\n' "$1" > "$d/cells.tsv"
+        # the fixture's own (empty) waivers: the repo's live file waived `* apr` on the car and the
+        # RED-cell row went green under it -- a fixture must not read state that ships
+        : > "$d/waivers.tsv"
     }
     cut_with() {  # cut_with <script>: run a real cut against the fake; posts land in $d/api/posts
-        RC_CUT_LEDGER=$d/ledger.tsv RC_CUT_FAULT=${F:-} RC_TAG_FAKE=$d/api RC_TAG_CELLS=$d/cells.tsv RC_TAG_NOW=$(date -u -d 2026-09-25T21:00:00Z +%s) bash "$1" --tag v0.70.0-rc.1 --sha "$A" > "$d/out" 2>&1
+        RC_CUT_LEDGER=$d/ledger.tsv RC_CUT_FAULT=${F:-} RC_TAG_FAKE=$d/api RC_TAG_CELLS=$d/cells.tsv RC_TAG_WAIVERS=$d/waivers.tsv RC_TAG_NOW=$(date -u -d 2026-09-25T21:00:00Z +%s) bash "$1" --tag v0.70.0-rc.1 --sha "$A" > "$d/out" 2>&1
     }
     local me; me="$HERE/$(basename -- "${BASH_SOURCE[0]}")"
     fake GREEN; cut_with "$me"; rc=$?
@@ -282,7 +285,7 @@ self_test() {
             echo "  ok   killed $pt, resumed twice: exactly 1 tag, 1 draft, 1 dispatch"
         else echo "  FAIL killed $pt: resume rc $rc/$rc2, posts '$got': $(tail -n 2 "$d/out")"; fail=1; fi
     done
-    for v in RC_TAG_HERE RC_TAG_CELLS RC_TAG_NOW RC_CUT_FAULT; do   # live run (no RC_TAG_FAKE): exits before any API call
+    for v in RC_TAG_HERE RC_TAG_CELLS RC_TAG_WAIVERS RC_TAG_NOW RC_CUT_FAULT; do   # live run (no RC_TAG_FAKE): exits before any API call
         env -u RC_TAG_FAKE "$v=$d" GH_TOKEN=unused bash "$me" --tag v0.70.0-rc.1 --sha "$A" --dry-run > /dev/null 2>&1; rc=$?
         if [ "$rc" = 2 ]; then echo "  ok   live run with $v set: refused (rc 2)"
         else echo "  FAIL live run with $v set: rc $rc"; fail=1; fi
