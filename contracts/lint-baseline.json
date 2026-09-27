@@ -11,15 +11,15 @@
   "claude_md": {"verified_commands":["bash scripts/check_package_includes.sh"],"withdrawn":[]},
   "ont": {
     "consumer_present": true,
-    "contracts_total": 1930,
+    "contracts_total": 1931,
     "entity_types_registered": 17,
     "extractors_implemented": 12,
-    "contracts_anchored": 36,
-    "contracts_shaped": 28,
+    "contracts_anchored": 37,
+    "contracts_shaped": 29,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
     "liskov_prose": 0,
-    "shapes_unarmed": 34
+    "shapes_unarmed": 35
   }
 }
