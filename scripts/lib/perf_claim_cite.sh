@@ -146,6 +146,10 @@ claim_line_is_receipted() {
     hi=$((n + PERF_CLAIM_CITE_WINDOW))
     if [ "$hi" -gt "$total" ]; then hi="$total"; fi
     block=$(sed -n "${lo},${hi}p" "$f" 2>/dev/null)
+    # PERF_CLAIM_RECEIPT_RE needs a literal `evidence/`, so a window without one
+    # cannot be receipted; skipping the resolver's pipeline for it is most of
+    # the per-finding cost (#4527).
+    case "$block" in *evidence/*) ;; *) return 1 ;; esac
     cites=$(resolve_citations "$root" "$block")
     grep -q ' exists$' <<< "$cites"
 }

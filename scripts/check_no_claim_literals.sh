@@ -272,7 +272,7 @@ table_ratio_hits_in() {
     [ -n "$cands" ] || return 0
     while IFS= read -r rec; do
         f="${rec%%:*}"
-        n=$(printf '%s' "$rec" | cut -d: -f2)
+        n=${rec#*:}; n=${n%%:*}  # field 2, as `cut -d: -f2`, without two forks per record (#4527)
         case "$n" in '' | *[!0-9]*) continue ;; esac
         hi=$((n - 1))
         [ "$hi" -ge 1 ] || continue
@@ -520,7 +520,7 @@ drop_receipted() { # drop_receipted <root> < findings-on-stdin
     while IFS= read -r rec; do
         [ -n "$rec" ] || continue
         f="${rec%%:*}"
-        n=$(printf '%s' "$rec" | cut -d: -f2)
+        n=${rec#*:}; n=${n%%:*}  # field 2, as `cut -d: -f2`, without two forks per record (#4527)
         # `claim_citation_exempts`, NOT `claim_line_is_receipted`: the exemption
         # is a CONJUNCTION of "cites a resolving evidence/ FILE" and "is on one
         # of the three surfaces PP-12 names". Applied without the second
