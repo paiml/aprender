@@ -94,7 +94,7 @@ def project_of(cwd):
 
 
 def _project_by_name(cwd):
-    m = re.match(r"/home/noah/src/([^/]+)", cwd)
+    m = re.match(re.escape(SRC) + r"/([^/]+)", cwd)
     if m:
         if m.group(1).startswith("aprender-wt"):
             return "aprender"
@@ -380,9 +380,9 @@ def self_test():
                 (os.path.join(SRC, "forjar", "vendored"), "forjar", "a submodule's RELATIVE gitdir resolves from its dir"),
                 (os.path.join(scratch, "odd"), "x", "the repo sits above the LAST .git, not the first"),
                 (os.path.join(SRC, "paiml-implement"), "paiml-implement", "a main checkout: the repo dir name"),
-                ("/home/noah/src/forjar-615", "forjar", "a deleted worktree dir: the longest prefix that is a repo"),
-                ("/home/noah/src/paiml-implement-x", "paiml-implement", "hyphenated repo name keeps its hyphen"),
-                ("/home/noah/src/aprender-wt-17", "aprender", "the aprender-wt convention"),
+                (os.path.join(SRC, "forjar-615"), "forjar", "a deleted worktree dir: the longest prefix that is a repo"),
+                (os.path.join(SRC, "paiml-implement-x"), "paiml-implement", "hyphenated repo name keeps its hyphen"),
+                (os.path.join(SRC, "aprender-wt-17"), "aprender", "the aprender-wt convention"),
                 ("/tmp/claude-1000/-home-noah-src-paiml-implement/s/scratchpad", "paiml-implement",
                  "a scratchpad of a hyphenated repo keeps its hyphen"),
                 ("/mnt/nvme-raid0/scratch/ont-37f7875c", "unattributed:scratch/ont-37f7875c", "no git, no name: said so"),

@@ -235,7 +235,7 @@
     "prompt": "What is 2+2? Answer with just the number."
   },
   "bench": {
-    "model": "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "model": "~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
     "tokens_per_second": 10.1,
     "total_tokens": 160,
     "total_time_ms": 15867.416000000001,

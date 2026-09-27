@@ -3499,7 +3499,6 @@ jobs:
     env:
       LEAN: crates/aprender-contracts-staging/lean
       SUMMARY: crates/aprender-contracts-staging/discharge-summary.json
-      ELAN_HOME: /home/noah/.elan
       LEAN_CACHE_ROOT: /mnt/nvme-raid0/lean-cache
       CARGO_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder
       PV: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder/debug/pv
@@ -3527,6 +3526,9 @@ jobs:
           done
           # summary-fresh diffs a TRACKED file: `git diff` exits 0 on an untracked path.
           git ls-files --error-unmatch -- "$SUMMARY" >/dev/null 2>&1 || skip "$SUMMARY is not tracked"
+          # elan's own default, from the runner user's $HOME: no machine-specific literal.
+          ELAN_HOME="${ELAN_HOME:-$HOME/.elan}"
+          echo "ELAN_HOME=$ELAN_HOME" >> "$GITHUB_ENV"
           export PATH="$ELAN_HOME/bin:$PATH"
           command -v elan >/dev/null || decline "no elan in $ELAN_HOME on $(hostname) (proof-toolchain, infra)"
           [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
