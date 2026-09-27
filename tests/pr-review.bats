@@ -1702,6 +1702,26 @@ land_prior_art_on_main() {
   [[ "$output" == *"[B1]"* && "$output" == *"the docs tier fails closed"* ]] || { echo "$output"; false; }
 }
 
+@test "row 44 with the head's blobs unreadable -> the claim scan fails closed  RED B1" {
+  # The ratio scan reads the ADDED LINES. Inside `< <(...)` a failed git diff yielded
+  # zero lines and the scan passed (quorum finding on #4503). Reproduce it: a clone
+  # whose head blob for docs/note.md is gone, so --name-only (trees only) still works
+  # but --unified=0 cannot read the content; a stub classifier answers class=docs so
+  # the scan is reached at all.
+  local repo="$BATS_TEST_TMPDIR/blobless" stub="$BATS_TEST_TMPDIR/dc-stub.sh" blob obj
+  cp -a "$FIXTURE_REPO" "$repo"
+  blob=$(git -C "$repo" rev-parse docs-pr:docs/note.md)
+  obj="$repo/.git/objects/${blob:0:2}/${blob:2}"
+  # The fixture's objects are loose; if that ever changes this probe must say so, not pass.
+  [ -f "$obj" ] || { echo "blob $blob is not loose"; false; }
+  mv -- "$obj" "$BATS_TEST_TMPDIR/"
+  ! git -C "$repo" cat-file -e "$blob" 2>/dev/null
+  printf '#!/usr/bin/env bash\nprintf "class=docs\\nsubclass=prose\\npaths=1\\nreason=stub\\n"\n' > "$stub"
+  PR_REVIEW_REPO="$repo" PR_REVIEW_DIFF_CLASS="$stub" run "$GUARD" "$FIX/row-44-arm-e-docs-tier"
+  [ "$status" -eq 1 ] || { echo "expected RED, got $status:"; echo "$output"; false; }
+  [[ "$output" == *"[B1]"* && "$output" == *"could not be read; the docs tier fails closed"* ]] || { echo "$output"; false; }
+}
+
 @test "row 46 docs-tier diff, trigger_reason does not name the tier     RED  B1" {
   # Row 44's diff with the pre-#4472 reason: taking the exemption must be on the record.
   assert_row row-46-arm-e-docs-tier-reason-unnamed RED B1 \

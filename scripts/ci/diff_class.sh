@@ -31,7 +31,11 @@
 #                       crate's README is part of its doc-tests)
 #   book/**/*.md        the mdBook sources (Book workflow still compiles their code
 #                       blocks: it is keyed on book/** paths, not on this class)
-#   docs/**             prose, specs, roadmaps, audits, evidence notes
+#   docs/**/*.md        prose, specs, evidence notes -- MARKDOWN only: data files under
+#                       docs/ are CI inputs (docs/specifications/pp-066-dag.yaml is read
+#                       by check_dag_invariants.sh and render_dag.py in ci/sections.yml),
+#                       so a docs/**/*.yaml is code (quorum finding on #4503)
+#   docs/roadmaps/**, docs/audits/**   the #3658 ledger set, any suffix, unchanged
 # NOT docs, deliberately: .claude/** (skills and agent memory are read by contract
 # tests), contracts/** (pv-validated, and several are CI inputs), evidence/** (model
 # ledgers read by gates), *.yaml/*.toml anywhere at the root, and every .github/ file.
@@ -51,7 +55,8 @@ is_docs_path() { # $1 = path -> 0 iff on the DOCS PATHS list
         *) return 1 ;;
     esac
     case "$1" in
-        book/*.md|docs/*) return 0 ;;
+        book/*.md|docs/*.md) return 0 ;;
+        docs/roadmaps/*|docs/audits/*) return 0 ;;  # the #3658 ledger set, any suffix
         *) return 1 ;;
     esac
 }
@@ -65,7 +70,7 @@ classify() {
         [ -n "$p" ] || continue
         n=$((n + 1))
         if ! is_docs_path "$p"; then
-            printf 'class=code\npaths=%s\nreason=%s is not a docs path (root *.md, book/**/*.md, docs/**) -- the diff can reach a build, a test or a workflow\n' \
+            printf 'class=code\npaths=%s\nreason=%s is not a docs path (root *.md, book/**/*.md, docs/**/*.md, docs/roadmaps|audits/**) -- the diff can reach a build, a test or a workflow\n' \
                 "$(grep -c . "$list")" "$p"
             return 0
         fi
@@ -83,7 +88,7 @@ classify() {
     if [ "$ledger" -eq 1 ]; then
         printf 'class=docs\nsubclass=ledger\npaths=%s\nreason=all %s path(s) are under docs/roadmaps/ or docs/audits/ and present at %s\n' "$n" "$n" "$head"
     else
-        printf 'class=docs\nsubclass=prose\npaths=%s\nreason=all %s path(s) are docs (root *.md, book/**/*.md, docs/**) and present at %s\n' "$n" "$n" "$head"
+        printf 'class=docs\nsubclass=prose\npaths=%s\nreason=all %s path(s) are docs (root *.md, book/**/*.md, docs/**/*.md, ledger) and present at %s\n' "$n" "$n" "$head"
     fi
 }
 
@@ -97,7 +102,7 @@ self_test() {
     git config user.email t@t && git config user.name t && git config core.hooksPath /dev/null
     mkdir -p book/src/g docs/roadmaps docs/audits docs/specifications crates/x/src .claude/skills contracts evidence/models .github/workflows
     for f in README.md CHANGELOG.md book/src/g/install.md book/src/SUMMARY.md docs/roadmaps/r.yaml docs/audits/a.md \
-             docs/specifications/s.md docs/BEATS.md crates/x/README.md crates/x/src/lib.rs .claude/skills/s.md \
+             docs/specifications/s.md docs/specifications/dag.yaml docs/surface.json docs/BEATS.md crates/x/README.md crates/x/src/lib.rs .claude/skills/s.md \
              contracts/c.yaml evidence/models/supported.yaml .github/workflows/ci.yml Cargo.toml book/book.toml codecov.yaml; do
         printf 'x\n' > "$f"
     done
@@ -124,6 +129,8 @@ self_test() {
     row '^class=code$' "root Cargo.toml -> code" Cargo.toml
     row '^class=code$' "root config yaml -> code" codecov.yaml
     row '^class=code$' "book.toml is not a page -> code" book/book.toml
+    row '^class=code$' "docs/ data file a CI step reads -> code (pp-066-dag.yaml shape)" docs/specifications/dag.yaml
+    row '^class=code$' "docs/ json -> code" docs/surface.json
     row '^class=code$' "deleted doc -> code (tree readers assert cited paths exist)" docs/specifications/s.md
     row '^class=code$' "one code path among docs -> code" README.md docs/audits/a.md crates/x/src/lib.rs
     row '^class=empty$' "empty diff -> empty" ''

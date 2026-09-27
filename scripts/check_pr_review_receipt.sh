@@ -892,7 +892,7 @@ validate_receipt() {
     # pmat stays unconditional (S3.A), and the signature, patch binding and the
     # cuda/crux/mutation recomputations above all still ran on this receipt.
     if [ "$ag_st" = "not-triggered" ]; then
-      local dc dc_out ag_why ag_claim='' acf acl
+      local dc dc_out ag_why ag_claim='' ag_added acf acl
       dc_out=$(bash "$DIFF_CLASS" --repo "$REPO" --base "$base" --head "$head" 2>&1) \
         || reject B1 "consultations.antigravity is not-triggered and the diff classifier could not classify $base..$head ($(printf '%s' "$dc_out" | tr '\n' ' ' | cut -c1-160)); the docs tier fails closed" || return 1
       dc=$(printf '%s\n' "$dc_out" | sed -n 's/^class=//p')
@@ -900,10 +900,15 @@ validate_receipt() {
         || reject B1 "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR except a docs-tier diff, and this one is class=$dc ($(printf '%s\n' "$dc_out" | sed -n 's/^reason=//p' | cut -c1-160))" || return 1
       ! grep -qx 'docs/BEATS.md' <<<"$changed_files" \
         || reject B1 "consultations.antigravity is not-triggered, but the diff touches docs/BEATS.md; the beat scoreboard is a published claim, so the docs tier does not cover it" || return 1
+      # Read the added lines FIRST, with their status: inside `< <(...)` a failed
+      # changed_lines would yield zero lines and the claim scan would pass (fail-open,
+      # quorum finding on #4503).
+      ag_added=$(changed_lines "$base" "$head" '+') \
+        || reject B1 "consultations.antigravity is not-triggered and the added lines of $base..$head could not be read; the docs tier fails closed" || return 1
       while IFS=$'\t' read -r acf acl; do
         [ -n "$acf" ] || continue
         if match_comparative "$acl"; then ag_claim="$acf"; break; fi
-      done < <(changed_lines "$base" "$head" '+' | grep -Ei -- "$COMPARATIVE_RE" || true)
+      done < <(printf '%s\n' "$ag_added" | grep -Ei -- "$COMPARATIVE_RE" || true)
       [ -z "$ag_claim" ] \
         || reject B1 "consultations.antigravity is not-triggered, but an added line in $ag_claim states a comparative ratio; the docs tier does not cover a claim, which is exactly what a second vendor is owed" || return 1
       ag_why=$(jq -r '.predicate.consultations.antigravity.trigger_reason // ""' "$rcpt")
