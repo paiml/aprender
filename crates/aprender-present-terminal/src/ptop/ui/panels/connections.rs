@@ -487,7 +487,7 @@ pub fn truncate_process_name(name: &str, max_len: usize) -> String {
     if name.len() <= max_len {
         name.to_string()
     } else if max_len > 1 {
-        format!("{}…", &name[..max_len - 1])
+        format!("{}…", &name[..name.floor_char_boundary(max_len - 1)])
     } else {
         name.chars().take(max_len).collect()
     }

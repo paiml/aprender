@@ -1331,6 +1331,9 @@ impl App {
             entry.0.push(net.received as f64);
             entry.1.push(net.transmitted as f64);
         }
+        // #4511 D2: forget interfaces that are gone, or container veth churn grows the map forever
+        self.net_iface_history
+            .retain(|name, _| snapshot.network_info.iter().any(|n| &n.name == name));
         self.snapshot_networks = snapshot.network_info;
         self.snapshot_psi = snapshot.psi_data;
         self.snapshot_connections = snapshot.connections_data;

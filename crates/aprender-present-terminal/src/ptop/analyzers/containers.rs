@@ -148,7 +148,10 @@ impl Container {
         if self.name.len() <= max_len {
             self.name.clone()
         } else {
-            format!("{}…", &self.name[..max_len - 1])
+            format!(
+                "{}…",
+                &self.name[..self.name.floor_char_boundary(max_len.saturating_sub(1))]
+            )
         }
     }
 

@@ -94,7 +94,7 @@ impl ProcessExtra {
     pub fn container_badge(&self) -> Option<String> {
         self.container.as_ref().map(|c| {
             if c.len() > 12 {
-                format!("[{}…]", &c[..11])
+                format!("[{}…]", &c[..c.floor_char_boundary(11)])
             } else {
                 format!("[{}]", c)
             }
@@ -119,7 +119,7 @@ impl ProcessExtra {
             .find(|s| !s.is_empty())
             .map(|s| {
                 if s.len() > 30 {
-                    format!("{}...", &s[..27])
+                    format!("{}...", &s[..s.floor_char_boundary(27)])
                 } else {
                     s.to_string()
                 }

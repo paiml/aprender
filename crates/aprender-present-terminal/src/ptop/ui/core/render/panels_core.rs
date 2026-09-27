@@ -1489,7 +1489,7 @@ pub(super) fn draw_signal_dialog(app: &App, canvas: &mut DirectTerminalCanvas<'_
     // Truncate process name if too long
     let max_name_len = 25;
     let display_name = if name.len() > max_name_len {
-        format!("{}...", &name[..max_name_len - 3])
+        format!("{}...", &name[..name.floor_char_boundary(max_name_len - 3)])
     } else {
         name.clone()
     };

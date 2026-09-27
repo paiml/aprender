@@ -25,6 +25,8 @@ pub mod panel_cpu;
 pub mod panel_gpu;
 pub mod panel_memory;
 mod render;
+#[cfg(test)]
+mod utf8_boundary_tests;
 
 // Re-export rendering functions from render.rs
 pub use render::{draw, panel_border_color, read_gpu_info, GpuInfo};

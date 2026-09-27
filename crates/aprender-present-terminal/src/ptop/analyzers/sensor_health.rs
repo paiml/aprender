@@ -129,7 +129,7 @@ impl SensorReading {
     /// Get short label (max 12 chars)
     pub fn short_label(&self) -> String {
         if self.label.len() > 12 {
-            format!("{}...", &self.label[..9])
+            format!("{}...", &self.label[..self.label.floor_char_boundary(9)])
         } else {
             self.label.clone()
         }

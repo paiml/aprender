@@ -248,7 +248,7 @@ pub fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
     } else if max_len <= 3 {
         s.chars().take(max_len).collect()
     } else {
-        format!("{}...", &s[..max_len - 3])
+        format!("{}...", &s[..s.floor_char_boundary(max_len - 3)])
     }
 }
 
@@ -256,7 +256,7 @@ pub fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
 #[must_use]
 pub fn pad_left(s: &str, width: usize) -> String {
     if s.len() >= width {
-        s[..width].to_string()
+        s[..s.floor_char_boundary(width)].to_string()
     } else {
         format!("{s:<width$}")
     }
@@ -266,7 +266,7 @@ pub fn pad_left(s: &str, width: usize) -> String {
 #[must_use]
 pub fn pad_right(s: &str, width: usize) -> String {
     if s.len() >= width {
-        s[..width].to_string()
+        s[..s.floor_char_boundary(width)].to_string()
     } else {
         format!("{s:>width$}")
     }

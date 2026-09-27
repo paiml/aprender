@@ -98,7 +98,7 @@ pub(crate) fn format_proc_util(util: Option<f32>) -> String {
 #[must_use]
 pub(crate) fn truncate_name(name: &str, max_len: usize) -> &str {
     if name.len() > max_len {
-        &name[..max_len]
+        &name[..name.floor_char_boundary(max_len)]
     } else {
         name
     }

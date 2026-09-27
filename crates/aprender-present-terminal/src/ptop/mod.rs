@@ -93,6 +93,9 @@ pub mod input;
 pub mod ui;
 pub mod ui_atoms;
 
+#[cfg(test)]
+mod iface_history_tests;
+
 pub use analyzers::{
     AnalyzerRegistry, ConnectionsAnalyzer, ConnectionsData, PsiAnalyzer, PsiData, TcpConnection,
     TcpState,

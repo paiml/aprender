@@ -1143,7 +1143,7 @@ fn format_process_name(conn: &crate::ptop::analyzers::TcpConnection) -> String {
         .as_ref()
         .map(|s| {
             if s.len() > 10 {
-                format!("{}…", &s[..9])
+                format!("{}…", &s[..s.floor_char_boundary(9)])
             } else {
                 s.clone()
             }
@@ -1563,7 +1563,7 @@ fn mount_point_style(mount: &str) -> (&str, Color) {
 fn mount_short_name(mount: &str) -> &str {
     let name = mount.split('/').next_back().unwrap_or("disk");
     if name.len() > 6 {
-        &name[..6]
+        &name[..name.floor_char_boundary(6)]
     } else {
         name
     }
