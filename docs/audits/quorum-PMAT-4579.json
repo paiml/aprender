@@ -1,0 +1,460 @@
+{
+  "ticket": "PMAT-4579",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "5ff901d974911f563ce518f55d43399dd935fabc",
+  "diff_sha256": "3ce03eb13d15c33875bbf57bbd020277946defb1c77db92aef4a93e4fa26a0de",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 12698,
+  "prompt_sha256": "db4180631869fbe26bedfda0890ec1f0e6f0b1b0bbf40c2583e1fa9c4867efe0",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requested automated approval flow for the signer bot. It cleanly adds `pr_review_approve_signer_runs.sh` as a step to the `pr-review-sign` job to approve the specific `pull_request` runs that get held under the fork-approval policy. The script explicitly ensures that only `github-actions[bot]` runs matching the exact pushed SHA and marked as `action_required` are touched. The `--self-test` harness is exceptionally well-written, mocking the GitHub API to validate the 8 edge-case rows and 4 failure mutants exactly as requested by the ticket (4/4 RED). The script also correctly exits non-zero if the API refuses approval or if no run appears within the wait window. No external dependencies, secrets, or `.github/workflows` modifications were introduced.",
+      "findings": [],
+      "raw_bytes": 4511,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "db4180631869fbe26bedfda0890ec1f0e6f0b1b0bbf40c2583e1fa9c4867efe0",
+      "trace": {
+        "input_sha256": "7532985942a04a69fbca87e0f319e69a5518f6d214a2c438a4c454f0a574092e",
+        "output_sha256": "f0cb52c2fe35ac7e75f1b963549f3c807e5dab8cb6dff0c86400109128e771cf",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all four acceptance criteria of PMAT-4579 and I found no refutation.\n\n**AC1 (filter correctness):** `select_held` (line 48–58) filters on exactly `head_sha==sha`, `event==pull_request`, `actor.login==github-actions[bot]`, `conclusion==action_required`. The step runs only when `env.signed_any == '1'` (after the push) and passes `$(git rev-parse HEAD)` — the just-pushed sha. No other run is touched.\n\n**AC2 (self-test: 8/8 rows, 4/4 mutants, wired):** `run_rows()` has exactly 8 `row` calls (lines 130–144). Four planted mutants (no-sha, no-event, no-actor, no-held) each disable one filter and are verified killed. The self-test step is wired in `ci/sections.yml` at line 2748–2750 in the `pr-review-sign` job.\n\n**AC3 (failures exit non-zero):** Approve failure returns 1 with the run URL in the error message (line 78). No-run-at-all returns 3 (line 94). Both tested in rows 7–8 of the self-test.\n\n**AC4 (no secret, ruleset, or .github/workflows change):** Confirmed: the three changed files are `ci/sections.yml`, `docs/roadmaps/roadmap.yaml`, and `scripts/pr_review_approve_signer_runs.sh`. None are in `.github/workflows/`. The token used is `${{ github.token }}` (the job token), not a secret. No ruleset files changed.",
+      "findings": [
+        {
+          "claim": "select_held filters on exactly (head_sha==sha, event==pull_request, actor==github-actions[bot], conclusion==action_required), matching AC1",
+          "file": "scripts/pr_review_approve_signer_runs.sh",
+          "grounding": "cited",
+          "line": 48
+        },
+        {
+          "claim": "The approve step runs only when env.signed_any == '1', after the git push step (line 2793), ensuring it runs only after the signer pushes",
+          "file": "ci/sections.yml",
+          "grounding": "measured",
+          "line": 2800
+        },
+        {
+          "claim": "run_rows() contains exactly 8 row() calls (lines 130-144), matching AC2's '8/8 rows' requirement",
+          "file": "scripts/pr_review_approve_signer_runs.sh",
+          "grounding": "cited",
+          "line": 130
+        },
+        {
+          "claim": "4 planted mutants (no-sha, no-event, no-actor, no-held) are each verified killed by [ $killed -eq $total ] (line 159), matching AC2's '4/4 planted filter mutants RED'",
+          "file": "scripts/pr_review_approve_signer_runs.sh",
+          "grounding": "cited",
+          "line": 152
+        },
+        {
+          "claim": "The --self-test is wired as a step in ci/sections.yml pr-review-sign job, matching AC2's 'wired as a step' requirement",
+          "file": "ci/sections.yml",
+          "grounding": "cited",
+          "line": 2748
+        },
+        {
+          "claim": "Approve failure returns 1 and the error message includes the run URL (https://github.com/$repo/actions/runs/$id), matching AC3",
+          "file": "scripts/pr_review_approve_signer_runs.sh",
+          "grounding": "cited",
+          "line": 78
+        },
+        {
+          "claim": "No-run-at-all exits 3 (non-zero), matching AC3's 'never green' requirement",
+          "file": "scripts/pr_review_approve_signer_runs.sh",
+          "grounding": "cited",
+          "line": 94
+        },
+        {
+          "claim": "Uses ${{ github.token }} (the built-in job token), not ${{ secrets.* }}. No secret is introduced, satisfying AC4",
+          "file": "ci/sections.yml",
+          "grounding": "measured",
+          "line": 2803
+        },
+        {
+          "claim": "No .github/workflows file or ruleset file is changed in this diff — confirmed via git diff --name-only: only ci/sections.yml, docs/roadmaps/roadmap.yaml, scripts/pr_review_approve_signer_runs.sh",
+          "file": "scripts/pr_review_approve_signer_runs.sh",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "The self-test prints '$rows/$rows rows' but does not assert rows==8. An anti-vacuity assertion on the exact row count is absent. However, the rows are hardcoded function calls (not discovered), the step name explicitly says '8 rows', and the mutant kill assertion provides strong secondary coverage. This is a minor gap, not a refutation.",
+          "file": "scripts/pr_review_approve_signer_runs.sh",
+          "grounding": "cited",
+          "line": 149
+        }
+      ],
+      "raw_bytes": 9171,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-opus-4-6-thinking",
+      "model_measured": "claude-opus-4-6-thinking",
+      "model_source": "measured",
+      "family": "claude",
+      "executor": "agy",
+      "brief_sha256": "db4180631869fbe26bedfda0890ec1f0e6f0b1b0bbf40c2583e1fa9c4867efe0",
+      "trace": {
+        "input_sha256": "40f66b7366449725a3eca86720e05f83bdadb35ade3623a1680ab7bf07c657ed",
+        "output_sha256": "bee8bbbf862d8059cb4ea193d706298548d08cd44175709f95b3eafe3bd1a0d4",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-4-6-thinking",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4579: it adds a script that filters and approves held runs created by the signer's push, with proper exit codes for all failure cases, a comprehensive 8-row self-test with 4 planted filter mutants, and correct CI integration without touching secrets or rulesets.",
+      "findings": [],
+      "raw_bytes": 1500,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "db4180631869fbe26bedfda0890ec1f0e6f0b1b0bbf40c2583e1fa9c4867efe0",
+      "trace": {
+        "input_sha256": "015b2eb721ec096348e83ebdc2b036c4fed6bc151f41a8336a665e774f976b3b",
+        "output_sha256": "86bef0aff731095dea826d6927bc2812d687b0a652f36da1ad35b54f460be57a",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "ci/sections.yml",
+      "line": 2748,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The --self-test is wired as a step in ci/sections.yml pr-review-sign job, matching AC2's 'wired as a step' requirement"
+      ]
+    },
+    {
+      "file": "ci/sections.yml",
+      "line": 2800,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The approve step runs only when env.signed_any == '1', after the git push step (line 2793), ensuring it runs only after the signer pushes"
+      ]
+    },
+    {
+      "file": "ci/sections.yml",
+      "line": 2803,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Uses ${{ github.token }} (the built-in job token), not ${{ secrets.* }}. No secret is introduced, satisfying AC4"
+      ]
+    },
+    {
+      "file": "scripts/pr_review_approve_signer_runs.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "No .github/workflows file or ruleset file is changed in this diff — confirmed via git diff --name-only: only ci/sections.yml, docs/roadmaps/roadmap.yaml, scripts/pr_review_approve_signer_runs.sh"
+      ]
+    },
+    {
+      "file": "scripts/pr_review_approve_signer_runs.sh",
+      "line": 48,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "select_held filters on exactly (head_sha==sha, event==pull_request, actor==github-actions[bot], conclusion==action_required), matching AC1"
+      ]
+    },
+    {
+      "file": "scripts/pr_review_approve_signer_runs.sh",
+      "line": 78,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Approve failure returns 1 and the error message includes the run URL (https://github.com/$repo/actions/runs/$id), matching AC3"
+      ]
+    },
+    {
+      "file": "scripts/pr_review_approve_signer_runs.sh",
+      "line": 94,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "No-run-at-all exits 3 (non-zero), matching AC3's 'never green' requirement"
+      ]
+    },
+    {
+      "file": "scripts/pr_review_approve_signer_runs.sh",
+      "line": 130,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "run_rows() contains exactly 8 row() calls (lines 130-144), matching AC2's '8/8 rows' requirement"
+      ]
+    },
+    {
+      "file": "scripts/pr_review_approve_signer_runs.sh",
+      "line": 149,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The self-test prints '$rows/$rows rows' but does not assert rows==8. An anti-vacuity assertion on the exact row count is absent. However, the rows are hardcoded function calls (not discovered), the step name explicitly says '8 rows', and the mutant kill assertion provides strong secondary coverage. This is a minor gap, not a refutation."
+      ]
+    },
+    {
+      "file": "scripts/pr_review_approve_signer_runs.sh",
+      "line": 152,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "4 planted mutants (no-sha, no-event, no-actor, no-held) are each verified killed by [ $killed -eq $total ] (line 159), matching AC2's '4/4 planted filter mutants RED'"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790529840,
+          "window_calls": 2,
+          "window_429": 0,
+          "hour_calls": 0,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: 2 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790522666,
+          "window_calls": 34,
+          "window_429": 0,
+          "hour_calls": 4,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 12698
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Refused": {
+        "cell": "gx10-cpu",
+        "removed_by": "gpu-proof"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cpu",
+    "gpu_proof": null,
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 55,
+    "collected_s": 1037,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 16 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 12698,
+      "sent_bytes": 12867,
+      "max_bytes": 24576
+    },
+    "trace": {
+      "input_sha256": "c10c809bab57ba115a9e6f531af7a59661d25d713e93628555040621e599c431",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 55,
+        "used_gpu": null,
+        "ts": "2026-09-27T18:29:54.048Z",
+        "wall_ms": 55514,
+        "request_id": "01a0e421-78fd-7238-9934-030955761b4b",
+        "load1": 12.53,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
