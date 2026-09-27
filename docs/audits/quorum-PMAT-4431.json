@@ -1,15 +1,15 @@
 {
   "ticket": "PMAT-4431",
-  "base": "e5929e6e5",
-  "base_resolved": "e5929e6e5",
-  "base_note": "no origin/e5929e6e5 exists; judged against the local ref",
-  "head": "e161cdb3cc942cc170762fe98e3e1ead0e576905",
-  "diff_sha256": "b24a1f8a311dcfe190307592b0e4d0b6ce7131b7d28f03beeb0c1e63f6bd771f",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "8229e2b9e4537fe7546c88194917d7b1916fc741",
+  "diff_sha256": "de1ccb6d7fef16b24d5b5317039a1c5391bcb2ab4fcb91109183579bd1d36ce8",
   "width": 3,
   "executor": "agy",
-  "prompt_mode": "inline",
-  "prompt_bytes": 65382,
-  "prompt_sha256": "2bdc7e3def1f50f4c8e5e579468452a8a25f820e35c673986119929717cb3c6c",
+  "prompt_mode": "file",
+  "prompt_bytes": 6782589,
+  "prompt_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,17 +21,38 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Each change maps to a named guard that the receipt says was RED without it. Ticket criterion 2 puts any file in scope when a named guard is RED without it, and that covers the PMAT-4072 fragment and roadmap row. The receipt states the PMAT-4072 status and assignee sync openly. The two helper splits keep the same checks, messages and order. The two retired guards and the moved ci_run_target_release.sh are documented in scripts/retired/README.md and in the filed re-port finding. I ran no builds; the recorded gate results are the build's evidence. I read the diff, and my only measured check was a grep confirming that check_append_only_ledgers.sh does not mention docs/findings.",
+      "summary": "Verified the receipt's specific claims for PMAT-4431 against the diff and the live worktree. The three most contested items from a prior dissenting round (truncation-message change, mutant rewrite, PMAT-4072 status/assignee sync) are each backed by a real, checkable guard, and static inspection of the guard scripts and current tree state confirms the receipt's framing is accurate, not a drive-by change. The admission.rs/receipt.rs refactor genuinely splits row_errors into cell_errors/field_errors/status_errors with the same checks and order. The .gitattributes and scripts/retired/ items match the receipt's description. No refuting evidence found within the scope I could verify without running a build.",
       "findings": [
         {
-          "file": "docs/findings/aprender-57.jsonl",
-          "line": 1,
-          "claim": "Cosmetic: the edited `ask` string runs two sentences together (\"...ci/sections.yml Also move scripts/retired/...\"), with no full stop before \"Also\". The JSON is still valid. The finding is edited in place, and my grep found no reference to docs/findings in check_append_only_ledgers.sh, so no ledger guard is weakened.",
-          "grounding": "measured",
-          "fix": "Add a period before \"Also\"."
+          "file": "docs/audits/quorum-PMAT-4431.prompt.md",
+          "line": 15,
+          "claim": "The embedded receipt states 'The judged diff (base e5929e6e5) is the three fix commits', but the diff actually pasted in the prompt is the full origin/main...HEAD fold (730 files, ~97k lines) — the entire B3 fold, not just three fix commits.",
+          "fix": "This is not a defect: the ticket title itself ('the full B3 fold ... as one branch from main') and the latest commit (8229e2b9e4 'scope is the full B3 fold, merge-base..head') confirm the review scope was deliberately widened after the receipt text was written. Worth updating the receipt's opening line to match, but it does not change the verdict.",
+          "grounding": "cited"
+        },
+        {
+          "file": "scripts/lib/model_ladder_cells_produce.py",
+          "line": 210,
+          "claim": "Receipt claims the '... and N more chars' truncation-reason change is required by check_no_silent_truncation.sh, which flags any new silent truncation.",
+          "fix": "No fix needed — verified: scripts/check_no_silent_truncation.sh's LOUD regex explicitly matches 'more chars|\\.\\.\\. and ', confirming this exact message format is the guard's expected non-silent pattern.",
+          "grounding": "measured"
+        },
+        {
+          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+          "line": 18,
+          "claim": "Receipt claims the roadmap.yaml aggregate's PMAT-4072 status/assigned_to flip is a sync from an already-committed fragment (commit 5c1dbe01f), not a new unauthorized edit.",
+          "fix": "No fix needed — verified in the live worktree: the fragment already reads status: completed, assigned_to: aprender-ea, notes citing quorum-PMAT-4072-fe8c9dff7.json, matching the receipt's claim exactly.",
+          "grounding": "measured"
+        },
+        {
+          "file": "crates/aprender-review-experiment/src/admission.rs",
+          "line": 852,
+          "claim": "Receipt claims row_errors was split into helpers (cell_errors/field_errors/status_errors) preserving the same checks, messages and order to fix a complexity-ratchet guard.",
+          "fix": "No fix needed — read the diff directly: row_errors now delegates to cell_errors, field_errors, status_errors in that order, with identical error message formats and semantics.",
+          "grounding": "cited"
         }
       ],
-      "raw_bytes": 3184,
+      "raw_bytes": 6591,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -42,10 +63,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "2bdc7e3def1f50f4c8e5e579468452a8a25f820e35c673986119929717cb3c6c",
+      "brief_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
       "trace": {
-        "input_sha256": "db5773badbce891396652be7b09daa79e40105b4c390335bbac4f18cb3efe220",
-        "output_sha256": "49a3dee874eb8b78f9648c58b3f686a575ee08426036fb1b1ca455a2757ace72",
+        "input_sha256": "b4f2a14fdf91e1c45fc0a5ddd752ddad7a206f11e940381bbf13d6044bcfda19",
+        "output_sha256": "df5772781b06ed763a62408c8c9ec198a03f1eec0fec57fae92ec224a1d41470",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -66,74 +87,46 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Nothing in the diff refutes PMAT-4431. Acceptance criterion 2 puts any file in scope when a named guard is RED without it, and the receipt names a guard and its RED output for each change. That covers the PMAT-4072 status, assignee and notes edits and the other guard-driven fixes. The receipt now states that PMAT-4072's status and assignee were synced from its fragment. This closes the gap round 2 lane 3 found. Two read-only greps found nothing that contradicts the retirement of ci_run_target_release.sh or the reworded truncation message. I ran no build or test and rely on the receipt's recorded gate results.",
-      "findings": [
-        {
-          "file": "docs/findings/aprender-57.jsonl",
-          "line": 1,
-          "claim": "Cosmetic only: the new `ask` text runs two sentences together ('...ci/sections.yml Also move scripts/retired/...') with no full stop. The JSON is still valid. Grounding: the diff line reads '...ci/sections.yml Also move scripts/retired/ci_run_target_release.sh back...'.",
-          "grounding": "cited",
-          "fix": "Add a period before 'Also'."
-        },
-        {
-          "file": "scripts/retired/ci_run_target_release.sh",
-          "line": 1,
-          "claim": "Nothing outside the retired README, the finding, the roadmap and old evidence references ci_run_target_release. A grep for the name outside docs/audits returned only docs/roadmaps/roadmap.yaml, docs/findings/aprender-57.jsonl, scripts/retired/README.md, scripts/retired/ci_run_target_release.sh, docs/roadmaps/entries/PMAT-4102.yaml and old evidence/pr-review files. So no live caller is broken by the move.",
-          "grounding": "measured"
-        }
-      ],
-      "raw_bytes": 3944,
-      "err_bytes": 0,
+      "summary": "The diff correctly implements what the ticket PMAT-4431 asks for (merging B3 onto main while ensuring target-side guards are green). The receipt carefully justifies all changes, including those flagged by a previous review as drive-by (such as the truncation string change in model_ladder_cells_produce.py and the mutant slice in check_ladder_cells_producer.sh), showing they were strictly necessary to satisfy specific guards (check_no_silent_truncation and check_ladder_cells_producer.sh). Nothing in the diff refutes the ticket or receipt.",
+      "findings": [],
+      "raw_bytes": 3695,
+      "err_bytes": 62,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
-      "executor": "claude-code",
       "grounding_check": "parity",
-      "role": "counted",
-      "model": "claude-sonnet-5",
-      "model_measured": "claude-sonnet-5",
-      "model_source": "flag",
-      "family": "claude",
-      "brief_sha256": "2bdc7e3def1f50f4c8e5e579468452a8a25f820e35c673986119929717cb3c6c",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
       "trace": {
-        "input_sha256": "1617eb1c6ad5e32a2c82ad668a920dc1534cc827b5946cb9c1bac5e9ea1c2cb9",
-        "output_sha256": "049603a522a2b3a51eab758300e9a062b150e950af388763837f97abb11a1535",
+        "input_sha256": "e16a88c61a95f70b32f01825646f18dc019b611a6af2734fe69756850c784acd",
+        "output_sha256": "96a7e8146f5ae6892906537b924543edb4b2b595ca15541629d052c2533af0bd",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": "claude-sonnet-5",
+        "judged_by": "gemini-3.1-pro-high",
         "exhausted": false,
         "attempts": [
           {
-            "model": "claude-sonnet-5",
-            "family": "claude",
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
             "outcome": "answered"
           }
         ],
-        "skipped": [
-          {
-            "model": "gemini-3.1-pro-high",
-            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-          }
-        ]
-      },
-      "repeat_of": 1
+        "skipped": []
+      }
     },
     {
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements the three fix commits following the merge of origin/main e7a52949d into fold/b3-onto-main. Acceptance criterion 2 explicitly permits changes to any file when a named guard is RED without it, covering the PMAT-4072 notes edit and the automatic roadmap.yaml regeneration from fragments. Refactoring of validation helpers in admission.rs and receipt.rs preserves all checks and order. Guard retirement appropriately responds to main's ci.yml changes (removal of jobs moved to ci/sections.yml). Documentation and roadmap updates are accurate. Receipt validates test passing and mutant behavior. A misreading in lane 3's round-2 FAIL verdict led to a false claim that status/assigned_to changes lacked justification, but the receipt explicitly documents them as automatic regeneration consequences and they are justified by criterion 2's guard-required scope rule.",
-      "findings": [
-        {
-          "file": "docs/findings/aprender-57.jsonl",
-          "line": 1,
-          "claim": "The `ask` field joins two sentences without a period: '...ci/sections.yml Also move...'",
-          "grounding": "cited",
-          "fix": "Add a period before 'Also'."
-        }
-      ],
-      "raw_bytes": 3116,
+      "summary": "PMAT-4431 fold of B3 onto main is complete with proper guard satisfaction. All 6 fix commits are well-justified by named failing guards. Complexity refactoring in admission.rs and receipt.rs is sound. No findings refute the ticket or receipt claims.",
+      "findings": [],
+      "raw_bytes": 1417,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -144,10 +137,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "2bdc7e3def1f50f4c8e5e579468452a8a25f820e35c673986119929717cb3c6c",
+      "brief_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
       "trace": {
-        "input_sha256": "2d619e23ab9d3e038582ac51126e940341659fd46f0c9c76054a85be3c15b0c3",
-        "output_sha256": "6207fbc308edb7301d95ab515ed23fddcdf05e4f1a97293d2051e62a84547c56",
+        "input_sha256": "706644c20e4c43fd73de80bf1d0c8beea714261afa75cc90896fdccc6376bae5",
+        "output_sha256": "3996308ae1725cefb0c70b3d6363ba498f623747ffb2d363b361300270a67823",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -168,37 +161,50 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "docs/findings/aprender-57.jsonl",
-      "line": 1,
+      "file": "crates/aprender-review-experiment/src/admission.rs",
+      "line": 852,
       "lanes_agreeing": [
-        1,
-        2,
-        3
+        1
       ],
       "claims": [
-        "Cosmetic only: the new `ask` text runs two sentences together ('...ci/sections.yml Also move scripts/retired/...') with no full stop. The JSON is still valid. Grounding: the diff line reads '...ci/sections.yml Also move scripts/retired/ci_run_target_release.sh back...'.",
-        "Cosmetic: the edited `ask` string runs two sentences together (\"...ci/sections.yml Also move scripts/retired/...\"), with no full stop before \"Also\". The JSON is still valid. The finding is edited in place, and my grep found no reference to docs/findings in check_append_only_ledgers.sh, so no ledger guard is weakened.",
-        "The `ask` field joins two sentences without a period: '...ci/sections.yml Also move...'"
+        "Receipt claims row_errors was split into helpers (cell_errors/field_errors/status_errors) preserving the same checks, messages and order to fix a complexity-ratchet guard."
       ]
     },
     {
-      "file": "scripts/retired/ci_run_target_release.sh",
-      "line": 1,
+      "file": "docs/audits/quorum-PMAT-4431.prompt.md",
+      "line": 15,
       "lanes_agreeing": [
-        2
+        1
       ],
       "claims": [
-        "Nothing outside the retired README, the finding, the roadmap and old evidence references ci_run_target_release. A grep for the name outside docs/audits returned only docs/roadmaps/roadmap.yaml, docs/findings/aprender-57.jsonl, scripts/retired/README.md, scripts/retired/ci_run_target_release.sh, docs/roadmaps/entries/PMAT-4102.yaml and old evidence/pr-review files. So no live caller is broken by the move."
+        "The embedded receipt states 'The judged diff (base e5929e6e5) is the three fix commits', but the diff actually pasted in the prompt is the full origin/main...HEAD fold (730 files, ~97k lines) — the entire B3 fold, not just three fix commits."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+      "line": 18,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Receipt claims the roadmap.yaml aggregate's PMAT-4072 status/assigned_to flip is a sync from an already-committed fragment (commit 5c1dbe01f), not a new unauthorized edit."
+      ]
+    },
+    {
+      "file": "scripts/lib/model_ladder_cells_produce.py",
+      "line": 210,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Receipt claims the '... and N more chars' truncation-reason change is required by check_no_silent_truncation.sh, which flags any new silent truncation."
       ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
-  "partial_reasons": [
-    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
-    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
-  ],
+  "partial_reasons": [],
   "fallback": {
     "same_family_width": 2,
     "chain": [
@@ -236,34 +242,41 @@
       {
         "family": "gemini",
         "model": "gemini-3.1-pro-high",
-        "probe": 0,
-        "outcome": "policy",
-        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        "probe": 1,
+        "outcome": "live"
       }
     ],
-    "degraded": {
-      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
-      "lanes": [
-        2
-      ],
-      "families": [
-        {
-          "family": "gemini",
-          "state": "policy",
-          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-        }
-      ],
-      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
-    },
+    "degraded": null,
     "prah": {
       "source": "install-receipt",
       "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
     },
     "tier1": {
       "agy_tier1_only": true,
-      "tier1": false,
-      "matched": [],
-      "paths": 16,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/conleche-nightly.yml",
+        "contracts/release-readiness-v1.yaml",
+        "contracts/softmax-kernel-v1.yaml",
+        "crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/pmat/contracts/macs-ladder-kernel-v1.yaml",
+        "crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/pmat/src/tdg/cuda_simd_scores.rs.txt",
+        "crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs",
+        "crates/aprender-contracts-cli/tests/ont4e_refines_gate.rs",
+        "crates/aprender-contracts-cli/tests/ont5_consistency_gate.rs",
+        "crates/aprender-contracts-cli/tests/ont8_evidence_gate.rs",
+        "crates/aprender-contracts-cli/tests/pv_surface_gate.rs",
+        "crates/aprender-contracts-staging/lean/challenge/activation-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/adamw-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/alibi-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/attention-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/conv1d-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/gelu-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/gqa-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/kernel-fusion-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/layernorm-kernel-v1.lean",
+        "crates/aprender-contracts-staging/lean/challenge/matmul-kernel-v1.lean"
+      ],
+      "paths": 730,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -278,7 +291,21 @@
       "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
-      "buckets": {},
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790504511,
+          "window_calls": 47,
+          "window_429": 0,
+          "hour_calls": 16,
+          "share": 17,
+          "want": 2,
+          "state": "hour",
+          "reason": "agy bucket gemini: 16 calls in the last hour + 2 this round exceed the hour share 17 (1/5 of the budget 86, [U] default 30, raised to the 86 calls a window has made without a 429; no window reached one)"
+        }
+      },
       "closed": []
     }
   },
@@ -288,23 +315,9 @@
     "disarmed": false,
     "note": "auto-merge not armed"
   },
-  "degraded": {
-    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
-    "lanes": [
-      2
-    ],
-    "families": [
-      {
-        "family": "gemini",
-        "state": "policy",
-        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
-      }
-    ],
-    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
-  },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 65382 bytes > 24576"
+    "skipped": "brief 6782589 bytes > 24576"
   },
   "advisory_lane": {
     "state": "not-run",
@@ -313,19 +326,23 @@
       "NotRun": "ContextOverflow"
     },
     "verdict": "unavailable",
-    "why": "the brief is 65382 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "why": "the brief is 6782589 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
     "model": null,
     "model_sha256": null,
     "rc": 0,
     "wall_s": 0,
     "collected_s": 0,
-    "budget_s": 300,
-    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 65382,
+      "bytes": 6782589,
       "sent_bytes": 0,
       "max_bytes": 24576
     },
@@ -338,6 +355,6 @@
   },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
   }
 }
