@@ -141,13 +141,14 @@ fn dispatch_proof_status_with_binding() {
         kind: None,
         verify_bindings: None,
     });
-    // PVL-001 EV-2: `--binding` RESOLVES every binding. This registry names five
-    // functions that exist nowhere in the tree (swap_axes, validate_element_count,
-    // map_tensor_name, bidirectional_attention, mint_test_token; #4094), so the
-    // honest answer is a reject. This test asserted `is_ok()` while proof-status
-    // counted entries without resolving them: it encoded the defect.
-    let err = result.expect_err("a registry holding ghost bindings must be rejected");
-    assert!(err.to_string().contains("ghost binding"), "{err}");
+    // PVL-001 EV-2: `--binding` RESOLVES every binding and rejects on a ghost. The
+    // five ghosts this test once expected (#4094) were fixed or allowlisted in
+    // #4502, and the last one, `quantize_data`, is a real `pub use ... as` re-export
+    // the resolver now sees. So the real registry must resolve clean: a new ghost
+    // turns this RED. The reject path is covered by tests/pvl_ghost_binding.rs.
+    if let Err(e) = result {
+        panic!("the aprender registry must resolve with no ghost: {e}");
+    }
 }
 
 #[test]

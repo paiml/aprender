@@ -188,12 +188,52 @@ fn scan_fns(dir: &Path, found: &mut HashSet<String>) {
 /// `pub(super) fn` (crates/aprender-core/src/tree/regression_helpers.rs:27) and was
 /// reported a ghost by the old four-prefix scanner (scripts/dogfood.sh records the
 /// same defect for rmedia's `apply_loudnorm`).
+///
+/// A public re-export under a new name (`pub use quantize::{quantize as
+/// quantize_data}`) is a symbol callers can name too, so its alias counts. Measured
+/// at aprender#4502: `model-format-conversion-v1 quantization_bounds` binds
+/// `aprender::format::quantize_data`, re-exported at
+/// crates/aprender-core/src/format/mod.rs:334, and was the tree's one false ghost.
 fn extract_fn_names(content: &str, found: &mut HashSet<String>) {
+    let mut in_pub_use = false;
     for line in content.lines() {
         if let Some(name) = fn_item_name(line) {
             found.insert(name);
         }
+        let code = line.split_once("//").map_or(line, |(code, _)| code);
+        in_pub_use = in_pub_use || is_pub_use(code);
+        if in_pub_use {
+            found.extend(use_renames(code));
+            in_pub_use = !code.contains(';');
+        }
     }
+}
+
+/// Whether a source line opens a `use` item with `pub` or `pub(...)` visibility.
+fn is_pub_use(line: &str) -> bool {
+    let Some(rest) = line.trim_start().strip_prefix("pub") else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let rest = match rest.strip_prefix('(') {
+        Some(inner) => inner.split_once(')').map_or("", |(_, r)| r.trim_start()),
+        None => rest,
+    };
+    rest.starts_with("use ")
+}
+
+/// The lowercased aliases a line of a `use` item introduces (`x as y` yields `y`;
+/// `as _` introduces no name).
+fn use_renames(line: &str) -> Vec<String> {
+    let words: Vec<&str> = line
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|w| !w.is_empty())
+        .collect();
+    words
+        .windows(2)
+        .filter(|w| w[0] == "as" && w[1] != "_")
+        .map(|w| w[1].to_lowercase())
+        .collect()
 }
 
 /// The lowercased name of the item (`fn`, `struct`, `enum`, `type`, `trait`) a source
@@ -247,7 +287,38 @@ fn fn_item_name(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::fn_item_name;
+    use super::{extract_fn_names, fn_item_name};
+    use std::collections::HashSet;
+
+    /// Public re-export renames are seen; private ones and `as _` are not.
+    #[test]
+    fn pub_use_rename_case_table() {
+        let src = "\
+pub use quantize::{
+    dequantize, quantize as quantize_data, Q4_0Quantizer,
+};
+pub(crate) use a::b as InCrate;
+pub use c::d as e;
+use h::{i as also_private};
+pub use j::Trait as _;
+// pub use k::l as commented;
+pub use m::n; // re-exported as not_an_alias
+";
+        let mut found = HashSet::new();
+        extract_fn_names(src, &mut found);
+        for want in ["quantize_data", "incrate", "e"] {
+            assert!(found.contains(want), "{want} missing from {found:?}");
+        }
+        for not in [
+            "also_private",
+            "_",
+            "commented",
+            "not_an_alias",
+            "dequantize",
+        ] {
+            assert!(!found.contains(not), "{not} wrongly in {found:?}");
+        }
+    }
 
     /// The resolver's case table: every declaration form a binding can name must be
     /// seen (a miss is a false GHOST reject), and non-declarations must not be.
