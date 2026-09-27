@@ -45,7 +45,9 @@ pub use feedforward::EncoderFeedForward;
 pub use gdn::{
     causal_conv1d_seq, gated_delta_scan, gdn_mixer_forward, GdnDims, GdnFloat, GdnScan, GdnWeights,
 };
-pub use gdn_backward::{gated_delta_scan_backward, GdnScanGrads};
+pub use gdn_backward::{
+    gated_delta_scan_backward, gdn_mixer_backward, GdnScanGrads, GdnWeightGrads,
+};
 pub use model::Transformer;
 pub use norm::LayerNorm;
 pub use qwen35_layer::{
