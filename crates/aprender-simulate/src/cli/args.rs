@@ -28,12 +28,7 @@ use std::path::PathBuf;
 /// The semver and the first 9 hex of the
 /// commit it was built from (G0.1, #4476) — the semver is a workspace version shared
 /// by every worktree, so without the sha a stale simular reads as HEAD.
-pub const VERSION: &str = concat!(
-    env!("CARGO_PKG_VERSION"),
-    " (",
-    env!("APR_GIT_SHA"),
-    ")"
-);
+pub const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")");
 
 /// CLI arguments container.
 #[derive(Debug, Clone, PartialEq, Parser)]

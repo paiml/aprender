@@ -38,8 +38,8 @@ use crate::ontology::arming::ArmedShapes;
 use crate::ontology::capability_cells;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, binary, cli_surface, code, csv, example, gguf, json, kernel, lean, llm_context, parity_receipt,
-    pv_contract, readme, release_evidence, ExtractFailure,
+    self, apr_model, binary, cli_surface, code, csv, example, gguf, json, kernel, lean,
+    llm_context, parity_receipt, pv_contract, readme, release_evidence, ExtractFailure,
 };
 use crate::ontology::measured_sets;
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};

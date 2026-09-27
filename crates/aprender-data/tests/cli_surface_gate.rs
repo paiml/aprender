@@ -123,7 +123,8 @@ fn unknown_flag_is_a_usage_error() {
 #[test]
 fn unusable_input_is_rejected() {
     let bad = unusable_inputs();
-    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-data-surface-gate-out.parquet");
+    let out =
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-data-surface-gate-out.parquet");
     let out = out.display().to_string();
     for b in &bad {
         assert_rejected(&["info", b]);

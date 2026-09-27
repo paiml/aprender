@@ -810,9 +810,11 @@ fn impl_is_for(im: &syn::ItemImpl, ty: &str, generic: Option<&str>) -> bool {
 /// The `fn name` of a trait (declared or defaulted).
 fn find_trait_fn(items: &[syn::TraitItem], name: &str) -> Option<Resolved> {
     items.iter().find_map(|ti| match ti {
-        syn::TraitItem::Fn(f) if f.sig.ident == name => {
-            Some(found_bodiless("trait-method", &syn::Visibility::Inherited, &f.attrs))
-        }
+        syn::TraitItem::Fn(f) if f.sig.ident == name => Some(found_bodiless(
+            "trait-method",
+            &syn::Visibility::Inherited,
+            &f.attrs,
+        )),
         _ => None,
     })
 }
