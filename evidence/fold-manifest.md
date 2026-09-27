@@ -66,14 +66,14 @@ suite for main `761d6247de` itself. It is marked PRE-EXISTING below and is not c
 |---|---|---|---|---|
 | F2a | fold/rc1-F2a-ladder-c1 | `0dcad701ab` | c1/3846 alone: ladder self-test 153/0 | – |
 | F3 | fold/rc1-F3-4313-prefill | `2c54d9844d` | fmt fixed. Serve lib: PRE-EXISTING thread_config only. 63f36159ef left out (patches aprender-gpu/src/ptx_patch.rs, which is car-only) | – |
-| F5 | fold/rc1-F5-flow003 | `adc8356100` | green. The serve lib test was killed by the memcap, but serve/src is unchanged | 36322092872 |
+| F5 | fold/rc1-F5-flow003 | `adc8356100` | green. The serve lib test was killed by the memcap, but serve/src is unchanged | 36322092872 **RED, fold defects**: check_nextest_ci_profile self-test rows 22/23 rc=2 (table-form `retries = { count = N }`, a2); check_release_scripts_derive_identity R3 on scripts/release/queue_inputs.sh, a literal count (89); bashrs DET002/SEC010. Also workspace-test not done within 12000s (shard starvation) |
 | F6 | fold/rc1-F6-gpu-correctness-a | `8a45a50e6c` | green except PRE-EXISTING thread_config | – |
 | F9 | fold/rc1-F9-serve-2706 | `4897c0890f` | fmt and clippy fixed (`;` at tokenizer.rs:338); 2815 tokenizer test ok | – |
 | F11 | fold/rc1-F11-e9 | `75e79f0733` | green (core lib 14326/0) | – |
 | F12 | fold/rc1-F12-2378 | `9ba41b3f18` | fix/2378 cherry-picked + cb/2378 merged; PRE-EXISTING thread_config only | – |
 | S1 | fold/rc1-S1-3761 | `0c6aec0da2` | green except PRE-EXISTING thread_config | – |
 | S2 | fold/rc1-S2-4153 | `13746adedb` | clippy clean on core/serve/cli; PRE-EXISTING thread_config only | – |
-| S3 | fold/rc1-S3-parity-receipt | `fa6289e784` | green (contracts.nt regenerated) | 36322094539: determinism RED on gx10-build (13:50→14:51Z, determinism-compare at `timeout (-1803s)`). Same budget exhaustion as S5; runner time, not the fold |
+| S3 | fold/rc1-S3-parity-receipt | `fa6289e784` | green (contracts.nt regenerated) | 36322094539: determinism RED on gx10-build (13:50→14:51Z, determinism-compare at `timeout (-1803s)`). Same budget exhaustion as S5; runner time, not the fold. Also x86-main: roadmap_diff_additive + roadmap_fragment_required [run] FAIL (a dispatched run has no PR base; check this on the PR) and workspace-test >12000s |
 | S4 | fold/rc1-S4-rex-001 | `89832a3cbf` | green on the touched modules (the full serve and cli suites were memcap-killed) | – |
 | S5 | fold/rc1-S5-tier-base-race | `f8a1d940ca` | tier self-test 94/0. **CI definition: needs 3/3 agy quorum** | 36322091100: determinism RED on gx10-pool3. The job used its whole budget (13:28→14:05Z) and determinism-compare started with `timeout (-400s)`. That is runner time, not the fold. Other jobs still running at 14:15Z |
 
