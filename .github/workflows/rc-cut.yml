@@ -34,7 +34,19 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: ['release/**']
+    # main (#4434): rc.N = tag on a queue-green main sha. rc_cut.sh cuts on main only
+    # for a push run, only rc.1 of a version automatically, never after the final.
+    branches: ['release/**', main]
+  # rc.N+1 on main after a promotion failure (rule 17): name the green run, pass next.
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'CI run id (a green push run on main or release/X.Y.Z)'
+        required: true
+      next:
+        description: 'main only: allow rc.N+1'
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # create the tag ref and the prerelease
@@ -44,7 +56,7 @@ permissions:
 # and two green runs racing would both read the same N. The tag ref is also the
 # lock (a duplicate gets HTTP 422 and writes nothing else).
 concurrency:
-  group: rc-cut-${{ github.event.workflow_run.head_branch }}
+  group: rc-cut-${{ github.event.workflow_run.head_branch || 'dispatch' }}  # the tag ref is the lock; this only serialises
   cancel-in-progress: false
 
 jobs:
@@ -55,7 +67,7 @@ jobs:
     # the package walk is ~65 s warm on lambda; a cold registry index is the rest
     timeout-minutes: 30
     # Cheap pre-filter only; rc_cut.sh re-judges every condition itself.
-    if: github.event.workflow_run.conclusion != 'cancelled'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,8 +82,12 @@ jobs:
         id: decide
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-        run: bash scripts/release/rc_cut.sh --run-id "$RUN_ID" --dry-run
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          NEXT: ${{ inputs.next }}
+        run: |
+          args=(--run-id "$RUN_ID" --dry-run)
+          if [ "$NEXT" = true ]; then args+=(--next); fi
+          bash scripts/release/rc_cut.sh "${args[@]}"
       - name: Publish gate on the rc commit (#4287)
         if: steps.decide.outputs.tag != ''
         env:
@@ -85,5 +101,9 @@ jobs:
         id: cut
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-        run: bash scripts/release/rc_cut.sh --run-id "$RUN_ID"
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          NEXT: ${{ inputs.next }}
+        run: |
+          args=(--run-id "$RUN_ID")
+          if [ "$NEXT" = true ]; then args+=(--next); fi
+          bash scripts/release/rc_cut.sh "${args[@]}"
