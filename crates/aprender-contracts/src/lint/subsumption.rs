@@ -56,61 +56,87 @@ pub fn inherited(graph: &Graph, shapes: &[NodeShape], sigma: &Sigma) -> (usize, 
     (total, rows)
 }
 
-/// The components of `sup` that `sub` drops or loosens, on the same path.
-fn weakened(sup: &PropertyShape, sub: &PropertyShape) -> Vec<&'static str> {
-    let mut out = Vec::new();
-    let min_ok = match (sup.min_count, sub.min_count) {
+/// `minCount` weakens iff `sub` allows fewer occurrences than `sup` required.
+fn weakened_min_count(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    let ok = match (sup.min_count, sub.min_count) {
         (Some(a), Some(b)) => b >= a,
         (Some(_), None) => false,
         (None, _) => true,
     };
-    if !min_ok {
-        out.push("minCount");
-    }
-    let max_ok = match (sup.max_count, sub.max_count) {
+    (!ok).then_some("minCount")
+}
+
+/// `maxCount` weakens iff `sub` allows more occurrences than `sup` capped.
+fn weakened_max_count(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    let ok = match (sup.max_count, sub.max_count) {
         (Some(a), Some(b)) => b <= a,
         (Some(_), None) => false,
         (None, _) => true,
     };
-    if !max_ok {
-        out.push("maxCount");
-    }
-    let same = |a: &Option<String>, b: &Option<String>| a.is_none() || a == b;
-    if !same(&sup.datatype, &sub.datatype) {
-        out.push("datatype");
-    }
-    if !same(&sup.class, &sub.class) {
-        out.push("class");
-    }
-    if sup.node_kind.is_some() && sup.node_kind != sub.node_kind {
-        out.push("nodeKind");
-    }
-    let pat = |p: &Option<(String, regex::Regex)>| p.as_ref().map(|(s, _)| s.clone());
-    if sup.pattern.is_some() && pat(&sup.pattern) != pat(&sub.pattern) {
-        out.push("pattern");
-    }
-    if let Some(allowed) = &sup.r#in {
-        let narrower = sub
-            .r#in
-            .as_ref()
-            .is_some_and(|s| s.iter().all(|x| allowed.contains(x)));
-        if !narrower {
-            out.push("in");
-        }
-    }
-    if sup
-        .min_length
+    (!ok).then_some("maxCount")
+}
+
+/// `datatype` weakens iff `sup` constrains it and `sub` drops or changes it.
+fn weakened_datatype(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    (sup.datatype.is_some() && sup.datatype != sub.datatype).then_some("datatype")
+}
+
+/// `class` weakens iff `sup` constrains it and `sub` drops or changes it.
+fn weakened_class(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    (sup.class.is_some() && sup.class != sub.class).then_some("class")
+}
+
+/// `nodeKind` weakens iff `sup` constrains it and `sub` drops or changes it.
+fn weakened_node_kind(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    (sup.node_kind.is_some() && sup.node_kind != sub.node_kind).then_some("nodeKind")
+}
+
+/// `pattern` weakens iff `sup` constrains it and `sub` drops or changes the source regex.
+fn weakened_pattern(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    let src = |p: &Option<(String, regex::Regex)>| p.as_ref().map(|(s, _)| s.clone());
+    (sup.pattern.is_some() && src(&sup.pattern) != src(&sub.pattern)).then_some("pattern")
+}
+
+/// `in` weakens iff `sup` constrains it and `sub`'s allowed set is not a subset of `sup`'s.
+fn weakened_in(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    let Some(allowed) = &sup.r#in else {
+        return None;
+    };
+    let narrower = sub
+        .r#in
+        .as_ref()
+        .is_some_and(|s| s.iter().all(|x| allowed.contains(x)));
+    (!narrower).then_some("in")
+}
+
+/// `minLength` weakens iff `sup` required a floor and `sub` allows shorter (or none).
+fn weakened_min_length(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    sup.min_length
         .is_some_and(|a| sub.min_length.is_none_or(|b| b < a))
-    {
-        out.push("minLength");
-    }
-    if sup
-        .max_length
+        .then_some("minLength")
+}
+
+/// `maxLength` weakens iff `sup` capped it and `sub` allows longer (or none).
+fn weakened_max_length(sup: &PropertyShape, sub: &PropertyShape) -> Option<&'static str> {
+    sup.max_length
         .is_some_and(|a| sub.max_length.is_none_or(|b| b > a))
-    {
-        out.push("maxLength");
-    }
-    out
+        .then_some("maxLength")
+}
+
+/// The components of `sup` that `sub` drops or loosens, on the same path.
+fn weakened(sup: &PropertyShape, sub: &PropertyShape) -> Vec<&'static str> {
+    let checks: [fn(&PropertyShape, &PropertyShape) -> Option<&'static str>; 9] = [
+        weakened_min_count,
+        weakened_max_count,
+        weakened_datatype,
+        weakened_class,
+        weakened_node_kind,
+        weakened_pattern,
+        weakened_in,
+        weakened_min_length,
+        weakened_max_length,
+    ];
+    checks.iter().filter_map(|f| f(sup, sub)).collect()
 }
 
 /// Every `reject: <S_sub> weakens <S_sup>.<path>.<component>`, sorted.

@@ -191,21 +191,11 @@ pub fn run_with(
                 .into(),
         );
     }
-    let head = match refinement::load(lean_dir)
-        .map_err(|e| format!("no formalization.yaml: {e}"))
-        .and_then(|rec| measure(lean_dir, contract_dir, rec, &mut resolve))
-    {
+    let head = match load_head_side(lean_dir, contract_dir, &mut resolve) {
         Ok(s) => s,
         Err(e) => return RatchetOutcome::Declined(format!("HEAD: {e}")),
     };
-    // A BASE with no formalization.yaml yet has no models: every theorem-bearing module there is unrefined.
-    let base_rec = if base_lean.join("formalization.yaml").exists() {
-        refinement::load(base_lean)
-    } else {
-        Ok(refinement::Record::default())
-    };
-    let base = match base_rec.and_then(|rec| measure(base_lean, base_contracts, rec, &mut resolve))
-    {
+    let base = match load_base_side(base_lean, base_contracts, &mut resolve) {
         Ok(s) => s,
         Err(e) => return RatchetOutcome::Declined(format!("BASE {base_label}: {e}")),
     };
@@ -227,7 +217,45 @@ pub fn run_with(
         pc_resolver: crate::ontology::witness::FIRED.to_string(),
         ..RefinementCounters::default()
     };
-    for j in &head.judged {
+    judge_findings(&head.judged, &mut findings, &mut c);
+    diff_findings(&head, &base, base_label, &mut findings, &mut c);
+    c.violations = findings.len();
+    build_result(c, findings, start)
+}
+
+/// Load and measure HEAD's side: `Err` is a decline reason (no "HEAD:" prefix yet).
+fn load_head_side(
+    lean_dir: &Path,
+    contract_dir: &Path,
+    resolve: &mut impl FnMut(&str) -> Result<(), String>,
+) -> Result<Side, String> {
+    refinement::load(lean_dir)
+        .map_err(|e| format!("no formalization.yaml: {e}"))
+        .and_then(|rec| measure(lean_dir, contract_dir, rec, resolve))
+}
+
+/// Load and measure BASE's side. A BASE with no `formalization.yaml` yet has no models: every
+/// theorem-bearing module there is unrefined.
+fn load_base_side(
+    base_lean: &Path,
+    base_contracts: &Path,
+    resolve: &mut impl FnMut(&str) -> Result<(), String>,
+) -> Result<Side, String> {
+    let rec = if base_lean.join("formalization.yaml").exists() {
+        refinement::load(base_lean)?
+    } else {
+        refinement::Record::default()
+    };
+    measure(base_lean, base_contracts, rec, resolve)
+}
+
+/// Score each judged model into `c`'s counters, and raise PV-ONT-031/032 for ghosts and out-of-cone models.
+fn judge_findings(
+    judged: &[refinement::Judged],
+    findings: &mut Vec<LintFinding>,
+    c: &mut RefinementCounters,
+) {
+    for j in judged {
         let m = &j.model;
         match &j.resolved {
             Ok(()) => c.resolved += 1,
@@ -254,6 +282,16 @@ pub fn run_with(
             _ => {}
         }
     }
+}
+
+/// Raise PV-ONT-033/034 for anything unrefined or orphaned at HEAD that BASE did not have, and count them.
+fn diff_findings(
+    head: &Side,
+    base: &Side,
+    base_label: &str,
+    findings: &mut Vec<LintFinding>,
+    c: &mut RefinementCounters,
+) {
     let new_unrefined: Vec<&String> = head.unrefined.difference(&base.unrefined).collect();
     c.new_unrefined = new_unrefined.len();
     if !new_unrefined.is_empty() {
@@ -282,8 +320,14 @@ pub fn run_with(
             ),
         ));
     }
+}
 
-    c.violations = findings.len();
+/// Assemble the final [`RatchetOutcome`] from the counters and findings collected for both sides.
+fn build_result(
+    c: RefinementCounters,
+    findings: Vec<LintFinding>,
+    start: Instant,
+) -> RatchetOutcome {
     let verdict = if findings.is_empty() {
         Verdict::Pass
     } else {

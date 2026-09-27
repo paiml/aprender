@@ -95,6 +95,67 @@ pub struct RefinesCounters {
     pub witness: Option<LiskovWitnessReport>,
 }
 
+/// PV-ONT-026 findings, one per malformed clause the corpus walk found.
+fn malformed_findings(corpus: &crate::ontology::liskov::LiskovCorpus) -> Vec<LintFinding> {
+    corpus
+        .malformed
+        .iter()
+        .map(|(file, why)| {
+            LintFinding::new(
+                "PV-ONT-026",
+                RuleSeverity::Error,
+                format!("clause is not {{id, statement, formal, formal_status}}: {why}"),
+                file.clone(),
+            )
+        })
+        .collect()
+}
+
+/// Sort `pairs` into the counters' legacy/prose buckets, returning the ones left to check against the witness.
+fn classify_pairs(pairs: Vec<Pair>, c: &mut RefinesCounters) -> Vec<Pair> {
+    let mut checkable = Vec::new();
+    for p in pairs {
+        match p.class() {
+            PairClass::Legacy => c.liskov_pairs_legacy += 1,
+            PairClass::Prose(names) => {
+                c.liskov_prose += 1;
+                c.prose_clauses.extend(names);
+            }
+            PairClass::Checkable => checkable.push(p),
+        }
+    }
+    checkable
+}
+
+/// PV-ONT-027: `liskov_prose` rose above the shrink-only baseline in `lint-baseline.json`.
+fn baseline_finding(c: &RefinesCounters) -> Option<LintFinding> {
+    let baseline = c.liskov_prose_baseline?;
+    if c.liskov_prose <= baseline {
+        return None;
+    }
+    Some(LintFinding::new(
+        "PV-ONT-027",
+        RuleSeverity::Error,
+        format!(
+            "liskov_prose rose {baseline} -> {}: a refines pair with a prose clause was added ({}). The baseline in contracts/lint-baseline.json is shrink-only",
+            c.liskov_prose,
+            c.prose_clauses.join(", ")
+        ),
+        "contracts/lint-baseline.json",
+    ))
+}
+
+/// `Fail` on any finding, else `Unknown{Prose}` when a prose clause left something unchecked, else `Pass`.
+fn refines_verdict(findings: &[LintFinding], liskov_prose: usize) -> Verdict {
+    if !findings.is_empty() {
+        Verdict::Fail
+    } else if liskov_prose > 0 {
+        Verdict::Unknown(Reason::Prose)
+    } else {
+        Verdict::Pass
+    }
+}
+
 /// Run the gate over `contract_dir`.
 #[must_use]
 pub fn run_refines_gate(contract_dir: &Path) -> RefinesOutcome {
@@ -115,18 +176,7 @@ pub fn run_refines_gate(contract_dir: &Path) -> RefinesOutcome {
     };
     let corpus = liskov_corpus(&corpus_documents(contract_dir), &edges);
 
-    let mut findings: Vec<LintFinding> = corpus
-        .malformed
-        .iter()
-        .map(|(file, why)| {
-            LintFinding::new(
-                "PV-ONT-026",
-                RuleSeverity::Error,
-                format!("clause is not {{id, statement, formal, formal_status}}: {why}"),
-                file.clone(),
-            )
-        })
-        .collect();
+    let mut findings = malformed_findings(&corpus);
     let mut c = RefinesCounters {
         refines_pairs: corpus.refines_edges,
         requires_n: corpus.counts.0,
@@ -136,31 +186,8 @@ pub fn run_refines_gate(contract_dir: &Path) -> RefinesOutcome {
         liskov_prose_baseline: baseline_liskov_prose(contract_dir),
         ..RefinesCounters::default()
     };
-    let mut checkable: Vec<Pair> = Vec::new();
-    for p in corpus.pairs {
-        match p.class() {
-            PairClass::Legacy => c.liskov_pairs_legacy += 1,
-            PairClass::Prose(names) => {
-                c.liskov_prose += 1;
-                c.prose_clauses.extend(names);
-            }
-            PairClass::Checkable => checkable.push(p),
-        }
-    }
-    if let Some(baseline) = c.liskov_prose_baseline {
-        if c.liskov_prose > baseline {
-            findings.push(LintFinding::new(
-                "PV-ONT-027",
-                RuleSeverity::Error,
-                format!(
-                    "liskov_prose rose {baseline} -> {}: a refines pair with a prose clause was added ({}). The baseline in contracts/lint-baseline.json is shrink-only",
-                    c.liskov_prose,
-                    c.prose_clauses.join(", ")
-                ),
-                "contracts/lint-baseline.json",
-            ));
-        }
-    }
+    let checkable = classify_pairs(corpus.pairs, &mut c);
+    findings.extend(baseline_finding(&c));
 
     if !checkable.is_empty() {
         match checked_witness(contract_dir, &checkable) {
@@ -174,13 +201,7 @@ pub fn run_refines_gate(contract_dir: &Path) -> RefinesOutcome {
     }
 
     c.violations = findings.len();
-    let verdict = if !findings.is_empty() {
-        Verdict::Fail
-    } else if c.liskov_prose > 0 {
-        Verdict::Unknown(Reason::Prose)
-    } else {
-        Verdict::Pass
-    };
+    let verdict = refines_verdict(&findings, c.liskov_prose);
     let result = GateResult {
         name: GATE.into(),
         passed: verdict == Verdict::Pass,

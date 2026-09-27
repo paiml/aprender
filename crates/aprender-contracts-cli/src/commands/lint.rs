@@ -376,11 +376,7 @@ fn decide_named_gate(
     name: &str,
     shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
-    use provable_contracts::lint::{
-        evidence_gate::EvidenceOutcome, ratchet_gates::RatchetOutcome,
-        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
-        valid_under_gate::ValidUnderOutcome, NamedGateOutcome, NAMED_GATES,
-    };
+    use provable_contracts::lint::{NamedGateOutcome, NAMED_GATES};
 
     match provable_contracts::lint::run_named_gate_with(contract_dir, name, shapes_opts) {
         NamedGateOutcome::UnknownGate => Err(crate::contract_walk::UnknownGate {
@@ -388,71 +384,128 @@ fn decide_named_gate(
             known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
         }
         .into()),
-        NamedGateOutcome::Sigma(SigmaOutcome::NoSigma) => Err(LintDeclined {
-            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-        }
-        .into()),
-        NamedGateOutcome::Sigma(SigmaOutcome::Malformed(e)) => {
-            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
-        }
-        NamedGateOutcome::Relations(
-            RelationsOutcome::NoSigma | RelationsOutcome::NoRelations { .. },
-        ) => Err(LintDeclined {
-            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-        }
-        .into()),
-        NamedGateOutcome::Relations(RelationsOutcome::Malformed(e)) => {
-            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
-        }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
         NamedGateOutcome::Consistency(outcome) => decide_consistency_gate(outcome),
         NamedGateOutcome::Refines(outcome) => decide_refines_gate(outcome),
         NamedGateOutcome::Tbox(outcome) => decide_tbox_gate(outcome),
-        NamedGateOutcome::Evidence(EvidenceOutcome::NoSigma) => Err(LintDeclined {
-            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+        other => decide_scored_gate(name, other),
+    }
+}
+
+/// A gate whose decline is a bare "nothing checkable" reason, with no message of its own.
+fn no_checkable() -> Box<dyn std::error::Error> {
+    LintDeclined {
+        reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+    }
+    .into()
+}
+
+/// The remaining named-gate outcomes that share the `Sigma`-derived answer shape (no Σ, malformed Σ, a
+/// verdict): `sigma`, `relations`, `evidence`, `valid-under` and any PVL-001 ratchet.
+fn decide_scored_gate(
+    name: &str,
+    outcome: provable_contracts::lint::NamedGateOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::NamedGateOutcome;
+
+    match outcome {
+        NamedGateOutcome::Sigma(o) => decide_sigma_gate(o),
+        NamedGateOutcome::Relations(o) => decide_relations_gate(o),
+        NamedGateOutcome::Evidence(o) => decide_evidence_gate(o),
+        NamedGateOutcome::ValidUnder(o) => decide_valid_under_gate(o),
+        NamedGateOutcome::Ratchet(o) => decide_ratchet_gate(name, o),
+        NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
+        _ => unreachable!(
+            "decide_named_gate routes UnknownGate/Shapes/Consistency/Refines/Tbox directly"
+        ),
+    }
+}
+
+/// The `sigma` gate's answers: no Σ, malformed Σ, or a verdict.
+fn decide_sigma_gate(
+    outcome: provable_contracts::lint::sigma_gate::SigmaOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::sigma_gate::SigmaOutcome;
+
+    match outcome {
+        SigmaOutcome::NoSigma => Err(no_checkable()),
+        SigmaOutcome::Malformed(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
-        .into()),
-        NamedGateOutcome::Evidence(EvidenceOutcome::NoEvidence { contracts_checked }) => {
+        SigmaOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// The `relations` gate's answers (ONT-4): no Σ, no typed relations, malformed Σ, or a verdict.
+fn decide_relations_gate(
+    outcome: provable_contracts::lint::relations_gate::RelationsOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::relations_gate::RelationsOutcome;
+
+    match outcome {
+        RelationsOutcome::NoSigma | RelationsOutcome::NoRelations { .. } => Err(no_checkable()),
+        RelationsOutcome::Malformed(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        RelationsOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// The `evidence` gate's answers (ONT-8): no Σ, no evidence block (prints why first), malformed Σ, or a verdict.
+fn decide_evidence_gate(
+    outcome: provable_contracts::lint::evidence_gate::EvidenceOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::evidence_gate::EvidenceOutcome;
+
+    match outcome {
+        EvidenceOutcome::NoSigma => Err(no_checkable()),
+        EvidenceOutcome::NoEvidence { contracts_checked } => {
             eprintln!(
                 "evidence: no evidence block in {contracts_checked} contract(s) — nothing was measured"
             );
-            Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into())
+            Err(no_checkable())
         }
-        NamedGateOutcome::Evidence(EvidenceOutcome::Malformed(e)) => {
+        EvidenceOutcome::Malformed(e) => {
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
-        NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoSigma) => Err(LintDeclined {
-            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-        }
-        .into()),
-        NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoKernels { contracts_checked }) => {
+        EvidenceOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// The `valid-under` gate's answers (ONT-7): no Σ, no kernels (prints why first), malformed Σ, or a verdict.
+fn decide_valid_under_gate(
+    outcome: provable_contracts::lint::valid_under_gate::ValidUnderOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::valid_under_gate::ValidUnderOutcome;
+
+    match outcome {
+        ValidUnderOutcome::NoSigma => Err(no_checkable()),
+        ValidUnderOutcome::NoKernels { contracts_checked } => {
             eprintln!(
                 "valid-under: no kernel-kind contract and no valid_under in {contracts_checked} contract(s) — nothing was measured"
             );
-            Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into())
+            Err(no_checkable())
         }
-        NamedGateOutcome::ValidUnder(ValidUnderOutcome::Malformed(e)) => {
+        ValidUnderOutcome::Malformed(e) => {
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
-        NamedGateOutcome::Ratchet(RatchetOutcome::Declined(why)) => {
+        ValidUnderOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// A PVL-001 EV-11 ratchet's answers: a decline (prints why first) or a verdict.
+fn decide_ratchet_gate(
+    name: &str,
+    outcome: provable_contracts::lint::ratchet_gates::RatchetOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::ratchet_gates::RatchetOutcome;
+
+    match outcome {
+        RatchetOutcome::Declined(why) => {
             eprintln!("{name}: {why}");
-            Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into())
+            Err(no_checkable())
         }
-        NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
-        | NamedGateOutcome::Ratchet(RatchetOutcome::Ran { result, findings })
-        | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
-        | NamedGateOutcome::ValidUnder(ValidUnderOutcome::Ran { result, findings })
-        | NamedGateOutcome::Evidence(EvidenceOutcome::Ran { result, findings })
-        | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
+        RatchetOutcome::Ran { result, findings } => Ok((result, findings)),
     }
 }
 
