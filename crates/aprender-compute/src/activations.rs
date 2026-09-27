@@ -433,6 +433,29 @@ mod tests {
         assert_eq!(f16_to_f32(0), 0.0);
     }
 
+    /// L4 simulation witness for `ProvableContracts/Theorems/F16/Conversion.lean`
+    /// (`f16_to_f32_normal_simulates`). The Lean side proves an op-for-op
+    /// transcription of the normal branch equals `toF32Bits`; this checks, over
+    /// EVERY u16 whose exponent field is in 1..=30, that the real function's
+    /// output bits equal that same closed form, computed with `*`/`+` rather than
+    /// the shifts under test. The count guards against a vacuous loop.
+    #[test]
+    fn test_f16_to_f32_normal_branch_matches_lean_model_exhaustive() {
+        let mut normals = 0_u32;
+        for bits in 0..=u16::MAX {
+            let s = u32::from(bits) / 32768;
+            let e = u32::from(bits) / 1024 % 32;
+            let m = u32::from(bits) % 1024;
+            if e == 0 || e == 31 {
+                continue;
+            }
+            normals += 1;
+            let model = s * 2_147_483_648 + (e + 112) * 8_388_608 + m * 8192;
+            assert_eq!(f16_to_f32(bits).to_bits(), model, "bits={bits:#06x}");
+        }
+        assert_eq!(normals, 2 * 30 * 1024);
+    }
+
     // =========================================================================
     // FALSIFY-GE: gelu-kernel-v1.yaml contract (trueno gelu_scalar)
     //

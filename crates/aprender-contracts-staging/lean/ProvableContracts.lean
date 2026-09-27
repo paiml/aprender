@@ -70,6 +70,7 @@ import ProvableContracts.Theorems.Embedding.Determinism
 import ProvableContracts.Theorems.Embedding.Finite
 import ProvableContracts.Theorems.Embedding.Rows
 import ProvableContracts.Theorems.Embedding.Shape
+import ProvableContracts.Theorems.F16.Conversion
 import ProvableContracts.Theorems.FFT.Parseval
 import ProvableContracts.Theorems.FP8.Interchange
 import ProvableContracts.Theorems.GEMV.Correctness

@@ -142,6 +142,125 @@ theorem toF32Bits_monotone (a b : F16Normal)
   subst hsign
   omega
 
+/-! ## Refinement: simulation of `trueno::activations::f16_to_f32` (normal branch)
+
+The theorems above are about the *field model* `F16Normal`. This section ties
+that model to the Rust function in `crates/aprender-compute/src/activations.rs`
+(re-exported as `trueno::activations::f16_to_f32`), whose normal branch is
+
+```rust
+let sign = (bits >> 15) & 0x1;
+let exponent = (bits >> 10) & 0x1F;
+let mantissa = bits & 0x3FF;
+if exponent != 0 && exponent != 31 {
+    let f32_exp = (exponent as u32 + 112) as u32;
+    let f32_mant = (mantissa as u32) << 13;
+    let f32_bits = ((sign as u32) << 31) | (f32_exp << 23) | f32_mant;
+    return f32::from_bits(f32_bits);
+}
+```
+
+`rustSign`/`rustExp`/`rustMant`/`rustNormalBits` transcribe those lines
+operator-for-operator (`>>` ↦ `>>>`, `&` ↦ `&&&`, `<<` ↦ `<<<`, `|` ↦ `|||`,
+same association) over `Nat`, with the input a `u16` (`bits < 2^16`).
+`rustNormalBits_lt_u32` proves no intermediate exceeds `u32`, so `Nat`
+arithmetic agrees with the Rust `u16`/`u32` arithmetic (no truncation), and
+`f16_to_f32_normal_simulates` proves the Rust bits equal `toF32Bits` of the
+decoded `F16Normal`. Every theorem above therefore holds of the Rust output.
+
+**Scope: normal inputs only** (`exponent ∉ {0, 31}`). The subnormal, ±0,
+±inf and NaN branches that follow in the Rust are NOT modelled here. -/
+
+/-- Rust: `(bits >> 15) & 0x1`. -/
+def rustSign (bits : Nat) : Nat := (bits >>> 15) &&& 0x1
+
+/-- Rust: `(bits >> 10) & 0x1F`. -/
+def rustExp (bits : Nat) : Nat := (bits >>> 10) &&& 0x1F
+
+/-- Rust: `bits & 0x3FF`. -/
+def rustMant (bits : Nat) : Nat := bits &&& 0x3FF
+
+/-- Rust: the branch guard `exponent != 0 && exponent != 31`. -/
+def RustNormal (bits : Nat) : Prop := rustExp bits ≠ 0 ∧ rustExp bits ≠ 31
+
+/-- Rust: `((sign as u32) << 31) | (f32_exp << 23) | f32_mant`, with
+    `f32_exp = exponent + 112` and `f32_mant = mantissa << 13`. -/
+def rustNormalBits (bits : Nat) : Nat :=
+  (rustSign bits <<< 31 ||| (rustExp bits + 112) <<< 23) ||| rustMant bits <<< 13
+
+theorem rustSign_eq (b : Nat) : rustSign b = b / 32768 % 2 := by
+  have h := Nat.and_two_pow_sub_one_eq_mod (b >>> 15) 1
+  simp only [Nat.reducePow, Nat.reduceSub] at h
+  unfold rustSign
+  rw [h, Nat.shiftRight_eq_div_pow]
+
+theorem rustExp_eq (b : Nat) : rustExp b = b / 1024 % 32 := by
+  have h := Nat.and_two_pow_sub_one_eq_mod (b >>> 10) 5
+  simp only [Nat.reducePow, Nat.reduceSub] at h
+  unfold rustExp
+  rw [h, Nat.shiftRight_eq_div_pow]
+
+theorem rustMant_eq (b : Nat) : rustMant b = b % 1024 := by
+  have h := Nat.and_two_pow_sub_one_eq_mod b 10
+  simp only [Nat.reducePow, Nat.reduceSub] at h
+  simp only [rustMant, h]
+
+/-- Disjoint bit fields: the Rust `|`-packing equals the `+`-packing. -/
+theorem or_pack_eq_add (s e m : Nat) (he : e < 256) (hm : m < 1024) :
+    (s <<< 31 ||| e <<< 23) ||| m <<< 13
+      = s * 2147483648 + e * 8388608 + m * 8192 := by
+  have h1 : s <<< 31 ||| e <<< 23 = (s * 256 + e) <<< 23 := by
+    rw [← Nat.shiftLeft_add_eq_or_of_lt
+      (by simp only [Nat.shiftLeft_eq, Nat.reducePow]; omega)]
+    simp only [Nat.shiftLeft_eq, Nat.reducePow]
+    omega
+  rw [h1, ← Nat.shiftLeft_add_eq_or_of_lt
+    (by simp only [Nat.shiftLeft_eq, Nat.reducePow]; omega)]
+  simp only [Nat.shiftLeft_eq, Nat.reducePow]
+  omega
+
+/-- Decode a `u16` taking the Rust normal branch into the field model. -/
+def ofBits (b : Nat) (hn : RustNormal b) : F16Normal where
+  s := rustSign b
+  e := rustExp b
+  m := rustMant b
+  hs := by rw [rustSign_eq]; omega
+  he_lo := by have := hn.1; omega
+  he_hi := by have := hn.2; rw [rustExp_eq] at *; omega
+  hm := by rw [rustMant_eq]; omega
+
+/-- **Simulation** (normal branch): for every `u16` input on which
+    `f16_to_f32` takes the normal branch, the bit pattern it hands to
+    `f32::from_bits` is `toF32Bits` of the decoded field model. -/
+theorem f16_to_f32_normal_simulates (b : Nat) (hn : RustNormal b) :
+    rustNormalBits b = toF32Bits (ofBits b hn) := by
+  have hx := hn.2
+  rw [rustExp_eq] at hx
+  simp only [rustNormalBits, toF32Bits, ofBits]
+  rw [or_pack_eq_add _ _ _
+    (by rw [rustExp_eq]; omega)
+    (by rw [rustMant_eq]; omega)]
+
+/-- No `u32` overflow: the Rust packing of any `u16` fits in 32 bits, so the
+    `Nat` model and the `u32` computation coincide. -/
+theorem rustNormalBits_lt_u32 (b : Nat) (hn : RustNormal b) :
+    rustNormalBits b < 4294967296 := by
+  rw [f16_to_f32_normal_simulates b hn]
+  have h := (ofBits b hn).hs
+  have h2 := (ofBits b hn).he_hi
+  have h3 := (ofBits b hn).hm
+  simp only [toF32Bits]
+  omega
+
+/-- The branch guard is decided on the same field `ofBits` stores, so the
+    exponent the model sees is exactly the one the Rust tested. -/
+theorem ofBits_fields (b : Nat) (hb : b < 65536) (hn : RustNormal b) :
+    (ofBits b hn).s = b / 32768 ∧ (ofBits b hn).e = b / 1024 % 32
+      ∧ (ofBits b hn).m = b % 1024 := by
+  dsimp only [ofBits]
+  rw [rustSign_eq, rustExp_eq, rustMant_eq]
+  omega
+
 #check @sign_preserved
 #check @exp_rebiased
 #check @mant_preserved
@@ -149,5 +268,9 @@ theorem toF32Bits_monotone (a b : F16Normal)
 #check @bias_trick_correct
 #check @roundtrip_identity
 #check @toF32Bits_monotone
+#check @or_pack_eq_add
+#check @f16_to_f32_normal_simulates
+#check @rustNormalBits_lt_u32
+#check @ofBits_fields
 
 end ProvableContracts.F16

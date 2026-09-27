@@ -27,7 +27,7 @@ scope: >-
   the Mathlib .olean files they import. Replaying Mathlib (`leanchecker --fresh`) takes hours; it runs only in the
   nightly (PVL-F7), never on the per-PR gate.
 # ONT-3b (#4073): which Rust item each Lean module models, and how. `extraction`/`simulation` earn L4 (once the
-# discharge is green); `test_witnessed` earns L3. These three are test_witnessed, honestly: the Lean statements are
+# discharge is green); `test_witnessed` earns L3. The first three are test_witnessed, honestly: the Lean statements are
 # over ℝ and were written by hand, not extracted from the f32 Rust, so only the proptests tie the two together.
 # `pv lint contracts/ --gate refinement` resolves every model_of through the workspace's syn walk.
 models:
@@ -46,5 +46,16 @@ models:
     relation:
       kind: test_witnessed
       evidence: FALSIFY-ACT-004 (contracts/activation-kernel-v1.yaml), a proptest that ReLU(x) >= 0, signed zeros included
+  - module: ProvableContracts/Theorems/F16/Conversion.lean
+    model_of: trueno::activations::f16_to_f32
+    relation:
+      kind: simulation
+      evidence: >-
+        Normal branch only (exponent field in 1..=30; subnormal, zero, inf and NaN branches are not modelled).
+        Lean `f16_to_f32_normal_simulates` proves rustNormalBits b = toF32Bits (ofBits b hn), where rustSign,
+        rustExp, rustMant and rustNormalBits transcribe crates/aprender-compute/src/activations.rs f16_to_f32
+        operator-for-operator over Nat, and `rustNormalBits_lt_u32` shows no u32 truncation. The transcription is
+        by hand, not extracted; it is witnessed exhaustively over all 61440 normal u16 inputs by
+        test_f16_to_f32_normal_branch_matches_lean_model_exhaustive (aprender-compute activations tests).
 # There is no stored unrefined count: `pv lint --gate refinement` measures it at HEAD and at BASE
 # (merge-base(HEAD, origin/main)) in the same run, and fails on a module unrefined at HEAD but not at BASE.
