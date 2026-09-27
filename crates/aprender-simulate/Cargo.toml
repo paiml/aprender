@@ -12,6 +12,8 @@ keywords = ["simulation", "physics", "monte-carlo", "optimization", "reproducibl
 categories = ["simulation", "science", "mathematics"]
 
 [dependencies]
+# Structural schema check (`pattern`) when jsonschema is not compiled in (#4079)
+regex = { workspace = true }
 # CLI argument parsing (declarative only — hand-rolled argv parsing is banned,
 # see scripts/check_no_hand_rolled_parsers.sh and src/cli/args.rs)
 clap = { workspace = true }

@@ -90,18 +90,22 @@ invariants:
     property: every aprender-explain subcommand has an audited ledger row
     formal: '∀ c ∈ commands(aprender-explain): |{r ∈ surface_audit : r.binary = aprender-explain ∧ r.feature = "aprender-explain " ++ c}| ≥ 1'
     prose: false
+  - id: BIN-APRENDER-EXPLAIN-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-explain/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-BIN-APRENDER-EXPLAIN-001
     rule: 'G1.2 help answers'
     prediction: '`aprender-explain --help` exits 0 with non-empty stdout'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-explain'
+    test: 'cargo test -p aprender-explain --test cli_surface_gate every_advertised_subcommand_is_reachable'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
     mutation: 'make the top-level --help return an error; must turn RED'
   - id: FALSIFY-BIN-APRENDER-EXPLAIN-002
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`aprender-explain --no-such-flag` exits 2'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-explain'
+    test: 'cargo test -p aprender-explain --test cli_surface_gate unknown_'
     if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
     mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
   - id: FALSIFY-BIN-APRENDER-EXPLAIN-003
@@ -113,7 +117,7 @@ falsification_tests:
   - id: FALSIFY-BIN-APRENDER-EXPLAIN-004
     rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
     prediction: '`aprender-explain ptx -K nosuch` exits 2 naming the allowed kernels; subcommands(clap) = the 7 literals above'
-    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    test: 'cargo test -p aprender-explain --test cli_surface_gate -- advertised_subcommands_are_the_pinned_surface malformed_arguments_are_usage_errors'
     if_fails: 'a bad kernel name runs past clap (was RED at 8e88b8fc5d: exit 1, "Unknown kernel: nosuch. Available: vector_add, gemm_naive, gemm_tiled, softmax, q4k_gemm, q5k_gemm, q6k_gemm"); FIXED on batch/ont-10: kernel_names() value_parser on all 6 kernel flags, exit 2, --help lists them'
     mutation: 'after the fix, turn -K back into a String; must turn RED'
   - id: FALSIFY-BIN-APRENDER-EXPLAIN-005
@@ -122,3 +126,9 @@ falsification_tests:
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'the binary would ship unaudited (observed 2026-09-27: 7/7, GREEN)'
     mutation: 'delete every aprender-explain row; must turn RED naming aprender-explain'
+  - id: FALSIFY-BIN-APRENDER-EXPLAIN-006
+    rule: 'unusable input is rejected cleanly'
+    prediction: '`diff -K vector_add --baseline` on a missing, empty and garbage file: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-explain --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 1 with no panic, GREEN; no source mutation was run for this binary'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

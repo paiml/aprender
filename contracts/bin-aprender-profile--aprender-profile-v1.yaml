@@ -34,7 +34,7 @@ metadata:
   version: "1.0.0"
   kind: pattern
   created: '2026-09-26'
-  last_modified: '2026-09-26'
+  last_modified: '2026-09-27'
   author: PAIML Engineering
   description: >
     aprender-profile answers --help, rejects an unknown flag as a usage error, names itself and the commit it was
@@ -91,18 +91,22 @@ invariants:
     property: every aprender-profile ledger row names a command, option or positional the built binary accepts
     formal: '∀ r ∈ surface_audit : r.binary = aprender-profile ⇒ key(r) ∈ commands ∪ options ∪ positionals'
     prose: false
+  - id: BIN-APRENDER-PROFILE-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-profile/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-BIN-APRENDER-PROFILE-001
     rule: 'G1.2 help answers'
     prediction: '`aprender-profile --help` exits 0 with non-empty stdout'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-profile'
+    test: 'cargo test -p aprender-profile --test cli_surface_gate every_advertised_subcommand_is_reachable'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
     mutation: 'make the top-level --help return an error; must turn RED'
   - id: FALSIFY-BIN-APRENDER-PROFILE-002
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`aprender-profile --no-such-flag` exits 2'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-profile'
+    test: 'cargo test -p aprender-profile --test cli_surface_gate unknown_'
     if_fails: 'a typo would be traced as a program argument (observed 2026-09-26: exit 2, GREEN)'
     mutation: 'mark the trailing COMMAND trailing_var_arg + allow_hyphen_values; must turn RED'
   - id: FALSIFY-BIN-APRENDER-PROFILE-003
@@ -114,7 +118,7 @@ falsification_tests:
   - id: FALSIFY-BIN-APRENDER-PROFILE-004
     rule: 'G1.3/G1.4 enumerated values are parsed by clap and the surface equals the snapshot'
     prediction: '`aprender-profile --format nosuch` exits 2; the snapshot has exactly {validate}, 46 options, {COMMAND}'
-    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    test: 'cargo test -p aprender-profile --test cli_surface_gate -- advertised_subcommands_are_the_pinned_surface malformed_arguments_are_usage_errors'
     if_fails: 'a profiling mode could be added or dropped unmodelled (observed 2026-09-26: --format exits 2, GREEN)'
     mutation: 'delete --chaos from the snapshot; must turn RED on bin:option (45) and bin:ledgerOrphan naming `--chaos <PRESET>`'
   - id: FALSIFY-BIN-APRENDER-PROFILE-005
@@ -123,3 +127,9 @@ falsification_tests:
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'a ledgered profiling mode could vanish from the shipped binary with the ontology green'
     mutation: 'delete every aprender-profile row; must turn RED naming aprender-profile'
+  - id: FALSIFY-BIN-APRENDER-PROFILE-006
+    rule: 'unusable input is rejected cleanly'
+    prediction: '`validate --baseline <b> -- true` on a missing, empty and garbage path: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-profile --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 2 ("Baseline not found", the documented code) with no panic, GREEN; an existing FILE is also reported "not found" because a baseline is a directory'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

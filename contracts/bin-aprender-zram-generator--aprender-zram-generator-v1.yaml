@@ -31,7 +31,7 @@ metadata:
   version: "1.0.0"
   kind: pattern
   created: '2026-09-26'
-  last_modified: '2026-09-26'
+  last_modified: '2026-09-27'
   author: PAIML Engineering
   description: >
     aprender-zram-generator answers --help, rejects an unknown flag as a usage error, names itself and the commit it
@@ -83,18 +83,22 @@ invariants:
     property: the generator takes exactly systemd's three directories and every ledger row names one of them
     formal: 'positionals(aprender-zram-generator) = {NORMAL_DIR, EARLY_DIR, LATE_DIR} ∧ ∀ r ∈ surface_audit : r.binary = aprender-zram-generator ⇒ key(r) ∈ positionals'
     prose: false
+  - id: BIN-APRENDER-ZRAM-GENERATOR-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-zram-generator/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-001
     rule: 'G1.2 help answers'
     prediction: '`aprender-zram-generator --help` exits 0 with non-empty stdout'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-zram-generator'
+    test: 'cargo test -p aprender-zram-generator --test cli_surface_gate advertised_options_are_the_pinned_surface'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
     mutation: 'make --help return an error; must turn RED'
   - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-002
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`aprender-zram-generator --no-such-flag` exits 2'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-zram-generator'
+    test: 'cargo test -p aprender-zram-generator --test cli_surface_gate unknown_'
     if_fails: 'a flag would be taken as NORMAL_DIR and units written under it (observed 2026-09-26: exit 2, GREEN)'
     mutation: 'mark NORMAL_DIR allow_hyphen_values; must turn RED'
   - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-003
@@ -106,7 +110,7 @@ falsification_tests:
   - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-004
     rule: 'G1.3/G1.4 the argv surface equals the snapshot'
     prediction: 'the snapshot has no command and exactly {EARLY_DIR, LATE_DIR, NORMAL_DIR}'
-    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    test: 'cargo test -p aprender-zram-generator --test cli_surface_gate -- advertised_options_are_the_pinned_surface'
     if_fails: 'the generator could stop accepting systemd''s argv with the ontology green; zram units would silently not be written'
     mutation: 'remove LATE_DIR from the snapshot, or add a subcommand; each must turn RED'
   - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-005
@@ -115,3 +119,9 @@ falsification_tests:
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'the generator would ship unaudited'
     mutation: 'delete the aprender-zram-generator row; must turn RED naming aprender-zram-generator'
+  - id: FALSIFY-BIN-APRENDER-ZRAM-GENERATOR-006
+    rule: 'unusable input is rejected cleanly'
+    prediction: 'a NORMAL_DIR under a regular file (a missing NORMAL_DIR is valid: a generator creates it), with stderr prefixed by the binary name: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-zram-generator --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): exits 1 with no panic, GREEN; before the fix the error said "trueno-zram-generator:" and the prefix assertion was RED'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

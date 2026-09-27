@@ -1430,6 +1430,7 @@ dependencies = [
  "proptest",
  "rand 0.9.4",
  "rand_pcg",
+ "regex",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

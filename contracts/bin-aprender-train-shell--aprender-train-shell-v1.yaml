@@ -99,18 +99,22 @@ invariants:
     property: every aprender-train-shell surface member has an audited ledger row, and every ledger row names one
     formal: '∀ c ∈ surface(aprender-train-shell): ∃ r ∈ surface_audit : r.binary = aprender-train-shell ∧ path(r) = c; ∀ r with r.binary = aprender-train-shell: path(r) ∈ surface(aprender-train-shell)'
     prose: false
+  - id: BIN-APRENDER-TRAIN-SHELL-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-train-shell/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-001
     rule: 'G1.2 help answers'
     prediction: '`aprender-train-shell --help` exits 0 with non-empty stdout'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-train-shell'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate advertised_options_are_the_pinned_surface'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
     mutation: 'make the top-level --help return an error; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-002
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`aprender-train-shell --no-such-flag` exits 2'
-    test: 'scripts/dogfood_surfaces.sh --cli aprender-train-shell'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate unknown_'
     if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
     mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
   - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-003
@@ -122,7 +126,7 @@ falsification_tests:
   - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
     prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
-    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate -- advertised_options_are_the_pinned_surface'
     if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
     mutation: 'remove one surface literal from the snapshot; must turn RED naming it'
   - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-005
@@ -143,3 +147,9 @@ falsification_tests:
     test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot with one bin:command added'
     if_fails: 'A subcommand surface could be added to the REPL binary without a ledger row or a contract change.'
     mutation: 'the edit in the prediction; must turn RED — verdict Fail on path bin:command'
+  - id: FALSIFY-BIN-APRENDER-TRAIN-SHELL-008
+    rule: 'unusable input is rejected cleanly'
+    prediction: '`--session <b> --command help` on a missing, empty and garbage session file: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-train-shell --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 1 with no panic, GREEN; no source mutation was run for this binary'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

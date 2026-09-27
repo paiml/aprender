@@ -108,3 +108,9 @@ required-features = ["ptop"]
 
 [lints]
 workspace = true
+
+# ONT-10 surface gate (#4079): the bin it runs exists only with `ptop`.
+[[test]]
+name = "cli_surface_gate"
+path = "tests/cli_surface_gate.rs"
+required-features = ["ptop"]

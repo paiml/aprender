@@ -84,18 +84,22 @@ invariants:
     property: every presentar surface member has an audited ledger row, and every ledger row names one
     formal: '∀ c ∈ surface(presentar): ∃ r ∈ surface_audit : r.binary = presentar ∧ path(r) = c; ∀ r with r.binary = presentar: path(r) ∈ surface(presentar)'
     prose: false
+  - id: BIN-PRESENTAR-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-present-cli/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-BIN-PRESENTAR-001
     rule: 'G1.2 help answers'
     prediction: '`presentar --help` exits 0 with non-empty stdout'
-    test: 'scripts/dogfood_surfaces.sh --cli presentar'
+    test: 'cargo test -p aprender-present-cli --test cli_surface_gate every_advertised_subcommand_is_reachable'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
     mutation: 'make the top-level --help return an error; must turn RED'
   - id: FALSIFY-BIN-PRESENTAR-002
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`presentar --no-such-flag` exits 2'
-    test: 'scripts/dogfood_surfaces.sh --cli presentar'
+    test: 'cargo test -p aprender-present-cli --test cli_surface_gate unknown_'
     if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
     mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
   - id: FALSIFY-BIN-PRESENTAR-003
@@ -107,7 +111,7 @@ falsification_tests:
   - id: FALSIFY-BIN-PRESENTAR-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
     prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
-    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    test: 'cargo test -p aprender-present-cli --test cli_surface_gate -- advertised_subcommands_are_the_pinned_surface'
     if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
     mutation: 'remove `bundle` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
   - id: FALSIFY-BIN-PRESENTAR-005
@@ -116,3 +120,9 @@ falsification_tests:
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
     mutation: 'delete every presentar row; must turn RED naming presentar'
+  - id: FALSIFY-BIN-PRESENTAR-006
+    rule: 'unusable input is rejected cleanly'
+    prediction: '`check`, `score` and `gate` on a missing, empty and garbage manifest: each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-present-cli --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 1 with no panic, GREEN; no source mutation was run for this binary'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'

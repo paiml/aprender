@@ -65,7 +65,7 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("trueno-zram-generator: {e}");
+            eprintln!("aprender-zram-generator: {e}");
             ExitCode::FAILURE
         }
     }

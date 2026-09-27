@@ -99,18 +99,22 @@ invariants:
     property: every ptop surface member has an audited ledger row, and every ledger row names one
     formal: '∀ c ∈ surface(ptop): ∃ r ∈ surface_audit : r.binary = ptop ∧ path(r) = c; ∀ r with r.binary = ptop: path(r) ∈ surface(ptop)'
     prose: false
+  - id: BIN-PTOP-INV-002
+    property: unusable input is a clean rejection, never a success and never a panic
+    formal: '∀ a ∈ rejection_rows(crates/aprender-present-terminal/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-BIN-PTOP-001
     rule: 'G1.2 help answers'
     prediction: '`ptop --help` exits 0 with non-empty stdout'
-    test: 'scripts/dogfood_surfaces.sh --cli ptop'
+    test: 'cargo test -p aprender-present-terminal --features ptop --test cli_surface_gate advertised_options_are_the_pinned_surface'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
     mutation: 'make the top-level --help return an error; must turn RED'
   - id: FALSIFY-BIN-PTOP-002
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`ptop --no-such-flag` exits 2'
-    test: 'scripts/dogfood_surfaces.sh --cli ptop'
+    test: 'cargo test -p aprender-present-terminal --features ptop --test cli_surface_gate unknown_'
     if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
     mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
   - id: FALSIFY-BIN-PTOP-003
@@ -122,7 +126,7 @@ falsification_tests:
   - id: FALSIFY-BIN-PTOP-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
     prediction: '`ptop --explode nosuch` exits 2, and the surface literals in the shape above = the snapshot''s, set-equal'
-    test: 'crates/aprender-present-terminal/src/bin/ptop.rs tests::explode_unknown_panel_is_a_usage_error, tests::explode_accepts_panel_names_and_aliases; the set: NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    test: 'cargo test -p aprender-present-terminal --features ptop --test cli_surface_gate -- advertised_options_are_the_pinned_surface malformed_arguments_are_usage_errors'
     if_fails: 'an added, dropped or renamed surface member ships with the ontology green ; a misspelt --explode panel rendered the whole screen with exit 0 (observed 2026-09-26 at b6cf6d2ed; fixed on batch/ont-10: parse_panel_type is the clap value_parser, exit 2)'
     mutation: 'map the unknown-panel arm of parse_panel_type to Ok(PanelType::Cpu); the unit test turns RED (checked 2026-09-27). Remove one surface literal from the snapshot; must turn RED naming it'
   - id: FALSIFY-BIN-PTOP-005
@@ -143,3 +147,9 @@ falsification_tests:
     test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot from a default-feature build'
     if_fails: 'A binary the ledger lists could drop out of the ontology silently because its feature is opt-in.'
     mutation: 'the edit in the prediction; must turn RED — the ONT-4g surface_audit_bins gate names ptop as a ledgered binary with no node'
+  - id: FALSIFY-BIN-PTOP-008
+    rule: 'unusable input is rejected cleanly'
+    prediction: 'a non-numeric `--width`, `--refresh` and `--height` (ptop reads no input file it could reject: a missing or garbage `-c` config warns and falls back to the defaults): each exits non-zero, not 101, with no "panicked" on stderr'
+    test: 'cargo test -p aprender-present-terminal --features ptop --test cli_surface_gate unusable_input_is_rejected'
+    if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 2, GREEN. `-c <missing|garbage> --render-once` exits 0 with a warning — NOT asserted, recorded as finding a01-ont10-ptop-config-falls-back'
+    mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'
