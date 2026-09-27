@@ -15,14 +15,35 @@ case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_include_files.sh (
 errors=0
 checked=0
 
+# Every tracked path, read ONCE. The loop used to fork `git ls-files
+# --error-unmatch` (plus echo|grep|sed and dirname) per include!(): ~1,800
+# forks and 33 s in CI. A path in this set is tracked; one NOT in it still goes
+# through the original git check below, so every verdict is git's own.
+declare -A TRACKED=()
+while IFS= read -r -d '' p; do TRACKED["$p"]=1; done < <(git ls-files -z)
+INCLUDE_RE='include!\([[:space:]]*"([^"]+)"[[:space:]]*\)'
+
 # Find all include!() directives in Rust source files
 while IFS=: read -r file line content; do
     # Extract the included filename from include!("filename.rs")
-    included=$(echo "$content" | grep -oP 'include!\(\s*"([^"]+)"\s*\)' | sed 's/include!("//;s/")//' || true)
+    # Fast path: exactly one include!() on the line. Same strip as the sed below
+    # (first `include!("` and first `")` removed). Two or more on one line take
+    # the original pipeline, whose multi-line output this does not re-create.
+    # (a failed =~ clears BASH_REMATCH, so the match is saved before the 2nd test)
+    rest="${content#*include!(}"
+    m=""
+    [[ "$content" =~ $INCLUDE_RE ]] && m="${BASH_REMATCH[0]}"
+    if [ -n "$m" ] && [[ ! "$rest" =~ $INCLUDE_RE ]]; then
+        included="${m/include!(\"/}"
+        included="${included/\")/}"
+    else
+        included=$(echo "$content" | grep -oP 'include!\(\s*"([^"]+)"\s*\)' | sed 's/include!("//;s/")//' || true)
+    fi
     [ -z "$included" ] && continue
 
     # Resolve relative to the directory containing the source file
-    dir=$(dirname "$file")
+    # (grep -rn paths always contain a `/`, so this is dirname's answer)
+    dir="${file%/*}"
     resolved="$dir/$included"
 
     checked=$((checked + 1))
@@ -35,6 +56,7 @@ while IFS=: read -r file line content; do
     fi
 
     # Check file is tracked by git (not gitignored)
+    [ -n "${TRACKED[$resolved]:-}" ] && continue
     if ! git ls-files --error-unmatch "$resolved" >/dev/null 2>&1; then
         # Double-check: is it ignored?
         if git check-ignore -q "$resolved" 2>/dev/null; then
