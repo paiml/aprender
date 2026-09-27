@@ -98,6 +98,18 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
 - **Gates:** loss(last 10) ≤ 0.9 × loss(first 10), all finite. Served base+adapter equals the training-side merged forward
   (cos ≥ 0.999, equal argmax).
 - **Planted:** lr = 0 must FAIL the loss gate. The receipt names the device from a trace line (CLAUDE.md verification rule 2).
+- **Spike S-R4a (2026-09-27, `la-72/r3-backward` @045a7edb73) — does LoRA + AdamW over the R3 backward train the real
+  0.8B? Yes, monotone.** `[V]`
+  - `transformer::Qwen35Lora`: r16, alpha 32, on all 150 attention/GDN/MLP projections (10.2M params, 1.3% of 0.8B).
+    Adapter gradients are projected from the full `dW'` (`dA = s·Bᵀ·dW'`, `dB = s·dW'·Aᵀ`), and the in-tree `AdamW`
+    steps the adapters.
+  - Measured with AdamW at lr 1e-4 on one 5-token sentence (CPU release): loss 8.881 → 5.394 → 3.210 → 1.631 → 0.442 →
+    0.053 → 0.011 → 0.004 → 0.002.
+  - Step cost is about 7.2 s: forward+backward 6.5–7.3 s, merge 0.1 s, projection+AdamW 0.5 s.
+  - This answers S-R3b: AdamW does not bounce the way fixed-step SGD did.
+  - Gates: FALSIFY-QTG-009 (finite-difference check per adapter tensor, 2 seeds; base never written; a zero step is
+    exact) with 6 planted mutants RED.
+  - What R4 on CUDA still needs: an NF4 base, and adapter gradients that never materialise `dW'`.
 - **Existing surface `[V]`:** QLoRA path at `crates/apr-cli/src/commands/finetune.rs:270-336`. The contract it cites,
   `qlora-training-loop-v1` (`finetune.rs:349`), has no file (row R16).
 
