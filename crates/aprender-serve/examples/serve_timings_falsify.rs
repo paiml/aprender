@@ -14,12 +14,14 @@
 //!   `build` and `host`.
 //! - F7: the X-Request-ID the client sent is echoed on the response and appears as
 //!   `client_request_id` in both the stderr line and the JSONL line.
+//! - BE: both log lines name `--expect-backend` (the device this run was started on) as
+//!   `backend`, or `unreported` where the server cannot tell; naming the other device is RED.
 //!
 //! Exits 0 iff every cell is GREEN. A cell is never skipped: a missing line is RED.
 //!
 //! ```text
 //! cargo run -p aprender-serve --example serve_timings_falsify -- \
-//!     --apr "$APR" --model M.gguf --out /tmp/srvtim -- --gpu-layers all
+//!     --apr "$APR" --model M.gguf --out /tmp/srvtim --expect-backend gpu -- --gpu-layers all
 //! # GPU hosts: --prefix "flock /tmp/apr-gpu.lock"
 //! cargo test -p aprender-serve --example serve_timings_falsify   # the checks' case table
 //! ```
@@ -44,6 +46,7 @@ struct Args {
     port: u16,
     prefix: Vec<String>,
     health_seconds: u64,
+    expect_backend: String,
     serve_args: Vec<String>,
 }
 
@@ -51,6 +54,7 @@ fn parse_args() -> Result<Args, String> {
     let mut it = std::env::args().skip(1);
     let (mut apr, mut model, mut out) = (None, None, None);
     let (mut port, mut prefix, mut health_seconds) = (18431u16, Vec::new(), 600u64);
+    let mut expect_backend = None;
     let mut serve_args = Vec::new();
     while let Some(a) = it.next() {
         let mut val = |name: &str| it.next().ok_or(format!("{name} needs a value"));
@@ -70,6 +74,7 @@ fn parse_args() -> Result<Args, String> {
                     .parse()
                     .map_err(|e| format!("--health-seconds: {e}"))?;
             },
+            "--expect-backend" => expect_backend = Some(val("--expect-backend")?),
             "--" => serve_args.extend(it.by_ref()),
             other => return Err(format!("unknown argument {other}")),
         }
@@ -81,6 +86,9 @@ fn parse_args() -> Result<Args, String> {
         port,
         prefix,
         health_seconds,
+        expect_backend: expect_backend
+            .filter(|b| b == "cpu" || b == "gpu")
+            .ok_or("--expect-backend cpu|gpu is required: the device this run was started on")?,
         serve_args,
     })
 }
@@ -167,7 +175,8 @@ fn cells(
     r: &Response,
     logged: &HashMap<String, Value>,
     filed: &HashMap<String, Value>,
-) -> [bool; 6] {
+    expect_backend: &str,
+) -> [bool; 7] {
     let num = |v: &Value, k: &str| v.get(k).and_then(Value::as_f64);
     let t = r.timings.as_ref();
     let f1 = t.is_some();
@@ -207,7 +216,15 @@ fn cells(
             == Some(r.client_id.as_str())
     };
     let f7 = r.echoed.as_deref() == Some(r.client_id.as_str()) && echoes(lrec) && echoes(frec);
-    [f1, f2, f3, f5, f6, f7]
+    // BE: a log line names the device the run was started on, or says it cannot tell
+    // (`unreported`, the documented SSE-chat gap). Naming the OTHER device is a false label.
+    let label_ok = |rec: Option<&Value>| {
+        rec.and_then(|x| x.get("backend"))
+            .and_then(Value::as_str)
+            .is_some_and(|b| b == expect_backend || b == "unreported")
+    };
+    let be = label_ok(lrec) && label_ok(frec);
+    [f1, f2, f3, f5, f6, f7, be]
 }
 
 fn cases() -> Vec<(String, &'static str, Value)> {
@@ -349,11 +366,11 @@ fn run(a: &Args) -> Result<bool, String> {
     let filed = records(read_lines(&tlog).into_iter(), false);
     let mut red = 0;
     println!(
-        "{:<20} F1    F2    F3    F5    F6    F7    prompt_ms/predicted_ms/wall_ms",
+        "{:<20} F1    F2    F3    F5    F6    F7    BE    prompt_ms/predicted_ms/wall_ms",
         "case"
     );
     for r in &responses {
-        let c = cells(r, &logged, &filed);
+        let c = cells(r, &logged, &filed, &a.expect_backend);
         red += c.iter().filter(|ok| !**ok).count();
         let ms = r.timings.as_ref().map_or_else(
             || "-".to_string(),
@@ -412,7 +429,7 @@ mod tests {
 
     fn rec() -> Value {
         json!({"request_id": ID, "client_request_id": CID, "prefill_ms": 30.5, "decode_ms": 20.0,
-               "prompt_n": 12, "predicted_n": 4, "build": "0.70.0 abc123def", "host": "lambda"})
+               "prompt_n": 12, "predicted_n": 4, "build": "0.70.0 abc123def", "host": "lambda", "backend": "gpu"})
     }
 
     fn resp() -> Response {
@@ -436,16 +453,17 @@ mod tests {
     #[test]
     fn a_consistent_response_is_all_green() {
         let (l, f) = logs();
-        assert_eq!(cells(&resp(), &l, &f), [true; 6]);
+        assert_eq!(cells(&resp(), &l, &f, "gpu"), [true; 7]);
     }
 
-    /// Each row plants one defect and names EXACTLY the cells it turns RED (0=F1 … 5=F7).
+    /// Each row plants one defect and names EXACTLY the cells it turns RED (0=F1 … 5=F7, 6=BE).
     /// Null timings reddens every cell that compares against them; a missing JSONL line also
-    /// loses F7, as the client id rides on it. Every other plant stays in its own column.
+    /// loses F7 and BE, as the client id and the label ride on it. Every other plant stays in
+    /// its own column.
     #[test]
     fn each_planted_defect_turns_exactly_its_cells_red() {
         type Plant = fn(&mut Response, &mut HashMap<String, Value>, &mut HashMap<String, Value>);
-        let table: [(&str, Plant, &[usize]); 9] = [
+        let table: [(&str, Plant, &[usize]); 11] = [
             (
                 "F1 null timings",
                 |r, _, _| r.timings = None,
@@ -471,7 +489,7 @@ mod tests {
                 |_, l, _| l.get_mut(ID).expect("fixture")["decode_ms"] = json!(21.0),
                 &[3],
             ),
-            ("F6 jsonl missing", |_, _, f| f.clear(), &[4, 5]),
+            ("F6 jsonl missing", |_, _, f| f.clear(), &[4, 5, 6]),
             (
                 "F6 no host",
                 |_, _, f| f.get_mut(ID).expect("fixture")["host"] = json!(""),
@@ -489,13 +507,23 @@ mod tests {
                 },
                 &[5],
             ),
+            (
+                "BE stderr names the other device",
+                |_, l, _| l.get_mut(ID).expect("fixture")["backend"] = json!("cpu"),
+                &[6],
+            ),
+            (
+                "BE jsonl says unreported (documented gap)",
+                |_, _, f| f.get_mut(ID).expect("fixture")["backend"] = json!("unreported"),
+                &[],
+            ),
         ];
         for (name, plant, want) in table {
             let (mut l, mut f) = logs();
             let mut r = resp();
             plant(&mut r, &mut l, &mut f);
-            let c = cells(&r, &l, &f);
-            let reds: Vec<usize> = (0..6).filter(|i| !c[*i]).collect();
+            let c = cells(&r, &l, &f, "gpu");
+            let reds: Vec<usize> = (0..7).filter(|i| !c[*i]).collect();
             assert_eq!(reds, want, "{name}: RED cells {reds:?}, want {want:?}");
         }
     }
@@ -506,10 +534,10 @@ mod tests {
         let mut r = resp();
         r.timings =
             Some(json!({"prompt_n": 12, "prompt_ms": 30.5, "predicted_n": 0, "predicted_ms": 0.0}));
-        assert!(cells(&r, &l, &f)[2]);
+        assert!(cells(&r, &l, &f, "gpu")[2]);
         r.timings =
             Some(json!({"prompt_n": 12, "prompt_ms": 30.5, "predicted_n": 4, "predicted_ms": 0.0}));
-        assert!(!cells(&r, &l, &f)[2]);
+        assert!(!cells(&r, &l, &f, "gpu")[2]);
     }
 
     #[test]

@@ -288,6 +288,9 @@ pub(crate) fn try_qwen35_completions_stream(
         stop_tokens,
         gen_config,
     } = plan;
+    // #4490: the log line's backend is what the session did. The worker stores
+    // `on_gpu` before it sends Done, so reading it on Done is measured, not assumed.
+    let served = std::sync::Arc::clone(&session);
     tokio::task::spawn_blocking(move || {
         let Ok(mut s) = session.session.lock() else {
             let _ = tx.send(Qwen35StreamMsg::Failed(POISONED.to_string()));
@@ -375,7 +378,7 @@ pub(crate) fn try_qwen35_completions_stream(
                         &log_id,
                         &log_model,
                         "completions",
-                        Some(true),
+                        Some(served.on_gpu.load(std::sync::atomic::Ordering::Relaxed)),
                         true,
                         prompt_tokens,
                         completion_tokens,

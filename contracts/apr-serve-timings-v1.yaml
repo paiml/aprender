@@ -57,7 +57,7 @@ equations:
       completions, continuous-batch scheduler arm — RED: the scheduler reports
       one whole-batch latency_ms and no per-request first-token instant; the
       response carries no timings until it does
-    - "streaming chat log records report backend `unreported` (the SSE builders do not see used_gpu); the phase values are still the response's"
+    - "streaming chat log records, and every record from a backend whose response has no used_gpu, report backend `unreported` (measured 2026-09-27: all Qwen2.5 GGUF routes, CPU and CUDA); the phase values are still the response's. `unreported` is allowed; naming the wrong device is not (FALSIFY-SRV-TIM-008)"
     preconditions:
     - "row coverage is read from the dispatch arms in gpu_completions_handler.rs, openai_handlers.rs, cuda_chat_backend.rs"
     postconditions:
@@ -101,7 +101,7 @@ falsification_tests:
   prediction: >-
     chat and completions, stream and non-stream, at max_tokens 1 and 32: the
     body or the SSE terminal chunk carries a non-null `timings`.
-  test: "cargo run -p aprender-serve --example serve_timings_falsify -- --apr \"$APR\" --model <gguf> --out <dir> (column F1)"
+  test: "cargo run -p aprender-serve --example serve_timings_falsify -- --apr \"$APR\" --model <gguf> --out <dir> --expect-backend cpu|gpu (column F1)"
   if_fails: a backend dropped its split; Prometheus reads null and the gate on prefill_ratio is blind
 - id: FALSIFY-SRV-TIM-002
   rule: timings counts equal usage
@@ -138,3 +138,13 @@ falsification_tests:
     client_request_id, stream and non-stream.
   test: "serve_timings_falsify ... (column F7); cargo test -p aprender-serve --lib obs03"
   if_fails: OBS-04 cannot join client lane rows to server rows; self-report agreement is unmeasurable
+- id: FALSIFY-SRV-TIM-008
+  rule: a log line never names a device the request did not run on (#4490)
+  prediction: >-
+    every `[request] ` stderr line and --timings-log line carries backend equal to
+    the device the server was started on (--expect-backend), or `unreported`
+    where the response has no used_gpu. Measured RED on 2026-09-27 before the
+    fix: Qwen3.5 streaming /v1/completions under --no-gpu logged backend `gpu`
+    (a hardcoded Some(true)).
+  test: "serve_timings_falsify ... --expect-backend cpu (column BE)"
+  if_fails: OBS-04 and the /metrics readers attribute CPU latency to the GPU lane
