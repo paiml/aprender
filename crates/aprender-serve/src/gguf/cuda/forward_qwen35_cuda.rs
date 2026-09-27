@@ -565,19 +565,16 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        // PRODUCTION DEFAULT, not a test affordance (PMAT-3477 / #3090): this
-        // architecture runs the FLOAT Q4_K/Q6_K GEMV kernels, never the DP4A
-        // ones `GpuProfile::detect` picks for a dense decode.
-        //
-        // The pin's original reason, "DP4A is catastrophic through the
-        // recurrence" (1.656 relative, a wrong argmax at position 0), was
-        // #4258: no qwen35 writer kernel cleared `q8_activation_valid`, so
-        // every DP4A GEMV reused the first Q8_1 activation. With that fixed,
-        // DP4A holds the parity contract on 0.8B
-        // (`qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence`). The pin
-        // stays until DP4A is re-measured on 2B/4B (#4030). Lifting it is a
-        // perf decision to make on that evidence, not a side effect of this fix.
-        Self::pin_float_gemv(&mut executor.gpu_profile);
+        // PRODUCTION precision policy (#4485, RCA-SRV-001 fix 3): decode runs
+        // the DP4A (Q8_1-activation) Q4_K/Q6_K GEMVs, as llama.cpp's
+        // `mul_mat_vec_q` does. From PMAT-3477 / #3090 until #4485 this pinned
+        // the FLOAT pair. Its reason, "DP4A is catastrophic through the
+        // recurrence", was the stale-activation bug #4258. What was left was a
+        // kernel-isolation tolerance (1e-3 of the CPU) acting as production
+        // policy. The isolation tests keep it through `pin_reference_gemv`. The
+        // quality bound on 4B is
+        // `qwen35_cuda_4b_dp4a_gemv_stays_within_the_float_pair_of_cpu`.
+        Self::arm_production_gemv(&mut executor.gpu_profile);
 
         let mut layers = Vec::with_capacity(model.layers.len());
         for (il, layer) in model.layers.iter().enumerate() {
@@ -832,13 +829,56 @@ impl<'a> Qwen35CudaModel<'a> {
     /// test that means to measure the Gated `DeltaNet` kernels, and not the GEMV
     /// quantization choice, pins this first.
     ///
-    /// This is ALSO what [`Self::with_max_seq_len`] does at build time for
-    /// every model of this architecture (see the comment there and
-    /// [`Self::gemv_variants`]); the method stays because a test that wants to
-    /// say "the float GEMV, explicitly" should be able to, and because a caller
-    /// that has re-armed DP4A on the executor can get back to the pinned state.
+    /// Production does NOT run this pair: [`Self::with_max_seq_len`] arms
+    /// [`Self::production_gemv`] (#4485). This is the kernel-isolation pin.
     pub fn pin_reference_gemv(&mut self) {
         Self::pin_float_gemv(&mut self.executor.gpu_profile);
+    }
+
+    /// Env vars that choose a Q4_K / Q6_K GEMV variant in `GpuProfile::detect`.
+    /// When any is set, the build keeps the detected profile, so an A/B run
+    /// (e.g. `MWV_Q4K=1 MWV_Q6K=1` for the float pair) is not overridden.
+    pub(crate) const GEMV_ENV_OVERRIDES: [&'static str; 9] = [
+        "WIDE_Q4K_DISABLE",
+        "WIDE_Q4K",
+        "VECTORIZED_Q4K",
+        "HW_DP4A_Q4K",
+        "DP4A_Q4K",
+        "MWV_Q4K",
+        "HW_DP4A_Q6K",
+        "DP4A_Q6K",
+        "MWV_Q6K",
+    ];
+
+    /// The Q4_K / Q6_K GEMV pair a Qwen3.5 decode runs on a device of compute
+    /// capability `cc` (#4485): the DP4A pair from sm_75, where
+    /// `GpuProfile::detect` validates the DP4A kernels, and the float pair
+    /// below it.
+    #[must_use]
+    pub(crate) const fn production_gemv(
+        cc: u32,
+    ) -> (
+        crate::cuda::gpu_profile::Q4kVariant,
+        crate::cuda::gpu_profile::Q6kVariant,
+    ) {
+        use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
+        if cc >= 75 {
+            (Q4kVariant::HwDp4a, Q6kVariant::HwDp4a)
+        } else {
+            (Q4kVariant::Mwv, Q6kVariant::Mwv)
+        }
+    }
+
+    /// Arm [`Self::production_gemv`] on a profile, unless an env var in
+    /// [`Self::GEMV_ENV_OVERRIDES`] already chose the variants.
+    fn arm_production_gemv(profile: &mut crate::cuda::gpu_profile::GpuProfile) {
+        if Self::GEMV_ENV_OVERRIDES
+            .iter()
+            .any(|v| std::env::var_os(v).is_some())
+        {
+            return;
+        }
+        (profile.q4k, profile.q6k) = Self::production_gemv(profile.cc);
     }
 
     /// Set the float (non-DP4A) Q4_K / Q6_K variants on a profile.
@@ -849,8 +889,8 @@ impl<'a> Qwen35CudaModel<'a> {
 
     /// The Q4_K and Q6_K GEMV variants this model will actually dispatch.
     ///
-    /// A freshly built model reports the float pair — see the pinning comment
-    /// in [`Self::with_max_seq_len`]. A caller that overrides the executor's
+    /// A freshly built model reports [`Self::production_gemv`] for its device
+    /// (#4485), or the env-chosen pair when a variant env var is set. A caller that overrides the executor's
     /// profile afterwards sees its own choice here, which is what the DP4A
     /// falsifier test reads.
     #[must_use]

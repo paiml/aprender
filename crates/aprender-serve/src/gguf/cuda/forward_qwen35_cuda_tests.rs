@@ -1174,12 +1174,12 @@ fn qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantizatio
         .fused_matmul_into(&x, &a.attn_q, &mut cpu)
         .expect("cpu attn_q");
 
-    // NOT `pin_reference_gemv()`: the constructor pins the float variants for
-    // every model of this architecture, and a test that re-pins measures its
-    // own call instead of production behaviour (#3090 review). The pin itself
-    // is asserted by `qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants`;
-    // if it ever stops holding, the first assertion below turns red here too.
+    // This measures the FLOAT GEMV against the exact dot, so it pins it: since
+    // #4485 production decodes on the DP4A pair, which quantizes the activation
+    // and is bounded end to end by
+    // `qwen35_cuda_4b_dp4a_gemv_stays_within_the_float_pair_of_cpu` instead.
     let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    gpu.pin_reference_gemv();
     let got = gpu
         .attn_q_gemv_of_host_input(il, &x)
         .expect("gpu attn_q GEMV");
@@ -1204,19 +1204,22 @@ fn qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantizatio
     );
 }
 
-/// A model built the ordinary way already runs the FLOAT GEMV kernels — the pin
-/// is production behaviour, not something a test remembers to do.
-///
-/// `GpuProfile::detect` picks the DP4A variants for this device; the
-/// constructor overrides them for this architecture because DP4A is
-/// catastrophic through the recurrence (the falsifier below). If that override
-/// is ever dropped, decode silently returns garbage tokens and only this
-/// assertion says so before the parity tests do.
+/// A model built the ordinary way runs the production GEMV pair (#4485): DP4A
+/// on a DP4A-capable device. It was the float pair until #4485 — see
+/// `forward_qwen35_gemv_policy_tests.rs` for why, and for the 4B falsifier
+/// that bounds what the DP4A pair costs in quality.
 #[test]
 #[serial_test::serial]
-fn qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants() {
-    use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
+fn qwen35_cuda_a_fresh_model_runs_the_production_gemv_variants() {
     let executor = qwen35_cuda_fixture_or_skip!();
+    let cc = executor.gpu_profile.cc;
+    if Qwen35CudaModel::GEMV_ENV_OVERRIDES
+        .iter()
+        .any(|v| std::env::var_os(v).is_some())
+    {
+        eprintln!("SKIP: a Q4K/Q6K variant env var is set; the policy defers to it");
+        return;
+    }
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
     let base = load_cpu_model(&mapped);
     let qwen =
@@ -1225,8 +1228,8 @@ fn qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants() {
     let gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
     assert_eq!(
         gpu.gemv_variants(),
-        (Q4kVariant::Mwv, Q6kVariant::Mwv),
-        "Qwen35CudaModel::new must pin the float GEMV variants for this architecture"
+        Qwen35CudaModel::production_gemv(cc),
+        "Qwen35CudaModel::new must arm the production GEMV pair for sm_{cc}"
     );
 }
 
@@ -1241,8 +1244,9 @@ fn qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants() {
 /// position. So this now guards the fix: if the stale-activation reuse comes back,
 /// the argmax breaks here.
 ///
-/// The float pin in `Qwen35CudaModel::with_max_seq_len` stays until DP4A is
-/// re-measured on 2B/4B (#4030). This test only says the pin's stated reason is gone.
+/// The 4B re-measurement #4030 asked for is
+/// `qwen35_cuda_4b_dp4a_gemv_stays_within_the_float_pair_of_cpu`; on it, #4485
+/// made the DP4A pair the production default.
 #[test]
 #[serial_test::serial]
 fn qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence() {
@@ -1811,3 +1815,6 @@ fn qwen35_cuda_graph_decode_is_token_identical_to_eager_4b() {
     let executor = qwen35_cuda_file_or_skip!(MODEL_PATH_4B);
     qwen35_graph_matches_eager(MODEL_PATH_4B, executor);
 }
+
+#[path = "forward_qwen35_gemv_policy_tests.rs"]
+mod gemv_policy;
