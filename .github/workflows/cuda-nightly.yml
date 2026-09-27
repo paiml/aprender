@@ -336,9 +336,10 @@ jobs:
       - name: aprender#4251 - every serve route prefills through the batched prefill (Qwen3.5)
         if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
         env:
-          APR_QWEN35_MODEL: ${{ vars.APR_QWEN35_MODEL || '/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf' }}
+          APR_QWEN35_MODEL_VAR: ${{ vars.APR_QWEN35_MODEL }}
         run: |
           set -euo pipefail
+          export APR_QWEN35_MODEL="${APR_QWEN35_MODEL_VAR:-$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf}"
           if [ ! -f "$APR_QWEN35_MODEL" ]; then
             echo "::error::#4251 UNMEASURABLE on ${{ matrix.name }} (provisioning, not a code defect): $APR_QWEN35_MODEL is absent"
             exit 1
