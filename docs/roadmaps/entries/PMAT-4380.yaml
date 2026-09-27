@@ -1,0 +1,16 @@
+- id: PMAT-4380
+  github_issue: 4380
+  item_type: task
+  title: 'build scripts and #[contract] producers read the gone provable-contracts sibling; read in-tree contracts/ and fail loudly (#4369 + #4380)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-49
+  created: 2026-09-27 10:00:00+00:00
+  updated: '2026-09-27T11:00:00Z'
+  spec: null
+  acceptance_criteria:
+  - 'no crates/*/build.rs reads ../../provable-contracts/contracts or ../../../provable-contracts/contracts (git grep empty outside comments)'
+  - 'the 10 #[contract] producers read contracts/<producer>/binding.yaml in-tree and a registry-less #[contract] site is a compile error (#4368, #4369)'
+  - 'aprender-serve build no longer prints the PMAT-228 "not found" fallback warning; it prints "Generated arch_requirements from YAML"; cargo test -p aprender-serve --lib arch_ passes'
+  - 'cargo test -p aprender-contracts --lib and -p aprender-contracts-macros pass; the #4219 APR_GIT_SHA stamp stays in every build.rs that had it'
+  phases: []
