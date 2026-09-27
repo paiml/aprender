@@ -417,6 +417,35 @@ fn st_cpu_generate(
         .map_err(|e| e.to_string())
 }
 
+/// #3718: the SafeTensors handlers apply the context rule the wgpu handler does,
+/// BEFORE generating. Without it `Session` clamped the budget to the room left in
+/// the window on its own and the reply was reported `"stop"`, and a prompt that
+/// filled the window came back as a 500. Returns the budget to generate with and
+/// to judge `finish_reason` against, or the 400 `context_length_exceeded` reply.
+#[cfg(feature = "inference")]
+fn st_context_budget(
+    model: &realizar::apr_transformer::AprTransformer,
+    prompt_len: usize,
+    max_tokens: usize,
+) -> std::result::Result<usize, axum::response::Response> {
+    use axum::response::IntoResponse;
+    use realizar::session::ArchForward;
+    // The same length `Session` checks against (StCpuForward::context_length).
+    let context_length = realizar::safetensors_infer::StCpuForward::new(model).context_length();
+    super::handlers::context_token_budget(prompt_len, max_tokens, context_length).map_err(
+        |(prompt_len, context_length)| {
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                axum::Json(super::handlers::context_length_exceeded_body(
+                    prompt_len,
+                    context_length,
+                )),
+            )
+                .into_response()
+        },
+    )
+}
+
 #[cfg(all(test, feature = "inference"))]
 #[path = "tests_st_serve_session_4269.rs"]
 mod tests_st_serve_session_4269;

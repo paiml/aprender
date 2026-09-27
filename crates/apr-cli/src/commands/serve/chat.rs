@@ -266,7 +266,7 @@ pub(crate) async fn safetensors_chat_completions_handler(
         .get("temperature")
         .and_then(|t| t.as_f64())
         .unwrap_or(0.0) as f32;
-    let output_ids = {
+    let (output_ids, max_tokens) = {
         // PMAT-189: Handle transformer lock poisoning gracefully
         let t = match transformer.lock() {
             Ok(guard) => guard,
@@ -280,8 +280,12 @@ pub(crate) async fn safetensors_chat_completions_handler(
                     .into_response();
             }
         };
-        match st_cpu_generate(&t, &input_ids, max_tokens, temperature) {
-            Ok(ids) => ids,
+        let budget = match st_context_budget(&t, input_ids.len(), max_tokens) {
+            Ok(budget) => budget,
+            Err(refusal) => return refusal,
+        };
+        match st_cpu_generate(&t, &input_ids, budget, temperature) {
+            Ok(ids) => (ids, budget),
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,

@@ -4,7 +4,9 @@
 // decode loop grew the KV cache past what the model was trained on, reporting
 // `finish_reason: "stop"`. These two pure functions are the rule it now follows,
 // the same rule the CPU (`effective_max_tokens`) and Qwen3.5 (`Session`) paths
-// already enforce. They are not gated on `wgpu`, so default-feature CI tests them.
+// already enforce. The SafeTensors handlers (chat.rs, simple.rs) apply it too,
+// through `st_context_budget`. They are not gated on `wgpu`, so default-feature
+// CI tests them.
 
 /// Tokens the reply may use once the prompt is in a `context_length` window:
 /// `min(requested, context_length - prompt_len)`.
@@ -13,8 +15,8 @@
 /// `(prompt_len, context_length)` when the prompt leaves no room for even one
 /// generated token. That is decided by the request alone, so the caller refuses
 /// it as a client error rather than truncating.
-#[cfg_attr(not(feature = "wgpu"), allow(dead_code))]
-fn context_token_budget(
+#[cfg_attr(not(any(feature = "wgpu", feature = "inference")), allow(dead_code))]
+pub(super) fn context_token_budget(
     prompt_len: usize,
     requested: usize,
     context_length: usize,
@@ -28,8 +30,8 @@ fn context_token_budget(
 /// The OpenAI-shaped 400 body for a prompt refused for length
 /// (`error.code = "context_length_exceeded"`), so a client can tell it from a
 /// server fault without parsing the message.
-#[cfg_attr(not(feature = "wgpu"), allow(dead_code))]
-fn context_length_exceeded_body(prompt_len: usize, context_length: usize) -> serde_json::Value {
+#[cfg_attr(not(any(feature = "wgpu", feature = "inference")), allow(dead_code))]
+pub(super) fn context_length_exceeded_body(prompt_len: usize, context_length: usize) -> serde_json::Value {
     serde_json::json!({
         "error": {
             "message": format!(
