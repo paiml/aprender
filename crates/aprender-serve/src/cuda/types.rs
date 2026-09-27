@@ -279,6 +279,39 @@ impl WeightQuantType {
         }
     }
 
+    /// #3850: the GGML type id of this variant — the exact inverse of
+    /// [`Self::from_ggml_type`], so `from_ggml_type(q.ggml_type()) == Some(q)`
+    /// for every variant.
+    ///
+    /// Deliberately exhaustive (no `_` arm): the PERF-050 graph path carried a
+    /// weight's type as a code produced by a hand list of seven variants ending
+    /// `_ => 12`, so every variant added after it — F16, BF16, F32, Q2_K, Q5_1
+    /// and the IQ family — crossed the graph as Q4_K and was decoded with the
+    /// Q4_K kernel. A new variant now fails to compile here instead.
+    #[must_use]
+    pub const fn ggml_type(self) -> u32 {
+        match self {
+            Self::F32 => 0,
+            Self::F16 => 1,
+            Self::Q4_0 => 2,
+            Self::Q4_1 => 3,
+            Self::Q5_0 => 6,
+            Self::Q5_1 => 7,
+            Self::Q8_0 => 8,
+            Self::Q2K => 10,
+            Self::Q4K => 12,
+            Self::Q5K => 13,
+            Self::Q6K => 14,
+            Self::IQ2XXS => 16,
+            Self::IQ3XXS => 18,
+            Self::IQ4NL => 20,
+            Self::IQ3S => 21,
+            Self::IQ2S => 22,
+            Self::IQ4XS => 23,
+            Self::BF16 => 30,
+        }
+    }
+
     /// PAR-105-FIX: Check if a qtype matches the expected size for given dimensions
     /// Returns true if the qtype would produce the given byte size
     pub fn matches_size(&self, size_bytes: usize, n_rows: usize, n_cols: usize) -> bool {
