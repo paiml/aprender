@@ -26,11 +26,11 @@ namespace ProvableContracts.NF4
 axiom nf4_lut : Fin 16 → ℝ
 
 /-- NF4 dequantization of a single nibble. -/
-def dequant_nibble (nibble : Fin 16) : ℝ :=
+noncomputable def dequant_nibble (nibble : Fin 16) : ℝ :=
   nf4_lut nibble
 
 /-- Blockwise dequantization: x_i = LUT[nibble_i] * absmax[i / blocksize] -/
-def dequant_blockwise (nibbles : List (Fin 16)) (absmax : List ℝ) (blocksize : ℕ)
+noncomputable def dequant_blockwise (nibbles : List (Fin 16)) (absmax : List ℝ) (blocksize : ℕ)
     (_hbs : blocksize > 0) : List ℝ :=
   (nibbles.zip (List.range nibbles.length)).map fun ⟨n, i⟩ =>
     dequant_nibble n * (absmax.getD (i / blocksize) 0)
@@ -138,10 +138,6 @@ theorem gpu_ne_cpu_without_swap :
     gpuSlot [0x12] 2 2 0 ≠ (cpuSlots [0x12] 2)[0]? := by decide
 
 theorem cpu_odd_block_differs : (cpuSlots [0, 0] 3)[3]? ≠ some ⟨0, 3 / 3⟩ := by decide
-
-def witnessChecksum (bs : Nat) : Nat :=
-  ((cpuSlots ((List.range 256).map UInt8.ofNat) bs).zipIdx).foldl
-    (fun acc (s, i) => acc + (i + 1) * (s.code * 1009 + if s.code = 7 then 0 else s.block)) 0
 
 -- Status: proved
 /-- NF4 codebook is monotonically increasing (LUT[i] < LUT[i+1]). -/
