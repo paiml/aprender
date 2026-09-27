@@ -25,6 +25,7 @@ main and cherry-pick.
 | F9 | serve epic #2706 (60) | fix/2817-stream-usage `b6b8c9809a` | fix/2815-im-end-after-punct `9adae252d2` | none | none. 2815 is only the guard test (the fix is already on main) |
 | F10 | contracts / pv hardening | fix/2530-kani-bounded-array `b7997e69de` (#2530) | df/2556-ratchet-070 `af7c5b92c1` (#2556, closed) | df sits on batch/0.70.0 (PR #4372 closed): replay onto main | aprender-contracts: check on replay |
 | F11 | E9 linfa gap (5d) | feat/3149-neighbor-index `d16279dbe2` (#3149) | docs/findings-5d-e9-kmeans-d2 `2d72e0f553` | docs branch is stacked on n_init (12 ahead) | aprender-core: check |
+| F12 | #2378 apr run/serve refusals (epic #3997) | fix/2378-apr-run-refusals `ed0d546e6e` (m0694) | df's serve/finetune dequant branch (not pushed yet; pair it when it lands) | 2378 **conflicts with main: re-cut it fresh from main and cherry-pick** (no main-merge). Paired per cop 77 | forward_qwen35.rs with F3: land after F3 |
 
 ## Singles (no same-workstream partner; fold alone or ride an open batch)
 
@@ -33,7 +34,6 @@ main and cherry-pick.
 | 0d/3559-ghosts `a0219a25a5` | #3559 ONT (0.70.0) | on car. contracts.nt overlaps with F4, so land it before F4 regenerates |
 | 91/3761-on-main `9ffc76bef2` | #3761 | B1r / #4520 step 2. Could ride #4428 |
 | 76/3558-pareto-select `4369a21f01` | #3558 dogfood | apr-cli + scripts/release |
-| fix/2378-apr-run-refusals `ed0d546e6e` | #2378, epic #3997 | shares forward_qwen35.rs with F3: land after F3 |
 | feat/4496-obs09-trace-serve `8eb949fc82` | #4496 OBS | on car. Shares forward_qwen35_cuda.rs with 4486 (F8), and session.rs with fix/4325 |
 | fix/4325-cancel-poll-before-forward `dd9168f4bd` | #4325 | session.rs vs feat/4496 |
 | a2/4153-clippy-slice1 `25dd398e6a` | #4153 | 212 files: keep it alone. Shares serve falsification_tests.rs with F5 a2/flake0 |
