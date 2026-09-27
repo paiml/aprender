@@ -26,6 +26,7 @@
             median_time: Duration::ZERO,
             std_dev: Duration::ZERO,
             passed: false,
+            raw: None,
         };
         assert_eq!(result.total_time, Duration::ZERO);
         assert_eq!(result.iteration_times.len(), 3);
@@ -45,6 +46,7 @@
             median_time: max,
             std_dev: max,
             passed: true,
+            raw: None,
         };
         assert_eq!(result.total_tokens, usize::MAX);
         assert!(result.tokens_per_second.is_finite());
@@ -62,6 +64,7 @@
             median_time: Duration::ZERO,
             std_dev: Duration::ZERO,
             passed: false,
+            raw: None,
         };
         assert!(result.tokens_per_second.is_nan());
     }
@@ -78,6 +81,7 @@
             median_time: Duration::ZERO,
             std_dev: Duration::ZERO,
             passed: true,
+            raw: None,
         };
         assert!(result.tokens_per_second.is_infinite());
     }
@@ -98,6 +102,7 @@
             median_time: Duration::from_millis(400),
             std_dev: Duration::from_millis(68),
             passed: true,
+            raw: None,
         };
         let cloned = result.clone();
         assert_eq!(cloned.total_tokens, result.total_tokens);
@@ -123,6 +128,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(5),
             passed: true,
+            raw: None,
         };
         let debug = format!("{result:?}");
         assert!(debug.contains("total_tokens"));
@@ -205,6 +211,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(1),
             passed: true,
+            raw: None,
         };
         print_results(&result);
 
@@ -245,6 +252,7 @@
             median_time: Duration::from_secs(20),
             std_dev: Duration::from_secs(1),
             passed: false,
+            raw: None,
         };
         print_results(&result);
     }
@@ -337,6 +345,7 @@
             median_time: Duration::from_millis(400),
             std_dev: Duration::from_millis(5),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }

@@ -445,5 +445,6 @@ fn calculate_benchmark_stats(
         median_time,
         std_dev,
         passed,
+        raw: None,
     })
 }

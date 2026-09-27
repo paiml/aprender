@@ -145,6 +145,30 @@ struct BenchResult {
     pub std_dev: Duration,
     /// Passed threshold (spec H12: >= 10 tok/s)
     pub passed: bool,
+    /// #4551: per-iteration measurements, set ONLY by a path that measured
+    /// each iteration's tokens and TTFT. `None` means the path does not know
+    /// them, and `--emit raw-samples-v1` refuses rather than invent them.
+    pub raw: Option<RawSamples>,
+}
+
+/// #4551 (APR-OBS-001 §2.7): what one timed iteration measured.
+#[derive(Debug, Clone, PartialEq)]
+struct RawSample {
+    /// Wall time of the whole turn: prefill + decode.
+    pub wall: Duration,
+    /// Tokens generated in this turn (the prompt excluded).
+    pub completion_tokens: usize,
+    /// Time to the first generated token.
+    pub ttft: Duration,
+}
+
+/// #4551: the per-iteration record of one bench run, plus the route it took.
+#[derive(Debug, Clone, PartialEq)]
+struct RawSamples {
+    /// The route the engine REPORTED it took (`Qwen35Session::on_gpu`), not
+    /// the route that was asked for. This is the subject's gpu proof.
+    pub on_gpu: bool,
+    pub samples: Vec<RawSample>,
 }
 
 /// Run the benchmark command
@@ -184,6 +208,48 @@ pub(crate) fn run(
     json: bool,
     percentiles: &[f64],
 ) -> Result<()> {
+    run_emit(
+        path,
+        warmup,
+        iterations,
+        max_tokens,
+        prompt,
+        fast,
+        brick,
+        json,
+        percentiles,
+        None,
+    )
+}
+
+/// [`run`], plus `--emit` (#4551).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_emit(
+    path: &Path,
+    warmup: usize,
+    iterations: usize,
+    max_tokens: usize,
+    prompt: Option<&str>,
+    fast: bool,
+    brick: Option<&str>,
+    json: bool,
+    percentiles: &[f64],
+    emit: Option<&str>,
+) -> Result<()> {
+    if let Some(format) = emit {
+        if format != RAW_SAMPLES_V1 {
+            return Err(CliError::ValidationFailed(format!(
+                "--emit {format}: unknown format (supported: {RAW_SAMPLES_V1})"
+            )));
+        }
+        if brick.is_some() {
+            return Err(CliError::ValidationFailed(format!(
+                "--emit {RAW_SAMPLES_V1} times whole generation turns; --brick does not"
+            )));
+        }
+    }
+    // The emitted document owns stdout: no banner, no progress lines.
+    let json = json || emit.is_some();
     // Defence in depth: the clap value_parser rejects out-of-range points, but
     // `run` is also reachable from non-clap callers.
     for &p in percentiles {
@@ -242,6 +308,13 @@ pub(crate) fn run(
             "Benchmark requires the 'inference' feature. Build with: cargo build --features inference".to_string()
         ));
     };
+
+    // #4551: the raw-samples document replaces every other output.
+    if emit.is_some() {
+        let doc = raw_samples_v1(path, &config, &result, &EmitEnv::capture(path))?;
+        println!("{doc}");
+        return Ok(());
+    }
 
     // GH-254: JSON output mode — always exit 0 with results in JSON body
     if json {
@@ -835,6 +908,7 @@ include!("bench_qwen35.rs");
 #[path = "bench_qwen35_tests.rs"]
 mod bench_qwen35_tests;
 include!("bench_04.rs");
+include!("bench_raw_samples.rs");
 
 // ── PARITY-001: the bench receipt's provenance fields ───────────────────────
 //

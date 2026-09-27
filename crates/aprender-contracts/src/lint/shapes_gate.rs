@@ -938,3 +938,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "raw_samples_v1_tests.rs"]
+mod raw_samples_v1_tests;

@@ -502,6 +502,7 @@
             fast: true,
             brick: None,
             percentiles: vec![50.0, 95.0, 99.0],
+            emit: None,
         }));
         let result = dispatch_profiling_commands(&cli);
         assert!(result.is_some(), "Bench should be handled by profiling dispatcher");

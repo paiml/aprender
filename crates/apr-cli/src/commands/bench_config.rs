@@ -48,6 +48,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(10),
             passed: true,
+            raw: None,
         };
 
         assert!(result.passed);
@@ -66,6 +67,7 @@
             median_time: Duration::from_secs(2),
             std_dev: Duration::from_millis(50),
             passed: false,
+            raw: None,
         };
 
         assert!(!result.passed);
@@ -84,6 +86,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(5),
             passed: true,
+            raw: None,
         };
 
         assert!(result.passed);
@@ -103,6 +106,7 @@
             median_time: Duration::from_secs(2),
             std_dev: Duration::from_millis(50),
             passed: true,
+            raw: None,
         };
 
         assert!(result.passed);
@@ -121,6 +125,7 @@
             median_time: Duration::from_secs(2),
             std_dev: Duration::from_millis(50),
             passed: false,
+            raw: None,
         };
 
         assert!(!result.passed);
@@ -315,6 +320,7 @@
             median_time: Duration::from_secs(0),
             std_dev: Duration::from_secs(0),
             passed: false,
+            raw: None,
         };
 
         assert_eq!(result.total_tokens, 0);
@@ -334,6 +340,7 @@
             median_time: Duration::from_millis(500),
             std_dev: Duration::from_millis(0),
             passed: true,
+            raw: None,
         };
 
         assert_eq!(result.iteration_times.len(), 1);
@@ -356,6 +363,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_secs(2), // High variance
             passed: true,
+            raw: None,
         };
 
         // Mean and median are very different due to outlier
@@ -374,6 +382,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(1),
             passed: true,
+            raw: None,
         };
 
         assert!(result.time_to_first_token < Duration::from_millis(1));
@@ -391,6 +400,7 @@
             median_time: Duration::from_secs(2),
             std_dev: Duration::from_millis(10),
             passed: true,
+            raw: None,
         };
 
         assert!(result.time_to_first_token >= Duration::from_secs(5));
@@ -438,6 +448,7 @@
             median_time: Duration::from_millis(100),
             std_dev: Duration::from_millis(0),
             passed: true,
+            raw: None,
         };
 
         assert_eq!(result.iteration_times.len(), 10);

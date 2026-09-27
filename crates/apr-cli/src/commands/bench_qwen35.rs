@@ -37,6 +37,7 @@ fn run_qwen35_session_benchmark(
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
+    let mut samples = Vec::with_capacity(config.iterations);
     let budget_us = config.max_tokens as u64 * 100_000;
     for i in 0..config.iterations {
         let (turn, iter_time, ttft) =
@@ -47,10 +48,21 @@ fn run_qwen35_session_benchmark(
         if i == 0 {
             first_token_time = ttft;
         }
+        samples.push(RawSample {
+            wall: iter_time,
+            completion_tokens: tokens_generated,
+            ttft,
+        });
         bench_log_iter(config, i, iter_time, Some(tokens_generated));
     }
     bench_log_done(config);
-    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+    let mut result =
+        calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)?;
+    result.raw = Some(RawSamples {
+        on_gpu: session.on_gpu(),
+        samples,
+    });
+    Ok(result)
 }
 
 /// One timed turn: `(turn, total, time to first token)`. The prompt must be

@@ -1,0 +1,122 @@
+name: apr-raw-samples
+version: "1.0.0"
+scope: >
+  The document `apr bench --emit raw-samples-v1` writes on stdout: the identity the subject can know,
+  the workload it ran, and one entry per timed iteration. Out of scope: every derived statistic,
+  the ledger row, and the identity fields only the recorder can know (tier, band, order, epoch,
+  lease, the hash chain). APR-OBS-001 §2.7: the subject emits; it never opens a ledger.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    A perf ledger row is only as good as the samples under it. A summary cannot be resampled, so the
+    subject hands the recorder the raw per-iteration measurements and nothing it derived: the
+    recorder (`apr-perf-recorder`) validates this document with `pv`, computes every statistic,
+    checks identity, and appends the row.
+  references:
+    - 'aprender#4551 (this contract and the emitter), aprender#4539'
+    - 'APR-OBS-001 v1.3 §2.7 — kreg owns the schema, the pv contract and the emitter'
+    - 'crates/apr-cli/src/commands/bench_raw_samples.rs — the emitter and its refusal table'
+    - 'evidence/perf/raw-samples-v1/example-lambda-cpu.json — a real emit (Qwen3.5-4B Q4_K_M, CPU, lambda, loaded host: a shape example, not a measurement)'
+    - 'crates/aprender-contracts/src/lint/raw_samples_v1_tests.rs — the case table, both arms'
+
+entity:
+  type: json
+  ref: evidence/perf/raw-samples-v1/example-lambda-cpu.json
+
+vocabulary:
+  prefix: rawsamples
+  root_class: rawsamples:Document
+  nested:
+    gpu_proof: rawsamples:GpuProof
+    workload: rawsamples:Workload
+    samples: rawsamples:Sample
+
+shape:
+  targetClass: rawsamples:Document
+  closed: true
+  properties:
+    - {path: rawsamples:schema, minCount: 1, maxCount: 1, in: ["raw-samples-v1"]}
+    - {path: rawsamples:ts, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"}
+    # Identity. The emitter writes null when it cannot read a value, and null is DROPPED on
+    # extraction, so an unknown host or digest fails minCount here rather than reaching the ledger.
+    - {path: rawsamples:host, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 1}
+    - {path: rawsamples:apr_version, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+"}
+    - {path: rawsamples:build_identity, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^[0-9a-f]{7,40}$"}
+    - {path: rawsamples:binary_sha256, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^[0-9a-f]{64}$"}
+    - {path: rawsamples:model_id, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 1}
+    - {path: rawsamples:model_sha256, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^[0-9a-f]{64}$"}
+    - {path: rawsamples:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu]}
+    - {path: rawsamples:gpu_proof, minCount: 1, maxCount: 1, node: {closed: true, properties: [
+        {path: rawsamples:source, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 1},
+        {path: rawsamples:on_gpu, minCount: 1, maxCount: 1, datatype: xsd:boolean}]}}
+    - {path: rawsamples:request_id, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^[0-9a-f]{32}$"}
+    - {path: rawsamples:workload, minCount: 1, maxCount: 1, node: {closed: true, properties: [
+        {path: rawsamples:prompt_sha256, minCount: 1, maxCount: 1, datatype: xsd:string,
+         pattern: "^[0-9a-f]{64}$"},
+        {path: rawsamples:max_tokens, minCount: 1, maxCount: 1, datatype: xsd:integer},
+        {path: rawsamples:warmup, minCount: 1, maxCount: 1, datatype: xsd:integer},
+        {path: rawsamples:iterations, minCount: 1, maxCount: 1, datatype: xsd:integer}]}}
+    # One node per timed iteration. `closed` is what keeps a derived number (tok/s, a mean) out:
+    # the recorder derives, so an extra key here is a second, unverifiable source of truth.
+    - {path: rawsamples:samples, minCount: 1, node: {closed: true, properties: [
+        {path: rawsamples:index, minCount: 1, maxCount: 1, datatype: xsd:integer},
+        {path: rawsamples:wall_ms, minCount: 1, maxCount: 1, datatype: xsd:double},
+        {path: rawsamples:ttft_ms, minCount: 1, maxCount: 1, datatype: xsd:double},
+        {path: rawsamples:completion_tokens, minCount: 1, maxCount: 1, datatype: xsd:integer}]}}
+
+equations:
+  raw_only:
+    formula: "∀ d ∈ Document: keys(d) ⊆ Identity_subject ∪ {workload, samples} ∧ |samples(d)| ≥ 1"
+    domain: "one stdout document of `apr bench --emit raw-samples-v1`"
+    codomain: "conforms, or a violation naming the focus node and the value"
+    invariants:
+      - "no derived statistic is carried: the recorder computes every one from the samples"
+      - "an identity field the subject could not read is refused, never defaulted"
+    preconditions:
+      - "the bench path measured each iteration's tokens and TTFT (the emitter refuses otherwise)"
+    postconditions:
+      - "every timed iteration appears once, with its own wall time, TTFT and token count"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: RAWS-INV-001
+    property: the document carries raw samples only, never a derived statistic
+    formal: 'k ∉ Shape(d) ⇒ Fail(apr-raw-samples-v1, d)'
+    prose: false
+  - id: RAWS-INV-002
+    property: identity the subject could not read is refused, not defaulted
+    formal: '|host(d)| = 0 ∨ |binary_sha256(d)| = 0 ∨ |model_sha256(d)| = 0 ⇒ Fail(apr-raw-samples-v1, d)'
+    prose: false
+  - id: RAWS-INV-003
+    property: a document with no sample is refused
+    formal: '|samples(d)| = 0 ⇒ Fail(apr-raw-samples-v1, d)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-RAWS-001
+    rule: the real emit conforms, and each planted defect is refused
+    prediction: >
+      the committed real emit passes the shapes gate; a derived `tokens_per_second` key, a null
+      host, a summary key inside a sample, an empty sample list, a short binary digest, and an
+      undeclared backend are each refused
+    test: cargo test -p aprender-contracts --lib raw_samples_v1
+    if_fails: a shape that only ever sees the good document cannot tell it from a fabricated one
+  - id: FALSIFY-RAWS-002
+    rule: the emitter refuses rather than invent samples
+    prediction: >
+      a bench path without per-iteration samples, and samples that do not line up with the timed
+      iterations, are refused by `apr bench --emit raw-samples-v1`
+    test: cargo test -p apr-cli --lib raw_samples_v1
+    if_fails: the recorder would be handed samples no iteration produced

@@ -11,6 +11,7 @@
             median_time: Duration::from_millis(100),
             std_dev: Duration::from_millis(1),
             passed: true,
+            raw: None,
         };
 
         // BenchResult derives Debug
@@ -31,6 +32,7 @@
             median_time: Duration::from_millis(100),
             std_dev: Duration::from_millis(1),
             passed: true,
+            raw: None,
         };
 
         let cloned = result.clone();
@@ -55,6 +57,7 @@
             median_time: Duration::from_millis(100),
             std_dev: Duration::from_millis(1),
             passed: true,
+            raw: None,
         };
 
         assert!(result.tokens_per_second >= 100.0);
@@ -73,6 +76,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(10),
             passed: true,
+            raw: None,
         };
 
         assert!(result.tokens_per_second >= 50.0 && result.tokens_per_second < 100.0);
@@ -91,6 +95,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(50),
             passed: true,
+            raw: None,
         };
 
         assert!(result.tokens_per_second >= 20.0 && result.tokens_per_second < 50.0);
@@ -158,6 +163,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(2),
             passed: true,
+            raw: None,
         };
         // Exercises the A+ branch (>= 100.0) in print_results
         print_results(&result);
@@ -176,6 +182,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(5),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -193,6 +200,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(10),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -210,6 +218,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(20),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -227,6 +236,7 @@
             median_time: Duration::from_secs(1),
             std_dev: Duration::from_millis(100),
             passed: false,
+            raw: None,
         };
         print_results(&result);
     }
@@ -244,6 +254,7 @@
             median_time: Duration::from_millis(400),
             std_dev: Duration::from_millis(5),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -261,6 +272,7 @@
             median_time: Duration::from_secs(2),
             std_dev: Duration::from_millis(200),
             passed: false,
+            raw: None,
         };
         print_results(&result);
     }
@@ -278,6 +290,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(1),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -295,6 +308,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(5),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -312,6 +326,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(10),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -329,6 +344,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::from_millis(20),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -345,6 +361,7 @@
             median_time: Duration::from_millis(200),
             std_dev: Duration::ZERO,
             passed: false,
+            raw: None,
         };
         print_results(&result);
     }
@@ -361,6 +378,7 @@
             median_time: Duration::from_millis(20),
             std_dev: Duration::from_nanos(500),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }
@@ -378,6 +396,7 @@
             median_time: Duration::from_micros(100),
             std_dev: Duration::from_micros(1),
             passed: true,
+            raw: None,
         };
         print_results(&result);
     }

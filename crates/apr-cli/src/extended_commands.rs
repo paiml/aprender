@@ -119,6 +119,11 @@ pub enum ExtendedCommands {
             value_parser = crate::commands::bench::parse_percentile
         )]
         percentiles: Vec<f64>,
+        /// Emit the per-iteration raw samples document on stdout for the
+        /// perf recorder (APR-OBS-001 §2.7) instead of the report. Refuses on
+        /// a bench path that does not measure each iteration's tokens.
+        #[arg(long, value_name = "FORMAT", value_parser = ["raw-samples-v1"])]
+        emit: Option<String>,
     },
     /// Evaluate model perplexity (spec H13: PPL <= 20) or classification metrics
     Eval {
