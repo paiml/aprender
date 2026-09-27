@@ -144,3 +144,7 @@ fn apr_dtype_to_ggml(dtype: crate::format::v2::TensorDType) -> Option<crate::for
     }
 }
 
+
+#[cfg(test)]
+#[path = "fusion_dtype_sim_tests.rs"]
+mod fusion_dtype_sim_tests;

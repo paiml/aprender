@@ -77,6 +77,7 @@ import ProvableContracts.Theorems.Gelu.GeluBounds
 import ProvableContracts.Theorems.Gelu.GeluMono
 import ProvableContracts.Theorems.Gelu.GeluSign
 import ProvableContracts.Theorems.Gelu.GeluZero
+import ProvableContracts.Theorems.GgufExportSymmetry.Roundtrip
 import ProvableContracts.Theorems.Gqa.ConvexBound
 import ProvableContracts.Theorems.Gqa.Distribution
 import ProvableContracts.Theorems.Gqa.HeadMapping
