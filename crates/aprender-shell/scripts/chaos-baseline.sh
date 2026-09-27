@@ -12,7 +12,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-BINARY="$PROJECT_ROOT/target/release/aprender-shell"
+# Where cargo puts the build: same rule as scripts/renacer_bin.sh (the old
+# hardcoded <repo>/target ignored CARGO_TARGET_DIR).
+BINARY="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}/release/aprender-shell"
 MODEL="/tmp/chaos-test-model.apr"
 HISTORY="/tmp/chaos-test-history"
 RESULTS_DIR="/tmp/chaos-results"
@@ -27,25 +29,30 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
-# Ensure renacer is available
+# The IN-TREE renacer (crates/aprender-profile), built from and proven at HEAD
+# by scripts/renacer_bin.sh - never whatever `renacer` PATH holds, never the
+# pre-monorepo ../renacer checkout (TRACE-001 TR-05, R-2). The binary is named
+# aprender-profile, so every call goes through "$RENACER", not a PATH prepend.
 check_renacer() {
-    if ! command -v renacer &> /dev/null; then
-        log_warn "renacer not found in PATH, attempting to build..."
-        if [[ -d "$PROJECT_ROOT/../renacer" ]]; then
-            cargo build --release --manifest-path "$PROJECT_ROOT/../renacer/Cargo.toml"
-            export PATH="$PROJECT_ROOT/../renacer/target/release:$PATH"
-        else
-            log_error "renacer not found. Install from: cargo install --path ../renacer"
-            exit 1
-        fi
-    fi
-    log_info "Using renacer: $(which renacer)"
+    # shellcheck source=scripts/renacer_bin.sh
+    . "$PROJECT_ROOT/scripts/renacer_bin.sh" || {
+        log_error "no in-tree renacer built from HEAD. Build it: cargo build --release -p aprender-profile --bin aprender-profile"
+        exit 1
+    }
+    RENACER_VERSION="$("$RENACER" --version)" || RENACER_VERSION=""
+    log_info "Using renacer: $RENACER ($RENACER_VERSION)"
 }
 
 # Build aprender-shell in release mode
 build_binary() {
     log_info "Building aprender-shell in release mode..."
     cargo build --release -p aprender-shell --manifest-path "$PROJECT_ROOT/Cargo.toml"
+    # aprender-shell lost its [[bin]] to the mono-binary rule (Refs #701), so the
+    # build above yields only a library. Say so, not a bare rc 127 later on.
+    if [[ ! -x "$BINARY" ]]; then
+        log_error "no aprender-shell binary at $BINARY: the crate has no [[bin]] since Refs #701, so there is nothing to drive"
+        exit 1
+    fi
 }
 
 # Create test model
@@ -83,7 +90,7 @@ test_gentle_chaos() {
     log_info "Running gentle chaos test (CI-safe)..."
 
     local output
-    output=$(renacer --chaos gentle -c -- "$BINARY" suggest "git " --model "$MODEL" 2>&1)
+    output=$("$RENACER" --chaos gentle -c -- "$BINARY" suggest "git " --model "$MODEL" 2>&1)
 
     # Check for anomalies
     if grep -q "ANOMALY" <<< "$output" ; then
@@ -101,7 +108,7 @@ test_memory_pressure() {
     log_info "Running memory pressure test (64MB limit)..."
 
     local output
-    output=$(renacer --chaos-memory-limit 64M -c -- "$BINARY" suggest "cargo " --model "$MODEL" 2>&1)
+    output=$("$RENACER" --chaos-memory-limit 64M -c -- "$BINARY" suggest "cargo " --model "$MODEL" 2>&1)
 
     # Check process completed without OOM
     if grep -q "killed\|OOM\|Cannot allocate" <<< "$output" ; then
@@ -119,7 +126,7 @@ test_cpu_throttle() {
     log_info "Running CPU throttle test (25% CPU)..."
 
     local output
-    output=$(renacer --chaos-cpu-limit 0.25 -c -- "$BINARY" suggest "docker " --model "$MODEL" 2>&1)
+    output=$("$RENACER" --chaos-cpu-limit 0.25 -c -- "$BINARY" suggest "docker " --model "$MODEL" 2>&1)
 
     log_info "CPU throttle: PASS"
     echo "$output" > "$RESULTS_DIR/cpu-throttle.txt"
@@ -130,7 +137,7 @@ test_aggressive_chaos() {
     log_info "Running aggressive chaos test..."
 
     local output
-    output=$(renacer --chaos aggressive -c -- "$BINARY" suggest "kubectl " --model "$MODEL" 2>&1)
+    output=$("$RENACER" --chaos aggressive -c -- "$BINARY" suggest "kubectl " --model "$MODEL" 2>&1)
 
     log_info "Aggressive chaos: PASS"
     echo "$output" > "$RESULTS_DIR/aggressive-chaos.txt"
@@ -141,7 +148,7 @@ test_signal_injection() {
     log_info "Running signal injection test (SIGUSR1)..."
 
     local output
-    output=$(renacer --chaos-signal SIGUSR1 -c -- "$BINARY" suggest "aws " --model "$MODEL" 2>&1)
+    output=$("$RENACER" --chaos-signal SIGUSR1 -c -- "$BINARY" suggest "aws " --model "$MODEL" 2>&1)
 
     log_info "Signal injection: PASS"
     echo "$output" > "$RESULTS_DIR/signal-injection.txt"
@@ -152,7 +159,7 @@ test_baseline() {
     log_info "Running performance baseline (no chaos)..."
 
     local output
-    output=$(renacer -c --stats-extended -- "$BINARY" suggest "git " --model "$MODEL" 2>&1)
+    output=$("$RENACER" -c --stats-extended -- "$BINARY" suggest "git " --model "$MODEL" 2>&1)
 
     log_info "Baseline complete"
     echo "$output" > "$RESULTS_DIR/baseline.txt"
@@ -172,6 +179,7 @@ generate_report() {
 
 Generated: $(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)
 Binary: $BINARY
+Renacer: $RENACER ($RENACER_VERSION)
 Model: $MODEL
 
 ## Test Results

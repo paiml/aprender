@@ -830,10 +830,10 @@ bench:
 # Chaos engineering tests (from renacer, Issue #99)
 chaos-test: build ## Run chaos engineering tests with renacer
 	@echo "🔥 Running chaos engineering tests..."
-	@if command -v renacer >/dev/null 2>&1; then \
-		./crates/aprender-shell/scripts/chaos-baseline.sh ci; \
+	@if RENACER_BIN_BUILD=0 . scripts/renacer_bin.sh 2>/dev/null; then \
+		RENACER_BIN="$$RENACER" ./crates/aprender-shell/scripts/chaos-baseline.sh ci; \
 	else \
-		echo "⚠️  renacer not found. Install with: cargo install --git https://github.com/paiml/renacer"; \
+		echo "⚠️  no in-tree renacer built from HEAD. Build it: cargo build --release -p aprender-profile --bin aprender-profile"; \
 		echo "💡 Running lightweight chaos simulation instead..."; \
 		$(MAKE) chaos-test-lite; \
 	fi
