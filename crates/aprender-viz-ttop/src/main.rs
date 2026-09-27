@@ -299,6 +299,14 @@ fn soak(
     let (rx, _stop) = spawn_metrics_collector(refresh_ms, app.deterministic, t.is_some());
     let mut output = Vec::with_capacity(32768);
     let mut stdout = io::stdout();
+    // Frame 1 starts only once real state is loaded. The first collector pass
+    // (analyzers included) took 9.4 s on a loaded host, longer than a 120-frame run,
+    // so the soak measured an empty app, --timings reported no collector phase, and
+    // the first big snapshot landed after warm-up as a one-time RSS step.
+    let first = rx
+        .recv_timeout(Duration::from_secs(120))
+        .map_err(|e| io::Error::other(format!("soak: no collector snapshot in 120 s ({e})")))?;
+    apply(&mut app, first, t.as_deref_mut());
     for frame in 1..=frames {
         while let Ok(snapshot) = rx.try_recv() {
             apply(&mut app, snapshot, t.as_deref_mut());
