@@ -28,13 +28,6 @@ bindings:
   signature: 'fn write(&self, path: &Path, tensors: &[(&str, &Array1<f32>)]) -> Result<()>'
   status: implemented
   notes: Cross-crate; aprender provides APR format I/O
-- contract: apr-checkpoint-v1.yaml
-  equation: apr_reader
-  module_path: aprender::serialization::apr
-  function: AprReader::read
-  signature: 'fn read(path: &Path) -> Result<Vec<(String, Array1<f32>)>>'
-  status: implemented
-  notes: Cross-crate; aprender provides APR format I/O
 - contract: attention-head-extraction-v1.yaml
   equation: forward_with_lora
   module_path: entrenar::transformer::attention
@@ -170,13 +163,6 @@ bindings:
   status: implemented
   notes: 3-10 epochs; more for imbalanced datasets
 - contract: tensor-rc-data-v1.yaml
-  equation: tensor_clone
-  module_path: entrenar::autograd::tensor
-  function: Tensor::clone
-  signature: fn clone(&self) -> Tensor
-  status: implemented
-  notes: 'KAIZEN-019: Rc bump (O(1)) instead of 16GB deep copies'
-- contract: tensor-rc-data-v1.yaml
   equation: data_read
   module_path: entrenar::autograd::tensor
   function: Tensor::data
@@ -202,13 +188,6 @@ bindings:
   module_path: trueno::backends::gpu::batch
   function: GpuCommandBatch::import_buffer
   signature: 'fn import_buffer(&mut self, buffer: &GpuBuffer)'
-  status: implemented
-  notes: function not found in source
-- contract: wgpu-resident-weights-v1.yaml
-  equation: vram_budget
-  module_path: entrenar::finetune::classify_pipeline
-  function: estimate_wgpu_vram
-  signature: 'fn estimate_wgpu_vram(model_params: usize) -> usize'
   status: implemented
   notes: function not found in source
 - contract: cma-es-kernel-v1.yaml

@@ -146,6 +146,34 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/allowlisted-symbols-ticketed> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/AllowlistedSymbol> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/implements> ;
+        sh:minCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/Contract> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/resolved> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "false"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/allowlistReason> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/allowlistTicket> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(paiml/[A-Za-z0-9._-]+)?#[0-9]+$" ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/lean-statements-grounded> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Statement> ;
     sh:property [

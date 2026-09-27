@@ -8,27 +8,12 @@ bindings:
   status: partial
   notes: '#4369: #[contract] site at crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:753 had no binding row, and contracts/wgpu-forward-pass-v1.yaml does not exist in-tree: the annotation cites no contract'
 - contract: pipeline-cache-v1.yaml
-  equation: pipeline_cache
-  module_path: trueno::backends::gpu::batch::execute::dispatch
-  function: PipelineCache
-  signature: 'pub type PipelineCache = HashMap<usize, CachedPipeline>'
-  status: implemented
-  notes: 'Type alias + cache_key() pattern; get-or-insert via contains_key + conditional
-    insert in execute_inner()'
-- contract: pipeline-cache-v1.yaml
   equation: single_encoder
   module_path: trueno::backends::gpu::batch::execute
   function: GpuCommandBatch::execute
   signature: 'pub async fn execute(&mut self) -> Result<(), String>'
   status: implemented
   notes: 'Single command encoder per execute() call; N ops batched (C-BATCH-EXEC-001)'
-- contract: tiled-matmul-shader-v1.yaml
-  equation: matmul_shader
-  module_path: trueno::backends::gpu::shaders::basic_ops
-  function: MATMUL_SHADER
-  signature: "pub const MATMUL_SHADER: &str"
-  status: implemented
-  notes: '16x16 tiled WGSL shader with shared memory (KAIZEN-021, C-TILED-MATMUL-001)'
 - contract: tiled-matmul-shader-v1.yaml
   equation: matmul_dispatch
   module_path: trueno::backends::gpu::device::linalg::matmul

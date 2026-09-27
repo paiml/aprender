@@ -1085,7 +1085,12 @@ mod tests {
         let mut g = Graph::new();
         let stats = extract(&dir, &mut g);
         assert_eq!(
-            (stats.symbols, stats.resolved, stats.allowlisted, stats.unresolved),
+            (
+                stats.symbols,
+                stats.resolved,
+                stats.allowlisted,
+                stats.unresolved
+            ),
             (2, 1, 1, 0)
         );
         let ghost = iri("symbol", "kern::nn::functional::no_such_function");
@@ -1093,7 +1098,10 @@ mod tests {
         let orphan = iri("symbol", "kern::gone::vanished");
         let symbols = g.instances_of(&ont("Symbol"));
         let allowed = g.instances_of(&ont("AllowlistedSymbol"));
-        assert!(!symbols.iter().any(|s| *s == ghost), "an excused ghost leaves ont:Symbol");
+        assert!(
+            !symbols.iter().any(|s| *s == ghost),
+            "an excused ghost leaves ont:Symbol"
+        );
         assert!(allowed.iter().any(|s| *s == ghost));
         assert!(symbols.iter().any(|s| *s == stale) && allowed.iter().any(|s| *s == stale));
         assert!(allowed.iter().any(|s| *s == orphan));

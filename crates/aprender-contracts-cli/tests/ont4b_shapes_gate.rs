@@ -236,11 +236,12 @@ fn the_tracked_repo_graph_is_fresh() {
     // added six more for the DERIVED cell classes (effect, probe, model-cell, effect-cell) CRUX (crux-verb, crux)
     // and a8's sampling controls (sampling), and ONT-4c5 (PMAT-3972) added `capability-cells`, bringing car's line
     // to 26 (18+8). #4069 (ONT-4c4) added kernel-parity, kernel-timing and kernel-safety. The branches added
-    // disjoint shapes, so the union is 18 + 4 (ONT-4c) + 8 (car) + 3 (ONT-4c4) = 33.
+    // disjoint shapes, so the union is 18 + 4 (ONT-4c) + 8 (car) + 3 (ONT-4c4) = 33. #3559 added
+    // allowlisted-symbols-ticketed, the binding-allowlist ledger's own shape: 34.
     assert_eq!(
         v["shapes_n"],
-        33,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5)\n{}",
+        34,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + allowlisted-symbols-ticketed (#3559)\n{}",
         show(&r)
     );
 }

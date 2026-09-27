@@ -188,13 +188,6 @@ bindings:
   status: implemented
   notes: GGUF loader path; validates via ValidatedLayerWeights::validate()
 - contract: architecture-requirements-v1.yaml
-  equation: apr_loader_validation
-  module_path: realizar::apr::cuda_part_02_part_03
-  function: AprV2ModelCuda::upload_quantized_weights_to_gpu
-  signature: fn upload_quantized_weights_to_gpu(&mut self) -> Result<usize>
-  status: implemented
-  notes: APR loader path; derives ArchConstraints from metadata
-- contract: architecture-requirements-v1.yaml
   equation: safetensors_loader_validation
   module_path: realizar::safetensors_cuda
   function: SafeTensorsCudaModel::upload_weights
@@ -552,33 +545,12 @@ bindings:
   status: implemented
   notes: 'PMAT-405: Preemption logic for fairness under load'
 - contract: inference-pipeline-v1.yaml
-  equation: residual_stream
-  module_path: realizar::apply
-  function: forward_layer
-  signature: 'fn forward_layer(&mut self, layer_idx: usize, hidden: &[f32]) -> Result<Vec<f32>>'
-  status: implemented
-  notes: 'PMAT-405: hidden += attn_proj, residual += ffn_out. Also GPU PTX residualadd kernel'
-- contract: inference-pipeline-v1.yaml
   equation: layer_composition
   module_path: realizar::gpu::adapters::apr_q4
   function: forward_layer
   signature: 'fn forward_layer(&self, executor: &mut CudaExecutor, input: &GpuBuffer<f32>, layer_idx: usize, seq_len: usize) -> Result<GpuBuffer<f32>>'
   status: implemented
   notes: 'PMAT-405: Chained forward through num_layers. CPU and GPU paths'
-- contract: inference-pipeline-v1.yaml
-  equation: hybrid_layer_schedule
-  module_path: realizar::safetensors::safetensors_config
-  function: SafeTensorsConfig::is_hybrid_attention
-  signature: 'pub fn is_hybrid_attention(&self) -> bool'
-  status: implemented
-  notes: 'PMAT-405: GDN/attention dispatch per layer_types array (Qwen3.5 MoE)'
-- contract: inference-pipeline-v1.yaml
-  equation: kv_cache_growth
-  module_path: realizar::verification_specs
-  function: verify_kv_cache_size
-  signature: 'fn verify_kv_cache_size(num_layers: u64, num_heads: u64, head_dim: u64, max_seq_len: u64) -> u64'
-  status: implemented
-  notes: 'PMAT-405: KV cache = 2 * layers * seq_len * kv_dim * 4 bytes'
 - contract: q4k-q6k-superblock-v1.yaml
   equation: q4k_superblock
   module_path: realizar::quantize::format_trait
