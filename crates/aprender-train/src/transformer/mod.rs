@@ -16,6 +16,7 @@ mod embedding;
 mod encoder;
 mod encoder_block;
 mod feedforward;
+mod gdn;
 pub mod init;
 mod model;
 mod norm;
@@ -38,6 +39,9 @@ pub use embedding::LearnedPositionEmbedding;
 pub use encoder::EncoderModel;
 pub use encoder_block::EncoderBlock;
 pub use feedforward::EncoderFeedForward;
+pub use gdn::{
+    causal_conv1d_seq, gated_delta_scan, gdn_mixer_forward, GdnDims, GdnScan, GdnWeights,
+};
 pub use model::Transformer;
 pub use norm::LayerNorm;
 pub use weights::{load_safetensors_weights, validate_weights, Architecture};
