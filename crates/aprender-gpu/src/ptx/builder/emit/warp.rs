@@ -1,6 +1,6 @@
 //! Warp-level operation emission
 //!
-//! Handles: ShflDown, ShflIdx, Vote, VoteBallot, Popc, Bfind, Clz, Bfe, Bfi
+//! Handles: ShflDown, ShflBfly, ShflIdx, Vote, VoteBallot, Popc, Bfind, Clz, Bfe, Bfi
 
 use crate::ptx::instructions::PtxOp;
 
@@ -8,6 +8,7 @@ use crate::ptx::instructions::PtxOp;
 pub(crate) fn emit_warp_opcode(op: &PtxOp, s: &mut String) {
     match op {
         PtxOp::ShflDown => s.push_str("shfl.sync.down.b32"),
+        PtxOp::ShflBfly => s.push_str("shfl.sync.bfly.b32"),
         PtxOp::ShflIdx => s.push_str("shfl.sync.idx.b32"),
         PtxOp::Vote | PtxOp::VoteBallot => s.push_str("vote.sync.ballot.b32"),
         PtxOp::Popc => s.push_str("popc"),
@@ -24,6 +25,7 @@ pub(crate) fn is_warp_op(op: &PtxOp) -> bool {
     matches!(
         op,
         PtxOp::ShflDown
+            | PtxOp::ShflBfly
             | PtxOp::ShflIdx
             | PtxOp::Vote
             | PtxOp::VoteBallot
@@ -39,7 +41,7 @@ pub(crate) fn is_warp_op(op: &PtxOp) -> bool {
 pub(crate) fn skip_type_for_warp_op(op: &PtxOp) -> bool {
     matches!(
         op,
-        PtxOp::ShflDown | PtxOp::ShflIdx | PtxOp::Vote | PtxOp::VoteBallot
+        PtxOp::ShflDown | PtxOp::ShflBfly | PtxOp::ShflIdx | PtxOp::Vote | PtxOp::VoteBallot
     )
 }
 
@@ -52,6 +54,16 @@ mod tests {
         let mut s = String::new();
         emit_warp_opcode(&PtxOp::ShflDown, &mut s);
         assert_eq!(s, "shfl.sync.down.b32");
+    }
+
+    #[test]
+    fn test_emit_shfl_bfly() {
+        // shfl_xor_f32 emitted the bare op name `shflbfly`, which ptxas rejects (#4376).
+        let mut s = String::new();
+        emit_warp_opcode(&PtxOp::ShflBfly, &mut s);
+        assert_eq!(s, "shfl.sync.bfly.b32");
+        assert!(is_warp_op(&PtxOp::ShflBfly));
+        assert!(skip_type_for_warp_op(&PtxOp::ShflBfly));
     }
 
     #[test]

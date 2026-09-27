@@ -38,6 +38,7 @@ mod fused;
 mod fused_gemm;
 pub mod fused_kv_scatter;
 mod legacy;
+mod mma_q4k_gemm;
 mod nf4;
 mod nf4_cpu;
 mod nf4_tensor_core;
@@ -58,6 +59,7 @@ pub use fused::{
     FusedRmsNormNf4GemvKernel, FusedRmsNormQ4KGemvKernel,
 };
 pub use legacy::{Q4_0GemvKernel, Q4_1GemvKernel, Q5_0GemvKernel, Q8_0GemvKernel};
+pub use mma_q4k_gemm::MmaQ4KGemmKernel;
 pub(crate) use nf4::nf4_register_lut_lookup;
 pub use nf4::{Nf4GemmKernel, Nf4GemmTransposeKernel};
 pub use nf4_cpu::{

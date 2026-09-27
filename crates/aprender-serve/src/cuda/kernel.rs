@@ -60,6 +60,7 @@ impl CudaKernels {
             KernelType::InterleavedWmmaQ4KGemm { .. } => "interleaved_wmma_q4k_gemm",
             KernelType::W4a16WmmaQ4KGemm { .. } => "w4a16_wmma_q4k_gemm",
             KernelType::Dp4aQ4KGemm { .. } => "dp4a_q4k_gemm",
+            KernelType::MmaQ4KGemm { .. } => "mma_q4k_gemm",
             _ => return None,
         };
         Some(name)

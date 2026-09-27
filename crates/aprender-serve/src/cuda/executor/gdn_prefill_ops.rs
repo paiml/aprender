@@ -16,6 +16,9 @@
 //!      inputs round to fp16 (10-bit mantissa, unlike DP4A's 8-bit activations).
 //!    - `dp4a` runs the Q4K int8 GEMM, measured slower than f32, and carries the
 //!      #3513 hazard.
+//!    - `mmq` (#4376) runs the same Q8_1 × Q4K integer GEMM as `dp4a` on int8 tensor
+//!      cores (`mma.sync.m16n8k32` s8), so it shares `dp4a`'s numerics: coherent but
+//!      not greedy-exact against f32 on long prompts (`docs/audits/4376-mmq/`). Opt-in.
 //!    - `f32` is this path, unchanged, and the escape hatch.
 //!    `f16` is the default (operator, 2026-09-25) and runs only where the prewarm
 //!    completed; a host without the VRAM, or a failed prewarm, keeps the f32 path.
@@ -176,6 +179,9 @@ impl CudaExecutor {
                 if qtype == WeightQuantType::Q4K && ldc == n && k % 256 == 0 =>
             {
                 return self.launch_dp4a_q4k_gemm(w_ptr, x_ptr, y_ptr, rows, n, k);
+            },
+            Qwen35PrefillGemm::Mmq if qtype == WeightQuantType::Q4K && ldc == n && k % 256 == 0 => {
+                return self.launch_mma_q4k_gemm(w_ptr, x_ptr, y_ptr, rows, n, k);
             },
             _ => {},
         }
@@ -705,7 +711,7 @@ impl CudaExecutor {
 }
 
 /// Which GEMM the Qwen3.5 prefill projections run (#4313), from
-/// `APR_QWEN35_PREFILL_GEMM` = `f16` (default) | `f32` | `dp4a`. Read once. `f16`
+/// `APR_QWEN35_PREFILL_GEMM` = `f16` (default) | `f32` | `dp4a` | `mmq`. Read once. `f16`
 /// runs only on an executor whose fp16 set was prewarmed completely
 /// (`set_qwen35_prefill_f16`); elsewhere the f32 path runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -713,6 +719,7 @@ pub(crate) enum Qwen35PrefillGemm {
     F32,
     F16,
     Dp4a,
+    Mmq,
 }
 
 /// `APR_QWEN35_SCAN=bitwise` selects the chunk scan that is bitwise-identical to the
@@ -732,10 +739,11 @@ pub(crate) fn qwen35_prefill_gemm_mode() -> Qwen35PrefillGemm {
         || match std::env::var("APR_QWEN35_PREFILL_GEMM").as_deref() {
             Ok("f32") => Qwen35PrefillGemm::F32,
             Ok("dp4a") => Qwen35PrefillGemm::Dp4a,
+            Ok("mmq") => Qwen35PrefillGemm::Mmq,
             Ok("f16") | Err(_) => Qwen35PrefillGemm::F16,
             Ok(other) => {
                 eprintln!(
-                    "[qwen35] APR_QWEN35_PREFILL_GEMM={other:?} is not f16|f32|dp4a; using f16"
+                    "[qwen35] APR_QWEN35_PREFILL_GEMM={other:?} is not f16|f32|dp4a|mmq; using f16"
                 );
                 Qwen35PrefillGemm::F16
             },

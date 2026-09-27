@@ -83,7 +83,9 @@ pub trait PtxSync: KernelBuilderCore {
                 .dst(Operand::Reg(dst))
                 .src(Operand::Reg(val))
                 .src(Operand::ImmI64(mask as i64))
-                .src(Operand::ImmI64(31)),
+                .src(Operand::ImmI64(31))
+                // membermask: `shfl.sync` takes 5 operands; without it ptxas rejects (#4376)
+                .src(Operand::ImmU64(0xFFFF_FFFF)),
         );
         dst
     }
@@ -390,6 +392,11 @@ mod tests {
         assert_eq!(builder.instructions.len(), 1);
         assert_eq!(builder.instructions[0].op, PtxOp::ShflBfly);
         assert_eq!(builder.instructions[0].ty, PtxType::F32);
+        assert_eq!(
+            builder.instructions[0].srcs.len(),
+            4,
+            "src, lane mask, clamp, membermask"
+        );
         assert!(result.id() > 0);
     }
 

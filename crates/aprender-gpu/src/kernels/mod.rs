@@ -106,6 +106,7 @@ pub use optimizer::{
 };
 pub use persistent::PersistentDecoderKernel;
 pub use quantize::fused_kv_scatter::FusedKvScatterKernel;
+pub use quantize::MmaQ4KGemmKernel;
 pub use quantize::{
     dequantize_nf4, pack_nf4_for_gpu, quantize_nf4, repack_q4k_interleaved, repack_q4k_w4a16,
     unpack_nf4_from_gpu, BatchedHwDp4aQ4KGemvKernel, BatchedQ4KGemvKernel, BatchedQ6KGemvKernel,

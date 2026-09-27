@@ -883,7 +883,63 @@ impl CudaExecutor {
         n: u32,
         k: u32,
     ) -> Result<(), GpuError> {
-        let total_f32_elements = m * k;
+        let q8_ptr = self.quantize_q8_1_scratch(packed_input_ptr, m * k)?;
+
+        // Step 2: DP4A Q4K×Q8 GEMM
+        let num_warps: u32 = 4;
+        let num_half_warps = num_warps * 2;
+        let tile_m: u32 = 4;
+
+        let kernel_type = KernelType::Dp4aQ4KGemm { m, n, k };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("dp4a_q4k_gemm_{m}_{n}_{k}");
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let grid_x = (n + num_half_warps - 1) / num_half_warps;
+        let grid_y = (m + tile_m - 1) / tile_m;
+        let config = LaunchConfig::grid_2d(grid_x, grid_y, num_warps * 32, 1);
+
+        let mut ptr_y = packed_output_ptr;
+        let mut ptr_w = weight_ptr;
+        let mut ptr_q8 = q8_ptr;
+        let mut m_val = m;
+        let mut n_val = n;
+        let mut k_val = k;
+
+        // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_y) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_w) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_q8) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut m_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Quantize `total_f32_elements` f32 activations to Q8_1 into `dp4a_q8_scratch`
+    /// and return its device pointer. Shared by the DP4A and MMA Q4K GEMMs, so both
+    /// consume byte-identical Q8_1 input.
+    pub(crate) fn quantize_q8_1_scratch(
+        &mut self,
+        input_ptr: u64,
+        total_f32_elements: u32,
+    ) -> Result<u64, GpuError> {
         let num_q8_blocks = total_f32_elements / 32;
         let q8_bytes = num_q8_blocks as usize * 36;
 
@@ -917,7 +973,7 @@ impl CudaExecutor {
                 .expect("module just inserted");
             let config = LaunchConfig::grid_2d(num_q8_blocks, 1, 32, 1);
             let mut out = q8_ptr;
-            let mut inp = packed_input_ptr;
+            let mut inp = input_ptr;
             let mut n_val = total_f32_elements;
 
             // SAFETY: launches a CUDA kernel via the driver API. The argument pointer array, grid/block config, and module/function name match the kernel's signature, and every referenced device buffer is allocated, correctly sized, and lives until the stream-ordered launch completes.
@@ -935,25 +991,34 @@ impl CudaExecutor {
             }
         }
 
-        // Step 2: DP4A Q4K×Q8 GEMM
-        let num_warps: u32 = 4;
-        let num_half_warps = num_warps * 2;
-        let tile_m: u32 = 4;
+        Ok(q8_ptr)
+    }
 
-        let kernel_type = KernelType::Dp4aQ4KGemm { m, n, k };
+    /// #4376: tensor-core Q4K×Q8_1 GEMM (`mma.sync.m16n8k32` s8), a drop-in for
+    /// [`Self::launch_dp4a_q4k_gemm`]: same arguments, same Q8_1 activations, same
+    /// f32 row-major `[m, n]` output. K must be a multiple of 256.
+    pub(crate) fn launch_mma_q4k_gemm(
+        &mut self,
+        weight_ptr: u64,
+        packed_input_ptr: u64,
+        packed_output_ptr: u64,
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        let q8_ptr = self.quantize_q8_1_scratch(packed_input_ptr, m * k)?;
+
+        let kernel_type = KernelType::MmaQ4KGemm { m, n, k };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("dp4a_q4k_gemm_{m}_{n}_{k}");
-
+        let cache_key = format!("mma_q4k_gemm_{m}_{n}_{k}");
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
-
         let module = self
             .modules
             .get_mut(&cache_key)
             .expect("module just inserted");
 
-        let grid_x = (n + num_half_warps - 1) / num_half_warps;
-        let grid_y = (m + tile_m - 1) / tile_m;
-        let config = LaunchConfig::grid_2d(grid_x, grid_y, num_warps * 32, 1);
+        let (grid_x, grid_y) = trueno_gpu::kernels::MmaQ4KGemmKernel::grid(m, n);
+        let config = LaunchConfig::grid_2d(grid_x, grid_y, 128, 1);
 
         let mut ptr_y = packed_output_ptr;
         let mut ptr_w = weight_ptr;

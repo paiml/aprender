@@ -31,7 +31,7 @@ use trueno_gpu::kernels::{
     FusedResidualRmsNormKernel, FusedRmsNormGateUpSwigluQ4KKernel, FusedRmsNormQ4KGemvKernel,
     FusedSwigluKernel, GeluKernel, GemmKernel, GemvKernel, HalfWarpDp4aQ4KGemvKernel,
     HalfWarpDp4aQ6KGemvKernel, IncrementalAttentionKernel, InlineQ8Dp4aQ4KGemvKernel, Kernel,
-    KvCacheScatterIndirectKernel, KvCacheScatterKernel, LayerNormKernel,
+    KvCacheScatterIndirectKernel, KvCacheScatterKernel, LayerNormKernel, MmaQ4KGemmKernel,
     MultiWarpIncrementalAttentionKernel, MultiWarpQ6KGemvKernel, MultiWarpTensorCoreQ4KGemmKernel,
     MultiWarpVectorizedQ4KGemvKernel, MwvDp4aQ4KGemvKernel, PackedDp4aQ4KQ8Kernel,
     PerHeadRmsNormKernel, PreciseRmsNormKernel, PreciseRopeIndirectKernel, Q4KDequantFp16Kernel,

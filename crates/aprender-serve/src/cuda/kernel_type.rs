@@ -243,6 +243,12 @@ pub enum KernelType {
         n: u32,
         k: u32,
     },
+    /// #4376: tensor-core (mma.sync s8) Q4K×Q8_1 GEMM — same inputs as `Dp4aQ4KGemm`
+    MmaQ4KGemm {
+        m: u32,
+        n: u32,
+        k: u32,
+    },
     /// PAR-108: Batched Q4_K GEMV via shared dequantization (the throughput target is PAR-108's)
     BatchedQ4KGemv {
         m: u32,

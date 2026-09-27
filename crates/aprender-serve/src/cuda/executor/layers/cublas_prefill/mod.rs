@@ -22,6 +22,9 @@ mod fp8_gemm_range_tests_3728;
 // #3807: per-row E4M3 scales and subnormals, on the real kernels.
 #[cfg(test)]
 mod fp8_recipe_tests_3807;
+// #4376: the tensor-core MMQ GEMM against DP4A and a host reference, on the real kernel.
+#[cfg(test)]
+mod mma_q4k_gemm_tests_4376;
 
 use super::super::*;
 
