@@ -5,8 +5,24 @@
     "consistent": true,
     "entailed_subsumptions": [
       [
+        "Issue",
+        "Json"
+      ],
+      [
         "Kernel",
         "Contract"
+      ],
+      [
+        "Milestone",
+        "Json"
+      ],
+      [
+        "PullRequest",
+        "Json"
+      ],
+      [
+        "Repo",
+        "Json"
       ],
       [
         "Symbol",
@@ -30,8 +46,24 @@
     "consistent": true,
     "entailed_subsumptions": [
       [
+        "Issue",
+        "Json"
+      ],
+      [
         "Kernel",
         "Contract"
+      ],
+      [
+        "Milestone",
+        "Json"
+      ],
+      [
+        "PullRequest",
+        "Json"
+      ],
+      [
+        "Repo",
+        "Json"
       ],
       [
         "Symbol",
