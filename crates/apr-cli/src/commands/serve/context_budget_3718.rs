@@ -45,9 +45,29 @@ fn context_length_exceeded_body(prompt_len: usize, context_length: usize) -> ser
     })
 }
 
+/// OpenAI `finish_reason` for a reply of `generated` tokens under a `max_tokens`
+/// budget: `"length"` when the budget ran out, else `"stop"`. Every serve path
+/// (wgpu, CUDA, the CUDA->CPU fallback) reports through this one rule, so a cut
+/// reply is never labelled a natural stop.
+pub(super) fn finish_reason_for(generated: usize, max_tokens: usize) -> &'static str {
+    if generated >= max_tokens {
+        "length"
+    } else {
+        "stop"
+    }
+}
+
 #[cfg(test)]
 mod tests_context_budget_3718 {
-    use super::{context_length_exceeded_body, context_token_budget};
+    use super::{context_length_exceeded_body, context_token_budget, finish_reason_for};
+
+    #[test]
+    fn a_reply_that_used_the_whole_budget_is_length_not_stop() {
+        assert_eq!(finish_reason_for(64, 64), "length");
+        assert_eq!(finish_reason_for(65, 64), "length");
+        assert_eq!(finish_reason_for(63, 64), "stop");
+        assert_eq!(finish_reason_for(0, 64), "stop");
+    }
 
     #[test]
     fn budget_is_the_request_when_it_fits() {

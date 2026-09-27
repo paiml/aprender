@@ -285,11 +285,7 @@ fn wgpu_stream_generate(
     }
 
     // #3718: a reply cut at the budget is "length", never "stop".
-    let finish_reason = if completion_tokens as usize >= max_tokens {
-        "length"
-    } else {
-        "stop"
-    };
+    let finish_reason = finish_reason_for(completion_tokens as usize, max_tokens);
     let done = wgpu_stream_done_chunk(
         id,
         prompt_ids.len(),
@@ -362,11 +358,7 @@ fn wgpu_chat_completion_blocking(
         .map(|&tok| wgpu_detokenize_one(tok, &state.vocab))
         .collect();
     let tok_s = wgpu_tokens_per_second(output_ids.len() as f64, elapsed);
-    let finish_reason = if output_ids.len() >= max_tokens {
-        "length"
-    } else {
-        "stop"
-    };
+    let finish_reason = finish_reason_for(output_ids.len(), max_tokens);
 
     axum::Json(serde_json::json!({
         "id": id, "object": "chat.completion", "model": "qwen-wgpu",

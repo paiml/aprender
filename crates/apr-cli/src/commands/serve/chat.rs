@@ -336,6 +336,7 @@ pub(crate) async fn safetensors_chat_completions_handler(
         stream_mode,
         input_ids.len(),
         tokens_generated,
+        max_tokens,
         elapsed,
         tok_per_sec,
     )
@@ -419,6 +420,7 @@ fn build_chat_response(
     stream_mode: bool,
     prompt_tokens: usize,
     tokens_generated: usize,
+    max_tokens: usize,
     elapsed: std::time::Duration,
     tok_per_sec: f64,
 ) -> axum::response::Response {
@@ -427,7 +429,12 @@ fn build_chat_response(
 
     let request_id = generate_request_id();
     let has_tool_calls = tool_calls.is_some();
-    let finish_reason = if has_tool_calls { "tool_calls" } else { "stop" };
+    // #3718: a reply cut at `max_tokens` is "length", never "stop".
+    let finish_reason = if has_tool_calls {
+        "tool_calls"
+    } else {
+        super::handlers::finish_reason_for(tokens_generated, max_tokens)
+    };
     let created = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -688,6 +695,26 @@ mod chat_helper_tests {
 
     // ---- build_chat_response ------------------------------------------
 
+    /// #3718: a SafeTensors reply that used its whole `max_tokens` budget was cut,
+    /// and says "length"; the hardcoded "stop" read it as finished.
+    #[tokio::test]
+    async fn a_reply_cut_at_max_tokens_is_length_not_stop() {
+        use axum::body::to_bytes;
+        let resp = build_chat_response(
+            "cut".to_string(),
+            None,
+            false,
+            5,
+            16,
+            16,
+            std::time::Duration::from_millis(10),
+            300.0,
+        );
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(v["choices"][0]["finish_reason"], "length");
+    }
+
     #[tokio::test]
     async fn build_chat_response_non_streaming_json_body() {
         use axum::body::to_bytes;
@@ -697,6 +724,7 @@ mod chat_helper_tests {
             false,
             5,
             3,
+            16,
             std::time::Duration::from_millis(10),
             300.0,
         );
@@ -727,6 +755,7 @@ mod chat_helper_tests {
             false,
             2,
             0,
+            16,
             std::time::Duration::from_millis(1),
             0.0,
         );
@@ -748,6 +777,7 @@ mod chat_helper_tests {
             true,
             1,
             1,
+            16,
             std::time::Duration::from_millis(1),
             1.0,
         );
@@ -773,6 +803,7 @@ mod chat_helper_tests {
             true,
             1,
             1,
+            16,
             std::time::Duration::from_millis(1),
             1.0,
         );

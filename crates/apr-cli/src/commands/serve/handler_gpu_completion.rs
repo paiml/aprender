@@ -138,7 +138,7 @@ async fn gpu_cpu_fallback(
     .await;
 
     match result {
-        Ok(Ok(out)) => build_cpu_fallback_response(&out, start),
+        Ok(Ok(out)) => build_cpu_fallback_response(&out, max_tokens, start),
         Ok(Err(cpu_err)) => {
             Json(serde_json::json!({
                 "error": format!("GPU failed: {gpu_err}; CPU fallback also failed: {cpu_err}")
@@ -158,7 +158,11 @@ async fn gpu_cpu_fallback(
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)]
-fn build_cpu_fallback_response(out: &AprInferenceOutput, start: Instant) -> axum::response::Response {
+fn build_cpu_fallback_response(
+    out: &AprInferenceOutput,
+    max_tokens: usize,
+    start: Instant,
+) -> axum::response::Response {
     use axum::{response::IntoResponse, Json};
 
     let request_id = generate_request_id();
@@ -171,7 +175,8 @@ fn build_cpu_fallback_response(out: &AprInferenceOutput, start: Instant) -> axum
         "object": "chat.completion",
         "created": created,
         "model": "apr-cpu-fallback",
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}],
+        // #3718: a reply cut at the budget is "length", never "stop".
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": out.text}, "finish_reason": finish_reason_for(out.tokens_generated, max_tokens)}],
         "usage": {
             "prompt_tokens": out.input_token_count,
             "completion_tokens": out.tokens_generated,
@@ -324,7 +329,8 @@ async fn handle_gpu_chat_completion(
             "object": "chat.completion",
             "created": created,
             "model": &response_model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": output_text}, "finish_reason": "stop"}],
+            // #3718: a reply cut at the budget is "length", never "stop".
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": output_text}, "finish_reason": finish_reason_for(tokens_generated, max_tokens_clamped)}],
             "usage": {
                 "prompt_tokens": input_tokens.len(),
                 "completion_tokens": tokens_generated,
