@@ -215,7 +215,7 @@
     #[test]
     fn test_rosetta_commands_inspect_with_hexdump() {
         let cmd = RosettaCommands::Inspect {
-            file: PathBuf::from("model.gguf"),
+            file: PathBuf::from("model.gguf").into(),
             hexdump: true,
             json: true,
         };
@@ -231,9 +231,9 @@
     #[test]
     fn test_rosetta_commands_convert_with_all_options() {
         let cmd = RosettaCommands::Convert {
-            source: PathBuf::from("in.safetensors"),
-            target: PathBuf::from("out.apr"),
-            quantize: Some("int4".to_string()),
+            source: PathBuf::from("in.safetensors").into(),
+            target: PathBuf::from("out.apr").into(),
+            quantize: Some("int4".to_string().into()),
             verify: true,
             json: true,
             tokenizer: None,
@@ -245,7 +245,7 @@
                 json,
                 ..
             } => {
-                assert_eq!(quantize, Some("int4".to_string()));
+                assert_eq!(quantize, Some("int4".to_string()).map(Into::into));
                 assert!(verify);
                 assert!(json);
             }
@@ -256,10 +256,10 @@
     #[test]
     fn test_rosetta_commands_fingerprint_with_model_b() {
         let cmd = RosettaCommands::Fingerprint {
-            model: PathBuf::from("model_a.gguf"),
-            model_b: Some(PathBuf::from("model_b.apr")),
+            model: PathBuf::from("model_a.gguf").into(),
+            model_b: Some(PathBuf::from("model_b.apr").into()),
             output: None,
-            filter: Some("attn".to_string()),
+            filter: Some("attn".to_string().into()),
             verbose: false,
             json: true,
         };
@@ -271,7 +271,7 @@
                 ..
             } => {
                 assert!(model_b.is_some());
-                assert_eq!(filter, Some("attn".to_string()));
+                assert_eq!(filter, Some("attn".to_string()).map(Into::into));
                 assert!(json);
             }
             _ => panic!("Wrong command variant"),

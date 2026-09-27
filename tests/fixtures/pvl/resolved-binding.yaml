@@ -1,0 +1,12 @@
+# PVL-001 EV-2 control: ONE `implemented` binding whose function DOES exist in
+# the tree the resolver scans from the repo root (`fn main` in src/bin/apr.rs,
+# reached through verify_bindings' local `src/` arm). Accepted: exit 0, no ghosts.
+version: 1.0.0
+target_crate: aprender
+bindings:
+- contract: softmax-kernel-v1.yaml
+  equation: softmax
+  module_path: aprender
+  function: main
+  signature: 'fn main() -> std::process::ExitCode'
+  status: implemented

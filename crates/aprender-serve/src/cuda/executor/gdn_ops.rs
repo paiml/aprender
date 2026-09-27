@@ -275,6 +275,19 @@ impl CudaExecutor {
         head_dim: u32,
         seq_len: u32,
     ) -> Result<(), GpuError> {
+        // The split kernel scores a position with one warp in 16-byte lanes.
+        if head_dim % 128 == 0 && !decode_attention_unsplit() {
+            return self.gdn_decode_attention_split_into(
+                q,
+                k_cache,
+                v_cache,
+                output,
+                num_heads,
+                num_kv_heads,
+                head_dim,
+                seq_len,
+            );
+        }
         let kernel = trueno_gpu::kernels::gdn::DecodeAttention256Kernel::new(
             num_heads,
             num_kv_heads,
@@ -306,6 +319,212 @@ impl CudaExecutor {
                 v_cache.as_ptr(),
                 output.as_ptr(),
             ],
+            &[u64::from(seq_len)],
+        )
+    }
+
+    /// aprender#4233: [`Self::gdn_partial_neox_rope_into`] with the position read
+    /// from the device `u32` at `pos`, so a captured decode graph replays at
+    /// whatever position the host last wrote there. Bit-identical to the direct
+    /// kernel (`aprender-gpu` device test).
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    pub fn gdn_partial_neox_rope_indirect_into(
+        &mut self,
+        x: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+        theta_scale: f32,
+    ) -> Result<(), GpuError> {
+        let kernel =
+            trueno_gpu::kernels::gdn::PartialNeoxRopeKernel::new(num_heads, head_dim, n_rot)
+                .indirect();
+        let kernel_type = KernelType::GdnPartialNeoxRopeIndirect {
+            num_heads,
+            head_dim,
+            n_rot,
+        };
+        let cache_key = format!("gdn_partial_neox_rope_indirect_{num_heads}_{head_dim}_{n_rot}");
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, 1, bx, 1);
+        self.gdn_launch_mixed(
+            &cache_key,
+            kernel_name,
+            config,
+            &[x.as_ptr(), pos.as_ptr()],
+            &[u64::from(theta_scale.to_bits())],
+        )
+    }
+
+    /// aprender#4233: [`Self::gdn_decode_attention_into`] attending over
+    /// `*pos + 1` positions, read on the device.
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_decode_attention_indirect_into(
+        &mut self,
+        q: &GpuBuffer<f32>,
+        k_cache: &GpuBuffer<f32>,
+        v_cache: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    ) -> Result<(), GpuError> {
+        let kernel = trueno_gpu::kernels::gdn::DecodeAttention256Kernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        )
+        .indirect();
+        let kernel_type = KernelType::GdnDecodeAttentionIndirect {
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        };
+        let cache_key =
+            format!("gdn_decode_attention_indirect_{num_heads}_{num_kv_heads}_{head_dim}");
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, 1, bx, 1);
+        self.gdn_launch(
+            &cache_key,
+            kernel_name,
+            config,
+            &[
+                q.as_ptr(),
+                k_cache.as_ptr(),
+                v_cache.as_ptr(),
+                output.as_ptr(),
+                pos.as_ptr(),
+            ],
+        )
+    }
+
+    /// aprender#4233: append one KV row, `cache[*pos * row ..][..row] = src`,
+    /// with the position read on the device — the graph-safe replacement for
+    /// writing through a host-computed row view.
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    pub fn gdn_kv_row_scatter_indirect_into(
+        &mut self,
+        src: &GpuBuffer<f32>,
+        cache: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        row: u32,
+    ) -> Result<(), GpuError> {
+        let kernel = trueno_gpu::kernels::gdn::KvRowScatterIndirectKernel::new(row);
+        let kernel_type = KernelType::GdnKvRowScatterIndirect { row };
+        let cache_key = format!("gdn_kv_row_scatter_indirect_{row}");
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, 1, bx, 1);
+        self.gdn_launch(
+            &cache_key,
+            kernel_name,
+            config,
+            &[src.as_ptr(), cache.as_ptr(), pos.as_ptr()],
+        )
+    }
+
+    /// aprender#4273: [`Self::gdn_decode_attention_into`] split over the sequence —
+    /// grid `(num_heads, ceil(seq_len / split_len))` writing per-split partials, then
+    /// a per-head reduce. The unsplit kernel runs 16 blocks on Qwen3.5-4B whatever
+    /// the context, so its time grew linearly on 16 of 128 SMs (measured in #4273).
+    ///
+    /// The partials live in `decode_attn_partials`, grown when a longer context
+    /// needs more splits. The grid depends on `seq_len`, so this launch must not be
+    /// replayed from a recorded graph at another position — neither can the unsplit
+    /// one, whose `seq_len` scalar is baked into its recorded arguments.
+    ///
+    /// # Errors
+    /// PTX compilation, allocation or kernel launch failure, or a null pointer.
+    #[allow(clippy::too_many_arguments)]
+    fn gdn_decode_attention_split_into(
+        &mut self,
+        q: &GpuBuffer<f32>,
+        k_cache: &GpuBuffer<f32>,
+        v_cache: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        seq_len: u32,
+    ) -> Result<(), GpuError> {
+        let split = trueno_gpu::kernels::gdn::DecodeAttentionSplitKernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        );
+        let split_len = split.split_len;
+        let (acc_floats, ml_floats) = split.partial_floats(seq_len);
+        let need = acc_floats + ml_floats;
+        if self.decode_attn_partials.as_ref().map_or(0, GpuBuffer::len) < need {
+            // Grow in steps of 64 splits' worth so a decode reallocates rarely; the
+            // old buffer may still be read by an in-flight launch, so drain first.
+            let rows_step = (num_heads * 64) as usize * (head_dim as usize + 2);
+            let grown = need.div_ceil(rows_step) * rows_step;
+            self.stream.synchronize()?;
+            self.decode_attn_partials = Some(GpuBuffer::new(&self.context, grown)?);
+        }
+        let partials = self
+            .decode_attn_partials
+            .as_ref()
+            .expect("allocated just above")
+            .as_ptr();
+        let part_acc = partials;
+        let part_ml = partials + (acc_floats * 4) as u64;
+
+        let split_type = KernelType::GdnDecodeAttentionSplit {
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            split_len,
+        };
+        let split_key =
+            format!("gdn_decode_attention_split_{num_heads}_{num_kv_heads}_{head_dim}_{split_len}");
+        let split_name = self.gdn_prepare(&split_type, &split_key)?;
+        let (gx, gy, _) = split.grid(seq_len);
+        let (bx, _, _) = split.block();
+        self.gdn_launch_mixed(
+            &split_key,
+            split_name,
+            LaunchConfig::grid_2d(gx, gy, bx, 1),
+            &[
+                q.as_ptr(),
+                k_cache.as_ptr(),
+                v_cache.as_ptr(),
+                part_acc,
+                part_ml,
+            ],
+            &[u64::from(seq_len)],
+        )?;
+
+        let reduce = split.reduce();
+        let reduce_type = KernelType::GdnDecodeAttentionReduce {
+            num_heads,
+            head_dim,
+            split_len,
+        };
+        let reduce_key = format!("gdn_decode_attention_reduce_{num_heads}_{head_dim}_{split_len}");
+        let reduce_name = self.gdn_prepare(&reduce_type, &reduce_key)?;
+        let (rx, _, _) = reduce.grid();
+        let (rbx, _, _) = reduce.block();
+        self.gdn_launch_mixed(
+            &reduce_key,
+            reduce_name,
+            LaunchConfig::grid_2d(rx, 1, rbx, 1),
+            &[part_acc, part_ml, output.as_ptr()],
             &[u64::from(seq_len)],
         )
     }
@@ -573,4 +792,12 @@ impl CudaExecutor {
             &[x.as_ptr(), gate.as_ptr()],
         )
     }
+}
+
+/// aprender#4273: `APR_QWEN35_DECODE_ATTENTION=unsplit` selects the pre-#4273
+/// single-pass-per-head kernel, for A/B receipts (nsys, token identity). Read once.
+fn decode_attention_unsplit() -> bool {
+    static UNSPLIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *UNSPLIT
+        .get_or_init(|| std::env::var("APR_QWEN35_DECODE_ATTENTION").is_ok_and(|v| v == "unsplit"))
 }

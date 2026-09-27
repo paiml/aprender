@@ -556,15 +556,24 @@ impl SchemaValidator {
         Ok(())
     }
 
+    /// Without `jsonschema` compiled in, check the structural core of the schema
+    /// (`type`, `required`, nested `properties`). This used to return `Ok(())`
+    /// unconditionally, so `simular validate` printed "Schema validation PASSED"
+    /// for an empty file (#4079).
     #[cfg(not(feature = "schema-validation"))]
-    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    #[allow(clippy::unused_self)]
     fn validate_against_schema(
         &self,
-        _instance: &serde_json::Value,
-        _schema: &serde_json::Value,
+        instance: &serde_json::Value,
+        schema: &serde_json::Value,
     ) -> Result<(), SchemaValidationError> {
-        // Schema validation disabled (WASM build)
-        Ok(())
+        let mut errors = Vec::new();
+        check_structure(instance, schema, schema, "", &mut errors);
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(SchemaValidationError::ValidationFailed(errors))
+        }
     }
 
     /// Validate experiment file
@@ -585,6 +594,162 @@ impl SchemaValidator {
         let contents = std::fs::read_to_string(path)
             .map_err(|e| SchemaValidationError::YamlParseError(e.to_string()))?;
         self.validate_emc(&contents)
+    }
+}
+
+/// The JSON Schema keywords the embedded schemas use, checked without `jsonschema`:
+/// `type`, `required`, `properties`, `additionalProperties`, `items`, `minItems`,
+/// `enum`, `pattern`, `minLength`, `minimum`, `maximum`, `anyOf`, `oneOf`, `not`
+/// and local `$ref` (`#/$defs/...`). Annotations (`title`, `default`, ...) are ignored.
+#[cfg(not(feature = "schema-validation"))]
+fn check_structure(
+    instance: &serde_json::Value,
+    schema: &serde_json::Value,
+    root: &serde_json::Value,
+    at: &str,
+    errors: &mut Vec<String>,
+) {
+    use serde_json::Value;
+    let here = if at.is_empty() { "/" } else { at };
+    if let Some(r) = schema.get("$ref").and_then(Value::as_str) {
+        match r.strip_prefix('#').and_then(|p| root.pointer(p)) {
+            Some(target) => check_structure(instance, target, root, at, errors),
+            None => errors.push(format!("{here}: unresolvable $ref {r}")),
+        }
+        return;
+    }
+    if !type_matches(instance, schema.get("type")) {
+        errors.push(format!("{here}: expected type {}", schema["type"]));
+        return;
+    }
+    let passes = |sub: &Value| {
+        let mut e = Vec::new();
+        check_structure(instance, sub, root, at, &mut e);
+        e.is_empty()
+    };
+    if let Some(branches) = schema.get("anyOf").and_then(Value::as_array) {
+        if !branches.iter().any(passes) {
+            errors.push(format!("{here}: matches none of anyOf"));
+        }
+    }
+    if let Some(branches) = schema.get("oneOf").and_then(Value::as_array) {
+        let n = branches.iter().filter(|b| passes(b)).count();
+        if n != 1 {
+            errors.push(format!("{here}: matches {n} of oneOf, expected exactly 1"));
+        }
+    }
+    if let Some(forbidden) = schema.get("not") {
+        if passes(forbidden) {
+            errors.push(format!("{here}: matches a forbidden (`not`) schema"));
+        }
+    }
+    if let Some(allowed) = schema.get("enum").and_then(Value::as_array) {
+        if !allowed.contains(instance) {
+            errors.push(format!("{here}: {instance} is not one of {allowed:?}"));
+        }
+    }
+    if let Some(x) = instance.as_f64() {
+        if let Some(min) = schema.get("minimum").and_then(Value::as_f64) {
+            if x < min {
+                errors.push(format!("{here}: {x} < minimum {min}"));
+            }
+        }
+        if let Some(max) = schema.get("maximum").and_then(Value::as_f64) {
+            if x > max {
+                errors.push(format!("{here}: {x} > maximum {max}"));
+            }
+        }
+    }
+    if let Some(text) = instance.as_str() {
+        check_string(text, schema, here, errors);
+    }
+    if let Some(items) = instance.as_array() {
+        if let Some(min) = schema.get("minItems").and_then(Value::as_u64) {
+            if (items.len() as u64) < min {
+                errors.push(format!(
+                    "{here}: needs at least {min} items, has {}",
+                    items.len()
+                ));
+            }
+        }
+        if let Some(item_schema) = schema.get("items") {
+            for (i, item) in items.iter().enumerate() {
+                check_structure(item, item_schema, root, &format!("{at}/{i}"), errors);
+            }
+        }
+    }
+    if let Some(obj) = instance.as_object() {
+        check_object(obj, schema, root, at, errors);
+    }
+}
+
+#[cfg(not(feature = "schema-validation"))]
+fn type_matches(instance: &serde_json::Value, ty: Option<&serde_json::Value>) -> bool {
+    use serde_json::Value;
+    let one = |t: &str| match t {
+        "object" => instance.is_object(),
+        "array" => instance.is_array(),
+        "string" => instance.is_string(),
+        "integer" => instance.is_i64() || instance.is_u64(),
+        "number" => instance.is_number(),
+        "boolean" => instance.is_boolean(),
+        "null" => instance.is_null(),
+        _ => true,
+    };
+    match ty {
+        Some(Value::String(t)) => one(t),
+        Some(Value::Array(ts)) => ts.iter().filter_map(Value::as_str).any(one),
+        _ => true,
+    }
+}
+
+#[cfg(not(feature = "schema-validation"))]
+fn check_string(text: &str, schema: &serde_json::Value, here: &str, errors: &mut Vec<String>) {
+    use serde_json::Value;
+    if let Some(min) = schema.get("minLength").and_then(Value::as_u64) {
+        if (text.chars().count() as u64) < min {
+            errors.push(format!("{here}: shorter than minLength {min}"));
+        }
+    }
+    if let Some(pat) = schema.get("pattern").and_then(Value::as_str) {
+        match regex::Regex::new(pat) {
+            Ok(re) if re.is_match(text) => {}
+            Ok(_) => errors.push(format!("{here}: \"{text}\" does not match {pat}")),
+            Err(e) => errors.push(format!("{here}: bad pattern {pat}: {e}")),
+        }
+    }
+}
+
+#[cfg(not(feature = "schema-validation"))]
+fn check_object(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    schema: &serde_json::Value,
+    root: &serde_json::Value,
+    at: &str,
+    errors: &mut Vec<String>,
+) {
+    use serde_json::Value;
+    let here = if at.is_empty() { "/" } else { at };
+    if let Some(req) = schema.get("required").and_then(Value::as_array) {
+        for key in req.iter().filter_map(Value::as_str) {
+            if !obj.contains_key(key) {
+                errors.push(format!("{here}: missing required property \"{key}\""));
+            }
+        }
+    }
+    let props = schema.get("properties").and_then(Value::as_object);
+    let extra = schema.get("additionalProperties");
+    for (key, v) in obj {
+        let path = format!("{at}/{key}");
+        match (props.and_then(|p| p.get(key)), extra) {
+            (Some(sub), _) | (None, Some(sub @ Value::Object(_))) => {
+                check_structure(v, sub, root, &path, errors);
+            }
+            (None, Some(Value::Bool(false))) => {
+                errors.push(format!("{here}: unknown property \"{key}\""));
+            }
+            (None, _) => {}
+        }
     }
 }
 
@@ -1101,7 +1266,6 @@ falsification:
     }
 
     #[test]
-    #[cfg(feature = "schema-validation")]
     fn test_schema_rejects_missing_seed() {
         let invalid_yaml = r#"
 id: "TSP-001"
@@ -1123,7 +1287,6 @@ falsification:
     }
 
     #[test]
-    #[cfg(feature = "schema-validation")]
     fn test_schema_rejects_missing_falsification() {
         let invalid_yaml = r#"
 id: "TSP-001"
@@ -1141,7 +1304,6 @@ simulation:
     }
 
     #[test]
-    #[cfg(feature = "schema-validation")]
     fn test_schema_rejects_empty_falsification_criteria() {
         let invalid_yaml = r#"
 id: "TSP-001"
@@ -1161,7 +1323,6 @@ falsification:
     }
 
     #[test]
-    #[cfg(feature = "schema-validation")]
     fn test_schema_rejects_javascript_field() {
         let invalid_yaml = r#"
 id: "TSP-001"
@@ -1214,7 +1375,6 @@ falsification:
     }
 
     #[test]
-    #[cfg(feature = "schema-validation")]
     fn test_schema_rejects_emc_without_governing_equation() {
         let invalid_emc = r#"
 emc_version: "1.0"
@@ -1239,7 +1399,6 @@ falsification:
     }
 
     #[test]
-    #[cfg(feature = "schema-validation")]
     fn test_schema_rejects_emc_invalid_version() {
         let invalid_emc = r#"
 emc_version: "invalid"

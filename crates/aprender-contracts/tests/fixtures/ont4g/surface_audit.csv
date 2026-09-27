@@ -1,0 +1,9 @@
+binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence
+apr,apr run,8,cpu,ollama,yes,1,core,,high
+apr,apr serve --port <N>,8,cpu,ollama,yes,1,core,,high
+apr,apr serve plan,7,cpu,ollama,yes,1,core,,high
+apr,apr --version,9,cpu,,yes,1,core,,high
+apr,"GET /api/tags (list, local)",7,cpu,ollama,yes,2,http,,high
+apr,mcp:apr.qa,6,cpu,,yes,3,mcp,,med
+pv,pv audit,8,cpu,,yes,4,pv,,high
+pv,pv lint,8,cpu,,yes,4,pv,,high

@@ -629,9 +629,7 @@ def load_manifest(path):
     return doc if doc and doc.get("schema") == SCHEMA else None
 
 
-def main(argv):
-    if argv[1:2] == ["--self-test"]:
-        return self_test()
+def _parser():
     ap = argparse.ArgumentParser(prog="nightly_manifest.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("gate")
@@ -665,47 +663,73 @@ def main(argv):
     for a in ("--manifest", "--dist", "--sha"):
         p.add_argument(a, required=True)
     p.add_argument("--repo", default="paiml/aprender")
-    a = ap.parse_args(argv[1:])
+    return ap
 
-    if a.cmd == "gate":
-        try:
-            runs = load(a.checks_json)["check_runs"] if a.checks_json else \
-                fetch_check_runs(a.repo, a.sha, os.environ.get("GH_TOKEN"))
-        except GateError as e:
-            print(f"::error::{e}", file=sys.stderr)
-            return 3
-        decision, why = gate(a.sha, load_manifest(a.prev), a.targets.split(","), runs)
-        print(decision)
-        print(f"gate {a.sha[:9]}: {decision} -- {why}", file=sys.stderr)
-        return 0
-    if a.cmd == "record":
-        print(json.dumps(record(a.target, a.sha, a.bins.split(","), a.bin_dir, a.dist, a.build_outcome,
-                                version=a.version, variants=[v for v in a.variants.split(",") if v]), indent=1))
-        return 0
-    if a.cmd == "merge":
-        frags = {}
-        if os.path.isdir(a.fragments):
-            for n in sorted(os.listdir(a.fragments)):
-                fr = load(os.path.join(a.fragments, n)) if n.startswith("fragment-") and n.endswith(".json") else None
-                if fr and fr.get("sha") == a.sha:
-                    frags[fr["target"]] = fr
-        now = a.now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        out = merge(load_manifest(a.prev), frags, a.sha, a.decision, a.targets.split(","), a.run_id, a.run_url, now)
-        print(json.dumps(out, indent=1, sort_keys=True))
-        return 0
-    if a.cmd == "bins":
-        wb = workspace_bins(load(a.metadata))
-        print(",".join(b for b, _, _ in wb) if a.format == "list" else " ".join(cargo_args(wb)))
-        return 0
-    if a.cmd == "smoke":
-        out = record("release-commit", a.sha, a.bins.split(","), a.bin_dir, None, version=a.version)
-        print(json.dumps(out, indent=1))
-        return 1 if out["status"] != "green" else 0
-    if a.cmd == "publish":
-        publish(a.manifest, a.dist, a.sha, a.repo, os.environ["GH_TOKEN"])
-        return 0
-    return 2
 
+def _cmd_gate(a):
+    try:
+        runs = load(a.checks_json)["check_runs"] if a.checks_json else \
+            fetch_check_runs(a.repo, a.sha, os.environ.get("GH_TOKEN"))
+    except GateError as e:
+        print(f"::error::{e}", file=sys.stderr)
+        return 3
+    decision, why = gate(a.sha, load_manifest(a.prev), a.targets.split(","), runs)
+    print(decision)
+    print(f"gate {a.sha[:9]}: {decision} -- {why}", file=sys.stderr)
+    return 0
+
+
+def _cmd_record(a):
+    print(json.dumps(record(a.target, a.sha, a.bins.split(","), a.bin_dir, a.dist, a.build_outcome,
+                            version=a.version, variants=[v for v in a.variants.split(",") if v]), indent=1))
+    return 0
+
+
+def _load_fragments(d, sha):
+    frags = {}
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            fr = load(os.path.join(d, n)) if n.startswith("fragment-") and n.endswith(".json") else None
+            if fr and fr.get("sha") == sha:
+                frags[fr["target"]] = fr
+    return frags
+
+
+def _cmd_merge(a):
+    frags = _load_fragments(a.fragments, a.sha)
+    now = a.now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = merge(load_manifest(a.prev), frags, a.sha, a.decision, a.targets.split(","), a.run_id, a.run_url, now)
+    print(json.dumps(out, indent=1, sort_keys=True))
+    return 0
+
+
+def _cmd_bins(a):
+    wb = workspace_bins(load(a.metadata))
+    print(",".join(b for b, _, _ in wb) if a.format == "list" else " ".join(cargo_args(wb)))
+    return 0
+
+
+def _cmd_smoke(a):
+    out = record("release-commit", a.sha, a.bins.split(","), a.bin_dir, None, version=a.version)
+    print(json.dumps(out, indent=1))
+    return 1 if out["status"] != "green" else 0
+
+
+def _cmd_publish(a):
+    publish(a.manifest, a.dist, a.sha, a.repo, os.environ["GH_TOKEN"])
+    return 0
+
+
+COMMANDS = {"gate": _cmd_gate, "record": _cmd_record, "merge": _cmd_merge, "bins": _cmd_bins,
+            "smoke": _cmd_smoke, "publish": _cmd_publish}
+
+
+def main(argv):
+    if argv[1:2] == ["--self-test"]:
+        return self_test()
+    a = _parser().parse_args(argv[1:])
+    cmd = COMMANDS.get(a.cmd)
+    return cmd(a) if cmd else 2
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))

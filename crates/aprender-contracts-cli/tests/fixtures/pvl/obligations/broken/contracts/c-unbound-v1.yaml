@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  references:
+    - "PVL-001 EV-10 golden fixture"
+  description: "CHECK 3a: an applies_to that names no fn; controls: all, an equation, a real fn, a missing/empty target"
+
+equations:
+  relu:
+    formula: "y_i = max(0, x_i)"
+    invariants:
+      - "y_i >= 0"
+
+proof_obligations:
+  - type: invariant
+    property: "ghost"
+    applies_to: ghost_fn_xyz
+  - type: invariant
+    property: "prefix only: src has fn bounded_v2, not fn bounded"
+    applies_to: bounded
+  - type: invariant
+    property: "control: all"
+    applies_to: all
+  - type: invariant
+    property: "control: an equation of this contract"
+    applies_to: relu
+  - type: invariant
+    property: "control: a real fn, found in a nested file"
+    applies_to: real_fn
+  - type: invariant
+    property: "control: no applies_to"
+falsification_tests:
+  - id: FALSIFY-OBL-001
+    rule: "Non-negativity"
+    prediction: "relu(x)_i >= 0"
+    if_fails: "Comparison inverted"

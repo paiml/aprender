@@ -1,0 +1,360 @@
+{
+  "ticket": "GH-4086",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "708c6bfceda7fe0d0a94139d28412dc3c19ed460",
+  "diff_sha256": "18280d6a065c207b948a721b442172234d33008f5657693c4d50303ca208e3c3",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 32138,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "DESIGN_VERDICT=PASS | The diff correctly addresses ticket GH-4086 by having `check_model_ladder.sh` read the recorded emergency scope when called with no `--scope` argument (which is how `dogfood.sh` invokes declared gates). The dogfood script successfully extracts the `SCOPED:` prefix to include in its output note while truncating the long explanation, preserving room for potential failure messages. All logic matches the receipt's claims perfectly, and the mutants verify the logic. No tests assert the opposite of the ticket, and the scope logic falls back safely to the full ladder when `--scope none` is passed or no scope is recorded for the given release.",
+      "findings": [
+        {
+          "claim": "With no --scope, it applies the recorded scope and prints SCOPED: <name> -- … before the scope's own verdict line.",
+          "file": "scripts/check_model_ladder.sh",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 1146
+        },
+        {
+          "claim": "classify_declared carries a gate's SCOPED: line into its row note, on both PASS and FAIL. Only the scope name is carried, because mark() keeps 200 chars of a note and a red row's reason must survive.",
+          "file": "scripts/dogfood.sh",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 252
+        },
+        {
+          "claim": "It returns (None, None) when no entry matches, which means the full ladder applies. It returns a reason, which makes the gate RED, for two entries or a nameless entry.",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 38
+        }
+      ],
+      "raw_bytes": 5806,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 2 of 3 review for ticket GH-4086 (branch fix/4086-dogfood-ladder-scope-seam against origin/chore/0.69.1-merge-back). Attempted refutation against all criteria and found nothing to refute:\n\n1. Defect & Ticket Alignment:\n   At 0.69.1, release gates passed check_model_ladder.sh --scope crux-smoke while dogfood executed check_model_ladder.sh with no arguments (defaulting to the full ladder) and went RED. The diff resolves this by having check_model_ladder.sh look up any emergency scope recorded for the release version when --scope is omitted, while providing MODEL_LADDER_CRUX_DIR as an environment seam for dogfood, printing 'SCOPED: <name>', allowing '--scope none' to force the full ladder, and ensuring dogfood row notes carry the scope name on both PASS and FAIL.\n\n2. Gate Strength & Failure Modes:\n   No gate is weakened. If no emergency scope is recorded for the version (e.g. 0.70.0), the full ladder is judged. If multiple scopes or a nameless scope are recorded, the gate fails closed (RED) without judging either the scope or ladder. If receipts are not from the binary being cut, it fails closed (measured: rc 1 'not the release binary' on HEAD vs rc 0 when cut-commit matches published receipts).\n\n3. Receipt Claims Verified (all measured):\n   - bash scripts/check_model_ladder.sh --self-test: rc 0, '147 case(s), 0 bad' (select table 6 rows + 4 mutants killed; e2e table 7 rows + 4 mutants killed; must-RED row confirmed).\n   - bash scripts/check_dogfood_no_defer.sh --self-test: rc 0 (4 new declnote rows + 3 mutants killed).\n   - Real data 0.69.1 receipts with --cut-commit d8a6df53a...3f: rc 0 ('SCOPED: crux-smoke -- satisfied').\n   - Real data 0.69.1 receipts at HEAD: rc 1 ('not the release binary').\n   - pv validate contracts/model-capability-ladder-v1.yaml: valid (0 error, 0 warning).\n   - check_dogfood_shim.sh, check_no_claim_literals.sh, check_dogfood_no_defer.sh: all rc 0.\n   - bashrs lint --no-ignore --level error: 0 errors, 0 warnings across all 3 changed shell files.\n   - Pre-push gates: cargo fmt --all -- --check rc 0; cargo test -p aprender-contracts --lib (1701 passed); cargo deny check advisories (ok).\n\n4. Scope & Hygiene:\n   Diff contains only the requested functionality and tests. No extra files or unrelated changes. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "scripts/lib/crux_smoke_scope.py implements recorded_scope(L, version), which extracts the recorded emergency scope when exactly one entry matches str(version), returns (None, None) for unrecorded releases, and returns a refusal reason for duplicate or nameless entries. All 4 mutants (any-release, prefix-match, first-wins, nameless-ok) are killed by select_table.",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "grounding": "measured",
+          "line": 31
+        },
+        {
+          "claim": "scripts/check_model_ladder.sh lines 1135-1157 wire MODEL_LADDER_CRUX_DIR as the fallback seam for CRUX_DIR when --crux is omitted, auto-selects the recorded scope via crux_smoke_scope.recorded_scope when --scope is omitted, prints 'SCOPED: <name> -- ...', allows --scope none to force full ladder verification, and fails closed with rc 1 if the record is unusable. All 4 dispatch mutants (no-auto-scope, silent-scope, none-ignored, crux-env-unread) are killed by e2e_table.",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "measured",
+          "line": 1135
+        },
+        {
+          "claim": "scripts/dogfood.sh classify_declared lines 255-257 parses '^SCOPED: ' from the log, truncates to 120 chars, trims the suffix, and appends ' -- SCOPED: <name> (a recorded scope, not the full gate)' to the row note on both rc=0 and rc!=0 without truncating failure reasons. All 3 note mutants (scope-dropped-pass, scope-dropped-fail, scope-anywhere) are killed in check_dogfood_no_defer.sh.",
+          "file": "scripts/dogfood.sh",
+          "grounding": "measured",
+          "line": 255
+        },
+        {
+          "claim": "contracts/model-capability-ladder-v1.yaml adds FALSIFY-MCL-017 for recorded emergency scopes, validated cleanly via pv validate.",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "measured",
+          "line": 461
+        }
+      ],
+      "raw_bytes": 9451,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely and cleanly implements the requirements of GH-4086:\n1. `scripts/lib/crux_smoke_scope.py` introduces `recorded_scope(L, version)` to read exact-match release scopes from contract YAML while rejecting ambiguity (duplicate/nameless scopes).\n2. `scripts/check_model_ladder.sh` wires `MODEL_LADDER_CRUX_DIR` and auto-scopes with `SCOPED: <name>` when called without `--scope`, while honoring `--scope none`.\n3. `scripts/dogfood.sh` annotates dogfood row notes with the active scope for declared gates.\n4. Comprehensive unit, end-to-end, and mutant-killing self-tests were added and verified. All contracts, lints, and cargo test suites pass.",
+      "findings": [
+        {
+          "claim": "`recorded_scope` accurately parses and validates recorded emergency scopes from the contract ladder, returning the scope name on exact match, None on no match, and an error reason on duplicates or missing name.",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "Implemented `recorded_scope(L, version)`",
+          "grounding": "cited",
+          "line": 31
+        },
+        {
+          "claim": "`check_model_ladder.sh` applies `MODEL_LADDER_CRUX_DIR` when `--crux` is not passed and auto-selects a recorded emergency scope when `--scope` is omitted, printing `SCOPED: <name>` and supporting `--scope none` override.",
+          "file": "scripts/check_model_ladder.sh",
+          "fix": "Added recorded scope auto-selection and MODEL_LADDER_CRUX_DIR environment fallback",
+          "grounding": "cited",
+          "line": 1137
+        },
+        {
+          "claim": "`classify_declared` in `dogfood.sh` extracts `SCOPED:` annotations into the dogfood note for both PASS and FAIL declared gate rows without exceeding note length limits.",
+          "file": "scripts/dogfood.sh",
+          "fix": "Carried `SCOPED:` marker in classify_declared",
+          "grounding": "cited",
+          "line": 255
+        },
+        {
+          "claim": "Added FALSIFY-MCL-017 to specify and enforce recorded emergency scope behavior on declared gates.",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "fix": "Added FALSIFY-MCL-017",
+          "grounding": "cited",
+          "line": 461
+        },
+        {
+          "claim": "Self-tests in `check_model_ladder.sh` (147 cases, 4 select mutants, 4 dispatch mutants killed) and `check_dogfood_no_defer.sh` (4 cases, 3 mutants killed) pass with rc 0. Real 0.69.1 receipts evaluate to satisfied under the cut commit and fail closed on mismatched HEAD. Cargo test passes (1701 passed).",
+          "file": "scripts/check_model_ladder.sh",
+          "fix": "Added unit and end-to-end mutant-killing test suites",
+          "grounding": "measured",
+          "line": 996
+        }
+      ],
+      "raw_bytes": 13690,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 461,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Added FALSIFY-MCL-017 to specify and enforce recorded emergency scope behavior on declared gates.",
+        "contracts/model-capability-ladder-v1.yaml adds FALSIFY-MCL-017 for recorded emergency scopes, validated cleanly via pv validate."
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 996,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Self-tests in `check_model_ladder.sh` (147 cases, 4 select mutants, 4 dispatch mutants killed) and `check_dogfood_no_defer.sh` (4 cases, 3 mutants killed) pass with rc 0. Real 0.69.1 receipts evaluate to satisfied under the cut commit and fail closed on mismatched HEAD. Cargo test passes (1701 passed)."
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 1135,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "scripts/check_model_ladder.sh lines 1135-1157 wire MODEL_LADDER_CRUX_DIR as the fallback seam for CRUX_DIR when --crux is omitted, auto-selects the recorded scope via crux_smoke_scope.recorded_scope when --scope is omitted, prints 'SCOPED: <name> -- ...', allows --scope none to force full ladder verification, and fails closed with rc 1 if the record is unusable. All 4 dispatch mutants (no-auto-scope, silent-scope, none-ignored, crux-env-unread) are killed by e2e_table."
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 1137,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`check_model_ladder.sh` applies `MODEL_LADDER_CRUX_DIR` when `--crux` is not passed and auto-selects a recorded emergency scope when `--scope` is omitted, printing `SCOPED: <name>` and supporting `--scope none` override."
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 1146,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "With no --scope, it applies the recorded scope and prints SCOPED: <name> -- … before the scope's own verdict line."
+      ]
+    },
+    {
+      "file": "scripts/dogfood.sh",
+      "line": 252,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "classify_declared carries a gate's SCOPED: line into its row note, on both PASS and FAIL. Only the scope name is carried, because mark() keeps 200 chars of a note and a red row's reason must survive."
+      ]
+    },
+    {
+      "file": "scripts/dogfood.sh",
+      "line": 255,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "`classify_declared` in `dogfood.sh` extracts `SCOPED:` annotations into the dogfood note for both PASS and FAIL declared gate rows without exceeding note length limits.",
+        "scripts/dogfood.sh classify_declared lines 255-257 parses '^SCOPED: ' from the log, truncates to 120 chars, trims the suffix, and appends ' -- SCOPED: <name> (a recorded scope, not the full gate)' to the row note on both rc=0 and rc!=0 without truncating failure reasons. All 3 note mutants (scope-dropped-pass, scope-dropped-fail, scope-anywhere) are killed in check_dogfood_no_defer.sh."
+      ]
+    },
+    {
+      "file": "scripts/lib/crux_smoke_scope.py",
+      "line": 31,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "`recorded_scope` accurately parses and validates recorded emergency scopes from the contract ladder, returning the scope name on exact match, None on no match, and an error reason on duplicates or missing name.",
+        "scripts/lib/crux_smoke_scope.py implements recorded_scope(L, version), which extracts the recorded emergency scope when exactly one entry matches str(version), returns (None, None) for unrecorded releases, and returns a refusal reason for duplicate or nameless entries. All 4 mutants (any-release, prefix-match, first-wins, nameless-ok) are killed by select_table."
+      ]
+    },
+    {
+      "file": "scripts/lib/crux_smoke_scope.py",
+      "line": 38,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "It returns (None, None) when no entry matches, which means the full ladder applies. It returns a reason, which makes the gate RED, for two entries or a nameless entry."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

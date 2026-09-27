@@ -1,0 +1,27 @@
+{
+  "ticket": "PMAT-4112",
+  "pr": 4163,
+  "judged_head": "75f243a971aacf0249457b6f73b7c204909d4747",
+  "base": "origin/main",
+  "lane": {
+    "model": "claude-haiku-4-5",
+    "family": "claude",
+    "role": "cheap-claude-seat",
+    "executor": "claude-code Agent (subagent_type general-purpose, model haiku)",
+    "agent_id": "aceae1bca2fef4326",
+    "tool_uses": 48,
+    "duration_ms": 415791
+  },
+  "policy": "operator (verbatim via cop aprender-cf): 2 agy non-Claude lanes + 1 cheap Claude Code lane (haiku); cop overrides receipt-lint same-family refusal for this seat",
+  "brief": {
+    "capture": "hard-link of quorum-review.sh --width 2 --brief-only brief (cop ruling (a), until #363)",
+    "bytes": 27009,
+    "brief_sha256": "bb78d6962b304564009539f463fc21298d93f0eeb1eb7eeae165ae0f68782697",
+    "agy_prompt_sha256": "bb78d6962b304564009539f463fc21298d93f0eeb1eb7eeae165ae0f68782697",
+    "agy_prompt_source": "prompt.md of the width-2 agy round launched 09:15 (re-hashed after relaunch; round 1 was killed by its owner shell, archived)",
+    "identical": true
+  },
+  "verdict": "PASS",
+  "summary": "Implementation correctly executes PMAT-4112: release/** added to push.branches, non-guard jobs excluded on release push, both guards unshallow on release push, guard script validates all constraints with 8/8 self-test passing. No tests refute the ticket, no gates weakened, all receipt claims backed by diff.",
+  "findings": []
+}

@@ -1,0 +1,16 @@
+- id: PMAT-3546
+  github_issue: 3546
+  item_type: task
+  title: 'install.sh: clean-container curl|bash e2e for stable+rc (sha256, version==tag+sha) as release gate + nightly'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-59
+  created: 2026-09-24T18:08:23Z
+  updated: 2026-09-24T18:08:23Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

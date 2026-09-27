@@ -25,7 +25,7 @@ pub enum OutputFormat {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "renacer")]
+#[command(name = "aprender-profile")]
 #[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 #[command(about = "Pure Rust system call tracer with source correlation", long_about = None)]
 pub struct Cli {
@@ -459,7 +459,7 @@ fn run_tracer(
         }
         (None, None) => {
             anyhow::bail!(
-                "Must specify either -p PID or command. Usage: renacer -p PID or renacer -- COMMAND [ARGS...]"
+                "Must specify either -p PID or command. Usage: aprender-profile -p PID or aprender-profile -- COMMAND [ARGS...]"
             );
         }
     }
@@ -609,6 +609,14 @@ pub fn run() -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ONT-10 S15 (aprender#4502): the version names this binary, not the pre-monorepo `renacer`.
+    #[test]
+    fn test_cli_version_names_aprender_profile() {
+        use clap::CommandFactory;
+        let v = Cli::command().render_version();
+        assert!(v.starts_with("aprender-profile "), "got {v:?}");
+    }
 
     #[test]
     fn test_cli_parses_command() {

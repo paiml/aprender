@@ -1,0 +1,9 @@
+metadata:
+  version: "1.0.0"
+  kind: kernel
+  created: '2026-09-23'
+  last_modified: '2026-09-23'
+  author: fixture
+  description: ONT-4d fixture — a KERNEL instance with no `name`; only the closure makes it ont:Code
+version: "1.0.0"
+status: active

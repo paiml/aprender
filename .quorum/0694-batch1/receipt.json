@@ -1,0 +1,23 @@
+{
+  "pr": 4318,
+  "batch": "batch/0.69.4-epic-4249",
+  "reviewed_head": "01c71e648",
+  "fix_head": "3c4e19242",
+  "base": "a5efa1443",
+  "author_model": "claude-opus-5-5",
+  "degraded": "same-family",
+  "mandatory_scope": ".github/workflows/binary-release.yml reviewed explicitly by every lane (cop GO condition)",
+  "round_1": [
+    {"lane": 1, "model": "claude-sonnet-5", "scope": "workflows + scripts/release + install", "verdict": "FAIL", "finding": "build-apr-darwin did not stamp the rc version; the rc darwin asset printed bare X.Y.Z"},
+    {"lane": 2, "model": "claude-haiku-4-5-20251001", "scope": "binary-release.yml line-by-line + ci/ + contracts/", "verdict": "PASS"},
+    {"lane": 3, "model": "claude-sonnet-5", "scope": "crates/** + binary-release.yml", "verdict": "PASS"}
+  ],
+  "fix": "3c4e19242: darwin lane stamps the rc version (stamper from the workflow commit) and runs asset_version_check.sh against the tag and commit",
+  "round_2_on_fix": [
+    {"lane": "r1", "model": "claude-sonnet-5", "verdict": "FAIL", "reason": "darwin is not a required asset and has no post-upload smoke; this is aprender#4353 scope (milestone 0.70.1), and the operator ruled no scope change for 0.69.4"},
+    {"lane": "r2", "model": "claude-haiku-4-5-20251001", "verdict": "PASS"},
+    {"lane": "r3", "model": "claude-sonnet-5", "verdict": "PASS", "note": "#4353 gap is non-blocking and out of scope; smoke the stamper on the mini"}
+  ],
+  "extra_evidence": "stamp_rc_version.sh --self-test on mini (GNU bash 5.3.20, aarch64-apple-darwin): PASS",
+  "result": "3/3 PASS (lanes 2 and 3 on the whole batch; r2 and r3 on the fix to lane 1's finding), degraded: same-family"
+}

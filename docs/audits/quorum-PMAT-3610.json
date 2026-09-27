@@ -1,0 +1,272 @@
+{
+  "ticket": "PMAT-3610",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "3aab786b1b0cbf689449faac68b534e4df4d2f0e",
+  "diff_sha256": "4302e9fa569c04f0974d30c1cf15d23384378d5754c66f99db39b611f2ac9e6e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 67893,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements per-shape vacuity checking as requested in PMAT-3610. Vacuity is evaluated for each shape individually before making verdict decisions. Armed shapes with zero focus nodes correctly trigger an `Unknown(NoFocus)` decline (exit 2), while unarmed vacuous shapes are reported without refusing the gate. Vacuous shapes are explicitly filtered out from both the `armed_shapes` and `not_armed_shapes` arrays to prevent them from being hidden as policy choices. All changes are thoroughly tested in both the directory and lone-contract venues, with assertions confirming exit codes remain distinct and JSON outputs parse correctly.",
+      "findings": [
+        {
+          "claim": "Vacuity is computed per-shape before verdicts.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 156
+        },
+        {
+          "claim": "An ARMED shape with zero focus nodes declines with Unknown(NoFocus).",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 245
+        },
+        {
+          "claim": "Vacuous shapes are explicitly removed from both armed_shapes and not_armed_shapes.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 260
+        },
+        {
+          "claim": "Both armed and unarmed vacuous shapes are correctly reported in declines[] array.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 318
+        },
+        {
+          "claim": "pass/fail/decline remain distinct (0/1/2) and emit parseable reports.",
+          "file": "crates/aprender-contracts-cli/tests/shapes_vacuity.rs",
+          "grounding": "cited",
+          "line": 184
+        }
+      ],
+      "raw_bytes": 5254,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly computes vacuity per-shape before formulating a verdict. Armed vacuous shapes decline the run (`Unknown(NoFocus)`) and unarmed vacuous shapes simply report via `declines[]` without declining the build. Both cases properly omit the vacuous shapes from `armed_shapes` and `not_armed_shapes`, addressing the defect. Additionally, robust integration tests are included that verify both the directory and lone-contract venues, ensuring exit codes 0/1/2 are strictly preserved along with valid JSON output. No gates are weakened and all PMAT-3610 requirements are met.",
+      "findings": [
+        {
+          "claim": "Vacuity is computed per-shape before any verdict is formed.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 156
+        },
+        {
+          "claim": "An ARMED shape at zero declines with Unknown(NoFocus) (which maps to exit 2) and is explicitly named in `declines`.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 245
+        },
+        {
+          "claim": "An UNARMED shape at zero is reported in `declines[]` without refusing the build.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 318
+        },
+        {
+          "claim": "Vacuous shapes are explicitly removed from both `armed_shapes` and `not_armed_shapes` via a filter prior to partitioning.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 260
+        },
+        {
+          "claim": "The added tests verify that pass, fail, and decline answers remain distinct (exit codes 0, 1, 2) and all three cases emit parseable reports.",
+          "file": "crates/aprender-contracts-cli/tests/shapes_vacuity.rs",
+          "grounding": "cited",
+          "line": 184
+        }
+      ],
+      "raw_bytes": 5458,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review PASS (Lane 3 of 3): The diff fully satisfies ticket PMAT-3610 without violating any constraints or weakening gates. Per-shape vacuity is computed before forming verdicts, armed vacuous shapes in directory evaluations decline with exit code 2 while retaining stdout JSON reports and `declines[]` listings, unarmed vacuous shapes are reported in `declines[]` without refusing (exit code 0), and vacuous shapes are correctly excluded from `armed_shapes` and `not_armed_shapes`. Integration tests and fixtures verify both directory and lone-contract venues.",
+      "findings": [
+        {
+          "claim": "Per-shape focus node counts (`focus_of`) and vacuous sets (`vacuous_any`, `vacuous_armed`) are evaluated before forming any gate verdict.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 159
+        },
+        {
+          "claim": "An armed shape grading zero focus nodes sets the verdict to `Unknown(NoFocus)` (exit code 2) while continuing stdout JSON report generation.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 246
+        },
+        {
+          "claim": "Vacuous shapes (armed or unarmed) are filtered out of both `armed_shapes` and `not_armed_shapes` partitions, appearing exclusively in `declines`.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 260
+        },
+        {
+          "claim": "Unarmed vacuous shapes do not trigger a refusal verdict but are reported in `declines[]` without swallowing the finding.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited",
+          "line": 318
+        },
+        {
+          "claim": "Integration tests in `shapes_vacuity.rs` cover directory and lone-contract venues, verifying 0/1/2 exit code distinction and JSON report emission.",
+          "file": "crates/aprender-contracts-cli/tests/shapes_vacuity.rs",
+          "grounding": "cited",
+          "line": 79
+        }
+      ],
+      "raw_bytes": 5895,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-contracts-cli/tests/shapes_vacuity.rs",
+      "line": 79,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Integration tests in `shapes_vacuity.rs` cover directory and lone-contract venues, verifying 0/1/2 exit code distinction and JSON report emission."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/shapes_vacuity.rs",
+      "line": 184,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The added tests verify that pass, fail, and decline answers remain distinct (exit codes 0, 1, 2) and all three cases emit parseable reports.",
+        "pass/fail/decline remain distinct (0/1/2) and emit parseable reports."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": 156,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Vacuity is computed per-shape before any verdict is formed.",
+        "Vacuity is computed per-shape before verdicts."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": 159,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Per-shape focus node counts (`focus_of`) and vacuous sets (`vacuous_any`, `vacuous_armed`) are evaluated before forming any gate verdict."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": 245,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "An ARMED shape at zero declines with Unknown(NoFocus) (which maps to exit 2) and is explicitly named in `declines`.",
+        "An ARMED shape with zero focus nodes declines with Unknown(NoFocus)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": 246,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "An armed shape grading zero focus nodes sets the verdict to `Unknown(NoFocus)` (exit code 2) while continuing stdout JSON report generation."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": 260,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "Vacuous shapes (armed or unarmed) are filtered out of both `armed_shapes` and `not_armed_shapes` partitions, appearing exclusively in `declines`.",
+        "Vacuous shapes are explicitly removed from both `armed_shapes` and `not_armed_shapes` via a filter prior to partitioning.",
+        "Vacuous shapes are explicitly removed from both armed_shapes and not_armed_shapes."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": 318,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "An UNARMED shape at zero is reported in `declines[]` without refusing the build.",
+        "Both armed and unarmed vacuous shapes are correctly reported in declines[] array.",
+        "Unarmed vacuous shapes do not trigger a refusal verdict but are reported in `declines[]` without swallowing the finding."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

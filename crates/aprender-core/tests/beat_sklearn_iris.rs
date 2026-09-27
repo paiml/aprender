@@ -44,19 +44,24 @@ struct BeatParams {
     ci_gate_name: String,
 }
 
-/// Load the beat parameters from the contract. `include_str!` pins it at compile
-/// time (same pattern as the aprender-contracts pilot test); the path is relative
-/// to THIS file (`crates/aprender-core/tests/` → repo root → `contracts/`).
-fn load_beat() -> BeatParams {
-    const YAML: &str = include_str!("../../../contracts/beat-sklearn-iris-v1.yaml");
+/// Load the beat parameters from the contract, read at run time (#4192): in
+/// tree a missing contract panics; out of tree (a published tarball has no
+/// `contracts/`) it returns `None` and the test skips by name.
+fn load_beat() -> Option<BeatParams> {
+    let yaml = provable_contracts::workspace_file_or_skip!(
+        "beat_sklearn_iris",
+        "contracts/beat-sklearn-iris-v1.yaml"
+    )?;
     let contract: BeatContract =
-        serde_yaml::from_str(YAML).expect("parse contracts/beat-sklearn-iris-v1.yaml");
-    contract.beat
+        serde_yaml::from_str(&yaml).expect("parse contracts/beat-sklearn-iris-v1.yaml");
+    Some(contract.beat)
 }
 
 #[test]
 fn beat_sklearn_iris_accuracy() {
-    let beat = load_beat();
+    let Some(beat) = load_beat() else {
+        return;
+    };
     // Self-consistency: the contract names the gate that enforces it — guard
     // against the contract and this test binary drifting apart.
     assert_eq!(

@@ -171,10 +171,10 @@ buffer.update(0, 0, "日", Color::WHITE, Color::BLACK, Modifiers::NONE);
 
 ```bash
 # Interactive demo
-cargo run -p presentar-terminal --example direct_canvas_demo
+cargo run -p aprender-present-terminal --example direct_canvas_demo
 
 # Performance benchmark (use release mode)
-cargo run -p presentar-terminal --example direct_benchmark --release
+cargo run -p aprender-present-terminal --example direct_benchmark --release
 ```
 
 ## API Reference

@@ -1,0 +1,39 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    REX-001 pre-registration lock (rule R-1). Spec §2–§5, the analysis code
+    (crates/aprender-review-experiment/src/stats.rs), the analysis plan and prompt v1
+    are frozen by sha256 in docs/audits/rex-001/prereg.lock. The prereg sha is carried
+    by every review-experiment receipt; a tree that no longer matches the lock is a
+    new spec version and its data is exploratory.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "docs/audits/rex-001/analysis-plan.md"
+    - "https://github.com/paiml/aprender/issues/4355"
+
+equations:
+  prereg_sha:
+    formula: "sha256('rex-prereg-v1\\n' || 'spec_s2_s5 ' || H(spec[§2..§6)) || '\\nstats_rs ' || H(stats.rs) || '\\nanalysis_plan ' || H(plan) || '\\nprompt_v1 ' || H(prompt) || '\\n')"
+  locked:
+    formula: "prereg.lock[k] == H(component_k) for every k, and prereg.lock[prereg_sha] == prereg_sha"
+
+falsification_tests:
+  - id: FALSIFY-REX-PREREG-001
+    name: lock_matches_tree
+    prediction: "the committed lock matches every frozen component"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rex_prereg_001"
+    expected_output: "exit 0"
+    if_fails: "A frozen component changed after REX-00. That is a new spec version (R-1): label prior data exploratory and cut v2; never edit the lock to match."
+  - id: FALSIFY-REX-PREREG-002
+    name: planted_section3_edit_is_caught
+    prediction: "an edit to §3 (hypotheses) changes the prereg sha"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rex_prereg_002"
+    expected_output: "exit 0"
+    if_fails: "The §2–§5 span no longer covers §3; the lock is vacuous."
+  - id: FALSIFY-REX-PREREG-003
+    name: out_of_scope_edit_is_not_a_version
+    prediction: "an edit to the status line (outside §2–§5) leaves the prereg sha unchanged"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rex_prereg_003"
+    expected_output: "exit 0"
+    if_fails: "The span leaks past §6; routine status edits would invalidate data."

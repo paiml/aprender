@@ -253,8 +253,8 @@ huggingface-cli upload myorg/my-dataset ./data/ data/ \
 
 ```bash
 # Future CLI integration
-alimentar hf-push myorg/my-dataset ./data/train.parquet
-alimentar hf-push myorg/my-dataset --from-registry my-local-dataset
+aprender-data hf-push myorg/my-dataset ./data/train.parquet
+aprender-data hf-push myorg/my-dataset --from-registry my-local-dataset
 ```
 
 ---

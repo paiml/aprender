@@ -8,7 +8,7 @@
 #
 # THE GENERATED SET is the only thing this script ever resolves by itself:
 #   docs/roadmaps/roadmap.yaml   aggregate of docs/roadmaps/entries/
-#   contracts/census.json        pv census
+#   contracts/census.json        pv census -- NOT regenerated here since #3569: the train is its one writer
 #   contracts/contracts.nt       pv extract
 #   contracts/shapes.ttl         pv extract (every `shape:` block)
 #   README.md CONTRACT_COUNT     scripts/readme_sync.sh -- the COUNT BLOCKS only
@@ -127,7 +127,8 @@ regen() { # regenerate the generated set once, assert the fixed points, commit i
         . scripts/pv_bin.sh || die "regen: scripts/pv_bin.sh could not build/resolve pv from this tree"
     fi
     make roadmap-aggregate >/dev/null 2>&1                              || die "regen: make roadmap-aggregate failed"
-    "$PV" census contracts --format json > contracts/census.json 2>/dev/null || die "regen: pv census failed"
+    # No `pv census` here: contracts/census.json is a release-train snapshot and a
+    # fold is not the train (#3569, scripts/check_census_derived.sh).
     "$PV" extract contracts >/dev/null 2>&1                             || die "regen: pv extract failed"
     bash scripts/readme_sync.sh --write >/dev/null 2>&1                 || die "regen: readme_sync.sh --write failed"
     # the fixed points: each regenerated artifact must equal a second regeneration
@@ -136,13 +137,13 @@ regen() { # regenerate the generated set once, assert the fixed points, commit i
     bash scripts/readme_sync.sh --check >/dev/null 2>&1                 || die "regen: fixed point FAILED -- readme_sync.sh --check"
     # only the generated set may have moved; anything else is a tool writing where it should not
     extra=$(git status --porcelain --untracked-files=no | awk '{print $2}' \
-            | grep -vxE 'docs/roadmaps/roadmap\.yaml|contracts/census\.json|contracts/contracts\.nt|contracts/shapes\.ttl|README\.md' || true)
+            | grep -vxE 'docs/roadmaps/roadmap\.yaml|contracts/contracts\.nt|contracts/shapes\.ttl|README\.md' || true)
     [ -z "$extra" ] || die "regen: wrote outside the generated set: $(printf '%s ' $extra)"
     if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-        git add -- docs/roadmaps/roadmap.yaml contracts/census.json contracts/contracts.nt contracts/shapes.ttl README.md 2>/dev/null
+        git add -- docs/roadmaps/roadmap.yaml contracts/contracts.nt contracts/shapes.ttl README.md 2>/dev/null
         git -c commit.gpgsign=false commit -q -m "batch: regenerate the generated set once (batch_fold.sh --regen)
 
-roadmap aggregate, pv census, pv extract (contracts.nt + shapes.ttl) and the
+roadmap aggregate, pv extract (contracts.nt + shapes.ttl) and the
 README CONTRACT_COUNT blocks, regenerated with the pv built from this tree;
 fixed points asserted: make roadmap-aggregate-check, pv extract --check,
 readme_sync.sh --check." >/dev/null 2>&1 || die "regen: commit failed"

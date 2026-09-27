@@ -2313,25 +2313,13 @@ include!("throughput.rs");
 /// A workspace file read at RUN time for tests (#4129, the #4048 pattern agreed with #4130).
 ///
 /// `include_str!` of a path outside this crate cannot compile from the published tarball, and
-/// a run-time read that `expect`s the file panics there. In tree (the workspace's `contracts/`
-/// beside the crate) a missing file FAILS the test; only out of tree does it print
-/// `SKIP <test>: ...` and return `None`. `rel` is relative to the repository root.
+/// a run-time read that `expect`s the file panics there. The in-tree decision is the shared
+/// rule, `provable_contracts::workspace_file_or_skip!` (#4175): in tree a missing file FAILS the
+/// test; only out of tree does it print `SKIP <test>: ...` and return `None`. `rel` is relative
+/// to the repository root.
 #[cfg(test)]
 fn workspace_file_or_skip(test: &str, rel: &str) -> Option<String> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    if !root.join("contracts").is_dir() {
-        eprintln!(
-            "SKIP {test}: out of tree (no {} beside this crate) - {rel} lives in the workspace, \
-             which a published crate does not carry (#4129)",
-            root.join("contracts").display()
-        );
-        return None;
-    }
-    let path = root.join(rel);
-    Some(
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())),
-    )
+    provable_contracts::workspace_file_or_skip!(test, rel)
 }
 
 /// #3914: which string the template detector is keyed on.

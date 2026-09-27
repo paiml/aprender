@@ -225,12 +225,12 @@ Single GPU target: 40%+ MFU. Primary lever: kernel fusion (fused RMSNorm, SwiGLU
 | 46 | Streaming data loading (no full dataset in memory) | **PASS** | R-046: `StreamingParquetLoader` with file-level sharding (C-SHARD-001), lazy loading, bounded buffer, epoch reshuffling. 10 unit tests. |
 | 47 | Data shuffling per epoch | **PASS** | R-015: Fisher-Yates shuffle with seed+epoch LCG PRNG. |
 | 48 | Deterministic data ordering (reproducible batches) | **PASS** | R-015: Seed-controlled shuffle produces identical order for same seed+epoch. |
-| 49 | Data deduplication (exact + fuzzy) | **PASS** | R-019: `alimentar dedup` — exact dedup by text column content (Rust, Arrow Unique transform). |
-| 50 | Data quality filtering | **PASS** | R-022: `alimentar filter-text` — composite scoring (alnum ratio, line length, dup lines, entropy). |
+| 49 | Data deduplication (exact + fuzzy) | **PASS** | R-019: `aprender-data dedup` — exact dedup by text column content (Rust, Arrow Unique transform). |
+| 50 | Data quality filtering | **PASS** | R-022: `aprender-data filter-text` — composite scoring (alnum ratio, line length, dup lines, entropy). |
 | 51 | FIM augmentation for code models | **PASS** | alimentar FIM at 50% PSM rate. ALB-033 sentinel token gap noted. |
 | 52 | Pre-tokenization pipeline | **PASS** | `scripts/pretokenize.py` produces 2048-length sequences in Parquet. |
 | 53 | Curriculum learning / multi-stage data mixing | **PASS** | R-023: `training.curriculum` YAML config with step-based stage transitions, JSONL logging. |
-| 54 | Data mixing with configurable weights | **PASS** | `alimentar mix` with per-source weights. |
+| 54 | Data mixing with configurable weights | **PASS** | `aprender-data mix` with per-source weights. |
 | 55 | Validation set separate from training | **PASS** | `data/pretokenized-2048/val/val.parquet` used for perplexity eval. |
 
 **Score: 10.0/10**

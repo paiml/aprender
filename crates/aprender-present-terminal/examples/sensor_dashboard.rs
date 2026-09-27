@@ -4,7 +4,7 @@
 //! Demonstrates real-time sensor data visualization for `IoT`
 //! monitoring applications with temperature, humidity, and pressure.
 //!
-//! Run with: cargo run -p presentar-terminal --example `sensor_dashboard`
+//! Run with: cargo run -p aprender-present-terminal --example `sensor_dashboard`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Widget};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

@@ -4,41 +4,123 @@ fn contracts_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts")
 }
 
-#[test]
-fn lint_passes_on_real_contracts() {
-    let dir = contracts_dir();
-    let config = LintConfig::new(&dir, None, 0.0);
-    let report = run_lint(&config);
-    assert!(report.passed, "lint should pass: {report:?}");
-    // 13 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
-    // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
-    // valid-under (ONT-7).
-    assert_eq!(report.gates.len(), 13);
+// Linting the real corpus is the cost of this file: each run lints every contract in the repo,
+// and nextest runs every #[test] in its own process, so nothing can be shared between tests. So
+// the corpus is linted by exactly two tests, one per score threshold, and each read-only check
+// on it is a plain fn those two call. Tests that turn one config knob lint `knob_corpus`.
+
+/// A three-contract corpus for the tests that turn one config knob. It holds each finding they
+/// look at (PV-SCR-001 below 0.99, the special-tokens stem, an arch-constraints file) without
+/// re-linting the whole repo per test. Nested, not a bare tempdir (#4173).
+fn knob_corpus() -> (tempfile::TempDir, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
+    for stem in [
+        "softmax-kernel-v1",
+        "special-tokens-registry-v1",
+        "arch-constraints-v1",
+    ] {
+        let f = format!("{stem}.yaml");
+        std::fs::copy(contracts_dir().join(&f), dir.join(&f)).unwrap();
+    }
+    (tmp, dir)
 }
 
 #[test]
-fn lint_score_gate_fails_with_high_threshold() {
-    let dir = contracts_dir();
-    let config = LintConfig::new(&dir, None, 0.99);
-    let report = run_lint(&config);
+fn lint_passes_on_real_contracts() {
+    let report = run_lint(&LintConfig::new(&contracts_dir(), None, 0.0));
+    lint_report_serializes_to_json(&report);
+    lint_cache_populates_stats(&report);
+    every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus(&report);
+    valid_under_is_computed_on_the_real_corpus(&report);
+    assert!(report.passed, "lint should pass: {report:?}");
+    // 22 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
+    // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
+    // valid-under (ONT-7), theorem-pairing and depends-on-present (PVL-001 EV-11), and
+    // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
+    // files are real, so `report.passed` requires them fresh), ont-consistency (ONT-5), refines (ONT-4e), bindings (ONT-3a),
+    // refinement (ONT-3b), evidence (ONT-8).
+    assert_eq!(report.gates.len(), 22);
+}
+
+fn lint_score_gate_fails_with_high_threshold(report: &LintReport) {
     assert!(!report.passed);
     assert!(!report.findings.is_empty());
 }
 
 #[test]
 fn lint_empty_dir() {
+    // The lint takes the contract dir's PARENT as the project root and reads
+    // `scripts/contract_duplicate_stem_baseline.txt` from it. A bare tempdir's parent is
+    // the shared `/tmp`, so a stray `/tmp/scripts/` failed this test (#4207). Nest it.
     let tmp = tempfile::tempdir().unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
-    let report = run_lint(&config);
-    assert!(report.passed);
-}
-
-#[test]
-fn lint_report_serializes_to_json() {
-    let dir = contracts_dir();
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
-    let json = serde_json::to_string_pretty(&report).unwrap();
+    assert!(report.passed, "empty dir should pass: {report:?}");
+    // The new-finding state is the fixture's own, not `$TMPDIR/.pv` shared with every other run (#4173).
+    assert_eq!(pv_state_dir(&dir), tmp.path().join(".pv"));
+    assert!(tmp.path().join(".pv/lint-previous.json").is_file());
+}
+
+/// #4173: `pv_state_dir` is the contract dir's PARENT, so a test that lints a bare `tempdir()` reads
+/// and writes `$TMPDIR/.pv/lint-previous.json`, a file every other run on the host shares. Its
+/// verdict then depends on state it does not own. Every lint test must nest its corpus.
+#[test]
+fn no_lint_test_points_the_lint_at_a_bare_tempdir() {
+    let bare = |line: &str| {
+        let l: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+        ["(tmp.path()", "(&tmp.path()"].iter().any(|arg| {
+            let pat = format!("{}{arg}", concat!("LintConfig::", "new"));
+            l.match_indices(&pat)
+                .any(|(k, _)| matches!(l[k + pat.len()..].chars().next(), Some(',' | ')')))
+        })
+    };
+    for (line, want) in [
+        (
+            concat!("run_lint(&LintConfig::new", "(tmp.path(), None, 0.0));"),
+            true,
+        ),
+        (
+            concat!("let c = LintConfig::new", "( &tmp.path(), None, 0.0);"),
+            true,
+        ),
+        ("let c = LintConfig::new(&corpus, None, 0.0);", false),
+        (
+            "let c = LintConfig::new(&tmp.path().join(\"contracts\"), None, 0.0);",
+            false,
+        ),
+    ] {
+        assert_eq!(bare(line), want, "case table: {line}");
+    }
+    let lint_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lint");
+    let mut scanned = 0;
+    for entry in std::fs::read_dir(&lint_src).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "rs") {
+            scanned += 1;
+            let src = std::fs::read_to_string(&path).unwrap();
+            for (i, line) in src.lines().enumerate() {
+                assert!(
+                    !bare(line),
+                    "{}:{}: lints a bare tempdir: {line}",
+                    path.display(),
+                    i + 1
+                );
+            }
+        }
+    }
+    assert!(
+        scanned > 5,
+        "scanned only {scanned} files under {}",
+        lint_src.display()
+    );
+}
+
+fn lint_report_serializes_to_json(report: &LintReport) {
+    let json = serde_json::to_string_pretty(report).unwrap();
     assert!(json.contains("\"passed\""));
 }
 
@@ -53,30 +135,41 @@ fn gate_detail_variants() {
 
 #[test]
 fn lint_findings_on_failure() {
-    let dir = contracts_dir();
-    let config = LintConfig::new(&dir, None, 0.99);
-    let report = run_lint(&config);
+    let report = run_lint(&LintConfig::new(&contracts_dir(), None, 0.99));
+    lint_score_gate_fails_with_high_threshold(&report);
+    lint_sarif_output(&report);
     assert!(report.findings.iter().any(|f| f.rule_id == "PV-SCR-001"));
 }
 
 #[test]
 fn lint_severity_filter() {
-    let dir = contracts_dir();
+    let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.99);
+    // Non-vacuity: the unfiltered corpus must carry a finding the filter has to drop.
+    let unfiltered = run_lint(&config);
+    assert!(
+        unfiltered
+            .findings
+            .iter()
+            .any(|f| f.severity < RuleSeverity::Error),
+        "knob corpus has no below-Error finding — the filter test is vacuous"
+    );
     config.severity_filter = Some(RuleSeverity::Error);
     let report = run_lint(&config);
     assert!(report
         .findings
         .iter()
         .all(|f| f.severity >= RuleSeverity::Error));
+    assert!(report.findings.len() < unfiltered.findings.len());
 }
 
 #[test]
 fn lint_suppression_by_rule() {
-    let dir = contracts_dir();
+    let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.99);
     config.suppressed_rules = vec!["PV-SCR-001".into()];
     let report = run_lint(&config);
+    assert!(report.findings.iter().any(|f| f.rule_id == "PV-SCR-001"));
     for f in &report.findings {
         if f.rule_id == "PV-SCR-001" {
             assert!(f.suppressed);
@@ -86,7 +179,7 @@ fn lint_suppression_by_rule() {
 
 #[test]
 fn lint_strict_mode() {
-    let dir = contracts_dir();
+    let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.0);
     config.strict = true;
     let report = run_lint(&config);
@@ -95,11 +188,7 @@ fn lint_strict_mode() {
     }
 }
 
-#[test]
-fn lint_sarif_output() {
-    let dir = contracts_dir();
-    let config = LintConfig::new(&dir, None, 0.99);
-    let report = run_lint(&config);
+fn lint_sarif_output(report: &LintReport) {
     let sarif_log = sarif::findings_to_sarif(&report.findings, "0.1.0");
     let json = sarif::sarif_to_json(&sarif_log, true);
     assert!(json.contains("sarif-schema-2.1.0"));
@@ -114,11 +203,7 @@ fn skipped_gate_creates_correct_result() {
     assert!(g.skipped);
 }
 
-#[test]
-fn lint_cache_populates_stats() {
-    let dir = contracts_dir();
-    let config = LintConfig::new(&dir, None, 0.0);
-    let report = run_lint(&config);
+fn lint_cache_populates_stats(report: &LintReport) {
     // Default config has cache enabled, so stats should be populated
     assert!(report.cache_stats.total > 0);
     assert_eq!(
@@ -129,7 +214,7 @@ fn lint_cache_populates_stats() {
 
 #[test]
 fn lint_no_cache_skips_stats() {
-    let dir = contracts_dir();
+    let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.0);
     config.no_cache = true;
     let report = run_lint(&config);
@@ -156,14 +241,16 @@ fn lint_cache_second_run_hits() {
 #[test]
 fn lint_validation_failure_skips_audit_and_score() {
     let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
     // Write a malformed YAML that will parse into a Contract with validation errors
     // Actually: write something that fails to parse entirely
-    std::fs::write(tmp.path().join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    std::fs::write(dir.join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 13);
+    assert_eq!(report.gates.len(), 22);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -177,11 +264,15 @@ fn lint_validation_failure_skips_audit_and_score() {
 
 #[test]
 fn lint_suppression_by_stem() {
-    let dir = contracts_dir();
+    let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.99);
     // Suppress by contract stem (--suppress)
     config.suppressed_findings = vec!["special-tokens-registry-v1".into()];
     let report = run_lint(&config);
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.contract_stem.as_deref() == Some("special-tokens-registry-v1")));
     for f in &report.findings {
         if f.contract_stem.as_deref() == Some("special-tokens-registry-v1") {
             assert!(f.suppressed);
@@ -191,10 +282,14 @@ fn lint_suppression_by_stem() {
 
 #[test]
 fn lint_suppression_by_file_pattern() {
-    let dir = contracts_dir();
+    let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.99);
     config.suppressed_files = vec!["arch-constraints".into()];
     let report = run_lint(&config);
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.file.contains("arch-constraints")));
     for f in &report.findings {
         if f.file.contains("arch-constraints") {
             assert!(f.suppressed);
@@ -204,12 +299,13 @@ fn lint_suppression_by_file_pattern() {
 
 #[test]
 fn lint_severity_override() {
-    let dir = contracts_dir();
+    let (_tmp, dir) = knob_corpus();
     let mut config = LintConfig::new(&dir, None, 0.99);
     let mut overrides = HashMap::new();
     overrides.insert("PV-SCR-001".into(), RuleSeverity::Warning);
     config.severity_overrides = overrides;
     let report = run_lint(&config);
+    assert!(report.findings.iter().any(|f| f.rule_id == "PV-SCR-001"));
     for f in &report.findings {
         if f.rule_id == "PV-SCR-001" {
             assert_eq!(f.severity, RuleSeverity::Warning);
@@ -332,10 +428,7 @@ fn lifecycle_mark_new_findings_unit() {
 /// ONT-6 (PMAT-3451): every gate of a real run carries the lattice element its own `passed`/`skipped`
 /// pair maps to, and the report's verdict is the meet over the default armed set — so no constructor can
 /// set a verdict that disagrees with the booleans it sits beside.
-#[test]
-fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
-    let dir = contracts_dir();
-    let report = run_lint(&LintConfig::new(&dir, None, 0.0));
+fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus(report: &LintReport) {
     for g in &report.gates {
         assert_eq!(
             g.verdict,
@@ -361,7 +454,7 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
         Verdict::Pass,
         "the repo corpus passes its armed meet"
     );
-    // `run_lint` arms the DEFAULT set (the 8), so the three gates outside it are reported and excluded. The repo's
+    // `run_lint` arms the DEFAULT set (the 8), so the gates outside it are reported and excluded. The repo's
     // own `lint-baseline.json` arms `sigma` and `relations` as well — per-repo declarations, not the default.
     assert_eq!(
         report.not_armed,
@@ -371,8 +464,25 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             "relations".to_string(),
             "shapes".to_string(),
             // ONT-7, R-8: computed in every run, armed only when the baseline names it.
-            "valid-under".to_string()
-        ]
+            "valid-under".to_string(),
+            // PVL-001 EV-11: computed in every run (R-8), armed per repo.
+            "theorem-pairing".to_string(),
+            "depends-on-present".to_string(),
+            // PVL-001 EV-8a: born armed in the repo's own baseline, not in the default set.
+            "proved-is-derived".to_string(),
+            "challenge-fresh".to_string(),
+            // ONT-5: computed everywhere (R-8), armed by nobody until its quorum passes.
+            "ont-consistency".to_string(),
+            // ONT-4e (gate 19) likewise.
+            "refines".to_string(),
+            // ONT-3a (gate 20) likewise.
+            "bindings".to_string(),
+            // ONT-3b (gate 21) likewise.
+            "refinement".to_string(),
+            // ONT-8 (gate 22) likewise.
+            "evidence".to_string(),
+        ],
+        "challenge-fresh is reported, never armed by default: it moves only via `make ont-ratchet`"
     );
 }
 
@@ -407,12 +517,8 @@ fn a_gate_a_flag_ran_is_reported_but_not_armed() {
     assert_eq!(report.armed_gates.len(), 8);
 }
 
-/// ONT-7, R-8: gate 13 is COMPUTED when validation passes and SKIPPED, naming why, when it fails. Both halves
-/// at the lib level, because the CI mutation lane runs `--lib` only (#4076 round-2 review): a mutant that
-/// inverts `validation_passed` in `valid_under_result` must fail here, not only in the CLI integration test.
-#[test]
-fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
-    let report = run_lint(&LintConfig::new(&contracts_dir(), None, 0.0));
+/// ONT-7, R-8, the computed half: gate 13 runs and passes on the repo corpus.
+fn valid_under_is_computed_on_the_real_corpus(report: &LintReport) {
     let g = report
         .gates
         .iter()
@@ -422,15 +528,25 @@ fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
         !g.skipped && g.passed,
         "computed and Pass on the repo corpus: {g:?}"
     );
+}
 
+/// ONT-7, R-8: gate 13 is COMPUTED when validation passes and SKIPPED, naming why, when it fails. Both halves
+/// at the lib level, because the CI mutation lane runs `--lib` only (#4076 round-2 review): a mutant that
+/// inverts `validation_passed` in `valid_under_result` must fail here, not only in the CLI integration test.
+#[test]
+fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
+    // The computed half runs on the real corpus in `lint_passes_on_real_contracts`.
     // Σ and a kernel contract are present, so the ONLY reason to skip is the failed validation.
+    // Nested, not the bare tempdir: the lint writes its state into the contract dir's PARENT (#4173).
     let tmp = tempfile::tempdir().unwrap();
+    let corpus = tmp.path().join("contracts");
+    std::fs::create_dir_all(&corpus).unwrap();
     let fixture = contracts_dir().join("../tests/fixtures/ont/valid-under-ok");
     for f in ["ontology.yaml", "fixture-vu-v1.yaml"] {
-        std::fs::copy(fixture.join(f), tmp.path().join(f)).unwrap();
+        std::fs::copy(fixture.join(f), corpus.join(f)).unwrap();
     }
-    std::fs::write(tmp.path().join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
-    let report = run_lint(&LintConfig::new(tmp.path(), None, 0.0));
+    std::fs::write(corpus.join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let report = run_lint(&LintConfig::new(&corpus, None, 0.0));
     let g = report
         .gates
         .iter()

@@ -54,6 +54,12 @@ name = "llama.cpp"
 # 7-11) is incomparable with a ratio measured against this pin; the side-by-side
 # re-measurement of the row-0a comparator lane at both pins is LEDGER.md row 12.
 build_commit = "d1d3c3396"
+# SUPERSEDED PINS (#3741). A committed artifact may cite one of these ONLY as dated history or as
+# a fixture value, and only when scripts/comparator_pin_citations.txt lists the file and says which;
+# scripts/check_comparator_pin_citations.sh is RED on any other citation (a planted receipt citing an
+# old pin), on a ledger entry whose file no longer cites one, and on a ledger that grows. Bumping
+# build_commit APPENDS the old value here: every ratio measured against it is then history.
+superseded_commits = "39173bcac 60b06ab9a"
 
 # A PIN WITH NO EXPIRY IS A PIN NOBODY EVER REVISITS (PP-20). The commit above
 # freezes the denominator, which is the point; left alone forever it also

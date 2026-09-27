@@ -165,7 +165,7 @@ write_crates2() {
     {
         printf '{"installs":{'
         printf '"apr-cli 0.63.0 (path+file://%s)":' "$from"
-        printf '{"version_req":null,"bins":["apr","apr-corpus-ingest"],'
+        printf '{"version_req":null,"bins":["apr","aprender-corpus-ingest"],'
         printf '"features":[],"all_features":false,"no_default_features":false,'
         printf '"profile":"release","target":"x86_64-unknown-linux-gnu","rustc":"x"}'
         printf '}}\n'

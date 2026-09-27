@@ -1,11 +1,12 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-04-05'
   author: PAIML Engineering
   description: "apr --version traceability contract — the version output must always contain an informative build identifier; never the bare '(unknown)' sentinel when a CARGO_PKG_VERSION or any alternative identifier is available; AND the embedded git SHA must match the actual HEAD of the source tree at build time (including in git worktrees)"
   references:
     - "paiml/aprender#597 (Version string shows (unknown) instead of git hash)"
     - "paiml/aprender#1862 (build.rs misses HEAD changes in worktrees because ../../.git is a file pointer, not a directory)"
+    - "paiml/aprender#4110 (crates.io installs print +no-git although the tarball's .cargo_vcs_info.json carries the commit)"
   registry: true
   tags:
     - cli
@@ -36,11 +37,13 @@ equations:
       - "Common sentinel forms are forbidden: (unknown), 0000000, <empty>, null"
 
   fallback_hierarchy:
-    formula: "APR_GIT_SHA = override ∨ git_hash ∨ committed_sha ∨ 'v{version}+no-git'"
+    formula: "APR_GIT_SHA = override ∨ vcs_info_sha ∨ git_hash ∨ committed_sha ∨ 'v{version}+no-git'"
     domain: "build-time environment"
     codomain: "APR_GIT_SHA environment variable"
     invariants:
       - "Env var APR_GIT_SHA_OVERRIDE, if set, wins (for CI/release)"
+      - "Otherwise: read git.sha1 from the package's .cargo_vcs_info.json (written by cargo package into every published crate), short 9-hex form, -dirty suffix when cargo recorded a dirty tree; a value that is not 40 hex is ignored (#4110)"
+      - "The vcs rung precedes git rev-parse: an unpacked crate may sit inside an UNRELATED repository whose HEAD is not the crate's commit"
       - "Otherwise: try git rev-parse --short HEAD"
       - "Otherwise: try reading crates/apr-cli/.git-sha committed file"
       - "Otherwise: emit 'v{CARGO_PKG_VERSION}+no-git' as informative fallback"
@@ -92,8 +95,13 @@ falsification_tests:
   - id: FALSIFY-VERSION-004
     rule: "build.rs registers worktree-aware rerun-if-changed triggers"
     prediction: "build.rs invokes `git rev-parse --git-dir` and `--git-common-dir` (not a hardcoded `../../.git/HEAD` path)"
-    test: "grep -qE 'rev-parse.*--git-(dir|common-dir)' crates/apr-cli/build.rs && ! grep -qE '\\.\\./\\.\\./\\.git/HEAD' crates/apr-cli/build.rs"
+    test: "grep -qE 'rev-parse.*--git-(dir|common-dir)' crates/aprender-build-sha/src/lib.rs && ! grep -qE '\\.\\./\\.\\./\\.git/HEAD' crates/aprender-build-sha/src/lib.rs crates/apr-cli/build.rs"
     if_fails: "build.rs still relies on a hardcoded relative .git/HEAD path; worktree HEAD changes won't trigger rebuild"
+  - id: FALSIFY-VERSION-005
+    rule: "a packaged apr-cli (no .git of its own) names the commit in its .cargo_vcs_info.json, even inside a foreign repository"
+    prediction: "The shipped build.rs, compiled and run as cargo runs it on a package dir holding the byte-exact apr-cli-0.69.1 vcs file, emits APR_GIT_SHA=d8a6df53a; inside an unrelated repo it still does; with the vcs rung removed or placed behind git rev-parse the table goes RED"
+    test: "cargo test -p aprender-build-sha --lib emit_tests"
+    if_fails: "crates.io installs regress to '+no-git' (0.68.1/0.69.1 shape), or report an enclosing repository's HEAD"
 
 kani_harnesses:
   - id: KANI-VERSION-001

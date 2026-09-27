@@ -1,0 +1,168 @@
+{
+ "spec": "APR-EPIC-001",
+ "row": "A1",
+ "ticket": "aprender#4438",
+ "writes": 14,
+ "ops": "gh issue edit N --title T --body-file F [--add-label epic]; idempotent: skip when title and body already equal",
+ "not_in_A1": "milestones (A5), closing absorbed epics (A4), re-parenting (A3)",
+ "plan": [
+  {
+   "issue": 3269,
+   "epic": "E0",
+   "title_before": "ONT-001: aprender owns 16 untriaged ontology rows \u2014 one per train, ratcheted (APR-RELEASE-001 \u00a711)",
+   "title_after": "EPIC E0 0.70: Ontology (ONT-001)",
+   "add_labels": [],
+   "body_file": "bodies/3269.md",
+   "body_sha256": "86a176e3a56ca248405346464b91cdb916bf3ef50327fffcbe4a47e9bb3863d4",
+   "body_before_len": 3645,
+   "milestone_now": "0.70.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 3998,
+   "epic": "E1",
+   "title_before": "EPIC 0.70.0: Fast Train \u2014 freeze\u2192publish in \u22644 h; lock scoped to GPU work, sharded sweep, idle same-arch pre-screen",
+   "title_after": "EPIC E1 0.70: Fast Train",
+   "add_labels": [],
+   "body_file": "bodies/3998.md",
+   "body_sha256": "00e5b33da63a26f520e88a430fc8eed2fe8e38d4be55a36db2ae59d6dab0f7a3",
+   "body_before_len": 1612,
+   "milestone_now": "0.70.1",
+   "state": "OPEN"
+  },
+  {
+   "issue": 3598,
+   "epic": "E2",
+   "title_before": "0.69 serve + instrument lane: apr run --json timing fields, apr serve resident, apr devices stops reporting NotCompiled",
+   "title_after": "EPIC E2 0.71: Verbs Are Fast",
+   "add_labels": [],
+   "body_file": "bodies/3598.md",
+   "body_sha256": "5e33dea0b371865120f7aaaabfce623f17a81dfea8d2d720c5dbe207badad9b1",
+   "body_before_len": 3676,
+   "milestone_now": "0.72.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 3994,
+   "epic": "E3",
+   "title_before": "EPIC 0.71.0: Don't Leave Behind \u2014 every Qwen, every quant, every verb, on CUDA + CPU + wgpu + Apple Silicon, zero REDs",
+   "title_after": "EPIC E3 0.71: Don't Leave Behind",
+   "add_labels": [],
+   "body_file": "bodies/3994.md",
+   "body_sha256": "d3f83e32cce240466487455f5ee94bf484fc5cd640e92faa8e4c81d9286bcad6",
+   "body_before_len": 4276,
+   "milestone_now": "0.71.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 4381,
+   "epic": "E4",
+   "title_before": "EXT-001: dogfood model lifecycle \u2014 tracking, model release train, CRUX gates",
+   "title_after": "EPIC E4 0.71: Dogfood Model Lifecycle",
+   "add_labels": [],
+   "body_file": "bodies/4381.md",
+   "body_sha256": "d641d3d8d2384333ecb59675790271b7114cba6b723487a8b4f5f4000edef043",
+   "body_before_len": 6045,
+   "milestone_now": "0.71.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 4000,
+   "epic": "E5",
+   "title_before": "EPIC 0.72.0: Agent Ready \u2014 apr serve is the one gateway for all agents (OpenAI + Anthropic /v1/messages), one conformance suite",
+   "title_after": "EPIC E5 0.72: Agent Ready",
+   "add_labels": [],
+   "body_file": "bodies/4000.md",
+   "body_sha256": "b8b95d3f5c750dc26edef30a00eea5ae9383308724fd980146229c225ec1f1f8",
+   "body_before_len": 2673,
+   "milestone_now": "0.72.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 3999,
+   "epic": "E6",
+   "title_before": "EPIC 0.73.0: llama.cpp Parity \u2014 decode/prefill/TTFT/memory \u2265 llama.cpp across the certified matrix",
+   "title_after": "EPIC E6 0.73: llama.cpp Parity",
+   "add_labels": [],
+   "body_file": "bodies/3999.md",
+   "body_sha256": "badc4bfc7ae9acc642f3b368e889abdcd5c5ab5ff0223a67fe500a14147117e2",
+   "body_before_len": 3060,
+   "milestone_now": "0.73.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 4001,
+   "epic": "E7",
+   "title_before": "EPIC 0.74.0: Any Model \u2014 unified model support (Alfredo #3423/#3422/#3418), new architecture \u2248 config + small delta, llama.cpp as reference",
+   "title_after": "EPIC E7 0.74: Any Model",
+   "add_labels": [],
+   "body_file": "bodies/4001.md",
+   "body_sha256": "2f9a62f0ca22081d84dbd6ad65866adddd937126834bbee2df1923473cc4f977",
+   "body_before_len": 2190,
+   "milestone_now": "0.74.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 4002,
+   "epic": "E8",
+   "title_before": "EPIC 0.75.0: CRUX declarative fine-tune/distill for Qwen3.5 \u2014 one YAML recipe, certified vs 3\u20135 competitor engines",
+   "title_after": "EPIC E8 0.75: CRUX Fine-Tune/Distill",
+   "add_labels": [],
+   "body_file": "bodies/4002.md",
+   "body_sha256": "cecb366310364e2b9f0edd9b04286a4e7c51cc2f9b146a7b8b4a7e926d4ced9b",
+   "body_before_len": 2213,
+   "milestone_now": "0.75.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 4164,
+   "epic": "E9",
+   "title_before": "EPIC 0.76.0: Classical ML + AutoML \u2014 sklearn/linfa/Burn parity (#3146), CLUS clustering, CRUX-O AutoML vs AutoGluon (#3370)",
+   "title_after": "EPIC E9 0.76: Classical ML + AutoML",
+   "add_labels": [],
+   "body_file": "bodies/4164.md",
+   "body_sha256": "4bdfcd848697aa3661833aa7c6d963ed17541b44913424272878f57af66eb16d",
+   "body_before_len": 1201,
+   "milestone_now": "0.76.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 3863,
+   "epic": "S1",
+   "title_before": "EPIC: technical debt \u2014 gates that cannot fail, and the coverage gap",
+   "title_after": "EPIC S1 standing: Gates That Cannot Lie",
+   "add_labels": [],
+   "body_file": "bodies/3863.md",
+   "body_sha256": "05abbaad79ac2ae6b0a23620da992ba15a229670d42a3e532f47108ead9c7b11",
+   "body_before_len": 9931,
+   "milestone_now": "0.71.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 2870,
+   "epic": "S2",
+   "title_before": "PV-IMPROVE-001: the contract system reports PASS / grades / proof levels while enforcing almost nothing \u2014 8/639 Lean refs resolve, 47/1,257 Kani harnesses exist, 10/10 #[contract] sites name no YAML",
+   "title_after": "EPIC S2 standing: Provable Contracts (PVL-001)",
+   "add_labels": [
+    "epic"
+   ],
+   "body_file": "bodies/2870.md",
+   "body_sha256": "07796f1ae6f6c2f1633f1ab0696553a7655e7353a7ae422a060b5520784d48c2",
+   "body_before_len": 10269,
+   "milestone_now": "0.72.0",
+   "state": "OPEN"
+  },
+  {
+   "issue": 3997,
+   "epic": "S3",
+   "title_before": "EPIC: debt ratchet 0.70\u21920.74 \u2014 80% of tech debt in 5 equal slices (coverage\u219295% w/ yoga CUDA shards, pv deepest enforcement, ONT-001 fully merged, zero backlog)",
+   "title_after": "EPIC S3 standing: Debt Ratchet",
+   "add_labels": [],
+   "body_file": "bodies/3997.md",
+   "body_sha256": "eb7b628c05f0046f585d6365c2a8ca9ffda41b0e70e099b22e420a6170553d44",
+   "body_before_len": 2838,
+   "milestone_now": "0.70.1",
+   "state": "OPEN"
+  }
+ ]
+}

@@ -1,0 +1,18 @@
+- id: PMAT-4112
+  github_issue: 4112
+  item_type: task
+  title: 'GH-4112: ci.yml runs guard-tree + guard-cargo on fold pushes to release/** (operator-approved option B)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:47:28Z
+  updated: 2026-09-24T06:47:28Z
+  spec: null
+  acceptance_criteria:
+  - 'Refs #4112. push.branches gains ''release/**''; every job but guard-tree/guard-cargo is excluded on a release push; both guard jobs unshallow there so resolve_base.sh can name merge-base(origin/main, HEAD). Guard: scripts/check_ci_release_fold_scope.sh (R1-R3, 8-case self-test; RED on main''s ci.yml with 11 violations).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -1,0 +1,491 @@
+//! `cargo run -p aprender-review-experiment --example rex -- <command>`
+//!
+//! An example, not a `[[bin]]`: the workspace binary register only shrinks
+//! (monorepo_invariants::test_no_unauthorized_binaries).
+//!
+//! Commands:
+//! - `prereg`        print the prereg lock the tree implies
+//! - `prereg-check`  exit 1 unless the committed lock matches the tree
+//! - `corpus-build PRS_JSON CUTOFF ITEMS_DIR MUTANTS_JSON...`
+//!   build corpus v1 (REX-02): writes `ITEMS_DIR/<id>.diff`, and in the repo
+//!   `docs/audits/review-corpus/corpus-v1.jsonl` + `test-manifest-v1.txt`.
+//!   Prints counts only; it never prints a test item.
+//! - `review --url U --cell C --host H --backend B --arm A --model-id M
+//!   --weights-sha W --apr-tag T --apr-sha S --items DIR --out DIR --split dev|test
+//!   [--limit N] [--rerun] [--cold-first]`
+//!   REX-03: drive a resident `apr serve`; append receipts to
+//!   `OUT/receipts.jsonl` and raw outputs under `OUT/raw/`. Prints a count line.
+//! - `not-run --why NoDeclaredExecutor|Refused (identity flags as review)`
+//!   write explicit `NotRun` receipts for a cell that cannot run.
+//! - `score --receipts F --cell C --arm A --split dev|test [--rerun]
+//!   [--pubkey P]` the §2.3 metrics as JSON. Without `--pubkey` the result
+//!   is labelled `unsigned` (exploratory); with it, `minisign -V` must pass.
+//! - `admit --cell C|all --why NoDeclaredExecutor --model-id M --weights-sha W
+//!   --apr-tag T --apr-sha S --out FILE` append `NotRun` admission rows (REX-04);
+//!   `admit --cell C --removed-by R ...` appends a `Refused` row.
+//! - `admission-check --file F` every §2.1 cell resolved exactly once; prints the
+//!   summary JSON. Exit 1 if inadmissible, 10 if admissible but S-7 (no cell admitted).
+
+use aprender_review_experiment::build_corpus::{
+    choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
+};
+use aprender_review_experiment::corpus::{
+    assign_splits, corpus_version, render_manifest, sha256_hex, Item, Split,
+};
+use aprender_review_experiment::harness::{
+    classify, post, request_body, rerun_subset, run_order, utc_now, Run,
+};
+use aprender_review_experiment::prereg;
+use aprender_review_experiment::receipt::{Arm, Expect, NotRun, Receipt};
+use aprender_review_experiment::score::{collect, score};
+use std::collections::BTreeMap;
+use std::process::ExitCode;
+
+/// Seed for every draw (the epic number, analysis plan §Seeds).
+const SEED: u64 = 4354;
+const CORPUS_DIR: &str = "docs/audits/review-corpus";
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("prereg") => prereg_cmd(false),
+        Some("prereg-check") => prereg_cmd(true),
+        Some("admission-check") => admission_check(&args[1..]),
+        Some(c @ ("review" | "not-run" | "score" | "admit")) => {
+            match flags(&args[1..]).and_then(|f| match c {
+                "review" => review(&f),
+                "not-run" => not_run(&f),
+                "admit" => admit(&f),
+                _ => score_cmd(&f),
+            }) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("rex {c}: {e}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Some("corpus-build") if args.len() >= 5 => match corpus_build(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("rex corpus-build: {e}");
+                ExitCode::from(1)
+            }
+        },
+        _ => {
+            eprintln!(
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)"
+            );
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn prereg_cmd(check: bool) -> ExitCode {
+    let Some(c) = prereg::Components::in_tree() else {
+        eprintln!("rex: spec lacks a §2..§6 span");
+        return ExitCode::from(2);
+    };
+    if !check {
+        print!("{}", c.render_lock());
+        return ExitCode::SUCCESS;
+    }
+    let bad = prereg::verify(prereg::LOCK, &c);
+    if bad.is_empty() {
+        println!("rex-prereg-v1 OK prereg_sha={}", c.prereg_sha());
+        return ExitCode::SUCCESS;
+    }
+    for b in &bad {
+        eprintln!("rex-prereg-v1 DRIFT {b}");
+    }
+    ExitCode::from(1)
+}
+
+fn read_json<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))
+}
+
+fn corpus_build(a: &[String]) -> Result<(), String> {
+    let (prs_path, cutoff, items_dir) = (&a[0], &a[1], &a[2]);
+    let prs: Vec<Pr> = read_json(prs_path)?;
+    let mut mutants: Vec<Mutant> = Vec::new();
+    for m in &a[3..] {
+        mutants.extend(read_json::<Vec<Mutant>>(m)?);
+    }
+    let base = String::from_utf8_lossy(
+        &std::process::Command::new("git")
+            .args(["rev-parse", "--short=9", "HEAD"])
+            .output()
+            .map_err(|e| e.to_string())?
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    let r = choose(r_candidates(&prs), PER_CLASS, SEED);
+    let g_pool: Vec<_> = choose(g_candidates(&prs, cutoff), PER_CLASS * 2, SEED)
+        .into_iter()
+        .filter(|(i, _)| i.id[4..].parse().is_ok_and(is_green))
+        .collect();
+    let g = choose(g_pool, PER_CLASS, SEED);
+    let p = p_candidates(&mutants, &base, PER_CLASS, SEED);
+
+    let mut all: Vec<(Item, String)> = p.into_iter().chain(r).chain(g).collect();
+    let mut items: Vec<Item> = all.iter().map(|(i, _)| i.clone()).collect();
+    assign_splits(&mut items, SEED);
+    let split: BTreeMap<String, _> = items.iter().map(|i| (i.id.clone(), i.split)).collect();
+    for (i, _) in &mut all {
+        i.split = split[&i.id];
+    }
+    all.sort_by(|x, y| x.0.id.cmp(&y.0.id));
+    write_outputs(&all, items_dir)
+}
+
+fn write_outputs(all: &[(Item, String)], items_dir: &str) -> Result<(), String> {
+    std::fs::create_dir_all(items_dir).map_err(|e| e.to_string())?;
+    let mut jsonl = String::new();
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for (i, d) in all {
+        std::fs::write(format!("{items_dir}/{}.diff", i.id), d).map_err(|e| e.to_string())?;
+        jsonl.push_str(&serde_json::to_string(i).map_err(|e| e.to_string())?);
+        jsonl.push('\n');
+        *counts
+            .entry(format!("{:?} {:?} {:?}", i.class, i.stratum, i.split))
+            .or_default() += 1;
+    }
+    let manifest = render_manifest(&seal(all));
+    std::fs::write(format!("{CORPUS_DIR}/corpus-v1.jsonl"), &jsonl).map_err(|e| e.to_string())?;
+    std::fs::write(format!("{CORPUS_DIR}/test-manifest-v1.txt"), &manifest)
+        .map_err(|e| e.to_string())?;
+    for (k, n) in &counts {
+        println!("{k} {n}");
+    }
+    println!(
+        "items {} corpus_version {}",
+        all.len(),
+        corpus_version(&manifest)
+    );
+    Ok(())
+}
+
+type Flags = BTreeMap<String, String>;
+
+/// `--key value` pairs; a flag followed by another flag (or nothing) is `"1"`.
+fn flags(a: &[String]) -> Result<Flags, String> {
+    let mut f = Flags::new();
+    let mut i = 0;
+    while i < a.len() {
+        let k = a[i]
+            .strip_prefix("--")
+            .ok_or_else(|| format!("expected --flag, got {:?}", a[i]))?;
+        match a.get(i + 1).filter(|v| !v.starts_with("--")) {
+            Some(v) => {
+                f.insert(k.into(), v.clone());
+                i += 2;
+            }
+            None => {
+                f.insert(k.into(), "1".into());
+                i += 1;
+            }
+        }
+    }
+    Ok(f)
+}
+
+fn need<'a>(f: &'a Flags, k: &str) -> Result<&'a str, String> {
+    f.get(k)
+        .map(String::as_str)
+        .ok_or_else(|| format!("--{k} is required"))
+}
+
+fn split_of(f: &Flags) -> Result<Split, String> {
+    match need(f, "split")? {
+        "dev" => Ok(Split::Dev),
+        "test" => Ok(Split::Test),
+        s => Err(format!("--split {s}: dev or test")),
+    }
+}
+
+fn arm_of(s: &str) -> Result<Arm, String> {
+    serde_json::from_value(serde_json::Value::String(s.into()))
+        .map_err(|_| format!("--arm {s}: apr-4b|apr-9b|haiku|agy"))
+}
+
+/// The corpus items and the analysis identity (prereg sha, corpus version).
+fn corpus() -> Result<(Vec<Item>, String, String), String> {
+    let jsonl = std::fs::read_to_string(format!("{CORPUS_DIR}/corpus-v1.jsonl"))
+        .map_err(|e| e.to_string())?;
+    let items = jsonl
+        .lines()
+        .map(|l| serde_json::from_str(l).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<Item>, _>>()?;
+    let manifest = std::fs::read_to_string(format!("{CORPUS_DIR}/test-manifest-v1.txt"))
+        .map_err(|e| e.to_string())?;
+    let prereg_sha = prereg::locked_prereg_sha()
+        .ok_or("no locked prereg sha")?
+        .to_string();
+    Ok((items, prereg_sha, corpus_version(&manifest)))
+}
+
+fn run_of(f: &Flags, prereg_sha: String, corpus_version: String) -> Result<Run, String> {
+    Ok(Run {
+        cell: need(f, "cell")?.into(),
+        host: need(f, "host")?.into(),
+        backend: need(f, "backend")?.into(),
+        arm: arm_of(need(f, "arm")?)?,
+        apr_tag: need(f, "apr-tag")?.into(),
+        apr_sha256: need(f, "apr-sha")?.into(),
+        model_id: need(f, "model-id")?.into(),
+        weights_sha256: need(f, "weights-sha")?.into(),
+        prompt: prereg::PROMPT_V1.into(),
+        corpus_version,
+        prereg_sha,
+    })
+}
+
+/// Items of the split in the seeded run order (the rerun subset with --rerun).
+fn ordered(items: &[Item], split: Split, rerun: bool) -> Vec<&Item> {
+    let by_id: BTreeMap<&str, &Item> = items
+        .iter()
+        .filter(|i| i.split == split)
+        .map(|i| (i.id.as_str(), i))
+        .collect();
+    let ids: Vec<String> = by_id.keys().map(|k| (*k).to_string()).collect();
+    let mut order = run_order(&ids, SEED);
+    if rerun {
+        order = rerun_subset(&order);
+    }
+    order.iter().map(|id| by_id[id.as_str()]).collect()
+}
+
+fn append(path: &str, r: &Receipt) -> Result<(), String> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    writeln!(
+        f,
+        "{}",
+        serde_json::to_string(r).map_err(|e| e.to_string())?
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn review(f: &Flags) -> Result<(), String> {
+    let (items, prereg_sha, cv) = corpus()?;
+    let run = run_of(f, prereg_sha, cv)?;
+    let (url, items_dir, out) = (need(f, "url")?, need(f, "items")?, need(f, "out")?);
+    let rerun = f.contains_key("rerun");
+    let mut todo = ordered(&items, split_of(f)?, rerun);
+    if let Some(n) = f.get("limit") {
+        todo.truncate(n.parse().map_err(|_| "--limit N")?);
+    }
+    let raw_dir = format!("raw/{}/{}", run.cell, need(f, "arm")?);
+    std::fs::create_dir_all(format!("{out}/{raw_dir}")).map_err(|e| e.to_string())?;
+    let mut tally: BTreeMap<String, usize> = BTreeMap::new();
+    for (n, item) in todo.iter().enumerate() {
+        let diff = std::fs::read_to_string(format!("{items_dir}/{}.diff", item.id))
+            .map_err(|e| format!("{}: {e}", item.id))?;
+        if sha256_hex(diff.as_bytes()) != item.diff_sha256 {
+            return Err(format!(
+                "{}: diff sha differs from the corpus (wrong items tar?)",
+                item.id
+            ));
+        }
+        let body = request_body(&run.model_id, &run.prompt, &diff);
+        let when = utc_now();
+        let reply = post(url, &body)?;
+        let parsed = classify(&reply);
+        let raw = format!(
+            "{raw_dir}/{}{}.txt",
+            item.id,
+            if rerun { ".rerun" } else { "" }
+        );
+        std::fs::write(format!("{out}/{raw}"), &parsed.text).map_err(|e| e.to_string())?;
+        let mut r = run.receipt(item, &body, &parsed, reply.wall_ms, &raw, &when);
+        r.cold = n == 0 && f.contains_key("cold-first");
+        r.rerun = rerun;
+        append(&format!("{out}/receipts.jsonl"), &r)?;
+        *tally.entry(format!("{:?}", r.verdict)).or_default() += 1;
+    }
+    println!("reviewed {} {tally:?}", todo.len());
+    Ok(())
+}
+
+fn not_run(f: &Flags) -> Result<(), String> {
+    let (items, prereg_sha, cv) = corpus()?;
+    let run = run_of(f, prereg_sha, cv)?;
+    let why: NotRun = serde_json::from_value(serde_json::Value::String(need(f, "why")?.into()))
+        .map_err(|_| "--why NoDeclaredExecutor|Refused|ContextOverflow|ServeError")?;
+    let out = need(f, "out")?;
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    let when = utc_now();
+    let todo = ordered(&items, split_of(f)?, false);
+    for item in &todo {
+        append(
+            &format!("{out}/receipts.jsonl"),
+            &run.not_run(item, why, &when),
+        )?;
+    }
+    println!("not-run {} {why:?}", todo.len());
+    Ok(())
+}
+
+/// What `score` prints.
+#[derive(serde::Serialize)]
+struct Report<'a> {
+    cell: &'a str,
+    arm: Arm,
+    provenance: &'a str,
+    prereg_sha: &'a str,
+    corpus_version: &'a str,
+    rejected_rows: usize,
+    score: aprender_review_experiment::score::LaneScore,
+}
+
+fn score_cmd(f: &Flags) -> Result<(), String> {
+    let (items, prereg_sha, cv) = corpus()?;
+    let path = need(f, "receipts")?;
+    let signed = match f.get("pubkey") {
+        Some(pk) => {
+            let ok = std::process::Command::new("minisign")
+                .args(["-Vqm", path, "-p", pk])
+                .status()
+                .map_err(|e| format!("minisign: {e}"))?
+                .success();
+            if !ok {
+                return Err(format!("{path}: signature does not verify under {pk}"));
+            }
+            "signed"
+        }
+        None => "unsigned (exploratory)",
+    };
+    let (cell, arm, rerun) = (
+        need(f, "cell")?.to_string(),
+        arm_of(need(f, "arm")?)?,
+        f.contains_key("rerun"),
+    );
+    let expected = ordered(&items, split_of(f)?, rerun);
+    let lines = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let root = std::path::Path::new(path)
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    let expect = Expect {
+        prereg_sha: &prereg_sha,
+        corpus_version: &cv,
+    };
+    let (rows, rejected) = collect(
+        &lines,
+        expect,
+        &expected,
+        |r| r.cell == cell && r.arm == arm && r.rerun == rerun,
+        |p| std::fs::read_to_string(root.join(p)).ok(),
+    );
+    let out = Report {
+        cell: &cell,
+        arm,
+        provenance: signed,
+        prereg_sha: &prereg_sha,
+        corpus_version: &cv,
+        rejected_rows: rejected.len(),
+        score: score(&rows),
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?
+    );
+    for r in rejected.iter().take(5) {
+        eprintln!("rejected line {}: {}", r.line, r.reasons.join("; "));
+    }
+    Ok(())
+}
+
+/// REX-04: append admission rows for one cell or all six.
+fn admit(f: &Flags) -> Result<(), String> {
+    use aprender_review_experiment::admission::{Row, Status, CELLS, SCHEME};
+    let prereg_sha = prereg::locked_prereg_sha()
+        .ok_or("no locked prereg sha")?
+        .to_string();
+    let status = match f.get("removed-by") {
+        Some(r) => Status::Refused {
+            removed_by: r.clone(),
+        },
+        None => Status::NotRun {
+            reason: serde_json::from_value(serde_json::Value::String(need(f, "why")?.into()))
+                .map_err(|_| "--why NoDeclaredExecutor|ServeError|…")?,
+        },
+    };
+    let which = need(f, "cell")?;
+    let cells: Vec<_> = CELLS
+        .iter()
+        .filter(|c| which == "all" || c.cell == which)
+        .collect();
+    if cells.is_empty() {
+        return Err(format!("--cell {which}: not a §2.1 cell"));
+    }
+    let out = need(f, "out")?;
+    let at = utc_now();
+    let mut text = String::new();
+    for c in &cells {
+        let row = Row {
+            schema: SCHEME.into(),
+            cell: c.cell.into(),
+            host: c.host.into(),
+            backend: c.backend.into(),
+            apr_tag: need(f, "apr-tag")?.into(),
+            apr_sha256: need(f, "apr-sha")?.into(),
+            model_id: need(f, "model-id")?.into(),
+            weights_sha256: need(f, "weights-sha")?.into(),
+            prereg_sha: prereg_sha.clone(),
+            at: at.clone(),
+            status: status.clone(),
+        };
+        text += &(serde_json::to_string(&row).map_err(|e| e.to_string())? + "\n");
+    }
+    use std::io::Write;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(out)
+        .and_then(|mut h| h.write_all(text.as_bytes()))
+        .map_err(|e| e.to_string())?;
+    println!("admit {} row(s)", cells.len());
+    Ok(())
+}
+
+/// REX-04: resolve an admission file. Exit 10 (an alarm, never a crash code)
+/// when it is admissible but no cell is admitted (S-7).
+fn admission_check(a: &[String]) -> ExitCode {
+    let run = || -> Result<aprender_review_experiment::admission::Summary, Vec<String>> {
+        let f = flags(a).map_err(|e| vec![e])?;
+        let path = need(&f, "file").map_err(|e| vec![e])?;
+        let text = std::fs::read_to_string(path).map_err(|e| vec![e.to_string()])?;
+        let lock =
+            prereg::locked_prereg_sha().ok_or_else(|| vec!["no locked prereg sha".into()])?;
+        aprender_review_experiment::admission::check(&text, lock)
+    };
+    match run() {
+        Ok(s) => {
+            match serde_json::to_string(&s) {
+                Ok(j) => println!("{j}"),
+                Err(e) => eprintln!("rex admission-check: {e}"),
+            }
+            if s.s7 {
+                eprintln!("S-7: no cell is admitted — no admissible cell for (A)");
+                ExitCode::from(10)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(es) => {
+            for e in es {
+                eprintln!("rex admission-check: {e}");
+            }
+            ExitCode::from(1)
+        }
+    }
+}

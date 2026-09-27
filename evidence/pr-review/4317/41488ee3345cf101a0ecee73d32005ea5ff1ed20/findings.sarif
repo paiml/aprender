@@ -1,0 +1,262 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.41.1",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity-delta-increase",
+          "level": "warning",
+          "message": {
+            "text": "recheck (crates/aprender-contracts-cli/src/commands/discharge.rs) cognitive complexity rose 13 -> 19 and cyclomatic 7 -> 9 between base eff71538d and head 41488ee33, newly crossing the configured cognitive threshold of 15 (.pmat-gates.toml). Driven by the new systemd-run scope-probe branch plus the recheck_argv extraction; the function was previously 682-757 (76 lines), now 781-876 (96 lines)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-contracts-cli/src/commands/discharge.rs"
+                },
+                "region": {
+                  "startLine": 781,
+                  "endLine": 876
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "crates/aprender-contracts-cli/src",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a8f47a97b36c3d34fe04687bce03b8209a4b5be8cfd73c24859492beac9cfaa1",
+            "failure_scenario": "A future edit adds one more branch to recheck() and no gate catches it locally; the cognitive-complexity CI gate (min_grade B / max threshold) is the only backstop and it fires on PR, not in review.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication-semantic-clone",
+          "level": "note",
+          "message": {
+            "text": "pmat --duplicates flags recheck_argv (discharge.rs:217-247) as a 25% match in a 4-member clone group (argv-builder shape shared with other CLI arm constructors in this crate). Read the group: the shared shape is Vec<String> argv assembly, not re-implemented logic; not a duplication defect."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-contracts-cli/src/commands/discharge.rs"
+                },
+                "region": {
+                  "startLine": 217,
+                  "endLine": 247
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "pmat query \"systemd-run scope probe before leanchecker\" --duplicates --limit 5",
+            "excerpt": "crates/aprender-contracts-cli/src/commands/discharge.rs:217-247 \u2502 recheck_argv \u2502 TDG: A+ \u2502 O(1)\n   C:2 \u2502 L:33 \u2502 18c \u2502 \ud83d\udd0425% \u2502 \ud83d\udccb4",
+            "excerpt_sha256": "44c300993dc485ceed46ab737b582e6324330379e9d7e8aa40a24d05235ead00",
+            "failure_scenario": "n/a - informational, not a defect",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "unversioned",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "scripts/pr_review_duplication_scan.sh (lexical, non-Rust + sibling-branch + merge-base..origin/main duplication sweep) did not complete on this repository. Four attempts: full run 550s (timeout 124), --horizon since 14d 280s (timeout 124), --horizon none 90s (timeout 124, ruled out the sibling sweep as cause), and the isolated core git grep -I -n -w -F -w over 85 needles at HEAD alone: 280s wall, 305.98s user CPU (109% cpu, so not blocked/deadlocked), 34399 raw hits and still running when killed. This repository's tracked tree (10,716 files) makes the word-boundary+fixed-string multi-needle git grep genuinely slow; not a lock, not a hang, not a quota issue."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "git",
+                  "grep",
+                  "-I",
+                  "-n",
+                  "-w",
+                  "-F",
+                  "--no-color",
+                  "-e",
+                  "<85 needles>",
+                  "41488ee33..."
+                ],
+                "exit_code": 124,
+                "stdout_sha256": "n/a-timeout"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "unversioned",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux-new-cli-flags",
+          "level": "note",
+          "message": {
+            "text": "The delta adds 3 new apr/pv CLI flags gated behind requires=\"leanchecker\": --leanchecker-threads, --leanchecker-memory-max-gib, --leanchecker-cpu-quota-pct (crates/aprender-contracts-cli/src/cli.rs), defaulting to the constants already enforced by check_leanchecker_scoped.sh. This is an internal resource-cap knob on an operator-only discharge path, not a user-facing competitive feature; no contracts/crux-*.yaml surface (CLI subcommand ergonomics, output format, HTTP/MCP) names leanchecker resource limits as a competitor-comparable axis. No gap_effect claimed either way; flagged so the receipt does not silently omit a triggered CRUX surface."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-contracts-cli/src/cli.rs"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_pr_review_receipt.sh",
+              "--match-crux-surface",
+              "<added #[arg(long...)] lines>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "n/a-boolean-predicate",
+            "failure_scenario": "n/a - coverage note, not a defect claim",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "unversioned",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "scripts/check_leanchecker_scoped.sh and scripts/check_workspace_test_waits_on_guard_tree.sh are both touched by this delta and both match the guard's own --match-mutation-trigger predicate. No committed mutation set covers either: grep -rl over scripts/mutate*.sh (mutate-guard.sh, mutate_pr_review_wiring_guard.sh, mutate_quorum_arm.sh, mutate_spec_conformance.sh, mutate_vendored_schemas_guard.sh) returned zero references to either filename. check_leanchecker_scoped.sh's own --self-test ran clean (23/23 rows) and a live scan of the tree was clean (441 files, rc=0), but that is the guard's self-check, not an independent mutation-kill measurement."
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "lexical-guard-bypass-naming",
+          "level": "note",
+          "message": {
+            "text": "check_leanchecker_scoped.sh's CMD_RE requires an immediate terminator after the literal \"leanchecker\" (quote/space/EOL/;/)/&/|). A wrapper binary or script named e.g. leanchecker_wrapper.sh invoked in command position would not match CMD_RE (the char after \"leanchecker\" is \"_\", not in the terminator set) and would run unscoped without tripping the guard. This is a naming-trick bypass of a lexical guard, not a defect this delta introduces (the same class of limit the duplication-scan script documents about itself); low likelihood, advisory only."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_leanchecker_scoped.sh"
+                },
+                "region": {
+                  "startLine": 25
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_leanchecker_scoped.sh:25 (CMD_RE definition)",
+            "excerpt": "CMD_RE='(^|[;&|(`]|[[:space:]])((exec|env|nice|lake[[:space:]]+env|timeout([[:space:]]+-[^[:space:]]+)*[[:space:]]+[0-9]+[smhd]?)[[:space:]]+)*(\"?[^[:space:]\"]*/)?leanchecker(\"|[[:space:]]|$|[;)&|])'",
+            "excerpt_sha256": "392b4e3b902199ad69eeddc611012ee0dd0ecf8f5dcff35faab8933078076e50",
+            "failure_scenario": "An agent or script renames the invocation to bypass review attention (e.g. a helper script literally named leanchecker_run.sh calling the real binary internally) and the guard reports clean while the memory/CPU cap is not actually applied.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.11",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "One attempt in a disposable git-archive copy (no .git), prompt+diff passed as files, pinned gemini-3.1-pro-high, --print-timeout 4m inside a 280s wall-clock bash timeout. Returned rc=0 but agy_out.json was 0 bytes and stderr recorded: '[agy] print timeout after 4m0s with turn in progress; returning partial output'. No structured_output.reviewed field, so it fails the artifact test per SKILL.md S3.E. Not retried (S3.E: do not retry more than once)."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "--model",
+                  "gemini-3.1-pro-high",
+                  "--print-timeout",
+                  "4m",
+                  "-p",
+                  "<PROMPT.md>",
+                  "--dangerously-skip-permissions"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
