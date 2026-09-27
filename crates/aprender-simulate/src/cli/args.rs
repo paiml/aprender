@@ -70,7 +70,7 @@ pub enum Commands {
     /// Render simulation to SVG + keyframes
     Render {
         /// Simulation domain (orbit, `bouncing_balls`).
-        #[arg(long, default_value = "orbit")]
+        #[arg(long, default_value = "orbit", value_parser = ["orbit", "bouncing_balls"])]
         domain: String,
         /// Output format: svg-frames or svg-keyframes.
         #[arg(long, value_enum, default_value = "svg-keyframes")]
