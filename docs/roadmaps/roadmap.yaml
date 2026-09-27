@@ -22147,3 +22147,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4536
+  github_issue: 4536
+  item_type: task
+  title: 'DUP-001: fail a PR whose changes (git patch-id) already exist in another open PR'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-a2
+  created: 2026-09-27T19:10:00Z
+  updated: 2026-09-27T19:10:00Z
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'scripts/check_pr_duplicate_patches.sh fails a pull_request whose commit or hunk patch-id (--stable) matches one in another OPEN PR, naming both PRs, both shas and the file + hunk'
+  - 'the only exemption is a PR body line stacked-on: #N, for that pair, both ways'
+  - '--self-test case table (must-match: pure copy, copy then edit, cherry-pick with another message; must-not-match: identical generated regen, whitespace-only) passes, wired as a guard-tree step on every event'
+  - 'the cross-PR check is wired as a guard-tree step on pull_request; a gh or fetch failure exits 2, never green'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Engine and case table by aprender-59/76 on 76/4536-dup-001 (d23fcc5206); a2 wires it (cop assignment 2026-09-27 19:0xZ). Root cause of #4429/#4502 going unflagged: built, unwired. Ships in the post-rc.1 CI batch.'
