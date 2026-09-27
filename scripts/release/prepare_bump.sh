@@ -99,6 +99,16 @@ bash scripts/check_model_ladder.sh --version "$V" > "$AP/ladder.log" 2>&1 || {
 }
 ignored=$(git ls-files --others --ignored --exclude-standard -- "evidence/dogfood/models/$V")
 [ -z "$ignored" ] || die "model-ladder receipts for $V are gitignored, so the bump would not commit them: $ignored"
+# THE QWEN3.5 SIZE SELECTION IS RE-DERIVED FROM THOSE RECEIPTS ON EVERY BUMP (#3558), and the
+# mirror `apr capability --select` embeds is refreshed with it. Without this the shipped binary
+# answers from the last release's receipts; apr-cli's the_mirror_is_the_newest_derived_table
+# test is what turns a hand-skipped refresh RED.
+SEL_DIR=evidence/dogfood/qwen35-selection
+SEL="$SEL_DIR/$V.json"
+mkdir -p "$SEL_DIR" || die "cannot create $SEL_DIR"
+python3 scripts/qwen35_size_select.py --version "$V" --out "$SEL" > "$AP/select.log" 2>&1 \
+  || die "Qwen3.5 size selection did not derive from the $V receipts ($AP/select.log)"
+cp "$SEL" crates/apr-cli/contracts/qwen35-size-selection.json || die "cannot refresh the apr-cli selection mirror"
 cargo_bin() { "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo "$@"; }
 cargo_bin fmt --all -- --check > /dev/null 2>&1 || die "cargo fmt --check failed"
 cargo_bin deny check advisories > "$AP/deny.log" 2>&1 || die "cargo deny check advisories failed ($AP/deny.log)"
