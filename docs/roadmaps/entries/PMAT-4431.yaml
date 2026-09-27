@@ -1,17 +1,17 @@
 - id: PMAT-4431
   github_issue: 4431
   item_type: task
-  title: 'fold(B3) onto main: merge origin/main e7a52949d into fold/b3-onto-main and green the target-side guards'
+  title: 'fold(B3) onto main: the full B3 fold (contracts / ONT / PVL / docs, 26 folded PRs + #4197 EV-6c part 2) as one branch from main, target-side guards green'
   status: in_progress
   priority: high
   assigned_to: aprender-57
   created: 2026-09-26T12:22:22Z
-  updated: 2026-09-26T12:22:22Z
+  updated: 2026-09-27T13:30:00Z
   spec: null
   acceptance_criteria:
-  - origin/main merged in without rebase or force; conflicts resolved.
-  - every target-side guard newer than the merge-base is green on the merged tree, or its red is shown identical on main. A change to ANY file (another ticket's fragment included) is in scope when a named guard is RED without it.
-  - (process, not diff content) a quorum on the merge delta, then pmat-merge re-arms with --match-head-commit; the round judging this diff is that quorum.
+  - 'scope is the WHOLE fold, merge-base..head: every PR listed in #4431''s body (#4204 #4227 #4121 #4150 #4163 #4196 #4177 #4183 #4216 #4092 #4095 #4230 #4136 #4248 #4205 #4137 #4301 #4289 #4003 #4009 #4011 #4012 #4013 #4014 #4237 #4281) plus #4197 EV-6c part 2 (pv discharge check --kani, contracts/kani-assume-baseline.json, ci fragment 463); origin/main merged in without rebase or force; conflicts resolved to B3.'
+  - every target-side guard newer than the merge-base is green on the merged tree, or its red is shown identical on main. A change to ANY file (another ticket''s fragment included) is in scope when a named guard is RED without it.
+  - (process, not diff content) a quorum on the full merge-base..head diff, then pmat-merge re-arms with --match-head-commit; the round judging this diff is that quorum.
   phases: []
   subtasks: []
   estimated_effort: null
