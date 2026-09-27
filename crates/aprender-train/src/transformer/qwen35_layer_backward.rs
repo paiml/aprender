@@ -58,7 +58,7 @@ pub struct Qwen35BlockGrads<T = f32> {
 
 /// Reverse [`rms_norm_chunks`]: `y = x·r·w` per `w.len()`-wide chunk, `r = (mean x² + ε)^-½`.
 /// Returns `∂L/∂x` and adds `∂L/∂w` into `dw`.
-fn rms_norm_chunks_backward<T: GdnFloat>(
+pub(super) fn rms_norm_chunks_backward<T: GdnFloat>(
     x: &[T],
     w: &[T],
     dy: &[T],

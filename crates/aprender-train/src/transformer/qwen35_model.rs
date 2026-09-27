@@ -14,11 +14,8 @@ use std::path::Path;
 
 use aprender::format::gguf::{GgufReader, GgufValue};
 
-use super::gdn::project;
-use super::qwen35_layer::{
-    qwen35_block_forward, rms_norm_chunks, GatedAttnDims, GatedAttnWeights, Qwen35Mixer,
-    SwiGluWeights,
-};
+use super::qwen35_layer::{GatedAttnDims, GatedAttnWeights, Qwen35Mixer, SwiGluWeights};
+use super::qwen35_lm::{Qwen35LayerRef, Qwen35LmGrads, Qwen35LmRef};
 use super::{GdnDims, GdnWeights};
 use crate::{Error, Result};
 
@@ -68,7 +65,7 @@ struct Qwen35Layer {
 }
 
 impl Qwen35Layer {
-    fn forward(&self, hidden: &[f32], eps: f32) -> Vec<f32> {
+    fn as_ref(&self) -> Qwen35LayerRef<'_> {
         let mixer = match &self.mixer {
             OwnedMixer::Gdn(g) => Qwen35Mixer::Gdn(
                 GdnWeights {
@@ -96,15 +93,18 @@ impl Qwen35Layer {
                 a.dims,
             ),
         };
-        let ffn = SwiGluWeights { gate: &self.ffn_gate, up: &self.ffn_up, down: &self.ffn_down };
-        qwen35_block_forward(hidden, &self.attn_norm, &mixer, &self.post_norm, &ffn, eps)
+        Qwen35LayerRef {
+            attn_norm: &self.attn_norm,
+            mixer,
+            post_norm: &self.post_norm,
+            ffn: SwiGluWeights { gate: &self.ffn_gate, up: &self.ffn_up, down: &self.ffn_down },
+        }
     }
 }
 
 /// A whole Qwen3.5 (hybrid Gated `DeltaNet` + gated attention) model in f32.
 #[derive(Debug, Clone)]
 pub struct Qwen35Model {
-    hidden_dim: usize,
     vocab_size: usize,
     eps: f32,
     embed: Vec<f32>,
@@ -200,7 +200,7 @@ impl Qwen35Model {
         let layers = (0..g.usize("block_count")?)
             .map(|i| load_layer(&g, i, hidden_dim, eps))
             .collect::<Result<Vec<_>>>()?;
-        Ok(Self { hidden_dim, vocab_size, eps, embed, layers, final_norm, lm_head })
+        Ok(Self { vocab_size, eps, embed, layers, final_norm, lm_head })
     }
 
     /// Vocabulary size (rows of the embedding).
@@ -221,24 +221,35 @@ impl Qwen35Model {
         self.layers.iter().map(|l| matches!(l.mixer, OwnedMixer::Attention(_))).collect()
     }
 
+    /// The weights as a borrowed [`Qwen35LmRef`] (the generic forward/backward).
+    #[must_use]
+    pub fn as_lm(&self) -> Qwen35LmRef<'_> {
+        Qwen35LmRef {
+            embed: &self.embed,
+            layers: self.layers.iter().map(Qwen35Layer::as_ref).collect(),
+            final_norm: &self.final_norm,
+            lm_head: self.lm_head.as_deref(),
+            eps: self.eps,
+        }
+    }
+
     /// Causal forward over `tokens` from an empty state; logits are `[len × vocab]`.
     ///
     /// # Panics
     /// If a token id is outside the vocabulary.
     #[must_use]
     pub fn forward(&self, tokens: &[u32]) -> Vec<f32> {
-        let d = self.hidden_dim;
-        let mut h = Vec::with_capacity(tokens.len() * d);
-        for &t in tokens {
-            let t = t as usize;
-            assert!(t < self.vocab_size, "token {t} outside vocab {}", self.vocab_size);
-            h.extend_from_slice(&self.embed[t * d..(t + 1) * d]);
-        }
-        for layer in &self.layers {
-            h = layer.forward(&h, self.eps);
-        }
-        rms_norm_chunks(&mut h, &self.final_norm, self.eps);
-        project(&h, self.lm_head.as_deref().unwrap_or(&self.embed), d, self.vocab_size)
+        self.as_lm().logits(tokens)
+    }
+
+    /// Mean next-token cross-entropy of `tokens` → `targets` and its gradient with
+    /// respect to every weight.
+    ///
+    /// # Panics
+    /// If `targets` is not `tokens`' length, or an id is outside the vocabulary.
+    #[must_use]
+    pub fn loss_and_grads(&self, tokens: &[u32], targets: &[u32]) -> (f32, Qwen35LmGrads) {
+        self.as_lm().loss_and_grads(tokens, targets)
     }
 }
 
