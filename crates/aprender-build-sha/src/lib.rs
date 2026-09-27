@@ -136,7 +136,9 @@ fn resolve_git_sha_with(
 
 #[cfg(test)]
 mod tests {
-    use super::{git_rerun_triggers, resolve, resolve_git_sha, resolve_git_sha_with, run_git};
+    use super::{
+        emit, git_rerun_triggers, resolve, resolve_git_sha, resolve_git_sha_with, run_git,
+    };
 
     #[test]
     fn override_wins_over_everything() {
@@ -302,5 +304,68 @@ mod tests {
                 "{got}"
             );
         }
+    }
+
+    /// The child half of `emit_prints_the_sha_and_watches_a_real_checkout`: it
+    /// only runs `emit` when the parent re-executes this test binary.
+    #[test]
+    fn emit_child() {
+        if std::env::var_os("BUILD_SHA_EMIT_CHILD").is_some() {
+            emit();
+        }
+    }
+
+    /// `emit` writes to stdout, which a test cannot read in-process, and under
+    /// cargo-mutants the tree is a copy with no `.git`, so a test that reads the
+    /// outer checkout passes whether or not the triggers are returned. Re-run this
+    /// test binary as a child inside a fresh `git init`, so both the sha line and
+    /// the HEAD / refs/heads triggers must appear on its stdout.
+    #[test]
+    fn emit_prints_the_sha_and_watches_a_real_checkout() {
+        let dir = std::env::temp_dir().join(format!("build-sha-emit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let init = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&dir)
+            .status()
+            .expect("git is required: without a checkout the triggers cannot be observed");
+        assert!(init.success(), "git init failed in {}", dir.display());
+        let out = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "--exact",
+                "tests::emit_child",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .current_dir(&dir)
+            .env("BUILD_SHA_EMIT_CHILD", "1")
+            .env_remove("APR_GIT_SHA_OVERRIDE")
+            .output()
+            .expect("re-run the test binary");
+        let _ = std::fs::remove_dir_all(&dir);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{stdout}");
+        // libtest prefixes the child's first line with "test tests::emit_child ... ".
+        let directives: Vec<&str> = stdout
+            .lines()
+            .filter_map(|l| l.find("cargo:").map(|at| &l[at..]))
+            .collect();
+        let has = |p: &dyn Fn(&str) -> bool| directives.iter().any(|d| p(d));
+        assert!(
+            has(&|d| d.starts_with("cargo:rustc-env=APR_GIT_SHA=")),
+            "{stdout}"
+        );
+        assert!(
+            has(&|d| d.starts_with("cargo:rerun-if-changed=") && d.ends_with("/HEAD")),
+            "no HEAD trigger: {stdout}"
+        );
+        assert!(
+            has(&|d| d.starts_with("cargo:rerun-if-changed=") && d.ends_with("/refs/heads")),
+            "no refs/heads trigger: {stdout}"
+        );
+        assert!(
+            has(&|d| d == "cargo:rerun-if-env-changed=APR_GIT_SHA_OVERRIDE"),
+            "{stdout}"
+        );
     }
 }

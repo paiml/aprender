@@ -175,6 +175,8 @@
 #
 # Recorded, not blessed. Shrink-only from here.
 #
+CLAUDE.md:218
+CLAUDE.md:222
 ROADMAP.md:55
 book/src/advanced-testing/popperian-falsification.md:44
 crates/apr-cli/src/commands/bench_safetensors.rs:123
