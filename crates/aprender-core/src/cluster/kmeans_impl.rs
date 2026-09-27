@@ -8,6 +8,7 @@ impl KMeans {
             max_iter: 300,
             tol: 1e-4,
             random_state: None,
+            n_init: DEFAULT_N_INIT,
             centroids: None,
             labels: None,
             inertia: 0.0,
@@ -34,6 +35,23 @@ impl KMeans {
     pub fn with_random_state(mut self, seed: u64) -> Self {
         self.random_state = Some(seed);
         self
+    }
+
+    /// Sets the number of seeded restarts (sklearn's `n_init`, default 1).
+    ///
+    /// Restart 0 starts from the same row a single-init fit uses, and a later
+    /// restart replaces it only with a strictly lower inertia, so the fitted
+    /// inertia never exceeds the `n_init = 1` inertia. Zero is treated as 1.
+    #[must_use]
+    pub fn with_n_init(mut self, n_init: usize) -> Self {
+        self.n_init = n_init.max(1);
+        self
+    }
+
+    /// Returns the number of seeded restarts.
+    #[must_use]
+    pub fn n_init(&self) -> usize {
+        self.n_init
     }
 
     /// Returns the cluster centroids.
@@ -103,14 +121,39 @@ impl KMeans {
 
     /// Loads a model from a binary file.
     ///
+    /// Files saved before `n_init` existed still load, with `n_init = 1`.
+    ///
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
-        let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
-        Ok(model)
+        Self::from_bincode(&bytes)
+    }
+
+    /// Decodes the current layout, falling back to the pre-`n_init` one.
+    ///
+    /// `n_init` is the LAST field, so an old file runs out of bytes exactly
+    /// where it would start and the current decode fails; a current file is
+    /// never tried as legacy.
+    pub(crate) fn from_bincode(bytes: &[u8]) -> std::result::Result<Self, String> {
+        let current = match bincode::deserialize::<Self>(bytes) {
+            Ok(model) => return Ok(model),
+            Err(e) => e,
+        };
+        let old: LegacyKMeans = bincode::deserialize(bytes)
+            .map_err(|e| format!("Deserialization failed: {current} (pre-n_init layout: {e})"))?;
+        Ok(Self {
+            n_clusters: old.n_clusters,
+            max_iter: old.max_iter,
+            tol: old.tol,
+            random_state: old.random_state,
+            centroids: old.centroids,
+            labels: old.labels,
+            inertia: old.inertia,
+            n_iter: old.n_iter,
+            n_init: 1,
+        })
     }
 
     /// Saves the K-Means model to a `SafeTensors` file.
@@ -157,6 +200,10 @@ impl KMeans {
             (vec![self.max_iter as f32], vec![1]),
         );
         tensors.insert("tol".to_string(), (vec![self.tol], vec![1]));
+        tensors.insert(
+            "n_init".to_string(),
+            (vec![self.n_init as f32], vec![1]),
+        );
 
         let random_state_val = if let Some(state) = self.random_state {
             state as f32
@@ -226,6 +273,13 @@ impl KMeans {
         let tol_data = safetensors::extract_tensor(&raw_data, tol_meta)?;
         let tol = tol_data[0];
 
+        // Files written before n_init existed carry no tensor: they were fitted
+        // from a single start, so they load as n_init = 1.
+        let n_init = match metadata.get("n_init") {
+            Some(meta) => (safetensors::extract_tensor(&raw_data, meta)?[0] as usize).max(1),
+            None => 1,
+        };
+
         let random_state_meta = metadata
             .get("random_state")
             .ok_or("Missing 'random_state' tensor")?;
@@ -250,6 +304,7 @@ impl KMeans {
             max_iter,
             tol,
             random_state,
+            n_init,
             centroids: Some(centroids),
             labels: None, // Training labels not serialized
             inertia,
@@ -257,19 +312,66 @@ impl KMeans {
         })
     }
 
-    /// Initializes centroids using k-means++ algorithm.
-    fn kmeans_plusplus_init(&self, x: &Matrix<f32>) -> Matrix<f32> {
-        let (n_samples, n_features) = x.shape();
-        let mut centroids_data = Vec::with_capacity(self.n_clusters * n_features);
-
+    /// First centroid row of restart `run`. Restart 0 is `seed % n_samples`,
+    /// the row a single-init fit has always used; later restarts draw a row
+    /// from the seed through `SplitMix64`, so they are reproducible.
+    pub(crate) fn restart_start_row(&self, run: usize, n_samples: usize) -> usize {
         let seed = self.random_state.unwrap_or(42);
-        let first_idx = (seed as usize) % n_samples;
+        if run == 0 {
+            return (seed as usize) % n_samples;
+        }
+        (splitmix64(seed ^ (run as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)) % n_samples as u64)
+            as usize
+    }
+
+    /// Greedy k-means++ (D²) seeding for restart `run`, as sklearn and linfa do.
+    /// The first centroid is row [`Self::restart_start_row`].
+    ///
+    /// Each further centroid is the best of `2 + ln k` candidates, each drawn
+    /// with probability proportional to its squared distance to the nearest
+    /// centroid so far; "best" is the lowest resulting potential (sum of those
+    /// distances). The draws come from `SplitMix64` keyed on the seed and
+    /// `run`, so a seeded fit is reproducible on every platform, and two
+    /// restarts that share a start row still draw differently.
+    /// Farthest-point seeding, used before #3146, always took the argmax and
+    /// so chased outliers.
+    fn kmeans_plusplus_init(&self, x: &Matrix<f32>, run: usize) -> Matrix<f32> {
+        let (n_samples, n_features) = x.shape();
+        let first_idx = self.restart_start_row(run, n_samples);
+        let mut centroids_data = Vec::with_capacity(self.n_clusters * n_features);
         append_row(&mut centroids_data, x, first_idx, n_features);
 
+        let seed = self.random_state.unwrap_or(42);
+        let mut rng = SplitMix64(splitmix64(seed ^ 0xA076_1D64_78BD_642F) ^ run as u64);
+        let n_trials = 2 + (self.n_clusters as f64).ln() as usize;
+        let mut closest = distances_sq_to_sample(x, first_idx);
+
         for _ in 1..self.n_clusters {
-            let min_distances = nearest_centroid_distances_sq(x, &centroids_data, n_features);
-            let max_idx = argmax(&min_distances);
-            append_row(&mut centroids_data, x, max_idx, n_features);
+            let cumulative: Vec<f64> = closest
+                .iter()
+                .scan(0.0_f64, |acc, &d| {
+                    *acc += f64::from(d);
+                    Some(*acc)
+                })
+                .collect();
+            let total = cumulative[n_samples - 1];
+
+            let mut best: Option<(f64, usize, Vec<f32>)> = None;
+            for _ in 0..n_trials {
+                let target = rng.next_unit() * total;
+                let cand = cumulative
+                    .partition_point(|&cum| cum <= target)
+                    .min(n_samples - 1);
+                let d_cand = distances_sq_to_sample(x, cand);
+                let merged: Vec<f32> = closest.iter().zip(&d_cand).map(|(&a, &b)| a.min(b)).collect();
+                let potential: f64 = merged.iter().map(|&d| f64::from(d)).sum();
+                if best.as_ref().map_or(true, |b| potential < b.0) {
+                    best = Some((potential, cand, merged));
+                }
+            }
+            let (_, cand, merged) = best.expect("n_trials >= 2");
+            append_row(&mut centroids_data, x, cand, n_features);
+            closest = merged;
         }
 
         Matrix::from_vec(self.n_clusters, n_features, centroids_data)
@@ -371,31 +473,20 @@ impl UnsupervisedEstimator for KMeans {
             return Err("Number of samples must be >= number of clusters".into());
         }
 
-        // Initialize centroids using k-means++
-        let mut centroids = self.kmeans_plusplus_init(x);
-
-        let mut labels = vec![0; n_samples];
-
-        for iter in 0..self.max_iter {
-            // Assign samples to nearest centroid
-            labels = self.assign_labels(x, &centroids);
-
-            // Update centroids
-            let new_centroids = self.update_centroids(x, &labels);
-
-            // Check convergence
-            if self.centroids_converged(&centroids, &new_centroids) {
-                self.n_iter = iter + 1;
-                centroids = new_centroids;
-                break;
+        // Best of n_init seeded restarts; ties keep the earlier run, so restart 0
+        // (the single-init result) survives unless a restart strictly beats it.
+        let mut best: Option<(Matrix<f32>, Vec<usize>, f32, usize)> = None;
+        for run in 0..self.n_init.max(1) {
+            let (centroids, labels, run_inertia, n_iter) = self.lloyd(x, run);
+            if best.as_ref().map_or(true, |b| run_inertia < b.2) {
+                best = Some((centroids, labels, run_inertia, n_iter));
             }
-
-            centroids = new_centroids;
-            self.n_iter = iter + 1;
         }
+        let (centroids, labels, best_inertia, n_iter) =
+            best.expect("n_init >= 1 runs at least one restart");
 
-        // Compute final inertia
-        self.inertia = inertia(x, &centroids, &labels);
+        self.inertia = best_inertia;
+        self.n_iter = n_iter;
         self.labels = Some(labels);
         self.centroids = Some(centroids);
 
@@ -414,58 +505,81 @@ impl UnsupervisedEstimator for KMeans {
     }
 }
 
+impl KMeans {
+    /// Restart `run`: D² seeding, then Lloyd iterations.
+    fn lloyd(&self, x: &Matrix<f32>, run: usize) -> (Matrix<f32>, Vec<usize>, f32, usize) {
+        self.lloyd_from(x, self.kmeans_plusplus_init(x, run))
+    }
+
+    /// Lloyd iterations from `centroids`: (centroids, labels, inertia, iterations).
+    fn lloyd_from(
+        &self,
+        x: &Matrix<f32>,
+        mut centroids: Matrix<f32>,
+    ) -> (Matrix<f32>, Vec<usize>, f32, usize) {
+        let mut labels = vec![0; x.n_rows()];
+        let mut n_iter = 0;
+
+        for iter in 0..self.max_iter {
+            // Assign samples to nearest centroid
+            labels = self.assign_labels(x, &centroids);
+
+            // Update centroids
+            let new_centroids = self.update_centroids(x, &labels);
+
+            // Check convergence
+            if self.centroids_converged(&centroids, &new_centroids) {
+                n_iter = iter + 1;
+                centroids = new_centroids;
+                break;
+            }
+
+            centroids = new_centroids;
+            n_iter = iter + 1;
+        }
+
+        let run_inertia = inertia(x, &centroids, &labels);
+        (centroids, labels, run_inertia, n_iter)
+    }
+}
+
+/// `SplitMix64` finalizer: a seeded, platform-independent row draw for restarts.
+fn splitmix64(mut z: u64) -> u64 {
+    z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// A seeded `SplitMix64` stream for the D² draws.
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    /// Uniform in `[0, 1)` from the top 53 bits.
+    fn next_unit(&mut self) -> f64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        (splitmix64(self.0) >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// Squared distance of every sample to sample `row`.
+fn distances_sq_to_sample(x: &Matrix<f32>, row: usize) -> Vec<f32> {
+    let n_features = x.n_cols();
+    (0..x.n_rows())
+        .map(|i| {
+            (0..n_features)
+                .map(|j| {
+                    let diff = x.get(i, j) - x.get(row, j);
+                    diff * diff
+                })
+                .sum()
+        })
+        .collect()
+}
+
 /// Append the `row`-th row of `x` to the flat centroid buffer.
 fn append_row(centroids_data: &mut Vec<f32>, x: &Matrix<f32>, row: usize, n_features: usize) {
     for j in 0..n_features {
         centroids_data.push(x.get(row, j));
     }
-}
-
-/// Squared Euclidean distance from point `i` to flat centroid `c` in `centroids_data`.
-fn squared_distance_to_centroid(
-    x: &Matrix<f32>,
-    i: usize,
-    centroids_data: &[f32],
-    c: usize,
-    n_features: usize,
-) -> f32 {
-    let mut dist_sq = 0.0;
-    for j in 0..n_features {
-        let diff = x.get(i, j) - centroids_data[c * n_features + j];
-        dist_sq += diff * diff;
-    }
-    dist_sq
-}
-
-/// For each sample, the squared distance to its nearest centroid seen so far.
-fn nearest_centroid_distances_sq(
-    x: &Matrix<f32>,
-    centroids_data: &[f32],
-    n_features: usize,
-) -> Vec<f32> {
-    let n_samples = x.n_rows();
-    let n_current = centroids_data.len() / n_features;
-    let mut min_distances = vec![f32::INFINITY; n_samples];
-    for (i, min_dist) in min_distances.iter_mut().enumerate() {
-        for c in 0..n_current {
-            let dist_sq = squared_distance_to_centroid(x, i, centroids_data, c, n_features);
-            if dist_sq < *min_dist {
-                *min_dist = dist_sq;
-            }
-        }
-    }
-    min_distances
-}
-
-/// Index of the maximum element. Ties resolve to the first occurrence.
-fn argmax(values: &[f32]) -> usize {
-    let mut max_val = 0.0;
-    let mut max_idx = 0;
-    for (i, &v) in values.iter().enumerate() {
-        if v > max_val {
-            max_val = v;
-            max_idx = i;
-        }
-    }
-    max_idx
 }
