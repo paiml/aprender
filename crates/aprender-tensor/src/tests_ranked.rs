@@ -220,3 +220,19 @@ fn layout_markers_follow_the_tensor_layout_contract() -> R {
     );
     Ok(())
 }
+
+#[test]
+fn add_is_elementwise_and_checks_extents() -> R {
+    let a = RankedTensor::<3>::new([1, 2, 2], ramp(4))?;
+    let b = RankedTensor::<3>::new([1, 2, 2], vec![1.0; 4])?;
+    let s = a.add(&b)?;
+    assert_eq!(s.shape(), [1, 2, 2]);
+    assert_eq!(s.data(), &[-2.0, -1.5, -1.0, -0.5]);
+    let wrong = RankedTensor::<3>::zeros([2, 2, 1]);
+    assert!(matches!(
+        a.add(&wrong),
+        Err(TensorError::ShapeMismatch { expected, got })
+            if expected == vec![1, 2, 2] && got == vec![2, 2, 1]
+    ));
+    Ok(())
+}

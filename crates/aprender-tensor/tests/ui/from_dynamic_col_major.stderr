@@ -1,0 +1,22 @@
+error[E0599]: no function or associated item named `from_dynamic` found for struct `RankedTensor<2, ColMajor>` in the current scope
+ --> tests/ui/from_dynamic_col_major.rs:6:42
+  |
+6 |     let _ = RankedTensor::<2, ColMajor>::from_dynamic(&t);
+  |                                          ^^^^^^^^^^^^ function or associated item not found in `RankedTensor<2, ColMajor>`
+  |
+note: if you're trying to build a new `RankedTensor<2, ColMajor>` consider using one of the following associated functions:
+      RankedTensor::<D, L>::new
+      RankedTensor::<D, L>::zeros
+      RankedTensor::<2, ColMajor>::from_gguf
+ --> src/ranked.rs
+  |
+  |     pub fn new(shape: [usize; D], data: Vec<f32>) -> Result<Self, TensorError> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+  |     pub fn zeros(shape: [usize; D]) -> Self {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+  |     pub fn from_gguf(ne: [usize; 2], data: Vec<f32>) -> Result<Self, TensorError> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: the function or associated item was found for
+          - `RankedTensor<D>`

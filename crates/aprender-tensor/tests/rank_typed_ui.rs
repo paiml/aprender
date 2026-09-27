@@ -10,4 +10,7 @@
 fn rank_and_layout_mismatches_do_not_compile() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
+    // The positive half: the typed pipeline (GGUF import, matmul, add, rank
+    // steps, reshape, dynamic round trip) compiles and runs.
+    t.pass("tests/ui-pass/*.rs");
 }

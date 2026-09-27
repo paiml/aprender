@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/ui/add_different_rank.rs:7:19
+  |
+7 |     let _ = a.add(&b);
+  |               --- ^^ expected `2`, found `3`
+  |               |
+  |               arguments to this method are incorrect
+  |
+  = note: expected reference `&RankedTensor<2>`
+             found reference `&RankedTensor<3>`
+note: method defined here
+ --> src/ranked.rs
+  |
+  |     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
+  |            ^^^

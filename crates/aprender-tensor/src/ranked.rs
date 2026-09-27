@@ -166,6 +166,33 @@ impl<const D: usize, L: Layout> RankedTensor<D, L> {
         }
         self.data[self.offset(index)]
     }
+
+    /// Elementwise `self + other`. Rank and layout are type facts, so adding a
+    /// rank-2 tensor to a rank-3 one, or row-major to column-major, does not
+    /// compile; only the extents are checked.
+    ///
+    /// # Errors
+    ///
+    /// `ShapeMismatch` if the shapes differ.
+    pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.shape != other.shape {
+            return Err(TensorError::ShapeMismatch {
+                expected: self.shape.to_vec(),
+                got: other.shape.to_vec(),
+            });
+        }
+        let data = self
+            .data
+            .iter()
+            .zip(&other.data)
+            .map(|(a, b)| a + b)
+            .collect();
+        Ok(RankedTensor {
+            shape: self.shape,
+            data,
+            layout: PhantomData,
+        })
+    }
 }
 
 impl<const D: usize> RankedTensor<D, RowMajor> {

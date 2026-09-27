@@ -285,6 +285,14 @@ use trueno::backends::q6k::matmul_q6k_f32_colmajor;
 // (and their _dispatch variants)
 ```
 
+**Statically unrepresentable in `aprender-tensor` (#3150):** `RankedTensor<D, L>`
+(`crates/aprender-tensor/src/ranked.rs`) carries rank and layout in the type. A GGUF
+matrix is `RankedTensor<2, ColMajor>` and has no `matmul`/`add`; it reaches the row-major
+kernel only through `into_apr()` (zero-copy `[ne0, ne1]` → `[ne1, ne0]`) or
+`to_row_major()`. Passing it where a `Matrix` is expected is a compile error, pinned
+by `crates/aprender-tensor/tests/rank_typed_ui.rs`. The trueno `*_colmajor` imports
+above are still reachable and still forbidden: the type covers only this crate.
+
 **REQUIRED IMPORTS (row-major):**
 ```rust
 use crate::quantize::fused_q4k_parallel_matvec;

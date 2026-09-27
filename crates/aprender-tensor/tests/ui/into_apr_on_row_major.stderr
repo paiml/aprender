@@ -1,0 +1,11 @@
+error[E0599]: no method named `into_apr` found for struct `RankedTensor<2>` in the current scope
+ --> tests/ui/into_apr_on_row_major.rs:6:15
+  |
+6 |     let _ = a.into_apr();
+  |               ^^^^^^^^
+  |
+help: there is a method `into` with a similar name
+  |
+6 -     let _ = a.into_apr();
+6 +     let _ = a.into();
+  |

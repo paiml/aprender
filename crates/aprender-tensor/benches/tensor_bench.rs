@@ -1,7 +1,7 @@
 #![allow(missing_docs, clippy::expect_used, clippy::disallowed_methods)]
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::hint::black_box;
-use trueno_tensor::{einsum, matmul, Tensor};
+use trueno_tensor::{einsum, matmul, Matrix, Tensor};
 
 fn make_matrix(m: usize, n: usize) -> Tensor {
     let data: Vec<f32> = (0..m * n)
@@ -63,11 +63,36 @@ fn bench_einsum_trace(c: &mut Criterion) {
     }
     group.finish();
 }
+/// #3150 zero-cost evidence: the old dynamic route (`einsum "ij,jk->ik"`), the
+/// migrated `matmul` (rank-checks and copies into `Matrix`, then back), and the
+/// typed kernel called directly. The typed path carries no rank checks at all;
+/// what `matmul` adds over `Matrix::matmul` is the `from_dynamic` copy.
+fn bench_rank_typed_matmul(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rank_typed_matmul");
+    for &n in &[16, 64, 256] {
+        let a = make_matrix(n, n);
+        let b = make_matrix(n, n);
+        let ta = Matrix::from_dynamic(&a).expect("rank 2");
+        let tb = Matrix::from_dynamic(&b).expect("rank 2");
+        group.bench_with_input(BenchmarkId::new("einsum_route", n), &n, |bench, _| {
+            bench
+                .iter(|| black_box(einsum("ij,jk->ik", black_box(&a), black_box(&b)).expect("ok")));
+        });
+        group.bench_with_input(BenchmarkId::new("dynamic_matmul", n), &n, |bench, _| {
+            bench.iter(|| black_box(matmul(black_box(&a), black_box(&b)).expect("ok")));
+        });
+        group.bench_with_input(BenchmarkId::new("typed_matmul", n), &n, |bench, _| {
+            bench.iter(|| black_box(black_box(&ta).matmul(black_box(&tb)).expect("ok")));
+        });
+    }
+    group.finish();
+}
 
 criterion_group!(
     benches,
     bench_matmul,
     bench_einsum_transpose,
-    bench_einsum_trace
+    bench_einsum_trace,
+    bench_rank_typed_matmul
 );
 criterion_main!(benches);
