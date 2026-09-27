@@ -59,12 +59,31 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - Moving the recurrence into aprender-compute is a refactor with no extra guarantee; deferred (not a 0.72 row).
   - `[U]` Build cost: `cargo check -p aprender-train --features realizar` was not run (heavy slots were saturated). The
     first R2 PR must show it green.
+- **Evidence (2026-09-27, branch `la-72/r3-backward`, no PR while the repo is over the PR cap)** `[V]`
+  - `transformer::Qwen35Model::from_gguf` + `forward` on the real Qwen3.5-0.8B-Q4_K_M: QTG-001 holds, logit for logit,
+    against serve's `forward_single_qwen35`. The two sides read the GGUF independently, and dequant agrees to ≤ 1e-6.
+  - **Finding:** serve's oracle must run under `realizar::quantize::with_fp32_activations`. By default, serve's Q4_K
+    matvec quantises the activation to Q8_K first, which alone moves the 0.8B to cos 0.998 of the f32 forward. That gap
+    is serve's arithmetic, not a model mismatch. Recorded as a precondition of `train_serve_forward_identity`.
 
 ### R3 — GDN backward + gradcheck · contract `qwen35-train-gdn-v1` (QTG-003/004) · K̂ 120 `[A]`
 - **Change:** analytic backward for every GDN parameter, plus the carried state S₀ (chunked training passes state across chunks).
 - **Gate:** f64 central-difference gradcheck, rel err ≤ 1e-3, on a tiny layer (2 heads, d = 8, T = 16).
 - **Planted:** zeroing the read-out gradient (through r_t = S_tᵀk_t) turns it RED.
 - **Risk K1:** no in-tree training-side reference exists; this is the train's largest schedule risk.
+- **Evidence (2026-09-27, `la-72/r3-backward` @8bbedb0960, branch only)** `[V]`
+  - The backward is split into 4 steps. Each step recomputes its own forward, is generic over f32/f64, and carries its
+    own gradcheck and planted mutants:
+    - scan (`gated_delta_scan_backward`, dS₀ included; QTG-004 read-out mutant RED at 5.2e-2);
+    - GDN mixer (`gdn_mixer_backward`; 5 mutants RED, plus the softplus cut-over from review 6b);
+    - attention and block (`gated_attn_backward`, `qwen35_block_backward`; 8 RED);
+    - whole LM with next-token CE (`Qwen35LmRef::loss_and_grads`; 7 RED).
+  - Rows QTG-006/007/008 added.
+  - The f32 path is unchanged: the real 0.8B QTG-001 was re-run green after each generic refactor. On the real 0.8B,
+    `loss_and_grads` equals an independent f64 CE of `forward`'s logits, and every gradient is finite (about 2 min on CPU).
+  - **Finding (QTG-008):** a plain f32 softmax denominator over the 248k vocabulary drops the tail, which biased the
+    0.8B loss 1.2e-4 low (8.880096 vs 8.881130). The denominator is now a Kahan sum.
+  - K1 is retired: the training side has its own f64 reference.
 
 ### R4 — QLoRA end to end on Qwen3.5-4B (CUDA) · contract `qwen35-qlora-e2e-v1` · K̂ 90 `[A]`
 - **Cell:** NF4 base; LoRA r16 on attention, MLP and GDN projections; 1,000-sample pinned set; seed 42; 200 steps; RTX 4090.

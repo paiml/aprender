@@ -37,13 +37,21 @@ equations:
     - Both sides load the same .apr bytes (sha recorded)
     preconditions:
     - same tokenizer ids fed to both sides
+    - 'serve oracle runs under realizar::quantize::with_fp32_activations — its default Q4_K matvec quantises activations to Q8_K first, which alone moves the real 0.8B to cos 0.998 of the f32 forward (the arithmetic, not the model)'
   gdn_backward:
     formula: '∀ θ ∈ {q,k,v,z,β,dt projections, A_log, dt_bias, conv1d, norm}: |∂L/∂θ_analytic − (L(θ+ε) − L(θ−ε))/2ε| ≤ 1e-3 · max(1, |∂L/∂θ_fd|)'
-    domain: f64 reference on a 2-head, d_k=d_v=8, T=16 GDN layer with causal conv1d; ε = 1e-4
+    domain: 'f64 reference on a 2 key : 4 value head, d_k=d_v=8, T=16 GDN scan, and an 8-wide mixer with causal conv1d (K=4, T=8); ε = 1e-6'
     invariants:
     - Gradient w.r.t. the carried state S_0 is also checked (chunked training passes state across chunks)
     preconditions:
     - T ≥ 2
+  lm_cross_entropy:
+    formula: 'L = (1/T) Σ_t [log Σ_v exp(z_{t,v} − m_t) + m_t − z_{t,y_t}];  ∂L/∂z_{t,v} = (softmax(z_t)_v − 1[v = y_t]) / T'
+    domain: next-token loss over the whole model (embedding, hybrid stack, final norm, lm_head or tied embedding)
+    invariants:
+    - 'the f32 softmax denominator is a compensated sum: a plain f32 sum over a 248k vocabulary drops every term below half an ulp of the running total'
+    preconditions:
+    - one target per position, every id < vocab
 proof_obligations:
 - type: equivalence
   property: The trained forward equals the served forward
@@ -54,6 +62,11 @@ proof_obligations:
   property: GDN analytic gradient equals central finite differences
   formal: 'max_θ rel_err(∂L/∂θ) ≤ 1e-3 (f64 reference)'
   tolerance: 1.0e-03
+  applies_to: all
+- type: bound
+  property: f32 cross-entropy equals f64 cross-entropy at real vocabulary size
+  formal: '|L_f32 − L_f64| ≤ 1e-6 on a 250 000-logit row whose tail sits below half an f32 ulp of its head'
+  tolerance: 1.0e-06
   applies_to: all
 - type: invariant
   property: Layer schedule matches the family contract
@@ -85,6 +98,21 @@ falsification_tests:
   prediction: 'the training model reports the same attention/GDN layer indices as contracts/model-families/qwen3_5.yaml and aprender-serve'
   test: 'table test over the 0.8B, 4B, 9B, 27B configs'
   if_fails: 'layer interleaving drifted between crates'
+- id: FALSIFY-QTG-006
+  rule: Whole-model gradcheck (attention, block, language model)
+  prediction: 'the gated-attention mixer, a whole block with either mixer, and the whole LM under next-token cross-entropy (GDN + attention layers, lm_head separate and tied) pass central-difference gradcheck at rel err ≤ 1e-3 in f64, for the input and every weight'
+  test: 'transformer::qwen35_layer_backward::tests::falsify_qtg_003_{gated_attn,block}_gradcheck_f64, transformer::qwen35_lm::tests::falsify_qtg_003_lm_gradcheck_f64'
+  if_fails: 'a term of the attention, block, embedding, final-norm or head backward is missing or wrong'
+- id: FALSIFY-QTG-007
+  rule: Planted falsifiers for QTG-006
+  prediction: 'each of: rope backward without the inverse rotation, softmax without Σ P·dP, RMSNorm without its r³ term, wrong kv-group map, gate without σ′, block residual dropped, SwiGLU up without silu, dv without P, CE without softmax, CE without 1/T, tied head gradient dropped, embedding scatter that overwrites, final-norm backward skipped, layer input off by one, layer gradients unreversed — turns QTG-006 RED'
+  test: 'mutation run over qwen35_layer_backward.rs and qwen35_lm.rs'
+  if_fails: 'the gradcheck does not exercise that path'
+- id: FALSIFY-QTG-008
+  rule: f32 cross-entropy keeps a large-vocabulary tail
+  prediction: 'f32 CE of a 250 000-logit row (head 0, tail −18) is within 1e-6 of f64 (0.0038); a plain f32 sum returns 0, and on the real 0.8B biases the loss 1.2e-4 low (8.880096 vs 8.881130)'
+  test: 'transformer::qwen35_lm::tests::f32_cross_entropy_keeps_a_large_vocab_tail; ignored real_model_loss_and_grads_are_consistent_and_finite'
+  if_fails: 'the f32 training loss is biased low by the vocabulary tail'
 qa_gate:
   certeza:
     min_score: 0.0
