@@ -54,3 +54,35 @@ main and cherry-pick.
 - d1/E8-4002-recipe: blocked by its owner (no trainer path).
 - Already in car, no action: 49/4507-fat-ws-aside, d1/ont10-s12-trueno-rag-g13, fix/fat-signer-secret-b64, e6/x86-slow-tests.
 - Superseded: PMAT-3850-resolve-qtype-refuses (by batch/gpu-correctness-071), fix/3761-header-only-reads-on-main (by 91/3761-on-main).
+
+## Pre-built fold branches (cop 77, 2026-09-27)
+
+Every fold is built off origin/main `761d6247de` and has no PR. CI is started by
+`gh workflow run ci.yml --ref <branch>`, three at a time. A dispatched run takes the full tier.
+One test, `thread_config::test_auto_config_at_least_half_for_decode`, fails on the gx10 serve lib
+suite for main `761d6247de` itself. It is marked PRE-EXISTING below and is not caused by any fold.
+
+| Fold | Branch | Head | Local result | CI run |
+|---|---|---|---|---|
+| F2a | fold/rc1-F2a-ladder-c1 | `0dcad701ab` | c1/3846 alone: ladder self-test 153/0 | – |
+| F3 | fold/rc1-F3-4313-prefill | `2c54d9844d` | fmt fixed. Serve lib: PRE-EXISTING thread_config only. 63f36159ef left out (patches aprender-gpu/src/ptx_patch.rs, which is car-only) | – |
+| F5 | fold/rc1-F5-flow003 | `adc8356100` | green. The serve lib test was killed by the memcap, but serve/src is unchanged | 36322092872 |
+| F6 | fold/rc1-F6-gpu-correctness-a | `8a45a50e6c` | green except PRE-EXISTING thread_config | – |
+| F9 | fold/rc1-F9-serve-2706 | `4897c0890f` | fmt and clippy fixed (`;` at tokenizer.rs:338); 2815 tokenizer test ok | – |
+| F11 | fold/rc1-F11-e9 | `75e79f0733` | green (core lib 14326/0) | – |
+| F12 | fold/rc1-F12-2378 | `9ba41b3f18` | fix/2378 cherry-picked + cb/2378 merged; PRE-EXISTING thread_config only | – |
+| S1 | fold/rc1-S1-3761 | `0c6aec0da2` | green except PRE-EXISTING thread_config | – |
+| S2 | fold/rc1-S2-4153 | `13746adedb` | clippy clean on core/serve/cli; PRE-EXISTING thread_config only | – |
+| S3 | fold/rc1-S3-parity-receipt | `fa6289e784` | green (contracts.nt regenerated) | 36322094539 |
+| S4 | fold/rc1-S4-rex-001 | `89832a3cbf` | green on the touched modules (the full serve and cli suites were memcap-killed) | – |
+| S5 | fold/rc1-S5-tier-base-race | `f8a1d940ca` | tier self-test 94/0. **CI definition: needs 3/3 agy quorum** | 36322091100 |
+
+**Not pushed. Each needs its owner or a base to land first:**
+
+- **F1** (d1 + e6): e6's commits change scripts/release/rc_cut.sh and rc_fleet_stage.sh, which exist only on car. They apply after car lands. d1 alone merged clean after a binary-release.yml resolution. **workflow**
+- **F2 part b** (98/4520 `e0f5f33a62`): with the box re-exec, `check_model_ladder.sh --self-test` goes 3 bad: `producer mutant no-lock / no-choom / unbounded SURVIVED the lock checks`. Owner 98.
+- **F4** (OBS pair): blocked on fold/88-obs00-on-b3, which has the witness and contract files. Owner 88.
+- **F7** (3111 + 3759): `scripts/cuda_module_key_gate.sh:213 DET002` (`started=$(date -u …)`) fails bashrs-gate. Owner 41.
+- **F8** (gdn + 4486): 49fb4bb4cf depends on #4273 split-decode, which is car-only. It applies after car lands.
+- **F10** (2530 + df/2556): the ratchet ceiling was measured on batch/0.70.0: `kernel contracts self-exempted by registry: true rose to 513 (ceiling 512)`. Owner df re-measures on main.
+- **F13** (0d/3559 + 98 ont4g): the binding.yaml files are car-only and ont4g needs batch/ont-10 files. Both apply after car and ont-10 land.
