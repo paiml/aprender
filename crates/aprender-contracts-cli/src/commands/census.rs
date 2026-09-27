@@ -36,6 +36,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use provable_contracts::lint::collect_yaml_files;
+use provable_contracts::ontology::extract::pv_contract;
 use provable_contracts::schema::parse_contract;
 /// The declaration's shape, defined ONCE — in the schema module, beside the
 /// `pv validate` rules that check it (PMAT-1098). It used to be declared here,
@@ -239,14 +240,29 @@ fn declared_external(root: &Path) -> Result<Vec<ExternalCorpus>, Box<dyn std::er
     Ok(corpora)
 }
 
-/// Walk `dir` with `pv lint`'s file rule and count. Returns the census, or the
+/// The files the census counts: `dir` by `pv lint`'s file rule, plus (#4538) the crate-local contracts Σ admits
+/// from `crates/*/contracts`. Σ's own walk ([`pv_contract::corpus`]) decides the crate files, so the census and the
+/// graph cannot count two different corpora; refused crate copies are counted by neither.
+fn census_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if !dir.is_dir() {
+        return files;
+    }
+    collect_yaml_files(dir, &mut files);
+    let top: BTreeSet<PathBuf> = files.iter().cloned().collect();
+    files.extend(
+        pv_contract::corpus(dir)
+            .files
+            .into_iter()
+            .filter(|f| !top.contains(f)),
+    );
+    files
+}
+
+/// Walk `dir` with `pv lint`'s file rule and Σ's crate walk, and count. Returns the census, or the
 /// refusal the corpus earned (see the module docs).
 pub fn census_of(dir: &Path) -> Result<Census, Box<dyn std::error::Error>> {
-    let mut all = Vec::new();
-    if dir.is_dir() {
-        collect_yaml_files(dir, &mut all);
-    }
-    let mut files = all;
+    let mut files = census_files(dir);
     if files.is_empty() {
         return Err(ZeroContracts {
             path: dir.to_path_buf(),
@@ -515,6 +531,34 @@ mod tests {
             c.n_files, 1,
             "binding.yaml and kaizen/ are excluded by provable_contracts::lint's walker"
         );
+    }
+
+    /// #4538: the census counts the corpus Σ extracts — its admitted crate contracts too, never a refused copy —
+    /// so a README count cannot undercount the graph.
+    #[test]
+    fn the_census_counts_the_crate_contracts_sigma_admits_and_not_the_ones_it_refuses() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path().join("contracts");
+        write_valid(&dir, "top.yaml");
+        write_valid(&dir, "same.yaml");
+        let k = tmp.path().join("crates/k");
+        std::fs::create_dir_all(k.join("contracts")).expect("mkdir");
+        std::fs::write(k.join("Cargo.toml"), "[package]\nname = \"k\"\n").expect("write");
+        write_valid(&k.join("contracts"), "uniq.yaml");
+        write_valid(&k.join("contracts"), "same.yaml");
+        std::fs::write(
+            k.join("contracts/top.yaml"),
+            std::fs::read_to_string(dir.join("top.yaml")).expect("read") + "# differs\n",
+        )
+        .expect("write");
+        let c = census_of(&dir).expect("a valid corpus censuses");
+        // top + same at the top level, uniq admitted; the identical `same` is skipped, the differing `top` refused.
+        assert_eq!(c.n_files, 3);
+        let sigma: Vec<_> = pv_contract::documents(&dir)
+            .into_iter()
+            .map(|(s, _, _)| s)
+            .collect();
+        assert_eq!(c.n_files, sigma.len(), "{sigma:?}");
     }
 
     #[test]

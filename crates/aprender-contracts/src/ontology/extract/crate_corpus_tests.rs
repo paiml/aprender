@@ -161,3 +161,23 @@ fn a_binding_that_names_a_refused_crate_copy_is_refused_by_name_not_resolved_to_
     );
     assert_eq!(stats.symbols, 2);
 }
+
+#[test]
+fn a_crate_yaml_that_is_not_a_typed_contract_is_skipped_by_name_not_admitted() {
+    let t = fixture();
+    write(
+        t.path(),
+        "crates/k/contracts/cgp-v1.yaml",
+        "name: cgp\nkernel: x\n",
+    );
+    let dir = t.path().join("contracts");
+    let c = corpus(&dir);
+    assert!(!stems(&dir).contains(&"cgp-v1".to_string()));
+    assert!(c
+        .files
+        .iter()
+        .all(|f| crate::schema::parse_contract(f).is_ok() || f.starts_with(&dir)));
+    assert!(c
+        .unparsed
+        .contains(&"crates/k/contracts/cgp-v1.yaml".to_string()));
+}

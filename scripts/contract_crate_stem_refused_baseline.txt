@@ -11,35 +11,19 @@
 # origin/main). Adding a line is not a fix. Make the crate copy byte-identical
 # to the authoritative one, rename it, or delete it, and then remove the line.
 agent-loop-v1
-bert
-cgp-monorepo-consolidation-v1
 checkpoint-v1
-deepseek
-falcon_h1
-gemma
 gemm-v1
-gpt2
 kernel-fusion-v1
-llama
 loss-functions-v1
-mamba
 matmul-v1
-mistral
-moonshine
-openelm
 optimizer-v1
-phi
 quantization-v1
 quantized-dot-product-v1
-qwen2
-qwen3
 qwen3_5
 rope-kernel-v1
-rwkv7
 softmax-kernel-v1
 tensor-layout-v1
 tokenizer-v1
 tokenize-v1
 training-loop-v1
 transpose-kernel-v1
-whisper
