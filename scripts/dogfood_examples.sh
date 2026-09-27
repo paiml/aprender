@@ -88,6 +88,7 @@ NEEDS_DATA_RE='No such file or directory|[Mm]odel not found|not found at |Failed
 # these must be re-run WITH the feature before a release verdict -- a skip here
 # must never be readable as "the compression example works".
 NEEDS_FEATURE_RE="requires the '[^']+' feature|requires the features?:"
+RESOURCE_RE='No space left on device|out of memory|memory allocation of [0-9]+ bytes failed|signal: 9|SIGKILL'
 
 
 # ---------------------------------------------------------------------------
@@ -211,8 +212,27 @@ classify() {
         printf 'needs-feature\t%s\n' "$(oneline "${line}")"
         return 0
     fi
-    line=$(grep -m1 -E '[^[:space:]]' "${log}" 2> /dev/null) || line=''
-    printf 'fail\t%s: %s\n' "${stage}" "$(oneline "${line:-no output}")"
+    # A starved host (disk, memory) fails every later build in a row, and the
+    # first line it leaves is a bare "could not compile" or nothing at all: the
+    # log itself may not fit on a full disk. examples-nightly 36230807732 had
+    # its serve rows fail as "build: no output" and pass on the rerun. Cite the resource line
+    # when there is one, and for an empty log say so with rc and free space.
+    line=$(grep -m1 -E "${RESOURCE_RE}" "${log}" 2> /dev/null) || line=''
+    if [ -z "${line}" ]; then
+        line=$(grep -m1 -E '[^[:space:]]' "${log}" 2> /dev/null) || line=''
+    fi
+    if [ -z "${line}" ]; then
+        line="no output (rc=${rc}; free: $(free_kib "${log%/*}") log dir, $(free_kib "${CARGO_TARGET_DIR:-.}") target)"
+    fi
+    printf 'fail\t%s: %s\n' "${stage}" "$(oneline "${line}")"
+}
+
+# free_kib DIR -- available space on DIR's filesystem, or `?` when df cannot say.
+free_kib() {
+    local kib
+    # DET004 waived: the host's free space is exactly what this cite reports.
+    kib=$(df -Pk "$1" 2> /dev/null | awk 'NR == 2 { print $4 }') || kib=''
+    printf '%sKiB' "${kib:-?}"
 }
 
 # ---------------------------------------------------------------------------
@@ -418,6 +438,23 @@ selftest() {
     st_expect 'class: nohw -> needs-hardware' "${out}" "${p}" nohw needs-hardware
     st_expect 'class: nodata -> needs-data' "${out}" "${p}" nodata needs-data
     st_expect 'class: nofeature -> needs-feature' "${out}" "${p}" nofeature needs-feature
+    st_expect 'class: silent -> fail' "${out}" "${p}" silent fail
+    st_expect 'class: starved -> fail' "${out}" "${p}" starved fail
+
+    # A silent failure cites its rc and free space, never a bare "no output".
+    if awk -F'\t' '$2 == "silent" && $6 ~ /no output \(rc=5; free: [0-9]+KiB log dir, [0-9]+KiB target\)/ { f = 1 } END { exit !f }' "${out}"; then
+        st_row PASS 'cite: silent failure names rc=5 and free space'
+    else
+        st_row FAIL 'cite: silent failure names rc=5 and free space' \
+            "$(oneline "$(awk -F'\t' '$2 == "silent" { print }' "${out}")")"
+    fi
+    # A resource line wins over the first line of the log.
+    if awk -F'\t' '$2 == "starved" && $6 ~ /No space left on device/ { f = 1 } END { exit !f }' "${out}"; then
+        st_row PASS 'cite: starved failure cites the resource line, not the first line'
+    else
+        st_row FAIL 'cite: starved failure cites the resource line, not the first line' \
+            "$(oneline "$(awk -F'\t' '$2 == "starved" { print }' "${out}")")"
+    fi
 
     # NEEDS_FEATURE_RE, both polarities. A skip class is the dangerous kind of
     # addition -- it can only ever turn a `fail` into a non-failure -- so the
@@ -462,7 +499,7 @@ selftest() {
     fi
 
     # Trailer counts.
-    if grep -qxF '# summary pass=1 fail=1 timeout=1 needs-args=1 needs-hardware=1 needs-data=1' "${out}"; then
+    if grep -qxF '# summary pass=1 fail=3 timeout=1 needs-args=1 needs-hardware=1 needs-data=1' "${out}"; then
         st_row PASS 'trailer: summary counts'
     else
         st_row FAIL 'trailer: summary counts' "$(oneline "$(grep '^# summary' "${out}" || true)")"
