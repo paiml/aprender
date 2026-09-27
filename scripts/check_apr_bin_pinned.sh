@@ -312,17 +312,32 @@ ltrim() {
 # `pv validate` after the quotes go. It does blind us to the rare `pv "$@"`
 # form, which is the correct trade -- a false positive on every reporter line
 # would get this guard disabled, and a disabled guard catches nothing.
+#
+# Both set DEMSG rather than print, and strip in bash, not `$(… | sed …)`: they
+# run on every candidate line, and that fork pair per line was most of this
+# guard's CI time (#4527). unquote() is sed "s/'[^']*'//g; s/\"[^\"]*\"//g"
+# exactly -- leftmost non-overlapping '…' spans, then "…" spans of what is left;
+# an unpaired quote stays.
+unquote() {
+    local t="$1" q out
+    for q in "'" '"'; do
+        out=""
+        while [[ $t == *"$q"*"$q"* ]]; do
+            out+="${t%%"$q"*}"; t="${t#*"$q"}"; t="${t#*"$q"}"
+        done
+        t="$out$t"
+    done
+    DEMSG="$t"
+}
+
 demessage_pv() {
-    printf '%s' "$1" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g"
+    unquote "$1"
 }
 
 demessage() {
-    local t="$1"
-    case "$t" in
-        echo\ *|printf\ *|echo|printf)
-            printf '%s' "$t" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g"
-            ;;
-        *) printf '%s' "$t" ;;
+    case "$1" in
+        echo\ *|printf\ *|echo|printf) unquote "$1" ;;
+        *) DEMSG="$1" ;;
     esac
 }
 
@@ -357,7 +372,7 @@ check_file() {
                 continue ;;
         esac
 
-        probe="$(demessage "$trimmed")"
+        demessage "$trimmed"; probe="$DEMSG"
 
         # CLASS 1 --------------------------------------------------------
         if [[ $probe =~ $BARE_APR ]]; then
@@ -379,7 +394,7 @@ check_file() {
         # CLASS 3 --------------------------------------------------------
         # apr_bin.sh probes `type -aP apr` on purpose, to NAME the shadows;
         # it is exempted wholesale above.
-        probe_pv="$(demessage_pv "$trimmed")"
+        demessage_pv "$trimmed"; probe_pv="$DEMSG"
         if [[ $probe_pv =~ $BARE_PV ]]; then
             report "$f" "$lineno" "BARE-PV" "$trimmed"
         fi
@@ -485,7 +500,7 @@ if [ "${1:-}" = "--self-test" ]; then
         # Mirror check_file's own pre-filters exactly, or the table would be
         # testing a different pipeline than the one that ships.
         ltrim "$line"; t="$LTRIM"
-        p="$(demessage "$t")"
+        demessage "$t"; p="$DEMSG"
         case "$t" in '#'*) p='' ;; esac
         case "$t" in name:*|-\ name:*) p='' ;; esac
         if [ "$want" = match ]; then
@@ -507,7 +522,7 @@ if [ "${1:-}" = "--self-test" ]; then
     probe_case_pv() {
         local re="$1" line="$2" want="$3" label="$4" p t
         ltrim "$line"; t="$LTRIM"
-        p="$(demessage_pv "$t")"
+        demessage_pv "$t"; p="$DEMSG"
         case "$t" in '#'*) p='' ;; esac
         case "$t" in name:*|-\ name:*) p='' ;; esac
         if [ "$want" = match ]; then
