@@ -85,12 +85,10 @@ fn code(e: &MergeError) -> u8 {
 fn merge_with_base_matches_lean_merge_rows() {
     for (bl, dl, want) in MERGE_ROWS {
         let (base, delta) = (model(Some(bl)), model(dl));
-        let got = catch_unwind(AssertUnwindSafe(|| merge_with_base(&base, delta)))
-            .ok()
-            .map(|m| {
-                assert_eq!(m.len(), 1, "merge keeps exactly the base's names");
-                m["w"].len()
-            });
+        let got = catch_unwind(AssertUnwindSafe(|| merge_with_base(&base, delta))).ok().map(|m| {
+            assert_eq!(m.len(), 1, "merge keeps exactly the base's names");
+            m["w"].len()
+        });
         assert_eq!(got, want, "base {bl}, delta {dl:?}");
     }
 }
