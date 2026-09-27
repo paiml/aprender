@@ -292,6 +292,19 @@ impl<'a> KernelBuilder<'a> {
         dst
     }
 
+    /// `mov.b32` a 32-bit integer register's bits into a new `.f32` register. No
+    /// conversion: the bits are reinterpreted (#4376 uses it to turn an s32 mma result
+    /// seeded with `0x4B40_0000` into `1.5·2^23 + I` without a quarter-rate `cvt`).
+    pub fn mov_f32_from_bits(&mut self, src: VirtualReg) -> VirtualReg {
+        let dst = self.registers.allocate_virtual(PtxType::F32);
+        self.instructions.push(
+            PtxInstruction::new(PtxOp::Mov, PtxType::B32)
+                .dst(Operand::Reg(dst))
+                .src(Operand::Reg(src)),
+        );
+        dst
+    }
+
     // ===== MMA.sync (SM 8.0+ — higher IPC than WMMA) =====
 
     /// mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32

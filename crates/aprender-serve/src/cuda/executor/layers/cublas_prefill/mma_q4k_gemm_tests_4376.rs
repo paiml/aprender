@@ -141,3 +141,47 @@ fn mma_q4k_gemm_matches_dp4a_and_the_host_reference() {
         );
     }
 }
+
+/// Kernel time at Qwen3.5-4B prefill shapes, mma vs dp4a (each includes its Q8_1
+/// quantize pass). `cargo test ... -- --ignored mma_q4k_gemm_bench --nocapture`.
+#[test]
+#[ignore = "benchmark: needs a quiet GPU"]
+fn mma_q4k_gemm_bench_4376() {
+    let Ok(mut exec) = CudaExecutor::new(0) else {
+        eprintln!("SKIP #4376 bench: no CUDA device");
+        return;
+    };
+    let mut rng = rand::rngs::StdRng::seed_from_u64(4376);
+    for (m, n, k) in [(4096u32, 9216u32, 2560u32), (4096, 2560, 9216)] {
+        let (mu, nu, ku) = (m as usize, n as usize, k as usize);
+        let w = random_q4k(&mut rng, nu, ku);
+        let x: Vec<f32> = (0..mu * ku)
+            .map(|_| rng.random_range(-1.0f32..1.0))
+            .collect();
+        let w_buf = GpuBuffer::from_host(&exec.context, &w).expect("upload w");
+        let x_buf = GpuBuffer::from_host(&exec.context, &x).expect("upload x");
+        let y = GpuBuffer::<f32>::new(&exec.context, mu * nu).expect("alloc y");
+        for mmq in [false, true] {
+            let mut launch = |exec: &mut CudaExecutor| {
+                if mmq {
+                    exec.launch_mma_q4k_gemm(w_buf.as_ptr(), x_buf.as_ptr(), y.as_ptr(), m, n, k)
+                } else {
+                    exec.launch_dp4a_q4k_gemm(w_buf.as_ptr(), x_buf.as_ptr(), y.as_ptr(), m, n, k)
+                }
+                .expect("launch");
+            };
+            launch(&mut exec);
+            exec.stream.synchronize().expect("sync");
+            let iters = 10;
+            let t0 = std::time::Instant::now();
+            for _ in 0..iters {
+                launch(&mut exec);
+            }
+            exec.stream.synchronize().expect("sync");
+            let ms = t0.elapsed().as_secs_f64() * 1e3 / f64::from(iters);
+            let tops = 2.0 * f64::from(m) * f64::from(n) * f64::from(k) / (ms * 1e-3) / 1e12;
+            let name = if mmq { "mma" } else { "dp4a" };
+            eprintln!("#4376 bench {name} m={m} n={n} k={k}: {ms:.3} ms ({tops:.1} TOPS)");
+        }
+    }
+}

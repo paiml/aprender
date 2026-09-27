@@ -1018,7 +1018,7 @@ impl CudaExecutor {
             .expect("module just inserted");
 
         let (grid_x, grid_y) = trueno_gpu::kernels::MmaQ4KGemmKernel::grid(m, n);
-        let config = LaunchConfig::grid_2d(grid_x, grid_y, 128, 1);
+        let config = LaunchConfig::grid_2d(grid_x, grid_y, trueno_gpu::kernels::MMA_Q4K_THREADS, 1);
 
         let mut ptr_y = packed_output_ptr;
         let mut ptr_w = weight_ptr;

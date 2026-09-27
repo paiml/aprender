@@ -59,7 +59,7 @@ pub use fused::{
     FusedRmsNormNf4GemvKernel, FusedRmsNormQ4KGemvKernel,
 };
 pub use legacy::{Q4_0GemvKernel, Q4_1GemvKernel, Q5_0GemvKernel, Q8_0GemvKernel};
-pub use mma_q4k_gemm::MmaQ4KGemmKernel;
+pub use mma_q4k_gemm::{MmaQ4KGemmKernel, MMA_Q4K_THREADS};
 pub(crate) use nf4::nf4_register_lut_lookup;
 pub use nf4::{Nf4GemmKernel, Nf4GemmTransposeKernel};
 pub use nf4_cpu::{

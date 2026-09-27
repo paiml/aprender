@@ -106,7 +106,6 @@ pub use optimizer::{
 };
 pub use persistent::PersistentDecoderKernel;
 pub use quantize::fused_kv_scatter::FusedKvScatterKernel;
-pub use quantize::MmaQ4KGemmKernel;
 pub use quantize::{
     dequantize_nf4, pack_nf4_for_gpu, quantize_nf4, repack_q4k_interleaved, repack_q4k_w4a16,
     unpack_nf4_from_gpu, BatchedHwDp4aQ4KGemvKernel, BatchedQ4KGemvKernel, BatchedQ6KGemvKernel,
@@ -125,6 +124,7 @@ pub use quantize::{
     TrueDp4aQ4KGemvKernel, VectorizedQ4KGemvKernel, W4a16WmmaQ4KGemmKernel, WideQ4KGemvKernel,
     NF4_BLOCK_BYTES, NF4_BLOCK_SIZE, NF4_LUT,
 };
+pub use quantize::{MmaQ4KGemmKernel, MMA_Q4K_THREADS};
 pub use softmax::{LongRowSoftmaxKernel, SoftmaxKernel};
 
 use crate::ptx::optimize::barrier_safety::{self, BarrierSafetyResult};
