@@ -1173,10 +1173,14 @@ mod tests {
     #[test]
     fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
         // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
-        let flipped: BTreeSet<String> = ["gguf", "readme"].iter().map(|s| s.to_string()).collect();
+        // A name no arm will ever count: a real type (readme, binary) stops being arm-less when its row lands.
+        let flipped: BTreeSet<String> = ["gguf", "no-arm-type"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         match by_entity_type(&extract::Extraction::default(), &flipped) {
             Err(ShapeError::Malformed { what, .. }) => assert!(
-                what.contains("entity type readme is registered in Σ as implemented"),
+                what.contains("entity type no-arm-type is registered in Σ as implemented"),
                 "{what}"
             ),
             other => panic!("expected a named refusal, got {other:?}"),
