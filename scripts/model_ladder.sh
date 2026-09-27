@@ -1432,6 +1432,9 @@ while IFS='|' read -r -t 5 ifile ipath; do
 done <<EOF3
 $INVENTORY
 EOF3
+# #4520: the per-cell meter attribution ends with the cells. An apr call after this point (the cells
+# producer, a probe) is not billed to whichever rung happened to run last.
+unset LADDER_METER_CELL LADDER_METER_FILE_BYTES
 
 [ "$DRY" = 1 ] && exit 0
 if [ "$EXECUTED" -eq 0 ]; then
