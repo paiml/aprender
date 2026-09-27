@@ -1079,14 +1079,17 @@ expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as wh
 # ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
   # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
+  # Each mutant re-runs the whole table (~35 s); serially that was ~14 min of the x86-main guard step
+  # (#4527). They are independent (own mktemp dir each), so CRUX_MUTANT_JOBS (default 6) run at once;
+  # the verdicts are then read back in table order, so the output is what the serial loop printed.
+  mjobs=${CRUX_MUTANT_JOBS:-6}; mlist="$TMP/mutants.txt"; : > "$mlist"
   while IFS='|' read -r label must expr; do
     [ -n "$label" ] || continue
+    printf '%s|%s\n' "$label" "$must" >> "$mlist"
     m="$TMP/mut-$label.py"; sed "$expr" "$JUDGE" > "$m"
-    if cmp -s "$JUDGE" "$m"; then broke "F6 mutant $label did not apply"; continue; fi
-    CRUX_JUDGE_OVERRIDE="$m" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$label.log" 2>&1
-    nb=$(grep -c '^  BROKE' "$TMP/mut-$label.log")
-    if grep -q "^  BROKE.*$must" "$TMP/mut-$label.log"; then ok "F6 mutant $label killed by '$must' ($nb row(s) broke)"
-    else broke "F6 mutant $label SURVIVED: '$must' stayed ok ($nb other row(s) broke)"; fi
+    if cmp -s "$JUDGE" "$m"; then : > "$TMP/mut-$label.noapply"; continue; fi
+    while [ "$(jobs -rp | wc -l)" -ge "$mjobs" ]; do wait "$(jobs -rp | head -1)"; done  # no wait -n: bash 3.2
+    CRUX_JUDGE_OVERRIDE="$m" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$label.log" 2>&1 &
   done <<'MUT'
 bad-control-ignored|the only control a token loop|s/^        if bad:$/        if False:/
 no-control-ok|is no control: RED|s/^    if not ctl:$/    if False:/
@@ -1113,6 +1116,13 @@ admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is 
 admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
+  wait
+  while IFS='|' read -r label must; do
+    if [ -e "$TMP/mut-$label.noapply" ]; then broke "F6 mutant $label did not apply"; continue; fi
+    nb=$(grep -c '^  BROKE' "$TMP/mut-$label.log")
+    if grep -q "^  BROKE.*$must" "$TMP/mut-$label.log"; then ok "F6 mutant $label killed by '$must' ($nb row(s) broke)"
+    else broke "F6 mutant $label SURVIVED: '$must' stayed ok ($nb other row(s) broke)"; fi
+  done < "$mlist"
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
