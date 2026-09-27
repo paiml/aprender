@@ -352,6 +352,17 @@ self_test() {
     else t 0 'mutant (host match dropped) still yields a table' - "$cf" "$cd/mutant.sh"
         [ "$ft" != "$(printf '%b' "$want")" ] && echo "  ok   host-match mutant killed" || { echo "  FAIL host-match mutant survived"; fail=1; }
     fi
+    # MUTANT: the #4509 drift itself -- a hand copy overrides the catalogue (intel -cpu, mini no pv)
+    sed 's/^        printf .%s\\t%s\\t%s\\t%s\\n. "\$h" "\$t" "\$as" "\${ps:--}"$/        case "$h" in intel) as=x86_64-unknown-linux-gnu-cpu ;; mini) ps=- ;; esac\n&/' "${BASH_SOURCE[0]}" > "$cd/mutant.sh"
+    if cmp -s "$cd/mutant.sh" "${BASH_SOURCE[0]}"; then echo "  FAIL #4509 hand-copy mutant not built: the anchor moved"; fail=1
+    else t 0 'mutant (#4509 hand copy: intel -cpu, mini no pv) still yields a table' - "$cf" "$cd/mutant.sh"
+        case "$ft" in *'intel	intel	x86_64-unknown-linux-gnu-cpu	'*) [ "$ft" != "$(printf '%b' "$want")" ] && echo "  ok   #4509 hand-copy mutant killed: intel -cpu is not the catalogue's table" \
+            || { echo "  FAIL #4509 hand-copy mutant survived"; fail=1; } ;;
+        *) echo "  FAIL #4509 hand-copy mutant did not plant intel -cpu"; fail=1 ;; esac
+    fi
+    # the table FOLLOWS the catalogue: move intel's apr row to -cpu there and the table moves with it
+    sed 's/x86_64-unknown-linux-gnu-wgpu/x86_64-unknown-linux-gnu-cpu/' "$cf" > "$cd/cpu.tsv"
+    t 0 'catalogue says intel -cpu -> the table says -cpu (no second list to disagree with)' "${want/-wgpu/-cpu}" "$cd/cpu.tsv"
     rm -rf -- "${cd:?}"
     # A FAKE FLEET, end to end: three hosts behind a fake ssh/scp/gh. The operator's
     # acceptance (#4327): "a cut where one host fails verify does NOT publish".
