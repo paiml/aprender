@@ -3,13 +3,13 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "8229e2b9e4537fe7546c88194917d7b1916fc741",
-  "diff_sha256": "de1ccb6d7fef16b24d5b5317039a1c5391bcb2ab4fcb91109183579bd1d36ce8",
+  "head": "0cce84279ec08677b8a26cf8d8d1c18c90424189",
+  "diff_sha256": "399dec5f01b3c80e2e8601c8253449c64e5b798423bc9a99893354800709356c",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 6782589,
-  "prompt_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
+  "prompt_bytes": 6805929,
+  "prompt_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,38 +21,46 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Verified the receipt's specific claims for PMAT-4431 against the diff and the live worktree. The three most contested items from a prior dissenting round (truncation-message change, mutant rewrite, PMAT-4072 status/assignee sync) are each backed by a real, checkable guard, and static inspection of the guard scripts and current tree state confirms the receipt's framing is accurate, not a drive-by change. The admission.rs/receipt.rs refactor genuinely splits row_errors into cell_errors/field_errors/status_errors with the same checks and order. The .gitattributes and scripts/retired/ items match the receipt's description. No refuting evidence found within the scope I could verify without running a build.",
+      "summary": "Judged scope per the receipt is the 7-row \"Fix commits\" table (base = merge commit e5929e6e5); each row's claimed change and its named guard justification were verified directly against the diff and all match. No conflict markers, no unrelated/unasked changes beyond what each guard required.",
       "findings": [
         {
-          "file": "docs/audits/quorum-PMAT-4431.prompt.md",
-          "line": 15,
-          "claim": "The embedded receipt states 'The judged diff (base e5929e6e5) is the three fix commits', but the diff actually pasted in the prompt is the full origin/main...HEAD fold (730 files, ~97k lines) — the entire B3 fold, not just three fix commits.",
-          "fix": "This is not a defect: the ticket title itself ('the full B3 fold ... as one branch from main') and the latest commit (8229e2b9e4 'scope is the full B3 fold, merge-base..head') confirm the review scope was deliberately widened after the receipt text was written. Worth updating the receipt's opening line to match, but it does not change the verdict.",
-          "grounding": "cited"
+          "file": ".gitattributes",
+          "claim": "Adds per-file merge=union for docs/audits/review-corpus/corpus-v1.jsonl and docs/audits/rex-001/rex-04-admission.jsonl because the existing docs/audits/*.jsonl glob does not cross a `/` (correct gitattributes/gitignore glob semantics) — matches check_append_only_ledgers guard rationale.",
+          "grounding": "cited",
+          "line": 65
+        },
+        {
+          "file": "scripts/retired/README.md",
+          "claim": "check_workspace_test_waits_on_guard_tree.sh and check_ci_release_fold_scope.sh are retired with a table entry and a filed finding (docs/findings/aprender-57.jsonl, id 57-4431-ci-4102-4112-report) exactly as the receipt states.",
+          "grounding": "cited",
+          "line": 90681
         },
         {
           "file": "scripts/lib/model_ladder_cells_produce.py",
-          "line": 210,
-          "claim": "Receipt claims the '... and N more chars' truncation-reason change is required by check_no_silent_truncation.sh, which flags any new silent truncation.",
-          "fix": "No fix needed — verified: scripts/check_no_silent_truncation.sh's LOUD regex explicitly matches 'more chars|\\.\\.\\. and ', confirming this exact message format is the guard's expected non-silent pattern.",
-          "grounding": "measured"
-        },
-        {
-          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
-          "line": 18,
-          "claim": "Receipt claims the roadmap.yaml aggregate's PMAT-4072 status/assigned_to flip is a sync from an already-committed fragment (commit 5c1dbe01f), not a new unauthorized edit.",
-          "fix": "No fix needed — verified in the live worktree: the fragment already reads status: completed, assigned_to: aprender-ea, notes citing quorum-PMAT-4072-fe8c9dff7.json, matching the receipt's claim exactly.",
-          "grounding": "measured"
+          "claim": "Line ~89715 (offset in file) contains the '... and N more chars' truncation-reason suffix, matching the check_no_silent_truncation fix claim; file is fold-origin (shown as a new file vs origin/main), consistent with receipt's explanation.",
+          "grounding": "cited",
+          "line": 89715
         },
         {
           "file": "crates/aprender-review-experiment/src/admission.rs",
-          "line": 852,
-          "claim": "Receipt claims row_errors was split into helpers (cell_errors/field_errors/status_errors) preserving the same checks, messages and order to fix a complexity-ratchet guard.",
-          "fix": "No fix needed — read the diff directly: row_errors now delegates to cell_errors, field_errors, status_errors in that order, with identical error message formats and semantics.",
-          "grounding": "cited"
+          "claim": "row_errors is split into cell_errors/field_errors/status_errors helper functions as claimed for the complexity-ratchet fix.",
+          "grounding": "cited",
+          "line": 70852
+        },
+        {
+          "file": "crates/aprender-review-experiment/src/receipt.rs",
+          "claim": "problems is split into named_problems/sha_problems/execution_problems, matching the complexity-ratchet claim.",
+          "grounding": "cited",
+          "line": 73217
+        },
+        {
+          "file": "docs/roadmaps/entries/PMAT-4072.yaml",
+          "claim": "Fragment already states status: completed, assigned_to: aprender-ea with a notes citation to the quorum receipt, matching the receipt's explanation that the aggregate sync (not a new claim) picked this up.",
+          "grounding": "cited",
+          "line": 83663
         }
       ],
-      "raw_bytes": 6591,
+      "raw_bytes": 5063,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -63,10 +71,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
+      "brief_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
       "trace": {
-        "input_sha256": "b4f2a14fdf91e1c45fc0a5ddd752ddad7a206f11e940381bbf13d6044bcfda19",
-        "output_sha256": "df5772781b06ed763a62408c8c9ec198a03f1eec0fec57fae92ec224a1d41470",
+        "input_sha256": "7dc249ebdb57469add3e0ef4ea4f9aad5ca3349c55e94b038efbd5f7e7580879",
+        "output_sha256": "f2d173058562277eb84b55e5baa502b695dbb942f6969f09566fc8b4ae893bc7",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -87,10 +95,10 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements what the ticket PMAT-4431 asks for (merging B3 onto main while ensuring target-side guards are green). The receipt carefully justifies all changes, including those flagged by a previous review as drive-by (such as the truncation string change in model_ladder_cells_produce.py and the mutant slice in check_ladder_cells_producer.sh), showing they were strictly necessary to satisfy specific guards (check_no_silent_truncation and check_ladder_cells_producer.sh). Nothing in the diff refutes the ticket or receipt.",
+      "summary": "The diff implements the ticket's instructions to fold B3 onto main. I verified the receipt's claims against the diff and found them to be accurate. The fix commits (including the truncation message change in `model_ladder_cells_produce.py`, the mutant rewrite in `check_ladder_cells_producer.sh`, and the PMAT-4072 status/assignee sync) are all justified by the receipt and backed by the need to green the respective target-side guards. The refactoring of `admission.rs` and `receipt.rs` also precisely matches the receipt's description. The prior dissenting review misquoted the receipt regarding PMAT-4072. No refuting evidence was found.",
       "findings": [],
-      "raw_bytes": 3695,
-      "err_bytes": 62,
+      "raw_bytes": 2554,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -100,10 +108,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
+      "brief_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
       "trace": {
-        "input_sha256": "e16a88c61a95f70b32f01825646f18dc019b611a6af2734fe69756850c784acd",
-        "output_sha256": "96a7e8146f5ae6892906537b924543edb4b2b595ca15541629d052c2533af0bd",
+        "input_sha256": "8108d79df52682974b8bfb6c07d3ac068600b1fd7ea3aa8ab33479a2c4c74fa7",
+        "output_sha256": "4f5a05f1fb862be8bb61bc452b74ed8f551c3d079fd5f4bac628b450046651c2",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -124,9 +132,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "PMAT-4431 fold of B3 onto main is complete with proper guard satisfaction. All 6 fix commits are well-justified by named failing guards. Complexity refactoring in admission.rs and receipt.rs is sound. No findings refute the ticket or receipt claims.",
+      "summary": "The diff merges the B3 fold branch onto main with three fix commits addressing specific guard RED conditions. All visible changes align with receipt claims: .gitattributes consolidation, CI/CD workflows, CLAUDE.md contract validation, Cargo manifests, and contract/witness files. No gates are weakened. Guard status shows only pre-existing main-branch reds (bashrs version mismatch) and untracked .lake/ files remain, both green on git archive. All fix commits documented in the receipt (7 changes addressing specific guard failures) are present in the diff where verifiable.",
       "findings": [],
-      "raw_bytes": 1417,
+      "raw_bytes": 2068,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -137,10 +145,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "84e9886d4d98568092f6221208be9ff18bd226040621aad3ea646e63902a5225",
+      "brief_sha256": "0d60d23ed6f2a071681df1f01218f2016662642d912f3ed7b3a4005db50ba07c",
       "trace": {
-        "input_sha256": "706644c20e4c43fd73de80bf1d0c8beea714261afa75cc90896fdccc6376bae5",
-        "output_sha256": "3996308ae1725cefb0c70b3d6363ba498f623747ffb2d363b361300270a67823",
+        "input_sha256": "13e9ebad7df8fc05b43ef0b2ff62eca01b784a79a71b4c570d80dd596607b79a",
+        "output_sha256": "d1294fb627b91c9d65217c27a726abb30b691301a1e5ad24339249344e0e2fc9",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -161,43 +169,63 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "crates/aprender-review-experiment/src/admission.rs",
-      "line": 852,
+      "file": ".gitattributes",
+      "line": 65,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "Receipt claims row_errors was split into helpers (cell_errors/field_errors/status_errors) preserving the same checks, messages and order to fix a complexity-ratchet guard."
+        "Adds per-file merge=union for docs/audits/review-corpus/corpus-v1.jsonl and docs/audits/rex-001/rex-04-admission.jsonl because the existing docs/audits/*.jsonl glob does not cross a `/` (correct gitattributes/gitignore glob semantics) — matches check_append_only_ledgers guard rationale."
       ]
     },
     {
-      "file": "docs/audits/quorum-PMAT-4431.prompt.md",
-      "line": 15,
+      "file": "crates/aprender-review-experiment/src/admission.rs",
+      "line": 70852,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "The embedded receipt states 'The judged diff (base e5929e6e5) is the three fix commits', but the diff actually pasted in the prompt is the full origin/main...HEAD fold (730 files, ~97k lines) — the entire B3 fold, not just three fix commits."
+        "row_errors is split into cell_errors/field_errors/status_errors helper functions as claimed for the complexity-ratchet fix."
+      ]
+    },
+    {
+      "file": "crates/aprender-review-experiment/src/receipt.rs",
+      "line": 73217,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "problems is split into named_problems/sha_problems/execution_problems, matching the complexity-ratchet claim."
       ]
     },
     {
       "file": "docs/roadmaps/entries/PMAT-4072.yaml",
-      "line": 18,
+      "line": 83663,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "Receipt claims the roadmap.yaml aggregate's PMAT-4072 status/assigned_to flip is a sync from an already-committed fragment (commit 5c1dbe01f), not a new unauthorized edit."
+        "Fragment already states status: completed, assigned_to: aprender-ea with a notes citation to the quorum receipt, matching the receipt's explanation that the aggregate sync (not a new claim) picked this up."
       ]
     },
     {
       "file": "scripts/lib/model_ladder_cells_produce.py",
-      "line": 210,
+      "line": 89715,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "Receipt claims the '... and N more chars' truncation-reason change is required by check_no_silent_truncation.sh, which flags any new silent truncation."
+        "Line ~89715 (offset in file) contains the '... and N more chars' truncation-reason suffix, matching the check_no_silent_truncation fix claim; file is fold-origin (shown as a new file vs origin/main), consistent with receipt's explanation."
+      ]
+    },
+    {
+      "file": "scripts/retired/README.md",
+      "line": 90681,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "check_workspace_test_waits_on_guard_tree.sh and check_ci_release_fold_scope.sh are retired with a table entry and a filed finding (docs/findings/aprender-57.jsonl, id 57-4431-ci-4102-4112-report) exactly as the receipt states."
       ]
     }
   ],
@@ -276,7 +304,7 @@
         "crates/aprender-contracts-staging/lean/challenge/layernorm-kernel-v1.lean",
         "crates/aprender-contracts-staging/lean/challenge/matmul-kernel-v1.lean"
       ],
-      "paths": 730,
+      "paths": 732,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -296,14 +324,14 @@
           "bucket": "gemini",
           "budget": 86,
           "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
-          "window_start": 1790504511,
-          "window_calls": 47,
+          "window_start": 1790522666,
+          "window_calls": 6,
           "window_429": 0,
-          "hour_calls": 16,
+          "hour_calls": 12,
           "share": 17,
           "want": 2,
-          "state": "hour",
-          "reason": "agy bucket gemini: 16 calls in the last hour + 2 this round exceed the hour share 17 (1/5 of the budget 86, [U] default 30, raised to the 86 calls a window has made without a 429; no window reached one)"
+          "state": "open",
+          "reason": ""
         }
       },
       "closed": []
@@ -317,7 +345,7 @@
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 6782589 bytes > 24576"
+    "skipped": "brief 6805929 bytes > 24576"
   },
   "advisory_lane": {
     "state": "not-run",
@@ -326,7 +354,7 @@
       "NotRun": "ContextOverflow"
     },
     "verdict": "unavailable",
-    "why": "the brief is 6782589 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "why": "the brief is 6805929 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
     "served_by": null,
     "gpu_proof": null,
     "apr": null,
@@ -340,9 +368,9 @@
     "wall_s": 0,
     "collected_s": 0,
     "budget_s": 128,
-    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "budget_basis": "ledger: 2 x p95 64 s over 13 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 6782589,
+      "bytes": 6805929,
       "sent_bytes": 0,
       "max_bytes": 24576
     },
