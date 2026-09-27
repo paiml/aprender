@@ -204,7 +204,7 @@ pub struct GdnWeightGrads<T = f32> {
 }
 
 /// Reverse `y = x · Wᵀ`: adds `∂L/∂x` into `dx` and returns `∂L/∂W`.
-fn project_backward<T: GdnFloat>(
+pub(super) fn project_backward<T: GdnFloat>(
     x: &[T],
     w: &[T],
     dy: &[T],
@@ -227,7 +227,7 @@ fn project_backward<T: GdnFloat>(
 }
 
 /// `d silu(x) / dx = σ(x) (1 + x (1 − σ(x)))`.
-fn silu_grad<T: GdnFloat>(x: T) -> T {
+pub(super) fn silu_grad<T: GdnFloat>(x: T) -> T {
     let s = sigmoid(x);
     s * (T::ONE + x * (T::ONE - s))
 }
