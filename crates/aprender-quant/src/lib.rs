@@ -75,7 +75,10 @@ pub use quantize::{
     quantize_q4_k, quantize_q4_k_matrix, quantize_q5_k, quantize_q5_k_matrix, quantize_q6_k,
     quantize_q6_k_matrix,
 };
-pub use transpose::{transpose_q4k_for_matmul, transpose_q5k_for_matmul, transpose_q6k_for_matmul};
+pub use transpose::{
+    transpose_q4k_for_matmul, transpose_q5k_for_matmul, transpose_q6k_for_matmul,
+    transpose_row_major,
+};
 // #3947: IQ4_NL / IQ3_S / IQ4_XS, so aprender-core can inspect IQ tensors.
 pub use iq::{dequantize_iq_to_f32, iq_block_layout, IqDequantError};
 
