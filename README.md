@@ -29,7 +29,7 @@ contract_count: 1888
 Pre-built and ready to use (Linux x86_64/aarch64 only today — other platforms fall
 through to `cargo install` below):
 
-```bash
+```text
 curl -LsSf https://paiml.com/apr/install.sh | sh
 ```
 
@@ -37,7 +37,7 @@ To read the script before it runs, download it with `curl -LsSf https://paiml.co
 
 Compile and build:
 
-```bash
+```text
 cargo install aprender                    # CPU ONLY - no GPU backend is compiled in
 cargo install aprender --features cuda    # NVIDIA GPU acceleration
 cargo install aprender --features full    # everything (training, visualization, zram)
