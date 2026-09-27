@@ -8,8 +8,9 @@ This branch is a FOLD, not a single-file fix. Acceptance criterion 4 of `docs/ro
 
 | Files | Origin | Why it is here |
 |---|---|---|
-| `scripts/release/carry_forward_gate.py`, `carry-forward-drops.tsv`, `decode_floor.py`, `scripts/perf-matrix.yaml`, `rc_cut.sh` (12 lines) | e6 commits e0ec2d6dfd, da88d81d17 | the base the #4509 fix is built on (AC 4); self-tests below, rc=0 |
-| `scripts/release/rc_fleet_stage.sh` | infra-64 0c4f9b88f8 + aprender-57 3cafab5852 | the #4509 fix proper (AC 1-3) |
+| `scripts/release/carry_forward_gate.py`, `carry-forward-drops.tsv`, `rc_cut.sh` (+12/-1) | e6 e0ec2d6dfd | the carry-forward gate base (AC 4); self-tests below, rc=0 |
+| `scripts/release/decode_floor.py`, `scripts/perf-matrix.yaml`, and **98 lines of `scripts/release/rc_fleet_stage.sh`** (`DECODE_SH`, `decode_floor_row()`, their wiring into `stage()`/the verdict, and the matching self-test rows) | e6 da88d81d17 | the decode-floor base (AC 4): an rc is not published while it decodes slower than the previous line; self-tests below, rc=0 |
+| the rest of `scripts/release/rc_fleet_stage.sh` (`FLEET_HOSTS`, `catalogue_suffix()`, `fleet_table()`, the catalogue self-test rows and the #4509 hand-copy mutant) | infra-64 0c4f9b88f8 + aprender-57 3cafab5852 | the #4509 fix proper (AC 1-3) |
 | `docs/roadmaps/entries/PMAT-4509.yaml`, `roadmap.yaml` (+21) | aprender-57 | the ticket fragment; roadmap.yaml adds only the PMAT-4509 block over car |
 
 Correction: commit 78c45809ef's subject says "the judged diff adds only PMAT-4509". That is true of `docs/roadmaps/roadmap.yaml` only (car's file + the PMAT-4509 block). The judged diff as a whole is the fold in the table above.

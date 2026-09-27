@@ -12,7 +12,7 @@
   - 'scripts/release/rc_fleet_stage.sh derives its per-host asset table from the fleet-bins catalogue (paiml/infra machines/fleet-hosts/fleet-bins/fleet-bins.tsv), not a hand copy'
   - 'intel stages the x86_64-unknown-linux-gnu-wgpu apr asset; mini stages pv-{tag}-aarch64-apple-darwin'
   - 'rc_fleet_stage.sh --self-test PASS, including a row that goes RED on the #4509 drift shape'
-  - 'folded onto car/0.70.0 together with its base (e6 carry-forward gate da88d81d1: carry_forward_gate.py, decode_floor.py, rc_cut.sh wiring), whose self-tests also PASS'
+  - 'folded onto car/0.70.0 together with its base (e6 e0ec2d6dfd + da88d81d1: carry_forward_gate.py, decode_floor.py, perf-matrix.yaml, rc_cut.sh wiring, and the decode-floor row in rc_fleet_stage.sh), whose self-tests also PASS'
   phases: []
   subtasks: []
   estimated_effort: null
