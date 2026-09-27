@@ -67,8 +67,15 @@ pub enum ShapesOutcome {
     ExtractFailed(ExtractFailure),
     /// Not one contract carries a shape.
     NoShapes { contracts_checked: usize },
-    /// Shapes exist, but no node in the graph has any of their target classes.
-    NoFocus { shapes_n: usize },
+    /// Shapes exist, but no node in the graph has any of their target classes. A decline, and it carries the
+    /// same report the per-shape path prints (#4100): `by_shape` names every shape at zero and `declines` lists
+    /// them, verdict `Unknown(NoFocus)`. Without it the global venue printed nothing on stdout while the
+    /// per-shape one printed everything, and a consumer that parses stdout whatever the exit code got no shape.
+    NoFocus {
+        shapes_n: usize,
+        result: Box<GateResult>,
+        findings: Vec<LintFinding>,
+    },
     /// A shape resolves receipts and the tree holds none under `evidence/dogfood/models/`.
     NoReceipts { shapes_n: usize, dir: String },
     /// PMAT-3577 — `extract:parity-receipt` matched a different number of focus nodes than
@@ -313,16 +320,20 @@ fn run_or_answer(
     )?;
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
     // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
+    // It outranks every other decline, as it always has, but it no longer returns early: the report is built
+    // below and travels inside `NoFocus` (#4100), so stdout names the empty shapes on this venue too.
     let all_allow_empty = shapes.iter().all(|s| s.allow_empty.is_some());
-    if let Some(d) = decline(
-        shapes.len(),
-        &report,
-        all_allow_empty,
-        unmeasured,
-        plant_violations,
-        &pc_extract,
-    ) {
-        return Err(d);
+    let global_vacuity = report.focus_nodes_n == 0 && !all_allow_empty;
+    if !global_vacuity {
+        if let Some(d) = decline(
+            shapes.len(),
+            &report,
+            unmeasured,
+            plant_violations,
+            &pc_extract,
+        ) {
+            return Err(d);
+        }
     }
     let w3c_run = w3c_checked(shapes.len(), report.focus_nodes_n)?;
 
@@ -338,7 +349,11 @@ fn run_or_answer(
     );
     refuse_vacuous_kernels(&mut counted, &shapes, extraction.kernel.kernels);
     let passed = counted.violations == 0;
-    let verdict = verdict_of(&counted, armed_vacuity);
+    let verdict = if global_vacuity {
+        Verdict::Unknown(Reason::NoFocus)
+    } else {
+        verdict_of(&counted, armed_vacuity)
+    };
     let by_shape = by_shape(&focus_of);
     // A shape that graded nothing appears in NEITHER list: `armed_shapes` is the tool's claim about
     // what it MEASURED, and `not_armed_shapes` means "not armed by policy". Filing a vacuity as a
@@ -409,10 +424,15 @@ fn run_or_answer(
             ratchets: super::Ratchets::default(),
         }),
     };
-    Ok(ShapesOutcome::Ran {
-        result: Box::new(result),
-        findings: counted.findings,
-    })
+    let (result, findings) = (Box::new(result), counted.findings);
+    if global_vacuity {
+        return Err(ShapesOutcome::NoFocus {
+            shapes_n: shapes.len(),
+            result,
+            findings,
+        });
+    }
+    Ok(ShapesOutcome::Ran { result, findings })
 }
 
 /// The ONE walk (R-18) and the refusals that must answer before anything is graded: every extractor, the json
@@ -720,22 +740,19 @@ fn harness_broken(extraction: &extract::Extraction) -> Option<ShapesOutcome> {
     (!causes.is_empty()).then_some(ShapesOutcome::HarnessBroken { causes })
 }
 
-/// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
-/// none tracked, the plant silent, an extractor control silent. `None` when the corpus gets a verdict.
+/// The answers that are not corpus verdicts, in the order they are asked: receipts needed and none tracked, the
+/// plant silent, an extractor control silent. `None` when the corpus gets a verdict.
 ///
-/// No focus node at all is `NoFocus` unless EVERY shape in scope declares `allowEmpty` (#3610): then the run
-/// reaches the per-shape path, which names each one in `declines` and does not refuse for them.
+/// No focus node at all is asked BEFORE this, by the caller, because it answers with the report attached
+/// (#4100). It is `NoFocus` unless EVERY shape in scope declares `allowEmpty` (#3610): then the run reaches the
+/// per-shape path, which names each one in `declines` and does not refuse for them.
 fn decline(
     shapes_n: usize,
     report: &Report,
-    all_allow_empty: bool,
     unmeasured: bool,
     plant_violations: usize,
     pc_extract: &BTreeMap<String, String>,
 ) -> Option<ShapesOutcome> {
-    if report.focus_nodes_n == 0 && !all_allow_empty {
-        return Some(ShapesOutcome::NoFocus { shapes_n });
-    }
     if unmeasured {
         return Some(ShapesOutcome::NoReceipts {
             shapes_n,
@@ -1063,8 +1080,26 @@ mod tests {
         ));
         assert!(matches!(
             run_shapes_gate(&fixture("shapes-nofocus")),
-            ShapesOutcome::NoFocus { shapes_n: 1 }
+            ShapesOutcome::NoFocus { shapes_n: 1, .. }
         ));
+        // #4100: the global decline carries the report, naming the shape that graded nothing
+        match run_shapes_gate(&fixture("shapes-nofocus")) {
+            ShapesOutcome::NoFocus { result, .. } => {
+                assert_eq!(result.verdict, Verdict::Unknown(Reason::NoFocus));
+                match result.extra {
+                    Some(GateExtra::Shapes {
+                        declines,
+                        focus_nodes_n,
+                        ..
+                    }) => {
+                        assert_eq!(focus_nodes_n, 0);
+                        assert_eq!(declines.len(), 1, "the one shape at zero is named");
+                    }
+                    other => panic!("NoFocus must carry the shapes report, got {other:?}"),
+                }
+            }
+            other => panic!("expected NoFocus, got {other:?}"),
+        }
         match run_shapes_gate(&fixture("shapes-unsupported")) {
             ShapesOutcome::Unsupported(ShapeError::Unsupported { component, .. }) => {
                 assert_eq!(component, "targetNode");

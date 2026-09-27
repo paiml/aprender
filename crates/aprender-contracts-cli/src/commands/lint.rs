@@ -437,6 +437,11 @@ fn decide_shapes_gate(
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         ShapesOutcome::Ran { result, findings } => Ok((result, findings)),
+        // #4100: the global vacuity declines through the ordinary result path, like the per-shape one — the
+        // report is printed and the `Unknown(NoFocus)` verdict it carries makes the exit 2
+        ShapesOutcome::NoFocus {
+            result, findings, ..
+        } => Ok((result, findings)),
         declined => Err(LintDeclined {
             reason: shapes_decline_reason(declined),
         }

@@ -21,7 +21,7 @@
 //! | `json-ok` | `tool-status=1` | yes | Pass, `declines: []` |
 //! | `shapes-one-empty-allowed` | same, `allowEmpty: "<why>"` on `empty-shape` | yes | **Pass**, `declines: ["empty-shape"]` |
 //! | `shapes-all-empty-allowed` | `empty-shape=0` (the only shape), `allowEmpty` | yes | **Pass**, `declines: ["empty-shape"]` |
-//! | `shapes-all-empty` | `empty-shape=0` (the only shape) | yes | **exit 2** via the global path, no report yet (#4100) |
+//! | `shapes-all-empty` | `empty-shape=0` (the only shape) | yes | **exit 2** via the global path, `declines: ["empty-shape"]` (#4100) |
 //!
 //! The second row is what keeps the fix from being "refuse whenever anything is empty": an UNARMED
 //! shape at zero did not affect the verdict, so it is **reported** rather than refused — and it is
@@ -259,22 +259,41 @@ fn a_corpus_whose_every_shape_graded_nothing_declines_through_the_global_path() 
     );
 }
 
-/// THE ASYMMETRY, ASSERTED RATHER THAN LEFT UNSAID. The global path renders through
-/// `skipped_gate(...)` with no `extra`, so it declines with **no `by_shape` and no `declines`**,
-/// while the per-shape path (the one #3610 fixed) declines *with* the full report. The consumer that
-/// motivated the report requirement (infra's SLK gate) parses stdout whatever the exit code, so on
-/// this path it gets nothing. **Filed as #4100**, not fixed here: it needs the NoFocus outcome to
-/// carry the report, a change to the outcome path rather than to the verdict.
+/// #4100 — THE GLOBAL VENUE PRINTS THE SAME REPORT AS THE PER-SHAPE ONE. Before #4100 this path
+/// rendered through `skipped_gate(...)` with no `extra`: exit 2, `decline: NoFocus` on stderr and
+/// **0 bytes on stdout**, while the per-shape path (#3610) declined *with* the full report. The
+/// consumer that motivated the report requirement (infra's SLK gate) parses stdout whatever the exit
+/// code, so on this path it scored the run UNMEASURED and could not name the shape. The decline is
+/// unchanged; what changed is that it now carries the evidence, naming the shape that graded nothing.
 #[test]
-fn the_global_nofocus_decline_prints_no_report_and_that_is_recorded() {
+fn the_global_nofocus_decline_prints_the_report_naming_the_empty_shape() {
     let r = shapes_on("shapes-all-empty");
     assert_eq!(r.code, 2, "{}", r.all());
+    let extra = r.extra();
     assert!(
-        r.extra().is_null(),
-        "if this venue has GAINED a report, #4100 is fixed — replace this test with an assertion of \
-         the report and add `shapes-all-empty` to the_three_answers_remain_distinct's loop\n{}",
+        !extra.is_null(),
+        "the global NoFocus decline printed no parseable report (#4100)\n{}",
         r.all()
     );
+    assert_eq!(
+        extra["by_shape"],
+        serde_json::Value::from(vec!["empty-shape=0"]),
+        "by_shape must name the shape and its zero reach\n{}",
+        r.all()
+    );
+    assert_eq!(
+        extra["declines"],
+        serde_json::Value::from(vec!["empty-shape"]),
+        "the vacuity is named in declines, as on the per-shape path\n{}",
+        r.all()
+    );
+    assert_eq!(
+        extra["armed_shapes"],
+        serde_json::json!([]),
+        "a shape that graded nothing is not a claim about what was measured\n{}",
+        r.all()
+    );
+    assert_eq!(extra["focus_nodes_n"], 0, "{}", r.all());
 }
 
 #[test]
@@ -291,7 +310,12 @@ fn the_three_answers_remain_distinct() {
     );
     // Every one of the three must also PRINT its report — a consumer that captures stdout and
     // parses it regardless of exit code must get a document in all three cases, not two.
-    for fixture in ["json-ok", "json-violation", "shapes-one-empty"] {
+    for fixture in [
+        "json-ok",
+        "json-violation",
+        "shapes-one-empty",
+        "shapes-all-empty",
+    ] {
         let r = shapes_on(fixture);
         assert!(
             !r.extra().is_null(),
