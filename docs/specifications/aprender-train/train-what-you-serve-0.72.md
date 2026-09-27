@@ -45,8 +45,20 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
 - **Gate:** per-position cosine ≥ 0.9999 and equal argmax between aprender-train and aprender-serve logits on Qwen3.5-4B,
   both loading the same .apr bytes (CPU, dequantized f32). This check runs on CPU, so it may run while train-active.
 - **Planted:** the sigmoid-gate mutant turns it RED. The same mutant scores 0.7656 on the serving side (qwen35-hybrid-forward-v1).
-- **Open question:** share code with aprender-serve, or keep a parallel implementation? Recommendation: share the recurrence kernel
-  through aprender-compute so that "train = serve" holds by construction. Ruling needed only if the crate DAG objects.
+- **Spike S-R2 (desk, 2026-09-27) — share the kernel, or run a parallel implementation? Answer: parallel training impl, serve as the oracle. No ruling needed.** `[V]`
+  - The crate DAG already allows train → serve. `crates/aprender-train/Cargo.toml:84` has
+    `realizar = { workspace = true, optional = true }` (implicit feature `realizar`), and aprender-serve does not depend on
+    aprender-train, so there is no cycle. `realizar::gguf::forward_qwen35` is `pub` (`crates/aprender-serve/src/gguf/mod.rs:147`)
+    and exports `causal_conv1d`, `delta_rule_recurrence` and `delta_rule_recurrence_gqa` (`forward_qwen35.rs:89,130,221`).
+  - Those functions cannot be the training forward. They step one token at a time, update the conv/recurrent state in
+    place, and save no activations, so autograd has nothing to differentiate through. A training GDN has to be a
+    sequence-level (chunked) forward on the tape that keeps S_t (or recomputes it per chunk).
+  - So: aprender-train implements its own sequence GDN forward+backward. The parity test QTG-001 runs under
+    `--features realizar` and calls serve's `forward_qwen35` on the same .apr bytes as the ORACLE. "train = serve" holds
+    by test, not by shared code, which is the same guarantee without a refactor.
+  - Moving the recurrence into aprender-compute is a refactor with no extra guarantee; deferred (not a 0.72 row).
+  - `[U]` Build cost: `cargo check -p aprender-train --features realizar` was not run (heavy slots were saturated). The
+    first R2 PR must show it green.
 
 ### R3 — GDN backward + gradcheck · contract `qwen35-train-gdn-v1` (QTG-003/004) · K̂ 120 `[A]`
 - **Change:** analytic backward for every GDN parameter, plus the carried state S₀ (chunked training passes state across chunks).
