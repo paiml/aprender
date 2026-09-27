@@ -206,7 +206,14 @@ fn series<'a>(rows: &'a [Row], tags: &'a [String], cell: &str) -> Vec<(&'a str, 
 
 /// Judge the newest measured record of `cell` against the shrink-only floor.
 pub(crate) fn ratchet(rows: &[Row], tags: &[String], cell: &str) -> Ratchet {
-    let s = series(rows, tags, cell);
+    judge(&series(rows, tags, cell))
+}
+
+/// The shrink-only verdict over one cell's (tag, ratio) series in release
+/// order: the last record is judged against the running max of the median of
+/// every three records before it. Shared by the EXT-26 rows and the APR-OBS
+/// `apr-perf-ledger-v1` rows, so the floor is computed one way only.
+pub(crate) fn judge(s: &[(&str, f64)]) -> Ratchet {
     let Some((&(tag, x), prior)) = s.split_last() else {
         return Ratchet::Unarmed { records: 0 };
     };
