@@ -10,6 +10,7 @@ The cop is the single writer of that file; workers write heartbeat files.
   tick STATE                          LA-02  I1-I4 report + the actions due this tick
   respawn STATE --slot L --worker NEW LA-02  refill a dead slot; refuse a live one
   prompt --slot L --train X.Y         LA-03  the §7 standing prompt, checked against the spec
+  pr-budget STATE --prs SNAP          LA-04  §2 open-PR budgets, repo-cap yield order, queue order
 
 Exit codes, shared by every verb:
   0  the property holds (or the action was done)
@@ -389,8 +390,125 @@ def cmd_prompt(args):
     return 0
 
 
+# ---- LA-04: open-PR budgets and queue order ----------------------------------------
+PR_BUDGET = {"L1": 2, "L2": 1, "L3": 1}  # §2
+YIELD_ORDER = ["L3", "L2", "L1"]  # at the repo cap L3 yields first, then L2; L1 only to train N
+DOC_PREFIXES = ("docs/", "contracts/")  # what L2 may land undrafted and L3 may land at all
+
+
+def pr_train(pr):
+    m = re.fullmatch(r"v?([0-9]+\.[0-9]+)(\.[0-9]+)?", str(pr.get("milestone") or ""))
+    return m.group(1) if m else None
+
+
+def normalize_pr(raw):
+    """Accept `gh pr list --json number,milestone,isDraft,createdAt,files` rows as well
+    as the plain snapshot shape, so the cop can pipe gh output straight in."""
+    if not isinstance(raw, dict):
+        raise CannotJudge(f"PR entry is not an object: {raw!r}")
+    ms = raw.get("milestone")
+    files = raw.get("files")
+    if isinstance(files, list):
+        files = [f.get("path") if isinstance(f, dict) else f for f in files]
+    return {"number": raw.get("number"),
+            "milestone": ms.get("title") if isinstance(ms, dict) else ms,
+            "draft": raw.get("draft", raw.get("isDraft", False)),
+            "created": raw.get("created", raw.get("createdAt", "")),
+            "files": files}
+
+
+def budget_actions(state, snap):
+    """The actions due on a PR snapshot {cap, prs:[{number, milestone, draft, created,
+    files}], queue:[numbers in merge-queue order]} under the §2 rules."""
+    by_train = {state["slots"][s]["train"]: s for s in SLOTS}
+    cur = state["current_train"]
+    prs = snap.get("prs")
+    cap = snap.get("cap")
+    if not isinstance(prs, list) or not isinstance(cap, int):
+        raise CannotJudge("snapshot needs an integer `cap` and a `prs` list")
+    slot_of, actions = {}, []
+    for pr in prs:
+        if not isinstance(pr, dict) or not isinstance(pr.get("number"), int):
+            raise CannotJudge(f"PR entry without an integer number: {pr!r}")
+        s = by_train.get(pr_train(pr))
+        if s:
+            slot_of[pr["number"]] = s
+    blocked = set()
+    for s in SLOTS:  # per-slot budget: the NEWEST PRs over the budget are blocked
+        mine = sorted((p for p in prs if slot_of.get(p["number"]) == s),
+                      key=lambda p: (str(p.get("created", "")), p["number"]))
+        for p in mine[PR_BUDGET[s]:]:
+            blocked.add(p["number"])
+            actions.append(("BLOCK", p["number"], f"{s} holds {len(mine)} open PRs, budget {PR_BUDGET[s]}"))
+    for p in prs:  # what each slot may land
+        s = slot_of.get(p["number"])
+        files = p.get("files")
+        if s in ("L2", "L3") and files is None:
+            raise CannotJudge(f"#{p['number']} ({s}) has no `files`; cannot judge its content rule")
+        code = [f for f in (files or []) if not f.startswith(DOC_PREFIXES)]
+        if s == "L3" and code:
+            actions.append(("BLOCK", p["number"], f"L3 lands specs and docs only; touches {code[0]}"))
+        if s == "L2" and code and not p.get("draft"):
+            actions.append(("DRAFT", p["number"], f"L2 code must be a draft PR; touches {code[0]}"))
+    live = [p for p in prs if p["number"] not in blocked]
+    over = len(live) - cap
+    for s in YIELD_ORDER:  # repo cap: look-ahead yields, never train N or unslotted work
+        if over <= 0:
+            break
+        for p in sorted((p for p in live if slot_of.get(p["number"]) == s),
+                        key=lambda p: (str(p.get("created", "")), p["number"]), reverse=True):
+            if over <= 0:
+                break
+            actions.append(("YIELD", p["number"], f"repo at {len(live)} open PRs, cap {cap}: {s} yields"))
+            over -= 1
+    queue = snap.get("queue", [])
+    known = {p["number"]: p for p in prs}
+    train_pos = [i for i, n in enumerate(queue) if pr_train(known.get(n, {})) == cur]
+    last_train = max(train_pos) if train_pos else -1
+    seen_train = set()
+    for i, n in enumerate(queue):
+        s = slot_of.get(n)
+        if not s:
+            continue
+        if i < last_train:
+            actions.append(("REQUEUE", n, f"{s} PR queued ahead of a train-{cur} PR"))
+        tr = pr_train(known[n])
+        if tr in seen_train:
+            actions.append(("REQUEUE", n, f"a second train-{tr} look-ahead PR in the queue"))
+        seen_train.add(tr)
+    return actions
+
+
+def cmd_pr_budget(args):
+    pos, opts = parse_opts(args, {"prs", "cap", "queue"})
+    if len(pos) != 1 or not opts.get("prs"):
+        raise CannotJudge("usage: pr-budget STATE --prs SNAPSHOT.json | GH_PR_LIST.json [--cap N] [--queue n,n,...]")
+    state, bad = load_legal_state(pos[0])
+    if bad:
+        raise CannotJudge(f"{pos[0]} is not a legal state ({bad[0][0]}: {bad[0][1]})")
+    snap = load_json(opts["prs"])
+    if isinstance(snap, list):  # raw gh output
+        snap = {"prs": snap}
+    if not isinstance(snap, dict):
+        raise CannotJudge(f"{opts['prs']}: not a snapshot object or a PR list")
+    try:
+        if "cap" in opts:
+            snap["cap"] = int(opts["cap"])
+        if "queue" in opts:
+            snap["queue"] = [int(n) for n in opts["queue"].split(",") if n]
+    except ValueError as exc:
+        raise CannotJudge(f"--cap/--queue: {exc}") from exc
+    snap["prs"] = [normalize_pr(p) for p in snap.get("prs") or []] if isinstance(snap.get("prs"), list) else None
+    actions = budget_actions(state, snap)
+    for verb, n, why in actions:
+        print(f"{verb} #{n}: {why}")
+    if not actions:
+        print("OK: every look-ahead PR is within its slot budget and queued behind the current train")
+    return 1 if actions else 0
+
+
 VERBS = {"validate": cmd_validate, "heartbeat": cmd_heartbeat, "tick": cmd_tick,
-         "respawn": cmd_respawn, "prompt": cmd_prompt}
+         "respawn": cmd_respawn, "prompt": cmd_prompt, "pr-budget": cmd_pr_budget}
 
 
 def main(argv):

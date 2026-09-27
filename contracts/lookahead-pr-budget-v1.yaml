@@ -1,0 +1,79 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "Look-ahead workers spend the repo's open-PR cap and merge-queue slots, which belong to the current train first (APR-LOOKAHEAD-001 §2, LA-04 #4545). `lookahead.py pr-budget` reads a PR snapshot (or raw `gh pr list --json number,milestone,isDraft,createdAt,files`) and prints the actions due: BLOCK a PR over its slot budget (L1 ≤ 2, L2 ≤ 1, L3 ≤ 1) or outside what its slot may land, DRAFT an undrafted L2 code PR, YIELD look-ahead PRs at the repo cap in the order L3, L2, L1, and REQUEUE a look-ahead PR queued ahead of a current-train PR or a second PR for the same look-ahead train. A PR belongs to a slot by its milestone."
+  kind: pattern
+  references:
+    - "docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md — §2 roles, budgets and queue rules; §9 LA-04"
+    - "scripts/lookahead/lookahead.py — `pr-budget` verb"
+    - "scripts/check_lookahead.sh — LA-04 rows and mutants"
+
+five_whys:
+  symptom: "Look-ahead work could crowd the current train out of the PR cap and the merge queue."
+  why_1: "The open-PR cap is repo-wide; a PR for train N+2 counts the same as one for train N."
+  why_2: "The merge queue is first-come, so a look-ahead PR armed early lands ahead of the train it is not part of."
+  why_3: "Slot budgets (2/1/1) and the yield order existed only in the spec's table."
+  why_4: "Nothing mapped a PR to a slot, so no tool could count per slot."
+  why_5: "No planted third L1 PR or out-of-order queue ever ran against a checker."
+  root_cause: "The budgets lived in prose. The remedy maps a PR to a slot by its milestone, derives every action from a snapshot, and plants the over-budget and out-of-order cases."
+
+equations:
+  slot_budget:
+    formula: "∀ s ∈ {L1,L2,L3}: |open(s)| > B(s) ⇒ BLOCK the |open(s)| − B(s) newest PRs of s, with B = {L1:2, L2:1, L3:1}"
+    domain: "a legal lookahead state and a PR snapshot"
+    codomain: "exit 0 (OK) | 1 (actions) | 2 (cannot judge)"
+    invariants:
+      - "the oldest B(s) PRs of a slot are never blocked by the budget"
+      - "an L3 PR touching anything outside docs/ and contracts/ is blocked; an L2 one must be a draft"
+  queue_order:
+    formula: "∀ look-ahead PR p in the queue at position i: i > max{j : queue[j] ∈ train N} ∧ no earlier look-ahead PR in the queue shares train(p)"
+    domain: "the merge queue in order"
+    codomain: "REQUEUE actions"
+  cap_yield:
+    formula: "|live| > cap ⇒ YIELD look-ahead PRs in slot order L3, L2, L1 (newest first within a slot) until |live| − yielded ≤ cap; train-N and unslotted PRs never yield"
+    domain: "the open PRs not already blocked"
+    codomain: "YIELD actions"
+
+proof_obligations:
+  - id: LAB-INV-001
+    type: invariant
+    property: "A third L1 PR is blocked"
+    formal: "|open(L1)| = 3 ⇒ BLOCK newest(L1) ∧ ¬BLOCK the other two"
+    applies_to: slot_budget
+  - id: LAB-INV-002
+    type: invariant
+    property: "A look-ahead PR ahead of a train PR is re-queued"
+    formal: "queue = [p_lookahead, p_train] ⇒ REQUEUE p_lookahead"
+    applies_to: queue_order
+  - id: LAB-INV-003
+    type: invariant
+    property: "At the cap, L3 yields before L2 and train PRs never yield"
+    formal: "over = 2 with one L3 and one L2 PR ⇒ YIELD {L3, L2} ∧ no YIELD on train-N PRs"
+    applies_to: cap_yield
+  - id: LAB-INV-004
+    type: invariant
+    property: "The guard still fails on the defects it names"
+    formal: "∀ m ∈ {slot-budget-unchecked, l2-draft-unchecked, queue-order-unchecked, yield-order-reversed}: guard(m) ≠ 0"
+    applies_to: slot_budget
+
+falsification_tests:
+  - id: FALSIFY-LAB-001
+    rule: "A planted third L1 PR is blocked; a planted look-ahead PR ahead of a train PR is re-queued"
+    prediction: "the LA-04 rows of the case table are GREEN"
+    test: "bash scripts/check_lookahead.sh"
+    if_fails: "A slot exceeds its budget, or look-ahead work jumps the current train"
+  - id: FALSIFY-LAB-002
+    rule: "The guard can still fail"
+    prediction: "every LA-04 mutant turns at least one row RED"
+    test: "bash scripts/check_lookahead.sh --self-test"
+    if_fails: "The budget rows are theater"
+
+qa_gate:
+  id: F-LAB-001
+  name: "Look-ahead PRs stay within budget and behind the current train"
+  description: "lookahead.py pr-budget derives BLOCK/DRAFT/YIELD/REQUEUE from a PR snapshot; the cop applies them each tick. scripts/check_lookahead.sh runs in guard_tree.sh's --no-cargo step."
+  checks:
+    - "slot_budget"
+    - "queue_order"
+    - "cap_yield"

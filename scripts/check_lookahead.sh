@@ -147,6 +147,45 @@ run_table() {
     row "prompt/no-launch-line-refused" 1 'lacks the launch line' -- la prompt --slot L1 --train 0.71 --root "$P"
     rm -f "${P:?}/docs/prompts/lookahead-worker.md"
     row "prompt/absent-cannot-judge" 2 'CANNOT-JUDGE' -- la prompt --slot L1 --train 0.71 --root "$P"
+
+    # LA-04 lookahead-pr-budget-v1 --------------------------------------------------
+    # pr NUM MILESTONE DRAFT CREATED-HOUR FILE -- one PR in the plain snapshot shape
+    pr() { printf '{"number": %s, "milestone": "%s", "draft": %s, "created": "2026-09-27T%s:00:00Z", "files": ["%s"]}' "$@"; }
+    snap() { local cap=$1 q=$2; shift 2; local IFS=,; printf '{"cap": %s, "queue": [%s], "prs": [%s]}\n' "$cap" "$q" "$*"; }
+    snap 10 "" "$(pr 1 0.71.0 false 08 crates/a.rs)" "$(pr 2 0.71.0 false 09 crates/b.rs)" \
+        "$(pr 3 0.72.0 false 09 docs/x.md)" "$(pr 4 0.73.0 false 09 docs/y.md)" "$(pr 5 0.70.0 false 07 crates/c.rs)" > "$T/budget-ok.json"
+    row "budget/within-budget-clean" 0 '^OK: every look-ahead PR' -- la pr-budget "$T/good.json" --prs "$T/budget-ok.json"
+    # a planted third L1 PR: the newest one is blocked, the older two stand
+    snap 10 "" "$(pr 1 0.71.0 false 08 crates/a.rs)" "$(pr 2 0.71.0 false 09 crates/b.rs)" "$(pr 6 0.71.0 false 10 crates/d.rs)" > "$T/l1-three.json"
+    row "budget/third-l1-pr-blocked" 1 '^BLOCK #6: L1 holds 3 open PRs, budget 2' -- la pr-budget "$T/good.json" --prs "$T/l1-three.json"
+    row "budget/older-l1-prs-stand" 0 '^[^#]*#6[^#]*$' -- sh -c "python3 '$SUBJECT' pr-budget '$T/good.json' --prs '$T/l1-three.json' | tr '\n' ' '"
+    snap 10 "" "$(pr 3 0.72.0 false 09 docs/x.md)" "$(pr 7 0.72.0 true 10 docs/z.md)" > "$T/l2-two.json"
+    row "budget/second-l2-pr-blocked" 1 '^BLOCK #7: L2 holds 2' -- la pr-budget "$T/good.json" --prs "$T/l2-two.json"
+    # what a slot may land
+    snap 10 "" "$(pr 3 0.72.0 false 09 crates/spike.rs)" > "$T/l2-code.json"
+    row "budget/l2-code-must-be-draft" 1 '^DRAFT #3' -- la pr-budget "$T/good.json" --prs "$T/l2-code.json"
+    snap 10 "" "$(pr 3 0.72.0 true 09 crates/spike.rs)" > "$T/l2-draft.json"
+    row "budget/l2-draft-code-ok" 0 '^OK' -- la pr-budget "$T/good.json" --prs "$T/l2-draft.json"
+    snap 10 "" "$(pr 4 0.73.0 true 09 crates/spike.rs)" > "$T/l3-code.json"
+    row "budget/l3-code-blocked" 1 '^BLOCK #4: L3 lands specs and docs only' -- la pr-budget "$T/good.json" --prs "$T/l3-code.json"
+    # a planted look-ahead PR ahead of a train PR in the queue is re-queued
+    snap 10 "3,5" "$(pr 3 0.72.0 false 09 docs/x.md)" "$(pr 5 0.70.0 false 07 crates/c.rs)" > "$T/queue-ahead.json"
+    row "budget/lookahead-ahead-of-train-requeued" 1 '^REQUEUE #3: L2 PR queued ahead of a train-0.70 PR' -- la pr-budget "$T/good.json" --prs "$T/queue-ahead.json"
+    snap 10 "5,3" "$(pr 3 0.72.0 false 09 docs/x.md)" "$(pr 5 0.70.0 false 07 crates/c.rs)" > "$T/queue-behind.json"
+    row "budget/lookahead-behind-train-ok" 0 '^OK' -- la pr-budget "$T/good.json" --prs "$T/queue-behind.json"
+    snap 10 "5,1,2" "$(pr 1 0.71.0 false 08 crates/a.rs)" "$(pr 2 0.71.0 false 09 crates/b.rs)" "$(pr 5 0.70.0 false 07 crates/c.rs)" > "$T/queue-two.json"
+    row "budget/two-same-train-in-queue-requeued" 1 '^REQUEUE #2: a second train-0.71' -- la pr-budget "$T/good.json" --prs "$T/queue-two.json"
+    # the repo cap: L3 yields first, then L2; train and unslotted PRs never yield
+    snap 3 "" "$(pr 5 0.70.0 false 07 crates/c.rs)" "$(pr 8 "" false 07 crates/e.rs)" "$(pr 1 0.71.0 false 08 crates/a.rs)" \
+        "$(pr 3 0.72.0 false 09 docs/x.md)" "$(pr 4 0.73.0 false 09 docs/y.md)" > "$T/cap.json"
+    row "budget/at-cap-l3-yields-first" 1 '^YIELD #4: .*L3 yields' -- la pr-budget "$T/good.json" --prs "$T/cap.json"
+    row "budget/at-cap-then-l2" 1 '^YIELD #3: .*L2 yields' -- la pr-budget "$T/good.json" --prs "$T/cap.json"
+    row "budget/at-cap-train-never-yields" 0 '^$' -- sh -c "python3 '$SUBJECT' pr-budget '$T/good.json' --prs '$T/cap.json' | grep -E 'YIELD #(5|8|1):' || true"
+    # raw `gh pr list --json` rows are accepted as they come
+    printf '[{"number": 1, "milestone": {"title": "0.71.0"}, "isDraft": false, "createdAt": "2026-09-27T08:00:00Z", "files": [{"path": "a.rs"}]}, {"number": 2, "milestone": {"title": "0.71.0"}, "isDraft": false, "createdAt": "2026-09-27T09:00:00Z", "files": []}, {"number": 6, "milestone": {"title": "0.71.0"}, "isDraft": false, "createdAt": "2026-09-27T10:00:00Z", "files": []}]\n' > "$T/gh.json"
+    row "budget/gh-json-accepted" 1 '^BLOCK #6' -- la pr-budget "$T/good.json" --prs "$T/gh.json" --cap 10
+    printf '{"prs": []}\n' > "$T/nocap.json"
+    row "budget/no-cap-cannot-judge" 2 'CANNOT-JUDGE' -- la pr-budget "$T/good.json" --prs "$T/nocap.json"
 }
 
 run_all() {
@@ -173,6 +212,10 @@ MUTANTS=(
   "i4-unchecked|            stale = ho_age_h >= HANDOFF_MAX_H or ho.get(\"train\") != rec[\"train\"]|            stale = False"
   "prompt-drift-unchecked|    if block != spec_block:|    if False:"
   "prompt-launch-unchecked|    if launch_prompt(\"L1\", \"0.71\") not in text:|    if False:"
+  "slot-budget-unchecked|        for p in mine[PR_BUDGET[s]:]:|        for p in mine[99:]:"
+  "l2-draft-unchecked|        if s == \"L2\" and code and not p.get(\"draft\"):|        if False:"
+  "queue-order-unchecked|        if i < last_train:|        if False:"
+  "yield-order-reversed|YIELD_ORDER = [\"L3\", \"L2\", \"L1\"]|YIELD_ORDER = [\"L1\", \"L2\", \"L3\"]"
   "cannot-judge-passes|        return 2\n\n\nif __name__|        return 0\n\n\nif __name__"
 )
 
