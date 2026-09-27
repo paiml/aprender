@@ -48,7 +48,7 @@ green on S7 (`apr 0.69.3 (b6cf6d2ede)`) and RED on simular and ptop.
 | S18 (1/3) | NEW → contracts/bin-aprender-ptx-debug--aprender-ptx-debug-v1.yaml | aprender-ptx-debug | 3 | unknown flag exits 1 by design (`exit_code_for_parse_error`), G1.2 RED |
 | S18 (2/3) | NEW → contracts/bin-aprender-explain--aprender-explain-v1.yaml | aprender-explain | 7 | `--version` says "trueno-explain"; `ptx -K` is a String checked after clap (exit 1), G1.3 RED |
 | S18 (3/3) | NEW → contracts/bin-aprender-db--aprender-db-v1.yaml | aprender-db | 0; `--config`; 3 HTTP routes | `--version` says "trueno-db"; needs `--features server` to exist |
-| S12 (1/2) | binary-trueno-rag-v1.yaml | trueno-rag (aprender-rag-cli) | 6 | 7 ledger rows (`eval compare/gate/generate/judge/metrics/retrieve/sample`) name commands behind non-default feature `eval` |
-| S12 (2/2) | binary-score-v1.yaml | score (aprender-present-terminal) | 0; 7 long options + [PATH] | none beyond G0.1. Needs `--features score` to exist at all; bare-row join extended to allow positional placeholders (`score [PATH] (…)`) |
+| S12 (1/2) | MOVED → contracts/bin-aprender-rag-cli--trueno-rag-v1.yaml | trueno-rag (aprender-rag-cli) | 6 | 7 ledger rows (`eval compare/gate/generate/judge/metrics/retrieve/sample`) name commands behind non-default feature `eval`; G1.3: `query --format/--mode/--fusion/--rerank` are Strings checked after clap (exit 1) |
+| S12 (2/2) | MOVED → contracts/bin-aprender-present-terminal--score-v1.yaml | score (aprender-present-terminal) | 0; 7 long options + [PATH] | none beyond G0.1. Needs `--features score` to exist at all; bare-row join extended to allow positional placeholders (`score [PATH] (…)`) |
 
 G0.1 is RED on both S12 binaries (`trueno-rag 0.69.3`, `score 0.69.3`: no sha).
