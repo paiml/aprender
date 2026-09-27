@@ -1,0 +1,215 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.41.1",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"asset version check bin name\" --limit 5 --format json"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-DUP-001",
+          "level": "note",
+          "message": {
+            "text": "No prior implementation of a multi-bin asset_version_check found. pmat's semantic index (94,064 functions, Rust-only reach) returned nothing that duplicates the generalised avc_decide() bin-name-prefix logic this PR adds; top hits were unrelated build.rs / release-schedule doc chunks. This is a lexical-reach gap, not a clean bill: the index cannot see other shell scripts by symbol, only by name, so a second hand-rolled per-bin version checker under a different filename would not surface here."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "asset version check bin name",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "Accepting the pmat hit list as proof of no duplication would miss a second per-bin version-string parser written as a fresh shell script rather than a Rust function, since pmat's semantic index is Rust-only.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CORRECT-001",
+          "level": "note",
+          "message": {
+            "text": "CORRECTED after coordinator re-check: `python3 scripts/nightly_manifest.py bins --metadata <cargo-metadata>` (the function build-all-bins actually calls) prints 29 bin names and `ttop` is NOT among them. crates/aprender-viz-ttop/Cargo.toml sets `publish = false` (\"Internal system-monitor binary; ships via apr binary, not as a library dep\"), and workspace_bins() excludes non-published crates from the derived bin set -- so build-all-bins never builds or version-checks ttop today; my original 'error' framing (the job goes red on ttop) was wrong, verified by actually running the manifest command rather than reasoning from Cargo.toml's [[bin]] table alone. Retained as an ADVISORY note only: crates/aprender-viz-ttop/src/main.rs:27 still declares `#[command(name = \"ttop\", version, about, long_about = None)]` with clap's bare `version` (no `(<sha>)` suffix), and if `publish = false` were ever dropped, or ttop moved into the derived bin set some other way, it would fail asset_version_check.sh's version-line regex immediately -- the same class of bug this PR's own aprender-cgp fix addresses, just not live in this diff's actual gate surface."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "scripts/nightly_manifest.py",
+              "bins",
+              "--metadata",
+              "<cargo-metadata.json>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "Only reachable if crates/aprender-viz-ttop/Cargo.toml's `publish = false` is later removed, or ttop is added to the derived bin set by some other path -- not reachable through this PR's diff as merged today.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The guard's own --match-path predicate, recomputed over the FULL base_sha..head_sha range (aca6f2d7f6..e97655a868, evidence/pr-review/ excluded, 1628 paths -- this branch is stacked on batch/ont-10, so this range is not this PR's own diff), fires on 55 paths including .github/workflows/cuda-nightly.yml, crates/aprender-gpu/**, crates/aprender-serve/src/cuda/**, crates/aprender-ptx-debug/**. None of the 55 are among the 4 files this PR's own commits (ae34ee7cdd, e97655a868) touch -- confirmed by diffing origin/batch/ont-10...HEAD, which returns exactly the 4 reviewed files. nvidia-cuda-docs was not queried: the two-mark rule (S3.0) requires recording the trigger honestly rather than reasoning that 'this PR itself has no CUDA content' and calling it not-triggered, since the guard recomputes the trigger over base..head, not over a hand-picked commit range."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "git diff --name-only aca6f2d7f6c436426ab3d78721474853f82a8448 e97655a8686d17d09216ad82b7326548b110c897 -- . ':!evidence/pr-review/' | xargs -I{} scripts/check_pr_review_receipt.sh --match-path {}"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-CARRIED-001",
+          "level": "note",
+          "message": {
+            "text": "All 55 CUDA-path-trigger matches in base..head are pre-existing batch/ont-10 / car content already in that branch's own history, not authored by this PR's two commits (ae34ee7cdd feat(release): G5, e97655a868 docs(audit): GH-4189 receipt). This PR's own diff (origin/batch/ont-10...HEAD) touches only .github/workflows/binary-release.yml, crates/aprender-cgp/src/cli.rs, docs/audits/impl-GH-4189-receipt.md and scripts/release/asset_version_check.sh -- none CUDA-path-matching. Recorded as unreachable/carried-forward rather than not-triggered, per S3.0(c): narrating around the guard's own recomputed trigger is what this rule forbids."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "git diff --name-only origin/batch/ont-10...HEAD"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "Reporting cuda as cleanly not-triggered on this receipt would misstate what the guard actually recomputes (the full base..head range, not this PR's own 2-commit delta), and the guard's own positive-control rejects exactly that misstatement.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "git diff aca6f2d7f6..e97655a868 -- <PR's 4 files> | grep -E '^\\+' | grep -E \"$CRUX_SURFACE_RE\" (re-run of the guard's own S3.C regex against only this PR's own changed lines)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-001",
+          "level": "note",
+          "message": {
+            "text": "Re-running the guard's own CRUX_SURFACE_RE against this PR's own changed lines (not the full base..head range) finds two matches. (1) crates/aprender-cgp/src/cli.rs: `#[command(name = \"aprender-cgp\", ...)]` -- a REAL surface change: the aprender-cgp binary's clap command name changes from \"cgp\" to \"aprender-cgp\", which changes the leading token of its `--help`/`--version` output. This is the exact surface asset_version_check.sh's new bin-name-prefix stripping (avc_decide's 4th arg) depends on -- the fix and the surface it changes are the same commit, and the new self-test rows for 'aprender-cgp' cover it, so the gap here is zero: the one contract this surface touches (bin-name-prefixed version-line parsing) is exercised by the PR's own 30-row self-test. (2) .github/workflows/binary-release.yml: 4 occurrences of `APR_SHA=$(git rev-parse --short=9 HEAD)` / `APR_GIT_SHA_OVERRIDE=... --short=9` match the guard's `short[[:space:]]*=` sub-pattern, but this is `git rev-parse`'s own `--short=9` flag inside a shell heredoc, not a clap `#[arg(short = ...)]` declaration -- a regex false positive, not a CLI surface."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "git diff aca6f2d7f6c436426ab3d78721474853f82a8448 e97655a8686d17d09216ad82b7326548b110c897 -- .github/workflows/binary-release.yml crates/aprender-cgp/src/cli.rs scripts/release/asset_version_check.sh docs/audits/impl-GH-4189-receipt.md | grep -E '^\\+' | grep -E \"$CRUX_SURFACE_RE\""
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Recording crux as not-triggered (as this receipt originally did, checking only the full base..head range and finding it 'noisy' would hide the one real surface change this PR makes -- the clap command name -- and would also fail the guard's own S3.C positive control, which recomputes the trigger per-PR-diff-line, not just over the wide range.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://mutants.rs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants was not run this session: bounded review session on a shared host, no dedicated compute reserved. The diff's only Rust hunk is a one-line clap name string change in crates/aprender-cgp/src/cli.rs; scripts/release/asset_version_check.sh is a bash guard with its own committed case table, which WAS run directly (30/30 rows, self-test PASS, see the pmat run's stdout_sha256 note) -- that is a real falsification result, just not cargo-mutants."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/release/asset_version_check.sh",
+                  "--self-test"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "internal:agy"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy was not dispatched this session: this review lane's sandbox is git-read-only and process-restricted (subagent-lock hook refused a git-fetch and a git-patch-id invocation typed directly at the top level during this same review), and no disposable-tree agy run was attempted within the session's time/compute budget."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "git fetch origin main --quiet"
+                ],
+                "exit_code": 1
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
