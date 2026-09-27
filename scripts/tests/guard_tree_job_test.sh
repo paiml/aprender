@@ -4,18 +4,20 @@
 # (BSE-02, PMAT-1064, paiml/infra BSE-001 spec §4 wave 3).
 #
 # #4433 SPLIT THE CONTRACT ACROSS TWO FILES. The guard-tree job body moved
-# verbatim to ci/sections.yml; .github/workflows/ci.yml's x86-main fat job runs
+# verbatim to ci/sections.yml; .github/workflows/ci.yml's `neutral` fat job runs
 # it as a section, and the verdict job `gate` reads that section's result.
+# `neutral` carries NO arch label, so gx10 takes it as readily as an X64 runner
+# (operator 10x item 6); leg 5 pins that, since the section is pure script.
 # Legs 1 and 3 read the section; legs 2 and 4 read who runs and gates it.
 #
-# Four assertions, each a leg of the spec's acceptance expression:
+# Five assertions, each a leg of the spec's acceptance expression:
 #
 #   1. sections .jobs."guard-tree".needs is null (guard-tree needs nothing,
 #      so the fat driver starts it at once -- §13 F-13: gating the builds on
 #      it would add its runtime to every green run).
-#   2. gate requires it: ci.yml's x86-main runs `--sections` naming
-#      guard-tree, gate.needs contains x86-main, and gate's required-section
-#      list names `X86:guard-tree` (gate is the ONLY job that waits on it).
+#   2. gate requires it: ci.yml's neutral runs `--sections` naming
+#      guard-tree, gate.needs contains neutral, and gate's required-section
+#      list names `NEU:guard-tree` (gate is the ONLY job that waits on it).
 #   3. No step's `run:` text in the guard-tree section contains a bare `cargo `
 #      token -- the SAME classification regex guard_tree.sh itself uses
 #      (`(^|[^a-z_-])cargo `), not a naive substring match: a naive
@@ -24,9 +26,11 @@
 #      FLAG contains the substring "cargo " once joined with the next
 #      token. That would make the real, correct job read as violating its
 #      own contract. See CARGO_RE below and scripts/guard_tree.sh's header.
-#   4. It runs on clean-room: the section's `runs-on` AND the x86-main fat
+#   4. It runs on clean-room: the section's `runs-on` AND the neutral fat
 #      job's (the section's runs-on is now only what the driver honours; the
 #      fat job's is where it actually lands).
+#   5. The neutral fat job's runs-on names no arch (X64/ARM64): a pinned arch
+#      would leave the other arch's clean-room runners idle for script-only work.
 #
 # TWO IMPLEMENTATIONS, ONE CONTRACT. `command -v yq` is checked for a
 # mikefarah v4 build (`yq --version` prints
@@ -130,9 +134,10 @@ run_text_of_job_block() {
 }
 
 # The fat job's --sections list names guard-tree as a whole item (quoted,
-# comma-separated), and gate's required list names X86:guard-tree.
+# comma-separated), and gate's required list names NEU:guard-tree.
 export SECTIONS_RE="--sections '([^']*,)?guard-tree(,[^']*)?'"
-export GATE_RE="(^|[[:space:]])X86:guard-tree([[:space:]]|$)"
+export GATE_RE="(^|[[:space:]])NEU:guard-tree([[:space:]]|$)"
+ARCH_RE='(^|[^A-Za-z0-9_-])(X64|ARM64)([^A-Za-z0-9_-]|$)'
 
 # assertions_yq CI SECT -- prints "true" or "false"
 # NOTE: `yq` and its subcommand are split across lines on purpose -- bashrs
@@ -151,10 +156,11 @@ assertions_yq() {
     ' "$2" 2>/dev/null)"
     b="$(yq \
         e '
-        (.jobs.gate.needs | contains(["x86-main"]))
+        (.jobs.gate.needs | contains(["neutral"]))
         and (.jobs.gate.steps | map(.run // "") | join(" ") | test(strenv(GATE_RE)))
-        and (.jobs."x86-main".steps | map(.run // "") | join(" ") | test(strenv(SECTIONS_RE)))
-        and (.jobs."x86-main"."runs-on" | contains(["clean-room"]))
+        and (.jobs.neutral.steps | map(.run // "") | join(" ") | test(strenv(SECTIONS_RE)))
+        and (.jobs.neutral."runs-on" | contains(["clean-room"]))
+        and ((.jobs.neutral."runs-on" | map(select(. == "X64" or . == "ARM64")) | length) == 0)
     ' "$1" 2>/dev/null)"
     if [ "$a" = true ] && [ "$b" = true ]; then echo true; else echo false; fi
 }
@@ -166,13 +172,13 @@ assertions_awk() {
     [ -n "$gt_job" ] || { echo false; return; }
     gate_job="$(job_block "gate" "$ci")"
     [ -n "$gate_job" ] || { echo false; return; }
-    x86_job="$(job_block "x86-main" "$ci")"
+    x86_job="$(job_block "neutral" "$ci")"
     [ -n "$x86_job" ] || { echo false; return; }
 
     needs_line="$(grep -c '^    needs:' <<<"$gt_job")"
     runson_line="$(grep '^    runs-on:' <<<"$gt_job")"
 
-    local leg1=false leg2=false leg3=false leg4=false
+    local leg1=false leg2=false leg3=false leg4=false leg5=false
     [ "${needs_line:-1}" -eq 0 ] && leg1=true
     # Each producer's text is captured first and grepped from a here-string: a
     # pipe into `grep -q` reports the producer's SIGPIPE under pipefail
@@ -183,7 +189,7 @@ assertions_awk() {
     x86_run="$(run_text_of_job_block <<<"$x86_job" | tr '\n' ' ' || true)"
     gt_run="$(run_text_of_job_block <<<"$gt_job" || true)"
     x86_runson="$(grep '^    runs-on:' <<<"$x86_job" || true)"
-    grep -qE '(^|[^a-z0-9_-])x86-main([^a-z0-9_-]|$)' <<<"$gate_needs" \
+    grep -qE '(^|[^a-z0-9_-])neutral([^a-z0-9_-]|$)' <<<"$gate_needs" \
         && grep -qE "$GATE_RE" <<<"$gate_run" \
         && grep -qE -- "$SECTIONS_RE" <<<"$x86_run" \
         && leg2=true
@@ -191,8 +197,9 @@ assertions_awk() {
     grep -qE '(^|[^a-z0-9_-])clean-room([^a-z0-9_-]|$)' <<<"$runson_line" \
         && grep -qE '(^|[^a-z0-9_-])clean-room([^a-z0-9_-]|$)' <<<"$x86_runson" \
         && leg4=true
+    [ -n "$x86_runson" ] && ! grep -qE "$ARCH_RE" <<<"$x86_runson" && leg5=true
 
-    if [ "$leg1" = true ] && [ "$leg2" = true ] && [ "$leg3" = true ] && [ "$leg4" = true ]; then
+    if [ "$leg1" = true ] && [ "$leg2" = true ] && [ "$leg3" = true ] && [ "$leg4" = true ] && [ "$leg5" = true ]; then
         echo true
     else
         echo false
@@ -217,9 +224,9 @@ fi
 # ---------------------------------------------------------------------------
 real_result="$(assertions "$CI_YML" "$SECT_YML")"
 if [ "$real_result" = "true" ]; then
-    pass_row "guard-tree: no needs, gate needs it, no cargo step, runs on clean-room"
+    pass_row "guard-tree: no needs, gate needs it, no cargo step, runs on clean-room, no arch pin"
 else
-    fail_row "guard-tree: no needs, gate needs it, no cargo step, runs on clean-room" \
+    fail_row "guard-tree: no needs, gate needs it, no cargo step, runs on clean-room, no arch pin" \
         "assertions()=$real_result"
 fi
 
@@ -263,22 +270,22 @@ mutant_row "cargo step in guard-tree" "$CI_YML" "$m2" differs "$SECT_YML" "$m2"
 # 3. Mutant: guard-tree dropped from gate's required-section list.
 # ---------------------------------------------------------------------------
 m3="$WORK/gate-drops-guard-tree.yml"
-sed -E 's/ X86:guard-tree / /' "$CI_YML" > "$m3"
+sed -E 's/ NEU:guard-tree / /' "$CI_YML" > "$m3"
 mutant_row "guard-tree dropped from gate's required sections" "$m3" "$SECT_YML" differs "$CI_YML" "$m3"
 
 # ---------------------------------------------------------------------------
-# 4. Mutant: guard-tree dropped from x86-main's --sections.
+# 4. Mutant: guard-tree dropped from neutral's --sections.
 # ---------------------------------------------------------------------------
-m4="$WORK/x86-drops-guard-tree.yml"
-sed -E "s/^( *--sections '.*),guard-tree,/\1,/" "$CI_YML" > "$m4"
-mutant_row "guard-tree dropped from x86-main --sections" "$m4" "$SECT_YML" differs "$CI_YML" "$m4"
+m4="$WORK/neutral-drops-guard-tree.yml"
+sed -E "s/^( *--sections ')guard-tree,/\1/" "$CI_YML" > "$m4"
+mutant_row "guard-tree dropped from neutral --sections" "$m4" "$SECT_YML" differs "$CI_YML" "$m4"
 
 # ---------------------------------------------------------------------------
-# 5. Mutant: x86-main dropped from gate.needs.
+# 5. Mutant: neutral dropped from gate.needs.
 # ---------------------------------------------------------------------------
-m5="$WORK/gate-drops-x86.yml"
-sed -E 's/^(    needs: \[)x86-main, ([a-z, -]*determinism\].*)$/\1\2/' "$CI_YML" > "$m5"
-mutant_row "x86-main dropped from gate.needs" "$m5" "$SECT_YML" differs "$CI_YML" "$m5"
+m5="$WORK/gate-drops-neutral.yml"
+sed -E 's/^(    needs: \[x86-main, )neutral, ([a-z, -]*determinism\].*)$/\1\2/' "$CI_YML" > "$m5"
+mutant_row "neutral dropped from gate.needs" "$m5" "$SECT_YML" differs "$CI_YML" "$m5"
 
 # ---------------------------------------------------------------------------
 # 6. Mutant: the guard-tree section gains a `needs:`.
@@ -291,15 +298,28 @@ awk '
 mutant_row "guard-tree gaining a needs:" "$CI_YML" "$m6" differs "$SECT_YML" "$m6"
 
 # ---------------------------------------------------------------------------
-# 7. Mutant: the x86-main fat job leaves clean-room.
+# 7. Mutant: the neutral fat job leaves clean-room.
 # ---------------------------------------------------------------------------
-m7="$WORK/x86-off-clean-room.yml"
+m7="$WORK/neutral-off-clean-room.yml"
 awk '
-    /^  x86-main:/ { in_x = 1 }
+    /^  neutral:/ { in_x = 1 }
     in_x && /^    runs-on:/ { sub(/, clean-room/, ""); in_x = 0 }
     { print }
 ' "$CI_YML" > "$m7"
-mutant_row "x86-main off clean-room" "$m7" "$SECT_YML" differs "$CI_YML" "$m7"
+mutant_row "neutral off clean-room" "$m7" "$SECT_YML" differs "$CI_YML" "$m7"
+
+# ---------------------------------------------------------------------------
+# 8. Mutant: the neutral fat job is pinned back to one arch (either one).
+# ---------------------------------------------------------------------------
+for arch in X64 ARM64; do
+    m8="$WORK/neutral-pinned-$arch.yml"
+    awk -v a="$arch" '
+        /^  neutral:/ { in_x = 1 }
+        in_x && /^    runs-on:/ { sub(/Linux,/, "Linux, " a ","); in_x = 0 }
+        { print }
+    ' "$CI_YML" > "$m8"
+    mutant_row "neutral pinned to $arch" "$m8" "$SECT_YML" differs "$CI_YML" "$m8"
+done
 
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then

@@ -85,7 +85,6 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}
     steps:
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
@@ -100,7 +99,7 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64]'
+          --sections 'sov.*,guard-cargo,mutants,determinism[X64]'
           --external-job workspace-test
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
@@ -114,13 +113,6 @@ jobs:
         id: wait
         if: always()
         run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: pr-review-shadow-sample
-          path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
-          retention-days: 90
-          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -147,6 +139,47 @@ jobs:
         continue-on-error: true
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
+
+  # The arch-neutral sections: pure scripts, no cargo, no arch-gated code. They
+  # ran inside x86-main, which is pinned X64, so gx10 sat idle while they waited
+  # for an x86 runner (operator 10x item 6). NO arch label here: any clean-room
+  # runner takes it -- intel, framework16, yoga or gx10. What stays X64 and why:
+  # sov.lint/sov.test (clippy and check lint only the host arch's cfg, and 939
+  # target_arch = "x86*" gates in 222 files would go unlinted on ARM64),
+  # guard-cargo (runs aprender-core model tests, whose SIMD paths differ by arch),
+  # mutants and determinism[X64]. scripts/tests/guard_tree_job_test.sh pins this.
+  neutral:
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 60
+    # pr-review-shadow comments on the PR; pr-review-sign pushes the signature.
+    permissions: write-all
+    outputs:
+      results: ${{ steps.wait.outputs.results }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      # Moved verbatim from x86-main. The _B -> _B64 name fix is #4512 on car
+      # #4429; a rebase after the car lands must carry it here, not to x86-main.
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: fat_driver case table must still turn RED
+        run: python3 scripts/ci/fat_driver.py self-test
+      - name: Sections
+        id: wait
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'guard-tree,vendored-schemas,pr-review-shadow,pr-review-sign'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr-review-shadow-sample
+          path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
+          retention-days: 90
+          if-no-files-found: ignore
 
   # The GPU decision stays OFF the GPU hosts, as before #4433: an `if:` that
   # could only be evaluated on gx10/yoga would queue the job to answer it, and
@@ -419,12 +452,13 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
-    needs: [x86-main, workspace-test, determinism]   # as on main: the GPU jobs are advisory (68-C3 / 68-D2)
+    needs: [x86-main, neutral, workspace-test, determinism]   # as on main: the GPU jobs are advisory (68-C3 / 68-D2)
     if: always()
     steps:
       - name: Check required sections
         env:
           X86: ${{ needs.x86-main.outputs.results }}
+          NEU: ${{ needs.neutral.outputs.results }}
           DET: ${{ needs.determinism.outputs.results }}
           WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
@@ -436,7 +470,7 @@ jobs:
           # cuda-unit were never in the gate; they still are not.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+          for pair in NEU:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
             job="${pair%%:*}" sec="${pair#*:}"
             r=$(res "${!job}" "$sec")
             if [ "$r" != success ]; then
