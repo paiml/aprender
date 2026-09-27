@@ -10,7 +10,7 @@
 //!   2. `.cargo_vcs_info.json` `git.sha1` — written by `cargo package` into every published
 //!      tarball, so a crates.io install knows its commit (#4110). Ahead of `git rev-parse`
 //!      because an unpacked crate may sit inside SOME OTHER repository whose HEAD is not ours
-//!   3. `git rev-parse --short=9 HEAD` (dev builds from worktree or primary checkout; retried with
+//!   3. `git rev-parse --short HEAD` (dev builds from worktree or primary checkout; retried with
 //!      the enclosing checkout marked safe.directory when git refuses a checkout owned by another
 //!      user — binary-release.yml builds as root in a container over the runner's checkout)
 //!      then, with no git binary that answers, HEAD read straight from `.git` (#4254: the
@@ -118,7 +118,7 @@ fn resolve_git_sha() -> String {
     }
     // `trusted_git_retry`: the release binaries are built as root in a container over the
     // runner-owned checkout, where git refuses the repo as "dubious ownership" (#4110)
-    let head = ["rev-parse", "--short=9", "HEAD"];
+    let head = ["rev-parse", "--short", "HEAD"];
     // #4254: and when no git binary answers at all (the sibling build container over a
     // bind-mounted checkout), read HEAD straight from the checkout's own `.git`.
     let git_head = run_git(&head)
