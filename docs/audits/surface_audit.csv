@@ -427,6 +427,7 @@ apr-qa,apr-qa tickets,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.
 apr-qa,apr-qa tools,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:182,high
 apr-qa,apr-qa validate-contract,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:413,high
 apr-qa-readme-sync,apr-qa-readme-sync (README certification-table sync),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-qa-certify/src/main.rs:36-51,high
+aprender-cbtop,aprender-cbtop (interactive TUI; --headless),6,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:24,high
 aprender-cbtop,aprender-cbtop bench,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:88,high
 aprender-cbtop,aprender-cbtop optimize analyze,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:151,high
 aprender-cbtop,aprender-cbtop optimize baseline,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:136,high

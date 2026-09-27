@@ -7,7 +7,7 @@
 #   --help rc 0; --no-such-flag rc 2; --version = "apr-qa-readme-sync 0.69.3";
 #   ROOT-ONLY: 0 subcommands; options --csv <PATH> [docs/certifications/models.csv], --readme <PATH> [README.md];
 #   one ledger row, keyed as the bare binary: "apr-qa-readme-sync (README certification-table sync)".
-# LIVE RED: G0.1 (no sha). No flag takes an enumerated value, so G1.3 is vacuous here.
+# G0.1 was LIVE RED 2026-09-26 (no sha); GREEN 2026-09-27 (build.rs embeds APR_GIT_SHA). No flag takes an enumerated value, so G1.3 is vacuous here.
 # Root-only convention (as the staged zram-generator slice): bin:command maxCount 0; the root row is the ledger surface.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
@@ -48,8 +48,8 @@ shapes:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["apr-qa-readme-sync"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-qa-certify"]}
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^apr-qa-readme-sync [0-9]+\\.[0-9]+\\.[0-9]+"}
-      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
-      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      # G0.1 — GREEN 2026-09-27: build.rs embeds APR_GIT_SHA
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
       # root-only: no subcommand
       - {path: bin:command, maxCount: 0}
       - {path: bin:unledgeredCommand, maxCount: 0}
@@ -91,7 +91,7 @@ falsification_tests:
     rule: 'G0.1 the version names the commit'
     prediction: '`apr-qa-readme-sync --version` contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-26: `apr-qa-readme-sync 0.69.3` — no sha'
+    if_fails: 'the build cannot be traced to a commit (was LIVE RED 2026-09-26: `apr-qa-readme-sync 0.69.3`, no sha; GREEN 2026-09-27: `apr-qa-readme-sync 0.69.3 (2d367b4d98)`)'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APR-QA-README-SYNC-004
     rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
