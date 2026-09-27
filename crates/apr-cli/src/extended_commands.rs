@@ -649,6 +649,13 @@ pub enum ExtendedCommands {
         /// Print the registry as JSON
         #[arg(long)]
         json: bool,
+        /// Instead of the registry: the smallest admissible Qwen3.5 size for this
+        /// consumer (arbiter, rah, rmedia), from committed ladder receipts (#3558)
+        #[arg(long, value_name = "CONSUMER")]
+        select: Option<String>,
+        /// Host whose receipts answer --select
+        #[arg(long, default_value = "lambda", requires = "select")]
+        host: String,
     },
     /// Backend discovery: probe, enumerate, print — every kind is a line (PP-066 R-0)
     #[cfg(feature = "inference")]

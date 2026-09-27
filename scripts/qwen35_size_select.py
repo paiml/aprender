@@ -26,6 +26,9 @@ Usage:
   qwen35_size_select.py --check PATH                    re-derive, byte-compare
   qwen35_size_select.py --query CONSUMER --host HOST    selected size + receipts
   qwen35_size_select.py --selftest                      planted case table
+After --out for a new release, copy the table to
+crates/apr-cli/contracts/qwen35-size-selection.json -- `apr capability --select`
+embeds that mirror, and an apr-cli unit test is RED until it equals the newest table.
 Exit: 0 ok | 1 --check mismatch or --query with nothing admissible | 2 bad input.
 """
 

@@ -1,0 +1,670 @@
+{
+  "context_basis_note": "ingested = prefill run (max_tokens 1) completed on GPU at >= budget; correctness at that length is not measured",
+  "derived_from": [
+    {
+      "path": "contracts/model-capability-ladder-v1.yaml",
+      "sha256": "75f17bcec9caf39534f87c35e5cd13a072d66c0fb786ca266f8703a5ebbc69ad"
+    },
+    {
+      "path": "evidence/dogfood/models/0.69.1/gx10.json",
+      "sha256": "25f926877a85b81b2a9a333a2edaf09bef47993cda3a4407fdbacf2bea732439"
+    },
+    {
+      "path": "evidence/dogfood/models/0.69.1/lambda.json",
+      "sha256": "f2e107149cdcaa29d427407e5619732b4b354d4bf6819cfcae4c7a88992845f2"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/27B-brief.json",
+      "sha256": "3005391c41e5278651dadb1dd57f431455007c4a816109696bf555b369fcb6a4"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/27B-p4k.json",
+      "sha256": "16a8ca561de6d520652a9afc8bac4b60eeb7eb7fbd5de5f9babbdc2634c1f781"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/9B-brief.json",
+      "sha256": "a11632d751138ff7d7525f402aa641b56e3f44eb7ad5fcd923fe5e2ca8b9ea05"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/9B-p148k.json",
+      "sha256": "2a47907dfb7706b7aeba102efb67b265cd54731900d4126962ee9f0f5d999a7d"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/9B-p20k.json",
+      "sha256": "0083efb0fe97dd730d1c4db8018a97e18d2ac976dd23a9f52e114d84bba8e5f4"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/9B-p262k.json",
+      "sha256": "120dc9e81c7b01f23464fb9fb7412fddff869110289ad74fd68864e7e8a667df"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/9B-p4k.json",
+      "sha256": "26d73908f245b4a23e1097457db11595a201fff9e826c7fdb30d2931c8e6b93e"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/9B-p60k.json",
+      "sha256": "9131dad69a82d6dd38a58c94a98baf0d34d8e59c67606331d2c3f0e8baba5f78"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/9B-p8k.json",
+      "sha256": "95d0ec3453f238b4d16929abc633ac3126b55b7b48b51d85ebe28debac217b9c"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/ladder.json",
+      "sha256": "1d2a5b26614bd3224f275515f22d2940ef15a55e74c7f6047fe7b8900b1ab1f8"
+    },
+    {
+      "path": "evidence/pmat-3596-gx10/prof.json",
+      "sha256": "12239764b7cfc51e5b20ae5f0f692532b6876a31dfb88b0770c63a7f18a771ea"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p148k.json",
+      "sha256": "3a79c0d8cf6deb30bd9eaa1ff18dd0cebb6e2b5d00426ab49f91ec57fd1d820a"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p20k-rerun.json",
+      "sha256": "e302237e4969b013901e0243f0ff71e1164f6bf1b4df938ed9124851f9247291"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p20k.json",
+      "sha256": "7208354b6ccc274e4e4485c35b5e0bf6a3a6c6fcfb55920a3bf5589d5ffb3ff0"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p262k.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p4k.json",
+      "sha256": "03ee4fa94c7faed96715d494cb0603a89b42aca07356684883bc79b47ba858f0"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p60k-rerun.json",
+      "sha256": "c8b7856f5f8c416f7dfa9d752054087632e3d23867499052beb365f0b8be2d1f"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p60k.json",
+      "sha256": "b0dfee4676f901752f00b0052ac8ceb02401f260ca33cbdeac2e822748738726"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/9b-p8k.json",
+      "sha256": "70c46e6cbab0352b9319ad04ebc480c5b15a7ebc666cb6bf8de820b3be1ef131"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/brief2.json",
+      "sha256": "2f16ac426c7cba32a319371052664f7d164c7283c7e3f069d3c43aead2254141"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/flash-9b-p148k.json",
+      "sha256": "f7a286f0501d9805f975301541293137e7906452d21f9fa69c4af4b8520b842b"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/flash-9b-p20k.json",
+      "sha256": "1938ef2620bf1240193f0d3f73d789bb9bcf93ddef5b6d13b2888bd31dd2df89"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/flash-9b-p262k.json",
+      "sha256": "8d21b993c3062e45d976c9753e88666840c13a2dfb95710ce2fc07396ab4e0f9"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/flash-9b-p60k.json",
+      "sha256": "f7656ef97a91e7b1161c256d9fe560f3fb9b35cf4148d456d3b1e887b03222d7"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/ladder.json",
+      "sha256": "13aa1d8d6ecef594d0910317e17e44ce91d3f3f14782eff0c06a692361610510"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/prof60k.json",
+      "sha256": "c608981083956820ccd5750d1bfff0f56ea96655e9b1207743a40a9914c934e6"
+    },
+    {
+      "path": "evidence/pmat-3596-lambda/r1.json",
+      "sha256": "a10d9145a3f67dccb2e22ee20e054d84b621b9e9f89c744f5a94be9805882c91"
+    },
+    {
+      "path": "evidence/release/context-rungs.json",
+      "sha256": "a7bcca64074db451208f1a9311ccaf64d226d142fa066a862104802629396aaa"
+    }
+  ],
+  "family": "qwen3.5",
+  "hosts": {
+    "gx10": {
+      "apr": "apr 0.69.1 (9b7739951)",
+      "consumers": {
+        "arbiter": {
+          "admissible": [
+            "qwen35-9b-q4km"
+          ],
+          "candidates": [
+            {
+              "admissible": false,
+              "bytes": 532517120,
+              "capability": {
+                "ok": false,
+                "why": "known_red #4030"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-0.8B-Q4_K_M.gguf",
+              "rung": "qwen35-0.8b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 1280835840,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-2B-Q4_K_M.gguf",
+              "rung": "qwen35-2b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 2740937888,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-4B-Q4_K_M.gguf",
+              "rung": "qwen35-4b-q4km"
+            },
+            {
+              "admissible": true,
+              "bytes": 5680522464,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "apr": "(pre-record)",
+                "basis": "ingested",
+                "met": true,
+                "prompt_tokens": 8221,
+                "receipt": "evidence/pmat-3596-gx10/9B-p8k.json",
+                "tag": "9B-p8k"
+              },
+              "gguf": "Qwen3.5-9B-Q4_K_M.gguf",
+              "rung": "qwen35-9b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 16740812704,
+              "capability": {
+                "ok": false,
+                "why": "cuda serve: apr serve did not answer /health within 90s"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-27B-Q4_K_M.gguf",
+              "rung": "qwen35-27b-q4km"
+            }
+          ],
+          "max_prompt_tokens": 7000,
+          "selected": "qwen35-9b-q4km"
+        },
+        "rah": {
+          "admissible": [
+            "qwen35-9b-q4km"
+          ],
+          "candidates": [
+            {
+              "admissible": false,
+              "bytes": 532517120,
+              "capability": {
+                "ok": false,
+                "why": "known_red #4030"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-0.8B-Q4_K_M.gguf",
+              "rung": "qwen35-0.8b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 1280835840,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-2B-Q4_K_M.gguf",
+              "rung": "qwen35-2b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 2740937888,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-4B-Q4_K_M.gguf",
+              "rung": "qwen35-4b-q4km"
+            },
+            {
+              "admissible": true,
+              "bytes": 5680522464,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "apr": "apr 0.69.0 (4ff26a07a)",
+                "basis": "ingested",
+                "met": true,
+                "prompt_tokens": 148563,
+                "receipt": "evidence/pmat-3596-gx10/9B-p148k.json",
+                "tag": "9B-p148k"
+              },
+              "gguf": "Qwen3.5-9B-Q4_K_M.gguf",
+              "rung": "qwen35-9b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 16740812704,
+              "capability": {
+                "ok": false,
+                "why": "cuda serve: apr serve did not answer /health within 90s"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-27B-Q4_K_M.gguf",
+              "rung": "qwen35-27b-q4km"
+            }
+          ],
+          "max_prompt_tokens": 148000,
+          "selected": "qwen35-9b-q4km"
+        },
+        "rmedia": {
+          "admissible": [
+            "qwen35-9b-q4km"
+          ],
+          "candidates": [
+            {
+              "admissible": false,
+              "bytes": 532517120,
+              "capability": {
+                "ok": false,
+                "why": "known_red #4030"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-0.8B-Q4_K_M.gguf",
+              "rung": "qwen35-0.8b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 1280835840,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-2B-Q4_K_M.gguf",
+              "rung": "qwen35-2b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 2740937888,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-4B-Q4_K_M.gguf",
+              "rung": "qwen35-4b-q4km"
+            },
+            {
+              "admissible": true,
+              "bytes": 5680522464,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "apr": "apr 0.69.0 (4ff26a07a)",
+                "basis": "ingested",
+                "met": true,
+                "prompt_tokens": 148563,
+                "receipt": "evidence/pmat-3596-gx10/9B-p148k.json",
+                "tag": "9B-p148k"
+              },
+              "gguf": "Qwen3.5-9B-Q4_K_M.gguf",
+              "rung": "qwen35-9b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 16740812704,
+              "capability": {
+                "ok": false,
+                "why": "cuda serve: apr serve did not answer /health within 90s"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-27B-Q4_K_M.gguf",
+              "rung": "qwen35-27b-q4km"
+            }
+          ],
+          "max_prompt_tokens": 128000,
+          "selected": "qwen35-9b-q4km"
+        }
+      },
+      "context_runs": "evidence/pmat-3596-gx10/ladder.json",
+      "receipt": "evidence/dogfood/models/0.69.1/gx10.json"
+    },
+    "lambda": {
+      "apr": "apr 0.69.1 (9b7739951)",
+      "consumers": {
+        "arbiter": {
+          "admissible": [
+            "qwen35-9b-q4km"
+          ],
+          "candidates": [
+            {
+              "admissible": false,
+              "bytes": 532517120,
+              "capability": {
+                "ok": false,
+                "why": "known_red #4030"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-0.8B-Q4_K_M.gguf",
+              "rung": "qwen35-0.8b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 1280835840,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-2B-Q4_K_M.gguf",
+              "rung": "qwen35-2b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 2740937888,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-4B-Q4_K_M.gguf",
+              "rung": "qwen35-4b-q4km"
+            },
+            {
+              "admissible": true,
+              "bytes": 5680522464,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "apr": "(pre-record)",
+                "basis": "ingested",
+                "met": true,
+                "prompt_tokens": 8221,
+                "receipt": "evidence/pmat-3596-lambda/9b-p8k.json",
+                "tag": "9b-p8k"
+              },
+              "gguf": "Qwen3.5-9B-Q4_K_M.gguf",
+              "rung": "qwen35-9b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 16740812704,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 7000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-27B-Q4_K_M.gguf",
+              "rung": "qwen35-27b-q4km"
+            }
+          ],
+          "max_prompt_tokens": 7000,
+          "selected": "qwen35-9b-q4km"
+        },
+        "rah": {
+          "admissible": [
+            "qwen35-9b-q4km"
+          ],
+          "candidates": [
+            {
+              "admissible": false,
+              "bytes": 532517120,
+              "capability": {
+                "ok": false,
+                "why": "known_red #4030"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-0.8B-Q4_K_M.gguf",
+              "rung": "qwen35-0.8b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 1280835840,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-2B-Q4_K_M.gguf",
+              "rung": "qwen35-2b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 2740937888,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-4B-Q4_K_M.gguf",
+              "rung": "qwen35-4b-q4km"
+            },
+            {
+              "admissible": true,
+              "bytes": 5680522464,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "apr": "apr 0.69.0 (4ff26a07a)",
+                "basis": "ingested",
+                "met": true,
+                "prompt_tokens": 148563,
+                "receipt": "evidence/pmat-3596-lambda/9b-p148k.json",
+                "tag": "9b-p148k"
+              },
+              "gguf": "Qwen3.5-9B-Q4_K_M.gguf",
+              "rung": "qwen35-9b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 16740812704,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 148000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-27B-Q4_K_M.gguf",
+              "rung": "qwen35-27b-q4km"
+            }
+          ],
+          "max_prompt_tokens": 148000,
+          "selected": "qwen35-9b-q4km"
+        },
+        "rmedia": {
+          "admissible": [
+            "qwen35-9b-q4km"
+          ],
+          "candidates": [
+            {
+              "admissible": false,
+              "bytes": 532517120,
+              "capability": {
+                "ok": false,
+                "why": "known_red #4030"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-0.8B-Q4_K_M.gguf",
+              "rung": "qwen35-0.8b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 1280835840,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-2B-Q4_K_M.gguf",
+              "rung": "qwen35-2b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 2740937888,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-4B-Q4_K_M.gguf",
+              "rung": "qwen35-4b-q4km"
+            },
+            {
+              "admissible": true,
+              "bytes": 5680522464,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "apr": "apr 0.69.0 (4ff26a07a)",
+                "basis": "ingested",
+                "met": true,
+                "prompt_tokens": 148563,
+                "receipt": "evidence/pmat-3596-lambda/9b-p148k.json",
+                "tag": "9b-p148k"
+              },
+              "gguf": "Qwen3.5-9B-Q4_K_M.gguf",
+              "rung": "qwen35-9b-q4km"
+            },
+            {
+              "admissible": false,
+              "bytes": 16740812704,
+              "capability": {
+                "ok": true,
+                "why": "ladder rung green"
+              },
+              "context": {
+                "basis": "unmeasured",
+                "met": false,
+                "why": "no GPU run ingested >= 128000 tokens (max seen 0)"
+              },
+              "gguf": "Qwen3.5-27B-Q4_K_M.gguf",
+              "rung": "qwen35-27b-q4km"
+            }
+          ],
+          "max_prompt_tokens": 128000,
+          "selected": "qwen35-9b-q4km"
+        }
+      },
+      "context_runs": "evidence/pmat-3596-lambda/ladder.json",
+      "receipt": "evidence/dogfood/models/0.69.1/lambda.json"
+    }
+  },
+  "ladder_version": "0.69.1",
+  "schema": "apr-qwen35-size-selection/v1"
+}
