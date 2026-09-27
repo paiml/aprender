@@ -661,6 +661,60 @@ mod tests {
         assert!(checked > 0, "no row was checked");
     }
 
+    /// FALSIFY-KREG-008 (AC-3, ratchet): a parity receipt names a real row and was taken on a
+    /// host of that row's arch; the rows without one number exactly `unreceipted_max`, which
+    /// only ever falls, and is 0 from `hard_red_at` on.
+    #[test]
+    fn unreceipted_rows_only_fall_and_reach_zero_at_the_hard_red_version() {
+        let doc: serde_json::Value =
+            serde_json::from_str(include_str!("../kernel-registry-receipts.json"))
+                .expect("receipts json");
+        let r = registry().expect("registry");
+        let mut receipted = std::collections::HashSet::new();
+        for rc in doc["receipts"].as_array().expect("receipts") {
+            let id = rc["kernel_id"].as_str().expect("kernel_id");
+            let row = r
+                .rows()
+                .iter()
+                .find(|row| row.kernel_id == id)
+                .unwrap_or_else(|| panic!("receipt for unregistered kernel {id}"));
+            let host_arch = rc["host_arch"].as_str().expect("host_arch");
+            assert!(
+                row.arch == "any" || row.arch == host_arch,
+                "{id}: receipt from a {host_arch} host cannot admit an arch={} row",
+                row.arch
+            );
+            assert!(
+                rc["receipt"].as_str().is_some_and(|p| !p.is_empty()),
+                "{id}: receipt path"
+            );
+            assert!(receipted.insert(id), "{id}: two receipts");
+        }
+        let unreceipted = r.rows().len() - receipted.len();
+        let max = doc["unreceipted_max"].as_u64().expect("unreceipted_max");
+        assert_eq!(
+            unreceipted as u64, max,
+            "unreceipted rows = {unreceipted}; set unreceipted_max to it (it may only fall)"
+        );
+        let minor = |v: &str| -> (u64, u64) {
+            let mut it = v
+                .split('.')
+                .map(|x| x.parse::<u64>().expect("version part"));
+            (it.next().expect("major"), it.next().expect("minor"))
+        };
+        let hard = doc["hard_red_at"].as_str().expect("hard_red_at");
+        let this = env!("CARGO_PKG_VERSION")
+            .split('-')
+            .next()
+            .expect("version");
+        if minor(this) >= minor(hard) {
+            assert_eq!(
+                unreceipted, 0,
+                "AC-3 is hard RED from {hard}: {unreceipted} rows lack a receipt"
+            );
+        }
+    }
+
     /// KREG coverage (CUDA): the registry's `cuda` rows and the ids `WeightQuantType` declares
     /// (one `gemv_dispatch` arm each — that match is exhaustive) are the same set, derived here
     /// over every id rather than from a hand-kept count. A variant with no row would be
