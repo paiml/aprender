@@ -601,9 +601,9 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
-        sh:minCount 36 ;
-        sh:maxCount 36 ;
-        sh:in ( "animation check" "audio check" "av-sync check" "av-sync report" "build" "comply" "comply check" "comply diff" "comply enforce" "comply migrate" "comply report" "config" "coverage" "init" "llm bench" "llm data-audit" "llm experiment compare" "llm experiment init" "llm experiment status" "llm gen-dataset" "llm load" "llm report" "llm score" "llm sweep" "llm test" "playbook" "record" "report" "serve" "serve score" "serve tree" "serve viz" "stress" "test" "video check" "watch" ) ;
+        sh:minCount 37 ;
+        sh:maxCount 37 ;
+        sh:in ( "animation check" "audio check" "av-sync check" "av-sync report" "build" "comply" "comply check" "comply diff" "comply enforce" "comply migrate" "comply report" "config" "coverage" "init" "llm bench" "llm data-audit" "llm experiment" "llm experiment compare" "llm experiment init" "llm experiment status" "llm gen-dataset" "llm load" "llm report" "llm score" "llm sweep" "llm test" "playbook" "record" "report" "serve" "serve score" "serve tree" "serve viz" "stress" "test" "video check" "watch" ) ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/unledgeredCommand> ;

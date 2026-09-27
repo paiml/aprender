@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 /// Probador: CLI for Probar - Rust-native testing framework for WASM games
 #[derive(Parser, Debug)]
-#[command(name = "probador")]
+#[command(name = "aprender-test-cli")]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
@@ -699,9 +699,13 @@ pub struct LlmScoreArgs {
 /// Arguments for `probador llm experiment`
 #[derive(Parser, Debug)]
 pub struct ExperimentArgs {
-    /// Experiment subcommand
+    /// Experiment subcommand (default: `status`)
     #[command(subcommand)]
-    pub subcommand: ExperimentSubcommand,
+    pub subcommand: Option<ExperimentSubcommand>,
+
+    /// Status of this experiment when no subcommand is given
+    #[command(flatten)]
+    pub status: ExperimentStatusArgs,
 }
 
 /// Experiment subcommands
