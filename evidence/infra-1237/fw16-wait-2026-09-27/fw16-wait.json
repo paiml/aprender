@@ -1,0 +1,34 @@
+{
+  "window": "2026-09-20T11:12:16Z 2026-09-27T11:12:16Z",
+  "runner_re": "^framework16",
+  "method": "jobs of every workflow run created in the window (all attempts), runner_name =~ runner_re; wait = started_at - created_at",
+  "all": {
+    "n": 232,
+    "p50_s": 35,
+    "p90_s": 548,
+    "max_s": 2010
+  },
+  "by_runner": {
+    "framework16": {
+      "n": 99,
+      "p50_s": 14,
+      "p90_s": 296,
+      "max_s": 2010
+    },
+    "framework16-2": {
+      "n": 96,
+      "p50_s": 51,
+      "p90_s": 619,
+      "max_s": 1737
+    },
+    "framework16-3": {
+      "n": 37,
+      "p50_s": 78,
+      "p90_s": 495,
+      "max_s": 1807
+    }
+  },
+  "excluded_negative_waits": 10,
+  "first_job_day": "2026-09-26",
+  "verdict": "MEASURED"
+}

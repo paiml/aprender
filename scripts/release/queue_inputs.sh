@@ -83,26 +83,27 @@ ghj() {
     mv -- "$out.tmp" "$out"
 }
 
-# fetch_ci_runs <dir> <start> <end> <jq>: every ci.yml run created in the window into <dir>/ci_runs.jsonl.
+# fetch_ci_runs <dir> <start> <end> <jq> [endpoint] [out]: every run created in the window into <dir>/<out>
+# (default: ci.yml runs into ci_runs.jsonl; endpoint "actions/runs" lists every workflow).
 fetch_ci_runs() {
-    local d="$1" start="$2" end="$3" runq="$4"
+    local d="$1" start="$2" end="$3" runq="$4" ep="${5:-actions/workflows/ci.yml/runs}" out="${6:-ci_runs.jsonl}"
     # The runs API returns at most 1000 rows per filtered query (a 7-day ci.yml window has more), so ask
     # one 12-hour slice at a time and refuse a slice that hit the cap: a truncated slice is not data.
-    if [ ! -s "$d/ci_runs.jsonl" ]; then
+    if [ ! -s "$d/$out" ]; then
         local a b s0 s1 rows
         a=$(date -u -d "$start" +%s); b=$(date -u -d "$end" +%s)
         : > "$d/ci_runs.part"
         while [ "$a" -lt "$b" ]; do
             s0=$(date -u -d "@$a" +%Y-%m-%dT%H:%M:%SZ)
             s1=$(date -u -d "@$(( a + 43200 < b ? a + 43200 : b ))" +%Y-%m-%dT%H:%M:%SZ)
-            gh api --paginate "repos/$REPO/actions/workflows/ci.yml/runs?created=$s0..$s1&per_page=100" \
+            gh api --paginate "repos/$REPO/$ep?created=$s0..$s1&per_page=100" \
                 -q "$runq" > "$d/slice.tmp" || return 1
             rows=$(wc -l < "$d/slice.tmp")
             [ "$rows" -lt 1000 ] || { printf 'queue_inputs: slice %s hit the 1000-row cap\n' "$s0" >&2; return 1; }
             cat -- "$d/slice.tmp" >> "$d/ci_runs.part"
             a=$(( a + 43200 ))
         done
-        jq -sc 'unique_by(.id) | .[]' "$d/ci_runs.part" > "$d/ci_runs.jsonl"
+        jq -sc 'unique_by(.id) | .[]' "$d/ci_runs.part" > "$d/$out"
         rm -f -- "${d:?}/ci_runs.part" "${d:?}/slice.tmp"
     fi
 }
@@ -719,6 +720,20 @@ J
     uo=$(dora_compute "$dd")
     check "dora: empty window is NO-DATA on every metric, never MET" '(.verdict | startswith("NO-DATA")) and ([.metrics[] | select(.ok == true)] | length) == 0' "$uo"
 
+    # runner wait: 3 planted fw16 jobs (10 s, 30 s, and a re-run with started < created) + a foreign runner.
+    local rw="$t/rw"; mkdir -p "$rw"
+    printf '2026-01-01T00:00:00Z 2026-01-08T00:00:00Z\n' > "$rw/window.txt"
+    cat > "$rw/jobs.jsonl" <<'J'
+{"id":1,"runner_name":"framework16","created_at":"2026-01-02T00:00:00Z","started_at":"2026-01-02T00:00:10Z"}
+{"id":2,"runner_name":"framework16-2","created_at":"2026-01-02T00:00:00Z","started_at":"2026-01-02T00:00:30Z"}
+{"id":3,"runner_name":"framework16","created_at":"2026-01-02T01:00:00Z","started_at":"2026-01-02T00:50:00Z"}
+{"id":4,"runner_name":"intel-clean-room-1","created_at":"2026-01-02T00:00:00Z","started_at":"2026-01-02T05:00:00Z"}
+J
+    uo=$(runner_wait "$rw")
+    check "runner wait: fw16 only, negative re-run wait excluded, p50 of 10,30 = 10" '.all.n == 2 and .all.p50_s == 10 and .excluded_negative_waits == 1' "$uo"
+    uo=$(runner_wait "$rw" '^nomatch')
+    check "runner wait: no matching runner is NO-DATA" '.verdict == "NO-DATA" and .all.n == 0' "$uo"
+
     if [ "$fails" -eq 0 ]; then printf 'queue_inputs self-test: PASS\n'; return 0; fi
     printf 'queue_inputs self-test: %s FAIL\n' "$fails"; return 1
 }
@@ -762,6 +777,53 @@ untangle_week() {
     out=$(untangle_tally "${files[@]}" | jq --arg d "$days" '. + {window_days: ($d | tonumber)}')
     printf '%s\n' "$out"
     printf '%s' "$out" | jq -e '.verdict == "MET"' >/dev/null
+}
+
+# ---- runner wait (infra#1237: fw16 wrapper before/after) --------------------------------------------
+# runner_wait_fetch <raw-dir> [days]: every workflow run in the window, then every job of every attempt.
+runner_wait_fetch() {
+    local d="$1" days="${2:-7}" start end
+    mkdir -p -- "$d/jobs"
+    if [ ! -s "$d/window.txt" ]; then
+        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
+        printf '%s %s\n' "$start" "$end" > "$d/window.txt"
+    fi
+    read -r start end < "$d/window.txt"
+    fetch_ci_runs "$d" "$start" "$end" '.workflow_runs[] | {id, name, event, run_attempt, created_at}' \
+        actions/runs runs.jsonl || return 1
+    # One file per run so a killed fetch resumes; filter=all returns the jobs of every attempt.
+    jq -r '.id' "$d/runs.jsonl" | xargs -P 6 -I{} bash -c '
+        f="$1/jobs/$2.jsonl"; [ -s "$f" ] && exit 0
+        gh api --paginate "repos/$3/actions/runs/$2/jobs?filter=all&per_page=100" \
+            -q ".jobs[] | {id, run_id, run_attempt, name, runner_name, labels, status, conclusion, created_at, started_at, completed_at}" \
+            > "$f.tmp" && mv -- "$f.tmp" "$f"' _ "$d" {} "$REPO" || return 1
+    local have want
+    have=$(find "$d/jobs" -name '*.jsonl' | wc -l); want=$(wc -l < "$d/runs.jsonl")
+    [ "$have" -eq "$want" ] || { printf 'queue_inputs: jobs for %s of %s runs\n' "$have" "$want" >&2; return 1; }
+    find "$d/jobs" -name '*.jsonl' -exec cat -- {} + | jq -sc 'unique_by(.id) | .[]' > "$d/jobs.jsonl"
+}
+
+# runner_wait <raw-dir> [runner-name-regex]: queued -> started (job started_at - created_at) for jobs that ran
+# on a matching runner. n = 0 is NO-DATA.
+runner_wait() {
+    local d="$1" re="${2:-^framework16}"
+    [ -s "$d/jobs.jsonl" ] || die "missing $d/jobs.jsonl (run runner-wait-fetch)"
+    jq -s --arg re "$re" --arg win "$(cat "$d/window.txt")" '
+      def pct($p): sort | if length == 0 then null else .[((length - 1) * $p) | floor] end;
+      def r1: if . == null then null else (. * 10 | round) / 10 end;
+      def stats: {n: length, p50_s: (pct(0.5) | r1), p90_s: (pct(0.9) | r1), max_s: (max | r1)};
+      [.[] | select(.runner_name != null and (.runner_name | test($re)) and .started_at != null and .created_at != null)
+       | {runner: .runner_name, day: .created_at[:10], wait: ((.started_at | fromdate) - (.created_at | fromdate))}] as $all
+      # A re-run attempt can carry the previous attempt'"'"'s started_at (started < created): not a wait, excluded.
+      | [$all[] | select(.wait >= 0)] as $j
+      | {window: $win, runner_re: $re,
+         method: "jobs of every workflow run created in the window (all attempts), runner_name =~ runner_re; wait = started_at - created_at",
+         all: ([$j[].wait] | stats),
+         by_runner: ($j | group_by(.runner) | map({(.[0].runner): ([.[].wait] | stats)}) | add),
+         excluded_negative_waits: ([$all[] | select(.wait < 0)] | length),
+         first_job_day: ([$all[] | .day] | min),
+         verdict: (if ($j | length) == 0 then "NO-DATA" else "MEASURED" end)}' "$d/jobs.jsonl"
 }
 
 # ---- DORA weekly (operator ask via the cop, 2026-09-27) -------------------------------------------
@@ -906,6 +968,8 @@ case "${1:-}" in
     prop12) [ $# -eq 2 ] || die "usage: prop12 <queue-inputs.json>"; prop12_lines < "$2" ;;
     untangle) shift; untangle_week "$@" ;;
     dora-fetch) [ $# -ge 2 ] || die "usage: dora-fetch <raw-dir> [days]"; dora_fetch "$2" "${3:-7}" ;;
+    runner-wait-fetch) [ $# -ge 2 ] || die "usage: runner-wait-fetch <raw-dir> [days]"; runner_wait_fetch "$2" "${3:-7}" ;;
+    runner-wait) [ $# -ge 2 ] || die "usage: runner-wait <raw-dir> [runner-regex]"; runner_wait "$2" "${3:-^framework16}" ;;
     dora-line) dora_line ;;
     dora) [ $# -eq 2 ] || die "usage: dora <raw-dir>"; out=$(dora_compute "$2"); printf '%s\n' "$out"
           printf '%s' "$out" | dora_line >&2; printf '%s' "$out" | jq -e '.verdict == "MET"' >/dev/null ;;
