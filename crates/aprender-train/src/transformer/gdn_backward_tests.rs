@@ -280,33 +280,54 @@ impl MixCase {
 /// `RMSNorm`, the scan, both gates, the L2 norms, SiLU, the causal conv and `attn_qkv`.
 #[test]
 fn falsify_qtg_003_mixer_gradcheck_f64() {
-    const H: f64 = 1e-6;
     for seed in [2, 11, 23] {
-        let case = MixCase::random(seed);
-        let (d_normed, g) = gdn_mixer_backward(&case.f[0], &case.weights(), &MIX, &case.w_y);
-        let got = [
-            &d_normed, &g.qkv, &g.gate, &g.alpha, &g.beta, &g.a, &g.dt_bias, &g.conv, &g.norm,
-            &g.out,
-        ];
-        for (fi, name) in MIX_FIELDS.iter().enumerate() {
-            let mut c = case.clone();
-            let want: Vec<f64> = (0..c.f[fi].len())
-                .map(|i| {
-                    let x = c.f[fi][i];
-                    c.f[fi][i] = x + H;
-                    let up = c.loss();
-                    c.f[fi][i] = x - H;
-                    let down = c.loss();
-                    c.f[fi][i] = x;
-                    (up - down) / (2.0 * H)
-                })
-                .collect();
-            assert!(norm(&want) > 1e-4, "seed {seed}: d{name} ~0, the check would be vacuous");
-            assert_eq!(got[fi].len(), want.len(), "d{name} shape");
-            let diff: Vec<f64> = got[fi].iter().zip(&want).map(|(x, y)| x - y).collect();
-            let rel = norm(&diff) / norm(&want);
-            assert!(rel <= 1e-3, "seed {seed}: d{name} rel err {rel:e} > 1e-3");
-        }
+        mixer_gradcheck(&MixCase::random(seed), &format!("seed {seed}"));
+    }
+}
+
+/// Gradcheck `normed` and every weight of `case`'s mixer at rel err ≤ 1e-3.
+fn mixer_gradcheck(case: &MixCase, at: &str) {
+    const H: f64 = 1e-6;
+    let (d_normed, g) = gdn_mixer_backward(&case.f[0], &case.weights(), &MIX, &case.w_y);
+    let got =
+        [&d_normed, &g.qkv, &g.gate, &g.alpha, &g.beta, &g.a, &g.dt_bias, &g.conv, &g.norm, &g.out];
+    for (fi, name) in MIX_FIELDS.iter().enumerate() {
+        let mut c = case.clone();
+        let want: Vec<f64> = (0..c.f[fi].len())
+            .map(|i| {
+                let x = c.f[fi][i];
+                c.f[fi][i] = x + H;
+                let up = c.loss();
+                c.f[fi][i] = x - H;
+                let down = c.loss();
+                c.f[fi][i] = x;
+                (up - down) / (2.0 * H)
+            })
+            .collect();
+        assert!(norm(&want) > 1e-4, "{at}: d{name} ~0, the check would be vacuous");
+        assert_eq!(got[fi].len(), want.len(), "d{name} shape");
+        let diff: Vec<f64> = got[fi].iter().zip(&want).map(|(x, y)| x - y).collect();
+        let rel = norm(&diff) / norm(&want);
+        assert!(rel <= 1e-3, "{at}: d{name} rel err {rel:e} > 1e-3");
+    }
+}
+
+/// The softplus cut-over (serve: identity above 20) is differentiated too: with
+/// `dt_bias` ≈ 25 every head's `alpha·x + dt_bias` is past 20, and a small `|a|` keeps
+/// the decay `e^(a·softplus)` live so `d_a`/`d_dt_bias`/`d_alpha` are not vanishing.
+/// (Review 6b, survivor B3: the other gradchecks never reach this branch.)
+#[test]
+fn falsify_qtg_003_mixer_gradcheck_past_softplus_cutover() {
+    for seed in [4, 17] {
+        let mut c = MixCase::random(seed);
+        c.f[6].iter_mut().for_each(|b| *b += 25.0); // dt_bias
+        c.f[5].iter_mut().for_each(|a| *a *= 0.02); // a ∈ (-0.03, -0.004)
+        let a_pre = super::super::gdn::project(&c.f[0], &c.f[3], MIX.hidden_dim, MIX.num_v_heads);
+        let min = (0..a_pre.len())
+            .map(|i| a_pre[i] + c.f[6][i % MIX.num_v_heads])
+            .fold(f64::INFINITY, f64::min);
+        assert!(min > 20.5, "seed {seed}: a_pre {min} does not clear the cut-over");
+        mixer_gradcheck(&c, &format!("cut-over seed {seed}"));
     }
 }
 
