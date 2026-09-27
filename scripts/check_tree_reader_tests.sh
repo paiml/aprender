@@ -163,10 +163,16 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
             c=$(basename "$(dirname "$(dirname "$f")")"); t=$(basename "$f" .rs)
             printf '%s\t--test\t%s\n' "$c" "$t"
         done
-        for f in $(find "$root"/crates/*/src -name '*.rs' 2>/dev/null); do
-            grep -q '#\[cfg(test)\]' "$f" || continue
-            grep -qE "$ORACLE" "$f" || continue
-            c=$(printf '%s' "$f" | sed "s|^$root/crates/||; s|/.*||")
+        # Two `grep -l` passes over the whole list, in find order, rather than two
+        # `grep -q` forks per file: ~10k files made that most of this guard's
+        # CI time (#4527). Same predicates, same order, same stderr. `|| true`: a
+        # stage that matches nothing (xargs 123) or a missing src/ skipped a file
+        # in the old loop and must not abort derive() under pipefail now.
+        { find "$root"/crates/*/src -name '*.rs' -print0 2>/dev/null || true; } \
+            | { xargs -0 -r grep -lZ '#\[cfg(test)\]' -- 2>/dev/null || true; } \
+            | { xargs -0 -r grep -lE "$ORACLE" -- 2>/dev/null || true; } \
+            | while IFS= read -r f; do
+            c=${f#"$root"/crates/}; c=${c%%/*}
             # `--lib` on a crate with NO library target is a hard error, never a
             # passable gate: `error: no library targets found in package X`.
             # aprender-compute-xtask is bin-only and its src carries a cfg(test)
