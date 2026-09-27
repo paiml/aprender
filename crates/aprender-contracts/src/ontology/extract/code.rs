@@ -136,7 +136,7 @@ pub fn bound_of(registry: &BindingRegistry) -> Vec<Bound> {
                 .unwrap_or(&module_path)
                 .to_string();
             Some(Bound {
-                contract: crate::binding::normalize_contract_id(&b.contract).to_string(),
+                contract: contract_stem(&b.contract).to_string(),
                 equation: b.equation.clone(),
                 module_path,
                 function,
@@ -144,6 +144,14 @@ pub fn bound_of(registry: &BindingRegistry) -> Vec<Bound> {
             })
         })
         .collect()
+}
+
+/// The contract IRI a binding row names: a contract's IRI is its file stem, so a
+/// row spelled `../gguf-format-safety-v1.yaml` (a registry in a subdirectory
+/// pointing up) names `contract/gguf-format-safety-v1`, not `contract/..%2F…`.
+fn contract_stem(contract: &str) -> &str {
+    let id = crate::binding::normalize_contract_id(contract);
+    id.rsplit('/').next().unwrap_or(id)
 }
 
 /// The crates of a workspace: every `Cargo.toml` under `root` (skipping build and vcs dirs), keyed by both the
@@ -1062,6 +1070,17 @@ mod tests {
         let mut g2 = Graph::new();
         extract(&dir, &mut g2);
         assert_eq!(nt, g2.to_ntriples());
+    }
+
+    #[test]
+    fn a_relative_contract_path_names_the_contract_by_its_stem() {
+        assert_eq!(
+            contract_stem("../gguf-format-safety-v1.yaml"),
+            "gguf-format-safety-v1"
+        );
+        assert_eq!(contract_stem("../../a/b-v1"), "b-v1");
+        assert_eq!(contract_stem("softmax-kernel-v1.yaml"), "softmax-kernel-v1");
+        assert_eq!(contract_stem("softmax-kernel-v1"), "softmax-kernel-v1");
     }
 
     #[test]
