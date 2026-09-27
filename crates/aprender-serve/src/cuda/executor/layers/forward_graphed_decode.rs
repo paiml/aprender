@@ -121,10 +121,13 @@ impl CudaExecutor {
             self.graph_recording = false;
             self.graph_capture_failed = true;
             eprintln!("[trueno#243] Eager forward during recording failed: {:?}", eager_err);
-            return self.forward_all_layers_gpu_to_logits(
+            let r = self.forward_all_layers_gpu_to_logits(
                 input, logits, position, num_layers, hidden_dim,
                 intermediate_dim, vocab_size, epsilon,
             );
+            // This token used the buffers; later tokens must not (C14).
+            self.abandon_decode_graph_capture();
+            return r;
         }
 
         // Eager pass succeeded — now build graph from recorded kernels
@@ -146,11 +149,11 @@ impl CudaExecutor {
                     logits_buf.copy_to_host(logits)?;
                 }
                 // Mark graph as failed so subsequent tokens use eager path
-                self.graph_capture_failed = true;
+                self.abandon_decode_graph_capture();
                 Ok(())
             },
             Err(graph_err) => {
-                self.graph_capture_failed = true;
+                self.abandon_decode_graph_capture();
                 eprintln!("[trueno#243] Manual graph build failed: {:?}, using eager", graph_err);
                 // First token was already computed, just download logits
                 self.stream.synchronize()?;

@@ -215,6 +215,38 @@ fn test_cov008_clear_decode_graph() {
     );
 }
 
+/// C14: eager kernels switch to graph-mode indirect addressing when `position_buf` /
+/// `seq_len_buf` exist. A failed capture that left them behind froze every later
+/// token at the capture position (qwen3-8b parity: pos 0 ok, then cos < 0).
+#[test]
+#[serial]
+fn test_c14_abandoned_capture_drops_indirect_buffers() {
+    if !CudaExecutor::is_available() {
+        return;
+    }
+    let mut executor = crate::cuda_executor_or_skip!(0);
+    executor.position_buf =
+        Some(GpuBuffer::from_host(&executor.context, &[0u32]).expect("position_buf"));
+    executor.seq_len_buf =
+        Some(GpuBuffer::from_host(&executor.context, &[1u32]).expect("seq_len_buf"));
+
+    executor.abandon_decode_graph_capture();
+
+    assert!(
+        executor.graph_capture_failed,
+        "later tokens must take eager"
+    );
+    assert!(
+        executor.position_buf.is_none(),
+        "stale position_buf selects indirect scatter/RoPE"
+    );
+    assert!(
+        executor.seq_len_buf.is_none(),
+        "stale seq_len_buf pins attention to seq_len 1"
+    );
+    assert!(!executor.has_decode_graph());
+}
+
 #[test]
 #[serial]
 fn test_cov008_gemv_buffer_stats_initial() {
