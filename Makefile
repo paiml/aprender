@@ -819,9 +819,9 @@ coverage-open: ## Open HTML coverage report in browser
 		echo "❌ Run 'make coverage' first"; \
 	fi
 
-# Profiling (requires renacer)
+# Profiling with the IN-TREE renacer, built from and proven at HEAD (TRACE-001 TR-05)
 profile:
-	renacer --function-time --source -- cargo bench
+	. scripts/renacer_bin.sh && "$$RENACER" --function-time --source -- cargo bench
 
 # Benchmarks
 bench:

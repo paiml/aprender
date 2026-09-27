@@ -17,11 +17,11 @@ NC='\033[0m' # No Color
 # Configuration
 TRACES_DIR="golden_traces"
 
-# Ensure renacer is installed
-if ! command -v renacer &> /dev/null; then
-    echo -e "${YELLOW}Renacer not found. Installing from crates.io...${NC}"
-    cargo install renacer --version 0.6.2
-fi
+# The IN-TREE renacer (crates/aprender-profile), built from and proven at HEAD
+# (TRACE-001 TR-05, tool-resolution-v1). Never install renacer from crates.io: the
+# 0.6.2 release this script used to pin is not the code under review.
+. "$(dirname "$0")/renacer_bin.sh" || exit 1
+echo -e "${BLUE}renacer: $("$RENACER" --version)${NC}"
 
 # Build examples
 echo -e "${YELLOW}Building release examples...${NC}"
@@ -41,18 +41,18 @@ echo ""
 echo -e "${GREEN}[1/3]${NC} Capturing: iris_clustering"
 BINARY_PATH="./target/release/examples/iris_clustering"
 
-renacer --format json -- "$BINARY_PATH" 2>&1 | \
+"$RENACER" --format json -- "$BINARY_PATH" 2>&1 | \
     grep -v "^Iris\\|^Loading\\|^Running\\|^Cluster\\|^Iteration\\|^Final\\|^Results\\|^  \\|^-\\|^✓\\|^K-means" | \
     head -1 > "$TRACES_DIR/iris_clustering.json" 2>/dev/null || \
-    echo '{"version":"0.6.2","format":"renacer-json-v1","syscalls":[]}' > "$TRACES_DIR/iris_clustering.json"
+    echo '{"format":"renacer-json-v1","syscalls":null,"status":"NotInstrumented","reason":"capture produced no JSON line"}' > "$TRACES_DIR/iris_clustering.json"
 
-renacer --summary --timing -- "$BINARY_PATH" 2>&1 | \
+"$RENACER" --summary --timing -- "$BINARY_PATH" 2>&1 | \
     tail -n +2 > "$TRACES_DIR/iris_clustering_summary.txt"
 
-renacer -s --format json -- "$BINARY_PATH" 2>&1 | \
+"$RENACER" -s --format json -- "$BINARY_PATH" 2>&1 | \
     grep -v "^Iris\\|^Loading\\|^Running\\|^Cluster\\|^Iteration\\|^Final\\|^Results\\|^  \\|^-\\|^✓\\|^K-means" | \
     head -1 > "$TRACES_DIR/iris_clustering_source.json" 2>/dev/null || \
-    echo '{"version":"0.6.2","format":"renacer-json-v1","syscalls":[]}' > "$TRACES_DIR/iris_clustering_source.json"
+    echo '{"format":"renacer-json-v1","syscalls":null,"status":"NotInstrumented","reason":"capture produced no JSON line"}' > "$TRACES_DIR/iris_clustering_source.json"
 
 # ==============================================================================
 # Trace 2: dataframe_basics (DataFrame operations)
@@ -60,12 +60,12 @@ renacer -s --format json -- "$BINARY_PATH" 2>&1 | \
 echo -e "${GREEN}[2/3]${NC} Capturing: dataframe_basics"
 BINARY_PATH="./target/release/examples/dataframe_basics"
 
-renacer --format json -- "$BINARY_PATH" 2>&1 | \
+"$RENACER" --format json -- "$BINARY_PATH" 2>&1 | \
     grep -v "^DataFrame\\|^Creating\\|^Filtering\\|^Aggregating\\|^Sorting\\|^Results\\|^  \\|^-\\|^✓\\|^│\\|^┌\\|^└" | \
     head -1 > "$TRACES_DIR/dataframe_basics.json" 2>/dev/null || \
-    echo '{"version":"0.6.2","format":"renacer-json-v1","syscalls":[]}' > "$TRACES_DIR/dataframe_basics.json"
+    echo '{"format":"renacer-json-v1","syscalls":null,"status":"NotInstrumented","reason":"capture produced no JSON line"}' > "$TRACES_DIR/dataframe_basics.json"
 
-renacer --summary --timing -- "$BINARY_PATH" 2>&1 | \
+"$RENACER" --summary --timing -- "$BINARY_PATH" 2>&1 | \
     tail -n +2 > "$TRACES_DIR/dataframe_basics_summary.txt"
 
 # ==============================================================================
@@ -74,12 +74,12 @@ renacer --summary --timing -- "$BINARY_PATH" 2>&1 | \
 echo -e "${GREEN}[3/3]${NC} Capturing: graph_algorithms_comprehensive"
 BINARY_PATH="./target/release/examples/graph_algorithms_comprehensive"
 
-renacer --format json -- "$BINARY_PATH" 2>&1 | \
+"$RENACER" --format json -- "$BINARY_PATH" 2>&1 | \
     grep -v "^Graph\\|^Building\\|^Running\\|^PageRank\\|^BFS\\|^Community\\|^Results\\|^  \\|^-\\|^✓\\|^Node\\|^Edge" | \
     head -1 > "$TRACES_DIR/graph_algorithms_comprehensive.json" 2>/dev/null || \
-    echo '{"version":"0.6.2","format":"renacer-json-v1","syscalls":[]}' > "$TRACES_DIR/graph_algorithms_comprehensive.json"
+    echo '{"format":"renacer-json-v1","syscalls":null,"status":"NotInstrumented","reason":"capture produced no JSON line"}' > "$TRACES_DIR/graph_algorithms_comprehensive.json"
 
-renacer --summary --timing -- "$BINARY_PATH" 2>&1 | \
+"$RENACER" --summary --timing -- "$BINARY_PATH" 2>&1 | \
     tail -n +2 > "$TRACES_DIR/graph_algorithms_comprehensive_summary.txt"
 
 # ==============================================================================
@@ -114,8 +114,8 @@ This directory contains golden traces captured from aprender (pure Rust ML libra
 Compare new builds against golden traces:
 
 ```bash
-# Capture new trace
-renacer --format json -- ./target/release/examples/iris_clustering > new_trace.json
+# Capture new trace (in-tree renacer, proven built from HEAD)
+. scripts/renacer_bin.sh && "$RENACER" --format json -- ./target/release/examples/iris_clustering > new_trace.json
 
 # Compare with golden
 diff golden_traces/iris_clustering.json new_trace.json
@@ -143,7 +143,7 @@ Add to `.github/workflows/ci.yml`:
 ```yaml
 - name: Validate ML Performance
   run: |
-    renacer --format json -- ./target/release/examples/iris_clustering > trace.json
+    . scripts/renacer_bin.sh && "$RENACER" --format json -- ./target/release/examples/iris_clustering > trace.json
     # Compare against golden trace or run assertions
     cargo test --test golden_trace_validation
 ```
@@ -235,7 +235,7 @@ Renacer can detect:
 5. **Monitor serialization I/O** patterns for optimization opportunities
 
 Generated: $(date)
-Renacer Version: 0.6.2
+Renacer: in-tree crates/aprender-profile at the capture commit (see `renacer --version` in the capture log)
 aprender Version: 0.7.0
 EOF
 

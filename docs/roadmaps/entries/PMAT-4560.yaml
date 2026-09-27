@@ -1,0 +1,16 @@
+- id: PMAT-4560
+  github_issue: 4560
+  item_type: task
+  title: 'TR-05: renacer resolved in-tree and proven at HEAD (scripts/renacer_bin.sh); tool-resolution-v1 guard (report-only)'
+  status: inprogress
+  priority: high
+  assigned_to: la-impl
+  created: 2026-09-27T13:40:12Z
+  updated: 2026-09-27T13:40:12Z
+  spec: docs/specifications/TRACE-001-tracing-consumers.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: TRACE-001 Phase A

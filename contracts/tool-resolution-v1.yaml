@@ -1,0 +1,77 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "An in-tree tool runs from this tree (TRACE-001 TR-05 #4560). renacer is crates/aprender-profile, yet scripts/capture_golden_traces.sh installed renacer 0.6.2 from crates.io when it was not on PATH, and the Makefile `profile:` target ran a bare `renacer` (whatever PATH held). Both traced with a binary that is not the code under review. scripts/renacer_bin.sh (sourced, option-neutral, `return` never `exit`, mirrors apr_bin.sh) builds <target>/release/aprender-profile and accepts it only when its `--version` sha is a prefix of HEAD. scripts/check_tool_resolution.sh refuses the two shapes in scripts/ and the Makefile; report-only under TRACE-001 R-6 until first-green plus 7 green nights."
+  kind: pattern
+  references:
+    - "docs/specifications/TRACE-001-tracing-consumers.md — §3 tool-resolution-v1, §4 TR-05, §5 R-2/R-6"
+    - "scripts/renacer_bin.sh — the resolver and its --self-test"
+    - "scripts/check_tool_resolution.sh — the guard and its must-match/must-not-match case table"
+    - "crates/aprender-profile/build.rs — APR_GIT_SHA stamp (aprender-build-sha, #4219)"
+
+five_whys:
+  symptom: "Golden traces and `make profile` ran a renacer that was not built from the commit under review."
+  why_1: "capture_golden_traces.sh installed renacer 0.6.2 from crates.io; `profile:` ran a bare `renacer`."
+  why_2: "Both were written when renacer was a separate published crate, before APR-MONO moved it in-tree."
+  why_3: "The consolidation moved the source and left the call sites resolving the tool by name on PATH."
+  why_4: "apr had a resolver that proves HEAD (apr_bin.sh); renacer had none."
+  why_5: "Nothing refused a crates.io install or a bare invocation of an in-tree tool."
+  root_cause: "Resolution by PATH name cannot attribute a binary to a tree. The remedy is a resolver that builds from this tree and proves the stamped sha is HEAD, plus a guard that refuses the unresolved shapes."
+
+equations:
+  tool_resolution:
+    formula: "accept(bin) ⇔ executable(bin) ∧ sha(bin --version) ≠ ε ∧ HEAD starts_with sha(bin --version)"
+    domain: "bin = RENACER_BIN or <CARGO_TARGET_DIR|repo/target>/release/aprender-profile"
+    codomain: "0 with $RENACER exported | 1 with the caller's shell and options intact"
+    invariants:
+      - "the resolver never calls exit when sourced and never changes the caller's shell options"
+      - "a binary stamped with a sha that is not HEAD is refused, never trusted"
+  unresolved_invocation:
+    formula: "violation(line) ⇔ line ~ install-from-crates.io(renacer) ∨ line ~ ^\\s*@?renacer\\s"
+    domain: "git ls-files -- scripts Makefile"
+    codomain: "count of violating lines; 0 at HEAD"
+    invariants:
+      - "the pattern passes its own must-match / must-not-match case table before it judges the tree"
+
+proof_obligations:
+  - id: TRES-INV-001
+    type: invariant
+    property: "An absent target leaves the sourcing caller alive with its options unchanged"
+    formal: "CARGO_TARGET_DIR=absent, RENACER_BIN_BUILD=0 ⇒ source returns 1 ∧ $- unchanged ∧ the caller continues"
+    applies_to: tool_resolution
+  - id: TRES-INV-002
+    type: invariant
+    property: "A foreign-sha binary is refused"
+    formal: "bin --version = 'renacer 0.0.0 (0000000)' ⇒ source returns 1"
+    applies_to: tool_resolution
+  - id: TRES-INV-003
+    type: invariant
+    property: "No unresolved renacer invocation in scripts/ or the Makefile"
+    formal: "|violations(git ls-files -- scripts Makefile)| = 0"
+    applies_to: unresolved_invocation
+
+falsification_tests:
+  - id: FALSIFY-TRES-001
+    rule: "The resolver fails soft and refuses a foreign sha"
+    prediction: "self-test OK; mutating the sha check to accept anything, or the sourced failure to `exit 1`, turns it RED"
+    test: "bash scripts/renacer_bin.sh --self-test"
+    if_fails: "a script could trace with a renacer not built from HEAD, or an absent binary could kill a tally-style caller"
+  - id: FALSIFY-TRES-002
+    rule: "The guard's pattern is proven by its case table"
+    prediction: "5 must-match lines match and 6 must-not-match lines do not; the pre-TR-05 tree reports 11 violations"
+    test: "bash scripts/check_tool_resolution.sh --self-test"
+    if_fails: "the guard could pass vacuously"
+  - id: FALSIFY-TRES-003
+    rule: "HEAD is clean"
+    prediction: "0 unresolved renacer invocations in scripts/ and the Makefile"
+    test: "TOOLRES_ENFORCE=1 bash scripts/check_tool_resolution.sh"
+    if_fails: "a crates.io install or a bare renacer came back"
+
+qa_gate:
+  id: F-TRES-001
+  name: "In-tree tools resolve from this tree"
+  description: "scripts/check_tool_resolution.sh is in guard_tree.sh's --no-cargo universe (git ls-files 'scripts/check_*.sh'), which ci / gate reads. Report-only (TRACE-001 R-6) until first-green plus 7 green nights; TOOLRES_ENFORCE=1 makes it blocking."
+  checks:
+    - "tool_resolution"
+    - "unresolved_invocation"
