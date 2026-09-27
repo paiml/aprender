@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// Probador: CLI for Probar - Rust-native testing framework for WASM games
 #[derive(Parser, Debug)]
 #[command(name = "probador")]
-#[command(author, version, about, long_about = None)]
+#[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
     /// Verbosity level (-v, -vv, -vvv)
