@@ -43,6 +43,8 @@ pub mod html;
 pub mod junit;
 pub mod markdown;
 pub mod mqs;
+pub mod obs_backfill;
+pub mod obs_epoch;
 pub mod popperian;
 pub mod proof_status;
 pub mod ticket;

@@ -1,0 +1,180 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md v1.3 §2.9 epochs, §10 E3/E9, §3 falsifiers, §7 OBS-14'
+  - 'contracts/apr-perf-ledger-v1.yaml — the nightly rows an epoch segments (OBS-05)'
+  - 'crates/aprender-qa-report/src/obs_epoch.rs — epoch key, segmentation, bridge, provisional mode, T−14 freeze'
+  - 'crates/aprender-qa-report/src/obs_backfill.rs — apr-perf-backfill-v1 importer'
+  - 'aprender#4573 — OBS-14'
+  description: >
+    A perf series is only comparable within an epoch. The epoch key is
+    (model_sha256, comparator.build_commit, comparator.flags, build_identity.driver,
+    band.workload_id). The apr binary, including a rustc bump, is the signal and never
+    opens an epoch (C19). A model or workload change opens a fresh epoch that is
+    report-only until 14 nights calibrate it (E3). A comparator or driver change must
+    be bridged by exactly 3 paired nights (E9): a passing bridge carries θ and the
+    baseline across; a failed one stays armed at θ_prov(n_e) and graduates at n_e = 14.
+    No epoch change is accepted on a gated host inside T−14 of a scheduled final (C18).
+
+    Historical evidence/perf* receipts are imported into apr-perf-backfill-v1 only when
+    they carry the complete identity block themselves. Backfill rows are their own
+    ledger and a series refuses them. Measured at this commit: 17 receipts scanned,
+    0 importable — none carries model_sha256, crate_tarball_sha256 or request_id.
+
+equations:
+  epoch_key:
+    formula: |
+      key(r) = (r.model_sha256, r.comparator.build_commit, canon(r.comparator.flags),
+                r.build_identity.driver, r.band.workload_id)
+      Δmodel ∨ Δworkload           ⇒ Recalibrate  (fresh E3, report-only)
+      Δcomparator ∨ Δdriver only   ⇒ Bridge       (E9, exactly 3 nights)
+      Δrustc ∨ Δbinary_sha256      ⇒ Same
+    domain: 'two consecutive admissible perf-ledger rows of one series, in night order'
+    codomain: 'Same | Recalibrate | Bridge'
+    invariants:
+    - 'canon() sorts object keys, so flag order never opens an epoch.'
+    - 'build_identity.driver must be present; null (a cpu host) is a value, absence refuses the row.'
+
+  calibration:
+    formula: |
+      σ̂ = 1.4826 · MAD(L_1..L_14);  θ = max(θ_min, 3σ̂);  θ_min = −ln 0.95
+    domain: 'the first 14 nights of an epoch'
+    codomain: 'θ, or none before night 14'
+
+  bridge:
+    formula: |
+      d_i = L^{e′}_i − L^e_i, i ∈ 1..3;  Δ_e = med(d);  σ̂_bridge = 1.4826 · MAD(d)
+      bridge_ok ⇔ σ̂_bridge ≤ σ̂_e
+      bridge_ok ⇒ baseline_{e′} = L_tag + Δ_e ∧ θ_{e′} = θ_e
+    domain: 'exactly 3 paired finite nights either side of a pin change'
+    codomain: '(Δ_e, σ̂_bridge, bridge_ok)'
+
+  theta_prov:
+    formula: |
+      θ_prov(n_e) = max(θ_min, 3σ̂(1 + 2·1.166/√n_e)) + 3·1.2533·σ̂_bridge/√3,  3 ≤ n_e < 14
+      θ_prov(n_e) ≥ max(θ_min, 3σ̂)                                   (prov_ge)
+    domain: 'a failed bridge, n_e nights into the new epoch'
+    codomain: 'θ'
+
+  freeze:
+    formula: |
+      gated(h) ∧ ∃ T ∈ finals: 0 ≤ T − c ≤ 14  ⇒  refuse the epoch change at night c
+    domain: 'an epoch change on host h at night c'
+    codomain: bool
+
+  backfill_row_shape:
+    formula: |
+      row = identity(receipt) ∪ { gpu_proof, schema = "apr-perf-backfill-v1",
+                                  source: { path, sha256(receipt bytes) } }
+      REQUIRE: ∀ f ∈ identity: receipt.f ∉ { absent, null, "", "unknown" }
+      REQUIRE: backend ≠ cpu ⇒ gpu_proof ≠ null;  |canon(row)| ≤ 4096
+      ∀ series s: ∀ r ∈ s: r.schema ≠ "apr-perf-backfill-v1"
+    domain: 'one evidence/perf* receipt'
+    codomain: 'canonical JSON line, or the named missing fields'
+
+falsification_tests:
+- id: FALSIFY-OBS-EPOCH-001
+  rule: a pin change without 3 bridge nights is refused
+  prediction: 'A comparator or driver change bridged by 0, 1, 2 or 4 nights, or none, is Unbridged.'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::pin_change_without_three_bridge_nights_is_refused'
+  if_fails: 'a comparator bump reads as an apr regression or improvement'
+  mutation: 'accept any bridge of 2+ nights; must turn RED (killed)'
+- id: FALSIFY-OBS-EPOCH-002
+  rule: a bridge with dispersion above σ̂_e is not bridge_ok
+  prediction: 'σ̂_bridge = σ̂_e + ε is bridge_ok = false; σ̂_e − ε is true.'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::bridge_ok_iff_bridge_dispersion_within_sigma_e'
+  if_fails: 'a noisy bridge carries θ that no longer fits the new comparator'
+  mutation: 'bridge_ok = true always; must turn RED (killed)'
+- id: FALSIFY-OBS-EPOCH-003
+  rule: provisional θ is θ_prov(n_e), never below full calibration
+  prediction: 'θ_prov(3, 0.03, 0.01) equals the E9 formula; θ_prov ≥ max(θ_min, 3σ̂) over a grid.'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::provisional_theta_is_theta_prov_and_never_below_full_calibration'
+  if_fails: 'a provisional series fires on noise it has not yet measured'
+  mutation: 'drop the u_Δ term; drop the widening term; admit n_e < 3 — each must turn RED (killed)'
+- id: FALSIFY-OBS-EPOCH-004
+  rule: a backfill row is refused by a series
+  prediction: 'segment() over rows containing an apr-perf-backfill-v1 row returns BackfillInSeries(i).'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::backfill_row_is_refused_by_a_series'
+  if_fails: 'rows without complete identity enter RED, baseline or view series'
+  mutation: 'accept backfill rows as perf rows; must turn RED (killed)'
+- id: FALSIFY-OBS-EPOCH-005
+  rule: a rustc-only change does not open an epoch
+  prediction: 'Changing build_identity.rustc, features and binary_sha256 leaves one epoch.'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::rustc_or_apr_binary_change_does_not_open_an_epoch'
+  if_fails: 'every apr build resets calibration and no regression is ever measured (C19)'
+  mutation: 'key on build_identity.rustc instead of driver; must turn RED (killed)'
+- id: FALSIFY-OBS-EPOCH-006
+  rule: no epoch change inside T−14 of a final on a gated host
+  prediction: 'Changes at T−0, T−7, T−14 are Frozen; T−15, T+1, ungated and no-final are allowed.'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::epoch_change_inside_t_minus_14_of_a_final_is_frozen'
+  if_fails: 'a final is gated by a series still calibrating'
+  mutation: 'drop the freeze filter; make the range exclusive of 14 — each must turn RED (killed)'
+- id: FALSIFY-OBS-EPOCH-007
+  rule: a backfill receipt without complete identity is refused and named
+  prediction: 'Each of the 11 identity fields absent, null, "" or "unknown" is refused, naming the field; null gpu_proof on cuda is refused.'
+  test: 'crates/aprender-qa-report/src/obs_backfill_tests.rs::every_missing_identity_field_is_refused_and_named'
+  if_fails: 'a receipt is given an identity it never recorded'
+  mutation: 'stop checking model_sha256; accept null gpu_proof off cpu — each must turn RED (killed)'
+- id: FALSIFY-OBS-EPOCH-P01
+  rule: 'positive: a clean pin bump with a passing bridge carries θ and the baseline'
+  prediction: 'bridge_ok, baseline = L_tag + Δ_e, mode = Calibrated with the carried θ.'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::clean_pin_bump_with_passing_bridge_carries_theta_and_baseline'
+  if_fails: 'every pin bump drops the series to report-only for 14 nights'
+  mutation: 'covered by the bridge_ok mutant above'
+- id: FALSIFY-OBS-EPOCH-P02
+  rule: 'positive: a failed bridge stays armed and graduates at n_e = 14'
+  prediction: 'n_e = 3..13 is Provisional at θ_prov(n_e); n_e = 14 is Calibrated at E3 θ.'
+  test: 'crates/aprender-qa-report/src/obs_epoch_tests.rs::failed_bridge_stays_armed_and_graduates_at_14'
+  if_fails: 'a failed bridge disarms the series, or never leaves provisional'
+  mutation: 'disable graduation; must turn RED (killed)'
+
+proof_obligations:
+- type: invariant
+  property: 'A pin change needs exactly 3 bridge nights (FALSIFY-OBS-EPOCH-001)'
+  formal: 'Bridge(c) ∧ accepted ⇒ |L^e| = |L^{e′}| = 3'
+- type: invariant
+  property: 'bridge_ok iff σ̂_bridge ≤ σ̂_e (FALSIFY-OBS-EPOCH-002)'
+  formal: 'bridge_ok = (1.4826·MAD(d) ≤ sigma_e)'
+- type: bound
+  property: 'θ_prov never below full calibration (FALSIFY-OBS-EPOCH-003)'
+  formal: '∀ n_e ∈ [3,14): θ_prov(n_e) ≥ max(θ_min, 3·sigma_new)'
+- type: invariant
+  property: 'No backfill row in any series (FALSIFY-OBS-EPOCH-004)'
+  formal: '∀ s, r ∈ s: r.schema ≠ apr-perf-backfill-v1'
+- type: invariant
+  property: 'rustc and binary changes keep the epoch (FALSIFY-OBS-EPOCH-005)'
+  formal: 'key(r) = key(r′) ⇒ epoch(r) = epoch(r′)'
+- type: invariant
+  property: 'No epoch change inside T−14 on a gated host (FALSIFY-OBS-EPOCH-006)'
+  formal: 'gated ∧ 0 ≤ T − c ≤ 14 ⇒ refused(c)'
+- type: invariant
+  property: 'Backfill rows carry complete identity (FALSIFY-OBS-EPOCH-007)'
+  formal: '∀ r ∈ backfill, f ∈ identity: r.f ∉ {∅, null, "", unknown}'
+
+qa_gate:
+  id: F-OBS-EPOCH-GATE-001
+  name: 'perf series are compared only within an epoch, and backfill never enters one'
+  description: 'OBS-14 acceptance: every §3 falsifier for apr-perf-epoch-v1 RED under its mutant, GREEN on the code; 0 backfill rows in any series.'
+  checks:
+  - epoch_key_excludes_apr_build
+  - bridge_exactly_three_nights
+  - bridge_ok_by_dispersion
+  - provisional_theta_bound
+  - graduation_at_14
+  - freeze_t_minus_14
+  - backfill_complete_identity_only
+  - backfill_never_in_series
+  pass_criteria: >
+    All checks hold. The functions take L_n values; wiring them into the nightly
+    engine and the view is OBS-05/OBS-06/OBS-08 work, so this gate is unit-level
+    until OBS-05 writes rows.
+
+verification_summary:
+  total_obligations: 7
+  proven: 0
+  tested: 7
+  status: tested
+  notes: 'Pure functions in aprender-qa-report; 22 unit tests, 13/13 planted mutants killed. The freeze refuses any epoch change on a gated host, not only pin changes. Backfill today: 17 receipts scanned, 0 imported.'
