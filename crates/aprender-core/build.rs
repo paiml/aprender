@@ -66,18 +66,20 @@ const ALLOWED_GAPS: &[(&str, &str)] = &[
     ("ssm-kernel-v1", "selective_gate"),
     // ONT-3a bindings gate (aprender#4502) measured these as not resolving to workspace code and marked
     // them not_implemented; they stay listed until the binding is re-pointed or implemented (aprender#4502).
-    ("apr-cli-operations-v1", "inference_determinism"),
-    ("apr-data-pipeline-v1", "streaming_data_loader"),
-    ("apr-format-safety-v1", "magic_byte_validation"),
-    ("apr-format-safety-v1", "header_integrity"),
-    ("apr-gpu-backend-v1", "generation_temperature_zero"),
-    ("../encoder-forward-v1", "cls_pooling"),
-    ("../format-parity-v1", "transpose_involution"),
-    ("../format-parity-v1", "element_count"),
-    ("../bidirectional-attention-v1", "bidirectional_attention"),
-    ("linear-probe-classifier-v1", "linear_probe"),
-    ("setfit-apr-v1", "doc_bundle_bijection"),
-    ("setfit-apr-v1", "selection_lock_lifecycle"),
+    // Each was `implemented` on main only because nothing checked that its bound symbol exists; the entry
+    // records a measured gap, it does not loosen a passing check. Reason per line:
+    ("apr-cli-operations-v1", "inference_determinism"), // bound `generate` resolves to no workspace fn (PV-ONT-028)
+    ("apr-data-pipeline-v1", "streaming_data_loader"), // `DataLoader::next_batch` absent in aprender (PV-ONT-028)
+    ("apr-format-safety-v1", "magic_byte_validation"), // `detect_format` absent at the bound path (PV-ONT-028)
+    ("apr-format-safety-v1", "header_integrity"), // `validate_header` absent at the bound path (PV-ONT-028)
+    ("apr-gpu-backend-v1", "generation_temperature_zero"), // bound GPU `generate` resolves to no fn (PV-ONT-028)
+    ("../encoder-forward-v1", "cls_pooling"), // `cls_embedding` absent in the workspace (PV-ONT-028)
+    ("../format-parity-v1", "transpose_involution"), // `swap_axes` absent at the bound path (PV-ONT-028)
+    ("../format-parity-v1", "element_count"), // `validate_element_count` absent at the bound path (PV-ONT-028)
+    ("../bidirectional-attention-v1", "bidirectional_attention"), // `bidirectional_attention` fn absent (PV-ONT-028)
+    ("linear-probe-classifier-v1", "linear_probe"), // FrozenProbeRun::fit not built yet (binding notes)
+    ("setfit-apr-v1", "doc_bundle_bijection"),      // `deserialize` lands with setfit plan 04-05
+    ("setfit-apr-v1", "selection_lock_lifecycle"), // `mint_test_token` lock workflow lands with 04-07/04-14
 ];
 
 /// Returns true if the new status is dominated by what we already have.
