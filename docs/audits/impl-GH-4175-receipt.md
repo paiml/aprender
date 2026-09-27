@@ -28,7 +28,8 @@ now on fix/4175-on-car-f6fa". What it does:
 | b331a306b7 | `scripts/tree_reader_tests.txt` / `_unwired_baseline.txt` regenerated with `check_tree_reader_tests.sh --update` |
 | cec92504fa | **quorum round 1 fix**: the eight sites that still decided "in tree" by a local `contracts/.is_dir()` (the rule the phase-1 ruling forbids, mutant M3) now call the shared macros: aprender-contracts `schema::workspace_contract_or_skip`, aprender-core `test_support`, aprender-train `llama_370m`, aprender-present-terminal, `pv_surface_gate.rs`, apr-cli `golden_output.rs` + `thinking_budgets_mirror.rs`, aprender-orchestrate `chat_template.rs`. present-terminal and orchestrate gain the versioned `provable-contracts = { workspace = true }` dev-dep (aprender-contracts' normal closure is `{-macros}`: no cycle). |
 
-No local copy is left: `grep -rn --include='*.rs' 'contracts").is_dir()' crates/` → no match.
+No local copy is left: `grep -rn --include='*.rs' 'contracts").is_dir()' crates/` → no match (after merging the moved car at 04db69c29, which brought one more copy in
+`aprender-present-terminal/src/ptop/mod.rs`; that site is migrated too, in the commit after the merge).
 
 ### Why excludes (#4130), not skips
 
