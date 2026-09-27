@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-05-22'
   author: PAIML Engineering
   description: |
@@ -23,9 +23,11 @@ metadata:
   - 'Qwen2.5 model card — vocab=152064 for 7B Coder, vocab=151936 for 0.5B/1.5B Coder'
   - 'crates/aprender-train-distill/src/kd_step.rs:103-107 (assert_eq! that the alignment must satisfy)'
   - 'crates/apr-cli/src/commands/distill_q4k_teacher.rs (fix site)'
+  - '1.1.0 (0.72 R18): Qwen3.5 27B->4B cell; the shared-prefix invariant is MEASURED by scripts/distill_vocab_identity.py
+    on the GGUFs pinned in evidence/crux/hf-sources.yaml -> evidence/distill-qwen35-27b-4b-vocab-alignment/'
 
 name: apr-distill-teacher-vocab-alignment
-version: 1.0.0
+version: 1.1.0
 scope: aprender-train-distill teacher-provider boundary — vocab alignment between teacher and student
 
 equations:
@@ -51,6 +53,19 @@ equations:
       to verify when building a distillation pair. The contract assumes the
       invariant holds; runtime checks would require comparing tokenizer.json
       between teacher and student, which is out of scope here.
+
+      1.1.0: the invariant is now measured, not assumed, for the Qwen3.5 pair.
+      scripts/distill_vocab_identity.py reads tokenizer.ggml.{tokens,merges,token_type}
+      from both GGUFs. Qwen3.5-27B and Qwen3.5-4B (Q4_K_M, pinned in hf-sources.yaml)
+      carry byte-identical lists (248320 tokens, 247587 merges), so for this pair
+      effective_teacher_vocab == native_t and truncation is the identity (FT-VOCAB-ALIGN-005).
+      The same measurement shows vocab SIZE is not evidence of a shared prefix: a Qwen2.5
+      student (151936) is smaller than the Qwen3.5 teacher and passes the size rule, yet
+      the lists differ from index 280 (FT-VOCAB-ALIGN-006). Run the script on every new pair.
+      Only tokenizer.chat_template differs between 27B and 4B: the 27B opens a <think>
+      block unless enable_thinking is false, the 4B only when it is true. KD data must be
+      rendered with ONE template for both models, or teacher and student see different
+      prompt suffixes.
     preconditions:
     - native_t >= 1
     - target_s >= 1 (if Some)
@@ -112,8 +127,9 @@ proof_obligations:
   property: vocab-mismatch path is detectable from metadata alone
   formal: |
     For every (teacher.apr, student.apr) pair: comparing their metadata.vocab_size
-    fields suffices to decide whether truncation is needed. No tokenizer decode
-    or token-by-token comparison required at runtime.
+    fields suffices to decide whether truncation is NEEDED. It does not decide whether
+    truncation is SOUND: that needs the shared-prefix check (FT-VOCAB-ALIGN-006), run
+    once per pair by scripts/distill_vocab_identity.py, not per step at runtime.
 
 falsification_tests:
 - id: FT-VOCAB-ALIGN-001
@@ -161,6 +177,29 @@ falsification_tests:
     or `logits.truncate(effective_vocab_size)` is in the forward path.
   evidence: cargo test -p apr-cli --features cuda,training,inference --lib distill_q4k_teacher::tests::logits_truncated_to_target
 
+- id: FT-VOCAB-ALIGN-005
+  rule: Qwen3.5 27B teacher -> 4B student share one vocab, so truncation is the identity
+  prediction: |
+    scripts/distill_vocab_identity.py on Qwen3.5-27B-Q4_K_M.gguf and Qwen3.5-4B-Q4_K_M.gguf
+    (sha256 84b5f7f1... and 00fe7986..., pinned in evidence/crux/hf-sources.yaml) exits 0:
+    tokens, merges and token_type are byte-identical, both token lists have length 248320
+    == contracts/model-families/qwen3_5.yaml size_variants.27b.vocab_size. So
+    effective_teacher_vocab(248320, Some(248320)) == 248320 and no logit is dropped.
+  if_fails: |
+    The pair does not share a tokenizer: the first_diff index names where. Either the GGUF
+    pin moved, or the family vocab changed. Re-measure before any 27B->4B KD run; a
+    truncation over differing lists trains the student on the wrong tokens.
+  evidence: cargo test -p aprender-train-distill --lib vocab_alignment_evidence_tests::qwen35_27b_and_4b_share_one_vocab_so_truncation_is_the_identity
+- id: FT-VOCAB-ALIGN-006
+  rule: a smaller student vocab is not evidence of a shared prefix
+  prediction: |
+    The same script on the Qwen3.5-27B teacher and a Qwen2.5-0.5B student exits 1:
+    student_len 151936 < teacher_len 248320 (the size rule would truncate and train), but
+    the token lists differ from index 280, so student_vocab_is_teacher_prefix is false.
+  if_fails: |
+    If this pair ever reports a shared prefix, the script compares nothing (e.g. an empty
+    token list) and FT-VOCAB-ALIGN-005's green is vacuous.
+  evidence: cargo test -p aprender-train-distill --lib vocab_alignment_evidence_tests::a_smaller_student_vocab_is_not_a_shared_prefix
 kani_harnesses:
 - id: KANI-VOCAB-ALIGN-001
   obligation: vocab_alignment_dispatch — effective_vocab is min(native, target_if_set)

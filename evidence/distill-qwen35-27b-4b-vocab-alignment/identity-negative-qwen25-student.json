@@ -1,0 +1,49 @@
+{
+  "lists": {
+    "tokenizer.ggml.merges": {
+      "first_diff": 24,
+      "identical": false,
+      "student_len": 151387,
+      "student_sha256": "7dd03eeaab5131cb0df13654f774ab6eca76e538add990e7edd409bcd057fc3c",
+      "teacher_len": 247587,
+      "teacher_sha256": "2d0d7c583fcdbbccbebdfb69eb5bee91a3b8eb95cb8dc37f44ff645c484ae6e8"
+    },
+    "tokenizer.ggml.token_type": {
+      "first_diff": 151643,
+      "identical": false,
+      "student_len": 151936,
+      "student_sha256": "54b1c3ac7306a6ffec040eebd602411eebd98212d815d5b9c2451561db6d136d",
+      "teacher_len": 248320,
+      "teacher_sha256": "a350d06979fc99da90fabeb3920914e2fa45bae3bf230ad999fd54d80b8098bb"
+    },
+    "tokenizer.ggml.tokens": {
+      "first_diff": 280,
+      "identical": false,
+      "student_len": 151936,
+      "student_sha256": "4f203032920dc4ca55506d37f2eba22fe8794c833f876f91a1b0368b026e2273",
+      "teacher_len": 248320,
+      "teacher_sha256": "49930cc8a75188cf69a07c57914f0aabe383db11494aa03ed15629adee4c7e33"
+    }
+  },
+  "other_tokenizer_keys_differing": [
+    "tokenizer.chat_template",
+    "tokenizer.ggml.add_bos_token",
+    "tokenizer.ggml.bos_token_id",
+    "tokenizer.ggml.eos_token_id",
+    "tokenizer.ggml.padding_token_id",
+    "tokenizer.ggml.pre"
+  ],
+  "student": {
+    "architecture": "qwen2",
+    "embedding_length": 896,
+    "file": "Qwen2.5-0.5B-Instruct-IQ4_XS.gguf",
+    "tied_embeddings": true
+  },
+  "student_vocab_is_teacher_prefix": false,
+  "teacher": {
+    "architecture": "qwen35",
+    "embedding_length": 5120,
+    "file": "Qwen3.5-27B-Q4_K_M.gguf",
+    "tied_embeddings": false
+  }
+}

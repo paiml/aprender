@@ -119,6 +119,9 @@ impl MemoryEstimate {
 }
 
 #[cfg(test)]
+mod vocab_alignment_evidence_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
