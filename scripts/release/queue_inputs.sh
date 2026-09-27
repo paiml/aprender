@@ -906,6 +906,7 @@ case "${1:-}" in
     prop12) [ $# -eq 2 ] || die "usage: prop12 <queue-inputs.json>"; prop12_lines < "$2" ;;
     untangle) shift; untangle_week "$@" ;;
     dora-fetch) [ $# -ge 2 ] || die "usage: dora-fetch <raw-dir> [days]"; dora_fetch "$2" "${3:-7}" ;;
+    dora-line) dora_line ;;
     dora) [ $# -eq 2 ] || die "usage: dora <raw-dir>"; out=$(dora_compute "$2"); printf '%s\n' "$out"
           printf '%s' "$out" | dora_line >&2; printf '%s' "$out" | jq -e '.verdict == "MET"' >/dev/null ;;
     self-test) self_test ;;
