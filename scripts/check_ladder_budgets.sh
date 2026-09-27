@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# check_ladder_budgets.sh — a ladder cell over its declared byte/RSS/wall budget is RED (#4520 step 4).
+#
+# WHY. 2026-09-27 ~07:15Z: model_ladder.sh --host lambda re-read a 17 GB GGUF off the disk for every
+# verb and held the operator's desktop at IO PSI 90% / load 190 for 15+ minutes. Nothing in the
+# receipt said so: cost to the host was never measured, so it could never be a defect.
+#
+# WHAT THIS CHECKS, IN TWO LAYERS.
+#   1. THE JUDGE (scripts/lib/ladder_budget.py) over a case table of meter records, against the
+#      SHIPPED contract's ladder.budgets: every rule has a must-RED row and a must-GREEN row.
+#   2. THE METER ON A REAL READ. The SHIPPED apr_locked (lifted from model_ladder.sh) runs a fake
+#      `apr` whose `inspect` reads a planted model file off the disk: whole (must be RED on
+#      header_bytes_read_max) and 4 KiB (must be GREEN). The file's page cache is dropped first, so
+#      the bytes are real storage reads. If the whole-file control reads ~0 (a tmpfs TMPDIR, say),
+#      the meter would be proving nothing here: exit 2, never a pass.
+# --self-test plants a judge that ignores the header budget and requires this check to go RED.
+#
+# Exit: 0 all as expected · 1 a case landed wrong · 2 could not check.
+set -uo pipefail
+SELF_TEST=0
+case "${1:-}" in --self-test) SELF_TEST=1 ;; "") ;; *) echo "unknown argument '$1'" >&2; exit 2 ;; esac
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "  cannot check: not in a repository" >&2; exit 2; }
+cd "$ROOT" || exit 2
+command -v flock >/dev/null && command -v choom >/dev/null || { echo "  cannot check: flock/choom absent" >&2; exit 2; }
+python3 -c 'import yaml' 2>/dev/null || { echo "  cannot check: python3 yaml absent" >&2; exit 2; }
+
+T=$(mktemp -d) || exit 2
+trap 'rm -rf -- "${T:?}"' EXIT
+cp scripts/lib/ladder_budget.py "$T/ladder_budget.py"
+if [ "$SELF_TEST" = 1 ]; then   # the mutant: the header rule never fires
+  sed -i 's/if verb in b\["header_verbs"\] and/if False and/' "$T/ladder_budget.py"
+fi
+fails=0
+ok()  { printf '  ok    %s\n' "$1"; }
+bad() { printf '  FAIL  %s\n' "$1"; fails=$((fails + 1)); }
+
+# ── layer 1: the judge's case table ───────────────────────────────────────────
+python3 - "$T" contracts/model-capability-ladder-v1.yaml > "$T/l1.out" <<'PY'
+import sys, yaml
+sys.path.insert(0, sys.argv[1]); import ladder_budget as L
+b = L.load_budgets(yaml.safe_load(open(sys.argv[2])))
+G = 1 << 30
+def rec(cell, verb, br=0, rss=1 << 20, wall=1.0, fb=4 * G):
+    return {"cell": cell, "verb": verb, "bytes_read": br, "peak_rss_bytes": rss, "wall_s": wall, "file_bytes": fb}
+H = b["header_bytes_read_max"]; C = b["cell_bytes_read_max_factor"]; W = b["wall_s_max"]
+rss_lim = lambda fb: int(b["peak_rss_max_factor"] * fb + b["peak_rss_slack_bytes"])
+cases = [  # name, records, the budget that must fire (None = must be green)
+    ("header-reads-whole-file", [rec("a", "inspect", br=4 * G)], "header_bytes_read_max"),
+    ("header-reads-4k",         [rec("a", "inspect", br=4096)], None),
+    ("header-at-limit",         [rec("a", "inspect", br=H)], None),
+    ("header-one-over",         [rec("a", "inspect", br=H + 1)], "header_bytes_read_max"),
+    ("load-verb-reads-file",    [rec("a", "run", br=4 * G)], None),
+    ("cell-rereads-per-verb",   [rec("a", v, br=4 * G) for v in ("qa", "run", "chat", "serve")], "cell_bytes_read"),
+    ("cell-reads-once",         [rec("a", "qa", br=4 * G), rec("a", "run"), rec("a", "chat")], None),
+    ("cell-at-factor",          [rec("a", "qa", br=int(C * 4 * G))], None),
+    ("two-cells-not-summed",    [rec("a", "qa", br=5 * G), rec("b", "qa", br=5 * G)], None),
+    ("rss-over",                [rec("a", "run", rss=rss_lim(4 * G) + 1)], "peak_rss"),
+    ("rss-at-limit",            [rec("a", "run", rss=rss_lim(4 * G))], None),
+    ("wall-over-run",           [rec("a", "run", wall=W + 1)], "wall_s_max"),
+    ("wall-over-serve-exempt",  [rec("a", "serve", wall=W + 1)], None),
+    ("no-file-bytes",           [rec("a", "run", fb=None)], "file_bytes"),
+    ("no-cell-not-judged",      [rec(None, "inspect", br=4 * G)], None),
+]
+for name, recs, want in cases:
+    got = {v["budget"] for v in L.judge(recs, b)}
+    good = (not got) if want is None else (want in got and len(got) == 1)
+    print(("ok   " if good else "FAIL ") + f" {name}: want {want or 'green'}, got {sorted(got) or 'green'}")
+for name, mut in [("budgets-absent", lambda d: d["ladder"].pop("budgets")),
+                  ("budget-zero", lambda d: d["ladder"]["budgets"].__setitem__("wall_s_max", 0)),
+                  ("header-verbs-empty", lambda d: d["ladder"]["budgets"].__setitem__("header_verbs", []))]:
+    d = yaml.safe_load(open(sys.argv[2])); mut(d)
+    try:
+        L.load_budgets(d); print(f"FAIL  {name}: accepted, must decline")
+    except ValueError:
+        print(f"ok    {name}: declines")
+PY
+[ $? = 0 ] || { echo "  cannot check: layer 1 crashed" >&2; exit 2; }
+while IFS= read -r l; do case "$l" in ok*) ok "${l#ok    }" ;; *) bad "${l#FAIL  }" ;; esac; done < "$T/l1.out"
+
+# ── layer 2: the shipped apr_locked + meter on real storage reads ─────────────
+eval "$(sed -n '/^apr_locked() {/p' scripts/model_ladder.sh)"
+declare -F apr_locked >/dev/null || { echo "  cannot check: apr_locked not found in model_ladder.sh" >&2; exit 2; }
+GPU_LOCK="$T/gpu.lock"; LOCK_WAIT=5; LOCK_BUSY=75
+MODEL="$T/model.gguf"
+head -c $((128 << 20)) /dev/urandom > "$MODEL" || exit 2
+cat > "$T/apr" <<'SH'
+#!/usr/bin/env bash
+# fake apr: `inspect <file>` reads $FAKE_READ bytes of the file (all = the whole file)
+[ "$1" = inspect ] || exit 0
+if [ "${FAKE_READ:-all}" = all ]; then cat -- "$2" > /dev/null; else head -c "$FAKE_READ" -- "$2" > /dev/null; fi
+SH
+chmod +x "$T/apr"; APR="$T/apr"
+drop_cache() { python3 -c 'import os,sys; fd=os.open(sys.argv[1], os.O_RDONLY); os.posix_fadvise(fd,0,0,os.POSIX_FADV_DONTNEED); os.close(fd)' "$MODEL"; }
+sync -f "$MODEL" 2>/dev/null || sync
+export LADDER_METER="$T/meter.jsonl" LADDER_METER_CELL=planted LADDER_METER_FILE_BYTES; LADDER_METER_FILE_BYTES=$(stat -Lc %s "$MODEL")
+: > "$LADDER_METER"
+drop_cache; FAKE_READ=all apr_locked inspect "$MODEL" || { echo "  cannot check: apr_locked failed" >&2; exit 2; }
+if [ ! -s "$LADDER_METER" ]; then   # apr_locked no longer meters: that is the regression, not an environment gap
+  bad "meter: the shipped apr_locked wrote no meter record -- every apr call would go unjudged"
+  echo "ladder budgets: $fails case(s) wrong"; exit 1
+fi
+whole=$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["bytes_read"])' "$LADDER_METER")
+if [ "$whole" -lt $((64 << 20)) ]; then
+  echo "  cannot check: the whole-file control read $whole storage bytes of 128 MiB -- is TMPDIR tmpfs? the meter proves nothing here" >&2; exit 2
+fi
+python3 "$T/ladder_budget.py" contracts/model-capability-ladder-v1.yaml "$LADDER_METER" > "$T/v1"; rc=$?
+if [ $rc = 1 ] && grep -q '"budget": "header_bytes_read_max"' "$T/v1"; then ok "meter: planted inspect reading the whole file ($whole B off disk) is RED on header_bytes_read_max"
+else bad "meter: planted inspect reading the whole file ($whole B) was not RED on header_bytes_read_max (judge rc=$rc)"; fi
+: > "$LADDER_METER"
+drop_cache; FAKE_READ=4096 apr_locked inspect "$MODEL"
+python3 "$T/ladder_budget.py" contracts/model-capability-ladder-v1.yaml "$LADDER_METER" > "$T/v2"; rc=$?
+if [ $rc = 0 ]; then ok "meter: planted inspect reading 4 KiB is GREEN"
+else bad "meter: planted inspect reading 4 KiB was judged over budget (rc=$rc: $(head -c 300 "$T/v2"))"; fi
+# the meter passes the child's status through: a verb's rc is still the verb's
+FAKE_READ=4096 apr_locked inspect /nonexistent-4520 2>/dev/null; rc=$?
+[ $rc = 1 ] && ok "meter: the child's exit status passes through (rc=1)" || bad "meter: child rc 1 came back as $rc"
+
+if [ "$SELF_TEST" = 1 ]; then
+  [ "$fails" -gt 0 ] && { echo "self-test: the planted blind judge turned this RED ($fails case(s)) -- good"; exit 0; }
+  echo "self-test: FAIL -- a judge that ignores the header budget passed every case"; exit 1
+fi
+[ "$fails" = 0 ] && { echo "ladder budgets: all cases as expected"; exit 0; }
+echo "ladder budgets: $fails case(s) wrong"; exit 1

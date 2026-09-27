@@ -101,7 +101,10 @@ LOCK_WAIT="${MODEL_LADDER_LOCK_WAIT:-1800}"
 LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr exit 75 also declines -- never a pass)
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
-apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+# #4520 step 4: every apr call is metered (storage bytes_read, peak RSS, wall) into $LADDER_METER and
+# judged against the contract's ladder.budgets when the receipt is written. The meter forwards signals
+# and is one more parent in the tree, which ladder_serve_teardown walks by parentage anyway.
+apr_locked() { python3 scripts/lib/ladder_meter.py "$1" -- flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
 # THE LOCK IS NOT EXCLUSIVITY (#3964). The lock serializes only the processes that take it, and
 # Ollama's daemon never does: on lambda it loaded 1328 MiB onto the card in the MIDDLE of a
 # locked device A/B. So a GPU run leg goes through gpu_exclusive_run: the same lock, plus a
@@ -110,7 +113,7 @@ apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -
 # command it never saw on the card (UNVERIFIED), which is every CPU leg by construction.
 apr_exclusive() {
   GPU_OWNED_PREFIX="$(readlink -f "$APR")" GPU_LOCK="$GPU_LOCK" GPU_WAIT_SECS="$LOCK_WAIT" \
-    choom -n 1000 -- bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"
+    python3 scripts/lib/ladder_meter.py "$1" -- choom -n 1000 -- bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"
 }
 
 # ── #3843: ASK THE BINARY whether a verb takes a flag; never assume ───────────
@@ -520,6 +523,10 @@ print(s, c)
 PY
 ) || { echo "decline: the ladder declares no valid serve_health {stall_s, ceiling_s} (0 < stall_s <= ceiling_s) -- the serve wait would be unbounded or arbitrary (#3943)" >&2; exit 2; }
 read -r SERVE_STALL_S SERVE_CEILING_S <<< "$SERVE_WAIT"   # the files the rungs name; section 2 skips re-measuring them
+# #4520 step 4: the budgets are read BEFORE anything is measured -- a ladder with no budgets declines,
+# it never measures and then reads "no limit" as a pass.
+python3 -c 'import sys, yaml; sys.path.insert(0, "scripts/lib"); import ladder_budget; ladder_budget.load_budgets(yaml.safe_load(open(sys.argv[1])))' "$LADDER" \
+  || { echo "decline: the ladder declares no valid ladder.budgets (#4520) -- a cell's cost to the host would be unjudged" >&2; exit 2; }
 
 # The inventory spec (#3712). MODEL_LADDER_INVENTORY_DIRS (colon-separated) is a test seam only.
 INV_SPEC=$(python3 - "$LADDER" <<'PY'
@@ -863,6 +870,7 @@ _rm_work() {
 trap _rm_work EXIT
 ROWS="$WORK/rows.jsonl"; : > "$ROWS" 2>/dev/null || { echo "decline: cannot write $ROWS" >&2; exit 2; }
 INV_ROWS="$WORK/inventory.jsonl"; : > "$INV_ROWS" 2>/dev/null || { echo "decline: cannot write $INV_ROWS" >&2; exit 2; }
+export LADDER_METER="$WORK/meter.jsonl"; : > "$LADDER_METER" 2>/dev/null || { echo "decline: cannot write $LADDER_METER" >&2; exit 2; }
 
 # ── A write the ladder cannot make is a DECLINE (rc 2), never a hole ────────────
 # gx10, 0.69.1 final sweep: the root fs filled mid-run. Every artifact of
@@ -916,6 +924,8 @@ printf '    inventory: %s model(s) matching %s under %s\n' "$(grep -c . <<< "$IN
 #   2. per claimed backend: `apr run` rc 0 and no fallback line (did it stay on that backend?)
 measure() {
   local rid=$1 rfile=$2 path=$3 got=$4 rbackends=$5 rreq=$6 rinv=$7
+  # #4520: the meter attributes every apr call below to this cell and its file size (the budget base)
+  export LADDER_METER_CELL="$rid" LADDER_METER_FILE_BYTES; LADDER_METER_FILE_BYTES=$(stat -Lc %s "$path" 2>/dev/null)
   local probe_why
   probe_why=$(ladder_disk_probe "$WORK") || ladder_write_decline "before $rid: $probe_why"
   local qa_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.qa.json" cap_flag="" qa_rc qa_row be_json first b flag run_out run_rc fb ran row why
@@ -1417,7 +1427,7 @@ mkdir -p "$OUT_DIR"
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
 RECEIPT_TMP="$OUT_DIR/.$RECEIPT_BASE.json.tmp.$$"
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
-python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
+LADDER_CONTRACT="$LADDER" python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
 import json, os, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 _bx = os.environ.get("LADDER_BOX_EVENTS")
@@ -1430,9 +1440,25 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
        "host_box": host_box, "rungs": rows}
+# #4520 step 4: every metered apr call, and every budget it broke. A row with a violation is not green,
+# and `red` is recounted from the rows so the judge's red==non-green reconciliation (#3842) still holds.
+sys.path.insert(0, "scripts/lib"); import ladder_budget, yaml
+_mf = os.environ.get("LADDER_METER")
+meter = [json.loads(l) for l in open(_mf) if l.strip()] if _mf and os.path.isfile(_mf) else []
+budgets = ladder_budget.load_budgets(yaml.safe_load(open(os.environ["LADDER_CONTRACT"])))
+viol = ladder_budget.judge(meter, budgets)
+for r in rows:
+    mine = [v for v in viol if v["cell"] == r.get("id")]
+    if mine:
+        r["budget_violations"] = mine; r["green"] = False
+out["budgets"] = budgets; out["meter"] = meter; out["budget_violations"] = viol
+out["red"] = sum(1 for r in rows if not r.get("green"))
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
+open(sys.argv[2] + ".red", "w").write(str(out["red"]))
 PY
 receipt_rc=$?
+if [ "$receipt_rc" = 0 ]; then RED=$(cat "$RECEIPT_TMP.red" 2>/dev/null || echo "$RED"); fi
+rm -f -- "${RECEIPT_TMP:?}.red"
 # The receipt must say exactly what was recorded: parse it back and count it against the
 # appends this run actually made, then rename it into place (atomic on one filesystem).
 if [ "$receipt_rc" != 0 ] || ! python3 - "$RECEIPT_TMP" "$LADDER_APPENDS_ROWS" "$LADDER_APPENDS_INV" <<'PY'
