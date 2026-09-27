@@ -418,7 +418,9 @@ fn qwen35_bisect_real_probe_per_layer() {
         .with(|c| c.set(Some(crate::cuda::Qwen35PrefillGemm::F32)));
     let mapped = crate::gguf::MappedGGUFModel::from_path(&model_path).expect("map the GGUF");
     let probe: Vec<u32> = if let Ok(ids) = std::env::var("APR_BISECT_IDS") {
-        ids.split(',').map(|s| s.trim().parse().expect("id")).collect()
+        ids.split(',')
+            .map(|s| s.trim().parse().expect("id"))
+            .collect()
     } else {
         let path = std::env::var("APR_BISECT_TEXT").expect("APR_BISECT_TEXT or APR_BISECT_IDS");
         let text = std::fs::read_to_string(&path).expect("read the probe text");
@@ -428,7 +430,11 @@ fn qwen35_bisect_real_probe_per_layer() {
             text
         };
         let all = mapped.model.encode(&text).expect("encode");
-        println!("[4313] encoded {} ids, tail {:?}", all.len(), &all[all.len().saturating_sub(12)..]);
+        println!(
+            "[4313] encoded {} ids, tail {:?}",
+            all.len(),
+            &all[all.len().saturating_sub(12)..]
+        );
         let n: usize = std::env::var("APR_BISECT_N").map_or(64, |v| v.parse().expect("N"));
         all[all.len().saturating_sub(n)..].to_vec()
     };
@@ -441,7 +447,10 @@ fn qwen35_bisect_real_probe_per_layer() {
     let cpu: Vec<Vec<f32>> = probe
         .iter()
         .enumerate()
-        .map(|(pos, &t)| qwen.forward_single_qwen35(t, &mut cpu_state, pos).expect("cpu"))
+        .map(|(pos, &t)| {
+            qwen.forward_single_qwen35(t, &mut cpu_state, pos)
+                .expect("cpu")
+        })
         .collect();
     if std::env::var("APR_BISECT_CPU_ONLY").is_ok_and(|v| v == "1") {
         let dir = std::env::var("APR_BISECT_DUMP").expect("APR_BISECT_DUMP");
@@ -463,7 +472,10 @@ fn qwen35_bisect_real_probe_per_layer() {
     let mut per_token = gpu.new_state_with_len(n + 1).expect("state");
     let mut want = Vec::with_capacity(n);
     for (pos, &t) in probe.iter().enumerate() {
-        want.push(gpu.forward_single(t, &mut per_token, pos).expect("forward_single"));
+        want.push(
+            gpu.forward_single(t, &mut per_token, pos)
+                .expect("forward_single"),
+        );
     }
     let mut batched = gpu.new_state_with_len(n + 1).expect("state");
     let every: Vec<usize> = (0..n).collect();
@@ -488,8 +500,16 @@ fn qwen35_bisect_real_probe_per_layer() {
     println!("[4313] first position with cos < 0.99: {first_bad:?}");
     if let Ok(dir) = std::env::var("APR_BISECT_DUMP") {
         std::fs::create_dir_all(&dir).expect("dump dir");
-        for (tag, rows) in [("cpu", &cpu), ("gpu_batched", &got), ("gpu_per_token", &want)] {
-            let bytes: Vec<u8> = rows.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
+        for (tag, rows) in [
+            ("cpu", &cpu),
+            ("gpu_batched", &got),
+            ("gpu_per_token", &want),
+        ] {
+            let bytes: Vec<u8> = rows
+                .iter()
+                .flatten()
+                .flat_map(|v| v.to_le_bytes())
+                .collect();
             std::fs::write(format!("{dir}/{tag}.f32"), bytes).expect("dump");
         }
     }
@@ -515,10 +535,18 @@ fn qwen35_bisect_real_probe_per_layer() {
         }
         for (kind, b, p) in pairs {
             let scale = p.iter().fold(0.0f32, |m, v| m.max(v.abs()));
-            let (arg, diff) = b.iter().zip(&p).enumerate().fold((0, 0.0f32), |acc, (i, (x, y))| {
-                let d = (x - y).abs();
-                if d > acc.1 { (i, d) } else { acc }
-            });
+            let (arg, diff) = b
+                .iter()
+                .zip(&p)
+                .enumerate()
+                .fold((0, 0.0f32), |acc, (i, (x, y))| {
+                    let d = (x - y).abs();
+                    if d > acc.1 {
+                        (i, d)
+                    } else {
+                        acc
+                    }
+                });
             let nonfinite = b.iter().filter(|v| !v.is_finite()).count();
             println!(
                 "[4313] layer {il:2} {kind:4} rel L∞ {:.3e} (abs {diff:.3e} at {arg}, scale {scale:.3e}, cos {:.6}, nonfinite {nonfinite})",
