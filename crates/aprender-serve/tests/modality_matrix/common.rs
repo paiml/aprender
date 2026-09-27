@@ -1,17 +1,19 @@
 //! Common test utilities for modality matrix tests
 //!
 //! Provides shared infrastructure for Popperian falsifiable testing.
-//! Includes renacer-compatible tracing API for PARITY-112 compliance.
+//! Includes `mock_trace`, an in-process span recorder. It is a MOCK: it never
+//! runs renacer (the in-tree `aprender-profile` syscall tracer) — TR-04, #4559.
 
 use std::collections::HashMap;
 
 // ============================================================================
-// PARITY-112 QA-A01/A08: Renacer-Compatible Tracing Module
+// PARITY-112 QA-A01/A08: mock trace recorder (not renacer)
 // ============================================================================
 
-/// Renacer-compatible tracing module for PARITY-112 compliance.
+/// Mock trace recorder: thread-local spans, no process tracing. Named
+/// `mock_trace`, not `renacer`, per contracts/no-mock-named-real-v1.yaml.
 /// This provides the `capture()` API required by QA-A08.
-pub mod renacer {
+pub mod mock_trace {
     use super::{ExecutionTrace, TraceSpan};
     use std::cell::RefCell;
 
@@ -20,7 +22,7 @@ pub mod renacer {
     }
 
     /// Capture execution trace from a closure (QA-A08 compliance).
-    /// This is the renacer-compatible API for trace capture.
+    /// Mock: records only spans pushed via `record_span`.
     pub fn capture<F, T>(f: F) -> (T, ExecutionTrace)
     where
         F: FnOnce() -> T,
@@ -54,7 +56,7 @@ pub mod renacer {
         });
     }
 
-    /// Assertion types for renacer validation (QA-H01-H10)
+    /// Assertion types for mock-trace validation (QA-H01-H10)
     #[derive(Debug, Clone)]
     #[allow(clippy::struct_field_names)]
     pub struct Assertion {
@@ -236,7 +238,7 @@ pub mod renacer {
     pub fn generate_report(assertions: &[Assertion]) -> String {
         use std::fmt::Write;
         let mut report = String::new();
-        report.push_str("# Renacer Assertion Report\n\n");
+        report.push_str("# Mock Trace Assertion Report\n\n");
 
         let passed = assertions.iter().filter(|a| a.passed).count();
         let total = assertions.len();
@@ -310,7 +312,7 @@ impl Backend {
     }
 }
 
-/// Execution trace span (simplified renacer-compatible)
+/// Execution trace span (mock recorder)
 #[derive(Debug, Clone)]
 pub struct TraceSpan {
     pub name: String,
@@ -526,19 +528,20 @@ mod tests {
     }
 
     // ========================================================================
-    // PARITY-112 QA-A08: Renacer Trace Capture Tests
+    // PARITY-112 QA-A08: mock_trace self-test (does NOT exercise renacer)
     // ========================================================================
 
-    /// QA-A08: Verify renacer::capture() API exists and works
+    /// QA-A08 (mock self-test): `mock_trace::capture()` returns the spans it recorded.
+    /// This proves the mock, not renacer.
     #[test]
-    fn test_qa_a08_renacer_capture_api() {
-        use super::renacer;
+    fn test_qa_a08_mock_trace_self_test() {
+        use super::mock_trace;
 
         // Capture trace from closure
-        let (result, trace) = renacer::capture(|| {
+        let (result, trace) = mock_trace::capture(|| {
             // Simulate traced operation
-            renacer::record_span(TraceSpan::new("test_operation", 1000));
-            renacer::set_metrics(100, 500);
+            mock_trace::record_span(TraceSpan::new("test_operation", 1000));
+            mock_trace::set_metrics(100, 500);
             42 // Return value
         });
 
@@ -547,17 +550,17 @@ mod tests {
         assert_eq!(trace.total_tokens, 100);
         assert_eq!(trace.total_duration_ms, 500);
 
-        eprintln!("QA-A08 PASS: renacer::capture() API works correctly");
+        eprintln!("QA-A08 PASS (mock self-test): mock_trace::capture() records spans");
     }
 
     // ========================================================================
-    // PARITY-112 QA-H01-H10: Renacer Assertion Validation Tests
+    // PARITY-112 QA-H01-H10: mock-trace assertion validation tests
     // ========================================================================
 
     /// QA-H01: Verify cuda_kernel_required assertion
     #[test]
     fn test_qa_h01_cuda_kernel_required_assertion() {
-        use super::renacer::{self, AssertionType};
+        use super::mock_trace::{self, AssertionType};
 
         // Create trace WITH CUDA kernel
         let mut trace_with_cuda = ExecutionTrace::new();
@@ -567,7 +570,7 @@ mod tests {
         trace_with_cuda.total_tokens = 200;
         trace_with_cuda.total_duration_ms = 1000;
 
-        let mut assertion = renacer::Assertion::new(
+        let mut assertion = mock_trace::Assertion::new(
             "cuda_kernel_required",
             "CUDA kernel span MUST exist",
             AssertionType::SpanCount {
@@ -584,7 +587,7 @@ mod tests {
 
         // Create trace WITHOUT CUDA kernel
         let trace_without_cuda = ExecutionTrace::new();
-        let mut assertion2 = renacer::Assertion::new(
+        let mut assertion2 = mock_trace::Assertion::new(
             "cuda_kernel_required",
             "CUDA kernel span MUST exist",
             AssertionType::SpanCount {
@@ -604,13 +607,13 @@ mod tests {
     /// QA-H02: Verify no_scalar_fallback assertion
     #[test]
     fn test_qa_h02_no_scalar_fallback_assertion() {
-        use super::renacer::{self, AssertionType};
+        use super::mock_trace::{self, AssertionType};
 
         // Trace WITHOUT scalar fallback (good)
         let mut trace_no_scalar = ExecutionTrace::new();
         trace_no_scalar.add_span(TraceSpan::new("gpu_kernel:gemm_fp32", 3000));
 
-        let mut assertion = renacer::Assertion::new(
+        let mut assertion = mock_trace::Assertion::new(
             "no_scalar_fallback",
             "No scalar fallback in CUDA mode",
             AssertionType::SpanCount {
@@ -629,7 +632,7 @@ mod tests {
         let mut trace_with_scalar = ExecutionTrace::new();
         trace_with_scalar.add_span(TraceSpan::new("compute_block:scalar_matmul", 50000));
 
-        let mut assertion2 = renacer::Assertion::new(
+        let mut assertion2 = mock_trace::Assertion::new(
             "no_scalar_fallback",
             "No scalar fallback in CUDA mode",
             AssertionType::SpanCount {
@@ -649,13 +652,13 @@ mod tests {
     /// QA-H03: Verify gemm_under_5ms assertion
     #[test]
     fn test_qa_h03_gemm_duration_assertion() {
-        use super::renacer::{self, AssertionType};
+        use super::mock_trace::{self, AssertionType};
 
         // Fast GEMM (good)
         let mut trace_fast = ExecutionTrace::new();
         trace_fast.add_span(TraceSpan::new("gpu_kernel:gemm_fp32", 3000)); // 3ms
 
-        let mut assertion = renacer::Assertion::new(
+        let mut assertion = mock_trace::Assertion::new(
             "gemm_under_5ms",
             "GEMM should complete in <5ms",
             AssertionType::SpanDuration {
@@ -673,7 +676,7 @@ mod tests {
         let mut trace_slow = ExecutionTrace::new();
         trace_slow.add_span(TraceSpan::new("gpu_kernel:gemm_fp32", 10000)); // 10ms
 
-        let mut assertion2 = renacer::Assertion::new(
+        let mut assertion2 = mock_trace::Assertion::new(
             "gemm_under_5ms",
             "GEMM should complete in <5ms",
             AssertionType::SpanDuration {
@@ -692,7 +695,7 @@ mod tests {
     /// QA-H04/H05: Verify golden trace matching (attribute validation)
     #[test]
     fn test_qa_h04_h05_golden_trace_matching() {
-        use super::renacer::{self, AssertionType};
+        use super::mock_trace::{self, AssertionType};
 
         let mut trace = ExecutionTrace::new();
         trace.add_span(
@@ -702,7 +705,7 @@ mod tests {
         );
 
         // QA-H04: CUDA backend attribute
-        let mut assertion_cuda = renacer::Assertion::new(
+        let mut assertion_cuda = mock_trace::Assertion::new(
             "gpu_backend_cuda",
             "GPU kernel must have backend=cuda",
             AssertionType::Attribute {
@@ -723,7 +726,7 @@ mod tests {
                 .with_attr("simd.instruction_set", "avx2"),
         );
 
-        let mut assertion_simd = renacer::Assertion::new(
+        let mut assertion_simd = mock_trace::Assertion::new(
             "simd_instruction_set",
             "SIMD block must have instruction_set=avx2",
             AssertionType::Attribute {
@@ -743,7 +746,7 @@ mod tests {
     /// QA-H06: Verify throughput_m4_floor assertion
     #[test]
     fn test_qa_h06_throughput_m4_floor_assertion() {
-        use super::renacer::{self, AssertionType};
+        use super::mock_trace::{self, AssertionType};
 
         // High throughput (meets M4)
         let mut trace_high = ExecutionTrace::new();
@@ -751,7 +754,7 @@ mod tests {
         trace_high.total_tokens = 200;
         trace_high.total_duration_ms = 1000; // 200 tok/s
 
-        let mut assertion = renacer::Assertion::new(
+        let mut assertion = mock_trace::Assertion::new(
             "throughput_m4_floor",
             "Must meet M4 floor (100 tok/s)",
             AssertionType::Throughput {
@@ -769,7 +772,7 @@ mod tests {
         trace_low.total_tokens = 50;
         trace_low.total_duration_ms = 1000; // 50 tok/s
 
-        let mut assertion2 = renacer::Assertion::new(
+        let mut assertion2 = mock_trace::Assertion::new(
             "throughput_m4_floor",
             "Must meet M4 floor (100 tok/s)",
             AssertionType::Throughput {
@@ -794,7 +797,7 @@ mod tests {
         eprintln!("=========================================");
         eprintln!();
         eprintln!("Assertions are designed for CI integration:");
-        eprintln!("  - renacer::validate_assertions() returns Vec<Assertion>");
+        eprintln!("  - mock_trace::validate_assertions() returns Vec<Assertion>");
         eprintln!("  - Each Assertion has severity (Critical/Warning/Info)");
         eprintln!("  - CI should fail on any Critical assertion failure");
         eprintln!("  - CI should warn on Warning assertion failures");
@@ -810,7 +813,7 @@ mod tests {
     /// QA-H09: Verify assertion report generation
     #[test]
     fn test_qa_h09_assertion_report_generation() {
-        use super::renacer;
+        use super::mock_trace;
 
         // Create a valid CUDA trace
         let mut trace = ExecutionTrace::new();
@@ -821,14 +824,14 @@ mod tests {
         trace.total_duration_ms = 1000;
 
         // Validate all assertions
-        let assertions = renacer::validate_assertions(&trace);
+        let assertions = mock_trace::validate_assertions(&trace);
 
         // Generate report
-        let report = renacer::generate_report(&assertions);
+        let report = mock_trace::generate_report(&assertions);
 
         // Verify report structure
         assert!(
-            report.contains("# Renacer Assertion Report"),
+            report.contains("# Mock Trace Assertion Report"),
             "Should have title"
         );
         assert!(report.contains("assertions passed"), "Should have summary");
@@ -849,7 +852,7 @@ mod tests {
     /// QA-H10: Verify zero assertion violations on valid CUDA trace
     #[test]
     fn test_qa_h10_zero_assertion_violations() {
-        use super::renacer;
+        use super::mock_trace;
 
         // Create a perfect CUDA trace that passes all assertions
         let mut trace = ExecutionTrace::new();
@@ -861,7 +864,7 @@ mod tests {
         trace.total_duration_ms = 1000; // 200 tok/s > 100 tok/s M4 floor
 
         // Validate all assertions
-        let assertions = renacer::validate_assertions(&trace);
+        let assertions = mock_trace::validate_assertions(&trace);
 
         // Count violations
         let violations: Vec<_> = assertions.iter().filter(|a| !a.passed).collect();

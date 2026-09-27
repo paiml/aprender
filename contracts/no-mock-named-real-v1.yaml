@@ -1,0 +1,96 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# no-mock-named-real-v1 — a mock may not wear a real workspace crate's name
+# (TRACE-001 §4 TR-04, finding F5; issue #4559)
+#
+# WHAT IT GOVERNS
+#   crates/aprender-core/tests/no_mock_named_real.rs — a Rust scan of every
+#   git-tracked `.rs` file (no Python, no shell). Wired into CI by
+#   ci/explicit-test-commands.d/035-aprender-core-no-mock-named-real.cmd.
+#
+# WHY. aprender-serve/tests/modality_matrix/common.rs defined `pub mod renacer`,
+# a thread-local span recorder, and its test printed "QA-A08 PASS:
+# renacer::capture() API works correctly". renacer (the in-tree
+# aprender-profile syscall tracer) was never run. The module is now
+# `mock_trace` and QA-A08 is labelled a mock self-test.
+# ─────────────────────────────────────────────────────────────────────────────
+name: no-mock-named-real
+version: "1.0.0"
+scope: >
+  Modules and types in git-tracked Rust source that carry the [lib] name of a workspace package other than their own.
+  Out of scope: identifiers that are not module or type declarations (functions, variables, strings), macro-generated
+  modules, and multi-word lib names in type position (`apr_format` would flag the domain enum `AprFormat`).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    `mod NAME` where NAME is another workspace package's lib name and the module body never names that crate as a
+    path root is a mock wearing a real name; so is a type named after a single-word lib (`Trueno`, `Renacer`). Hits
+    under tests/ can never be allowlisted. Six pre-existing src/ modules are allowlisted with reasons, and a stale
+    entry fails, so the list only shrinks.
+  references:
+    - 'docs/specifications/TRACE-001-tracing-consumers.md §1 F5, §3 contract table, §4 TR-04'
+    - 'crates/aprender-core/tests/no_mock_named_real.rs — FALSIFY-NMNR-001..003'
+    - 'crates/aprender-serve/tests/modality_matrix/common.rs — `mod mock_trace`, QA-A08 mock self-test'
+
+equations:
+  no_mock_named_real:
+    formula: "admits(tree) ⇔ ∀ decl d ∈ tree: ¬(name(d) ∈ libs \\ libs(owner(d)) ∧ ¬names_crate(body(d), name(d))) ∨ (d ∈ ALLOW ∧ path(d) ∉ tests/)"
+    domain: "the git-tracked .rs files of the workspace and the [lib] names from cargo metadata"
+    codomain: "Pass | Fail"
+    invariants:
+      - "a module named after a foreign workspace lib that names that crate (use X / X::) is an adapter and passes"
+      - "a module named after its own package's lib passes"
+    preconditions:
+      - "cargo metadata lists more than 50 workspace libs and git ls-files lists more than 1000 .rs files"
+    postconditions:
+      - "verdict ∈ {Pass, Fail}"
+      - "|ALLOW| never grows without an entry that still hits"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: NMNR-INV-001
+    property: no test-side module or type is named after a real workspace crate unless it uses that crate
+    formal: 'path(d) ∈ tests/ ⇒ ¬mock_named_real(d)'
+    prose: false
+  - id: NMNR-INV-002
+    property: the src allowlist is shrink-only
+    formal: '∀ a ∈ ALLOW: ∃ d: hit(d) ∧ (path, name)(d) = a'
+    prose: false
+  - id: NMNR-INV-003
+    property: the scan is never vacuous
+    formal: '|libs| > 50 ∧ |files| > 1000'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-NMNR-001
+    rule: a planted mock turns RED
+    prediction: "`pub mod trueno { … }` in crates/aprender-serve/tests/x.rs is one hit at line 2; so are an out-of-line `mod renacer;` and `pub(crate) struct Renacer;`"
+    test: cargo test -p aprender-core --test no_mock_named_real falsify_nmnr_001_planted_mock_is_red
+    if_fails: the lint cannot see the defect it exists for
+  - id: FALSIFY-NMNR-002
+    rule: honest names stay GREEN
+    prediction: "`mod mock_trace`, an adapter `mod trueno { use trueno::Vector; }`, a crate's own `mod trueno`/`struct Trueno` and a commented-out mod are 0 hits; `super::trueno::`/`crate::trueno::` do not count as naming the crate"
+    test: cargo test -p aprender-core --test no_mock_named_real falsify_nmnr_002_honest_names_are_green
+    if_fails: the lint flags adapters or self-paths, and gets allowlisted into silence
+  - id: FALSIFY-NMNR-003
+    rule: 0 hits at HEAD
+    prediction: no hit under tests/, no un-allowlisted hit, no stale allowlist entry
+    test: cargo test -p aprender-core --test no_mock_named_real falsify_nmnr_003_zero_hits_at_head
+    if_fails: a mock named after a real crate is back, or an allowlisted module was renamed and its entry left behind
+
+qa_gate:
+  id: F-NMNR-001
+  name: no mock named real
+  description: A module or type named after a real workspace crate either uses that crate or is renamed (TR-04)
+  checks:
+    - planted_mock_red
+    - adapters_green
+    - zero_hits_at_head
+    - allowlist_shrink_only
+  pass_criteria: All 3 falsification tests pass
+  falsification: 'restore `pub mod renacer` in modality_matrix/common.rs → FALSIFY-NMNR-003 RED naming common.rs (measured 2026-09-27)'
