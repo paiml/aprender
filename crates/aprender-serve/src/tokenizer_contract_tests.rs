@@ -71,4 +71,32 @@ mod tokenizer_contract_tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<BPETokenizer>();
     }
+
+    /// #2817: on the greedy (no-merges) path every GGUF `apr serve` uses, a chat marker is
+    /// one token even when the byte before it forms a longer vocabulary entry. Qwen2.5 has
+    /// `.<`, so `.<|im_end|>` split into five pieces and the prompt ran 3 tokens over
+    /// llama.cpp per turn end, with no end-of-turn token for the model to see.
+    #[test]
+    fn falsify_tok_2817_chat_marker_is_one_token_after_a_merging_byte() {
+        let vocab: Vec<String> = [
+            "<unk>", ".", "<", ".<", "|", "im", "_end", ">", ">Ċ", "Ċ", "<|im_end|>", "<|im_start|>",
+            "a",
+        ]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+        let tok = BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+        let id = |s: &str| tok.get_token_id(s).expect(s);
+        assert_eq!(
+            tok.encode("a.<|im_end|>\n<|im_start|>"),
+            [id("a"), id("."), id("<|im_end|>"), id("Ċ"), id("<|im_start|>")],
+        );
+        // Text around no marker still matches greedily, and a `<|...|>` string the
+        // vocabulary lacks is ordinary text.
+        assert_eq!(tok.encode(".<"), [id(".<")]);
+        assert_eq!(
+            tok.encode(".<|x|>"),
+            [id(".<"), id("|"), tok.encode("x")[0], id("|"), id(">")],
+        );
+    }
 }
