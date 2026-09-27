@@ -193,3 +193,7 @@ impl crate::traits::Estimator for DecisionTreeRegressor {
         crate::metrics::r2_score(y.as_slice(), pred.as_slice())
     }
 }
+
+#[cfg(test)]
+#[path = "tests_dtr_contract.rs"]
+mod tests_dtr_contract;

@@ -23,7 +23,127 @@ pub(super) fn variance_f32(y: &[f32]) -> f32 {
     sum_squared_diff / y.len() as f32
 }
 
+/// Running count, mean and sum of squared deviations (`M2`) of a sequence of
+/// targets, updated one value at a time (Welford), in `f64`.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct Moments {
+    n: usize,
+    mean: f64,
+    m2: f64,
+}
+
+impl Moments {
+    /// The moments with one more target.
+    fn push(self, y: f32) -> Self {
+        let n = self.n + 1;
+        let y = f64::from(y);
+        let delta = y - self.mean;
+        let mean = self.mean + delta / n as f64;
+        Self {
+            n,
+            mean,
+            m2: self.m2 + delta * (y - mean),
+        }
+    }
+}
+
+/// Weighted within-child variance of a split, from each child's moments:
+/// `(n_l/n)·(M2_l/n_l) + (n_r/n)·(M2_r/n_r) = (M2_l + M2_r)/n`.
+pub(super) fn split_mse_from_moments(left: Moments, right: Moments) -> f32 {
+    contract_pre_mse_split!();
+    let n_total = (left.n + right.n) as f64;
+    if n_total == 0.0 {
+        return 0.0;
+    }
+    ((left.m2 + right.m2) / n_total) as f32
+}
+
+/// Rows `0..n_samples` in split order: every row with a non-NaN value on
+/// `feature_idx`, ascending, then the NaN rows. Returns the order and the
+/// number of non-NaN rows. A NaN row goes right at every threshold
+/// (`NaN <= t` is false), so it sits after every boundary.
+fn regression_split_order(
+    x: &crate::primitives::Matrix<f32>,
+    feature_idx: usize,
+    n_samples: usize,
+) -> (Vec<usize>, usize) {
+    let (mut order, nan_rows): (Vec<usize>, Vec<usize>) =
+        (0..n_samples).partition(|&row| !x.get(row, feature_idx).is_nan());
+    order.sort_by(|&a, &b| x.get(a, feature_idx).total_cmp(&x.get(b, feature_idx)));
+    let n_ordered = order.len();
+    order.extend(nan_rows);
+    (order, n_ordered)
+}
+
+/// `suffix[k]` = moments of the targets of `order[k..]`.
+fn suffix_moments(order: &[usize], y: &[f32]) -> Vec<Moments> {
+    let mut suffix = vec![Moments::default(); order.len() + 1];
+    for k in (0..order.len()).rev() {
+        suffix[k] = suffix[k + 1].push(y[order[k]]);
+    }
+    suffix
+}
+
+/// Find the best split for a single feature.
+///
+/// #3859: sort the rows once, then walk the candidate thresholds in ascending
+/// order carrying the left child's moments forward and reading the right
+/// child's from a precomputed suffix — `O(n log n)` per feature per node,
+/// where the rescan it replaced was `O(n^2)`.
+///
+/// The candidates, the `<=` partition and the tie-breaking (first strictly
+/// greater gain wins) are the rescan's. The variance is not: the rescan takes
+/// an `f32` two-pass variance of each child in row order, this takes `f64`
+/// running moments in sorted order. That reassociates the sums, so the gains
+/// differ in the low bits and a near-tie can resolve to the other candidate.
+/// `FALSIFY-DT-010` states and asserts the bound.
+pub(super) fn find_best_regression_split_for_feature(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[f32],
+    feature_idx: usize,
+    n_samples: usize,
+    current_variance: f32,
+) -> Option<(f32, f32)> {
+    let (order, n_ordered) = regression_split_order(x, feature_idx, n_samples);
+    let suffix = suffix_moments(&order, y);
+    let values: Vec<f32> = order[..n_ordered]
+        .iter()
+        .map(|&row| x.get(row, feature_idx))
+        .collect();
+
+    let mut left = Moments::default();
+    let mut boundary = 0;
+    let mut best_threshold = 0.0;
+    let mut best_gain = 0.0;
+
+    for pair in values.windows(2).filter(|p| p[0] != p[1]) {
+        let threshold = f32::midpoint(pair[0], pair[1]);
+        while boundary < n_ordered && values[boundary] <= threshold {
+            left = left.push(y[order[boundary]]);
+            boundary += 1;
+        }
+        let right = suffix[boundary];
+        if left.n == 0 || right.n == 0 {
+            continue;
+        }
+        let gain = current_variance - split_mse_from_moments(left, right);
+        if gain > best_gain {
+            best_gain = gain;
+            best_threshold = threshold;
+        }
+    }
+
+    (best_gain > 0.0).then_some((best_threshold, best_gain))
+}
+
 /// Compute Mean Squared Error for a split.
+///
+/// Oracle-only since #3859. The rescan split search this fed was replaced by
+/// the sort-once search in [`find_best_regression_split_for_feature`]; it is
+/// kept verbatim under `cfg(test)` so the fast path is checked against the
+/// algorithm it replaced (`FALSIFY-DT-010`), not against a second derivation
+/// of the fast path's own premise.
+#[cfg(test)]
 pub(super) fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32 {
     contract_pre_mse_split!();
     let n_left = y_left.len() as f32;
@@ -41,6 +161,13 @@ pub(super) fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32 {
 }
 
 /// Get unique sorted feature values for splitting.
+///
+/// Oracle-only since #3859. The rescan split search this fed was replaced by
+/// the sort-once search in [`find_best_regression_split_for_feature`]; it is
+/// kept verbatim under `cfg(test)` so the fast path is checked against the
+/// algorithm it replaced (`FALSIFY-DT-010`), not against a second derivation
+/// of the fast path's own premise.
+#[cfg(test)]
 pub(super) fn get_unique_feature_values(
     x: &crate::primitives::Matrix<f32>,
     feature_idx: usize,
@@ -53,6 +180,13 @@ pub(super) fn get_unique_feature_values(
 }
 
 /// Split y values by a threshold on a feature.
+///
+/// Oracle-only since #3859. The rescan split search this fed was replaced by
+/// the sort-once search in [`find_best_regression_split_for_feature`]; it is
+/// kept verbatim under `cfg(test)` so the fast path is checked against the
+/// algorithm it replaced (`FALSIFY-DT-010`), not against a second derivation
+/// of the fast path's own premise.
+#[cfg(test)]
 pub(super) fn split_by_threshold(
     x: &crate::primitives::Matrix<f32>,
     y: &[f32],
@@ -73,6 +207,13 @@ pub(super) fn split_by_threshold(
 }
 
 /// Evaluate a single split and return gain if valid.
+///
+/// Oracle-only since #3859. The rescan split search this fed was replaced by
+/// the sort-once search in [`find_best_regression_split_for_feature`]; it is
+/// kept verbatim under `cfg(test)` so the fast path is checked against the
+/// algorithm it replaced (`FALSIFY-DT-010`), not against a second derivation
+/// of the fast path's own premise.
+#[cfg(test)]
 pub(super) fn evaluate_split_gain(
     y_left: &[f32],
     y_right: &[f32],
@@ -86,8 +227,13 @@ pub(super) fn evaluate_split_gain(
     (gain > 0.0).then_some(gain)
 }
 
-/// Find the best split for a single feature.
-pub(super) fn find_best_regression_split_for_feature(
+/// The pre-#3859 split search, kept verbatim as the oracle for
+/// `FALSIFY-DT-010`.
+///
+/// `O(n)` candidate thresholds x `O(n)` rescan per candidate = `O(n^2)` per
+/// feature per node.
+#[cfg(test)]
+pub(super) fn find_best_regression_split_for_feature_rescan(
     x: &crate::primitives::Matrix<f32>,
     y: &[f32],
     feature_idx: usize,

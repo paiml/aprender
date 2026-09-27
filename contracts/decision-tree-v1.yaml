@@ -155,6 +155,31 @@ falsification_tests:
     both sides of the budget measured, 0.25s single-pass against ~1713s rescan
   if_fails: Each candidate threshold rescans all n samples again — quadratic in rows,
     which is what blocked fitting past ~100k
+- id: FALSIFY-DT-010
+  rule: Regression split search is within a stated envelope of the rescan
+  test_harness: cargo test -p aprender-core --lib -- tree::regressor::tests_dtr_contract::falsify_dt_010_regression_split_within_envelope_of_rescan --exact
+  prediction: find_best_regression_split_for_feature (f64 running moments, sorted once)
+    agrees with find_best_regression_split_for_feature_rescan (the retained pre-#3859
+    f32 two-pass rescan) within tol = 8·(n+4)·f32::EPSILON·mean(y²) + f32::MIN_POSITIVE —
+    both refuse, or the oracle scores the fast threshold within tol of its own best
+    and the fast gain within tol of that score, or the one split found has gain ≤ tol
+  test: tree::regressor::tests_dtr_contract::falsify_dt_010_regression_split_within_envelope_of_rescan
+    — 513 structured and randomised columns (duplicates, adjacent floats, signed
+    zeros, NaN rows, infinities, a 1e4 target offset) against the rescan
+  if_fails: The candidate walk, the <= partition, the NaN ordering, the running
+    moments or the tie-breaking diverged from the rescan beyond floating-point
+    reassociation — the fitted regressor is a different model, not a faster one
+- id: FALSIFY-DT-011
+  rule: Regression split search is sub-quadratic
+  test_harness: cargo test -p aprender-core --lib -- tree::regressor::tests_dtr_contract::falsify_dt_011_regression_root_split_search_is_subquadratic --exact
+  prediction: one DecisionTreeRegressor root split over 200k rows completes far inside 60s
+  test: tree::regressor::tests_dtr_contract::falsify_dt_011_regression_root_split_search_is_subquadratic
+    — max_depth=1 fit on a 200k-row continuous column with the wall clock asserted;
+    both sides measured in the debug test build, 0.19s sort-once (322x under) against
+    ~1715s rescan (28x over; timed at 1562/3125/6250/12500 rows = 0.07/0.28/1.15/4.97s,
+    4.3x per doubling, extrapolated four doublings at that measured exponent)
+  if_fails: Each candidate threshold rescans all n rows again — quadratic in rows,
+    the #3815 shape, in the regressor's own helper set
 enforcement:
   bounded:
     description: Gini impurity must be in [0, 1)

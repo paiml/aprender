@@ -187,10 +187,11 @@ bindings:
 - contract: decision-tree-v1.yaml
   equation: mse_split
   module_path: aprender::tree::regression_helpers
-  function: compute_mse
-  signature: 'fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32'
+  function: split_mse_from_moments
+  signature: 'fn split_mse_from_moments(left: Moments, right: Moments) -> f32'
   status: implemented
-  notes: MSE impurity for regression tree split (weighted variance)
+  notes: MSE impurity for regression tree split (weighted variance), from each child's
+    running moments — (M2_l + M2_r)/n (#3859; compute_mse is the cfg(test) oracle)
 - contract: metrics-ranking-v1.yaml
   equation: hit_at_k
   module_path: aprender::metrics::ranking
