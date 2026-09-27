@@ -38,6 +38,41 @@ fn lint_empty_dir() {
     assert!(report.passed, "{:?}", report.gates);
 }
 
+/// FLAKE-0: the verdict of an empty contract dir must not depend on files ABOVE its
+/// project root. Plant a stale PV-DUP baseline in the parent of the root (where a bare
+/// tempdir's root, the shared /tmp, would sit): the lint must still pass. Then plant the
+/// same baseline AT the root: it must fail, so the first half is not vacuous.
+#[test]
+fn lint_empty_dir_ignores_baseline_above_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plant = |root: &std::path::Path| {
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            root.join(duplicate_stems::BASELINE_REL_PATH),
+            "planted-stale-stem\n",
+        )
+        .unwrap();
+    };
+    plant(tmp.path());
+    let root = tmp.path().join("project");
+    let dir = root.join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
+    let report = run_lint(&LintConfig::new(&dir, None, 0.0));
+    assert!(
+        report.passed,
+        "baseline above root leaked in: {:?}",
+        report.gates
+    );
+
+    plant(&root);
+    let report = run_lint(&LintConfig::new(&dir, None, 0.0));
+    assert!(
+        !report.passed,
+        "a stale baseline AT the root must fail PV-DUP-002"
+    );
+}
+
 #[test]
 fn lint_report_serializes_to_json() {
     let dir = contracts_dir();
