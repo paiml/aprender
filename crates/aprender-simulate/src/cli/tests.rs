@@ -516,6 +516,15 @@ fn test_parse_render_unknown_format_is_an_error() {
 }
 
 #[test]
+fn test_parse_render_unknown_domain_is_an_error() {
+    // Was: parsed, then refused at run time with exit 1 after printing the render header (ONT-4g G1.4).
+    assert_eq!(
+        parse_err(&["simular", "render", "--domain", "mars"]),
+        ErrorKind::InvalidValue
+    );
+}
+
+#[test]
 fn test_args_clone() {
     let args = Cli::try_parse_from(["simular", "list-emc"]).expect("list-emc parses");
     let cloned = args.clone();

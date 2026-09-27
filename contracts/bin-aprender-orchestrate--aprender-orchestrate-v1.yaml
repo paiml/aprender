@@ -11,12 +11,17 @@
 #
 # MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0 / ff9587b59, release build, default features):
 #   `aprender-orchestrate --version` = "batuta 0.69.3": the pre-monorepo name, no sha. LIVE RED on the name
-#   pattern and on G0.1 (warning).
+#   pattern and on G0.1 (warning). NAME FIXED 2026-09-27 (c1): clap `#[command(name)]` in src/main_cli.rs now says
+#   "aprender-orchestrate"; the release build prints "aprender-orchestrate 0.69.3". G0.1 (sha) clears when car/0.70.0's
+#   version string lands (#4219), so it stays a warning here.
 #   Recursive --help walk: 86 leaf commands, set-equal to surface_audit.csv's 86 CLI rows.
 #   MCP: `aprender-orchestrate mcp` (stdio) answers tools/list with 4 tools (hf_info, hf_integration, hf_search,
-#   hf_tree; server "batuta-hf"). LIVE RED: none has a ledger row, and the ledger's 6 `mcp:*` rows (calculator,
-#   code_execution, web_search from banco's POST /api/v1/mcp; compute, memory, rag from the agent registry) are not
-#   tools/list tools. Those 6 are reachable only over HTTP or an agent session.
+#   hf_tree; server "batuta-hf"). unledgeredTool FIXED 2026-09-27 (c1): 4 `mcp:hf_*` ledger rows, evidence
+#   src/mcp/server.rs, verified_hardware x86_64-linux because CI's workspace-test runs test_tool_hf_* there.
+#   STILL LIVE RED (ledgerOrphan): the ledger's 6 other `mcp:*` rows (calculator, code_execution, web_search from
+#   banco's POST /api/v1/mcp; compute, memory, rag from the agent registry) are not tools/list tools. Those 6 are
+#   reachable only over HTTP or an agent session. A relabel is not the fix: check_dogfood_coverage.sh G2.2 reads a
+#   renamed row as a deleted one. The shape needs a transport for them (a second tool property), not a ledger edit.
 #   HTTP (aprender-1c, S3): crates/aprender-orchestrate/src/serve/banco/router.rs mounts 92 (METHOD, /path) pairs via
 #   .route(), with no .nest/.merge/.route_service/.fallback under serve/. That set equals the ledger's 92 HTTP rows.
 #   EXTRACT GAP, LIVE RED: scripts/dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty on
@@ -61,7 +66,7 @@ shapes:
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-orchestrate"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-orchestrate"]}
-      # LIVE RED 2026-09-26: "batuta 0.69.3"
+      # was LIVE RED 2026-09-26 ("batuta 0.69.3"); fixed 2026-09-27
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-orchestrate [0-9]+\\.[0-9]+\\.[0-9]+"}
       # G0.1 — LIVE RED 2026-09-26 (no sha); a warning to match the exemplar
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
@@ -157,7 +162,7 @@ shapes:
           - "viz tree"
       - {path: bin:unledgeredCommand, maxCount: 0}
       - {path: bin:ledgerOrphan, maxCount: 0}
-      # LIVE RED 2026-09-26: 4 tools, none ledgered (header)
+      # 4 tools, ledgered 2026-09-27 (header); the 6 non-stdio mcp:* rows are still ledgerOrphan RED
       - path: bin:mcpTool
         minCount: 4
         maxCount: 4
@@ -301,7 +306,7 @@ falsification_tests:
     rule: 'G0.1 the version names the binary and the commit'
     prediction: '`aprender-orchestrate --version` starts with "aprender-orchestrate x.y.z" and contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-26: "batuta 0.69.3" — the pre-monorepo name and no sha; a stale aprender-orchestrate reads as HEAD'
+    if_fails: 'a stale aprender-orchestrate reads as HEAD. Was LIVE RED 2026-09-26 ("batuta 0.69.3"); name fixed 2026-09-27, sha still absent until #4219 reaches this branch'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-ORCHESTRATE-004
     rule: 'G1.3/G1.4 the command, tool and route sets equal the snapshot'
@@ -313,5 +318,5 @@ falsification_tests:
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has a row per command, tool and route with binary = aprender-orchestrate'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: 'LIVE RED 2026-09-26: 4 MCP tools unledgered (hf_info, hf_integration, hf_search, hf_tree); 6 mcp:* rows name banco/agent tools that tools/list does not list'
+    if_fails: '4 MCP tools unledgered 2026-09-26, ledgered 2026-09-27. STILL LIVE RED: 6 mcp:* rows name banco/agent tools that tools/list does not list'
     mutation: 'delete every aprender-orchestrate row; must turn RED naming aprender-orchestrate'
