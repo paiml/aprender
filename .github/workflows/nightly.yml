@@ -214,6 +214,122 @@ jobs:
           path: dist/*
           if-no-files-found: warn
 
+  # ── QM-10 (#4528): the CI input set I = I_dep ∪ F ∪ C (FLOW-003 v2.1 Def. 14) ──
+  # One nightly writes one trace of F; the artifact carries the union over the last
+  # nightlies, and INV-BASE (`input_set.sh base`) is only armable once it spans ≥ 7.
+  # The tests are traced from a nextest ARCHIVE (QM-09's shape), never through
+  # cargo: cargo's own package walks would enumerate whole crate dirs and make
+  # dirPrefix useless. Needs strace + jq + unzip in sovereign-ci (paiml/infra
+  # branch 60/sovereign-ci-strace-jq); until the image has them the job fails
+  # closed, naming the missing tool.
+  input-set:
+    needs: gate
+    if: needs.gate.result == 'success' && needs.gate.outputs.decision != 'reused'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # Unmeasured: the first three runs replace this basis (BSE-05). A lib build
+    # (~27 min on guard-cargo) plus the lib tests under strace -f, taken as 3×.
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      IS_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.ref_name }}/run-${{ github.run_id }}-input-set
+      IS_CARGO_HOME: /mnt/nvme-raid0/cargo-ci/home/${{ github.ref_name }}
+      # How many earlier nightlies' F to union with this one (7 in all).
+      IS_PRIOR: 6
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The image carries strace, jq and unzip (fail closed)
+        run: |
+          missing=$(docker run --rm "$IMAGE" sh -c 'for t in strace jq unzip; do command -v "$t" >/dev/null || printf "%s " "$t"; done')
+          if [ -n "$missing" ]; then
+            echo "::error::sovereign-ci lacks: ${missing}— F cannot be traced (paiml/infra branch 60/sovereign-ci-strace-jq adds them)"
+            exit 1
+          fi
+      - name: Create this job's own target dir and CARGO_HOME (before any bind mount)
+        run: |
+          mkdir -p "$IS_TARGET_DIR" "$IS_CARGO_HOME/registry" "$RUNNER_TEMP/is"
+      - name: Input-set writer case table (F1..F5, K1..K5, planted mutants)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "${GITHUB_WORKSPACE}:/workspace" -v "${IS_CARGO_HOME}:/cargo-home" -e CARGO_HOME=/cargo-home \
+            -v "${RUNNER_TEMP}/is:/is" -e TMPDIR=/is -w /workspace "$IMAGE" \
+            bash scripts/ci/input_set.sh --self-test
+      - name: Earlier nightlies' input sets (the union's other members)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # shellcheck disable=SC2016 # the inner script expands inside the container
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/is/prior"
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "${RUNNER_TEMP}/is:/is" -w /is -e GH_TOKEN -e GITHUB_REPOSITORY -e IS_PRIOR "$IMAGE" bash -c '
+              set -euo pipefail
+              api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+              hdr=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json")
+              runs=$(curl -fsS "${hdr[@]}" "$api/actions/workflows/nightly.yml/runs?status=success&per_page=30" | jq -r ".workflow_runs[].id")
+              n=0
+              for r in $runs; do
+                [ "$n" -lt "$IS_PRIOR" ] || break
+                url=$(curl -fsS "${hdr[@]}" "$api/actions/runs/$r/artifacts?name=ci-input-set" | jq -r "[.artifacts[] | select(.expired | not)][0].archive_download_url // empty")
+                [ -n "$url" ] || continue
+                curl -fsSL "${hdr[@]}" -o "prior/$r.zip" "$url"
+                unzip -q -o "prior/$r.zip" input-set.json -d "prior/$r"
+                n=$((n + 1))
+              done
+              echo "prior input sets: $n of $IS_PRIOR"'
+      - name: Trace the workspace lib tests and write the input set
+        run: |
+          # shellcheck disable=SC2016 # the inner script expands inside the container
+          set -euo pipefail
+          base=$(git rev-parse HEAD)
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${IS_CARGO_HOME}:/cargo-home" -e CARGO_HOME=/cargo-home \
+            -v "${IS_TARGET_DIR}:/workspace/target" -e CARGO_TARGET_DIR=/workspace/target \
+            -v "${RUNNER_TEMP}/is:/is" -e TMPDIR=/is \
+            -e CARGO_INCREMENTAL=0 -e CARGO_BUILD_JOBS=8 -e CARGO_TERM_COLOR=never \
+            -e BASE="$base" -w /workspace "$IMAGE" bash -c '
+              set -euo pipefail
+              X="--exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute"
+              # shellcheck disable=SC2086
+              cargo nextest archive --workspace --lib $X --archive-file /is/lib.tar.zst
+              # A failing test still read its inputs: F is recorded either way, the
+              # verdict belongs to workspace-test.
+              rc=0
+              bash scripts/ci/input_set.sh trace /workspace /is/trace.log -- \
+                cargo nextest run --profile ci --no-fail-fast --archive-file /is/lib.tar.zst \
+                  --workspace-remap /workspace || rc=$?
+              echo "traced test run exit: $rc"
+              bash scripts/ci/input_set.sh assemble /workspace /workspace/target "$BASE" /is/one.json /is/trace.log
+              set -- /is/prior/*/input-set.json
+              [ -e "$1" ] || set --
+              mkdir -p /is/out
+              bash scripts/ci/input_set.sh merge /is/out/input-set.json /is/one.json "$@"
+              jq -c "{baseSha, nightlies, dep: (.dep|length), read: (.read|length), dirPrefix: (.dirPrefix|length), absent: (.absent|length), config: (.config|length)}" /is/out/input-set.json'
+      - name: Upload the input set
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-input-set
+          path: ${{ runner.temp }}/is/out/input-set.json
+          retention-days: 30
+      - name: Remove this run's target dir
+        if: always()
+        run: |
+          d="${IS_TARGET_DIR:?}"
+          docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" rm -rf "/p/$(basename "$d")"
+
   # ── Publish per arch, then the manifest ──────────────────
   publish:
     needs: [gate, build]
