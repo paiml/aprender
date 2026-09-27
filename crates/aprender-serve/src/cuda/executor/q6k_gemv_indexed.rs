@@ -61,7 +61,7 @@ impl CudaExecutor {
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // Allocate output buffer
@@ -166,7 +166,7 @@ impl CudaExecutor {
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -220,13 +220,13 @@ impl CudaExecutor {
         validate_device_ptr(weight_ptr, "coalesced_q4k_gemv_into")?;
         let kernel_type = KernelType::CoalescedQ4KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("coalesced_q4k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "coalesced_q4k_gemv_{}_{}", k, n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // One warp (32 threads) per output element
@@ -277,13 +277,13 @@ impl CudaExecutor {
         validate_device_ptr(weight_ptr, "wide_q4k_gemv_into")?;
         let kernel_type = KernelType::WideQ4KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("wide_q4k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "wide_q4k_gemv_{}_{}", k, n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // PAR-132: 8 warps (256 threads) per output element
@@ -341,13 +341,13 @@ impl CudaExecutor {
         validate_device_ptr(weight_ptr, "vectorized_q4k_gemv_into")?;
         let kernel_type = KernelType::VectorizedQ4KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("vectorized_q4k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "vectorized_q4k_gemv_{}_{}", k, n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // One warp (32 threads) per output element

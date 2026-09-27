@@ -270,7 +270,7 @@ apr_bin_origin() {
 
     case "$bin" in
         */bin/apr)
-            inst=$(apr_bin_installed_from "${CARGO_HOME:-$HOME/.cargo}/.crates2.json") || inst=""
+            inst=$(apr_bin_installed_from "${CARGO_HOME:-${HOME:-}/.cargo}/.crates2.json") || inst=""
             if [ -n "$inst" ] && [ -n "$APR_BIN_WS_ROOT" ]; then
                 case "$inst" in
                     "$APR_BIN_WS_ROOT"|"$APR_BIN_WS_ROOT"/*) printf 'own\n' ;;
@@ -339,7 +339,7 @@ apr_bin_scan() {
     apr_bin_load_meta || true
     td="$APR_BIN_TARGET_DIR"
     lr=$(apr_bin_local_root) || lr=""
-    ch="${CARGO_HOME:-$HOME/.cargo}"
+    ch="${CARGO_HOME:-${HOME:-}/.cargo}"
 
     if [ -n "$td" ]; then
         apr_bin_try "$want" "$td/release/apr" && return 0
@@ -369,7 +369,7 @@ apr_bin_report_candidate() {
     owner=$(apr_bin_dep_owner "${cand}.d") || owner=""
     if [ -z "$owner" ] && [ "$origin" != "own" ]; then
         case "$cand" in
-            */bin/apr) owner=$(apr_bin_installed_from "${CARGO_HOME:-$HOME/.cargo}/.crates2.json") || owner="" ;;
+            */bin/apr) owner=$(apr_bin_installed_from "${CARGO_HOME:-${HOME:-}/.cargo}/.crates2.json") || owner="" ;;
         esac
     fi
     printf '    %-46s %-8s %s\n' "$cand" "$origin" "$("$cand" --version 2>&1 | head -1)"
@@ -383,7 +383,7 @@ apr_bin_report_all_candidates() {
     apr_bin_load_meta || true
     td="$APR_BIN_TARGET_DIR"
     lr=$(apr_bin_local_root) || lr=""
-    ch="${CARGO_HOME:-$HOME/.cargo}"
+    ch="${CARGO_HOME:-${HOME:-}/.cargo}"
     if [ -n "$td" ]; then
         apr_bin_report_candidate "$td/release/apr"
         apr_bin_report_candidate "$td/debug/apr"
@@ -548,6 +548,68 @@ apr_bin_assert_fresh() {
 # per-shell one: a caller that sources this file, cd's into a different
 # checkout and sources it again must get that checkout's answer, not the
 # first one's.
+# NIGHTLY MODE (#4186). On a fleet host, or with APR_BIN_REQUIRE=nightly, the only
+# acceptable apr is the one the arbiter's nightly manifest names; HEAD
+# provenance below is for dev trees and PR CI. scripts/nightly_pin.sh holds the
+# rule and scripts/check_nightly_pin.sh its case table. Unknown mode -> refuse.
+# The RULE travels with this file: it is loaded from beside it, not from the
+# cwd's checkout. Sourced by path from an older worktree's cwd, the cwd lookup
+# loaded THAT tree's weaker rule and accepted a denylisted binary (quorum round
+# 4). The name comes from BASH_SOURCE in bash and %x in zsh, never zsh's $0:
+# for `. apr_bin.sh` found via PATH, $0 is the bare name, and the rule was
+# then looked up in the cwd (quorum round 5). Both give the full path for a
+# PATH hit and a bare name only when the file was found in the cwd, where a
+# cwd-relative rule IS beside it. Only when this file cannot name itself
+# (neither bash nor zsh) is the cwd's checkout asked, and a rule without the
+# current NIGHTLY_PIN_API refuses.
+APR_NP_RC=0
+APR_NP_SELF=""
+if [ -n "${BASH_VERSION:-}" ]; then APR_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then eval 'APR_NP_SELF=${(%):-%x}'; fi  # bashrs disable-line=SEC001 (constant string; zsh-only %x expansion)
+case "$APR_NP_SELF" in
+    */apr_bin.sh) APR_NP_LIB="$(dirname "$APR_NP_SELF")/nightly_pin.sh" ;;
+    apr_bin.sh) APR_NP_LIB="./nightly_pin.sh" ;;  # ./ : a bare `.` searches PATH first
+    *) APR_NP_LIB=$(git rev-parse --show-toplevel 2>/dev/null) && APR_NP_LIB="$APR_NP_LIB/scripts/nightly_pin.sh" || APR_NP_LIB="" ;;
+esac
+if [ -n "$APR_NP_LIB" ] && [ -f "$APR_NP_LIB" ]; then
+    unset NIGHTLY_PIN_API
+    . "$APR_NP_LIB" || { printf 'NIGHTLY PIN REFUSED: cannot load %s\n' "$APR_NP_LIB" >&2; return 1 2>/dev/null || exit 1; }
+    if [ "${NIGHTLY_PIN_API:-}" = "1" ]; then
+        nightly_pin_mode APR_BIN_REQUIRE || APR_NP_RC=$?
+    else
+        # An older rule is not a fallback. Refuse only if nightly mode could be
+        # meant; a dev tree with neither the knob nor the marker keeps HEAD mode.
+        if [ "${APR_BIN_REQUIRE:-}" = "head" ] || { [ -z "${APR_BIN_REQUIRE:-}" ] && [ -n "${APR_FLEET_MARKER:-}${HOME:-}" ] && [ ! -e "${APR_FLEET_MARKER:-${HOME:-}/.config/aprender/fleet-nightly}" ]; }; then
+            APR_NP_RC=1
+        else
+            printf 'NIGHTLY PIN REFUSED: %s predates NIGHTLY_PIN_API=1 (an older rule is never a fallback)\n' "$APR_NP_LIB" >&2
+            return 1 2>/dev/null || exit 1
+        fi
+    fi
+elif { [ -n "${APR_BIN_REQUIRE:-}" ] && [ "${APR_BIN_REQUIRE}" != "head" ]; } \
+    || { [ -z "${APR_BIN_REQUIRE:-}" ] \
+        && { [ -z "${APR_FLEET_MARKER:-}${HOME:-}" ] || [ -e "${APR_FLEET_MARKER:-${HOME:-}/.config/aprender/fleet-nightly}" ]; }; }; then
+    # (no HOME and no APR_FLEET_MARKER: the marker cannot be ruled out, so refuse)
+    # nightly mode is asked for (explicitly, or by the fleet marker) and the rule
+    # that enforces it is not here: refuse rather than fall back to HEAD. No
+    # Actions exemption here on purpose: that rule lives only in nightly_pin_mode.
+    printf 'NIGHTLY PIN REFUSED: nightly mode (%s=%s, fleet marker) but nightly_pin.sh is not beside this resolver or in this checkout\n' APR_BIN_REQUIRE "${APR_BIN_REQUIRE:-}" >&2
+    return 1 2>/dev/null || exit 1
+else
+    APR_NP_RC=1
+fi
+if [ "$APR_NP_RC" -ne 0 ] && [ "$APR_NP_RC" -ne 1 ]; then  # 2 = unknown mode (already said why); anything else is a broken rule
+    [ "$APR_NP_RC" -eq 2 ] || printf 'NIGHTLY PIN REFUSED: nightly_pin_mode returned %s (expected 0/1/2): the rule is broken, not bypassed\n' "$APR_NP_RC" >&2
+    return 1 2>/dev/null || exit 1
+fi
+if [ "$APR_NP_RC" -eq 0 ]; then
+    APR=$(nightly_pin_resolve apr APR_BIN APR_BIN_REQUIRE) || { return 1 2>/dev/null || exit 1; }
+    export APR
+    if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
+        printf '%s\n' "$APR"
+    fi
+    return 0 2>/dev/null || exit 0
+fi
+
 APR_BIN_META_LOADED=0
 
 APR_BIN_RC=0

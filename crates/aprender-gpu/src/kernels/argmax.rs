@@ -19,8 +19,29 @@
 //! - Expected speedup: ~1.2x overall (from ~163 tok/s to ~200 tok/s)
 
 use super::Kernel;
-use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl};
-use crate::ptx::{PtxKernel, PtxType};
+use crate::ptx::builder::{KernelBuilder, PtxArithmetic, PtxComparison, PtxControl};
+use crate::ptx::{PtxKernel, PtxType, VirtualReg};
+
+/// Does the candidate at `tid + stride` replace this thread's current best?
+///
+/// Larger value wins; on an EXACT tie the lower index wins, so the reduction
+/// returns the FIRST maximum — the contract of the CPU `ops::argmax` this
+/// kernel replaces (#4215). A strict `>` alone keeps whichever side the tree
+/// happened to put in `tid`, which after the strided load can be the later
+/// index. Both comparisons are ordered, so a NaN never wins.
+fn other_wins(
+    ctx: &mut KernelBuilder<'_>,
+    other_val: VirtualReg,
+    other_idx: VirtualReg,
+    my_val: VirtualReg,
+    my_idx: VirtualReg,
+) -> VirtualReg {
+    let greater = ctx.setp_gt_f32(other_val, my_val);
+    let equal = ctx.setp_eq_f32(other_val, my_val);
+    let earlier = ctx.setp_lt_u32(other_idx, my_idx);
+    let tie_to_earlier = ctx.and_pred(equal, earlier);
+    ctx.or_pred(greater, tie_to_earlier)
+}
 
 /// ArgMax kernel configuration
 ///
@@ -175,7 +196,7 @@ impl Kernel for ArgMaxKernel {
                     let my_val = ctx.ld_generic_f32(sh_val_addr);
                     let my_idx = ctx.ld_generic_u32(sh_idx_addr);
 
-                    let is_greater = ctx.setp_gt_f32(other_val, my_val);
+                    let is_greater = other_wins(ctx, other_val, other_idx, my_val, my_idx);
                     let new_val = ctx.selp_f32(is_greater, other_val, my_val);
                     let new_idx = ctx.selp_u32(is_greater, other_idx, my_idx);
 
@@ -201,7 +222,7 @@ impl Kernel for ArgMaxKernel {
                         let my_val = ctx.ld_generic_f32(sh_val_addr);
                         let my_idx = ctx.ld_generic_u32(sh_idx_addr);
 
-                        let is_greater = ctx.setp_gt_f32(other_val, my_val);
+                        let is_greater = other_wins(ctx, other_val, other_idx, my_val, my_idx);
                         let new_val = ctx.selp_f32(is_greater, other_val, my_val);
                         let new_idx = ctx.selp_u32(is_greater, other_idx, my_idx);
 
@@ -328,7 +349,7 @@ impl Kernel for ArgMaxFinalKernel {
                         let my_val = ctx.ld_generic_f32(sh_val_addr);
                         let my_idx = ctx.ld_generic_u32(sh_idx_addr);
 
-                        let is_greater = ctx.setp_gt_f32(other_val, my_val);
+                        let is_greater = other_wins(ctx, other_val, other_idx, my_val, my_idx);
                         let new_val = ctx.selp_f32(is_greater, other_val, my_val);
                         let new_idx = ctx.selp_u32(is_greater, other_idx, my_idx);
 

@@ -5,6 +5,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 fn main() {
+    // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
+    build_sha::emit();
+
     // Capture build metadata for reproducibility verification
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=Cargo.lock");

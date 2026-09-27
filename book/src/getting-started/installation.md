@@ -6,6 +6,17 @@
 
 ## Install the CLI
 
+Pre-built and ready to use (Linux x86_64/aarch64 only today — other platforms fall
+through to `cargo install` below):
+
+```bash
+curl -LsSf https://paiml.com/apr/install.sh | sh
+```
+
+To read the script before it runs, download it with `curl -LsSf https://paiml.com/apr/install.sh -o install.sh`, review it, then run `sh install.sh`. The installer is POSIX `sh` and checks the downloaded release archive against its published `.sha256` before installing.
+
+Compile and build:
+
 ```bash
 cargo install aprender
 ```
