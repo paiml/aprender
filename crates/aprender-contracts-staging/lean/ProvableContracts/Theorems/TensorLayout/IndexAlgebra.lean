@@ -168,6 +168,72 @@ theorem row_block_upper {ncols i j : Nat} (hj : j < ncols) :
     idx ncols i j < i * ncols + ncols := by
   unfold idx; omega
 
+/-! ## `idx-MODEL-001` — simulation of the Rust `transpose_row_major`
+
+`transposeRowMajor` transcribes `crates/aprender-quant/src/transpose.rs:17-21`
+(`trueno_quant::transpose::transpose_row_major`, the reindex every
+`transpose_q{4,5,6}k_for_matmul` runs between dequantize and requantize):
+
+    (0..rows * cols).map(|k| src[(k % cols) * rows + k / cols]).collect()
+
+`List.range (rows * cols)` is `0..rows * cols`, `List.map` is `.map(..).collect()`, and
+`(k % cols) * rows + k / cols` is `idx rows (uncol cols k) (unrow cols k)`. The element type
+is generic in both. Rust's `src[i]` panics out of range where the model reads `getD i default`;
+`transposeRowMajor_reads_in_range` shows no read is out of range when `src.len() = rows * cols`,
+the only way the importer calls it, so the two agree there.
+
+Witness: `crates/aprender-quant/src/transpose_row_major_witness_tests.rs` checks the Rust fn
+against this def's `#eval` on every shape `rows, cols ≤ 8` (golden table beside it). -/
+
+/-- Transcription of `transpose_row_major` (`crates/aprender-quant/src/transpose.rs:17`). -/
+def transposeRowMajor {α : Type} [Inhabited α] (src : List α) (rows cols : Nat) : List α :=
+  (List.range (rows * cols)).map fun k => src.getD (idx rows (uncol cols k) (unrow cols k)) default
+
+/-- The output has exactly `rows * cols` elements (the Rust `Vec` length). -/
+theorem transposeRowMajor_length {α : Type} [Inhabited α] (src : List α) (rows cols : Nat) :
+    (transposeRowMajor src rows cols).length = rows * cols := by
+  simp [transposeRowMajor]
+
+/-- Every slot the Rust body reads, `(k % cols) * rows + k / cols` for `k < rows * cols`, is in
+    range of a `rows * cols` source: the Rust indexing never panics on a well-sized input. -/
+theorem transposeRowMajor_reads_in_range {rows cols k : Nat} (hk : k < rows * cols) :
+    idx rows (uncol cols k) (unrow cols k) < rows * cols := by
+  have hc : 0 < cols := Nat.pos_of_ne_zero (fun h => by simp [h] at hk)
+  have hu : uncol cols k < cols := Nat.mod_lt k hc
+  have hr : unrow cols k < rows := (Nat.div_lt_iff_lt_mul hc).2 hk
+  have := idx_lt (nrows := cols) hu hr
+  rwa [Nat.mul_comm cols rows] at this
+
+/-- LAYOUT-002 on the model: APR element `(r, c)` (slot `r * cols + c`) is GGUF element
+    `(c, r)` (slot `c * rows + r`). -/
+theorem transposeRowMajor_get {α : Type} [Inhabited α] {src : List α} {rows cols r c : Nat}
+    (hr : r < rows) (hc : c < cols) :
+    (transposeRowMajor src rows cols)[idx cols r c]? = some (src.getD (idx rows c r) default) := by
+  have hk : idx cols r c < rows * cols := idx_lt hr hc
+  simp only [transposeRowMajor, List.getElem?_map, List.getElem?_range hk, Option.map_some,
+    unrow_idx hc, uncol_idx hc]
+
+/-- Transposing back with the axes swapped returns the input exactly: the reindex is a
+    permutation, nothing dropped or duplicated. -/
+theorem transposeRowMajor_involution {α : Type} [Inhabited α] {src : List α} {rows cols : Nat}
+    (hlen : src.length = rows * cols) :
+    transposeRowMajor (transposeRowMajor src rows cols) cols rows = src := by
+  apply List.ext_getElem
+  · rw [transposeRowMajor_length, hlen, Nat.mul_comm]
+  · intro k h1 h2
+    have hk : k < rows * cols := hlen ▸ h2
+    have hrp : 0 < rows := Nat.pos_of_ne_zero (fun h => by simp [h] at hk)
+    have ha : uncol rows k < rows := Nat.mod_lt k hrp
+    have hb : unrow rows k < cols := (Nat.div_lt_iff_lt_mul hrp).2 (by rwa [Nat.mul_comm] at hk)
+    have hinner := transposeRowMajor_get (src := src) ha hb
+    simp only [transposeRowMajor, List.getElem_map, List.getElem_range]
+    rw [List.getD_eq_getElem?_getD]
+    have hL : (List.map (fun k => src.getD (idx rows (uncol cols k) (unrow cols k)) default)
+        (List.range (rows * cols)))[idx cols (uncol rows k) (unrow rows k)]? =
+        some (src.getD (idx rows (unrow rows k) (uncol rows k)) default) := hinner
+    rw [hL, Option.getD_some, idx_unrow_uncol, List.getD_eq_getElem?_getD,
+      List.getElem?_eq_getElem h2, Option.getD_some]
+
 -- Checks
 #check @idx_lt
 #check @unrow_idx
@@ -179,5 +245,8 @@ theorem row_block_upper {ncols i j : Nat} (hj : j < ncols) :
 #check @transpose_size_preserved
 #check @row_stride
 #check @col_stride
+#check @transposeRowMajor_reads_in_range
+#check @transposeRowMajor_get
+#check @transposeRowMajor_involution
 
 end ProvableContracts.TensorLayout

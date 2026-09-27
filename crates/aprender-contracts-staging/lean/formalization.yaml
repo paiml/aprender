@@ -46,6 +46,11 @@ models:
     relation:
       kind: test_witnessed
       evidence: FALSIFY-ACT-004 (contracts/activation-kernel-v1.yaml), a proptest that ReLU(x) >= 0, signed zeros included
+  - module: ProvableContracts/Theorems/TensorLayout/IndexAlgebra.lean
+    model_of: trueno_quant::transpose::transpose_row_major
+    relation:
+      kind: simulation
+      evidence: "transposeRowMajor transcribes crates/aprender-quant/src/transpose.rs:17-21; witness crates/aprender-quant/src/transpose_row_major_witness_tests.rs (golden table of the model's #eval, all 81 shapes rows, cols <= 8)"
 # Theorem-bearing modules with no L4 model. The refinement gate fails when the measured count rises above this, and
 # also when it falls below it, so lower it in the same commit that adds an L4 model.
-unrefined_baseline: 76
+unrefined_baseline: 75
