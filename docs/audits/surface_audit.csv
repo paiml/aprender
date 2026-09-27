@@ -90,6 +90,7 @@ apr,apr beat-run,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src
 apr,apr bench,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:88,high
 apr,apr canary check,4,x86_64-linux,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands/canary.rs:44,medium
 apr,apr canary create,4,x86_64-linux,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands/canary.rs:30,medium
+apr,apr capability,6,x86_64-linux,NONE,no,10,apr-core-commands,crates/apr-cli/src/extended_commands.rs:650,high
 apr,apr cbtop,3,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:478,high
 apr,apr cgp baseline,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:117,low
 apr,apr cgp bench,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:46,low
@@ -427,6 +428,7 @@ apr-qa,apr-qa tickets,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.
 apr-qa,apr-qa tools,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:182,high
 apr-qa,apr-qa validate-contract,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:413,high
 apr-qa-readme-sync,apr-qa-readme-sync (README certification-table sync),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-qa-certify/src/main.rs:36-51,high
+aprender-cbtop,aprender-cbtop (interactive TUI; --headless),6,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:24,high
 aprender-cbtop,aprender-cbtop bench,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:88,high
 aprender-cbtop,aprender-cbtop optimize analyze,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:151,high
 aprender-cbtop,aprender-cbtop optimize baseline,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:136,high
@@ -759,14 +761,22 @@ ptop,ptop --render-once,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-p
 ptop,ptop --render-once --explode <PANEL>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:63,high
 pv,pv audit,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:67,low
 pv,pv book,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:367,low
+pv,pv census,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:99,high
 pv,pv certify,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:459,low
+pv,pv challenge check,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:624,high
+pv,pv challenge gen,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:616,high
 pv,pv check-parity,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:28,low
 pv,pv codegen,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:45,low
 pv,pv coq,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:353,low
 pv,pv coverage,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:132,low
 pv,pv diff,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:81,low
+pv,pv discharge check,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:521,high
+pv,pv discharge gen-axioms,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:509,high
+pv,pv discharge label-ratchet,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:604,high
+pv,pv discharge run,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:574,medium
 pv,pv equations,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:176,low
 pv,pv explain,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:9,low
+pv,pv extract,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:112,high
 pv,pv extract-pytorch,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:39,low
 pv,pv flux,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:359,low
 pv,pv fuzz,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:355,low
@@ -781,6 +791,9 @@ pv,pv lean-status,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contract
 pv,pv lint,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:218,low
 pv,pv migrate,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:497,low
 pv,pv mirai,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:357,low
+pv,pv obligations,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:398,high
+pv,pv ontology export,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:713,high
+pv,pv ontology tbox,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:725,high
 pv,pv pipeline,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:432,low
 pv,pv probar,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:55,low
 pv,pv proof-status,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:194,low

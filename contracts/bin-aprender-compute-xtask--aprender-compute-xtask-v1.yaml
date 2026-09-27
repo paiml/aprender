@@ -6,7 +6,7 @@
 # MEASURED 2026-09-26, batch/ont-10 @ dafb8194f, release build, default features:
 #   --help rc 0; --no-such-flag rc 2; --version = "aprender-compute-xtask 0.69.3"; options -h/-V only;
 #   3 subcommands, and surface_audit.csv has exactly those 3 rows (set-equal).
-# LIVE RED: G0.1 (no sha). No subcommand takes an enumerated value, so G1.3 is vacuous here.
+# G0.1 was LIVE RED 2026-09-26 (no sha); GREEN 2026-09-27 (build.rs embeds APR_GIT_SHA). No subcommand takes an enumerated value, so G1.3 is vacuous here.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
@@ -47,8 +47,8 @@ shapes:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-compute-xtask"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-compute-xtask"]}
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-compute-xtask [0-9]+\\.[0-9]+\\.[0-9]+"}
-      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
-      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      # G0.1 — GREEN 2026-09-27: build.rs embeds APR_GIT_SHA
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
       - path: bin:command
         minCount: 3
         maxCount: 3
@@ -95,7 +95,7 @@ falsification_tests:
     rule: 'G0.1 the version names the commit'
     prediction: '`aprender-compute-xtask --version` contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-26: `aprender-compute-xtask 0.69.3` — no sha'
+    if_fails: 'the build cannot be traced to a commit (was LIVE RED 2026-09-26: `aprender-compute-xtask 0.69.3`, no sha; GREEN 2026-09-27: `aprender-compute-xtask 0.69.3 (2d367b4d98)`)'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-COMPUTE-XTASK-004
     rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'

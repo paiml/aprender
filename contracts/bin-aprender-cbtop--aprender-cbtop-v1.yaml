@@ -5,9 +5,9 @@
 # MEASURED 2026-09-26, batch/ont-10 @ dafb8194f, release build, default features:
 #   --help rc 0; --no-such-flag rc 2; --version = "cbtop 0.69.3" (clap #[command(name = "cbtop")], src/main.rs:19);
 #   the --help walk gives 4 leaf commands and surface_audit.csv has exactly those 4 rows (set-equal).
-# LIVE RED: G0.1 (no sha); name pair — --version says "cbtop", the target is aprender-cbtop; G1.3 — `bench --backend
-#   nosuch`, `--workload nosuch`, `--format nosuch` each exit 0 and run with a default (values parsed after clap).
-# [U] [COMMAND] is optional: a bare invocation starts the TUI, and no ledger row names that root surface.
+# LIVE RED 2026-09-26, all GREEN 2026-09-27 (aprender-5d): G0.1 (no sha) — build.rs embeds APR_GIT_SHA; name pair —
+#   --version said "cbtop", now aprender-cbtop; G1.3 — bogus --backend/--workload/--format/--load/--compare exited 0 with
+#   a default, now clap value_parsers (exit 2); the bare invocation (TUI / --headless) now has its own ledger row.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
@@ -47,10 +47,10 @@ shapes:
     properties:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-cbtop"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-cbtop"]}
-      # LIVE RED 2026-09-26: "cbtop 0.69.3" — clap's command name is cbtop, not the target name; a warning until renamed
-      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-cbtop [0-9]+\\.[0-9]+\\.[0-9]+", severity: warning}
-      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
-      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      # was LIVE RED 2026-09-26 ("cbtop 0.69.3"); GREEN 2026-09-27: #[command(name = "aprender-cbtop")]
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-cbtop [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — GREEN 2026-09-27: build.rs embeds APR_GIT_SHA
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
       - path: bin:command
         minCount: 4
         maxCount: 4
@@ -98,17 +98,17 @@ falsification_tests:
     rule: 'G0.1 the version names the commit'
     prediction: '`aprender-cbtop --version` starts with the target name and contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-26: `cbtop 0.69.3` — no sha, and the name is cbtop, not aprender-cbtop'
+    if_fails: 'the build cannot be traced to a commit (was LIVE RED 2026-09-26: `cbtop 0.69.3`, no sha; GREEN 2026-09-27: `aprender-cbtop 0.69.3 (2d367b4d98)`)'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-APRENDER-CBTOP-004
     rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
-    prediction: '`aprender-cbtop bench --backend nosuch` exits 2 naming simd, wgpu, cuda, all; leaves(clap) = commands(snapshot)'
-    test: 'NOT YET WRITTEN — S19 (aprender-5d)'
-    if_fails: 'LIVE RED 2026-09-26: `bench --backend nosuch`, `bench --workload nosuch` and `bench --format nosuch` each exit 0 and run with a default — the values are parsed after clap and fall back silently'
-    mutation: 'add a subcommand without re-snapshotting; must turn RED naming it'
+    prediction: 'every enumerated flag (--backend, --load, --workload, --format, --compare items) is a clap value_parser: `aprender-cbtop bench --backend nosuch` exits 2 naming simd, wgpu, cuda, all; leaves(clap) = commands(snapshot)'
+    test: 'cargo test -p aprender-cbtop --bin aprender-cbtop g13_ (3 tests; the leaf-set half waits for extract:binary)'
+    if_fails: 'a typo in an enumerated flag runs with a silent default (was LIVE RED 2026-09-26: `bench --backend/--workload/--format nosuch` exit 0; GREEN 2026-09-27: those, `--load nosuch`, `bench --workload dot`, `bench --compare simd,nosuch` and `optimize analyze|check --format nosuch` all exit 2)'
+    mutation: 'drop value_parser = BACKENDS from bench --backend; `bench --backend nosuch` exits 0 and must turn RED. Add a subcommand without re-snapshotting; must turn RED naming it'
   - id: FALSIFY-BIN-APRENDER-CBTOP-005
     rule: 'ledger rows exist'
-    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = aprender-cbtop per leaf (4 on 2026-09-26)'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = aprender-cbtop per leaf (4) and one for the bare root surface (5 rows on 2026-09-27)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: 'a shipped command has no audited row (observed 2026-09-26: 4 of 4 ledgered, GREEN)'
+    if_fails: 'a shipped command has no audited row (observed 2026-09-27: 4 of 4 leaves ledgered, plus the root row `aprender-cbtop (interactive TUI; --headless)` added 2026-09-27, GREEN)'
     mutation: 'delete every aprender-cbtop row; must turn RED naming aprender-cbtop'
