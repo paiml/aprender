@@ -53,6 +53,13 @@ pub fn run(
     for w in &extraction.warnings {
         eprintln!("warning: {w}");
     }
+    if !extraction.unparsed.is_empty() {
+        eprintln!(
+            "skipped: {} crate-local YAML file(s) are not typed contracts, counted by neither Σ nor the census: {}",
+            extraction.unparsed.len(),
+            extraction.unparsed.join(", ")
+        );
+    }
     for r in &extraction.refused {
         eprintln!(
             "refused: PV-DUP-001 crate contract `{}` differs from another copy, not unioned: {}",

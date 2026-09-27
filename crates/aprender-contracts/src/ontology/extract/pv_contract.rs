@@ -40,6 +40,9 @@ pub struct Corpus {
     /// Contract files, byte order: every top-level file first, then the admitted crate files.
     pub files: Vec<std::path::PathBuf>,
     pub refused: Vec<RefusedStem>,
+    /// Crate-local YAML files (repo-relative) that do not parse as a typed `Contract` — not admitted, so the census
+    /// (which counts typed contracts) and the graph walk the same files. Top-level files are never put here.
+    pub unparsed: Vec<String>,
 }
 
 /// `<repo>/crates/*/contracts` for every crate that has a `Cargo.toml` (a directory is not a crate: the manifest-less
@@ -106,6 +109,15 @@ pub fn corpus(contract_dir: &Path) -> Corpus {
         files.retain(|f| f.file_name().is_some_and(|n| n != "ontology.yaml"));
         crate_files.extend(files);
     }
+    let mut unparsed = Vec::new();
+    crate_files.retain(|f| {
+        let typed = crate::schema::parse_contract(f).is_ok();
+        if !typed {
+            unparsed.push(rel_of(&root, f));
+        }
+        typed
+    });
+    unparsed.sort();
     crate_files.sort();
     let top_stems: std::collections::BTreeSet<String> = top.iter().map(|f| stem_of(f)).collect();
     let mut crate_contents: std::collections::BTreeMap<String, Vec<Vec<u8>>> =
@@ -150,7 +162,11 @@ pub fn corpus(contract_dir: &Path) -> Corpus {
             files.push(f);
         }
     }
-    Corpus { files, refused }
+    Corpus {
+        files,
+        refused,
+        unparsed,
+    }
 }
 
 /// Every contract document of the [`corpus`] (Σ excluded, refused crate copies excluded), in byte order:
