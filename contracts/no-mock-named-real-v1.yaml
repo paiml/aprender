@@ -1,0 +1,60 @@
+metadata:
+  kind: pattern   # cross-cutting test-hygiene guard over test sources, not a mathematical kernel
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering (la-72, TRACE-001 TR-04, #4559)
+  references:
+  - 'docs/specifications/TRACE-001-tracing-consumers.md §F5, row TR-04'
+  - 'crates/aprender-core/tests/monorepo_invariants.rs (FALSIFY-NMR-001/002)'
+  description: >
+    No test source defines a module or type named after a real workspace crate, outside
+    that crate. A mock named after the real thing makes a test read as exercising it:
+    `aprender-serve/tests/modality_matrix/common.rs` had a local `pub mod renacer`, and
+    QA-A08 "renacer::capture() API works correctly" passed against that mock without
+    touching renacer (crates/aprender-profile). The mock is now `mock_trace`.
+    Production adapter modules that WRAP the real crate (`storage::trueno`,
+    `ecosystem::realizar`) are out of scope; only test sources are checked.
+
+equations:
+  no_mock_named_real:
+    formula: |
+      forall f in test_sources(workspace), forall def in definitions(f):
+        def.kind = mod    -> def.name       not in lib_names \ {owner_lib(f)}
+        def.kind in {struct, enum, trait, type}
+                          -> snake(def.name) not in lib_names \ {owner_lib(f)}
+    domain: >
+      test_sources = .rs files under crates/ and src/ that sit under a tests/ directory
+      or are named tests.rs / *_test.rs / *_tests.rs; lib_names = every workspace
+      member's lib or proc-macro target name from `cargo metadata --no-deps`
+    codomain: bool
+    invariants:
+    - "use lines and comments never match; only definitions do"
+    - "a crate may name things after itself (owner_lib = longest package dir prefix)"
+
+proof_obligations:
+- type: invariant
+  property: No test mock carries a real crate's name
+  formal: 'violations(HEAD) = ∅ ∧ scanned ≥ 1000 test files ∧ |lib_names| ≥ 20'
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-NMR-001
+  rule: The matcher's case table holds
+  prediction: 'RED on `mod trueno {`, `pub mod renacer {`, `pub(crate) mod realizar;`, `struct Renacer;`, `pub enum TruenoDb`, `trait Realizar`; GREEN on `mod mock_trace`, `use trueno::…`, comments, `mod trueno_tests`, `struct RenacerLike`'
+  test: 'cargo test -p aprender-core --test monorepo_invariants falsify_nmr_001'
+  if_fails: 'the matcher regressed; fix it against the table, never by editing the table'
+- id: FALSIFY-NMR-002
+  rule: Zero hits at HEAD, and the scan is not vacuous
+  prediction: 'no violations; ≥ 1000 test files scanned; renacer is among the lib names'
+  test: 'cargo test -p aprender-core --test monorepo_invariants falsify_nmr_002'
+  if_fails: 'rename the offending mock (e.g. mock_trace) so no test reads as exercising the real crate'
+- id: FALSIFY-NMR-003
+  rule: Planted mutant — restoring the old mock name turns the gate RED
+  prediction: 'with common.rs `pub mod mock_trace` reverted to `pub mod renacer`, FALSIFY-NMR-002 FAILS naming common.rs'
+  test: 'sed the rename back in a scratch tree, run FALSIFY-NMR-002, expect a failure naming the file'
+  if_fails: 'the scan does not reach aprender-serve/tests, or the matcher misses `pub mod`'
+
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: The gate is the invariant above; no composite score is claimed.

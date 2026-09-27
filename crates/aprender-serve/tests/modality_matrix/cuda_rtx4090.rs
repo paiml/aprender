@@ -38,7 +38,7 @@ fn test_cuda_kernel_execution() {
 
     force_backend(Backend::Cuda);
 
-    // Simulate trace that renacer would capture
+    // Hand-built mock trace (renacer is not run here)
     let mut trace = ExecutionTrace::new();
 
     // THE CRITICAL SPAN: gpu_kernel with backend="cuda"

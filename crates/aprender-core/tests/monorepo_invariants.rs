@@ -1023,3 +1023,209 @@ fn falsify_ggml_003_extractor_case_table_passes() {
         .unwrap_or_else(|| panic!("the self-test did not report a case count:\n{stdout}"));
     assert!(ran >= 7, "the extractor case table ran only {ran} case(s)");
 }
+
+/// `no-mock-named-real-v1` (TRACE-001 TR-04): the name a TEST file gives to a module
+/// or type, when that name is a real workspace crate's lib name. Returns one
+/// `"<line>: <name>"` per hit. A module matches its lib name exactly (`mod trueno`); a
+/// type matches in CamelCase (`struct Renacer` for `renacer`). `use` lines and comments
+/// never match: only definitions do.
+fn mock_named_real_hits(src: &str, libs: &HashSet<String>) -> Vec<String> {
+    let mut hits = Vec::new();
+    for (i, raw) in src.lines().enumerate() {
+        let line = raw.trim_start();
+        let line = line
+            .strip_prefix("pub(crate) ")
+            .or_else(|| line.strip_prefix("pub(super) "))
+            .or_else(|| line.strip_prefix("pub "))
+            .unwrap_or(line);
+        let (kw_rest, is_mod) = if let Some(r) = line.strip_prefix("mod ") {
+            (r, true)
+        } else if let Some(r) = ["struct ", "enum ", "trait ", "type "]
+            .iter()
+            .find_map(|kw| line.strip_prefix(kw))
+        {
+            (r, false)
+        } else {
+            continue;
+        };
+        let name: String = kw_rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        let as_lib = if is_mod {
+            name.clone()
+        } else {
+            // CamelCase -> snake_case: `TruenoDb` -> `trueno_db`.
+            let mut s = String::new();
+            for (j, c) in name.chars().enumerate() {
+                if c.is_ascii_uppercase() && j > 0 {
+                    s.push('_');
+                }
+                s.push(c.to_ascii_lowercase());
+            }
+            s
+        };
+        if libs.contains(&as_lib) {
+            hits.push(format!("{}: {name}", i + 1));
+        }
+    }
+    hits
+}
+
+/// A test source file: under a `tests/` directory, or named `tests.rs` / `*_test(s).rs`.
+fn is_test_source(rel: &str) -> bool {
+    let file = rel.rsplit('/').next().unwrap_or(rel);
+    rel.contains("/tests/")
+        || file == "tests.rs"
+        || file.ends_with("_test.rs")
+        || file.ends_with("_tests.rs")
+}
+
+/// FALSIFY-NMR-001 (case table): the matcher is RED on each planted mock-named-real
+/// shape and GREEN on each legitimate one. Re-run this table, don't re-read the matcher.
+#[test]
+fn falsify_nmr_001_mock_named_real_case_table() {
+    let libs: HashSet<String> = ["trueno", "renacer", "trueno_db", "realizar"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let red = [
+        "mod trueno {",
+        "    pub mod renacer {",
+        "pub(crate) mod realizar;",
+        "struct Renacer;",
+        "pub enum TruenoDb { A }",
+        "trait Realizar {}",
+    ];
+    let green = [
+        "mod mock_trace {",
+        "use trueno::Vector;",
+        "// mod trueno {",
+        "/// pub mod renacer {",
+        "mod trueno_tests {",
+        "struct RenacerLike;",
+        "let trueno = 1;",
+        "mod tests {",
+    ];
+    for s in red {
+        assert_eq!(
+            mock_named_real_hits(s, &libs).len(),
+            1,
+            "must be RED (a mock named after a real crate): {s:?}"
+        );
+    }
+    for s in green {
+        assert!(
+            mock_named_real_hits(s, &libs).is_empty(),
+            "must be GREEN: {s:?}"
+        );
+    }
+    assert!(is_test_source("crates/x/tests/modality_matrix/common.rs"));
+    assert!(is_test_source("crates/x/src/lint/mod_tests.rs"));
+    assert!(!is_test_source("crates/x/src/storage/trueno.rs"));
+}
+
+/// FALSIFY-NMR-002 (`no-mock-named-real-v1`, TRACE-001 TR-04): no test source in the
+/// workspace defines a module or type named after a real workspace crate outside that
+/// crate. The shape this catches: `aprender-serve/tests/modality_matrix/common.rs` had a
+/// local mock `pub mod renacer`, so QA-A08 "renacer::capture() works" passed against
+/// the mock and never touched renacer. Production adapter modules (`storage::trueno`,
+/// `ecosystem::realizar`) are out of scope: they wrap the real crate, they don't fake it.
+#[test]
+fn falsify_nmr_002_no_mock_named_after_a_real_crate() {
+    let root = workspace_root();
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(&root)
+        .output()
+        .expect("cargo metadata failed");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+            .expect("failed to parse cargo metadata");
+    // (package dir relative to root, lib name) for every workspace member with a lib.
+    let mut owners: Vec<(String, String)> = Vec::new();
+    for pkg in metadata["packages"].as_array().expect("no packages") {
+        let dir = Path::new(pkg["manifest_path"].as_str().unwrap_or(""))
+            .parent()
+            .and_then(|d| d.strip_prefix(&root).ok())
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        for t in pkg["targets"].as_array().into_iter().flatten() {
+            let kinds = t["kind"].to_string();
+            if kinds.contains("\"lib\"") || kinds.contains("proc-macro") {
+                owners.push((dir.clone(), t["name"].as_str().unwrap_or("").to_string()));
+            }
+        }
+    }
+    let libs: HashSet<String> = owners.iter().map(|(_, l)| l.clone()).collect();
+    assert!(
+        libs.len() >= 20,
+        "only {} lib names: metadata read wrong",
+        libs.len()
+    );
+    assert!(
+        libs.contains("renacer"),
+        "renacer must be a workspace lib name"
+    );
+
+    let mut stack = vec![root.join("crates"), root.join("src")];
+    let (mut scanned, mut violations) = (0usize, Vec::new());
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if p.file_name().is_some_and(|n| n != "target") {
+                    stack.push(p);
+                }
+                continue;
+            }
+            let rel = p
+                .strip_prefix(&root)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .into_owned();
+            if !rel.ends_with(".rs") || !is_test_source(&rel) {
+                continue;
+            }
+            let Ok(src) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            scanned += 1;
+            // The owning crate is the longest package dir that prefixes the path; a
+            // crate may name things after itself.
+            let own = owners
+                .iter()
+                .filter(|(d, _)| !d.is_empty() && rel.starts_with(&format!("{d}/")))
+                .max_by_key(|(d, _)| d.len())
+                .map(|(_, l)| l.as_str());
+            for hit in mock_named_real_hits(&src, &libs) {
+                let name_lib = hit.rsplit(": ").next().unwrap_or("");
+                let snake: String = name_lib
+                    .chars()
+                    .enumerate()
+                    .flat_map(|(j, c)| {
+                        let sep = (c.is_ascii_uppercase() && j > 0).then_some('_');
+                        sep.into_iter()
+                            .chain(std::iter::once(c.to_ascii_lowercase()))
+                    })
+                    .collect();
+                if own != Some(snake.as_str()) {
+                    violations.push(format!("{rel}:{hit}"));
+                }
+            }
+        }
+    }
+    assert!(
+        scanned >= 1000,
+        "scanned only {scanned} test files: the walk is broken"
+    );
+    assert!(
+        violations.is_empty(),
+        "no-mock-named-real-v1: test code defines a module/type named after a real workspace \
+         crate. Rename it (e.g. `mock_trace`) so no test reads as exercising the real crate:\n{}",
+        violations.join("\n")
+    );
+}
