@@ -1,0 +1,92 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "The §10 readiness section of the cop's hourly report (APR-LOOKAHEAD-001 §6, LA-05 #4546) is derived, never declared. `lookahead.py readiness` reads each slot's handoff block and judges it against the tree: a top-10 row of train N+1 is Ready only when its spec and baseline are files that exist, its contract is a file under contracts/, its falsifier ID appears in that contract, and it has an owner. An exit criterion counts as met only with a receipt file; the N+2 theme is ruled only when 06x-release-schedule.md carries its row; the N+3 risk register and measurement plan are files, not flags. `lookahead.py latency` writes the train-start latency receipt (tag of N → first merged PR of N+1, target ≤ 120 min)."
+  kind: pattern
+  references:
+    - "docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md — §6 Definition of Ready and metrics, §10 report schema, §9 LA-05"
+    - "scripts/lookahead/lookahead.py — `readiness` and `latency` verbs"
+    - "docs/lookahead/0.71.md, 0.72.md, 0.73.md — the handoff blocks it reads"
+    - "scripts/check_lookahead.sh — LA-05 rows and mutants"
+
+five_whys:
+  symptom: "A train could start with its top rows missing a spec, a contract or a baseline, and nobody would know until the first PR."
+  why_1: "Readiness was a worker's claim in prose; 'ready' cost nothing to write."
+  why_2: "A self-declared flag (risk_register: true, V5: met) is indistinguishable from the thing it names."
+  why_3: "Train-start latency was never measured, so a slow start could not be told from a fast one."
+  why_4: "No planted unready row ever ran against the renderer."
+  why_5: "The Definition of Ready had no machine-read home."
+  root_cause: "Readiness lived in claims. The remedy puts rows in a machine-read handoff block, judges every path and ID against the tree, and plants a top-10 row with no contract."
+
+equations:
+  row_ready:
+    formula: "ready(r) ⇔ file(r.spec) ∧ r.contract ∈ contracts/ ∧ file(r.contract) ∧ r.falsifier ∈ text(r.contract) ∧ file(r.baseline) ∧ r.owner ≠ ∅"
+    domain: "one handoff row and the repo tree"
+    codomain: "bool, with the reasons when false"
+    invariants:
+      - "a path outside the repo (absolute, or with ..) is never a file in the tree"
+  n_plus_1_ready:
+    formula: "READY(N+1) ⇔ |top10| = 10 ∧ ∀ r ∈ top10: ready(r) ∧ |first5_prs with owner| ≥ 5 ∧ every pending question has a ruling request ∧ epic groomed = 100%"
+    domain: "the L1 handoff block, the tree, and the epic grooming counts"
+    codomain: "exit 0 READY | 1 NOT READY with reasons | 2 cannot judge"
+    invariants:
+      - "top10 is by `ev`, highest first; a row below the top 10 does not affect readiness"
+      - "epic grooming with no evidence is 'unverified', which is not ready"
+  criterion_met:
+    formula: "shown_met(c) ⇔ c = {status: met, receipt: f} ∧ file(f)"
+    domain: "one exit criterion of a handoff"
+    codomain: "open | met | moved"
+  train_start_latency:
+    formula: "latency(N) = min{mergedAt(p) : milestone(p) = N+1 ∧ mergedAt(p) ≥ tag_at(N)} − tag_at(N); met ⇔ latency ≤ 120 min"
+    domain: "the tag time and the merged-PR list"
+    codomain: "one JSON receipt"
+
+proof_obligations:
+  - id: LAR-INV-001
+    type: invariant
+    property: "A top-10 row without a contract shows NOT READY"
+    formal: "∃ r ∈ top10: ¬file(r.contract) ⇒ readiness = NOT READY naming r"
+    applies_to: n_plus_1_ready
+  - id: LAR-INV-002
+    type: invariant
+    property: "A criterion marked met without a receipt stays open"
+    formal: "c = met ∧ no receipt ⇒ shown(c) = open ∧ NOT READY"
+    applies_to: criterion_met
+  - id: LAR-INV-003
+    type: invariant
+    property: "Latency counts only PRs merged after the tag"
+    formal: "mergedAt(p) < tag_at ⇒ p ∉ latency candidates"
+    applies_to: train_start_latency
+  - id: LAR-INV-004
+    type: invariant
+    property: "The guard still fails on the defects it names"
+    formal: "∀ m ∈ {row-contract-unchecked, falsifier-unchecked, met-trusted, epic-unchecked, latency-before-tag-counted}: guard(m) ≠ 0"
+    applies_to: row_ready
+
+falsification_tests:
+  - id: FALSIFY-LAR-001
+    rule: "A planted top-10 row without a contract shows NOT READY; a fully ready fixture shows READY"
+    prediction: "the LA-05 rows of the case table are GREEN"
+    test: "bash scripts/check_lookahead.sh"
+    if_fails: "Readiness is claimed, not derived"
+  - id: FALSIFY-LAR-002
+    rule: "The guard can still fail"
+    prediction: "every LA-05 mutant turns at least one row RED"
+    test: "bash scripts/check_lookahead.sh --self-test"
+    if_fails: "The readiness rows are theater"
+  - id: FALSIFY-LAR-003
+    rule: "The committed handoffs are machine-readable"
+    prediction: "`lookahead.py readiness` on a legal state over the committed handoffs judges them (exit 0 or 1, never 2)"
+    test: "d=$(mktemp -d) && printf '{\"current_train\": \"0.70\", \"slots\": {\"L1\": {\"train\": \"0.71\", \"worker\": \"a\", \"since\": \"2026-09-27T10:00:00Z\", \"heartbeat\": \"2026-09-27T10:00:00Z\", \"handoff\": \"docs/lookahead/0.71.md\"}, \"L2\": {\"train\": \"0.72\", \"worker\": \"b\", \"since\": \"2026-09-27T10:00:00Z\", \"heartbeat\": \"2026-09-27T10:00:00Z\", \"handoff\": \"docs/lookahead/0.72.md\"}, \"L3\": {\"train\": \"0.73\", \"worker\": \"c\", \"since\": \"2026-09-27T10:00:00Z\", \"heartbeat\": \"2026-09-27T10:00:00Z\", \"handoff\": \"docs/lookahead/0.73.md\"}}}' > \"$d/s.json\" && python3 scripts/lookahead/lookahead.py readiness \"$d/s.json\" >/dev/null; rc=$?; rm -f \"${d:?}/s.json\"; rmdir \"$d\"; [ \"$rc\" -le 1 ]"
+    if_fails: "A committed handoff lost its lookahead-handoff block; the readiness report cannot be rendered"
+
+qa_gate:
+  id: F-LAR-001
+  name: "Readiness is derived from the tree"
+  description: "lookahead.py readiness renders §10 readiness from the handoff blocks judged against the tree; lookahead.py latency writes the train-start receipt at each tag. scripts/check_lookahead.sh runs in guard_tree.sh's --no-cargo step."
+  checks:
+    - "row_ready"
+    - "n_plus_1_ready"
+    - "criterion_met"
+    - "train_start_latency"

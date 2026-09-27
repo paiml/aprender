@@ -11,6 +11,8 @@ The cop is the single writer of that file; workers write heartbeat files.
   respawn STATE --slot L --worker NEW LA-02  refill a dead slot; refuse a live one
   prompt --slot L --train X.Y         LA-03  the §7 standing prompt, checked against the spec
   pr-budget STATE --prs SNAP          LA-04  §2 open-PR budgets, repo-cap yield order, queue order
+  readiness STATE                     LA-05  §6 Definition of Ready, judged against the tree
+  latency --tag V --tag-at T ...      LA-05  train-start latency receipt (tag N -> first PR of N+1)
 
 Exit codes, shared by every verb:
   0  the property holds (or the action was done)
@@ -507,8 +509,184 @@ def cmd_pr_budget(args):
     return 1 if actions else 0
 
 
+# ---- LA-05: readiness (§6) and train-start latency ---------------------------------
+SCHEDULE_DOC = "docs/specifications/06x-release-schedule.md"
+CRITERION_STATES = ("open", "met", "moved")
+LATENCY_TARGET_MIN = 120  # §6: tag of N -> first merged PR of N+1
+
+
+def tree_file(root, rel):
+    """A handoff path is judged against the tree: a repo-relative file that exists
+    (an `#anchor` suffix is allowed on spec paths)."""
+    if not isinstance(rel, str) or not rel or rel.startswith("/") or ".." in rel.split("/"):
+        return False
+    return os.path.isfile(os.path.join(root, rel.split("#", 1)[0]))
+
+
+def row_problems(root, row):
+    """Why one handoff row is not Ready (§6: spec, contract, planted falsifier, baseline, owner)."""
+    if not isinstance(row, dict):
+        return ["row is not an object"]
+    out = []
+    if not tree_file(root, row.get("spec")):
+        out.append(f"spec {row.get('spec')!r} not in the tree")
+    contract = row.get("contract")
+    if not (isinstance(contract, str) and contract.startswith("contracts/") and tree_file(root, contract)):
+        out.append(f"contract {contract!r} not a file under contracts/")
+    else:
+        fid = row.get("falsifier")
+        with open(os.path.join(root, contract), encoding="utf-8") as fh:
+            if not (isinstance(fid, str) and fid and re.search(rf"\b{re.escape(fid)}\b", fh.read())):
+                out.append(f"falsifier {fid!r} not in {contract}")
+    if not tree_file(root, row.get("baseline")):
+        out.append(f"baseline {row.get('baseline')!r} not in the tree")
+    if not (isinstance(row.get("owner"), str) and row["owner"].strip()):
+        out.append("no owner proposed")
+    return out
+
+
+def ranked(rows):
+    """Rows by EV, highest first; a row without a numeric `ev` is unranked and sorts last."""
+    def key(r):
+        ev = r.get("ev") if isinstance(r, dict) else None
+        return -ev if isinstance(ev, (int, float)) and not isinstance(ev, bool) else float("inf")
+    return sorted(rows, key=key)
+
+
+def criteria_view(root, crit, problems, train):
+    """`met` counts only with a receipt file in the tree; anything else stays open."""
+    view = {}
+    for cid, val in sorted((crit or {}).items()):
+        status = val.get("status") if isinstance(val, dict) else val
+        if status not in CRITERION_STATES:
+            problems.append(f"{train} {cid}: status {status!r} not one of {'|'.join(CRITERION_STATES)}")
+            status = "open"
+        elif status == "met" and not (isinstance(val, dict) and tree_file(root, val.get("receipt"))):
+            problems.append(f"{train} {cid}: met without a receipt file in the tree")
+            status = "open"
+        view[cid] = status
+    return view
+
+
+def theme_ruled(root, train, theme):
+    try:
+        with open(os.path.join(root, SCHEDULE_DOC), encoding="utf-8") as fh:
+            text = fh.read()
+    except FileNotFoundError:
+        return False
+    return bool(theme) and re.search(rf"^\| {re.escape(train)} \| \*\*{re.escape(theme)}\*\* \|", text, re.M) is not None
+
+
+def readiness_report(state, root, epics):
+    slots = state["slots"]
+    ho = {s: load_handoff(root, slots[s]["handoff"]) for s in SLOTS}
+    problems = {s: [] for s in SLOTS}
+    for s in SLOTS:
+        if ho[s].get("train") != slots[s]["train"]:
+            problems[s].append(f"handoff names train {ho[s].get('train')!r}, slot holds {slots[s]['train']}")
+    exit_criteria = {slots[s]["train"]: criteria_view(root, ho[s].get("exit_criteria"), problems[s], slots[s]["train"])
+                     for s in SLOTS}
+    # N+1: the Definition of Ready at the cut of N
+    h1, t1 = ho["L1"], slots["L1"]["train"]
+    top10 = ranked(h1.get("rows") or [])[:10]
+    ready10 = 0
+    for r in top10:
+        why = row_problems(root, r)
+        if why:
+            problems["L1"].append(f"row {r.get('id', '?') if isinstance(r, dict) else '?'}: {'; '.join(why)}")
+        else:
+            ready10 += 1
+    if len(top10) < 10:
+        problems["L1"].append(f"only {len(top10)} rows ranked; the top 10 must each be Ready")
+    first5 = h1.get("first5_prs") or []
+    first5_ok = len(first5) >= 5 and all(isinstance(p, dict) and str(p.get("owner", "")).strip() for p in first5[:5])
+    if not first5_ok:
+        problems["L1"].append("first 5 PRs not identified with owners")
+    pending = [q for q in h1.get("rulings_pending") or [] if not (isinstance(q, dict) and q.get("request"))]
+    if pending:
+        problems["L1"].append(f"{len(pending)} operator question(s) without a filed ruling request")
+    groomed = None
+    ep = (epics or {}).get(str(h1.get("epic")))
+    if isinstance(ep, dict) and isinstance(ep.get("tickets"), int) and ep["tickets"] > 0:
+        groomed = round(100 * ep.get("groomed", 0) / ep["tickets"])
+    if groomed != 100:
+        problems["L1"].append("epic grooming unverified" if groomed is None else f"epic {groomed}% groomed")
+    # N+2: theme ruled, top 20 ranked, top 5 specified
+    h2, t2 = ho["L2"], slots["L2"]["train"]
+    rows2 = h2.get("rows") or []
+    ranked2 = [r for r in rows2 if isinstance(r, dict) and isinstance(r.get("ev"), (int, float))]
+    spec5 = sum(1 for r in ranked(rows2)[:5] if isinstance(r, dict) and tree_file(root, r.get("spec"))
+                and tree_file(root, r.get("contract")) and str(r.get("contract")).startswith("contracts/"))
+    ruled2 = theme_ruled(root, t2, h2.get("theme"))
+    # N+3: theme proposed, risk register, measurement plan (files, not flags)
+    h3 = ho["L3"]
+    report = {
+        "exit_criteria": exit_criteria,
+        "n_plus_1": {"train": t1, "epic_groomed_pct": groomed, "top10_ready": f"{ready10}/10",
+                     "first5_prs_identified": first5_ok, "rulings_pending": len(pending),
+                     "ready": not problems["L1"]},
+        "n_plus_2": {"train": t2, "theme_ruled": ruled2, "top20_ranked": len(ranked2) >= 20,
+                     "top5_specified": f"{spec5}/5"},
+        "n_plus_3": {"train": slots["L3"]["train"], "theme_proposed": bool(str(h3.get("theme") or "").strip()),
+                     "risk_register": tree_file(root, h3.get("risk_register")),
+                     "measurement_plan": tree_file(root, h3.get("measurement_plan"))},
+        "not_ready": {s: problems[s] for s in SLOTS if problems[s]},
+    }
+    return report
+
+
+def cmd_readiness(args):
+    """LA-05: the §10 `readiness` section, every field derived from the handoff blocks
+    judged against the tree. Exit 1 while train N+1 is NOT READY."""
+    pos, opts = parse_opts(args, {"root", "epics"})
+    if len(pos) != 1:
+        raise CannotJudge("usage: readiness STATE [--root REPO] [--epics EPICS.json]")
+    state, bad = load_legal_state(pos[0])
+    if bad:
+        raise CannotJudge(f"{pos[0]} is not a legal state ({bad[0][0]}: {bad[0][1]})")
+    epics = load_json(opts["epics"]) if opts.get("epics") else None
+    rep = readiness_report(state, opts.get("root") or ROOT, epics)
+    print(json.dumps({"readiness": rep}, indent=2))
+    t1 = rep["n_plus_1"]["train"]
+    if rep["n_plus_1"]["ready"]:
+        print(f"READY {t1}")
+        return 0
+    for why in rep["not_ready"].get("L1", []):
+        print(f"NOT READY {t1}: {why}")
+    return 1
+
+
+def cmd_latency(args):
+    """LA-05: train-start latency receipt -- minutes from the tag of N to the first
+    merged PR of N+1 (`gh pr list --state merged --json number,milestone,mergedAt`)."""
+    pos, opts = parse_opts(args, {"tag", "tag_at", "train", "merged"})
+    if pos or not all(opts.get(k) for k in ("tag", "tag_at", "train", "merged")):
+        raise CannotJudge("usage: latency --tag vX.Y.Z --tag-at T --train X.Y --merged GH_MERGED.json")
+    tag_at = parse_ts(opts["tag_at"], "--tag-at")
+    merged = load_json(opts["merged"])
+    if not isinstance(merged, list):
+        raise CannotJudge(f"{opts['merged']}: not a PR list")
+    first = None
+    for raw in merged:
+        pr = normalize_pr(raw)
+        at = raw.get("mergedAt") if isinstance(raw, dict) else None
+        if pr_train(pr) != opts["train"] or not at:
+            continue
+        when = parse_ts(at, f"#{pr['number']}.mergedAt")
+        if when >= tag_at and (first is None or when < first[1]):
+            first = (pr["number"], when)
+    rec = {"tag": opts["tag"], "tag_at": fmt_ts(tag_at), "train": opts["train"],
+           "first_pr": first[0] if first else None,
+           "latency_min": int((first[1] - tag_at).total_seconds() // 60) if first else None,
+           "target_min": LATENCY_TARGET_MIN}
+    rec["met"] = rec["latency_min"] is not None and rec["latency_min"] <= LATENCY_TARGET_MIN
+    print(json.dumps(rec))
+    return 0 if rec["met"] else 1
+
+
 VERBS = {"validate": cmd_validate, "heartbeat": cmd_heartbeat, "tick": cmd_tick,
-         "respawn": cmd_respawn, "prompt": cmd_prompt, "pr-budget": cmd_pr_budget}
+         "respawn": cmd_respawn, "prompt": cmd_prompt, "pr-budget": cmd_pr_budget,
+         "readiness": cmd_readiness, "latency": cmd_latency}
 
 
 def main(argv):

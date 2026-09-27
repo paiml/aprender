@@ -186,6 +186,74 @@ run_table() {
     row "budget/gh-json-accepted" 1 '^BLOCK #6' -- la pr-budget "$T/good.json" --prs "$T/gh.json" --cap 10
     printf '{"prs": []}\n' > "$T/nocap.json"
     row "budget/no-cap-cannot-judge" 2 'CANNOT-JUDGE' -- la pr-budget "$T/good.json" --prs "$T/nocap.json"
+
+    # LA-05 lookahead-readiness-v1 --------------------------------------------------
+    # ready_repo DIR [MUTATION] -- a fixture repo whose 0.71 handoff is fully Ready;
+    # MUTATION plants one defect (see the python below).
+    ready_repo() {
+        python3 - "$1" "${2:-}" <<'FIX'
+import json, os, sys
+root, mut = sys.argv[1], sys.argv[2]
+def w(rel, text):
+    os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+    open(os.path.join(root, rel), "w").write(text)
+w("docs/specifications/s.md", "# spec\n")
+w("contracts/c-v1.yaml", "falsification_tests:\n  - id: FALSIFY-C-001\n")
+w("docs/baselines/b.json", "{}\n")
+w("docs/lookahead/risks-0.73.md", "# risks\n")
+w("docs/specifications/06x-release-schedule.md",
+  "| 0.71 | **Verbs Are Fast** | #3598 |\n| 0.72 | **Train What You Serve** | #4000 |\n")
+row = lambda i, ev: {"id": f"R{i}", "ev": ev, "spec": "docs/specifications/s.md#r", "contract": "contracts/c-v1.yaml",
+                     "falsifier": "FALSIFY-C-001", "baseline": "docs/baselines/b.json", "owner": "kreg"}
+rows = [row(i, 100 - i) for i in range(10)] + [{"id": "R-low", "ev": 1}]  # an unready 11th row is outside the top 10
+h1 = {"train": "0.71", "epic": 3598, "theme": "Verbs Are Fast", "updated": "2026-09-27T11:00:00Z",
+      "exit_criteria": {"V1": "open", "V5": {"status": "met", "receipt": "docs/baselines/b.json"}},
+      "rows": rows, "first5_prs": [{"title": f"p{i}", "owner": "kreg"} for i in range(5)],
+      "rulings_pending": [{"q": "scope?", "request": "#9999"}]}
+h2 = {"train": "0.72", "theme": "Train What You Serve", "updated": "2026-09-27T11:00:00Z", "exit_criteria": {},
+      "rows": [row(i, 50 - i) for i in range(20)]}
+h3 = {"train": "0.73", "theme": "Runs Everywhere", "updated": "2026-09-27T11:00:00Z", "exit_criteria": {},
+      "risk_register": "docs/lookahead/risks-0.73.md", "measurement_plan": "docs/lookahead/absent.md"}
+if mut == "no-contract":
+    rows[3]["contract"] = "contracts/missing-v1.yaml"
+if mut == "falsifier-absent":
+    rows[3]["falsifier"] = "FALSIFY-C-999"
+if mut == "met-no-receipt":
+    h1["exit_criteria"]["V5"] = "met"
+if mut == "question-unfiled":
+    h1["rulings_pending"].append({"q": "theme?"})
+if mut == "four-prs":
+    h1["first5_prs"].pop()
+if mut == "spec-outside-tree":
+    rows[0]["spec"] = "../../etc/passwd"
+for t, h in (("0.71", h1), ("0.72", h2), ("0.73", h3)):
+    w(f"docs/lookahead/{t}.md", "```json lookahead-handoff\n" + json.dumps(h) + "\n```\n")
+w("epics.json", json.dumps({"3598": {"tickets": 12, "groomed": 11 if mut == "epic-11-of-12" else 12}}))
+FIX
+    }
+    local D m
+    D="$T/ready"; ready_repo "$D"
+    row "ready/fully-ready-n+1" 0 '^READY 0.71$' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    row "ready/top10-rendered" 0 '"top10_ready": "10/10"' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    row "ready/n+2-derived" 0 '"top5_specified": "5/5"' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    row "ready/n+2-theme-ruled-from-schedule" 0 '"theme_ruled": true' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    row "ready/n+3-absent-plan-is-false" 0 '"measurement_plan": false' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    row "ready/met-with-receipt-counts" 0 '"V5": "met"' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    # the planted top-10 row without a contract shows NOT READY, naming the row
+    D="$T/r-nc"; ready_repo "$D" no-contract
+    row "ready/top10-row-without-contract-not-ready" 1 '^NOT READY 0.71: row R3: contract' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    for m in falsifier-absent met-no-receipt question-unfiled four-prs spec-outside-tree epic-11-of-12; do
+        D="$T/r-$m"; ready_repo "$D" "$m"
+        row "ready/$m-not-ready" 1 '^NOT READY 0.71' -- la readiness "$T/good.json" --root "$D" --epics "$D/epics.json"
+    done
+    row "ready/epics-absent-unverified" 1 'NOT READY 0.71: epic grooming unverified' -- la readiness "$T/good.json" --root "$T/ready"
+    row "ready/handoff-missing-cannot-judge" 2 'CANNOT-JUDGE' -- la readiness "$T/good.json" --root "$T/empty-root"
+    # train-start latency receipt
+    printf '[{"number": 11, "milestone": {"title": "0.71.0"}, "mergedAt": "2026-09-27T19:30:00Z"}, {"number": 12, "milestone": {"title": "0.71.0"}, "mergedAt": "2026-09-27T18:40:00Z"}, {"number": 13, "milestone": {"title": "0.70.0"}, "mergedAt": "2026-09-27T18:10:00Z"}, {"number": 14, "milestone": {"title": "0.71.0"}, "mergedAt": "2026-09-27T17:00:00Z"}]\n' > "$T/merged.json"
+    row "latency/first-n+1-pr-after-tag" 0 '"first_pr": 12, "latency_min": 40' -- la latency --tag v0.70.0 --tag-at 2026-09-27T18:00:00Z --train 0.71 --merged "$T/merged.json"
+    printf '[{"number": 11, "milestone": {"title": "0.71.0"}, "mergedAt": "2026-09-27T19:30:00Z"}]\n' > "$T/merged-late.json"
+    row "latency/over-target-not-met" 1 '"latency_min": 150, "target_min": 120, "met": false' -- la latency --tag v0.70.0 --tag-at 2026-09-27T17:00:00Z --train 0.71 --merged "$T/merged-late.json"
+    row "latency/none-yet-pending" 1 '"first_pr": null' -- la latency --tag v0.70.0 --tag-at 2026-09-27T20:00:00Z --train 0.71 --merged "$T/merged.json"
 }
 
 run_all() {
@@ -216,6 +284,11 @@ MUTANTS=(
   "l2-draft-unchecked|        if s == \"L2\" and code and not p.get(\"draft\"):|        if False:"
   "queue-order-unchecked|        if i < last_train:|        if False:"
   "yield-order-reversed|YIELD_ORDER = [\"L3\", \"L2\", \"L1\"]|YIELD_ORDER = [\"L1\", \"L2\", \"L3\"]"
+  "row-contract-unchecked|        out.append(f\"contract {contract!r} not a file under contracts/\")|        pass"
+  "falsifier-unchecked|                out.append(f\"falsifier {fid!r} not in {contract}\")|                pass"
+  "met-trusted|        elif status == \"met\" and not|        elif False and not"
+  "epic-unchecked|    if groomed != 100:|    if False:"
+  "latency-before-tag-counted|        if when >= tag_at and|        if True and"
   "cannot-judge-passes|        return 2\n\n\nif __name__|        return 0\n\n\nif __name__"
 )
 
