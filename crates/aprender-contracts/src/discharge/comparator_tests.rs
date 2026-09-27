@@ -401,3 +401,48 @@ fn expected_roots_reads_the_listed_files_and_an_unreadable_one_is_an_error() {
     let gone = vec![PathBuf::from("Challenge/gone-v1.lean")];
     assert!(expected_roots(d.path(), &gone).is_err());
 }
+
+/// #4202: a root several contracts cite is rendered into each of their Challenge files. The identical row from a
+/// later file is that one challenge, counted once; a DIFFERING row for the name, or the name twice within one file,
+/// still reaches the judge and fails `DUPLICATE`.
+#[test]
+fn identical_rows_across_files_are_one_shared_root_and_anything_else_is_duplicate() {
+    let (rows, shared) = merge_file_rows(vec![
+        vec![closed("A.f"), closed("A.g")],
+        vec![closed("A.f"), closed("B.h")],
+        vec![closed("A.f")],
+    ]);
+    assert_eq!(shared, 2);
+    let (r, c) = judge(&rows);
+    assert!(fails(&r).is_empty(), "{:?}", r.lines);
+    assert_eq!(
+        c,
+        Closure {
+            closed: 3,
+            total: 3
+        }
+    );
+
+    let weaker = row("A.f", Some(h(1)), Some(h(2)), Some(&["propext"]));
+    let (rows, shared) = merge_file_rows(vec![vec![closed("A.f")], vec![weaker]]);
+    assert_eq!(shared, 0);
+    let (r, _) = judge(&rows);
+    assert!(
+        fails(&r)
+            .iter()
+            .any(|f| f.contains("DUPLICATE PvlChallenge.A.f")),
+        "{:?}",
+        r.lines
+    );
+
+    let (rows, shared) = merge_file_rows(vec![vec![closed("A.f"), closed("A.f")]]);
+    assert_eq!(shared, 0);
+    let (r, _) = judge(&rows);
+    assert!(
+        fails(&r)
+            .iter()
+            .any(|f| f.contains("DUPLICATE PvlChallenge.A.f")),
+        "{:?}",
+        r.lines
+    );
+}
