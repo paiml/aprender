@@ -18191,6 +18191,29 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-3150
+  github_issue: 3150
+  item_type: task
+  title: 'P0: const-generic rank-checked tensor (Burn''s Tensor<B,D,K>) — make LAYOUT-001 a compile error'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-6b
+  created: 2026-09-27T12:12:20.205949+00:00
+  updated: 2026-09-27T12:12:20.205949+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] `trybuild` suite with at least 8 compile-fail cases: 2D-matmul on a 3D tensor, reshape to an incompatible rank, adding tensors of different rank, passing a `ColMajor` tensor where `RowMajor` is required. Each must fail to compile with a comprehensible error — the expected stderr is committed.'
+  - '[ ] A matching `trybuild` pass-suite, so the type is not merely rejecting everything.'
+  - '[ ] Zero runtime cost: a benchmark or a codegen check showing the typed wrapper compiles to the same code as the untyped one for the migrated path.'
+  - '[ ] The migrated hot path produces byte-identical output before and after.'
+  - '[ ] The `FORBIDDEN IMPORTS` list in `CLAUDE.md` gains a line saying which of its entries are now statically unrepresentable — and the readme/CLAUDE drift gate (`crates/aprender-core/tests/readme_contract.rs`) still passes.'
+  - '[ ] **Mutation-verified in the new scope**: per the repo rule that extending a guard''s scope requires re-mutating there, a deliberate rank error is introduced in the migrated path and the build is confirmed RED.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: GH-4129
   github_issue: 4129
   item_type: task
