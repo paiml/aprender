@@ -79,15 +79,28 @@ trap 'rm -f "${LOG:?}"' EXIT
 # tool that printed no [error] lines because it died must not read as an
 # improvement (measured: a stub exiting 101 produced "Improved: 9 -> 0", PASS).
 tool_failed=0
+# Still one file per invocation, but SHELL_LINT_JOBS (default 4) of them at
+# once: serially this was ~33 s of the x86-main guard step (#4527). Each run
+# writes its own output and exit status, and both are read back below in the
+# sorted order, so the LOG is the same bytes as the serial loop wrote.
+OUT=$(mktemp -d) || exit 1
+trap 'rm -f "${LOG:?}"; rm -rf "${OUT:?}"' EXIT
+find scripts -maxdepth 1 -name '*.sh' | LC_ALL=C sort > "$OUT/list"
+awk '{ printf "%s\t%06d\0", $0, NR }' "$OUT/list" \
+    | xargs -0 -n 1 -P "${SHELL_LINT_JOBS:-4}" bash -c '
+        s=${1%%$'"'"'\t'"'"'*}; i=${1##*$'"'"'\t'"'"'}
+        bashrs lint "$s" > "$0/$i.out" 2>&1; echo "$?" > "$0/$i.rc"' "$OUT"
+n=0
 while IFS= read -r script; do
-    out=$(bashrs lint "$script" 2>&1); rc=$?
+    n=$((n + 1)); i=$(printf '%06d' "$n")
+    out=$(cat "$OUT/$i.out" 2>/dev/null); rc=$(cat "$OUT/$i.rc" 2>/dev/null || echo 255)
     printf '%s\n' "$out" | sed "s|^|${script}: |" >> "$LOG"
     # bashrs: 0 clean, 1 warnings, 2 errors -- all three are the tool RUNNING.
     if [ "$rc" -gt 2 ]; then
         printf 'FAIL: bashrs exited %s on %s; a lint that could not run is not a lint that found nothing.\n' "$rc" "$script"
         tool_failed=1
     fi
-done < <(find scripts -maxdepth 1 -name '*.sh' | LC_ALL=C sort)
+done < "$OUT/list"
 if [ "$tool_failed" -ne 0 ]; then
     exit 1
 fi
