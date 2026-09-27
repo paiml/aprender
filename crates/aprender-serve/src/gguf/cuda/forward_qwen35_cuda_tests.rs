@@ -1763,6 +1763,12 @@ fn qwen35_greedy(gpu: &mut Qwen35CudaModel<'_>, prompt: &[u32], steps: usize) ->
 /// #4233 acceptance: greedy decode through the captured graph is token-identical
 /// to the eager step for 256 tokens, the graph is actually replayed, and the
 /// decode tok/s of both paths is printed from the same process and GPU.
+///
+/// Token identity is a property of the graph MACHINERY, so this pins the float
+/// GEMVs (#4485). The graph step runs the indirect RoPE and attention kernels,
+/// which sit ~5e-6 off the eager ones on the logits; the production DP4A GEMVs
+/// re-round that onto their Q8_1 grid, which moves near-ties. The DP4A graph is
+/// bounded against eager in `gemv_policy` instead.
 fn qwen35_graph_matches_eager(path: &str, executor: crate::cuda::CudaExecutor) {
     const STEPS: usize = 256;
     let mapped = crate::gguf::MappedGGUFModel::from_path(path).expect("map the GGUF");
@@ -1771,6 +1777,7 @@ fn qwen35_graph_matches_eager(path: &str, executor: crate::cuda::CudaExecutor) {
         Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
     let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, LONG_PROMPT.len() + STEPS + 1)
         .expect("build the CUDA model");
+    gpu.pin_reference_gemv();
 
     gpu.set_decode_graph(false);
     let (eager, eager_tps) = qwen35_greedy(&mut gpu, &LONG_PROMPT, STEPS);

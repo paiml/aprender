@@ -9,7 +9,7 @@
 //! production precision policy. llama.cpp's `mul_mat_vec_q` quantizes the
 //! activation to q8_1 the same way.
 
-use super::{cosine, Qwen35CudaModel, MODEL_PATH_4B, PROMPT_4B};
+use super::{cosine, Qwen35CudaModel, MODEL_PATH, MODEL_PATH_4B, PROMPT_4B};
 use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
 use crate::gguf::forward_qwen35::Qwen35Model;
 
@@ -166,4 +166,120 @@ fn qwen35_cuda_4b_dp4a_gemv_stays_within_the_float_pair_of_cpu() {
         dp4a_cos >= 0.99,
         "DP4A logit cosine to the CPU fell to {dp4a_cos:.6} < the pre-registered 0.99"
     );
+}
+
+/// Teacher-forced decode positions for the graph arm.
+const GRAPH_STEPS: usize = 48;
+
+/// #4485: the decode graph under the production DP4A GEMVs.
+///
+/// The DP4A kernels replay bit-exactly from the manual graph
+/// (`tests_dp4a_graph_replay`). The graph STEP is not the eager step, though: it
+/// runs the indirect RoPE and attention kernels, ~5e-6 off on the float logits.
+/// DP4A re-rounds every GEMV input onto a Q8_1 grid, so that difference lands
+/// on different grid points; measured, the logits then differ by ~0.15.
+///
+/// PRE-REGISTERED (written before this test first ran): teacher-forced on the
+/// eager DP4A greedy tokens, from the capture token on,
+///
+/// 1. the largest graph-vs-eager logit difference is no larger than the largest
+///    DP4A-vs-float eager difference (the replay moves the logits by no more
+///    than the precision policy already does), and
+/// 2. every position's graph-vs-eager logit cosine is at or above **0.999**.
+fn qwen35_dp4a_graph_stays_within_the_dp4a_precision_band(
+    path: &str,
+    executor: crate::cuda::CudaExecutor,
+) {
+    if executor.gpu_profile.cc < 75 {
+        eprintln!("SKIP: no DP4A on sm_{}", executor.gpu_profile.cc);
+        return;
+    }
+    let mapped = crate::gguf::MappedGGUFModel::from_path(path).expect("map the GGUF");
+    let base = super::load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let prompt = super::LONG_PROMPT;
+    let total = prompt.len() + GRAPH_STEPS;
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, total + 1)
+        .expect("build the CUDA model");
+
+    let mut run = |q4k, q6k, graph: bool, forced: Option<&[u32]>| -> (Vec<u32>, Vec<Vec<f32>>) {
+        gpu.executor_mut().gpu_profile.q4k = q4k;
+        gpu.executor_mut().gpu_profile.q6k = q6k;
+        gpu.set_decode_graph(graph);
+        let before = gpu.decode_graph_replays();
+        let mut state = gpu.new_state().expect("device state");
+        let mut tokens = prompt.to_vec();
+        let mut all = Vec::with_capacity(total);
+        for pos in 0..total {
+            let token = forced.map_or_else(|| tokens[pos], |f| f[pos]);
+            let logits = gpu.forward_single(token, &mut state, pos).expect("forward");
+            if forced.is_none() && pos + 1 == tokens.len() && tokens.len() < total {
+                tokens.push(crate::gguf::ops::argmax(&logits) as u32);
+            }
+            all.push(logits);
+        }
+        let replays = gpu.decode_graph_replays() - before;
+        let want = if graph { total as u64 - 1 } else { 0 };
+        assert_eq!(
+            replays, want,
+            "graph={graph}: the decode graph was not engaged as asked"
+        );
+        (forced.map_or(tokens, <[u32]>::to_vec), all)
+    };
+    let dp4a = (Q4kVariant::HwDp4a, Q6kVariant::HwDp4a);
+    let float = (Q4kVariant::Mwv, Q6kVariant::Mwv);
+    let (tokens, eager) = run(dp4a.0, dp4a.1, false, None);
+    let (_, graphed) = run(dp4a.0, dp4a.1, true, Some(&tokens));
+    let (_, eager_float) = run(float.0, float.1, false, Some(&tokens));
+
+    let max_abs =
+        |a: &[f32], b: &[f32]| a.iter().zip(b).fold(0f32, |m, (x, y)| m.max((x - y).abs()));
+    let (mut replay_max, mut policy_max, mut min_cos, mut flips) = (0f32, 0f32, 1f32, 0usize);
+    for pos in 0..total {
+        let (r, p) = (
+            max_abs(&graphed[pos], &eager[pos]),
+            max_abs(&eager_float[pos], &eager[pos]),
+        );
+        let cos = cosine(&graphed[pos], &eager[pos]);
+        let (g, e) = (
+            crate::gguf::ops::argmax(&graphed[pos]),
+            crate::gguf::ops::argmax(&eager[pos]),
+        );
+        flips += usize::from(g != e);
+        replay_max = replay_max.max(r);
+        policy_max = policy_max.max(p);
+        min_cos = min_cos.min(cos);
+        eprintln!(
+            "[4485 graph] pos {pos}: replay max|d| {r:.4} dp4a-vs-float max|d| {p:.4} \
+             cosine {cos:.6} argmax graph {g} eager {e}"
+        );
+    }
+    eprintln!(
+        "[4485 graph] {path}: {total} positions, replay max|d| {replay_max:.4} vs precision \
+         band {policy_max:.4}, min cosine {min_cos:.6}, {flips} argmax flips"
+    );
+    assert!(
+        replay_max <= policy_max,
+        "the DP4A graph moved a logit by {replay_max:.4}, more than DP4A itself moves it off \
+         float ({policy_max:.4})"
+    );
+    assert!(
+        min_cos >= 0.999,
+        "DP4A graph-vs-eager logit cosine fell to {min_cos:.6} < the pre-registered 0.999"
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_dp4a_graph_stays_within_the_dp4a_precision_band_0_8b() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    qwen35_dp4a_graph_stays_within_the_dp4a_precision_band(MODEL_PATH, executor);
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_dp4a_graph_stays_within_the_dp4a_precision_band_4b() {
+    let executor = qwen35_cuda_file_or_skip!(MODEL_PATH_4B);
+    qwen35_dp4a_graph_stays_within_the_dp4a_precision_band(MODEL_PATH_4B, executor);
 }

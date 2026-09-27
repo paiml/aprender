@@ -358,6 +358,8 @@ mod poison_trace_test;
 
 // FALSIFY-QDOT-008 (#3111): the Q5_K GEMV against gguf-py's values of a llama.cpp block
 #[cfg(test)]
+mod tests_dp4a_graph_replay;
+#[cfg(test)]
 mod tests_q5k_ggml;
 #[cfg(test)]
 mod tests_q8_activation_staleness;
