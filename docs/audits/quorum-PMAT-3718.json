@@ -1,15 +1,15 @@
 {
   "ticket": "PMAT-3718",
-  "base": "main",
+  "base": "origin/main",
   "base_resolved": "origin/main",
-  "base_note": "local main differs from origin/main by 158 commit(s); judged against origin/main",
-  "head": "6df76897533b50d7dd0c6ecd4d11011d11b7454c",
-  "diff_sha256": "13df8f6d36cedbea4aa956751392504166737a76414d9aa3103f90050f1049bf",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "42eb448d14e6982756d6eca5a5d1a6cb7e1b4628",
+  "diff_sha256": "6180cac08f8236e7a69e0a5e5610e38f4c28f1449b0cf3c54f6b46f404790a75",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 15319,
-  "prompt_sha256": "aaf8e507b84266d63a6d69794d21148be5200a625a32a95a0e36e03b3398ab0a",
+  "prompt_bytes": 49675,
+  "prompt_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,62 +21,41 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff successfully fulfills the second part of PMAT-3718 ('serve usage and finish_reason never report a cut as a stop') by replacing all instances of hardcoded `\"stop\"` finish reasons with `finish_reason_for(tokens_generated, max_tokens)` in `serve` contexts (including `chat.rs`, `handlers.rs`, and `handler_gpu_completion.rs`), ensuring they correctly report `\"length\"` when a generation is cut off. It also correctly bounds `max_tokens` with `context_token_budget` to avoid `wgpu` returning `\"stop\"` for a full context window cutoff. The `apr run --json` requirements from the ticket's title were absent in this diff, but since the ticket is 50% complete, they were verified to exist in a prior commit (`run_tests_usage_3718.rs`). No ticket constraints were violated.",
+      "summary": "The diff correctly implements the \"serve\" half of PMAT-3718: a new finish_reason_for(generated, max_tokens) rule (\"length\" when generated >= the budget actually run with, else \"stop\") replaces every hardcoded \"stop\" in the SafeTensors chat handler, the wgpu non-streaming/streaming handlers, and the CUDA/CPU-fallback handlers. A new context_token_budget helper clamps max_tokens to the room left in the context window and refuses (400 context_length_exceeded) a prompt that fills it, wired into both the wgpu and SafeTensors paths before generation runs, matching done_when 3. Verified by reading (not running) the code: build_chat_response's finish_reason is judged against the clamped budget actually passed to st_cpu_generate (not the raw request), StCpuForward::context_length() exists and matches the comment's claim, and the tiny_transformer fixture used in the new 400-refusal test does have context_length 64 as asserted. No test asserts the opposite of the ticket, no gate is weakened, and I found no scope creep beyond what the ticket describes.",
       "findings": [
         {
-          "claim": "serve usage and finish_reason never report a cut as a stop",
-          "file": "crates/apr-cli/src/commands/serve/chat.rs",
-          "fix": "",
-          "grounding": "cited",
-          "line": 429
-        },
-        {
-          "claim": "serve usage and finish_reason never report a cut as a stop",
-          "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-          "fix": "",
-          "grounding": "cited",
-          "line": 284
-        },
-        {
-          "claim": "serve usage and finish_reason never report a cut as a stop",
           "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "fix": "",
-          "grounding": "cited",
-          "line": 175
-        },
-        {
-          "claim": "serve usage and finish_reason never report a cut as a stop",
-          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "fix": "",
-          "grounding": "cited",
-          "line": 329
+          "line": 236,
+          "claim": "Pre-existing, not introduced by this diff: build_gpu_sse_stream's terminal [DONE] SSE event carries no finish_reason field at all (content chunks send finish_reason: null), so a CUDA streaming client never learns length vs stop.",
+          "fix": "Out of scope for this diff (untouched file region) but worth a follow-up ticket if the CUDA streaming path is meant to satisfy the same #3718 guarantee as the wgpu streaming path, which does send a terminal chunk with finish_reason.",
+          "grounding": "cited"
         }
       ],
-      "raw_bytes": 5703,
-      "err_bytes": 62,
+      "raw_bytes": 4281,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
+      "executor": "claude-code",
       "grounding_check": "parity",
-      "role": "independent",
-      "model": "gemini-3.1-pro-high",
-      "model_measured": "gemini-3.1-pro-high",
-      "model_source": "measured",
-      "family": "gemini",
-      "executor": "agy",
-      "brief_sha256": "aaf8e507b84266d63a6d69794d21148be5200a625a32a95a0e36e03b3398ab0a",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
       "trace": {
-        "input_sha256": "f3a2c49aff4f616009fd2063ef4927b6e37572ea15c3fd8e01ab3c1a2079c5b7",
-        "output_sha256": "ecfebdf1e0a6fd92d6fd0d1ad8440c7b0240dd75acd7d4755646408c5563f940",
+        "input_sha256": "cddc014e8538193133956da3e3252cb1fddeefe98d8a08941e3d14ac1d1f2859",
+        "output_sha256": "331b524226a250425a582f87c748927dca1bb4a7d0a7780fdc1aa0484df231d0",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": "gemini-3.1-pro-high",
+        "judged_by": "claude-sonnet-5",
         "exhausted": false,
         "attempts": [
           {
-            "model": "gemini-3.1-pro-high",
-            "family": "gemini",
+            "model": "claude-sonnet-5",
+            "family": "claude",
             "outcome": "answered"
           }
         ],
@@ -87,106 +66,52 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff fixes the \"serve … never report a cut as a stop\" half of PMAT-3718 (the \"apr run --json\" half was already merged to main in a prior commit, consistent with the 50% progress marker). It introduces `finish_reason_for(generated, max_tokens)` → \"length\" when generated ≥ max_tokens, else \"stop\" — and wires it into the four serve paths that previously hardcoded \"stop\": (1) wgpu non-streaming, (2) wgpu streaming done-chunk, (3) CUDA non-streaming, (4) CUDA→CPU fallback, and (5) SafeTensors chat. Context-budget refusal for wgpu (done_when 3) is also plumbed. One receipt claim is slightly overstated — the commit message says \"All four serve paths now take finish_reason from ONE rule\" but the CPU-path streaming handler (`handler_apr_cpu_completion.rs:280`) still has its own inline `if n >= ctx.max_tokens { \"length\" } else { \"stop\" }` rather than calling `finish_reason_for`. However, the logic is semantically identical and the file is untouched by this diff, so it is not a regression or a gate weakening — just an aspirational claim about consolidation that doesn't match reality. No tests assert the opposite of the ticket. No gates are weakened. The diff does nothing the ticket forbids.",
-      "findings": [
-        {
-          "claim": "finish_reason_for returns \"length\" when generated >= max_tokens and \"stop\" otherwise, matching the ticket requirement that a cut is never reported as a stop.",
-          "file": "crates/apr-cli/src/commands/serve/context_budget_3718.rs",
-          "grounding": "cited",
-          "line": 52
-        },
-        {
-          "claim": "Test a_reply_that_used_the_whole_budget_is_length_not_stop asserts finish_reason_for(64,64)==\"length\", finish_reason_for(65,64)==\"length\", finish_reason_for(63,64)==\"stop\", finish_reason_for(0,64)==\"stop\" — consistent with ticket.",
-          "file": "crates/apr-cli/src/commands/serve/context_budget_3718.rs",
-          "grounding": "cited",
-          "line": 67
-        },
-        {
-          "claim": "New test a_reply_cut_at_max_tokens_is_length_not_stop passes tokens_generated=16, max_tokens=16 and asserts finish_reason is \"length\", exercising the SafeTensors path.",
-          "file": "crates/apr-cli/src/commands/serve/chat.rs",
-          "grounding": "cited",
-          "line": 715
-        },
-        {
-          "claim": "CUDA non-streaming path now uses finish_reason_for(tokens_generated, max_tokens_clamped) instead of hardcoded \"stop\".",
-          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "grounding": "cited",
-          "line": 333
-        },
-        {
-          "claim": "CUDA→CPU fallback now uses finish_reason_for(out.tokens_generated, max_tokens) instead of hardcoded \"stop\".",
-          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "grounding": "cited",
-          "line": 179
-        },
-        {
-          "claim": "wgpu streaming done-chunk now uses finish_reason_for(completion_tokens as usize, max_tokens) instead of hardcoded \"stop\".",
-          "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-          "grounding": "cited",
-          "line": 288
-        },
-        {
-          "claim": "wgpu non-streaming path replaces its inline if/else with finish_reason_for(output_ids.len(), max_tokens), consolidating to the shared rule.",
-          "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-          "grounding": "cited",
-          "line": 361
-        },
-        {
-          "claim": "wgpu_chat_completion now calls context_token_budget before prefill, refusing prompts ≥ context_length with HTTP 400 and an OpenAI-shaped error body (done_when 3).",
-          "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-          "grounding": "cited",
-          "line": 389
-        },
-        {
-          "claim": "The commit message claims 'All four serve paths now take finish_reason from ONE rule, finish_reason_for' but this file's streaming path still has its own inline `if n >= ctx.max_tokens { \"length\" } else { \"stop\" }` — semantically identical but not calling finish_reason_for. The claim is aspirational, not backed by the diff, but the logic is correct and pre-existing.",
-          "file": "crates/apr-cli/src/commands/serve/handler_apr_cpu_completion.rs",
-          "grounding": "measured",
-          "line": 280
-        },
-        {
-          "claim": "The CUDA SSE streaming path (build_gpu_sse_stream) sends [DONE] without a finish_reason chunk. This is pre-existing, not introduced by the diff, and not a regression.",
-          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "grounding": "measured",
-          "line": 236
-        }
-      ],
-      "raw_bytes": 16145,
+      "summary": "Diff correctly implements PMAT-3718's serve-side requirement: a new finish_reason_for(generated, max_tokens) rule replaces hardcoded \"stop\" in SafeTensors chat/simple handlers, the CUDA non-streaming path, the CUDA→CPU fallback, and both wgpu streaming/non-streaming paths. A new context_token_budget clamps generation and refuses over-long prompts with 400 context_length_exceeded (SafeTensors via st_context_budget, wgpu via context_token_budget), applied before generation runs so the budget used for generation is the same one finish_reason is judged against. Traced the generated/max_tokens pairing through chat.rs, safetensors.rs, handler_gpu_completion.rs and handlers.rs — all internally consistent, no mismatched variables. New/updated tests match the intended behavior; no test asserts the opposite of the ticket. The \"apr run --json\" half of the ticket is already present on this branch (run.rs, run_tests_usage_3718.rs) from a prior commit, consistent with the 50%-InProgress status. handler_apr_cpu_completion.rs was left untouched but already applies the same length/stop rule inline (pre-existing), so it's not a gap. No gate weakening, no scope creep found.",
+      "findings": [],
+      "raw_bytes": 3288,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
       "role": "counted",
-      "model": "claude-opus-4-6-thinking",
-      "model_measured": "claude-opus-4-6-thinking",
-      "model_source": "measured",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
       "family": "claude",
-      "executor": "agy",
-      "brief_sha256": "aaf8e507b84266d63a6d69794d21148be5200a625a32a95a0e36e03b3398ab0a",
+      "brief_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
       "trace": {
-        "input_sha256": "775bdc580c368d37ab0a2b72f0bc35d78923f7e95877311fc02688f30fb63dd5",
-        "output_sha256": "e00df1f50c638809999ac7f99192144f855003dd91c3e1734709cb2504cad6b5",
+        "input_sha256": "e1f123825b8ff98955b709a499a6fe1b4eb2a8ba60ad9c2de24eae0772d2753b",
+        "output_sha256": "fa75e96bb14b90e3f0693b5f3029a2568d7339241a6ad15a4917b11df8a4157b",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
       "fallback": {
-        "judged_by": "claude-opus-4-6-thinking",
+        "judged_by": "claude-sonnet-5",
         "exhausted": false,
         "attempts": [
           {
-            "model": "claude-opus-4-6-thinking",
+            "model": "claude-sonnet-5",
             "family": "claude",
             "outcome": "answered"
           }
         ],
-        "skipped": []
-      }
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
     },
     {
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff correctly implements PMAT-3718: centralized finish_reason_for() function returns \"length\" when generated >= max_tokens, else \"stop\". All three serving paths (SafeTensors, GPU, wgpu) updated to use this logic. Context window validation added for wgpu. Tests verify behavior and are properly updated with max_tokens parameter. No budget-cut replies will be mislabeled as \"stop\".",
+      "summary": "Diff correctly implements PMAT-3718's serve half: replaces all hardcoded \"stop\" finish reasons with finish_reason_for(generated, max_tokens)→\"length\" when generated≥max_tokens, else \"stop\". Updates SafeTensors (chat/simple), wgpu (streaming/non-streaming), and CUDA (non-streaming/CPU-fallback) paths. Adds context budget validation that returns 400 context_length_exceeded before prefill when prompt fills window. Tests verify boundary cases and SafeTensors integration. No gates weakened, no unauthorized changes.",
       "findings": [],
-      "raw_bytes": 1693,
+      "raw_bytes": 1969,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -197,10 +122,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "aaf8e507b84266d63a6d69794d21148be5200a625a32a95a0e36e03b3398ab0a",
+      "brief_sha256": "8479b98ef43cfa5b3d4d5102ec14ff34913c3bc8ad188dd3473c54b5da582b65",
       "trace": {
-        "input_sha256": "5b61cd42656efcfb20939e804c8811eda772264ba3d7ff7a98c3328cb5762191",
-        "output_sha256": "072d4fd8c5168adf7b69fbc67ce8439ae921fce4ce86a8d95d92c83c04f17191",
+        "input_sha256": "e090c837b5c14541d2a7899cc36a5f7bca39b8aef258c86b0ec3474fb65032a3",
+        "output_sha256": "7d5caa1c1ea251c78d226a68d9cee94e087b4d4f5ffa9535406729e8d2f29ff2",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -221,143 +146,13 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "crates/apr-cli/src/commands/serve/chat.rs",
-      "line": 429,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "serve usage and finish_reason never report a cut as a stop"
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/chat.rs",
-      "line": 715,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "New test a_reply_cut_at_max_tokens_is_length_not_stop passes tokens_generated=16, max_tokens=16 and asserts finish_reason is \"length\", exercising the SafeTensors path."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/context_budget_3718.rs",
-      "line": 52,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "finish_reason_for returns \"length\" when generated >= max_tokens and \"stop\" otherwise, matching the ticket requirement that a cut is never reported as a stop."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/context_budget_3718.rs",
-      "line": 67,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "Test a_reply_that_used_the_whole_budget_is_length_not_stop asserts finish_reason_for(64,64)==\"length\", finish_reason_for(65,64)==\"length\", finish_reason_for(63,64)==\"stop\", finish_reason_for(0,64)==\"stop\" — consistent with ticket."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handler_apr_cpu_completion.rs",
-      "line": 280,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The commit message claims 'All four serve paths now take finish_reason from ONE rule, finish_reason_for' but this file's streaming path still has its own inline `if n >= ctx.max_tokens { \"length\" } else { \"stop\" }` — semantically identical but not calling finish_reason_for. The claim is aspirational, not backed by the diff, but the logic is correct and pre-existing."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-      "line": 175,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "serve usage and finish_reason never report a cut as a stop"
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-      "line": 179,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "CUDA→CPU fallback now uses finish_reason_for(out.tokens_generated, max_tokens) instead of hardcoded \"stop\"."
-      ]
-    },
-    {
       "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
       "line": 236,
       "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The CUDA SSE streaming path (build_gpu_sse_stream) sends [DONE] without a finish_reason chunk. This is pre-existing, not introduced by the diff, and not a regression."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-      "line": 329,
-      "lanes_agreeing": [
         1
       ],
       "claims": [
-        "serve usage and finish_reason never report a cut as a stop"
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-      "line": 333,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "CUDA non-streaming path now uses finish_reason_for(tokens_generated, max_tokens_clamped) instead of hardcoded \"stop\"."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-      "line": 284,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "serve usage and finish_reason never report a cut as a stop"
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-      "line": 288,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "wgpu streaming done-chunk now uses finish_reason_for(completion_tokens as usize, max_tokens) instead of hardcoded \"stop\"."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-      "line": 361,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "wgpu non-streaming path replaces its inline if/else with finish_reason_for(output_ids.len(), max_tokens), consolidating to the shared rule."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handlers.rs",
-      "line": 389,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "wgpu_chat_completion now calls context_token_budget before prefill, refusing prompts ≥ context_length with HTTP 400 and an OpenAI-shaped error body (done_when 3)."
+        "Pre-existing, not introduced by this diff: build_gpu_sse_stream's terminal [DONE] SSE event carries no finish_reason field at all (content chunks send finish_reason: null), so a CUDA streaming client never learns length vs stop."
       ]
     }
   ],
@@ -365,29 +160,25 @@
   "coverage_source": "lanes",
   "partial": false,
   "partial_reasons": [
-    "lane 2: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (16145 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
   ],
   "fallback": {
     "same_family_width": 2,
     "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
       {
         "model": "gemini-3.1-pro-high",
         "family": "gemini",
         "disposition": "configured"
       },
       {
-        "model": "claude-opus-4-6-thinking",
-        "family": "claude",
-        "disposition": "configured"
-      },
-      {
         "model": "claude-haiku-4-5",
-        "family": "claude",
-        "disposition": "claude-code",
-        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
-      },
-      {
-        "model": "claude-sonnet-5",
         "family": "claude",
         "disposition": "claude-code",
         "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
@@ -409,110 +200,138 @@
       {
         "family": "gemini",
         "model": "gemini-3.1-pro-high",
-        "probe": 1,
-        "outcome": "live"
-      },
-      {
-        "family": "claude",
-        "model": "claude-opus-4-6-thinking",
-        "probe": 1,
-        "outcome": "live"
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
       }
     ],
-    "degraded": null,
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
     "prah": {
       "source": "install-receipt",
       "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 8,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
     },
     "bucket": {
       "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
-      "buckets": {
-        "claude-gpt": {
-          "bucket": "claude-gpt",
-          "budget": 0,
-          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
-          "window_start": null,
-          "window_calls": 0,
-          "window_429": 0,
-          "hour_calls": 2,
-          "share": 1,
-          "want": 2,
-          "state": "empty",
-          "reason": "agy bucket claude-gpt is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
-        },
-        "gemini": {
-          "bucket": "gemini",
-          "budget": 86,
-          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
-          "window_start": 1790504511,
-          "window_calls": 15,
-          "window_429": 0,
-          "hour_calls": 18,
-          "share": 17,
-          "want": 2,
-          "state": "hour",
-          "reason": "agy bucket gemini: 18 calls in the last hour + 2 this round exceed the hour share 17 (1/5 of the budget 86, [U] default 30, raised to the 86 calls a window has made without a 429; no window reached one)"
-        }
-      },
+      "buckets": {},
       "closed": []
     }
   },
   "auto_merge": {
-    "checked": false,
+    "checked": true,
     "was_armed": false,
     "disarmed": false,
-    "note": "no --pr given: nothing to disarm"
+    "note": "auto-merge not armed"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "shape": "canary",
-    "max_brief_bytes": 24576,
-    "brief_bytes": 15319
+    "skipped": "brief 49675 bytes > 24576"
   },
   "advisory_lane": {
-    "state": "unavailable",
+    "state": "answered",
     "counts": false,
     "row": {
-      "NotRun": "Busy"
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
     },
-    "verdict": "unavailable",
-    "why": "no host answered inside the budget",
-    "served_by": null,
-    "gpu_proof": null,
-    "apr": null,
-    "model": null,
-    "model_sha256": null,
-    "rc": 2,
-    "wall_s": 1,
-    "collected_s": 2092,
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "3340528, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 15,
+    "collected_s": 821,
     "budget_s": 128,
-    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "budget_basis": "ledger: 2 x p95 64 s over 27 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 15319,
-      "sent_bytes": 15488,
-      "max_bytes": 24576
+      "bytes": 49675,
+      "sent_bytes": 49844,
+      "max_bytes": 196608
     },
     "trace": {
-      "input_sha256": "cf2ac7e121e5c915e3efab98bbefe4d0ce36d0bd4cc8cd1e474440ce256ab904",
+      "input_sha256": "568b8499c5f3b47f6bfce98326c10139208625a14c5b0a13ef052244dd0415c0",
       "raw": "advisory.json"
     },
     "attempts": [
       {
         "host": "gx10",
-        "ok": false,
-        "wall_s": 1,
-        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-25T20:18:53Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)"
+        "ok": true,
+        "wall_s": 15,
+        "used_gpu": true,
+        "ts": "2026-09-27T21:44:23.578Z",
+        "wall_ms": 15010,
+        "request_id": "01a0e4d3-8917-716f-b923-666910d9a5ea",
+        "load1": 12.20,
+        "cold": false
       }
     ],
     "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
-    "agrees_with_counted": null,
+    "agrees_with_counted": true,
     "counted": "PASS"
   },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
   }
 }
