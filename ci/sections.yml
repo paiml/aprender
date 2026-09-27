@@ -2744,6 +2744,11 @@ jobs:
         shell: bash
         run: bash scripts/pr_review_sign_receipt.sh --self-test
 
+      # The approver's case table: 8 rows on a fake API, 4 planted filter mutants.
+      - name: "Held-run approver case table: 8 rows, 4 mutants RED"
+        shell: bash
+        run: bash scripts/pr_review_approve_signer_runs.sh --self-test
+
       - name: Sign this PR's receipt, if it has an unsigned one
         shell: bash
         env:
@@ -2786,6 +2791,17 @@ jobs:
           # Never --force. A race with the author's own push fails this step and the
           # next run signs it; a force-push would silently discard their commit.
           git push origin "HEAD:$PR_HEAD_REF"
+
+      # A push by github-actions[bot] creates the new head's pull_request runs HELD
+      # (action_required) and nothing approved them: every signed PR stalled on a
+      # human click (8 held runs measured 2026-09-27). Approve exactly the runs this
+      # push created — that sha, pull_request, the bot actor, held — and nothing else.
+      - name: Approve the CI runs the signature push is held on
+        if: env.signed_any == '1'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/pr_review_approve_signer_runs.sh "$(git rev-parse HEAD)"
 
   # ---------------------------------------------------------------------------
   # RECEIPT PRESENCE, AS A FAST REQUIRED CHECK.
