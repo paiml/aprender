@@ -281,6 +281,7 @@ worker_run_one() {
     : > "$w_labels"
     w_total=0
     w_failed=0
+    w_start=$SECONDS
 
     # Same row shape, same capture-and-indent, as the serial runner it
     # replaces -- only the destination changed.
@@ -306,7 +307,7 @@ worker_run_one() {
         worker_row "$w_guard [run]" bash "$w_guard"
     fi
     rm -f "$w_cap"
-    printf 'total=%d\nfailed=%d\n' "$w_total" "$w_failed" > "$w_meta.tmp"
+    printf 'total=%d\nfailed=%d\nsecs=%d\n' "$w_total" "$w_failed" "$((SECONDS - w_start))" > "$w_meta.tmp"
     mv -f "$w_meta.tmp" "$w_meta"
     return 0
 }
@@ -654,6 +655,19 @@ while IFS="$TAB" read -r kind g reason; do
 done < "$PLAN"
 
 printf 'dispatch: up to %d guard(s) at a time (GUARD_TREE_JOBS)\n' "$GUARD_TREE_JOBS"
+# WHERE THE WALL CLOCK WENT. The pool's wall time is set by its slowest guards,
+# and without this line a slow guard-tree is a single opaque number (#4429's
+# x86-main: 1409 s for this one step, and no way to say which guard spent it).
+idx=0
+while IFS="$TAB" read -r kind g reason; do
+    idx=$((idx + 1))
+    [ "$kind" = RUN ] || continue
+    s="$(sed -n 's/^secs=//p' "$RUN_DIR/$idx.meta" 2>/dev/null | head -1)"
+    case "${s:-}" in ''|*[!0-9]*) continue ;; esac
+    printf '%d\t%s\n' "$s" "$g"
+done < "$PLAN" | sort -rn | head -n "${GUARD_TREE_SLOWEST:-15}" | while IFS="$TAB" read -r s g; do
+    printf 'slowest: %5ds  %s\n' "$s" "$g"
+done
 printf '%d guard(s) skipped\n' "$skipped"
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then

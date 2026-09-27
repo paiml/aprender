@@ -1492,14 +1492,14 @@ mod tests {
 
     /// FALSIFY-SHIP-020 / AC-SHIP2-010 — pure decode-throughput threshold
     /// proof. `apr bench --median` on a real trained 370M .apr is the
-    /// compute-heavy harness; the decision rule itself (≥100 tok/s
-    /// passes, <100 tok/s fails) is separable and proven here.
+    /// compute-heavy harness; the decision rule itself (at or above
+    /// `AC_SHIP2_010_MIN_DECODE_TPS_RTX4090` passes, below it fails) is separable and proven here.
     ///
     /// Invariants covered:
-    ///   1. Pass boundary: exactly 100.0 tok/s → Pass (contract floor).
-    ///   2. Fail boundary: 99.999 tok/s → Fail (one ULP below floor).
-    ///   3. Generous green: 120.0 and 500.0 tok/s → Pass.
-    ///   4. Hard red: 0.0 and 50.0 tok/s → Fail.
+    ///   1. Pass boundary: exactly the floor → Pass (contract floor).
+    ///   2. Fail boundary: one f32 ULP below the floor → Fail.
+    ///   3. Generous green: well above the floor → Pass.
+    ///   4. Hard red: zero and half the floor → Fail.
     ///   5. Monotonicity: once Fail, all strictly lower tps stay Fail.
     ///   6. Degenerate inputs: NaN and ±∞ → Fail (no well-defined
     ///      median → no proof).

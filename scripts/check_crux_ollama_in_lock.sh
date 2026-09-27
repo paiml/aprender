@@ -301,7 +301,6 @@ fi
 PSET="$ROOT/$(sed -n 's/^PROMPTS="\(.*\)"$/\1/p' "$DOGFOOD" | head -1)"
 ONLY=$(python3 -c 'import json,sys; print(next(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PSET" 2>/dev/null)
 RUN_ROW_EXTRA="--only-prompts $ONLY" run_row only "$ROOT" "/nonexistent/gpu-q"
-cells=$(find /tmp -maxdepth 6 -path "*/cell-*.sh" -newer "$TMP/only.lock" 2>/dev/null | grep -c . )
 wrong=$(sed -n 's/.*work kept: //p' "$TMP/only.dogfood.log" | head -1 | xargs -r -I{} find {} -name 'cell-*.sh' 2>/dev/null | grep -v -e "cell-$ONLY.sh" -e 'cell-serve.sh' -e 'cell-code.sh' -e 'cell-greedy.sh' | grep -c .)
 nloads=$(grep -c '^LOAD ' "$TMP/only.log")
 read -r floads _ <<< "$(verdict flock)"

@@ -131,11 +131,11 @@ jobs:
 
       - name: "Arm 4 case table: 23 rows, both polarities of the cutoff and the patch-id binding"
         shell: bash
-        run: bash scripts/check_pr_review_arm4.sh --self-test
+        run: setsid --wait bash scripts/check_pr_review_arm4.sh --self-test
 
       - name: This PR's own receipt, judged by the base's Arm 4 under the base's public key
         shell: bash
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr }}
           PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
-        run: bash scripts/check_pr_review_arm4.sh
+        run: setsid --wait bash scripts/check_pr_review_arm4.sh

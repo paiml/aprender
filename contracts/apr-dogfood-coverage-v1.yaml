@@ -84,33 +84,33 @@ metadata:
         covered may never DECREASE for any binary; total may never decrease
         without a reconciliation finding recording which direction moved.
       apr: {total: 375, covered: 144}
-      aprender-orchestrate: {total: 184, covered: 0}
-      aprender-test-cli: {total: 39, covered: 0}
+      aprender-orchestrate: {total: 185, covered: 0}
+      aprender-test-cli: {total: 40, covered: 0}
       pv: {total: 38, covered: 0}
-      alimentar: {total: 35, covered: 0}
-      aprender-cgp: {total: 25, covered: 0}
-      aprender-profile: {total: 16, covered: 0}
-      apr-qa: {total: 15, covered: 0}
-      aprender-train-shell: {total: 13, covered: 0}
-      trueno-rag: {total: 13, covered: 0}
-      simular: {total: 12, covered: 0}
-      verificar: {total: 11, covered: 0}
-      aprender-explain: {total: 7, covered: 0}
-      presentar: {total: 7, covered: 0}
-      aprender-train-bench: {total: 6, covered: 0}
-      aprender-train-inspect: {total: 6, covered: 0}
-      aprender-cbtop: {total: 4, covered: 0}
-      aprender-db: {total: 4, covered: 0}
-      aprender-train-distill: {total: 4, covered: 0}
-      aprender-train-lora: {total: 4, covered: 0}
-      ptop: {total: 4, covered: 0}
-      trueno-zram: {total: 4, covered: 0}
-      aprender-compute-xtask: {total: 3, covered: 0}
-      aprender-ptx-debug: {total: 3, covered: 0}
-      apr-corpus-ingest: {total: 2, covered: 0}
-      score: {total: 2, covered: 0}
-      apr-qa-readme-sync: {total: 1, covered: 0}
-      aprender-zram-generator: {total: 1, covered: 0}
+      alimentar: {total: 36, covered: 0}
+      aprender-cgp: {total: 26, covered: 0}
+      aprender-profile: {total: 17, covered: 0}
+      apr-qa: {total: 16, covered: 0}
+      aprender-train-shell: {total: 14, covered: 0}
+      trueno-rag: {total: 14, covered: 0}
+      simular: {total: 13, covered: 0}
+      verificar: {total: 12, covered: 0}
+      aprender-explain: {total: 8, covered: 0}
+      presentar: {total: 8, covered: 0}
+      aprender-train-bench: {total: 7, covered: 0}
+      aprender-train-inspect: {total: 7, covered: 0}
+      aprender-cbtop: {total: 5, covered: 0}
+      aprender-db: {total: 5, covered: 0}
+      aprender-train-distill: {total: 5, covered: 0}
+      aprender-train-lora: {total: 5, covered: 0}
+      ptop: {total: 5, covered: 0}
+      trueno-zram: {total: 5, covered: 0}
+      aprender-compute-xtask: {total: 4, covered: 0}
+      aprender-ptx-debug: {total: 4, covered: 0}
+      apr-corpus-ingest: {total: 3, covered: 0}
+      score: {total: 3, covered: 0}
+      apr-qa-readme-sync: {total: 2, covered: 0}
+      aprender-zram-generator: {total: 2, covered: 0}
 
     per_cluster:
       command: "python3 scripts/dogfood_baseline.py  # section: per_cluster"
@@ -148,18 +148,18 @@ metadata:
         cannot assert that a feature works, and quality_1_10 is never derived from
         it -- severity comes from the 0.63.0 ledger.
       apr-core-commands: {total: 111, covered: 39}          # 35.1% of cluster, 27.1% of gate effort
-      entrypoint-and-mcp: {total: 99, covered: 9}           # 9.1% of cluster,  6.3% of gate effort
-      http-orchestrate-banco: {total: 95, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
+      entrypoint-and-mcp: {total: 115, covered: 9}           # 7.8% of cluster,  6.3% of gate effort
+      http-orchestrate-banco: {total: 96, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
       contracts-pv: {total: 76, covered: 0}                 #  ZERO -- one contract-CLI harness, 76 pv subcommands
-      data-pipeline: {total: 76, covered: 0}                #  ZERO
+      data-pipeline: {total: 77, covered: 0}                #  ZERO
       apr-lint-diag: {total: 71, covered: 55}               # 77.5% of cluster, 38.5% of gate effort
       orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
-      test-harness: {total: 49, covered: 0}                 #  ZERO
+      test-harness: {total: 51, covered: 0}                 #  ZERO
       http-apr-serve: {total: 45, covered: 40}              # 88.9% of cluster, 28.0% of gate effort
-      profiling: {total: 44, covered: 1}                    # 2.3% of cluster,  0.7% of gate effort
-      rag-eval: {total: 44, covered: 0}                     #  ZERO
-      qa-cgp: {total: 37, covered: 0}                       #  ZERO
-      simulation: {total: 18, covered: 0}                   #  ZERO
+      profiling: {total: 46, covered: 1}                    # 2.2% of cluster,  0.7% of gate effort
+      rag-eval: {total: 46, covered: 0}                     #  ZERO
+      qa-cgp: {total: 38, covered: 0}                       #  ZERO
+      simulation: {total: 19, covered: 0}                   #  ZERO
       orchestrate-pacha-secrets: {total: 17, covered: 0}    #  ZERO
 
     per_band:
@@ -173,7 +173,7 @@ metadata:
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
       q5_6: {total: 676, covered: 29}    # 4.3%
-      q7_8: {total: 12, covered: 10}      # 83.3%
+      q7_8: {total: 38, covered: 10}      # 26.3%
       q9_10: {total: 21, covered: 20}    # 95.2%
 
     hardware_provenance:
