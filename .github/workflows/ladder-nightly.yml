@@ -3,8 +3,9 @@
 # ci/sections.yml `provable-ladder` SKIPs a PR or queue batch that changes none of its
 # inputs (scripts/ci/ladder_touched.sh). This run is the other half of that trade: it runs
 # the section in full on main every day, with LADDER_FORCE=1, through the same fat driver
-# and on the same runner pin as x86-main, so the host's .lake cache entry and the shared pv
-# target dir are warm when the next PR that does touch the ladder arrives.
+# and on the same runner labels as x86-main, so the host it lands on has a warm .lake cache
+# entry and pv target dir for the next PR there that touches the ladder. Other hosts in the
+# pool stay cold until they run it once or lean_cache_seed.sh seeds them.
 #
 # ADVISORY, as the section is: a red run here is a finding, not a blocked merge.
 name: ladder-nightly
@@ -23,8 +24,9 @@ concurrency:
 
 jobs:
   ladder:
-    # Same pin as ci.yml x86-main: the cache it warms is the one the PR runs read.
-    runs-on: [self-hosted, Linux, X64, clean-room, intel]
+    # Same labels as ci.yml x86-main, so it lands in the pool the PR runs use. The .lake
+    # cache is per host: this warms the host it lands on, not the whole pool.
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 120
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,6 +40,8 @@ jobs:
         run: python3 scripts/ci/fat_driver.py self-test
       - name: The ladder selector's case table must still turn RED
         run: bash scripts/ci/ladder_touched.sh --self-test
+      - name: The cache seeder's case table must still turn RED
+        run: bash scripts/ci/lean_cache_seed_test.sh
       - name: provable-ladder (full, LADDER_FORCE=1)
         run: >-
           python3 scripts/ci/fat_driver.py run

@@ -3283,9 +3283,12 @@ jobs:
   # `confirmed_by: pending`, and only a person may confirm them (§5.3). Flip to required --
   # add it to `gate.needs` and read its result there -- only when that is clear.
   #
-  # The clean-room X64 pool is intel-clean-room-* plus yoga-build, yoga-build2 and yoga-build3,
-  # and infra-8d verified elan and a writable /mnt/nvme-raid0/lean-cache on every one of them
-  # (2026-09-25). A host added to the pool without them DECLINES here, never builds cold.
+  # It runs as a section of x86-main, so on whichever X64 clean-room host takes that job
+  # (intel, framework16 or yoga). infra-8d verified elan and a writable
+  # /mnt/nvme-raid0/lean-cache on the intel and yoga hosts (2026-09-25); a host without them
+  # DECLINES here, never builds cold. The .lake cache is PER HOST: ladder-nightly warms only
+  # the host it lands on, so another host's first run is COLD (logged below) unless
+  # scripts/ci/lean_cache_seed.sh seeded its key from a same-input donor.
   # X64 is mandatory: `ci / lint` once landed on aarch64 gx10 and failed on x86-only code.
   # 90 min: under the merge queue's 180 min.
   # build.sh is ~6 min on a warm cache, and the leanchecker arm's own cap is 3600 s.
@@ -3339,6 +3342,7 @@ jobs:
           # FLOW-003 Thm 15: skip a PR / queue batch that changes none of the ladder's inputs.
           # The selector's case table runs first, so a stale selector goes RED here.
           bash scripts/ci/ladder_touched.sh --self-test
+          bash scripts/ci/lean_cache_seed_test.sh
           base=""
           case "${GITHUB_EVENT_NAME:-}" in
             pull_request) base="refs/heads/${GITHUB_BASE_REF:-}" ;;
