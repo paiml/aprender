@@ -23,11 +23,23 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+/// The version line of `simular --version` and `simular version`.
+///
+/// The semver and the first 9 hex of the
+/// commit it was built from (G0.1, #4476) — the semver is a workspace version shared
+/// by every worktree, so without the sha a stale simular reads as HEAD.
+pub const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("APR_GIT_SHA"),
+    ")"
+);
+
 /// CLI arguments container.
 #[derive(Debug, Clone, PartialEq, Parser)]
 #[command(
     name = "simular",
-    version,
+    version = VERSION,
     about = "Unified Simulation Engine for the Sovereign AI Stack",
     // `help` and `version` are real subcommands below, so that `simular help`
     // keeps printing simular's own help text (see `output::print_help`) rather

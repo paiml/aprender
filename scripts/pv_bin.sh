@@ -722,6 +722,68 @@ pv_bin_assert_fresh() {
 # per-shell ones: a caller that sources this file, cd's into a different
 # checkout and sources it again must get that checkout's answer, not the first
 # one's.
+# NIGHTLY MODE (#4186). On a fleet host, or with PV_BIN_REQUIRE=nightly, the only
+# acceptable pv is the one the arbiter's nightly manifest names; HEAD
+# provenance below is for dev trees and PR CI. scripts/nightly_pin.sh holds the
+# rule and scripts/check_nightly_pin.sh its case table. Unknown mode -> refuse.
+# The RULE travels with this file: it is loaded from beside it, not from the
+# cwd's checkout. Sourced by path from an older worktree's cwd, the cwd lookup
+# loaded THAT tree's weaker rule and accepted a denylisted binary (quorum round
+# 4). The name comes from BASH_SOURCE in bash and %x in zsh, never zsh's $0:
+# for `. pv_bin.sh` found via PATH, $0 is the bare name, and the rule was
+# then looked up in the cwd (quorum round 5). Both give the full path for a
+# PATH hit and a bare name only when the file was found in the cwd, where a
+# cwd-relative rule IS beside it. Only when this file cannot name itself
+# (neither bash nor zsh) is the cwd's checkout asked, and a rule without the
+# current NIGHTLY_PIN_API refuses.
+PV_NP_RC=0
+PV_NP_SELF=""
+if [ -n "${BASH_VERSION:-}" ]; then PV_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then eval 'PV_NP_SELF=${(%):-%x}'; fi  # bashrs disable-line=SEC001 (constant string; zsh-only %x expansion)
+case "$PV_NP_SELF" in
+    */pv_bin.sh) PV_NP_LIB="$(dirname "$PV_NP_SELF")/nightly_pin.sh" ;;
+    pv_bin.sh) PV_NP_LIB="./nightly_pin.sh" ;;  # ./ : a bare `.` searches PATH first
+    *) PV_NP_LIB=$(git rev-parse --show-toplevel 2>/dev/null) && PV_NP_LIB="$PV_NP_LIB/scripts/nightly_pin.sh" || PV_NP_LIB="" ;;
+esac
+if [ -n "$PV_NP_LIB" ] && [ -f "$PV_NP_LIB" ]; then
+    unset NIGHTLY_PIN_API
+    . "$PV_NP_LIB" || { printf 'NIGHTLY PIN REFUSED: cannot load %s\n' "$PV_NP_LIB" >&2; return 1 2>/dev/null || exit 1; }
+    if [ "${NIGHTLY_PIN_API:-}" = "1" ]; then
+        nightly_pin_mode PV_BIN_REQUIRE || PV_NP_RC=$?
+    else
+        # An older rule is not a fallback. Refuse only if nightly mode could be
+        # meant; a dev tree with neither the knob nor the marker keeps HEAD mode.
+        if [ "${PV_BIN_REQUIRE:-}" = "head" ] || { [ -z "${PV_BIN_REQUIRE:-}" ] && [ -n "${APR_FLEET_MARKER:-}${HOME:-}" ] && [ ! -e "${APR_FLEET_MARKER:-${HOME:-}/.config/aprender/fleet-nightly}" ]; }; then
+            PV_NP_RC=1
+        else
+            printf 'NIGHTLY PIN REFUSED: %s predates NIGHTLY_PIN_API=1 (an older rule is never a fallback)\n' "$PV_NP_LIB" >&2
+            return 1 2>/dev/null || exit 1
+        fi
+    fi
+elif { [ -n "${PV_BIN_REQUIRE:-}" ] && [ "${PV_BIN_REQUIRE}" != "head" ]; } \
+    || { [ -z "${PV_BIN_REQUIRE:-}" ] \
+        && { [ -z "${APR_FLEET_MARKER:-}${HOME:-}" ] || [ -e "${APR_FLEET_MARKER:-${HOME:-}/.config/aprender/fleet-nightly}" ]; }; }; then
+    # (no HOME and no APR_FLEET_MARKER: the marker cannot be ruled out, so refuse)
+    # nightly mode is asked for (explicitly, or by the fleet marker) and the rule
+    # that enforces it is not here: refuse rather than fall back to HEAD. No
+    # Actions exemption here on purpose: that rule lives only in nightly_pin_mode.
+    printf 'NIGHTLY PIN REFUSED: nightly mode (%s=%s, fleet marker) but nightly_pin.sh is not beside this resolver or in this checkout\n' PV_BIN_REQUIRE "${PV_BIN_REQUIRE:-}" >&2
+    return 1 2>/dev/null || exit 1
+else
+    PV_NP_RC=1
+fi
+if [ "$PV_NP_RC" -ne 0 ] && [ "$PV_NP_RC" -ne 1 ]; then  # 2 = unknown mode (already said why); anything else is a broken rule
+    [ "$PV_NP_RC" -eq 2 ] || printf 'NIGHTLY PIN REFUSED: nightly_pin_mode returned %s (expected 0/1/2): the rule is broken, not bypassed\n' "$PV_NP_RC" >&2
+    return 1 2>/dev/null || exit 1
+fi
+if [ "$PV_NP_RC" -eq 0 ]; then
+    PV=$(nightly_pin_resolve pv PV_BIN PV_BIN_REQUIRE) || { return 1 2>/dev/null || exit 1; }
+    export PV
+    if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
+        printf '%s\n' "$PV"
+    fi
+    return 0 2>/dev/null || exit 0
+fi
+
 PV_BIN_META_LOADED=0
 PV_BIN_DECLARED=""
 

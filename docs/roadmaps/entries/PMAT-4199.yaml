@@ -24,4 +24,4 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Stacked on EV-6a (#4139). Absent vs failed is decided by probing `lake env printenv LEAN_SYSROOT` for bin/leanchecker, because MEASURED on elan v4.15.0 `lake env leanchecker` exits 1 "does not have the binary" -- the rc alone would read a missing checker as a failed proof.'
+  notes: 'proof:crates/aprender-contracts-cli/tests/pvl_discharge_leanchecker.rs. Stacked on EV-6a (#4139). Absent vs failed is decided by probing `lake env printenv LEAN_SYSROOT` for bin/leanchecker, because MEASURED on elan v4.15.0 `lake env leanchecker` exits 1 "does not have the binary" -- the rc alone would read a missing checker as a failed proof.'

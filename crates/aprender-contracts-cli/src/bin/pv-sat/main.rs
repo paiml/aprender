@@ -38,16 +38,29 @@ fn main() -> ExitCode {
     match args.as_slice() {
         [flag] if flag == "--self-test" => self_test(),
         [flag] if flag == "-h" || flag == "--help" => {
-            println!("usage: pv-sat [CONTRACT_DIR] | pv-sat --self-test");
+            println!("usage: pv-sat [CONTRACT_DIR] | pv-sat --self-test | pv-sat --version");
+            ExitCode::SUCCESS
+        }
+        // G0.1 (#4476): the same `<semver> (<sha9>)` shape as `pv --version`.
+        [flag] if flag == "-V" || flag == "--version" => {
+            println!("{}", version_line());
             ExitCode::SUCCESS
         }
         [] => write_witness(Path::new("contracts")),
         [dir] => write_witness(Path::new(dir)),
         _ => {
-            eprintln!("usage: pv-sat [CONTRACT_DIR] | pv-sat --self-test");
+            eprintln!("usage: pv-sat [CONTRACT_DIR] | pv-sat --self-test | pv-sat --version");
             ExitCode::from(3)
         }
     }
+}
+
+fn version_line() -> String {
+    format!(
+        "pv-sat {} ({}) (aprender ONT-5 reasoner)",
+        env!("CARGO_PKG_VERSION"),
+        env!("APR_GIT_SHA")
+    )
 }
 
 fn self_test() -> ExitCode {

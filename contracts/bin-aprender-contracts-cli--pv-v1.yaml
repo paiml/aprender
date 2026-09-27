@@ -58,8 +58,8 @@ shapes:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["pv"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-contracts-cli"]}
       - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^pv [0-9]+\\.[0-9]+\\.[0-9]+"}
-      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
-      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      # G0.1 — GREEN 2026-09-27 at a3def2970 (`pv 0.69.3 (a3def2970) (...)`); an error now, no longer a warning
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "\\([0-9a-f]{9}\\)"}
       - path: bin:command
         minCount: 49
         maxCount: 49
@@ -113,7 +113,7 @@ shapes:
           - "verify-bindings"
           - "verify-pipeline"
           - "verify-structure"
-      # LIVE RED 2026-09-26: 11 paths have no ledger row (census, challenge *, discharge *, extract, obligations, ontology *)
+      # GREEN 2026-09-27: all 49 paths have a ledger row (was 11 unledgered on 2026-09-26)
       - {path: bin:unledgeredCommand, maxCount: 0}
       - {path: bin:ledgerOrphan, maxCount: 0}
 
@@ -153,17 +153,17 @@ falsification_tests:
     rule: 'G0.1 the version names the commit'
     prediction: '`pv --version` contains the first 9 hex of the git sha it was built from'
     test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-26: `pv 0.69.3 (aprender provable-contracts verifier)` — no sha; a stale pv reads as HEAD'
+    if_fails: 'a stale pv reads as HEAD (RED 2026-09-26: `pv 0.69.3 (aprender provable-contracts verifier)`, no sha; GREEN 2026-09-27 at a3def2970)'
     mutation: 'drop the sha from the version string; must turn RED'
   - id: FALSIFY-BIN-PV-004
     rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
     prediction: '`pv lint contracts/ --format nosuch` exits 2 naming the allowed values; subcommands(clap) = commands(snapshot)'
     test: 'NOT YET WRITTEN — S1 (aprender-60)'
-    if_fails: 'LIVE RED 2026-09-26: `--format nosuch` exits 1, not 2 — format is parsed after clap, so the help does not list the values'
+    if_fails: 'a bad --format is a runtime error the help never lists (RED 2026-09-26: exit 1; GREEN 2026-09-27 at a3def2970: exit 2 with the value list)'
     mutation: 'add a subcommand without re-snapshotting; must turn RED naming it'
   - id: FALSIFY-BIN-PV-005
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = pv (38 on 2026-09-26)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: 'LIVE RED 2026-09-26: 11 of 49 command paths have no row (census, challenge check|gen, discharge check|gen-axioms|label-ratchet|run, extract, obligations, ontology export|tbox)'
+    if_fails: 'a pv command ships unaudited (RED 2026-09-26: 11 of 49 paths had no row; GREEN 2026-09-27: 49 of 49)'
     mutation: 'delete every pv row; must turn RED naming pv'

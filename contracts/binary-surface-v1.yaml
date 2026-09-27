@@ -149,25 +149,25 @@ falsification_tests:
   - id: FALSIFY-BIN-001
     rule: 'mutation 1 — drop a bin target from the snapshot'
     prediction: 'by_entity_type.binary ≠ the cargo metadata bin count, and the ONT-4g probe fails'
-    test: 'NOT YET WRITTEN — lands with extract:binary (aprender-98), fixture tests/fixtures/ont4g/'
+    test: 'crates/aprender-contracts/src/ontology/extract/binary_tests.rs::falsify_bin_001_a_dropped_line_is_red_naming_the_target (fixture crates/aprender-contracts/tests/fixtures/ont4g/)'
     if_fails: 'a binary nobody snapshots has no surface and no gate'
     mutation: 'delete one line of the snapshot; the probe must turn RED naming the count'
   - id: FALSIFY-BIN-002
     rule: 'mutation 2 — key by name alone'
     prediction: 'the two apr targets collapse into one node and the count is one short'
-    test: 'NOT YET WRITTEN — lands with extract:binary'
+    test: 'crates/aprender-contracts/src/ontology/extract/binary_tests.rs::falsify_bin_002_the_apr_pair_is_two_nodes'
     if_fails: 'the facade apr and the apr-cli apr can diverge unseen (G0.5)'
     mutation: 'build the node IRI from bin:name only; must turn RED'
   - id: FALSIFY-BIN-003
     rule: 'mutation 3 — a --version without the commit'
     prediction: 'bin:versionLacksSha fires on that node and binary-target fails naming it'
-    test: 'NOT YET WRITTEN — lands with extract:binary'
+    test: 'crates/aprender-contracts/src/ontology/extract/binary_tests.rs::falsify_bin_003_a_version_without_the_commit_fires'
     if_fails: 'a stale binary reads as the one built from HEAD (G0.1)'
     mutation: 'strip the sha from one snapshot version; must turn RED'
   - id: FALSIFY-BIN-004
     rule: 'mutation 4 — the apr pair diverges'
     prediction: 'bin:namePairMismatch fires on both apr nodes'
-    test: 'NOT YET WRITTEN — lands with extract:binary'
+    test: 'crates/aprender-contracts/src/ontology/extract/binary_tests.rs::falsify_bin_004_the_apr_pair_diverging_fires_on_both'
     if_fails: 'cargo install aprender ships a different apr than the one tested'
     mutation: 'change one apr helpSha256 in the snapshot; must turn RED'
   - id: FALSIFY-BIN-005

@@ -17,8 +17,21 @@ use provable_contracts::scoring;
 
 fn main() {
     // --- 1. Parse a contract from YAML ---
-    let yaml = include_str!("../../../contracts/softmax-kernel-v1.yaml");
-    let contract = parse_contract_str(yaml).expect("valid contract YAML");
+    // Read at run time, not include_str!: the published crate ships no workspace
+    // contracts/, and a compile-time include broke `cargo test` from the tarball,
+    // which builds examples (#4129).
+    let contracts = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+    if !contracts.is_dir() {
+        eprintln!(
+            "design_by_contract needs the workspace contracts/ (not beside this crate); \
+             run it from an aprender checkout (#4129)"
+        );
+        std::process::exit(2);
+    }
+    let path = contracts.join("softmax-kernel-v1.yaml");
+    let yaml = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{} missing in tree: {e}", path.display()));
+    let contract = parse_contract_str(&yaml).expect("valid contract YAML");
 
     println!("Contract: {}", contract.metadata.description);
     println!("Version:  {}", contract.metadata.version);

@@ -460,3 +460,24 @@ fn dispatch_pipeline_json() {
     });
     assert!(result.is_ok());
 }
+
+/// G1.3 (#4476): `pv lint --format` is an enumerated clap value, so a typo is a
+/// usage error (clap exits 2 and lists the values), not a run that silently
+/// prints text. Every value `print_report` handles still parses.
+#[test]
+fn g1_3_lint_format_is_a_clap_value_parser() {
+    let err = match Cli::try_parse_from(["pv", "lint", "contracts", "--format", "nosuch"]) {
+        Ok(_) => panic!("--format nosuch parsed"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    assert_eq!(err.exit_code(), 2);
+    let msg = err.to_string();
+    for v in ["text", "json", "sarif", "github", "html"] {
+        assert!(msg.contains(v), "error must name `{v}`:\n{msg}");
+        assert!(
+            Cli::try_parse_from(["pv", "lint", "contracts", "--format", v]).is_ok(),
+            "--format {v} must parse"
+        );
+    }
+}

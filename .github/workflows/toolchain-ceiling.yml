@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Workspace builds on its DECLARED MSRV
-        run: bash scripts/check_msrv.sh
+        run: setsid --wait bash scripts/check_msrv.sh
 
   clippy-current-stable:
     # clean-room pool, same as coverage-nightly: this is a full-workspace clippy
@@ -85,7 +85,7 @@ jobs:
           # (see memory: feedback_gh_default_shell_no_pipefail). No pipes below, and
           # the script's own exit status is the verdict — do not tee it.
           export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          bash scripts/check_clippy_current_stable.sh
+          setsid --wait bash scripts/check_clippy_current_stable.sh
 
   # THE FEATURE AXIS (#3837). The ceiling above varies the TOOLCHAIN; this varies the FEATURES. `ci / lint` runs
   # clippy without `--features cuda` and the cuda jobs run tests, never clippy, so nothing had ever linted code
@@ -105,8 +105,8 @@ jobs:
       - name: Self-test — an unreached feature is refused, and a planted cuda-only finding reddens only the cuda-reaching axes
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          bash scripts/check_clippy_feature_matrix.sh --self-test
+          setsid --wait bash scripts/check_clippy_feature_matrix.sh --self-test
       - name: Strict clippy on every feature axis — the axis table must reach every apr-cli feature (derived)
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          bash scripts/check_clippy_feature_matrix.sh
+          setsid --wait bash scripts/check_clippy_feature_matrix.sh

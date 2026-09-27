@@ -11,12 +11,13 @@
 # `required-features = ["ptop"]` and the package's default features are empty, so a default build does not produce
 # it at all; it was built with `--features ptop`, the smallest build that has it.
 #   `ptop --version` = "ptop 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   (G0.1 FIXED 2026-09-27 on batch/ont-10: `ptop 0.69.3 (<sha9>)`, semver still field 2; the shape is now a violation.)
 #   --help: no subcommands (0 commands) and 10 long options, --help/--version excluded: --config, --deterministic,
 #   --dump-config, --explode, --height, --no-color, --qa-timing, --refresh, --render-once, --width. The --help
 #   description line is the library's ("Terminal backend for Presentar UI framework…"), not ptop's; not shaped.
 #   surface_audit.csv holds 4 rows with binary=ptop (ledger at cf038d37f): the bare entry row `ptop (interactive TUI
 #   system monitor)`, and `ptop --dump-config`, `ptop --render-once`, `ptop --render-once --explode <PANEL>`. Every
-#   option a row names is in --help: GREEN today apart from G0.1.
+#   option a row names is in --help: GREEN (G0.1 too, since the fix above).
 #
 # CONVENTION (S15's option join, plus one rule): a row whose feature after the binary name starts with `-` joins
 # bin:option on its first long option; a row that is the bare binary name (optionally with a parenthetical) is the
@@ -61,8 +62,8 @@ shapes:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["ptop"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-present-terminal"]}
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^ptop [0-9]+\\.[0-9]+\\.[0-9]+"}
-      # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
-      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
+      # G0.1 — a violation since batch/ont-10 2026-09-27 (build.rs embeds APR_GIT_SHA); was a warning while RED
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
       - {path: "bin:command", maxCount: 0}
       - path: bin:option
         minCount: 10
@@ -120,9 +121,9 @@ falsification_tests:
   - id: FALSIFY-BIN-PTOP-003
     rule: 'G0.1 the version names the commit'
     prediction: '`ptop --version` contains the first 9 hex of the git sha it was built from'
-    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'LIVE RED 2026-09-27: "ptop 0.69.3" — no sha; a stale ptop reads as HEAD'
-    mutation: 'drop the sha from the version string; must turn RED'
+    test: 'crates/aprender-present-terminal/src/bin/ptop.rs tests::version_flag_names_the_commit; the shape: bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'a stale ptop reads as HEAD (observed 2026-09-26 at b6cf6d2ed: "ptop 0.69.3", no sha; fixed on batch/ont-10: build.rs embeds APR_GIT_SHA, same resolver as pv)'
+    mutation: 'set VERSION back to CARGO_PKG_VERSION alone; the unit test turns RED (field 3 missing)'
   - id: FALSIFY-BIN-PTOP-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
     prediction: '`ptop --explode nosuch` exits 2, and the surface literals in the shape above = the snapshot''s, set-equal'

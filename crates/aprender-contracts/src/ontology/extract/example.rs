@@ -163,7 +163,7 @@ pub fn targets_of(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// Every `Cargo.toml` under `root`, skipping build and vcs dirs, byte-ordered.
-fn manifests(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn manifests(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {

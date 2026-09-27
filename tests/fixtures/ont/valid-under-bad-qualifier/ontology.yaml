@@ -177,3 +177,15 @@ readers:
   entity_types: lint/sigma_gate.rs
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs
+  entity_type_target_class: ontology/shapes.rs
+
+# v4.16 D-T1: every implemented entity_type names its default target class or an explicit `~` (sigma.rs rule 7).
+entity_type_target_class:
+  pv-contract: ont:Contract
+  json: ~
+  code: ~
+  lean: ~
+  apr-model: model:AprModel
+  gguf: model:Model
+  parity-receipt: ~
+  release-evidence: ~

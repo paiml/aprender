@@ -82,6 +82,32 @@ fn test_parse_version_long_flag() {
     assert_eq!(err.exit_code(), 0);
 }
 
+/// G0.1 (#4476, FALSIFY-BIN-SIMULAR-003): `simular --version` names the commit, so a
+/// stale simular can no longer read as HEAD. The semver stays field 2.
+#[test]
+fn test_version_flag_names_the_commit() {
+    let err = Cli::try_parse_from(["simular", "--version"]).expect_err("--version short-circuits");
+    let line = err.to_string();
+    let sha = env!("APR_GIT_SHA");
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    assert_eq!(fields.first(), Some(&"simular"), "got `{line}`");
+    assert_eq!(
+        fields.get(1),
+        Some(&env!("CARGO_PKG_VERSION")),
+        "got `{line}`"
+    );
+    assert_eq!(
+        fields.get(2).copied(),
+        Some(format!("({sha})").as_str()),
+        "got `{line}`"
+    );
+    let hex9 = sha.len() == 9 && sha.chars().all(|c| c.is_ascii_hexdigit());
+    assert!(
+        hex9 || sha.ends_with("+no-git"),
+        "APR_GIT_SHA must be 9 hex or v<ver>+no-git; got `{sha}`"
+    );
+}
+
 #[test]
 fn test_parse_version_command() {
     assert_eq!(parse_ok(&["simular", "version"]), Commands::Version);

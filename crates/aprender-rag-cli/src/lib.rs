@@ -89,7 +89,7 @@ pub enum BackendType {
 #[derive(Parser)]
 #[command(name = "trueno-rag")]
 #[command(author = "Pragmatic AI Labs")]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 #[command(about = "Pure-Rust RAG pipeline CLI", long_about = None)]
 pub struct Cli {
     /// The command to run

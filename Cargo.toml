@@ -4,6 +4,8 @@ members = [
     "crates/aprender-core",
     # --- APR-2231: sovereign `.apr` container leaf crate ---
     "crates/apr-format",
+    # --- #4219: shared build.rs helper that stamps APR_GIT_SHA into every [[bin]] ---
+    "crates/aprender-build-sha",
     # --- Pre-existing aprender crates ---
     "crates/aprender-shell",
     "crates/aprender-tsp",
@@ -104,10 +106,9 @@ members = [
     "crates/aprender-qa-report",
     "crates/aprender-qa-certify",
     "crates/aprender-qa-cli",
-    # Remaining excluded (workspace root shells with no src):
-    # "crates/aprender-viz-ttop",
-    # "crates/aprender-present",
-    # "crates/aprender-test",
+    # Remaining excluded (see `exclude` below): aprender-present and
+    # aprender-test are workspace root shells with no package; aprender-viz-ttop
+    # IS a package and ships a binary (ledgered in contracts/binary-debt-v1.yaml).
 ]
 exclude = [
     # Pulls burn 0.21 -> rusqlite 0.37 -> libsqlite3-sys 0.35, while aprender-rag
@@ -126,8 +127,11 @@ exclude = [
     'crates/aprender-zram/bins/trueno-ublk',
     "tools/ccpa-sft-export",
     "fuzz",
-    # Old workspace root shells (no package, just held sub-crates):
+    # A real package that ships the `aprender-viz-ttop` binary, NOT a shell;
+    # excluded, so cargo metadata cannot see it. scripts/check_binary_debt.sh
+    # derives it from this list (#4058).
     "crates/aprender-viz-ttop",
+    # Old workspace root shells (no package, just held sub-crates):
     "crates/aprender-present",
     "crates/aprender-test",
     # crates.io compatibility facades for the names APR-MONO renamed
@@ -298,6 +302,7 @@ aprender-train-common = { path = "crates/aprender-train-common", version = "0.69
 aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.69.3" }
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.69.3" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.69.3" }
+aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.69.3" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.69.3" }
 aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.69.3" }
 aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.69.3" }

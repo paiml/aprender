@@ -20,9 +20,14 @@ use presentar_terminal::direct::{CellBuffer, DiffRenderer};
 use presentar_terminal::ptop::{config::PtopConfig, ui, App, PanelType};
 use presentar_terminal::ColorMode;
 
+/// `ptop --version`: the semver and the first 9 hex of the commit it was built from
+/// (G0.1, #4476) — the semver is a workspace version shared by every worktree, so
+/// without the sha a stale ptop reads as HEAD.
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")");
+
 /// Presentar System Monitor - widget composition demo
 #[derive(Parser)]
-#[command(name = "ptop", version, about, long_about = None)]
+#[command(name = "ptop", version = VERSION, about, long_about = None)]
 struct Cli {
     /// Refresh interval in milliseconds
     #[arg(short, long, default_value = "1000")]
@@ -431,6 +436,35 @@ mod tests {
             .expect("an unknown panel must not parse");
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
         assert_eq!(err.exit_code(), 2);
+    }
+
+    /// G0.1 (#4476, FALSIFY-BIN-PTOP-003): `ptop --version` names the commit, so a
+    /// stale ptop can no longer read as HEAD. The semver stays field 2.
+    #[test]
+    fn version_flag_names_the_commit() {
+        let err = Cli::try_parse_from(["ptop", "--version"])
+            .err()
+            .expect("--version short-circuits parsing");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+        let line = err.to_string();
+        let sha = env!("APR_GIT_SHA");
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(fields.first(), Some(&"ptop"), "got `{line}`");
+        assert_eq!(
+            fields.get(1),
+            Some(&env!("CARGO_PKG_VERSION")),
+            "got `{line}`"
+        );
+        assert_eq!(
+            fields.get(2).copied(),
+            Some(format!("({sha})").as_str()),
+            "got `{line}`"
+        );
+        let hex9 = sha.len() == 9 && sha.chars().all(|c| c.is_ascii_hexdigit());
+        assert!(
+            hex9 || sha.ends_with("+no-git"),
+            "APR_GIT_SHA must be 9 hex or v<ver>+no-git; got `{sha}`"
+        );
     }
 
     #[test]
