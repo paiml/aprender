@@ -103,14 +103,100 @@ for name in ("tomllib", "tomli"):
         break
     except ImportError:
         continue
-if toml is None:
-    print("ENV: no TOML reader on this interpreter (python %d.%d, need tomllib >= 3.11 or tomli) runner=%s -- "
-          "the manifests were not read; this is not 'no violations'" % (sys.version_info[0], sys.version_info[1], runner))
-    sys.exit(3)   # #3692: the runner lacks the tool -- the shell makes this UNMEASURED, never a pass
 
-root = sys.argv[1]
-KINDS = ("dev-dependencies",)
-manifests = 0
+class FallbackUnread(ValueError):
+    pass
+
+_HDR = re.compile(r"^\[\s*([^\[\]]+?)\s*\]\s*(#.*)?$")
+_KEY = re.compile(r"""^(?:"([A-Za-z0-9_-]+)"|([A-Za-z0-9_-]+))(?:\.([A-Za-z0-9_-]+))?\s*=\s*(.*)$""")
+_INLINE_KEY = re.compile(r"(?:^\{|,)\s*([A-Za-z0-9_-]+)\s*(?:\.[A-Za-z0-9_-]+\s*)*=")
+
+def _strip_comment(val):
+    out, q = [], None
+    for ch in val:
+        if q:
+            if ch == q:
+                q = None
+        elif ch in "\"'":
+            q = ch
+        elif ch == "#":
+            break
+        out.append(ch)
+    if q:
+        raise FallbackUnread("unterminated string")
+    return "".join(out).strip()
+
+def devdeps_fallback(text):
+    """The top-level [dev-dependencies] of a Cargo.toml, for a python with no TOML reader
+    (#3863: python 3.10 on intel-clean-room-*). It returns only what sourceless() reads --
+    each dep's KEY NAMES (path/version/git/workspace), never a value it would have to
+    guess -- and raises FallbackUnread on any shape it does not parse, so the manifest is
+    counted unread, never read as "no deps"."""
+    deps, table, sub, depth = {}, None, None, 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if depth:
+            # continuation of a multi-line array: its lines are values, never keys
+            depth += _strip_comment(line).count("[") - _strip_comment(line).count("]")
+            continue
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[["):
+            table = None
+            continue
+        if line.startswith("["):
+            m = _HDR.match(line)
+            if not m:
+                raise FallbackUnread("header %r" % line)
+            name = re.sub(r"\s+", "", m.group(1))
+            if name == "dev-dependencies":
+                table, sub = "dd", None
+            elif name.startswith("dev-dependencies."):
+                table, sub = "sub", name.split(".", 1)[1].strip("\"'")
+                if "." in sub:
+                    raise FallbackUnread("header %r" % line)
+                deps.setdefault(sub, {})
+            else:
+                table = None
+            continue
+        if table is None:
+            continue
+        m = _KEY.match(line)
+        if not m:
+            raise FallbackUnread("line %r" % line)
+        key, dotted, val = m.group(1) or m.group(2), m.group(3), _strip_comment(m.group(4))
+        if '"""' in val or "\'\'\'" in val:
+            raise FallbackUnread("multi-line string %r" % line)
+        if table == "sub":
+            if dotted:
+                raise FallbackUnread("line %r" % line)
+            deps[sub][key] = True
+            depth = max(0, val.count("[") - val.count("]"))
+        elif dotted:
+            spec = deps.setdefault(key, {})
+            if not isinstance(spec, dict):
+                raise FallbackUnread("line %r" % line)
+            spec[dotted] = True
+        elif val[:1] in "\"'":
+            deps[key] = val
+        elif val.startswith("{"):
+            if not val.endswith("}"):
+                raise FallbackUnread("multi-line inline table %r" % line)
+            deps[key] = {k: True for k in _INLINE_KEY.findall(val)}
+        else:
+            raise FallbackUnread("line %r" % line)
+    return {"dev-dependencies": deps} if deps else {}
+
+class _Fallback:
+    __name__ = "fallback"
+    TOMLDecodeError = FallbackUnread
+
+    @staticmethod
+    def load(fh):
+        return devdeps_fallback(fh.read().decode("utf-8"))
+
+if toml is None:
+    toml = _Fallback()   # #3863: MEASURE on python 3.10, do not stand down to UNMEASURED
 
 def sourceless(spec):
     """True when the dep carries a path and nothing that survives publish."""
@@ -119,6 +205,47 @@ def sourceless(spec):
     if "path" not in spec:
         return False
     return not any(k in spec for k in ("version", "git", "workspace"))
+
+root = sys.argv[1]
+KINDS = ("dev-dependencies",)
+
+if os.environ.get("PATHONLY_GUARD_EQUIV") == "1":
+    # #3863: the fallback must read every manifest of the tree exactly as the real reader
+    # does -- each top-level dev-dep's key names. Only a python WITH a real reader can say.
+    if toml.__name__ == "fallback":
+        print("EQUIV-UNMEASURED no real TOML reader to compare against")
+        print("SCAN-DONE manifests=0 reader=fallback")
+        sys.exit(0)
+    checked = sourceless_n = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in (".git", "target", "node_modules")]
+        if "Cargo.toml" not in filenames:
+            continue
+        manifest = os.path.join(dirpath, "Cargo.toml")
+        try:
+            with open(manifest, "rb") as fh:
+                raw = fh.read()
+            want = toml.loads(raw.decode("utf-8")).get("dev-dependencies") or {}
+        except (toml.TOMLDecodeError, OSError, UnicodeDecodeError):
+            continue
+        checked += 1
+        try:
+            got = devdeps_fallback(raw.decode("utf-8")).get("dev-dependencies") or {}
+        except FallbackUnread as exc:
+            print("EQUIV-MISMATCH %s unread (%s)" % (os.path.relpath(manifest, root), exc))
+            continue
+        norm = lambda m: {k: (sorted(v) if isinstance(v, dict) else "string") for k, v in m.items()}
+        if norm(want) != norm(got):
+            print("EQUIV-MISMATCH %s tomllib=%s fallback=%s" % (os.path.relpath(manifest, root), norm(want), norm(got)))
+        sourceless_n += sum(1 for v in want.values() if sourceless(v))
+    print("EQUIV-DONE manifests=%d sourceless=%d" % (checked, sourceless_n))
+    print("SCAN-DONE manifests=%d reader=%s" % (checked, toml.__name__))
+    sys.exit(0)
+
+manifests = 0
+unread = []
+rows = []   # printed only after the unread check, so an UNMEASURED scan emits no row verdict
+
 
 for dirpath, dirnames, filenames in os.walk(root):
     dirnames[:] = [d for d in dirnames if d not in (".git", "target", "node_modules")]
@@ -131,6 +258,9 @@ for dirpath, dirnames, filenames in os.walk(root):
     try:
         with open(manifest, "rb") as fh:
             data = toml.load(fh)
+    except FallbackUnread as exc:
+        unread.append("%s (%s)" % (os.path.relpath(manifest, root), exc))
+        continue
     except (toml.TOMLDecodeError, OSError):
         continue
     manifests += 1
@@ -157,7 +287,16 @@ for dirpath, dirnames, filenames in os.walk(root):
                     if pat.search(line):
                         rel_m = os.path.relpath(manifest, root)
                         rel_s = os.path.relpath(path, root)
-                        print(f"{rel_m}|{alias}|{rel_s}:{n}:{stripped[:100]}")
+                        rows.append(f"{rel_m}|{alias}|{rel_s}:{n}:{stripped[:100]}")
+if unread:
+    # the fallback met a shape it does not parse: those manifests were NOT read, so the
+    # scan is not a verdict. Fleet state (the runner lacks a full reader), never a pass.
+    print("ENV: no TOML reader on this interpreter (python %d.%d, need tomllib >= 3.11 or tomli) runner=%s -- "
+          "the fallback reader could not read %d manifest(s): %s; this is not 'no violations'"
+          % (sys.version_info[0], sys.version_info[1], runner, len(unread), "; ".join(unread[:3])))
+    sys.exit(3)
+for row in rows:
+    print(row)
 # positive evidence that the scan RAN TO THE END; the shell refuses any output without it
 print("SCAN-DONE manifests=%d reader=%s" % (manifests, toml.__name__))
 PY
@@ -213,10 +352,19 @@ selftest() {
   mk ok_comment   'sib = { path = "../sib" }'                        '// use sib::thing;'
   mk ok_substring 'sib = { path = "../sib" }'                        'use sibling::thing;'
 
+  # THE SHAPES THE FALLBACK READER MUST GET RIGHT (#3863) -- scanned under both readers below
+  mk hit_subtable  $'[dev-dependencies.sib]\npath = "../sib"'        'use sib::thing;'
+  mk hit_trailing  'sib = { path = "../sib" } # version = "1"'       'use sib::thing;'
+  mk hit_dotted   'sib.path = "../sib"'                              'use sib::thing;'
+  mk hit_quoted    '"sib" = { path = "../sib", features = ["a", "b"] }' 'use sib::thing;'
+  mk ok_sub_versioned $'[dev-dependencies.sib]\npath = "../sib"\nversion = "0.1"' 'use sib::thing;'
+  mk ok_dotted_ws  'sib.workspace = true'                            'use sib::thing;'
+  mk ok_array_then $'sib = { path = "../sib" }\n\n[features]\nx = [\n  "y",\n]' 'pub fn f() {}'
+
   # ENV from the scanner is ENV here: rc 2, never "missed hit_use" (#3644).
   # Fleet state (rc 3) passes through: scan already printed the UNMEASURED line (#3692).
-  local env_rc=0
-  out="$(scan "$tmp")" || env_rc=$?
+  local env_rc=0 out_real out_fb
+  out_real="$(scan "$tmp")" || env_rc=$?
   if [ "$env_rc" -eq 3 ]; then
     cleanup; FIXTURES=""
     return 3
@@ -225,6 +373,15 @@ selftest() {
     printf 'ENV: the case table could not be measured (scan rc=%s)\n' "$env_rc"
     cleanup; FIXTURES=""
     return 2
+  fi
+  # The same table under the fallback reader, the one python 3.10 runs (#3863). It MUST
+  # measure: an UNMEASURED here is the intel shape standing down again, so it is RED.
+  env_rc=0
+  out_fb="$(PATHONLY_GUARD_FORCE_NO_TOML=1 scan "$tmp" 2>&1)" || env_rc=$?
+  if [ "$env_rc" -ne 0 ]; then
+    printf 'FAIL: the fallback reader did not measure the case table (scan rc=%s): %s\n' "$env_rc" "$out_fb"
+    cleanup; FIXTURES=""
+    return 1
   fi
 
   # Piping a producer into a quiet grep is banned here
@@ -241,12 +398,53 @@ selftest() {
     esac
   }
 
-  for row in hit_use hit_qualified hit_underscore hit_extern; do
-    row_present "$row" || { printf 'FAIL: missed %s\n' "$row"; rc=1; }
+  for reader in real fallback; do
+    if [ "$reader" = real ]; then out="$out_real"; else out="$out_fb"; fi
+    for row in hit_use hit_qualified hit_underscore hit_extern hit_subtable hit_trailing hit_dotted hit_quoted; do
+      row_present "$row" || { printf 'FAIL: missed %s (reader=%s)\n' "$row" "$reader"; rc=1; }
+    done
+    for row in ok_versioned ok_workspace ok_git ok_registry ok_unused ok_comment ok_substring \
+               ok_sub_versioned ok_dotted_ws ok_array_then; do
+      if row_present "$row"; then printf 'FAIL: false positive on %s (reader=%s)\n' "$row" "$reader"; rc=1; fi
+    done
   done
-  for row in ok_versioned ok_workspace ok_git ok_registry ok_unused ok_comment ok_substring; do
-    if row_present "$row"; then printf 'FAIL: false positive on %s\n' "$row"; rc=1; fi
-  done
+  out="$out_real"
+
+  # A shape the fallback does not parse is NOT "no deps": the whole scan is UNMEASURED
+  # (rc 3, the no-reader line), and it prints no row -- not even the must-match beside it.
+  local unread_root="$tmp/unread-root" ur_rc=0 ur_out
+  mkdir -p "$unread_root/multi/src" "$unread_root/hit/src"
+  printf '[package]\nname = "multi"\n\n[dev-dependencies]\nsib = {\n  path = "../sib" }\n' > "$unread_root/multi/Cargo.toml"
+  printf 'use sib::x;\n' > "$unread_root/multi/src/lib.rs"
+  printf '[package]\nname = "hit"\n\n[dev-dependencies]\nsib = { path = "../sib" }\n' > "$unread_root/hit/Cargo.toml"
+  printf 'use sib::x;\n' > "$unread_root/hit/src/lib.rs"
+  ur_out="$(PATHONLY_GUARD_FORCE_NO_TOML=1 scan "$unread_root" 2>&1)" || ur_rc=$?
+  case "$ur_rc:$ur_out" in
+    *"Cargo.toml|sib|"*) printf 'FAIL  unread  the fallback printed a row beside an unread manifest\n'; rc=1 ;;
+    3:*"UNMEASURED"*"reason=no-toml-reader"*"multi/Cargo.toml"*)
+      printf 'ok    unread rc=3  a manifest the fallback cannot parse makes the scan UNMEASURED, never a verdict\n' ;;
+    *) printf 'FAIL  unread rc=%s (wanted 3 + UNMEASURED naming multi/Cargo.toml): %s\n' "$ur_rc" "$ur_out"; rc=1 ;;
+  esac
+  rm -rf "${unread_root:?}"
+
+  # EQUIVALENCE ON THE REAL TREE (#3863): wherever a real reader exists, the fallback must
+  # read every manifest's dev-dep key names exactly as it does. Vacuity guard: the tree
+  # must yield manifests AND sourceless deps, else the comparison proved nothing.
+  if [ -z "${PATHONLY_GUARD_NESTED:-}" ] && [ -z "${PATHONLY_GUARD_FORCE_NO_TOML:-}" ]; then
+    local eq_out eq_rc=0
+    eq_out="$(PATHONLY_GUARD_EQUIV=1 scan "$REPO" 2>&1)" || eq_rc=$?
+    case "$eq_rc:$eq_out" in
+      0:*"EQUIV-MISMATCH"*)
+        printf 'FAIL  equiv  the fallback reads the tree differently from the real reader:\n'
+        printf '%s\n' "$eq_out" | grep '^EQUIV-MISMATCH' | head -5 | sed 's/^/      /'; rc=1 ;;
+      0:*"EQUIV-UNMEASURED"*) printf '~     equiv  no real TOML reader here; the equivalence row is measured on the other runners\n' ;;
+      0:*"EQUIV-DONE manifests=0 "*|0:*"EQUIV-DONE manifests="*" sourceless=0"*)
+        printf 'FAIL  equiv  vacuous: %s\n' "$eq_out"; rc=1 ;;
+      0:*"EQUIV-DONE manifests="*)
+        printf 'ok    equiv  %s -- fallback == real reader on every manifest\n' "$(printf '%s\n' "$eq_out" | grep '^EQUIV-DONE')" ;;
+      *) printf 'FAIL  equiv  rc=%s: %s\n' "$eq_rc" "$eq_out"; rc=1 ;;
+    esac
+  fi
 
   # THE DEATH ROWS (#3644): every way the scanner can fail to run must come
   # back as ENV rc=2, never as a row verdict. A must-match fixture is scanned
@@ -262,25 +460,26 @@ selftest() {
   # the exit code alone must not buy an UNMEASURED.
   printf '#!/bin/sh\necho "Traceback (most recent call last): boom" >&2\nexit 3\n' > "$tmp/exit3-python"
   chmod 755 "$tmp/exit3-python"
-  death 'both TOML readers absent (the intel shape) -> UNMEASURED rc=3, fleet state (#3692)' 3 PATHONLY_GUARD_FORCE_NO_TOML=1
+  death 'both TOML readers absent (the intel shape) -> the fallback MEASURES, rc=0 (#3863)'  0 PATHONLY_GUARD_FORCE_NO_TOML=1
   death 'no interpreter at all -> UNMEASURED rc=3, fleet state (#3692)'                     3 PATHONLY_GUARD_PYTHON="$tmp/no-such-python"
   death 'interpreter exits 1 with no output -> ENV rc=2 (RED), never fleet state'          2 PATHONLY_GUARD_PYTHON=/bin/false
   death 'interpreter exits 3 without the no-reader line -> ENV rc=2 (RED)'                 2 PATHONLY_GUARD_PYTHON="$tmp/exit3-python"
   death 'the working interpreter, as the control -> rc=0'                                  0 PATHONLY_GUARD_PYTHON="${PATHONLY_GUARD_PYTHON:-python3}"
   # The rows above call scan() directly. These run THE WHOLE GUARD, because the call
-  # site is where the old `|| true` swallowed the death. Under the intel shape: exit 0,
-  # an UNMEASURED line naming the reason, no row verdict and no OK line (#3692). Under a
-  # dead interpreter: exit 2, still RED. (Guarded against recursion; the nested run has
-  # no death rows of its own.)
+  # site is where the old `|| true` swallowed the death. Under the intel shape the guard
+  # MEASURES with the fallback reader: exit 0, its OK line, no UNMEASURED (#3863 -- it
+  # was UNMEASURED reason=no-toml-reader on intel-clean-room-4, #3692). Under a dead
+  # interpreter: exit 2, still RED. (Guarded against recursion; the nested run has no
+  # death rows of its own.)
   if [ -z "${PATHONLY_GUARD_NESTED:-}" ]; then
     local nested_out nested_rc=0
     nested_out=$(PATHONLY_GUARD_NESTED=1 PATHONLY_GUARD_FORCE_NO_TOML=1 RUNNER_NAME=intel-probe bash "$0" 2>&1) || nested_rc=$?
     case "$nested_rc:$nested_out" in
-      0:*"missed hit_"*|0:*"false positive"*|0:*"OK: no NEW"*)
-        printf 'FAIL  death  the whole guard under the intel shape printed a verdict beside its UNMEASURED\n'; rc=1 ;;
-      0:*$'\n'"UNMEASURED runner=intel-probe reason=no-toml-reader"*|0:"UNMEASURED runner=intel-probe reason=no-toml-reader"*)
-        printf 'ok    death  rc=0  the whole guard under the intel shape is UNMEASURED reason=no-toml-reader, no verdict (#3692)\n' ;;
-      *)   printf 'FAIL  death  rc=%s (wanted 0 + UNMEASURED reason=no-toml-reader)  the whole guard under the intel shape: %s\n' "$nested_rc" "$nested_out"; rc=1 ;;
+      "UNMEASURED runner="*|*$'\n'"UNMEASURED runner="*|*:"UNMEASURED runner="*)
+        printf 'FAIL  death  the whole guard under the intel shape stood down to UNMEASURED (#3863): %s\n' "$nested_out"; rc=1 ;;
+      0:*"OK: no NEW"*)
+        printf 'ok    death  rc=0  the whole guard under the intel shape MEASURES the tree with the fallback reader (#3863)\n' ;;
+      *)   printf 'FAIL  death  rc=%s (wanted 0 + OK)  the whole guard under the intel shape: %s\n' "$nested_rc" "$nested_out"; rc=1 ;;
     esac
     nested_rc=0
     PATHONLY_GUARD_NESTED=1 PATHONLY_GUARD_PYTHON=/bin/false bash "$0" > /dev/null 2>&1 || nested_rc=$?
@@ -290,7 +489,7 @@ selftest() {
 
   cleanup
   FIXTURES=""
-  [ "$rc" -eq 0 ] && printf 'PASS: case table (4 must-match, 7 must-not-match, 7 death rows)\n'
+  [ "$rc" -eq 0 ] && printf 'PASS: case table (8 must-match, 10 must-not-match, x2 readers; 1 unread row; 7 death rows; tree equivalence)\n'
   return "$rc"
 }
 
