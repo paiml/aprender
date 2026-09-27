@@ -625,7 +625,10 @@ mod tests {
     fn legacy_depends_on_is_counted_never_rejected_and_ratcheted() {
         // the fixture carries metadata.depends_on with one resolving and one dangling target
         let (result, findings) = ran("relations-legacy");
-        assert!(result.passed, "no comparand: counted, never judged: {findings:?}");
+        assert!(
+            result.passed,
+            "no comparand: counted, never judged: {findings:?}"
+        );
         match result.extra {
             Some(GateExtra::Relations {
                 legacy_depends_on,
@@ -639,17 +642,21 @@ mod tests {
         }
         // a rise measured against the comparand (relations-ok: 0 dangling) is a violation
         let (result, findings) =
-            crate::lint::comparand::with_comparand(&fixture("relations-ok"), || ran("relations-legacy"));
+            crate::lint::comparand::with_comparand(&fixture("relations-ok"), || {
+                ran("relations-legacy")
+            });
         assert!(!result.passed);
         assert_eq!(rules(&findings), vec!["PV-ONT-010"]);
         // and the same pair the other way round is a fall, which passes
         let (result, findings) =
-            crate::lint::comparand::with_comparand(&fixture("relations-legacy"), || ran("relations-ok"));
+            crate::lint::comparand::with_comparand(&fixture("relations-legacy"), || {
+                ran("relations-ok")
+            });
         assert!(result.passed, "{findings:?}");
-        let (result, findings) = crate::lint::comparand::with_comparand(
-            &fixture("relations-legacy"),
-            || ran("relations-legacy"),
-        );
+        let (result, findings) =
+            crate::lint::comparand::with_comparand(&fixture("relations-legacy"), || {
+                ran("relations-legacy")
+            });
         assert!(result.passed, "a hold is not a rise: {findings:?}");
     }
 

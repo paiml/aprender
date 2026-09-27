@@ -164,7 +164,11 @@ fn prose_is_ratcheted_head_against_the_comparand_in_both_directions() {
     // a comparand with a second prose pair (c refines b in prose): the head's one is a fall
     let two = fixture("refines-prose");
     let a = std::fs::read_to_string(two.path().join("a.yaml")).expect("a.yaml");
-    std::fs::write(two.path().join("c.yaml"), a.replace("name: a\n", "name: c\n")).expect("c.yaml");
+    std::fs::write(
+        two.path().join("c.yaml"),
+        a.replace("name: a\n", "name: c\n"),
+    )
+    .expect("c.yaml");
     let (r, findings, c) = with_comparand(two.path(), || ran(run_refines_gate(head.path())));
     assert!(findings.is_empty(), "a fall passes: {findings:?}");
     assert_eq!(c.liskov_prose_baseline, Some(2));

@@ -135,7 +135,8 @@ fn the_row_probe_passes_on_the_repo_corpus() {
     );
     // Against itself the baseline is the count, measured: nothing to hand-edit, nothing to restamp.
     assert_eq!(
-        extra["baseline"], extra["contracts_without_valid_under"],
+        extra["baseline"],
+        extra["contracts_without_valid_under"],
         "the baseline is the comparand measured\n{}",
         show(&r)
     );
@@ -221,7 +222,14 @@ fn a_malformed_qualifier_rejects() {
 fn a_rise_in_the_debt_against_the_comparand_rejects_and_a_fall_passes() {
     let against = |head: &str, base: &str| {
         pv_against(
-            &["lint", &fixture(head), "--gate", "valid-under", "--format", "json"],
+            &[
+                "lint",
+                &fixture(head),
+                "--gate",
+                "valid-under",
+                "--format",
+                "json",
+            ],
             Some(&fixture(base)),
         )
     };
@@ -236,7 +244,10 @@ fn a_rise_in_the_debt_against_the_comparand_rejects_and_a_fall_passes() {
     // no comparand named: the debt is reported, never judged
     let alone = gate(&fixture("valid-under-ratchet-rise"));
     assert_eq!(alone.code, 0, "{}", show(&alone));
-    assert_eq!(json_of(&alone)["extra"]["baseline"], serde_json::Value::Null);
+    assert_eq!(
+        json_of(&alone)["extra"]["baseline"],
+        serde_json::Value::Null
+    );
 }
 
 #[test]

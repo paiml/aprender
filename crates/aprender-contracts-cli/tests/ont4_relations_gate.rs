@@ -179,7 +179,14 @@ fn a_malformed_sigma_is_an_error_at_exit_3() {
 fn the_legacy_ratchet_rejects_a_rise_and_passes_a_hold() {
     let gate_against = |head: &str, base: &str| {
         pv_against(
-            &["lint", &s(&fixture(head)), "--gate", "relations", "--format", "json"],
+            &[
+                "lint",
+                &s(&fixture(head)),
+                "--gate",
+                "relations",
+                "--format",
+                "json",
+            ],
             Some(&fixture(base)),
         )
     };

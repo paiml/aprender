@@ -137,13 +137,33 @@ fn the_ratchet_rejects_a_rise_only() {
 fn the_baseline_is_the_comparand_measured_and_a_stored_number_is_none() {
     let t = pairing_repo();
     // the pre-#3569 stored shape: a number a PR could restamp
-    write(t.path(), "contracts/lint-baseline.json", r#"{"unpaired_theorem_modules": 7}"#);
-    assert_eq!(baseline_of(UNPAIRED_KEY), None, "no comparand: no baseline, whatever is stored");
+    write(
+        t.path(),
+        "contracts/lint-baseline.json",
+        r#"{"unpaired_theorem_modules": 7}"#,
+    );
+    assert_eq!(
+        baseline_of(UNPAIRED_KEY),
+        None,
+        "no comparand: no baseline, whatever is stored"
+    );
     let base = snapshot(t.path());
-    assert_eq!(against(&base, || baseline_of(UNPAIRED_KEY)), Some(1), "the comparand, measured");
-    assert_eq!(against(&base, || baseline_of("formal_prose")), None, "not an EV-11 key");
+    assert_eq!(
+        against(&base, || baseline_of(UNPAIRED_KEY)),
+        Some(1),
+        "the comparand, measured"
+    );
+    assert_eq!(
+        against(&base, || baseline_of("formal_prose")),
+        None,
+        "not an EV-11 key"
+    );
     let empty = tempfile::tempdir().expect("tempdir");
-    assert_eq!(against(&empty, || baseline_of(UNPAIRED_KEY)), None, "a comparand that declines is no baseline");
+    assert_eq!(
+        against(&empty, || baseline_of(UNPAIRED_KEY)),
+        None,
+        "a comparand that declines is no baseline"
+    );
 }
 
 // ── theorem-pairing over a repo ───────────────────────────────────────────────────────────────────────────
@@ -153,7 +173,10 @@ fn theorem_pairing_counts_the_modules_no_book_page_names() {
     let t = pairing_repo();
     let base = snapshot(t.path());
     let (r, rules) = against(&base, || pairing(t.path()));
-    assert!(r.passed && !r.skipped, "unchanged against the comparand: pass");
+    assert!(
+        r.passed && !r.skipped,
+        "unchanged against the comparand: pass"
+    );
     assert!(rules.is_empty());
     assert_eq!(
         unpaired_of(&r),
@@ -314,7 +337,11 @@ fn adding_a_kernel_contract_with_no_depends_on_is_red() {
     write(t.path(), "contracts/c-v1.yaml", &contract("kernel", "[]"));
     let (r, rules) = against(&base, || depends(t.path()));
     // and the same pair the other way round is a fall
-    assert!(with_comparand(&t.path().join("contracts"), || depends(base.path())).0.passed);
+    assert!(
+        with_comparand(&t.path().join("contracts"), || depends(base.path()))
+            .0
+            .passed
+    );
     assert!(!r.passed);
     assert_eq!(rules, ["PV-RAT-002"]);
     assert_eq!(without_of(&r), (3, 2));
@@ -344,10 +371,19 @@ fn a_stored_count_moves_nothing_and_is_never_written() {
     // a stored 0 once made this unchanged head RED; a stored 9 would have hidden a rise
     let json = "{\n  \"unpaired_theorem_modules\": 0,\n  \"contracts_without_depends_on\": 0\n}\n";
     write(t.path(), "contracts/lint-baseline.json", json);
-    assert!(against(&base, || pairing(t.path())).0.passed, "a hold, whatever is stored");
-    assert!(against(&base, || depends(t.path())).0.passed, "a hold, whatever is stored");
+    assert!(
+        against(&base, || pairing(t.path())).0.passed,
+        "a hold, whatever is stored"
+    );
+    assert!(
+        against(&base, || depends(t.path())).0.passed,
+        "a hold, whatever is stored"
+    );
     let (r, _) = pairing(t.path());
-    assert!(!r.passed && r.skipped, "no comparand: reported, the stored 0 is not a baseline");
+    assert!(
+        !r.passed && r.skipped,
+        "no comparand: reported, the stored 0 is not a baseline"
+    );
     assert_eq!(
         std::fs::read_to_string(t.path().join("contracts/lint-baseline.json")).expect("read"),
         json
@@ -473,7 +509,10 @@ fn a_summary_that_is_not_green_derives_nothing() {
     ];
     write(t.path(), SUMMARY, &summary_json("0", &all));
     let base = snapshot(t.path());
-    assert!(against(&base, || derived_gate(t.path())).0.passed, "green: 0 underived");
+    assert!(
+        against(&base, || derived_gate(t.path())).0.passed,
+        "green: 0 underived"
+    );
     for bad in ["1", "124", "null"] {
         write(t.path(), SUMMARY, &summary_json(bad, &all));
         let (r, rules) = against(&base, || derived_gate(t.path()));

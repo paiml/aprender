@@ -37,13 +37,27 @@ STEPS=(lint shapes consistency census regen readme provenance diff)
 # expected to lag; a PR may not edit it (scripts/check_census_derived.sh). The census step checks a FRESH one.
 GENERATED=(contracts/contracts.nt contracts/shapes.ttl)
 
+# #3569 part 2: the ratchets inside `pv lint` (sigma prose, relations legacy, refines prose, valid-under,
+# proved-is-derived, the EV-11 pair) are measured head vs the comparand TREE, never a stored number. The
+# tree is extracted here and named to pv as PV_LINT_COMPARAND; a comparand that cannot be named is RED,
+# never a lint that silently judged nothing.
 step_lint() {
-    local log rc
-    log=$(mktemp "${TMPDIR:-/tmp}/pv-lint-contracts.XXXXXX") || return 1
-    "$PV" lint contracts/ >"$log" 2>&1
+    local log rc tree
+    tree=$(mktemp -d "${TMPDIR:-/tmp}/pv-lint-comparand.XXXXXX") || return 1
+    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "FAIL: not in a git checkout, so no comparand"; rm -rf "${tree:?}"; return 1; }
+    PROG="contracts gate: lint"
+    # shellcheck source=scripts/lib/comparand_tree.sh
+    if ! . "$(dirname "$SELF")/lib/comparand_tree.sh" || ! comparand_tree "$tree"; then
+        echo "FAIL: no comparand tree for pv lint's ratchets (#3569) -- unmeasured is not unchanged"
+        rm -rf "${tree:?}"
+        return 1
+    fi
+    log=$(mktemp "${TMPDIR:-/tmp}/pv-lint-contracts.XXXXXX") || { rm -rf "${tree:?}"; return 1; }
+    PV_LINT_COMPARAND="$COMPARAND_CONTRACTS" "$PV" lint contracts/ >"$log" 2>&1
     rc=$?
     tail -5 "$log"
-    rm -f "$log"
+    rm -f "${log:?}"
+    rm -rf "${tree:?}"
     return "$rc"
 }
 
@@ -166,7 +180,8 @@ case "$1" in
   census)  echo "{\"n_files\": $n}" ;;
   extract) echo "nt $n" >contracts/contracts.nt; echo "ttl $n" >contracts/shapes.ttl ;;
   lint)
-    [ "${3:-}" = --gate ] || exit 0
+    # #3569: the full lint must be handed a comparand tree that carries contracts/
+    [ "${3:-}" = --gate ] || { [ -f "${PV_LINT_COMPARAND:-/nonexistent}/a.yaml" ] || { echo "stub: no comparand"; exit 1; }; exit 0; }
     ok='"verdict":"Pass","extra":{"shapes_n":21,"focus_nodes_n":9,"pc_shape":"fired","pc_extract":{"gguf":"fired","kernel":"fired"}}'
     case "${STUB_SHAPES:-pass}" in
       pass)      echo "{$ok}" ;;
@@ -196,7 +211,9 @@ STUB
             && printf '#!/usr/bin/env bash\nexit 0\n' >scripts/readme_sync.sh \
             && cp scripts/readme_sync.sh scripts/lint-provenance.sh \
             && printf '#!/usr/bin/env bash\n[ "$1" = --census ] && [ -s "$2" ] || exit 1\n[ "${STUB_CD:-}" != fail ] || { echo "stub: census invariants FAIL"; exit 1; }\n' >scripts/check_census_derived.sh \
-            && git add -A && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm fixture
+            && git add -A && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm fixture \
+            && git update-ref refs/remotes/origin/main HEAD \
+            && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -q --allow-empty -m branch
     ) || { echo "self-test: fixture setup failed"; return 2; }
     row() {
         if [ "$2" -eq 0 ]; then pass=$((pass + 1)); echo "ok   $1"; else fail=$((fail + 1)); echo "FAIL $1"; fi
@@ -215,6 +232,12 @@ STUB
     out=$(run "$SELF" lint pass); rc=$?
     [ "$rc" != 0 ] && grep -q '8 of 8 step(s) RAN, 1 FAILED: lint' <<<"$out"
     row "a red pv lint is non-zero AND every later step still runs (rc=$rc)" $?
+
+    (cd "$d" && git update-ref -d refs/remotes/origin/main)
+    out=$(run "$SELF" "" pass lint); rc=$?
+    (cd "$d" && git update-ref refs/remotes/origin/main HEAD~1)
+    [ "$rc" != 0 ] && grep -q "no comparand tree" <<<"$out" && grep -q "FAILED: lint" <<<"$out"
+    row "no nameable comparand is RED on lint, never a lint that judged nothing (#3569, rc=$rc)" $?
 
     out=$(run "$SELF" sat pass); rc=$?
     [ "$rc" != 0 ] && grep -q 'FAILED: consistency' <<<"$out"
@@ -266,7 +289,7 @@ STUB
 
     rm -rf "${d:?}"
     echo "contracts_gate self-test: $pass passed, $fail failed"
-    [ "$fail" -eq 0 ] && [ "$pass" -eq 19 ]
+    [ "$fail" -eq 0 ] && [ "$pass" -eq 20 ]
 }
 
 SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")

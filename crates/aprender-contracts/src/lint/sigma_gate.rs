@@ -282,7 +282,9 @@ mod tests {
 
     fn prose_rise(head: &Path) -> bool {
         match run_sigma_gate(head) {
-            SigmaOutcome::Ran { findings, .. } => findings.iter().any(|f| f.rule_id == "PV-ONT-004"),
+            SigmaOutcome::Ran { findings, .. } => {
+                findings.iter().any(|f| f.rule_id == "PV-ONT-004")
+            }
             other => panic!("expected Ran, got {other:?}"),
         }
     }
@@ -301,13 +303,17 @@ mod tests {
     #[test]
     fn a_rise_in_the_prose_debt_against_the_comparand_is_a_violation() {
         // head carries one prose `formal:`; the comparand (sigma-ok) carries none.
-        let rise = with_comparand(&fixture("sigma-ok"), || prose_rise(&fixture("sigma-prose-ratchet")));
+        let rise = with_comparand(&fixture("sigma-ok"), || {
+            prose_rise(&fixture("sigma-prose-ratchet"))
+        });
         assert!(rise, "a rise measured comparand -> head fails the gate");
     }
 
     #[test]
     fn a_fall_or_a_hold_against_the_comparand_passes() {
-        let fall = with_comparand(&fixture("sigma-prose-ratchet"), || prose_rise(&fixture("sigma-ok")));
+        let fall = with_comparand(&fixture("sigma-prose-ratchet"), || {
+            prose_rise(&fixture("sigma-ok"))
+        });
         assert!(!fall, "a fall is progress");
         let hold = with_comparand(&fixture("sigma-prose-ratchet"), || {
             prose_rise(&fixture("sigma-prose-ratchet"))

@@ -432,7 +432,11 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus(report: 
     for g in &report.gates {
         // an EV-11 ratchet with no comparand named (#3569) reports its count: Unknown{Report} refines the skip
         if g.verdict == Verdict::Unknown(crate::ontology::verdict::Reason::Report) {
-            assert!(!g.passed && g.skipped, "gate {}: a report is never a pass", g.name);
+            assert!(
+                !g.passed && g.skipped,
+                "gate {}: a report is never a pass",
+                g.name
+            );
             continue;
         }
         assert_eq!(

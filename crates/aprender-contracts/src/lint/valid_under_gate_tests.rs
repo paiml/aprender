@@ -192,7 +192,11 @@ fn the_census_counts_what_it_saw() {
     let Some(GateExtra::ValidUnder { baseline, .. }) = extra else {
         panic!("valid-under extra");
     };
-    assert_eq!(baseline, Some(0), "the baseline is the comparand measured, not a stored number");
+    assert_eq!(
+        baseline,
+        Some(0),
+        "the baseline is the comparand measured, not a stored number"
+    );
     let (_, _, extra) = ran("valid-under-appendix-b");
     let Some(GateExtra::ValidUnder { by_world, .. }) = extra else {
         panic!("valid-under extra");

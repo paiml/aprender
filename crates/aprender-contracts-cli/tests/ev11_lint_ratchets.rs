@@ -31,10 +31,6 @@ struct Run {
 
 const COMPARAND: &str = "PV_LINT_COMPARAND";
 
-fn pv(args: &[&str]) -> Run {
-    pv_against(args, None)
-}
-
 /// `pv` with `comparand` named as the tree the baselines are measured over; `None` names none, whatever the
 /// caller's environment exports.
 fn pv_against(args: &[&str], comparand: Option<&Path>) -> Run {
@@ -149,7 +145,10 @@ fn the_probe_passes_on_the_real_corpus_against_itself_and_stores_nothing() {
     let before = std::fs::read(&baseline).expect("baseline readable");
     let doc: serde_json::Value = serde_json::from_slice(&before).expect("baseline is JSON");
     for key in RETIRED {
-        assert!(doc.get(key).is_none(), "{key} is measured, not stored: {doc}");
+        assert!(
+            doc.get(key).is_none(),
+            "{key} is measured, not stored: {doc}"
+        );
     }
 
     let dir = repo_contracts();
@@ -235,7 +234,12 @@ fn a_restamped_stored_count_moves_nothing() {
         "{\n  \"unpaired_theorem_modules\": 99,\n  \"contracts_without_depends_on\": 99\n}\n",
     );
     let r = lint_against(t.path(), Some(base.path()), &BOTH);
-    assert_eq!(r.code, 1, "a restamp does not hide a measured rise: {}", show(&r));
+    assert_eq!(
+        r.code,
+        1,
+        "a restamp does not hide a measured rise: {}",
+        show(&r)
+    );
     assert!(r.stdout.contains("PV-RAT-001"), "{}", show(&r));
     // and with no comparand the stored number is not a baseline either
     let r = lint(t.path(), &BOTH);
