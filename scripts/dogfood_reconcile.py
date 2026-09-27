@@ -40,31 +40,22 @@ import sys
 CSV_PATH = "docs/audits/surface_audit.csv"
 HTTP_VERBS = ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "HEAD ")
 
-# In-scope ledger rows a DEFAULT cargo build cannot show. Each was proven by
-# rebuilding with the feature and watching the subcommand appear -- not inferred
-# from reading a #[cfg] attribute, because an attribute says what the source
-# intends and a rebuild says what the binary does.
-#
-#   dev      -> apr mono {publish, shims, audit, archive}
-#   hf-hub   -> aprender-data {hub push, import hf}   (+ the `apr data x` mirror)
-#   doctest  -> aprender-data doctest {extract, merge} (+ the `apr data x` mirror)
-#   eval     -> aprender-rag eval {7 verbs}          (+ the `apr rag` mirror)
-#
-# ENUMERATED, never a bare count: a tolerance of "<= 28 mismatches" would absorb
-# a real deletion. Anything not on this list turns the gate RED.
-FEATURE_GATED = {
-    "apr mono archive", "apr mono audit", "apr mono publish", "apr mono shims",
-    "aprender-data hub push", "aprender-data import hf",
-    "aprender-data doctest extract", "aprender-data doctest merge",
-    "apr data x hub push", "apr data x import hf",
-    "apr data x doctest extract", "apr data x doctest merge",
-    "aprender-rag eval compare", "aprender-rag eval gate", "aprender-rag eval generate",
-    "aprender-rag eval judge", "aprender-rag eval metrics", "aprender-rag eval retrieve",
-    "aprender-rag eval sample",
-    "apr rag eval compare", "apr rag eval gate", "apr rag eval generate",
-    "apr rag eval judge", "apr rag eval metrics", "apr rag eval retrieve",
-    "apr rag eval sample",
-}
+# In-scope ledger rows a DEFAULT cargo build cannot show, with the proof of each,
+# live in ONE file that extract:binary reads too (ONT-4g, #4476). ENUMERATED,
+# never a bare count: anything not listed there turns the gate RED.
+FEATURE_GATED_PATH = "docs/audits/surface_audit_feature_gated.csv"
+
+
+def load_feature_gated(path=FEATURE_GATED_PATH):
+    """The `feature` column of every allowance row (comments and header skipped)."""
+    rows = [l.rstrip("\n") for l in open(path, encoding="utf-8")]
+    rows = [l for l in rows if l.strip() and not l.startswith("#")]
+    if not rows or rows[0] != "binary,feature":
+        raise SystemExit(f"FAIL: {path} header is not `binary,feature`")
+    return {l.split(",", 1)[1] for l in rows[1:]}
+
+
+FEATURE_GATED = load_feature_gated()
 
 # The emitter inherits dogfood_surfaces.sh's `grep -vE '^(help)$'` filter, so the
 # literal `help` subcommand never appears in the runtime set even though clap

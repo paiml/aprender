@@ -1,0 +1,45 @@
+# Ledger rows (docs/audits/surface_audit.csv) a DEFAULT cargo build cannot show.
+# ONE list, read by scripts/dogfood_reconcile.py and by extract:binary
+# (crates/aprender-contracts/src/ontology/extract/binary.rs). Each row must name a
+# ledger row exactly (binary, feature); a row that names none is refused.
+#
+# Command rows were proven by rebuilding with the feature and watching the
+# subcommand appear -- not inferred from a #[cfg] attribute:
+#   dev      -> apr mono {publish, shims, audit, archive}
+#   hf-hub   -> aprender-data {hub push, import hf}   (+ the `apr data x` mirror)
+#   doctest  -> aprender-data doctest {extract, merge} (+ the `apr data x` mirror)
+#   eval     -> aprender-rag eval {7 verbs}          (+ the `apr rag` mirror)
+# Route rows:
+#   cuda     -> apr serve POST /v1/{logprobs,perplexity}
+#               (crates/aprender-serve/src/api/router.rs, #[cfg(feature = "cuda")])
+#
+# ENUMERATED, never a bare count: a tolerance would absorb a real deletion.
+binary,feature
+apr,apr mono archive
+apr,apr mono audit
+apr,apr mono publish
+apr,apr mono shims
+aprender-data,aprender-data hub push
+aprender-data,aprender-data import hf
+aprender-data,aprender-data doctest extract
+aprender-data,aprender-data doctest merge
+apr,apr data x hub push
+apr,apr data x import hf
+apr,apr data x doctest extract
+apr,apr data x doctest merge
+aprender-rag,aprender-rag eval compare
+aprender-rag,aprender-rag eval gate
+aprender-rag,aprender-rag eval generate
+aprender-rag,aprender-rag eval judge
+aprender-rag,aprender-rag eval metrics
+aprender-rag,aprender-rag eval retrieve
+aprender-rag,aprender-rag eval sample
+apr,apr rag eval compare
+apr,apr rag eval gate
+apr,apr rag eval generate
+apr,apr rag eval judge
+apr,apr rag eval metrics
+apr,apr rag eval retrieve
+apr,apr rag eval sample
+apr,POST /v1/logprobs
+apr,POST /v1/perplexity

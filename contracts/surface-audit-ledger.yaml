@@ -1,0 +1,87 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# surface-audit-ledger — docs/audits/surface_audit.csv as a graded csv entity (ONT-4g, #4476)
+#
+# WHAT IS GRADED. `extract:csv` reads the ledger extract:binary joins every bin target against: its exact
+# 10-column header, the data-row count, the sha256 of the bytes, and the producer this contract names. The rows
+# are curated by the surface audit, not generated; `csv:producer` names the runtime enumeration they are
+# reconciled against (scripts/dogfood_surfaces.sh, via scripts/dogfood_reconcile.py). The shape targets
+# `csv:dataset/surface-audit-ledger`, never `csv:Dataset`, so it grades this file and no other dataset.
+#
+# Deleting a row the snapshot still shows is RED by name through binary-target (bin:unledgered*), not here.
+#
+# KIND: pattern. The edit that makes it fail: rename, add or drop a header column.
+# ─────────────────────────────────────────────────────────────────────────────
+name: surface-audit-ledger
+version: "1.0.0"
+scope: >
+  docs/audits/surface_audit.csv: its header, row count and bytes, and the enumeration it is reconciled against.
+  Out of scope: each row's content, which binary-surface-v1's binary-target shape joins against the snapshot.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    The surface-audit ledger becomes a csv:Dataset node with the exact ledger header, a row count, a sha256
+    and a producer that exists.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the binary-target shape that joins the ledger'
+    - 'contracts/apr-dogfood-coverage-v1.yaml — the coverage ratchet over the same rows'
+    - 'crates/aprender-contracts/src/ontology/extract/csv.rs'
+
+entity:
+  type: csv
+  ref: docs/audits/surface_audit.csv
+  properties:
+    producer: scripts/dogfood_surfaces.sh
+
+relations:
+  depends_on: [ont-sigma-v1, ont-shapes-v1, binary-surface-v1]
+
+shape:
+  targetClass: csv:dataset/surface-audit-ledger
+  properties:
+    - {path: csv:header, minCount: 1, maxCount: 1,
+       in: ["binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence"]}
+    - {path: csv:column, minCount: 10, maxCount: 10}
+    - {path: csv:rows, minCount: 1, maxCount: 1, datatype: xsd:integer}
+    - {path: csv:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+    - {path: csv:producer, minCount: 1, maxCount: 1, resolves: path}
+
+equations:
+  rectangular:
+    formula: "∀ row ∈ data(surface_audit.csv): |row| = |header(surface_audit.csv)| = 10"
+    domain: every non-empty line after the header
+    codomain: one csv:Dataset node, or a PV-ONT-012 refusal naming the file and the row
+    invariants:
+      - a ragged row is refused by name, never truncated or padded
+    preconditions:
+      - the file is UTF-8
+    postconditions:
+      - the header is exactly the 10-column surface-audit header extract:binary reads
+    lean_theorem: "none — L4 not declared"
+
+invariants:
+  - id: SAL-INV-001
+    property: every data row has the header's column count
+    formal: '∀ r ∈ rows(surface_audit.csv): |r| = 10'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-SAL-001
+    rule: a ledger header the joins cannot read is RED by name
+    prediction: >
+      renaming the `feature` column makes both extract:binary refuse the ledger (header is not the
+      surface-audit header) and this shape fail csv:header on ont:csv/surface-audit-ledger
+    test: cargo test -p aprender-contracts --lib ontology::extract
+    if_fails: the binary join silently reads a ledger with the wrong columns
+  - id: FALSIFY-SAL-002
+    rule: another dataset is not graded by this shape
+    prediction: >
+      csv-train's node carries csv:dataset/csv-train, not csv:dataset/surface-audit-ledger, so its
+      three-column header is never a violation here (and this ledger's is never one of csv-train's)
+    test: cargo test -p aprender-contracts --lib ontology::extract::csv::tests::each_dataset_has_its_own_class
+    if_fails: two datasets grade each other's header and every armed csv shape is RED

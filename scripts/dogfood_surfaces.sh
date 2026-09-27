@@ -790,16 +790,26 @@ snap_routes() {
                   done
             ;;
         aprender-orchestrate/aprender-orchestrate)
-            # axum `.route("/p", get(h).post(h))` chains, joined onto one line per route
-            tr '\n' ' ' < "$REPO_ROOT"/crates/aprender-orchestrate/src/serve/banco/router.rs \
-                | grep -oE '\.route\([[:space:]]*"[^"]+"[[:space:]]*,[^;]*' \
-                | sed -E 's/\.route\(/\n.route(/g' \
-                | awk 'match($0, /"[^"]+"/) { p=substr($0, RSTART+1, RLENGTH-2); rest=substr($0, RSTART+RLENGTH);
-                        while (match(rest, /(^|[^a-z_])(get|post|put|delete|patch|head)\(/)) {
-                            m=substr(rest, RSTART, RLENGTH); gsub(/[^a-z]/, "", m);
-                            print toupper(m) " " p; rest=substr(rest, RSTART+RLENGTH) } }'
+            snap_axum_routes "$REPO_ROOT"/crates/aprender-orchestrate/src/serve/banco/router.rs
+            ;;
+        aprender-db/aprender-db)
+            snap_axum_routes "$REPO_ROOT"/crates/aprender-db/src/main.rs
+            ;;
+        aprender-test-cli/aprender-test-cli)
+            snap_axum_routes "$REPO_ROOT"/crates/aprender-test-cli/src/dev_server.rs
             ;;
     esac
+}
+
+# axum `.route("/p", get(h).post(h))` chains in one file, one "VERB /p" per method.
+snap_axum_routes() {
+    tr '\n' ' ' < "$1" \
+        | grep -oE '\.route\([[:space:]]*"[^"]+"[[:space:]]*,[^;]*' \
+        | sed -E 's/\.route\(/\n.route(/g' \
+        | awk 'match($0, /"[^"]+"/) { p=substr($0, RSTART+1, RLENGTH-2); rest=substr($0, RSTART+RLENGTH);
+                while (match(rest, /(^|[^a-z_])(get|post|put|delete|patch|head)\(/)) {
+                    m=substr(rest, RSTART, RLENGTH); gsub(/[^a-z]/, "", m);
+                    print toupper(m) " " p; rest=substr(rest, RSTART+RLENGTH) } }'
 }
 
 # MCP tools, asked of the binary over stdio.

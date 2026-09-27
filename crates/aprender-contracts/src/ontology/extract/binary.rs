@@ -20,6 +20,9 @@
 //!   `"<name> <path> …"`, its path cut at the first token starting with `-`, `<`, `[` or `(`; a bare `"<name>"` or
 //!   `"<name> --flag"` row is the binary itself, never an orphan. A route row is `"VERB /path …"`; a tool row is
 //!   `"mcp:<tool> …"`. Rows of any other form are counted in `bin:auditRow` and joined to nothing.
+//! - `bin:featureGated` (not a violation): a ledger row [`FEATURE_GATED`] declares absent from the default-feature
+//!   build (`dev`, `hf-hub`, `doctest`, `eval`, `cuda`). It leaves the join, so it is never an orphan; a gated row
+//!   naming no ledger row is an extractor error.
 //!
 //! Census (the extractor-missing check): at a `[workspace]` root the member manifests are read for their bin targets
 //! (`[[bin]]` tables plus cargo's `src/main.rs` / `src/bin/*` auto-discovery), and every census target without a
@@ -42,6 +45,9 @@ pub const SNAPSHOT: &str = "evidence/binary/snapshot.jsonl";
 pub const SCHEMA: &str = "binary-snapshot/v1";
 /// The surface-audit ledger, relative to the repo root.
 pub const LEDGER: &str = "docs/audits/surface_audit.csv";
+/// The ledger rows a default cargo build cannot show (feature- or hardware-gated), relative to the repo root.
+/// `scripts/dogfood_reconcile.py` reads the same file, so the allowance has one source.
+pub const FEATURE_GATED: &str = "docs/audits/surface_audit_feature_gated.csv";
 /// The ledger header this reader understands; any other header is refused.
 pub const LEDGER_HEADER: &str =
     "binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,\
@@ -99,6 +105,10 @@ pub struct LedgerEntry {
     pub commands: BTreeSet<String>,
     pub routes: BTreeSet<String>,
     pub tools: BTreeSet<String>,
+    /// Command paths / route keys [`FEATURE_GATED`] moved out of `commands` / `routes`: absent from the
+    /// default-feature snapshot by declaration, so `bin:featureGated`, never `bin:ledgerOrphan{,Route}`.
+    pub gated_commands: BTreeSet<String>,
+    pub gated_routes: BTreeSet<String>,
 }
 
 /// Counts reported beside the graph.
@@ -120,6 +130,8 @@ pub struct BinaryStats {
     pub help_failed: usize,
     pub unledgered: usize,
     pub orphans: usize,
+    /// [`FEATURE_GATED`] rows applied.
+    pub feature_gated: usize,
     /// Nodes with no ledger row at all.
     pub no_audit_row: usize,
     pub errors: Vec<ExtractError>,
@@ -315,6 +327,41 @@ pub fn parse_ledger(text: &str) -> Result<BTreeMap<String, LedgerEntry>, String>
     Ok(out)
 }
 
+/// Move every [`FEATURE_GATED`] row out of the joinable sets of `ledger`. The text is `binary,feature` lines
+/// after `#` comments and a `binary,feature` header. A row naming no ledger row, or naming a row that is not a
+/// command or route, is refused by name: an allowance that allows nothing is a stale list, not a no-op.
+pub fn apply_feature_gated(
+    ledger: &mut BTreeMap<String, LedgerEntry>,
+    text: &str,
+) -> Result<usize, String> {
+    let mut lines = text
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'));
+    if lines.next() != Some("binary,feature") {
+        return Err("header is not `binary,feature`".into());
+    }
+    let mut n = 0;
+    for line in lines {
+        let Some((binary, feature)) = line.split_once(',') else {
+            return Err(format!("line `{line}` is not `binary,feature`"));
+        };
+        let Some(e) = ledger.get_mut(binary).filter(|e| e.rows.contains(feature)) else {
+            return Err(format!("`{line}` names no ledger row"));
+        };
+        if let Some(r) = route_key(feature) {
+            e.routes.remove(&r);
+            e.gated_routes.insert(r);
+        } else if let Some(p) = command_path(binary, feature).filter(|p| !p.is_empty()) {
+            e.commands.remove(&p);
+            e.gated_commands.insert(p);
+        } else {
+            return Err(format!("`{line}` is neither a command nor a route row"));
+        }
+        n += 1;
+    }
+    Ok(n)
+}
+
 /// `(package, target)` of every bin target one manifest declares: its `[[bin]]` tables, plus cargo's
 /// auto-discovered `src/main.rs` (named for the package) and `src/bin/<x>.rs` / `src/bin/<x>/main.rs` unless
 /// `autobins = false` or a `[[bin]]` already uses that file. A `[[bin]]` of the same name replaces the discovered
@@ -457,6 +504,9 @@ pub fn emit(g: &mut Graph, t: &Target, ledger: Option<&LedgerEntry>, pair_mismat
             g.insert(n.clone(), bin(pred), Term::string(x.as_str()));
         }
     }
+    for x in l.gated_commands.iter().chain(&l.gated_routes) {
+        g.insert(n.clone(), bin("featureGated"), Term::string(x.as_str()));
+    }
 }
 
 /// For each target, the targets sharing its name that differ in help or version sha (G0.5).
@@ -530,6 +580,13 @@ pub fn extract_at(root: &Path, g: &mut Graph) -> BinaryStats {
         Err(_) => BTreeMap::new(),
     };
     stats.ledger_rows = ledger.values().map(|e| e.rows.len()).sum();
+    let mut ledger = ledger;
+    if let Ok(text) = std::fs::read_to_string(root.join(FEATURE_GATED)) {
+        match apply_feature_gated(&mut ledger, &text) {
+            Ok(n) => stats.feature_gated = n,
+            Err(what) => refuse(&mut stats.errors, FEATURE_GATED, what),
+        }
+    }
     emit_all(g, &targets, &ledger, &mut stats);
     if let Some(census) = &census {
         if targets.is_empty() {

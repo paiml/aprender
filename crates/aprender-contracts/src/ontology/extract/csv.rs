@@ -4,7 +4,8 @@
 //! one `csv:column` per name), the data-row count (`csv:rows`, an integer), one inferred `csv:dtype` per column
 //! (`int` when every value parses as an integer, else `float` when every value parses as a number, else
 //! `string`), and `csv:sha256` over the file's bytes. `csv:producer` is the contract's `entity.properties.producer`
-//! (`resolves: path` — it must exist under the repo root, v4.16). A data row whose column count differs from the
+//! (`resolves: path` — it must exist under the repo root, v4.16). Each node is also typed `csv:dataset/<stem>`
+//! (the contract's stem), the class a shape for ONE dataset targets. A data row whose column count differs from the
 //! header's is refused naming the file and the row, never a node (the `pc_extract.csv` positive control, R-3).
 
 use std::path::Path;
@@ -126,6 +127,12 @@ pub fn emit_file(
     let t = parse(rel, text)?;
     let s = iri("csv", stem);
     g.insert(s.clone(), RDF_TYPE, Term::iri(csv("Dataset")));
+    // The class a per-dataset shape targets: two datasets never grade each other's header (#4476).
+    g.insert(
+        s.clone(),
+        RDF_TYPE,
+        Term::iri(csv(&format!("dataset/{stem}"))),
+    );
     g.insert(s.clone(), csv("header"), Term::string(&t.header));
     for c in &t.columns {
         g.insert(s.clone(), csv("column"), Term::string(c));
@@ -188,6 +195,23 @@ pub fn positive_control() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_dataset_has_its_own_class() {
+        let yes = |_: &str| true;
+        let mut g = Graph::new();
+        emit_file(&mut g, "a", "a.csv", b"x\n1\n", None, &yes).expect("a");
+        emit_file(&mut g, "b", "b.csv", b"y\n2\n", None, &yes).expect("b");
+        assert_eq!(g.instances_of(&csv("Dataset")).len(), 2);
+        assert_eq!(
+            g.instances_of(&csv("dataset/a")),
+            vec![iri("csv", "a").as_str()]
+        );
+        assert_eq!(
+            g.instances_of(&csv("dataset/b")),
+            vec![iri("csv", "b").as_str()]
+        );
+    }
 
     #[test]
     fn a_table_parses_with_its_dtypes_and_quoted_fields() {

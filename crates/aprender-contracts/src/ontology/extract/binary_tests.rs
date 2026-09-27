@@ -277,3 +277,97 @@ fn the_repo_census_has_both_aprs_and_pv() {
         );
     }
 }
+
+fn gated_ledger() -> BTreeMap<String, LedgerEntry> {
+    parse_ledger(&format!(
+        "{LEDGER_HEADER}\napr,apr run,,,,,,,,\napr,apr mono archive,,,,,,,,\napr,POST /v1/logprobs,,nvidia-cuda,,,,,,\n"
+    ))
+    .expect("ledger")
+}
+
+fn join(ledger: &BTreeMap<String, LedgerEntry>) -> Graph {
+    let t = Target {
+        package: "apr-cli".into(),
+        target: "apr".into(),
+        name: "apr".into(),
+        commands: ["run".to_string()].into_iter().collect(),
+        ..Target::default()
+    };
+    let mut g = Graph::default();
+    emit_all(&mut g, &[t], ledger, &mut BinaryStats::default());
+    g
+}
+
+#[test]
+fn a_feature_gated_row_is_gated_not_an_orphan() {
+    let mut l = gated_ledger();
+    let n = apply_feature_gated(
+        &mut l,
+        "# why\nbinary,feature\napr,apr mono archive\napr,POST /v1/logprobs\n",
+    )
+    .expect("applies");
+    assert_eq!(n, 2);
+    let g = join(&l);
+    let a = node("apr-cli", "apr");
+    assert!(!has(&g, &a, "ledgerOrphan"));
+    assert!(!has(&g, &a, "ledgerOrphanRoute"));
+    assert_eq!(
+        g.objects(&a, &bin("featureGated")),
+        [
+            &Term::string("POST /v1/logprobs"),
+            &Term::string("mono archive")
+        ]
+    );
+}
+
+#[test]
+fn dropping_an_allowance_row_makes_it_an_orphan_again() {
+    let mut l = gated_ledger();
+    apply_feature_gated(&mut l, "binary,feature\napr,POST /v1/logprobs\n").expect("applies");
+    let g = join(&l);
+    let a = node("apr-cli", "apr");
+    assert_eq!(
+        g.objects(&a, &bin("ledgerOrphan")),
+        [&Term::string("mono archive")]
+    );
+    assert!(!has(&g, &a, "ledgerOrphanRoute"));
+}
+
+#[test]
+fn a_stale_or_malformed_allowance_is_refused_by_name() {
+    for (text, why) in [
+        (
+            "binary,feature\napr,apr mono gone\n",
+            "`apr,apr mono gone` names no ledger row",
+        ),
+        (
+            "binary,feature\naprx,apr run\n",
+            "`aprx,apr run` names no ledger row",
+        ),
+        ("feature\napr,apr run\n", "header is not `binary,feature`"),
+        (
+            "binary,feature\nno comma\n",
+            "line `no comma` is not `binary,feature`",
+        ),
+    ] {
+        let mut l = gated_ledger();
+        assert_eq!(
+            apply_feature_gated(&mut l, text),
+            Err(why.to_string()),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn the_repo_allowance_applies_to_the_repo_ledger() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut l =
+        parse_ledger(&fs::read_to_string(root.join(LEDGER)).expect("ledger")).expect("parses");
+    let n = apply_feature_gated(
+        &mut l,
+        &fs::read_to_string(root.join(FEATURE_GATED)).expect("allowance"),
+    )
+    .expect("every allowance row names a ledger row");
+    assert_eq!(n, 28);
+}

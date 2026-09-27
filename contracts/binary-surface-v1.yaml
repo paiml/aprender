@@ -21,8 +21,10 @@
 # `entity.ref` = binary/<package>/<target>. This file holds what every binary shares; the per-binary file holds
 # only what that binary's surface must do.
 #
-# NOT ARMED YET. Σ `binary` is `implemented: false` until extract:binary lands (aprender-98); until then these
-# shapes have no focus nodes and are not in contracts/lint-baseline.json armed_shapes[].
+# ARMED (#4476). Σ `binary` is implemented by extract:binary; `binary-target` is in contracts/lint-baseline.json
+# armed_shapes[]. Ledger rows a default-feature build cannot show are declared, not tolerated:
+# docs/audits/surface_audit_feature_gated.csv (bin:featureGated). The ledger's own shape is
+# contracts/surface-audit-ledger.yaml.
 #
 # KIND: pattern. Vocabulary, an extractor and shapes over a graph; the proof is the gate's own case table.
 # ──────────────────────────────────────────────
@@ -51,7 +53,7 @@ metadata:
     - 'aprender#4502 — ONT-10 epic batch; gates/ont10-sizing.md slices S1–S20'
     - 'scripts/dogfood_surfaces.sh — the snapshot writer (--snapshot, --twice)'
     - 'contracts/ontology.yaml — entity_types binary, extractors binary, role bin:exposes'
-    - 'docs/audits/surface_audit.csv — the ledger, a csv entity'
+    - 'contracts/surface-audit-ledger.yaml — docs/audits/surface_audit.csv, the ledger, as a csv entity'
 
 entity:
   type: binary
@@ -89,6 +91,9 @@ shapes:
       - {path: bin:unledgeredTool, maxCount: 0}
       - {path: bin:ledgerOrphan, maxCount: 0}
       - {path: bin:ledgerOrphanRoute, maxCount: 0}
+      # a ledger row docs/audits/surface_audit_feature_gated.csv declares absent from the default-feature build
+      # (dev, hf-hub, doctest, eval, cuda): out of the join, so never an orphan; not a violation
+      - {path: bin:featureGated}
       # G0.1 — the extractor materializes this when bin:versionString does not contain the first 9 hex of bin:gitSha.
       - {path: bin:versionLacksSha, maxCount: 0}
       # G0.5 — materialized on BOTH nodes when two targets share bin:name and differ in helpSha256 or versionSha256.
@@ -97,15 +102,6 @@ shapes:
       - {path: bin:helpFailed, maxCount: 0}
       # every binary has ≥1 feature row in docs/audits/surface_audit.csv (resolved by bin:name).
       - {path: bin:auditRow, minCount: 1}
-
-  - id: surface-audit-ledger
-    targetClass: csv:Dataset
-    properties:
-      - {path: csv:header, minCount: 1, maxCount: 1,
-         in: ["binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence"]}
-      - {path: csv:rows, minCount: 1, maxCount: 1, datatype: xsd:integer}
-      - {path: csv:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
-      - {path: csv:producer, minCount: 1, maxCount: 1, resolves: path}
 
 equations:
   one_node_per_bin_target:
