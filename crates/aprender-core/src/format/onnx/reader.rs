@@ -464,7 +464,8 @@ pub fn is_onnx_file(path: &Path) -> bool {
     }
     // Check protobuf magic (ONNX starts with varint tag for field 1, wire type 0)
     // Field 1 (ir_version) with varint wire type = tag byte 0x08
-    std::fs::read(path).is_ok_and(|data| data.len() > 4 && data[0] == 0x08)
+    // #3761: 5 bytes decide it (`len > 4` and the first byte), never the whole file
+    crate::format::prefix::read_prefix(path, 5).is_ok_and(|data| data.len() > 4 && data[0] == 0x08)
 }
 
 /// Check if a file is a NeMo archive (.nemo = tar.gz)

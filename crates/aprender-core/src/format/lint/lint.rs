@@ -184,7 +184,19 @@ fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
 
     let mut info = ModelLintInfo::default();
 
-    let data = std::fs::read(path)?;
+    // #3761: the metadata is in the JSON header; read the length and the header, never the
+    // tensor data (the tensors come from `mapped`). A header past the shared cap is not read.
+    let head = crate::format::prefix::read_prefix(path, 8)?;
+    let header_end = head
+        .get(0..8)
+        .and_then(|b| b.try_into().ok())
+        .map(u64::from_le_bytes)
+        .and_then(|n| usize::try_from(n).ok()?.checked_add(8))
+        .filter(|&n| n <= crate::format::prefix::HEADER_READ_CAP);
+    let data = match header_end {
+        Some(n) => crate::format::prefix::read_prefix(path, n)?,
+        None => head,
+    };
     extract_safetensors_metadata(&data, &mut info);
     collect_safetensors_tensors(&mapped, &mut info);
 
@@ -318,10 +330,11 @@ fn lint_apr_v1_file(path: &Path) -> Result<LintReport> {
 /// Lint an APR v2 file (APR\0 or APR2 magic)
 fn lint_apr_v2_file(path: &Path) -> Result<LintReport> {
     use crate::format::v2::AprV2Reader;
-    use std::fs;
 
-    // Read file and create reader
-    let data = fs::read(path)?;
+    // Read the header + metadata + tensor index and create the reader (#3761: the lint reads
+    // metadata and index entries only, never the tensor data)
+    let data = crate::format::prefix::apr_v2_header_prefix(path)
+        .map_err(|message| crate::error::AprenderError::FormatError { message })?;
     let reader =
         AprV2Reader::from_bytes(&data).map_err(|e| crate::error::AprenderError::FormatError {
             message: format!("Failed to parse APR v2: {e}"),
