@@ -18,10 +18,19 @@
 #   MCP: `aprender-orchestrate mcp` (stdio) answers tools/list with 4 tools (hf_info, hf_integration, hf_search,
 #   hf_tree; server "batuta-hf"). unledgeredTool FIXED 2026-09-27 (c1): 4 `mcp:hf_*` ledger rows, evidence
 #   src/mcp/server.rs, verified_hardware x86_64-linux because CI's workspace-test runs test_tool_hf_* there.
-#   STILL LIVE RED (ledgerOrphan): the ledger's 6 other `mcp:*` rows (calculator, code_execution, web_search from
-#   banco's POST /api/v1/mcp; compute, memory, rag from the agent registry) are not tools/list tools. Those 6 are
-#   reachable only over HTTP or an agent session. A relabel is not the fix: check_dogfood_coverage.sh G2.2 reads a
-#   renamed row as a deleted one. The shape needs a transport for them (a second tool property), not a ledger edit.
+#   STILL LIVE RED (ledgerOrphan): the ledger's 6 other `mcp:*` rows are not stdio tools/list tools. Traced
+#   2026-09-27 (c1), they are two different classes:
+#   - calculator, code_execution, web_search: NOT a ledger defect. banco mounts POST /api/v1/mcp (router.rs:196;
+#     GET /api/v1/mcp/info says transport "http") and its ToolRegistry lists these three. Each row DECLARES that
+#     transport in its feature text, "(banco POST /api/v1/mcp)", as S8's cuda-only rows declare theirs in
+#     verified_hardware. The RED clears when extract:binary honours the declaration (join those rows against
+#     banco's tools/list, not stdio's), never by a count tolerance.
+#   - compute, memory, rag "(agent tool registry)": a REAL orphan. HandlerRegistry (agent/tool/mcp_server.rs) has
+#     no caller outside its tests and examples/agent_demo.rs, so no transport of this binary serves them. Recorded
+#     as docs/findings/aprender-c1.jsonl c1-ont10-orchestrate-agent-mcp-tools-unserved (serve them, or declare
+#     a library-surface allowance).
+#   Neither class may be fixed by a rename or a delete: check_dogfood_coverage.sh G2.2 reads a renamed row as a
+#   deleted one, and a deleted row takes its defect with it.
 #   HTTP (aprender-1c, S3): crates/aprender-orchestrate/src/serve/banco/router.rs mounts 92 (METHOD, /path) pairs via
 #   .route(), with no .nest/.merge/.route_service/.fallback under serve/. That set equals the ledger's 92 HTTP rows.
 #   EXTRACT GAP, LIVE RED: scripts/dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty on
@@ -162,7 +171,7 @@ shapes:
           - "viz tree"
       - {path: bin:unledgeredCommand, maxCount: 0}
       - {path: bin:ledgerOrphan, maxCount: 0}
-      # 4 tools, ledgered 2026-09-27 (header); the 6 non-stdio mcp:* rows are still ledgerOrphan RED
+      # 4 tools, ledgered 2026-09-27 (header); 6 non-stdio mcp:* rows still ledgerOrphan RED: 3 banco-declared, 3 unserved (finding)
       - path: bin:mcpTool
         minCount: 4
         maxCount: 4
@@ -318,5 +327,5 @@ falsification_tests:
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has a row per command, tool and route with binary = aprender-orchestrate'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: '4 MCP tools unledgered 2026-09-26, ledgered 2026-09-27. STILL LIVE RED: 6 mcp:* rows name banco/agent tools that tools/list does not list'
+    if_fails: '4 MCP tools unledgered 2026-09-26, ledgered 2026-09-27. STILL LIVE RED: 6 mcp:* rows are not stdio tools/list tools. 3 declare banco POST /api/v1/mcp (clears when extract:binary honours the declared transport); 3 (agent registry) no transport serves, recorded as finding c1-ont10-orchestrate-agent-mcp-tools-unserved'
     mutation: 'delete every aprender-orchestrate row; must turn RED naming aprender-orchestrate'
