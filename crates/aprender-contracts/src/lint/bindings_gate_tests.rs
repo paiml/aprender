@@ -276,3 +276,89 @@ fn the_spec_probe_fields_are_serialized_and_count_only_unallowlisted_ghosts() {
     assert_eq!(repo["unresolved"], 0);
     assert!(repo["crates_scanned"].as_u64() > Some(1), "{repo}");
 }
+
+/// PV-ONT-031's matcher. Must-match: the file-path forms the registries held before #4502's rewrite. Must-not-match:
+/// real module paths, including ones with a segment that merely contains `src`/`mod`/`rs`.
+#[test]
+fn the_file_path_form_case_table() {
+    for p in [
+        "presentar::src::widgets::chart",
+        "trueno_db::src::query",
+        "batuta::src::oracle::mod",
+        "kern::ops::mod",
+        "kern::ops::activation.rs",
+        "simular::src::engine::rng",
+    ] {
+        assert!(is_file_path_form(p), "must match: {p}");
+    }
+    for p in [
+        "src",
+        "kern::nn::functional",
+        "kern::source::modes",
+        "kern::srcs::module",
+        "kern::rs::modal",
+        "aprender::format::converter",
+        "kern::ops::activation",
+    ] {
+        assert!(!is_file_path_form(p), "must not match: {p}");
+    }
+}
+
+#[test]
+fn a_file_path_module_path_is_rejected_even_when_it_would_resolve_elsewhere() {
+    let (_g, c) = workspace();
+    allow(&c, &format!(r#"{{"entries": [{}]}}"#, entry(GHOST)));
+    bind(&c, "kern::src::nn::functional", "softmax", "", "");
+    let (r, f) = ran(run_bindings_gate(&c));
+    assert_eq!(r.verdict, Verdict::Fail);
+    let rs = rules(&f);
+    assert!(rs.contains(&"PV-ONT-031"), "{rs:?}");
+    assert!(
+        f.iter()
+            .any(|x| x.rule_id == "PV-ONT-031" && x.message.contains("kern::src::nn::functional")),
+        "{f:?}"
+    );
+    assert_eq!(counters(&r).file_path_form, 1);
+}
+
+#[test]
+fn an_allowlisted_file_path_ghost_is_exempt_and_counted_by_class() {
+    let (_g, c) = workspace();
+    let fp = "kern::nn::mod::no_such_function";
+    bind(&c, "kern::nn::mod", "no_such_function", "", "");
+    allow(
+        &c,
+        &format!(r#"{{"entries": [{}, {}]}}"#, entry(GHOST), entry(fp)),
+    );
+    let (r, f) = ran(run_bindings_gate(&c));
+    assert!(f.is_empty(), "{f:?}");
+    let k = counters(&r);
+    assert_eq!(
+        (
+            k.allowlisted,
+            k.allowlisted_absent_leaf,
+            k.allowlisted_no_module,
+            k.file_path_form
+        ),
+        (2, 1, 1, 0)
+    );
+}
+
+/// infra-83's ruling on #4502: no file-path row survives unallowlisted, and every allowlisted ghost is in a named
+/// class, so the "counted separately" totals add up.
+#[test]
+fn the_repo_corpus_has_no_file_path_row_and_every_allowlisted_ghost_has_a_class() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+    let (r, _) = ran(run_bindings_gate(&repo));
+    let k = counters(&r);
+    assert_eq!(k.file_path_form, 0);
+    assert_eq!(
+        k.allowlisted,
+        k.allowlisted_absent_leaf
+            + k.allowlisted_no_module
+            + k.allowlisted_not_member
+            + k.allowlisted_other,
+        "{k:?}"
+    );
+    assert_eq!(k.allowlisted_other, 0, "{k:?}");
+}

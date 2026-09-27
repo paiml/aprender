@@ -151,42 +151,42 @@ bindings:
 - contract: tui-panels-v1.yaml
   equation: panel_layout_nonoverlap
   function: compute_layout
-  module_path: batuta::src::agent::tui::layout::compute_layout
+  module_path: batuta::agent::tui::layout::compute_layout
   status: pending
 - contract: tui-panels-v1.yaml
   equation: adaptive_degradation
   function: detail_level
-  module_path: batuta::src::agent::tui::layout::detail_level
+  module_path: batuta::agent::tui::layout::detail_level
   status: pending
 - contract: tui-panels-v1.yaml
   equation: streaming_token_ordering
   function: push_token
-  module_path: batuta::src::agent::tui::streaming::push_token
+  module_path: batuta::agent::tui::streaming::push_token
   status: pending
 - contract: tui-panels-v1.yaml
   equation: tool_progress_monotonic
   function: update_tool
-  module_path: batuta::src::agent::tui::tools::update_tool
+  module_path: batuta::agent::tui::tools::update_tool
   status: pending
 - contract: tui-panels-v1.yaml
   equation: cost_display_invariants
   function: update_cost
-  module_path: batuta::src::agent::tui::cost::update_cost
+  module_path: batuta::agent::tui::cost::update_cost
   status: pending
 - contract: tui-panels-v1.yaml
   equation: sandbox_violation_visibility
   function: add_violation
-  module_path: batuta::src::agent::tui::sandbox::add_violation
+  module_path: batuta::agent::tui::sandbox::add_violation
   status: pending
 - contract: tui-panels-v1.yaml
   equation: brick_budget_enforcement
   function: verify_all
-  module_path: batuta::src::agent::brick::verify_all
+  module_path: batuta::agent::brick::verify_all
   status: pending
 - contract: tui-panels-v1.yaml
   equation: statusbar_state_display
   function: update_statusbar
-  module_path: batuta::src::agent::tui::statusbar::update_statusbar
+  module_path: batuta::agent::tui::statusbar::update_statusbar
   status: pending
 # --- TUI lifecycle contracts (2026-04-03) ---
 - contract: tui-lifecycle-v1.yaml

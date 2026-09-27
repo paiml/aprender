@@ -375,6 +375,10 @@ struct Module {
     origins: Vec<PathBuf>,
     file: PathBuf,
     child_dir: PathBuf,
+    /// Every file `include!()`d into this module (at any nesting depth), keyed by its stem: `ops::activation::matmul`
+    /// names `matmul` in the `activation.rs` that `ops/mod.rs` includes. Rust has no such path, but the binding rows
+    /// name the file the item is written in, and the item does exist (infra-83 ruling on #4502).
+    includes: Vec<(String, PathBuf)>,
 }
 
 /// `include!` nesting bound — the macro recurses, a cycle must not.
@@ -447,6 +451,7 @@ impl<'a> Resolver<'a> {
             origins: Vec::new(),
             file: file.to_path_buf(),
             child_dir,
+            includes: Vec::new(),
         };
         self.splice(items, file, 0, &mut module);
         module
@@ -461,6 +466,9 @@ impl<'a> Resolver<'a> {
                 Some(rel) if depth < INCLUDE_DEPTH => {
                     let file = origin.parent().unwrap_or(origin).join(rel);
                     if let Some(ast) = self.parse(&file) {
+                        if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
+                            module.includes.push((stem.to_string(), file.clone()));
+                        }
                         self.splice(&ast.items, &file, depth + 1, module);
                     }
                 }
@@ -687,6 +695,9 @@ impl<'a> Resolver<'a> {
         if defines_type(&module.items, seg) {
             return Ok(Step::Type);
         }
+        if let Some(step) = self.step_into_include(module, seg) {
+            return step;
+        }
         let globs = pub_globs(&module.items, module, self.ws);
         if !globs.is_empty() {
             return Ok(Step::Globs(globs));
@@ -719,6 +730,63 @@ impl<'a> Resolver<'a> {
             child_file(&module.child_dir, seg, &m.attrs)
                 .and_then(|(file, child_dir)| self.file_module(&file, child_dir).map(Step::Module)),
         )
+    }
+
+    /// `seg` is the stem of a file `include!()`d into this module: step into THAT file's items alone (its own
+    /// `include!`s spliced), so a fn written in a sibling included file is still refused. A real `mod`, `use` or
+    /// type of the same name is tried first.
+    ///
+    /// The file may also be included by a CHILD module's file in the same directory: `metaheuristics::
+    /// cmaes_include_01::optimize`, where `metaheuristics/cmaes.rs` (`mod cmaes;`) does `include!("cmaes_include_01.rs")`.
+    fn step_into_include(
+        &mut self,
+        module: &Module,
+        seg: &str,
+    ) -> Option<Result<Step, Unresolved>> {
+        let file = match module.includes.iter().find(|(stem, _)| stem == seg) {
+            Some((_, file)) => file.clone(),
+            None => self.included_by_child(module, seg)?,
+        };
+        Some(
+            self.file_module(&file, module.child_dir.clone())
+                .map(Step::Module),
+        )
+    }
+
+    /// `child_dir/seg.rs`, when a file-backed `mod x;` of this module lives in `child_dir` and includes it.
+    fn included_by_child(&mut self, module: &Module, seg: &str) -> Option<PathBuf> {
+        let target = module.child_dir.join(format!("{seg}.rs"));
+        if !target.is_file() {
+            return None;
+        }
+        let children: Vec<PathBuf> = module
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                syn::Item::Mod(m) if m.content.is_none() => {
+                    child_file(&module.child_dir, &m.ident.to_string(), &m.attrs)
+                        .ok()
+                        .map(|(file, _)| file)
+                }
+                _ => None,
+            })
+            .filter(|file| file.parent() == Some(module.child_dir.as_path()))
+            .collect();
+        for child in children {
+            let Some(ast) = self.parse(&child) else {
+                continue;
+            };
+            let dir = child.parent().unwrap_or(&child).to_path_buf();
+            if ast
+                .items
+                .iter()
+                .filter_map(include_path)
+                .any(|rel| dir.join(rel) == target)
+            {
+                return Some(target);
+            }
+        }
+        None
     }
 
     fn rel(&self, file: &Path) -> String {
@@ -1375,6 +1443,62 @@ mod tests {
         assert!(
             r.resolve("k::a::T::<C>", "f").is_err(),
             "a does not implement f"
+        );
+    }
+
+    /// #4502: a binding row names the file an `include!()`d item is written in (`ops::activation::matmul`, with
+    /// `ops/mod.rs` doing `include!("activation.rs")`; `cmaes::cmaes_include_01::optimize` for a method in a file
+    /// the sibling `cmaes.rs` includes). The item exists, so the row resolves; an item of a DIFFERENT included file,
+    /// or a stem nothing includes, is still refused.
+    #[test]
+    fn an_item_in_an_included_file_resolves_under_the_file_stem() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").unwrap();
+        std::fs::create_dir_all(w.join("k/src/ops")).unwrap();
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").unwrap();
+        std::fs::write(w.join("k/src/lib.rs"), "pub mod ops;\npub mod cmaes;\n").unwrap();
+        std::fs::write(
+            w.join("k/src/ops/mod.rs"),
+            "include!(\"activation.rs\");\ninclude!(\"masking.rs\");\n",
+        )
+        .unwrap();
+        std::fs::write(w.join("k/src/ops/activation.rs"), "pub fn matmul() {}\n").unwrap();
+        std::fs::write(w.join("k/src/ops/masking.rs"), "pub fn mask() {}\n").unwrap();
+        std::fs::write(
+            w.join("k/src/cmaes.rs"),
+            "pub struct Cma;\ninclude!(\"cmaes_include_01.rs\");\n",
+        )
+        .unwrap();
+        std::fs::write(
+            w.join("k/src/cmaes_include_01.rs"),
+            "impl Cma { pub fn optimize(&self) {} }\n",
+        )
+        .unwrap();
+        let ws = Workspace::scan(w);
+        let mut r = Resolver::new(&ws);
+        let m = r
+            .resolve("k::ops::activation", "matmul")
+            .expect("the included file's stem is a segment");
+        assert_eq!(m.file, "k/src/ops/activation.rs");
+        r.resolve("k::ops", "matmul")
+            .expect("the Rust path still resolves");
+        r.resolve("k::cmaes_include_01", "optimize")
+            .expect("a method in a file the sibling module includes, named under the parent");
+        r.resolve("k::cmaes::cmaes_include_01", "optimize")
+            .expect("the same file under the including module");
+        std::fs::write(w.join("k/src/stray.rs"), "pub fn optimize() {}\n").unwrap();
+        assert!(
+            Resolver::new(&ws).resolve("k::stray", "optimize").is_err(),
+            "a file on disk that nothing declares or includes"
+        );
+        let wrong = r
+            .resolve("k::ops::activation", "mask")
+            .expect_err("mask is in masking.rs, not activation.rs");
+        assert!(wrong.reason.contains("no `fn mask`"), "{}", wrong.reason);
+        assert!(
+            r.resolve("k::ops::pooling", "matmul").is_err(),
+            "a stem nothing includes"
         );
     }
 
