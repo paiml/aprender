@@ -1,0 +1,114 @@
+35641528830	pull_request	release/0.69.1-batch-1	mac-check	1	FAIL	0.024	(─────────) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35641528830	pull_request	release/0.69.1-batch-1	mac-check	2	FAIL	0.025	(─────────) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35641528830	pull_request	release/0.69.1-batch-1	mac-check	3	FAIL	0.055	(5328/7318) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35641528830	pull_request	release/0.69.1-batch-1	mac-check	3	FAIL	0.055	(5328/7318) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	workspace-test-shard (2/3)	1	FAIL	0.018	(───────────) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	workspace-test-shard (2/3)	2	FAIL	0.016	(───────────) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	workspace-test-shard (2/3)	3	FAIL	0.018	( 1748/27584) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	workspace-test-shard (2/3)	3	FAIL	0.018	( 1748/27584) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	mac-check	1	FAIL	0.046	(─────────) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	mac-check	2	FAIL	0.044	(─────────) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	mac-check	3	FAIL	0.051	(5327/7318) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35649358447	pull_request	release/0.69.1-batch-1	mac-check	3	FAIL	0.051	(5327/7318) apr-cli commands::serve::accelerator_guard_tests::the_gguf_cuda_serve_path_reads_the_context_length_flag
+35721789826	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	1	FAIL	14.977	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35721789826	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	2	FAIL	13.845	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35721789826	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	3	FAIL	15.231	( 3569/27525) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35721789826	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	3	FAIL	15.231	( 3569/27525) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35733346984	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	1	FAIL	55.671	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35733346984	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	2	FAIL	56.613	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35733346984	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	3	FAIL	55.466	( 3444/27569) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35733346984	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	3	FAIL	55.466	( 3444/27569) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35740094206	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	1	FAIL	60.104	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35740094206	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	2	FAIL	59.313	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35740094206	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	3	FAIL	56.989	( 3392/27569) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35740094206	pull_request	release/0.69.1-batch-2	workspace-test-shard (3/3)	3	FAIL	56.989	( 3392/27569) aprender-contracts lint::tests::lint_passes_on_real_contracts
+35747427333	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.028	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35747427333	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.027	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35747427333	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.037	(3427/7363) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35747427333	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.037	(3427/7363) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35759119987	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.033	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35759119987	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.033	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35759119987	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.041	(3436/7366) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35759119987	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.041	(3436/7366) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35760540795	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.023	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35760540795	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.026	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35760540795	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.024	(3423/7366) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35760540795	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.024	(3423/7366) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35762475197	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.030	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35762475197	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.028	(─────────) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35762475197	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.023	(3427/7366) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35762475197	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.023	(3427/7366) apr-cli commands::parity::hybrid_quant_refusal_tests::a_deltanet_projection_with_no_gpu_kernel_is_refused
+35781530119	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.043	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35781530119	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.030	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35781530119	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.025	( 791/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35781530119	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.025	( 791/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35783147780	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.038	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35783147780	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.027	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35783147780	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.024	( 785/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35783147780	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.024	( 785/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35785985508	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.034	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35785985508	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.021	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35785985508	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.031	( 790/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35785985508	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.031	( 790/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35787147236	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.045	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35787147236	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.030	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35787147236	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.028	( 791/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35787147236	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.028	( 791/7380) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35797523261	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.049	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35797523261	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.029	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35797523261	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.027	( 792/7384) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35797523261	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.027	( 792/7384) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35799795413	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.044	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35799795413	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.031	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35799795413	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.032	( 797/7387) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35799795413	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.032	( 797/7387) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	mac-check	1	FAIL	0.033	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	mac-check	2	FAIL	0.035	(─────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.023	( 788/7387) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	mac-check	3	FAIL	0.023	( 788/7387) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	1	FAIL	0.010	(───────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	2	FAIL	0.011	(───────────) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	3	FAIL	0.015	(  242/27548) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35802356641	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	3	FAIL	0.015	(  242/27548) apr-cli commands::chat::tests::test_find_qwen_tokenizer_nonexistent_path
+35826230906	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	1	FAIL	0.021	(───────────) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35826230906	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	2	FAIL	0.014	(───────────) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35826230906	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	3	FAIL	0.019	( 7352/27554) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35826230906	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	3	FAIL	0.019	( 7352/27554) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35842345102	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	1	FAIL	0.027	(───────────) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35842345102	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	2	FAIL	0.019	(───────────) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35842345102	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	3	FAIL	0.023	( 7357/27570) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+35842345102	pull_request	release/0.69.1-batch-2	workspace-test-shard (1/3)	3	FAIL	0.023	( 7357/27570) aprender-core release_section::release_section_doc::the_committed_readme_section_matches_the_receipts
+36010274043	pull_request	release/0.69.3	workspace-test-shard (3/3)	1	FAIL	0.164	(───────────) aprender-serve api::tests_engine_identity::every_arch_forward_is_a_session_row
+36010274043	pull_request	release/0.69.3	workspace-test-shard (3/3)	2	FAIL	0.150	(───────────) aprender-serve api::tests_engine_identity::every_arch_forward_is_a_session_row
+36010274043	pull_request	release/0.69.3	workspace-test-shard (3/3)	3	FAIL	0.164	(16179/27629) aprender-serve api::tests_engine_identity::every_arch_forward_is_a_session_row
+36010274043	pull_request	release/0.69.3	workspace-test-shard (3/3)	3	FAIL	0.164	(16179/27629) aprender-serve api::tests_engine_identity::every_arch_forward_is_a_session_row
+36033230005	pull_request	fold/b3-contracts-ont-docs	workspace-test-shard (2/3)	1	FAIL	0.010	(───────────) aprender-contracts kani_assume::tests::baseline_json_has_exactly_the_three_fields_and_refuses_others
+36033230005	pull_request	fold/b3-contracts-ont-docs	workspace-test-shard (2/3)	2	FAIL	0.011	(───────────) aprender-contracts kani_assume::tests::baseline_json_has_exactly_the_three_fields_and_refuses_others
+36033230005	pull_request	fold/b3-contracts-ont-docs	workspace-test-shard (2/3)	3	FAIL	0.011	( 2874/27618) aprender-contracts kani_assume::tests::baseline_json_has_exactly_the_three_fields_and_refuses_others
+36033230005	pull_request	fold/b3-contracts-ont-docs	workspace-test-shard (2/3)	3	FAIL	0.011	( 2874/27618) aprender-contracts kani_assume::tests::baseline_json_has_exactly_the_three_fields_and_refuses_others
+36123739017	pull_request	batch/0.69.5	workspace-test-shard (1/3)	1	FAIL	0.020	(───────────) aprender-serve::falsification_tests falsify_h3_attention_correctness
+36123739017	pull_request	batch/0.69.5	workspace-test-shard (1/3)	2	PASS	0.040	(17841/21419) aprender-serve::falsification_tests falsify_h3_attention_correctness
+36135459701	pull_request	batch/0.69.4-epic-4249	workspace-test-shard (3/3)	1	FAIL	0.015	(───────────) aprender-serve fusion_call_site_guard_3985::every_active_fusion_call_site_is_a_live_call_of_its_kernel
+36135459701	pull_request	batch/0.69.4-epic-4249	workspace-test-shard (3/3)	2	FAIL	0.019	(───────────) aprender-serve fusion_call_site_guard_3985::every_active_fusion_call_site_is_a_live_call_of_its_kernel
+36135459701	pull_request	batch/0.69.4-epic-4249	workspace-test-shard (3/3)	3	FAIL	0.015	(17438/27640) aprender-serve fusion_call_site_guard_3985::every_active_fusion_call_site_is_a_live_call_of_its_kernel
+36135459701	pull_request	batch/0.69.4-epic-4249	workspace-test-shard (3/3)	3	FAIL	0.015	(17438/27640) aprender-serve fusion_call_site_guard_3985::every_active_fusion_call_site_is_a_live_call_of_its_kernel
+36161452446	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	1	FAIL	29.369	(───────────) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36161452446	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	2	FAIL	22.648	(───────────) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36161452446	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	3	FAIL	24.209	( 8310/11605) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36161452446	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	3	FAIL	24.209	( 8310/11605) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36182523915	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	1	FAIL	25.131	(───────────) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36182523915	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	2	FAIL	22.125	(───────────) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36182523915	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	3	FAIL	23.832	( 8310/11605) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36182523915	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	3	FAIL	23.832	( 8310/11605) aprender-contracts-cli::ont4b_shapes_gate the_tracked_repo_graph_is_fresh
+36197466892	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	1	FAIL	0.032	(───────────) aprender-serve::falsification_tests falsify_h3_attention_correctness
+36197466892	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1/3)	2	PASS	0.046	(46195/57749) aprender-serve::falsification_tests falsify_h3_attention_correctness
+36212366765	merge_group	gh-readonly-queue/main/pr-4428-a016cee94909d3617133e82de822fb2863dfa97c	x86-main	1	FAIL	0.082	(───────────) aprender-core::spec_checklist_g_code_quality g9_roofline_efficiency
+36212366765	merge_group	gh-readonly-queue/main/pr-4428-a016cee94909d3617133e82de822fb2863dfa97c	x86-main	2	PASS	0.084	(25785/57749) aprender-core::spec_checklist_g_code_quality g9_roofline_efficiency
+36257329047	pull_request	batch/ont-4480-4473	workspace-test-shard (1)	1	FAIL	0.086	(─────────) aprender-contracts schema::artifact::tests::real_binding_registries_validate
+36257329047	pull_request	batch/ont-4480-4473	workspace-test-shard (1)	2	FAIL	0.090	(─────────) aprender-contracts schema::artifact::tests::real_binding_registries_validate
+36257329047	pull_request	batch/ont-4480-4473	workspace-test-shard (1)	3	FAIL	0.067	(1552/2368) aprender-contracts schema::artifact::tests::real_binding_registries_validate
+36257329047	pull_request	batch/ont-4480-4473	workspace-test-shard (1)	3	FAIL	0.067	(1552/2368) aprender-contracts schema::artifact::tests::real_binding_registries_validate
+36261955368	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1)	1	FAIL	42.071	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+36261955368	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1)	2	FAIL	35.138	(───────────) aprender-contracts lint::tests::lint_passes_on_real_contracts
+36261955368	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1)	3	FAIL	31.892	( 9386/57759) aprender-contracts lint::tests::lint_passes_on_real_contracts
+36261955368	pull_request	batch/b1r-serve-perf-runtime	workspace-test-shard (1)	3	FAIL	31.892	( 9386/57759) aprender-contracts lint::tests::lint_passes_on_real_contracts

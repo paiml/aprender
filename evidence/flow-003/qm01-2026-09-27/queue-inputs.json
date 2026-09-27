@@ -1,0 +1,242 @@
+{
+  "schema": "queue-inputs-v1",
+  "spec": "FLOW-003",
+  "row": "QM-01",
+  "window": {
+    "start": "2026-09-20T07:09:01Z",
+    "end": "2026-09-27T07:09:01Z",
+    "hours": 168
+  },
+  "inputs": {
+    "T": {
+      "value": 44.1083,
+      "n": 50,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "gh api repos/paiml/aprender/actions/runs?event=merge_group (CI, success)",
+      "method": "median created->updated of passed queue entries, min"
+    },
+    "C": {
+      "value": 43.5667,
+      "n": 95,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "gh api repos/paiml/aprender/actions/workflows/ci.yml/runs (pull_request, release branches)",
+      "method": "median CI created->completed per release-PR push, min; branches ~ ^(car/|rc/|release[/-]|batch/|fold/|replace/b[0-9])"
+    },
+    "q": {
+      "value": 0.14,
+      "n": 57,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "q = q'*f/(1-q'), q' from merge_group CI entries",
+      "method": "per-PR defect rate backed out of per-entry q' (Q4); flaky failed entries removed"
+    },
+    "phi": {
+      "value": 0.0192,
+      "n": 156,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "gh api repos/paiml/aprender/actions/jobs/<id>/logs | grep ' TRY n '",
+      "method": "share of harvested CI runs (merge_group + release PRs) with a test whose TRY 1 failed and a later TRY passed"
+    },
+    "lambda_per_h": {
+      "value": 1.3393,
+      "n": 225,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "gh pr list -R paiml/aprender --state all --json createdAt",
+      "method": "lambda: PRs created per hour (not queue entries; see derived.lambda_eff_per_h)"
+    },
+    "f": {
+      "value": 1,
+      "n": 1,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "GraphQL timelineItems (queue events) + commits, merge_group CI runs",
+      "method": "ejected PRs re-entered after a push: share whose next queue CI entry passed"
+    },
+    "F": {
+      "value": 4.0167,
+      "n": 1,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "GraphQL timelineItems (queue events) + commits",
+      "method": "median ejection -> first push after it, min"
+    },
+    "rho_mq": {
+      "value": 0.0014,
+      "n": 1,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "nextest TRY n>=2 durations from job logs",
+      "method": "mean retry-attempt seconds / 60, merge_group runs, min"
+    },
+    "rho_rel": {
+      "value": 0.1259,
+      "n": 83,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "nextest TRY n>=2 durations from job logs",
+      "method": "mean retry-attempt seconds / 60, release-PR runs, min"
+    },
+    "R": {
+      "value": 34.4,
+      "n": 2,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "GraphQL timelineItems (queue events) + commits",
+      "method": "median false ejection (re-entered with no push, and that entry passed) -> re-entry, min"
+    },
+    "ident_rate": {
+      "value": 0.2874,
+      "n": 87,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "ident.tsv: one row per red release-PR CI run (run id, names culprit yes|no, why)",
+      "method": "red release cycles whose failing tests name the culprit PR / red release cycles"
+    },
+    "window_days": {
+      "value": 7,
+      "n": 1,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "window.txt",
+      "method": "trailing window length"
+    },
+    "n_runs": {
+      "value": 63,
+      "n": 63,
+      "window": "2026-09-20T07:09:01Z/2026-09-27T07:09:01Z",
+      "command": "merge_group CI entries",
+      "method": "queue entries in window"
+    }
+  },
+  "derived": {
+    "q_prime_raw": 0.1525,
+    "q_prime_defect": 0.1228,
+    "entries": {
+      "passed": 50,
+      "failed": 9,
+      "failed_flaky": 2,
+      "cancelled": 2,
+      "in_progress": 2
+    },
+    "lambda_eff_per_h": 0.375,
+    "queue_entries_by_event": 63,
+    "ejections": {
+      "total": 10,
+      "fixed_then_reentered": 1,
+      "false": 2,
+      "not_reentered": 5
+    },
+    "retries": {
+      "mq": 1,
+      "release": 83,
+      "all": 84
+    },
+    "release_cycles": {
+      "total": 95,
+      "red": 87,
+      "unclassified_red": []
+    },
+    "ejection_rows": [
+      {
+        "pr": 3564,
+        "ejected": "2026-09-20T11:39:51Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-20T12:08:08Z",
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": "merged",
+        "next_entry": "success"
+      },
+      {
+        "pr": 3614,
+        "ejected": "2026-09-20T20:06:58Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-20T20:47:29Z",
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": "merged",
+        "next_entry": "success"
+      },
+      {
+        "pr": 4022,
+        "ejected": "2026-09-23T17:08:15Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4024,
+        "ejected": "2026-09-23T19:08:19Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4163,
+        "ejected": "2026-09-24T14:23:44Z",
+        "reason": "checks_timed_out",
+        "reentry": null,
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4338,
+        "ejected": "2026-09-25T02:29:17Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-25T03:56:24Z",
+        "fix_push": "2026-09-25T02:33:18Z",
+        "pushed_before_reentry": true,
+        "next_exit": "merge_conflict",
+        "next_entry": "success"
+      },
+      {
+        "pr": 4414,
+        "ejected": "2026-09-25T20:18:14Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-26T04:58:33Z",
+        "fix_push": "2026-09-26T06:31:18Z",
+        "pushed_before_reentry": false,
+        "next_exit": "failed_checks",
+        "next_entry": "failure"
+      },
+      {
+        "pr": 4414,
+        "ejected": "2026-09-26T06:07:52Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": "2026-09-26T06:31:18Z",
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4428,
+        "ejected": "2026-09-26T03:51:26Z",
+        "reason": "failed_checks",
+        "reentry": null,
+        "fix_push": "2026-09-26T06:31:04Z",
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      },
+      {
+        "pr": 4467,
+        "ejected": "2026-09-26T18:01:10Z",
+        "reason": "failed_checks",
+        "reentry": "2026-09-27T07:00:59Z",
+        "fix_push": null,
+        "pushed_before_reentry": false,
+        "next_exit": null,
+        "next_entry": null
+      }
+    ]
+  },
+  "unknown": [],
+  "low_n": [
+    "f",
+    "F",
+    "rho_mq",
+    "R"
+  ],
+  "verdict": "GREEN"
+}
