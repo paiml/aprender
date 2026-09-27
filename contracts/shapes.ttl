@@ -2,6 +2,114 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ont: <https://ont.paiml.dev/v1alpha1/> .
 
+<https://ont.paiml.dev/v1alpha1/shape/kernel-registry-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/kreg/Kernel> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/kernel_id> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^(cpu|cuda|wgpu|metal)\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_+]+){0,2}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/op> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "matvec" "gemv" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/qtype> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "F32" "F16" "BF16" "Q4_0" "Q4_1" "Q5_0" "Q5_1" "Q8_0" "Q2_K" "Q3_K" "Q4_K" "Q5_K" "Q6_K" "IQ2_XXS" "IQ2_S" "IQ3_XXS" "IQ3_S" "IQ4_XS" "IQ4_NL" "APR_Q4" "APR_Q8" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/ggml_type> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/layout> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "row_major" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/backend> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "cpu" "cuda" "wgpu" "metal" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/arch> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(any|[a-z][a-z0-9_]*)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/isa_features> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(none|[a-z0-9_.]+(\\+[a-z0-9_.]+)*)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/block_elems> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/accumulate> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "f32" "i32_f32" "profile_selected" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/precision> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "f32" "f16" "bf16" "q8_0" "q8_k" "profile_selected" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/shape_class> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "m1" "m_any" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/tolerance> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(unmeasured|evidence/.+\\.json)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/source_file> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^crates/[a-z0-9_-]+/src/.+\\.rs$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/source_fn> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[a-z_][a-z0-9_]*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/selector> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 8 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/contract> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^contracts/.+\\.yaml$" ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
     sh:property [
