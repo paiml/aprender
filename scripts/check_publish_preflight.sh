@@ -327,7 +327,7 @@ gate() {
     tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
     # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
     # satisfied `v1.2.3` (second review of #2859, tag-regex-injection).
-    if [ -n "$version" ] && printf '%s\n' "$tags" | grep -Fqx -- "v$version"; then
+    if [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
         echo "ok    R3 tag v$version points at HEAD ${head:0:9}"
     else
         printf 'FAIL  R3 tag v%s does not point at HEAD %s (tags here: %s)\n' \

@@ -176,6 +176,12 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # is a decision, not a leak — the distinction this guard exists to keep.
         guards_nightly_manifest.txt)
             printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
+        # #4430. Neither is a ratchet against main: both are new with the bin-name rename,
+        # and each is exact-matched by its own guard instead.
+        bin_names_pending_fold.txt)
+            printf 'none\tfold ledger (#4430); exact-match against the observed [[bin]] set, a row whose bin is gone FAILS (scripts/check_bin_names_aprender.sh)\n' ;;
+        bin_renames.txt)
+            printf 'none\tdeclared [[bin]] renames <old> <new> (#4430); read by the dogfood ledger gate to map comparand rows (scripts/lib/dogfood_coverage_gate.py)\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
         # #4023. coverage-solo.txt EXCLUDES NOTHING: its tests still run and are still

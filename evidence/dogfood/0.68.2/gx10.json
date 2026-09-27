@@ -202,7 +202,7 @@
   "bench_attempt": {
     "status": "refused",
     "rc": 75,
-    "reason": "gpu-q: waiting (prio 8, 4/4 in queue) | gpu-q: waiting (prio 8, 4/4 in queue) | gpu-q: ENV waited 3600s in the queue (head ticket 1-1790033482386358661-3975179, pid 3975179: flock /tmp/apr-gpu.lock choom -n 1000 -- timeout 1200 env APR_3751_DENSE_MODELS=/home/noah/models/qwen2.5-1.5b-instruct-); not run"
+    "reason": "gpu-q: waiting (prio 8, 4/4 in queue) | gpu-q: waiting (prio 8, 4/4 in queue) | gpu-q: ENV waited 3600s in the queue (head ticket 1-1790033482386358661-3975179, pid 3975179: flock /tmp/apr-gpu.lock choom -n 1000 -- timeout 1200 env APR_3751_DENSE_MODELS=~/models/qwen2.5-1.5b-instruct-); not run"
   },
   "parity_attempt": {
     "status": "refused",

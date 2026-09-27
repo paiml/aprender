@@ -31,7 +31,7 @@ grep -q 'ont_complete_gate self-test: PASS' <<< "$out"; row self-test $((rc | $?
 bash "$GATE" > /dev/null 2>&1; rc=$?
 [ "$rc" = 2 ]; row bare-refuses $?
 
-git ls-files 'scripts/check_*.sh' | grep -q 'ont_complete\.sh$\|check_ont_complete_gate\.sh$'
+grep -q 'ont_complete\.sh$\|check_ont_complete_gate\.sh$' <<<"$(git ls-files 'scripts/check_*.sh')"
 [ $? = 1 ]; row not-in-tree $?
 
 echo "check_ont_complete_gate_selftest: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"

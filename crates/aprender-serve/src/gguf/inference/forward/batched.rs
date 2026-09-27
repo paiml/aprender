@@ -376,5 +376,4 @@ impl OwnedQuantizedModel {
 
         Ok(tokens)
     }
-
 }

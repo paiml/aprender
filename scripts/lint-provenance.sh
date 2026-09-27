@@ -26,10 +26,10 @@ lint_file() {
     while IFS= read -r line; do
         case "$line" in \#*|'') continue ;; esac
         key=$(printf '%s' "$line" | sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*:.*/\1/p')
-        if [ -n "$key" ] && printf '%s' "$key" | grep -Eq "$EXEMPT"; then continue; fi
-        printf '%s' "$line" | grep -q '[0-9]' || continue
+        if [ -n "$key" ] && grep -Eq "$EXEMPT" <<<"$key"; then continue; fi
+        grep -q '[0-9]' <<<"$line" || continue
         scanned=$((scanned + 1))
-        printf '%s' "$line" | grep -Eq "$MARKS" && continue
+        grep -Eq "$MARKS" <<<"$line" && continue
         printf 'unmarked: %s: %s\n' "$f" "$(printf '%s' "$line" | cut -c1-90)"
         n=$((n + 1))
     done < <(grep -E -e '^\s*(-|\|)\s*\S' -e '^\s*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:[[:space:]]*\S' "$f" || true)

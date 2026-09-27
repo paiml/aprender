@@ -279,7 +279,7 @@ apply_github_env() { # apply_github_env <file> -- KEY=VAL and KEY<<DELIM lines, 
     done
 }
 
-now() { date +%s.%N; }
+now() { date +%s.%N; }  # bashrs disable-line=DET002 (step wall-clock for the summary table, never in an artifact)
 
 cmd_run() {
     # 4800 s per step, not 1200: car's whole `guard_tree.sh --no-cargo` universe is
@@ -317,6 +317,8 @@ cmd_run() {
     if [ -n "${CI_GUARDS_SCRATCH:-}" ]; then scratch=$CI_GUARDS_SCRATCH
     elif in_ci; then scratch="$(mktemp -d "${TMPDIR:-/tmp}/ci-guards-XXXXXX")" || die "mktemp failed"
     else scratch="$root/target/ci-guards-local"; fi
+    # $scratch is CI_GUARDS_SCRATCH, a mktemp dir, or $root/target: never user input
+    # bashrs disable-next-line=SEC010
     mkdir -p "$scratch" || die "cannot create $scratch"
 
     local -a rows=()
@@ -408,8 +410,10 @@ cmd_run() {
             # signals its whole process group, so background children still die.
             [ "$timeout" -gt 0 ] && tcmd=(timeout -s TERM -k 60 "$timeout")
             if [ "$stream" = 1 ]; then
+                # bashrs disable-next-line=SEC010
                 (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null 3<&-)
             else
+                # bashrs disable-next-line=SEC010
                 (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null > "$log" 2>&1 3<&-)
             fi
             rc=$?

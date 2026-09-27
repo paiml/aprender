@@ -119,12 +119,27 @@ block_occurrences() {
 # thing in this file that may contain '<', so the body can never swallow the
 # closing marker, and a body that has been hand-edited to prose is replaced
 # just as a stale number is.
-rewrite_stream() { # rewrite_stream <count> < README
-    # ONT-4c (B.4): the frontmatter's `contract_count:` is the same derived number — `extract:readme` grades it
-    # `resolves: census`, so it is rewritten here, never typed. Only a line that is exactly `contract_count: N`
-    # matches; the frontmatter is the only place README.md carries one.
+# ONT-4c (B.4): the frontmatter's `contract_count:` is graded `resolves: census` by `extract:readme` — it must
+# equal the TRACKED contracts/census.json `n_files`, not the walked tree. The two differ on every branch that adds a
+# contract, because census.json is the release train's snapshot (#3569) and lags by design; writing the walked count
+# there made readme_sync and the extractor demand different numbers (#4429: 1844 vs 1837, one of them always RED).
+# The body blocks stay the walked count (FALSIFY-README-002 holds them to the tree); the frontmatter follows the census.
+tracked_census_count() {
+    local n
+    n=$(jq -r '.n_files // empty' "$REPO_ROOT/contracts/census.json" 2>/dev/null || true)
+    case "$n" in
+        '' | *[!0-9]*)
+            printf 'FAIL readme_sync: contracts/census.json n_files is %q, not a number — the frontmatter contract_count is UNMEASURED\n' "$n" >&2
+            return 1
+            ;;
+    esac
+    printf '%s' "$n"
+}
+
+rewrite_stream() { # rewrite_stream WALKED_COUNT CENSUS_COUNT, README on stdin
+    # Only a line that is exactly `contract_count: N` matches; the frontmatter is the only place README.md carries one.
     sed -E -e "s|(${CONTRACT_BLOCK_START})[^<]*(${CONTRACT_BLOCK_END})|\1${1}\2|g" \
-        -e "s|^contract_count: [0-9]+\$|contract_count: ${1}|"
+        -e "s|^contract_count: [0-9]+\$|contract_count: ${2}|"
 }
 
 mode=""
@@ -153,6 +168,7 @@ if [ -z "$count" ] || [ "$count" -eq 0 ]; then
     printf 'FAIL readme_sync: contracts/ holds 0 *.yaml files. A zero count is a broken measurement, not a README to regenerate.\n' >&2
     exit 2
 fi
+census_n="$(tracked_census_count)" || exit 2
 
 case "$mode" in
     print)
@@ -164,7 +180,7 @@ case "$mode" in
         tmp="$(mktemp "${TMPDIR:-/tmp}/readme-sync-check.XXXXXX")"
         # shellcheck disable=SC2064
         trap "rm -f '$tmp'" EXIT
-        rewrite_stream "$count" < "$README" > "$tmp"
+        rewrite_stream "$count" "$census_n" < "$README" > "$tmp"
         if cmp -s "$README" "$tmp"; then
             printf 'ok    readme_sync: README.md already states the measured count %s in every CONTRACT_COUNT block\n' "$count"
             exit 0
@@ -184,7 +200,7 @@ case "$mode" in
         tmp="$(mktemp "${TMPDIR:-/tmp}/readme-sync.XXXXXX")"
         # shellcheck disable=SC2064
         trap "rm -f '$tmp'" EXIT
-        rewrite_stream "$count" < "$README" > "$tmp"
+        rewrite_stream "$count" "$census_n" < "$README" > "$tmp"
         cat "$tmp" > "$README"
         # Read the file BACK and assert the effect, rather than reporting that
         # bytes were written: every block must now carry the measured count.
