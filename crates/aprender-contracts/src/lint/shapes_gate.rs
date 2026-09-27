@@ -1321,7 +1321,9 @@ mod tests {
             .collect();
         match by_entity_type(&extract::Extraction::default(), &flipped) {
             Err(ShapeError::Malformed { what, .. }) => assert!(
-                what.contains(&format!("entity type {PLANT} is registered in Σ as implemented")),
+                what.contains(&format!(
+                    "entity type {PLANT} is registered in Σ as implemented"
+                )),
                 "{what}"
             ),
             other => panic!("expected a named refusal, got {other:?}"),

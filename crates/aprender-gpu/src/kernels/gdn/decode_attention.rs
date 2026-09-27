@@ -599,7 +599,16 @@ impl Kernel for DecodeAttention256Kernel {
             let st = emit_passes(
                 ctx,
                 shape,
-                PassRegs { tid, lane, warp, q_base, k_head, v_head, begin: zero_u32, end: seq_len },
+                PassRegs {
+                    tid,
+                    lane,
+                    warp,
+                    q_base,
+                    k_head,
+                    v_head,
+                    begin: zero_u32,
+                    end: seq_len,
+                },
             );
 
             // out = sum_p exp(s_p - max) * v_p / sum_p exp(s_p - max)
