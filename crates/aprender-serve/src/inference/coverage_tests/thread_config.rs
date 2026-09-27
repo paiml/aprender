@@ -301,6 +301,22 @@ fn test_for_cpus_decode_is_at_least_half_for_every_core_count() {
     assert_eq!(ThreadConfig::for_cpus(8).n_threads_decode, 4);
 }
 
+#[test]
+fn test_auto_config_decode_is_ceil_half_in_real_odd_rayon_pools() {
+    // `auto` reads rayon's pool, which is what RAYON_NUM_THREADS sizes. Run it
+    // inside real pools of 3, 5 and 7 so the odd case is exercised on every host.
+    for n in [1usize, 2, 3, 5, 7] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .expect("build rayon pool");
+        let config = pool.install(ThreadConfig::auto);
+        assert_eq!(config.n_threads_batch, n, "pool of {n}");
+        assert_eq!(config.n_threads_decode, n.div_ceil(2), "pool of {n}");
+        assert!(config.n_threads_decode * 2 >= n, "pool of {n}");
+    }
+}
+
 // ============================================================================
 // Stress Tests
 // ============================================================================
