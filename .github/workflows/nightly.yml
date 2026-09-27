@@ -162,7 +162,7 @@ jobs:
           # The driver is dlopen'd at run time (aprender-gpu: dep:libloading), so
           # the bullseye image needs no toolkit -- binary-release.yml's cuda lane.
           # Record proves the feature took (libcuda.so in the executable).
-          APR_SHA=$(git rev-parse --short HEAD)
+          APR_SHA=$(git rev-parse --short=9 HEAD)
           mkdir -p "$CACHE/target-cuda"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \

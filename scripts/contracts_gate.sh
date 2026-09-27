@@ -32,8 +32,10 @@
 
 set -u
 
-STEPS=(lint shapes regen readme provenance diff)
-GENERATED=(contracts/census.json contracts/contracts.nt contracts/shapes.ttl)
+STEPS=(lint shapes census regen readme provenance diff)
+# contracts/census.json is NOT here: it is a release-train snapshot with one writer (`make census`) and is
+# expected to lag; a PR may not edit it (scripts/check_census_derived.sh). The census step checks a FRESH one.
+GENERATED=(contracts/contracts.nt contracts/shapes.ttl)
 
 step_lint() {
     local log rc
@@ -87,8 +89,23 @@ step_shapes() {
 # Regenerate every generated file from committed sources; `diff` then asks GIT whether they moved. Asking git,
 # not pv's own --check, is the point: the comparand is the committed tree, not the tool's opinion of itself.
 step_regen() {
-    "$PV" census contracts --format json >contracts/census.json || { echo "FAIL: pv census exited non-zero"; return 1; }
     "$PV" extract contracts >/dev/null || { echo "FAIL: pv extract contracts exited non-zero"; return 1; }
+}
+
+# A FRESH census, into a temp file: its identities hold (check_census_derived.sh --census) and the README's count
+# equals its n_files. The tracked contracts/census.json is never rewritten here.
+step_census() {
+    local t rc
+    t=$(mktemp "${TMPDIR:-/tmp}/pv-census.XXXXXX") || return 1
+    if "$PV" census contracts --format json >"$t"; then
+        bash scripts/check_census_derived.sh --census "$t" && CENSUS_JSON="$t" bash scripts/readme_sync.sh --check
+        rc=$?
+    else
+        echo "FAIL: pv census exited non-zero"
+        rc=1
+    fi
+    rm -f "${t:?}"
+    return "$rc"
 }
 
 step_readme() { bash scripts/readme_sync.sh --check; }
@@ -104,7 +121,7 @@ step_diff() {
         git ls-files --error-unmatch "$f" >/dev/null 2>&1 \
             || { echo "FAIL: $f is not tracked, so diffing it proves nothing"; return 1; }
     done
-    git diff --stat --exit-code -- "${GENERATED[@]}" \
+    git diff --stat --exit-code HEAD -- "${GENERATED[@]}" \
         || { echo "FAIL: a generated file differs from what the committed contracts produce — a contract changed without regenerating. Run \`bash scripts/contracts_gate.sh regen\` and commit ${GENERATED[*]}"; return 1; }
 }
 
@@ -162,6 +179,7 @@ STUB
             && echo 'nt 1' >contracts/contracts.nt && echo 'ttl 1' >contracts/shapes.ttl \
             && printf '#!/usr/bin/env bash\nexit 0\n' >scripts/readme_sync.sh \
             && cp scripts/readme_sync.sh scripts/lint-provenance.sh \
+            && printf '#!/usr/bin/env bash\n[ "$1" = --census ] && [ -s "$2" ] || exit 1\n[ "${STUB_CD:-}" != fail ] || { echo "stub: census invariants FAIL"; exit 1; }\n' >scripts/check_census_derived.sh \
             && git add -A && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm fixture
     ) || { echo "self-test: fixture setup failed"; return 2; }
     row() {
@@ -171,27 +189,33 @@ STUB
     run() {
         local script=$1 sf=$2 ss=$3
         shift 3
-        (cd "$d" && git checkout -q -- . && CONTRACTS_GATE_PV="$stub" STUB_FAIL="$sf" STUB_SHAPES="$ss" bash "$script" "$@" 2>&1)
+        (cd "$d" && git checkout -q -- . && CONTRACTS_GATE_PV="$stub" STUB_FAIL="$sf" STUB_SHAPES="$ss" STUB_CD="${STUB_CD:-}" bash "$script" "$@" 2>&1)
     }
 
     out=$(run "$SELF" "" pass); rc=$?
-    [ "$rc" = 0 ] && grep -q '6 of 6 step(s) RAN, 0 FAILED' <<<"$out" && grep -q '^SHAPES PASS shapes_n=21' <<<"$out"
-    row "all green: exit 0, all 6 steps RAN (the .ONESHELL recipe stopped after 1), shapes PASS" $?
+    [ "$rc" = 0 ] && grep -q '7 of 7 step(s) RAN, 0 FAILED' <<<"$out" && grep -q '^SHAPES PASS shapes_n=21' <<<"$out"
+    row "all green: exit 0, all 7 steps RAN (the .ONESHELL recipe stopped after 1), shapes PASS" $?
 
     out=$(run "$SELF" lint pass); rc=$?
-    [ "$rc" != 0 ] && grep -q '6 of 6 step(s) RAN, 1 FAILED: lint' <<<"$out"
+    [ "$rc" != 0 ] && grep -q '7 of 7 step(s) RAN, 1 FAILED: lint' <<<"$out"
     row "a red pv lint is non-zero AND every later step still runs (rc=$rc)" $?
 
     out=$(run "$SELF" extract pass); rc=$?
     [ "$rc" != 0 ] && grep -q 'FAILED: regen' <<<"$out"
     row "a failing pv extract is non-zero and named (rc=$rc)" $?
 
+    out=$(STUB_CD=fail run "$SELF" "" pass); rc=$?
+    [ "$rc" != 0 ] && grep -q 'FAILED: census' <<<"$out"
+    row "a fresh census that breaks its invariants (check_census_derived.sh --census) is RED on census (rc=$rc)" $?
+
     (cd "$d" && echo 'id: b' >contracts/b.yaml && git add contracts/b.yaml \
         && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm 'add a contract, do not regenerate')
     out=$(run "$SELF" "" pass); rc=$?
-    [ "$rc" != 0 ] && grep -q 'FAILED: diff' <<<"$out" && grep -q 'census.json' <<<"$out" \
+    [ "$rc" != 0 ] && grep -q 'FAILED: diff' <<<"$out" && ! grep -q 'census.json' <<<"$out" \
         && grep -q 'contracts.nt' <<<"$out" && grep -q 'shapes.ttl' <<<"$out"
-    row "a contract added WITHOUT regenerating is RED on diff, naming census.json, contracts.nt and shapes.ttl (rc=$rc)" $?
+    row "a contract added WITHOUT regenerating is RED on diff, naming contracts.nt and shapes.ttl, NOT census.json (rc=$rc)" $?
+    (cd "$d" && git checkout -q -- . && CONTRACTS_GATE_PV="$stub" bash "$SELF" >/dev/null 2>&1; git diff --quiet HEAD -- contracts/census.json)
+    row "a full run never rewrites the tracked contracts/census.json (the train snapshot has one writer, #3569)" $?
     (cd "$d" && git checkout -q -- . && CONTRACTS_GATE_PV="$stub" bash "$SELF" regen >/dev/null 2>&1 && git add -A \
         && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm regenerate)
     out=$(run "$SELF" "" pass); rc=$?
@@ -222,7 +246,7 @@ STUB
 
     rm -rf "${d:?}"
     echo "contracts_gate self-test: $pass passed, $fail failed"
-    [ "$fail" -eq 0 ] && [ "$pass" -eq 16 ]
+    [ "$fail" -eq 0 ] && [ "$pass" -eq 18 ]
 }
 
 SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")

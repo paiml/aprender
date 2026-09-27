@@ -630,12 +630,10 @@ census:
 # EXIT PROPAGATION (PVL-001 EV-4, aprender#4168). Under .ONESHELL this whole
 # recipe is ONE shell script, so without errexit its status is the LAST line's
 # and every earlier step -- `pv lint` included -- was advisory: a failing lint
-# printed its tail and the gate exited 0. `set -e` stops at a failing step.
-# It is NOT enough on the pv lines: errexit ignores a failure on the LEFT of
-# `&&`, so a pv_bin.sh that REFUSES the binary (stale, wrong identity) would
-# fall through to the next step. Hence `|| exit` there as well, which exits
-# with that list's own status (pv's rc through the pipe, via -o pipefail).
-# Case table + mutants: scripts/tests/make_contracts_propagates.sh.
+# printed its tail and the gate exited 0. So every line that can fail ends in
+# `|| exit`, which ends the recipe with that line's own status.
+# Case table + mutants: scripts/tests/make_contracts_propagates.sh (this recipe)
+# and `scripts/contracts_gate.sh --self-test` (the gate's steps).
 contracts:
 # #4475: the steps live in scripts/contracts_gate.sh. The recipe used to hold them as lines, and under
 # `.ONESHELL` + `.SHELLFLAGS := -o pipefail -c` (no -e) the whole recipe is ONE bash script: the lint line's
@@ -650,7 +648,7 @@ contracts:
 	@. scripts/pv_bin.sh && { [ -x "$$PV_SAT" ] || { echo "FAIL: no pv-sat beside $$PV -- a PV_BIN override must ship its pv-sat too"; exit 1; }; } && "$$PV_SAT" contracts && "$$PV" lint contracts/ --gate ont-consistency >/dev/null && "$$PV" lint contracts/ --gate refines >/dev/null && "$$PV" lint contracts/ --gate bindings >/dev/null || exit 1
 	@test -z "$$(git status --porcelain -- contracts/witness)" || { git status --short -- contracts/witness; echo "FAIL: contracts/witness/ differs from what pv-sat writes -- commit it"; exit 1; }
 	@echo "== contract engine tests =="
-	@# Same shape as pv lint above: the old `| grep | tail -1` printed the verdict and
+	@# The old `| grep | tail -1` printed the verdict and
 	@# discarded it (the exit status was tail's), so a failing engine test passed the gate.
 	@t=$$(mktemp) && ( cargo test -p aprender-contracts --lib > "$$t" 2>&1; rc=$$?; grep -E "test result" "$$t" | tail -1; [ $$rc -eq 0 ] || tail -30 "$$t"; rm -f "$${t:?}"; exit $$rc ) || exit
 
