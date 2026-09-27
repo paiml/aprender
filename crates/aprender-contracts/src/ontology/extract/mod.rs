@@ -22,6 +22,7 @@ pub mod covering;
 pub mod csv;
 pub mod gguf;
 pub mod json;
+pub mod kernel;
 pub mod lean;
 pub mod llm_context;
 pub mod parity_receipt;
@@ -52,6 +53,8 @@ pub struct Extraction {
     pub code: code::CodeStats,
     /// ONT-4b2: the in-tree Lean theorems and the contracts that cite them.
     pub lean: lean::LeanStats,
+    /// ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`, and their kernel receipts.
+    pub kernel: kernel::KernelStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
     /// ONT-4c: `README.md` — files read, the claim commands CI runs (the MEASURED set), refusals.
@@ -78,6 +81,8 @@ pub enum ExtractFailure {
     ///
     /// [`RESERVED_ENTITY_TYPE`]: crate::ontology::sigma::RESERVED_ENTITY_TYPE
     ReservedEntityType { contract: String },
+    /// ONT-4c4: a file under `evidence/kernels/` is unreadable or carries a foreign schema.
+    Kernel(kernel::KernelError),
 }
 
 impl std::fmt::Display for ExtractFailure {
@@ -92,6 +97,7 @@ impl std::fmt::Display for ExtractFailure {
                  the entity classes, so its entity predicates would collide with them (PMAT-4160)",
                 crate::ontology::sigma::RESERVED_ENTITY_TYPE
             ),
+            Self::Kernel(e) => write!(f, "{e}"),
         }
     }
 }
@@ -134,6 +140,8 @@ pub fn all_with(
     out.receipts = receipts::read_all(root).map_err(ExtractFailure::Receipt)?;
     out.resolve = receipts::resolve(&mut out.graph, &out.gguf.rungs, &out.receipts);
     out.code = code::extract(contract_dir, &mut out.graph);
+    out.kernel = kernel::extract(&repo_root(contract_dir), &mut out.graph)
+        .map_err(ExtractFailure::Kernel)?;
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
     // ONT-4c: the claim fences resolve against the merge-path `run:` lines, computed once per walk
