@@ -1254,6 +1254,11 @@ jobs:
       # a precondition. Its 4-case self-test is cargo-free and model-free, so it runs here.
       - name: Parity-receipt denominator case table (#3577)
         run: bash scripts/parity_receipt_denominator.sh --self-test
+      # OBS-06 (#4493): the APR-OBS-001 §4 RED rules over the nightly perf ledger. Report-only
+      # through 0.70, so only the case table runs here: a planted 2-theta regression goes RED,
+      # planted noise stays GREEN, liveness is judged against the declared series. jq-only.
+      - name: Perf-ledger RED rules case table (OBS-06, #4493)
+        run: bash scripts/obs_red_rules.sh --self-test
       # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
       # the command refuses — `apr chat` silently loaded its toy demo model for a
       # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)

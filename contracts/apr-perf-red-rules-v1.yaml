@@ -1,0 +1,160 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §4 RED rules, §7 OBS-06'
+  - 'contracts/apr-perf-ledger-v1.yaml — the rows judged'
+  - 'contracts/apr-obs-row-identity-v1.yaml — admissibility (identity block, gpu_proof)'
+  - 'scripts/obs_red_rules.sh — the engine; `--self-test` is the case table'
+  - 'aprender#4493 — OBS-06'
+  description: >
+    The RED rules over the nightly perf ledger (spec §4 rules 1, 2, 3, 5, 6; rule 4,
+    the release-tag baseline, is OBS-07). The signal is apr / llama.cpp on the same
+    host and run, recomputed by the engine from the raw medians. Report-only through
+    0.70 (spec §4 blocking policy): the engine exits 10 on RED only under --enforce.
+
+    Calibration (the night-14 log committed to the repo) is NOT claimed here. It is
+    gated on OBS-05 writing real rows; every number below was measured on fixtures.
+
+equations:
+  admissible:
+    formula: |
+      admissible(r) = identity_complete(r)             (apr-obs-row-identity-v1: present, not null, not "unknown")
+                    AND has(r, gpu_proof)
+                    AND (backend = cpu => gpu_proof = null)
+                    AND (backend in {cuda, wgpu, metal} => gpu_proof != null)   else backend_unproven
+                    AND prompt_n >= 8 AND reps = 5
+                    AND apr.*, llama.* > 0 for load_ms, ttft_ms, pp512_tok_s, tg128_tok_s
+                    AND (pin given => llama.build_commit = pin)
+                    AND r.ratio[m] = apr[m] / llama[m] (rel. 1e-6) for every metric
+      an inadmissible row counts as ABSENT for liveness
+    domain: 'one ledger line'
+    codomain: bool
+    invariants:
+    - 'the ratio block is recomputed, never believed: a writer that lies about its ratio is refused'
+
+  threshold:
+    formula: |
+      H = admissible prior nights of the series with tonight''s model_sha256 AND llama.build_commit
+      n = |H|;  n < 14 => calibrating (rule 1: never RED)
+      p = 14 + 30 * floor((n - 14) / 30);  W = H[p-14 .. p-1]
+      theta = max(0.05, 3 * MAD(W) / median(W))
+    domain: 'one host x backend x metric'
+    codomain: 'theta in [0.05, inf)'
+    invariants:
+    - 'recomputed every 30 nights (p = 14, 44, 74, ...), and the window is reported (window_index)'
+    - 'a model or comparator change restarts calibration and is annotated identity_break'
+
+  rolling_red:
+    formula: |
+      worse(x, b) = (x - b) / b   for load, ttft  (ms: higher is worse)
+                  = (b - x) / b   for prefill, decode (tok/s: lower is worse)
+      d_t = worse(ratio_tonight, median(last 7 of H))
+      RED if d_t > 2 theta
+      RED if d_t > theta AND the calendar-previous night is in H AND its own d > its own theta
+    domain: 'one host x backend x metric, measured'
+    codomain: bool
+
+  liveness_red:
+    formula: |
+      |ledger| = 0 => RED
+      forall s in DECLARED (never derived from rows): no admissible row for s tonight => RED
+    domain: 'the ledger vs the declared series'
+    codomain: bool
+
+  one_record_per_key:
+    formula: |
+      would_open = one record per (host, backend, metric); the engine never calls gh (only the cop opens issues)
+    domain: 'the RED set'
+    codomain: 'list of would_open records'
+
+falsification_tests:
+- id: FALSIFY-OBS-RED-001
+  rule: a planted regression is RED
+  prediction: 'decode ratio 12% under the 7-night median of a quiet series (theta at the 5% floor) is RED rolling_2theta, one would_open record.'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # planted-2theta-red'
+  if_fails: 'a real slowdown ships with a green nightly'
+  mutation: 'compare against theta instead of 2 theta on one night (single-night-theta) — killed'
+- id: FALSIFY-OBS-RED-002
+  rule: planted noise is GREEN
+  prediction: 'a series wobbling within 2% is GREEN; a 7% dip on ONE night is GREEN; a series wobbling within 12% has theta > 0.10 and a 12% dip is GREEN.'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # quiet-green, one-night-theta-green, noisy-theta-adapts'
+  if_fails: 'the rule cries wolf and is muted'
+  mutation: 'theta = 0.05 fixed, no MAD term (theta-fixed-floor) — killed'
+- id: FALSIFY-OBS-RED-003
+  rule: two consecutive nights over theta are RED, a gap is not
+  prediction: '7% on nights N-1 and N is RED rolling_2consecutive; 7% on N-2 and N is GREEN.'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # two-night-theta-red, gap-is-not-consecutive'
+  if_fails: 'a slow drift never trips, or a missing night stitches two unrelated nights'
+  mutation: 'drop the calendar-adjacency check (consecutive-not-calendar) — killed'
+- id: FALSIFY-OBS-RED-004
+  rule: direction per metric
+  prediction: 'ttft +12% RED, ttft -20% GREEN; prefill -20% RED, prefill +20% GREEN.'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # ttft-*, prefill-*'
+  if_fails: 'a speed-up is filed as a regression and a regression as a speed-up'
+  mutation: 'flip hi on ttft (ttft-direction), on prefill (prefill-direction) — both killed'
+- id: FALSIFY-OBS-RED-005
+  rule: calibration is report-only for exactly 14 nights and recalibrates every 30
+  prediction: '13 prior nights and a 50% dip is GREEN calibrating; 14 is RED. At n=40 the window is nights 0..13; at n=50 it is 30..43.'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # calibration-boundary-13/14, recal-*'
+  if_fails: 'rules fire on an uncalibrated theta, or theta never moves after the first two weeks'
+  mutation: 'CAL_N 13 (calibration-13), RECAL_EVERY never (never-recalibrate) — both killed'
+- id: FALSIFY-OBS-RED-006
+  rule: liveness is judged against the declaration, and an inadmissible row is absent
+  prediction: 'empty ledger RED; a declared series with no row RED; a row with no binary_sha256, apr_tag "unknown", or cuda with gpu_proof null is absent => RED.'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # empty-ledger-red, missing-declared-series-red, no-binary-sha-is-absent, unknown-is-absent, cuda-unproven-is-absent'
+  if_fails: 'a host that stopped writing, or wrote an unprovable row, looks healthy (FALSIFY-OBS-PERF-001..004)'
+  mutation: 'derive DECLARED from rows, drop the empty check, drop binary_sha256, admit "unknown", admit unproven GPU — all killed'
+- id: FALSIFY-OBS-RED-007
+  rule: no comparison across identity
+  prediction: 'tonight with a new model_sha256 or llama.build_commit restarts calibration (identity_break = 20, GREEN); a new crate_tarball_sha256 is compared (identity_break = 0).'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # model-change-restarts, pin-change-restarts, new-build-is-compared'
+  if_fails: 'a model swap reads as a regression (FALSIFY-OBS-PERF-005)'
+  mutation: 'H = all prior rows (history-across-identity) — killed'
+- id: FALSIFY-OBS-RED-008
+  rule: report-only through 0.70, and RED is not a crash code
+  prediction: 'RED exits 0 without --enforce and 10 with it; usage errors exit 2.'
+  test: 'bash scripts/obs_red_rules.sh --self-test  # *-exits-*'
+  if_fails: 'a report-only rule blocks a release, or a crashed engine reads as RED'
+  mutation: 'return 1 on RED (enforce-exit-1) — killed'
+
+proof_obligations:
+- type: invariant
+  property: 'A planted regression beyond 2 theta is RED (FALSIFY-OBS-RED-001)'
+  formal: '¬(d_t ≤ 2·θ) ⇒ RED'
+- type: invariant
+  property: 'Noise inside theta on one night is GREEN (FALSIFY-OBS-RED-002)'
+  formal: 'd_t ≤ θ ⇒ ¬rolling_red'
+- type: invariant
+  property: 'Liveness against the declaration (FALSIFY-OBS-RED-006)'
+  formal: '∀ s ∈ DECLARED: ¬∃ admissible r(s, night) ⇒ RED'
+- type: soundness
+  property: 'History never crosses model or comparator identity (FALSIFY-OBS-RED-007)'
+  formal: '∀ h ∈ H: h.model_sha256 = t.model_sha256 ∧ h.llama.build_commit = t.llama.build_commit'
+
+qa_gate:
+  id: F-OBS-RED-GATE-001
+  name: 'the RED rules turn RED on a planted regression and stay GREEN on planted noise'
+  description: 'OBS-06 engine acceptance on fixtures: the case table passes and every registered mutant is killed.'
+  checks:
+  - planted_regression_red
+  - planted_noise_green
+  - consecutive_nights
+  - metric_direction
+  - calibration_and_recalibration
+  - liveness_against_declaration
+  - identity_bounded_history
+  - report_only_exit_codes
+  pass_criteria: >
+    `bash scripts/obs_red_rules.sh --self-test` passes (39/39 on 2026-09-27) and the 21
+    registered mutants are each killed. The spec §7 done-when also requires the calibration
+    log committed at night 14 — that is NOT met and is gated on OBS-05 rows.
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: proposed
+  notes: 'Tested on fixtures only. No real ledger rows exist yet (OBS-05); the night-14 calibration log is outstanding.'
