@@ -1,0 +1,89 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "TRACE-001 TR-05 (aprender#4560): renacer is resolved IN-TREE. scripts/renacer_bin.sh resolves crates/aprender-profile's binary under the cargo-metadata target dir, refuses one another worktree built (dep-info attribution) or one not built from HEAD (--version sha), builds it when absent, and fails by RETURN status so a sourcing `set -e` caller survives. No script or Makefile target runs `cargo install renacer` or a bare `renacer`."
+  kind: pattern
+  references:
+    - "scripts/renacer_bin.sh — the resolver; --self-test is the case table"
+    - "scripts/apr_bin.sh — the pattern it mirrors (git toplevel, cargo metadata roots, dep-info origin, --version sha)"
+    - "scripts/capture_golden_traces.sh, Makefile profile: — the callers rewritten"
+    - "scripts/check_sourced_libs_option_neutral.sh — covers renacer_bin.sh (sourced by capture_golden_traces.sh)"
+    - "crates/aprender-build-sha — stamps APR_GIT_SHA into `renacer --version` (#4219)"
+    - "docs/specifications/TRACE-001-tracing-consumers.md R-2, TR-05"
+    - "paiml/aprender#4560"
+
+five_whys:
+  symptom: "Golden traces were captured by whatever `renacer` PATH held; with none, the script ran `cargo install renacer --version 0.6.2` from crates.io."
+  why_1: "renacer moved into the workspace (crates/aprender-profile) at APR-MONO, but its callers kept the pre-monorepo install line."
+  why_2: "A bare command name resolves through PATH, which on the dev box holds stale and foreign copies (the four-apr lesson)."
+  why_3: "The in-tree binary is named aprender-profile, not renacer, so no `target/release/renacer` exists for a naive path to find."
+  why_4: "Nothing checked which build a trace came from; the fallback JSON and ANALYSIS.md hardcoded version 0.6.2 whatever ran."
+  why_5: "No resolver existed for renacer the way apr_bin.sh/pv_bin.sh exist for apr/pv."
+  root_cause: "A tool used for evidence must be resolved from this tree's own build and proven built from HEAD, or the evidence describes some other code."
+
+equations:
+  resolve:
+    formula: "RENACER = first c in [T/release, T/debug, W/target/release, W/target/debug]/aprender-profile with executable(c) AND origin(c) = own AND sha_short(HEAD) in version(c); else build once and rescan; else return 1"
+    domain: "T = cargo metadata target_directory; W = workspace_root; origin from <c>.d naming crates/aprender-profile/src/main.rs of THIS tree"
+    codomain: "exported $RENACER | return status 1 (never exit)"
+    invariants:
+      - "no PATH lookup, no absolute path, no crates.io"
+      - "a foreign binary is never returned, fresh or not"
+      - "RENACER_BIN override must still be executable and fresh"
+  callers:
+    formula: "count(git grep -nE 'cargo install renacer|^\\s*renacer ' -- scripts Makefile) = 0"
+    domain: "scripts/, Makefile"
+    codomain: "0"
+
+proof_obligations:
+  - id: TR-INV-001
+    type: invariant
+    property: "Target absent: the sourcing caller survives and sees a non-zero status"
+    formal: "no candidate AND no build => `. renacer_bin.sh` returns 1 under the caller's set -euo pipefail; caller continues"
+    applies_to: resolve
+  - id: TR-INV-002
+    type: invariant
+    property: "Only this tree's build is returned"
+    formal: "origin(c) != own => c not returned"
+    applies_to: resolve
+  - id: TR-INV-003
+    type: invariant
+    property: "Only a build from HEAD is returned"
+    formal: "sha_short(HEAD) not in version(c) => c not returned (override included)"
+    applies_to: resolve
+  - id: TR-INV-004
+    type: invariant
+    property: "No caller installs or PATH-resolves renacer"
+    formal: "callers = 0"
+    applies_to: callers
+
+falsification_tests:
+  - id: FALSIFY-TR-001
+    rule: "Target absent -> caller survives (TR-05 done-when)"
+    prediction: "renacer_bin.sh --self-test rows target_absent_caller_survives (bash) and zsh_target_absent_survives print `survived rc=1`; mutating the tail `return 1 2>/dev/null || exit 1` to `exit 1` BREAKS 6 rows"
+    test: "bash scripts/renacer_bin.sh --self-test"
+    if_fails: "A missing renacer kills every set -e script that sources the resolver"
+  - id: FALSIFY-TR-002
+    rule: "A foreign fresh binary is refused"
+    prediction: "Row foreign_fresh_is_refused returns 1; deleting the origin check BREAKS exactly that row"
+    test: "bash scripts/renacer_bin.sh --self-test"
+    if_fails: "A sibling worktree's renacer produces this tree's traces"
+  - id: FALSIFY-TR-003
+    rule: "A stale binary is refused"
+    prediction: "Row override_stale_is_refused returns 1; making the --version match unconditional BREAKS exactly that row"
+    test: "bash scripts/renacer_bin.sh --self-test"
+    if_fails: "Traces come from an old build"
+  - id: FALSIFY-TR-004
+    rule: "No crates.io install and no bare renacer in scripts or Makefile"
+    prediction: "the git grep prints nothing and exits 1"
+    test: "git grep -nE 'cargo install renacer|^\\s*renacer ' -- scripts Makefile"
+    if_fails: "Evidence is captured with an unpinned tool"
+
+qa_gate:
+  id: F-TR-001
+  name: "Tool resolution — renacer comes from this tree, built from HEAD"
+  description: "scripts/renacer_bin.sh is the only way scripts and the Makefile reach renacer; it refuses foreign and stale builds and never kills its caller."
+  checks:
+    - "resolve"
+    - "callers"
