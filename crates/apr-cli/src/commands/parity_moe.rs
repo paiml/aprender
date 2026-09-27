@@ -96,7 +96,7 @@ fn measure_moe(
     .map_err(|e| match e {
         realizar::error::RealizarError::CapacityRefused(_) => {
             CliError::BackendUnavailable(format!("{e}"))
-        },
+        }
         other => CliError::ValidationFailed(format!("CUDA MoE model build failed: {other}")),
     })?;
     let (device_name, vram_mb) = gpu.device_summary();
@@ -139,9 +139,11 @@ fn measure_moe(
 
     let mut metrics = Vec::with_capacity(tokens.len());
     for (pos, (&token_id, cpu)) in tokens.iter().zip(&cpu_logits).enumerate() {
-        let gpu_logits = gpu.forward_single(token_id, &mut gpu_state, pos).map_err(|e| {
-            CliError::InferenceFailed(format!("GPU forward failed at pos {pos}: {e}"))
-        })?;
+        let gpu_logits = gpu
+            .forward_single(token_id, &mut gpu_state, pos)
+            .map_err(|e| {
+                CliError::InferenceFailed(format!("GPU forward failed at pos {pos}: {e}"))
+            })?;
         let m = compute_metrics(cpu, &gpu_logits, pos, token_id);
         print_row(&m);
         if verbose && m.verdict().is_fail() {
@@ -207,13 +209,17 @@ mod parity_moe_tests {
         }
         let mapped = realizar::gguf::MappedGGUFModel::from_path(&path).expect("map the GGUF");
         let tokens = mapped.model.encode(PROMPT).expect("tokenize");
-        assert!(tokens.len() >= 64, "the prompt must reach 64 positions, got {}", tokens.len());
+        assert!(
+            tokens.len() >= 64,
+            "the prompt must reach 64 positions, got {}",
+            tokens.len()
+        );
         let measured = match measure_moe(&mapped, &tokens, false) {
             Ok(m) => m,
             Err(crate::error::CliError::BackendUnavailable(why)) => {
                 eprintln!("SKIP: {why}");
                 return;
-            },
+            }
             Err(e) => panic!("measure: {e}"),
         };
         assert_eq!(measured.metrics.len(), tokens.len());

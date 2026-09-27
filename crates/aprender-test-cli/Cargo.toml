@@ -67,6 +67,9 @@ chrono = "0.4"
 atty = "0.2"
 glob = "0.3"
 
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
 [dev-dependencies]
 tempfile = { workspace = true }
 assert_cmd = "2.0"

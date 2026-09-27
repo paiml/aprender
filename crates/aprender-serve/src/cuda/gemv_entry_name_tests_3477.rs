@@ -50,8 +50,16 @@ mod gemv_entry_name_tests_3477 {
     fn every_strategy_gemv_kernel() -> Vec<KernelType> {
         let (k, n, w) = (4096u32, 4096u32, 4u32);
         vec![
-            KernelType::TiledQ4KGemv { k, n, outputs_per_block: w },
-            KernelType::ChunkedTiledQ4KGemv { k, n, outputs_per_block: w },
+            KernelType::TiledQ4KGemv {
+                k,
+                n,
+                outputs_per_block: w,
+            },
+            KernelType::ChunkedTiledQ4KGemv {
+                k,
+                n,
+                outputs_per_block: w,
+            },
             KernelType::CoalescedQ4KGemv { k, n },
             KernelType::WideQ4KGemv { k, n },
             KernelType::VectorizedQ4KGemv { k, n },
@@ -63,16 +71,35 @@ mod gemv_entry_name_tests_3477 {
             KernelType::TrueDp4aQ4KGemv { k, n },
             KernelType::BatchedQ4KGemv { m: w, k, n },
             KernelType::MultiWarpBatchedQ4KGemv { k, n, warps: w },
-            KernelType::BatchedHwDp4aQ4KGemv { k, n, m: w, num_warps: w },
-            KernelType::FusedFp32Q4KGemv { k, n, m: w, num_warps: w },
-            KernelType::InlineQ8Dp4aQ4KGemv { k, n, m: w, num_warps: w },
+            KernelType::BatchedHwDp4aQ4KGemv {
+                k,
+                n,
+                m: w,
+                num_warps: w,
+            },
+            KernelType::FusedFp32Q4KGemv {
+                k,
+                n,
+                m: w,
+                num_warps: w,
+            },
+            KernelType::InlineQ8Dp4aQ4KGemv {
+                k,
+                n,
+                m: w,
+                num_warps: w,
+            },
             KernelType::CoalescedQ6KGemv { k, n },
             KernelType::BatchedQ6KGemv { k, n, m: w },
             KernelType::MwvQ6KGemv { k, n, num_warps: w },
             KernelType::Dp4aQ6KGemv { k, n, num_warps: w },
             KernelType::HwDp4aQ6KGemv { k, n, num_warps: w },
             KernelType::Fp16Q4KGemv { k, n },
-            KernelType::FusedRmsNormQ4KGemv { k, n, epsilon: 1e-6 },
+            KernelType::FusedRmsNormQ4KGemv {
+                k,
+                n,
+                epsilon: 1e-6,
+            },
             KernelType::FusedGateUpQ4KGemv { k, n },
             KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { k, n },
         ]
@@ -130,8 +157,11 @@ mod gemv_entry_name_tests_3477 {
         );
         // No exclusions (#3970): the Q4_K/Q6_K strategy variants used to be
         // skipped here by a named rule, and so were never assembled.
-        let missing: Vec<&str> =
-            declared.iter().copied().filter(|v| !listed.contains(v)).collect();
+        let missing: Vec<&str> = declared
+            .iter()
+            .copied()
+            .filter(|v| !listed.contains(v))
+            .collect();
         assert!(
             missing.is_empty(),
             "GEMV kernel variant(s) declared in kernel_type.rs but absent from \
@@ -199,7 +229,11 @@ mod gemv_entry_name_tests_3477 {
                 }
             }
         }
-        assert!(broken.is_empty(), "PTX generators leaked into each other:{}", broken.concat());
+        assert!(
+            broken.is_empty(),
+            "PTX generators leaked into each other:{}",
+            broken.concat()
+        );
     }
 
     #[test]
@@ -257,21 +291,47 @@ mod gemv_entry_name_tests_3477 {
     fn f16_is_registered_consistently_in_every_table() {
         use crate::cuda::types::{GemvKernel, WeightQuantType};
 
-        assert_eq!(WeightQuantType::from_ggml_type(1), Some(WeightQuantType::F16));
-        assert_eq!(WeightQuantType::F16.bytes_per_superblock(), 512, "256 elems x 2 bytes");
-        assert_eq!(WeightQuantType::F16.bytes_per_block(), 64, "32 elems x 2 bytes");
+        assert_eq!(
+            WeightQuantType::from_ggml_type(1),
+            Some(WeightQuantType::F16)
+        );
+        assert_eq!(
+            WeightQuantType::F16.bytes_per_superblock(),
+            512,
+            "256 elems x 2 bytes"
+        );
+        assert_eq!(
+            WeightQuantType::F16.bytes_per_block(),
+            64,
+            "32 elems x 2 bytes"
+        );
 
         // A [2560, 32] ssm_alpha — the actual shape in Qwen3.5-4B-UD-Q4_K_XL.
         assert!(WeightQuantType::F16.matches_size(2560 * 32 * 2, 2560, 32));
-        assert!(!WeightQuantType::F16.matches_size(2560 * 32 * 4, 2560, 32), "that is F32's size");
+        assert!(
+            !WeightQuantType::F16.matches_size(2560 * 32 * 4, 2560, 32),
+            "that is F32's size"
+        );
 
         // from_size must not let F32's check swallow F16, nor the reverse.
-        assert_eq!(WeightQuantType::from_size(2560 * 32 * 2, 2560, 32), Some(WeightQuantType::F16));
-        assert_eq!(WeightQuantType::from_size(2560 * 32 * 4, 2560, 32), Some(WeightQuantType::F32));
+        assert_eq!(
+            WeightQuantType::from_size(2560 * 32 * 2, 2560, 32),
+            Some(WeightQuantType::F16)
+        );
+        assert_eq!(
+            WeightQuantType::from_size(2560 * 32 * 4, 2560, 32),
+            Some(WeightQuantType::F32)
+        );
 
         assert_eq!(
-            crate::cuda::types::BoundWeight::bind(0x1000, 2560 * 32 * 2, WeightQuantType::F16, 2560, 32)
-                .kernel(),
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                2560 * 32 * 2,
+                WeightQuantType::F16,
+                2560,
+                32
+            )
+            .kernel(),
             GemvKernel::F16,
             "binding F16 to any other kernel decodes 2-byte weights as something else"
         );
@@ -365,9 +425,7 @@ mod gemv_entry_name_tests_3477 {
     #[test]
     fn the_types_found_in_the_wild_without_kernels_resolve_to_none() {
         use crate::cuda::types::WeightQuantType;
-        let census: &[(u32, &str)] = &[
-            (11, "Q3_K"),
-        ];
+        let census: &[(u32, &str)] = &[(11, "Q3_K")];
         let admitted: Vec<String> = census
             .iter()
             .filter(|(t, _)| WeightQuantType::from_ggml_type(*t).is_some())
@@ -664,7 +722,10 @@ mod gemv_entry_name_tests_3477 {
                 gk,
                 "binding type {q} to any other kernel decodes {bytes}-byte blocks as another scheme"
             );
-            assert!(!crate::gguf::gpu_unsupported_quant_qtype(q), "type {q} must be GPU-eligible");
+            assert!(
+                !crate::gguf::gpu_unsupported_quant_qtype(q),
+                "type {q} must be GPU-eligible"
+            );
             // Not ambiguous by size, and inferred at a real shape from the model.
             let (k, n) = (3584usize, 1024usize);
             assert_eq!(
@@ -704,7 +765,10 @@ mod gemv_entry_name_tests_3477 {
     #[test]
     fn iq2_xxs_is_admitted_because_its_kernel_was_measured() {
         use crate::cuda::types::{GemvKernel, WeightQuantType};
-        assert_eq!(WeightQuantType::from_ggml_type(16), Some(WeightQuantType::IQ2XXS));
+        assert_eq!(
+            WeightQuantType::from_ggml_type(16),
+            Some(WeightQuantType::IQ2XXS)
+        );
         assert_eq!(
             crate::cuda::types::BoundWeight::bind(0x1000, 66 * 4, WeightQuantType::IQ2XXS, 4, 256)
                 .kernel(),
@@ -787,7 +851,11 @@ mod gemv_entry_name_tests_3477 {
                 #[allow(clippy::cast_precision_loss)]
                 let m2 = ((hi >> (8 * j)) & 0xff) as f32;
                 let s1 = if (signs >> j) & 1 != 0 { -1.0 } else { 1.0 };
-                let s2 = if (signs >> (j + 4)) & 1 != 0 { -1.0 } else { 1.0 };
+                let s2 = if (signs >> (j + 4)) & 1 != 0 {
+                    -1.0
+                } else {
+                    1.0
+                };
                 got[col0 + j] = m1 * db * s1;
                 got[col0 + j + 4] = m2 * db * s2;
             }
@@ -800,8 +868,14 @@ mod gemv_entry_name_tests_3477 {
             );
         }
         // The fixture must be able to see the bugs above, or agreement is empty.
-        assert!(scales_seen.len() >= 3, "fixture exercises only scales {scales_seen:?}");
-        assert!(expected.iter().any(|v| *v < 0.0), "fixture never sets a sign bit");
+        assert!(
+            scales_seen.len() >= 3,
+            "fixture exercises only scales {scales_seen:?}"
+        );
+        assert!(
+            expected.iter().any(|v| *v < 0.0),
+            "fixture never sets a sign bit"
+        );
         assert!(expected.iter().any(|v| *v > 0.0), "fixture is all negative");
     }
 
@@ -814,7 +888,9 @@ mod gemv_entry_name_tests_3477 {
     /// and the 7-bit sign-code field.
     #[test]
     fn the_iq3_xxs_thread_mapping_reproduces_the_cpu_decoder() {
-        use crate::quantize::iq3_xxs::{dequantize_iq3_xxs_block, IQ3_XXS_BLOCK_BYTES, IQ3_XXS_BLOCK_ELEMS};
+        use crate::quantize::iq3_xxs::{
+            dequantize_iq3_xxs_block, IQ3_XXS_BLOCK_BYTES, IQ3_XXS_BLOCK_ELEMS,
+        };
         use crate::quantize::iq_grids::{IQ3XXS_GRID, KSIGNS_IQ2XS};
 
         let mut block = [0u8; IQ3_XXS_BLOCK_BYTES];
@@ -840,7 +916,10 @@ mod gemv_entry_name_tests_3477 {
             let db = d * ((0.5 + (aux >> 28) as f32) * 0.5);
             let signs = u32::from(KSIGNS_IQ2XS[((aux >> (7 * l)) & 127) as usize]);
             let q = 2 + 8 * ib + 2 * l;
-            let (g1, g2) = (IQ3XXS_GRID[usize::from(block[q])], IQ3XXS_GRID[usize::from(block[q + 1])]);
+            let (g1, g2) = (
+                IQ3XXS_GRID[usize::from(block[q])],
+                IQ3XXS_GRID[usize::from(block[q + 1])],
+            );
             let col0 = 32 * ib + 8 * l;
             for j in 0..4usize {
                 #[allow(clippy::cast_precision_loss)]
@@ -848,15 +927,25 @@ mod gemv_entry_name_tests_3477 {
                 #[allow(clippy::cast_precision_loss)]
                 let m2 = ((g2 >> (8 * j)) & 0xff) as f32;
                 let s1 = if (signs >> j) & 1 != 0 { -1.0 } else { 1.0 };
-                let s2 = if (signs >> (j + 4)) & 1 != 0 { -1.0 } else { 1.0 };
+                let s2 = if (signs >> (j + 4)) & 1 != 0 {
+                    -1.0
+                } else {
+                    1.0
+                };
                 got[col0 + j] = m1 * db * s1;
                 got[col0 + j + 4] = m2 * db * s2;
             }
         }
         for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
-            assert!((g - e).abs() <= 1e-6, "element {i}: kernel mapping {g}, CPU decoder {e}");
+            assert!(
+                (g - e).abs() <= 1e-6,
+                "element {i}: kernel mapping {g}, CPU decoder {e}"
+            );
         }
-        assert!(scales.len() >= 3, "fixture exercises only scales {scales:?}");
+        assert!(
+            scales.len() >= 3,
+            "fixture exercises only scales {scales:?}"
+        );
         assert!(expected.iter().any(|v| *v < 0.0) && expected.iter().any(|v| *v > 0.0));
     }
 
@@ -899,8 +988,8 @@ mod gemv_entry_name_tests_3477 {
             let db = d * (1.0 + 2.0 * (v as f32));
             let qh = u32::from(block[66 + ib]);
             let i1 = usize::from(block[2 + 8 * ib + 2 * l]) | (((qh >> (2 * l)) & 1) << 8) as usize;
-            let i2 =
-                usize::from(block[2 + 8 * ib + 2 * l + 1]) | (((qh >> (2 * l + 1)) & 1) << 8) as usize;
+            let i2 = usize::from(block[2 + 8 * ib + 2 * l + 1])
+                | (((qh >> (2 * l + 1)) & 1) << 8) as usize;
             let (g1, g2) = (IQ3S_GRID[i1], IQ3S_GRID[i2]);
             let sb = u32::from(block[74 + 4 * ib + l]);
             let col0 = 32 * ib + 8 * l;
@@ -943,8 +1032,9 @@ mod gemv_entry_name_tests_3477 {
         };
 
         // KVALUES_IQ4NL, the 16 non-linear levels, as the PTX embeds them.
-        const KV: [i32; 16] =
-            [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113];
+        const KV: [i32; 16] = [
+            -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113,
+        ];
 
         let mut block = [0u8; IQ4_NL_BLOCK_BYTES];
         let mut x: u32 = 0x1234_5678;
@@ -983,10 +1073,7 @@ mod gemv_entry_name_tests_3477 {
 
         // State the counter-intuitive half as its own assertion, so a failure
         // names the mechanism rather than an index.
-        assert_eq!(
-            got[0], expected[0],
-            "byte 0's LOW nibble is element 0"
-        );
+        assert_eq!(got[0], expected[0], "byte 0's LOW nibble is element 0");
         assert_eq!(
             got[16], expected[16],
             "byte 0's HIGH nibble is element 16, not element 1"
@@ -1011,8 +1098,9 @@ mod gemv_entry_name_tests_3477 {
         use crate::quantize::iq4_xs::{dequantize_iq4_xs_block, IQ4_XS_BLOCK_BYTES};
 
         // KVALUES_IQ4NL, the 16 non-linear levels, as the PTX embeds them.
-        const KV: [i32; 16] =
-            [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113];
+        const KV: [i32; 16] = [
+            -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113,
+        ];
 
         // A deterministic pseudo-random block; byte 0..2 is the f16 scale, kept
         // to a cleanly representable value so the comparison is about indexing.
@@ -1051,7 +1139,10 @@ mod gemv_entry_name_tests_3477 {
         let mut wrong = Vec::new();
         for i in 0..256 {
             if (got[i] - expected[i]).abs() > 1e-6 {
-                wrong.push(format!("\n  - element {i}: kernel {} vs decoder {}", got[i], expected[i]));
+                wrong.push(format!(
+                    "\n  - element {i}: kernel {} vs decoder {}",
+                    got[i], expected[i]
+                ));
             }
         }
         assert!(
@@ -1075,7 +1166,11 @@ mod gemv_entry_name_tests_3477 {
         } else {
             (1.0 + frac / 1024.0) * 2f32.powi(exp - 15)
         };
-        if sign.is_sign_negative() { -mag } else { mag }
+        if sign.is_sign_negative() {
+            -mag
+        } else {
+            mag
+        }
     }
 
     /// IQ4_XS must be registered with the right block size. 136 bytes per 256
@@ -1084,15 +1179,27 @@ mod gemv_entry_name_tests_3477 {
     #[test]
     fn iq4_xs_is_registered_with_the_right_block_size() {
         use crate::cuda::types::{GemvKernel, WeightQuantType};
-        assert_eq!(WeightQuantType::from_ggml_type(23), Some(WeightQuantType::IQ4XS));
+        assert_eq!(
+            WeightQuantType::from_ggml_type(23),
+            Some(WeightQuantType::IQ4XS)
+        );
         assert_eq!(WeightQuantType::IQ4XS.bytes_per_superblock(), 136);
         // [2560, 9216] ffn_gate — the real shape in the UD model.
         let nsb = 2560 * (9216 / 256);
         assert!(WeightQuantType::IQ4XS.matches_size(nsb * 136, 2560, 9216));
-        assert_eq!(WeightQuantType::from_size(nsb * 136, 2560, 9216), Some(WeightQuantType::IQ4XS));
         assert_eq!(
-            crate::cuda::types::BoundWeight::bind(0x1000, nsb * 136, WeightQuantType::IQ4XS, 2560, 9216)
-                .kernel(),
+            WeightQuantType::from_size(nsb * 136, 2560, 9216),
+            Some(WeightQuantType::IQ4XS)
+        );
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                nsb * 136,
+                WeightQuantType::IQ4XS,
+                2560,
+                9216
+            )
+            .kernel(),
             GemvKernel::IQ4XS
         );
     }
@@ -1146,10 +1253,7 @@ mod gemv_entry_name_tests_3477 {
 
         let inferred = WeightQuantType::from_size(size, rows, cols);
         assert!(
-            matches!(
-                inferred,
-                Some(WeightQuantType::Q4K | WeightQuantType::Q4_0)
-            ),
+            matches!(inferred, Some(WeightQuantType::Q4K | WeightQuantType::Q4_0)),
             "size inference resolves this to Q4_K or Q4_0 today; it got {inferred:?}. It must \
              never resolve it to IQ4_NL, because nothing in the bytes distinguishes them"
         );
@@ -1174,7 +1278,9 @@ mod gemv_entry_name_tests_3477 {
             // Assemble at the declared target, or the first newer arch this ptxas
             // still defines (gx10's CUDA 13 and yoga's no longer define sm_70).
             let target = crate::test_ptxas::declared_target(&ptx);
-            if let Err(e) = crate::test_ptxas::assemble(&ptx, kernels.kernel_name(&kt), &[target.as_str()]) {
+            if let Err(e) =
+                crate::test_ptxas::assemble(&ptx, kernels.kernel_name(&kt), &[target.as_str()])
+            {
                 broken.push(format!("\n  - {kt:?}: {e}"));
             }
         }
@@ -1244,7 +1350,10 @@ mod gemv_entry_name_tests_3477 {
             Some(W::Q4_1)
         );
         // No declaration: the size guess is all there is, unchanged.
-        assert_eq!(W::resolve_declared_or_sized(None, two_bytes, rows, cols), Some(W::F16));
+        assert_eq!(
+            W::resolve_declared_or_sized(None, two_bytes, rows, cols),
+            Some(W::F16)
+        );
         // Neither matches: fall back to the declaration rather than inventing one.
         assert_eq!(
             W::resolve_declared_or_sized(Some(W::Q4K), 12_345, rows, cols),
