@@ -109,15 +109,16 @@ pub fn run_relations_gate(contract_dir: &Path) -> RelationsOutcome {
     findings.extend(cycle_findings);
 
     // The legacy ratchet (R-6): a RISE in unresolved legacy targets is a violation; a fall passes.
-    if let Some(baseline) = baseline_legacy_unresolved(contract_dir) {
+    if let Some(baseline) = baseline_legacy_unresolved() {
         if legacy_unresolved > baseline {
             findings.push(LintFinding::new(
                 "PV-ONT-010",
                 RuleSeverity::Error,
                 format!(
-                    "legacy_unresolved_depends_on rose {baseline} -> {legacy_unresolved}: a `metadata.depends_on` naming no contract was added. The baseline in contracts/lint-baseline.json is shrink-only"
+                    "legacy_unresolved_depends_on rose {baseline} -> {legacy_unresolved}: a `metadata.depends_on` naming no contract was added. It is shrink-only against {}",
+                    super::comparand::WHERE
                 ),
-                "contracts/lint-baseline.json".to_string(),
+                contract_dir.display().to_string(),
             ));
         }
     }
@@ -436,14 +437,14 @@ fn legacy_depends_on_edges(doc: &serde_yaml::Value, stems: &BTreeSet<String>) ->
     (n, unresolved)
 }
 
-/// `ont.legacy_unresolved_depends_on` from `<contract_dir>/lint-baseline.json`, when it is recorded.
-fn baseline_legacy_unresolved(contract_dir: &Path) -> Option<usize> {
-    let raw = std::fs::read_to_string(contract_dir.join("lint-baseline.json")).ok()?;
-    let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    doc.get("ont")?
-        .get("legacy_unresolved_depends_on")?
-        .as_u64()
-        .and_then(|n| usize::try_from(n).ok())
+/// `legacy_unresolved_depends_on` as this gate measures it over the comparand tree (#3569), when one is named.
+fn baseline_legacy_unresolved() -> Option<usize> {
+    super::comparand::baseline(|base| match run_relations_gate(base) {
+        RelationsOutcome::Ran { result, .. } => {
+            super::comparand::count_in(&result, "legacy_unresolved_depends_on")
+        }
+        _ => None,
+    })
 }
 
 /// DFS colouring: unvisited, on the stack, finished.
@@ -622,9 +623,9 @@ mod tests {
 
     #[test]
     fn legacy_depends_on_is_counted_never_rejected_and_ratcheted() {
-        // the fixture carries metadata.depends_on with one resolving and one dangling target, and a baseline of 1
+        // the fixture carries metadata.depends_on with one resolving and one dangling target
         let (result, findings) = ran("relations-legacy");
-        assert!(result.passed, "{findings:?}");
+        assert!(result.passed, "no comparand: counted, never judged: {findings:?}");
         match result.extra {
             Some(GateExtra::Relations {
                 legacy_depends_on,
@@ -636,10 +637,20 @@ mod tests {
             }
             other => panic!("expected Relations extra, got {other:?}"),
         }
-        // and a rise above the baseline is a violation
-        let (result, findings) = ran("relations-legacy-rise");
+        // a rise measured against the comparand (relations-ok: 0 dangling) is a violation
+        let (result, findings) =
+            crate::lint::comparand::with_comparand(&fixture("relations-ok"), || ran("relations-legacy"));
         assert!(!result.passed);
         assert_eq!(rules(&findings), vec!["PV-ONT-010"]);
+        // and the same pair the other way round is a fall, which passes
+        let (result, findings) =
+            crate::lint::comparand::with_comparand(&fixture("relations-legacy"), || ran("relations-ok"));
+        assert!(result.passed, "{findings:?}");
+        let (result, findings) = crate::lint::comparand::with_comparand(
+            &fixture("relations-legacy"),
+            || ran("relations-legacy"),
+        );
+        assert!(result.passed, "a hold is not a rise: {findings:?}");
     }
 
     #[test]

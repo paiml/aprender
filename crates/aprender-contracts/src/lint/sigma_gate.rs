@@ -99,20 +99,20 @@ pub fn run_sigma_gate(contract_dir: &Path) -> SigmaOutcome {
     }
 
     // The `formal_prose` ratchet, enforced by the one thing that measures it. A RISE is a violation; a fall is
-    // progress and passes (`make ont-ratchet` lowers the recorded number). Without a baseline there is nothing to
-    // ratchet against and the count is only reported — never silently treated as satisfied.
-    if let Some(baseline) = baseline_formal_prose(contract_dir) {
+    // progress and passes. The comparand is this same count measured over the comparand tree (#3569) — never a
+    // stored number. Without a comparand there is nothing to ratchet against and the count is only reported —
+    // never silently treated as satisfied.
+    if let Some(baseline) = baseline_formal_prose() {
         if formal_prose > baseline {
-            let mut f = LintFinding::new(
+            findings.push(LintFinding::new(
                 "PV-ONT-004",
                 RuleSeverity::Error,
                 format!(
-                    "formal_prose rose {baseline} -> {formal_prose}: a `formal:` entry carrying no symbol Σ declares was added. The baseline in contracts/lint-baseline.json is shrink-only"
+                    "formal_prose rose {baseline} -> {formal_prose}: a `formal:` entry carrying no symbol Σ declares was added. It is shrink-only against {}",
+                    super::comparand::WHERE
                 ),
-                "contracts/lint-baseline.json".to_string(),
-            );
-            f.contract_stem = Some("lint-baseline".to_string());
-            findings.push(f);
+                contract_dir.display().to_string(),
+            ));
         }
     }
 
@@ -149,14 +149,12 @@ pub fn run_sigma_gate(contract_dir: &Path) -> SigmaOutcome {
     }
 }
 
-/// `ont.formal_prose` from `<contract_dir>/lint-baseline.json`, when it is recorded.
-fn baseline_formal_prose(contract_dir: &Path) -> Option<usize> {
-    let raw = std::fs::read_to_string(contract_dir.join("lint-baseline.json")).ok()?;
-    let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    doc.get("ont")?
-        .get("formal_prose")?
-        .as_u64()
-        .and_then(|n| usize::try_from(n).ok())
+/// `formal_prose` as this gate measures it over the comparand tree (#3569), when one is named.
+fn baseline_formal_prose() -> Option<usize> {
+    super::comparand::baseline(|base| match run_sigma_gate(base) {
+        SigmaOutcome::Ran { result, .. } => super::comparand::count_in(&result, "formal_prose"),
+        _ => None,
+    })
 }
 
 /// PV-ONT-001 — `entity.type` must be one Σ declares.
@@ -280,29 +278,56 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn a_rise_in_the_prose_debt_is_a_violation() {
-        // The fixture records `formal_prose: 0` and then carries one prose `formal:` — the shape a new
-        // unformalised expression has when it lands on a corpus whose baseline says there were none.
-        match run_sigma_gate(&fixture("sigma-prose-ratchet")) {
-            SigmaOutcome::Ran { result, findings } => {
-                assert!(!result.passed, "a rise in the debt fails the gate");
-                assert!(
-                    findings.iter().any(|f| f.rule_id == "PV-ONT-004"),
-                    "{findings:?}"
-                );
-            }
+    use crate::lint::comparand::with_comparand;
+
+    fn prose_rise(head: &Path) -> bool {
+        match run_sigma_gate(head) {
+            SigmaOutcome::Ran { findings, .. } => findings.iter().any(|f| f.rule_id == "PV-ONT-004"),
             other => panic!("expected Ran, got {other:?}"),
         }
     }
 
-    #[test]
-    fn a_fall_in_the_prose_debt_passes() {
-        // sigma-ok records no baseline at all, and its one expression is fully symbolic: nothing to ratchet.
-        match run_sigma_gate(&fixture("sigma-ok")) {
-            SigmaOutcome::Ran { result, .. } => assert!(result.passed),
-            other => panic!("expected Ran, got {other:?}"),
+    /// A copy of `name` with `lint-baseline.json` stamped to `stored` — the number the PR under test could write.
+    fn restamped(name: &str, stored: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for entry in std::fs::read_dir(fixture(name)).expect("fixture dir") {
+            let entry = entry.expect("entry");
+            std::fs::copy(entry.path(), dir.path().join(entry.file_name())).expect("copy");
         }
+        std::fs::write(dir.path().join("lint-baseline.json"), stored).expect("stamp");
+        dir
+    }
+
+    #[test]
+    fn a_rise_in_the_prose_debt_against_the_comparand_is_a_violation() {
+        // head carries one prose `formal:`; the comparand (sigma-ok) carries none.
+        let rise = with_comparand(&fixture("sigma-ok"), || prose_rise(&fixture("sigma-prose-ratchet")));
+        assert!(rise, "a rise measured comparand -> head fails the gate");
+    }
+
+    #[test]
+    fn a_fall_or_a_hold_against_the_comparand_passes() {
+        let fall = with_comparand(&fixture("sigma-prose-ratchet"), || prose_rise(&fixture("sigma-ok")));
+        assert!(!fall, "a fall is progress");
+        let hold = with_comparand(&fixture("sigma-prose-ratchet"), || {
+            prose_rise(&fixture("sigma-prose-ratchet"))
+        });
+        assert!(!hold, "unchanged is not a rise");
+    }
+
+    #[test]
+    fn without_a_comparand_the_debt_is_reported_not_judged() {
+        assert!(!prose_rise(&fixture("sigma-prose-ratchet")));
+    }
+
+    #[test]
+    fn a_stored_number_moves_nothing() {
+        // The pre-#3569 shape: a stored 0 made this head RED, and a restamped 99 made a real rise GREEN.
+        let low = restamped("sigma-prose-ratchet", r#"{"ont": {"formal_prose": 0}}"#);
+        assert!(!prose_rise(low.path()), "a stored 0 is not a comparand");
+        let high = restamped("sigma-prose-ratchet", r#"{"ont": {"formal_prose": 99}}"#);
+        let rise = with_comparand(&fixture("sigma-ok"), || prose_rise(high.path()));
+        assert!(rise, "a restamped 99 does not hide a measured rise");
     }
 
     #[test]

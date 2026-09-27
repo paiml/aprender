@@ -110,7 +110,7 @@ falsification_tests:
     if_fails: a decline and a reject become indistinguishable to a caller
   - id: FALSIFY-REL-006
     rule: the legacy ratchet
-    prediction: a rise in unresolved metadata.depends_on above the baseline is PV-ONT-010; the count itself is never a reject
+    prediction: a rise in unresolved metadata.depends_on over the same count on the comparand tree is PV-ONT-010, a fall or hold passes; the count itself is never a reject
     test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::legacy_depends_on_is_counted_never_rejected_and_ratcheted
     if_fails: either the legacy field is silently rewritten by refusal, or its debt can grow unrecorded
 

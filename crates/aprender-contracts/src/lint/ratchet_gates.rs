@@ -1,4 +1,4 @@
-//! PVL-001 §EV-11 — two shrink-only ratchets over `contracts/lint-baseline.json`.
+//! PVL-001 §EV-11 — shrink-only ratchets, head vs the comparand tree (#3569).
 //!
 //! - `theorem-pairing` (PV-RAT-001): a Lean THEOREM MODULE is a `.lean` file under
 //!   `<lean base>/ProvableContracts/Theorems/`, named by its dotted path from the base
@@ -19,10 +19,10 @@
 //! 165 `.lean` files (measured 2026-09-24), mostly as ordinary words, and the full module name of 1 of 131. The root module and the lakefile are not
 //! theorem modules, so they are not counted either way.
 //!
-//! THE GATES NEVER WRITE. At or below the baseline they PASS and report the count; lowering the recorded number
-//! is `make lint-ratchet`'s job (never in CI). No baseline key is `Unknown(Report)`, never a pass: the whole
-//! verdict is the comparison, so the count is REPORTED (that is how `make lint-ratchet` records the first
-//! baseline) and not judged, and `--gate` exits 2. A Lean base with no theorem module, a repo with no book, or a
+//! THE BASELINE IS MEASURED, NEVER STORED (#3569; operator 2026-09-27: never-worse = head vs base, same scanner,
+//! same run). Each gate runs itself over the comparand tree ([`super::comparand`]) and compares. At or below the
+//! comparand the gate PASSES and reports the count. No comparand named is `Unknown(Report)`, never a pass: the whole
+//! verdict is the comparison, so the count is REPORTED and not judged, and `--gate` exits 2. A Lean base with no theorem module, a repo with no book, or a
 //! corpus with no kernel-kind contract measured nothing and declines outright (ONT R-2: zero is a decline).
 
 use std::path::{Path, PathBuf};
@@ -37,11 +37,11 @@ use super::rules::RuleSeverity;
 use super::{GateDetail, GateExtra, GateResult, Verdict};
 use crate::ontology::verdict::Reason;
 
-/// Top-level `lint-baseline.json` key for the theorem-pairing debt.
+/// The `GateExtra` count key for the theorem-pairing debt.
 pub const UNPAIRED_KEY: &str = "unpaired_theorem_modules";
-/// Top-level `lint-baseline.json` key for the depends_on debt.
+/// The `GateExtra` count key for the depends_on debt.
 pub const WITHOUT_DEPENDS_ON_KEY: &str = "contracts_without_depends_on";
-/// Top-level `lint-baseline.json` key for the underived `status: proved` debt.
+/// The `GateExtra` count key for the underived `status: proved` debt.
 pub const UNDERIVED_KEY: &str = "underived_proved_claims";
 /// The book roots a theorem module is paired against, relative to the repo root.
 pub const BOOK_ROOTS: [&str; 2] = ["book", "crates/aprender-contracts-staging/book"];
@@ -58,12 +58,19 @@ pub enum RatchetOutcome {
     },
 }
 
-/// The top-level integer `key` of `<contract_dir>/lint-baseline.json`. Absent, unreadable, or not a
-/// non-negative integer → `None`.
-fn baseline_of(contract_dir: &Path, key: &str) -> Option<usize> {
-    let raw = std::fs::read_to_string(contract_dir.join("lint-baseline.json")).ok()?;
-    let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    doc.get(key)?.as_u64().and_then(|n| usize::try_from(n).ok())
+/// The debt `key` as its own gate measures it over the comparand tree (#3569). No comparand named, or the gate
+/// declines there → `None`. Never a number stored in `lint-baseline.json`: a stored limit can be restamped.
+fn baseline_of(key: &str) -> Option<usize> {
+    let run: fn(&Path) -> RatchetOutcome = match key {
+        UNPAIRED_KEY => run_theorem_pairing_gate,
+        WITHOUT_DEPENDS_ON_KEY => run_depends_on_present_gate,
+        UNDERIVED_KEY => run_proved_is_derived_gate,
+        _ => return None,
+    };
+    super::comparand::baseline(|base| match run(base) {
+        RatchetOutcome::Ran { result, .. } => super::comparand::count_in(&result, key),
+        RatchetOutcome::Declined(_) => None,
+    })
 }
 
 /// The repo root the contract dir sits in: its parent, or `.` for a bare relative name.
@@ -142,16 +149,15 @@ fn ratchet_finding(
     if now <= baseline {
         return None;
     }
-    let mut f = LintFinding::new(
+    Some(LintFinding::new(
         rule,
         RuleSeverity::Error,
         format!(
-            "{key} rose {baseline} -> {now}: {fix}. The baseline in contracts/lint-baseline.json is shrink-only; `make lint-ratchet` only lowers it"
+            "{key} rose {baseline} -> {now}: {fix}. It is shrink-only against {}",
+            super::comparand::WHERE
         ),
-        "contracts/lint-baseline.json".to_string(),
-    );
-    f.contract_stem = Some("lint-baseline".to_string());
-    Some(f)
+        "contracts".to_string(),
+    ))
 }
 
 fn result_of(
@@ -221,7 +227,7 @@ pub fn run_theorem_pairing_gate(contract_dir: &Path) -> RatchetOutcome {
             modules.len()
         ));
     }
-    let baseline = baseline_of(contract_dir, UNPAIRED_KEY);
+    let baseline = baseline_of(UNPAIRED_KEY);
     let texts: Vec<String> = pages
         .iter()
         .filter_map(|p| std::fs::read_to_string(p).ok())
@@ -287,7 +293,7 @@ pub fn run_depends_on_present_gate(contract_dir: &Path) -> RatchetOutcome {
             "no kernel-kind contract in {checked} contract(s): nothing was measured"
         ));
     }
-    let baseline = baseline_of(contract_dir, WITHOUT_DEPENDS_ON_KEY);
+    let baseline = baseline_of(WITHOUT_DEPENDS_ON_KEY);
     let findings: Vec<LintFinding> = ratchet_finding(
         "PV-RAT-002",
         WITHOUT_DEPENDS_ON_KEY,
@@ -357,7 +363,7 @@ pub fn run_proved_is_derived_gate(contract_dir: &Path) -> RatchetOutcome {
             contract_dir.display()
         ));
     }
-    let baseline = baseline_of(contract_dir, UNDERIVED_KEY);
+    let baseline = baseline_of(UNDERIVED_KEY);
     let findings: Vec<LintFinding> = ratchet_finding(
         "PV-RAT-003",
         UNDERIVED_KEY,

@@ -16,9 +16,9 @@
 //! prose, and its glyphs are not checked. Inferring "this looks like prose" was refused in the plan grill: an
 //! inferred rule cannot be shrunk deliberately, and cannot fail on a malformed string.
 //!
-//! **The debt is counted, not hidden.** `formal_prose` in `contracts/lint-baseline.json` is the number of `formal:`
-//! entries carrying NO declared symbol at all — 1536 of 2303 when this row landed. It is shrink-only: the corpus may
-//! become more formal over time, never less.
+//! **The debt is counted, not hidden.** `formal_prose` is the number of `formal:` entries carrying NO
+//! declared symbol at all — 1536 of 2303 when this row landed. It is shrink-only against the same count over the
+//! merge-base tree (#3569): the corpus may become more formal over time, never less.
 
 use crate::ontology::sigma::Sigma;
 

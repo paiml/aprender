@@ -22,9 +22,9 @@
 //! - PV-ONT-015 — a qualifier has the wrong shape (`toolchain` a map of strings; the others non-empty lists
 //!   of non-empty strings);
 //! - PV-ONT-016 — the `contracts_without_valid_under` ratchet ROSE. The debt is the kernel-kind contracts
-//!   (non-registry) that carry no `valid_under`; it is recorded at the TOP LEVEL of
-//!   `contracts/lint-baseline.json` (the row's probe reads it there) and is shrink-only, the
-//!   `formal_prose` pattern. Without a baseline the count is reported, never treated as satisfied.
+//!   (non-registry) that carry no `valid_under`; it is measured at head and over the comparand
+//!   tree ([`super::comparand`], #3569) by this same gate and is shrink-only, the `formal_prose` pattern.
+//!   Without a comparand the count is reported, never treated as satisfied.
 //!
 //! The rules apply to `valid_under` wherever it appears; only the ratchet is scoped to kernel-kind, because
 //! that is the class the row obliges. Non-verdict answers: no Σ → decline, malformed Σ → error, and a corpus
@@ -55,7 +55,7 @@ pub const VALID_UNDER_KEYS: [&str; 5] = ["world", "toolchain", "host_class", "ba
 /// world Σ declares: a Σ without `committed` gives an omitted `world` nothing to default to (PV-ONT-014).
 pub const DEFAULT_WORLD: &str = "committed";
 
-/// The top-level key of `lint-baseline.json` that records the debt.
+/// The `GateExtra` count key that carries the debt.
 pub const BASELINE_KEY: &str = "contracts_without_valid_under";
 
 /// What one `valid-under` run answers. Only [`ValidUnderOutcome::Ran`] is a verdict about the corpus.
@@ -107,7 +107,7 @@ pub fn run_valid_under_gate(contract_dir: &Path) -> ValidUnderOutcome {
             contracts_checked: c.checked,
         };
     }
-    let baseline = baseline_without_valid_under(contract_dir);
+    let baseline = baseline_without_valid_under();
     c.findings
         .extend(ratchet_finding(baseline, c.kernels_without));
     let Census {
@@ -209,16 +209,15 @@ fn ratchet_finding(baseline: Option<usize>, without: usize) -> Option<LintFindin
     if without <= b {
         return None;
     }
-    let mut f = LintFinding::new(
+    Some(LintFinding::new(
         "PV-ONT-016",
         RuleSeverity::Error,
         format!(
-            "{BASELINE_KEY} rose {b} -> {without}: a kernel-kind contract without `metadata.valid_under` was added. The baseline in contracts/lint-baseline.json is shrink-only — give the new contract a world"
+            "{BASELINE_KEY} rose {b} -> {without}: a kernel-kind contract without `metadata.valid_under` was added. It is shrink-only against {} — give the new contract a world",
+            super::comparand::WHERE
         ),
-        "contracts/lint-baseline.json".to_string(),
-    );
-    f.contract_stem = Some("lint-baseline".to_string());
-    Some(f)
+        "contracts".to_string(),
+    ))
 }
 
 fn finding(rule: &str, msg: String, stem: &str, file: &Path) -> LintFinding {
@@ -327,13 +326,12 @@ fn check_valid_under(
     }
 }
 
-/// The top-level `contracts_without_valid_under` from `<contract_dir>/lint-baseline.json`, when recorded.
-fn baseline_without_valid_under(contract_dir: &Path) -> Option<usize> {
-    let raw = std::fs::read_to_string(contract_dir.join("lint-baseline.json")).ok()?;
-    let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    doc.get(BASELINE_KEY)?
-        .as_u64()
-        .and_then(|n| usize::try_from(n).ok())
+/// `contracts_without_valid_under` as this gate measures it over the comparand tree (#3569), when one is named.
+fn baseline_without_valid_under() -> Option<usize> {
+    super::comparand::baseline(|base| match run_valid_under_gate(base) {
+        ValidUnderOutcome::Ran { result, .. } => super::comparand::count_in(&result, BASELINE_KEY),
+        _ => None,
+    })
 }
 
 #[cfg(test)]

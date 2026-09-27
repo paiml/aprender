@@ -10,7 +10,7 @@
 #   liskov_sha256, LiskovWitness, check, pc_checker.
 #   provable_contracts::lint::refines_gate — the `refines` gate: PV-ONT-024
 #   (Liskov violation, clause named), PV-ONT-025 (witness does not check),
-#   PV-ONT-026 (malformed clause), PV-ONT-027 (liskov_prose above the baseline);
+#   PV-ONT-026 (malformed clause), PV-ONT-027 (liskov_prose above its count over the comparand tree, #3569);
 #   declines NoCheckable / WitnessStale / PositiveControlFailed, exit 3 on a
 #   malformed Σ.
 #   `pv-sat` liskov.rs — the UNTRUSTED reasoner, with its own direction table and
@@ -76,11 +76,11 @@ equations:
     lean_theorem: none — L4 not declared
   gate:
     formula: 'verdict = Unknown(NoCheckable) if no Σ; Unknown(WitnessStale) if checkable pairs and no witness for them; Unknown(PositiveControlFailed) unless pc_checker and pc_reasoner fired; Fail on any finding; Unknown(Prose) if a prose clause; Pass otherwise'
-    domain: a contracts/ directory with Σ, lint-baseline.json and a witness directory
+    domain: a contracts/ directory with Σ and a witness directory, and the comparand (merge-base) tree
     codomain: V (the ONT-6 lattice)
     invariants:
     - no verdict over checkable pairs without both positive controls fired (R-3)
-    - liskov_prose never rises above the committed baseline
+    - liskov_prose never rises above its count over the comparand tree (#3569)
     preconditions:
     - Σ parses; otherwise exit 3
     postconditions:
@@ -137,7 +137,7 @@ falsification_tests:
   if_fails: a checker that accepts any implication goes unnoticed (measured 2026-09-24 — skipping the atom check turns 10 lib tests and the pv-sat reasoner test red)
 - id: FALSIFY-ONT4E-004
   rule: the gate's lattice
-  prediction: 'honest witness → Pass; control not fired → PositiveControlFailed; no witness → WitnessStale naming make contracts; legacy → Pass with nothing checked; prose → Unknown(Prose) naming the clause; prose above the baseline → PV-ONT-027; malformed clause → PV-ONT-026; no Σ → NoCheckable'
+  prediction: 'honest witness → Pass; control not fired → PositiveControlFailed; no witness → WitnessStale naming make contracts; legacy → Pass with nothing checked; prose → Unknown(Prose) naming the clause; prose above the comparand count → PV-ONT-027; malformed clause → PV-ONT-026; no Σ → NoCheckable'
   test: cargo test -p aprender-contracts --lib lint::refines_gate::tests
   if_fails: the gate reports a verdict about pairs nobody reasoned over
 - id: FALSIFY-ONT4E-005

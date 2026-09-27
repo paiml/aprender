@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::lint::comparand::with_comparand;
 use crate::ontology::liskov::{Kind, Obligation, PairWitness, Step};
 
 fn fixture(name: &str) -> tempfile::TempDir {
@@ -148,19 +149,43 @@ fn a_prose_clause_is_unknown_prose_naming_it() {
 }
 
 #[test]
-fn prose_above_the_baseline_is_rejected_and_at_it_is_not() {
-    let dir = fixture("refines-prose");
-    let baseline = dir.path().join("lint-baseline.json");
-    std::fs::write(&baseline, r#"{"ont": {"liskov_prose": 0}}"#).expect("write");
-    let (r, findings, c) = ran(run_refines_gate(dir.path()));
+fn prose_is_ratcheted_head_against_the_comparand_in_both_directions() {
+    let (head, base) = (fixture("refines-prose"), fixture("refines-ok"));
+    // refines-ok has no prose pair; refines-prose has one — a rise of one
+    let (r, findings, c) = with_comparand(base.path(), || ran(run_refines_gate(head.path())));
     assert_eq!(r.verdict, Verdict::Fail);
     assert_eq!(c.liskov_prose_baseline, Some(0));
     assert_eq!(findings[0].rule_id, "PV-ONT-027", "{findings:?}");
 
-    std::fs::write(&baseline, r#"{"ont": {"liskov_prose": 1}}"#).expect("write");
-    let (r, findings, _) = ran(run_refines_gate(dir.path()));
-    assert!(findings.is_empty(), "{findings:?}");
+    let (r, findings, _) = with_comparand(head.path(), || ran(run_refines_gate(head.path())));
+    assert!(findings.is_empty(), "a hold passes: {findings:?}");
     assert_eq!(r.verdict, Verdict::Unknown(Reason::Prose));
+
+    // a comparand with a second prose pair (c refines b in prose): the head's one is a fall
+    let two = fixture("refines-prose");
+    let a = std::fs::read_to_string(two.path().join("a.yaml")).expect("a.yaml");
+    std::fs::write(two.path().join("c.yaml"), a.replace("name: a\n", "name: c\n")).expect("c.yaml");
+    let (r, findings, c) = with_comparand(two.path(), || ran(run_refines_gate(head.path())));
+    assert!(findings.is_empty(), "a fall passes: {findings:?}");
+    assert_eq!(c.liskov_prose_baseline, Some(2));
+    assert_eq!(r.verdict, Verdict::Unknown(Reason::Prose));
+}
+
+#[test]
+fn a_stored_liskov_prose_moves_nothing() {
+    let dir = fixture("refines-prose");
+    let baseline = dir.path().join("lint-baseline.json");
+    // a stored 0 once made this head RED; with no comparand it is reported only
+    std::fs::write(&baseline, r#"{"ont": {"liskov_prose": 0}}"#).expect("write");
+    let (r, findings, c) = ran(run_refines_gate(dir.path()));
+    assert!(findings.is_empty(), "{findings:?}");
+    assert_eq!(c.liskov_prose_baseline, None);
+    assert_eq!(r.verdict, Verdict::Unknown(Reason::Prose));
+    // and a restamped 99 does not hide a measured rise
+    std::fs::write(&baseline, r#"{"ont": {"liskov_prose": 99}}"#).expect("write");
+    let base = fixture("refines-ok");
+    let (_, findings, _) = with_comparand(base.path(), || ran(run_refines_gate(dir.path())));
+    assert_eq!(findings[0].rule_id, "PV-ONT-027", "{findings:?}");
 }
 
 #[test]

@@ -10,6 +10,7 @@
 
 pub mod cache;
 pub mod capability_cells_gate;
+pub mod comparand;
 mod composition_gate;
 pub mod config;
 pub mod consistency_gate;
@@ -276,7 +277,7 @@ pub enum GateExtra {
         contracts_with_valid_under: usize,
         /// Kernel-kind contracts carrying none — the debt, shrink-only against the baseline.
         contracts_without_valid_under: usize,
-        /// The top-level `contracts_without_valid_under` in `lint-baseline.json`; `None` = not recorded.
+        /// The same count measured over the comparand tree (#3569); `None` = no comparand named (reported only).
         baseline: Option<usize>,
         /// `world=count` over the contracts whose `valid_under` passed every rule.
         by_world: Vec<String>,
@@ -296,7 +297,7 @@ pub enum GateExtra {
         paired: usize,
         /// The debt, shrink-only against the baseline.
         unpaired_theorem_modules: usize,
-        /// The top-level `unpaired_theorem_modules` in `lint-baseline.json`; `None` = not recorded (reported only).
+        /// The same count measured over the comparand tree (#3569); `None` = no comparand named (reported only).
         baseline: Option<usize>,
         /// The unpaired modules, dotted, in byte order.
         unpaired: Vec<String>,
@@ -312,7 +313,7 @@ pub enum GateExtra {
         kernel_contracts: usize,
         /// Kernel-kind contracts whose `metadata.depends_on` is empty — the debt, shrink-only.
         contracts_without_depends_on: usize,
-        /// The top-level `contracts_without_depends_on` in `lint-baseline.json`; `None` = not recorded (reported only).
+        /// The same count measured over the comparand tree (#3569); `None` = no comparand named (reported only).
         baseline: Option<usize>,
         /// Findings.
         violations: usize,
@@ -332,7 +333,7 @@ pub enum GateExtra {
         proved_claims: usize,
         /// Of those, not derived — the debt, shrink-only against the baseline, and it must reach 0.
         underived_proved_claims: usize,
-        /// The top-level `underived_proved_claims` in `lint-baseline.json`; `None` = not recorded (reported only).
+        /// The same count measured over the comparand tree (#3569); `None` = no comparand named (reported only).
         baseline: Option<usize>,
         /// The underived claims, as `contract: theorem`, in contract order.
         underived: Vec<String>,

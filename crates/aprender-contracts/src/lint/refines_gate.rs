@@ -11,7 +11,7 @@
 //! - PV-ONT-024 — a checked Liskov violation, `A refines B: precondition strengthened (PRE-1)` and its siblings;
 //! - PV-ONT-025 — the Liskov witness does not check against the current pairs;
 //! - PV-ONT-026 — a `requires`/`ensures`/`invariants` clause that is not `{id, statement, formal, formal_status}`;
-//! - PV-ONT-027 — `liskov_prose` rose above `ont.liskov_prose` in `lint-baseline.json` (shrink-only).
+//! - PV-ONT-027 — `liskov_prose` rose above the same count over the comparand tree (shrink-only, #3569).
 //!
 //! Otherwise: a `prose` clause in any pair is `Unknown{Prose}` naming it; a legacy pair (no `formal_status` on
 //! either side) has nothing to check and is counted as such — with no checkable pair the verdict is `Pass` and
@@ -79,7 +79,7 @@ pub struct RefinesCounters {
     pub liskov_pairs_legacy: usize,
     /// Pairs left `Unknown{Prose}` by a `prose` clause.
     pub liskov_prose: usize,
-    /// `ont.liskov_prose` in `lint-baseline.json`, when recorded.
+    /// `liskov_prose` over the comparand tree (#3569); `None` = no comparand named.
     pub liskov_prose_baseline: Option<usize>,
     /// The prose clauses, `<contract>.<block> <id>`.
     pub prose_clauses: Vec<String>,
@@ -133,7 +133,7 @@ pub fn run_refines_gate(contract_dir: &Path) -> RefinesOutcome {
         ensures_n: corpus.counts.1,
         invariants_n: corpus.counts.2,
         pc_checker: pc.to_string(),
-        liskov_prose_baseline: baseline_liskov_prose(contract_dir),
+        liskov_prose_baseline: baseline_liskov_prose(),
         ..RefinesCounters::default()
     };
     let mut checkable: Vec<Pair> = Vec::new();
@@ -153,11 +153,12 @@ pub fn run_refines_gate(contract_dir: &Path) -> RefinesOutcome {
                 "PV-ONT-027",
                 RuleSeverity::Error,
                 format!(
-                    "liskov_prose rose {baseline} -> {}: a refines pair with a prose clause was added ({}). The baseline in contracts/lint-baseline.json is shrink-only",
+                    "liskov_prose rose {baseline} -> {}: a refines pair with a prose clause was added ({}). It is shrink-only against {}",
                     c.liskov_prose,
-                    c.prose_clauses.join(", ")
+                    c.prose_clauses.join(", "),
+                    super::comparand::WHERE
                 ),
-                "contracts/lint-baseline.json",
+                contract_dir.display().to_string(),
             ));
         }
     }
@@ -256,14 +257,19 @@ fn checked_witness(
     Ok((report, findings))
 }
 
-/// `ont.liskov_prose` from `<contract_dir>/lint-baseline.json`, when it is recorded.
-fn baseline_liskov_prose(contract_dir: &Path) -> Option<usize> {
-    let raw = std::fs::read_to_string(contract_dir.join("lint-baseline.json")).ok()?;
-    let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    doc.get("ont")?
-        .get("liskov_prose")?
-        .as_u64()
-        .and_then(|n| usize::try_from(n).ok())
+/// `liskov_prose` over the comparand tree (#3569), when one is named — the SAME census this gate takes at head
+/// (`typed_graph` → `liskov_corpus` → [`PairClass::Prose`]), without the witness run a full gate would start.
+fn baseline_liskov_prose() -> Option<usize> {
+    super::comparand::baseline(|base| match typed_graph(base) {
+        TypedGraph::Read { edges, .. } => Some(
+            liskov_corpus(&corpus_documents(base), &edges)
+                .pairs
+                .iter()
+                .filter(|p| matches!(p.class(), PairClass::Prose(_)))
+                .count(),
+        ),
+        _ => None,
+    })
 }
 
 /// The reason a non-verdict outcome declines with.

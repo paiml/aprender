@@ -12,7 +12,7 @@
 # lattice IS a kernel (it has laws and three harnesses); this is not.
 #
 # PROOF LADDER, STATED HONESTLY
-#   * L1 — the gate exists and runs everywhere: 10th gate in `run_lint`, and armed in contracts/lint-baseline.json.
+#   * L1 — the gate exists and runs everywhere: 10th gate in `run_lint`, and armed in contracts/lint-baseline.json `armed_gates`.
 #   * L2 — falsification MEASURED on the real corpus (1792 contracts, 2303 `formal:` expressions) and on six
 #          fixture corpora, one per rule, including the two rules the real corpus CANNOT exercise.
 #   * L3/L4 — not applicable and not declared.
@@ -105,9 +105,9 @@ falsification_tests:
     if_fails: a malformed Σ and a failing corpus become indistinguishable to a caller
   - id: FALSIFY-SIGMA-005
     rule: the formal_prose ratchet
-    prediction: a corpus whose prose debt exceeds its recorded baseline fails with PV-ONT-004
-    test: cargo test -p aprender-contracts --lib lint::sigma_gate::tests::a_rise_in_the_prose_debt_is_a_violation
-    if_fails: the baseline is recorded and nothing enforces it — a number in a file, which is this fleet's signature defect
+    prediction: a head whose prose debt exceeds the same count over the comparand (merge-base) tree fails with PV-ONT-004; a fall or a hold passes, and a stored number moves nothing (#3569)
+    test: cargo test -p aprender-contracts --lib lint::sigma_gate::tests::a_rise_in_the_prose_debt_against_the_comparand_is_a_violation
+    if_fails: the ratchet compares against a number in a file a PR can restamp, which is this fleet's signature defect
 
 qa_gate:
   id: F-SIGMA-001

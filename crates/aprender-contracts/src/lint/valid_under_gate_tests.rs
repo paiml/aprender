@@ -154,7 +154,8 @@ fn every_fixture_draws_exactly_its_rule() {
             "valid-under-bad-qualifier",
             vec!["PV-ONT-015", "PV-ONT-015"],
         ),
-        ("valid-under-ratchet-rise", vec!["PV-ONT-016"]),
+        // no comparand named: the debt is reported, never judged
+        ("valid-under-ratchet-rise", vec![]),
         ("valid-under-nonkernel-bad", vec!["PV-ONT-014"]),
     ] {
         let (passed, rules, _) = ran(name);
@@ -183,8 +184,15 @@ fn the_census_counts_what_it_saw() {
             contracts_with_valid_under,
             baseline
         ),
-        (1, 1, 0, Some(0))
+        (1, 1, 0, None)
     );
+    let extra = crate::lint::comparand::with_comparand(&fixture("valid-under-ok"), || {
+        ran("valid-under-ratchet-rise").2
+    });
+    let Some(GateExtra::ValidUnder { baseline, .. }) = extra else {
+        panic!("valid-under extra");
+    };
+    assert_eq!(baseline, Some(0), "the baseline is the comparand measured, not a stored number");
     let (_, _, extra) = ran("valid-under-appendix-b");
     let Some(GateExtra::ValidUnder { by_world, .. }) = extra else {
         panic!("valid-under extra");
@@ -217,4 +225,18 @@ fn the_named_gate_dispatches_valid_under() {
         super::super::run_named_gate(&fixture("valid-under-ok"), "valid-under"),
         super::super::NamedGateOutcome::ValidUnder(ValidUnderOutcome::Ran { .. })
     ));
+}
+
+#[test]
+fn the_ratchet_is_head_against_the_comparand_in_both_directions() {
+    let with = |base: &str, head: &str| {
+        crate::lint::comparand::with_comparand(&fixture(base), || ran(head))
+    };
+    // valid-under-ok declares valid_under; the -rise head drops it — a rise of one
+    let (passed, rules, _) = with("valid-under-ok", "valid-under-ratchet-rise");
+    assert_eq!((passed, rules), (false, vec!["PV-ONT-016".to_string()]));
+    let (passed, rules, _) = with("valid-under-ratchet-rise", "valid-under-ok");
+    assert_eq!((passed, rules), (true, vec![]), "a fall passes");
+    let (passed, rules, _) = with("valid-under-ratchet-rise", "valid-under-ratchet-rise");
+    assert_eq!((passed, rules), (true, vec![]), "a hold passes");
 }

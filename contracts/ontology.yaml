@@ -11,8 +11,8 @@
 # files at f30c67de3: `∀` 275, `∧` 134, `∈` 116, `→` 72, `⟹` 63, `≥` 52, `≤` 42, `ε` 34, `≠` 27, `⇒` 24, `¬` 21,
 # and the function names `len`, `shape`, `isFinite`, `modifies`, `preserves` that the kernel contracts actually use.
 # Most of those 2330 expressions are PROSE, not notation — the ten most frequent identifiers in them are `for`, `x`,
-# `all`, `in`, `i`, `and`, `t`, `forall`, `s`, `p`. That debt is counted in `lint-baseline.json.formal_prose` and
-# shrinks; it is not declared away here by adding English words to `symbols`.
+# `all`, `in`, `i`, `and`, `t`, `forall`, `s`, `p`. That debt is counted as `formal_prose` and
+# shrinks against the same count at the merge-base (#3569); it is not declared away here by adding English words to `symbols`.
 schema: ont-sigma-v1
 
 concepts:

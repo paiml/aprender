@@ -90,7 +90,7 @@ falsification_tests:
     if_fails: the world index indexes nothing
   - id: FALSIFY-VU-004
     rule: the debt ratchet
-    prediction: a rise above the baseline is PV-ONT-016; equal or lower passes; no baseline is reported, never judged
+    prediction: a rise above the same count over the comparand tree is PV-ONT-016; equal or lower passes; no comparand is reported, never judged (#3569)
     test: cargo test -p aprender-contracts --lib lint::valid_under_gate::tests::the_ratchet_rejects_a_rise_only
     if_fails: a kernel contract with no world can be added unrecorded
   - id: FALSIFY-VU-005
