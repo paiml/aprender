@@ -1,15 +1,15 @@
 {
   "ticket": "PMAT-4481",
-  "base": "c074ace09d",
-  "base_resolved": "c074ace09d",
-  "base_note": "no origin/c074ace09d exists; judged against the local ref",
-  "head": "8170316368e9fe699cf787b64a300980eee67c50",
-  "diff_sha256": "3c3bb33e09107b427b865b3ec69a312127bd20757e1050c485d37f258c0999f8",
+  "base": "1cdb4a68cf",
+  "base_resolved": "1cdb4a68cf",
+  "base_note": "no origin/1cdb4a68cf exists; judged against the local ref",
+  "head": "13e326d085f5f57201eea70933655e35afbbbcb3",
+  "diff_sha256": "4ced844760259bd09e0d53a5838ffdec0459f729f0623924c9ddea883d52c269",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 22864,
-  "prompt_sha256": "5e5767c9097c77df676e41ca8447844bc557eace045c1d18f8f40e3941771e66",
+  "prompt_bytes": 7578,
+  "prompt_sha256": "a6e741ec8dfcdf963b25e49d8fd1ee2a62338ada5939f45ecc0274671da98e0f",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,10 +21,10 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements the acceptance criteria for PMAT-4481. The 3 commits (c30936d9d3, 91969973aa, 09edd15f28) from #4480 and #4473 are successfully cherry-picked without content modification. The CI-fix delta targets and correctly resolves the BINDING-006 failure by adding the `kernel: bool` flag and updating validation, with test coverage accurately verifying a matching reference+kernel pair, the rejection of duplicates (two references or two kernels), and that a kernel-only equation yields no reference. It also fixes bashrs SC2171 by moving the `jq` program into a heredoc. 16 struct literals are correctly updated to include `kernel: false`. Roadmap and receipt are appropriately updated, and there are no unrequested logic changes.",
+      "summary": "The diff correctly implements the requested changes by folding PRs #4480 and #4473 onto main. The CI failure on run 36298850626, caused by the missing `rg` command after the gate was made fail-closed, is successfully fixed by replacing the four `rg` calls with functionally equivalent `grep -E` and `grep -q` commands using identical patterns. My manual tests confirm GNU `grep -E` supports the PCRE `\\s` and behaves correctly with the provided regexes. The self-test correctly validates the gate, confirming it is not weakened. All receipt claims are backed by the diff.",
       "findings": [],
-      "raw_bytes": 4201,
-      "err_bytes": 103,
+      "raw_bytes": 3843,
+      "err_bytes": 62,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -34,10 +34,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "5e5767c9097c77df676e41ca8447844bc557eace045c1d18f8f40e3941771e66",
+      "brief_sha256": "a6e741ec8dfcdf963b25e49d8fd1ee2a62338ada5939f45ecc0274671da98e0f",
       "trace": {
-        "input_sha256": "90e1a4294be19476353322b3848218f849f66dd674f05a46c2f9ed96216ea774",
-        "output_sha256": "05ef2ea260ec67db4b736edeb5e2c358b89754d2f762c6152906087e23637a0f",
+        "input_sha256": "b7adfb9aa6832770120a9eba205e2bd638e377c1ba851d22704b3dd2af95b2cc",
+        "output_sha256": "fcfbbabd1a41c61358e9da74f3ee2b4e3a38fb4496f21ea868a579c471db7d97",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -58,53 +58,17 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff precisely matches the ticket's criteria. The CI-fix delta correctly implements the BINDING-006 fix by adding the `kernel` boolean flag to `KernelBinding` and isolating kernel entries in `find_binding` and validation checks. The tests thoroughly cover the four edge cases (pair passing, duplicate kernels failing, duplicate references failing, kernel-only resolving to no reference). The SC2171 bashrs warning is addressed by correctly converting the jq script into a heredoc. Exactly 16 test struct literals were updated to include `kernel: false`. The quorum artifact is verified to be present on the branch, and no unauthorized changes were found.",
+      "summary": "The diff fixes a CI failure in the contracts gate provenance step by replacing `rg` with `grep -E`/`grep -q` (because the CI runner framework16-2 lacked `rg`). This enables the PR fold (#4480 and #4473) to pass CI without weakening the gate, as the grep patterns are functionally identical to the removed rg patterns on Linux runners. The change is exactly what the receipt claims and nothing more.",
       "findings": [
         {
-          "claim": "Tests cover a pair passing",
-          "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-          "fix": "",
+          "claim": "The four `rg` calls became `grep -E`/`grep -q`, with the same patterns.",
+          "file": "scripts/lint-provenance.sh",
           "grounding": "cited",
-          "line": 279
-        },
-        {
-          "claim": "Tests cover two kernels RED",
-          "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-          "fix": "",
-          "grounding": "cited",
-          "line": 288
-        },
-        {
-          "claim": "Tests cover two references RED",
-          "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-          "fix": "",
-          "grounding": "cited",
-          "line": 295
-        },
-        {
-          "claim": "Tests cover kernel-only resolving to no reference",
-          "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-          "fix": "",
-          "grounding": "cited",
-          "line": 304
-        },
-        {
-          "claim": "jq program moves into a heredoc",
-          "file": "scripts/contracts_gate.sh",
-          "fix": "",
-          "grounding": "cited",
-          "line": 60
-        },
-        {
-          "claim": "16 edits add kernel: false to test/fixture struct literals",
-          "file": "crates/aprender-contracts/src/binding.rs",
-          "fix": "",
-          "grounding": "measured",
-          "line": 508
+          "line": 29
         }
       ],
-      "raw_bytes": 4543,
-      "err_bytes": 0,
+      "raw_bytes": 3507,
+      "err_bytes": 103,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -114,10 +78,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "5e5767c9097c77df676e41ca8447844bc557eace045c1d18f8f40e3941771e66",
+      "brief_sha256": "a6e741ec8dfcdf963b25e49d8fd1ee2a62338ada5939f45ecc0274671da98e0f",
       "trace": {
-        "input_sha256": "ebc9bf75753bc46f969f933bad998ec964bb5583fda279e389c74321a04d63ff",
-        "output_sha256": "902d84ea9c1a3c011b6c22759a634a1ae1b587d2b8087b8cfe7e57ca1a264e85",
+        "input_sha256": "aad52294b7cd97bad290df732e9283c60903586cc77dacc6a0a657072fd35b96",
+        "output_sha256": "ccdd2ef97b96627f61aa155ca00f494b792f20188ab19c3ea15cc03d730eb879",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -143,9 +107,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff correctly implements PMAT-4481 CI-fix delta: BINDING-006 keyed by (contract, equation, kernel) with kernel entries filtered from find_binding; SC2171 jq reformatted into heredoc (functionally equivalent); comprehensive test coverage of all required cases; all 16 struct fixtures updated with kernel: false; backward compatibility maintained via serde defaults.",
+      "summary": "The diff correctly replaces four `rg` calls with `grep` equivalents to fix the CI failure `rg: command not found`. The replacements are semantically correct (rg -q → grep -Eq or grep -q; rg -N -e → grep -E -e). The receipt documentation is updated appropriately. The diff matches the receipt's claimed changes exactly.",
       "findings": [],
-      "raw_bytes": 1650,
+      "raw_bytes": 1602,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -156,10 +120,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "5e5767c9097c77df676e41ca8447844bc557eace045c1d18f8f40e3941771e66",
+      "brief_sha256": "a6e741ec8dfcdf963b25e49d8fd1ee2a62338ada5939f45ecc0274671da98e0f",
       "trace": {
-        "input_sha256": "97969d62db50eb985c74ece143ef8dcaea9f46e63bb27c473638b5e88aa9507c",
-        "output_sha256": "62fa8024834605b11eb7f9fb1901af41931c3cb2745a76cbe40afbbaf844801c",
+        "input_sha256": "aac5caee9b4e6b143a34de6175ac7023ae2e7735dd5cac888da86fd22ca3e1a1",
+        "output_sha256": "aaaf352257d1e2dbccf029a16ae70e3ff319f4bc9c6ca173e96257044bc9595b",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -180,63 +144,13 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "crates/aprender-contracts/src/binding.rs",
-      "line": 508,
+      "file": "scripts/lint-provenance.sh",
+      "line": 29,
       "lanes_agreeing": [
         2
       ],
       "claims": [
-        "16 edits add kernel: false to test/fixture struct literals"
-      ]
-    },
-    {
-      "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-      "line": 279,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "Tests cover a pair passing"
-      ]
-    },
-    {
-      "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-      "line": 288,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "Tests cover two kernels RED"
-      ]
-    },
-    {
-      "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-      "line": 295,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "Tests cover two references RED"
-      ]
-    },
-    {
-      "file": "crates/aprender-contracts/src/schema/artifact_tests.rs",
-      "line": 304,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "Tests cover kernel-only resolving to no reference"
-      ]
-    },
-    {
-      "file": "scripts/contracts_gate.sh",
-      "line": 60,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "jq program moves into a heredoc"
+        "The four `rg` calls became `grep -E`/`grep -q`, with the same patterns."
       ]
     }
   ],
@@ -297,7 +211,7 @@
         "model": "claude-opus-4-6-thinking",
         "probe": 1,
         "outcome": "quota",
-        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 4h48m11s."
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 3h38m59s."
       }
     ],
     "degraded": null,
@@ -314,27 +228,27 @@
           "bucket": "claude-gpt",
           "budget": 0,
           "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
-          "window_start": null,
-          "window_calls": 0,
-          "window_429": 0,
-          "hour_calls": 0,
+          "window_start": 1790487268,
+          "window_calls": 3,
+          "window_429": 3,
+          "hour_calls": 2,
           "share": 1,
           "want": 2,
           "state": "empty",
-          "reason": "agy bucket claude-gpt is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-27T05:34:28Z)"
         },
         "gemini": {
           "bucket": "gemini",
           "budget": 67,
           "basis": "[U] default 30, raised to the 67 calls a window has made without a 429; no window reached one",
           "window_start": 1790486460,
-          "window_calls": 6,
+          "window_calls": 37,
           "window_429": 0,
-          "hour_calls": 6,
+          "hour_calls": 25,
           "share": 13,
           "want": 2,
-          "state": "open",
-          "reason": ""
+          "state": "hour",
+          "reason": "agy bucket gemini: 25 calls in the last hour + 2 this round exceed the hour share 13 (1/5 of the budget 67, [U] default 30, raised to the 67 calls a window has made without a 429; no window reached one)"
         }
       },
       "closed": []
@@ -342,65 +256,54 @@
   },
   "auto_merge": {
     "checked": true,
-    "was_armed": false,
-    "disarmed": false,
-    "note": "auto-merge not armed"
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
     "shape": "canary",
     "max_brief_bytes": 24576,
-    "brief_bytes": 22864
+    "brief_bytes": 7578
   },
   "advisory_lane": {
-    "state": "answered",
+    "state": "unavailable",
     "counts": false,
     "row": {
-      "Verdict": {
-        "verdict": "PASS",
-        "cell": "gx10-cuda",
-        "backend": "cuda"
-      }
+      "NotRun": "Busy"
     },
-    "verdict": "PASS",
-    "why": null,
-    "served_by": "gx10-cuda",
-    "gpu_proof": {
-      "used_gpu_probe": true,
-      "server_holds_gpu": true,
-      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
-      "trace_lines": [
-        "3616960, 245 MiB"
-      ]
-    },
-    "apr": "0.70.0",
-    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
-    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-    "rc": 0,
-    "wall_s": 64,
-    "collected_s": 1559,
-    "budget_s": 300,
-    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 1579,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 22864,
-      "sent_bytes": 23033,
+      "bytes": 7578,
+      "sent_bytes": 7747,
       "max_bytes": 24576
     },
     "trace": {
-      "input_sha256": "244185ceb54ec1c3e84f41bceeef32da821d8ef39c207a2ecdf6261d8a74bad0",
+      "input_sha256": "e8238886d75e72fff7f3c6806a322e07c57d785c75e31b185ac9451451db379a",
       "raw": "advisory.json"
     },
     "attempts": [
       {
         "host": "gx10",
-        "ok": true,
-        "wall_s": 63,
-        "used_gpu": true
+        "ok": false,
+        "wall_s": 1,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-25T20:18:53Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)"
       }
     ],
     "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
-    "agrees_with_counted": true,
+    "agrees_with_counted": null,
     "counted": "PASS"
   },
   "lint": {
