@@ -36,6 +36,8 @@ fn dispatch_run(
     split_prompt: bool,
     // #3723: `--thinking on|off`, None when absent.
     thinking: Option<bool>,
+    // #4026: `--logprobs K`, 0 when absent.
+    logprobs_top_k: usize,
 ) -> Result<(), CliError> {
     let effective_trace = trace || trace_payload;
     let effective_trace_level = if trace_payload {
@@ -74,6 +76,7 @@ fn dispatch_run(
         split_prompt,
         chat_template,
         thinking,
+        logprobs_top_k,
     )
 }
 

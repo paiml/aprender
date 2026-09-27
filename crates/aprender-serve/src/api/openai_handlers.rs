@@ -450,6 +450,8 @@ mod pmat821_chat_handler_threading_tests {
             ignore_eos: None,
             n: crate::api::ChoiceCount::ONE,
             stream: false,
+            logprobs: None,
+            top_logprobs: None,
             stop: None,
             user: None,
             tools: None,
@@ -677,6 +679,42 @@ pub(crate) fn build_chat_response(
     timings: Option<super::Timings>,
     used_gpu: Option<bool>,
 ) -> Response {
+    Json(chat_response_body(
+        request_id,
+        model,
+        text,
+        prompt_tokens,
+        completion_tokens,
+        max_tokens,
+        stops,
+        trace_level,
+        latency,
+        tools,
+        tool_choice,
+        timings,
+        used_gpu,
+    ))
+    .into_response()
+}
+
+/// The body [`build_chat_response`] serializes, for an arm that adds to it
+/// (the Qwen3.5 arm's `logprobs`, #4026).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn chat_response_body(
+    request_id: String,
+    model: String,
+    text: String,
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    max_tokens: usize,
+    stops: Option<&[String]>,
+    trace_level: Option<&str>,
+    latency: Duration,
+    tools: Option<&[super::OpenAiTool]>,
+    tool_choice: Option<crate::grammar::ToolChoice>,
+    timings: Option<super::Timings>,
+    used_gpu: Option<bool>,
+) -> ChatCompletionResponse {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
         latency.as_micros() as u64,
@@ -701,7 +739,7 @@ pub(crate) fn build_chat_response(
         ),
     };
 
-    Json(ChatCompletionResponse {
+    ChatCompletionResponse {
         used_gpu,
         id: request_id,
         object: "chat.completion".to_string(),
@@ -721,8 +759,7 @@ pub(crate) fn build_chat_response(
         step_trace,
         layer_trace,
         timings,
-    })
-    .into_response()
+    }
 }
 
 /// Serialize a value to an SSE event, returning `None` if serialization fails.

@@ -1,0 +1,65 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) REX-11 champion/challenger, spec §5.3–§5.4. A
+    challenger (B1a prompt version, B1b retrieval few-shot, a B2 checkpoint) replaces the
+    serving champion only if all five §5.4 gates hold on the current sealed test version:
+    (1) McNemar exact one-sided p < ALPHA on per-item correctness, (2) precision point
+    estimate not lower, (3) H1 and H2 hold, (4) 0 contamination hits, (5) p95 ≤ the §4
+    queue budget. Every gate fails closed: unmeasured is failed. Each decision spends one
+    of the version's 20 evaluations (§2.2); refusals (budget spent, no executed row (R-6),
+    no champion rows, challenger == champion) spend nothing. Promotion is a pin bump of
+    (weights, prompt, adapter) shas; the rollback target is the row's champion_before.
+    Demotion: two consecutive gold escapes where the champion said PASS and a voter said
+    FAIL. B1b retrieves from non-test gold only (R-2), never the query itself, and every
+    challenger prompt passes the contamination guard, which scans each fenced block alone
+    because a gold `- defect at …` line after a fence joins the last hunk and hides it
+    from a whole-text scan.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "https://github.com/paiml/aprender/issues/4366"
+
+equations:
+  promote:
+    formula: "promote ⇔ used < 20 ∧ ran ∧ p_McNemar(b,c) < α ∧ Δprecision ≥ 0 ∧ H1 ∧ H2 ∧ hits = 0 ∧ p95 ≤ budget"
+  demote:
+    formula: "demote ⇔ ∃ consecutive gold escapes e_i, e_{i+1}: champion_passed ∧ a_voter_failed"
+
+falsification_tests:
+  - id: FALSIFY-RXC-001
+    name: all_five_gates_promote_and_each_alone_rejects
+    prediction: "b=20, c=0 with every gate measured green promotes; flipping any single gate (or leaving it unmeasured) rejects with exactly that gate's reason; more correct but less precise is rejected on gate 2"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxc_001"
+    expected_output: "exit 0"
+    if_fails: "A challenger could be promoted with an unmeasured or failing gate."
+  - id: FALSIFY-RXC-002
+    name: the_evaluation_budget_counts_and_refusals_spend_nothing
+    prediction: "the 21st decision on one test version is refused and spends nothing; a rotated version has its own budget; a challenger that never ran and the champion itself are refused; promotion moves the pin and records the rollback sha"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxc_002"
+    expected_output: "exit 0"
+    if_fails: "The sealed test set could be over-fitted by unbounded challengers, or a never-run challenger counted."
+  - id: FALSIFY-RXC-003
+    name: two_consecutive_gold_escapes_demote
+    prediction: "two consecutive gold champion-PASS/voter-FAIL escapes demote; a silver row neither breaks nor extends the run; a caught gold escape breaks it"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxc_003"
+    expected_output: "exit 0"
+    if_fails: "A champion that keeps missing gold defects would keep serving."
+  - id: FALSIFY-RXF-001
+    name: a_test_item_in_the_retrieval_pool_is_an_error
+    prediction: "select() on a pool containing a Split::Test item errors naming the item and R-2"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxf_001"
+    expected_output: "exit 0"
+    if_fails: "Few-shot retrieval could show the model a sealed test diff."
+  - id: FALSIFY-RXF-002
+    name: retrieval_ranks_by_similarity_and_never_returns_the_query
+    prediction: "the most similar dev item ranks first; a dev query retrieves neither its own id nor a byte-identical diff"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxf_002"
+    expected_output: "exit 0"
+    if_fails: "A dev evaluation becomes open-book."
+  - id: FALSIFY-RXF-003
+    name: a_rendered_prompt_carrying_a_test_hunk_is_refused
+    prediction: "a clean rendered prompt passes; the same prompt with a sealed item as an example is refused naming it, although the whole-text scan alone misses it; an empty index is refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxf_003"
+    expected_output: "exit 0"
+    if_fails: "A B1 challenger prompt could carry a sealed test diff past the contamination guard."

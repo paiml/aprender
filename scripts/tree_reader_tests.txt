@@ -136,6 +136,8 @@ aprender-profile	--lib	cluster::registry
 aprender-qa-certify	--lib	<root>
 aprender-rag	--lib	loader::text
 aprender-rag-cli	--lib	<root>
+aprender-review-experiment	--lib	contamination
+aprender-review-experiment	--lib	prereg
 aprender-serve	--lib	capability
 aprender-serve	--lib	cli::cli_tests
 aprender-serve	--lib	infer

@@ -1,0 +1,77 @@
+{
+  "steps": [
+    {
+      "step": 0,
+      "top1_apr": 3,
+      "top1_oracle": 3,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 0.9937147252729654
+    },
+    {
+      "step": 1,
+      "top1_apr": 16,
+      "top1_oracle": 16,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 0.9999927226428112
+    },
+    {
+      "step": 2,
+      "top1_apr": 17,
+      "top1_oracle": 17,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 0.9999997808730922
+    },
+    {
+      "step": 3,
+      "top1_apr": 1088,
+      "top1_oracle": 1088,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 0.9999454921702258
+    },
+    {
+      "step": 4,
+      "top1_apr": 14695,
+      "top1_oracle": 14695,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 0.9999959911507754
+    },
+    {
+      "step": 5,
+      "top1_apr": 220,
+      "top1_oracle": 220,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 1.0000000797889739
+    },
+    {
+      "step": 6,
+      "top1_apr": 16,
+      "top1_oracle": 16,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 1.0000000783905607
+    },
+    {
+      "step": 7,
+      "top1_apr": 17,
+      "top1_oracle": 17,
+      "overlap": 20,
+      "max_abs_dlogprob": 0,
+      "chosen_dlogprob": 0,
+      "apr_mass": 1.000000040313696
+    }
+  ],
+  "pass": true
+}

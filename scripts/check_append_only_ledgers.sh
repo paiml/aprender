@@ -29,6 +29,11 @@ usage() { printf 'check_append_only_ledgers.sh [--self-test|--help]\n'; }
 # attr_union PATH -> 0 if git resolves merge=union for it
 attr_union() { [ "$(git check-attr merge -- "$1" 2>/dev/null | sed 's/.*: //')" = union ]; }
 
+# attr_golden PATH -> 0 if .gitattributes declares it `audit-golden`: a
+# single-writer file under docs/audits/ that is NOT a ledger (#4354: the review
+# corpus, the #4026 oracle captures). Declared, never inferred; never union.
+attr_golden() { [ "$(git check-attr audit-golden -- "$1" 2>/dev/null | sed 's/.*: //')" = set ]; }
+
 measure() {
     local rc=0 n_ledger=0 n_other=0 f
     printf '=== append-only ledgers must be union-merged; goldens must NOT be ===\n'
@@ -36,11 +41,18 @@ measure() {
     while IFS= read -r f; do
         [ -n "$f" ] || continue
         n_ledger=$((n_ledger + 1))
-        if attr_union "$f"; then
+        if attr_golden "$f"; then
+            if attr_union "$f"; then
+                printf 'FAIL  %s is declared audit-golden AND union-merged. Pick one.\n' "$f"
+                rc=1
+            else
+                printf 'ok    golden  %s\n' "$f"
+            fi
+        elif attr_union "$f"; then
             printf 'ok    union   %s\n' "$f"
         else
             printf 'FAIL  %s is an append-only ledger and is NOT union-merged.\n' "$f"
-            printf '      Add it to .gitattributes, or move it out of docs/audits/.\n'
+            printf '      Add it to .gitattributes, declare it audit-golden, or move it out of docs/audits/.\n'
             rc=1
         fi
     done < <(git ls-files "$LEDGER_GLOB")
@@ -100,6 +112,20 @@ self_test() {
     _row 'R3a without the attribute, a two-sided append CONFLICTS' "$(cat "$t/without" 2>/dev/null)" 1
     _row 'R3b with merge=union it does NOT'                        "$(cat "$t/with" 2>/dev/null)"    0
     _row 'R3c and the result is the UNION (base+MAIN+SIDE), not one side' "$(cat "$t/lines" 2>/dev/null)" 3
+    rm -rf "${t:?}"
+
+    # R4: a declared golden under docs/audits/ resolves golden and NOT union (the
+    # real tree), and a golden that is ALSO union is caught (a throwaway tree).
+    _row 'R4a docs/audits/review-corpus/corpus-v1.jsonl is audit-golden, not union' \
+         "$(attr_golden docs/audits/review-corpus/corpus-v1.jsonl && ! attr_union docs/audits/review-corpus/corpus-v1.jsonl && echo yes || echo no)" yes
+    t="$(mktemp -d)" || return 1
+    (
+      cd "$t" || exit 1
+      git init -q . && mkdir -p docs/audits/g && : > docs/audits/g/x.jsonl
+      printf 'docs/audits/**/*.jsonl merge=union\ndocs/audits/g/*.jsonl audit-golden\n' > .gitattributes
+      { attr_golden docs/audits/g/x.jsonl && attr_union docs/audits/g/x.jsonl && echo caught || echo missed; } > both
+    )
+    _row 'R4b a golden that is ALSO union-merged is seen as both (measure FAILs it)' "$(cat "$t/both" 2>/dev/null)" caught
     rm -rf "${t:?}"
 
     printf '\n%s row(s), %s\n' "$rows" "$( [ "$fails" -eq 0 ] && echo '0 red / FALSIFIER GREEN' || echo RED )"

@@ -1,0 +1,32 @@
+{
+  "steps": [
+    {
+      "step": 0,
+      "top1_apr": 332,
+      "top1_oracle": 332,
+      "overlap": 20,
+      "max_abs_dlogprob": 0.4042646884918213,
+      "chosen_dlogprob": 0.1427290439605713,
+      "apr_mass": 0.871400920435213
+    },
+    {
+      "step": 1,
+      "top1_apr": 10025,
+      "top1_oracle": 10025,
+      "overlap": 19,
+      "max_abs_dlogprob": 0.25193071365356445,
+      "chosen_dlogprob": 0.04702723026275635,
+      "apr_mass": 0.9749844810285127
+    },
+    {
+      "step": 2,
+      "top1_apr": 159034,
+      "top1_oracle": 159034,
+      "overlap": 19,
+      "max_abs_dlogprob": 0.3921699523925781,
+      "chosen_dlogprob": 0.0021566152572631836,
+      "apr_mass": 0.9994260901551654
+    }
+  ],
+  "pass": false
+}

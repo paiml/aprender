@@ -403,6 +403,7 @@ fn st_cpu_generate(
         seed: realizar::apr_transformer::DEFAULT_SEED,
         repeat_penalty: 1.0,
         repeat_last_n: 0,
+        logprobs_top_k: 0,
         // apr_transformer::generation::is_eos_token (GH-330) stopped on token 0
         // unconditionally; Session has no such builtin, so it is an explicit
         // stop token here to keep the handlers' stopping behavior identical.

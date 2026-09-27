@@ -253,6 +253,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             seed,
             repeat_penalty,
             repeat_last_n,
+            logprobs,
             chat,
             split_prompt,
             batch_jsonl,
@@ -339,6 +340,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *repeat_last_n,
                 *split_prompt,
                 thinking.mode(),
+                *logprobs,
             )
         }
 

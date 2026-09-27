@@ -76,6 +76,7 @@ fn safetensors_cpu_session_generate_leaves_a_witness_entry() {
         stop_tokens: vec![0],
         trace: false,
         logprobs: false,
+        logprobs_top_k: 0,
         cancel: crate::generate::CancelToken::never(),
     };
     let turn = session
