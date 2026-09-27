@@ -1,0 +1,108 @@
+# ──────────────────────────────────────────────
+# ci-input-set-v1 — the CI input set I of FLOW-003 v2.1 Def. 14 (§11.4), QM-10 (aprender#4528)
+#
+# I = I_dep ∪ F ∪ C, written by scripts/ci/input_set.sh and uploaded by the nightly `input-set` job as the
+# artifact `ci-input-set` (input-set.json). INV-BASE reads it: a base b may stand in for a newer main n only if
+# no commit in n..b touches a path of I.
+#   I_dep — rustc dep-info (target/**/*.d), anchored at the workspace root and normalized.
+#   F     — strace -f -y over openat/open/stat/lstat/newfstatat/statx/access/faccessat/faccessat2/getdents64
+#           of the lib tests run from the nextest archive: opened/stat'd → read, enumerated → dirPrefix (dir/**),
+#           ENOENT/ENOTDIR → absent. Unioned over ≥ 7 nightlies.
+#   C     — manifests, Cargo.lock, rust-toolchain.toml, .cargo/**, .github/workflows/**, .config/**, every
+#           proc-macro package, and every package whose build.rs declares no rerun-if-changed (dir/**).
+#
+# KIND: pattern (a file format and the one predicate that reads it).
+# ──────────────────────────────────────────────
+name: ci-input-set-v1
+version: "1.0.0"
+scope: >
+  The input-set.json that scripts/ci/input_set.sh writes, and INV-BASE, the refresh predicate over it.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    FLOW-003 v2.1 QM-10. A path a test can read without I naming it is a hole: a base that skipped it would
+    reuse a result the change could flip. Every term of I has a falsifier that plants exactly such a read.
+  references:
+    - 'scripts/ci/input_set.sh (writer, checker, INV-BASE, --self-test)'
+    - '.github/workflows/nightly.yml job input-set'
+    - 'aprender#4528 — QM-10; aprender#4527 — QM-09 (the nextest archive traced here)'
+
+equations:
+  input_set:
+    formula: "I = I_dep ∪ F ∪ C; F = ⋃_{k=1..N} F_k over the last N nightlies, N ≥ 7; inI(p) ⇔ p ∈ dep ∪ read ∪ absent ∨ ∃ d/** ∈ dirPrefix ∪ config : p starts with d/"
+    domain: "the workspace at baseSha; a strace log of the lib tests; rustc dep-info in the target dir"
+    codomain: "input-set.json with exactly the keys schema, baseSha, dep, read, dirPrefix, absent, config, traceSyscalls, nightlies, nightlyShas"
+    invariants:
+      - "nightlies = |unique(nightlyShas)|"
+      - "no path under target/ is in dep, read, dirPrefix or absent"
+      - "a relative path the parser cannot resolve is a fault (exit 1), never dropped"
+    preconditions:
+      - "strace and jq are on PATH; the job fails closed otherwise"
+    postconditions:
+      - "`input_set.sh check` exits 0 on the written file (with --allow-few while nightlies < 7)"
+    lean_theorem: none — L4 not declared
+  inv_base:
+    formula: "refresh(n, b) ⇔ ∃ c ∈ n..b, ∃ p ∈ paths(c) : inI(p)"
+    domain: "an input set whose baseSha is an ancestor of b"
+    codomain: "exit 0 (b may stand in for n) or exit 10 naming each (commit, path)"
+    invariants:
+      - "an input set with nightlies < 7 never arms INV-BASE"
+    preconditions:
+      - "baseSha is an ancestor of b; otherwise exit 1"
+    postconditions:
+      - "exit 10 lists every offending commit, not only the first"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: CI-INPUT-SET-INV-001
+    property: every read a test makes is in I
+    formal: '∀ p ∈ reads(lib tests at baseSha): inI(p)'
+    prose: false
+  - id: CI-INPUT-SET-INV-002
+    property: a commit that touches I forces a refresh
+    formal: '∀ c ∈ n..b: paths(c) ∩ I ≠ ∅ ⇒ exit(base) = 10'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-CI-INPUT-SET-001
+    rule: 'F1 include_str! is in I_dep'
+    prediction: 'a fixture crate that include_str!s ../../docs/x.md has docs/x.md in dep'
+    test: 'bash scripts/ci/input_set.sh --self-test (row F1)'
+    if_fails: 'a compiled-in document could change with the base reused'
+    mutation: 'INPUT_SET_MUTATE=drop-depinfo (keep only .rs); F1 turns RED'
+  - id: FALSIFY-CI-INPUT-SET-002
+    rule: 'F2 a runtime read is in F'
+    prediction: 'a test that reads ../docs/y.md at run time has docs/y.md in read'
+    test: 'bash scripts/ci/input_set.sh --self-test (row F2)'
+    if_fails: 'a fixture file read at run time is invisible to INV-BASE'
+    mutation: 'drop openat from the traced syscalls (not a planted mutant; F1/F3/F4/F5 are); F2 must turn RED'
+  - id: FALSIFY-CI-INPUT-SET-003
+    rule: 'F3 an enumerated directory is a prefix'
+    prediction: 'a test that read_dirs ../docs/specifications has docs/specifications/** in dirPrefix, so a file added there is in I (F3b)'
+    test: 'bash scripts/ci/input_set.sh --self-test (rows F3, F3b)'
+    if_fails: 'a new file in a directory a test walks changes its result with the base reused'
+    mutation: 'INPUT_SET_MUTATE=drop-getdents64; F3 and F3b turn RED'
+  - id: FALSIFY-CI-INPUT-SET-004
+    rule: 'F4 an absent path is in I'
+    prediction: 'a test that checks ../docs/absent.md exists has docs/absent.md in absent'
+    test: 'bash scripts/ci/input_set.sh --self-test (row F4)'
+    if_fails: 'creating a file a test probes for flips it with the base reused'
+    mutation: 'INPUT_SET_MUTATE=drop-enoent; F4 turns RED'
+  - id: FALSIFY-CI-INPUT-SET-005
+    rule: 'F5 INV-BASE refuses a commit that touches I'
+    prediction: 'a code commit in n..b that include_str!s a docs file makes `base` exit 10 naming it; a docs-only commit to paths outside I exits 0 (K5)'
+    test: 'bash scripts/ci/input_set.sh --self-test (rows F5, K5)'
+    if_fails: 'a stale base is reused across a change to a path the tests read'
+    mutation: 'INPUT_SET_MUTATE=base-noop; F5 turns RED'
+  - id: FALSIFY-CI-INPUT-SET-006
+    rule: 'one nightly is not an input set'
+    prediction: '`check` without --allow-few exits 1 on a file with nightlies < 7'
+    test: 'bash scripts/ci/input_set.sh --self-test (row K3)'
+    if_fails: 'INV-BASE could arm on one trace, missing reads a single run did not make'
+    mutation: 'lower the nightlies floor to 1; K3 turns RED'
