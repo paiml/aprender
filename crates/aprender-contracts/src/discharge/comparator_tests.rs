@@ -154,14 +154,15 @@ fn an_axiom_that_merely_contains_sorry_is_not_sorry() {
 }
 
 #[test]
-fn a_row_reported_twice_is_a_duplicate_counted_once_as_closed() {
-    let (r, c) = judge(&[closed("A.f"), closed("A.f")]);
+fn a_solution_measured_two_ways_is_a_duplicate_and_does_not_close() {
+    let other = row("A.f", Some(h(2)), Some(h(2)), Some(&["propext"]));
+    let (r, c) = judge(&[closed("A.f"), other]);
     assert!(r.reject);
     assert_eq!(
         c,
         Closure {
-            closed: 1,
-            total: 2
+            closed: 0,
+            total: 1
         }
     );
     let f = fails(&r);
@@ -369,11 +370,81 @@ fn zero_rows_against_declared_roots_rejects_not_declines_away() {
 }
 
 #[test]
+fn identical_fan_in_rows_are_one_closed_challenge() {
+    // #4083: three contracts bind A.f, so three Challenge files declare it and the comparator measures it three
+    // times, identically. That is one challenge, closed once -- not two DUPLICATE failures.
+    let (r, c) = judge(&[closed("A.f"), closed("A.f"), closed("A.f")]);
+    assert!(!r.reject, "{:?}", fails(&r));
+    assert_eq!(
+        c,
+        Closure {
+            closed: 1,
+            total: 1
+        }
+    );
+}
+
+#[test]
+fn fan_in_whose_challenge_differs_but_matches_by_defeq_closes_once() {
+    // #4083 measured: bsum_precompute_eq_inline under two Challenge files' imports -- same solution, different
+    // challenge hash, defeq_instances true. One challenge, closed.
+    let mut other = row("A.f", Some(h(3)), Some(h(1)), Some(&["propext"]));
+    other.defeq_instances = Some(true);
+    let (r, c) = judge(&[closed("A.f"), other]);
+    assert!(!r.reject, "{:?}", fails(&r));
+    assert_eq!(
+        c,
+        Closure {
+            closed: 1,
+            total: 1
+        }
+    );
+}
+
+#[test]
+fn fan_in_whose_second_challenge_mismatches_does_not_close() {
+    let other = row("A.f", Some(h(3)), Some(h(1)), Some(&["propext"]));
+    let (r, c) = judge(&[closed("A.f"), other]);
+    let f = fails(&r);
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert!(f[0].contains("MISMATCH"), "{}", f[0]);
+    assert_eq!(
+        c,
+        Closure {
+            closed: 0,
+            total: 1
+        }
+    );
+}
+
+#[test]
+fn identical_fan_in_of_a_failing_row_fails_once() {
+    let sorry = row("A.f", Some(h(1)), Some(h(1)), Some(&["sorryAx"]));
+    let (r, c) = judge(&[sorry.clone(), sorry]);
+    assert_eq!(fails(&r).len(), 1, "{:?}", fails(&r));
+    assert_eq!(
+        c,
+        Closure {
+            closed: 0,
+            total: 1
+        }
+    );
+}
+
+#[test]
 fn a_duplicate_row_is_one_name_in_the_cross_check() {
-    let (r, c) = cross(&[closed("A.b"), closed("A.b")], &["A.b"]);
+    let other = row("A.b", Some(h(2)), Some(h(2)), Some(&["propext"]));
+    let (r, c) = cross(&[closed("A.b"), other], &["A.b"]);
     let f = fails(&r);
     assert_eq!(f.len(), 1, "only the DUPLICATE: {f:?}");
     assert!(f[0].contains("DUPLICATE"));
+    assert_eq!(c.total, 1);
+}
+
+#[test]
+fn identical_fan_in_is_clean_in_the_cross_check() {
+    let (r, c) = cross(&[closed("A.b"), closed("A.b")], &["A.b"]);
+    assert!(fails(&r).is_empty(), "{:?}", fails(&r));
     assert_eq!(c.total, 1);
 }
 

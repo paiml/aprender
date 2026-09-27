@@ -12,7 +12,9 @@
 //! | hashes differ, `defeq_instances: true` | MATCH — the same statement through a different instance path |
 //! | hashes differ otherwise (`false` or absent) | FAIL `MISMATCH` — a different statement (a weakened one, say) |
 //! | `sorryAx` among the solution's axioms | FAIL `SORRY` — it closes nothing |
-//! | a name twice | FAIL `DUPLICATE` |
+//! | a name twice, rows identical | one challenge — several contracts bind the same root (fan-in), judged once |
+//! | a name twice, challenge side differs | each row judged; the root closes only if every row closes |
+//! | a name twice, solution side (`solution_type_hash`, `axioms`) differs | FAIL `DUPLICATE` — one constant measured two ways |
 //! | no `challenge_type_hash`, or a solution with no `axioms` | FAIL `MALFORMED` — unmeasured is never closed |
 //! | otherwise | closed |
 //!
@@ -164,30 +166,61 @@ pub fn cross_check(rows: &[Row], roots: &BTreeSet<String>, c: &mut Closure, r: &
 
 /// Judge the rows into `r`. Failures are judged before the zero-row decline.
 pub fn judge_rows(rows: &[Row], r: &mut Report) -> Closure {
-    let mut seen = BTreeSet::new();
+    // EV-7a writes one Challenge file per contract, so a root bound by k contracts is declared k times and
+    // measured k times (#4083: 88 roots, 133 repeat rows on the b3 tree). Each file elaborates its own copy of
+    // the statement under its own imports and `open`s, so the CHALLENGE side may hash differently per file (the
+    // `by simpa` proof inside a `getElem` bound, measured on `bsum_precompute_eq_inline`): every such row is
+    // judged and all must close. The SOLUTION side is one constant in one built tree; two measurements of it
+    // disagreeing is the defect DUPLICATE exists to catch.
+    let mut seen: std::collections::BTreeMap<&str, (&Row, bool)> =
+        std::collections::BTreeMap::new();
     let mut closed = 0;
     for row in rows {
         let n = &row.name;
         let ch = challenge_decl(n);
-        if !seen.insert(n.as_str()) {
-            r.fail(format!(
-                "DUPLICATE {ch} -- the comparator reported it twice"
-            ));
-            continue;
-        }
-        match judge_row(row, &ch) {
-            Err(fail) => {
-                r.fail(fail);
+        if let Some((first, ok)) = seen.get_mut(n.as_str()) {
+            if *first == row {
                 continue;
             }
-            Ok(Some(line)) => r.lines.push(line),
-            Ok(None) => {}
+            if first.solution_type_hash != row.solution_type_hash || first.axioms != row.axioms {
+                r.fail(format!(
+                    "DUPLICATE {ch} -- the comparator measured its solution two ways"
+                ));
+            } else {
+                match judge_row(row, &ch) {
+                    Err(fail) => r.fail(fail),
+                    Ok(Some(line)) => {
+                        r.lines.push(line);
+                        continue;
+                    }
+                    Ok(None) => continue,
+                }
+            }
+            if *ok {
+                *ok = false;
+                closed -= 1;
+            }
+            continue;
         }
-        closed += 1;
+        let ok = match judge_row(row, &ch) {
+            Err(fail) => {
+                r.fail(fail);
+                false
+            }
+            Ok(Some(line)) => {
+                r.lines.push(line);
+                true
+            }
+            Ok(None) => true,
+        };
+        if ok {
+            closed += 1;
+        }
+        seen.insert(n.as_str(), (row, ok));
     }
     let c = Closure {
         closed,
-        total: rows.len(),
+        total: seen.len(),
     };
     r.lines.push(format!(
         "COMPARATOR {}/{} challenge(s) closed",

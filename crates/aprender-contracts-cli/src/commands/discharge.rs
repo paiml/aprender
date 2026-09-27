@@ -473,33 +473,47 @@ fn compare(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
         return;
     }
     let what = format!("lake env lean --run {COMPARATOR} ({} file(s))", files.len());
-    let mut args: Vec<&OsStr> = ["env", "lean", "--run", COMPARATOR]
-        .map(OsStr::new)
-        .to_vec();
-    args.extend(files.iter().map(|f| f.as_os_str()));
-    let out = match lake.run(&args, lean_dir) {
-        Ok(Bounded::Done(o)) => o,
-        Ok(Bounded::TimedOut(pgid)) => {
-            r.lines.push(lake.timed_out(&what, pgid));
+    // One `lean` per Challenge file (#4083): each file imports the built tree (Mathlib included) and one process
+    // over all of them kept every environment live -- 34 GB RSS on the b3 tree, and OOM under a 12 GB cap.
+    let mut stdout = String::new();
+    for (i, f) in files.iter().enumerate() {
+        let one = format!(
+            "lake env lean --run {COMPARATOR} {} ({}/{} file(s))",
+            f.display(),
+            i + 1,
+            files.len()
+        );
+        let mut args: Vec<&OsStr> = ["env", "lean", "--run", COMPARATOR]
+            .map(OsStr::new)
+            .to_vec();
+        args.push(f.as_os_str());
+        let out = match lake.run(&args, lean_dir) {
+            Ok(Bounded::Done(o)) => o,
+            Ok(Bounded::TimedOut(pgid)) => {
+                r.lines.push(lake.timed_out(&one, pgid));
+                r.reject = true;
+                return;
+            }
+            Err(e) => {
+                r.decline = Some(format!(
+                    "lake could not be run ({e}): the comparator did not run"
+                ));
+                return;
+            }
+        };
+        if !out.status.success() {
+            r.lines.push(format!(
+                "FAIL  {one} exited {} -- a Challenge file did not elaborate; its rows were withheld",
+                raw_exit(out.status)
+            ));
+            r.lines.extend(tail(&String::from_utf8_lossy(&out.stderr)));
             r.reject = true;
             return;
         }
-        Err(e) => {
-            r.decline = Some(format!(
-                "lake could not be run ({e}): the comparator did not run"
-            ));
-            return;
+        stdout.push_str(&String::from_utf8_lossy(&out.stdout));
+        if !stdout.is_empty() && !stdout.ends_with('\n') {
+            stdout.push('\n');
         }
-    };
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    if !out.status.success() {
-        r.lines.push(format!(
-            "FAIL  {what} exited {} -- a Challenge file did not elaborate; its rows were withheld",
-            raw_exit(out.status)
-        ));
-        r.lines.extend(tail(&String::from_utf8_lossy(&out.stderr)));
-        r.reject = true;
-        return;
     }
     match comparator::parse_rows(&stdout) {
         Ok(rows) => {
