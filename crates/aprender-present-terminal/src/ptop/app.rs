@@ -3,7 +3,7 @@
 //! Mirrors ttop's app.rs - maintains system state and history.
 
 use crossterm::event::{KeyCode, KeyModifiers};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sysinfo::{
     CpuRefreshKind, Disks, MemoryRefreshKind, Networks, ProcessRefreshKind, ProcessesToUpdate,
@@ -238,6 +238,10 @@ pub struct MetricsSnapshot {
     pub disk_io_data: Option<DiskIoData>,
     pub disk_entropy_data: Option<DiskEntropyData>,
     pub file_analyzer_data: Option<FileAnalyzerData>,
+
+    // Per-collector wall time in µs, in collect order; empty unless the collector's
+    // timings are on (ttop --timings, #4511)
+    pub collect_phase_us: Vec<(&'static str, u32)>,
 }
 
 /// Lightweight process info for rendering
@@ -300,6 +304,7 @@ impl Snapshot for MetricsSnapshot {
             disk_io_data: None,
             disk_entropy_data: None,
             file_analyzer_data: None,
+            collect_phase_us: Vec::new(),
         }
     }
 }
@@ -313,6 +318,20 @@ pub struct MetricsCollector {
     analyzers: AnalyzerRegistry,
     deterministic: bool,
     frame_id: u64,
+    timings: bool,
+}
+
+/// End the phase that started at `*clock`: record it and restart the clock.
+/// A `None` clock (timings off) does nothing, so the off path never reads the time.
+fn lap(clock: &mut Option<Instant>, phases: &mut Vec<(&'static str, u32)>, phase: &'static str) {
+    if let Some(start) = clock {
+        let now = Instant::now();
+        phases.push((
+            phase,
+            u32::try_from(now.duration_since(*start).as_micros()).unwrap_or(u32::MAX),
+        ));
+        *start = now;
+    }
 }
 
 impl MetricsCollector {
@@ -334,7 +353,14 @@ impl MetricsCollector {
             analyzers,
             deterministic,
             frame_id: 0,
+            timings: false,
         }
+    }
+
+    /// Time each collector (cpu, mem, process, disk, net, gpu, analyzers) into
+    /// `MetricsSnapshot::collect_phase_us`. Off by default.
+    pub fn set_timings(&mut self, on: bool) {
+        self.timings = on;
     }
 
     /// Check if PSI is available
@@ -373,6 +399,9 @@ impl AsyncCollector for MetricsCollector {
             return MetricsSnapshot::empty();
         }
 
+        let mut clock = self.timings.then(Instant::now);
+        let mut phases = Vec::new();
+
         // CPU refresh
         self.system
             .refresh_cpu_specifics(CpuRefreshKind::everything());
@@ -404,6 +433,7 @@ impl AsyncCollector for MetricsCollector {
         let per_core_temp: Vec<f32> = read_core_temperatures(self.system.cpus().len());
 
         let load_avg = System::load_average();
+        lap(&mut clock, &mut phases, "cpu");
 
         // Memory refresh
         self.system
@@ -415,6 +445,7 @@ impl AsyncCollector for MetricsCollector {
         let mem_cached = read_cached_memory();
         let swap_total = self.system.total_swap();
         let swap_used = self.system.used_swap();
+        lap(&mut clock, &mut phases, "mem");
 
         // Process refresh - incremental for performance
         let process_count = self.system.processes().len();
@@ -471,6 +502,7 @@ impl AsyncCollector for MetricsCollector {
                     .join(" "),
             })
             .collect();
+        lap(&mut clock, &mut phases, "process");
 
         // Disk refresh
         self.disks.refresh(true);
@@ -485,6 +517,7 @@ impl AsyncCollector for MetricsCollector {
                 file_system: d.file_system().to_string_lossy().to_string(),
             })
             .collect();
+        lap(&mut clock, &mut phases, "disk");
 
         // Network refresh
         self.networks.refresh(true);
@@ -504,9 +537,11 @@ impl AsyncCollector for MetricsCollector {
                 transmitted: data.transmitted(),
             })
             .collect();
+        lap(&mut clock, &mut phases, "net");
 
         // GPU info (may call nvidia-smi)
         let gpu_info = read_gpu_info();
+        lap(&mut clock, &mut phases, "gpu");
 
         // Analyzer data
         self.analyzers.collect_all();
@@ -533,6 +568,7 @@ impl AsyncCollector for MetricsCollector {
             .file_analyzer
             .as_ref()
             .map(|f| f.data().clone());
+        lap(&mut clock, &mut phases, "analyzers");
 
         MetricsSnapshot {
             cpu_avg: cpu_total as f64 / 100.0,
@@ -559,6 +595,7 @@ impl AsyncCollector for MetricsCollector {
             disk_io_data,
             disk_entropy_data,
             file_analyzer_data,
+            collect_phase_us: phases,
         }
     }
 }

@@ -94,6 +94,8 @@ pub mod ui;
 pub mod ui_atoms;
 
 #[cfg(test)]
+mod collect_timings_tests;
+#[cfg(test)]
 mod iface_history_tests;
 
 pub use analyzers::{
