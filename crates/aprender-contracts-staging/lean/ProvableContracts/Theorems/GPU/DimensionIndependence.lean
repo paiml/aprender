@@ -14,7 +14,7 @@ namespace ProvableContracts.GPU
 /-- A constant kernel is trivially dimension-independent. -/
 theorem const_is_dimension_independent {α : Type*} (c : α) :
     dimension_independent (fun (_ _ _ : ℕ) => c) := by
-  intro m₁ k₁ n₁ m₂ k₂ n₂
+  intro _ _ _ _ _ _
   rfl
 
 #check @const_is_dimension_independent

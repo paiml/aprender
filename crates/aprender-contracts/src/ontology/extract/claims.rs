@@ -406,14 +406,16 @@ fn disabled(step: &serde_yaml::Value) -> bool {
     }
 }
 
-/// The normalised `run:` lines of every job in a `jobs:` mapping, regardless of what
-/// document it came from (shared by `workflow_run_lines` and the `ci/sections.yml` reader).
-fn jobs_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
+/// The raw `run:` bodies of the enabled steps of the jobs `keep` accepts, by job name.
+fn job_runs(doc: &serde_yaml::Value, keep: impl Fn(&str) -> bool) -> Vec<&str> {
     let Some(jobs) = doc.get("jobs").and_then(serde_yaml::Value::as_mapping) else {
-        return out;
+        return Vec::new();
     };
-    for job in jobs.values() {
+    let mut out = Vec::new();
+    for (name, job) in jobs {
+        if !name.as_str().is_some_and(&keep) {
+            continue;
+        }
         let Some(steps) = job.get("steps").and_then(serde_yaml::Value::as_sequence) else {
             continue;
         };
@@ -422,7 +424,7 @@ fn jobs_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
                 continue;
             }
             if let Some(run) = step.get("run").and_then(serde_yaml::Value::as_str) {
-                out.extend(normalise(run));
+                out.push(run);
             }
         }
     }
@@ -435,19 +437,135 @@ pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
     if !on_merge_path(doc) {
         return BTreeSet::new();
     }
-    jobs_run_lines(doc)
+    job_runs(doc, |_| true)
+        .into_iter()
+        .flat_map(normalise)
+        .collect()
 }
 
-/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`, plus every
-/// `run:` line in `<root>/ci/sections.yml` if present. #4433 moved the fat CI jobs' step
-/// bodies out of `.github/workflows/ci.yml` verbatim into `ci/sections.yml`, run by
-/// `scripts/ci/fat_driver.py` from the thin `ci.yml` that stayed on the merge path — so
-/// `sections.yml` carries no `on:` of its own and is read unconditionally, not gated by
-/// `on_merge_path` (there is nothing there to gate on). Unparseable files contribute
-/// nothing (a workflow GitHub cannot parse runs nothing either).
+/// #4433: the five fat CI jobs run the job bodies of `ci/sections.yml` through
+/// `scripts/ci/fat_driver.py run --sections '<spec>'`. The spec parts a merge-path workflow names, in order.
+#[must_use]
+pub fn section_specs(doc: &serde_yaml::Value) -> Vec<String> {
+    if !on_merge_path(doc) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for run in job_runs(doc, |_| true) {
+        if !run.contains("fat_driver.py") {
+            continue;
+        }
+        // A `${{ matrix.shard }}` in a spec is GitHub's to fill before fat_driver sees it, so it stands for
+        // any value — and it contains spaces, so it is replaced before the words are split.
+        let run = mask_expressions(run);
+        let mut words = run.split_whitespace();
+        while let Some(w) = words.next() {
+            if w == "--sections" {
+                if let Some(spec) = words.next() {
+                    let spec = spec.trim_matches(|c| c == '\'' || c == '"');
+                    out.extend(
+                        spec.split(',')
+                            .map(str::trim)
+                            .filter(|p| !p.is_empty())
+                            .map(String::from),
+                    );
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `text` with every `${{ … }}` expression replaced by `*`.
+fn mask_expressions(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find("${{") {
+        out.push_str(&rest[..i]);
+        match rest[i..].find("}}") {
+            Some(j) => {
+                out.push('*');
+                rest = &rest[i + j + 2..];
+            }
+            None => {
+                rest = &rest[i..];
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// fat_driver's `fnmatch` over the `*` and `?` its specs use.
+fn glob(n: &[u8], p: &[u8]) -> bool {
+    match (p.first(), n.first()) {
+        (None, None) => true,
+        (Some(b'*'), _) => glob(n, &p[1..]) || (!n.is_empty() && glob(&n[1..], p)),
+        (Some(b'?'), Some(_)) => glob(&n[1..], &p[1..]),
+        (Some(a), Some(b)) if a == b => glob(&n[1..], &p[1..]),
+        _ => false,
+    }
+}
+
+/// The section names fat_driver catalogues for job `name`: the job itself, or one `name[v1,v2]` per
+/// `matrix-pins` combination (`{any: k}` labels as `k`), as `fat_driver.py::load_catalog` builds them.
+fn section_names(sections: &serde_yaml::Value, name: &str) -> Vec<String> {
+    let value = |v: &serde_yaml::Value| -> String {
+        let v = v.get("any").unwrap_or(v);
+        match v {
+            serde_yaml::Value::String(s) => s.clone(),
+            other => serde_yaml::to_string(other)
+                .map_or_else(|_| String::new(), |t| t.trim().to_string()),
+        }
+    };
+    let pins = sections
+        .get("matrix-pins")
+        .and_then(|m| m.get(name))
+        .and_then(serde_yaml::Value::as_sequence);
+    let mut out = vec![name.to_string()];
+    for combo in pins.into_iter().flatten() {
+        if let Some(m) = combo.as_mapping() {
+            let label: Vec<String> = m.values().map(value).collect();
+            out.push(format!("{name}[{}]", label.join(",")));
+        }
+    }
+    out
+}
+
+/// Whether spec part `part` selects the job `name`: fat_driver matches a section name exactly or by
+/// `fnmatch`, and a matrix pin (`determinism[X64]`) selects its job (`determinism`), whose steps are the pin's.
+/// A `<job>-steps` manifest (`if: false`, #4415) is selected with `<job>`: `scripts/ci_guards.sh <job>`, the
+/// one step of `<job>`, executes every step of it.
+fn section_selected(sections: &serde_yaml::Value, name: &str, part: &str) -> bool {
+    let job = name.strip_suffix("-steps").unwrap_or(name);
+    let base = part.split('[').next().unwrap_or(part);
+    let hit = |n: &str| {
+        n == part || glob(n.as_bytes(), part.as_bytes()) || glob(n.as_bytes(), base.as_bytes())
+    };
+    section_names(sections, name).iter().any(|n| hit(n))
+        || (job != name && section_names(sections, job).iter().any(|n| hit(n)))
+}
+
+/// The normalised `run:` lines of the `ci/sections.yml` jobs that `specs` select. A section no merge-path fat
+/// job names contributes nothing: a claim it "runs" is not run.
+#[must_use]
+pub fn section_run_lines(sections: &serde_yaml::Value, specs: &[String]) -> BTreeSet<String> {
+    job_runs(sections, |name| {
+        specs.iter().any(|p| section_selected(sections, name, p))
+    })
+    .into_iter()
+    .flat_map(normalise)
+    .collect()
+}
+
+/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`, plus the `run:` lines of the
+/// `<root>/ci/sections.yml` jobs a merge-path workflow runs through `fat_driver.py --sections` (#4433). Unparseable
+/// files contribute nothing (a workflow GitHub cannot parse runs nothing either).
 #[must_use]
 pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
+    let mut specs = Vec::new();
     let Ok(rd) = std::fs::read_dir(root.join(".github/workflows")) else {
         return out;
     };
@@ -463,12 +581,14 @@ pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
         };
         if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) {
             out.extend(workflow_run_lines(&doc));
+            specs.extend(section_specs(&doc));
         }
     }
-    if let Ok(text) = std::fs::read_to_string(root.join("ci/sections.yml")) {
-        if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) {
-            out.extend(jobs_run_lines(&doc));
-        }
+    if let Some(sections) = std::fs::read_to_string(root.join("ci/sections.yml"))
+        .ok()
+        .and_then(|t| serde_yaml::from_str::<serde_yaml::Value>(&t).ok())
+    {
+        out.extend(section_run_lines(&sections, &specs));
     }
     out
 }
@@ -612,6 +732,52 @@ mod tests {
         assert_eq!(
             wf("on: [pull_request_target]\njobs:\n  a:\n    steps:\n      - run: x\n").len(),
             1
+        );
+    }
+
+    #[test]
+    fn a_section_counts_only_when_a_merge_path_fat_job_names_it() {
+        let ci: serde_yaml::Value = serde_yaml::from_str(
+            "on: [pull_request]\njobs:\n  x86:\n    steps:\n      - run: >-\n          python3 scripts/ci/fat_driver.py run\n          --sections 'sov.*,guard-*,determinism[X64]'\n          --results r.json\n",
+        )
+        .unwrap();
+        let nightly: serde_yaml::Value = serde_yaml::from_str(
+            "on: [schedule]\njobs:\n  n:\n    steps:\n      - run: python3 scripts/ci/fat_driver.py run --sections 'nightly-only'\n",
+        )
+        .unwrap();
+        let specs = section_specs(&ci);
+        assert_eq!(specs, vec!["sov.*", "guard-*", "determinism[X64]"]);
+        assert!(section_specs(&nightly).is_empty());
+        let sections: serde_yaml::Value = serde_yaml::from_str(
+            "jobs:\n  guard-tree:\n    steps:\n      - run: make readme\n      - if: false\n        run: make off\n  determinism:\n    steps:\n      - run: make det\n  nightly-only:\n    steps:\n      - run: make nightly\n",
+        )
+        .unwrap();
+        assert_eq!(
+            section_run_lines(&sections, &specs),
+            BTreeSet::from(["make readme".to_string(), "make det".to_string()])
+        );
+        assert!(section_run_lines(&sections, &[]).is_empty());
+    }
+
+    #[test]
+    fn a_matrix_pin_spec_and_a_steps_manifest_are_selected_like_fat_driver_selects_them() {
+        let ci: serde_yaml::Value = serde_yaml::from_str(
+            "on: [pull_request]\njobs:\n  s:\n    steps:\n      - run: >-\n          python3 scripts/ci/fat_driver.py run\n          --sections 'workspace-test-shard?${{ matrix.shard }}?3?,guard-tree'\n",
+        )
+        .unwrap();
+        let specs = section_specs(&ci);
+        assert_eq!(specs, vec!["workspace-test-shard?*?3?", "guard-tree"]);
+        let sections: serde_yaml::Value = serde_yaml::from_str(
+            "matrix-pins:\n  workspace-test-shard:\n    - {shard: 1, shards: 3}\njobs:\n  workspace-test-shard:\n    steps:\n      - run: make shard\n  guard-tree:\n    steps:\n      - run: bash scripts/ci_guards.sh guard-tree\n  guard-tree-steps:\n    if: false\n    steps:\n      - run: make guard\n  guard-cargo-steps:\n    steps:\n      - run: make unselected\n",
+        )
+        .unwrap();
+        assert_eq!(
+            section_run_lines(&sections, &specs),
+            BTreeSet::from([
+                "make shard".to_string(),
+                "bash scripts/ci_guards.sh guard-tree".to_string(),
+                "make guard".to_string(),
+            ])
         );
     }
 

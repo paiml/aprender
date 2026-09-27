@@ -592,6 +592,7 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: oracle-owl oracle-owl-check
 .PHONY: roadmap-aggregate roadmap-aggregate-check
 roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
 	@python3 scripts/lib/roadmap_fragments.py aggregate --write
@@ -608,6 +609,12 @@ ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 # that asks a human to do the measurement is not a gate. `coverage` already
 # enforces COV_FLOOR, so this is a name, not a new policy.
 coverage-check: coverage
+
+# PVL-001 EV-6a (#4139): the ONLY writer of the Lean label ratchet. `pv discharge check` never writes
+# unresolved-labels.json; this rewrites it DOWNWARD (a label that resolves now leaves; a new one is never added).
+.PHONY: label-ratchet
+label-ratchet:
+	@. scripts/pv_bin.sh && "$$PV" discharge label-ratchet crates/aprender-contracts-staging/lean --contracts contracts
 
 # Ditto for `contracts`. The provable-contract tier is a HARD release gate per
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
@@ -637,6 +644,11 @@ contracts:
 # gate runs EVERY step, prints `N of 6 step(s) RAN, M FAILED`, fails closed on a shapes verdict it cannot
 # measure, and regenerates census.json / contracts.nt / shapes.ttl then asks `git diff --exit-code`.
 	@bash scripts/contracts_gate.sh || exit 1
+# ONT-5 / ONT-4e / ONT-3a (batch/ont-10): consistency is not a contracts_gate.sh step yet; it runs after the gate,
+# each line failing closed on its own.
+	@echo "== consistency: pv-sat writes the witness, pv lint re-checks it (ONT-001 ONT-5, R-1); refines is Liskov (ONT-4e, R-20); bindings resolve (ONT-3a) =="
+	@. scripts/pv_bin.sh && { [ -x "$$PV_SAT" ] || { echo "FAIL: no pv-sat beside $$PV -- a PV_BIN override must ship its pv-sat too"; exit 1; }; } && "$$PV_SAT" contracts && "$$PV" lint contracts/ --gate ont-consistency >/dev/null && "$$PV" lint contracts/ --gate refines >/dev/null && "$$PV" lint contracts/ --gate bindings >/dev/null || exit 1
+	@test -z "$$(git status --porcelain -- contracts/witness)" || { git status --short -- contracts/witness; echo "FAIL: contracts/witness/ differs from what pv-sat writes -- commit it"; exit 1; }
 	@echo "== contract engine tests =="
 	@# Same shape as pv lint above: the old `| grep | tail -1` printed the verdict and
 	@# discarded it (the exit status was tail's), so a failing engine test passed the gate.
@@ -1531,3 +1543,22 @@ oracle:
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
+
+# ONT-001 §3.8 / ONT-2c — the OWL oracle (release gate only, R-13; never per PR). Three arms:
+# horned-owl re-parses the fixture's written .ofn and must equal the HAND-WRITTEN axiom list; every live
+# axiom must be a told-closure-admitted kind; ELK 0.4.3 (pinned by sha256, needs a JVM) must agree with
+# contracts/tbox-report.json, with a planted positive control turning it RED every run. No JVM exits 2 with
+# `decline: NOT MEASURED`, which is RED at the release gate and never a skip. The crate is detached from the
+# workspace AND from tests/oracle's SHACL crate (feature unification breaks horned-owl there).
+oracle-owl:
+	@echo "== OWL oracle: horned-owl round-trip + admitted kinds + ELK TBox differential (out of gate) =="
+	@. scripts/pv_bin.sh && "$$PV" ontology export --owl tests/fixtures/ont/owl/ontology.yaml > "$${TMPDIR:-/tmp}/ont2c-fixture.ofn"
+	@cargo build --release --quiet --manifest-path tests/oracle/owl/Cargo.toml
+	@O="$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/owl/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/owl-oracle"; \
+	"$$O" roundtrip "$${TMPDIR:-/tmp}/ont2c-fixture.ofn" tests/fixtures/ont/owl/axioms.txt && \
+	"$$O" kinds contracts/ontology.ofn && \
+	"$$O" elk .
+
+oracle-owl-check: oracle-owl
+	@git diff --exit-code tests/oracle/tbox-differential.json \
+	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }

@@ -88,12 +88,15 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     );
     assert_eq!(v["extra"]["pc_shape"], "fired", "{}", show(&r));
     // ONT-4b: exactly one, from ont:id minCount. ONT-4c1 plants a bare model:Model too, which draws
-    // ladder-measured's two minCounts: three. ONT-4c (#3847) arms readme-root, claude-md, model-setfit-slice and csv-train, and
-    // their plants add sixteen (measured on its branch, 0 real violations): nineteen, never zero.
+    // ladder-measured's two minCounts: three on this corpus, and never zero. ONT-4f (#4330) arms the four GitHub
+    // shapes, and the plant draws every minCount they declare: github-repo 4 + github-issue 6 +
+    // github-pull-request 7 + github-milestone 6 = 23 more, so 26. ONT-4c (#3847) arms readme-root, claude-md,
+    // model-setfit-slice and csv-train, whose plants add sixteen: 42. The car line's shapes (release-readiness cell
+    // classes, capability-cells, kernel-*) declare no minCount the plant draws, so the #4502 merge keeps 42.
     assert_eq!(
         v["extra"]["plant_violations"],
-        19,
-        "ont:id minCount + ladder-measured's two (ONT-4c1) + the ONT-4c plants against readme-root, claude-md, model-setfit-slice, csv-train\n{}",
+        42,
+        "ont:id minCount + ladder-measured's two (ONT-4c1) + the four GitHub shapes' 23 (ONT-4f) + the ONT-4c plants against readme-root, claude-md, model-setfit-slice, csv-train (16)\n{}",
         show(&r)
     );
 }
@@ -231,16 +234,24 @@ fn the_tracked_repo_graph_is_fresh() {
     // that is the ratchet working, not a conflict to route around. It did: the
     // 0.69 batch folded #3600 in and the count went 6 -> 9 with its three shapes. #3715 added the nine-shape
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
-    // node to a PR's graph — the release evidence is extracted only under `--release-*`. ONT-4c (#3847) adds the
-    // four armed non-code shapes readme-root, claude-md, model-setfit-slice, csv-train (18->22). #3745 S2 (#3777)
-    // added six more for the DERIVED cell classes (effect, probe, model-cell, effect-cell) CRUX (crux-verb, crux)
-    // and a8's sampling controls (sampling), and ONT-4c5 (PMAT-3972) added `capability-cells`, bringing car's line
-    // to 26 (18+8). #4069 (ONT-4c4) added kernel-parity, kernel-timing and kernel-safety. The branches added
-    // disjoint shapes, so the union is 18 + 4 (ONT-4c) + 8 (car) + 3 (ONT-4c4) = 33.
+    // node to a PR's graph — the release evidence is extracted only under `--release-*`. ONT-4f (#4330) adds
+    // `github-entities-v1`'s four armed shapes: 22. #3560 R1 adds `examples-well-formed` (reported, not armed): 23. R4 adds `examples-model-current` (reported): 24.
+    // ONT-4c (#3847) adds the four armed non-code shapes readme-root, claude-md, model-setfit-slice, csv-train: 28.
+    // ONT-4g/ONT-10 (#4502) add binary-target, surface-audit-ledger, binary-apr-http-mcp and twenty-three
+    // binary-<bin>-surface shapes, one per `contracts/bin-*-v1.yaml` (alimentar, apr, apr-cli-apr, apr-corpus-ingest,
+    // apr-qa, apr-qa-readme-sync, aprender-cbtop, aprender-compute-xtask, aprender-db, aprender-explain,
+    // aprender-orchestrate-aprender-orchestrate, aprender-profile, aprender-ptx-debug, aprender-test-cli,
+    // aprender-train-lora, aprender-train-shell, aprender-zram-generator, presentar, ptop, pv, score, simular,
+    // trueno-rag): 54. Each new ONT-10 slice raises this — name it here.
+    // The car line (merged with #4502) adds disjoint shapes: #3745 S2 (#3777) seven release-readiness-v1 cell classes
+    // (effect, probe, model-cell, effect-cell, crux-verb, crux, sampling), ONT-4c5 (PMAT-3972) `capability-cells`,
+    // and #4069 (ONT-4c4) kernel-parity, kernel-timing, kernel-safety. MEASURED on the merge with
+    // `pv extract contracts --check` (shapes_n=65, triples=29644), and it matches the sum by source:
+    // 18 + 4 (ONT-4f github) + 2 (#3560 examples) + 4 (ONT-4c) + 26 (ONT-4g/ONT-10) + 8 (car) + 3 (ONT-4c4) = 65.
     assert_eq!(
         v["shapes_n"],
-        33,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5)\n{}",
+        65,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 23 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-{{parity,timing,safety}} (ONT-4c4)\n{}",
         show(&r)
     );
 }

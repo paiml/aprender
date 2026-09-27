@@ -1,0 +1,322 @@
+# ──────────────────────────────────────────────
+# bin-aprender-orchestrate--aprender-orchestrate-v1 — the `aprender-orchestrate` bin target of package
+# aprender-orchestrate (ONT-10 slices S4 CLI+MCP and S3 HTTP routes, folded into one node)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha256, helpSha256,
+# gitSha, …) live in binary-surface-v1 and are not restated.
+#
+# ONE SHAPE, THREE KINDS: `in` + minCount + maxCount is set equality over the whole node, and pv's shapes subset
+# refuses qualifiedValueShape, so S3's routes cannot sit in a second file. They are properties of the one shape
+# below. S3's staged draft (docs/ont-10/binary-contracts/binary-aprender-orchestrate-http-v1.yaml) is superseded.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0 / ff9587b59, release build, default features):
+#   `aprender-orchestrate --version` = "batuta 0.69.3": the pre-monorepo name, no sha. LIVE RED on the name
+#   pattern and on G0.1 (warning). NAME FIXED 2026-09-27 (c1): clap `#[command(name)]` in src/main_cli.rs now says
+#   "aprender-orchestrate"; the release build prints "aprender-orchestrate 0.69.3". G0.1 (sha) clears when car/0.70.0's
+#   version string lands (#4219), so it stays a warning here.
+#   Recursive --help walk: 86 leaf commands, set-equal to surface_audit.csv's 86 CLI rows.
+#   MCP: `aprender-orchestrate mcp` (stdio) answers tools/list with 4 tools (hf_info, hf_integration, hf_search,
+#   hf_tree; server "batuta-hf"). unledgeredTool FIXED 2026-09-27 (c1): 4 `mcp:hf_*` ledger rows, evidence
+#   src/mcp/server.rs, verified_hardware x86_64-linux because CI's workspace-test runs test_tool_hf_* there.
+#   STILL LIVE RED (ledgerOrphan): the ledger's 6 other `mcp:*` rows (calculator, code_execution, web_search from
+#   banco's POST /api/v1/mcp; compute, memory, rag from the agent registry) are not tools/list tools. Those 6 are
+#   reachable only over HTTP or an agent session. A relabel is not the fix: check_dogfood_coverage.sh G2.2 reads a
+#   renamed row as a deleted one. The shape needs a transport for them (a second tool property), not a ledger edit.
+#   HTTP (aprender-1c, S3): crates/aprender-orchestrate/src/serve/banco/router.rs mounts 92 (METHOD, /path) pairs via
+#   .route(), with no .nest/.merge/.route_service/.fallback under serve/. That set equals the ledger's 92 HTTP rows.
+#   EXTRACT GAP, LIVE RED: scripts/dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty on
+#   this node until extract:binary reads the banco router. minCount 92 makes that a Fail, never a vacuous pass.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-orchestrate--aprender-orchestrate-v1
+version: "1.0.0"
+scope: >
+  The surface of the `aprender-orchestrate` binary of package aprender-orchestrate (src crates/aprender-orchestrate/src/main.rs):
+  its version string, its exact CLI command set, the tools its MCP server lists, the HTTP routes its banco server
+  mounts, and the surface-audit rows for each. Out of scope: what each command, tool or route computes.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    aprender-orchestrate names itself and the commit it was built from, exposes exactly the 86 commands, 4 MCP
+    tools and 92 HTTP routes the snapshot records, and has an audited ledger row for each.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'contracts/bin-aprender-contracts-cli--pv-v1.yaml — the exemplar'
+    - 'crates/aprender-orchestrate/src/serve/banco/router.rs — the route table'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is aprender-orchestrate'
+    - 'aprender#4502 — ONT-10, slices S3/S4'
+
+entity:
+  type: binary
+  ref: binary/aprender-orchestrate/aprender-orchestrate
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-orchestrate-aprender-orchestrate-surface
+    targetClass: bin:target/aprender-orchestrate/aprender-orchestrate
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-orchestrate"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-orchestrate"]}
+      # was LIVE RED 2026-09-26 ("batuta 0.69.3"); fixed 2026-09-27
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-orchestrate [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning to match the exemplar
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - path: bin:command
+        minCount: 86
+        maxCount: 86
+        in:
+          - "agent chat"
+          - "agent contracts"
+          - "agent pool"
+          - "agent run"
+          - "agent sign"
+          - "agent status"
+          - "agent validate"
+          - "agent verify-sig"
+          - "analyze"
+          - "bug-hunter analyze"
+          - "bug-hunter deep-hunt"
+          - "bug-hunter diff"
+          - "bug-hunter ensemble"
+          - "bug-hunter falsify"
+          - "bug-hunter fuzz"
+          - "bug-hunter hunt"
+          - "bug-hunter spec"
+          - "bug-hunter stack"
+          - "bug-hunter ticket"
+          - "bug-hunter trend"
+          - "bug-hunter triage"
+          - "build"
+          - "code"
+          - "content emit"
+          - "content types"
+          - "content validate"
+          - "data tree"
+          - "deploy cloudflare"
+          - "deploy docker"
+          - "deploy fly"
+          - "deploy k8s"
+          - "deploy lambda"
+          - "experiment tree"
+          - "falsify"
+          - "hf catalog"
+          - "hf course"
+          - "hf info"
+          - "hf pull"
+          - "hf push"
+          - "hf search"
+          - "hf tree"
+          - "init"
+          - "mcp"
+          - "optimize"
+          - "oracle"
+          - "pacha alias"
+          - "pacha aliases"
+          - "pacha decrypt"
+          - "pacha encrypt"
+          - "pacha keygen"
+          - "pacha list"
+          - "pacha pin"
+          - "pacha prune"
+          - "pacha pull"
+          - "pacha rm"
+          - "pacha run"
+          - "pacha search"
+          - "pacha show"
+          - "pacha sign"
+          - "pacha stats"
+          - "pacha unpin"
+          - "pacha verify"
+          - "parf"
+          - "playbook lock"
+          - "playbook run"
+          - "playbook status"
+          - "playbook validate"
+          - "report"
+          - "reset"
+          - "serve"
+          - "stack check"
+          - "stack comply"
+          - "stack drift"
+          - "stack gate"
+          - "stack publish-status"
+          - "stack quality"
+          - "stack release"
+          - "stack status"
+          - "stack sync"
+          - "stack tree"
+          - "stack versions"
+          - "status"
+          - "transpile"
+          - "validate"
+          - "viz dashboard"
+          - "viz tree"
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      # 4 tools, ledgered 2026-09-27 (header); the 6 non-stdio mcp:* rows are still ledgerOrphan RED
+      - path: bin:mcpTool
+        minCount: 4
+        maxCount: 4
+        in: ["hf_info", "hf_integration", "hf_search", "hf_tree"]
+      - {path: bin:unledgeredTool, maxCount: 0}
+      # S3 (aprender-1c). LIVE RED 2026-09-26: empty until extract:binary reads the banco router (header)
+      - path: bin:route
+        minCount: 92
+        maxCount: 92
+        in:
+          - "DELETE /api/delete"
+          - "DELETE /api/v1/conversations/:id"
+          - "DELETE /api/v1/data/files/:id"
+          - "DELETE /api/v1/models/registry/:name"
+          - "DELETE /api/v1/prompts/:id"
+          - "DELETE /api/v1/rag/index"
+          - "DELETE /api/v1/train/runs/:id"
+          - "GET /"
+          - "GET /api/tags"
+          - "GET /api/v1/audio/formats"
+          - "GET /api/v1/audit"
+          - "GET /api/v1/batch"
+          - "GET /api/v1/batch/:id"
+          - "GET /api/v1/chat/parameters"
+          - "GET /api/v1/config"
+          - "GET /api/v1/conversations"
+          - "GET /api/v1/conversations/:id"
+          - "GET /api/v1/conversations/export"
+          - "GET /api/v1/conversations/search"
+          - "GET /api/v1/data/datasets"
+          - "GET /api/v1/data/datasets/:id/preview"
+          - "GET /api/v1/data/files"
+          - "GET /api/v1/data/files/:id/info"
+          - "GET /api/v1/data/recipes"
+          - "GET /api/v1/data/recipes/:id"
+          - "GET /api/v1/eval/runs"
+          - "GET /api/v1/eval/runs/:id"
+          - "GET /api/v1/experiments"
+          - "GET /api/v1/experiments/:id/compare"
+          - "GET /api/v1/mcp/info"
+          - "GET /api/v1/metrics"
+          - "GET /api/v1/models"
+          - "GET /api/v1/models/merge/strategies"
+          - "GET /api/v1/models/registry"
+          - "GET /api/v1/models/status"
+          - "GET /api/v1/prompts"
+          - "GET /api/v1/prompts/:id"
+          - "GET /api/v1/rag/search"
+          - "GET /api/v1/rag/status"
+          - "GET /api/v1/system"
+          - "GET /api/v1/tools"
+          - "GET /api/v1/train/presets"
+          - "GET /api/v1/train/runs"
+          - "GET /api/v1/train/runs/:id"
+          - "GET /api/v1/train/runs/:id/metrics"
+          - "GET /api/v1/ws"
+          - "GET /assets/*path"
+          - "GET /health"
+          - "GET /health/live"
+          - "GET /health/ready"
+          - "GET /v1/models"
+          - "GET /v1/models/:id"
+          - "PATCH /api/v1/conversations/:id"
+          - "POST /api/chat"
+          - "POST /api/generate"
+          - "POST /api/pull"
+          - "POST /api/show"
+          - "POST /api/v1/audio/transcriptions"
+          - "POST /api/v1/batch"
+          - "POST /api/v1/chat/completions"
+          - "POST /api/v1/conversations"
+          - "POST /api/v1/conversations/import"
+          - "POST /api/v1/data/recipes"
+          - "POST /api/v1/data/recipes/:id/run"
+          - "POST /api/v1/data/upload"
+          - "POST /api/v1/data/upload/json"
+          - "POST /api/v1/detokenize"
+          - "POST /api/v1/embeddings"
+          - "POST /api/v1/eval/perplexity"
+          - "POST /api/v1/experiments"
+          - "POST /api/v1/experiments/:id/runs"
+          - "POST /api/v1/mcp"
+          - "POST /api/v1/models/load"
+          - "POST /api/v1/models/merge"
+          - "POST /api/v1/models/pull"
+          - "POST /api/v1/models/unload"
+          - "POST /api/v1/prompts"
+          - "POST /api/v1/rag/index"
+          - "POST /api/v1/tokenize"
+          - "POST /api/v1/tools"
+          - "POST /api/v1/tools/execute"
+          - "POST /api/v1/train/runs/:id/export"
+          - "POST /api/v1/train/runs/:id/stop"
+          - "POST /api/v1/train/start"
+          - "POST /ui/chat"
+          - "POST /v1/audio/transcriptions"
+          - "POST /v1/chat/completions"
+          - "POST /v1/completions"
+          - "POST /v1/embeddings"
+          - "PUT /api/v1/chat/parameters"
+          - "PUT /api/v1/config"
+          - "PUT /api/v1/tools/:name/config"
+      - {path: bin:unledgeredRoute, maxCount: 0}
+      - {path: bin:ledgerOrphanRoute, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(aprender-orchestrate)) = C, |C| = 86, C = leaves(--help walk) ∧ tools(mcp tools/list) = T, |T| = 4 ∧ routes(banco router) = R, |R| = 92 ∧ C ∪ T ∪ R = {feature(f) : f ∈ surface_audit, f.binary = aprender-orchestrate}"
+    domain: "the aprender-orchestrate line of the tracked snapshot and the ledger rows with binary = aprender-orchestrate (86 CLI + 92 HTTP + 6 mcp rows on 2026-09-26)"
+    codomain: "set equality per kind, or a Fail naming each member of the symmetric difference"
+    invariants:
+      - "in + minCount + maxCount over distinct literals is set equality: an added, dropped or renamed command, tool or route is a violation naming it"
+      - "one path served under two methods is two bin:route literals, `METHOD /path`, axum :param segments verbatim"
+      - "a CLI row joins C, a row whose feature starts with an HTTP method joins R, an mcp row joins T: no row is judged twice"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "an empty bin:route is a minCount Fail, never a pass over an empty set"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APRENDER-ORCHESTRATE-INV-001
+    property: every aprender-orchestrate command, MCP tool and route has an audited ledger row, and every ledger row names one
+    formal: '∀ s ∈ C ∪ T ∪ R: ∃ r ∈ surface_audit : r.binary = aprender-orchestrate ∧ feature(r) = s; ∀ r with r.binary = aprender-orchestrate: feature(r) ∈ C ∪ T ∪ R'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER-ORCHESTRATE-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-orchestrate --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-orchestrate'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-ORCHESTRATE-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-orchestrate --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-orchestrate'
+    if_fails: 'a typo is silently ignored'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-ORCHESTRATE-003
+    rule: 'G0.1 the version names the binary and the commit'
+    prediction: '`aprender-orchestrate --version` starts with "aprender-orchestrate x.y.z" and contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'a stale aprender-orchestrate reads as HEAD. Was LIVE RED 2026-09-26 ("batuta 0.69.3"); name fixed 2026-09-27, sha still absent until #4219 reaches this branch'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-ORCHESTRATE-004
+    rule: 'G1.3/G1.4 the command, tool and route sets equal the snapshot'
+    prediction: 'commands(snapshot) = the 86 literals above; tools/list = the 4; routes = the 92'
+    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g) reads tools/list and the banco router'
+    if_fails: 'LIVE RED 2026-09-26: bin:route is empty (extract gap), so minCount 92 fails; a command could vanish with the ontology green if the walk were not pinned'
+    mutation: 'remove `stack gate` from the snapshot, or DELETE /api/delete from the routes; must turn RED naming it on bin:command/bin:route and on the orphan property'
+  - id: FALSIFY-BIN-APRENDER-ORCHESTRATE-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has a row per command, tool and route with binary = aprender-orchestrate'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: '4 MCP tools unledgered 2026-09-26, ledgered 2026-09-27. STILL LIVE RED: 6 mcp:* rows name banco/agent tools that tools/list does not list'
+    mutation: 'delete every aprender-orchestrate row; must turn RED naming aprender-orchestrate'

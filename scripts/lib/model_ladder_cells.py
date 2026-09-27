@@ -77,6 +77,25 @@ def fits(item, total, tokens):
     return need <= int(total), need
 
 
+def owed_rungs(item, rungs, long_for, consumer_max):
+    """Yield (rung id, tokens) for every rung one inventory item OWES; tokens None = owed but unsizable.
+
+    ONE enumeration, shared by the judge below and by the producer (model_ladder_cells_produce.py), so
+    the set the producer measures cannot drift from the set the judge demands (#3712). A long rung is
+    skipped unless owes_long says so; a rung above the model's own declared context is not owed."""
+    long_ids = {r["id"] for r in rungs if r.get("long")}
+    lo, _ = owes_long(item, long_for)
+    ctx = item.get("context_length")
+    for rung in rungs:
+        rid = rung["id"]
+        if rid in long_ids and not lo:
+            continue
+        tok = _tokens(rung, ctx, consumer_max)
+        if tok is not None and ctx is not None and tok > int(ctx):
+            continue  # above the model's own declared context: not owed
+        yield rid, tok
+
+
 def load_rungs(doc, out):
     """-> (rungs, consumer_max, rc). A file that sizes nothing is a named FAIL, never an empty universe."""
     if doc is None:

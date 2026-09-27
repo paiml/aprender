@@ -495,6 +495,13 @@ const CASES: &[Case] = &[
             f.metadata = format!("{METADATA_OK}  competitor: \"THIS-COMPETITOR-DOES-NOT-EXIST\"\n");
         },
     },
+    Case {
+        // VS-COUNT-001 (#2648): a stated total that disagrees with the one-entry
+        // `proof_obligations` list. `kind: kernel`, so Error, not the schema Warning.
+        rule: "VS-COUNT-001",
+        sev: Sev::Error,
+        build: |f| f.extra = "verification_summary:\n  total_obligations: 2\n".to_string(),
+    },
 ];
 
 // ---------------------------------------------------------------------------

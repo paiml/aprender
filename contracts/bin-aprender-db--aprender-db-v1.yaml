@@ -1,0 +1,134 @@
+# ──────────────────────────────────────────────
+# bin-aprender-db--aprender-db-v1 — the `aprender-db` bin target of package aprender-db (ONT-10 slice S18, 3/3)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha256, helpSha256,
+# gitSha, …) live in binary-surface-v1 and are not restated.
+#
+# MEASURED (2026-09-27, batch/ont-10 @ 8e88b8fc5d, release build, `--features server`, private CARGO_TARGET_DIR):
+#   The target has required-features = ["server"]: a default-feature build does not produce it at all, so the
+#   snapshot must be taken with --features server.
+#   `--version` = "trueno-db 0.69.3": the pre-monorepo name (#[command(name = "trueno-db")]) and no sha. LIVE RED on
+#   the name pattern and on G0.1.
+#   FIXED in the same PR: clap name aprender-db (measured after the fix: "aprender-db 0.69.3").
+#   `--help` exits 0; `--no-such-flag` exits 2. No subcommands; one required option, --config <CONFIG>; no enumerated
+#   flag values.
+#   HTTP: src/main.rs mounts 3 routes via .route() (no nest/merge/fallback/route_service in src/): GET /health,
+#   GET /status, POST /query.
+#   surface_audit.csv: 4 rows = the 3 routes (set-equal) + `aprender-db --config <PATH>`.
+#
+# VOCABULARY EXTENSION ASKED OF binary-surface-v1 (aprender-88), as in bin-aprender-profile--aprender-profile-v1:
+# bin:option. The `--config <PATH>` row keys on option --config; joined against bin:command alone it is an orphan.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-db--aprender-db-v1
+version: "1.0.0"
+scope: >
+  The CLI and HTTP surface of the `aprender-db` binary (package aprender-db, src crates/aprender-db/src/main.rs, built
+  with feature `server`): its help, its usage errors, its version string, its (empty) command set, its option, its
+  routes, and its surface-audit rows. Out of scope: what a query computes.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    aprender-db answers --help, rejects an unknown flag as a usage error, names itself and the commit it was built
+    from, serves exactly the routes the snapshot records, and has an audited ledger row for each.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'contracts/bin-aprender-contracts-cli--pv-v1.yaml — the exemplar'
+    - 'crates/aprender-db/src/main.rs — the clap Args and the axum router'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is aprender-db'
+    - 'aprender#4502 — ONT-10, slice S18'
+
+entity:
+  type: binary
+  ref: binary/aprender-db/aprender-db
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-aprender-db-surface
+    targetClass: bin:target/aprender-db/aprender-db
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-db"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-db"]}
+      # was RED at 8e88b8fc5d ("trueno-db 0.69.3"); FIXED on batch/ont-10 (clap name = aprender-db)
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-db [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - {path: bin:command, maxCount: 0}
+      # vocabulary extension (header)
+      - {path: bin:option, minCount: 1, maxCount: 1, in: ["--config"]}
+      - path: bin:route
+        minCount: 3
+        maxCount: 3
+        in:
+          - "GET /health"
+          - "GET /status"
+          - "POST /query"
+      - {path: bin:unledgeredRoute, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:ledgerOrphanRoute, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(aprender-db)) = ∅ ∧ options(snapshot) = {--config} ∧ key(r) ∈ options for every CLI ledger row r with r.binary = aprender-db"
+    domain: "the aprender-db line of the tracked snapshot (built with --features server) and its 1 CLI ledger row"
+    codomain: "set equality, or a Fail naming the added command, the changed option or the orphan row"
+    invariants:
+      - "a subcommand added to a single-mode server is a violation naming it"
+    preconditions:
+      - "the snapshot was written at this commit with --features server"
+    postconditions:
+      - "key(`aprender-db --config <PATH> …`) = --config"
+    lean_theorem: none — L4 not declared
+  http_routes:
+    formula: "routes(aprender-db) = R = {GET /health, GET /status, POST /query}, the (METHOD, /path) pairs main.rs mounts via .route(); R = {f.feature minus the trailing ` (aprender-db)` : f ∈ surface_audit, f.binary = aprender-db, f is an HTTP row}"
+    domain: "the axum router in crates/aprender-db/src/main.rs and the 3 HTTP ledger rows"
+    codomain: "one bin:route literal \"METHOD /path\" per pair; set equality or a Fail naming the difference"
+    invariants:
+      - "in + minCount 3 + maxCount 3 is set equality: an added, dropped or re-methoded route is a violation naming it"
+
+invariants:
+  - id: BIN-APRENDER-DB-INV-001
+    property: every aprender-db route has an audited ledger row and every ledger row names a route or option the binary has
+    formal: '∀ p ∈ routes(aprender-db): ∃ r ∈ surface_audit : r.binary = aprender-db ∧ route(r) = p; ∀ r with r.binary = aprender-db: key(r) ∈ routes ∪ options'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER-DB-001
+    rule: 'G1.2 help answers'
+    prediction: '`aprender-db --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-db'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
+    mutation: 'make --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-DB-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`aprender-db --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli aprender-db'
+    if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-DB-003
+    rule: 'G0.1 the version names the binary and the commit'
+    prediction: '`aprender-db --version` starts with "aprender-db " and contains the first 9 hex of the git sha'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'name: FIXED on batch/ont-10 (was "trueno-db 0.69.3"); sha: LIVE RED on 0.69.3, clears at rc.1 (car/0.70.0 carries #4219)'
+    mutation: 'restore #[command(name = "trueno-db")] after a fix; must turn RED on bin:versionString'
+  - id: FALSIFY-BIN-APRENDER-DB-004
+    rule: 'G1.3/G1.4 the surface equals the snapshot'
+    prediction: 'no flag takes an enumerated value (observed 2026-09-27); no command, options = {--config}, routes = the 3 literals above'
+    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    if_fails: 'a route could be added or dropped unmodelled; the extractor must build with --features server or the node is absent'
+    mutation: 'drop POST /query from the snapshot; must turn RED on bin:route and bin:ledgerOrphanRoute'
+  - id: FALSIFY-BIN-APRENDER-DB-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per route with binary = aprender-db (4 rows on 2026-09-27: 3 routes + --config)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'the binary would ship unaudited (observed 2026-09-27: 3/3 routes, GREEN)'
+    mutation: 'delete every aprender-db row; must turn RED naming aprender-db'

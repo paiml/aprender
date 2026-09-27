@@ -141,7 +141,13 @@ fn dispatch_proof_status_with_binding() {
         kind: None,
         verify_bindings: None,
     });
-    assert!(result.is_ok());
+    // PVL-001 EV-2: `--binding` RESOLVES every binding. This registry names five
+    // functions that exist nowhere in the tree (swap_axes, validate_element_count,
+    // map_tensor_name, bidirectional_attention, mint_test_token; #4094), so the
+    // honest answer is a reject. This test asserted `is_ok()` while proof-status
+    // counted entries without resolving them: it encoded the defect.
+    let err = result.expect_err("a registry holding ghost bindings must be rejected");
+    assert!(err.to_string().contains("ghost binding"), "{err}");
 }
 
 #[test]

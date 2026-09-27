@@ -76,8 +76,15 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
             g.insert(s.clone(), ont(pred), Term::string(v));
         }
     }
-    if let Some(kind) = scalar(doc.get("metadata").and_then(|m| m.get("kind"))) {
-        g.insert(s.clone(), ont("kind"), Term::string(kind));
+    let kind = scalar(doc.get("metadata").and_then(|m| m.get("kind")));
+    if let Some(kind) = &kind {
+        g.insert(s.clone(), ont("kind"), Term::string(kind.as_str()));
+    }
+    // ONT-4d: Σ's `Kernel` concept is "a contract whose kind is kernel". An absent kind IS kernel
+    // (`schema::kind::ContractKind`'s default, ONT-6b), so both are typed `ont:Kernel`. `ont:Contract` stays
+    // asserted as well: an extraction with no Σ (and so no closure) must not lose it.
+    if kind.as_deref().is_none_or(|k| k == "kernel") {
+        g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Kernel")));
     }
     if let Some(level) = scalar(doc.get("evidence").and_then(|e| e.get("level"))) {
         g.insert(s.clone(), ont("evidenceLevel"), Term::string(level));

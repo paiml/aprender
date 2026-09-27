@@ -105,13 +105,14 @@ pub fn version_string() -> String {
 /// Map a clap parse failure onto the process exit code.
 ///
 /// `--help` and `--version` are reported by clap as errors but are successful
-/// invocations. Every other parse failure exits 1, preserving the exit status
-/// the hand-rolled parser used for an unknown command, a missing argument, or a
-/// bad option value.
+/// invocations. Every other parse failure is a usage error and exits 2, the
+/// clap convention every other workspace binary follows, so a caller can tell a
+/// typo from an analysis that ran and failed (exit 1). ONT-10 S18, G1.2:
+/// FALSIFY-BIN-APRENDER-PTX-DEBUG-002.
 #[must_use]
 pub fn exit_code_for_parse_error(err: &clap::Error) -> i32 {
     match err.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => 0,
-        _ => 1,
+        _ => 2,
     }
 }

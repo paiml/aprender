@@ -1,0 +1,20 @@
+- id: GH-4198
+  github_issue: 4198
+  item_type: task
+  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring) = pv-obligation-gate.py; 11 golden tests, fixtures, ci fragment 460; tree_reader registry +2, surface_audit pv cites +11 lines. NO ci.yml/Makefile/pmat edit'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:50:11.471932980+00:00
+  updated: 2026-09-24T08:50:11.471932980+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts-cli --test pvl_obligations_golden: 11 passed. Goldens (pmat, broken, edge .stdout/.rc) were written by running pmat''s scripts/pv-obligation-gate.py (sha256 e4fa9719, pmat d70a78f67, PyYAML 6.0.3) over each fixture, never by pv; pv matches stdout byte for byte and the exit code (pmat 0 over 35 rc 0; broken 6 over 4 rc 1; edge 3 over 4 rc 1: merge keys incl. a chained merge, falsy applies_to/proved_type/document). A duplicate-key and a >64-bit-integer contract match the script''s measured output: the validate line only, 1 over 1 rc 1.'
+  - 'Mutations in obligations.rs, each planted alone, restored sha-identical, 17/17 red, each naming the test it reds: validate-always-passes, falsification-counts-every-entry, fn/type word boundary (3), binding-yaml-included, gate-flag-ignored, empty-corpus-reported-as-pass, equation-targets-not-skipped, merge-keys-not-resolved, merge-single-pass, everything-truthy, falsy-document-rejected, unused-bad-type-reported-eagerly (edge_fixture_follows_pyyaml_and_python_truthiness_as_the_script_does), symlinked-contracts-skipped (a_symlinked_contract_is_checked_like_its_target), reached-bad-type-silent (a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it), parse-line-after-validate (a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees).'
+  - 'Deliberate differences from the script, documented in the module doc: zero contracts is decline rc 2 (PVL-1), non-YAML/non-mapping/non-string input is a named problem not a traceback, src/ walked on disk, YAML 1.2 vs PyYAML 1.1 plain booleans, checks 2-3 not run on a document serde_yaml refuses (it fails validate on both sides, so the verdict agrees), word chars next to non-ASCII. Largest function cog 17 / cyc 6.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ont-0.70
+  notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.

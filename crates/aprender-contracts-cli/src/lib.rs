@@ -120,6 +120,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract, binding, ..
         } => commands::audit::run(&contract, binding.as_deref()),
         Commands::Diff { old, new } => commands::diff::run(&old, &new),
+        Commands::Discharge { action } => commands::discharge::run(action),
+        Commands::Challenge { action } => commands::challenge::run(action),
         Commands::Census {
             contract_dir,
             format,
@@ -146,6 +148,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 cells_out.as_deref(),
             )
         }
+        Commands::Ontology { command } => commands::ontology::run(&command),
         Commands::Coverage {
             contract_dir,
             binding,
@@ -343,6 +346,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract_dir,
             top,
         } => commands::infer::run(&crate_dir, &binding, &contract_dir, top),
+        Commands::Obligations { root, gate } => commands::obligations::run(&root, gate),
         Commands::Unlock { contract, reason } => commands::unlock::run(&contract, &reason),
         Commands::Roofline {
             contract_dir,

@@ -266,7 +266,7 @@ fn gen_fkr_accepts_its_output_flag() {
 // --- Exit code mapping ------------------------------------------------------
 
 #[test]
-fn help_and_version_exit_zero_every_other_parse_failure_exits_one() {
+fn help_and_version_exit_zero_every_other_parse_failure_exits_two() {
     let code = |args: &[&str]| match parse(args) {
         Ok(_) => panic!("`{}` should not parse cleanly", args.join(" ")),
         Err(e) => exit_code_for_parse_error(&e),
@@ -276,12 +276,12 @@ fn help_and_version_exit_zero_every_other_parse_failure_exits_one() {
     assert_eq!(code(&["aprender-ptx-debug", "help"]), 0);
     assert_eq!(code(&["aprender-ptx-debug", "--version"]), 0);
 
-    // Preserved from the hand-rolled parser: usage failures exit 1.
-    assert_eq!(code(&["aprender-ptx-debug"]), 1);
-    assert_eq!(code(&["aprender-ptx-debug", "bogus"]), 1);
-    assert_eq!(code(&["aprender-ptx-debug", "analyze"]), 1);
+    // Usage failures exit 2 (clap convention; exit 1 is reserved for a failed analysis).
+    assert_eq!(code(&["aprender-ptx-debug"]), 2);
+    assert_eq!(code(&["aprender-ptx-debug", "bogus"]), 2);
+    assert_eq!(code(&["aprender-ptx-debug", "analyze"]), 2);
     assert_eq!(
         code(&["aprender-ptx-debug", "analyze", "k.ptx", "--seed", "42"]),
-        1
+        2
     );
 }

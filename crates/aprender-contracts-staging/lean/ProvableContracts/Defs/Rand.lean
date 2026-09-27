@@ -19,7 +19,7 @@ def deterministic {α β γ : Type*} (f : α → β → γ) : Prop :=
   ∀ k c, f k c = f k c
 
 /-- Counter increment preserves key. -/
-def counter_independent {α γ : Type*} (f : α → ℕ → γ) : Prop :=
-  ∀ (k : α) (c₁ c₂ : ℕ), c₁ ≠ c₂ → True  -- We can't prove outputs differ without the actual function
+def counter_independent {α γ : Type*} (_f : α → ℕ → γ) : Prop :=
+  ∀ (_k : α) (c₁ c₂ : ℕ), c₁ ≠ c₂ → True  -- We can't prove outputs differ without the actual function
 
 end ProvableContracts.Rand

@@ -1,0 +1,7 @@
+# orphan-allowlist.yaml -- PVL-001 EV-5a (#4122). Modules under ProvableContracts/** that the root
+# ProvableContracts.lean does not import (transitively), so `lake build` never checks them. Measured on main:
+# 59 of 162. One issue per module group. check-orphans.sh refuses an unlisted orphan, an entry without
+# ticket:/reason:, and a STALE entry (no longer an orphan). EV-5c drains this list; an entry is never deleted
+# for a module that will not compile -- it keeps its issue.
+# EV-6c (#4244, 2026-09-25): drained -- all 59 now compile and are imported by ProvableContracts.lean.
+[]

@@ -1,0 +1,227 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-self-v1 — the ontology's contract on itself: the corpus of contracts is
+# a well-formed, acyclic, fully-kinded, non-empty graph whose consistency
+# witness names the census it was computed over, whose armed gates only grow,
+# and whose witness checker accepts nothing that is false (ONT-001 §5 row
+# ONT-9, B.16; issue #4078)
+#
+# WHAT IT GOVERNS
+#   The corpus itself — entity `pv-contract`, ref `contracts/`. Every invariant
+#   below is enforced by a gate or refuser that already runs in `make contracts`
+#   or `pv lint`; this contract names them as ONE claim and binds each to the
+#   test that turns red when it breaks.
+#   provable_contracts::lint::relations_gate — cycle_sweep, now including the
+#   `depends_on ∪ supersedes` union sweep (ONT-9 found it missing: a cycle that
+#   alternates the two roles is a cycle in neither alone, and passed).
+#   provable_contracts::ontology::witness — check (the linear witness checker),
+#   ont_planted, and the KANI-ONT-9-1 harness over ontology::witness_small.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L2 — unit and CLI tests per invariant; `ont_planted` (proptest, 512 seeds,
+#          graphs of 2-8 ids consistent by construction or carrying a planted
+#          contradiction; verdict == construction, and every adversarial core
+#          or model is refused); `kani_ont_9_1_twin` (2048 samples of the
+#          harness body).
+#   * L3 — DECLARED, NOT EXECUTED. KANI-ONT-9-1 is a real #[kani::proof] in
+#          witness.rs. `cargo kani` has not been run on it (the host that
+#          wrote it is not cleared for Kani), so l3_kani_proved is 0 and
+#          proof.status is `declared`. The bound is 3 ids and cores of at most
+#          3 steps; nothing is claimed for 4 ids.
+#   * L4 — not declared. There is no Lean theorem.
+#   RESIDUAL — spec-level common mode: the checker, the oracle and the planted
+#   constructions all read the same Horn reading of the relations (§3.5). A
+#   mistake in THAT reading is invisible to every rung here.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: 1.0.0
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  kind: kernel
+  depends_on: [ont-consistency-v1, ont-relations-v1, ont-verdict-lattice-v1]
+  # ONT-7: every invariant is a fact about the committed tree and the gates run over it.
+  valid_under:
+    world: committed
+  description: >
+    ONT-001 self — the contract corpus as an entity: unique ids, an acyclic depends_on ∪ supersedes, every
+    contract kinded, a non-empty census, a witness bound to the census it names, monotone arming, and a witness
+    checker that accepts only what is true under relation semantics (ONT-9)
+  references:
+  - 'paiml/infra docs/specifications/paiml-ontology.md §5 ONT-9, B.16 (the example this contract instantiates), F-12 (planted-solution graphs, verdict == construction)'
+  - 'crates/aprender-contracts/src/lint/relations_gate.rs — cycle_sweep and the depends_on ∪ supersedes union sweep'
+  - 'crates/aprender-contracts/src/ontology/witness.rs — check, ont_planted, kani_proofs::kani_ont_9_1'
+  - 'crates/aprender-contracts/src/ontology/witness_small.rs — the bounded universe and relation-semantics oracle'
+  - 'crates/aprender-contracts/src/ontology/witness_planted.rs — the planted-solution generators'
+  - 'crates/aprender-contracts/src/ontology/arming.rs — check_monotone'
+
+entity:
+  type: pv-contract
+  ref: contracts/
+
+relations:
+  depends_on: [ont-consistency-v1, ont-relations-v1, ont-verdict-lattice-v1]
+
+equations:
+  corpus:
+    formula: 'wf(K) = unique(ids(K)) ∧ acyclic(depends_on ∪ supersedes) ∧ ∀c ∈ K: kind(c) ∈ KINDS ∧ n_files(K) > 0 ∧ witness.census_id_set_sha256 = census_sha(K) ∧ armed(K) ⊇ armed(committed)'
+    domain: K the contracts/ directory at the committed tree
+    codomain: '{true, false}, each conjunct reported by its own gate'
+    invariants:
+    - an id names exactly one contract
+    - no id reaches itself along depends_on and supersedes edges taken together
+    - a contract with no metadata.kind is defaulted and named, never silently untyped
+    - an empty corpus is refused, never a vacuous pass
+    - a witness computed over another census is stale, never checked
+    - an armed gate is never silently dropped
+    preconditions:
+    - Σ (contracts/ontology.yaml) parses
+    postconditions:
+    - each failed conjunct is a named finding, not a count
+    lean_theorem: none — L4 not declared
+  checker_soundness:
+    formula: 'check(G, W) = Ok(Unsat(K)) ⇒ ¬∃σ: σ ⊨ G, and check(G, W) = Ok(Sat) ⇒ ∃σ: σ ⊨ G'
+    domain: G a Horn clause set over contract ids (units, implications, conflict pairs); W a witness
+    codomain: '{Ok(Sat), Ok(Unsat(core)), Err(reason)}'
+    invariants:
+    - an accepted core names only ids the graph has
+    - a refusal claims nothing and is always sound
+    preconditions:
+    - W was produced by the untrusted reasoner or by anyone else; the checker trusts none of it
+    postconditions:
+    - verdict == construction on every planted graph
+    lean_theorem: none — L4 not declared
+
+proof_obligations:
+- id: ONTSELF-INV-001
+  type: invariant
+  property: contract ids are unique — a stem shared by two contracts is reported, never resolved silently
+  formal: '∀a, b ∈ K: a ≠ b ⇒ id(a) ≠ id(b)'
+  applies_to: all
+- id: ONTSELF-INV-002
+  type: invariant
+  property: depends_on and supersedes are acyclic taken TOGETHER, not only each alone
+  formal: '∀x ∈ ids(K): ¬(x reaches x along depends_on ∪ supersedes)'
+  applies_to: all
+- id: ONTSELF-INV-003
+  type: invariant
+  property: kind totality — a contract without metadata.kind is defaulted and named on its first error
+  formal: '∀c ∈ K: kind(c) ∈ KINDS'
+  applies_to: all
+- id: ONTSELF-INV-004
+  type: invariant
+  property: the corpus is non-empty — zero contracts is a refusal, never a vacuous pass
+  formal: 'len(K) ≥ 1'
+  applies_to: all
+- id: ONTSELF-INV-005
+  type: invariant
+  property: the witness names the census it was computed over; a missing or foreign witness is stale
+  formal: 'check_run ⇒ witness.census_id_set_sha256 = census_sha(K) ∧ witness.relations_sha256 = relations_sha(K)'
+  applies_to: all
+- id: ONTSELF-INV-006
+  type: invariant
+  property: armed_gates is monotone against the committed comparand
+  formal: 'armed(committed) ⊆ armed(K)'
+  applies_to: all
+- id: ONTSELF-INV-007
+  type: invariant
+  property: the witness checker is sound under relation semantics — an accepted core is a real contradiction, an accepted model a real model
+  formal: 'check(G, W) = Ok(Unsat(core)) ⇒ ¬satisfiable(G) ∧ core ⊆ ids(G) ∧ len(core) ≥ 1'
+  applies_to: all
+
+verification_summary:
+  total_obligations: 7
+  l2_property_tested: 7
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0
+  l4_not_applicable: 7
+
+proof:
+  status: declared
+  kani:
+    harnesses: [KANI-ONT-9-1]
+
+kani_harnesses:
+- id: KANI-ONT-9-1
+  obligation: ONTSELF-INV-007
+  property: every verdict check accepts over 3 ids is true under relation semantics — an accepted core means no assignment satisfies the graph, an accepted model means one does
+  bound: 3
+  strategy: exhaustive
+  solver: cadical
+  harness: kani_ont_9_1
+kani_harnesses_note: >
+  DECLARED, NOT EXECUTED. kani_ont_9_1 (witness.rs, cfg(kani)) is bounded at CORE_BOUND = 3 steps over 3 ids,
+  unwind 12. The bound is measured, not chosen: the pv-sat plant's core is 3 steps and the committed corpus witness
+  is a model. Over 3 ids a core of at most 3 steps is complete (each step derives one id). `cargo kani` has not
+  been run; until it has, proof.status stays `declared` and l3_kani_proved stays 0 (ont9_self_contract enforces the
+  pair). kani_ont_9_1_twin samples the same body under proptest.
+
+falsification_tests:
+- id: FALSIFY-ONTSELF-001
+  rule: unique ids
+  prediction: a stem shared by two contract files is reported as ambiguous, not resolved to either
+  test: cargo test -p aprender-contracts --lib lint::duplicate_stems::tests::ambiguous_stem_is_reported_not_silently_resolved
+  if_fails: a relation to a shared id binds to whichever file the walk met first
+- id: FALSIFY-ONTSELF-002
+  rule: acyclic depends_on ∪ supersedes
+  prediction: a → b by depends_on and b → a by supersedes is PV-ONT-009 naming `a -> b -> a` (red before ONT-9, measured 2026-09-24)
+  test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::a_cycle_through_depends_on_and_supersedes_together_is_rejected
+  if_fails: a cycle that alternates the two roles passes the relations gate
+- id: FALSIFY-ONTSELF-003
+  rule: a per-role cycle
+  prediction: a cycle through one acyclic role is PV-ONT-009 naming the closing path
+  test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::a_cycle_through_an_acyclic_role_is_rejected_naming_the_path
+  if_fails: introducing a cycle into the corpus stays green
+- id: FALSIFY-ONTSELF-004
+  rule: kind totality
+  prediction: a kindless contract that fails names the defaulted kind on its first error
+  test: cargo test -p aprender-contracts-cli --test ont6b_kind_default kindless_failing_names_the_default_on_its_first_error
+  if_fails: a contract is linted under a kind nobody declared or saw
+- id: FALSIFY-ONTSELF-005
+  rule: n_files > 0
+  prediction: pv lint over an empty directory is refused
+  test: cargo test -p aprender-contracts-cli --test pvl_zero_contracts lint_empty_dir_is_refused
+  if_fails: 0 violations over 0 files reads as a pass
+- id: FALSIFY-ONTSELF-006
+  rule: witness bound to the census
+  prediction: a missing or foreign witness declines WitnessStale and is never checked
+  test: cargo test -p aprender-contracts --lib lint::consistency_gate::tests::a_missing_or_foreign_witness_is_stale_not_a_pass
+  if_fails: a witness about another corpus passes this one
+- id: FALSIFY-ONTSELF-007
+  rule: armed_gates monotone
+  prediction: dropping an armed gate is a shrink that names it
+  test: cargo test -p aprender-contracts --lib ontology::arming::tests::a_dropped_gate_is_a_shrink_naming_it
+  if_fails: a gate is disarmed without anyone deciding to
+- id: FALSIFY-ONTSELF-008
+  rule: checker soundness, planted (F-12)
+  prediction: on 512 planted graphs verdict == construction and every adversarial certificate is refused; a checker weakened to accept any two ids goes RED (measured 2026-09-24)
+  test: cargo test -p aprender-contracts --lib ontology::witness::planted::ont_planted
+  if_fails: the checker accepts a core that proves nothing or a model that falsifies a clause
+- id: FALSIFY-ONTSELF-009
+  rule: checker soundness, bounded (L2 twin of KANI-ONT-9-1)
+  prediction: over 3 ids every accepted verdict agrees with the brute-force oracle
+  test: cargo test -p aprender-contracts --lib ontology::witness_small::tests::kani_ont_9_1_twin
+  if_fails: the harness body is false and the Kani run would find a counterexample
+- id: FALSIFY-ONTSELF-010
+  rule: the §5 probe end to end, the L3 rung not claimed early, a corpus cycle RED on the CLI
+  prediction: the contract is tracked and validates; witness.rs carries ont_planted and KANI-ONT-9-1; declared ⇒ l3_kani_proved = 0; every falsifier names a test fn that exists
+  test: cargo test -p aprender-contracts-cli --test ont9_self_contract
+  if_fails: the probe the ledger binds is not the behaviour shipped
+
+qa_gate:
+  id: F-ONTSELF-001
+  name: ONT-001 ontology self-contract
+  description: the corpus is a well-formed acyclic kinded non-empty graph, its witness names its census, arming is monotone, and the checker is sound (ONT-9)
+  checks:
+  - unique_ids
+  - union_acyclic
+  - per_role_acyclic
+  - kind_totality
+  - non_empty
+  - witness_census_bound
+  - arming_monotone
+  - checker_planted
+  - checker_bounded_twin
+  - spec_probe
+  pass_criteria: All 10 falsification tests pass
+  falsification: 'a checker that accepts any two ids, a model check that skips conflicts, or a relations gate without the union sweep — each turns a named test RED (measured 2026-09-24)'

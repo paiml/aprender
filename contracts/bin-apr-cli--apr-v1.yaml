@@ -1,0 +1,396 @@
+# ──────────────────────────────────────────────
+# bin-apr-cli--apr-v1 — the `apr` bin target of package apr-cli (ONT-10 slice S9; S8 adds routes + tools here)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha256, helpSha256,
+# gitSha, …) live in binary-surface-v1 and are not restated.
+#
+# WHY S8/S9 SPLIT BY KIND: `in` + minCount + maxCount on bin:command is set equality over the WHOLE node, and pv's
+# shapes subset refuses the qualifiedValueShape family (crates/aprender-contracts/src/ontology/shapes.rs), so a
+# command set cannot be halved. S9 owns identity + every CLI command. S8 (docs/ont-10/binary-contracts/
+# binary-apr-cli-2of2-v1.yaml) owns bin:route and bin:mcpTool of the same node. When S8 moves it appends its
+# properties to the ONE shape below; it does not add a second file.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features, private CARGO_TARGET_DIR):
+#   `apr --version` = "apr 0.69.3 (b1cd8c0b08)": G0.1 GREEN.
+#   `apr --help` exits 0; `apr --no-such-flag` exits 2; `apr qa --format nosuch x` exits 2.
+#   Recursive --help walk: 262 leaves (clap's auto `help` excluded) + 2 runnable non-leaves = 264 commands:
+#   `debug` (Usage shows [COMMAND]) and `sim help` (a real subcommand, "Show help").
+#   surface_audit.csv rows with binary=apr: 375 = 318 CLI + 47 HTTP + 10 other. The 318 CLI rows reduce to 267
+#   command paths (options stripped). Join against the 264, LIVE RED:
+#     15 ledgerOrphan, all feature-gated off in the default build:
+#       data x doctest extract|merge, data x hub push, data x import hf  (aprender-data features doctest / hf-hub)
+#       mono archive|audit|publish|shims                                  (apr-cli feature `dev`)
+#       rag eval compare|gate|generate|judge|metrics|retrieve|sample      (aprender-rag-cli feature `eval`)
+#     12 unledgeredCommand: capability, pv census, pv challenge check|gen,
+#       pv discharge check|gen-axioms|label-ratchet|run, pv extract, pv obligations, pv ontology export|tbox.
+#
+# CONVENTION ASKED OF extract:binary (ONT-4g, aprender-98): (1) a non-leaf whose Usage shows `[COMMAND]` is also a
+# bin:command; (2) only clap's auto-generated `help` is excluded, a user-defined `help` is a command; (3) the
+# ledger's binary column says `apr` for BOTH apr targets (apr-cli:apr, aprender:apr), so both nodes join the same
+# rows. G0.5 (the two apr targets' help equal) spans two nodes; it stays with the surface_audit_bins gate.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-apr-cli--apr-v1
+version: "1.0.0"
+scope: >
+  The command surface of the `apr` binary of package apr-cli (src crates/apr-cli/src/main.rs): its help, its usage
+  errors, its version string, its exact CLI command set, and its surface-audit rows. HTTP routes and MCP tools are
+  slice S8. Out of scope: what each subcommand computes.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    apr (apr-cli) answers --help, rejects an unknown flag as a usage error, names the commit it was built from,
+    exposes exactly the 264 commands the snapshot records, and has an audited ledger row for each.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'contracts/bin-aprender-contracts-cli--pv-v1.yaml — the exemplar'
+    - 'crates/apr-cli/src/lib.rs — the clap Commands enum'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is apr'
+    - 'aprender#4502 — ONT-10, slices S8/S9'
+
+entity:
+  type: binary
+  ref: binary/apr-cli/apr
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-apr-cli-apr-surface
+    targetClass: bin:target/apr-cli/apr
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["apr"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["apr-cli"]}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^apr [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — GREEN 2026-09-26 ("apr 0.69.3 (b1cd8c0b08)"); kept a warning to match the exemplar
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - path: bin:command
+        minCount: 264
+        maxCount: 264
+        in:
+          - "attn-parity-lint"
+          - "attn-viz-lint"
+          - "audio-inspect-lint"
+          - "awq-lint"
+          - "beat-run"
+          - "bench"
+          - "canary check"
+          - "canary create"
+          - "capability"
+          - "cbtop"
+          - "cgp baseline"
+          - "cgp bench"
+          - "cgp compete"
+          - "cgp contract generate"
+          - "cgp contract verify"
+          - "cgp diff"
+          - "cgp doctor"
+          - "cgp explain"
+          - "cgp profile binary"
+          - "cgp profile compare"
+          - "cgp profile cublas"
+          - "cgp profile kernel"
+          - "cgp profile library"
+          - "cgp profile metal"
+          - "cgp profile parallel"
+          - "cgp profile python"
+          - "cgp profile quant"
+          - "cgp profile scalar"
+          - "cgp profile scaling"
+          - "cgp profile simd"
+          - "cgp profile wasm"
+          - "cgp profile wgpu"
+          - "cgp roofline"
+          - "cgp trace"
+          - "cgp tui"
+          - "chat"
+          - "check"
+          - "check-finite-lint"
+          - "code"
+          - "compare-hf"
+          - "compile"
+          - "convert"
+          - "data audit"
+          - "data balance"
+          - "data decontaminate"
+          - "data dedup"
+          - "data split"
+          - "data x convert"
+          - "data x dedup"
+          - "data x drift compare"
+          - "data x drift detect"
+          - "data x drift merge"
+          - "data x drift report"
+          - "data x drift sketch"
+          - "data x fed manifest"
+          - "data x fed plan"
+          - "data x fed split"
+          - "data x fed verify"
+          - "data x filter-text"
+          - "data x fim"
+          - "data x head"
+          - "data x import local"
+          - "data x info"
+          - "data x mix"
+          - "data x quality check"
+          - "data x quality profiles"
+          - "data x quality report"
+          - "data x quality score"
+          - "data x registry delete"
+          - "data x registry init"
+          - "data x registry list"
+          - "data x registry pull"
+          - "data x registry push"
+          - "data x registry search"
+          - "data x registry show-info"
+          - "data x repl"
+          - "data x schema"
+          - "data x view"
+          - "dataset audio-inspect"
+          - "ddp-metrics-lint"
+          - "debug"
+          - "debug embed-viz"
+          - "decrypt"
+          - "devices"
+          - "diagnose"
+          - "diff"
+          - "distill"
+          - "dry-sampling-lint"
+          - "embed"
+          - "embed-viz-lint"
+          - "embeddings-lint"
+          - "encrypt"
+          - "eval"
+          - "experiment view"
+          - "explain"
+          - "explain-token-lint"
+          - "export"
+          - "finetune"
+          - "flow"
+          - "fp8-lint"
+          - "gbnf-lint"
+          - "gptq-lint"
+          - "gpu"
+          - "gpu-memtrace-lint"
+          - "grad-norm"
+          - "hang-trace-lint"
+          - "hex"
+          - "imatrix-lint"
+          - "import"
+          - "inspect"
+          - "kernel parity"
+          - "kv-timeline-lint"
+          - "lint"
+          - "list"
+          - "manifest"
+          - "mcp"
+          - "merge"
+          - "modelfile parse"
+          - "monitor"
+          - "nccl-diag-lint"
+          - "nf4-lint"
+          - "ollama-chat-lint"
+          - "ollama-tools-lint"
+          - "oom-lint"
+          - "oracle"
+          - "otlp-lint"
+          - "parity"
+          - "pipeline apply"
+          - "pipeline plan"
+          - "pipeline status"
+          - "pipeline validate"
+          - "ppl"
+          - "pretrain"
+          - "profile"
+          - "prometheus-lint"
+          - "prune"
+          - "ptx"
+          - "ptx-map"
+          - "publish"
+          - "pull"
+          - "pv audit"
+          - "pv book"
+          - "pv census"
+          - "pv certify"
+          - "pv challenge check"
+          - "pv challenge gen"
+          - "pv check-parity"
+          - "pv codegen"
+          - "pv coq"
+          - "pv coverage"
+          - "pv diff"
+          - "pv discharge check"
+          - "pv discharge gen-axioms"
+          - "pv discharge label-ratchet"
+          - "pv discharge run"
+          - "pv equations"
+          - "pv explain"
+          - "pv extract"
+          - "pv extract-pytorch"
+          - "pv flux"
+          - "pv fuzz"
+          - "pv generate"
+          - "pv graph"
+          - "pv infer"
+          - "pv invariants"
+          - "pv kaizen"
+          - "pv kani"
+          - "pv lean"
+          - "pv lean-status"
+          - "pv lint"
+          - "pv migrate"
+          - "pv mirai"
+          - "pv obligations"
+          - "pv ontology export"
+          - "pv ontology tbox"
+          - "pv pipeline"
+          - "pv probar"
+          - "pv proof-status"
+          - "pv query"
+          - "pv roofline"
+          - "pv scaffold"
+          - "pv score"
+          - "pv status"
+          - "pv tla"
+          - "pv unlock"
+          - "pv validate"
+          - "pv verify-bindings"
+          - "pv verify-pipeline"
+          - "pv verify-structure"
+          - "qa"
+          - "qualify"
+          - "quant-preservation-lint"
+          - "quantize"
+          - "rag demo"
+          - "rag extract-frames"
+          - "rag index"
+          - "rag info"
+          - "rag query"
+          - "rag transcribe"
+          - "react-trace-lint"
+          - "registry aliases"
+          - "registry-quota-lint"
+          - "rerank"
+          - "rm"
+          - "rm-gc-lint"
+          - "rosetta chain"
+          - "rosetta compare-inference"
+          - "rosetta convert"
+          - "rosetta diff-tensors"
+          - "rosetta fingerprint"
+          - "rosetta inspect"
+          - "rosetta validate-stats"
+          - "rosetta verify"
+          - "run"
+          - "runs diff"
+          - "runs ls"
+          - "runs show"
+          - "serve plan"
+          - "serve run"
+          - "shard"
+          - "shared-cache-lint"
+          - "showcase"
+          - "sim emc-check"
+          - "sim emc-validate"
+          - "sim help"
+          - "sim list-emc"
+          - "sim render"
+          - "sim run"
+          - "sim validate"
+          - "sim verify"
+          - "sim version"
+          - "stamp"
+          - "tensors"
+          - "test llm bench"
+          - "test tensor"
+          - "tokenize apply"
+          - "tokenize encode"
+          - "tokenize encode-corpus"
+          - "tokenize import-hf"
+          - "tokenize plan"
+          - "tokenize repair-manifest"
+          - "tokenize train"
+          - "tool-use-lint"
+          - "trace"
+          - "train apply"
+          - "train archive"
+          - "train cluster-status"
+          - "train halving"
+          - "train plan"
+          - "train submit"
+          - "train sweep"
+          - "train watch"
+          - "tree"
+          - "tui"
+          - "tune"
+          - "typical-p-lint"
+          - "unified-search-lint"
+          - "unshard"
+          - "validate"
+          - "validate-manifest"
+          - "zram benchmark"
+          - "zram create"
+          - "zram remove"
+          - "zram status"
+      # LIVE RED 2026-09-26: 12 commands with no ledger row, 15 feature-gated ledger rows (header)
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(apr)) = C, |C| = 264, C = leaves(--help walk) ∪ {non-leaves whose Usage shows [COMMAND]} ∪ {user-defined help} ∧ C = {path(f) : f ∈ surface_audit, f.binary = apr, f is a CLI row}"
+    domain: "the apr-cli:apr line of the tracked snapshot and the CLI ledger rows with binary = apr (318 rows, 267 paths)"
+    codomain: "set equality, or a Fail naming each command in the symmetric difference"
+    invariants:
+      - "in + minCount 264 + maxCount 264 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+      - "a feature-gated command is a member only if the default build exposes it; its ledger row is an orphan until then"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "path(r) = r.feature minus the leading 'apr ', cut at the first token starting with -, <, [ or ("
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APR-CLI-APR-INV-001
+    property: every apr (apr-cli) command has an audited ledger row, and every CLI ledger row names a command
+    formal: '∀ c ∈ commands(apr): ∃ r ∈ surface_audit : r.binary = apr ∧ path(r) = c; ∀ r CLI row with r.binary = apr: path(r) ∈ commands(apr)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APR-CLI-APR-001
+    rule: 'G1.2 help answers'
+    prediction: '`apr --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli apr'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APR-CLI-APR-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`apr --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli apr'
+    if_fails: 'a typo is silently ignored (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APR-CLI-APR-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`apr --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'a stale apr reads as HEAD (observed 2026-09-26: "apr 0.69.3 (b1cd8c0b08)", GREEN)'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APR-CLI-APR-004
+    rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
+    prediction: '`apr qa --format nosuch x` exits 2; commands(snapshot) = the 264 literals above'
+    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    if_fails: 'a leaves-only walk drops `debug` and `sim help`: minCount 264 RED and the `apr debug` row an orphan (observed 2026-09-26: --format exits 2, GREEN)'
+    mutation: 'remove `qa` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming qa'
+  - id: FALSIFY-BIN-APR-CLI-APR-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 CLI row per command with binary = apr (318 CLI rows on 2026-09-26)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'LIVE RED 2026-09-26: 12 commands unledgered (capability, pv census|challenge *|discharge *|extract|obligations|ontology *), 15 rows orphaned by default-off features (data x doctest|hub|import hf, mono *, rag eval *)'
+    mutation: 'delete every apr row; must turn RED naming apr'

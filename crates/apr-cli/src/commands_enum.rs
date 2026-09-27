@@ -35,6 +35,29 @@ pub struct BackendArg {
     pub backend: Option<String>,
 }
 
+/// Tasks `apr eval --task` accepts (ONT-4g G1.4, #4476). Omitting `--task`
+/// runs perplexity on `--dataset`.
+///
+/// The flag was a free-form `String` whose help named only `classify`, while the
+/// dispatcher matched ten task names and sent ANY other string — a typo, or
+/// `classify` in a build without `training` — to perplexity under a `_` arm: the
+/// user asked for one evaluation and silently got another (the #2583 class). The
+/// list is the `Some("…")` arms of the `ExtendedCommands::Eval` dispatch in
+/// `dispatch_analysis.rs`, pinned both ways by
+/// `test_eval_task_values_match_dispatch_arms_4476`.
+pub const EVAL_TASK_VALUES: [&str; 10] = [
+    "classify",
+    "code",
+    "humaneval",
+    "mbpp",
+    "contamination",
+    "compare",
+    "verify",
+    "correlation",
+    "human",
+    "plan",
+];
+
 /// Thinking modes `--thinking` accepts (#3723).
 pub const THINKING_VALUES: [&str; 2] = ["on", "off"];
 

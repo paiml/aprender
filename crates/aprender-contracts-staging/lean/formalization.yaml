@@ -1,0 +1,51 @@
+# PVL-001 formalization record for ProvableContracts, mathlib-initiative schema v0.4 (EV-6b #4199 landed `scope`;
+# EV-8b #4082 the rest). `pv discharge check --validate-formalization` MEASURES the factual fields: every
+# `main_results` entry must be a theorem discharge-summary.json lists, `status.axioms` must be the pinned kernel set,
+# and `sorry_count` must equal the escape scan's count. A stale number here is RED, so edit it with the tree.
+main_results:
+  - ProvableContracts.CrossEntropy.cross_entropy_nonneg
+  - ProvableContracts.CrossEntropy.log_softmax_le_zero
+  - ProvableContracts.Attention.attention_weights_sum_to_one
+  - ProvableContracts.AttentionScaling.softmax_max_subtraction_invariant
+  - ProvableContracts.LayerNorm.mean_layernorm_centering
+  - ProvableContracts.RMSNorm.rms_pos
+  - ProvableContracts.Gelu.gelu_nonneg_of_nonneg
+status:
+  axioms: [propext, Classical.choice, Quot.sound]
+# Theorems that get an EXACT axiom pin in Axioms.lean (the rest get a subset pin). None yet.
+capstones: []
+sorry_count: 0
+review:
+  status: self-assessed
+automation:
+  methods: [simp, ring, linarith, nlinarith, norm_num, positivity, omega, field_simp]
+scope: >-
+  NOT covered by the discharge gate: (1) the Rust binding. A contract names a Lean theorem by a string in YAML,
+  and nothing checks that the Rust code implements the statement the theorem proves (PVL-F5). (2) The YAML parser
+  and the `--trusted`-class modes of pv. (3) Mathlib itself. `pv discharge check --leanchecker` is NON-FRESH: it runs
+  `lake env leanchecker ProvableContracts`, which replays the kernel over this tree's own .olean files and TRUSTS
+  the Mathlib .olean files they import. Replaying Mathlib (`leanchecker --fresh`) takes hours; it runs only in the
+  nightly (PVL-F7), never on the per-PR gate.
+# ONT-3b (#4073): which Rust item each Lean module models, and how. `extraction`/`simulation` earn L4 (once the
+# discharge is green); `test_witnessed` earns L3. These three are test_witnessed, honestly: the Lean statements are
+# over ℝ and were written by hand, not extracted from the f32 Rust, so only the proptests tie the two together.
+# `pv lint contracts/ --gate refinement` resolves every model_of through the workspace's syn walk.
+models:
+  - module: ProvableContracts/Theorems/Softmax/PartitionOfUnity.lean
+    model_of: aprender::nn::functional::softmax
+    relation:
+      kind: test_witnessed
+      evidence: FALSIFY-SM-001 (contracts/softmax-kernel-v1.yaml), a proptest that sum(softmax(x)) is 1
+  - module: ProvableContracts/Theorems/Softmax/NonNegativity.lean
+    model_of: aprender::nn::functional::softmax
+    relation:
+      kind: test_witnessed
+      evidence: FALSIFY-SM-002 (contracts/softmax-kernel-v1.yaml), a proptest that softmax(x)_i > 0
+  - module: ProvableContracts/Theorems/Elementwise/ReLUNonNeg.lean
+    model_of: aprender::nn::functional::relu
+    relation:
+      kind: test_witnessed
+      evidence: FALSIFY-ACT-004 (contracts/activation-kernel-v1.yaml), a proptest that ReLU(x) >= 0, signed zeros included
+# Theorem-bearing modules with no L4 model. The refinement gate fails when the measured count rises above this, and
+# also when it falls below it, so lower it in the same commit that adds an L4 model.
+unrefined_baseline: 76

@@ -27,7 +27,7 @@
 //! violate at least one armed shape. `pc_extract` — one planted defect per extractor Σ marks implemented (R-3):
 //! `pv-contract`, a contract stripped of `metadata` carries no `ont:kind`; `json`, a nested key the vocabulary does
 //! not map is refused naming it; `gguf`, a corrupt magic is refused; `apr-model`, a header whose tensor count
-//! disagrees with its index is refused; `code` and `lean`, as their modules state; `parity-receipt`, a record
+//! disagrees with its index is refused; `code`, `lean` and `example`, as their modules state; `parity-receipt`, a record
 //! stripped of `comparator` loses its comparator edge. All of them every run, in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,8 +38,8 @@ use crate::ontology::arming::ArmedShapes;
 use crate::ontology::capability_cells;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, cli_surface, code, csv, gguf, json, kernel, lean, llm_context, parity_receipt,
-    pv_contract, readme, release_evidence, ExtractFailure,
+    self, apr_model, cli_surface, code, csv, example, gguf, json, kernel, lean, llm_context,
+    parity_receipt, pv_contract, readme, release_evidence, ExtractFailure,
 };
 use crate::ontology::measured_sets;
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
@@ -337,6 +337,8 @@ fn run_or_answer(
             .flat_map(|cc| cells_gate::findings(cc, &arming)),
     );
     refuse_vacuous_kernels(&mut counted, &shapes, extraction.kernel.kernels);
+    let (inherited_shapes_applied, inherited_by_shape) =
+        subsumption_of(contract_dir, graph, &shapes, &mut counted);
     let passed = counted.violations == 0;
     let verdict = verdict_of(&counted, armed_vacuity);
     let by_shape = by_shape(&focus_of);
@@ -399,10 +401,14 @@ fn run_or_answer(
             unmeasured_rows: extraction.resolve.unmeasured_rows,
             w3c_cases_passed: w3c_run.passed(),
             w3c_cases_n: w3c_run.results.len(),
-            symbols_resolved: extraction.code.resolved,
-            symbols_unresolved: extraction.code.unresolved,
-            lean_statements: extraction.lean.statements,
-            lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+            counters: Box::new(super::ShapesCounters {
+                symbols_resolved: extraction.code.resolved,
+                symbols_unresolved: extraction.code.unresolved,
+                lean_statements: extraction.lean.statements,
+                lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+                inherited_shapes_applied,
+                inherited_by_shape,
+            }),
             release: extraction.release.clone().map(Box::new),
             readme: measured(&extraction.readme),
             claude_md: measured(&extraction.llm_context),
@@ -611,6 +617,7 @@ const COUNTED_ENTITY_TYPES: &[&str] = &[
     "parity-receipt",
     "code",
     "lean",
+    "example",
     "release-evidence",
     "cli-surface",
     "readme",
@@ -636,6 +643,8 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
         "parity-receipt" => extraction.parity.records,
         "code" => extraction.code.symbols,
         "lean" => extraction.lean.statements,
+        // #3560 R1: the cargo example targets of the workspace members.
+        "example" => extraction.example.examples,
         // By rule 0 when no release subject was given (an ordinary PR has none): the extractor did not run.
         "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
         // #3777 registered cli-surface in Σ after #3624 derived these keys from it: the leaf commands the
@@ -651,7 +660,10 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
         "csv" => extraction.csv.files_read,
         // ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`
         "kernel" => extraction.kernel.kernels,
-        _ => return None,
+        // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone). The extractor seeds every
+        // declared type at 0, so a declared type is never absent here. Any other name is `None` — a
+        // `pv_contract` entity type is then counted by its entity class in [`by_entity_type`].
+        _ => return extraction.github.by_type.get(name).copied(),
     })
 }
 
@@ -672,8 +684,8 @@ fn sigma_implemented(contract_dir: &Path) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-/// Focus nodes each extractor produced, keyed by entity type: every type this build counts, and every type Σ
-/// implements. #3624 — the keys were a hand-written array beside Σ, so `json` and `release-evidence` shipped
+/// Focus nodes each extractor produced, keyed by entity type: every type this build counts, every GitHub snapshot
+/// type (ONT-4f), and every type Σ implements. #3624 — the keys were a hand-written array beside Σ, so `json` and `release-evidence` shipped
 /// implemented and uncounted, and every `by_entity_type["<name>"]` probe on them read ABSENT. A Σ-implemented type
 /// with no counting arm is now the gate's refusal, named, never a missing key. `implemented: false` types are
 /// omitted by rule unless this build counts them. A Σ type read by the `pv_contract` extractor (an `entity.type`
@@ -685,6 +697,7 @@ fn by_entity_type(
     COUNTED_ENTITY_TYPES
         .iter()
         .map(|s| (*s).to_string())
+        .chain(extraction.github.by_type.keys().cloned())
         .chain(implemented.keys().cloned())
         .map(|name| {
             let count = entity_count(&name, extraction).or_else(|| {
@@ -770,12 +783,22 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
         ("kernel", kernel::positive_control()),
+        ("example", example::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // ONT-4f: the GitHub snapshot types — a version mismatch (repo, milestone), a merge with no time
+        // (pull-request), a milestone reference to nothing tracked (issue)
+        ("repo", json::github::positive_control("repo")),
+        ("issue", json::github::positive_control("issue")),
+        (
+            "pull-request",
+            json::github::positive_control("pull-request"),
+        ),
+        ("milestone", json::github::positive_control("milestone")),
         // ONT-4c: an unrun claim, a missing referenced path, a ragged row — each refused by name
         ("readme", readme::positive_control()),
         ("llm-context", llm_context::positive_control()),
@@ -922,6 +945,7 @@ fn findings_of(
         .errors
         .iter()
         .chain(&extraction.apr_model.errors)
+        .chain(&extraction.example.errors)
         .chain(&extraction.readme.errors)
         .chain(&extraction.llm_context.errors)
         .chain(&extraction.csv.errors);
@@ -936,7 +960,46 @@ fn findings_of(
         f.contract_stem = None;
         c.findings.push(f);
     }
+    // ONT-4f: a refused GitHub snapshot is the corpus being wrong (a version that disagrees, a merge with no time),
+    // so it is a Fail naming the file, exactly like a lying model header.
+    for e in &extraction.github.errors {
+        c.violations += 1;
+        let mut f = LintFinding::new(
+            "PV-ONT-012",
+            RuleSeverity::Error,
+            format!("extractor refused {}: {}", e.file, e.what),
+            e.file.clone(),
+        );
+        f.contract_stem = None;
+        c.findings.push(f);
+    }
     c
+}
+
+/// ONT-4d (R-19): what Σ's subsumption did in this run. Returns `(inherited_shapes_applied, inherited_by_shape)`
+/// and adds one violation per weakened component (PV-ONT-013, exit 1). No Σ is no hierarchy, so zero and none.
+fn subsumption_of(
+    contract_dir: &Path,
+    graph: &Graph,
+    shapes: &[NodeShape],
+    counted: &mut Counted,
+) -> (usize, Vec<String>) {
+    let Some(sigma) = extract::sigma_of(contract_dir) else {
+        return (0, Vec::new());
+    };
+    for w in super::subsumption::weakenings(shapes, &sigma) {
+        counted.violations += 1;
+        let stem: String = w.split(' ').next().unwrap_or_default().to_string();
+        let mut f = LintFinding::new(
+            "PV-ONT-013",
+            RuleSeverity::Error,
+            format!("reject: {w} (R-19: a sub-concept may add constraints and may not remove any)"),
+            format!("contracts/{stem}.yaml"),
+        );
+        f.contract_stem = Some(stem);
+        counted.findings.push(f);
+    }
+    super::subsumption::inherited(graph, shapes, &sigma)
 }
 
 /// Validate the corpus graph plus the plant. Returns the corpus report (the plant's results removed) and how
@@ -1317,10 +1380,15 @@ mod tests {
         let implemented = sigma_implemented(&contracts);
         assert!(
             implemented.contains_key("json") && implemented.contains_key("release-evidence"),
-            "Σ no longer implements the two #3624 types — the test would be vacuous: {implemented:?}"
+            "Σ no longer implements the two #3624 types, so the test would be vacuous: {implemented:?}"
         );
-        let map = by_entity_type(&extract::Extraction::default(), &implemented)
-            .expect("every implemented type has an arm");
+        // The GitHub extractor seeds every Σ snapshot type at 0 before it reads a file; do the same here.
+        let mut x = extract::Extraction::default();
+        let sigma = extract::sigma_of(&contracts).expect("Σ parses");
+        for e in sigma.entity_types.iter().filter(|e| e.vocabulary.is_some()) {
+            x.github.by_type.insert(e.name.clone(), 0);
+        }
+        let map = by_entity_type(&x, &implemented).expect("every implemented type has an arm");
         for name in implemented.keys() {
             assert!(
                 map.contains_key(name),

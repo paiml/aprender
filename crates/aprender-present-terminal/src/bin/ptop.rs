@@ -61,8 +61,8 @@ struct Cli {
     qa_timing: bool,
 
     /// Explode a specific panel for QA (cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers)
-    #[arg(long, value_name = "PANEL")]
-    explode: Option<String>,
+    #[arg(long, value_name = "PANEL", value_parser = parse_panel_type)]
+    explode: Option<PanelType>,
 }
 
 /// Load configuration from file or default location.
@@ -85,8 +85,8 @@ fn handle_render_once(cli: &Cli, config: PtopConfig) -> io::Result<()> {
         std::thread::sleep(Duration::from_millis(100));
         app.collect_metrics();
     }
-    if let Some(ref panel_name) = cli.explode {
-        app.exploded_panel = parse_panel_type(panel_name);
+    if cli.explode.is_some() {
+        app.exploded_panel = cli.explode;
     }
     render_once(&app, cli.width, cli.height)
 }
@@ -400,24 +400,49 @@ fn run_app(
     Ok(())
 }
 
-/// Parse panel type from string for --explode flag
-fn parse_panel_type(name: &str) -> Option<PanelType> {
+/// Parse panel type from string for --explode flag. A clap value_parser, so an unknown panel is a usage
+/// error (exit 2) instead of a warning followed by the normal view and exit 0 (ONT-4g G1.4, #4476).
+fn parse_panel_type(name: &str) -> Result<PanelType, String> {
     match name.to_lowercase().as_str() {
-        "cpu" => Some(PanelType::Cpu),
-        "memory" | "mem" => Some(PanelType::Memory),
-        "disk" => Some(PanelType::Disk),
-        "network" | "net" => Some(PanelType::Network),
-        "process" | "proc" | "processes" => Some(PanelType::Process),
-        "gpu" => Some(PanelType::Gpu),
-        "sensors" | "sensor" => Some(PanelType::Sensors),
-        "connections" | "conn" => Some(PanelType::Connections),
-        "psi" | "pressure" => Some(PanelType::Psi),
-        "files" | "file" => Some(PanelType::Files),
-        "battery" | "bat" => Some(PanelType::Battery),
-        "containers" | "container" | "docker" => Some(PanelType::Containers),
-        _ => {
-            eprintln!("[ptop] Unknown panel: {name}. Valid: cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers");
-            None
+        "cpu" => Ok(PanelType::Cpu),
+        "memory" | "mem" => Ok(PanelType::Memory),
+        "disk" => Ok(PanelType::Disk),
+        "network" | "net" => Ok(PanelType::Network),
+        "process" | "proc" | "processes" => Ok(PanelType::Process),
+        "gpu" => Ok(PanelType::Gpu),
+        "sensors" | "sensor" => Ok(PanelType::Sensors),
+        "connections" | "conn" => Ok(PanelType::Connections),
+        "psi" | "pressure" => Ok(PanelType::Psi),
+        "files" | "file" => Ok(PanelType::Files),
+        "battery" | "bat" => Ok(PanelType::Battery),
+        "containers" | "container" | "docker" => Ok(PanelType::Containers),
+        _ => Err(format!("unknown panel `{name}`; valid: cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explode_unknown_panel_is_a_usage_error() {
+        let err = Cli::try_parse_from(["ptop", "--explode", "nosuch"])
+            .err()
+            .expect("an unknown panel must not parse");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    #[test]
+    fn explode_accepts_panel_names_and_aliases() {
+        for (arg, want) in [
+            ("cpu", PanelType::Cpu),
+            ("MEM", PanelType::Memory),
+            ("docker", PanelType::Containers),
+        ] {
+            let cli =
+                Cli::try_parse_from(["ptop", "--explode", arg]).expect("a known panel parses");
+            assert_eq!(cli.explode, Some(want), "{arg}");
         }
     }
 }

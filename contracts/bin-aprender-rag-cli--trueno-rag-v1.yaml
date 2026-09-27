@@ -1,0 +1,131 @@
+# ──────────────────────────────────────────────
+# bin-aprender-rag-cli--trueno-rag-v1 — the `trueno-rag` bin target of package aprender-rag-cli
+# (ONT-10 slice S12, 1/2)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha256, helpSha256,
+# gitSha, …) live in binary-surface-v1 and are not restated.
+#
+# MEASURED (2026-09-27, batch/ont-10 @ acc3827954, `cargo build --release -p aprender-rag-cli --bin trueno-rag`,
+# default features = [], private CARGO_TARGET_DIR, LC_ALL=C):
+#   `trueno-rag --version` = "trueno-rag 0.69.3": name right, no sha. LIVE RED on G0.1.
+#   `--help` exits 0; `--no-such-flag` exits 2.
+#   The --help walk gives 6 commands (clap's `help` excluded): demo, extract-frames, index, info, query,
+#   transcribe; none has subcommands.
+#   G1.3: `index --embedder|--model|--chunk-strategy nosuch` exit 2 (clap ValueEnum, GREEN). `query --format|--mode|
+#   --fusion|--rerank nosuch` exit 1 — they are `String` fields (crates/aprender-rag-cli/src/lib.rs:198-) checked
+#   after clap, `--mode` before the index loads and the other three not at all until the index is read. LIVE RED.
+#   surface_audit.csv holds 13 rows: 6 are set-equal to the walk; 7 name `eval compare|gate|generate|judge|metrics|
+#   retrieve|sample`, behind `#[cfg(feature = "eval")]` (lib.rs:309) which the default build lacks. LIVE RED:
+#   7 bin:ledgerOrphan on a default snapshot. All 7 are in scripts/dogfood_reconcile.py FEATURE_GATED (the
+#   enumerated, rebuild-proven allowance the dogfood gate already honours); extract:binary must honour it too.
+# G1.3 FIXED on d1/ont10-s12-trueno-rag-g13 @134e256bb9 (value_parser lists; live exit 2), pending fold into car.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-rag-cli--trueno-rag-v1
+version: "1.0.0"
+scope: >
+  The command surface of the `trueno-rag` binary (package aprender-rag-cli, src crates/aprender-rag-cli/src/main.rs):
+  its help, its usage errors, its version string, its command set, and its surface-audit rows. Out of scope: what
+  indexing or retrieval computes.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    trueno-rag answers --help, rejects an unknown flag or an unknown enumerated value as a usage error, names the
+    commit it was built from, exposes exactly the commands the snapshot records, and has an audited ledger row for
+    each — and no ledger row for a command the default build lacks.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'contracts/bin-aprender-contracts-cli--pv-v1.yaml — the exemplar'
+    - 'crates/aprender-rag-cli/src/lib.rs — the clap Commands enum; Eval behind feature eval'
+    - 'crates/aprender-rag-cli/Cargo.toml — [[bin]] trueno-rag; default = []'
+    - 'docs/audits/surface_audit.csv — the rows whose binary column is trueno-rag'
+    - 'aprender#4502 — ONT-10, slice S12'
+
+entity:
+  type: binary
+  ref: binary/aprender-rag-cli/trueno-rag
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-trueno-rag-surface
+    targetClass: bin:target/aprender-rag-cli/trueno-rag
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["trueno-rag"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-rag-cli"]}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^trueno-rag [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - path: bin:command
+        minCount: 6
+        maxCount: 6
+        in:
+          - "demo"
+          - "extract-frames"
+          - "index"
+          - "info"
+          - "query"
+          - "transcribe"
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      # LIVE RED 2026-09-27: the 7 `eval *` rows (feature eval, not default)
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(trueno-rag)) = subcommands(clap(Commands), default features) = {demo, extract-frames, index, info, query, transcribe} ∧ {strip(r.feature) : r ∈ surface_audit, r.binary = trueno-rag} = commands"
+    domain: "the trueno-rag line of the tracked snapshot, the clap Commands enum, and the 13 ledger rows"
+    codomain: "set equality, or a Fail naming each command or row in the symmetric difference"
+    invariants:
+      - "a subcommand clap accepts and the snapshot omits is an unaudited surface"
+      - "a ledger row for a command the default build does not expose is an orphan, never a silent skip"
+    preconditions:
+      - "the snapshot was written at this commit"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `trueno-rag --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-TRUENO-RAG-INV-001
+    property: every trueno-rag command has an audited ledger row, and every ledger row names a built command
+    formal: '∀ c ∈ commands(trueno-rag): ∃ r ∈ surface_audit: r.binary = trueno-rag ∧ r.feature = "trueno-rag " ++ c; ∀ r ∈ surface_audit, r.binary = trueno-rag: strip(r.feature) ∈ commands(trueno-rag)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-TRUENO-RAG-001
+    rule: 'G1.2 help answers'
+    prediction: '`trueno-rag --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli trueno-rag'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
+    mutation: 'make main exit 1 on DisplayHelp; must turn RED'
+  - id: FALSIFY-BIN-TRUENO-RAG-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`trueno-rag --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli trueno-rag'
+    if_fails: 'a wrapper cannot tell a typo from a retrieval failure (observed 2026-09-27: exit 2, GREEN)'
+    mutation: 'map every clap error to exit 1 in main; must turn RED'
+  - id: FALSIFY-BIN-TRUENO-RAG-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`trueno-rag --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-27: "trueno-rag 0.69.3" — no sha; a stale binary reads as HEAD'
+    mutation: 'drop the sha from the clap version string; must turn RED'
+  - id: FALSIFY-BIN-TRUENO-RAG-004
+    rule: 'G1.3 enumerated values are parsed by clap'
+    prediction: '`trueno-rag query --format nosuch --index I Q` (and --mode, --fusion, --rerank) exits 2 naming the possible values, as `index --embedder nosuch` already does'
+    test: 'scripts/dogfood_surfaces.sh --cli trueno-rag'
+    if_fails: 'LIVE RED 2026-09-27: exit 1 — the four query flags are String fields validated after clap; --format/--fusion/--rerank are not checked until an index has been loaded'
+    mutation: 'after the fix, turn --format back into a String; must turn RED'
+  - id: FALSIFY-BIN-TRUENO-RAG-005
+    rule: 'the command set equals the snapshot and every ledger row resolves'
+    prediction: 'commands = {demo, extract-frames, index, info, query, transcribe}; the 13 ledger rows minus the 7 `eval *` rows are set-equal to it'
+    test: 'pv lint contracts/ --gate shapes on the snapshot (ONT-4g extract:binary)'
+    if_fails: 'LIVE RED 2026-09-27 on a default-feature snapshot: 7 `eval *` rows are bin:ledgerOrphan. They are NOT a ledger defect: all 7 are enumerated in scripts/dogfood_reconcile.py FEATURE_GATED (proven by rebuilding with --features eval), so the RED clears when extract:binary reads that enumerated set as an allowance (same fix clears the S9 apr and S10 alimentar feature-gated rows) — never by a count tolerance, and never by deleting the rows'
+    mutation: 'delete `query` from the snapshot; must turn RED on bin:command (5) and bin:ledgerOrphan naming `trueno-rag query`'
