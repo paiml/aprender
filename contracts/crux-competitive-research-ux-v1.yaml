@@ -315,7 +315,7 @@ stories:
   - { id: CRUX-E-24, title: "RAG eval RAGAS/TruLens",              competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-E-24-v1.yaml }
   - { id: CRUX-E-25, title: "Vision-language benchmark harness",   competitor: openclip,    demand_score: 2, status: missing,   contract: crux-E-25-v1.yaml }
 
-  # Category F — Debug & Analysis (20; gap at F-10)
+  # Category F — Debug & Analysis (24; gap at F-10)
   - { id: CRUX-F-01, title: "apr tensors shape/dtype/stats",       competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-F-01-v1.yaml }
   - { id: CRUX-F-02, title: "apr trace layer-by-layer",            competitor: pytorch,     demand_score: 4, status: supported, contract: crux-F-02-v1.yaml }
   - { id: CRUX-F-03, title: "LAYOUT shape validation pre-load",    competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-F-03-v1.yaml }
@@ -337,6 +337,10 @@ stories:
   - { id: CRUX-F-19, title: "apr explain token selection",         competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-F-19-v1.yaml }
   - { id: CRUX-F-20, title: "GGUF metadata dump",                  competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-F-20-v1.yaml }
   - { id: CRUX-F-21, title: "apr qa 8-gate golden-test runner",    competitor: pytorch,     demand_score: 5, status: supported, contract: crux-F-21-v1.yaml }
+  - { id: CRUX-F-22, title: "renacer syscall trace vs strace",     competitor: ecosystem,   demand_score: 3, status: partial,   contract: crux-F-22-v1.yaml }  # TRACE-001 TR-11 (#4566)
+  - { id: CRUX-F-23, title: "renacer golden-trace regression",     competitor: ecosystem,   demand_score: 3, status: partial,   contract: crux-F-23-v1.yaml }  # TRACE-001 TR-11 (#4566)
+  - { id: CRUX-F-24, title: "cgp kernel profile vs nsys",          competitor: ecosystem,   demand_score: 3, status: partial,   contract: crux-F-24-v1.yaml }  # TRACE-001 TR-11 (#4566)
+  - { id: CRUX-F-25, title: "BrickTracer per-op attribution",      competitor: pytorch,     demand_score: 3, status: partial,   contract: crux-F-25-v1.yaml }  # TRACE-001 TR-11 (#4566)
 
   # Category G — Publishing & Distribution (15)
   - { id: CRUX-G-01, title: "Publish ≤5 GB model to HF Hub",       competitor: huggingface, demand_score: 5, status: supported, contract: crux-G-01-v1.yaml }
@@ -502,10 +506,10 @@ stories:
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
   supported: 43
-  partial:   77
+  partial:   81
   missing:   171
   unclear:    0
-  total:    291
+  total:    295
   notes: |
     ID gaps at C-14, F-10, H-04, I-05, K-06 are intentional — those
     five stories were dropped pre-v1.0.0 as duplicative (see inline
@@ -517,6 +521,10 @@ coverage_intake:
     Category O (24 rows, aprender#3370) was added 2026-09-16: 19 missing,
     5 partial. Competitor autogluon (1.6.3) — AutoML parity: predictor-level
     tabular AutoML and multi-series forecasting. Same registry edit.
+    CRUX-F-22..F-25 (4 rows, TRACE-001 TR-11, aprender#4566) were added
+    2026-09-27: 4 partial. Tracing surfaces (renacer, golden traces, cgp,
+    BrickTracer); competitors pinned per arm in each contract's
+    metadata.competitor_arms, gap_effect unmeasured until TR-15.
 
 # ─────────────────────────────────────────────────────────────
 # Falsification conditions

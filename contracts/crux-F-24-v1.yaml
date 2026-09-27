@@ -1,0 +1,111 @@
+# CRUX-F-24 — Kernel profile agreement: cgp vs nsys/ncu (TRACE-001 TR-11, E-S3)
+
+metadata:
+  id: CRUX-F-24
+  version: "1.0.0"
+  created: "2026-09-27"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: partial
+  gap_effect: unmeasured
+  description: >
+    `cgp profile` (cuda, simd, wgpu) sees exactly the kernels nsys sees on the
+    same run (J = 1) and each kernel's time agrees with nsys within nsys's own
+    run-to-run dispersion (E-S3). CRUX-F-16 stays export-only; this contract is
+    the agreement claim. The wgpu and Metal arms land in TR-16 (0.73).
+    gap_effect stays `unmeasured` until TR-15 commits the first record.
+  competitor_arms:
+  - tool: nsys
+    version: "2026.1.3.425-261338342291v0"
+    digest: "sha256:56fff02a719034c0fbdcf121a61b079cf36b890eb6a9bcdbf69d03c5dbdee7e7"
+    pinned_on: noah-Lambda-Vector /opt/nvidia/nsight-systems/2026.1.3/target-linux-x64/nsys (2026-09-27)
+  - tool: ncu
+    version: "2025.1.1.0 (build 35528883)"
+    digest: "sha256:a44ff2c735c4dcf66c78f3f430155805d6a0b1f74f26331f98ecec03bfbf3f1a"
+    pinned_on: noah-Lambda-Vector /usr/lib/nsight-compute/ncu (2026-09-27)
+  - tool: nsys on gx10 (GB10, sm_121)
+    refused:
+      reason: "the TR-15 record runs on gx10 and its nsys is not yet pinned by forjar; re-pin at TR-15"
+  references:
+  - 'spec: docs/specifications/TRACE-001-tracing-consumers.md §2.4 E-S3 (branch docs/trace001-obs-specs)'
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml'
+  - 'sibling: contracts/crux-F-16-v1.yaml (export only)'
+  - 'metric: crates/aprender-contracts/src/kernels/crux_trace.rs'
+equations:
+  kernel_jaccard:
+    formula: |
+      J = |K_cgp ∩ K_nsys| / |K_cgp ∪ K_nsys|     (J = 1 when both are empty)
+    domain: "kernel-name sets from one run captured by both tools"
+    codomain: "J in [0, 1]"
+    invariants:
+    - "J in [0, 1]"
+    - "J = 1 iff the kernel sets are equal"
+  kernel_times_ok:
+    formula: |
+      J = 1  and  forall k: |ln(tau_cgp_k / tau_nsys_k)| <= q_0.95( |ln(tau_nsys1_k / tau_nsys2_k)| )
+    domain: "per-kernel times from cgp and nsys, plus nsys self-noise over two runs"
+    codomain: "bool, or None when the noise sample is unusable or a time is non-positive"
+    invariants:
+    - "the time bound is nsys's own dispersion, never an invented tolerance"
+
+proof_obligations:
+- id: CRUX-F24-INV-001
+  type: invariant
+  property: "J in [0,1] and J = 1 iff the kernel sets are equal"
+- id: CRUX-F24-GATE-002
+  type: invariant
+  property: "a planted cgp build missing one kernel (J < 1) fails"
+- id: CRUX-F24-GATE-003
+  type: invariant
+  property: "a kernel time outside nsys self-noise fails; an empty noise sample is None"
+
+kani_harnesses:
+- id: KANI-CRUX-J
+  obligation: CRUX-F24-INV-001
+  property: "inter <= union over u64 kernel bitmasks; J = 1 iff masks equal"
+  bound: 64
+  strategy: exhaustive
+  harness: verify_crux_j_bounds_and_equality
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-24-001
+  rule: cgp missing one kernel fails
+  prediction: "kernel_jaccard < 1 and kernel_times_ok == Some(false)"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f24_001_cgp_missing_one_kernel_fails -- --exact
+  if_fails: a profiler that loses a kernel would claim agreement with nsys
+- id: FALSIFY-CRUX-F-24-002
+  rule: time outside nsys noise fails
+  prediction: "a 1.5x inflated kernel time gives Some(false); no noise sample gives None"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f24_002_time_outside_nsys_noise_fails -- --exact
+  if_fails: per-kernel timing disagreement goes undetected
+- id: FALSIFY-CRUX-F-24-003
+  rule: J bounds
+  prediction: "jaccard_parts on disjoint and equal masks; partial overlap in [0,1)"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f24_003_j_bounds -- --exact
+  if_fails: KANI-CRUX-J's properties do not hold on the shipped implementation
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-24
+  priority: medium
+  auto_created: false

@@ -1,0 +1,102 @@
+# CRUX-F-23 — Golden-trace regression: renacer validate vs strace -c diff (TRACE-001 TR-11, §2.5)
+
+metadata:
+  id: CRUX-F-23
+  version: "1.0.0"
+  created: "2026-09-27"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: partial
+  gap_effect: unmeasured
+  description: >
+    `renacer validate` golden traces detect syscall-count regressions per class
+    using the §2.5 tolerance theta_s (a one-call floor or 3 robust sigmas of the
+    baseline's own log-count spread) and reject any class absent from the
+    baseline. The competitor is the practical baseline, a `strace -c` summary
+    diff; no packaged golden-trace product exists [U]. Metrics are the planted
+    regression detection rate and the false-RED rate on unchanged builds.
+    gap_effect stays `unmeasured` until TR-15 commits the first record.
+  competitor_arms:
+  - tool: strace -c summary diff
+    version: "5.16"
+    digest: "sha256:38a5c75cb29dd85ddd7780d54f5bf595554d7a1b5c42524b23065f5dc4c4b01d"
+    pinned_on: noah-Lambda-Vector /usr/bin/strace (2026-09-27)
+  references:
+  - 'spec: docs/specifications/TRACE-001-tracing-consumers.md §2.5 (branch docs/trace001-obs-specs)'
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml'
+  - 'metric: crates/aprender-contracts/src/kernels/crux_trace.rs'
+equations:
+  golden_theta:
+    formula: |
+      l_s     = med_i ln(1 + c_i(s))
+      sigma_s = 1.4826 * med_i |ln(1 + c_i(s)) - l_s|
+      c_s     = exp(l_s) - 1
+      theta_s = max( ln(1 + 1/(1 + c_s)), 3 * sigma_s )
+    domain: "N >= 1 baseline counts per syscall class"
+    codomain: "(l_s, theta_s); None on an empty baseline"
+    invariants:
+    - "a deterministic class (sigma = 0) tolerates exactly one-call jitter"
+  golden_verdict:
+    formula: |
+      RED  if s not in baseline                         (new class)
+      RED  if |ln(1 + c(s)) - l_s| > 2 * theta_s          (single-run breach)
+      WATCH if theta_s < |ln(1 + c(s)) - l_s| <= 2 theta_s (RED on 2 consecutive)
+      GREEN otherwise
+    domain: "per-class baseline, one run's counts"
+    codomain: "Green | NewClass | Breach | Watch | Unbaselined"
+    invariants:
+    - "timing is not gated here"
+
+proof_obligations:
+- id: CRUX-F23-GATE-001
+  type: invariant
+  property: "a planted +10 000 write regression is RED on the first run"
+- id: CRUX-F23-GATE-002
+  type: invariant
+  property: "a syscall class absent from the baseline is RED"
+- id: CRUX-F23-INV-003
+  type: invariant
+  property: "an unchanged build is GREEN on every baseline run"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-23-001
+  rule: +10 000 write is RED on the first run
+  prediction: "golden_verdict == Breach { syscall: write }"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f23_001_plus_10000_write_is_red_on_first_run -- --exact
+  if_fails: the golden gate misses the regression it exists for
+- id: FALSIFY-CRUX-F-23-002
+  rule: new syscall class is RED
+  prediction: "golden_verdict == NewClass(fsync)"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f23_002_new_syscall_class_is_red -- --exact
+  if_fails: a new fsync in the decode loop would pass the golden gate
+- id: FALSIFY-CRUX-F-23-003
+  rule: empty baseline cannot pass
+  prediction: "a baselined class with zero runs is RED (Unbaselined)"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f23_003_empty_baseline_cannot_pass -- --exact
+  if_fails: the gate passes vacuously on a missing baseline
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-23
+  priority: medium
+  auto_created: false
