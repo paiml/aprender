@@ -45,39 +45,51 @@ use std::process::ExitCode;
 const SEED: u64 = 4354;
 const CORPUS_DIR: &str = "docs/audits/review-corpus";
 
+/// Runs one of the `flags`-parsed subcommands (`review`, `not-run`, `score`,
+/// `admit`), printing `rex <cmd>: <err>` and exiting 1 on failure.
+fn run_flagged_cmd(c: &str, args: &[String]) -> ExitCode {
+    let result = flags(args).and_then(|f| match c {
+        "review" => review(&f),
+        "not-run" => not_run(&f),
+        "admit" => admit(&f),
+        _ => score_cmd(&f),
+    });
+    to_exit_code(result, c)
+}
+
+/// Runs `corpus-build`, printing `rex corpus-build: <err>` and exiting 1 on failure.
+fn run_corpus_build_cmd(args: &[String]) -> ExitCode {
+    to_exit_code(corpus_build(args), "corpus-build")
+}
+
+/// Maps a command's `Result<(), String>` to an `ExitCode`, logging `rex <label>: <err>` on `Err`.
+fn to_exit_code(result: Result<(), String>, label: &str) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("rex {label}: {e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Prints the top-level usage line and exits 2 (unknown/missing command).
+fn usage() -> ExitCode {
+    eprintln!(
+        "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)"
+    );
+    ExitCode::from(2)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("prereg") => prereg_cmd(false),
         Some("prereg-check") => prereg_cmd(true),
         Some("admission-check") => admission_check(&args[1..]),
-        Some(c @ ("review" | "not-run" | "score" | "admit")) => {
-            match flags(&args[1..]).and_then(|f| match c {
-                "review" => review(&f),
-                "not-run" => not_run(&f),
-                "admit" => admit(&f),
-                _ => score_cmd(&f),
-            }) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(e) => {
-                    eprintln!("rex {c}: {e}");
-                    ExitCode::from(1)
-                }
-            }
-        }
-        Some("corpus-build") if args.len() >= 5 => match corpus_build(&args[1..]) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("rex corpus-build: {e}");
-                ExitCode::from(1)
-            }
-        },
-        _ => {
-            eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)"
-            );
-            ExitCode::from(2)
-        }
+        Some(c @ ("review" | "not-run" | "score" | "admit")) => run_flagged_cmd(c, &args[1..]),
+        Some("corpus-build") if args.len() >= 5 => run_corpus_build_cmd(&args[1..]),
+        _ => usage(),
     }
 }
 

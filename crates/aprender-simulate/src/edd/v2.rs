@@ -601,27 +601,41 @@ impl SchemaValidator {
 /// `type`, `required`, `properties`, `additionalProperties`, `items`, `minItems`,
 /// `enum`, `pattern`, `minLength`, `minimum`, `maximum`, `anyOf`, `oneOf`, `not`
 /// and local `$ref` (`#/$defs/...`). Annotations (`title`, `default`, ...) are ignored.
+/// Resolves a local `$ref` against `root` and recurses into it, or records an
+/// unresolvable-ref error. Returns `true` if the caller should stop (either
+/// case: a `$ref` present means no other keyword on this schema applies).
 #[cfg(not(feature = "schema-validation"))]
-fn check_structure(
+fn check_ref(
     instance: &serde_json::Value,
     schema: &serde_json::Value,
     root: &serde_json::Value,
     at: &str,
+    here: &str,
+    errors: &mut Vec<String>,
+) -> bool {
+    use serde_json::Value;
+    let Some(r) = schema.get("$ref").and_then(Value::as_str) else {
+        return false;
+    };
+    match r.strip_prefix('#').and_then(|p| root.pointer(p)) {
+        Some(target) => check_structure(instance, target, root, at, errors),
+        None => errors.push(format!("{here}: unresolvable $ref {r}")),
+    }
+    true
+}
+
+/// Checks `anyOf`/`oneOf`/`not` combinators, each re-running `check_structure`
+/// on `instance` against the candidate sub-schemas.
+#[cfg(not(feature = "schema-validation"))]
+fn check_combinators(
+    instance: &serde_json::Value,
+    schema: &serde_json::Value,
+    root: &serde_json::Value,
+    at: &str,
+    here: &str,
     errors: &mut Vec<String>,
 ) {
     use serde_json::Value;
-    let here = if at.is_empty() { "/" } else { at };
-    if let Some(r) = schema.get("$ref").and_then(Value::as_str) {
-        match r.strip_prefix('#').and_then(|p| root.pointer(p)) {
-            Some(target) => check_structure(instance, target, root, at, errors),
-            None => errors.push(format!("{here}: unresolvable $ref {r}")),
-        }
-        return;
-    }
-    if !type_matches(instance, schema.get("type")) {
-        errors.push(format!("{here}: expected type {}", schema["type"]));
-        return;
-    }
     let passes = |sub: &Value| {
         let mut e = Vec::new();
         check_structure(instance, sub, root, at, &mut e);
@@ -643,44 +657,121 @@ fn check_structure(
             errors.push(format!("{here}: matches a forbidden (`not`) schema"));
         }
     }
+}
+
+/// Checks `enum` membership.
+#[cfg(not(feature = "schema-validation"))]
+fn check_enum(
+    instance: &serde_json::Value,
+    schema: &serde_json::Value,
+    here: &str,
+    errors: &mut Vec<String>,
+) {
+    use serde_json::Value;
     if let Some(allowed) = schema.get("enum").and_then(Value::as_array) {
         if !allowed.contains(instance) {
             errors.push(format!("{here}: {instance} is not one of {allowed:?}"));
         }
     }
-    if let Some(x) = instance.as_f64() {
-        if let Some(min) = schema.get("minimum").and_then(Value::as_f64) {
-            if x < min {
-                errors.push(format!("{here}: {x} < minimum {min}"));
-            }
-        }
-        if let Some(max) = schema.get("maximum").and_then(Value::as_f64) {
-            if x > max {
-                errors.push(format!("{here}: {x} > maximum {max}"));
-            }
+}
+
+/// Checks `minimum`/`maximum` for a numeric instance.
+#[cfg(not(feature = "schema-validation"))]
+fn check_numeric_bounds(x: f64, schema: &serde_json::Value, here: &str, errors: &mut Vec<String>) {
+    use serde_json::Value;
+    if let Some(min) = schema.get("minimum").and_then(Value::as_f64) {
+        if x < min {
+            errors.push(format!("{here}: {x} < minimum {min}"));
         }
     }
+    if let Some(max) = schema.get("maximum").and_then(Value::as_f64) {
+        if x > max {
+            errors.push(format!("{here}: {x} > maximum {max}"));
+        }
+    }
+}
+
+/// Checks `enum` membership and, for numeric instances, `minimum`/`maximum`.
+#[cfg(not(feature = "schema-validation"))]
+fn check_enum_and_bounds(
+    instance: &serde_json::Value,
+    schema: &serde_json::Value,
+    here: &str,
+    errors: &mut Vec<String>,
+) {
+    check_enum(instance, schema, here, errors);
+    if let Some(x) = instance.as_f64() {
+        check_numeric_bounds(x, schema, here, errors);
+    }
+}
+
+/// Checks `minItems` and recurses `check_structure` over an `items` schema.
+#[cfg(not(feature = "schema-validation"))]
+fn check_array(
+    items: &[serde_json::Value],
+    schema: &serde_json::Value,
+    root: &serde_json::Value,
+    at: &str,
+    here: &str,
+    errors: &mut Vec<String>,
+) {
+    use serde_json::Value;
+    if let Some(min) = schema.get("minItems").and_then(Value::as_u64) {
+        if (items.len() as u64) < min {
+            errors.push(format!(
+                "{here}: needs at least {min} items, has {}",
+                items.len()
+            ));
+        }
+    }
+    if let Some(item_schema) = schema.get("items") {
+        for (i, item) in items.iter().enumerate() {
+            check_structure(item, item_schema, root, &format!("{at}/{i}"), errors);
+        }
+    }
+}
+
+#[cfg(not(feature = "schema-validation"))]
+/// Checks the by-kind keywords (`minLength`/`pattern`, `minItems`/`items`,
+/// object properties) matching whichever kind `instance` actually is.
+#[cfg(not(feature = "schema-validation"))]
+fn check_by_kind(
+    instance: &serde_json::Value,
+    schema: &serde_json::Value,
+    root: &serde_json::Value,
+    at: &str,
+    here: &str,
+    errors: &mut Vec<String>,
+) {
     if let Some(text) = instance.as_str() {
         check_string(text, schema, here, errors);
     }
     if let Some(items) = instance.as_array() {
-        if let Some(min) = schema.get("minItems").and_then(Value::as_u64) {
-            if (items.len() as u64) < min {
-                errors.push(format!(
-                    "{here}: needs at least {min} items, has {}",
-                    items.len()
-                ));
-            }
-        }
-        if let Some(item_schema) = schema.get("items") {
-            for (i, item) in items.iter().enumerate() {
-                check_structure(item, item_schema, root, &format!("{at}/{i}"), errors);
-            }
-        }
+        check_array(items, schema, root, at, here, errors);
     }
     if let Some(obj) = instance.as_object() {
         check_object(obj, schema, root, at, errors);
     }
+}
+
+fn check_structure(
+    instance: &serde_json::Value,
+    schema: &serde_json::Value,
+    root: &serde_json::Value,
+    at: &str,
+    errors: &mut Vec<String>,
+) {
+    let here = if at.is_empty() { "/" } else { at };
+    if check_ref(instance, schema, root, at, here, errors) {
+        return;
+    }
+    if !type_matches(instance, schema.get("type")) {
+        errors.push(format!("{here}: expected type {}", schema["type"]));
+        return;
+    }
+    check_combinators(instance, schema, root, at, here, errors);
+    check_enum_and_bounds(instance, schema, here, errors);
+    check_by_kind(instance, schema, root, at, here, errors);
 }
 
 #[cfg(not(feature = "schema-validation"))]
