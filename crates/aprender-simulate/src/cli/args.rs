@@ -31,7 +31,7 @@ use std::path::PathBuf;
 pub const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (",
-    env!("SIMULAR_GIT_SHA"),
+    env!("APR_GIT_SHA"),
     ")"
 );
 

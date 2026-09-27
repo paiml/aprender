@@ -1,0 +1,182 @@
+{
+  "ticket": "PMAT-4016",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "886808650e704d6e7a3067cc369070258d556a4e",
+  "diff_sha256": "395011dc616b9d6e4942b7255697bb40050a4b9587af942f5ff9227b89260645",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 153968,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully satisfies PMAT-4016. It correctly implements the llama.cpp fit placement gate before any apr call is made, introducing a behavioral test (fit_probe) and static audit test (fit_audit) to enforce the conditions. It enforces the full-offload, context floor limits, and partial-offload rejections properly in Python. The issue identified in Round 1 (Lane 3) regarding the roadmap drift is successfully resolved in this diff, with `docs/roadmaps/roadmap.yaml` properly regenerated. No contradictions or omissions found.",
+      "findings": [],
+      "raw_bytes": 3692,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff origin/main...HEAD satisfies PMAT-4016 completely under refutation doctrine.\n\n1. Implementation:\n- scripts/model_ladder.sh gates every GPU-claiming cell behind llama.cpp's `llama-fit-params` via `fit_verdict()` before executing any APR QA call (`apr_locked qa`).\n- Cells failing to fit fully on the GPU with context >= min(4096, trained) are immediately refused, marked RED in receipt rows with diagnostic fit info, and short-circuit measurement.\n- CPU cells record verdict 'not-applicable'.\n- `fit_locked` executes within the fleet lock and under `choom -n 1000`.\n- Pure evaluation logic in scripts/lib/llama_fit_verdict.py parses GGUF headers for trained context length without tensor allocation and computes verdicts.\n\n2. Verification and Tests:\n- scripts/check_model_ladder.sh enforces the gate via static analysis (`fit_audit`) and behavioral testing (`fit_probe`) covering 11 table cases (fits, does-not-fit, verdict-missing, partial-ot, partial-ngl, context floor variations including 2k trained models, unpinned, and tool-absent).\n- Mutants (producer mutants no-gate, no-refusal, raw-probe; verdict mutants tool-absent, pin, rc, no-verdict, partial-ngl, partial-ot, min-ctx, floor-4096, floor-trained, no-reader; judge mutants fit-missing, fit-not-fits) are all proven killed.\n- Full test suite `bash scripts/check_model_ladder.sh --self-test` passes completely with 49/49 cases green, 0 bad.\n- All modified shell scripts are clean under `bash -n` and `shellcheck -S error`.\n\n3. Roadmap Aggregate:\n- The round 1 failure regarding roadmap fragment aggregate drift has been addressed: `docs/roadmaps/roadmap.yaml` was regenerated and verified with `bash scripts/check_roadmap_fragment_required.sh` (exit code 0).\n\nVerdict: PASS.",
+      "findings": [],
+      "raw_bytes": 5128,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies PMAT-4016 completely and nothing refutes it:\n1. Implements the llama.cpp fit placement gate via `scripts/lib/llama_fit_verdict.py` and `scripts/model_ladder.sh`, requiring full GPU placement at ctx >= min(4096, trained context) before executing any `apr_locked qa` call.\n2. Refusal on anything other than 'fits' records a refusal receipt row (`\"refused\": \"fit\", \"green\": false`) and blocks cell measurement. CPU-only cells record 'not-applicable'.\n3. Static enforcement (`fit_audit`) and behavioral self-testing (`fit_probe`) in `scripts/check_model_ladder.sh` pass cleanly across all 11 test cases and kill all producer/verdict/judge mutants.\n4. `bash scripts/check_model_ladder.sh --self-test` passes (49 cases, 0 bad).\n5. Roadmap aggregation drift from Round 1 is resolved (`roadmap.yaml` regenerated, `check_roadmap_fragment_required.sh` and `roadmap_fragments.py aggregate --check` pass with rc 0).\n6. Complexity ratchet (`check_complexity_ratchet.sh`), `bash -n`, and `shellcheck -S error` all pass cleanly.",
+      "findings": [],
+      "raw_bytes": 4093,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

@@ -29,7 +29,7 @@ use cli::Commands;
 const SHORT_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (",
-    env!("PV_GIT_SHA"),
+    env!("APR_GIT_SHA"),
     ") (aprender provable-contracts verifier)"
 );
 
@@ -45,7 +45,7 @@ const SHORT_VERSION: &str = concat!(
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (",
-    env!("PV_GIT_SHA"),
+    env!("APR_GIT_SHA"),
     ") (aprender provable-contracts verifier)\n",
     "crate aprender-contracts-cli — ",
     env!("CARGO_PKG_REPOSITORY"),

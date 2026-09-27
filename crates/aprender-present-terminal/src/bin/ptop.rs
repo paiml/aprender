@@ -23,7 +23,7 @@ use presentar_terminal::ColorMode;
 /// `ptop --version`: the semver and the first 9 hex of the commit it was built from
 /// (G0.1, #4476) — the semver is a workspace version shared by every worktree, so
 /// without the sha a stale ptop reads as HEAD.
-const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("PTOP_GIT_SHA"), ")");
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")");
 
 /// Presentar System Monitor - widget composition demo
 #[derive(Parser)]
@@ -447,7 +447,7 @@ mod tests {
             .expect("--version short-circuits parsing");
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
         let line = err.to_string();
-        let sha = env!("PTOP_GIT_SHA");
+        let sha = env!("APR_GIT_SHA");
         let fields: Vec<&str> = line.split_whitespace().collect();
         assert_eq!(fields.first(), Some(&"ptop"), "got `{line}`");
         assert_eq!(
@@ -462,8 +462,8 @@ mod tests {
         );
         let hex9 = sha.len() == 9 && sha.chars().all(|c| c.is_ascii_hexdigit());
         assert!(
-            hex9 || sha == "no-git",
-            "PTOP_GIT_SHA must be 9 hex or no-git; got `{sha}`"
+            hex9 || sha.ends_with("+no-git"),
+            "APR_GIT_SHA must be 9 hex or v<ver>+no-git; got `{sha}`"
         );
     }
 

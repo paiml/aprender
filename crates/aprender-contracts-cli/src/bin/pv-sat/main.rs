@@ -59,7 +59,7 @@ fn version_line() -> String {
     format!(
         "pv-sat {} ({}) (aprender ONT-5 reasoner)",
         env!("CARGO_PKG_VERSION"),
-        env!("PV_GIT_SHA")
+        env!("APR_GIT_SHA")
     )
 }
 

@@ -228,7 +228,7 @@ fn g0_1_version_line_names_semver_and_commit() {
     assert_eq!(f.get(1), Some(&env!("CARGO_PKG_VERSION")), "{v}");
     assert_eq!(
         f.get(2).copied(),
-        Some(format!("({})", env!("PV_GIT_SHA")).as_str()),
+        Some(format!("({})", env!("APR_GIT_SHA")).as_str()),
         "{v}"
     );
 }

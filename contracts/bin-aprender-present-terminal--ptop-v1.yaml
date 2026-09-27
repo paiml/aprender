@@ -62,7 +62,7 @@ shapes:
       - {path: bin:name, minCount: 1, maxCount: 1, in: ["ptop"]}
       - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-present-terminal"]}
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^ptop [0-9]+\\.[0-9]+\\.[0-9]+"}
-      # G0.1 — a violation since batch/ont-10 2026-09-27 (build.rs embeds PTOP_GIT_SHA); was a warning while RED
+      # G0.1 — a violation since batch/ont-10 2026-09-27 (build.rs embeds APR_GIT_SHA); was a warning while RED
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
       - {path: "bin:command", maxCount: 0}
       - path: bin:option
@@ -118,7 +118,7 @@ falsification_tests:
     rule: 'G0.1 the version names the commit'
     prediction: '`ptop --version` contains the first 9 hex of the git sha it was built from'
     test: 'crates/aprender-present-terminal/src/bin/ptop.rs tests::version_flag_names_the_commit; the shape: bin:versionLacksSha, once extract:binary lands'
-    if_fails: 'a stale ptop reads as HEAD (observed 2026-09-26 at b6cf6d2ed: "ptop 0.69.3", no sha; fixed on batch/ont-10: build.rs embeds PTOP_GIT_SHA, same resolver as pv)'
+    if_fails: 'a stale ptop reads as HEAD (observed 2026-09-26 at b6cf6d2ed: "ptop 0.69.3", no sha; fixed on batch/ont-10: build.rs embeds APR_GIT_SHA, same resolver as pv)'
     mutation: 'set VERSION back to CARGO_PKG_VERSION alone; the unit test turns RED (field 3 missing)'
   - id: FALSIFY-BIN-PTOP-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'

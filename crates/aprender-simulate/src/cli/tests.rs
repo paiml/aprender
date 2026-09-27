@@ -88,7 +88,7 @@ fn test_parse_version_long_flag() {
 fn test_version_flag_names_the_commit() {
     let err = Cli::try_parse_from(["simular", "--version"]).expect_err("--version short-circuits");
     let line = err.to_string();
-    let sha = env!("SIMULAR_GIT_SHA");
+    let sha = env!("APR_GIT_SHA");
     let fields: Vec<&str> = line.split_whitespace().collect();
     assert_eq!(fields.first(), Some(&"simular"), "got `{line}`");
     assert_eq!(
@@ -103,8 +103,8 @@ fn test_version_flag_names_the_commit() {
     );
     let hex9 = sha.len() == 9 && sha.chars().all(|c| c.is_ascii_hexdigit());
     assert!(
-        hex9 || sha == "no-git",
-        "SIMULAR_GIT_SHA must be 9 hex or no-git; got `{sha}`"
+        hex9 || sha.ends_with("+no-git"),
+        "APR_GIT_SHA must be 9 hex or v<ver>+no-git; got `{sha}`"
     );
 }
 

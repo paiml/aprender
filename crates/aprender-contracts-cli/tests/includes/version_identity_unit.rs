@@ -105,20 +105,20 @@ fn short_and_long_agree_on_the_first_line() {
 
 /// G0.1 (#4476): the version names the commit it was built from, as the third
 /// field `(<9 hex>)`. Two worktrees share one workspace semver, so without the
-/// sha a stale pv reads as HEAD. `no-git` is the only other allowed value, and
+/// sha a stale pv reads as HEAD. `v<ver>+no-git` is the only other allowed value, and
 /// it never passes for a sha.
 #[test]
 fn g0_1_the_version_names_the_commit() {
     let first = long().lines().next().unwrap_or_default().to_string();
-    let sha = env!("PV_GIT_SHA");
+    let sha = env!("APR_GIT_SHA");
     assert!(
         first.contains(&format!("({sha})")),
         "pv --version must carry the build sha; got `{first}`"
     );
     let hex9 = sha.len() == 9 && sha.chars().all(|c| c.is_ascii_hexdigit());
     assert!(
-        hex9 || sha == "no-git",
-        "PV_GIT_SHA must be 9 hex or no-git; got `{sha}`"
+        hex9 || sha.ends_with("+no-git"),
+        "APR_GIT_SHA must be 9 hex or v<ver>+no-git; got `{sha}`"
     );
     assert_eq!(
         first.split_whitespace().nth(2),

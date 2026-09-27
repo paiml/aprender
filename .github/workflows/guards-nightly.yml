@@ -120,9 +120,9 @@ jobs:
       # ships 7 rows in both directions (a genuinely absent step still fails, and a
       # manifest that parsed almost nothing is refused rather than passed).
       - name: Manifest-vs-workflow case table (PMAT-3234, both directions)
-        run: bash scripts/check_guards_nightly_manifest.sh --self-test
+        run: setsid --wait bash scripts/check_guards_nightly_manifest.sh --self-test
       - name: Every step the manifest says moved here must exist here
-        run: bash scripts/check_guards_nightly_manifest.sh
+        run: setsid --wait bash scripts/check_guards_nightly_manifest.sh
       # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT -- the
       # SATD step below measures its ceiling on origin/main with the HEAD-built
       # suite, and a depth-1 checkout has no such ref until this runs.
@@ -154,7 +154,7 @@ jobs:
       - name: pmat/bashrs must match the pinned fleet versions (never install)
         # The fleet pin is the only installer; this asserts the version on PATH
         # matches tools.toml and fails closed. Placed before the first use.
-        run: bash scripts/check_tool_versions.sh
+        run: setsid --wait bash scripts/check_tool_versions.sh
       # ─────────────────────────────────────────────────────────────────────
       # THE MOVED STEPS. Copied VERBATIM from ci.yml's guard-cargo job --
       # same `name:`, same `run:`, same docker/mount shape -- because the name
@@ -165,15 +165,15 @@ jobs:
       - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
         run: bash scripts/ci_test_tier.sh --self-test
       - name: aprender-core builds for wasm32
-        run: bash scripts/check_wasm32_core_builds.sh
+        run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited
-        run: bash scripts/check_hermetic_stdin_tests.sh
+        run: setsid --wait bash scripts/check_hermetic_stdin_tests.sh
       - name: Publish safety (binary/oversize files in published packages)
-        run: bash scripts/check_publish_safety.sh
+        run: setsid --wait bash scripts/check_publish_safety.sh
       - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
         run: bash scripts/perf_gate.sh --selftest
       - name: Book rust examples compile
-        run: bash scripts/check_book_examples_compile.sh
+        run: setsid --wait bash scripts/check_book_examples_compile.sh
       - name: aprender-profile lib tests (was gated by nothing)
         run: cargo test -p aprender-profile --lib
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
