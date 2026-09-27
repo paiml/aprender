@@ -1378,6 +1378,16 @@ fn lean_sorry_token_case_table() {
             "modified axiom, even if no theorem uses it",
         ),
         ("theorem t : False := by admit", true, "tactic admit"),
+        (
+            "@[simp] axiom a : False",
+            true,
+            "attributed axiom at file start",
+        ),
+        (
+            "theorem t : True := trivial\nnoncomputable axiom a : Nat",
+            true,
+            "noncomputable axiom after a theorem",
+        ),
         // denies (true): a real hole a naive comment stripper would hide
         (
             "def s := \"--\"\ntheorem t : False := by sorry",
