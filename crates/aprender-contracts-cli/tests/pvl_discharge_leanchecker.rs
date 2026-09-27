@@ -90,12 +90,15 @@ impl Fx {
         )
     }
 
+    /// Unscoped: the stub `lake` cannot starve anything, and a CI container has no user systemd — scoped, the
+    /// probe declines (#4348) before the stub runs, so neither verdict below would be measured.
     fn check(&self) -> (i32, String) {
         self.pv(&[
             "discharge",
             "check",
             "lean",
             "--leanchecker",
+            "--leanchecker-unscoped",
             "--leanchecker-timeout",
             "60",
         ])
