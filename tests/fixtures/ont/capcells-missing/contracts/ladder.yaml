@@ -1,0 +1,17 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-23'
+  last_modified: '2026-09-23'
+  author: fixture
+  description: fixture ladder (ONT-4c5)
+name: ladder
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: gguf
+ladder:
+  rungs:
+    - {id: rung-a, arch: qwen2, gguf: a.gguf, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, backends: [cpu, cuda], required: true}
+    - {id: rung-b, arch: qwen3, gguf: b.gguf, sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, backends: [cpu, cuda], required: true}

@@ -11,6 +11,15 @@ struct Scripted {
     calls: Vec<(usize, usize)>,
     reserves: usize,
     drop_on_reserve: bool,
+    /// Checkpoint before the last position holding this token (#4214).
+    marker: Option<u32>,
+    /// Positions the state holds, as the forward itself tracks them.
+    held: usize,
+    /// Positions the saved checkpoint holds.
+    saved: Option<usize>,
+    restores: usize,
+    /// The forward loses its checkpoint (a reallocation, a fallback).
+    lose_checkpoint: bool,
 }
 
 impl Scripted {
@@ -21,6 +30,18 @@ impl Scripted {
             calls: Vec::new(),
             reserves: 0,
             drop_on_reserve: false,
+            marker: None,
+            held: 0,
+            saved: None,
+            restores: 0,
+            lose_checkpoint: false,
+        }
+    }
+
+    fn checkpointing(next: u32, context: usize, marker: u32) -> Self {
+        Self {
+            marker: Some(marker),
+            ..Self::new(next, context)
         }
     }
 }
@@ -45,8 +66,35 @@ impl ArchForward for Scripted {
         self.reserves += 1;
         Ok(self.drop_on_reserve)
     }
+    fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        let marker = self.marker?;
+        prompt.iter().rposition(|&t| t == marker)
+    }
+    fn save_checkpoint(&mut self) -> Result<()> {
+        assert!(self.marker.is_some(), "saved on a forward that keeps none");
+        self.saved = Some(self.held);
+        Ok(())
+    }
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        if self.lose_checkpoint {
+            self.saved = None;
+        }
+        let Some(saved) = self.saved else {
+            return Ok(false);
+        };
+        self.held = saved;
+        self.restores += 1;
+        Ok(true)
+    }
     fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        // The session may only claim positions the state holds.
+        assert!(
+            start == 0 || start == self.held,
+            "forward from {start}, but the state holds {}",
+            self.held
+        );
         self.calls.push((tokens.len(), start));
+        self.held = tokens.len();
         let mut logits = vec![0.0; 8];
         logits[self.next as usize] = 1.0;
         Ok(logits)
@@ -197,8 +245,18 @@ impl ArchForward for DeviceGreedy {
     fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
         self.inner.forward(tokens, start)
     }
+    fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        self.inner.checkpoint_at(prompt)
+    }
+    fn save_checkpoint(&mut self) -> Result<()> {
+        self.inner.save_checkpoint()
+    }
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        self.inner.restore_checkpoint()
+    }
     fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
         self.inner.calls.push((tokens.len(), start));
+        self.inner.held = tokens.len();
         self.greedy_calls += 1;
         Ok(Some(self.greedy_answer))
     }
@@ -233,4 +291,124 @@ fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
         0,
         "a repeat penalty needs the logits"
     );
+}
+
+// #4214 / #4274: a prompt that repeats, or re-renders, an earlier turn's history
+// resumes from the checkpoint the earlier turn left, not from position 0.
+
+const MARK: u32 = 7;
+
+#[test]
+fn an_identical_prompt_again_restores_the_checkpoint_before_its_last_marker() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    let prompt = [7801, 7802, MARK, 7803];
+    let t1 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
+    assert_eq!(t1.reused, 0);
+    // Prefilled in two spans: up to the checkpoint, then the rest.
+    assert_eq!(s.engine().calls, vec![(2, 0), (4, 2)]);
+    let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
+    assert_eq!(
+        t2.reused, 2,
+        "the repeat prefilled only from the checkpoint"
+    );
+    assert_eq!(t2.tokens, t1.tokens);
+    assert_eq!(s.engine().calls.last(), Some(&(4, 2)));
+    assert_eq!(s.engine().restores, 1);
+}
+
+#[test]
+fn a_re_rendered_history_resumes_from_the_last_turns_checkpoint() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    let t1 = s
+        .generate(&[7811, MARK, 7812], &greedy(2), &mut |_| true)
+        .expect("t1");
+    assert_eq!(t1.tokens, vec![7811, MARK, 7812, 3, 3]);
+    // Turn 2 re-renders turn 1's reply (7899, not the 3 it generated), so it
+    // does not extend what the state holds.
+    let p2 = [7811, MARK, 7812, 7899, MARK, 7813];
+    let before = s.engine().calls.len();
+    let t2 = s.generate(&p2, &greedy(2), &mut |_| true).expect("t2");
+    assert_eq!(t2.reused, 1, "resumed at turn 1's checkpoint, not at 0");
+    // From the checkpoint to turn 2's own (its last marker), then the rest.
+    assert_eq!(s.engine().calls[before..before + 2], [(4, 1), (6, 4)]);
+    // Turn 3 re-renders turn 2's reply too, and resumes at turn 2's checkpoint.
+    let p3 = [7811, MARK, 7812, 7899, MARK, 7813, 7898, MARK, 7814];
+    let t3 = s.generate(&p3, &greedy(1), &mut |_| true).expect("t3");
+    assert_eq!(t3.reused, 4);
+}
+
+#[test]
+fn a_prompt_that_diverges_before_the_checkpoint_starts_over() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    s.generate(&[7821, 7822, MARK, 7823], &greedy(1), &mut |_| true)
+        .expect("t1");
+    let t2 = s
+        .generate(&[7829, 7822, MARK, 7823], &greedy(1), &mut |_| true)
+        .expect("t2");
+    assert_eq!(t2.reused, 0);
+    assert_eq!(s.engine().restores, 0);
+}
+
+#[test]
+fn a_checkpoint_does_not_survive_a_dropped_state() {
+    let mut f = Scripted::checkpointing(3, 100, MARK);
+    f.drop_on_reserve = true;
+    let mut s = Session::new(f);
+    let prompt = [7831, 7832, MARK, 7833];
+    s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
+    let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
+    assert_eq!(t2.reused, 0, "reserve said the state was dropped");
+    assert_eq!(s.engine().restores, 0);
+}
+
+#[test]
+fn a_checkpoint_the_forward_lost_is_not_reused() {
+    let mut f = Scripted::checkpointing(3, 100, MARK);
+    f.lose_checkpoint = true;
+    let mut s = Session::new(f);
+    let prompt = [7841, 7842, MARK, 7843];
+    s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
+    let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
+    assert_eq!(t2.reused, 0);
+    assert_eq!(
+        s.engine().calls.last(),
+        Some(&(4, 2)),
+        "re-checkpointed from 0"
+    );
+    assert_eq!(s.engine().calls[s.engine().calls.len() - 2], (2, 0));
+}
+
+#[test]
+fn scoring_rewrites_the_state_so_the_checkpoint_is_dropped() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    let prompt = [7851, 7852, MARK, 7853];
+    s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
+    s.score(&[7859, 7858], &mut |_, _| true).expect("score");
+    let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
+    assert_eq!(
+        t2.reused, 0,
+        "the positions under the checkpoint were rewritten"
+    );
+    assert_eq!(s.engine().restores, 0);
+}
+
+#[test]
+fn a_device_argmax_from_below_the_checkpoint_drops_it() {
+    // The device-argmax path rewrites positions too: a prompt it prefills from
+    // under the checkpoint leaves a copy whose KV rows no longer match.
+    let mut s = Session::new(DeviceGreedy {
+        inner: Scripted::checkpointing(3, 100, MARK),
+        greedy_answer: 5,
+        greedy_calls: 0,
+    });
+    let prompt = [7861, 7862, MARK, 7863];
+    s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
+    s.generate(&[7869], &greedy(1), &mut |_| true).expect("t2");
+    assert!(s.engine().greedy_calls > 0, "t2 took the device argmax");
+    let t3 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t3");
+    assert_eq!(
+        t3.reused, 0,
+        "position 0 was rewritten under the checkpoint"
+    );
+    assert_eq!(s.engine().inner.restores, 0);
 }

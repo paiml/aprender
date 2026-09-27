@@ -834,25 +834,37 @@ fn validate_gpu_golden_output(
     }
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let generated = match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(cuda_model) => qa_dense_generate(
-            &mut qa_dense_cuda(cuda_model),
-            prompt_tokens,
-            gen_config,
-            true,
-        )
-        .map(|gpu_tokens| gguf.decode(&gpu_tokens))
-        .map_err(|e| format!("GPU generation: {e}")),
-        Err(e) => Err(format!("CUDA init on device 0: {e}")),
+    // #3821: consult the SAME F2 parity guard `apr run --gpu` does, on the same
+    // prompt, before generating — so the two surfaces that decide GPU-correct
+    // for this model are compared instead of forming separate opinions.
+    // `None` when the guard measured nothing: absence is never agreement.
+    let (guard_admits, generated) = match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(mut cuda_model) => {
+            let admits =
+                realizar::infer::gpu_parity_admits(&mut cuda_model, gen_config, prompt_tokens);
+            let generated = qa_dense_generate(
+                &mut qa_dense_cuda(cuda_model),
+                prompt_tokens,
+                gen_config,
+                true,
+            )
+            .map(|gpu_tokens| gguf.decode(&gpu_tokens))
+            .map_err(|e| format!("GPU generation: {e}"));
+            (admits, generated)
+        },
+        Err(e) => (None, Err(format!("CUDA init on device 0: {e}"))),
     };
     // #3711 + #3724: ONE typed leg. The budget is passed so the leg can
     // distinguish "still reasoning when the budget ran out" from "answered
     // wrongly" and from "never started" — three outcomes, not two.
-    Ok(GpuGoldenLeg::judge(
-        generated,
-        expected_patterns,
-        gen_config.max_tokens,
-    ))
+    let leg = GpuGoldenLeg::judge(generated, expected_patterns, gen_config.max_tokens);
+    // REPORT_ONLY (#3821's ruling): name a contradiction, do not change the verdict.
+    if let Some(admits) = guard_admits {
+        if let Some(text) = golden_contradiction(admits, &leg, || subject_of_bytes(mapped.data())) {
+            eprintln!("{}", text.red());
+        }
+    }
+    Ok(leg)
 }
 
 /// Note, in a verbose human-readable run, that the GPU half of the golden gate

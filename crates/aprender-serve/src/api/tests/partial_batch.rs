@@ -88,6 +88,7 @@
                 max_tokens: 10,
                 temperature: 0.7,
                 top_k: 40,
+                stop_tokens: Vec::new(),
                 response_tx: resp_tx,
                 submitted_at: Instant::now(),
             };
@@ -130,6 +131,7 @@
                 max_tokens: 5,
                 temperature: 0.0,
                 top_k: 1,
+                stop_tokens: Vec::new(),
                 response_tx: resp_tx,
                 submitted_at: Instant::now(),
             };

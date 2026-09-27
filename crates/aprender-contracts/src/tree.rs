@@ -79,7 +79,7 @@ pub fn workspace_file_or_skip_at(test: &str, manifest_dir: &Path, rel: &str) -> 
 /// must exist), `None` plus a named `SKIP` out of tree. See [`crate::tree`].
 #[macro_export]
 macro_rules! workspace_path_or_skip {
-    ($test:expr, $rel:expr) => {
+    ($test:expr, $rel:expr $(,)?) => {
         $crate::tree::workspace_path_or_skip_at(
             $test,
             ::std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
@@ -93,7 +93,7 @@ macro_rules! workspace_path_or_skip {
 /// [`crate::tree`].
 #[macro_export]
 macro_rules! workspace_file_or_skip {
-    ($test:expr, $rel:expr) => {
+    ($test:expr, $rel:expr $(,)?) => {
         $crate::tree::workspace_file_or_skip_at(
             $test,
             ::std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
@@ -235,5 +235,20 @@ mod tests {
         ) {
             assert!(text.contains("name = \"aprender-contracts\""));
         }
+    }
+
+    /// rustfmt breaks a long call across lines and adds a trailing comma; both macros must
+    /// accept that shape, or `cargo fmt` turns every caller into a compile error.
+    #[test]
+    fn the_macros_accept_the_trailing_comma_rustfmt_adds() {
+        let path = crate::workspace_path_or_skip!(
+            "the_macros_accept_the_trailing_comma_rustfmt_adds",
+            "crates/aprender-contracts/Cargo.toml",
+        );
+        let text = crate::workspace_file_or_skip!(
+            "the_macros_accept_the_trailing_comma_rustfmt_adds",
+            "crates/aprender-contracts/Cargo.toml",
+        );
+        assert_eq!(path.is_some(), text.is_some());
     }
 }

@@ -94,6 +94,7 @@ pub struct WgpuInstructPipeline {
     /// Normed hidden state — GPU-resident
     normed_buf: wgpu::Buffer,
     /// RMSNorm epsilon
+    #[allow(dead_code)] // stored but not yet read; first linted by #4056
     eps: f32,
 }
 
@@ -403,7 +404,7 @@ impl WgpuInstructPipeline {
                 // Kaiming init for A: std = sqrt(2/fan_in)
                 let std = (2.0 / in_d as f32).sqrt();
                 let a_data: Vec<f32> = (0..in_d * r)
-                    .map(|i| ((i as f32 * 0.013 + layer_idx as f32 * 7.0).sin() * std))
+                    .map(|i| (i as f32 * 0.013 + layer_idx as f32 * 7.0).sin() * std)
                     .collect();
                 // Zero init for B (contract: lora-gradient-flow-v1)
                 let b_data = vec![0.0f32; r * out_d];
@@ -459,7 +460,7 @@ impl WgpuInstructPipeline {
             lora_scale: scale,
             lora_step: 0,
             learning_rate,
-            lora_target_set: lora_target_set,
+            lora_target_set,
             num_layers,
             hidden_dim,
             vocab_size,
@@ -474,6 +475,7 @@ impl WgpuInstructPipeline {
 
     /// LoRA addmm: output += (input @ A) @ B * scale. One GPU dispatch.
     /// Contract: lora-algebra-v1/lora_shape
+    #[allow(dead_code)] // no caller yet; first linted by #4056
     fn dispatch_lora_addmm(
         &self,
         input: &wgpu::Buffer,
@@ -1090,8 +1092,7 @@ impl WgpuInstructPipeline {
         // This is simplified (skips SiLU backward, RMSNorm backward, up_proj path,
         // and attention backward) but provides DIFFERENT gradients per layer because
         // W_down and W_gate are different for each of the 28 layers.
-        let h = self.hidden_dim as u32;
-        let mut grad_buf = grad_hidden_buf;
+        let grad_buf = grad_hidden_buf;
 
         for layer_idx in (0..self.lora.len()).rev() {
             let layer_lora = &self.lora[layer_idx];

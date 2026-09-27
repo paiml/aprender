@@ -1,3 +1,4 @@
+import Mathlib.Tactic.NormNum
 import ProvableContracts.Defs.Image
 import Mathlib.Tactic.NormNum
 

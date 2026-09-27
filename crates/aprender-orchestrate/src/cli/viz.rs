@@ -241,7 +241,7 @@ layout:
         println!("{}", config);
         println!();
         println!("{}", "To launch dashboard:".cyan());
-        println!("  presentar serve dashboard.yaml --port {}", port);
+        println!("  aprender-present serve dashboard.yaml --port {}", port);
     }
 
     Ok(())

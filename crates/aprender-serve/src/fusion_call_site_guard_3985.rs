@@ -15,9 +15,7 @@
 //! path that moved, a line that drifted and a file that stopped being the call
 //! site all fail.
 
-use std::path::Path;
-
-const CONTRACT: &str = include_str!("../../../contracts/kernel-fusion-v1.yaml");
+use std::path::{Path, PathBuf};
 
 /// Lines searched around the cited one for the kernel's name: one before, three
 /// after (a call often spans a `let kernel_type =` line and its arguments).
@@ -64,17 +62,26 @@ fn check_call_site(root: &Path, fused: &str, call_site: &str) -> Result<(), Stri
     }
 }
 
-fn workspace_root() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+/// The workspace root in tree; `None` (with a named SKIP) in the published .crate, which
+/// carries neither `contracts/` nor the other crates the call sites point into (#4175:
+/// an `include_str!` of the contract stopped the tarball's lib tests compiling).
+fn workspace_root(test: &str) -> Option<PathBuf> {
+    provable_contracts::workspace_path_or_skip!(test, "contracts/kernel-fusion-v1.yaml")
+        .map(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
 }
 
 #[test]
 fn every_active_fusion_call_site_is_a_live_call_of_its_kernel() {
-    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(CONTRACT).expect("parse contract");
+    let test = "every_active_fusion_call_site_is_a_live_call_of_its_kernel";
+    let Some(root) = workspace_root(test) else {
+        return;
+    };
+    let contract = std::fs::read_to_string(root.join("contracts/kernel-fusion-v1.yaml"))
+        .expect("read contract");
+    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&contract).expect("parse contract");
     let decisions = doc["fusion_decisions"]
         .as_mapping()
         .expect("fusion_decisions mapping");
-    let root = workspace_root();
 
     let mut checked = 0;
     let mut broken = Vec::new();
@@ -106,7 +113,9 @@ fn every_active_fusion_call_site_is_a_live_call_of_its_kernel() {
 /// accept the real one.
 #[test]
 fn the_call_site_check_rejects_each_stale_shape() {
-    let root = workspace_root();
+    let Some(root) = workspace_root("the_call_site_check_rejects_each_stale_shape") else {
+        return;
+    };
     let live = "crates/aprender-serve/src/cuda/kernels_generate_gemm_cuda.rs";
     let src = std::fs::read_to_string(root.join(live)).expect("read live generator");
     let at = src

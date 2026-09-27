@@ -50,13 +50,10 @@ struct Binding {
 ///
 /// "softmax-kernel-v1.yaml" + "softmax" -> "CONTRACT_SOFTMAX_KERNEL_V1_SOFTMAX"
 fn binding_env_var_name(contract: &str, equation: &str) -> String {
-    let stem = contract
-        .trim_end_matches(".yaml")
-        .trim_end_matches(".yml")
-        .to_uppercase()
-        .replace('-', "_");
-    let eq = equation.to_uppercase().replace('-', "_");
-    format!("CONTRACT_{stem}_{eq}")
+    provable_contracts::build_helper::env_key(
+        contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
+        equation,
+    )
 }
 
 /// Contracts allowed to remain `not_implemented` without failing the build.
@@ -67,6 +64,20 @@ const ALLOWED_GAPS: &[(&str, &str)] = &[
     ("ssm-kernel-v1", "ssm_discretize"),
     ("ssm-kernel-v1", "ssm_scan"),
     ("ssm-kernel-v1", "selective_gate"),
+    // ONT-3a bindings gate (aprender#4502) measured these as not resolving to workspace code and marked
+    // them not_implemented; they stay listed until the binding is re-pointed or implemented (aprender#4502).
+    ("apr-cli-operations-v1", "inference_determinism"),
+    ("apr-data-pipeline-v1", "streaming_data_loader"),
+    ("apr-format-safety-v1", "magic_byte_validation"),
+    ("apr-format-safety-v1", "header_integrity"),
+    ("apr-gpu-backend-v1", "generation_temperature_zero"),
+    ("../encoder-forward-v1", "cls_pooling"),
+    ("../format-parity-v1", "transpose_involution"),
+    ("../format-parity-v1", "element_count"),
+    ("../bidirectional-attention-v1", "bidirectional_attention"),
+    ("linear-probe-classifier-v1", "linear_probe"),
+    ("setfit-apr-v1", "doc_bundle_bijection"),
+    ("setfit-apr-v1", "selection_lock_lifecycle"),
 ];
 
 /// Returns true if the new status is dominated by what we already have.
@@ -143,14 +154,8 @@ fn enforce_all_implemented(unallowed_gaps: &[String]) {
 /// `ALLOWED_GAPS` fails the build. This ensures all algorithm contracts
 /// have working implementations before code compiles.
 fn emit_provable_contract_bindings() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("aprender")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/aprender/binding.yaml");
 
     // Always tell Cargo to re-run if the file appears or changes
     println!("cargo:rerun-if-changed={}", binding_path.display());

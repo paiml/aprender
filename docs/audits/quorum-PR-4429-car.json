@@ -1,0 +1,81 @@
+{
+  "pr": 4429,
+  "branch": "car/0.70.0",
+  "ticket": "0.70.0 release car",
+  "date": "2026-09-25",
+  "judged_head": "dd6afadf4e0e7353a2e2ba9d6c5beeaa2271e303",
+  "base": "be48bedba",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "session": "aprender-59"
+  },
+  "executor": "headless lanes on a chmod a-w git-archive snapshot (claude -p --allowedTools Read Grep Glob --permission-mode plan; agy -p)",
+  "degraded": "same-family (round 2: agy 429 RESOURCE_EXHAUSTED; opus author -> 2nd sonnet lane per quorum rule)",
+  "round_1": {
+    "head": "aec0b67cf",
+    "range": "be48bedba..aec0b67cf",
+    "diff_sha256": "2f809e23197290fe2febc9a3a3d903053ed83eaf6422a06edb1f1032c90f4259",
+    "lanes": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "verdict": "PASS"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "model_self_report": "Gemini 3.1 Pro",
+        "family": "gemini",
+        "verdict": "PASS",
+        "agy_conversation": "d4c8a597-e3e0-4d20-a258-95752d435949"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "verdict": "FAIL",
+        "findings": [
+          "deprecation warnings removed from crates/{aprender-cgp,aprender-rag-cli,aprender-simulate,aprender-zram-cli}/src/main.rs"
+        ]
+      }
+    ]
+  },
+  "rebuttal": "All 4 main.rs files are byte-identical to main a5efa1443 and to the quorumed batch 596f06db2; the warnings belong to out-of-scope #4058, not to the car. Re-presented to all lanes in round 2.",
+  "fix": {
+    "commit": "dd6afadf4",
+    "what": "book/src/cli/ptx-debug.md + SUMMARY.md entry (Build Book was red: ptx-debug had no chapter)"
+  },
+  "round_2": {
+    "head": "dd6afadf4",
+    "range": "aec0b67cf..dd6afadf4",
+    "diff_sha256": "4fe2a537cefcd61467a5b770b9d78c9df32579e9b77129b6a4205b35a9a2aaa6",
+    "lanes": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "verdict": "PASS",
+        "notes": "non-blocking: new page has no PCU header/contract; no guard requires it"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "verdict": "PASS",
+        "notes": "accepts rebuttal (files identical to main and quorumed batch)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "lane": "2nd sonnet (agy fallback)",
+        "verdict": "PASS"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "verdict": "NOT COUNTED",
+        "notes": "status=ERROR 429 RESOURCE_EXHAUSTED after attempt 4; its partial text said PASS but a lane that errored is not a verdict",
+        "agy_conversation": "abaa2786-9c2c-4f94-8e1e-214c229badbf"
+      }
+    ]
+  },
+  "result": "PASS 3/3 (round 2, degraded: same-family)",
+  "agreed": true
+}

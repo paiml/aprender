@@ -42,6 +42,46 @@ REMOTE_HOST=gx10
 # scripts/check_release_models_t1.sh uses to drive both sides of the refusal).
 NEED_KIB=${MODELS_T1_NEED_KIB:-5524629}
 
+# mt_receipt_fields RECEIPT -> "<apr_version>\t<executed>\t<red>" ('-' for a missing key), or
+# "UNREADABLE\t-\t-". jq, not python3 (#4352); the values print as python's str() did, except a
+# list/object value prints as JSON, not a python repr (display only: it never equals $want).
+mt_receipt_fields() {
+    # python read the file as locale UTF-8, so a BOM made it UNREADABLE; jq would skip it
+    { [ -f "$1" ] && [ -r "$1" ] && [ "$(head -c 3 -- "$1")" != $'\xef\xbb\xbf' ] \
+        && jq -rs 'if length != 1 then "UNREADABLE\t-\t-" else .[0] | if type != "object" then empty else
+            . as $d | ["apr_version", "executed", "red"]
+            | map(. as $k | if ($d | has($k)) | not then "-" else $d[$k]
+                  | if type == "string" then . elif . == null then "None" elif . == true then "True"
+                    elif . == false then "False" else tojson end end)
+            | join("\t") end end' -- "$1" 2>/dev/null; } || printf 'UNREADABLE\t-\t-\n'
+}
+
+mt_self_test() {
+    local d fail=0 want got
+    d=$(mktemp -d) || return 2
+    while IFS='~' read -r want got; do
+        printf '%s' "$got" > "$d/r.json"
+        got=$(mt_receipt_fields "$d/r.json" | tr '\t' '|')
+        if [ "$got" = "$want" ]; then echo "  ok   receipt -> $want"; else echo "  FAIL receipt: wanted $want, got $got"; fail=1; fi
+    done <<'EOF'
+apr 1.0.0 (abc)|3|0~{"apr_version":"apr 1.0.0 (abc)","executed":3,"red":0}
+apr 1.0.0 (abc)|-|-~{"apr_version":"apr 1.0.0 (abc)"}
+None|True|False~{"apr_version":null,"executed":true,"red":false}
+UNREADABLE|-|-~not json
+UNREADABLE|-|-~
+UNREADABLE|-|-~{} {}
+EOF
+    printf '\xef\xbb\xbf{"apr_version":"apr 1.0.0 (abc)"}' > "$d/r.json"
+    got=$(mt_receipt_fields "$d/r.json" | tr '\t' '|')
+    if [ "$got" = "UNREADABLE|-|-" ]; then echo "  ok   a BOM-prefixed receipt is UNREADABLE, as python read it"; else echo "  FAIL BOM receipt gave '$got'"; fail=1; fi
+    got=$(mt_receipt_fields "$d/absent.json" | tr '\t' '|')
+    if [ "$got" = "UNREADABLE|-|-" ]; then echo "  ok   a missing receipt is UNREADABLE, once"; else echo "  FAIL missing receipt gave '$got'"; fail=1; fi
+    rm -rf -- "${d:?}"
+    if [ "$fail" -eq 0 ]; then echo "models_t1 self-test: PASS"; else echo "models_t1 self-test: FAIL"; fi
+    return "$fail"
+}
+if [ "${1:-}" = --self-test ]; then mt_self_test; exit $?; fi
+
 [ $# -eq 3 ] || { echo "usage: models_t1.sh <version> <release-commit> <out-dir>" >&2; exit 2; }
 ver=$1; out=$3
 [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "models_t1: version '$ver' is not X.Y.Z" >&2; exit 2; }
@@ -57,7 +97,7 @@ local_leg() {
     local tdir got
     cargo build --release -p apr-cli --bin apr --features cuda --locked \
         || { echo "MODELS-LEG $LOCAL_HOST BUILD-FAILED"; return 3; }
-    tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')}
+    tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
     [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
     choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out "$out"
@@ -127,11 +167,7 @@ for hr in "$LOCAL_HOST $lrc" "$REMOTE_HOST $rrc"; do
         echo "MODELS $h NO-GO: no receipt -- $(leg_reason "$h" "$rc")"; nogo=1; continue
     fi
     # tab-separated: apr_version itself contains spaces ("apr <v> (<sha9>)")
-    IFS=$'\t' read -r av executed red < <(python3 -c '
-import json, sys
-try: d = json.load(open(sys.argv[1]))
-except Exception: print("UNREADABLE\t-\t-"); sys.exit(0)
-print("\t".join(str(d.get(k, "-")) for k in ("apr_version", "executed", "red")))' "$receipt")
+    IFS=$'\t' read -r av executed red < <(mt_receipt_fields "$receipt")
     if [ "$av" != "$want" ]; then
         echo "MODELS $h NO-GO: the receipt was measured by '$av', not '$want'"; nogo=1; continue
     fi

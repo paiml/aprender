@@ -1,0 +1,14 @@
+# ONT-4c5 positive control (paiml/infra paiml-ontology.md v4.12 §5 ONT-4c5): a REQUIRED rung with NO receipt.
+# The shapes gate runs it every time through the same capability_cells::apply as the corpus, then through the
+# ARMED `capability-cells` shape, and must refuse exactly one cell, capability-cells-plant@plant-host. If it
+# does not, pc_shapes["capability-cells"] is not-fired and the gate declines. The tracked copy under
+# tests/fixtures/ont/ and crates/aprender-contracts/src/lint/ must stay byte-identical (a unit test holds them).
+ladder:
+  rungs:
+    - id: capability-cells-plant
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      arch: plant
+      gguf: capability-cells-plant.gguf
+      backends: [cpu]
+      hosts: [plant-host]
+      required: true

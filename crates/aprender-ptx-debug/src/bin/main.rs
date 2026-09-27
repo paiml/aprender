@@ -8,22 +8,19 @@
 //!
 //! Argument parsing is declarative and lives in `trueno_ptx_debug::cli`.
 
-use std::fs;
 use std::process;
 
 // Imported anonymously: `clap::Parser` would otherwise collide with the PTX
-// `Parser` used below.
+// `Parser` used by the library.
 use clap::Parser as _;
 
-use trueno_ptx_debug::bugs::BugRegistry;
-use trueno_ptx_debug::cli::{
-    exit_code_for_parse_error, version_string, AnalyzeArgs, Cli, Command, GenFkrArgs,
-};
-use trueno_ptx_debug::falsification::FalsificationRegistry;
-use trueno_ptx_debug::output::{generate_fkr_tests, generate_html_report, AnalysisResult};
-use trueno_ptx_debug::parser::Parser;
+use trueno_ptx_debug::cli::{exit_code_for_parse_error, Cli};
+
+/// #4062: `apr ptx-debug` runs the same code; this binary is on its way out.
+const DEPRECATED: &str = "warning: `aprender-ptx-debug` is deprecated and will be removed; run `apr ptx-debug` instead (the same code path). See paiml/aprender#4057.";
 
 fn main() {
+    eprintln!("{DEPRECATED}");
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {
@@ -34,58 +31,11 @@ fn main() {
         }
     };
 
-    let result = match cli.command {
-        Command::Analyze(args) => cmd_analyze(args),
-        Command::GenFkr(args) => cmd_gen_fkr(args),
-        Command::Version => {
-            print!("{}", version_string());
-            Ok(())
-        }
-    };
-
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        process::exit(1);
-    }
-}
-
-/// Print analysis results as JSON.
-fn print_json_report(
-    result: &AnalysisResult,
-    report: &trueno_ptx_debug::falsification::FalsificationReport,
-) {
-    println!("{{");
-    println!("  \"module\": \"{}\",", result.module_name);
-    println!("  \"score\": {:.1},", result.falsification_score);
-    println!("  \"confidence\": {:.2},", result.confidence);
-    println!("  \"earned_points\": {},", report.earned_points);
-    println!("  \"total_points\": {},", report.total_points);
-    println!(
-        "  \"critical_bugs_absent\": {}",
-        report.critical_bugs_absent()
-    );
-    println!("}}");
-}
-
-/// Print analysis results as human-readable text.
-fn print_text_report(
-    result: &AnalysisResult,
-    report: &trueno_ptx_debug::falsification::FalsificationReport,
-) {
-    println!("PTX Analysis Report: {}", result.module_name);
-    println!("=========================================");
-    println!("Score: {:.1}/100", result.falsification_score);
-    println!("Confidence: {:.1}%", result.confidence * 100.0);
-    println!("Points: {}/{}", report.earned_points, report.total_points);
-    println!();
-
-    let failed = report.failed_tests();
-    if failed.is_empty() {
-        println!("All tests passed!");
-    } else {
-        println!("Failed tests ({}):", failed.len());
-        for (id, category, desc, _result) in failed {
-            println!("  {} [{}]: {}", id, category, desc);
+    match trueno_ptx_debug::run::run(cli.command) {
+        Ok(code) => process::exit(code),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            process::exit(1);
         }
     }
 }

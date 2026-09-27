@@ -108,6 +108,18 @@ pub struct WgslForwardPass {
     num_kv_heads: u32,
     head_dim: u32,
     intermediate_dim: u32,
+    /// RMSNorm epsilon, passed to the shader as `params.y` (f32 bits). Defaults to
+    /// [`DEFAULT_RMS_NORM_EPS`]; callers set the model's value with
+    /// [`WgslForwardPass::set_rms_norm_eps`] (#4056: Llama-family models use 1e-5).
+    rms_norm_eps: f32,
+}
+
+/// Default RMSNorm epsilon: the constant the shader hardcoded before #4056.
+pub const DEFAULT_RMS_NORM_EPS: f32 = 1e-6;
+
+/// Uniform params for the RMSNorm shader: `(dim, eps as f32 bits, 0, 0)`.
+fn rmsnorm_params(dim: u32, eps: f32) -> [u32; 4] {
+    [dim, eps.to_bits(), 0, 0]
 }
 
 // WGSL shader source for RMSNorm (multi-row via workgroup_id.y)
@@ -116,7 +128,7 @@ const RMSNORM_SHADER: &str = r#"
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
 @group(0) @binding(2) var<storage, read_write> output: array<f32>;
-@group(0) @binding(3) var<uniform> params: vec4<u32>; // (dim, 0, 0, 0)
+@group(0) @binding(3) var<uniform> params: vec4<u32>; // (dim, bitcast<u32>(eps), 0, 0)
 
 var<workgroup> shared_sum: array<f32, 256>;
 
@@ -149,7 +161,8 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>,
         stride >>= 1u;
     }
 
-    let rms = sqrt(shared_sum[0] / f32(dim) + 1e-6);
+    let eps = bitcast<f32>(params.y);
+    let rms = sqrt(shared_sum[0] / f32(dim) + eps);
 
     // Normalize and scale
     i = tid;
@@ -548,7 +561,20 @@ impl WgslForwardPass {
             num_kv_heads: num_kv_heads as u32,
             head_dim: head_dim as u32,
             intermediate_dim: intermediate_dim as u32,
+            rms_norm_eps: DEFAULT_RMS_NORM_EPS,
         }
+    }
+
+    /// Set the RMSNorm epsilon every norm in this forward pass uses — pass the
+    /// model's configured `rms_norm_eps`. Default: [`DEFAULT_RMS_NORM_EPS`].
+    pub fn set_rms_norm_eps(&mut self, eps: f32) {
+        self.rms_norm_eps = eps;
+    }
+
+    /// The RMSNorm epsilon this forward pass uses.
+    #[must_use]
+    pub fn rms_norm_eps(&self) -> f32 {
+        self.rms_norm_eps
     }
 
     /// Upload a weight matrix (call once per layer at init).
@@ -1954,7 +1980,7 @@ impl WgslForwardPass {
         output: &wgpu::Buffer,
         dim: u32,
     ) {
-        let params = [dim, 0u32, 0, 0];
+        let params = rmsnorm_params(dim, self.rms_norm_eps);
         let params_buf = self.make_uniform(&params);
         let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -2154,5 +2180,37 @@ fn bgl_uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
             min_binding_size: None,
         },
         count: None,
+    }
+}
+
+#[cfg(test)]
+mod rmsnorm_eps_tests {
+    use super::{rmsnorm_params, DEFAULT_RMS_NORM_EPS};
+
+    /// #4056: the shader reads eps from `params.y`; it must carry the configured
+    /// value bit-exactly, not the old hardcoded 1e-6.
+    #[test]
+    fn rmsnorm_params_carry_eps_bits() {
+        let p = rmsnorm_params(896, 1e-5);
+        assert_eq!(p[0], 896);
+        assert_eq!(f32::from_bits(p[1]), 1e-5);
+        assert_ne!(f32::from_bits(p[1]), DEFAULT_RMS_NORM_EPS);
+        assert_eq!(f32::from_bits(rmsnorm_params(1, DEFAULT_RMS_NORM_EPS)[1]), 1e-6);
+    }
+
+    /// #4056: the shader now reads `bitcast<f32>(params.y)`; naga must accept it.
+    /// Skips (returns) when no GPU adapter is present.
+    #[test]
+    fn rmsnorm_shader_validates_on_device() {
+        let Ok(gpu) = crate::backends::gpu::GpuDevice::new() else {
+            return;
+        };
+        gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let _module = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("rmsnorm_eps_test"),
+            source: wgpu::ShaderSource::Wgsl(super::RMSNORM_SHADER.into()),
+        });
+        let err = pollster::block_on(gpu.device.pop_error_scope());
+        assert!(err.is_none(), "RMSNORM_SHADER failed validation: {err:?}");
     }
 }

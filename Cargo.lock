@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "apr-cli"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -266,6 +266,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-profile",
+ "aprender-ptx-debug",
  "aprender-quant",
  "aprender-rag-cli",
  "aprender-registry",
@@ -324,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "apr-format"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "bincode",
  "cargo_metadata",
@@ -342,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "apr-cli",
  "aprender-core",
@@ -350,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-compute"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -359,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-tokenizer"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -368,11 +369,14 @@ dependencies = [
 
 [[package]]
 name = "aprender-build-sha"
-version = "0.69.3"
+version = "0.70.0"
+dependencies = [
+ "tempfile",
+]
 
 [[package]]
 name = "aprender-cbtop"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -398,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cgp"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -419,17 +423,19 @@ dependencies = [
 
 [[package]]
 name = "aprender-common"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
+ "clap",
  "lz4_flex 0.11.6",
  "zstd",
 ]
 
 [[package]]
 name = "aprender-compute"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
+ "aprender-contracts",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-cuda-edge",
@@ -476,7 +482,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-compute-xtask"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -491,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-contracts-macros",
  "blake3",
@@ -511,9 +517,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-cli"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
+ "aprender-common",
  "aprender-contracts",
  "aprender-update",
  "clap",
@@ -526,7 +533,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -536,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contrastive-data"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-contracts-macros",
  "aprender-rand",
@@ -551,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-core"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aes-gcm",
  "alsa",
@@ -605,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cuda-edge"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-gpu",
  "proptest",
@@ -616,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cupti"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "bindgen",
  "bitflags 2.13.0",
@@ -626,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-data"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aes-gcm",
  "aprender-build-sha",
@@ -679,12 +686,13 @@ dependencies = [
 
 [[package]]
 name = "aprender-db"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "arrow 59.2.0",
  "axum 0.7.9",
  "bytemuck",
@@ -725,7 +733,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-distribute"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-compute",
  "aprender-db",
@@ -755,7 +763,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-explain"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-gpu",
@@ -774,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-fft"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -783,7 +791,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gemm-codegen"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -792,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gpu"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-common",
  "aprender-simulate",
@@ -810,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-graph"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-compute",
@@ -831,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-image"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -840,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-mcp"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "inventory",
  "jsonschema",
@@ -853,7 +861,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-monte-carlo"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -872,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-orchestrate"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -943,9 +951,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-cli"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
+ "aprender-contracts",
  "aprender-present-yaml",
  "clap",
  "notify",
@@ -957,8 +966,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-core"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
+ "aprender-contracts",
  "aprender-contracts-macros",
  "criterion 0.7.0",
  "proptest",
@@ -969,7 +979,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-layout"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-present-core",
  "criterion 0.7.0",
@@ -980,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-lib"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-contracts",
  "aprender-present-core",
@@ -1009,9 +1019,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-terminal"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
+ "aprender-contracts",
  "aprender-present-core",
  "bitvec",
  "clap",
@@ -1030,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-present-core",
  "aprender-present-test-macros",
@@ -1041,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test-macros"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1050,7 +1061,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-widgets"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-present-core",
  "aprender-present-yaml",
@@ -1062,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-yaml"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-present-core",
  "proptest",
@@ -1072,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "addr2line 0.25.1",
  "anyhow",
@@ -1125,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile-core"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "hex",
  "serde",
@@ -1135,7 +1146,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-ptx-debug"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "clap",
@@ -1145,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-certify"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "chrono",
@@ -1157,7 +1168,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-cli"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-qa-certify",
@@ -1177,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-gen"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1194,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-report"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1212,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-runner"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1237,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-quant"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "half",
  "serde_json",
@@ -1245,10 +1256,11 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "aprender-serve",
  "async-trait",
  "bincode",
@@ -1273,10 +1285,11 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag-cli"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
+ "aprender-common",
  "aprender-rag",
  "assert_cmd",
  "blake3",
@@ -1292,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rand"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1301,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-registry"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "aprender-core",
@@ -1331,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-review-experiment"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1341,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-serve"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "anyhow",
  "approx",
@@ -1412,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-shell"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-core",
  "clap",
@@ -1427,7 +1440,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-simulate"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-contracts",
@@ -1469,7 +1482,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-solve"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "criterion 0.7.0",
  "half",
@@ -1479,7 +1492,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-sparse"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1488,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tensor"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1497,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-cli"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-test-lib",
@@ -1526,7 +1539,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-derive"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1536,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-js-gen"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "blake3",
  "chrono",
@@ -1552,7 +1565,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-lib"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-compute",
  "aprender-present-core",
@@ -1598,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-showcase"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-present-terminal",
  "aprender-test-lib",
@@ -1615,7 +1628,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1684,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-bench"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1702,7 +1715,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-common"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-viz",
  "clap",
@@ -1714,7 +1727,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-distill"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1736,7 +1749,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-inspect"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1753,7 +1766,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-lora"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1770,7 +1783,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-shell"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1787,7 +1800,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-wasm"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "proptest",
  "serde",
@@ -1798,7 +1811,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -1813,7 +1826,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-update"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "flate2",
  "semver",
@@ -1827,7 +1840,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "chrono",
  "criterion 0.5.1",
@@ -1839,7 +1852,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify-ml"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-compute",
@@ -1870,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-viz"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1899,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-zram-adaptive",
  "aprender-zram-core",
@@ -1909,7 +1922,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-adaptive"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-zram-core",
  "proptest",
@@ -1918,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-cli"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-zram-adaptive",
@@ -1933,7 +1946,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-core"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-gpu",
  "criterion 0.7.0",
@@ -1945,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-generator"
-version = "0.69.3"
+version = "0.70.0"
 dependencies = [
  "aprender-build-sha",
  "aprender-zram-core",
@@ -3846,9 +3859,9 @@ dependencies = [
 
 [[package]]
 name = "chacha20"
-version = "0.10.0"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if 1.0.4",
  "cpufeatures 0.3.0",
@@ -10468,7 +10481,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
- "chacha20 0.10.0",
+ "chacha20 0.10.2",
  "getrandom 0.4.3",
  "rand_core 0.10.1",
 ]

@@ -44,13 +44,10 @@ struct Binding {
 ///
 /// `"softmax-kernel-v1.yaml"` + `"softmax"` → `"CONTRACT_SOFTMAX_KERNEL_V1_SOFTMAX"`
 fn env_var_name(contract: &str, equation: &str) -> String {
-    let stem = contract
-        .trim_end_matches(".yaml")
-        .trim_end_matches(".yml")
-        .to_uppercase()
-        .replace('-', "_");
-    let eq = equation.to_uppercase().replace('-', "_");
-    format!("CONTRACT_{stem}_{eq}")
+    provable_contracts::build_helper::env_key(
+        contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
+        equation,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -270,14 +267,8 @@ fn main() {
 /// Phase 2: Read binding.yaml and emit CONTRACT_* env vars for the proc macro.
 fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("realizar")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/realizar/binding.yaml");
 
     // Always tell Cargo to re-run if the file appears or changes
     println!("cargo:rerun-if-changed={}", binding_path.display());
@@ -857,10 +848,8 @@ fn emit_contract_assertions() {
         let Ok(y): Result<ContractYaml, _> = serde_yaml_ng::from_str(&c) else {
             continue;
         };
-        let su = stem.to_uppercase().replace('-', "_");
         for (eq, e) in &y.equations {
-            let eu = eq.to_uppercase().replace('-', "_");
-            let k = format!("CONTRACT_{su}_{eu}");
+            let k = provable_contracts::build_helper::env_key(stem, eq);
             if !e.preconditions.is_empty() {
                 println!("cargo:rustc-env={k}_PRE_COUNT={}", e.preconditions.len());
                 for (i, v) in e.preconditions.iter().enumerate() {

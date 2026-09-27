@@ -1,6 +1,6 @@
 //! Criterion benchmarks for presentar-terminal
 //!
-//! Run with: cargo bench -p presentar-terminal
+//! Run with: cargo bench -p aprender-present-terminal
 //!
 //! # Statistical Rigor (D1/D2 Popperian Criteria)
 //!

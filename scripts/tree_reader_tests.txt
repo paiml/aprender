@@ -7,6 +7,7 @@
 #   derivation said so on stderr (WARN unresolved-include).
 # Also: crate<TAB>--test<TAB>name (integration binary) and crate<TAB>--bins.
 apr-cli	--lib
+apr-cli	--lib	<root>
 apr-cli	--lib	commands
 apr-cli	--lib	commands::aliases
 apr-cli	--lib	commands::capability
@@ -36,8 +37,8 @@ apr-cli	--test	registry_failure_catalogue
 apr-cli	--test	thinking_budgets_mirror
 apr-format	--lib	falsifiers
 apr-format	--test	golden_fixtures
+aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
-aprender-cgp	--test	integration
 aprender-compute-xtask	--bins
 aprender-contracts	--lib
 aprender-contracts	--lib	binding
@@ -98,6 +99,7 @@ aprender-contracts-cli	--test	ont4b2_code_lean_w3c
 aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contracts-cli	--test	ont4c1_model_receipts
 aprender-contracts-cli	--test	ont4c3_parity_receipts
+aprender-contracts-cli	--test	ont4c5_capability_cells
 aprender-contracts-cli	--test	ont4c_doc_contracts
 aprender-contracts-cli	--test	ont4d_subsumption
 aprender-contracts-cli	--test	ont4e_refines_gate
@@ -120,8 +122,13 @@ aprender-contracts-cli	--test	pvl_discharge_leanchecker
 aprender-contracts-cli	--test	pvl_ghost_binding
 aprender-contracts-cli	--test	pvl_obligations_golden
 aprender-contracts-cli	--test	pvl_zero_contracts
+aprender-contracts-cli	--test	shapes_vacuity
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
+aprender-core	--lib	format::ship_001
+aprender-core	--lib	format::ship_003
+aprender-core	--lib	format::ship_004
+aprender-core	--lib	format::ship_010
 aprender-core	--lib	format::special_tokens_contract_falsify
 aprender-core	--lib	format::tokenizer_vocab_contract_falsify
 aprender-core	--lib	qa::docs

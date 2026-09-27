@@ -153,17 +153,17 @@ let features: Vector<f32> = mapped.get_vector("features")?;
 
 ```bash
 # Convert formats
-alimentar convert data.csv data.ald
-alimentar convert data.ald data.parquet
+aprender-data convert data.csv data.ald
+aprender-data convert data.ald data.parquet
 
 # Inspect
-alimentar info data.ald
-alimentar schema data.ald
+aprender-data info data.ald
+aprender-data schema data.ald
 
 # Security
-alimentar sign data.ald --key ~/.alimentar/key.enc
-alimentar verify data.ald
-alimentar encrypt data.ald --password
+aprender-data sign data.ald --key ~/.alimentar/key.enc
+aprender-data verify data.ald
+aprender-data encrypt data.ald --password
 ```
 
 ## Comparison with Other Formats

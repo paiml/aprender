@@ -115,7 +115,8 @@ predicates = "3"
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # PMAT-955: path-only (no version) so cargo strips it at publish
 
 [[bin]]
-name = "alimentar"
+# #4430: every shipped [[bin]] is aprender-* (was `alimentar`)
+name = "aprender-data"
 path = "src/main.rs"
 required-features = ["cli"]
 

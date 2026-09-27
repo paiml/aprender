@@ -306,6 +306,7 @@ qa_gate:
                 signature: None,
                 status: crate::binding::ImplStatus::Implemented,
                 notes: None,
+                kernel: false,
             }],
         };
 

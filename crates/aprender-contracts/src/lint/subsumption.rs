@@ -170,6 +170,8 @@ mod tests {
             min_length: None,
             max_length: None,
             node: None,
+            less_than: None,
+            less_than_or_equals: None,
             resolves: None,
             severity: crate::ontology::shapes::Severity::Violation,
         }
