@@ -25,7 +25,11 @@ pub(crate) struct GateReport {
 
 impl GateReport {
     pub(crate) fn passed(&self) -> bool {
-        self.holes.is_empty() && !self.cells.iter().any(|(_, r)| matches!(r, Ratchet::Red { .. }))
+        self.holes.is_empty()
+            && !self
+                .cells
+                .iter()
+                .any(|(_, r)| matches!(r, Ratchet::Red { .. }))
     }
 
     /// The report as printed. Verdicts and tags only — never a ratio or floor.
@@ -40,7 +44,9 @@ impl GateReport {
                 Ratchet::Unarmed { records } => {
                     format!("UNARMED  {c}: {records} measured record(s), arms after 3 prior")
                 }
-                Ratchet::Green { tag, .. } => format!("GREEN    {c} @ {tag}: at or above its floor"),
+                Ratchet::Green { tag, .. } => {
+                    format!("GREEN    {c} @ {tag}: at or above its floor")
+                }
                 Ratchet::Red { tag, .. } => {
                     format!("RED      {c} @ {tag}: below its shrink-only floor")
                 }
@@ -48,21 +54,36 @@ impl GateReport {
             out.push_str(&line);
             out.push('\n');
         }
-        out.push_str(if self.passed() { "speed gate: PASS\n" } else { "speed gate: FAIL\n" });
+        out.push_str(if self.passed() {
+            "speed gate: PASS\n"
+        } else {
+            "speed gate: FAIL\n"
+        });
         out
     }
 }
 
 /// Judge a JSONL ledger against the tags and cells the release requires.
 /// A malformed ledger is an error, never a verdict.
-pub(crate) fn gate(ledger_jsonl: &str, tags: &[String], cells: &[String]) -> Result<GateReport, String> {
+pub(crate) fn gate(
+    ledger_jsonl: &str,
+    tags: &[String],
+    cells: &[String],
+) -> Result<GateReport, String> {
     if tags.is_empty() || cells.is_empty() {
         return Err("speed gate needs at least one tag and one cell".into());
     }
     let rows = parse_ledger(ledger_jsonl)?;
     let holes = uncovered(&rows, tags, cells)?;
-    let cells_v = cells.iter().map(|c| (c.clone(), ratchet(&rows, tags, c))).collect();
-    Ok(GateReport { holes, cells: cells_v, pairs: tags.len() * cells.len() })
+    let cells_v = cells
+        .iter()
+        .map(|c| (c.clone(), ratchet(&rows, tags, c)))
+        .collect();
+    Ok(GateReport {
+        holes,
+        cells: cells_v,
+        pairs: tags.len() * cells.len(),
+    })
 }
 
 #[cfg(test)]

@@ -159,9 +159,19 @@ pub(crate) fn uncovered(
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Ratchet {
     /// Fewer than [`ARM_AFTER`] records precede the newest one.
-    Unarmed { records: usize },
-    Green { tag: String, ratio: f64, floor: f64 },
-    Red { tag: String, ratio: f64, floor: f64 },
+    Unarmed {
+        records: usize,
+    },
+    Green {
+        tag: String,
+        ratio: f64,
+        floor: f64,
+    },
+    Red {
+        tag: String,
+        ratio: f64,
+        floor: f64,
+    },
 }
 
 fn ratio(m: &Measured) -> Option<f64> {

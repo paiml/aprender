@@ -114,8 +114,6 @@ pub(crate) mod model_gate;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod speed_ledger;
 // EXT-19 release-phase gate over the speed ledger (G3 coverage + ratchet).
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) mod speed_gate;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;
 pub(crate) mod model_gate_cr;
@@ -127,6 +125,8 @@ pub(crate) mod model_ghcr;
 pub(crate) mod model_pack;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod speed_arms;
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod speed_gate;
 // Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
 // own source so the class cannot be reintroduced by the next copy-paste.
 #[cfg(test)]

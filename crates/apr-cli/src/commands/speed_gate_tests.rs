@@ -64,7 +64,11 @@ fn a_full_ledger_at_its_floor_passes() {
 #[test]
 fn a_planted_slowdown_in_the_ledger_fails_the_gate() {
     let r = gate(&ledger(&[90.0, 91.0, 90.0, 72.0]), &tags(4), &cells()).expect("gate");
-    assert!(!r.passed(), "planted sleep passed the gate:\n{}", r.render());
+    assert!(
+        !r.passed(),
+        "planted sleep passed the gate:\n{}",
+        r.render()
+    );
     let out = r.render();
     assert!(out.contains("RED      gx10-cuda @ v0.71.4"), "{out}");
     assert!(out.ends_with("speed gate: FAIL\n"), "{out}");
@@ -77,7 +81,10 @@ fn g3_a_missing_pair_fails_the_gate() {
     let mut l = ledger(&[90.0, 90.0, 90.0, 90.0]);
     l = l.replace(&not_run("v0.71.2", "lambda-cpu"), "");
     let r = gate(&l, &tags(4), &cells()).expect("gate");
-    assert_eq!(r.holes, vec![("v0.71.2".to_string(), "lambda-cpu".to_string())]);
+    assert_eq!(
+        r.holes,
+        vec![("v0.71.2".to_string(), "lambda-cpu".to_string())]
+    );
     assert!(!r.passed());
     let out = r.render();
     assert!(out.contains("G3 coverage: 7/8"), "{out}");
@@ -90,7 +97,11 @@ fn g3_a_missing_pair_fails_the_gate() {
 fn an_unarmed_cell_passes_and_says_so() {
     let r = gate(&ledger(&[10.0, 90.0]), &tags(2), &cells()).expect("gate");
     assert!(r.passed(), "{}", r.render());
-    assert!(r.render().contains("UNARMED  gx10-cuda: 2 measured"), "{}", r.render());
+    assert!(
+        r.render().contains("UNARMED  gx10-cuda: 2 measured"),
+        "{}",
+        r.render()
+    );
 }
 
 /// T28: the printed report never carries a comparator ratio or the floor —
@@ -100,7 +111,9 @@ fn t28_the_report_never_prints_a_ratio_or_floor() {
     for apr in [[90.0, 91.0, 90.0, 72.0], [90.0, 91.0, 90.0, 89.0]] {
         let r = gate(&ledger(&apr), &tags(4), &cells()).expect("gate");
         let out = r.render();
-        for needle in ["0.9", "0.72", "0.89", "0.91", "72%", "90%", "89%", "ratio", "floor ="] {
+        for needle in [
+            "0.9", "0.72", "0.89", "0.91", "72%", "90%", "89%", "ratio", "floor =",
+        ] {
             assert!(!out.contains(needle), "report leaks `{needle}`:\n{out}");
         }
     }
@@ -109,8 +122,14 @@ fn t28_the_report_never_prints_a_ratio_or_floor() {
 #[test]
 fn a_bad_ledger_or_empty_scope_is_an_error_not_a_verdict() {
     assert!(gate("{not json", &tags(1), &cells()).is_err());
-    let dup = format!("{}\n{}", row("v0.71.1", "gx10-cuda", 90.0), row("v0.71.1", "gx10-cuda", 90.0));
-    assert!(gate(&dup, &tags(1), &cells()).expect_err("dup").contains("two ledger rows"));
+    let dup = format!(
+        "{}\n{}",
+        row("v0.71.1", "gx10-cuda", 90.0),
+        row("v0.71.1", "gx10-cuda", 90.0)
+    );
+    assert!(gate(&dup, &tags(1), &cells())
+        .expect_err("dup")
+        .contains("two ledger rows"));
     assert!(gate("", &[], &cells()).is_err());
     assert!(gate("", &tags(1), &[]).is_err());
 }
