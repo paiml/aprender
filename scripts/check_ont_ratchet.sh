@@ -200,14 +200,58 @@ count_shapes_unarmed() { # count_shapes_unarmed BASELINE_FILE
     case "$armed" in '[]'|'[ ]') entries=0 ;; *) entries=$(( $(printf '%s' "$armed" | tr -cd ',' | wc -c) + 1 )) ;; esac
     [ "$declared" -ge "$entries" ] && printf '%s\n' $((declared - entries)) || printf '0\n'
 }
+
+# ONT-4c (v4.14): `readme` and `claude_md` carry the MEASURED claim sets `pv lint` checks — F-33 (the committed
+# `verified_commands[]` must equal the live extraction) and F-34 (`withdrawn(HEAD) \ withdrawn(merge-base) ==
+# set(merge-base) \ set(current)`). They are computed here, never typed: `--write` asks `pv lint --gate shapes`
+# for the live sets and sets `withdrawn` = set(merge-base) \ set(current), both sorted, each key on ONE line.
+# `--check` and the self-test carry the committed lines through untouched (they write nothing a gate reads).
+# A nonzero `pv lint` exit is tolerated — a stale set IS a failing F-33, and the restamp exists to clear it —
+# but output that is not a JSON object is refused: a set read from nothing would be ∅ and would pass.
+measured_set_lines() { # measured_set_lines BASELINE_FILE -> `  "readme": {...},` lines (or nothing)
+    local key
+    if [ "${_ONT_MEASURE_SETS:-0}" != 1 ]; then
+        [ -f "$1" ] || return 0
+        for key in readme claude_md; do
+            { grep -E "^  \"$key\"[[:space:]]*:" "$1" || true; } | head -1 | sed 's/,\{0,1\}[[:space:]]*$/,/'
+        done
+        return 0
+    fi
+    local pvbin out base cmp
+    pvbin="${PV:-$(command -v pv 2>/dev/null || true)}"
+    [ -n "$pvbin" ] || { printf 'NO-GO: no pv on PATH (set PV=) — the measured sets cannot be computed\n' >&2; return 2; }
+    out="$(mktemp)"
+    "$pvbin" lint "$REPO_ROOT/contracts" --gate shapes --format json >"$out" 2>/dev/null || true
+    if ! jq -e 'type == "object" and (.readme.verified_commands | type) == "array" and (.claude_md.verified_commands | type) == "array"' "$out" >/dev/null 2>&1; then
+        printf 'NO-GO: %s lint --gate shapes printed no readme/claude_md sets\n' "$pvbin" >&2
+        rm -f "$out"; return 2
+    fi
+    cmp="$(mktemp)"
+    base="$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || git -C "$REPO_ROOT" rev-parse --verify --quiet 'origin/main^{commit}' 2>/dev/null || true)"
+    if [ -n "$base" ] && git -C "$REPO_ROOT" cat-file -e "$base:contracts/lint-baseline.json" 2>/dev/null; then
+        git -C "$REPO_ROOT" show "$base:contracts/lint-baseline.json" >"$cmp"
+    else
+        printf '{}\n' >"$cmp"
+    fi
+    for key in readme claude_md; do
+        printf '  "%s": %s,\n' "$key" "$(jq -c --slurpfile c "$cmp" --arg k "$key" '
+            (.[$k].verified_commands | unique) as $cur
+            | ((($c | first)[$k].verified_commands // []) | unique) as $was
+            | {verified_commands: $cur, withdrawn: ($was - $cur)}' "$out")"
+    done
+    rm -f "$out" "$cmp"
+}
 measure() { # prints the JSON document
-    local anchored shaped types extractors bindable consumer total armed armed_shapes shapes_line unarmed top_line
+    local anchored shaped types extractors bindable consumer total armed armed_shapes shapes_line unarmed sets top_line
     armed="$(armed_gates_of "$BASELINE")" || return 2
     armed_shapes="$(armed_shapes_of "$BASELINE")" || return 2
     shapes_line=""
     [ -z "$armed_shapes" ] || shapes_line="$(printf '  "armed_shapes": %s,\n' "$armed_shapes")
 "
     unarmed="$(count_shapes_unarmed "$BASELINE")" || return 2
+    sets="$(measured_set_lines "$BASELINE")" || return 2
+    [ -z "$sets" ] || sets="$sets
+"
     top_line="$(foreign_top_keys "$BASELINE")"
     [ -z "$top_line" ] || top_line="$top_line
 "
@@ -220,7 +264,7 @@ measure() { # prints the JSON document
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through \`make ont-ratchet\` (ONT R-6)",
   "armed_gates": $armed,
-${shapes_line}${top_line}  "ont": {
+${shapes_line}${sets}${top_line}  "ont": {
     "consumer_present": $consumer,
     "contracts_total": $total,
     "entity_types_registered": $types,
@@ -248,6 +292,8 @@ field() { # field JSON_FILE NAME
 
 self_test() {
     local t pass=0 fail=0
+    # the self-test never asks pv: --write below carries the measured-set lines through (ONT-4c)
+    local _ONT_MEASURE_SETS=0
     t="$(mktemp -d)"
     case "$t" in /tmp/*|/var/tmp/*) : ;; *) printf 'NO-GO: odd mktemp path %s\n' "$t" >&2; return 2 ;; esac
     row() { # row NAME GOT WANT
@@ -277,6 +323,11 @@ self_test() {
     row "--write preserves armed_shapes in place" "$(grep -o '"armed_shapes": *\[[^]]*\]' "$t/ws.json" | tr -d ' ')" '"armed_shapes":["ont-shapes-v1","ladder-measured"]'
     row "--write writes shapes_unarmed"            "$(grep -c '"shapes_unarmed"' "$t/ws.json")" "1"
     row "--write does not invent armed_shapes"     "$(grep -c '"armed_shapes"' "$t/w.json")" "0"
+    printf '{\n  "armed_gates": ["validate"],\n  "readme": {"verified_commands":["a"],"withdrawn":[]},\n  "claude_md": {"verified_commands":[],"withdrawn":["b"]},\n  "ont": {}\n}\n' > "$t/sets.json"
+    set +e
+    BASELINE="$t/sets.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps the measured-set lines (ONT-4c)" "$(grep -cE '^  "(readme|claude_md)": \{' "$t/sets.json")" "2"
     printf '{\n  "armed_gates": ["validate"],\n  "armed_shapes": [\n    "a"\n  ]\n}\n' > "$t/multis.json"
     set +e
     BASELINE="$t/multis.json" measure >/dev/null 2>&1
@@ -385,7 +436,7 @@ main() {
             # empty and was rewritten as [].
             local tmp
             tmp="$(mktemp "$BASELINE.XXXXXX")"
-            measure > "$tmp" || { rm -f "$tmp"; return 2; }
+            _ONT_MEASURE_SETS="${_ONT_MEASURE_SETS:-1}" measure > "$tmp" || { rm -f "$tmp"; return 2; }
             mv "$tmp" "$BASELINE"
             printf 'wrote %s\n' "${BASELINE#"$REPO_ROOT"/}"
             sed -n '/"ont"/,/}/p' "$BASELINE"

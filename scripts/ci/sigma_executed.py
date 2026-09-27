@@ -94,7 +94,9 @@ def step_slice(log: str, step: str) -> str:
 
 
 def cargo_ids(text: str) -> set:
-    return {m.group(1) for m in re.finditer(r"^test (\S+) \.\.\. (?:ok|FAILED)\b", text, re.M)}
+    # libtest suffixes a #[should_panic] test: "test X - should panic ... ok".
+    return {m.group(1) for m in re.finditer(
+        r"^test (\S+)(?: - should panic)? \.\.\. (?:ok|FAILED)\b", text, re.M)}
 
 
 def cargo_list_ids(text: str) -> set:
@@ -181,6 +183,8 @@ def self_test() -> int:
         (d / "ign.txt").write_text("b::ign: test\n")
         for label, body, want in (
             ("cargo: executed == universe", "test b::one ... ok\ntest b::two ... FAILED\ntest b::ign ... ignored", 0),
+            ("cargo: a should_panic test counts as executed",
+             "test b::one ... ok\ntest b::two - should panic ... ok", 0),
             ("cargo: MUTANT drops one test", "test b::one ... ok", 1),
             ("cargo: other steps' tests do not count", "test b::one ... ok\n", 1),
         ):

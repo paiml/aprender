@@ -23,7 +23,7 @@ fn lookup_syscall(num: i64, table: &[(i64, &'static str)]) -> &'static str {
 }
 
 /// x86_64 syscall table (Linux, from arch/x86/entry/syscalls/syscall_64.tbl)
-#[cfg(target_arch = "x86_64")]
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))] // compiled everywhere: ABI tests check both tables on any host
 static SYSCALL_TABLE_X86_64: &[(i64, &str)] = &[
     (0, "read"),
     (1, "write"),
@@ -120,13 +120,13 @@ static SYSCALL_TABLE_X86_64: &[(i64, &str)] = &[
     (102, "getuid"),
     (104, "getgid"),
     (105, "setuid"),
-    (107, "setgid"),
-    (108, "geteuid"),
-    (109, "getegid"),
-    (110, "setpgid"),
-    (111, "getppid"),
-    (112, "getpgrp"),
-    (113, "setsid"),
+    (106, "setgid"),
+    (107, "geteuid"),
+    (108, "getegid"),
+    (109, "setpgid"),
+    (110, "getppid"),
+    (111, "getpgrp"),
+    (112, "setsid"),
     (131, "sigaltstack"),
     (157, "prctl"),
     (158, "arch_prctl"),
@@ -146,7 +146,7 @@ static SYSCALL_TABLE_X86_64: &[(i64, &str)] = &[
     (257, "openat"),
     (262, "newfstatat"),
     (273, "set_robust_list"),
-    (302, "pkey_mprotect"),
+    (302, "prlimit64"),
     (318, "getrandom"),
     (329, "pkey_mprotect"),
     (330, "pkey_alloc"),
@@ -165,7 +165,7 @@ fn syscall_table() -> &'static [(i64, &'static str)] {
 ///
 /// aarch64 uses the "new" unified syscall numbering (no legacy x86 heritage).
 /// Numbers sourced from Linux 6.8 include/uapi/asm-generic/unistd.h
-#[cfg(target_arch = "aarch64")]
+#[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))] // compiled everywhere: ABI tests check both tables on any host
 static SYSCALL_TABLE_AARCH64: &[(i64, &str)] = &[
     (17, "getcwd"),
     (23, "dup"),
@@ -201,6 +201,7 @@ static SYSCALL_TABLE_AARCH64: &[(i64, &str)] = &[
     (66, "writev"),
     (67, "pread64"),
     (68, "pwrite64"),
+    (71, "sendfile"),
     (72, "pselect6"),
     (73, "ppoll"),
     (78, "readlinkat"),
@@ -215,12 +216,11 @@ static SYSCALL_TABLE_AARCH64: &[(i64, &str)] = &[
     (98, "futex"),
     (99, "set_robust_list"),
     (101, "nanosleep"),
+    (102, "getitimer"),
     (103, "setitimer"),
-    (104, "getitimer"),
     (113, "clock_gettime"),
-    (116, "sched_yield"),
-    (117, "sched_setscheduler"),
-    (118, "sched_getscheduler"),
+    (119, "sched_setscheduler"),
+    (120, "sched_getscheduler"),
     (122, "sched_setaffinity"),
     (123, "sched_getaffinity"),
     (124, "sched_yield"),
@@ -231,10 +231,10 @@ static SYSCALL_TABLE_AARCH64: &[(i64, &str)] = &[
     (135, "rt_sigprocmask"),
     (139, "rt_sigreturn"),
     (153, "times"),
-    (157, "prctl"),
     (160, "uname"),
+    (165, "getrusage"),
     (166, "umask"),
-    (167, "getrusage"),
+    (167, "prctl"),
     (172, "getpid"),
     (173, "getppid"),
     (174, "getuid"),
@@ -243,45 +243,43 @@ static SYSCALL_TABLE_AARCH64: &[(i64, &str)] = &[
     (177, "getegid"),
     (178, "gettid"),
     (179, "sysinfo"),
-    (196, "shmget"),
-    (198, "shmdt"),
-    (200, "socket"),
-    (201, "socketpair"),
-    (202, "bind"),
-    (203, "listen"),
-    (204, "accept"),
-    (205, "connect"),
-    (206, "getsockname"),
-    (207, "getpeername"),
-    (208, "sendto"),
-    (209, "recvfrom"),
-    (210, "setsockopt"),
-    (211, "getsockopt"),
-    (212, "shutdown"),
-    (213, "sendmsg"),
-    (214, "recvmsg"),
-    (215, "readahead"),
-    (216, "brk"),
-    (217, "munmap"),
-    (218, "mremap"),
+    (194, "shmget"),
+    (197, "shmdt"),
+    (198, "socket"),
+    (199, "socketpair"),
+    (200, "bind"),
+    (201, "listen"),
+    (202, "accept"),
+    (203, "connect"),
+    (204, "getsockname"),
+    (205, "getpeername"),
+    (206, "sendto"),
+    (207, "recvfrom"),
+    (208, "setsockopt"),
+    (209, "getsockopt"),
+    (210, "shutdown"),
+    (211, "sendmsg"),
+    (212, "recvmsg"),
+    (213, "readahead"),
+    (214, "brk"),
+    (215, "munmap"),
+    (216, "mremap"),
     (220, "clone"),
     (221, "execve"),
     (222, "mmap"),
     (226, "mprotect"),
     (227, "msync"),
-    (228, "madvise"),
-    (233, "mlock"),
-    (234, "munlock"),
-    (237, "sendfile"),
+    (228, "mlock"),
+    (229, "munlock"),
+    (233, "madvise"),
     (242, "accept4"),
     (260, "wait4"),
     (261, "prlimit64"),
     (262, "fanotify_init"),
-    (268, "getrandom"),
     (276, "renameat2"),
     (278, "getrandom"),
-    (280, "memfd_create"),
-    (281, "bpf"),
+    (279, "memfd_create"),
+    (280, "bpf"),
     (291, "statx"),
     (293, "rseq"),
     (435, "clone3"),
@@ -437,6 +435,114 @@ mod table_completeness {
                 "syscall {n} is unnamed; the 228-231 range is where clock_nanosleep \
                  went missing and made a 50ms sleep invisible to the profiler"
             );
+        }
+    }
+}
+
+/// Both tables are compiled on every host, so an x86_64 CI run checks the
+/// aarch64 numbers too. Before this, the aarch64 table was only ever built on
+/// aarch64, where no test pinned more than five numbers: 34 rows were wrong
+/// (socket..mremap shifted by two, so `brk` printed as `recvmsg`) and nothing
+/// noticed until sprint9_filtering_tests first ran on an aarch64 runner.
+#[cfg(test)]
+mod abi_numbers {
+    use super::*;
+
+    /// `(number, name)` from linux/arch/x86/entry/syscalls/syscall_64.tbl
+    /// (/usr/include/x86_64-linux-gnu/asm/unistd_64.h). Every row the table got
+    /// wrong is here, plus anchors from each end.
+    const X86_64: &[(i64, &str)] = &[
+        (0, "read"),
+        (12, "brk"),
+        (106, "setgid"),
+        (107, "geteuid"),
+        (108, "getegid"),
+        (109, "setpgid"),
+        (110, "getppid"),
+        (111, "getpgrp"),
+        (112, "setsid"),
+        (302, "prlimit64"),
+        (329, "pkey_mprotect"),
+        (435, "clone3"),
+    ];
+
+    /// `(number, name)` from include/uapi/asm-generic/unistd.h, the numbering
+    /// aarch64 uses. Every row the table got wrong is here.
+    const AARCH64: &[(i64, &str)] = &[
+        (56, "openat"),
+        (71, "sendfile"),
+        (79, "newfstatat"),
+        (102, "getitimer"),
+        (119, "sched_setscheduler"),
+        (120, "sched_getscheduler"),
+        (124, "sched_yield"),
+        (165, "getrusage"),
+        (167, "prctl"),
+        (194, "shmget"),
+        (197, "shmdt"),
+        (198, "socket"),
+        (199, "socketpair"),
+        (200, "bind"),
+        (201, "listen"),
+        (202, "accept"),
+        (203, "connect"),
+        (204, "getsockname"),
+        (205, "getpeername"),
+        (206, "sendto"),
+        (207, "recvfrom"),
+        (208, "setsockopt"),
+        (209, "getsockopt"),
+        (210, "shutdown"),
+        (211, "sendmsg"),
+        (212, "recvmsg"),
+        (213, "readahead"),
+        (214, "brk"),
+        (215, "munmap"),
+        (216, "mremap"),
+        (222, "mmap"),
+        (228, "mlock"),
+        (229, "munlock"),
+        (233, "madvise"),
+        (278, "getrandom"),
+        (279, "memfd_create"),
+        (280, "bpf"),
+        (435, "clone3"),
+    ];
+
+    fn wrong(table: &[(i64, &'static str)], want: &[(i64, &str)]) -> Vec<String> {
+        want.iter()
+            .filter(|(n, name)| lookup_syscall(*n, table) != *name)
+            .map(|(n, name)| format!("{n} should be {name}, got {}", lookup_syscall(*n, table)))
+            .collect()
+    }
+
+    #[test]
+    fn x86_64_numbers_match_the_kernel_abi() {
+        let bad = wrong(SYSCALL_TABLE_X86_64, X86_64);
+        assert!(bad.is_empty(), "x86_64 table: {bad:?}");
+    }
+
+    #[test]
+    fn aarch64_numbers_match_the_kernel_abi() {
+        let bad = wrong(SYSCALL_TABLE_AARCH64, AARCH64);
+        assert!(bad.is_empty(), "aarch64 table: {bad:?}");
+    }
+
+    /// binary_search needs strictly ascending numbers, and a name listed twice
+    /// means one of its two numbers is wrong (aarch64 had sched_yield at 116
+    /// and 124, getrandom at 268 and 278).
+    #[test]
+    fn each_table_is_strictly_sorted_with_unique_names() {
+        for (arch, table) in [("x86_64", SYSCALL_TABLE_X86_64), ("aarch64", SYSCALL_TABLE_AARCH64)]
+        {
+            for w in table.windows(2) {
+                assert!(w[0].0 < w[1].0, "{arch}: {:?} then {:?} is not ascending", w[0], w[1]);
+            }
+            let mut names: Vec<&str> = table.iter().map(|&(_, s)| s).collect();
+            names.sort_unstable();
+            let before = names.len();
+            names.dedup();
+            assert_eq!(names.len(), before, "{arch}: a name appears twice");
         }
     }
 }
