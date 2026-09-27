@@ -22800,3 +22800,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4083
+  github_issue: 4083
+  item_type: task
+  title: 'PVL-001 EV-9: the provable ladder runs cached in CI (one owner: a2)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-a2
+  created: 2026-09-27T21:20:00Z
+  updated: 2026-09-27T21:20:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - 'ci/sections.yml carries the provable-ladder job and x86-main lists it in --sections; it stays ADVISORY (continue-on-error, not in gate.needs)'
+  - 'a PR or queue batch that changes no ladder input SKIPs (scripts/ci/ladder_touched.sh --self-test: every row passes, every input-drop mutant RED); an undecidable diff RUNS the ladder'
+  - 'the .lake cache is keyed on lean-toolchain + lake-manifest.json and each run logs warm/COLD; ladder-nightly.yml runs it in full daily'
+  - 'scripts/ci/lean_cache_seed.sh seeds a cold key from a same-input donor and writes receipt lean-cache-seed-v1 (lean_cache_seed_test.sh green)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Consolidates 52 (comparator fix, superseded by 0d/pv-gate-fold-4202), 60 (lean_cache_seed.sh, picked), m0694 (Mathlib pin, already on B3). The job lived only on the closed car #4429. Based on fold/b3-onto-main; lands after #4431 + the 0d pv fold.'
