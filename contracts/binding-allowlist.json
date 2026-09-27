@@ -41,11 +41,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::autograd::cuda_training::ComputeDevice::auto_detect",
-      "reason": "ghost: no `mod ComputeDevice` or `use \u2026 ComputeDevice` in `crates/aprender-train/src/autograd/cuda_training.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::autograd::tensor::Tensor::clone",
       "reason": "ghost: no `fn clone` in an `impl Tensor` or `trait Tensor` in `crates/aprender-train/src/autograd/tensor.rs`",
       "ticket": "#4502"
@@ -56,18 +51,8 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::confusion_matrix",
-      "reason": "ghost: no `fn confusion_matrix` (free or in an impl) or item `confusion_matrix` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::finetune::classify_pipeline::estimate_wgpu_vram",
       "reason": "ghost: no `fn estimate_wgpu_vram` (free or in an impl) or item `estimate_wgpu_vram` in `crates/aprender-train/src/finetune/classify_pipeline/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::classify_trainer::load_checkpoint",
-      "reason": "ghost: no `fn load_checkpoint` (free or in an impl) or item `load_checkpoint` in `crates/aprender-train/src/finetune/classify_trainer.rs`",
       "ticket": "#4502"
     },
     {
@@ -121,23 +106,8 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::greedy",
-      "reason": "ghost: no `fn greedy` (free or in an impl) or item `greedy` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::matmul",
       "reason": "ghost: no `fn matmul` (free or in an impl) or item `matmul` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::ndcg_at_k",
-      "reason": "ghost: no `fn ndcg_at_k` (free or in an impl) or item `ndcg_at_k` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::output",
-      "reason": "ghost: no `fn output` (free or in an impl) or item `output` in `crates/aprender-train/src/lib.rs`",
       "ticket": "#4502"
     },
     {
@@ -151,16 +121,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::relu",
-      "reason": "ghost: no `fn relu` (free or in an impl) or item `relu` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::rmse",
-      "reason": "ghost: no `fn rmse` (free or in an impl) or item `rmse` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::sample",
       "reason": "ghost: no `fn sample` (free or in an impl) or item `sample` in `crates/aprender-train/src/lib.rs`",
       "ticket": "#4502"
@@ -171,23 +131,8 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::statistics",
-      "reason": "ghost: no `fn statistics` (free or in an impl) or item `statistics` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::temperature",
-      "reason": "ghost: no `fn temperature` (free or in an impl) or item `temperature` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::top_k",
       "reason": "ghost: no `fn top_k` (free or in an impl) or item `top_k` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::total_bytes",
-      "reason": "ghost: no `fn total_bytes` (free or in an impl) or item `total_bytes` in `crates/aprender-train/src/lib.rs`",
       "ticket": "#4502"
     },
     {
@@ -261,11 +206,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "realizar::cuda::executor::kv_cache::PagedKvCache::slot",
-      "reason": "ghost: no `mod PagedKvCache` or `use \u2026 PagedKvCache` in `crates/aprender-serve/src/cuda/executor/kv_cache.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::cuda::executor::kv_cache_part_02_part_03::flash_attention_cached",
       "reason": "ghost: no `mod kv_cache_part_02_part_03` or `use \u2026 kv_cache_part_02_part_03` in `crates/aprender-serve/src/cuda/executor/mod.rs`",
       "ticket": "#4502"
@@ -293,16 +233,6 @@
     {
       "symbol": "realizar::cuda::kernel_generator::CudaKernels::generate_ptx",
       "reason": "ghost: no `fn generate_ptx` in an `impl CudaKernels` or `trait CudaKernels` in `crates/aprender-serve/src/cuda/kernel_generator.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::effective_context",
-      "reason": "ghost: no `fn effective_context` (free or in an impl) or item `effective_context` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::element_count",
-      "reason": "ghost: no `fn element_count` (free or in an impl) or item `element_count` in `crates/aprender-serve/src/arch_requirements.rs`",
       "ticket": "#4502"
     },
     {
@@ -406,11 +336,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "realizar::gpu_threshold",
-      "reason": "ghost: no `fn gpu_threshold` (free or in an impl) or item `gpu_threshold` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::gqa",
       "reason": "ghost: no `fn gqa` (free or in an impl) or item `gqa` in `crates/aprender-serve/src/arch_requirements.rs`",
       "ticket": "#4502"
@@ -428,11 +353,6 @@
     {
       "symbol": "realizar::matmul",
       "reason": "ghost: no `fn matmul` (free or in an impl) or item `matmul` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::position_embedding",
-      "reason": "ghost: no `fn position_embedding` (free or in an impl) or item `position_embedding` in `crates/aprender-serve/src/arch_requirements.rs`",
       "ticket": "#4502"
     },
     {
@@ -501,11 +421,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "realizar::total_bytes",
-      "reason": "ghost: no `fn total_bytes` (free or in an impl) or item `total_bytes` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::transpose",
       "reason": "ghost: no `fn transpose` (free or in an impl) or item `transpose` in `crates/aprender-serve/src/arch_requirements.rs`",
       "ticket": "#4502"
@@ -518,16 +433,6 @@
     {
       "symbol": "realizar::verification_specs::verify_kv_cache_size",
       "reason": "ghost: no `mod verification_specs` or `use \u2026 verification_specs` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "trueno::bounds",
-      "reason": "ghost: no `fn bounds` (free or in an impl) or item `bounds` in `crates/aprender-compute/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "trueno::bytes_per_param",
-      "reason": "ghost: no `fn bytes_per_param` (free or in an impl) or item `bytes_per_param` in `crates/aprender-compute/src/lib.rs`",
       "ticket": "#4502"
     },
     {
@@ -556,16 +461,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "trueno::eigenvector",
-      "reason": "ghost: no `fn eigenvector` (free or in an impl) or item `eigenvector` in `crates/aprender-compute/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "trueno::embedding_lookup",
-      "reason": "ghost: no `fn embedding_lookup` (free or in an impl) or item `embedding_lookup` in `crates/aprender-compute/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "trueno::gelu",
       "reason": "ghost: no `fn gelu` (free or in an impl) or item `gelu` in `crates/aprender-compute/src/lib.rs`",
       "ticket": "#4502"
@@ -586,11 +481,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "trueno::read",
-      "reason": "ghost: no `fn read` (free or in an impl) or item `read` in `crates/aprender-compute/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "trueno::relu",
       "reason": "ghost: no `fn relu` (free or in an impl) or item `relu` in `crates/aprender-compute/src/lib.rs`",
       "ticket": "#4502"
@@ -601,18 +491,8 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "trueno::silu",
-      "reason": "ghost: no `fn silu` (free or in an impl) or item `silu` in `crates/aprender-compute/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "trueno::softmax",
       "reason": "ghost: no `fn softmax` (free or in an impl) or item `softmax` in `crates/aprender-compute/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "trueno::update",
-      "reason": "ghost: no `fn update` (free or in an impl) or item `update` in `crates/aprender-compute/src/lib.rs`",
       "ticket": "#4502"
     },
     {

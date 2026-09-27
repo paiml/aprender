@@ -232,7 +232,7 @@ bindings:
   notes: 'PMAT-054A: Q8_1 quantize once, 3x GEMV reuse. Saves 56 kernel launches per token.'
 - contract: paged-kv-cache-v1.yaml
   equation: slot_mapping
-  module_path: realizar::cuda::executor::kv_cache
+  module_path: realizar::paged_kv::mod_paged
   function: PagedKvCache::slot
   signature: 'fn slot(&self, req: usize, pos: usize) -> usize'
   status: implemented
@@ -290,7 +290,7 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: q4k-q6k-superblock-v1.yaml
   equation: total_bytes
-  module_path: realizar
+  module_path: realizar::testing::generators
   function: total_bytes
   status: implemented
   notes: Auto-inferred by pv infer
@@ -320,7 +320,7 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: backend-dispatch-v1.yaml
   equation: gpu_threshold
-  module_path: realizar
+  module_path: realizar::gpu::buffer_pool
   function: gpu_threshold
   status: implemented
   notes: Auto-inferred by pv infer
@@ -344,7 +344,7 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: sliding-window-attention-v1.yaml
   equation: effective_context
-  module_path: realizar
+  module_path: realizar::layers::sliding_window
   function: effective_context
   status: implemented
   notes: Auto-inferred by pv infer
@@ -374,7 +374,7 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: learned-position-embedding-v1.yaml
   equation: position_embedding
-  module_path: realizar
+  module_path: realizar::gguf::model
   function: position_embedding
   status: implemented
   notes: Auto-inferred by pv infer
@@ -404,7 +404,7 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: format-parity-v1.yaml
   equation: element_count
-  module_path: realizar
+  module_path: realizar::apr
   function: element_count
   status: implemented
   notes: Auto-inferred by pv infer
