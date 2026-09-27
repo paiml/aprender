@@ -124,9 +124,7 @@ fn only_a_label_not_in_the_set_fails_and_by_name() {
 
 #[test]
 fn exact_names_are_the_fully_qualified_form_only() {
-    assert!(is_exact_name(
-        "ProvableContracts.MatMul.matmul_assoc"
-    ));
+    assert!(is_exact_name("ProvableContracts.MatMul.matmul_assoc"));
     assert!(!is_exact_name("Theorems.Gelu"));
     assert!(!is_exact_name("ProvableContracts.X — prose"));
 }
