@@ -131,6 +131,22 @@ run_table() {
     rm -f "${R:?}/docs/lookahead/0.73.md"
     row "tick/handoff-missing" 1 'ACTION HANDOFF-STALE L3' -- la tick "$T/live.json" --now "$NOW" --root "$R" --hb-dir "$T/nohb"
     row "tick/illegal-state-repair-first" 1 'ACTION REPAIR I2' -- la tick "$T/one-in-two.json" --now "$NOW" --root "$R" --hb-dir "$T/nohb"
+
+    # LA-03 the standing prompt ------------------------------------------------------
+    row "prompt/renders-for-slot" 0 'aprender train 0.72 \(slot L2\)' -- la prompt --slot L2 --train 0.72 --root "$ROOT"
+    row "prompt/no-placeholder-left" 0 '^[^$]*$' -- sh -c "python3 '$SUBJECT' prompt --slot L3 --train 0.73 --root '$ROOT' | tr -d '\n'"
+    row "prompt/tick-launch-line-matches" 1 'Run docs/prompts/lookahead-worker.md with SLOT=L2 TRAIN=0.72' -- la tick "$T/dead.json" --now "$NOW" --root "$R" --hb-dir "$T/nohb"
+    # a planted drifted prompt file (step 5 deleted) is refused
+    local P="$T/prompt-root"
+    mkdir -p "$P/docs/prompts" "$P/docs/specifications"
+    cp "$ROOT/docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md" "$P/docs/specifications/"
+    grep -v 'Respect your open-PR budget' "$ROOT/docs/prompts/lookahead-worker.md" > "$P/docs/prompts/lookahead-worker.md"
+    row "prompt/drifted-from-spec-refused" 1 'VIOLATION PROMPT: .* differs' -- la prompt --slot L1 --train 0.71 --root "$P"
+    # a prompt file without the launch line tick prints is refused
+    grep -v 'SLOT=L1 TRAIN=0.71 autonomously' "$ROOT/docs/prompts/lookahead-worker.md" > "$P/docs/prompts/lookahead-worker.md"
+    row "prompt/no-launch-line-refused" 1 'lacks the launch line' -- la prompt --slot L1 --train 0.71 --root "$P"
+    rm -f "${P:?}/docs/prompts/lookahead-worker.md"
+    row "prompt/absent-cannot-judge" 2 'CANNOT-JUDGE' -- la prompt --slot L1 --train 0.71 --root "$P"
 }
 
 run_all() {
@@ -155,6 +171,8 @@ MUTANTS=(
   "foreign-heartbeat-accepted|    if opts[\"worker\"] != owner:|    if False:"
   "hb-file-any-worker|        if isinstance(hb, dict) and hb.get(\"worker\") == rec[\"worker\"]:|        if isinstance(hb, dict):"
   "i4-unchecked|            stale = ho_age_h >= HANDOFF_MAX_H or ho.get(\"train\") != rec[\"train\"]|            stale = False"
+  "prompt-drift-unchecked|    if block != spec_block:|    if False:"
+  "prompt-launch-unchecked|    if launch_prompt(\"L1\", \"0.71\") not in text:|    if False:"
   "cannot-judge-passes|        return 2\n\n\nif __name__|        return 0\n\n\nif __name__"
 )
 

@@ -9,6 +9,7 @@ The cop is the single writer of that file; workers write heartbeat files.
   heartbeat STATE --slot L --worker W LA-02  a worker's own heartbeat file (never the state)
   tick STATE                          LA-02  I1-I4 report + the actions due this tick
   respawn STATE --slot L --worker NEW LA-02  refill a dead slot; refuse a live one
+  prompt --slot L --train X.Y         LA-03  the §7 standing prompt, checked against the spec
 
 Exit codes, shared by every verb:
   0  the property holds (or the action was done)
@@ -351,8 +352,45 @@ def cmd_respawn(args):
     return 0
 
 
+# ---- LA-03: the standing prompt ---------------------------------------------------
+PROMPT_DOC = "docs/prompts/lookahead-worker.md"
+SPEC_DOC = "docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md"
+FENCE = re.compile(r"^```\n(You are the dedicated look-ahead worker.*?)^```$", re.S | re.M)
+
+
+def standing_block(root, rel):
+    try:
+        with open(os.path.join(root, rel), encoding="utf-8") as fh:
+            text = fh.read()
+    except FileNotFoundError as exc:
+        raise CannotJudge(f"{rel}: not found") from exc
+    blocks = FENCE.findall(text)
+    if len(blocks) != 1:
+        raise CannotJudge(f"{rel}: {len(blocks)} standing-prompt blocks, want exactly 1")
+    return blocks[0], text
+
+
+def cmd_prompt(args):
+    """Render the standing prompt for one slot. Refuses (1) when the prompt file's
+    block has drifted from spec §7, or when it lacks the launch line tick prints."""
+    pos, opts = parse_opts(args, {"slot", "train", "root"})
+    slot, train, root = opts.get("slot"), opts.get("train"), opts.get("root") or ROOT
+    if pos or slot not in SLOTS or not re.fullmatch(r"[0-9]+\.[0-9]+", train or ""):
+        raise CannotJudge("usage: prompt --slot L? --train X.Y [--root REPO]")
+    block, text = standing_block(root, PROMPT_DOC)
+    spec_block, _ = standing_block(root, SPEC_DOC)
+    if block != spec_block:
+        print(f"VIOLATION PROMPT: {PROMPT_DOC} standing block differs from {SPEC_DOC} §7")
+        return 1
+    if launch_prompt("L1", "0.71") not in text:
+        print(f"VIOLATION PROMPT: {PROMPT_DOC} lacks the launch line tick prints: {launch_prompt('L1', '0.71')!r}")
+        return 1
+    print(block.replace("${SLOT}", slot).replace("${TRAIN}", train), end="")
+    return 0
+
+
 VERBS = {"validate": cmd_validate, "heartbeat": cmd_heartbeat, "tick": cmd_tick,
-         "respawn": cmd_respawn}
+         "respawn": cmd_respawn, "prompt": cmd_prompt}
 
 
 def main(argv):
