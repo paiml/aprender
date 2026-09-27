@@ -35,6 +35,8 @@ mod tests;
 mod tests_cov3;
 #[cfg(test)]
 mod tests_cov3b;
+#[cfg(test)]
+mod tests_qlora_loop;
 
 use crate::lora::LoRALayer;
 use crate::optim::{clip_grad_norm_refs, AdamW, Optimizer};

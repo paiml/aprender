@@ -1,0 +1,142 @@
+metadata:
+  id: C-QLORA-TRAINING-LOOP
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    The three invariants every LoRA/QLoRA instruct training step must hold:
+    the base model is frozen, the adapters are in the forward graph, and
+    the loss scores response tokens only.
+
+    BACKGROUND (0.72 R16). `apr finetune` (crates/apr-cli/src/commands/finetune.rs,
+    execute_training) and `WgpuTrainingPipeline::train_step` both cited
+    `qlora-training-loop-v1` and no such file existed: the citation
+    resolved to nothing, so nothing checked what it claimed. This file is
+    what the citation now resolves to, and each obligation is bound to a
+    test that runs.
+
+    SCOPE, stated so it is not over-read. The falsifiers exercise the CPU
+    `InstructPipeline::train_step` path (default features). The CUDA path
+    (`cuda_train_step`, `--features cuda`) shares `compute_causal_lm_loss`
+    but its frozen-base and adapter-movement behaviour is NOT exercised
+    here, and neither is the wgpu path (`--features gpu`,
+    `lora_forward_wgsl`). Those remain unmeasured under this contract
+    (TRACE-001 R-1: unmeasured is stated, never implied green).
+
+  references:
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/training.rs (train_step CPU path, compute_causal_lm_loss)'
+    - 'crates/aprender-train/src/finetune/instruct_pipeline/tests_qlora_loop.rs (falsifiers)'
+    - 'crates/aprender-train/src/lora/gradient_tests.rs (prop_base_weight_always_frozen)'
+    - 'crates/apr-cli/src/commands/finetune.rs (citing site, execute_training)'
+    - 'crates/aprender-train/src/finetune/wgpu_pipeline.rs (citing site, WgpuTrainingPipeline::train_step)'
+  depends_on:
+    - 'lora-gradient-flow-v1'
+
+equations:
+  frozen_base:
+    formula: |
+      ∀ step, ∀ θ ∈ base_parameters: θ_after(step) = θ_before(step)
+    domain: |
+      A training step updates LoRA A/B only. A base weight that moves turns
+      a LoRA run into an unbounded full fine-tune on a quantized base.
+    invariants:
+    - 'base parameters bit-identical across train_step'
+    preconditions:
+    - 'optimizer receives only LoRALayer::trainable_params()'
+
+  lora_forward:
+    formula: |
+      lora_layers ≠ ∅ ⇒ forward = forward_with_lora ∧ ∃ B ∈ lora_layers: ΔB ≠ 0
+    domain: |
+      The adapters must be in the autograd graph of the forward. A forward
+      that skips them (PMAT-805 class) yields zero adapter gradients and a
+      flat loss while the run reports success.
+    invariants:
+    - 'some LoRA B matrix moves after a training step'
+    preconditions:
+    - 'learning_rate > 0'
+
+  response_only_loss:
+    formula: |
+      loss_start = |prompt| - 1 ∧ num_loss_tokens = |response|
+      ∧ ∀ pos < loss_start: grad_logits[pos] = 0
+    domain: |
+      Causal-LM loss is taken over the positions that predict response
+      tokens. Prompt positions contribute no loss and receive no gradient,
+      so the model is not trained to reproduce its own prompt.
+    invariants:
+    - 'prompt-row logits do not change the loss'
+    preconditions:
+    - '|prompt| + |response| ≤ max_seq_len (no truncation)'
+
+proof_obligations:
+- id: QTL-INV-001
+  type: invariant
+  property: base parameters frozen across train_step
+  formal: '∀ θ ∈ model.parameters(): bits(θ_after) = bits(θ_before)'
+  applies_to: frozen_base
+- id: QTL-INV-002
+  type: invariant
+  property: adapters are in the forward graph and move
+  formal: 'lora_layers ≠ ∅ ⇒ ∃ B: ΔB ≠ 0'
+  applies_to: lora_forward
+- id: QTL-INV-003
+  type: invariant
+  property: loss window covers exactly the response
+  formal: 'num_loss_tokens = |response| ∧ ∀ pos < |prompt| - 1: grad_logits[pos] = 0'
+  applies_to: response_only_loss
+
+falsification_tests:
+- id: FALSIFY-QTL-001
+  rule: Three CPU train_steps leave every base parameter bit-identical.
+  prediction: |
+    Snapshots of model.parameters() before and after compare equal by
+    f32 bits. Planted falsifier: pushing the model's parameters_mut() into
+    the optimizer's param list makes this test RED.
+  test: cargo test -p aprender-train --lib falsify_qtl_001_train_step_leaves_base_weights_bit_identical
+  if_fails: |
+    The optimizer reached a base weight. Check what train_step passes to
+    optimizer.step_refs.
+  ship_blocking: true
+  counter_example_classes:
+  - base_weight_in_optimizer
+- id: FALSIFY-QTL-002
+  rule: Three CPU train_steps move at least one LoRA B matrix.
+  prediction: |
+    Some lora_b element changes by more than 1e-7. Planted falsifier:
+    routing train_step through model.forward (no LoRA) makes this RED.
+  test: cargo test -p aprender-train --lib falsify_qtl_002_train_step_moves_lora_adapters
+  if_fails: |
+    The adapters are orphaned from the forward graph (PMAT-805 class).
+  ship_blocking: true
+  counter_example_classes:
+  - lora_orphaned_from_forward
+- id: FALSIFY-QTL-003
+  rule: A 5-token prompt and 3-token response score exactly 3 tokens.
+  prediction: |
+    num_response_tokens = 3; compute_causal_lm_loss gives zero gradient
+    on prompt rows before loss_start, and perturbing those rows' logits
+    leaves the loss bit-identical. Planted falsifier: loss_start = 0
+    makes this RED.
+  test: cargo test -p aprender-train --lib falsify_qtl_003_loss_scores_response_tokens_only
+  if_fails: |
+    The loss window moved onto the prompt. Check loss_start in train_step
+    and the loop bounds in compute_causal_lm_loss.
+  ship_blocking: true
+  counter_example_classes:
+  - prompt_tokens_in_loss
+
+qa_gate:
+  id: F-QTL-001
+  name: QLoRA training-loop invariants (CPU path)
+  description: |
+    Frozen base, LoRA in the forward, response-only loss on the CPU
+    instruct train_step. CUDA and wgpu paths are not covered.
+  checks:
+  - frozen_base
+  - lora_forward
+  - response_only_loss
+  pass_criteria: FALSIFY-QTL-001, FALSIFY-QTL-002 and FALSIFY-QTL-003 pass
+  falsification: Failure fails the gate (ship-blocking)
