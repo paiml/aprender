@@ -1,0 +1,329 @@
+{
+  "ticket": "PMAT-4536",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "58d9b371d98087e92c6e112774402bf2800f23a4",
+  "diff_sha256": "dad4a89f76f30172c1b689fc0aea325a04b3c76847088d313ec7605a78b718a2",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 40991,
+  "prompt_sha256": "1e73b1aa9a3ec5267e491c895a2a7cbab7652c314ce6fee503fb10627f63419a",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff wires the previously-unwired DUP-001 engine (scripts/check_pr_duplicate_patches.sh + scripts/lib/pr_dup_patches.py) into ci/sections.yml as two guard-tree steps (self-test on every event, cross-PR check only on pull_request), adds the roadmap entry, and adds a 21-mutant kill-set. I traced the exit-code paths (gh list failure, unshallow/fetch failure, engine rc mapping) and confirmed each refuses-unread with exit 2 rather than passing green, matching acceptance criterion 4. The self-test case table (23 rows, matching the comment's count) logically covers all four required case-table families (pure copy, copy+edit, cherry-pick-reworded; identical generated regen, whitespace-only) plus extra must-not-match rows (landed fixes, declared stacks) that don't contradict the ticket. The stacked-on exemption regex and its bidirectional check in find_dups() match criterion 2. Nothing in the diff weakens an existing gate — ci/sections.yml only adds lines.",
+      "findings": [
+        {
+          "file": "scripts/lib/pr_dup_patches.py",
+          "line": 298,
+          "claim": "For a commit-level duplicate, render() prints no file/hunk (tail is empty unless level==\"hunk\"), while the ticket's acceptance criterion 1 says the check must fail 'naming both PRs, both shas and the file + hunk' for a matching commit OR hunk patch-id.",
+          "fix": "Either relax the acceptance-criterion wording to hunk-level only, or extend the commit-level message to enumerate the commit's touched files.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3837,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "1e73b1aa9a3ec5267e491c895a2a7cbab7652c314ce6fee503fb10627f63419a",
+      "trace": {
+        "input_sha256": "358ca2a6ddf784a0377271e5bb80c396feb1405ba6003cd019b38d9ae7f5f130",
+        "output_sha256": "0405c5b4f52781d5dfd6235c2ea6d7a9709bdec8c4d3f53eb6bf0ae6d46d3f2e",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "DUP-001 is wired into guard-tree exactly as PMAT-4536 specifies: the 23-row self-test case table runs on every event, the cross-PR check runs only on pull_request, and both gh-list and git-fetch failures exit 2 (never green), per the diff's explicit checks. The engine (scripts/lib/pr_dup_patches.py) computes commit- and hunk-level git patch-id --stable sets per PR, excludes generated paths/README-generated-blocks/whitespace-only hunks/already-landed content, and applies the stacked-on: #N exemption bidirectionally exactly once. Traced the trickier self-test rows by hand (stack-wrong-pr#, landed-fix dedup, detail-cap arithmetic, commit+hunk double-counting on 'pick') and each matches the code's actual behavior. Confirmed guard-tree runs inside the x86-main fat job which has permissions: write-all, so the added gh pr list / git fetch steps are not permission-starved. Found no test asserting the opposite of the ticket, no weakened gate, and no unrequested scope beyond the mutation harness (scripts/mutate_pr_dup_patches.sh), which is in-family with this epic's prior PRs.",
+      "findings": [
+        {
+          "file": "scripts/lib/pr_dup_patches.py",
+          "line": 232,
+          "claim": "landed_ids() runs `git log -p` over the full mb..base range on every (subject, other) pair; with the current 10-open-PR cap this is bounded, but the cost model is O(P) git-log-p calls per push event and isn't discussed as a scaling risk if the PR cap is ever relaxed.",
+          "grounding": "cited",
+          "fix": "Not a correctness defect against this ticket; worth a follow-up note if the max-10-open-PRs policy changes."
+        }
+      ],
+      "raw_bytes": 4029,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "1e73b1aa9a3ec5267e491c895a2a7cbab7652c314ce6fee503fb10627f63419a",
+      "trace": {
+        "input_sha256": "c4093d7bc8e87f72ca44586c6ecd4a0ab015376fa9c2eb7a6911701a28471dfe",
+        "output_sha256": "4a34755e11c546355052b20522bba53ad43756a523cc9bf0386a26782acc87c6",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4536 is correctly implemented. The diff wires DUP-001 (duplicate patch-id detection) into CI with proper exit codes (1=duplicate, 2=error, 0=no duplicate or no PR), comprehensive case-table testing (23 must-match/must-not-match rows, 21 mutation-tested rules), stacked-on exemption (both directions, case-insensitive), and error safety (gh/git failures never pass unread). All four acceptance criteria met.",
+      "findings": [],
+      "raw_bytes": 1732,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "1e73b1aa9a3ec5267e491c895a2a7cbab7652c314ce6fee503fb10627f63419a",
+      "trace": {
+        "input_sha256": "80fe23cac756f16e18f77804ca6f6454a0f077e4bb7e7715284d2deb9de19e3c",
+        "output_sha256": "7f6bfcd32d2c44336a1b23cf981c984436593cc4141f812521410b0aeccc0717",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/lib/pr_dup_patches.py",
+      "line": 232,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "landed_ids() runs `git log -p` over the full mb..base range on every (subject, other) pair; with the current 10-open-PR cap this is bounded, but the cost model is O(P) git-log-p calls per push event and isn't discussed as a scaling risk if the PR cap is ever relaxed."
+      ]
+    },
+    {
+      "file": "scripts/lib/pr_dup_patches.py",
+      "line": 298,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "For a commit-level duplicate, render() prints no file/hunk (tail is empty unless level==\"hunk\"), while the ticket's acceptance criterion 1 says the check must fail 'naming both PRs, both shas and the file + hunk' for a matching commit OR hunk patch-id."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 5,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 40991 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 40991 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 16 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 40991,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
