@@ -1,0 +1,125 @@
+# ──────────────────────────────────────────────
+# bin-aprender-qa-cli--apr-qa-v1 — the `apr-qa` bin target of package aprender-qa-cli (ONT-10 slice S16 (1/2))
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml. The shared shapes (sha, helpSha,
+# gitSha, …) live in binary-surface-v1 and are not restated. Moved from docs/ont-10/binary-contracts/ (aprender-bb).
+#
+# binary-apr-qa-v1 — ONT-10 slice S16 (1/2): the `apr-qa` binary as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features): `apr-qa --version` =
+# "apr-qa 0.69.3"; the --help walk gives 15 leaf commands, and surface_audit.csv has exactly those 15 rows
+# (set-equal). G0.1 (--version carries the git sha) is a warning here and RED today.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-qa-cli--apr-qa-v1
+version: "1.0.0"
+scope: >
+  The built `apr-qa` target of package `aprender-qa-cli` (default features) as the focus node binary/aprender-qa-cli/apr-qa: its identity and its exact CLI command set, and the surface_audit.csv rows that must resolve to it.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-27'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S16 (1/2) (apr-qa). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws
+    for binary/aprender-qa-cli/apr-qa, on the binary-surface-v1 vocabulary.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = apr-qa)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'aprender#4502 — ONT-10'
+
+entity:
+  type: binary
+  ref: binary/aprender-qa-cli/apr-qa
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-apr-qa-surface
+    targetClass: bin:target/aprender-qa-cli/apr-qa
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["apr-qa"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-qa-cli"]}
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "^apr-qa [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-27 (no sha); a warning until the version string carries it
+      - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: "warning"}
+      - path: bin:command
+        minCount: 15
+        maxCount: 15
+        in:
+          - "bootstrap"
+          - "certify"
+          - "export-csv"
+          - "export-evidence"
+          - "generate"
+          - "kernel-coverage"
+          - "list"
+          - "lock-playbooks"
+          - "parity"
+          - "report"
+          - "run"
+          - "score"
+          - "tickets"
+          - "tools"
+          - "validate-contract"
+      - {path: "bin:ledgerOrphan", maxCount: 0}
+      - {path: "bin:unledgeredCommand", maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(binary/aprender-qa-cli/apr-qa) = C, |C| = 15, where C = the leaves of the recursive --help walk of the default-feature build ∧ ledgerOrphan = { r ∈ csv : r.binary = apr-qa ∧ r.feature ∉ C }; unledgeredCommand = C ∖ { r.feature : r.binary = apr-qa }"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is apr-qa"
+    codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "in + minCount 15 + maxCount 15 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
+    preconditions:
+      - "the snapshot was written at this commit, default features"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `apr-qa --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APR-QA-INV-001
+    property: every apr-qa surface member has an audited ledger row, and every ledger row names one
+    formal: '∀ c ∈ surface(apr-qa): ∃ r ∈ surface_audit : r.binary = apr-qa ∧ path(r) = c; ∀ r with r.binary = apr-qa: path(r) ∈ surface(apr-qa)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APR-QA-001
+    rule: 'G1.2 help answers'
+    prediction: '`apr-qa --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli apr-qa'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APR-QA-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`apr-qa --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli apr-qa'
+    if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APR-QA-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`apr-qa --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-27: "apr-qa 0.69.3" — no sha; a stale apr-qa reads as HEAD'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APR-QA-004
+    rule: 'G1.3/G1.4 the surface set equals the snapshot'
+    prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
+    test: 'NOT YET WRITTEN — pv lint contracts/ --gate shapes on the snapshot, after extract:binary (ONT-4g)'
+    if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
+    mutation: 'remove `bootstrap` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
+  - id: FALSIFY-BIN-APR-QA-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row per surface member with binary = apr-qa (15 rows on 2026-09-27)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
+    mutation: 'delete every apr-qa row; must turn RED naming apr-qa'
