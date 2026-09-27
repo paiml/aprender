@@ -1,0 +1,28 @@
+{
+  "commit": "00c2ec721afb7b48b5073cf2982ff0fb09086283",
+  "compute_cap": "12.1",
+  "device_skips": 0,
+  "gpu": "NVIDIA GB10",
+  "gpu_failed": 0,
+  "gpu_passed": 2669,
+  "host": "gx10",
+  "issue": "#3759",
+  "mutant": {
+    "name": "cuda::executor::rmsnorm_eps_tests_3759::the_module_key_guard_refuses_one_key_for_two_epsilons",
+    "passed": true,
+    "ran": true,
+    "skipped": false
+  },
+  "reason": "suite exit serve=1 gpu=0",
+  "schema": "cuda-module-key-v1",
+  "serve_cuda_only": 1776,
+  "serve_failed": 5,
+  "serve_ignored": 14,
+  "serve_passed": 1757,
+  "started_utc": "2026-09-27T08:29:02Z",
+  "status": "FAIL",
+  "trees": {
+    "crates/aprender-gpu/src": "116be10e071ca37b25f00600d60255583337b5e5",
+    "crates/aprender-serve/src/cuda": "3ac5c16a7b558dc335f9d5ce6cd16fe6a3e7db13"
+  }
+}
