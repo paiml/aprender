@@ -108,7 +108,11 @@ fn weight(m: &Qwen35Model, layer: usize, t: LoraTarget) -> Option<&Vec<f32>> {
     }
 }
 
-fn weight_mut(m: &mut Qwen35Model, layer: usize, t: LoraTarget) -> Option<&mut Vec<f32>> {
+pub(super) fn weight_mut(
+    m: &mut Qwen35Model,
+    layer: usize,
+    t: LoraTarget,
+) -> Option<&mut Vec<f32>> {
     let l = &mut m.layers[layer];
     match (t, &mut l.mixer) {
         (LoraTarget::AttnQ, OwnedMixer::Attention(a)) => Some(&mut a.q),

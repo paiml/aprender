@@ -143,3 +143,88 @@ fn real_model_lora_adamw_descends() {
     assert!(losses[1] < losses[0], "the first step must descend: {losses:?}");
     assert!(losses[losses.len() - 1] < losses[0] / 2.0, "8 steps must halve the loss: {losses:?}");
 }
+
+/// Round-trip every adapted matrix through the CUDA path's NF4 quantizer (64-element
+/// absmax blocks over the row-major weight), which is the base R4 trains on.
+fn nf4_base(base: &Qwen35Model, lora: &Qwen35Lora) -> Qwen35Model {
+    let mut m = base.clone();
+    for slot in &lora.slots {
+        let w = super::super::lora::weight_mut(&mut m, slot.layer, slot.target).expect("slot");
+        let q = trueno_gpu::kernels::quantize_nf4(w, slot.rows, slot.cols);
+        *w = trueno_gpu::kernels::dequantize_nf4(&q);
+    }
+    m
+}
+
+/// The NF4 round trip is what QQE-005's CPU oracle loads: it moves the weights, stays
+/// within the codebook bound (C-NF4-001), and a second round trip is bit-identical.
+#[test]
+fn nf4_round_trip_base_is_idempotent_and_bounded() {
+    let base = tiny(5);
+    let lora = Qwen35Lora::new(&base, &LoraTarget::ALL, 4, 8.0, 1);
+    let once = nf4_base(&base, &lora);
+    let twice = nf4_base(&once, &lora);
+    assert_eq!(once.forward(&TOKENS), twice.forward(&TOKENS), "NF4 round trip is not idempotent");
+    assert_ne!(once.forward(&TOKENS), base.forward(&TOKENS), "NF4 round trip changed nothing");
+    for slot in &lora.slots {
+        let w0 = super::super::lora::weight_mut(&mut base.clone(), slot.layer, slot.target)
+            .expect("slot")
+            .clone();
+        let mut o = once.clone();
+        let w1 = super::super::lora::weight_mut(&mut o, slot.layer, slot.target).expect("slot");
+        for (b0, b1) in w0.chunks(64).zip(w1.chunks(64)) {
+            let absmax = b0.iter().fold(0.0_f32, |a, x| a.max(x.abs()));
+            for (x, y) in b0.iter().zip(b1.iter()) {
+                assert!((x - y).abs() <= 0.16 * absmax + 1e-7, "{slot:?}: {x} -> {y}");
+            }
+        }
+    }
+}
+
+fn rel(a: &[f32], b: &[f32]) -> f32 {
+    let d: Vec<f32> = a.iter().zip(b).map(|(x, y)| x - y).collect();
+    dot(&d, &d).sqrt() / dot(b, b).sqrt().max(f32::MIN_POSITIVE)
+}
+
+/// Spike S-R4c: on the real 0.8B, how far are the adapter gradients on the Q4_K base from
+/// those on the NF4 base the CUDA path trains? If that gap exceeds QQE-005's rel 1e-2, an
+/// oracle on the wrong base goes RED for a non-bug reason (risk K12).
+#[test]
+#[ignore = "needs a Qwen3.5 GGUF: QWEN35_GGUF=/path/to/Qwen3.5-0.8B-Q4_K_M.gguf"]
+fn real_model_nf4_base_gradient_gap() {
+    let path = std::env::var("QWEN35_GGUF").expect("set QWEN35_GGUF");
+    let base = Qwen35Model::from_gguf(&path).expect("train loads");
+    let mut lora = Qwen35Lora::new(&base, &LoraTarget::ALL, 16, 32.0, 42);
+    let mut r = Lcg(42 ^ 0x9e37);
+    for p in lora.params.iter_mut().skip(1).step_by(2) {
+        *p = Tensor::from_vec(r.vec(p.len(), 0.01), true);
+    }
+    let nf4 = nf4_base(&base, &lora);
+    let (tokens, targets) = ([9_707_u32, 11, 1_879], [11_u32, 1_879, 374]);
+    let grads = |m: &Qwen35Model| {
+        let mut work = m.clone();
+        lora.merge_into(m, &mut work);
+        let (loss, g) = work.loss_and_grads(&tokens, &targets);
+        lora.set_grads(&g);
+        let gs: Vec<Vec<f32>> =
+            lora.params.iter().map(|p| p.grad().expect("grad set").to_vec()).collect();
+        (loss, gs)
+    };
+    let (l_q4k, g_q4k) = grads(&base);
+    let (l_nf4, g_nf4) = grads(&nf4);
+    let (_, g_nf4_again) = grads(&nf4);
+    let control = g_nf4.iter().zip(&g_nf4_again).map(|(a, b)| rel(a, b)).fold(0.0_f32, f32::max);
+    let mut gaps: Vec<f32> = g_q4k.iter().zip(&g_nf4).map(|(a, b)| rel(a, b)).collect();
+    gaps.sort_by(f32::total_cmp);
+    let over = gaps.iter().filter(|&&x| x > 1e-2).count();
+    eprintln!(
+        "S-R4c: loss q4k {l_q4k:.5} nf4 {l_nf4:.5}; per-tensor rel gap over {} tensors: \
+         min {:.4} median {:.4} p90 {:.4} max {:.4}; {over} > 1e-2; control (same base twice) {control:e}",
+        gaps.len(),
+        gaps[0],
+        gaps[gaps.len() / 2],
+        gaps[gaps.len() * 9 / 10],
+        gaps[gaps.len() - 1]
+    );
+    assert_eq!(control, 0.0, "the backward is not deterministic on one base");
+}

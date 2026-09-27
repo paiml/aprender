@@ -150,6 +150,7 @@ dirs = "5.0"  # Cache directory detection for examples
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI snapshot testing (ENT-140); PMAT-955: path-only dev-dep
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # PMAT-955: path-only dev-dep (no version)
 realizar = { workspace = true }  # T1-R2 QTG-001: serve's per-token GDN is the parity oracle; a dev-dep so plain `cargo test` (and CI) compiles it
+trueno-gpu = { path = "../aprender-gpu", package = "aprender-gpu", features = ["cuda"] }  # 0.72 R4 QQE-005 (`cuda` only ungates the pure-CPU kernels::quantize_nf4; the driver is dlopened at run time): the CPU oracle round-trips the base through the CUDA path's own NF4 quantizer (no `cuda` feature)
 
 [[bench]]
 name = "monitor_bench"
