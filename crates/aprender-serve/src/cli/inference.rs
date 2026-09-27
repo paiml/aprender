@@ -321,6 +321,7 @@ pub fn run_gguf_inference(
         num_heads: config.num_heads,
         quant_type: Some("GGUF".to_string()),
     });
+    tracer.trace_cpu_kernel_paths();
 
     // Get vocabulary for decode tracing
     let vocab = mapped.model.vocabulary();

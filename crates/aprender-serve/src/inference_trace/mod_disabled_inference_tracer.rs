@@ -425,6 +425,43 @@ impl InferenceTracer {
         self.events.push(event);
     }
 
+    /// Record which CPU dot kernel each quantized path dispatches to (0.73 R3,
+    /// FALSIFY-NEON-Q4K-002). One `KERNEL_LAUNCH` event per path, `Dispatch:` set
+    /// to the dispatcher's own `kernel_path` label; no grid/block, it is not a GPU launch.
+    pub fn trace_cpu_kernel_paths(&mut self) {
+        if !self.config.should_trace(TraceStep::KernelLaunch) {
+            return;
+        }
+        let paths = [
+            ("fused_q4k_dot_simd", crate::quantize::fused_q4k_dot_kernel_path()),
+            ("fused_q6k_dot_simd", crate::quantize::fused_q6k_dot_kernel_path()),
+            ("fused_q4k_q8k_dot_simd", crate::quantize::fused_q4k_q8k_dot_kernel_path()),
+        ];
+        for (kernel, path) in paths {
+            let event = TraceEvent {
+                id: self.next_id(),
+                timestamp: Self::timestamp(),
+                event_type: AwsEventType::TaskStateExited,
+                previous_event_id: None,
+                step: TraceStep::KernelLaunch,
+                iteration: 0,
+                layer: None,
+                input_shape: vec![],
+                output_shape: vec![],
+                stats: TensorStats::default(),
+                duration_us: 0,
+                error: None,
+                cause: None,
+                details: TraceDetails {
+                    kernel_name: Some(kernel.to_string()),
+                    dispatch_strategy: Some(path.to_string()),
+                    ..Default::default()
+                },
+            };
+            self.events.push(event);
+        }
+    }
+
     /// Get all collected events
     #[must_use]
     pub fn events(&self) -> &[TraceEvent] {

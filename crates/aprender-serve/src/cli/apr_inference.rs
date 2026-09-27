@@ -123,6 +123,7 @@ pub fn run_apr_inference(
         num_heads: model.config.num_heads,
         quant_type: Some("APR scratch-dequant".to_string()),
     });
+    tracer.trace_cpu_kernel_paths();
 
     let load_time = load_start.elapsed();
     if verbose {

@@ -228,3 +228,36 @@ fn falsify_neon_q4k_002_q8k_kernel_path_is_honest() {
         assert!(!p.contains("neon"), "{p}");
     }
 }
+
+/// FALSIFY-NEON-Q4K-002 at the trace surface: `apr run --trace` reports the same
+/// labels the dispatchers report, and only when the kernel step is traced.
+#[test]
+fn falsify_neon_q4k_002_trace_reports_kernel_paths() {
+    use crate::inference_trace::{InferenceTracer, TraceConfig, TraceStep};
+    let mut tracer = InferenceTracer::new(TraceConfig::enabled());
+    tracer.trace_cpu_kernel_paths();
+    let got: Vec<_> = tracer
+        .events()
+        .iter()
+        .filter(|e| e.step == TraceStep::KernelLaunch)
+        .filter_map(|e| e.details.dispatch_strategy.clone())
+        .collect();
+    assert_eq!(
+        got,
+        [
+            fused_q4k_dot_kernel_path(),
+            fused_q6k_dot_kernel_path(),
+            fused_q4k_q8k_dot_kernel_path()
+        ]
+    );
+    let text = tracer.format_text();
+    assert!(text.contains(&format!("Dispatch: {}", got[0])), "{text}");
+    assert!(
+        !text.contains("Grid:"),
+        "CPU paths must not print a GPU grid: {text}"
+    );
+
+    let mut off = InferenceTracer::new(TraceConfig::default());
+    off.trace_cpu_kernel_paths();
+    assert!(off.events().is_empty());
+}
