@@ -81,8 +81,15 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   Median of 3 runs. Trained tokens/s over 200 timed steps, excluding load.
 - **Same-work guard (planted):** trainable-parameter counts must match within 1%. Halving apr's targets must FAIL.
 - **First run = baseline.** The 0.8 threshold is fixed by operator ruling. The gap feeds R14.
-- **`[U]` first check:** does Unsloth support Qwen 3.5 GDN layers? If not, both sides target attention + MLP only, and the
-  receipt says so.
+- **Spike S-R5 (desk, 2026-09-27) `[V, external]`:** Unsloth supports Qwen3.5 fine-tuning (0.8B–122B) with its own Triton
+  kernels for the GDN layers, and needs transformers v5. It **advises against QLoRA on Qwen3.5** ("higher than normal
+  quantization differences"). Its default targets are `q,k,v,o,gate,up,down`, with no GDN projections. It lists 10 GB
+  for 4B bf16 LoRA. Source: unsloth.ai/docs/models/qwen3.5/fine-tune. **Therefore the T2 cell is bf16 LoRA, not QLoRA**,
+  with Unsloth's default targets on both sides. The contract is updated to match.
+- **Consequence for the ranking:** R15 ("`-m lora` is CPU F32 today", `finetune.rs:281`) moves onto the critical path,
+  because bf16 LoRA on CUDA IS the T2 cell. R4 stays the T1 finetune cell, but NF4 quality on Qwen3.5 is now a known risk
+  (K10). R4 adds a gate: QLoRA's final loss is within 5% of bf16 LoRA's on the same cell, or QLoRA is documented as
+  unsupported for qwen3.5 (an honest refusal, not a silent quality loss).
 
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·

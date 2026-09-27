@@ -63,6 +63,14 @@ falsification_tests:
   prediction: 'apr serve base+adapter matches the training-side merged forward (cos ≥ 0.999, argmax equal)'
   test: 'post-train parity check on 3 prompts'
   if_fails: 'adapter layout, scaling (alpha/r) or GDN-projection target naming differs between train and serve'
+- id: FALSIFY-QQE-004
+  rule: NF4 quantization does not silently cost quality on Qwen3.5
+  prediction: 'mean(L_last10, QLoRA) ≤ 1.05 · mean(L_last10, bf16 LoRA) on the same cell, seed and data'
+  test: 'run the canonical cell twice, -m qlora and -m lora (bf16), compare the final loss windows'
+  if_fails: >-
+    Unsloth's Qwen3.5 guide advises against QLoRA for "higher than normal quantization differences"
+    (read 2026-09-27). If this fails, `apr finetune -m qlora` must refuse qwen3.5 by name and point
+    to -m lora. It must not train a worse adapter silently.
 qa_gate:
   certeza:
     min_score: 0.0
