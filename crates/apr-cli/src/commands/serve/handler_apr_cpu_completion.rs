@@ -309,6 +309,33 @@ fn insert_trace_data(response: &mut serde_json::Value, trace_level: Option<&str>
     }
 }
 
+/// TRACE-001 TR-03 (`contracts/serve-trace-payload-v1.yaml`): the
+/// `X-Trace-Level` payload for the APR CPU path, built by the same
+/// `realizar::api::build_trace_data` the aprender-serve handlers use. It
+/// reports the loaded model's real layer count (it was a literal 28 for every
+/// model) and carries `provenance: WallClockTotal`, because only the total
+/// latency is measured here.
+#[cfg(feature = "inference")]
+fn cpu_trace_data(
+    trace_level: Option<&str>,
+    latency_us: u64,
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    num_layers: usize,
+) -> Option<serde_json::Value> {
+    let (brick, step, layer) = realizar::api::build_trace_data(
+        trace_level,
+        latency_us,
+        prompt_tokens,
+        completion_tokens,
+        num_layers,
+    );
+    brick
+        .or(step)
+        .or(layer)
+        .and_then(|t| serde_json::to_value(t).ok())
+}
+
 /// Handle POST /v1/chat/completions for APR CPU inference (PAR-302).
 ///
 /// GH-284: True per-token SSE streaming via `spawn_blocking` + mpsc channel.
@@ -392,11 +419,15 @@ async fn handle_apr_cpu_chat_completion(
         "_apr_metrics": {"latency_ms": latency_ms, "tok_per_sec": tok_per_sec}
     });
 
-    let trace_data = serde_json::json!({
-        "total_time_us": latency_ms * 1000, "prompt_tokens": out.input_token_count,
-        "completion_tokens": out.tokens_generated, "layers": 28
-    });
-    insert_trace_data(&mut response, trace_level.as_deref(), trace_data);
+    if let Some(trace_data) = cpu_trace_data(
+        trace_level.as_deref(),
+        latency_ms * 1000,
+        out.input_token_count,
+        out.tokens_generated,
+        s.num_layers,
+    ) {
+        insert_trace_data(&mut response, trace_level.as_deref(), trace_data);
+    }
 
     Json(response).into_response()
 }
@@ -744,9 +775,40 @@ mod apr_cpu_completion_tests {
             ("layer", "layer_trace"),
         ] {
             let mut resp = serde_json::json!({});
-            insert_trace_data(&mut resp, Some(level), serde_json::json!({"layers": 28}));
-            assert_eq!(resp[key]["layers"], 28, "level {level} → key {key}");
+            insert_trace_data(&mut resp, Some(level), serde_json::json!({"x": 1}));
+            assert_eq!(resp[key]["x"], 1, "level {level} → key {key}");
         }
+    }
+
+    // ---- cpu_trace_data (TRACE-001 TR-03) ------------------------------
+
+    #[test]
+    fn falsify_stp_001_layer_count_is_the_models_not_28() {
+        for n in [12usize, 36] {
+            for level in ["brick", "step", "layer"] {
+                let t = cpu_trace_data(Some(level), 5000, 7, 3, n).expect("known level");
+                let s = t.to_string();
+                assert!(s.contains(&format!("{n} layers")) || t["operations"] == n, "{level}: {s}");
+                assert!(!s.contains("28 layers"), "{level}: {s}");
+            }
+        }
+        let layer = cpu_trace_data(Some("layer"), 5000, 7, 3, 12).expect("layer");
+        assert_eq!(layer["operations"], 12);
+    }
+
+    #[test]
+    fn falsify_stp_002_payload_carries_wall_clock_provenance() {
+        for level in ["brick", "step", "layer"] {
+            let t = cpu_trace_data(Some(level), 5000, 7, 3, 12).expect("known level");
+            assert_eq!(t["provenance"], "wall_clock_total", "{level}: {t}");
+            assert_eq!(t["total_time_us"], 5000, "{level}: {t}");
+        }
+    }
+
+    #[test]
+    fn falsify_stp_003_unknown_or_absent_level_emits_nothing() {
+        assert!(cpu_trace_data(None, 1, 1, 1, 12).is_none());
+        assert!(cpu_trace_data(Some("garbage"), 1, 1, 1, 12).is_none());
     }
 
     // ---- ollama_sampling ----------------------------------------------

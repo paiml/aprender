@@ -25,6 +25,7 @@ fn state_with(
         }),
         embedded_tokenizer: embedded,
         model_name: "apr".to_string(),
+        num_layers: 0,
         demo_scripted_tokens: None,
     }
 }

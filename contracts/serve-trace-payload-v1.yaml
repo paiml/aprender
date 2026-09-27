@@ -1,0 +1,65 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "The APR CPU `apr serve` X-Trace-Level payload (TRACE-001 TR-03, #4558) reports the loaded model's real layer count and declares its provenance. Both hand-built payloads wrote a literal `\"layers\": 28` for every model with no provenance (TRACE-001 F4), while the sibling aprender-serve path marks the same data WallClockTotal. The CPU handler now calls realizar::api::build_trace_data with AprServerState.num_layers, taken from the loaded transformer's config."
+  kind: pattern
+  references:
+    - "docs/specifications/TRACE-001-tracing-consumers.md — §1.3 F4, §3, §4 TR-03"
+    - "crates/apr-cli/src/commands/serve/handler_apr_cpu_completion.rs — cpu_trace_data"
+    - "crates/apr-cli/src/commands/serve/handlers.rs — AprServerState.num_layers"
+    - "crates/aprender-serve/src/api/mod_create_demo.rs — build_trace_data"
+
+five_whys:
+  symptom: "Every APR CPU trace response said the model has 28 layers."
+  why_1: "The payload was a json! literal with `\"layers\": 28` (a Qwen2.5-1.5B constant)."
+  why_2: "AprServerState did not carry the layer count, so the handler had nothing to report."
+  why_3: "The CPU handler hand-built its payload instead of calling build_trace_data, the shared builder that carries provenance."
+  why_4: "The only test of the payload asserted the literal 28 back."
+  why_5: "No falsifier ran the payload on a model with a different depth."
+  root_cause: "A literal stood in for a model property. The remedy threads num_layers from the loaded config and routes the payload through the shared, provenance-carrying builder."
+
+equations:
+  payload:
+    formula: "trace(level, lat, p, c, L) = serde(build_trace_data(level, lat, p, c, L)) for level ∈ {brick, step, layer}; None otherwise"
+    domain: "L = AprServerState.num_layers = AprTransformer.config.num_layers (0 when no transformer)"
+    codomain: "Option<serde_json::Value> with provenance = wall_clock_total"
+    invariants:
+      - "the reported layer count equals the loaded model's"
+      - "every payload carries provenance"
+
+proof_obligations:
+  - id: STP-INV-001
+    type: invariant
+    property: "The payload's layer count is the model's"
+    formal: "∀ L ≠ 28: trace(level, …, L) never reports 28 layers ∧ trace(layer, …, L).operations = L"
+    applies_to: payload
+  - id: STP-INV-002
+    type: invariant
+    property: "Every payload carries provenance and no hand-built literal remains"
+    formal: "trace(level, …).provenance = wall_clock_total ∧ git grep '\"layers\": 28' crates = ∅"
+    applies_to: payload
+
+falsification_tests:
+  - id: FALSIFY-STP-001
+    rule: "A 12- or 36-layer model is not reported as 28"
+    prediction: "every level reports the given layer count"
+    test: "cargo test -p apr-cli --lib falsify_stp_001"
+    if_fails: "the payload reports a literal instead of the model"
+  - id: FALSIFY-STP-002
+    rule: "Payload without provenance"
+    prediction: "brick, step and layer payloads all carry provenance wall_clock_total"
+    test: "cargo test -p apr-cli --lib falsify_stp_002"
+    if_fails: "a timing leaves the process without saying what was measured"
+  - id: FALSIFY-STP-003
+    rule: "The hand-built literal is gone"
+    prediction: "git grep finds no \"layers\": 28 under crates/"
+    test: "! git grep -n '\"layers\": 28' -- crates"
+    if_fails: "a hand-built payload survives beside the shared builder"
+
+qa_gate:
+  id: F-STP-001
+  name: "APR CPU serve trace payload is honest"
+  description: "The falsify_stp_* unit tests run in CI's workspace-test job (apr-cli --lib)."
+  checks:
+    - "payload"

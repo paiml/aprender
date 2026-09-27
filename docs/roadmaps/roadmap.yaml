@@ -22163,3 +22163,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: TRACE-001 Phase A
+- id: PMAT-4558
+  github_issue: 4558
+  item_type: task
+  title: 'TR-03: APR CPU serve trace payload reports the real layer count with provenance (serve-trace-payload-v1)'
+  status: inprogress
+  priority: high
+  assigned_to: la-impl
+  created: 2026-09-27T13:01:10Z
+  updated: 2026-09-27T13:01:10Z
+  spec: docs/specifications/TRACE-001-tracing-consumers.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: TRACE-001 Phase A

@@ -1062,6 +1062,9 @@ struct AprServerState {
     embedded_tokenizer: Option<realizar::apr::BpeTokenizer>,
     /// GH-283: Model name for request validation (derived from filename stem)
     model_name: String,
+    /// TRACE-001 TR-03: the loaded transformer's layer count, reported by the
+    /// `X-Trace-Level` payload. 0 when no transformer loaded.
+    num_layers: usize,
     /// PMAT-928 test seam ONLY: a scripted per-token text sequence used to drive
     /// the NDJSON streaming path without a real transformer. Production state
     /// always leaves this `None`; only `build_demo_apr_cpu_router_for_test` sets
@@ -1312,6 +1315,7 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
     println!("{}", "Using CPU inference".dimmed());
 
     // Load transformer
+    let mut num_layers = 0;
     let transformer = if is_transformer {
         match realizar::apr_transformer::AprTransformer::from_apr_file(model_path) {
             Ok(t) => {
@@ -1329,6 +1333,7 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
                     )
                     .cyan()
                 );
+                num_layers = t.config.num_layers;
                 let forward = realizar::apr_transformer::AprCpuForward::new(t);
                 let session = realizar::session::Session::new(forward);
                 Some(Arc::new(std::sync::Mutex::new(session)))
@@ -1360,6 +1365,7 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         tokenizer: bpe_tokenizer,
         embedded_tokenizer,
         model_name,
+        num_layers,
         demo_scripted_tokens: None,
     })
 }
@@ -1679,6 +1685,7 @@ pub fn build_demo_apr_cpu_router_for_test() -> axum::Router {
         tokenizer: None,
         embedded_tokenizer: None,
         model_name: "apr".to_string(),
+        num_layers: 0,
         demo_scripted_tokens: None,
     };
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
@@ -1705,6 +1712,7 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
         tokenizer: None,
         embedded_tokenizer: None,
         model_name: "apr".to_string(),
+        num_layers: 0,
         demo_scripted_tokens: Some(vec![
             "Hello".to_string(),
             ", ".to_string(),
