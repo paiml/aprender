@@ -668,54 +668,41 @@ fn store_findings_in_cache(
     }
 }
 
-/// Run all lint gates across a contract directory.
-#[allow(clippy::too_many_lines)]
-pub fn run_lint(config: &LintConfig) -> LintReport {
-    let overall_start = Instant::now();
-    let mut gates = Vec::with_capacity(3);
-    let mut all_findings = Vec::new();
-    let mut stats = cache::CacheStats::default();
-    let mut contract_timings: Vec<(String, u64)> = Vec::new();
-
-    let cache_root = if config.no_cache {
-        None
-    } else {
-        Some(cache::cache_dir(config.contract_dir))
-    };
-
-    let (contracts, parse_errors) = load_contracts(config.contract_dir);
-    let binding = load_binding(config.binding_path);
-
-    // Gate 1: validate
-    let (validate_result, mut validate_findings) = run_validate_gate(&contracts, &parse_errors);
-    let validation_passed = validate_result.passed;
-    gates.push(validate_result);
-
+/// Gates 2-9: audit, score, verify, enforce, enforcement-level, reverse-coverage, duplicate-stems, composition.
+/// Each is skipped (not run) when `validation_passed` is false, per `push_gate`'s contract.
+fn run_gates_2_to_9(
+    config: &LintConfig,
+    contracts: &[(String, crate::schema::Contract)],
+    binding: Option<&crate::binding::BindingRegistry>,
+    validation_passed: bool,
+    gates: &mut Vec<GateResult>,
+    all_findings: &mut Vec<LintFinding>,
+) {
     // Gate 2: audit (skip if validation failed)
     push_gate(
-        &mut gates,
-        &mut all_findings,
-        || run_audit_gate(&contracts),
+        gates,
+        all_findings,
+        || run_audit_gate(contracts),
         "audit",
         validation_passed,
     );
 
     // Gate 3: score (skip if validation failed)
     push_gate(
-        &mut gates,
-        &mut all_findings,
-        || run_score_gate(&contracts, binding.as_ref(), config.min_score),
+        gates,
+        all_findings,
+        || run_score_gate(contracts, binding, config.min_score),
         "score",
         validation_passed,
     );
 
     // Gate 4: verify (source code fulfillment)
     push_gate(
-        &mut gates,
-        &mut all_findings,
+        gates,
+        all_findings,
         || {
             let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
-            run_verify_gate(&contracts, project_root)
+            run_verify_gate(contracts, project_root)
         },
         "verify",
         validation_passed,
@@ -723,22 +710,22 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     // Gate 5: enforce (equations must have preconditions/postconditions)
     push_gate(
-        &mut gates,
-        &mut all_findings,
-        || run_enforce_gate(&contracts),
+        gates,
+        all_findings,
+        || run_enforce_gate(contracts),
         "enforce",
         validation_passed,
     );
 
     // Gate 6: enforcement level (Section 17, Gap 1 + Gap 5 level lock)
     push_gate(
-        &mut gates,
-        &mut all_findings,
+        gates,
+        all_findings,
         || {
             let min_level = config
                 .min_level
                 .unwrap_or(crate::schema::EnforcementLevel::Standard);
-            run_enforcement_level_gate(&contracts, min_level)
+            run_enforcement_level_gate(contracts, min_level)
         },
         "enforcement-level",
         validation_passed,
@@ -746,8 +733,8 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     // Gate 7: reverse coverage (optional — skip if no binding or crate dir)
     push_gate(
-        &mut gates,
-        &mut all_findings,
+        gates,
+        all_findings,
         || match (config.binding_path, config.crate_dir) {
             (Some(bp), Some(cd)) => run_reverse_coverage_gate(bp, cd),
             _ => (
@@ -765,8 +752,8 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     let duplicates = duplicate_stems::scan_duplicate_stems(config.contract_dir);
     let ambiguous = duplicate_stems::ambiguous_stems(&duplicates);
     push_gate(
-        &mut gates,
-        &mut all_findings,
+        gates,
+        all_findings,
         || {
             let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
             let baseline = duplicate_stems::read_baseline(project_root);
@@ -778,67 +765,73 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     // Gate 9: composition (assumes/guarantees chain verification)
     push_gate(
-        &mut gates,
-        &mut all_findings,
-        || composition_gate::run_composition_gate(&contracts, &ambiguous),
+        gates,
+        all_findings,
+        || composition_gate::run_composition_gate(contracts, &ambiguous),
         "composition",
         validation_passed,
     );
+}
 
+/// Gates 10-22: the ONT-* ontology gates. Same R-8 shape throughout — each is computed on every run and armed
+/// per repo, never skipped by `validation_passed` the way gates 2-9 are.
+fn run_ontology_gates_10_to_22(
+    contract_dir: &Path,
+    validation_passed: bool,
+    gates: &mut Vec<GateResult>,
+    all_findings: &mut Vec<LintFinding>,
+) {
     // Gate 10: sigma (ONT-2b). R-8: a new gate is COMPUTED everywhere and armed per repo — so it runs here as
     // well as under `--gate sigma`, or `armed_gates` could name a gate no run ever computes.
-    let (sigma_gate_result, mut sigma_findings) =
-        sigma_result(config.contract_dir, validation_passed);
+    let (sigma_gate_result, mut sigma_findings) = sigma_result(contract_dir, validation_passed);
     gates.push(sigma_gate_result);
     all_findings.append(&mut sigma_findings);
 
     // Gate 11: relations (ONT-4). Same R-8 shape as sigma: computed in every run, armed per repo.
     let (relations_gate_result, mut relations_findings) =
-        relations_result(config.contract_dir, validation_passed);
+        relations_result(contract_dir, validation_passed);
     gates.push(relations_gate_result);
     all_findings.append(&mut relations_findings);
 
     // Gate 12: shapes (ONT-4b). Same R-8 shape: computed in every run, armed per repo.
-    let (shapes_gate_result, mut shapes_findings) =
-        shapes_result(config.contract_dir, validation_passed);
+    let (shapes_gate_result, mut shapes_findings) = shapes_result(contract_dir, validation_passed);
     gates.push(shapes_gate_result);
     all_findings.append(&mut shapes_findings);
 
     // Gate 13: valid-under (ONT-7). Same R-8 shape: computed in every run, armed per repo.
     let (valid_under_gate_result, mut valid_under_findings) =
-        valid_under_result(config.contract_dir, validation_passed);
+        valid_under_result(contract_dir, validation_passed);
     gates.push(valid_under_gate_result);
     all_findings.append(&mut valid_under_findings);
 
     // Gates 14, 15, 16: theorem-pairing, depends-on-present (PVL-001 EV-11), proved-is-derived (EV-8a). Same R-8
     // shape: computed in every run, armed per repo.
     for (name, run) in RATCHET_GATES {
-        let (result, mut findings) =
-            ratchet_result(config.contract_dir, validation_passed, name, run);
+        let (result, mut findings) = ratchet_result(contract_dir, validation_passed, name, run);
         gates.push(result);
         all_findings.append(&mut findings);
     }
 
     // Gate 17: challenge-fresh (PVL-001 EV-7a). Same R-8 shape: computed wherever a Lean theorem base exists,
     // armed per repo (only through `make ont-ratchet`).
-    gates.push(challenge_result(config.contract_dir));
+    gates.push(challenge_result(contract_dir));
 
     // Gate 18 (numbered by agreement: ONT-7 13, EV-11 14-16, EV-7a 17): ont-consistency (ONT-5). Same R-8 shape:
     // computed in every run, armed per repo.
     let (consistency_gate_result, mut consistency_findings) =
-        consistency_result(config.contract_dir, validation_passed);
+        consistency_result(contract_dir, validation_passed);
     gates.push(consistency_gate_result);
     all_findings.append(&mut consistency_findings);
 
     // Gate 19: refines (ONT-4e, R-20). Same R-8 shape: computed in every run, armed per repo.
     let (refines_gate_result, mut refines_findings) =
-        refines_result(config.contract_dir, validation_passed);
+        refines_result(contract_dir, validation_passed);
     gates.push(refines_gate_result);
     all_findings.append(&mut refines_findings);
 
     // Gate 20: bindings (ONT-3a). Same R-8 shape: computed in every run, armed per repo.
     let (bindings_gate_result, mut bindings_findings) = ratchet_result(
-        config.contract_dir,
+        contract_dir,
         validation_passed,
         bindings_gate::GATE,
         bindings_gate::run_bindings_gate,
@@ -848,7 +841,7 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     // Gate 21: refinement (ONT-3b). Same R-8 shape.
     let (refinement_gate_result, mut refinement_findings) = ratchet_result(
-        config.contract_dir,
+        contract_dir,
         validation_passed,
         refinement_gate::GATE,
         refinement_gate::run_refinement_gate,
@@ -858,57 +851,139 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     // Gate 22: evidence (ONT-8). Same R-8 shape: computed in every run, armed per repo.
     let (evidence_gate_result, mut evidence_findings) =
-        evidence_result(config.contract_dir, validation_passed);
+        evidence_result(contract_dir, validation_passed);
     gates.push(evidence_gate_result);
     all_findings.append(&mut evidence_findings);
+}
 
-    // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
-    if config.strict_test_binding {
-        push_gate(
-            &mut gates,
-            &mut all_findings,
-            || {
-                let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
-                strict_test_binding::run_strict_test_binding_gate(
-                    &contracts,
-                    project_root,
-                    config.strict,
-                )
-            },
-            "strict-test-binding",
-            validation_passed,
-        );
+/// Gate 9 (again, by original numbering): strict test-binding (Issue #1510), opt-in via `--strict-test-binding`.
+fn run_strict_test_binding_gate_if_enabled(
+    config: &LintConfig,
+    contracts: &[(String, crate::schema::Contract)],
+    validation_passed: bool,
+    gates: &mut Vec<GateResult>,
+    all_findings: &mut Vec<LintFinding>,
+) {
+    if !config.strict_test_binding {
+        return;
     }
+    push_gate(
+        gates,
+        all_findings,
+        || {
+            let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
+            strict_test_binding::run_strict_test_binding_gate(
+                contracts,
+                project_root,
+                config.strict,
+            )
+        },
+        "strict-test-binding",
+        validation_passed,
+    );
+}
 
+/// Post-gate passes: fold in the validate gate's own findings, time contracts, detect stale suppressions, mark
+/// new-vs-pre-existing findings, cache them, then apply suppressions/overrides/severity filter.
+#[allow(clippy::too_many_arguments)]
+fn finalize_findings(
+    config: &LintConfig,
+    contracts: &[(String, crate::schema::Contract)],
+    binding: Option<&crate::binding::BindingRegistry>,
+    validation_passed: bool,
+    cache_root: Option<&std::path::Path>,
+    stats: &mut cache::CacheStats,
+    all_findings: &mut Vec<LintFinding>,
+    mut validate_findings: Vec<LintFinding>,
+) -> Vec<(String, u64)> {
     all_findings.append(&mut validate_findings);
 
     // Per-contract timing: measure how long each contract's findings take to process
-    if validation_passed {
-        contract_timings = per_contract_timings(&contracts, binding.as_ref());
-    }
+    let contract_timings = if validation_passed {
+        per_contract_timings(contracts, binding)
+    } else {
+        Vec::new()
+    };
 
     // Stale suppression detection (PV-SUP-001, Section 17 Gap 2)
     let mut stale_findings = check_stale_suppressions(
-        &all_findings,
+        all_findings,
         &config.suppressed_rules,
         &config.suppressed_findings,
     );
     all_findings.append(&mut stale_findings);
 
     // Issue lifecycle: mark each finding as new or pre-existing
-    mark_new_findings(&mut all_findings, config.contract_dir);
+    mark_new_findings(all_findings, config.contract_dir);
 
     // Cache: store findings per-contract for future runs
-    if let Some(ref root) = cache_root {
-        store_findings_in_cache(root, config, &contracts, &all_findings, &mut stats);
+    if let Some(root) = cache_root {
+        store_findings_in_cache(root, config, contracts, all_findings, stats);
     }
 
     // Apply suppressions, severity overrides, strict mode, and severity filter
-    apply_suppressions(&mut all_findings, config);
-    apply_severity_overrides(&mut all_findings, config);
+    apply_suppressions(all_findings, config);
+    apply_severity_overrides(all_findings, config);
     if let Some(min_sev) = config.severity_filter {
         all_findings.retain(|f| f.severity >= min_sev);
     }
+
+    contract_timings
+}
+
+/// Run all lint gates across a contract directory.
+pub fn run_lint(config: &LintConfig) -> LintReport {
+    let overall_start = Instant::now();
+    let mut gates = Vec::with_capacity(3);
+    let mut all_findings = Vec::new();
+    let mut stats = cache::CacheStats::default();
+
+    let cache_root = if config.no_cache {
+        None
+    } else {
+        Some(cache::cache_dir(config.contract_dir))
+    };
+
+    let (contracts, parse_errors) = load_contracts(config.contract_dir);
+    let binding = load_binding(config.binding_path);
+
+    // Gate 1: validate
+    let (validate_result, validate_findings) = run_validate_gate(&contracts, &parse_errors);
+    let validation_passed = validate_result.passed;
+    gates.push(validate_result);
+
+    run_gates_2_to_9(
+        config,
+        &contracts,
+        binding.as_ref(),
+        validation_passed,
+        &mut gates,
+        &mut all_findings,
+    );
+    run_ontology_gates_10_to_22(
+        config.contract_dir,
+        validation_passed,
+        &mut gates,
+        &mut all_findings,
+    );
+    run_strict_test_binding_gate_if_enabled(
+        config,
+        &contracts,
+        validation_passed,
+        &mut gates,
+        &mut all_findings,
+    );
+
+    let contract_timings = finalize_findings(
+        config,
+        &contracts,
+        binding.as_ref(),
+        validation_passed,
+        cache_root.as_deref(),
+        &mut stats,
+        &mut all_findings,
+        validate_findings,
+    );
 
     let passed = gates.iter().all(|g| g.passed || g.skipped);
 

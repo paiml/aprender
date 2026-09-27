@@ -138,6 +138,140 @@ fn count_allowlisted(c: &mut BindingsCounters, reason: &str) {
     }
 }
 
+/// Read the allowlist, turning a malformed file into a PV-ONT-030 finding rather than a hard error.
+fn load_allowlist(contract_dir: &Path, findings: &mut Vec<LintFinding>) -> Vec<AllowEntry> {
+    match read_allowlist(contract_dir) {
+        Ok(a) => a,
+        Err(why) => {
+            findings.push(LintFinding::new(
+                "PV-ONT-030",
+                RuleSeverity::Error,
+                format!("{ALLOWLIST} is malformed: {why}"),
+                format!("contracts/{ALLOWLIST}"),
+            ));
+            Vec::new()
+        }
+    }
+}
+
+/// PV-ONT-031: record a file-path-shaped `module_path` as a finding, once per symbol, unless it is allowlisted.
+fn check_file_path_form(
+    b: &crate::ontology::extract::code::Bound,
+    symbol: &str,
+    is_allowed: bool,
+    c: &mut BindingsCounters,
+    findings: &mut Vec<LintFinding>,
+    reported: &mut BTreeSet<String>,
+) {
+    if is_allowed || !is_file_path_form(&b.module_path) {
+        return;
+    }
+    c.file_path_form += 1;
+    if reported.insert(format!("031 {symbol}")) {
+        findings.push(LintFinding::new(
+            "PV-ONT-031",
+            RuleSeverity::Error,
+            format!(
+                "`{}` ({} {}) is a file path, not a module path — write the path the code is reached by \
+                 (drop `src`, `mod` and `.rs`)",
+                b.module_path, b.contract, b.equation
+            ),
+            b.contract.clone(),
+        ));
+    }
+}
+
+/// Record whether one binding resolved: PV-ONT-028 (an un-allowlisted ghost) or the allowlist bucket it falls in.
+/// The caller adds every unresolved symbol to its `unresolved` set.
+fn record_resolution(
+    b: &crate::ontology::extract::code::Bound,
+    symbol: &str,
+    found: &Result<
+        crate::ontology::extract::code::Resolved,
+        crate::ontology::extract::code::Unresolved,
+    >,
+    is_allowed: bool,
+    c: &mut BindingsCounters,
+    findings: &mut Vec<LintFinding>,
+    reported: &mut BTreeSet<String>,
+) {
+    match found {
+        Ok(_) => c.resolved += 1,
+        Err(u) if is_allowed => {
+            count_allowlisted(c, &u.reason);
+        }
+        Err(u) => {
+            c.ghosts += 1;
+            if reported.insert(symbol.to_string()) {
+                findings.push(LintFinding::new(
+                    "PV-ONT-028",
+                    RuleSeverity::Error,
+                    format!(
+                        "`{symbol}` ({} {}) is bound `{}` and does not resolve: {}",
+                        b.contract,
+                        b.equation,
+                        format!("{:?}", b.status).to_lowercase(),
+                        u.reason
+                    ),
+                    b.contract.clone(),
+                ));
+            }
+        }
+    }
+}
+
+/// PV-ONT-029: an allowlist entry that no longer names an unresolved binding is stale and must shrink out.
+fn check_stale_allowlist(
+    allow: &[AllowEntry],
+    unresolved: &BTreeSet<String>,
+    c: &mut BindingsCounters,
+    findings: &mut Vec<LintFinding>,
+) {
+    for e in allow {
+        if !unresolved.contains(&e.symbol) {
+            c.stale_allowlist += 1;
+            findings.push(LintFinding::new(
+                "PV-ONT-029",
+                RuleSeverity::Error,
+                format!(
+                    "{ALLOWLIST} names `{}` ({}), which no implemented/partial binding leaves unresolved — remove the entry",
+                    e.symbol, e.ticket
+                ),
+                format!("contracts/{ALLOWLIST}"),
+            ));
+        }
+    }
+}
+
+/// Build the final [`GateResult`] and [`RatchetOutcome::Ran`] from the counters and findings.
+fn finish(start: Instant, mut c: BindingsCounters, findings: Vec<LintFinding>) -> RatchetOutcome {
+    c.unresolved = c.ghosts;
+    c.violations = findings.len();
+    let verdict = if findings.is_empty() {
+        Verdict::Pass
+    } else {
+        Verdict::Fail
+    };
+    let result = GateResult {
+        name: GATE.into(),
+        passed: verdict == Verdict::Pass,
+        skipped: false,
+        verdict,
+        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        detail: GateDetail::Validate {
+            contracts: c.checked,
+            errors: findings.len(),
+            warnings: 0,
+            error_messages: findings.iter().map(|f| f.message.clone()).collect(),
+        },
+        extra: Some(GateExtra::Bindings(Box::new(c))),
+    };
+    RatchetOutcome::Ran {
+        result: Box::new(result),
+        findings,
+    }
+}
+
 /// Run the gate over `contract_dir`.
 #[must_use]
 pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
@@ -167,18 +301,7 @@ pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
     }
 
     let mut findings = Vec::new();
-    let allow = match read_allowlist(contract_dir) {
-        Ok(a) => a,
-        Err(why) => {
-            findings.push(LintFinding::new(
-                "PV-ONT-030",
-                RuleSeverity::Error,
-                format!("{ALLOWLIST} is malformed: {why}"),
-                format!("contracts/{ALLOWLIST}"),
-            ));
-            Vec::new()
-        }
-    };
+    let allow = load_allowlist(contract_dir, &mut findings);
     // Keyed by the symbol path alone, not (contract, equation): resolution is a function of the path, so every row
     // binding the same path is the same ghost. A NEW path is never covered by an old entry.
     let allowed: BTreeMap<&str, &AllowEntry> =
@@ -198,87 +321,23 @@ pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
     for (b, found) in claimed {
         let symbol = format!("{}::{}", b.module_path, b.function);
         let is_allowed = allowed.contains_key(symbol.as_str());
-        if !is_allowed && is_file_path_form(&b.module_path) {
-            c.file_path_form += 1;
-            if reported.insert(format!("031 {symbol}")) {
-                findings.push(LintFinding::new(
-                    "PV-ONT-031",
-                    RuleSeverity::Error,
-                    format!(
-                        "`{}` ({} {}) is a file path, not a module path — write the path the code is reached by \
-                         (drop `src`, `mod` and `.rs`)",
-                        b.module_path, b.contract, b.equation
-                    ),
-                    b.contract.clone(),
-                ));
-            }
-        }
-        match found {
-            Ok(_) => c.resolved += 1,
-            Err(u) if is_allowed => {
-                count_allowlisted(&mut c, &u.reason);
-                unresolved.insert(symbol);
-            }
-            Err(u) => {
-                c.ghosts += 1;
-                if reported.insert(symbol.clone()) {
-                    findings.push(LintFinding::new(
-                        "PV-ONT-028",
-                        RuleSeverity::Error,
-                        format!(
-                            "`{symbol}` ({} {}) is bound `{}` and does not resolve: {}",
-                            b.contract,
-                            b.equation,
-                            format!("{:?}", b.status).to_lowercase(),
-                            u.reason
-                        ),
-                        b.contract.clone(),
-                    ));
-                }
-                unresolved.insert(symbol);
-            }
+        check_file_path_form(b, &symbol, is_allowed, &mut c, &mut findings, &mut reported);
+        record_resolution(
+            b,
+            &symbol,
+            found,
+            is_allowed,
+            &mut c,
+            &mut findings,
+            &mut reported,
+        );
+        if found.is_err() {
+            unresolved.insert(symbol);
         }
     }
-    for e in &allow {
-        if !unresolved.contains(&e.symbol) {
-            c.stale_allowlist += 1;
-            findings.push(LintFinding::new(
-                "PV-ONT-029",
-                RuleSeverity::Error,
-                format!(
-                    "{ALLOWLIST} names `{}` ({}), which no implemented/partial binding leaves unresolved — remove the entry",
-                    e.symbol, e.ticket
-                ),
-                format!("contracts/{ALLOWLIST}"),
-            ));
-        }
-    }
+    check_stale_allowlist(&allow, &unresolved, &mut c, &mut findings);
 
-    c.unresolved = c.ghosts;
-    c.violations = findings.len();
-    let verdict = if findings.is_empty() {
-        Verdict::Pass
-    } else {
-        Verdict::Fail
-    };
-    let result = GateResult {
-        name: GATE.into(),
-        passed: verdict == Verdict::Pass,
-        skipped: false,
-        verdict,
-        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-        detail: GateDetail::Validate {
-            contracts: c.checked,
-            errors: findings.len(),
-            warnings: 0,
-            error_messages: findings.iter().map(|f| f.message.clone()).collect(),
-        },
-        extra: Some(GateExtra::Bindings(Box::new(c))),
-    };
-    RatchetOutcome::Ran {
-        result: Box::new(result),
-        findings,
-    }
+    finish(start, c, findings)
 }
 
 #[cfg(test)]
