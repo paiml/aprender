@@ -61,25 +61,25 @@ impl GdnDims {
 
 /// One GDN layer's weights, named as in the GGUF (`blk.N.*`), in serve's layouts.
 #[derive(Debug, Clone, Copy)]
-pub struct GdnWeights<'a> {
+pub struct GdnWeights<'a, T = f32> {
     /// `attn_qkv`: `[conv_dim × hidden]`.
-    pub qkv: &'a [f32],
+    pub qkv: &'a [T],
     /// `attn_gate` (z): `[v_dim × hidden]`.
-    pub gate: &'a [f32],
+    pub gate: &'a [T],
     /// `ssm_alpha` (dt projection): `[num_v_heads × hidden]`.
-    pub alpha: &'a [f32],
+    pub alpha: &'a [T],
     /// `ssm_beta`: `[num_v_heads × hidden]`.
-    pub beta: &'a [f32],
+    pub beta: &'a [T],
     /// `ssm_a` (= `-exp(A_log)`): `[num_v_heads]`.
-    pub a: &'a [f32],
+    pub a: &'a [T],
     /// `ssm_dt_bias`: `[num_v_heads]`.
-    pub dt_bias: &'a [f32],
+    pub dt_bias: &'a [T],
     /// `ssm_conv1d`: `[conv_dim × conv_kernel]`.
-    pub conv: &'a [f32],
+    pub conv: &'a [T],
     /// `ssm_norm`: `[head_v_dim]`, shared by every value head.
-    pub norm: &'a [f32],
+    pub norm: &'a [T],
     /// `ssm_out`: `[hidden × v_dim]`.
-    pub out: &'a [f32],
+    pub out: &'a [T],
 }
 
 /// The result of [`gated_delta_scan`].
@@ -107,10 +107,25 @@ pub trait GdnFloat:
     + std::ops::Div<Output = Self>
     + std::ops::AddAssign
     + std::ops::MulAssign
+    + PartialOrd
     + std::iter::Sum
 {
     /// Additive identity.
     const ZERO: Self;
+    /// Multiplicative identity.
+    const ONE: Self;
+    /// Widen (or keep) an f32 constant — `eps`, the softplus cut-over.
+    #[must_use]
+    fn from_f32(x: f32) -> Self;
+    /// `n` as a float (a mean's divisor).
+    #[must_use]
+    fn from_usize(n: usize) -> Self;
+    /// `√x`.
+    #[must_use]
+    fn sqrt(self) -> Self;
+    /// `ln x`.
+    #[must_use]
+    fn ln(self) -> Self;
     /// `eˣ`.
     #[must_use]
     fn exp(self) -> Self;
@@ -121,6 +136,19 @@ pub trait GdnFloat:
 
 impl GdnFloat for f32 {
     const ZERO: Self = 0.0;
+    const ONE: Self = 1.0;
+    fn from_f32(x: f32) -> Self {
+        x
+    }
+    fn from_usize(n: usize) -> Self {
+        n as f32
+    }
+    fn sqrt(self) -> Self {
+        f32::sqrt(self)
+    }
+    fn ln(self) -> Self {
+        f32::ln(self)
+    }
     fn exp(self) -> Self {
         f32::exp(self)
     }
@@ -131,6 +159,19 @@ impl GdnFloat for f32 {
 
 impl GdnFloat for f64 {
     const ZERO: Self = 0.0;
+    const ONE: Self = 1.0;
+    fn from_f32(x: f32) -> Self {
+        f64::from(x)
+    }
+    fn from_usize(n: usize) -> Self {
+        n as f64
+    }
+    fn sqrt(self) -> Self {
+        f64::sqrt(self)
+    }
+    fn ln(self) -> Self {
+        f64::ln(self)
+    }
     fn exp(self) -> Self {
         f64::exp(self)
     }
@@ -139,30 +180,30 @@ impl GdnFloat for f64 {
     }
 }
 
-pub(super) fn silu(x: f32) -> f32 {
-    x / (1.0 + (-x).exp())
+pub(super) fn silu<T: GdnFloat>(x: T) -> T {
+    x / (T::ONE + (T::ZERO - x).exp())
 }
 
-pub(super) fn sigmoid(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
+pub(super) fn sigmoid<T: GdnFloat>(x: T) -> T {
+    T::ONE / (T::ONE + (T::ZERO - x).exp())
 }
 
 /// Serve's softplus, including its linear cut-over above 20.
-fn softplus(x: f32) -> f32 {
-    if x > 20.0 {
+pub(super) fn softplus<T: GdnFloat>(x: T) -> T {
+    if x > T::from_f32(20.0) {
         x
     } else {
-        (1.0 + x.exp()).ln()
+        (T::ONE + x.exp()).ln()
     }
 }
 
 /// `y = x · Wᵀ` for every position: `x` is `[seq_len × d_in]`, `w` is `[d_out × d_in]`.
-pub(super) fn project(x: &[f32], w: &[f32], d_in: usize, d_out: usize) -> Vec<f32> {
+pub(super) fn project<T: GdnFloat>(x: &[T], w: &[T], d_in: usize, d_out: usize) -> Vec<T> {
     assert_eq!(w.len(), d_out * d_in, "projection weight is not [{d_out} x {d_in}]");
     let mut y = Vec::with_capacity(x.len() / d_in * d_out);
     for row in x.chunks_exact(d_in) {
         y.extend(
-            w.chunks_exact(d_in).map(|w_o| w_o.iter().zip(row).map(|(a, b)| a * b).sum::<f32>()),
+            w.chunks_exact(d_in).map(|w_o| w_o.iter().zip(row).map(|(&a, &b)| a * b).sum::<T>()),
         );
     }
     y
@@ -174,11 +215,11 @@ pub(super) fn project(x: &[f32], w: &[f32], d_in: usize, d_out: usize) -> Vec<f3
 /// # Panics
 /// If `x` is not `seq_len × channels` or `w` is not `channels × kernel`.
 #[must_use]
-pub fn causal_conv1d_seq(x: &[f32], w: &[f32], channels: usize, kernel: usize) -> Vec<f32> {
+pub fn causal_conv1d_seq<T: GdnFloat>(x: &[T], w: &[T], channels: usize, kernel: usize) -> Vec<T> {
     assert_eq!(x.len() % channels, 0);
     assert_eq!(w.len(), channels * kernel);
     let seq_len = x.len() / channels;
-    let mut y = vec![0.0; x.len()];
+    let mut y = vec![T::ZERO; x.len()];
     for t in 0..seq_len {
         for c in 0..channels {
             let taps = &w[c * kernel..(c + 1) * kernel];
@@ -192,9 +233,9 @@ pub fn causal_conv1d_seq(x: &[f32], w: &[f32], channels: usize, kernel: usize) -
 }
 
 /// Scale every `head_dim`-wide head of `x` to unit L2 norm on its own.
-fn l2_norm_heads(x: &mut [f32], head_dim: usize, eps: f32) {
+pub(super) fn l2_norm_heads<T: GdnFloat>(x: &mut [T], head_dim: usize, eps: T) {
     for head in x.chunks_exact_mut(head_dim) {
-        let scale = 1.0 / (head.iter().map(|v| v * v).sum::<f32>() + eps).sqrt();
+        let scale = T::ONE / (head.iter().map(|&v| v * v).sum::<T>() + eps).sqrt();
         for v in head.iter_mut() {
             *v *= scale;
         }
@@ -284,12 +325,15 @@ pub fn gated_delta_scan<T: GdnFloat>(
 }
 
 /// `RMSNorm(x) · weight · silu(z)` over each `head_v_dim`-wide head.
-fn gated_rmsnorm(x: &[f32], z: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
+fn gated_rmsnorm<T: GdnFloat>(x: &[T], z: &[T], weight: &[T], eps: T) -> Vec<T> {
     let hv = weight.len();
     let mut y = Vec::with_capacity(x.len());
     for (xh, zh) in x.chunks_exact(hv).zip(z.chunks_exact(hv)) {
-        let inv_rms = 1.0 / (xh.iter().map(|v| v * v).sum::<f32>() / hv as f32 + eps).sqrt();
-        y.extend(xh.iter().zip(zh).zip(weight).map(|((xi, zi), wi)| xi * inv_rms * wi * silu(*zi)));
+        let inv_rms =
+            T::ONE / (xh.iter().map(|&v| v * v).sum::<T>() / T::from_usize(hv) + eps).sqrt();
+        y.extend(
+            xh.iter().zip(zh).zip(weight).map(|((&xi, &zi), &wi)| xi * inv_rms * wi * silu(zi)),
+        );
     }
     y
 }
@@ -301,7 +345,11 @@ fn gated_rmsnorm(x: &[f32], z: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
 /// # Panics
 /// If a weight's length disagrees with `dims`.
 #[must_use]
-pub fn gdn_mixer_forward(normed: &[f32], w: &GdnWeights<'_>, dims: &GdnDims) -> Vec<f32> {
+pub fn gdn_mixer_forward<T: GdnFloat>(
+    normed: &[T],
+    w: &GdnWeights<'_, T>,
+    dims: &GdnDims,
+) -> Vec<T> {
     let (hidden, nv, kd, vd, cd) =
         (dims.hidden_dim, dims.num_v_heads, dims.k_dim(), dims.v_dim(), dims.conv_dim());
     let conv_in = project(normed, w.qkv, hidden, cd);
@@ -317,8 +365,9 @@ pub fn gdn_mixer_forward(normed: &[f32], w: &GdnWeights<'_>, dims: &GdnDims) -> 
         k.extend_from_slice(&row[kd..2 * kd]);
         v.extend_from_slice(&row[2 * kd..]);
     }
-    l2_norm_heads(&mut q, dims.head_k_dim, dims.eps);
-    l2_norm_heads(&mut k, dims.head_k_dim, dims.eps);
+    let eps = T::from_f32(dims.eps);
+    l2_norm_heads(&mut q, dims.head_k_dim, eps);
+    l2_norm_heads(&mut k, dims.head_k_dim, eps);
     assert_eq!((w.a.len(), w.dt_bias.len()), (nv, nv));
     let mut g = project(normed, w.alpha, hidden, nv);
     for (i, x) in g.iter_mut().enumerate() {
@@ -330,7 +379,7 @@ pub fn gdn_mixer_forward(normed: &[f32], w: &GdnWeights<'_>, dims: &GdnDims) -> 
     }
     let z = project(normed, w.gate, hidden, vd);
     let scan = gated_delta_scan(&q, &k, &v, &beta, &g, dims, None, false);
-    let y = gated_rmsnorm(&scan.out, &z, w.norm, dims.eps);
+    let y = gated_rmsnorm(&scan.out, &z, w.norm, eps);
     project(&y, w.out, vd, hidden)
 }
 
