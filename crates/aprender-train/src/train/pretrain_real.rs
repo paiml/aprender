@@ -227,7 +227,9 @@ pub fn normalize_metadata_arch_family(arch: &str) -> Option<&'static str> {
         "OPTForCausalLM" => Some("opt"),
         // Family slugs (canonical / lowercase)
         "qwen2" | "qwen2.5" | "qwen" => Some("qwen2"),
-        "qwen3" | "qwen3_5" | "qwen3.5" => Some("qwen3"),
+        // #4552: no `qwen3_5 | qwen3.5` alias here — a hybrid is not dense qwen3.
+        // `validate_init_arch_matches_tensor_evidence` refuses it by name first.
+        "qwen3" => Some("qwen3"),
         "llama" | "mistral" | "phi" | "phi3" | "phi4" => Some("llama"),
         "gpt2" => Some("gpt2"),
         "gpt-neox" | "gpt_neox" | "gptneox" | "pythia" => Some("gpt-neox"),
@@ -282,6 +284,12 @@ pub fn validate_init_arch_matches_tensor_evidence(
     metadata_arch: Option<&str>,
     init_tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Result<(), String> {
+    // #4552 train-arch-honesty-v1: an architecture this crate does not model is
+    // refused by name before the family cross-check can wave it through.
+    if let Some(arch) = metadata_arch {
+        crate::transformer::check_trainable_arch(arch).map_err(|e| e.to_string())?;
+    }
+
     // If the metadata claim is absent or unmappable, we have no claim to
     // contradict — skip the cross-check (a novel arch is not §86's case).
     let Some(metadata_family) = metadata_arch.and_then(normalize_metadata_arch_family) else {
@@ -1527,5 +1535,19 @@ mod tests {
         // Unknown
         assert_eq!(normalize_metadata_arch_family("unknown"), None);
         assert_eq!(normalize_metadata_arch_family("WeirdNovelArch"), None);
+    }
+
+    /// FALSIFY-TAH-002 (#4552): the `qwen3_5 → qwen3` alias is gone, and a
+    /// qwen3.5 `--init` is refused by name even when there is no tensor evidence
+    /// to contradict it. Re-adding the alias turns the first assertion RED.
+    #[test]
+    fn falsify_tah_002_qwen35_is_not_aliased_to_dense_qwen3() {
+        for arch in ["qwen3_5", "qwen3.5", "Qwen3_5ForCausalLM"] {
+            assert_ne!(normalize_metadata_arch_family(arch), Some("qwen3"), "{arch}");
+            let err = validate_init_arch_matches_tensor_evidence(Some(arch), &BTreeMap::new())
+                .expect_err(arch);
+            assert!(err.contains("UnsupportedArch"), "{arch}: {err}");
+        }
+        assert!(validate_init_arch_matches_tensor_evidence(Some("qwen3"), &BTreeMap::new()).is_ok());
     }
 }

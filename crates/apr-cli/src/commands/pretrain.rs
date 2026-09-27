@@ -217,7 +217,7 @@ pub(crate) fn run(
     let init_arch: Option<TransformerConfig> = if let Some(init_path) = init {
         validate_init_apr_path(init_path)?;
         Some(
-            crate::commands::model_config::read_apr_architecture(init_path).ok_or_else(|| {
+            crate::commands::model_config::read_apr_architecture(init_path)?.ok_or_else(|| {
                 CliError::ValidationFailed(format!(
                     "FALSIFY-APR-PRETRAIN-INIT-005: --init APR file at {} has missing or invalid \
                      architecture metadata (hidden_size, num_heads, num_layers, vocab_size, etc). \

@@ -341,7 +341,13 @@ impl TransformerConfig {
             "1.5B" | "qwen2.5-1.5b" | "qwen2-1.5b" => Ok(Self::qwen2_1_5b()),
             "7B" | "qwen2.5-7b" => Ok(Self::qwen2_7b()),
             "4B" | "qwen3-4b" | "qwen3" => Ok(Self::qwen3_4b()),
-            "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => Ok(Self::qwen3_5_9b()),
+            // #4552 train-arch-honesty-v1: the 3.5 preset is a dense Decoder with no GDN
+            // layers, so building it would train a different model than serve runs.
+            "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => {
+                super::check_trainable_arch("qwen3.5-9b")
+                    .map(|()| Self::qwen3_5_9b())
+                    .map_err(|e| e.to_string())
+            }
             unknown => Err(format!(
                 "Unknown model size '{unknown}'. Known sizes: codebert, 0.5B, 4B, 7B, 9B"
             )),
@@ -1300,10 +1306,22 @@ mod tests {
         assert!(TransformerConfig::from_size_str("4B").is_ok());
         assert!(TransformerConfig::from_size_str("qwen3-4b").is_ok());
         assert!(TransformerConfig::from_size_str("qwen3").is_ok());
-        assert!(TransformerConfig::from_size_str("9B").is_ok());
-        assert!(TransformerConfig::from_size_str("qwen3.5-9b").is_ok());
-        assert!(TransformerConfig::from_size_str("qwen3_5").is_ok());
-        assert!(TransformerConfig::from_size_str("qwen3.5").is_ok());
+        // #4552: refused by name until GDN training lands (was a silent dense preset)
+        assert!(TransformerConfig::from_size_str("9B")
+            .expect_err("9B")
+            .contains("UnsupportedArch"));
+        // #4552: refused by name until GDN training lands (was a silent dense preset)
+        assert!(TransformerConfig::from_size_str("qwen3.5-9b")
+            .expect_err("qwen3.5-9b")
+            .contains("UnsupportedArch"));
+        // #4552: refused by name until GDN training lands (was a silent dense preset)
+        assert!(TransformerConfig::from_size_str("qwen3_5")
+            .expect_err("qwen3_5")
+            .contains("UnsupportedArch"));
+        // #4552: refused by name until GDN training lands (was a silent dense preset)
+        assert!(TransformerConfig::from_size_str("qwen3.5")
+            .expect_err("qwen3.5")
+            .contains("UnsupportedArch"));
     }
 
     #[test]

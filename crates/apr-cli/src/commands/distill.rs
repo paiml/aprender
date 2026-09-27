@@ -518,6 +518,12 @@ pub(crate) fn run(
     if !teacher_path.exists() {
         return Err(CliError::FileNotFound(teacher_path.to_path_buf()));
     }
+    // #4552 train-arch-honesty-v1: every backend and --plan refuse an unmodelled
+    // teacher/student architecture by name, from the header only.
+    super::model_config::refuse_unmodelled_apr(teacher_path)?;
+    if let Some(student) = student_path {
+        super::model_config::refuse_unmodelled_apr(student)?;
+    }
 
     let distill_strategy: DistillStrategy = strategy.parse().map_err(CliError::ValidationFailed)?;
     validate_distill_params(temperature, alpha)?;
@@ -692,6 +698,8 @@ fn run_cuda_backend(
     })?;
 
     // Load teacher metadata → TransformerConfig.
+    // #4552: refuse an unmodelled arch from the header, before the full read.
+    super::model_config::refuse_unmodelled_apr(teacher_path)?;
     let teacher_bytes = std::fs::read(teacher_path).map_err(|e| {
         CliError::ValidationFailed(format!("read teacher {}: {e}", teacher_path.display()))
     })?;
@@ -735,6 +743,8 @@ fn run_cuda_backend(
 
     // Load student metadata → TransformerConfig (independent — student arch
     // typically differs from teacher).
+    // #4552: refuse an unmodelled arch from the header, before the full read.
+    super::model_config::refuse_unmodelled_apr(student_path)?;
     let student_bytes = std::fs::read(student_path).map_err(|e| {
         CliError::ValidationFailed(format!("read student {}: {e}", student_path.display()))
     })?;

@@ -8,6 +8,7 @@
 //! - `MultiHeadAttentionWithLoRA` - Attention with deep LoRA injection
 //! - `LoRAProjection` - Linear projection with LoRA adapters
 
+mod arch_honesty;
 mod attention;
 mod block;
 mod config;
@@ -23,6 +24,7 @@ pub(crate) mod weights;
 #[cfg(feature = "gpu")]
 pub mod wgpu_block;
 
+pub use arch_honesty::{check_trainable_arch, unmodelled_layer, UnsupportedArch};
 pub use attention::{LoRAProjection, MultiHeadAttention, MultiHeadAttentionWithLoRA};
 pub use config::{ModelArchitecture, TransformerConfig};
 #[cfg(feature = "cuda")]
