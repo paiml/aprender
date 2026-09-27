@@ -1,15 +1,15 @@
 {
-  "ticket": "PMAT-4380",
-  "base": "main",
+  "ticket": "PMAT-4380,PMAT-4581",
+  "base": "origin/main",
   "base_resolved": "origin/main",
-  "base_note": "local main differs from origin/main by 158 commit(s); judged against origin/main",
-  "head": "32b3f2b4bf25b44918f0f43b69a62a8a5558e1b4",
-  "diff_sha256": "090a0068420d3400fb673d4ca8c9e716e0634219758820501fbb260b25f6c0c5",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "9215d48578e9b10bae6a71b0be474e2b89c1f921",
+  "diff_sha256": "58c730716b79425f7ad8e0ad56aaa82d23b647e551f72015a602a46b47071d64",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 152797,
-  "prompt_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+  "prompt_bytes": 190456,
+  "prompt_sha256": "dd23a479cde7067f7fa0943d033863d75f8e71e7f912905c9d2287262651e0b6",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,17 +21,9 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff matches PMAT-4380 (+#4369) exactly: fixes 10 #[contract] producer build.rs scripts to read in-tree contracts/<crate>/binding.yaml instead of the gone ../../../provable-contracts sibling, adds a hard panic when contracts/ exists in-tree but the per-crate binding.yaml is missing, restores/adds 8 new per-repo binding.yaml registries (batuta, entrenar, presentar, realizar, simular, trueno-db, trueno-rag, trueno) plus 22 backfilled rows in contracts/aprender/binding.yaml, removes 3 now-dead build.rs stubs (aprender-graph, aprender-verify, and the provable-contracts block in aprender-verify-ml), fixes aprender-serve's arch-requirements/tensor-names paths, and renames three #[contract] sites in aprender-serve (gemm-v1/forward-pass-v1/sampling-v1 -> matmul-kernel-v1/rmsnorm-kernel-v1/softmax-kernel-v1) to match rows that now actually exist in the restored realizar registry (verified matmul/rmsnorm/softmax rows present at lines ~1387/1483/1417 of the new contracts/realizar/binding.yaml). The macro/build_helper changes (registry_miss, env_key parity test, fail-closed read_contract_assertions) are additive hardening consistent with #4368/#2699 and are unit-tested with case tables. ALLOWED_GAPS additions in aprender-core/build.rs are an honest whitelist of pre-existing not_implemented rows the policy never saw before (path was broken), not a blanket gate disable. No test asserts behavior contrary to the ticket, no gate is silently weakened, and no out-of-scope work was found. Roadmap entry's acceptance criteria and its measured claims (64/64 arch_ tests, build.rs:570 line) are consistent with the code changes shown.",
-      "findings": [
-        {
-          "file": "crates/aprender-core/build.rs",
-          "line": 2913,
-          "claim": "ALLOWED_GAPS gained 12 new (contract_stem, equation) exceptions to keep the AllImplemented policy from newly failing the build now that the binding registry is actually read; this is an explicit, dated whitelist of pre-existing gaps rather than a policy weakening, but it does mean those 12 sites remain unimplemented and unenforced going forward.",
-          "failure_scenario": "Not a defect in this diff, but a residual: if a future contributor assumes 'AllImplemented' means all contracts are actually implemented, these 12 excepted rows are silent gaps until #4369-tracked follow-up closes them.",
-          "grounding": "cited"
-        }
-      ],
-      "raw_bytes": 5540,
+      "summary": "Diff matches both tickets. PMAT-4380: 10+ build.rs producers switched from the gone ../../../provable-contracts sibling to in-tree contracts/<crate>/binding.yaml, hard-panic when contracts/ exists but the per-crate binding.yaml is missing (monorepo-only, crates.io fallback preserved), restored 8 per-repo binding.yaml registries plus aprender/binding.yaml backfill, deleted 2 dead build.rs stubs (aprender-graph, aprender-verify) plus the provable-contracts block in aprender-verify-ml, fixed aprender-serve's arch-requirements/tensor-names paths, and renamed 3 aprender-serve #[contract] sites (gemm-v1/forward-pass-v1/sampling-v1 -> matmul/rmsnorm/softmax-kernel-v1) to match rows now verified present in the restored contracts/realizar/binding.yaml. The contracts-macros hardening (#4368 registry_miss compile_error, #2699 fail-closed condition parsing, contract_env_key! parity) is additive and unit-tested with case tables. New `contract_binding_registry_is_loaded` tests assert CONTRACT_BINDING_SOURCE=binding.yaml per crate. PMAT-4581: sha2 opt-level=3 profile override is a clean, well-documented Cargo.toml addition; the cbtop M001-M003/M007/M008/M010 tests were correctly moved to crates/apr-cli/tests/falsification_cbtop_measurement.rs using CARGO_BIN_EXE_apr, and verified the source files they were removed from (aprender-core/tests/includes/falsification_measurement.rs) have no dangling Command:: or unused-import residue. verify-ml's book oracle tests now skip cleanly (with stderr reason) when python3 is absent, still asserting when present. The 'dead ALLOWED_GAPS pruned' criterion was already satisfied by a prior commit in this branch's history (not reflected as changed lines in this diff, which is expected since that commit predates this diff's base) — confirmed against the current build.rs that ALLOWED_GAPS contains only 3 not-yet-implemented ssm-kernel-v1 entries, none of which correspond to an implemented binding. No test asserts anything contrary to either ticket, no gate is weakened, and no out-of-scope work was found.",
+      "findings": [],
+      "raw_bytes": 5020,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -42,10 +34,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+      "brief_sha256": "dd23a479cde7067f7fa0943d033863d75f8e71e7f912905c9d2287262651e0b6",
       "trace": {
-        "input_sha256": "291669ec9fc63b6668936b0798420849757309e3317e4b0fb063bcb908ee21ee",
-        "output_sha256": "9b6734fd94129691bdf39ec5a55d7db765fe1516cdd7b905c4184521b972f047",
+        "input_sha256": "01dc0b82b31eb7057754497d70f7292660bd347fa2a8cb2bac862cb34645e19c",
+        "output_sha256": "365cd96629c6fd361594569d82c2808b1f30b94e934fcc43c43cade68f6ae5e2",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -66,9 +58,9 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff fixes 10 #[contract] build.rs producers (aprender-compute/core/db/orchestrate/present-cli/present-core/rag/serve/simulate/train) that were reading a now-nonexistent `../../../provable-contracts/contracts` sibling path, redirecting them to the in-tree `contracts/<producer>/binding.yaml`, and hard-failing the build (panic) when the registry is missing in a monorepo checkout (vs. a graceful CONTRACT_BINDING_SOURCE=none fallback only for out-of-tree crates.io builds). It also adds a macro-level compile_error! (#4368) when a registry ran but has no row for a #[contract] site, backfills ~40 previously-invisible binding rows across 7 contracts/*/binding.yaml registries (purely additive), fixes aprender-serve's arch-requirements/tensor-names YAML paths, and deletes two dead build.rs stubs (aprender-graph, aprender-verify) that referenced the same gone sibling. Verified against the actual tree: the roadmap's measured build.rs:570 line, the 10 producers all emit CONTRACT_BINDING_SOURCE=binding.yaml, contract renames (matmul/rmsnorm/softmax-kernel-v1) match rows added to contracts/realizar/binding.yaml, ALLOWED_GAPS additions match pre-existing not_implemented rows in contracts/aprender/binding.yaml, and the generated contract_pre_constraint_matrix_exhaustiveness!() call is a legitimate crate-visible macro already used identically in the fallback file. No deletions or weakenings found in any binding.yaml; all contract-registry diffs are additive.",
+      "summary": "test",
       "findings": [],
-      "raw_bytes": 3844,
+      "raw_bytes": 916,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -79,10 +71,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+      "brief_sha256": "dd23a479cde7067f7fa0943d033863d75f8e71e7f912905c9d2287262651e0b6",
       "trace": {
-        "input_sha256": "e6bdef5c7b1ec4ed3f43d40989b28865d8b323b5b5c165a3912ede7e72f6c6eb",
-        "output_sha256": "b4365b19856329a7866f8c75bf47d2ad2dbec7bd81b918de4246d9ba84c00a27",
+        "input_sha256": "82c072d2b3b27be41969e28d13cd940494d36012dd2cb58ea1a87f01ad76b08b",
+        "output_sha256": "3a0e8606d466adb42351ef3b9c124d0d69d6a83abeffd3aba68bb5c34d2024a3",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -109,31 +101,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Lane 3's FAIL is based on misreading criterion #3, which requires code-path switching, not adding a new message. The diff correctly changes all build.rs paths from ../../../provable-contracts/contracts/ to in-tree ../../contracts/, adds panic guards preventing silent registry fallback, and wires registry-miss compile-error checks. Lane 1 and 2 correctly PASS; their findings (cosmetic warning text, ALLOWED_GAPS comment accuracy) are minor, non-functional issues that don't constitute refutation.",
-      "findings": [
-        {
-          "file": "crates/aprender-present-core/build.rs",
-          "line": 3223,
-          "claim": "Unreachable-path warning string still references 'provable-contracts binding.yaml not found' despite fixing the path itself to in-tree contracts/",
-          "grounding": "cited",
-          "fix": "Update warning text for consistency (cosmetic only; path is correct, warning never runs)"
-        },
-        {
-          "file": "crates/aprender-core/build.rs",
-          "line": 78,
-          "claim": "12 ALLOWED_GAPS entries reference a rationale of 'not_implemented' status, but all 12 are status:implemented in contracts/aprender/binding.yaml (verified by grep)",
-          "grounding": "measured",
-          "fix": "Optional: remove entries or correct comment to clarify these were pre-existing implemented bindings (gate not weakened; findings inert)"
-        },
-        {
-          "file": "docs/audits/quorum-PMAT-4380.json",
-          "line": 120,
-          "claim": "Lane 3 FAIL verdict claims criterion #3 requires adding 'Generated arch_requirements from YAML' message, but criterion explicitly states 'No new message is added; the criterion is which branch runs'",
-          "grounding": "cited",
-          "fix": "Lane 3 misread criterion as requiring new message; diff DOES implement criterion by switching path to in-tree ../../contracts/architecture-requirements-v1.yaml"
-        }
-      ],
-      "raw_bytes": 4388,
+      "summary": "Lane 3 confirms the diff correctly implements both PMAT-4380 and PMAT-4581. All 10 build.rs scripts redirect from the gone provable-contracts sibling to in-tree contracts/ paths with hard panic guards. New binding.yaml registries are added (batuta, entrenar, etc.) with 22 backfilled aprender entries. Contract site renames in aprender-serve match added binding rows. SHA2 optimization, cbtop test migration to CARGO_BIN_EXE_apr, and python3 skip guards are all in place. The 3/3 quorum verdict is PASS with deduped findings (cosmetic warning text, ALLOWED_GAPS status note) that do not refute implementation.",
+      "findings": [],
+      "raw_bytes": 2258,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -144,10 +114,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "35a681f0a2ab67a64e051daa77e4ab06df1268b6c4ab4a119554118e98686a7d",
+      "brief_sha256": "dd23a479cde7067f7fa0943d033863d75f8e71e7f912905c9d2287262651e0b6",
       "trace": {
-        "input_sha256": "7ef1af1fe59bb72935a6ab5bc219422fd71aa19409c443adda9ae548b3602749",
-        "output_sha256": "44e925f5356ede6e2fac4837890572e0cd163353f26c35cf142a997549fe9b76",
+        "input_sha256": "05ffa89eac4f9b6ae9eb918f472caf17c1949f75869f70713c40331be544093c",
+        "output_sha256": "69e2a8caf3d1a69e0699747e461c3ab8fb6d47a8372cb985ded34b8b4ef66858",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -166,48 +136,7 @@
     }
   ],
   "dissent": [],
-  "dedup": [
-    {
-      "file": "crates/aprender-core/build.rs",
-      "line": 78,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "12 ALLOWED_GAPS entries reference a rationale of 'not_implemented' status, but all 12 are status:implemented in contracts/aprender/binding.yaml (verified by grep)"
-      ]
-    },
-    {
-      "file": "crates/aprender-core/build.rs",
-      "line": 2913,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "ALLOWED_GAPS gained 12 new (contract_stem, equation) exceptions to keep the AllImplemented policy from newly failing the build now that the binding registry is actually read; this is an explicit, dated whitelist of pre-existing gaps rather than a policy weakening, but it does mean those 12 sites remain unimplemented and unenforced going forward."
-      ]
-    },
-    {
-      "file": "crates/aprender-present-core/build.rs",
-      "line": 3223,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "Unreachable-path warning string still references 'provable-contracts binding.yaml not found' despite fixing the path itself to in-tree contracts/"
-      ]
-    },
-    {
-      "file": "docs/audits/quorum-PMAT-4380.json",
-      "line": 120,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "Lane 3 FAIL verdict claims criterion #3 requires adding 'Generated arch_requirements from YAML' message, but criterion explicitly states 'No new message is added; the criterion is which branch runs'"
-      ]
-    }
-  ],
+  "dedup": [],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
@@ -279,7 +208,7 @@
       "agy_tier1_only": true,
       "tier1": false,
       "matched": [],
-      "paths": 38,
+      "paths": 45,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -299,10 +228,10 @@
     }
   },
   "auto_merge": {
-    "checked": false,
+    "checked": true,
     "was_armed": false,
     "disarmed": false,
-    "note": "no --pr given: nothing to disarm"
+    "note": "auto-merge not armed"
   },
   "degraded": {
     "reason": "same-family (policy: agy reserved for tier-1 diffs)",
@@ -320,36 +249,66 @@
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 152797 bytes > 24576"
+    "skipped": "brief 190456 bytes > 24576"
   },
   "advisory_lane": {
-    "state": "not-run",
+    "state": "answered",
     "counts": false,
     "row": {
-      "NotRun": "ContextOverflow"
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
     },
-    "verdict": "unavailable",
-    "why": "the brief is 152797 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
-    "served_by": null,
-    "gpu_proof": null,
-    "apr": null,
-    "model": null,
-    "model_sha256": null,
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "3340528, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
     "rc": 0,
-    "wall_s": 0,
-    "collected_s": 0,
+    "wall_s": 88,
+    "collected_s": 474,
     "budget_s": 128,
-    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "budget_basis": "ledger: 2 x p95 64 s over 30 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 152797,
-      "sent_bytes": 0,
-      "max_bytes": 24576
+      "bytes": 190456,
+      "sent_bytes": 190625,
+      "max_bytes": 196608
     },
-    "trace": null,
-    "attempts": [],
+    "trace": {
+      "input_sha256": "2e2688881cfb0e5c64c4e7960e392883c6040daac5ca8cdddccf98dabaf56b77",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 88,
+        "used_gpu": true,
+        "ts": "2026-09-27T22:02:54.074Z",
+        "wall_ms": 88866,
+        "request_id": "01a0e4e4-7aee-7ab0-b2c1-39e309945935",
+        "load1": 12.01,
+        "cold": false
+      }
+    ],
     "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
-    "agrees_with_counted": null,
+    "agrees_with_counted": true,
     "counted": "PASS"
   },
   "lint": {
