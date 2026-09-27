@@ -1,0 +1,269 @@
+{
+  "ticket": "PMAT-4511",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "a3033df3e80c639b2f1355c9c2ed2fb9b8d88f6f",
+  "diff_sha256": "0209d3bb1f0b304f33236a20f2bb26b7d357dbd42a4539c050778c1e116353c4",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 135235,
+  "prompt_sha256": "f384292b2c4fb2e1cf9e271e70bc7a3e690ae4357bc575851433a93a0b79ff1c",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff matches the ticket and receipt for all 5 addressed items (workspace inclusion, leak soak gate, 6 defect fixes with mutant-tested regression tests, pv surface ontology contract, --timings instrumentation). The previously-flagged surface_audit.csv row-count discrepancy (14 vs 15) is already fixed in the visible diff — I counted 14 new aprender-viz-ttop rows matching the receipt's \"13 flags + base command\" claim. All non-logic file changes (generated_contracts.rs, brick_interface.rs, panel_falsification.rs, pixel_parity.rs) are pure rustfmt reformatting with no assertion or behavior changes. Known gaps (D7 has no CI test, fleet dogfood not done, renacer soak not run, pre-existing clippy/test failures unrelated to this branch) are explicitly disclosed in §8 of the receipt, not hidden. No gate is weakened: the soak/timings mutant gates are deliberately release-time-only (not required CI), and this is disclosed both in the ci/*.cmd comment and the receipt, matching what item 2/6 of the ticket asks for.",
+      "findings": [],
+      "raw_bytes": 2964,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "f384292b2c4fb2e1cf9e271e70bc7a3e690ae4357bc575851433a93a0b79ff1c",
+      "trace": {
+        "input_sha256": "1eb72b2597a8139906c287c5c3bed8b1c52dcfc072051e7add821c62233b30bc",
+        "output_sha256": "f5f42c3a8478af5617c5eb5ab76978cddf8f00170e57336ce93d5ea7ba4b3135",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All items in the PMAT-4511 ticket are met exactly. The leak soak gate passes, defect fixes are correctly implemented with tests covering them, pv ontology surface contract is present and tested, and --timings operates as requested without weakening required CI gates. (Note: paiml-lane-witness file was not found in the workspace git directory).",
+      "findings": [],
+      "raw_bytes": 2004,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "f384292b2c4fb2e1cf9e271e70bc7a3e690ae4357bc575851433a93a0b79ff1c",
+      "trace": {
+        "input_sha256": "4ae7ac2f291b447fee94a5a5b63fb5bf88c60df9d045a27845212f042f009868",
+        "output_sha256": "b515396e0245e71e73c42af568a876a363459aee2bfd26b728a317f2a60a80f6",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4511 correctly implements all seven ticket items: workspace integration, leak soak gate, seven defect fixes with tests/mutants, pv surface contract with audit, and --timings instrumentation. All major claims verified against diff. Quorum finding about surface_audit row count (15→14) was properly discovered and fixed. No refuting evidence found.",
+      "findings": [],
+      "raw_bytes": 1666,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "f384292b2c4fb2e1cf9e271e70bc7a3e690ae4357bc575851433a93a0b79ff1c",
+      "trace": {
+        "input_sha256": "2664b0dcb33052bcded2408e8826ce62402e5c3cf12357590c71f18821b4f076",
+        "output_sha256": "190da2dc0981e8ba18492377892a0f0546866f1b0871c7aea7e1a623b50ed35d",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "crates/aprender-viz-ttop/tests/ttop_surface_gate.rs",
+        "scripts/ttop_soak_gate.sh",
+        "scripts/ttop_timings_gate.sh"
+      ],
+      "paths": 39,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790504511,
+          "window_calls": 33,
+          "window_429": 0,
+          "hour_calls": 12,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 135235 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 135235 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 135235,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
