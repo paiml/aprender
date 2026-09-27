@@ -11,6 +11,8 @@
 #                                              rate (target >= 0.9) from '| untangle |' inbox lines; no rows = NO-DATA, rc 1
 #   queue_inputs.sh dora-fetch <raw-dir> [days] / dora <raw-dir>   weekly DORA table (lead time, CI p50,
 #                                              PR age, conflicts, change-fail, release cycle, merge commits)
+#   queue_inputs.sh runner-wait-fetch <raw-dir> [days] / runner-wait <raw-dir> [runner-re]   queued->started
+#                                              p50/p90 of jobs on matching runners (default ^framework16, infra#1237)
 #   queue_inputs.sh self-test                  planted fixtures, incl. the empty-window and [U] REDs
 #
 # Every input carries {value, n, window, command, method}. The raw files ARE the receipt: compute reads
