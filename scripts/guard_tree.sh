@@ -279,6 +279,7 @@ worker_run_one() {
     w_labels="$GUARD_TREE_RUN_DIR/$w_idx.labels"
     : > "$w_rows"
     : > "$w_labels"
+    w_t0=$SECONDS
     w_total=0
     w_failed=0
 
@@ -306,7 +307,7 @@ worker_run_one() {
         worker_row "$w_guard [run]" bash "$w_guard"
     fi
     rm -f "$w_cap"
-    printf 'total=%d\nfailed=%d\n' "$w_total" "$w_failed" > "$w_meta.tmp"
+    printf 'total=%d\nfailed=%d\nsecs=%d\n' "$w_total" "$w_failed" "$((SECONDS - w_t0))" > "$w_meta.tmp"
     mv -f "$w_meta.tmp" "$w_meta"
     return 0
 }
@@ -631,6 +632,8 @@ while IFS="$TAB" read -r kind g reason; do
         continue
     fi
     [ -f "$rows" ] && cat "$rows"
+    g_secs="$(sed -n 's/^secs=//p' "$meta" | head -1)"
+    case "${g_secs:-}" in ''|*[!0-9]*) ;; *) printf '%d\t%s\n' "$g_secs" "$g" >> "$RUN_DIR/secs" ;; esac
     total=$((total + g_total))
     # ONE INCREMENT PER FAILING CHECK, and deliberately not `failed + g_failed`.
     # scripts/tests/guard_tree_test.sh proves this runner is not fail-fast by
@@ -653,6 +656,14 @@ while IFS="$TAB" read -r kind g reason; do
     fi
 done < "$PLAN"
 
+# Where the wall time went (#4527): the ten slowest guards, self-test + run, so a
+# CI log is its own profile. Informational only -- no verdict reads these lines.
+if [ -s "$RUN_DIR/secs" ]; then
+    printf 'slowest guards (wall s, self-test + run):\n'
+    sort -t "$TAB" -k1,1nr "$RUN_DIR/secs" | head -10 | while IFS="$TAB" read -r s g; do
+        printf '  %5ds  %s\n' "$s" "$g"
+    done
+fi
 printf 'dispatch: up to %d guard(s) at a time (GUARD_TREE_JOBS)\n' "$GUARD_TREE_JOBS"
 printf '%d guard(s) skipped\n' "$skipped"
 printf '%d checks, %d failed\n' "$total" "$failed"
