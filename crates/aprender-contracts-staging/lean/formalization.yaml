@@ -46,6 +46,11 @@ models:
     relation:
       kind: test_witnessed
       evidence: FALSIFY-ACT-004 (contracts/activation-kernel-v1.yaml), a proptest that ReLU(x) >= 0, signed zeros included
+  - module: ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean
+    model_of: aprender::format::converter::export::apr_dtype_to_ggml
+    relation:
+      kind: simulation
+      evidence: "exportDtype transcribes crates/aprender-core/src/format/converter/fusion.rs:118 (include!d into export.rs:470); witness crates/aprender-core/src/format/converter/fusion.rs::export_tests_ges_l4_witness (all 12 TensorDType variants vs the Lean-proved exportDtypeTable_eq; Q6K=>None mutant fails)"
 # Theorem-bearing modules with no L4 model. The refinement gate fails when the measured count rises above this, and
 # also when it falls below it, so lower it in the same commit that adds an L4 model.
-unrefined_baseline: 76
+unrefined_baseline: 75

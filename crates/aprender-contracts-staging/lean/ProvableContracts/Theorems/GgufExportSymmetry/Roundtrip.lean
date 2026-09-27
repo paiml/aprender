@@ -52,15 +52,27 @@ inductive GgmlType
   | F32 | F16 | Q4_0 | Q4_1 | Q8_0 | Q4K | Q6K
   deriving DecidableEq
 
-/-- APR→GGUF export dtype map — mirrors `apr_dtype_to_ggml` (fusion.rs). `some`
-    only for the four layout-identical dtypes; `none` (reject) for everything
-    else, incl. `AprQ8`/`AprQ4`. -/
+/-- APR→GGUF export dtype map — a line-for-line TRANSCRIPTION of
+    `apr_dtype_to_ggml`, `crates/aprender-core/src/format/converter/fusion.rs:118`
+    (module `aprender::format::converter::export`, `include!`d from `export.rs:470`).
+    Same `match`, same arm order, one arm per `TensorDType` variant — no wildcard, so
+    adding a variant to the Rust enum without a Lean arm fails here too. The Rust
+    `eprintln!` in the reject arm is a side effect with no value; the value is `None`.
+    Witness: `export_tests_ges_l4_witness` in fusion.rs checks the Rust fn against
+    `exportDtypeTable` below on all 12 variants. -/
 def exportDtype : AprDType → Option GgmlType
-  | .F32 => some .F32
-  | .F16 => some .F16
-  | .Q4K => some .Q4K
-  | .Q6K => some .Q6K
-  | _    => none
+  | .F32   => some .F32          -- fusion.rs:122  TensorDType::F32 => Some(GgmlType::F32)
+  | .F16   => some .F16          -- fusion.rs:123
+  | .Q4K   => some .Q4K          -- fusion.rs:124
+  | .Q6K   => some .Q6K          -- fusion.rs:125
+  | .AprQ8 => none               -- fusion.rs:129-143  the GH-439 reject arm (8 variants, one `|` pattern)
+  | .BF16  => none
+  | .F64   => none
+  | .I32   => none
+  | .I64   => none
+  | .I8    => none
+  | .U8    => none
+  | .AprQ4 => none
 
 /-- GGUF→APR import dtype map — the inverse on the compatible subset. `Q8_0`
     (and the other non-representable GGML types) → `none`, mirroring the
@@ -171,6 +183,71 @@ theorem export_import_roundtrip (t : AprTensor) (gt : GgufTensor)
     have hg : importDtype g = some t.dtype := dtype_roundtrip t.dtype g hd
     rw [hg]
 
+/-!
+## L4 simulation — the transcription is characterized and pinned (ONT-10)
+
+`exportDtype` above transcribes `apr_dtype_to_ggml` arm for arm. The theorems
+below are over that def: which dtypes it accepts (exactly four, each to its
+twin), that it never merges two dtypes onto one GGML type, and the full
+12-row table the Rust witness test compares against.
+-/
+
+/-- Every `TensorDType` variant, in `tensor_index_impl.rs` declaration order. -/
+def allAprDTypes : List AprDType :=
+  [.F32, .F16, .BF16, .F64, .I32, .I64, .I8, .U8, .AprQ4, .AprQ8, .Q4K, .Q6K]
+
+/-- The table is exhaustive: no variant is left out of the witness domain. -/
+theorem allAprDTypes_complete (d : AprDType) : d ∈ allAprDTypes := by
+  cases d <;> decide
+
+/-- `exportDtype` accepts EXACTLY the four layout-identical dtypes, each mapped
+    to its same-named GGML twin — and nothing else maps to anything. -/
+theorem exportDtype_some_iff (d : AprDType) (g : GgmlType) :
+    exportDtype d = some g ↔
+      (d = .F32 ∧ g = .F32) ∨ (d = .F16 ∧ g = .F16) ∨
+      (d = .Q4K ∧ g = .Q4K) ∨ (d = .Q6K ∧ g = .Q6K) := by
+  cases d <;> cases g <;> decide
+
+/-- The reject set: `none` exactly off the four accepted dtypes. -/
+theorem exportDtype_none_iff (d : AprDType) :
+    exportDtype d = none ↔ d ≠ .F32 ∧ d ≠ .F16 ∧ d ≠ .Q4K ∧ d ≠ .Q6K := by
+  cases d <;> decide
+
+/-- No relabel collision: two dtypes that export to the same GGML type are equal. -/
+theorem exportDtype_injective (a b : AprDType) (g : GgmlType)
+    (ha : exportDtype a = some g) (hb : exportDtype b = some g) : a = b := by
+  cases a <;> cases b <;> cases g <;> simp_all [exportDtype]
+
+/-- Exactly 4 of the 12 dtypes are exportable (8 rejected). -/
+theorem exportDtype_accept_count :
+    (allAprDTypes.filter (fun d => (exportDtype d).isSome)).length = 4 := by
+  decide
+
+/-- Rust `Debug` spelling of each APR dtype (the witness test prints the same). -/
+def AprDType.tag : AprDType → String
+  | .F32 => "F32" | .F16 => "F16" | .BF16 => "BF16" | .F64 => "F64"
+  | .I32 => "I32" | .I64 => "I64" | .I8 => "I8" | .U8 => "U8"
+  | .AprQ4 => "AprQ4" | .AprQ8 => "AprQ8" | .Q4K => "Q4K" | .Q6K => "Q6K"
+
+def GgmlType.tag : GgmlType → String
+  | .F32 => "F32" | .F16 => "F16" | .Q4_0 => "Q4_0" | .Q4_1 => "Q4_1"
+  | .Q8_0 => "Q8_0" | .Q4K => "Q4K" | .Q6K => "Q6K"
+
+/-- The 12-row export table, one `dtype=>ggml|none` row per variant. -/
+def exportDtypeTable : String :=
+  ";".intercalate (allAprDTypes.map fun d =>
+    d.tag ++ "=>" ++ match exportDtype d with
+      | some g => g.tag
+      | none => "none")
+
+/-- The literal the Rust witness `export_tests_ges_l4_witness` pins (fusion.rs):
+    proved here, so the Rust side compares against a Lean-checked value. -/
+theorem exportDtypeTable_eq : exportDtypeTable =
+    "F32=>F32;F16=>F16;BF16=>none;F64=>none;I32=>none;I64=>none;I8=>none;U8=>none;AprQ4=>none;AprQ8=>none;Q4K=>Q4K;Q6K=>Q6K" := by
+  decide
+
+#eval exportDtypeTable
+
 -- Checks
 #check @dtype_roundtrip
 #check @dtype_roundtrip_section
@@ -179,5 +256,10 @@ theorem export_import_roundtrip (t : AprTensor) (gt : GgufTensor)
 #check @import_rejects_q8_0
 #check @export_preserves_shape
 #check @export_import_roundtrip
+#check @exportDtype_some_iff
+#check @exportDtype_none_iff
+#check @exportDtype_injective
+#check @exportDtype_accept_count
+#check @exportDtypeTable_eq
 
 end ProvableContracts.GgufExportSymmetry
