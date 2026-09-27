@@ -1,0 +1,17 @@
+# tool_version=none (derived by the in-tree scripts/guards/no_mock_named_real.rs --print-baseline; not a versioned analyser)
+# no-mock-named-real-v1 baseline (TRACE-001 TR-04). SHRINK-ONLY: a line leaves when its
+# declaration is renamed or removed; nothing is added. Format: <path> <mod|type> <ident>.
+# These predate the rule; most are integration modules for the crate they are named after.
+crates/apr-cli/src/commands/mod.rs mod cbtop
+crates/aprender-orchestrate/src/agent/driver/mod.rs mod realizar
+crates/aprender-orchestrate/src/agent/memory/mod.rs mod trueno
+crates/aprender-orchestrate/src/main.rs mod pacha
+crates/aprender-present-yaml/src/lib.rs mod pacha
+crates/aprender-train/src/ecosystem/mod.rs mod batuta
+crates/aprender-train/src/ecosystem/mod.rs mod realizar
+crates/aprender-train/src/hf_pipeline/export/exporter.rs type AprFormat
+crates/aprender-train/src/storage/mod.rs mod trueno
+crates/aprender-verify-ml/src/ml/mod.rs mod aprender
+crates/aprender-verify-ml/src/ml/mod.rs mod entrenar
+crates/aprender-viz/src/interop/mod.rs mod aprender
+crates/aprender-viz/src/interop/mod.rs mod trueno_graph

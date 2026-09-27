@@ -22179,3 +22179,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: TRACE-001 Phase A
+- id: PMAT-4559
+  github_issue: 4559
+  item_type: task
+  title: 'TR-04: modality-matrix mock renamed mock_trace; no-mock-named-real-v1 lint (Rust guard, report-only)'
+  status: inprogress
+  priority: high
+  assigned_to: la-impl
+  created: 2026-09-27T13:15:08Z
+  updated: 2026-09-27T13:15:08Z
+  spec: docs/specifications/TRACE-001-tracing-consumers.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: TRACE-001 Phase A

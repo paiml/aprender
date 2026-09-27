@@ -87,6 +87,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         include_fmt_baseline.txt)                printf 'set\n' ;;   # include!d .rs files rustfmt would change (scripts/include_fmt_ratchet.sh, #4151); instrument pinned in its own header
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
+        no_mock_named_real_baseline.txt)         printf 'set\n' ;;   # TRACE-001 TR-04: <path> <mod|type> <ident> named after a workspace crate outside it; may only shrink
         perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
         # aprender#3686, scripts/check_unwired_capabilities.sh. Three files, three
         # DIFFERENT contracts -- classified by what each one actually does, which

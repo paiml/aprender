@@ -1,0 +1,70 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "A mock is named as a mock (TRACE-001 R-5, TR-04 #4559). A module or type declared outside a workspace crate but named after that crate's library reads as the real crate. crates/aprender-serve/tests/modality_matrix/common.rs carried `pub mod renacer`, a thread-local span recorder that traced nothing, and its QA-A08 test printed 'renacer::capture() API works correctly'. The module is now `mock_trace` and QA-A08 is labelled a mock self-test. scripts/check_no_mock_named_real.sh (Rust: scripts/guards/no_mock_named_real.rs) derives every library name from the tracked Cargo.toml files and refuses a NEW declaration; the 13 that predate the rule are frozen in a shrink-only baseline. Report-only under TRACE-001 R-6 until first-green plus 7 green nights."
+  kind: pattern
+  references:
+    - "docs/specifications/TRACE-001-tracing-consumers.md — §1.3 F5, §3 no-mock-named-real-v1, §4 TR-04, §5 R-3/R-5/R-6"
+    - "scripts/guards/no_mock_named_real.rs — the scanner and its case table"
+    - "scripts/check_no_mock_named_real.sh — the guard, --self-test plants `mod trueno`"
+    - "scripts/no_mock_named_real_baseline.txt — pre-rule declarations, shrink-only (lib_baseline_ratchet.sh `set`)"
+
+five_whys:
+  symptom: "A test printed 'renacer::capture() API works correctly' for a module that is not renacer and traces no syscalls."
+  why_1: "The mock was declared as `pub mod renacer` inside a test helper, so every call site read `renacer::capture(...)`."
+  why_2: "Rust lets any module take any name; a local `mod renacer` shadows nothing and warns about nothing."
+  why_3: "The QA-A08 checklist asked for 'a renacer capture() API', and a mock with that name satisfied the checklist's words."
+  why_4: "No check compared module names against the workspace's own crate libraries."
+  why_5: "The rule 'a mock is named as a mock' lived only in review."
+  root_cause: "A name is a claim. The remedy is a derived scan: any module or type named after a workspace library, declared outside that library's crate, is NEW and fails; the pre-rule set may only shrink."
+
+equations:
+  mock_naming:
+    formula: "violation(f, d) ⇔ d declares mod n ∨ type camel(n), n ∈ Libs(Cargo.toml*), f ∉ dir(owner(n)), key(f, d) ∉ Baseline"
+    domain: "git ls-files of the tree; Libs = [package]/[lib] names of every non-root Cargo.toml, '-' → '_'"
+    codomain: "exit 0 (no NEW, no STALE) | 1 (NEW or STALE) | 2 (cannot judge)"
+    invariants:
+      - "library names are derived from manifests, never a hand-kept list"
+      - "Baseline ⊆ Baseline@origin/main (shrink-only) and every baseline line still matches a declaration (no STALE)"
+
+proof_obligations:
+  - id: NMR-INV-001
+    type: invariant
+    property: "A module named after a workspace library, outside its crate, is refused"
+    formal: "plant(crates/aprender-serve/tests/planted.rs, 'pub mod trueno {}') ⇒ guard = 1"
+    applies_to: mock_naming
+  - id: NMR-INV-002
+    type: invariant
+    property: "A mock named as a mock, and the owner's own module, are accepted"
+    formal: "'pub mod mock_trueno {}' outside ⇒ 0 ∧ 'mod trueno;' inside crates/aprender-compute ⇒ 0"
+    applies_to: mock_naming
+  - id: NMR-INV-003
+    type: invariant
+    property: "The pre-rule baseline only shrinks"
+    formal: "baseline line with no declaration ⇒ STALE ⇒ 1 ∧ baseline_ratchet_check(set) against origin/main"
+    applies_to: mock_naming
+
+falsification_tests:
+  - id: FALSIFY-NMR-001
+    rule: "A planted mod trueno in a test is RED"
+    prediction: "the guard's self-test plants `pub mod trueno` in crates/aprender-serve/tests and gets rc 1, then `pub mod mock_trueno` and gets rc 0"
+    test: "bash scripts/check_no_mock_named_real.sh --self-test"
+    if_fails: "a mock can wear a real crate's name again"
+  - id: FALSIFY-NMR-002
+    rule: "No NEW declaration at HEAD"
+    prediction: "0 new, 0 stale; the renamed modality-matrix mock is not reported"
+    test: "NMR_ENFORCE=1 bash scripts/check_no_mock_named_real.sh"
+    if_fails: "a module or type named after a workspace library was added outside its crate"
+  - id: FALSIFY-NMR-003
+    rule: "The renacer mock is gone from the modality matrix"
+    prediction: "no `mod renacer` in crates/aprender-serve/tests"
+    test: "! git grep -nE '^\\s*(pub\\s+)?mod renacer\\b' -- crates/aprender-serve/tests"
+    if_fails: "the mock is still named after the in-tree renacer"
+
+qa_gate:
+  id: F-NMR-001
+  name: "Mocks are named as mocks"
+  description: "scripts/check_no_mock_named_real.sh is in guard_tree.sh's --no-cargo universe (git ls-files 'scripts/check_*.sh'), which ci / gate reads. Report-only (TRACE-001 R-6) until first-green plus 7 green nights; NMR_ENFORCE=1 makes it blocking."
+  checks:
+    - "mock_naming"
