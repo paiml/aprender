@@ -1,0 +1,21 @@
+- id: PMAT-4509
+  github_issue: 4509
+  item_type: task
+  title: 'release: rc_fleet_stage.sh FLEET_DEFAULT disagrees with the fleet-bins catalogue — intel floor-tests the -cpu asset it never runs, mini pv never floor-tested'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-57
+  created: 2026-09-27 06:45:00+00:00
+  updated: '2026-09-27T06:45:00Z'
+  spec: docs/specifications/aprender-monorepo-consolidation.md
+  acceptance_criteria:
+  - 'scripts/release/rc_fleet_stage.sh derives its per-host asset table from the fleet-bins catalogue (paiml/infra machines/fleet-hosts/fleet-bins/fleet-bins.tsv), not a hand copy'
+  - 'intel stages the x86_64-unknown-linux-gnu-wgpu apr asset; mini stages pv-{tag}-aarch64-apple-darwin'
+  - 'rc_fleet_stage.sh --self-test PASS, including a row that goes RED on the #4509 drift shape'
+  - 'folded onto car/0.70.0 together with its base (e6 carry-forward gate da88d81d1: carry_forward_gate.py, decode_floor.py, rc_cut.sh wiring), whose self-tests also PASS'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Fix authored by infra-64 on fix/4509-stage-table-from-catalogue @0c4f9b88f8 (off e6/rc-carry-forward-gate da88d81d1). Fold-prep by aprender-57 on a57/car-4509 off car/0.70.0; e6 does the union push.'
