@@ -11,6 +11,6 @@
   acceptance_criteria:
   - 'no crates/*/build.rs reads ../../provable-contracts/contracts or ../../../provable-contracts/contracts (git grep empty outside comments)'
   - 'the 10 #[contract] producers read contracts/<producer>/binding.yaml in-tree and a registry-less #[contract] site is a compile error (#4368, #4369)'
-  - 'aprender-serve build no longer prints the PMAT-228 "not found" fallback warning; it prints "Generated arch_requirements from YAML"; cargo test -p aprender-serve --lib arch_ passes'
+  - 'aprender-serve build takes the YAML branch of generate_arch_requirements_file instead of the fallback: the build output carries the EXISTING (pre-diff, crates/aprender-serve/build.rs:570, already on main) line "[PMAT-228] Generated arch_requirements from YAML (14 weight roles, 4 constraint cells)" and no longer the "not found" fallback warning (measured, cargo check -p aprender-serve at this head). No new message is added; the criterion is which branch runs. cargo test -p aprender-serve --lib arch_ passes (64/64 measured)'
   - 'cargo test -p aprender-contracts --lib and -p aprender-contracts-macros pass; the #4219 APR_GIT_SHA stamp stays in every build.rs that had it'
   phases: []
