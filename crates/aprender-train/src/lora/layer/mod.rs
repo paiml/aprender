@@ -17,4 +17,7 @@ mod tests;
 #[cfg(test)]
 mod falsify_tests;
 
+#[cfg(test)]
+mod lean_witness_tests;
+
 pub use self::core::{LoRALayer, LoRAScaling};
