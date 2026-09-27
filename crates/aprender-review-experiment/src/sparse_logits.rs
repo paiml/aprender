@@ -340,6 +340,79 @@ pub fn decode(blob: &[u8]) -> Result<(Header, Vec<TokenLogits>), String> {
     Ok((h, tokens))
 }
 
+/// Where the CAS stores the blob with this sha under `root`
+/// (`blobs/sha256/ab/cd/<sha>.zst`, the layout the data card reads).
+#[must_use]
+pub fn cas_path(root: &std::path::Path, sha: &str) -> std::path::PathBuf {
+    root.join("blobs/sha256")
+        .join(&sha[..2])
+        .join(&sha[2..4])
+        .join(format!("{sha}.zst"))
+}
+
+/// What one C11 capture stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Captured {
+    /// sha256 of the raw blob: the row's `logits_sha`.
+    pub logits_sha: String,
+    pub n_tokens: u32,
+    pub k: u8,
+    pub raw_bytes: u64,
+    pub stored_bytes: u64,
+}
+
+/// PRM C11: turn an `apr serve` `/v1/chat/completions` body into a
+/// `sparse-logits-v1` blob in the CAS under `root`, and return its sha.
+///
+/// `h.n_tokens` is taken from the body. Nothing is written unless the blob
+/// decodes back to exactly what was captured, and the stored frame is read
+/// back and re-hashed before the sha is returned. An existing blob with the
+/// same sha is kept (the store is content-addressed), after the same check.
+///
+/// # Errors
+/// The body is refused by [`from_chat_completion`] or [`encode`], or the
+/// store cannot be written or does not read back.
+pub fn capture(
+    root: &std::path::Path,
+    h: &Header,
+    body: &serde_json::Value,
+) -> Result<Captured, String> {
+    let tokens = from_chat_completion(body, h.k)?;
+    let h = Header {
+        n_tokens: u32::try_from(tokens.len()).map_err(|_| "too many tokens".to_string())?,
+        ..h.clone()
+    };
+    let blob = encode(&h, &tokens)?;
+    if decode(&blob)? != (h.clone(), tokens) {
+        return Err("encoded blob does not decode to the capture".into());
+    }
+    let sha = crate::corpus::sha256_hex(&blob);
+    let path = cas_path(root, &sha);
+    if !path.exists() {
+        let frame = zstd::bulk::compress(&blob, ZSTD_LEVEL).map_err(|e| e.to_string())?;
+        let dir = path.parent().ok_or("cas path has no parent")?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let tmp = path.with_extension(format!("zst.tmp{}", std::process::id()));
+        std::fs::write(&tmp, &frame).map_err(|e| format!("{}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    let stored = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let raw = zstd::stream::decode_all(stored.as_slice()).map_err(|e| e.to_string())?;
+    if crate::corpus::sha256_hex(&raw) != sha {
+        return Err(format!(
+            "{}: stored blob does not hash to {sha}",
+            path.display()
+        ));
+    }
+    Ok(Captured {
+        logits_sha: sha,
+        n_tokens: h.n_tokens,
+        k: h.k,
+        raw_bytes: blob.len() as u64,
+        stored_bytes: stored.len() as u64,
+    })
+}
+
 #[cfg(test)]
 #[path = "sparse_logits_tests.rs"]
 mod tests;

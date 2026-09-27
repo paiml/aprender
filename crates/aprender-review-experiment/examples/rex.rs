@@ -70,6 +70,11 @@
 //!   and the replay strata weights over distinct diffs, as the receipt's
 //!   `workload` block. A falsified §0.2 is a measured result (exit 0); an
 //!   undecided one (no lane at min_n) is exit 13 (andon, S-14).
+//! - `sparse-logits --chat F --store DIR --model-sha M --tokenizer-sha T --apr-tag V
+//!   --backend B --temperature X [--k K]` PRM-C11 (contract sparse-logits-v1): one
+//!   `apr serve` chat-completion body into a sparse-logits-v1 blob in the local CAS
+//!   under DIR; prints the capture (`logits_sha`, sizes) as JSON for the
+//!   agent-trace-v1 row. Exit 1 on a refused body (nothing is written), 2 on usage.
 
 use aprender_review_experiment::b2;
 use aprender_review_experiment::build_corpus::{
@@ -109,6 +114,7 @@ fn main() -> ExitCode {
         Some("b2") => b2_cmd(&args[1..]),
         Some("lane-kappa") => lane_kappa_cmd(&args[1..]),
         Some("workload") => workload_cmd(&args[1..]),
+        Some("sparse-logits") => sparse_logits_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -132,7 +138,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa|workload> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa|workload|sparse-logits> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -1131,4 +1137,55 @@ fn workload_cmd(a: &[String]) -> ExitCode {
         return ExitCode::from(ANDON_WORKLOAD);
     }
     ExitCode::SUCCESS
+}
+
+fn sparse_logits_cmd(a: &[String]) -> ExitCode {
+    use aprender_review_experiment::sparse_logits::{capture, Header, Mode, DEFAULT_K, SCHEME};
+    const USAGE: &str = "usage: rex sparse-logits --chat F --store DIR --model-sha M --tokenizer-sha T --apr-tag V --backend B --temperature X [--k K]";
+    let header = |f: &Flags| -> Result<Header, String> {
+        let k = match f.get("k") {
+            Some(k) => k.parse::<u8>().map_err(|e| format!("--k: {e}"))?,
+            None => DEFAULT_K,
+        };
+        Ok(Header {
+            schema: SCHEME.into(),
+            mode: Mode::Topk,
+            model_sha256: need(f, "model-sha")?.into(),
+            tokenizer_sha256: need(f, "tokenizer-sha")?.into(),
+            apr_tag: need(f, "apr-tag")?.into(),
+            backend: need(f, "backend")?.into(),
+            temperature_of_record: need(f, "temperature")?
+                .parse()
+                .map_err(|e| format!("--temperature: {e}"))?,
+            k,
+            n_tokens: 0,
+        })
+    };
+    let parsed = flags(a).and_then(|f| {
+        let h = header(&f)?;
+        Ok((
+            h,
+            need(&f, "chat")?.to_string(),
+            need(&f, "store")?.to_string(),
+        ))
+    });
+    let (h, chat, store) = match parsed {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("rex sparse-logits: {e}\n{USAGE}");
+            return ExitCode::from(2);
+        }
+    };
+    match read_json::<serde_json::Value>(&chat)
+        .and_then(|body| capture(std::path::Path::new(&store), &h, &body))
+    {
+        Ok(c) => {
+            println!("{}", serde_json::to_string(&c).unwrap_or_default());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("rex sparse-logits: {e}");
+            ExitCode::from(1)
+        }
+    }
 }

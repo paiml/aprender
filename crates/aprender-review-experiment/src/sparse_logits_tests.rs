@@ -306,3 +306,79 @@ fn c11_serve_capture_refuses_what_it_cannot_record() {
         .expect_err("k=0")
         .contains("k = 0"));
 }
+
+/// A scratch CAS root, removed on drop.
+struct Root(std::path::PathBuf);
+
+impl Root {
+    fn new(tag: &str) -> Self {
+        let p = std::env::temp_dir().join(format!("spl-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        Self(p)
+    }
+}
+
+impl Drop for Root {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// FALSIFY-SPL-005 (PRM C11): a serve body captured into the CAS reads back as
+/// the same tokens, keeps its residual mass, and is addressed by the sha of the
+/// raw blob; a second capture is idempotent, and a stored blob that no longer
+/// hashes to its name is refused.
+#[test]
+fn falsify_spl_005_capture_round_trips_through_the_cas() {
+    let root = Root::new("005");
+    let rows: Vec<Vec<f32>> = (0..4).map(|s| row(s, 70_000)).collect();
+    let body = serve_body(&rows, 20, &[5, 69_999, 12, 7]);
+    let want = from_chat_completion(&body, DEFAULT_K).expect("control");
+    let got = capture(&root.0, &header(DEFAULT_K, 0), &body).expect("capture");
+    assert_eq!((got.n_tokens, got.k), (4, DEFAULT_K));
+    let path = cas_path(&root.0, &got.logits_sha);
+    let stored = std::fs::read(&path).expect("stored");
+    assert_eq!(stored.len() as u64, got.stored_bytes);
+    assert_eq!(
+        crate::datacard::zstd_content_size(&stored),
+        Some(got.raw_bytes),
+        "the frame declares its raw size for the data card"
+    );
+    let raw = zstd::stream::decode_all(stored.as_slice()).expect("frame");
+    assert_eq!(crate::corpus::sha256_hex(&raw), got.logits_sha);
+    let (h, toks) = decode(&raw).expect("decode");
+    assert_eq!(h.n_tokens, 4);
+    assert_eq!(toks, want);
+    for (t, r) in toks.iter().zip(&rows) {
+        let full = TokenLogits::from_full_logits(r, DEFAULT_K, 0).expect("row");
+        let tail = 1.0 - t.topk_mass.to_f32();
+        assert!(
+            (tail - (1.0 - full.topk_mass.to_f32())).abs() <= 1e-3,
+            "residual mass"
+        );
+    }
+    assert_eq!(
+        capture(&root.0, &header(DEFAULT_K, 0), &body).expect("again"),
+        got
+    );
+    std::fs::write(&path, zstd::bulk::compress(b"forged", 3).expect("z")).expect("plant");
+    let err = capture(&root.0, &header(DEFAULT_K, 0), &body).expect_err("forged store");
+    assert!(err.contains("does not hash"), "{err}");
+}
+
+/// FALSIFY-SPL-005: a body the codec refuses writes nothing to the CAS.
+#[test]
+fn falsify_spl_005_a_refused_body_writes_nothing() {
+    let root = Root::new("005-refused");
+    let mut body = serve_body(&[row(1, 64)], 4, &[3]);
+    body.pointer_mut("/choices/0/logprobs/content/0")
+        .expect("e")
+        .as_object_mut()
+        .expect("o")
+        .remove("logsumexp_full");
+    assert!(capture(&root.0, &header(4, 0), &body).is_err());
+    assert!(
+        !root.0.join("blobs").exists(),
+        "a refused capture left a blob"
+    );
+}

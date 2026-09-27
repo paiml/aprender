@@ -48,3 +48,9 @@ falsification_tests:
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_spl_004"
     expected_output: "exit 0"
     if_fails: "A malformed blob would decode to a plausible but wrong distribution."
+  - id: FALSIFY-SPL-005
+    name: capture_round_trips_through_the_cas
+    prediction: "an apr serve body captured by `capture` is stored at blobs/sha256/ab/cd/<sha>.zst, its frame declares the raw size, it decodes to the same tokens with the same residual mass, a second capture is idempotent, a forged stored blob is refused, and a refused body writes nothing"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_spl_005"
+    expected_output: "exit 0"
+    if_fails: "A row's logits_sha would name a blob that is absent, unreadable, or not the distribution the serve returned."
