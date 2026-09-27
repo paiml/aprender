@@ -307,8 +307,10 @@ fn reference_of(g: &Graph, kernel: &str) -> Option<String> {
     found.first().map(|s| (*s).to_string())
 }
 
+/// `row.kernel ∈ {name(k), module(k)::name(k)}` (ont-kernel-receipts-v1 `witness`). A bare module is NOT a
+/// name: a module-only row would witness every kernel in that module.
 fn names_kernel(row: &str, name: &str, module: &str) -> bool {
-    row == name || row == format!("{module}::{name}") || row == module
+    row == name || row == format!("{module}::{name}")
 }
 
 /// Type every bound `#[kernel]` in `g` and join `inputs` to it.
