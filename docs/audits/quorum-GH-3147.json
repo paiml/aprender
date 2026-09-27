@@ -1,0 +1,331 @@
+{
+  "ticket": "GH-3147,GH-3148",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "f4037fb82c07379ae93b763be401beee90dd8173",
+  "diff_sha256": "ad6a6bb3f165fd182c60c3fb4f4a8ad8decfbc5ee97f531b4672ef39bcb96e58",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 319946,
+  "prompt_sha256": "8bef26631f3d9fd13d5b45cbf1a9091e12db7ad7bff0e9d6dd95b370641aac9f",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "GH-3147 (dense f64 SVD substrate, Golub-Reinsch + randomized) and GH-3148 (PCA rewired onto SVD + TruncatedSVD) do what their tickets ask. Verified the JAMA-style bidiagonalization/QR algorithm in golub_reinsch.rs (correct Householder reflector math, Givens rotation ordering, Wilkinson-shift QR step), the Svd wrapper's shape/index bookkeeping for both the tall/wide transpose path and the randomized range-finder (all dimension bounds hold: l<=r<=min(rows,cols) throughout), and the PCA rewrite that fully removes the SymmetricEigen/covariance path (confirmed via diff: no covariance matrix formed) and replaces it with SVD-of-centered-data, matching the receipt's claim. The covariance-guard case table and its anchored source-scan test are real (not vacuous). The nightly PCA-vs-sklearn beat test genuinely asserts ratio<=0.80 with no silent-pass path, and the CI workflow hunk exactly matches what the receipt describes (pipefail present, mirrors the GMM step, additive only). BEATS.md correctly flips the PCA row from LOSS to WON with the sourced measurement, matching contracts/beat-sklearn-pca-speed-v1.yaml. The receipt's two PARTIAL disclosures (scipy parity uses a norm-wise not per-sigma bound; randomized-SVD 1% bound is domain-limited, with the out-of-domain 1.8% case explicitly tested and recorded as FND-20260926-3147) are accurate and not overstated. No unwrap() introduced; census/contract counts match the diff (1837->1839, +1 kernel +1 beat-benchmark = svd-v1 + beat-sklearn-pca-speed-v1).",
+      "findings": [],
+      "raw_bytes": 3929,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8bef26631f3d9fd13d5b45cbf1a9091e12db7ad7bff0e9d6dd95b370641aac9f",
+      "trace": {
+        "input_sha256": "40c00820eee6f7b102397acaabc5516c81d77bf84201382f592f323790b1336f",
+        "output_sha256": "f8b28f2efed6456a5d0523e3750f1795949673ea3ad7e02fc6c927ff3e3248ad",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR successfully implements the SVD substrate (Golub-Reinsch and randomized) in aprender-compute (#3147) and rewires PCA to use this new SVD instead of the old covariance matrix approach (#3148). The `docs/BEATS.md` has been updated to reflect this, removing the old PCA speed loss and recording a 1.8-3.6x win over scikit-learn. The tests correctly implement the falsification checks, including reconstruction error and sklearn parity. The diff aligns perfectly with the receipt claims.",
+      "findings": [
+        {
+          "claim": "Reconstruction ≤ 1e-10 on 200 matrices",
+          "file": "crates/aprender-compute/src/svd/tests.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "sklearn parity up to sign within 1e-8",
+          "file": "crates/aprender-core/src/preprocessing/tests_pca_svd.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "PCA-SVD is removed from the named losses, which had contradicted the WON row",
+          "file": "docs/BEATS.md",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4873,
+      "err_bytes": 103,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "8bef26631f3d9fd13d5b45cbf1a9091e12db7ad7bff0e9d6dd95b370641aac9f",
+      "trace": {
+        "input_sha256": "d9074e2a2235bf889d70a390eebb1a5b4bdebac550145df26d2b138549318a34",
+        "output_sha256": "d72ddfd6185f6ee615b5ab00d0187483f698c84bfe29c0a96167002b355957f7",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Both tickets GH-3147 (SVD substrate) and GH-3148 (PCA on SVD + TruncatedSVD) are correctly implemented. SVD substrate includes Golub-Reinsch and randomized solvers with comprehensive testing. PCA is rewritten onto SVD substrate with covariance path eliminated (verified by guard + case table). BEATS.md loss row is properly re-measured and updated to WON (tall 0.54x, wide 0.28x faster than sklearn). All contracts, fixtures, and workflow changes are in place. The randomized SVD domain limitation is disclosed, documented in the contract precondition, and filed as P3. The earlier gemini lane's claim about missing pipefail in the workflow is refuted by the actual diff (line 179).",
+      "findings": [
+        {
+          "file": "docs/findings/2026-09-26-pvl-b.jsonl",
+          "claim": "Randomized SVD accuracy (≤1%) is guaranteed only for spectra with σ_{k+p+1}/σ_k ≤ 0.5, not all rank-k-plus-noise matrices; harmonic spectrum measured 1.8% error at k=20",
+          "grounding": "cited",
+          "line": 10689
+        }
+      ],
+      "raw_bytes": 2818,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "8bef26631f3d9fd13d5b45cbf1a9091e12db7ad7bff0e9d6dd95b370641aac9f",
+      "trace": {
+        "input_sha256": "22aa03fb379fbfbe5094ac6c1842235d9570530416501f240c8af345b7626df0",
+        "output_sha256": "926c00b54fd5a179a0245964d04bb09d43c9928c2297febfdb9c5ef4185ced9a",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-compute/src/svd/tests.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Reconstruction ≤ 1e-10 on 200 matrices"
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/preprocessing/tests_pca_svd.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "sklearn parity up to sign within 1e-8"
+      ]
+    },
+    {
+      "file": "docs/BEATS.md",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "PCA-SVD is removed from the named losses, which had contradicted the WON row"
+      ]
+    },
+    {
+      "file": "docs/findings/2026-09-26-pvl-b.jsonl",
+      "line": 10689,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Randomized SVD accuracy (≤1%) is guaranteed only for spectra with σ_{k+p+1}/σ_k ≤ 0.5, not all rank-k-plus-noise matrices; harmonic spectrum measured 1.8% error at k=20"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/beat-speed-nightly.yml"
+      ],
+      "paths": 25,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790504511,
+          "window_calls": 41,
+          "window_429": 0,
+          "hour_calls": 14,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 319946 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 319946 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 319946,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}

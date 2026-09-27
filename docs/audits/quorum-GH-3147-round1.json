@@ -1,0 +1,301 @@
+{
+  "ticket": "GH-3147,GH-3148",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "53ef3339c7a549c0f68afa911fa4f2141e99b122",
+  "diff_sha256": "ae711322d290f19be0aa1d011651a1c6b7a264bb22bdbfd0d4027f1378d2317e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 317985,
+  "prompt_sha256": "b5d94bf177ed10ff28c267792b67ccff07b08783f61241f08570ca8693f570c8",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed the full diff (svd/golub_reinsch.rs, svd/mod.rs, svd/tests.rs, pca.rs, tests_pca_svd.rs, beat_sklearn_pca_speed.rs, contracts, BEATS.md, receipts, roadmap entries) against GH-3147 and GH-3148's acceptance criteria. GH-3147: Golub-Reinsch thin SVD + Halko randomized top-k SVD are correctly implemented (checked bidiagonalization, QR sweeps, sign canonicalization, transpose handling for wide inputs, randomized range-finder dimension bookkeeping) with a 200-matrix acceptance set, orthonormality proptest, scipy oracle parity, rank-tolerance test, and a measured mutation kill. GH-3148: PCA is rewired onto the SVD substrate with a real covariance-free code path (verified no `SymmetricEigen`/cov binding remains, backed by an anchored guard+case table), TruncatedSVD is added uncentered, and the BEATS.md PCA row is honestly updated from a narrow loss to a WON with a nightly-gated re-measurement step added to the workflow. Every partial/disclosed limitation (scipy vector-sign comparison scope, randomized SVD's 1% bound outside the disclosed decay precondition) is recorded as such in the receipt and backed by a filed finding (FND-20260926-3147), not hidden. Contract/README/census diffs (1837→1839) are mechanical and consistent with the two new contract files. Found nothing that refutes the ticket or receipt claims.",
+      "findings": [],
+      "raw_bytes": 3577,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b5d94bf177ed10ff28c267792b67ccff07b08783f61241f08570ca8693f570c8",
+      "trace": {
+        "input_sha256": "4c7726d4b0c5ca8e7e8176663c8144d06a3794a03de0c3893ce68ed55017f18d",
+        "output_sha256": "da60a4986ed90a9e6c11f6bcf18243f4126fc20ff4b9c2791474e70b5ca7f5b7",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The PR implements SVD in aprender-compute and rewires PCA to use it, retiring the covariance matrix approach. It adds the required tests, contracts, and updates BEATS.md appropriately to show a 'WON' status. However, the receipt explicitly claims that the new PCA workflow step 'mirrors the GMM step above it, and no other line of the workflow changes'. The diff reveals that the new PCA step includes 'set -o pipefail' which is absent from the GMM step above it. Because this receipt claim is false (the step does not mirror the GMM step exactly), the review must fail per the refutation doctrine.",
+      "findings": [
+        {
+          "claim": "Receipt claims 'It mirrors the GMM step above it' for the workflow change.",
+          "file": ".github/workflows/beat-speed-nightly.yml",
+          "fix": "Either remove 'set -o pipefail' so it truly mirrors the GMM step, or fix the GMM step to also include pipefail (and update the receipt/ticket to reflect this fix).",
+          "grounding": "cited",
+          "line": 156
+        }
+      ],
+      "raw_bytes": 5397,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "b5d94bf177ed10ff28c267792b67ccff07b08783f61241f08570ca8693f570c8",
+      "trace": {
+        "input_sha256": "59dfb6944e7f099145fe3a1bd84e60c58d97db8857157f8db17f6c5ddfbde368",
+        "output_sha256": "e87774afc8dd34cffbec860bd913d44cfd42ec1650516a136fbfc83bade22249",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "GH-3147,GH-3148 PR implements SVD substrate and PCA-on-SVD rewire with comprehensive measurement, proper contract definitions, and honest disclosure of limitations. All acceptance criteria met or explicitly documented as partial. Diff is complete, workflow change properly formatted, documentation consistent.",
+      "findings": [],
+      "raw_bytes": 1537,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b5d94bf177ed10ff28c267792b67ccff07b08783f61241f08570ca8693f570c8",
+      "trace": {
+        "input_sha256": "57b17aac63cd9eaaa668a0608b97f5d3f3856b96f31f6f8e33b7c79293ce2a8f",
+        "output_sha256": "57d824f966d7f1d34e8b1b62b2f21f813533e7e93369d723326cc2ef06a1f92b",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "The PR implements SVD in aprender-compute and rewires PCA to use it, retiring the covariance matrix approach. It adds the required tests, contracts, and updates BEATS.md appropriately to show a 'WON' status. However, the receipt explicitly claims that the new PCA workflow step 'mirrors the GMM step above it, and no other line of the workflow changes'. The diff reveals that the new PCA step includes 'set -o pipefail' which is absent from the GMM step above it. Because this receipt claim is false (the step does not mirror the GMM step exactly), the review must fail per the refutation doctrine.",
+      "findings": [
+        {
+          "claim": "Receipt claims 'It mirrors the GMM step above it' for the workflow change.",
+          "file": ".github/workflows/beat-speed-nightly.yml",
+          "fix": "Either remove 'set -o pipefail' so it truly mirrors the GMM step, or fix the GMM step to also include pipefail (and update the receipt/ticket to reflect this fix).",
+          "grounding": "cited",
+          "line": 156
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": ".github/workflows/beat-speed-nightly.yml",
+      "line": 156,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Receipt claims 'It mirrors the GMM step above it' for the workflow change."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/beat-speed-nightly.yml"
+      ],
+      "paths": 25,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790504511,
+          "window_calls": 27,
+          "window_429": 0,
+          "hour_calls": 6,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 317985 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 317985 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 317985,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
