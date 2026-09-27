@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-aprender-train-shell-v1 — ONT-10 slice S14 (1/2): the `aprender-train-shell` binary as an entity (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, LC_ALL=C recursive --help walk):
+#   - `aprender-train-shell --version` prints "entrenar-shell 0.69.3": the pre-monorepo name, so the identity shape is
+#     RED today. G0.1 (git sha) is a warning and RED today.
+#   - no clap subcommands: the surface is the bare REPL, two flags (-c <COMMAND>, -s <SESSION>; -h/-V excluded) and
+#     the REPL's own commands. `-c help` lists 9 REPL commands; the parser (crates/aprender-train-shell/src/
+#     commands.rs:71) also accepts `clear`/`cls`, which help omits. C_repl below is the parser's 10 canonical names,
+#     so a help-walk extractor reads `clear` as a ledger orphan: RED today until help lists it.
+#   - surface_audit.csv: 13 rows = bare REPL + 2 flag rows + 10 `repl: <cmd>` rows.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): nodes also typed bin:target/<package>/<target>
+# (no targetNode in pv's subset); commands as bin:command literals (full path below the binary name, space-joined);
+# the csv join yields bin:ledgerOrphan / bin:unledgeredCommand.
+# REPL binaries: bin:command has 0 values; flags from --help Options as bin:flag (short form, -h/-V excluded);
+# REPL commands from `<bin> -c help` as bin:replCommand (first word, canonical name); ledger `repl: <cmd> …`
+# rows join to bin:replCommand, `<bin> -x …` rows to bin:flag, `<bin> (interactive REPL)` to the bare binary.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-aprender-train-shell
+version: "0.1.0"
+scope: >
+  The built `aprender-train-shell` target of package `aprender-train-shell` (default features) as the focus node binary/aprender-train-shell/aprender-train-shell:
+  its identity and its exact command surface, and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S14 (aprender-train-shell, the entrenar REPL). DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on this branch yet,
+    so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - "crates/aprender-train-shell/src/commands.rs"
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: aprender-train-shell-identity
+    targetClass: bin:target/aprender-train-shell/aprender-train-shell
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-train-shell"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-train-shell"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-train-shell [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: aprender-train-shell-surface
+    targetClass: bin:target/aprender-train-shell/aprender-train-shell
+    properties:
+      - path: bin:replCommand
+        minCount: 10
+        maxCount: 10
+        in:
+          - "clear"
+          - "distill"
+          - "export"
+          - "fetch"
+          - "help"
+          - "history"
+          - "inspect"
+          - "memory"
+          - "quit"
+          - "set"
+      - {path: bin:command, maxCount: 0}
+      - path: bin:flag
+        minCount: 2
+        maxCount: 2
+        in: ["-c", "-s"]
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  repl_surface:
+    formula: "replCommands(binary/aprender-train-shell/aprender-train-shell) = R, |R| = 10; flags = {-c, -s}; commands = ∅"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target, plus `<bin> -c help`"
+    codomain: "bin:replCommand and bin:flag literals, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount + maxCount over distinct literals is set equality: an added, dropped or renamed REPL command or flag is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = ledger rows for this binary whose REPL command or flag is not on the node; unledgeredCommand = (R ∪ flags) ∖ ledger"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is aprender-train-shell"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a REPL command the built binary does not expose is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-TRAIN_SHELL-001
+    name: dropped_repl_command_is_red
+    prediction: "deleting one REPL command from the snapshot makes aprender-train-shell-surface RED naming it (minCount 10)"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one REPL command removed"
+    expected_output: "verdict Fail on binary/aprender-train-shell/aprender-train-shell path bin:replCommand"
+    if_fails: "A REPL command could vanish from the shipped shell with the ontology green."
+  - id: FALSIFY-BIN-TRAIN_SHELL-002
+    name: stray_subcommand_is_red
+    prediction: "a snapshot that records any clap subcommand for this binary makes bin:command maxCount 0 RED"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot with one bin:command added"
+    expected_output: "verdict Fail on path bin:command"
+    if_fails: "A subcommand surface could be added to the REPL binary without a ledger row or a contract change."

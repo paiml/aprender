@@ -1,0 +1,107 @@
+# ──────────────────────────────────────────────
+# bin-aprender-qa-certify--apr-qa-readme-sync-v1 — the `apr-qa-readme-sync` bin target of package aprender-qa-certify
+# (ONT-10 slice S19 3/3)
+#
+# Drafted to the exemplar contracts/bin-aprender-contracts-cli--pv-v1.yaml (ONT-4g, dafb8194f).
+# MEASURED 2026-09-26, batch/ont-10 @ dafb8194f, release build, default features:
+#   --help rc 0; --no-such-flag rc 2; --version = "apr-qa-readme-sync 0.69.3";
+#   ROOT-ONLY: 0 subcommands; options --csv <PATH> [docs/certifications/models.csv], --readme <PATH> [README.md];
+#   one ledger row, keyed as the bare binary: "apr-qa-readme-sync (README certification-table sync)".
+# LIVE RED: G0.1 (no sha). No flag takes an enumerated value, so G1.3 is vacuous here.
+# Root-only convention (as the staged zram-generator slice): bin:command maxCount 0; the root row is the ledger surface.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────
+name: bin-aprender-qa-certify--apr-qa-readme-sync-v1
+version: "1.0.0"
+scope: >
+  The command surface of the `apr-qa-readme-sync` binary (package aprender-qa-certify): its help, its usage errors,
+  its version string, the absence of subcommands, and its surface-audit row. Out of scope: the table it writes.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    apr-qa-readme-sync answers --help, rejects an unknown flag as a usage error, names the commit it was built
+    from, exposes no subcommand, and has an audited ledger row for its root surface.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'crates/aprender-qa-certify/src/main.rs — the clap Args struct of the apr-qa-readme-sync bin'
+    - 'docs/audits/surface_audit.csv — the row whose binary column is apr-qa-readme-sync'
+    - 'aprender#4502 — ONT-10, slice S19'
+
+entity:
+  type: binary
+  ref: binary/aprender-qa-certify/apr-qa-readme-sync
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-apr-qa-readme-sync-surface
+    targetClass: bin:target/aprender-qa-certify/apr-qa-readme-sync
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["apr-qa-readme-sync"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-qa-certify"]}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^apr-qa-readme-sync [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      # root-only: no subcommand
+      - {path: bin:command, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+
+equations:
+  surface_equals_snapshot:
+    formula: "commands(snapshot(apr-qa-readme-sync)) = subcommands(clap(Args)) = ∅ ∧ |{f ∈ surface_audit : f.binary = apr-qa-readme-sync}| ≥ 1"
+    domain: "the apr-qa-readme-sync line of the tracked snapshot, the clap Args struct, and the ledger rows with binary = apr-qa-readme-sync"
+    codomain: "both sets empty with a root ledger row, or a Fail naming each subcommand that appeared"
+    invariants:
+      - "a subcommand clap accepts and the snapshot omits is an unaudited surface"
+    preconditions:
+      - "the snapshot was written at this commit"
+    postconditions:
+      - "help_sha256 in the snapshot is the sha256 of `apr-qa-readme-sync --help` at this commit"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APR-QA-README-SYNC-INV-001
+    property: the root surface of apr-qa-readme-sync has an audited ledger row
+    formal: '|{r ∈ surface_audit : r.binary = apr-qa-readme-sync}| ≥ 1 ∧ commands(apr-qa-readme-sync) = ∅'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APR-QA-README-SYNC-001
+    rule: 'G1.2 help answers'
+    prediction: '`apr-qa-readme-sync --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli apr-qa-readme-sync'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APR-QA-README-SYNC-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`apr-qa-readme-sync --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli apr-qa-readme-sync'
+    if_fails: 'a typo is silently ignored (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APR-QA-README-SYNC-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`apr-qa-readme-sync --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: 'LIVE RED 2026-09-26: `apr-qa-readme-sync 0.69.3` — no sha'
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APR-QA-README-SYNC-004
+    rule: 'G1.3/G1.4 enumerated values are parsed by clap and the command set equals the snapshot'
+    prediction: 'subcommands(clap) = ∅ = commands(snapshot); --csv and --readme take paths, not enumerated values'
+    test: 'NOT YET WRITTEN — S19 (aprender-5d)'
+    if_fails: 'a subcommand shipped without being snapshotted (observed 2026-09-26: 0 = 0, GREEN)'
+    mutation: 'add a subcommand without re-snapshotting; must turn RED naming it'
+  - id: FALSIFY-BIN-APR-QA-README-SYNC-005
+    rule: 'ledger rows exist'
+    prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = apr-qa-readme-sync (1 on 2026-09-26, the root row)'
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: 'a shipped binary has no audited row (observed 2026-09-26: 1 root row, GREEN)'
+    mutation: 'delete the apr-qa-readme-sync row; must turn RED naming apr-qa-readme-sync'

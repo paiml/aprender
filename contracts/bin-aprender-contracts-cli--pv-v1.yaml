@@ -5,6 +5,9 @@
 #   · file name   contracts/bin-<package>--<target>-v1.yaml   (package and target exactly as cargo metadata spells them)
 #   · entity      {type: binary, ref: binary/<package>/<target>}
 #   · depends_on  [binary-surface-v1] — the shared shapes live there; do NOT restate them here
+#   · shapes      ONE shape, targetClass bin:target/<package>/<target>, pinning bin:name, bin:package, bin:versionString
+#                 (G0.1 as severity: warning while RED), bin:command / bin:route / bin:mcpTool with in: + exact
+#                 min/maxCount, and bin:unledgered{Command,Route,Tool} + bin:ledgerOrphan{,Route} at maxCount 0
 #   · equations   surface_equals_snapshot (the command set), plus one per surface kind the binary has (http, mcp)
 #   · falsifiers  FALSIFY-BIN-<TARGET>-001..005, one per gate below; each names a planted mutation that turns it RED
 #       001 G1.2  --help exits 0 and is non-empty
@@ -13,6 +16,8 @@
 #       004 G1.3/G1.4  every enumerated flag value is a clap value_parser; the command set equals the snapshot
 #       005 ledger  ≥1 docs/audits/surface_audit.csv row per command, `binary` column = the bin name
 # A gate that is live RED today stays in the contract, RED, with the observed value in `if_fails` — never dropped.
+# Slices staged under docs/ont-10/binary-contracts/ move here with `git mv` once Σ binary + this vocabulary are on
+# the batch (they are, as of this commit); `pv lint contracts/` must stay PASS after the move.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
@@ -45,6 +50,67 @@ entity:
 
 relations:
   depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-pv-surface
+    targetClass: bin:target/aprender-contracts-cli/pv
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["pv"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-contracts-cli"]}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^pv [0-9]+\\.[0-9]+\\.[0-9]+"}
+      # G0.1 — LIVE RED 2026-09-26 (no sha); a warning until the version string carries it
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+      - path: bin:command
+        minCount: 44
+        maxCount: 44
+        in:
+          - "audit"
+          - "book"
+          - "census"
+          - "certify"
+          - "challenge"
+          - "check-parity"
+          - "codegen"
+          - "coq"
+          - "coverage"
+          - "diff"
+          - "discharge"
+          - "equations"
+          - "explain"
+          - "extract"
+          - "extract-pytorch"
+          - "flux"
+          - "fuzz"
+          - "generate"
+          - "graph"
+          - "infer"
+          - "invariants"
+          - "kaizen"
+          - "kani"
+          - "lean"
+          - "lean-status"
+          - "lint"
+          - "migrate"
+          - "mirai"
+          - "obligations"
+          - "ontology"
+          - "pipeline"
+          - "probar"
+          - "proof-status"
+          - "query"
+          - "roofline"
+          - "scaffold"
+          - "score"
+          - "status"
+          - "tla"
+          - "unlock"
+          - "validate"
+          - "verify-bindings"
+          - "verify-pipeline"
+          - "verify-structure"
+      # LIVE RED 2026-09-26: census, challenge, discharge, extract, obligations, ontology have no ledger row
+      - {path: bin:unledgeredCommand, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
 
 equations:
   surface_equals_snapshot:
@@ -94,5 +160,5 @@ falsification_tests:
     rule: 'ledger rows exist'
     prediction: 'docs/audits/surface_audit.csv has ≥1 row with binary = pv (38 on 2026-09-26)'
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: 'pv ships with no audited feature'
+    if_fails: 'LIVE RED 2026-09-26: 6 of 44 commands have no row (census, challenge, discharge, extract, obligations, ontology)'
     mutation: 'delete every pv row; must turn RED naming pv'

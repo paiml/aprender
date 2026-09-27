@@ -1,0 +1,155 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-apr-cli-2of2-v1 — ONT-10 slice S8 (apr(apr-cli) 2/2): the HTTP routes and MCP tools the `apr` target of
+# package `apr-cli` exposes (ONT-001 v4.17 ONT-4g; #4476, #4079). Identity and every CLI command are S9,
+# binary-apr-cli-apr-v1.yaml; the split is by KIND (S9 header): set equality over bin:command cannot be halved.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, private CARGO_TARGET_DIR):
+#   MCP: `apr mcp` (stdio) answers tools/list with 9 tools, EQUAL to surface_audit.csv's 9 `mcp:apr.*` rows.
+#   HTTP: `apr serve` mounts one of several routers by model format (#3979): aprender-serve api/router.rs
+#   route_table (GGUF; its openai routes add POST /v1/batch/completions only when caps.gpu_batch) and the apr-cli
+#   serve/ routers (APR-CPU, SafeTensors, the ollama stubs). The union of their ("METHOD", "/path") tables plus
+#   the `GET /` index each serves is 43 routes, EQUAL to the 43 distinct routes of the 47 HTTP ledger rows (the
+#   other 4 rows are stream:true modes of a route already counted: POST /api/chat, /api/generate,
+#   /v1/chat/completions, /v1/completions). 2 of the 43 — POST /v1/logprobs, POST /v1/perplexity — are in
+#   cuda_routes(), behind #[cfg(feature = "cuda")], so the DEFAULT build mounts 41. Their 2 ledger rows are
+#   orphans, RED today, the same class as S9's 15 feature-gated command rows.
+#   The 10th non-CLI row, "HTTP 404 fallback route index", is a behaviour of every router (the fallback lists
+#   `routes`), shaped here as bin:notFoundListsRoutes.
+#
+# GAP THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): scripts/dogfood_surfaces.sh strips the METHOD
+# from both enumerations (enumerate_routes_live keeps the path only; enumerate_routes greps paths only), and its
+# source fallback reads crates/aprender-serve/src/api/ only, so GET /tensors, POST /api/pull and DELETE
+# /api/delete (apr-cli serve/) are invisible to it. bin:route here is "METHOD /path", the union over formats.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-apr-cli-2of2
+version: "0.1.0"
+scope: >
+  The HTTP and MCP surface of the built `apr` target of package `apr-cli` (default features): the exact set of
+  (METHOD, /path) routes `apr serve` can mount over every model format, the exact MCP tools/list of `apr mcp`,
+  and the surface_audit.csv HTTP and mcp rows that must resolve to them. Identity and CLI are S9.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S8 (apr of apr-cli, 2/2: HTTP + MCP). Per-binary shapes over the node extract:binary
+    (ONT-4g, #4476) draws for binary/apr-cli/apr. DRAFT: staged with its siblings until the directory moves to
+    contracts/ on the binary-surface-v1 vocabulary.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (binary column = apr; HTTP rows "METHOD /path", MCP rows "mcp:<tool>")'
+    - 'crates/aprender-serve/src/api/router.rs (route_table, cuda_routes)'
+    - 'crates/apr-cli/src/commands/serve/ (routes.rs, route_index.rs, handlers*.rs, ollama.rs, safetensors.rs)'
+    - 'crates/aprender-mcp/src/tools/ (the 9 tools)'
+    - 'docs/ont-10/binary-contracts/binary-apr-cli-apr-v1.yaml (S9: identity + CLI)'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: apr-cli-apr-routes
+    targetClass: bin:target/apr-cli/apr
+    properties:
+      - path: bin:route
+        minCount: 41
+        maxCount: 41
+        in:
+          - "DELETE /api/delete"
+          - "GET /"
+          - "GET /api/tags"
+          - "GET /api/version"
+          - "GET /health"
+          - "GET /health/live"
+          - "GET /health/ready"
+          - "GET /metrics"
+          - "GET /metrics/dispatch"
+          - "GET /models"
+          - "GET /ready"
+          - "GET /realize/model"
+          - "GET /tensors"
+          - "GET /v1/audit/:request_id"
+          - "GET /v1/effective-config"
+          - "GET /v1/gpu/status"
+          - "GET /v1/metrics"
+          - "GET /v1/models"
+          - "POST /api/chat"
+          - "POST /api/embeddings"
+          - "POST /api/generate"
+          - "POST /api/pull"
+          - "POST /api/show"
+          - "POST /batch/generate"
+          - "POST /batch/tokenize"
+          - "POST /generate"
+          - "POST /metrics/dispatch/reset"
+          - "POST /realize/batch"
+          - "POST /realize/embed"
+          - "POST /realize/generate"
+          - "POST /realize/reload"
+          - "POST /stream/generate"
+          - "POST /tokenize"
+          - "POST /v1/batch/completions"
+          - "POST /v1/chat/completions"
+          - "POST /v1/chat/completions/stream"
+          - "POST /v1/completions"
+          - "POST /v1/embeddings"
+          - "POST /v1/explain"
+          - "POST /v1/gpu/warmup"
+          - "POST /v1/predict"
+      - {path: bin:notFoundListsRoutes, minCount: 1, maxCount: 1, in: ["true"]}
+      - {path: bin:ledgerOrphanRoute, maxCount: 0}
+      - {path: bin:unledgeredRoute, maxCount: 0}
+  - id: apr-cli-apr-mcp
+    targetClass: bin:target/apr-cli/apr
+    properties:
+      - path: bin:mcpTool
+        minCount: 9
+        maxCount: 9
+        in: ["apr.bench", "apr.finetune", "apr.qa", "apr.run", "apr.serve", "apr.tensors", "apr.trace", "apr.validate", "apr.version"]
+      - {path: bin:ledgerOrphanTool, maxCount: 0}
+      - {path: bin:unledgeredTool, maxCount: 0}
+
+equations:
+  route_set:
+    formula: "routes(binary/apr-cli/apr) = R, |R| = 41, R = GET / plus the union of the (METHOD, /path) tables every `apr serve` router mounts in the default-feature build, over every model format and runtime capability"
+    domain: "aprender-serve route_table with caps all true and cuda off, and the apr-cli serve/ Indexed routers"
+    codomain: "one bin:route literal \"METHOD /path\" per pair, LC_ALL=C sorted; axum :param segments verbatim"
+    invariants:
+      - "in + minCount 41 + maxCount 41 is set equality: an added, dropped or re-methoded route is a violation naming it"
+      - "a --features cuda build mounts 43; this shape is over the default build, as S9's command set is"
+  ledger_join:
+    formula: "ledgerOrphanRoute = { strip_mode(r.feature) : r.binary = apr, r.feature starts with an HTTP method } minus R; unledgeredRoute = R minus those; the same for mcp:* rows against the tools/list"
+    domain: "docs/audits/surface_audit.csv rows with binary = apr: 47 HTTP, 9 mcp:*, 1 route-index row (2026-09-26)"
+    codomain: "literals on the focus node, one per orphan or unledgered item"
+    invariants:
+      - "strip_mode drops a trailing \" (stream:...)\" so a streaming-mode row joins its route; 47 rows -> 43 routes"
+      - "S9 joins the CLI rows; this join sees only HTTP, mcp:* and the route-index row, so no row is judged twice"
+      - "today: ledgerOrphanRoute = {POST /v1/logprobs, POST /v1/perplexity} (cuda-only) -> RED; everything else joins"
+
+falsification_tests:
+  - id: FALSIFY-BIN-APR_2OF2-001
+    name: dropped_route_is_red
+    prediction: "removing POST /api/pull from the snapshot's route list makes apr-cli-apr-routes RED on minCount 41 and on bin:ledgerOrphanRoute naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after the move), on the snapshot with the route removed"
+    expected_output: "verdict Fail, results on binary/apr-cli/apr paths bin:route and bin:ledgerOrphanRoute"
+    if_fails: "An Ollama-compat endpoint could vanish from apr serve with the ontology green."
+  - id: FALSIFY-BIN-APR_2OF2-002
+    name: unledgered_tool_is_red
+    prediction: "adding apr.probe to the snapshot's tools/list makes apr-cli-apr-mcp RED on maxCount 9, on `in`, and on bin:unledgeredTool"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after the move), on the snapshot with the tool added"
+    expected_output: "verdict Fail naming apr.probe"
+    if_fails: "An MCP tool could ship to Claude Code clients with no ledger row and no dogfood coverage."
+  - id: FALSIFY-BIN-APR_2OF2-003
+    name: cuda_only_rows_are_red_on_the_default_build
+    prediction: "on today's snapshot the 2 cuda-only ledger rows (POST /v1/logprobs, POST /v1/perplexity) are bin:ledgerOrphanRoute literals and the routes shape is RED on maxCount 0 for that path"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after the move), on the unmodified snapshot"
+    expected_output: "verdict Fail, two results on path bin:ledgerOrphanRoute"
+    if_fails: "The ledger would count two routes the shipped default binary cannot serve as covered surface."

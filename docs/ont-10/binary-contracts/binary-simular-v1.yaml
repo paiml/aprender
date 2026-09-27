@@ -1,0 +1,116 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-simular-v1 — ONT-10 slice S13 (1/2): the `simular` target of package `aprender-simulate` as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b6cf6d2ed, release build, default features (none), private
+# CARGO_TARGET_DIR):
+#   `simular --version` = "simular 0.69.3". Name right; no git sha, so G0.1 (warning) is RED today.
+#   Recursive --help walk (S9's convention): 9 commands, all top-level leaves. Two of them are user-defined
+#   `help` ("Show help") and `version` ("Show version") subcommands, not clap's auto help: both are members.
+#   surface_audit.csv holds 12 rows with binary=simular (ledger at cf038d37f): 9 CLI rows, one per command, and 3
+#   HTTP rows — GET /, GET /health, GET /ws — cited at crates/aprender-simulate/src/visualization/web.rs:82-89.
+#   Those routes belong to the library module `visualization::web`, compiled only under feature `web` (not
+#   default), and no command of the simular CLI starts that server under any feature: nothing in src/cli
+#   references it. So the binary serves no route and the 3 rows are bin:ledgerOrphan — RED today. The fix is
+#   in the ledger (attribute the rows to the library, or to a command that serves them), not in this shape.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g): an HTTP ledger row (feature starts with an HTTP method)
+# joins bin:route; a binary whose snapshot records no served route has none, so such a row is an orphan.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-simular
+version: "0.1.0"
+scope: >
+  The built `simular` target of package `aprender-simulate` (default features) as the focus node
+  binary/aprender-simulate/simular: its identity, its exact command set, and the surface_audit.csv rows that must
+  resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice S13 (simular, package aprender-simulate). Per-binary shapes over the node extract:binary
+    (ONT-4g, #4476) draws for binary/aprender-simulate/simular. DRAFT: binary-surface-v1 (the bin: vocabulary) and
+    extract:binary do not exist on this branch yet, so this contract goes green only after ONT-4g lands — and then
+    only once the 3 route rows above are re-attributed in the ledger.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = simular)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+    - 'crates/aprender-simulate/src/visualization/mod.rs (web is cfg(feature = "web"))'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: simular-identity
+    targetClass: bin:target/aprender-simulate/simular
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["simular"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-simulate"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^simular [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: simular-commands
+    targetClass: bin:target/aprender-simulate/simular
+    properties:
+      - path: bin:command
+        minCount: 9
+        maxCount: 9
+        in:
+          - "emc-check"
+          - "emc-validate"
+          - "help"
+          - "list-emc"
+          - "render"
+          - "run"
+          - "validate"
+          - "verify"
+          - "version"
+      - {path: bin:route, maxCount: 0}
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-simulate/simular) = C, |C| = 9, C = the leaves of the --help walk of the default-feature build ∪ user-defined `help` subcommands; routes(simular) = ∅"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per command; no bin:route literal"
+    invariants:
+      - "in + minCount 9 + maxCount 9 is set equality: an added, dropped or renamed command is a violation naming it"
+      - "a route the binary starts serving is a violation until this contract is re-measured"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = simular ∧ key(r) ∉ C ∪ routes(simular) }; key(r) = the command after 'simular ', or 'METHOD /path' for an HTTP row"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is simular (12 on 2026-09-26: 9 CLI, 3 HTTP)"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a surface the built binary does not serve is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-SIMULAR-001
+    name: dropped_command_is_red
+    prediction: "deleting `verify` from the snapshot's command list makes simular-commands RED twice: minCount 9 and a bin:ledgerOrphan naming verify"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with verify removed"
+    expected_output: "verdict Fail, results on binary/aprender-simulate/simular paths bin:command and bin:ledgerOrphan"
+    if_fails: "Reproducibility verification could vanish from the shipped binary with the ontology green."
+  - id: FALSIFY-BIN-SIMULAR-002
+    name: library_routes_attributed_to_binary_are_red_today
+    prediction: "on today's snapshot GET /, GET /health and GET /ws are bin:ledgerOrphan: the shape is RED with 3 results"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the b6cf6d2ed snapshot"
+    expected_output: "verdict Fail, 3 results on binary/aprender-simulate/simular path bin:ledgerOrphan"
+    if_fails: "The ledger would credit the simular binary with a web UI no user of it can reach."
+  - id: FALSIFY-BIN-SIMULAR-003
+    name: user_defined_help_counts
+    prediction: "an extractor that drops every subcommand named help (not only clap's auto one) makes simular-commands RED on minCount 9 and the `simular help` ledger row an orphan"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on a snapshot from a walk that drops all help"
+    expected_output: "verdict Fail naming help"
+    if_fails: "A real, ledgered command would sit outside the modelled surface."
