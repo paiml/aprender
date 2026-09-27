@@ -19,7 +19,11 @@
 #   AFTER the cell, and anything but `clean` makes every row of the cell RED.
 # Env: CRUX_NVIDIA_SMI overrides the nvidia-smi binary, CRUX_TEARDOWN_GPU_POLLS the
 #      number of 0.5 s polls (default 60), CRUX_TEARDOWN_KILL the command that sends the
-#      TERM/KILL (default: the `kill` builtin); all three exist for the case table.
+#      TERM/KILL (default: the `kill` builtin), CRUX_TEARDOWN_TERM_POLLS and
+#      CRUX_TEARDOWN_KILL_POLLS the 0.5 s polls after TERM and after KILL (default 30 and
+#      20); all of them exist for the case table, whose survivor rows otherwise sat out the
+#      full 25 s windows three times (#4527). A poll count that is not a positive integer
+#      is the default, never zero polls: zero would read every survivor as gone.
 #
 # PID 1 IS REFUSED BY NAME (#4120). A pid file naming 1 is never signalled: it FAILS the
 # cell. On a dev box `kill 1` is EPERM and looks harmless, but inside a CI runner's
@@ -64,6 +68,12 @@ alive() {
 
 # The one place a signal leaves this script (the case table swaps it for a logging no-op).
 KILL_SEAM="${CRUX_TEARDOWN_KILL:-}"
+polls() { # <value> <default>: a positive integer, else the default
+  case "$1" in ''|*[!0-9]*|0) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac
+}
+TERM_POLLS=$(polls "${CRUX_TEARDOWN_TERM_POLLS:-}" 30)
+KILL_POLLS=$(polls "${CRUX_TEARDOWN_KILL_POLLS:-}" 20)
+GPU_POLLS=$(polls "${CRUX_TEARDOWN_GPU_POLLS:-}" 60)
 sig() {
   if [ -n "$KILL_SEAM" ]; then "$KILL_SEAM" "$@"; else kill "$@"; fi
 }
@@ -71,7 +81,7 @@ sig() {
 left=""
 if [ "${#pids[@]}" -gt 0 ]; then
   sig -TERM "${pids[@]}" 2> /dev/null
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$TERM_POLLS"); do
     left=$(alive "${pids[@]}")
     [ -z "${left// /}" ] && break
     sleep 0.5
@@ -79,7 +89,7 @@ if [ "${#pids[@]}" -gt 0 ]; then
   if [ -n "${left// /}" ]; then
     # shellcheck disable=SC2086
     sig -KILL $left 2> /dev/null
-    for _ in $(seq 1 20); do
+    for _ in $(seq 1 "$KILL_POLLS"); do
       left=$(alive "${pids[@]}")
       [ -z "${left// /}" ] && break
       sleep 0.5
@@ -98,7 +108,7 @@ fi
 SMI="${CRUX_NVIDIA_SMI:-nvidia-smi}"
 if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then
   on_gpu=""
-  for _ in $(seq 1 "${CRUX_TEARDOWN_GPU_POLLS:-60}"); do
+  for _ in $(seq 1 "$GPU_POLLS"); do
     apps=$("$SMI" --query-compute-apps=pid --format=csv,noheader 2> /dev/null | tr -d ' ')
     on_gpu=""
     for p in "${pids[@]}"; do

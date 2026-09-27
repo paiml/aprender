@@ -246,7 +246,8 @@ chmod +x "$FAKE_SMI"
 td_case() { # <label> <want rc> <want state prefix> <td script> [pid files...]
   local label="$1" want="$2" pre="$3" td="$4" rc st
   shift 4
-  CRUX_NVIDIA_SMI="$FAKE_SMI" CRUX_TEARDOWN_GPU_POLLS=4 bash "$td" "$TMP/td.state" "$@" > /dev/null 2>&1
+  CRUX_NVIDIA_SMI="$FAKE_SMI" CRUX_TEARDOWN_GPU_POLLS=4 CRUX_TEARDOWN_TERM_POLLS=4 \
+    CRUX_TEARDOWN_KILL_POLLS=6 bash "$td" "$TMP/td.state" "$@" > /dev/null 2>&1
   rc=$?
   st=$(cat "$TMP/td.state" 2> /dev/null)
   [ "$rc" = "$want" ] && case "$st" in "$pre"*) true ;; *) false ;; esac
