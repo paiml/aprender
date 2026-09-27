@@ -267,15 +267,14 @@ pub fn raw_q4k_weights(model: &OwnedQuantizedModel) -> Vec<(String, Vec<u8>, usi
             ("up_proj", &layer.ffn_up_weight, intermediate, hidden),
             ("down_proj", &layer.ffn_down_weight, hidden, intermediate),
         ];
-        if let Some(ref gate) = layer.ffn_gate_weight {
-            raw.push((
-                format!("{prefix}.gate_proj"),
-                gate.data.clone(),
-                intermediate,
-                hidden,
-            ));
-        }
-        for (name, tensor, rows, cols) in projections {
+        // #2378 finding 8b: the gate is qtype-filtered like every other
+        // projection. It used to be pushed unconditionally, so a Q6_K gate
+        // (mixed-quant Q4_K_M files have them) was uploaded as Q4_K bytes.
+        let gate = layer
+            .ffn_gate_weight
+            .as_ref()
+            .map(|g| ("gate_proj", g, intermediate, hidden));
+        for (name, tensor, rows, cols) in projections.into_iter().chain(gate) {
             if tensor.qtype == GGUF_TYPE_Q4_K {
                 raw.push((format!("{prefix}.{name}"), tensor.data.clone(), rows, cols));
             }
@@ -502,5 +501,46 @@ mod dequant_skip_2378 {
         let b = dequant_model_weights_except(&model, &std::collections::HashSet::new()).expect("b");
         assert_eq!(a.len(), b.len());
         assert_eq!(f32_elements(&a), f32_elements(&b));
+    }
+
+    #[test]
+    fn a_non_q4k_gate_is_not_returned_as_raw_q4k() {
+        // FALSIFY-2378-8b. raw_q4k_weights filtered o/up/down and q/k/v by
+        // qtype but pushed gate_proj unconditionally. Mixed-quant Q4_K_M files
+        // store some ffn_gate tensors as Q6_K; such a gate went to
+        // upload_q4k_weight as if it were Q4_K, and -- since the raw names are
+        // skipped by dequant_model_weights_except -- no correct F32 copy existed
+        // either.
+        const GGUF_TYPE_Q6_K: u32 = 14;
+        const Q6K_BLOCK_BYTES: usize = 210; // per 256 elements
+        let cfg = q4k_config();
+        let mut model = create_test_model_with_config(&cfg);
+        let gate = model.layers[0]
+            .ffn_gate_weight
+            .as_mut()
+            .expect("the fixture has no gate, so this test cannot aim at it");
+        gate.qtype = GGUF_TYPE_Q6_K;
+        gate.data = vec![0u8; cfg.intermediate_dim * cfg.hidden_dim / 256 * Q6K_BLOCK_BYTES];
+
+        let raw: std::collections::HashSet<String> = raw_q4k_weights(&model)
+            .into_iter()
+            .map(|(n, _, _, _)| n)
+            .collect();
+        assert!(
+            raw.contains("layer.0.up_proj"),
+            "control: the Q4_K projections must still be returned raw: {raw:?}"
+        );
+        assert!(
+            !raw.contains("layer.0.gate_proj"),
+            "a Q6_K gate was returned as raw Q4_K bytes: {raw:?}"
+        );
+
+        // And it must reach the GPU some other way: as F32.
+        let f32w = dequant_model_weights_except(&model, &raw).expect("dequant");
+        let gate_f32 = f32w
+            .iter()
+            .find(|(n, _, _, _)| n == "layer.0.gate_proj")
+            .expect("the Q6_K gate is in neither the raw nor the F32 upload");
+        assert_eq!(gate_f32.1.len(), cfg.intermediate_dim * cfg.hidden_dim);
     }
 }
