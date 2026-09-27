@@ -1,8 +1,8 @@
 {
   "schema": "ont.paiml.dev/census/v1alpha1",
   "git_sha": null,
-  "n_files": 1878,
-  "n_parsed": 1878,
+  "n_files": 1886,
+  "n_parsed": 1886,
   "n_parse_errors": 0,
   "parse_errors": [],
   "quarantined_n": 0,
@@ -12,7 +12,7 @@
     "kernel": 388,
     "model-family": 28,
     "model-family-variant": 1,
-    "pattern": 130,
+    "pattern": 138,
     "pretraining-corpus": 2,
     "registry": 521,
     "schema": 773,
@@ -22,7 +22,7 @@
   },
   "by_entity_type": {
     "apr-model": 1,
-    "binary": 23,
+    "binary": 31,
     "csv": 1,
     "gguf": 2,
     "json": 3,
@@ -32,36 +32,13 @@
     "release-evidence": 1,
     "repo": 1
   },
-  "by_concept": {
-    "AprModel": 0,
-    "Binary": 0,
-    "Code": 161,
-    "Contract": 1813,
-    "Dataset": 0,
-    "Doc": 0,
-    "Entity": 0,
-    "Example": 980,
-    "Issue": 1,
-    "Json": 4,
-    "Kernel": 837,
-    "LadderRung": 0,
-    "LlmContext": 0,
-    "Milestone": 1,
-    "Model": 0,
-    "Proof": 0,
-    "PullRequest": 1,
-    "Readme": 0,
-    "Repo": 1,
-    "Statement": 415,
-    "Symbol": 161,
-    "Test": 0
-  },
+  "by_concept": {},
   "by_anchoring": {
     "unanchored": 1841,
     "class": 7,
-    "instance": 30
+    "instance": 38
   },
-  "id_set_sha256": "6f36e64b829020c50fe9b0c5e2f0e712580d7f1ad82bbbd37cdbd0eefba97a16",
+  "id_set_sha256": "9304ba0f733188d6f9e59f1a7d9725a8c9303878677a5e173488908b463ff6b3",
   "declared_external": [
     {
       "name": "provable-contracts",
