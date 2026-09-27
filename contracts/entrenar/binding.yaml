@@ -65,7 +65,7 @@ bindings:
   notes: function not found in source
 - contract: cuda-classify-training-v1.yaml
   equation: device_dispatch
-  module_path: entrenar::autograd::cuda_training
+  module_path: entrenar::finetune::device
   function: ComputeDevice::auto_detect
   signature: fn auto_detect() -> ComputeDevice
   status: implemented
@@ -219,7 +219,7 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: temperature
-  module_path: entrenar
+  module_path: entrenar::hf_pipeline::trainer::config
   function: temperature
   status: implemented
   notes: Auto-inferred by pv infer
@@ -243,25 +243,25 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: greedy
-  module_path: entrenar
+  module_path: entrenar::finetune::instruct_pipeline::generate
   function: greedy
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-classification-v1.yaml
   equation: confusion_matrix
-  module_path: entrenar
+  module_path: entrenar::eval::classification::report
   function: confusion_matrix
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-ranking-v1.yaml
   equation: ndcg_at_k
-  module_path: entrenar
+  module_path: entrenar::eval::generative::retrieval
   function: ndcg_at_k
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: layernorm-kernel-v1.yaml
   equation: statistics
-  module_path: entrenar
+  module_path: entrenar::efficiency::benchmark::collection
   function: statistics
   status: implemented
   notes: Auto-inferred by pv infer
@@ -273,13 +273,13 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: top_k
-  module_path: entrenar
+  module_path: entrenar::train::callback::explainability
   function: top_k
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-regression-v1.yaml
   equation: rmse
-  module_path: entrenar
+  module_path: entrenar::quant::error_analysis
   function: rmse
   status: implemented
   notes: Auto-inferred by pv infer
@@ -291,19 +291,19 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: model-config-algebra-v1.yaml
   equation: bounds
-  module_path: entrenar
+  module_path: entrenar::monitor::tui::render::charts
   function: bounds
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: gated-delta-net-v1.yaml
   equation: output
-  module_path: entrenar
+  module_path: entrenar::autograd::checkpoint
   function: output
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: q4k-q6k-superblock-v1.yaml
   equation: total_bytes
-  module_path: entrenar
+  module_path: entrenar::autograd::checkpoint
   function: total_bytes
   status: implemented
   notes: Auto-inferred by pv infer
@@ -321,13 +321,13 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: matmul-kernel-v1.yaml
   equation: matmul
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::matmul
   function: matmul
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: relu
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::activations
   function: relu
   status: implemented
   notes: Auto-inferred by pv infer
@@ -355,7 +355,7 @@ bindings:
   notes: Serializes LoRA A/B + optimizer state to JSON
 - contract: wgpu-transformer-trainer-v1.yaml
   equation: C-WGPU-CKPT-002
-  module_path: entrenar::train::transformer_trainer::wgpu_trainer
+  module_path: entrenar::finetune::classify_trainer
   function: load_checkpoint
   signature: 'fn load_checkpoint(&mut self, path: &Path) -> Result<(u32, f32), String>'
   status: implemented

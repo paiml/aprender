@@ -30,14 +30,14 @@ bindings:
   status: implemented
 - contract: pagerank-kernel-v1.yaml
   equation: pagerank
-  module_path: aprender::graph::pagerank
+  module_path: aprender::graph::centrality
   function: pagerank
   signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) -> Tensor'
   status: implemented
   notes: Power iteration PageRank
 - contract: pagerank-kernel-v1.yaml
   equation: power_iteration
-  module_path: aprender::graph::pagerank
+  module_path: aprender::graph::centrality
   function: pagerank
   signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) -> Tensor'
   status: implemented
@@ -186,7 +186,7 @@ bindings:
   notes: Weighted Gini impurity for binary split
 - contract: decision-tree-v1.yaml
   equation: mse_split
-  module_path: aprender::tree::helpers_part_02
+  module_path: aprender::tree::helpers
   function: compute_mse
   signature: 'fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32'
   status: implemented
@@ -221,14 +221,14 @@ bindings:
   notes: "Normalized DCG: DCG/IDCG \u2208 [0,1]"
 - contract: gnn-v1.yaml
   equation: global_mean_pool
-  module_path: aprender::gnn
+  module_path: aprender::gnn::accumulate
   function: global_mean_pool
   signature: 'fn global_mean_pool(node_features: &[Vec<f32>], batch: &[usize]) -> Vec<Vec<f32>>'
   status: implemented
   notes: Mean aggregation of node features per graph
 - contract: gnn-v1.yaml
   equation: global_max_pool
-  module_path: aprender::gnn
+  module_path: aprender::gnn::accumulate
   function: global_max_pool
   signature: 'fn global_max_pool(node_features: &[Vec<f32>], batch: &[usize]) -> Vec<Vec<f32>>'
   status: implemented
@@ -277,7 +277,7 @@ bindings:
   notes: Atomic write via temp file + rename
 - contract: model-format-conversion-v1.yaml
   equation: apr_tokenizer_embedding
-  module_path: aprender::convert
+  module_path: aprender::format::converter
   function: save_model_tensors_with_gguf_config_and_tokenizer
   status: implemented
   notes: "P0 invariant \u2014 every APR file embeds tokenizer (PMAT-154 fix, Q4K passthrough/fallback paths)"
@@ -476,7 +476,7 @@ bindings:
 # --- apr-model-graph-v1 (full LLM forward pass) ---
 - contract: apr-model-graph-v1.yaml
   equation: forward_pass_completeness
-  module_path: realizar::gguf
+  module_path: realizar::gguf::inference::forward::cache
   function: OwnedQuantizedModel::forward
   signature: 'fn forward(&self, token_ids: &[u32]) -> Result<Vec<f32>>'
   status: implemented
@@ -608,7 +608,7 @@ bindings:
   notes: 'LoRALayer::forward (core.rs:249) realizes the composed-affine forward map'
 - contract: lora-merge-forward-equivalence-v1.yaml
   equation: matvec_matmul_assoc
-  module_path: entrenar::autograd
+  module_path: entrenar::autograd::ops::matmul
   function: matmul
   signature: 'fn matmul(a: &Tensor, b: &Tensor) -> Tensor'
   status: implemented

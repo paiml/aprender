@@ -10,12 +10,12 @@ bindings:
 - contract: builder-pattern-v1.yaml
   equation: transpile
   function: build_transpiler_args
-  module_path: batuta::cli::build_transpiler_args
+  module_path: batuta::cli
   status: implemented
 - contract: configuration-v1.yaml
   equation: transpile
   function: cmd_transpile
-  module_path: batuta::cli::pipeline_cmds_transpile::cmd_transpile
+  module_path: batuta::cli::pipeline_cmds_transpile
   status: implemented
 - contract: configuration-v1.yaml
   equation: transpile
@@ -85,7 +85,7 @@ bindings:
 - contract: configuration-v1.yaml
   equation: analyze
   function: cmd_analyze
-  module_path: batuta::cli::pipeline_cmds::cmd_analyze
+  module_path: batuta::cli::pipeline_cmds
   status: implemented
 - contract: gpu-decode-profiling-v1.yaml
   equation: analyze
@@ -135,8 +135,8 @@ bindings:
   status: pending
 - contract: agent-loop-v1.yaml
   equation: loop_termination
-  function: run_loop
-  module_path: batuta::agent::run_loop
+  function: run_agent_loop
+  module_path: batuta::agent::runtime
   status: pending
 - contract: agent-loop-v1.yaml
   equation: state_machine
@@ -229,7 +229,7 @@ bindings:
 - contract: cli-oracle-v1.yaml
   equation: dispatch_correctness
   function: dispatch_oracle
-  module_path: batuta::cli::oracle::dispatch_oracle
+  module_path: batuta::main_oracle_dispatch
   status: pending
   notes: Every oracle subcommand variant has a dispatch handler
 - contract: cli-oracle-v1.yaml
