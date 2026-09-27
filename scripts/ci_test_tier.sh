@@ -516,7 +516,10 @@ self_test() {
     row 0 "  ...and the crate it left is in the selection" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
     row 0 "mutant without --no-renames reads the rename as docs-only (tier=none) -- the rows discriminate" 'MUTANT-NONE' bash -c "o=\$(bash '$td/mutant-renames.sh' --event merge_group --repo-root '$td/s-rename' --pr-head '$(qh "$td/s-rename")' --pr-head-conclusion success 2>&1); case \"\$o\" in *tier=none*) echo MUTANT-NONE ;; *) echo MUTANT-NOT-NONE ;; esac"
-    row 0 "ci.yml builds the pull_request touched list with --no-renames (the list docs_only judges)" '^ALL-PRESENT$' contains_all "$TREE/.github/workflows/ci.yml" 'git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
+    row 0 "ci/sections.yml builds the pull_request touched list with --no-renames (the list docs_only judges)" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'git diff --no-renames --name-only "$base" HEAD > "$RUNNER_TEMP/touched.txt"'
+    # #4518: the base is the merge ref's first parent, fixed by the ref. The live
+    # base-branch tip moved between shard starts and split the tier (quick quick full).
+    row 0 "ci/sections.yml diffs the pull_request against HEAD^1 of the merge ref, not the live base tip (#4518)" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" "if git rev-parse -q --verify 'HEAD^2'" 'base=$(git rev-parse HEAD^1)'
     # MUTANT: a copy whose queue branch ignores the re-derived diff and always
     # says full is exactly today's behaviour — the rows above must lose the crates.
     sed 's|^\( *\)selection "merge_group|\1printf "tier=full\\nreason=MUTANT\\n"; return 0; selection "merge_group|' "$T" > "$td/mutant-queue.sh"

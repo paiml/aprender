@@ -372,11 +372,27 @@ jobs:
           esac
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
-              git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+              # #4518: diff against the merge ref's FIRST PARENT, never the base
+              # branch's live tip. Every shard checks out the same merge ref, but
+              # each fetched origin/main at its own start time: a shard that
+              # started after main moved saw main's commits as "touched" and
+              # decided full while its siblings said quick (run 36302045588:
+              # "quick quick full"). HEAD^1 is fixed by the ref, so all shards agree.
+              git fetch --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || git fetch --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              if git rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
+                base=$(git rev-parse HEAD^1)
+                printf 'touched base: merge-ref first parent %s\n' "$base"
+              else
+                printf '::warning::HEAD is not a merge ref -- diffing against the live %s tip, which can differ between shards\n' "${GITHUB_BASE_REF}"
+                git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+                base="origin/${GITHUB_BASE_REF}"
+              fi
               # --no-renames (#3664): a rename must list BOTH paths, or a source
               # moved into docs/ reads as docs-only and runs zero tests.
-              git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
-              printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+              git diff --no-renames --name-only "$base" HEAD > "$RUNNER_TEMP/touched.txt"
+              printf 'touched (base vs merge ref): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
               ;;
             merge_group)
