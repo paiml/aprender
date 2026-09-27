@@ -356,6 +356,8 @@ pub mod inference;
 /// - SAMPLE: Token sampling
 /// - DECODE: Token to text decoding with garbage detection (APR-TOK-001)
 pub mod inference_trace;
+/// KREG-001: the kernel registry — a selector dispatches only a registered combination.
+pub mod kernel_registry;
 pub mod layers;
 pub mod memory;
 #[cfg(feature = "server")]

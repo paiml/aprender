@@ -1,0 +1,19 @@
+- id: PMAT-4539
+  github_issue: 4539
+  item_type: task
+  title: 'KREG-001: SHACL kernel registry, selector refuses unregistered kernels (aprender#4539)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-27T11:28:55Z
+  updated: 2026-09-27T11:28:55Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 1: registry rows + shape contract + runtime admit gate + coverage test. Refs #4539'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3994
