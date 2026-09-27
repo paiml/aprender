@@ -808,6 +808,8 @@ pv,pv validate,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-c
 pv,pv verify-bindings,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:486,low
 pv,pv verify-pipeline,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:479,low
 pv,pv verify-structure,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:469,low
+pv-sat,pv-sat [CONTRACT_DIR] (SAT witness write),6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:44-45,high
+pv-sat,pv-sat --self-test,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:39,high
 score,"score --ci --threshold <N> (gate mode, exit 1 below threshold)",6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:49,high
 score,score [PATH] (TUI-crate quality scoring),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:30-64,high
 simular,GET / (visualization UI),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:88,medium
