@@ -46,6 +46,11 @@ models:
     relation:
       kind: test_witnessed
       evidence: FALSIFY-ACT-004 (contracts/activation-kernel-v1.yaml), a proptest that ReLU(x) >= 0, signed zeros included
+  - module: ProvableContracts/Theorems/MatMul/Shape.lean
+    model_of: aprender::autograd::ops::activation::matmul
+    relation:
+      kind: simulation
+      evidence: "tensorMatmulShape/tensorMatmulDataLen transcribe crates/aprender-core/src/autograd/ops/activation.rs:274-299; witness crates/aprender-core/src/autograd/ops/tests_matmul_shape_l4.rs (1521-row golden from #eval rustMatmulGolden)"
 # Theorem-bearing modules with no L4 model. The refinement gate fails when the measured count rises above this, and
 # also when it falls below it, so lower it in the same commit that adds an L4 model.
-unrefined_baseline: 76
+unrefined_baseline: 75
