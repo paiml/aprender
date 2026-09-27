@@ -149,6 +149,7 @@ insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing fo
 dirs = "5.0"  # Cache directory detection for examples
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI snapshot testing (ENT-140); PMAT-955: path-only dev-dep
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # PMAT-955: path-only dev-dep (no version)
+realizar = { workspace = true }  # T1-R2 QTG-001: serve's per-token GDN is the parity oracle; a dev-dep so plain `cargo test` (and CI) compiles it
 
 [[bench]]
 name = "monitor_bench"
