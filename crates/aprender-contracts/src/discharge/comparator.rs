@@ -12,8 +12,8 @@
 //! | hashes differ, `defeq_instances: true` | MATCH — the same statement through a different instance path |
 //! | hashes differ otherwise (`false` or absent) | FAIL `MISMATCH` — a different statement (a weakened one, say) |
 //! | `sorryAx` among the solution's axioms | FAIL `SORRY` — it closes nothing |
-//! | a name twice in one file, or differing rows for one name across files | FAIL `DUPLICATE` |
-//! | an identical row from a later file (a shared root, [`merge_file_rows`]) | counted once |
+//! | a name twice in one file | FAIL `DUPLICATE` |
+//! | a root in several Challenge files ([`judge_files`]) | one challenge: identical rows judged once, differing rows each judged, closed only if all close |
 //! | no `challenge_type_hash`, or a solution with no `axioms` | FAIL `MALFORMED` — unmeasured is never closed |
 //! | otherwise | closed |
 //!
@@ -163,32 +163,71 @@ pub fn cross_check(rows: &[Row], roots: &BTreeSet<String>, c: &mut Closure, r: &
     ));
 }
 
-/// Merge the rows of one comparator run per Challenge file (#4202). A root several contracts cite is rendered into
-/// each of their Challenge files, so an IDENTICAL row from a later file is the same challenge, counted once. A row
-/// that differs from an earlier file's, or a name twice within one file, is kept, and [`judge_rows`] fails it
-/// `DUPLICATE`. Returns the merged rows and how many identical cross-file repeats were folded.
-#[must_use]
-pub fn merge_file_rows(per_file: Vec<Vec<Row>>) -> (Vec<Row>, usize) {
-    let mut earlier: std::collections::BTreeMap<String, Row> = std::collections::BTreeMap::new();
-    let mut out = Vec::new();
-    let mut shared = 0;
+/// Judge the rows of one comparator run per Challenge file (#4202). A root several contracts cite is rendered into
+/// each of their Challenge files. An IDENTICAL row from a later file is the same challenge and is not judged again;
+/// a DIFFERING one (the same text under other imports can elaborate through another instance path) is judged too.
+/// A root is one challenge, closed only if EVERY row for it closes, so no file's statement goes unjudged. A name
+/// twice within one file fails `DUPLICATE`. Returns the closure and one row per root, for [`cross_check`].
+pub fn judge_files(per_file: &[Vec<Row>], r: &mut Report) -> (Closure, Vec<Row>) {
+    let mut first: std::collections::BTreeMap<&str, &Row> = std::collections::BTreeMap::new();
+    let mut open: BTreeSet<&str> = BTreeSet::new();
+    let (mut shared, mut restated) = (0, 0);
+    let mut multi: BTreeSet<&str> = BTreeSet::new();
     for rows in per_file {
-        let mut this_file = Vec::new();
+        let mut seen = BTreeSet::new();
         for row in rows {
-            if earlier.get(&row.name) == Some(&row) {
-                shared += 1;
-            } else {
-                this_file.push(row);
+            let n = row.name.as_str();
+            let ch = challenge_decl(n);
+            if !seen.insert(n) {
+                r.fail(format!(
+                    "DUPLICATE {ch} -- the comparator reported it twice"
+                ));
+                open.insert(n);
+                continue;
+            }
+            match first.get(n) {
+                Some(f) if **f == *row => {
+                    shared += 1;
+                    multi.insert(n);
+                    continue;
+                }
+                Some(_) => {
+                    restated += 1;
+                    multi.insert(n);
+                }
+                None => {
+                    first.insert(n, row);
+                }
+            }
+            match judge_row(row, &ch) {
+                Err(fail) => {
+                    r.fail(fail);
+                    open.insert(n);
+                }
+                Ok(Some(line)) => r.lines.push(line),
+                Ok(None) => {}
             }
         }
-        for row in &this_file {
-            earlier
-                .entry(row.name.clone())
-                .or_insert_with(|| row.clone());
-        }
-        out.extend(this_file);
     }
-    (out, shared)
+    if shared + restated > 0 {
+        r.lines.push(format!(
+            "COMPARATOR {} root(s) cited by more than one Challenge file: {shared} identical row(s) folded, \
+             {restated} restated row(s) judged too",
+            multi.len()
+        ));
+    }
+    let c = Closure {
+        closed: first.keys().filter(|n| !open.contains(**n)).count(),
+        total: first.len(),
+    };
+    r.lines.push(format!(
+        "COMPARATOR {}/{} challenge(s) closed",
+        c.closed, c.total
+    ));
+    if first.is_empty() && !r.reject {
+        r.decline = Some("comparator: 0 challenge rows -- nothing was compared".to_string());
+    }
+    (c, first.into_values().cloned().collect())
 }
 
 /// Judge the rows into `r`. Failures are judged before the zero-row decline.

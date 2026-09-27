@@ -402,18 +402,22 @@ fn expected_roots_reads_the_listed_files_and_an_unreadable_one_is_an_error() {
     assert!(expected_roots(d.path(), &gone).is_err());
 }
 
-/// #4202: a root several contracts cite is rendered into each of their Challenge files. The identical row from a
-/// later file is that one challenge, counted once; a DIFFERING row for the name, or the name twice within one file,
-/// still reaches the judge and fails `DUPLICATE`.
+/// #4202: a root several contracts cite is rendered into each of their Challenge files. It is ONE challenge: an
+/// identical row from a later file is not judged again, a restated row (the same text under other imports, through
+/// another instance path) is judged too, and the root closes only if every row closes. A name twice within one
+/// file still fails `DUPLICATE`.
 #[test]
-fn identical_rows_across_files_are_one_shared_root_and_anything_else_is_duplicate() {
-    let (rows, shared) = merge_file_rows(vec![
+fn a_root_in_several_challenge_files_is_one_challenge_closed_only_if_every_row_closes() {
+    let files = |f: Vec<Vec<Row>>| {
+        let mut r = Report::default();
+        let (c, rows) = judge_files(&f, &mut r);
+        (r, c, rows)
+    };
+    let (r, c, rows) = files(vec![
         vec![closed("A.f"), closed("A.g")],
         vec![closed("A.f"), closed("B.h")],
         vec![closed("A.f")],
     ]);
-    assert_eq!(shared, 2);
-    let (r, c) = judge(&rows);
     assert!(fails(&r).is_empty(), "{:?}", r.lines);
     assert_eq!(
         c,
@@ -422,11 +426,38 @@ fn identical_rows_across_files_are_one_shared_root_and_anything_else_is_duplicat
             total: 3
         }
     );
+    assert_eq!(rows.len(), 3);
 
-    let weaker = row("A.f", Some(h(1)), Some(h(2)), Some(&["propext"]));
-    let (rows, shared) = merge_file_rows(vec![vec![closed("A.f")], vec![weaker]]);
-    assert_eq!(shared, 0);
-    let (r, _) = judge(&rows);
+    // the #4202 repro: the second file's challenge elaborates through another instance path, defeq to the solution
+    let mut restated = row("A.f", Some(h(3)), Some(h(1)), Some(&["propext"]));
+    restated.defeq_instances = Some(true);
+    let (r, c, _) = files(vec![vec![closed("A.f")], vec![restated]]);
+    assert!(fails(&r).is_empty(), "{:?}", r.lines);
+    assert_eq!(
+        c,
+        Closure {
+            closed: 1,
+            total: 1
+        }
+    );
+
+    // a later file whose statement the solution does NOT close keeps the root open, whatever the first file says
+    let weaker = row("A.f", Some(h(3)), Some(h(1)), Some(&["propext"]));
+    let (r, c, _) = files(vec![vec![closed("A.f")], vec![weaker]]);
+    assert!(
+        fails(&r).iter().any(|f| f.contains("MISMATCH")),
+        "{:?}",
+        r.lines
+    );
+    assert_eq!(
+        c,
+        Closure {
+            closed: 0,
+            total: 1
+        }
+    );
+
+    let (r, c, _) = files(vec![vec![closed("A.f"), closed("A.f")]]);
     assert!(
         fails(&r)
             .iter()
@@ -434,15 +465,14 @@ fn identical_rows_across_files_are_one_shared_root_and_anything_else_is_duplicat
         "{:?}",
         r.lines
     );
-
-    let (rows, shared) = merge_file_rows(vec![vec![closed("A.f"), closed("A.f")]]);
-    assert_eq!(shared, 0);
-    let (r, _) = judge(&rows);
-    assert!(
-        fails(&r)
-            .iter()
-            .any(|f| f.contains("DUPLICATE PvlChallenge.A.f")),
-        "{:?}",
-        r.lines
+    assert_eq!(
+        c,
+        Closure {
+            closed: 0,
+            total: 1
+        }
     );
+
+    let (r, c, _) = files(vec![vec![], vec![]]);
+    assert!(r.decline.is_some() && c.total == 0, "{:?}", r.lines);
 }
