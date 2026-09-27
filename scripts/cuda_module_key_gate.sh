@@ -170,10 +170,12 @@ test_binary() {
 # run_each_under_lock BIN LIST LOG - run every test named in LIST, one process per test,
 # each under its own hold of $GPU_LOCK, appending to LOG. Ends LOG with one synthesized
 # libtest `test result:` line carrying the summed counts, so summary_count reads the whole
-# suite. Returns non-zero iff any test failed or the list was empty.
+# suite, and writes LOG.verdicts: one `NAME<TAB>ok|FAILED|ignored|ABORTED` row per test, so a
+# single row's verdict is its own and not the suite's. Returns non-zero iff any test failed
+# or the list was empty.
 run_each_under_lock() {
-    local bin="$1" list="$2" log="$3" one="$3.one" name line passed=0 failed=0 ignored=0
-    : >"$log"
+    local bin="$1" list="$2" log="$3" one="$3.one" name line passed=0 failed=0 ignored=0 p f i
+    : >"$log"; : >"$log.verdicts"
     [ -s "$list" ] || { echo "run_each_under_lock: empty test list $list" >>"$log"; return 1; }
     while IFS= read -r name; do
         flock "$GPU_LOCK" "$bin" --exact --test-threads 1 --nocapture "$name" >"$one" 2>&1
@@ -182,11 +184,16 @@ run_each_under_lock() {
         if [ -z "$line" ]; then
             # The process aborted before libtest could summarize: that test failed.
             failed=$((failed + 1))
+            printf '%s\tABORTED\n' "$name" >>"$log.verdicts"
             continue
         fi
-        passed=$((passed + $(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) passed.*/\1/p')))
-        failed=$((failed + $(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) failed.*/\1/p')))
-        ignored=$((ignored + $(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) ignored.*/\1/p')))
+        p=$(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) passed.*/\1/p')
+        f=$(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) failed.*/\1/p')
+        i=$(printf '%s\n' "$line" | sed -nE 's/.* ([0-9]+) ignored.*/\1/p')
+        passed=$((passed + p)); failed=$((failed + f)); ignored=$((ignored + i))
+        if [ "$f" -ne 0 ]; then printf '%s\tFAILED\n' "$name"
+        elif [ "$p" -eq 1 ]; then printf '%s\tok\n' "$name"
+        else printf '%s\tignored\n' "$name"; fi >>"$log.verdicts"
     done <"$list"
     printf 'test result: %s. %d passed; %d failed; %d ignored; 0 measured; 0 filtered out (synthesized per-test)\n' \
         "$([ "$failed" -eq 0 ] && echo ok || echo FAILED)" "$passed" "$failed" "$ignored" >>"$log"
@@ -243,14 +250,16 @@ run_mode() {
     # 4. Judge, with ci.yml cuda-unit's anti-vacuity checks. Device skips print and return,
     #    which libtest counts as a pass; the grep is unanchored because under --nocapture the
     #    message lands on the `test X ... ` line. For the same reason the mutant's verdict is
-    #    read from libtest's `failures:` list, not from an `ok` on its own line.
+    #    read from its own process's `test result:` (LOG.verdicts), not from an `ok` on its own
+    #    line - and not from the suite's exit: on gx10 (#4096) four unrelated failures made the
+    #    suite exit 1 and the receipt recorded a mutant that passed as `passed: false`.
     local skips accounted mutant_ran mutant_passed mutant_skipped status reason
     local dev_skip='(CUDA|GPU) (executor |scheduler )?(unavailable|not available)|no CUDA device|CUDA model init failed'
     skips=$(cat "$log_serve" "$log_gpu" | grep -cE "$dev_skip")
     accounted=$(( $(summary_count "$log_serve" passed) + $(summary_count "$log_serve" ignored) ))
     mutant_ran=false; mutant_passed=false; mutant_skipped=false
     grep -qF "test ${MUTANT} ... " "$log_serve" && mutant_ran=true
-    if [ "$mutant_ran" = true ] && [ "$rc_serve" -eq 0 ] && ! grep -qxF "    ${MUTANT}" "$log_serve"; then
+    if [ "$mutant_ran" = true ] && grep -qxF "${MUTANT}$(printf '\t')ok" "$log_serve.verdicts"; then
         mutant_passed=true
     fi
     grep -qF "$MUTANT_SKIP_LINE" "$log_serve" && mutant_skipped=true
