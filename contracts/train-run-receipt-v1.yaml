@@ -1,0 +1,76 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-09-28'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The 0.72 R12 cell: every training run (apr finetune, distill, pretrain, train) writes one receipt that
+    ties its output to the binary, recipe, data, seed and base model that produced it. Spike S-R12
+    (2026-09-28, desk read at origin/main aca6f2d7f6) found no training writer records the apr git sha, a
+    recipe hash or a model hash; the seed is never persisted (finetune hardcodes 42); a data hash exists
+    only in finetune and covers parsed samples, not file bytes. APR-OBS has no schema (aprender#4484);
+    this contract proposes the training-run slice of it.
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R12, Spike S-R12
+  - contracts/entrenar/apr-checkpoint-v1.yaml (F-CKPT-017 canonical base_model_hash, no writer emits it)
+  - crates/aprender-build-sha (APR_GIT_SHA, used by --version/bench/serve, by no training writer)
+  - crates/apr-cli/src/commands/finetune.rs (seed 42 hardcoded), distill.rs (training_metadata.json), pretrain.rs
+  depends_on:
+  - apr-checkpoint-v1
+status: PROPOSED
+equations:
+  receipt_identity:
+    formula: 'R(run) = {apr_version, apr_git_sha, recipe_sha256, data_sha256[], seed, base_sha256[], backend, device, started_at, ended_at, steps, final_loss, output_sha256}'
+    domain: 'every successful apr finetune | distill | pretrain | train run; R written as train_receipt.json beside the output'
+    invariants:
+    - 'recipe_sha256 = sha256(canonical JSON of the EFFECTIVE config after defaults and CLI flags), so a changed default changes it'
+    - 'data_sha256 = sha256 of each input data file''s bytes, in the order read; a parsed-sample hash may be an extra key, never the only one'
+    - 'base_sha256 = the F-CKPT-017 canonical tensor hash of each input model (base, teacher, student, --init)'
+    - 'seed = the seed the RNGs were actually seeded with, including a default'
+    - 'a failed run writes no receipt claiming success (status field, or no file)'
+    preconditions:
+    - 'APR_GIT_SHA is compiled into the binary (aprender-build-sha)'
+proof_obligations:
+- type: invariant
+  property: Receipt is complete
+  formal: '∀ successful run: every key of R is present and non-empty in train_receipt.json'
+  applies_to: all
+- type: equivalence
+  property: Receipt identifies the binary
+  formal: 'R.apr_git_sha = sha printed by `apr --version` of the binary that ran'
+  applies_to: all
+- type: invariant
+  property: Hashes move with their inputs
+  formal: 'flip one byte of data ⇒ data_sha256 changes; change one tensor of base ⇒ base_sha256 changes; change one effective config value ⇒ recipe_sha256 changes'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TRR-001
+  rule: Every training command writes a complete receipt
+  prediction: 'a tiny CPU run of each of finetune, distill, pretrain and train leaves train_receipt.json with every key of R'
+  test: 'CPU, tiny synthetic model and data; S-R12 measured 0 of 4 commands record apr_git_sha, recipe hash or model hash'
+  if_fails: 'a T2–T4 receipt cannot be attributed to the binary, recipe, data and base that produced it'
+- id: FALSIFY-TRR-002
+  rule: The git sha is the running binary's
+  prediction: 'R.apr_git_sha equals the sha in `apr --version` for the same binary'
+  test: 'same runs; compare against `"$APR" --version`'
+  if_fails: 'the receipt names a build that did not run'
+- id: FALSIFY-TRR-003
+  rule: Planted falsifier — the data hash sees a reorder and a byte flip
+  prediction: 'swapping two lines of the training data file, or flipping one byte, changes data_sha256'
+  test: 'same tiny finetune run three times (original, reordered, flipped); the sorted-sample hash of today''s classify path does NOT see the reorder and must turn this RED'
+  if_fails: 'the hash covers parsed, sorted samples, so a reordered curriculum is indistinguishable'
+- id: FALSIFY-TRR-004
+  rule: The recorded seed is the one used
+  prediction: 'two runs with the receipt''s seed produce the same first-step loss; a different seed produces a different one'
+  test: 'tiny CPU finetune; S-R12 found seed 42 hardcoded and never written'
+  if_fails: 'the receipt records a seed the RNGs never saw'
+- id: FALSIFY-TRR-005
+  rule: The base-model hash is the F-CKPT-017 canonical hash
+  prediction: 'mutating one tensor of the base .apr changes base_sha256; renaming the file does not'
+  test: 'tiny CPU run twice on a base and on a renamed copy, then on a one-tensor mutant'
+  if_fails: 'the receipt records a path (today''s base_model_source), which a rename or overwrite silently breaks'
+- id: FALSIFY-TRR-006
+  rule: The recipe hash covers defaults
+  prediction: 'passing --batch-size equal to the default gives the same recipe_sha256 as omitting it; changing it changes the hash'
+  test: 'tiny CPU distill or finetune'
+  if_fails: 'the hash covers the argv, not the effective config, so a changed default is invisible'

@@ -267,6 +267,33 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
     the input dtype unless asked to widen (MOF-004). This comes before any R7 merge receipt, and it is small.
   - Until then, any "merged model" receipt is a safetensors file that only loads with a hand-copied config.
 
+### Spike S-R12 — what does a training run record about itself today? · `[V]` (2026-09-28, desk read at origin/main aca6f2d7f6)
+- **Setup:** desk read of the writers behind `apr finetune` (instruct and classify), `apr distill`, `apr pretrain` and
+  `apr train`, checked against nine identity fields. Pivotal citations were re-read by hand. Contract `train-run-receipt-v1`
+  (TRR-001..006). APR-OBS has no schema in aprender or infra (aprender-84, #4484), so this contract proposes one.
+- **No training output records the binary.** The apr version and git sha are absent from every writer. `APR_GIT_SHA`
+  is built in (`aprender-build-sha`), and `apr --version`, `bench` and `serve` use it; the `aprender-train-*` binaries use
+  it only in `--version`. The one near miss is the classify checkpoint's `provenance.tool`, which carries the train
+  crate's version, not apr's, and no sha.
+- **Seed: never persisted.** finetune hardcodes `seed: 42` (`finetune.rs:474`, and again for classify). distill has a
+  config seed that `training_metadata.json` does not write. pretrain prints its seed to stdout only.
+- **Recipe: copied, never hashed.** distill copies a few hyperparameters in plain text. No command hashes the effective
+  config after defaults, so a changed default is invisible.
+- **Data: hashed in finetune only, and over parsed samples.** Instruct hashes the parsed samples, and classify hashes the
+  sorted (input, label) pairs, which ignores order. distill and pretrain record no data hash.
+- **Models: paths, never hashes.** The base, teacher and student are recorded as paths or ids. `apr-checkpoint-v1`
+  F-CKPT-017 defines a canonical `base_model_hash`, and `TeacherProvenance.hash` exists in apr-format. **No writer emits
+  either.**
+- **Device and timestamps:** printed, rarely saved. `--backend cuda` distill prints its receipt JSON to stdout only.
+  classify's `training_state.json` is the richest record, but it is a live monitor file, not a receipt.
+- **Consequences:**
+  - Every T2–T4 receipt (R4 QLoRA, R6 distill, R13 publish) would today be unattributable: nothing ties an output to the
+    binary, recipe, data or base that produced it. R12 is a prerequisite of their evidence, not a nice-to-have.
+  - The fix is one shared writer: a `train_receipt.json` beside every training output with the nine fields, called by all
+    four commands. It reuses `APR_GIT_SHA`, the F-CKPT-017 hash and a sha256 of the data file bytes.
+  - Decision for R12's owner: whether the data hash covers file bytes (proposed, since it detects a reorder) or parsed
+    samples (today's finetune). The contract requires the byte hash and allows the sample hash as an extra key.
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
