@@ -18191,6 +18191,56 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-3147
+  github_issue: 3147
+  item_type: task
+  title: 'P0: SVD substrate in aprender-compute (Golub-Reinsch + randomized) — no SVD exists repo-wide'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-6b
+  created: 2026-09-27T12:12:15.927741+00:00
+  updated: 2026-09-27T12:12:15.927741+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] Reconstruction: for 200 random `f64` matrices with shapes spanning `m<n`, `m=n`, `m>n`, rank-deficient, and ill-conditioned (cond >= 1e8), `||A - U S V^T||_F / ||A||_F <= 1e-10`. An assertion that merely checks `is_ok()` does not satisfy this.'
+  - '[ ] Orthonormality property test (proptest): `||U^T U - I||_inf <= 1e-10` and same for `V`, over generated shapes.'
+  - '[ ] Singular values are non-negative and sorted descending — asserted, not assumed.'
+  - '[ ] Oracle parity: singular VALUES match `scipy.linalg.svd` within `1e-9` relative on pinned fixtures committed under `crates/aprender-compute/tests/fixtures/`. Singular vectors compared up to sign after the sign convention is applied.'
+  - '[ ] Randomized path: for a matrix with a known rank-`k` spectrum plus noise, randomized SVD with `p=10, q=2` recovers the top-`k` singular values within 1% of the exact ones.'
+  - '[ ] Rank-deficient input returns exact zeros (not 1e-17 noise) for the null singular values, or documents the tolerance it does guarantee.'
+  - '[ ] A `KernelContract` YAML under `contracts/` with the reconstruction and orthonormality equations as proof obligations, validated by `pv validate`.'
+  - '[ ] Mutation-verified: reverting the bidiagonalization step turns the reconstruction test RED.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: GH-3148
+  github_issue: 3148
+  item_type: task
+  title: 'P0: rewire PCA onto SVD + add TruncatedSVD — retires the only measured sklearn loss in BEATS.md'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-6b
+  created: 2026-09-27T12:12:15.927741+00:00
+  updated: 2026-09-27T12:12:15.927741+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] A falsification test asserts the covariance path is **gone**: `preprocessing/pca.rs` contains no construction of a `d x d` covariance matrix. A grep-based guard is acceptable only with an anchored pattern and a must-match/must-not-match case table.'
+  - '[ ] Ill-conditioning test: on a matrix with singular values spanning `1e0 .. 1e-9`, the recovered components match the SVD-exact components to `1e-7`, where the current covariance path is asserted to FAIL the same tolerance (proving the fix changed something).'
+  - '[ ] `explained_variance_ratio_` sums to 1.0 within 1e-12 when `n_components == min(n, d)`.'
+  - '[ ] Sign-convention determinism: two fits on the same data produce byte-identical components.'
+  - '[ ] Oracle parity vs `sklearn.decomposition.PCA` on pinned fixtures — components match up to sign within 1e-8.'
+  - '[ ] `TruncatedSVD` on a TF-IDF matrix from the existing `TfidfVectorizer` produces a reduced representation; a nearest-neighbour retrieval test on it beats random baseline by a margin asserted in the test.'
+  - '[ ] **The BEATS.md loss row is retired.** `beat-sklearn-pca-speed-v1.yaml` lands with the measured ratio, and `docs/BEATS.md` no longer lists PCA under "Speed loss". If the new ratio is still a loss, the row stays and says so honestly — but it must be re-measured, not deleted.'
+  - '[ ] `crates/aprender-core/tests/readme_contract.rs` still passes (it gates BEATS.md against contracts).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: GH-4129
   github_issue: 4129
   item_type: task
