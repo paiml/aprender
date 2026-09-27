@@ -81,6 +81,10 @@
 //!   quarantined rows byte-identical to Q, the per-verdict and per-rule counts as
 //!   JSON. Never overwrites F or Q (exit 1). An empty sealed index is exit 12
 //!   (andon) and writes nothing.
+//! - `datacard --root DIR` PRM-C14 (contract trace-datacard-v1): writes the
+//!   Croissant card, datasheet, manifest and G16 weekly receipt for the store under
+//!   DIR (idempotent; refuses hand-edited files, exit 1) and prints each ISO week's
+//!   G16 verdict. Any unmeasured week, or none, is exit 13 (andon): G16 stays `[U]`.
 
 use aprender_review_experiment::b2;
 use aprender_review_experiment::build_corpus::{
@@ -122,6 +126,7 @@ fn main() -> ExitCode {
         Some("workload") => workload_cmd(&args[1..]),
         Some("sparse-logits") => sparse_logits_cmd(&args[1..]),
         Some("pool-admit") => pool_admit_cmd(&args[1..]),
+        Some("datacard") => datacard_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -145,7 +150,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa|workload|sparse-logits|pool-admit> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa|workload|sparse-logits|pool-admit|datacard> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -1240,6 +1245,42 @@ fn pool_admit_cmd(a: &[String]) -> ExitCode {
     };
     run().unwrap_or_else(|e| {
         eprintln!("rex pool-admit: {e}");
+        ExitCode::from(1)
+    })
+}
+
+fn datacard_cmd(a: &[String]) -> ExitCode {
+    use aprender_review_experiment::datacard::{g16_decided, write_snapshot, CardMeta};
+    let Ok(f) = flags(a) else {
+        eprintln!("usage: rex datacard --root DIR");
+        return ExitCode::from(2);
+    };
+    let Ok(root) = need(&f, "root") else {
+        eprintln!("usage: rex datacard --root DIR");
+        return ExitCode::from(2);
+    };
+    let run = || -> Result<ExitCode, String> {
+        let dir = write_snapshot(std::path::Path::new(root), &CardMeta::default())?;
+        println!("{}", dir.display());
+        let p = dir.join("weekly.json");
+        let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let weekly: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", p.display()))?;
+        match g16_decided(&weekly) {
+            Ok(weeks) => {
+                for (week, g) in weeks {
+                    println!("{week} g16={g}");
+                }
+                Ok(ExitCode::SUCCESS)
+            }
+            Err(e) => {
+                eprintln!("rex datacard: ANDON G16 stays [U]: {e}");
+                Ok(ExitCode::from(13))
+            }
+        }
+    };
+    run().unwrap_or_else(|e| {
+        eprintln!("rex datacard: {e}");
         ExitCode::from(1)
     })
 }

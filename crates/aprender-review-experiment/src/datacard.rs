@@ -851,6 +851,44 @@ pub fn weekly(s: &Snapshot, root: &Path) -> Result<Value, String> {
     }))
 }
 
+/// G16 per ISO week from a [`weekly`] receipt: `(week, "within" | "outside")`.
+/// G16 moves from `[U]` to `[V]` only when every week is measured.
+///
+/// # Errors
+/// No weeks, a week whose G16 is `unmeasured` (named), or a malformed receipt.
+pub fn g16_decided(weekly: &Value) -> Result<Vec<(String, String)>, String> {
+    let weeks = weekly
+        .get("weeks")
+        .and_then(Value::as_array)
+        .ok_or("weekly receipt has no weeks array")?;
+    if weeks.is_empty() {
+        return Err("no week has rows: G16 stays [U]".into());
+    }
+    let mut out = Vec::new();
+    let mut open = Vec::new();
+    for w in weeks {
+        let (Some(week), Some(g)) = (
+            w.get("week").and_then(Value::as_str),
+            w.get("g16").and_then(Value::as_str),
+        ) else {
+            return Err(format!("malformed week row: {w}"));
+        };
+        match g {
+            "within" | "outside" => out.push((week.to_string(), g.to_string())),
+            "unmeasured" => open.push(week.to_string()),
+            other => return Err(format!("{week}: unknown g16 verdict {other:?}")),
+        }
+    }
+    if open.is_empty() {
+        Ok(out)
+    } else {
+        Err(format!(
+            "unmeasured (missing or undeclared blobs): {}",
+            open.join(", ")
+        ))
+    }
+}
+
 #[allow(clippy::disallowed_methods)] // `json!` over numbers and strings
 fn week_row(root: &Path, week: &str, w: &WeekYield) -> Value {
     let (mut stored, mut raw, mut missing, mut undeclared) = (0u64, 0u64, 0u64, 0u64);

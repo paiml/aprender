@@ -333,7 +333,7 @@ A challenger replaces the champion only if all of these hold on the current seal
 | 2 | PRM-C7–C9 | PRA T7–T9 | P2 | contamination on clusters; MinHash dedup; `repo#PR` time split | `trace-dedup-v1`, `trace-split-guard-v1` | perturbed sealed item refused; 0 cross-split clusters | 360 | todo |
 | 2 | PRM-C10 | PRA T10 | P2 | outcome join (14 d) plus HRQ rulings as gold | `trace-outcome-join-v1` | 3-day-old gold refused; weekly matured count | 150 | todo |
 | 2 | **PRM-C13** | PRA T12–T13 | P2 | G-PROV gate plus κ_err probe (all pairs) | `lane-independence-v1`, `trace-admission-prov-v1` | a planted hosted row in a pool → RED; κ matrix `[V]` | 120 | todo |
-| 2 | PRM-C14 | PRA T14 | P2 | datacard (Croissant+RAI) plus weekly yield/bytes receipt | `trace-datacard-v1` | G16 `[U]` → `[V]` | 120 | todo |
+| 2 | PRM-C14 | PRA T14 | P2 | datacard (Croissant+RAI) plus weekly yield/bytes receipt | `trace-datacard-v1` | G16 `[U]` → `[V]` | 120 | library + `rex datacard` on rex/001 (FALSIFY-TDC-001..009; exit 13 while any week is unmeasured); G16 `[V]` waits on real almacen rows (C3–C5, infra) |
 | 3 | PRM-05 | REX-05 | P2 | pilot | extends receipt | sample-size rule on R-recall applied | 90 | parked (prep `469bf0c98`) |
 | 3 | PRM-06 | REX-06 | P2 | full run plus comparators | extends receipt | 100% receipts or explicit NotRun; 0 unknown identity | 240 | parked |
 | 4 | PRM-08 | REX-08 | P2 | analysis plus hardware ruling | `prm-001-report-v1` | H1–H7 verdicts; primary/failover or shadow-only with reason | 150 | parked |

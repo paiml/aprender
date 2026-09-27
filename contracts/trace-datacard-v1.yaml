@@ -87,3 +87,9 @@ falsification_tests:
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_008"
     expected_output: "exit 0"
     if_fails: "Rows would land in the wrong week, or raw bytes would be misread."
+  - id: FALSIFY-TDC-009
+    name: g16_is_decided_only_when_every_week_is_measured
+    prediction: "g16_decided returns each week's within/outside only when every week is measured; one unmeasured week (named), no weeks, an unknown verdict or a missing weeks array is an error, so G16 stays [U]"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_009"
+    expected_output: "exit 0"
+    if_fails: "G16 is reported [V] from a week whose blobs were never measured."

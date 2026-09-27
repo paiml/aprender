@@ -433,3 +433,31 @@ fn falsify_tdc_008_iso_weeks_and_zstd_sizes_match_their_standards() {
     assert_eq!(zstd_content_size(&[0, 1, 2, 3, 0x20, 5]), None, "not zstd");
     assert_eq!(zstd_content_size(&z(&[0x80, 1, 2])), None, "truncated");
 }
+
+/// FALSIFY-TDC-009 (PRM-C14 acceptance): G16 is decided only when every week is
+/// measured. `within` and `outside` are both results; one `unmeasured` week, or
+/// no week at all, keeps G16 at `[U]` and names the open week.
+#[test]
+#[allow(clippy::disallowed_methods)] // `json!` over strings
+fn falsify_tdc_009_g16_is_decided_only_when_every_week_is_measured() {
+    let rx = |gs: &[(&str, &str)]| serde_json::json!({"weeks": gs.iter().map(|(w, g)| serde_json::json!({"week": w, "g16": g})).collect::<Vec<_>>()});
+    assert_eq!(
+        g16_decided(&rx(&[("2026-W38", "within"), ("2026-W39", "outside")])),
+        Ok(vec![
+            ("2026-W38".to_string(), "within".to_string()),
+            ("2026-W39".to_string(), "outside".to_string())
+        ])
+    );
+    let e = g16_decided(&rx(&[("2026-W38", "within"), ("2026-W39", "unmeasured")]))
+        .expect_err("an unmeasured week keeps G16 open");
+    assert!(e.contains("2026-W39"), "{e}");
+    assert!(g16_decided(&rx(&[])).is_err(), "no weeks is not a verdict");
+    assert!(
+        g16_decided(&rx(&[("2026-W38", "fine")])).is_err(),
+        "unknown verdict"
+    );
+    assert!(
+        g16_decided(&serde_json::json!({})).is_err(),
+        "no weeks array"
+    );
+}
