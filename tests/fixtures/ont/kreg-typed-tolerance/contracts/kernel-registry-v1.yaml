@@ -42,7 +42,7 @@ metadata:
   last_modified: '2026-09-27'
   author: PAIML Engineering
   description: >
-    A kernel is loadable only if a shaped row declares its (backend, op, qtype, layout). Layout is closed to
+    A kernel is loadable only if a shaped row declares its (backend, arch, isa_features, op, qtype, layout). Layout is closed to
     row_major, qtype is a closed set, tolerance is a measurement or the word unmeasured.
   references:
     - 'aprender#4539 (this row, KREG-001)'
@@ -66,7 +66,9 @@ shape:
   targetClass: kreg:Kernel
   closed: true
   properties:
-    - {path: kreg:id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^(cpu|cuda|wgpu)\\.[a-z0-9_]+\\.[a-z0-9_]+$"}
+    # AC-4 (OBS-15, #4574): the stable id OBS-15 records as kernel_path.entries[].kernel_id.
+    # <backend>.<op>.<qtype>, then .<arch>[.<isa>] once a row is arch-specific.
+    - {path: kreg:kernel_id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^(cpu|cuda|wgpu|metal)\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_+]+){0,2}$"}
     - {path: kreg:op, minCount: 1, maxCount: 1, in: [matvec, gemv]}
     - {path: kreg:qtype, minCount: 1, maxCount: 1,
        in: [F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K,
@@ -74,13 +76,19 @@ shape:
     - {path: kreg:ggml_type, minCount: 1, maxCount: 1, datatype: xsd:integer}
     # THE LAYOUT FALSIFIER. One admissible value; col_major is not in the set.
     - {path: kreg:layout, minCount: 1, maxCount: 1, in: [row_major]}
-    # The key's device dimension (la-73, 0.73 E5): backend names the runtime, arch the ISA or SM a
-    # row is restricted to (`any` until a kernel is ISA-specific). metal is closed-in now so its rows
-    # need no shape change; no metal kernel is registered yet.
+    # The key's device dimensions (la-73 0.73 E5; APR-OBS-001 section 2.10 AC-1/AC-2): backend names
+    # the runtime, arch the machine (x86_64, aarch64, sm_89, apple_m2, ... or `any`), isa_features
+    # the `+`-joined features a row requires (`none` = baseline). Nothing here is x86- or CUDA-only:
+    # an aarch64 NEON/SVE row, a Metal row and a wgpu row validate with no shape change.
     - {path: kreg:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu, metal]}
-    - {path: kreg:arch, minCount: 1, maxCount: 1, pattern: "^(any|x86_64-[a-z0-9]+|aarch64-[a-z0-9]+|sm_[0-9]+)$"}
+    - {path: kreg:arch, minCount: 1, maxCount: 1, pattern: "^(any|[a-z][a-z0-9_]*)$"}
+    - {path: kreg:isa_features, minCount: 1, maxCount: 1, pattern: "^(none|[a-z0-9_.]+(\\+[a-z0-9_.]+)*)$"}
     - {path: kreg:block_elems, minCount: 1, maxCount: 1, datatype: xsd:integer}
     - {path: kreg:accumulate, minCount: 1, maxCount: 1, in: [f32, i32_f32, profile_selected]}
+    # AC-4: what the nightly reports. precision = the activation precision inside the kernel;
+    # shape_class = the M it serves (m1 = one token, m_any = any batch).
+    - {path: kreg:precision, minCount: 1, maxCount: 1, in: [f32, f16, bf16, q8_0, q8_k, profile_selected]}
+    - {path: kreg:shape_class, minCount: 1, maxCount: 1, in: [m1, m_any]}
     - {path: kreg:tolerance, minCount: 1, maxCount: 1, pattern: "^(unmeasured|evidence/.+\\.json)$"}
     - {path: kreg:source_file, minCount: 1, maxCount: 1, pattern: "^crates/[a-z0-9_-]+/src/.+\\.rs$"}
     - {path: kreg:source_fn, minCount: 1, maxCount: 1, pattern: "^[a-z_][a-z0-9_]*$"}
@@ -89,16 +97,17 @@ shape:
 
 equations:
   admissible:
-    formula: "admit(b, op, q, l) = Ok(r) ⟺ ∃ r ∈ Kernel: (backend, op, ggml_type, layout)(r) = (b, op, q, l)"
-    domain: "every (backend, op, qtype, layout) a realizar kernel selector can reach"
+    formula: "admit(b, t, q, l) = Ok(r) ⟺ ∃ r ∈ Kernel: (backend, ggml_type, layout)(r) = (b, q, l) ∧ arch(r) ∈ {any, arch(t)} ∧ isa_features(r) ⊆ isa(t)"
+    domain: "every (backend, target arch + isa, qtype, layout) a realizar kernel selector can reach"
     codomain: "the registry row, or Err naming the combination — never a silent fallback"
     invariants:
       - "layout(r) = row_major for every row"
       - "an unregistered combination is an Err at the selector, never a default arm"
+      - "of several matching rows the most specific (arch named, most isa features) is chosen"
     preconditions:
       - "the registry document parses and every row conforms to the shape"
     postconditions:
-      - "no kernel runs on a (backend, op, qtype, layout) nobody declared"
+      - "no kernel runs on a (backend, arch, isa_features, qtype, layout) nobody declared"
     lean_theorem: none — L4 not declared
 
 invariants:

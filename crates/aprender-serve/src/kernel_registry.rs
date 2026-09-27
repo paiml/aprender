@@ -1,14 +1,16 @@
 //! KREG-001 (aprender#4539): the kernel registry at run time.
 //!
 //! `kernel-registry.json` (next to this crate's `Cargo.toml`, so `include_str!` works in a
-//! crates.io build) lists every (backend, qtype, layout) a selector may dispatch. Its shape is
+//! crates.io build) lists every (backend, arch, isa_features, qtype, layout) a selector may
+//! dispatch. Its shape is
 //! `contracts/kernel-registry-v1.yaml`, checked by `pv lint --gate shapes`. This module is the
 //! other half: a selector asks [`admit`] before it dispatches, and a combination with no row is an
 //! `Err` naming it — never a silent fallback. A wrong kernel is then unloadable rather than
 //! merely wrong.
 //!
-//! The lookup is one array index per call: the table is built once, keyed by
-//! `(backend, ggml type id)`, and the only admissible layout is row-major (LAYOUT-001).
+//! The table is built once, keyed by `(backend, ggml type id)`; each cell holds the rows for that
+//! pair, and a [`Target`] (arch + ISA features, APR-OBS-001 §2.10 AC-1/AC-2) picks the most
+//! specific row it satisfies. The only admissible layout is row-major (LAYOUT-001).
 
 use std::sync::OnceLock;
 
@@ -22,7 +24,7 @@ const REGISTRY_JSON: &str = include_str!("../kernel-registry.json");
 /// Type ids at or above this have no slot; every GGML/APR id in use is below it.
 const MAX_TYPE_ID: usize = 256;
 
-/// Sentinel for "no row" in the lookup table.
+/// Row indices are `u16`; a document this long cannot be indexed.
 const NO_ROW: u16 = u16::MAX;
 
 /// Where a kernel runs.
@@ -65,6 +67,85 @@ impl Backend {
     }
 }
 
+/// The machine a kernel is asked to run on: arch plus the ISA features it has (AC-1/AC-2).
+/// A row with `arch: any` and `isa_features: none` matches every target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    arch: String,
+    isa: Vec<String>,
+}
+
+impl Target {
+    /// A target with an explicit arch and feature set.
+    pub fn new(arch: &str, isa: &[&str]) -> Self {
+        Self {
+            arch: arch.to_string(),
+            isa: isa.iter().map(|f| (*f).to_string()).collect(),
+        }
+    }
+
+    /// A target nothing is known about: it matches only `arch: any`, `isa_features: none` rows.
+    /// Used for device backends until the device's arch (e.g. `sm_89`) is plumbed through.
+    pub fn generic() -> Self {
+        Self::new("any", &[])
+    }
+
+    /// The CPU this process runs on, detected once.
+    pub fn host() -> &'static Self {
+        static HOST: OnceLock<Target> = OnceLock::new();
+        HOST.get_or_init(|| Self::new(std::env::consts::ARCH, &host_isa_features()))
+    }
+
+    fn satisfies(&self, row: &KernelRow) -> bool {
+        (row.arch == "any" || row.arch == self.arch)
+            && row_isa(row).all(|f| self.isa.iter().any(|h| h == f))
+    }
+}
+
+/// The ISA features a CPU row may require, as detected on this host.
+fn host_isa_features() -> Vec<&'static str> {
+    let mut found = Vec::new();
+    #[cfg(target_arch = "x86_64")]
+    {
+        let probes: [(&'static str, bool); 6] = [
+            ("sse4.1", std::arch::is_x86_feature_detected!("sse4.1")),
+            ("avx2", std::arch::is_x86_feature_detected!("avx2")),
+            ("fma", std::arch::is_x86_feature_detected!("fma")),
+            ("avx512f", std::arch::is_x86_feature_detected!("avx512f")),
+            ("avx512bw", std::arch::is_x86_feature_detected!("avx512bw")),
+            (
+                "avx512vnni",
+                std::arch::is_x86_feature_detected!("avx512vnni"),
+            ),
+        ];
+        found.extend(probes.iter().filter(|p| p.1).map(|p| p.0));
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let probes: [(&'static str, bool); 4] = [
+            ("neon", std::arch::is_aarch64_feature_detected!("neon")),
+            (
+                "dotprod",
+                std::arch::is_aarch64_feature_detected!("dotprod"),
+            ),
+            ("i8mm", std::arch::is_aarch64_feature_detected!("i8mm")),
+            ("sve", std::arch::is_aarch64_feature_detected!("sve")),
+        ];
+        found.extend(probes.iter().filter(|p| p.1).map(|p| p.0));
+    }
+    found
+}
+
+/// A row's required ISA features (`none` is the empty set).
+fn row_isa(row: &KernelRow) -> impl Iterator<Item = &str> {
+    row.isa_features.split('+').filter(|f| *f != "none")
+}
+
+/// How specific a row is: a named arch outranks `any`, then more required features win.
+fn specificity(row: &KernelRow) -> usize {
+    usize::from(row.arch != "any") * 1024 + row_isa(row).count()
+}
+
 /// The memory layout of the weight the kernel will read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layout {
@@ -86,8 +167,9 @@ impl Layout {
 /// One registry row, as `contracts/kernel-registry-v1.yaml` shapes it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct KernelRow {
-    /// `<backend>.<op>.<qtype>`.
-    pub id: String,
+    /// Stable id, `<backend>.<op>.<qtype>[.<arch>[.<isa>]]` — what OBS-15 records as
+    /// `kernel_path.entries[].kernel_id` (AC-4).
+    pub kernel_id: String,
     /// `matvec` or `gemv`.
     pub op: String,
     /// The qtype name, e.g. `Q4_K`.
@@ -100,10 +182,16 @@ pub struct KernelRow {
     pub backend: String,
     /// Target architecture; `any` until a row is arch-specific.
     pub arch: String,
+    /// `+`-joined ISA features the row requires; `none` for baseline.
+    pub isa_features: String,
     /// Elements per quant block.
     pub block_elems: u32,
     /// Accumulator precision.
     pub accumulate: String,
+    /// Activation precision inside the kernel (AC-4).
+    pub precision: String,
+    /// The M the kernel serves: `m1` or `m_any` (AC-4).
+    pub shape_class: String,
     /// `unmeasured` or the path of a tolerance receipt.
     pub tolerance: String,
     /// Repo-relative file holding the kernel.
@@ -121,16 +209,33 @@ struct Document {
     kernels: Vec<KernelRow>,
 }
 
-/// The parsed registry and its `(backend, type id) -> row` table.
+/// The parsed registry and its `(backend, type id) -> rows` table.
 pub struct Registry {
     rows: Vec<KernelRow>,
-    table: [[u16; MAX_TYPE_ID]; Backend::ALL.len()],
+    table: Vec<Vec<u16>>,
+}
+
+/// The table cell for `(backend slot, type id)`.
+fn cell_index(slot: (usize, usize)) -> usize {
+    slot.0 * MAX_TYPE_ID + slot.1
+}
+
+/// Two rows collide when they share backend, type id, arch and ISA feature set.
+fn same_key(a: &KernelRow, b: &KernelRow) -> bool {
+    a.arch == b.arch && isa_set(a) == isa_set(b)
+}
+
+/// A row's ISA features, order-free.
+fn isa_set(row: &KernelRow) -> Vec<&str> {
+    let mut f: Vec<&str> = row_isa(row).collect();
+    f.sort_unstable();
+    f
 }
 
 impl Registry {
     /// Parse and index a registry document. Refuses — rather than skips — a row this table
     /// could not answer for honestly: an unknown backend, a non-row-major layout, an id with no
-    /// slot, or a second row for the same `(backend, type id)`.
+    /// slot, or a second row for the same `(backend, type id, arch, isa_features)`.
     pub fn parse(json: &str) -> std::result::Result<Self, String> {
         let doc: Document =
             serde_json::from_str(json).map_err(|e| format!("kernel registry: {e}"))?;
@@ -140,20 +245,24 @@ impl Registry {
                 doc.kernels.len()
             ));
         }
-        let mut table = [[NO_ROW; MAX_TYPE_ID]; Backend::ALL.len()];
+        let mut table = vec![Vec::new(); Backend::ALL.len() * MAX_TYPE_ID];
         for (i, row) in doc.kernels.iter().enumerate() {
-            let slot = index_slot(row)?;
-            let cell = &mut table[slot.0][slot.1];
-            if *cell != NO_ROW {
+            let cell = &mut table[cell_index(index_slot(row)?)];
+            if let Some(&other) = cell
+                .iter()
+                .find(|&&j| same_key(&doc.kernels[usize::from(j)], row))
+            {
                 return Err(format!(
-                    "kernel registry: rows `{}` and `{}` both claim ({}, type {})",
-                    doc.kernels[usize::from(*cell)].id,
-                    row.id,
+                    "kernel registry: rows `{}` and `{}` both claim ({}, type {}, {}, {})",
+                    doc.kernels[usize::from(other)].kernel_id,
+                    row.kernel_id,
                     row.backend,
-                    row.ggml_type
+                    row.ggml_type,
+                    row.arch,
+                    row.isa_features
                 ));
             }
-            *cell = u16::try_from(i).map_err(|e| format!("kernel registry: {e}"))?;
+            cell.push(u16::try_from(i).map_err(|e| format!("kernel registry: {e}"))?);
         }
         Ok(Self {
             rows: doc.kernels,
@@ -166,14 +275,36 @@ impl Registry {
         &self.rows
     }
 
-    /// The row for `(backend, type id, layout)`, or an error naming the combination.
+    /// The row for `(backend, type id, layout)` on the backend's default target: the host CPU
+    /// for [`Backend::Cpu`], [`Target::generic`] otherwise.
     pub fn admit(&self, backend: Backend, ggml_type: u32, layout: Layout) -> Result<&KernelRow> {
+        let target = match backend {
+            Backend::Cpu => Target::host().clone(),
+            _ => Target::generic(),
+        };
+        self.admit_for(backend, &target, ggml_type, layout)
+    }
+
+    /// The most specific row for `(backend, target, type id, layout)`, or an error naming the
+    /// combination.
+    pub fn admit_for(
+        &self,
+        backend: Backend,
+        target: &Target,
+        ggml_type: u32,
+        layout: Layout,
+    ) -> Result<&KernelRow> {
         let row = usize::try_from(ggml_type)
             .ok()
-            .and_then(|t| self.table[backend.slot()].get(t))
-            .filter(|&&cell| cell != NO_ROW && layout == Layout::RowMajor)
-            .map(|&cell| &self.rows[usize::from(cell)]);
-        row.ok_or_else(|| refusal(backend, ggml_type, layout))
+            .filter(|&t| t < MAX_TYPE_ID && layout == Layout::RowMajor)
+            .and_then(|t| {
+                self.table[cell_index((backend.slot(), t))]
+                    .iter()
+                    .map(|&i| &self.rows[usize::from(i)])
+                    .filter(|r| target.satisfies(r))
+                    .max_by_key(|r| specificity(r))
+            });
+        row.ok_or_else(|| refusal(backend, target, ggml_type, layout))
     }
 }
 
@@ -182,13 +313,13 @@ fn index_slot(row: &KernelRow) -> std::result::Result<(usize, usize), String> {
     let backend = Backend::parse(&row.backend).ok_or_else(|| {
         format!(
             "kernel registry: row `{}` has unknown backend `{}`",
-            row.id, row.backend
+            row.kernel_id, row.backend
         )
     })?;
     if row.layout != Layout::RowMajor.as_str() {
         return Err(format!(
             "kernel registry: row `{}` has layout `{}`; only row_major is admissible (LAYOUT-001)",
-            row.id, row.layout
+            row.kernel_id, row.layout
         ));
     }
     let id = usize::try_from(row.ggml_type)
@@ -197,20 +328,22 @@ fn index_slot(row: &KernelRow) -> std::result::Result<(usize, usize), String> {
         .ok_or_else(|| {
             format!(
                 "kernel registry: row `{}` type id {} has no slot",
-                row.id, row.ggml_type
+                row.kernel_id, row.ggml_type
             )
         })?;
     Ok((backend.slot(), id))
 }
 
-fn refusal(backend: Backend, ggml_type: u32, layout: Layout) -> RealizarError {
+fn refusal(backend: Backend, target: &Target, ggml_type: u32, layout: Layout) -> RealizarError {
     RealizarError::UnsupportedOperation {
         operation: "kernel_registry::admit".to_string(),
         reason: format!(
-            "no registered kernel for backend={} ggml_type={ggml_type} layout={} — add a row to \
+            "no registered kernel for backend={} arch={} isa={} ggml_type={ggml_type} layout={} — add a row to \
              crates/aprender-serve/kernel-registry.json (shape: contracts/kernel-registry-v1.yaml) \
              before dispatching it (KREG-001, aprender#4539)",
             backend.as_str(),
+            target.arch,
+            target.isa.join("+"),
             layout.as_str()
         ),
     }
@@ -236,9 +369,21 @@ mod tests {
     use crate::gguf::{GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
 
     fn row_json(id: &str, backend: &str, ggml_type: u32, layout: &str) -> String {
+        arch_row_json(id, backend, ggml_type, layout, "any", "none")
+    }
+
+    fn arch_row_json(
+        id: &str,
+        backend: &str,
+        ggml_type: u32,
+        layout: &str,
+        arch: &str,
+        isa: &str,
+    ) -> String {
         format!(
-            r#"{{"id":"{id}","op":"matvec","qtype":"Q4_K","ggml_type":{ggml_type},"layout":"{layout}",
-            "backend":"{backend}","arch":"any","block_elems":256,"accumulate":"f32",
+            r#"{{"kernel_id":"{id}","op":"matvec","qtype":"Q4_K","ggml_type":{ggml_type},"layout":"{layout}",
+            "backend":"{backend}","arch":"{arch}","isa_features":"{isa}","block_elems":256,
+            "accumulate":"f32","precision":"f32","shape_class":"m_any",
             "tolerance":"unmeasured","source_file":"crates/x/src/a.rs","source_fn":"f",
             "selector":"selector::fn","contract":"contracts/tensor-layout-v1.yaml"}}"#
         )
@@ -259,10 +404,12 @@ mod tests {
         let r = registry().expect("registry");
         for row in r.rows() {
             let backend = Backend::parse(&row.backend).expect("known backend");
+            let isa: Vec<&str> = row_isa(row).collect();
+            let target = Target::new(&row.arch, &isa);
             let got = r
-                .admit(backend, row.ggml_type, Layout::RowMajor)
+                .admit_for(backend, &target, row.ggml_type, Layout::RowMajor)
                 .expect("admitted");
-            assert_eq!(got.id, row.id);
+            assert_eq!(got.kernel_id, row.kernel_id);
         }
     }
 
@@ -338,6 +485,139 @@ mod tests {
         assert!(r.admit(Backend::Cuda, 12, Layout::RowMajor).is_err());
     }
 
+    /// AC-1/AC-2: the key carries arch and ISA features; the most specific satisfied row wins,
+    /// an arch-specific row never serves another arch, and a missing feature falls back to the
+    /// baseline row — or is refused when there is none.
+    #[test]
+    fn the_key_includes_arch_and_isa_features() {
+        let rows = [
+            arch_row_json("cpu.matvec.q4_k", "cpu", 12, "row_major", "any", "none"),
+            arch_row_json(
+                "cpu.matvec.q4_k.x86_64.avx2",
+                "cpu",
+                12,
+                "row_major",
+                "x86_64",
+                "avx2+fma",
+            ),
+            arch_row_json(
+                "cpu.matvec.q4_k.aarch64.neon",
+                "cpu",
+                12,
+                "row_major",
+                "aarch64",
+                "neon",
+            ),
+            arch_row_json(
+                "cpu.matvec.q4_k.x86_64.avx512",
+                "cpu",
+                12,
+                "row_major",
+                "x86_64",
+                "avx512f",
+            ),
+            arch_row_json(
+                "cpu.matvec.q6_k.aarch64.sve",
+                "cpu",
+                14,
+                "row_major",
+                "aarch64",
+                "sve",
+            ),
+        ];
+        let r = Registry::parse(&doc(&rows)).expect("parses");
+        let pick = |arch: &str, isa: &[&str], t: u32| {
+            r.admit_for(Backend::Cpu, &Target::new(arch, isa), t, Layout::RowMajor)
+                .map(|k| k.kernel_id.clone())
+        };
+        assert_eq!(
+            pick("x86_64", &["avx2", "fma"], 12).expect("x86"),
+            "cpu.matvec.q4_k.x86_64.avx2"
+        );
+        assert_eq!(
+            pick("x86_64", &["avx2"], 12).expect("no fma"),
+            "cpu.matvec.q4_k"
+        );
+        assert_eq!(
+            pick("aarch64", &["neon"], 12).expect("arm"),
+            "cpu.matvec.q4_k.aarch64.neon"
+        );
+        assert_eq!(
+            pick("x86_64", &["avx512f"], 12).expect("same arch, other features"),
+            "cpu.matvec.q4_k.x86_64.avx512"
+        );
+        assert_eq!(
+            pick("riscv64", &[], 12).expect("generic"),
+            "cpu.matvec.q4_k"
+        );
+        assert!(pick("aarch64", &["neon"], 14).is_err());
+        assert_eq!(
+            pick("aarch64", &["sve"], 14).expect("sve"),
+            "cpu.matvec.q6_k.aarch64.sve"
+        );
+        let named = [
+            arch_row_json("cpu.matvec.q8_0", "cpu", 8, "row_major", "any", "avx2"),
+            arch_row_json(
+                "cpu.matvec.q8_0.x86_64",
+                "cpu",
+                8,
+                "row_major",
+                "x86_64",
+                "none",
+            ),
+        ];
+        let n = Registry::parse(&doc(&named)).expect("parses");
+        let t = Target::new("x86_64", &["avx2"]);
+        let got = n
+            .admit_for(Backend::Cpu, &t, 8, Layout::RowMajor)
+            .expect("q8_0");
+        assert_eq!(
+            got.kernel_id, "cpu.matvec.q8_0.x86_64",
+            "a named arch outranks features"
+        );
+        let arm = Target::new("aarch64", &["avx2"]);
+        let got = n
+            .admit_for(Backend::Cpu, &arm, 8, Layout::RowMajor)
+            .expect("q8_0");
+        assert_eq!(
+            got.kernel_id, "cpu.matvec.q8_0",
+            "an x86_64 row served aarch64"
+        );
+        let e = pick("x86_64", &["avx2", "fma"], 14).expect_err("x86 got an sve kernel");
+        assert!(e.to_string().contains("arch=x86_64"), "{e}");
+    }
+
+    #[test]
+    fn the_same_arch_and_feature_set_is_a_duplicate_in_any_order() {
+        let rows = [
+            arch_row_json("cpu.matvec.a", "cpu", 12, "row_major", "x86_64", "avx2+fma"),
+            arch_row_json("cpu.matvec.b", "cpu", 12, "row_major", "x86_64", "fma+avx2"),
+        ];
+        let e = Registry::parse(&doc(&rows))
+            .err()
+            .expect("duplicate indexed");
+        assert!(e.contains("both claim"), "{e}");
+    }
+
+    /// AC-4: every embedded row carries a stable kernel_id that starts with its own backend.
+    #[test]
+    fn every_kernel_id_is_unique_and_names_its_backend() {
+        let r = registry().expect("registry");
+        let mut seen = std::collections::HashSet::new();
+        for row in r.rows() {
+            assert!(
+                row.kernel_id.starts_with(&format!("{}.", row.backend)),
+                "{}",
+                row.kernel_id
+            );
+            assert!(
+                seen.insert(row.kernel_id.as_str()),
+                "duplicate {}",
+                row.kernel_id
+            );
+        }
+    }
+
     /// KREG coverage (CUDA): the registry's `cuda` rows and the ids `WeightQuantType` declares
     /// (one `gemv_dispatch` arm each — that match is exhaustive) are the same set, derived here
     /// over every id rather than from a hand-kept count. A variant with no row would be
@@ -387,12 +667,16 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         for row in registry().expect("registry").rows() {
             let src = std::fs::read_to_string(root.join(&row.source_file))
-                .unwrap_or_else(|e| panic!("{}: {}: {e}", row.id, row.source_file));
+                .unwrap_or_else(|e| panic!("{}: {}: {e}", row.kernel_id, row.source_file));
             let needle = format!("fn {}", row.source_fn);
             let found = src
                 .match_indices(&needle)
                 .any(|(i, _)| src[i + needle.len()..].starts_with(['(', '<']));
-            assert!(found, "{}: `{needle}` not in {}", row.id, row.source_file);
+            assert!(
+                found,
+                "{}: `{needle}` not in {}",
+                row.kernel_id, row.source_file
+            );
         }
     }
 }
