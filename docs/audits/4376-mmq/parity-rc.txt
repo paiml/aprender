@@ -1,0 +1,15 @@
+p1_short f32 rc=0 in 40 ms
+p1_short f16 rc=0 in 194 ms
+p1_short dp4a rc=0 in 132 ms
+p2_2k f32 rc=0 in 737 ms
+p2_2k f16 rc=0 in 337 ms
+p2_2k dp4a rc=0 in 921 ms
+p3_8k f32 rc=0 in 2464 ms
+p3_8k f16 rc=0 in 1081 ms
+p3_8k dp4a rc=0 in 3359 ms
+p4_16k f32 rc=0 in 5616 ms
+p4_16k f16 rc=0 in 2699 ms
+p4_16k dp4a rc=0 in 7123 ms
+p5_30k f32 rc=0 in 11901 ms
+p5_30k f16 rc=0 in 6865 ms
+p5_30k dp4a rc=0 in 14711 ms
