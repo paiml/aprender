@@ -34,7 +34,7 @@ fn quiet() -> Value {
 
 // Shaped like an rc.1 engine-tier row on gx10 CUDA. No recorder exists yet (§1 G4), so
 // this is a specimen of the §2.1 shape, not a measured night.
-fn rc1(host: &str, backend: &str) -> Value {
+pub(crate) fn rc1(host: &str, backend: &str) -> Value {
     json!({
         "schema": "apr-perf-ledger-v1", "ts": "2026-10-01T03:12:00Z",
         "host": host, "apr_version": "0.71.0-rc.1", "apr_tag": "v0.71.0-rc.1",

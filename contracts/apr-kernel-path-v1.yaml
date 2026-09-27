@@ -1,0 +1,123 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md v1.3 §2.10 kernel path, §3 falsifiers, §7 OBS-15'
+  - 'contracts/apr-perf-ledger-v1.yaml — the rows that carry kernel_path (OBS-05)'
+  - 'contracts/apr-trace-v1.yaml — the OBS-09 per-layer trace kernel_path is read from'
+  - 'crates/aprender-qa-report/src/obs_kernel_path.rs — shape, trace cut, night-over-night attribution, KREG admission'
+  - 'aprender#4574 — OBS-15; aprender#4539 — KREG-001; aprender#4496 — OBS-09'
+  - 'https://github.com/paiml/aprender/issues/4539#issuecomment-5855943715 — the §2.10 KREG-001 requirement (AC-1..4), filed 2026-09-27'
+  description: >
+    kernel_path names the kernels a perf row ran, so a night-over-night ratio change
+    can be attributed to a kernel change rather than read as apr getting slower. It
+    is read from the OBS-09 per-layer trace until KREG-001 (#4539) lands, then from
+    KREG registry tuple ids. Before OBS-09 merges a null kernel_path is admitted with
+    a kernel_path_reason (apr-perf-ledger-v1); from the trace cut on, a GPU row
+    without one is refused. A KREG entry is admitted only with a passing parity
+    receipt from a host of its arch, so 0.73 (aarch64, mini, wgpu) needs no schema
+    migration and no entry is trusted on an arch nobody ran it on.
+
+equations:
+  kernel_path_shape:
+    formula: |
+      kernel_path = { source ∈ {trace, kreg},
+                      entries: [ {op, kernel_id, qtype, layout, arch, shape_class, precision} ] }
+      REQUIRE: |entries| ≥ 1;  every field present, non-null, not "", not "unknown"
+    domain: 'the kernel_path of one apr-perf-ledger-v1 row'
+    codomain: 'ok, or the first entry and the fields it lacks'
+
+  trace_cut:
+    formula: |
+      backend ∈ {cuda, wgpu, metal} ∧ night(r) ≥ cut ⇒ r.kernel_path ≠ null
+      cut = the first night whose recorder runs an apr binary with the OBS-09 trace
+    domain: 'a perf row and the cut (none until OBS-09 merges)'
+    codomain: bool
+    invariants:
+    - 'A row whose night cannot be read gets no pre-trace allowance.'
+    - 'CPU rows name no GPU kernel and are outside the rule.'
+
+  attribution:
+    formula: |
+      slot(e) = (e.op, e.shape_class)
+      diff(prev, cur) = { s : entry_prev(s) ≠ entry_cur(s) },  none if either path is null
+    domain: 'two consecutive nights of one series'
+    codomain: 'the changed slots with before/after entries, or none (unattributable)'
+
+  kreg_admission:
+    formula: |
+      key = (arch, isa_features, backend);  admit(e) ⟺ key(e) complete ∧ e.kernel_id present
+            ∧ ∃ receipt: receipt.arch = e.arch ∧ receipt.backend = e.backend
+                         ∧ receipt.kernel_id = e.kernel_id ∧ receipt.host present ∧ parity = pass
+    domain: 'one KREG-001 entry and the parity receipts on file'
+    codomain: 'ok, or the missing key dimensions / no_host_receipt'
+
+falsification_tests:
+- id: FALSIFY-OBS-KP-001
+  rule: a GPU row after the OBS-09 trace cut with kernel_path null is refused
+  prediction: 'cuda, wgpu and metal rows on and after the cut, with kernel_path null or absent, are NullAfterTrace; the night before, no cut, or a cpu row is admitted; an unreadable night with a cut is refused.'
+  test: 'crates/aprender-qa-report/src/obs_kernel_path_tests.rs::a_gpu_row_after_the_trace_cut_without_kernel_path_is_refused'
+  if_fails: 'a GPU regression ships without the kernels that caused it'
+  mutation: 'make the cut exclusive; disable the cut; allow unreadable nights; exempt every backend — each must turn RED (killed)'
+- id: FALSIFY-OBS-KP-002
+  rule: a KREG entry for an arch with no host receipt is refused
+  prediction: 'An aarch64 entry with no receipt, or only receipts differing in arch, backend, kernel_id, parity or host, is no_host_receipt; each missing key dimension is named.'
+  test: 'crates/aprender-qa-report/src/obs_kernel_path_tests.rs::a_kreg_entry_without_a_host_receipt_of_its_arch_is_refused'
+  if_fails: 'an x86 parity result admits a NEON kernel nobody ran'
+  mutation: 'skip the arch, backend, kernel_id, host or parity match; drop isa_features from the key — each must turn RED (killed)'
+- id: FALSIFY-OBS-KP-003
+  rule: a malformed kernel_path is refused and named
+  prediction: 'A non-object, an unknown source, absent or empty entries, and each of the 7 entry fields null, "" or "unknown" are refused, naming the entry and field.'
+  test: 'crates/aprender-qa-report/src/obs_kernel_path_tests.rs::a_malformed_kernel_path_is_refused_and_named'
+  if_fails: 'a path that names no kernel satisfies the 100% rule'
+  mutation: 'accept any source; accept empty entries; check presence only; drop precision — each must turn RED (killed)'
+- id: FALSIFY-OBS-KP-004
+  rule: a kernel change is attributed night over night, and a missing path is unattributable
+  prediction: 'A swapped kernel_id and an added op are the two changed slots; a row without a path gives none, never an empty change list.'
+  test: 'crates/aprender-qa-report/src/obs_kernel_path_tests.rs::a_kernel_change_is_attributed_night_over_night'
+  if_fails: 'a scalar fallback reads as an apr regression, or a missing path reads as "no kernel changed"'
+  mutation: 'report no changes; treat a null path as empty — each must turn RED (killed)'
+- id: FALSIFY-OBS-KP-P01
+  rule: 'positive: a gx10 row naming its kernels is admitted'
+  prediction: 'An rc.1 gx10 cuda row with a trace kernel_path passes admit_row and the kernel_path check with and without a cut.'
+  test: 'crates/aprender-qa-report/src/obs_kernel_path_tests.rs::a_gx10_row_naming_its_kernels_is_admitted'
+  if_fails: 'the check refuses the rows it exists to admit'
+  mutation: 'covered by the refusal mutants above'
+
+proof_obligations:
+- type: invariant
+  property: 'GPU rows carry kernel_path from the trace cut on (FALSIFY-OBS-KP-001)'
+  formal: '∀ r: backend(r) ∈ GPU ∧ night(r) ≥ cut ⇒ r.kernel_path ≠ null'
+- type: invariant
+  property: 'KREG entries need a host receipt of their arch (FALSIFY-OBS-KP-002)'
+  formal: 'admit(e) ⇒ ∃ p ∈ receipts: p.arch = e.arch ∧ p.backend = e.backend ∧ p.parity = pass'
+- type: invariant
+  property: 'Every entry is complete (FALSIFY-OBS-KP-003)'
+  formal: '∀ e ∈ entries, f ∈ ENTRY_FIELDS: e.f ∉ {null, "", unknown} ∧ |entries| ≥ 1'
+- type: soundness
+  property: 'Attribution never claims "unchanged" without both paths (FALSIFY-OBS-KP-004)'
+  formal: 'prev.kernel_path = null ∨ cur.kernel_path = null ⇒ diff = none'
+
+qa_gate:
+  id: F-OBS-KP-GATE-001
+  name: 'every GPU row after the OBS-09 merge names its kernels'
+  description: 'OBS-15 acceptance: 100% of GPU rows after the OBS-09 merge carry kernel_path; the §2.10 KREG-001 schema requirement is filed on #4539 with its comment URL recorded.'
+  checks:
+  - gpu_rows_carry_kernel_path_after_cut
+  - kernel_path_shape
+  - kreg_entry_needs_host_receipt
+  - night_over_night_attribution
+  - kreg_requirement_filed_on_4539
+  pass_criteria: >
+    All checks hold. The 100% criterion is NotRun until OBS-09 (#4496) merges and
+    declares the trace cut, and until the recorder writes rows (§1 G4); the checks
+    are unit-level until then.
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: tested
+  notes: 'Pure functions in aprender-qa-report (obs_kernel_path.rs); 5 unit tests over rc.1 specimens, 16/16 planted mutants killed. kreg_requirement_filed_on_4539: done, issuecomment-5855943715 (kreg reports AC-1..4 on kreg/4539-survey, AC-3 as a ratchet). Trace cut is None today: OBS-09 not merged, so gpu_rows_carry_kernel_path_after_cut is NotRun, never PASS.'

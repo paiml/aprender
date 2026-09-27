@@ -201,7 +201,7 @@ impl NightVerdict {
     }
 }
 
-fn night_of(row: &Value) -> Option<NaiveDate> {
+pub(crate) fn night_of(row: &Value) -> Option<NaiveDate> {
     let ts = row.get("ts")?.as_str()?;
     NaiveDate::parse_from_str(ts.get(..10)?, "%Y-%m-%d").ok()
 }
@@ -450,4 +450,4 @@ pub fn nightly_stat(blocks: &[Block]) -> Result<f64, NightError> {
 
 #[cfg(test)]
 #[path = "obs_ledger_tests.rs"]
-mod tests;
+pub(crate) mod tests;
