@@ -1,0 +1,21 @@
+- id: PMAT-4526
+  github_issue: 4526
+  item_type: task
+  title: 'GEN-001: README counts come from ONE generator; PRs never hand-edit them'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-98
+  created: 2026-09-27 10:00:00+00:00
+  updated: '2026-09-27T10:45:00Z'
+  spec: null
+  acceptance_criteria:
+  - 'G1: scripts/readme_sync.sh is the only writer of every derived README count; each count sits between <!-- NAME_START/END --> markers, --list-blocks names the owned set, --write refuses a missing block (exit 3) and a zero/unmeasured instrument (exit 2), and --check is exact'
+  - 'G3: crates/aprender-core/tests/readme_contract.rs compares every README *_COUNT block against the generator (--print-all), not an independent instrument; a block may lag but never overstate, and every block is generator-owned'
+  - 'G4: batch_fold.sh treats a conflict in any *_COUNT block as generated and regenerates it on the integrated tree; session_docs_commit.sh no longer writes counts itself'
+  - 'the case tables (readme_sync_selftest.sh, check_batch_fold.sh, check_readme_numeric_claims.sh --self-test) are green and each has a mutant that turns it red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cop assignment (aprender-77) 2026-09-27; step 3 of the operator trunk-based order. G2 (the PR guard) is aprender-0d on GH-4417-pr-generated-write-set and keys on readme_sync.sh --list-blocks. Measured drift on main @761d6247de: 4 of 5 hand-typed counts stale.'
