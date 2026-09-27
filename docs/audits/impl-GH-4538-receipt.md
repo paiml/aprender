@@ -110,3 +110,20 @@ M0 fixed                                         rc 0    8 passed
 M4 lookup without lexical() (the round-1 code)   rc 101  a_binding_that_reaches_a_refused_copy_through_dot_dot_is_still_refused FAILED
 clippy -p aprender-contracts --lib --tests -D warnings rc 0; fmt rc 0; pv extract contracts --check rc 0
 ```
+
+## Quorum round 2 → fix
+
+Round 2 (on 20a19f60d2) returned sonnet FAIL, sonnet PASS, haiku PASS. The FAIL: `RefusedStem.paths` lists every copy
+of the stem, including the kept top-level file, so the refused-binding set also caught a top-level
+`contracts/binding.yaml` row naming, for example, `softmax-kernel-v1.yaml`. The fix restricts the set to paths
+under `<root>/crates`, the only copies that are dropped. The test is
+`a_top_level_binding_to_a_refused_stems_kept_top_level_file_is_not_refused`.
+
+```
+M0                                          rc 0
+M5 filter removed (the round-2 code)        rc 101  a_top_level_binding_to_a_refused_stems_kept_top_level_file_is_not_refused FAILED
+fmt 0 · clippy (both crates) 0 · pv extract 0 · census 0 · readme_sync 0 · extract --check 0 · pv lint 0 · aprender-contracts-cli tests 0 · readme_contract 0
+```
+
+contracts.nt is byte-unchanged by this fix. On the real corpus, no top-level binding row that was wrongly refused had
+produced an edge. The defect was real in principle and is now pinned by a test.

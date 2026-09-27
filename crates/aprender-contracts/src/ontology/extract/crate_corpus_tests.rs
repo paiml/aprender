@@ -203,3 +203,29 @@ fn a_binding_that_reaches_a_refused_copy_through_dot_dot_is_still_refused() {
         stats.refused_bindings
     );
 }
+
+#[test]
+fn a_top_level_binding_to_a_refused_stems_kept_top_level_file_is_not_refused() {
+    let t = fixture();
+    write(
+        t.path(),
+        "contracts/binding.yaml",
+        "version: \"1.0.0\"\ntarget_crate: top\nbindings:\n\
+         - contract: diff-v1.yaml\n  equation: e\n  module_path: top::m\n  function: f\n  status: implemented\n",
+    );
+    let mut g = crate::ontology::rdf::Graph::new();
+    let stats = code::extract(&t.path().join("contracts"), &mut g);
+    assert!(
+        stats
+            .refused_bindings
+            .iter()
+            .all(|r| !r.starts_with("contracts/binding.yaml")),
+        "{:?}",
+        stats.refused_bindings
+    );
+    assert!(
+        g.to_ntriples()
+            .contains(&format!("<{}>", iri("contract", "diff-v1"))),
+        "the kept top-level diff-v1 is bound"
+    );
+}

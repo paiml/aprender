@@ -667,10 +667,14 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> CodeStats {
     let ws = Workspace::scan(root);
     let mut resolver = Resolver::new(&ws);
     let mut stats = CodeStats::default();
+    let crates_dir = lexical(&root.join("crates"));
     let refused: std::collections::BTreeSet<PathBuf> = super::pv_contract::corpus(contract_dir)
         .refused
         .iter()
         .flat_map(|r| r.paths.iter().map(|p| lexical(&root.join(p))))
+        // Only the dropped crate copies: a refused stem's top-level file stays in the graph, so a binding to it is
+        // kept (#4538 quorum r2 — `contracts/binding.yaml` → `softmax-kernel-v1.yaml`).
+        .filter(|p| p.starts_with(&crates_dir))
         .collect();
     for (file, registry) in registries(contract_dir) {
         stats.registries += 1;
