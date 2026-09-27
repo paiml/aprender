@@ -38,9 +38,7 @@ impl<'a> StCpuForward<'a> {
         Self {
             model,
             cache: None,
-            notices: vec![
-                "Backend: CPU (SafeTensors AprTransformer forward, #4269)".to_string(),
-            ],
+            notices: vec!["Backend: CPU (SafeTensors AprTransformer forward, #4269)".to_string()],
         }
     }
 }
@@ -94,9 +92,12 @@ impl ArchForward for StCpuForward<'_> {
     }
 
     fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
-        let cache = self.cache.as_mut().ok_or_else(|| RealizarError::InvalidShape {
-            reason: "safetensors session: the CPU state was never allocated".to_string(),
-        })?;
+        let cache = self
+            .cache
+            .as_mut()
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: "safetensors session: the CPU state was never allocated".to_string(),
+            })?;
         if start == 0 {
             cache.clear();
         }
