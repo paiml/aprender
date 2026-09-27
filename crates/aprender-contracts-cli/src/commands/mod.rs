@@ -9,6 +9,7 @@ pub mod coq;
 pub mod coverage;
 pub mod diff;
 pub mod discharge;
+pub mod discharge_kani;
 pub mod equations;
 pub mod explain;
 pub mod extract;

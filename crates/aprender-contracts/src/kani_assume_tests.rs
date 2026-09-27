@@ -146,3 +146,18 @@ fn count_tree_fails_closed_on_an_untokenizable_file() {
     std::fs::write(dir.path().join("bad.rs"), "fn f() { \"open").unwrap();
     assert!(matches!(count_tree(dir.path()), Err(CountError::Tokenize { path, .. }) if path == "bad.rs"));
 }
+
+#[test]
+fn ratchet_down_only_ever_lowers_and_never_admits_a_new_file() {
+    let old = baseline_of(&count_of(&[("fell.rs", 3), ("rose.rs", 1), ("gone.rs", 2), ("same.rs", 4)]), "old");
+    let now = count_of(&[("fell.rs", 1), ("rose.rs", 5), ("same.rs", 4), ("new.rs", 7)]);
+    let b = ratchet_down(&now, &old, "make kani-ratchet");
+    assert_eq!(
+        b,
+        baseline_of(&count_of(&[("fell.rs", 1), ("rose.rs", 1), ("same.rs", 4)]), "make kani-ratchet")
+    );
+    b.consistent().unwrap();
+    // The rewritten baseline still rejects what rose and what is new: the ratchet cannot launder a rise.
+    let paths: Vec<_> = rises(&now, &b).into_iter().map(|r| r.path).collect();
+    assert_eq!(paths, ["new.rs", "rose.rs"]);
+}
