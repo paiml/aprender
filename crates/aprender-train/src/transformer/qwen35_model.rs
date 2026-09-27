@@ -318,6 +318,10 @@ fn load_layer(g: &Gguf, i: usize, hidden_dim: usize, eps: f32) -> Result<Qwen35L
     })
 }
 
+#[path = "qwen35_lora.rs"]
+mod lora;
+pub use lora::{LoraSlot, LoraTarget, Qwen35Lora};
+
 #[cfg(test)]
 #[path = "qwen35_model_tests.rs"]
 mod tests;

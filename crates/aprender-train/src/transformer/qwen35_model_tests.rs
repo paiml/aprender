@@ -377,3 +377,6 @@ fn real_model_descends_on_one_sentence() {
     assert!(losses[1] < losses[0], "the first step must descend: {losses:?}");
     assert!(last < losses[0] / 10.0, "5 steps must overfit the sentence: {losses:?}");
 }
+
+#[path = "qwen35_lora_tests.rs"]
+mod lora;
