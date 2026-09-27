@@ -375,6 +375,8 @@ fn a_clean_tree_checks_green_with_no_decline() {
     let r = fx.check(true);
     assert!(!r.reject && r.decline.is_none(), "{:?}", r.lines);
     assert!(has(&r, "UNRESOLVED-LABEL (0) (listed 0)"), "{:?}", r.lines);
+    // The summary's escapes_ok/axioms_ok read these flags, not the FAIL lines.
+    assert_eq!((r.escapes_ok, r.axioms_fresh), (Some(true), Some(true)));
 }
 
 #[test]
@@ -395,6 +397,7 @@ fn check_rejects_an_unlisted_escape_found_on_disk() {
         "{:?}",
         r.lines
     );
+    assert_eq!((r.escapes_ok, r.axioms_fresh), (Some(false), Some(true)));
 }
 
 #[test]
@@ -491,6 +494,7 @@ fn a_stale_axioms_file_is_red() {
     std::fs::write(&p, format!("{text}-- edit\n")).expect("write");
     let r = fx.check(false);
     assert!(r.reject && has(&r, "STALE Axioms.lean"), "{:?}", r.lines);
+    assert_eq!((r.escapes_ok, r.axioms_fresh), (Some(true), Some(false)));
 }
 
 #[test]
