@@ -1,0 +1,162 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §4 rule 4, §7 OBS-07, R-10'
+  - 'contracts/apr-perf-red-rules-v1.yaml — theta, admissibility and calibration are OBS-06, reused, never re-derived'
+  - 'contracts/apr-perf-ledger-v1.yaml — the rows a baseline points at'
+  - 'scripts/obs_baseline.sh — writer and check; `--self-test` is the case table'
+  - 'scripts/check_obs_baseline_single_writer.sh — the single-writer guard'
+  - 'scripts/release/autopilot.sh step `baseline` — the one writer (T-0)'
+  - 'aprender#4494 — OBS-07'
+  description: >
+    The release-tag perf baseline (spec §4 rule 4). The rolling rules of OBS-06 compare
+    tonight with the last 7 nights, so a slow drift carries the median with it and never
+    trips. Rule 4 compares tonight's apr / llama.cpp ratio with the ratio recorded at the
+    previous release tag, which does not move. The release train writes it once per tag and
+    nothing edits it. Report-only through 0.70 (spec §4 blocking policy, S-7).
+
+    The done-when "a baseline row exists for the first tag after OBS-05" is NOT claimed
+    here: no real ledger rows exist yet (OBS-05). Every number below is from fixtures.
+
+equations:
+  baseline_file:
+    formula: |
+      B(tag) = { schema, tag, build_tags, night, writer = release-train,
+                 series: [ { host, backend, request_id, ts, apr_tag, crate_tarball_sha256,
+                             binary_sha256, model_sha256, llama_build_commit, ratio } ] }
+      written  <=>  forall s in DECLARED: admissible row r(s, night) (OBS-06) AND r.apr_tag in build_tags
+      build_tags = tags on the release commit (a final cut from an rc sha uses the rc rows)
+      path = store/apr-perf-baseline-v1.<tag>.json, created by link(2), mode 0444, never edited
+    domain: 'one release tag'
+    codomain: 'one file, or a refusal (exit 3) that writes nothing'
+    invariants:
+    - 'an incomplete baseline is never written: one absent declared series refuses the whole file'
+    - 'a second write for the same tag exits 4 and leaves the first file byte-identical'
+
+  baseline_selection:
+    formula: |
+      B* = argmax over files with B.night <= tonight of (B.night, B.tag by version order)
+      a file in the store that is not a baseline => RED baseline_invalid (no silent fallback)
+    domain: 'the baseline store, tonight'
+    codomain: 'one baseline or none'
+
+  baseline_verified:
+    formula: |
+      forall b in B*.series: exists r in ledger with r.request_id = b.request_id
+        AND (r.host, r.backend, r.model_sha256, r.llama.build_commit) = b.(...)
+        AND |b.ratio[m] - ratio(r)[m]| / ratio(r)[m] <= 1e-6 for every metric
+      else RED baseline_unverified
+    domain: 'B* against the ledger'
+    codomain: bool
+    invariants:
+    - 'the baseline is re-derived from the ledger, never believed: an edited ratio is RED'
+
+  baseline_red:
+    formula: |
+      worse(x, b) = (x - b) / b  for load, ttft;  (b - x) / b  for prefill, decode
+      per series s, metric m, measured by OBS-06 (calibrating => never RED):
+        identity(s tonight) != identity(B*.s)  => identity_mismatch, refused, not RED (S-4)
+        worse(ratio tonight, B*.s.ratio[m]) > theta(s, m)  => RED baseline
+      theta(s, m) is OBS-06's, for tonight
+    domain: 'one host x backend x metric'
+    codomain: bool
+
+  single_writer:
+    formula: |
+      invokers(obs_baseline.sh write) over shell, Makefile, CI yaml, Rust, TOML = { scripts/release/autopilot.sh }
+      files under crates/ naming the baseline file or its writer = {}   (R-10)
+    domain: 'the tracked tree'
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-OBS-BASE-001
+  rule: slow drift is RED against the tag, while the rolling rules stay GREEN
+  prediction: 'decode falls 3% of the tag ratio per week for 4 weeks after the tag: OBS-06 alone is GREEN, rule 4 is RED on decode; at 3 weeks (8.6%, between theta and 2 theta) it is RED; at 1 week (2.6%) GREEN.'
+  test: 'bash scripts/obs_baseline.sh --self-test  # drift-4w-rolling-rules-green, drift-4w-baseline-red, drift-3w-*, drift-1w-*'
+  if_fails: 'the spec §3 falsifier holds: 12% lost over a month ships with a green nightly'
+  mutation: 'compare against 2 theta (two-theta) — killed'
+- id: FALSIFY-OBS-BASE-002
+  rule: direction per metric, and a speed-up is GREEN
+  prediction: 'ttft +8% over the tag is RED; decode 33% faster and ttft faster is GREEN.'
+  test: 'bash scripts/obs_baseline.sh --self-test  # ttft-higher-is-worse, faster-than-tag-green'
+  if_fails: 'a speed-up is filed as a regression'
+  mutation: 'lower-is-worse metrics use (x - b) / b (direction) — killed'
+- id: FALSIFY-OBS-BASE-003
+  rule: no comparison across identity, and none while calibrating
+  prediction: 'tonight on a different model_sha256 at 0.5 of the tag is identity_mismatch and GREEN; a 50% dip while OBS-06 is calibrating is GREEN.'
+  test: 'bash scripts/obs_baseline.sh --self-test  # model-change-refused-not-red, calibrating-never-red'
+  if_fails: 'a model swap reads as a regression (S-4), or an uncalibrated theta fires'
+  mutation: 'drop the identity check (no-identity); compare calibrating metrics (compare-calibrating) — both killed'
+- id: FALSIFY-OBS-BASE-004
+  rule: the baseline is re-derived from the ledger, never believed
+  prediction: 'a baseline whose decode ratio was edited is RED baseline_unverified; a baseline whose row left the ledger is RED; an unparseable baseline file is RED baseline_invalid.'
+  test: 'bash scripts/obs_baseline.sh --self-test  # edited-baseline-red, baseline-row-gone-red, corrupt-baseline-red'
+  if_fails: 'a hand-edited baseline moves the goalposts silently'
+  mutation: 'skip verification (no-verify); check only the type of the ratio (ratio-believed); skip corrupt files (corrupt-skipped) — all killed'
+- id: FALSIFY-OBS-BASE-005
+  rule: the previous tag is the latest at or before tonight
+  prediction: 'with v0.70.0 (night 14) and v0.71.0 (night 30) in the store, night 31 uses v0.71.0 and night 20 uses v0.70.0; an empty store is GREEN no_baseline.'
+  test: 'bash scripts/obs_baseline.sh --self-test  # previous-tag-is-latest, future-tag-ignored, no-baseline-yet'
+  if_fails: 'tonight is judged against a tag it has not reached, or against a stale one'
+  mutation: 'pick the earliest (earliest-tag); admit a future baseline (future-tag) — both killed'
+- id: FALSIFY-OBS-BASE-006
+  rule: written once, complete, from the tagged build
+  prediction: 'a second write exits 4 and leaves the file unchanged, also before reading its input and also through a name already taken by a symlink; the file is 0444; one declared series with no row exits 3 and writes nothing; rows of another build exit 3; an rc tag on the release commit is accepted for the final.'
+  test: 'bash scripts/obs_baseline.sh --self-test  # second-write-*, existing-checked-before-input, create-once-by-link, written-once-readonly, undeclared-*, foreign-build-*, rc-rows-for-final'
+  if_fails: 'the baseline is edited after the tag, or recorded from a partial or wrong build'
+  mutation: 'ln -f (overwrite); drop the pre-check (precheck-only); drop chmod (no-chmod); admit absent series (write-absent); admit foreign rows (write-foreign); accept a tag outside --build-tags (tag-not-in-build) — all killed'
+- id: FALSIFY-OBS-BASE-007
+  rule: the release train is the single writer and apr is never a writer
+  prediction: 'a CI script or a Makefile recipe invoking the writer is RED; a crate naming the baseline file (literal or templated) is RED; a crate citing the contract is GREEN; a release train that does not invoke the writer is RED; comment lines and untracked files are not invocations.'
+  test: 'bash scripts/check_obs_baseline_single_writer.sh --self-test  # 15 matcher rows + 9 tree fixtures'
+  if_fails: 'a nightly re-writes the baseline to tonight and rule 4 compares tonight with itself (R-10)'
+  mutation: 'no comment filter, no crates scan, no writer check, everyone is the writer, no Makefile surface, no word boundary, literal-only subject pattern — all 7 killed'
+- id: FALSIFY-OBS-BASE-008
+  rule: report-only through 0.70, and RED is not a crash code
+  prediction: 'RED exits 0 without --enforce and 10 with it; usage errors exit 2.'
+  test: 'bash scripts/obs_baseline.sh --self-test  # enforce-red-exits-10, report-only-exits-0, bad-*-exits-2'
+  if_fails: 'a report-only rule blocks a release, or a crash reads as RED'
+  mutation: 'return 1 on RED (enforce-exit-1) — killed'
+
+proof_obligations:
+- type: invariant
+  property: 'A slow drift beyond theta from the tag is RED (FALSIFY-OBS-BASE-001)'
+  formal: '¬(worse(x, b_tag) ≤ θ) ⇒ RED'
+- type: soundness
+  property: 'The baseline is re-derived from the ledger (FALSIFY-OBS-BASE-004)'
+  formal: '∀ b ∈ B: ∃ r ∈ ledger: r.request_id = b.request_id ∧ |b.ratio − ratio(r)| ≤ 1e-6 · ratio(r)'
+- type: invariant
+  property: 'Written once and complete (FALSIFY-OBS-BASE-006)'
+  formal: 'written(B) ⇒ ∀ s ∈ DECLARED: ∃ r ∈ B.series: r.host = s.host ∧ r.backend = s.backend'
+- type: invariant
+  property: 'Single writer (FALSIFY-OBS-BASE-007)'
+  formal: '∀ f ∈ tree: invokes(f, write) ⇒ f = release-train'
+
+qa_gate:
+  id: F-OBS-BASE-GATE-001
+  name: 'rule 4 turns RED on a slow drift the rolling rules miss, and only the release train writes the baseline'
+  description: 'OBS-07 acceptance on fixtures: both case tables pass and every registered mutant is killed.'
+  checks:
+  - slow_drift_red
+  - metric_direction
+  - identity_and_calibration
+  - baseline_reverified
+  - previous_tag_selection
+  - write_once_complete
+  - single_writer
+  - report_only_exit_codes
+  pass_criteria: >
+    `bash scripts/obs_baseline.sh --self-test` passes (38/38 on 2026-09-27) with its 16
+    registered mutants killed, and `bash scripts/check_obs_baseline_single_writer.sh
+    --self-test` passes (24/24) with its 7 killed. The spec §7 done-when also requires a
+    baseline for the first real tag after OBS-05. That is NOT met and is gated on OBS-05 rows.
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: proposed
+  notes: 'Tested on fixtures only. No real ledger rows exist yet (OBS-05), so no real baseline has been written.'

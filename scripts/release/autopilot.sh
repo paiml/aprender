@@ -6,7 +6,7 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts close
+#   steps: wait deep dogfood models tag baseline cleanroom assets preflight dryrun cascade install hosts close
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -22,7 +22,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the r
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts close)
+STEPS=(wait deep dogfood models tag baseline cleanroom assets preflight dryrun cascade install hosts close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -173,6 +173,23 @@ if run_step tag; then
   say "RELEASED $(gh release view "$T" --repo $REPO --json url -q .url)"
 fi
 
+
+# 3a. baseline (T-0, APR-OBS-001 §4 rule 4, OBS-07 #4494): the train is the ONLY writer of the
+#     release-tag perf baseline (scripts/check_obs_baseline_single_writer.sh). The rows must be
+#     measured on this build: any tag on the release commit, so a final cut from an rc sha uses the
+#     rc's nightly rows. Report-only through 0.70 (spec §4, S-7): a refusal is said, never a STOP.
+#     No ledger, declaration or store configured on this host = NotRun, said by name.
+if run_step baseline; then
+  if [ -z "${OBS_PERF_LEDGER:-}" ] || [ -z "${OBS_DECLARED:-}" ] || [ -z "${OBS_BASELINE_STORE:-}" ]; then
+    say "BASELINE NotRun{NoDeclaredExecutor}: OBS_PERF_LEDGER, OBS_DECLARED and OBS_BASELINE_STORE are not all set"
+  else
+    build_tags=$(git tag --points-at "$MC" | tr '\n' ',')
+    obs_night=${OBS_BASELINE_NIGHT:-$(jq -rn '[inputs | (try fromjson catch null) | .ts? // empty | strings | .[0:10]] | max // empty' -R "$OBS_PERF_LEDGER" 2>/dev/null)}
+    bash "$REPO_ROOT/scripts/obs_baseline.sh" write --ledger "$OBS_PERF_LEDGER" --declared "$OBS_DECLARED" \
+      --night "$obs_night" --tag "$T" --build-tags "${build_tags%,}" --store "$OBS_BASELINE_STORE" >> "$LOG" 2>&1
+    rc=$?; say "BASELINE $T night=${obs_night:-none} rc=$rc (0 written, 3 refused, 4 exists; report-only)"
+  fi
+fi
 
 # 3b. cleanroom (T-3): dispatch paiml/infra clean-room.yml ON THE TAG (infra#621 ref input), record the
 #     run id, wait, require the `clean-room (aprender)` job green. The run's own first step asserts

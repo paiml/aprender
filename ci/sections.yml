@@ -1259,6 +1259,15 @@ jobs:
       # planted noise stays GREEN, liveness is judged against the declared series. jq-only.
       - name: Perf-ledger RED rules case table (OBS-06, #4493)
         run: bash scripts/obs_red_rules.sh --self-test
+      # OBS-07 (#4494): §4 rule 4, the release-tag baseline. A 3%/week drift for 4 weeks stays GREEN
+      # under the rolling rules above and is RED against the tag; the baseline is written once by the
+      # release train and re-derived from the ledger on every check. Report-only through 0.70. jq-only.
+      - name: Perf-ledger release-tag baseline case table (OBS-07, #4494)
+        run: bash scripts/obs_baseline.sh --self-test
+      # R-10: only scripts/release/autopilot.sh may invoke `obs_baseline.sh write`, nothing under
+      # crates/ may name the baseline, and the train must invoke it (an absent writer is RED).
+      - name: Perf-ledger baseline single writer (OBS-07, #4494)
+        run: bash scripts/check_obs_baseline_single_writer.sh --self-test && bash scripts/check_obs_baseline_single_writer.sh
       # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
       # the command refuses — `apr chat` silently loaded its toy demo model for a
       # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)
