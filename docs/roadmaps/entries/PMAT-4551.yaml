@@ -1,0 +1,22 @@
+- id: PMAT-4551
+  github_issue: 4551
+  item_type: task
+  title: 'PERF-HIST-001: build APR-OBS OBS-05 perf ledger inputs — raw-samples-v1 emitter + pv contract (aprender#4551)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-27T15:00:00Z
+  updated: 2026-09-28T00:00:00Z
+  spec: docs/specifications/APR-OBS-001-dogfood-observability.md
+  acceptance_criteria:
+  - 'This PR (Refs #4551, not Closes): APR-OBS-001 §2.7 subject side only. `apr bench --emit raw-samples-v1` writes raw per-iteration samples plus the identity the subject can know, and no derived statistic'
+  - 'AC-1 (contract): contracts/apr-raw-samples-v1.yaml validates a real committed emit; a derived key, a null identity field, a short digest, an empty sample list, an undeclared backend and a foreign schema are each refused (FALSIFY-RAWS-001)'
+  - 'AC-2 (emitter refuses, never invents): a bench path without per-iteration samples, or samples that do not match the timed iterations, is refused (FALSIFY-RAWS-002)'
+  - 'Out of scope here, later PRs on #4551: the apr-perf-ledger-v1 row schema, the recorder, backfill provenance, and the fleet timer (infra-8d)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3598
