@@ -67,9 +67,9 @@ falsification_tests:
   if_fails: the test does not actually exercise the alias map (vacuous gate)
 - id: FALSIFY-TAH-003
   rule: head_dim follows the family contract
-  prediction: 'for every family YAML under contracts/model-families/ that declares head_dim, from_apr_metadata(family) yields that head_dim; qwen3 (128) unchanged'
-  test: 'PENDING — not in the #4552 change. Table test over contracts/model-families/*.yaml; lands with R2 (a refused family cannot reach from_apr_metadata meanwhile)'
-  if_fails: a prefix rule overrides a sibling family (the qwen3 → qwen3_5 head_dim=128 class)
+  prediction: 'for every size of every family YAML under contracts/model-families/ that declares head_dim, from_apr_metadata(family).with_head_dim(declared) yields it (qwen3_5 = 256); a hybrid is never given dense qwen3''s 128 by prefix; the APR-header and HF config.json resolvers in apr-cli carry head_dim (Qwen3-4B: 128, not 2560/32 = 80)'
+  test: 'cargo test -p aprender-train --lib falsify_tah_003 (table: >= 20 sizes, >= 1 hybrid, >= 3 with head_dim != hidden/heads) and cargo test -p apr-cli --lib falsify_tah_003. Mutations: with_head_dim a no-op -> all three FAIL; bare starts_with("qwen3") prefix restored -> the table FAILs on qwen3_5; revert'
+  if_fails: a prefix rule overrides a sibling family (the qwen3 -> qwen3_5 head_dim=128 class), or a resolver reads head_dim and drops it
 - id: FALSIFY-TAH-004
   rule: Refusal precedes I/O
   prediction: 'a qwen35 .apr whose tensor section is truncated still yields UnsupportedArch, not an I/O or shape error'

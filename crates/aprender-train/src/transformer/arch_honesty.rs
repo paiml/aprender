@@ -103,4 +103,79 @@ mod tests {
             assert!(check_trainable_arch(arch).is_ok(), "{arch} must not be refused");
         }
     }
+
+    /// FALSIFY-TAH-003: for every size of every family in
+    /// `contracts/model-families/*.yaml`, the metadata path resolves the family's
+    /// declared `head_dim` (qwen3_5 = 256, gemma ≠ hidden/heads), and a hybrid is
+    /// never handed dense qwen3's 128 by prefix.
+    #[test]
+    fn falsify_tah_003_head_dim_is_the_familys_own() {
+        use crate::transformer::TransformerConfig;
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families");
+        let (mut checked, mut differs, mut hybrid) = (0, 0, 0);
+        let mut paths: Vec<_> = std::fs::read_dir(&dir)
+            .expect("model-families dir")
+            .map(|e| e.expect("entry").path())
+            .filter(|p| p.extension().is_some_and(|x| x == "yaml"))
+            .collect();
+        paths.sort();
+        for path in paths {
+            let family = path.file_stem().and_then(|s| s.to_str()).expect("utf-8 stem").to_string();
+            let text = std::fs::read_to_string(&path).expect("read yaml");
+            let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) else { continue };
+            let Some(sizes) = doc.get("size_variants").and_then(|v| v.as_mapping()) else {
+                continue;
+            };
+            for (name, v) in sizes {
+                let field =
+                    |k: &str| v.get(k).and_then(serde_yaml::Value::as_u64).map(|n| n as usize);
+                let (Some(hidden), Some(heads), Some(head_dim)) =
+                    (field("hidden_dim"), field("num_heads"), field("head_dim"))
+                else {
+                    continue;
+                };
+                if heads == 0 || head_dim == 0 {
+                    continue;
+                }
+                let at = format!("{family}/{name:?}");
+                let resolve = |hd: Option<usize>| {
+                    TransformerConfig::from_apr_metadata(
+                        Some(hidden),
+                        Some(heads),
+                        field("num_kv_heads"),
+                        Some(field("intermediate_dim").unwrap_or(4 * hidden)),
+                        Some(field("num_layers").unwrap_or(1)),
+                        Some(field("vocab_size").unwrap_or(32_000)),
+                        None,
+                        None,
+                        None,
+                        Some(&family),
+                    )
+                    .expect("complete metadata")
+                    .with_head_dim(hd)
+                };
+                assert_eq!(
+                    resolve(Some(head_dim)).head_dim(),
+                    head_dim,
+                    "{at}: declared head_dim lost"
+                );
+                if unmodelled_layer(&family).is_some() {
+                    hybrid += 1;
+                    let guessed = resolve(None).head_dim();
+                    assert!(
+                        guessed != 128 || head_dim == 128,
+                        "{at}: dense qwen3's 128 applied by prefix"
+                    );
+                }
+                differs += usize::from(head_dim != hidden / heads);
+                checked += 1;
+            }
+        }
+        // Not vacuous: the table must reach real sizes, the hybrid, and a family
+        // whose head_dim is not hidden/heads.
+        assert!(checked >= 20, "only {checked} sizes checked");
+        assert!(hybrid >= 1, "qwen3_5 sizes not reached");
+        assert!(differs >= 3, "only {differs} sizes with head_dim != hidden/heads");
+    }
 }

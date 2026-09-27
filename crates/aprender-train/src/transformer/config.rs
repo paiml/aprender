@@ -295,7 +295,11 @@ impl TransformerConfig {
         // Qwen3 family: head_dim=128 is explicit, not hidden/heads
         // Qwen2 family: use_bias=true
         let (use_bias, head_dim_override) = match architecture {
-            Some(a) if a.starts_with("qwen3") => {
+            // TAH-003: only the dense qwen3 family. A hybrid (qwen3.5 = 256) is not
+            // qwen3 by prefix; its head_dim must come from `with_head_dim`.
+            Some(a)
+                if a.starts_with("qwen3") && super::arch_honesty::unmodelled_layer(a).is_none() =>
+            {
                 // Qwen3: no bias, explicit head_dim=128 when hidden/heads != 128
                 let computed = hidden / heads;
                 let override_dim = if computed == 128 { None } else { Some(128) };
@@ -327,6 +331,22 @@ impl TransformerConfig {
             hf_model_type: None,
             tie_word_embeddings: false,
         })
+    }
+
+    /// Set the per-head dimension from the model's own metadata (APR `head_dim`,
+    /// HF `config.json` `head_dim`). `None` keeps the current resolution.
+    ///
+    /// TAH-003 (train-arch-honesty-v1): the model's declared value wins over any
+    /// family-name rule. Before this, the APR and HF resolvers read `head_dim`
+    /// and dropped it, so Qwen3-4B (2560/32 = 80, declared 128) built attention
+    /// with the wrong Q/K/V width.
+    #[must_use]
+    pub fn with_head_dim(mut self, head_dim: Option<usize>) -> Self {
+        if let Some(d) = head_dim {
+            let computed = self.hidden_size / self.num_attention_heads;
+            self.head_dim_override = (d != computed).then_some(d);
+        }
+        self
     }
 
     /// Resolve config from a model size string. Errors on unknown sizes.

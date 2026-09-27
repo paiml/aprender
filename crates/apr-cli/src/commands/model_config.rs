@@ -36,7 +36,8 @@ pub(crate) fn read_apr_architecture(
         metadata.rms_norm_eps,
         metadata.rope_theta,
         metadata.architecture.as_deref(),
-    ))
+    )
+    .map(|c| c.with_head_dim(metadata.head_dim)))
 }
 
 /// Parse the APR v2 metadata section of `path` (header + metadata JSON only).
@@ -231,7 +232,7 @@ fn read_hf_config_file(config_path: &Path) -> Option<entrenar::transformer::Tran
         .get("rope_theta")
         .and_then(|v| v.as_f64())
         .unwrap_or(10000.0) as f32;
-    let _head_dim = json
+    let head_dim = json
         .get("head_dim")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
@@ -240,23 +241,26 @@ fn read_hf_config_file(config_path: &Path) -> Option<entrenar::transformer::Tran
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    Some(entrenar::transformer::TransformerConfig {
-        hidden_size,
-        num_attention_heads: num_heads,
-        num_kv_heads,
-        intermediate_size,
-        num_hidden_layers: num_layers,
-        vocab_size,
-        max_position_embeddings: max_pos,
-        rms_norm_eps,
-        rope_theta,
-        use_bias,
-        head_dim_override: None,
-        architecture: entrenar::transformer::ModelArchitecture::Decoder,
-        hf_architecture: None,
-        hf_model_type: None,
-        tie_word_embeddings: false,
-    })
+    Some(
+        entrenar::transformer::TransformerConfig {
+            hidden_size,
+            num_attention_heads: num_heads,
+            num_kv_heads,
+            intermediate_size,
+            num_hidden_layers: num_layers,
+            vocab_size,
+            max_position_embeddings: max_pos,
+            rms_norm_eps,
+            rope_theta,
+            use_bias,
+            head_dim_override: None,
+            architecture: entrenar::transformer::ModelArchitecture::Decoder,
+            hf_architecture: None,
+            hf_model_type: None,
+            tie_word_embeddings: false,
+        }
+        .with_head_dim(head_dim),
+    )
 }
 
 /// Resolve TransformerConfig from `--model-size` string only.
@@ -574,4 +578,57 @@ fn read_sibling_hf_config(file: &Path) -> Option<entrenar::transformer::Transfor
     sibling_config_candidates(file)
         .iter()
         .find_map(|c| read_hf_config_file(c))
+}
+
+/// FALSIFY-TAH-003 (train-arch-honesty-v1): both resolvers carry the model's own
+/// `head_dim`. Qwen3-4B declares 128, and 2560 / 32 = 80.
+#[cfg(test)]
+mod head_dim_tests {
+    use super::*;
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
+
+    const QWEN3_4B: (usize, usize, usize) = (2560, 32, 128);
+
+    #[test]
+    fn falsify_tah_003_apr_header_head_dim_reaches_the_config() {
+        let (hidden, heads, head_dim) = QWEN3_4B;
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let path = dir.path().join("m.apr");
+        // A non-qwen3 architecture string, so no family-name rule can supply 128.
+        let metadata = AprV2Metadata {
+            architecture: Some("llama".to_string()),
+            hidden_size: Some(hidden),
+            num_heads: Some(heads),
+            num_kv_heads: Some(8),
+            intermediate_size: Some(9728),
+            num_layers: Some(36),
+            vocab_size: Some(151_936),
+            head_dim: Some(head_dim),
+            ..AprV2Metadata::new("tah-003")
+        };
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_tensor("w", TensorDType::F32, vec![1], vec![0u8; 4]);
+        std::fs::write(&path, writer.write().expect("write apr")).expect("write to disk");
+        let config = read_apr_architecture(&path)
+            .expect("modelled")
+            .expect("complete");
+        assert_eq!(config.head_dim(), head_dim);
+        assert_eq!(config.q_dim(), heads * head_dim);
+    }
+
+    #[test]
+    fn falsify_tah_003_hf_config_head_dim_reaches_the_config() {
+        let (hidden, heads, head_dim) = QWEN3_4B;
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let cfg = dir.path().join("config.json");
+        let json = format!(
+            r#"{{"hidden_size":{hidden},"num_attention_heads":{heads},"num_key_value_heads":8,
+                "intermediate_size":9728,"num_hidden_layers":36,"vocab_size":151936,
+                "head_dim":{head_dim}}}"#
+        );
+        std::fs::write(&cfg, json).expect("write config.json");
+        let config = read_hf_config_file(&cfg).expect("parsed");
+        assert_eq!(config.head_dim(), head_dim);
+        assert_eq!(config.q_dim(), heads * head_dim);
+    }
 }

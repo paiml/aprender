@@ -732,6 +732,7 @@ fn run_cuda_backend(
         teacher_meta.rope_theta,
         teacher_meta.architecture.as_deref(),
     )
+    .map(|c| c.with_head_dim(teacher_meta.head_dim))
     .ok_or_else(|| {
         CliError::ValidationFailed(
             "teacher .apr metadata missing required fields (hidden_size / num_heads / \
@@ -765,6 +766,7 @@ fn run_cuda_backend(
         student_meta.rope_theta,
         student_meta.architecture.as_deref(),
     )
+    .map(|c| c.with_head_dim(student_meta.head_dim))
     .ok_or_else(|| {
         CliError::ValidationFailed(
             "student .apr metadata missing required fields — see teacher error message".to_string(),
