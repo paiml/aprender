@@ -663,21 +663,14 @@ mod one_detector_tests {
     #[test]
     fn a_real_gguf_renders_its_own_template_equal_to_llama_cpp_3990() {
         // #4129: read at RUN time; an include_str! of a sibling crate's file cannot compile
-        // from the published aprender-orchestrate tarball. In tree a missing oracle FAILS;
-        // out of tree (no workspace contracts/) the test SKIPs by name.
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        if !root.join("contracts").is_dir() {
-            eprintln!(
-                "SKIP a_real_gguf_renders_its_own_template_equal_to_llama_cpp_3990: out of tree \
-                 (no workspace contracts/ beside this crate) - the #3990 oracle lives in \
-                 aprender-serve's fixtures, which a published crate does not carry (#4129)"
-            );
+        // from the published aprender-orchestrate tarball. The shared in-tree rule (#4175): in
+        // tree a missing oracle FAILS; out of tree the test SKIPs by name.
+        let Some(oracle) = provable_contracts::workspace_file_or_skip!(
+            "a_real_gguf_renders_its_own_template_equal_to_llama_cpp_3990",
+            "crates/aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json",
+        ) else {
             return;
-        }
-        let oracle_path = root
-            .join("crates/aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json");
-        let oracle = std::fs::read_to_string(&oracle_path)
-            .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", oracle_path.display()));
+        };
         let cells: Vec<serde_json::Value> = serde_json::from_str(&oracle).expect("oracle parses");
         let mut ran = 0usize;
         for c in cells.iter().filter(|c| c["thinking"] == false) {
