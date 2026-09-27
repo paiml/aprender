@@ -14,7 +14,7 @@ metadata:
   references:
   - 'crates/aprender-serve/src/api/mod_create_demo.rs — Timings, PhaseTimings, PhaseClock, build_trace_data_phased'
   - 'crates/aprender-serve/src/api/request_log.rs — RequestRecord, emit, prometheus_histograms, set_timings_log'
-  - 'scripts/serve_timings_falsify.py — the live falsifier (F1, F2, F3, F5, F6, F7)'
+  - 'crates/aprender-serve/examples/serve_timings_falsify.rs — the live falsifier (F1, F2, F3, F5, F6, F7); its case table runs under cargo test -p aprender-serve --example serve_timings_falsify'
 equations:
   phase_split:
     formula: >-
@@ -101,17 +101,17 @@ falsification_tests:
   prediction: >-
     chat and completions, stream and non-stream, at max_tokens 1 and 32: the
     body or the SSE terminal chunk carries a non-null `timings`.
-  test: "python3 scripts/serve_timings_falsify.py --apr \"$APR\" --model <gguf> --out <dir> (column F1)"
+  test: "cargo run -p aprender-serve --example serve_timings_falsify -- --apr \"$APR\" --model <gguf> --out <dir> (column F1)"
   if_fails: a backend dropped its split; Prometheus reads null and the gate on prefill_ratio is blind
 - id: FALSIFY-SRV-TIM-002
   rule: timings counts equal usage
   prediction: "timings.prompt_n == usage.prompt_tokens and timings.predicted_n == usage.completion_tokens"
-  test: "python3 scripts/serve_timings_falsify.py ... (column F2)"
+  test: "serve_timings_falsify ... (column F2)"
   if_fails: the rates are computed over the wrong token counts
 - id: FALSIFY-SRV-TIM-003
   rule: the phases are positive and partition wall time
   prediction: "prompt_ms > 0, predicted_ms > 0 when predicted_n > 0, prompt_ms + predicted_ms <= client wall ms + 1"
-  test: "python3 scripts/serve_timings_falsify.py ... (column F3); cargo test -p aprender-serve --lib falsify_srv_tim_003 falsify_srv_tim_001_stop"
+  test: "serve_timings_falsify ... (column F3); cargo test -p aprender-serve --lib falsify_srv_tim_003 falsify_srv_tim_001_stop"
   if_fails: a phase was invented or double-counted
 - id: FALSIFY-SRV-TIM-004
   rule: an unmeasured backend is RED, never zero-filled
@@ -123,12 +123,12 @@ falsification_tests:
 - id: FALSIFY-SRV-TIM-005
   rule: the stderr log line equals the response
   prediction: "the `[request] ` line for the response id is JSON with prefill_ms/decode_ms/prompt_n/predicted_n equal to the response timings"
-  test: "python3 scripts/serve_timings_falsify.py ... (column F5); cargo test -p aprender-serve --lib request_log"
+  test: "serve_timings_falsify ... (column F5); cargo test -p aprender-serve --lib request_log"
   if_fails: the log and the response disagree; one of them is lying
 - id: FALSIFY-SRV-TIM-006
   rule: the --timings-log line equals the response and names its build
   prediction: "the JSONL line for the response id carries the same four values plus non-empty build and host"
-  test: "python3 scripts/serve_timings_falsify.py ... (column F6)"
+  test: "serve_timings_falsify ... (column F6)"
   if_fails: the NAS ledger records numbers the client never saw, or cannot say which binary produced them
 - id: FALSIFY-SRV-TIM-007
   rule: the client's X-Request-ID is echoed into every sink (APR-OBS-001 OBS-03)
@@ -136,5 +136,5 @@ falsification_tests:
     a request sent with X-Request-ID gets it back as a response header, and its
     `[request] ` stderr line and --timings-log line carry it as
     client_request_id, stream and non-stream.
-  test: "python3 scripts/serve_timings_falsify.py ... (column F7); cargo test -p aprender-serve --lib obs03"
+  test: "serve_timings_falsify ... (column F7); cargo test -p aprender-serve --lib obs03"
   if_fails: OBS-04 cannot join client lane rows to server rows; self-report agreement is unmeasurable

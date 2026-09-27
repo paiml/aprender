@@ -334,6 +334,10 @@ required-features = ["cuda"]
 name = "qwen35_prefill_parity"
 required-features = ["cuda"]
 
+# #4490 SRV-TIM-001: the live timings falsifier (R-5 port of scripts/serve_timings_falsify.py)
+[[example]]
+name = "serve_timings_falsify"
+
 [[example]]
 name = "performance_parity"
 
