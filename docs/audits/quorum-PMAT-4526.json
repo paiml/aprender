@@ -1,0 +1,307 @@
+{
+  "ticket": "PMAT-4526",
+  "base": "761d6247de5af26e2fd8bf6baef754b136d7429a",
+  "base_resolved": "761d6247de5af26e2fd8bf6baef754b136d7429a",
+  "base_note": "no origin/761d6247de5af26e2fd8bf6baef754b136d7429a exists; judged against the local ref",
+  "head": "636c98c5a765d61986c0a596169c3032bcff279e",
+  "diff_sha256": "a1eecacc0d35b40a6120b95013ad0522202efd7b2a8a02231dc67d4b5a1226a7",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 59930,
+  "prompt_sha256": "ab6b8451d9edd02dad2048ac188fc634aaaaaa271db04078f9fc4700bfa66f1e",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff extends the existing CONTRACT_COUNT-only generator to all five previously hand-typed README counts (CRATE_COUNT, CLI_COMMAND_COUNT, BOOK_CLI_CHAPTER_COUNT, BOOK_LIB_CHAPTER_COUNT, CRATES_DIR_COUNT), matching G1 (--list-blocks, --write refuses missing block exit 3 / zero instrument exit 2, --check exact), G3 (readme_contract.rs now compares every *_COUNT block against `readme_sync.sh --print-all`, allowing lag but never overstatement), and G4 (batch_fold.sh generalizes its count-conflict regex to any *_COUNT block; session_docs_commit.sh delegates to readme_sync.sh --write instead of sed-patching). I independently re-measured three of the five new counts against the actual tree (book/src/cli = 114, book/src/lib = 73, contracts census n_files = 1837, and CLI registry commands section = 112 excluding help) and all matched the README's new claims exactly — no overstatement found. The old duplicate hand-typed crate-directory count in the ASCII tree diagram was removed rather than left as a second, ungenerated site, closing a drift vector the ticket's own commit message calls out. Supporting guard scripts (check_readme_claims.sh, check_readme_numeric_claims.sh, check_row_pr_write_set.sh, check_batch_fold.sh) were all updated to strip/handle the new generic markers, each with an added case-table row. The G2 PR-edit guard is explicitly out of scope here (assigned to a different branch/session per the roadmap note), consistent with ticket's 50%-progress status.",
+      "findings": [
+        {
+          "file": "scripts/batch_fold.sh",
+          "line": 73,
+          "claim": "When README.md carries two occurrences of the SAME *_COUNT name with different values on the `ours` side of a merge (e.g. a pre-fold drift between the two CONTRACT_COUNT sites), `readme_counts_only`'s per-name sed pass applies globally (`/g`) per name, so the later-sorted value silently overwrites the earlier occurrence's value for all instances of that name rather than restoring each occurrence's own captured value.",
+          "grounding": "cited",
+          "fix": "Not blocking: the immediately following `--regen` step rewrites every block from the live measurement, so the transient merged value is self-healing; flagged for awareness only, no test in check_batch_fold.sh currently exercises multi-instance same-name divergence."
+        }
+      ],
+      "raw_bytes": 5447,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ab6b8451d9edd02dad2048ac188fc634aaaaaa271db04078f9fc4700bfa66f1e",
+      "trace": {
+        "input_sha256": "7487f4297b2969bf9dc6a3858fab5a3028e9cafa41d93540e3220477caea900b",
+        "output_sha256": "6f0078ec49b32c07aae857f9d7765a00acfcee5750f73d2c1096f1a180916aca",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "GEN-001 widens the single-generator pattern from the CONTRACT_COUNT block to all five derived README counts (crate, contract, CLI command, book CLI/lib chapters, crate-directory). Verified: readme_sync.sh's BLOCKS/measure_*/--list-blocks/--print-all/--check/--write logic is self-consistent and matches the G1 exit-code contract (3 for missing block, 2 for zero/unmeasured); readme_contract.rs's new generator-driven test correctly strips markers and compares against --print-all; batch_fold.sh's generalized COUNT_RE with backreferences correctly extends the fold-as-generated behavior to all *_COUNT blocks; session_docs_commit.sh no longer sed-patches README itself, delegating to readme_sync.sh --write (G4); check_readme_claims.sh, check_readme_numeric_claims.sh and check_row_pr_write_set.sh were all updated to strip/detect markers so they don't go blind or vacuous. I independently verified against the live tree that the measured counts baked into README.md (CLI 112, book/cli 114, book/lib 73, crates/ dirs 86) match `ls book/src/cli/*.md` (114 files) and `ls book/src/lib/*.md` (73 files) exactly, and confirmed the contracts/readme-claims-v1.yaml key using \"ls -Nd\" (which looked like a typo for \"-1d\" at first glance) is in fact the correct normalized form produced by check_readme_numeric_claims.sh's own digit→N substitution regex. No other readme_contract.rs test reads raw unmarked README digits that this diff missed. No evidence the diff weakens a gate, contradicts its own tests, or does anything outside GEN-001's scope (the check_row_pr_write_set.sh touch is a necessary consequence of introducing markers, not scope creep).",
+      "findings": [],
+      "raw_bytes": 4232,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ab6b8451d9edd02dad2048ac188fc634aaaaaa271db04078f9fc4700bfa66f1e",
+      "trace": {
+        "input_sha256": "62d2888d34ad99e97660c679a61d5ea6482413030dc627a5fe1259842c45a51a",
+        "output_sha256": "620901e4b9a4643cbd44e1b73f33a40d1e400093e98cdaedecdc04e4c88bf29c",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "GEN-001 correctly implements a single generator (readme_sync.sh) that owns all README derived counts. Acceptance criteria G1, G3, G4 are met; case tables are well-designed with comprehensive coverage.",
+      "findings": [],
+      "raw_bytes": 1307,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ab6b8451d9edd02dad2048ac188fc634aaaaaa271db04078f9fc4700bfa66f1e",
+      "trace": {
+        "input_sha256": "0b8e7c5389bf3c99ee84f571b43bc23d5359dcab7ae24cbde22c3f1828baf6cc",
+        "output_sha256": "84ab50f16870ff98452d740a6691a7064376e8916e88d5ff975cf3052feff15c",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/batch_fold.sh",
+      "line": 73,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "When README.md carries two occurrences of the SAME *_COUNT name with different values on the `ours` side of a merge (e.g. a pre-fold drift between the two CONTRACT_COUNT sites), `readme_counts_only`'s per-name sed pass applies globally (`/g`) per name, so the later-sorted value silently overwrites the earlier occurrence's value for all instances of that name rather than restoring each occurrence's own captured value."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 13,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 59930 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 59930 bytes, over quorum.advisory_lane.max_brief_bytes=24576; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 128,
+    "budget_basis": "ledger: 2 x p95 64 s over 10 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 59930,
+      "sent_bytes": 0,
+      "max_bytes": 24576
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
