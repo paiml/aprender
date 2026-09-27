@@ -1,0 +1,238 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4431-GHOST-BINDING-MSE-SPLIT",
+          "level": "warning",
+          "message": {
+            "text": "Carried forward unchanged from the prior receipt (7061eb6dd1): contracts/aprender/binding.yaml still declares aprender::tree::helpers::compute_mse (status: implemented) while the real function is pub(super) fn compute_mse under aprender::tree::regression_helpers. Nothing in the aca6f2d7f6..da82a475b5 delta (the merge, #4197 EV-6c part 2, the roadmap rescope, or the quorum artifact) touches contracts/aprender/binding.yaml or crates/aprender-core/src/tree/regression_helpers.rs, so the finding stands as-is."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/aprender/binding.yaml"
+                },
+                "region": {
+                  "startLine": 188
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "carried_forward_from": "evidence/pr-review/4431/7061eb6dd16c550bb496708e376d3031a9f18ff1/findings.sarif",
+            "failure_scenario": "A caller resolves the binding's declared path aprender::tree::helpers::compute_mse expecting a public implemented function; that path does not exist (real fn is pub(super) under tree::regression_helpers), so any generated binding or doc built from this contract entry fails to compile or silently points nowhere."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-GHOST-BINDING-PAGERANK",
+          "level": "warning",
+          "message": {
+            "text": "Carried forward unchanged from the prior receipt (7061eb6dd1): contracts/aprender/binding.yaml still declares a free function fn pagerank(adj: &Tensor, ...) -> Tensor (status: implemented) while the real implementation is the trait method Graph::pagerank(&self, ...) -> Result<Vec<f64>, String>. Nothing in the aca6f2d7f6..da82a475b5 delta touches this file or crates/aprender-core/src/graph/centrality.rs, so the finding stands as-is."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/aprender/binding.yaml"
+                },
+                "region": {
+                  "startLine": 32
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "carried_forward_from": "evidence/pr-review/4431/7061eb6dd16c550bb496708e376d3031a9f18ff1/findings.sarif",
+            "failure_scenario": "Code or docs generated from the binding's declared signature fn pagerank(adj: &Tensor, ...) -> Tensor will not compile against the real Graph::pagerank(&self, ...) -> Result<Vec<f64>, String>; a caller trusting status: implemented for that exact signature hits a build failure or, if hand-adapted, silently drops the Result's error path."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-VS-COUNT-TESTED-EXCEEDS-TOTAL",
+          "level": "error",
+          "message": {
+            "text": "Carried forward unchanged from the prior receipt (7061eb6dd1, originally 0644f9c08): the same 8 contracts under contracts/ still report a verification_summary tested or proven count exceeding total_obligations. git diff --stat over the exact 8 paths across aca6f2d7f6..da82a475b5 is empty, so the finding stands as-is."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-cli-qa-v1.yaml" }, "region": { "startLine": 256 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-docs-v1.yaml" }, "region": { "startLine": 161 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-dogfood-coverage-v1.yaml" }, "region": { "startLine": 851 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/crate-hygiene-v1.yaml" }, "region": { "startLine": 128 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/crate-readme-v1.yaml" }, "region": { "startLine": 60 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/hero-svg-v1.yaml" }, "region": { "startLine": 67 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/ratatui-migration-v1.yaml" }, "region": { "startLine": 88 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/unified-specs-v1.yaml" }, "region": { "startLine": 82 } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "carried_forward_from": "evidence/pr-review/4431/7061eb6dd16c550bb496708e376d3031a9f18ff1/findings.sarif",
+            "failure_scenario": "A contract reporting tested/proven counts above total_obligations lets a consumer of that contract's verification_summary believe more was verified than the obligation set allows, masking a bookkeeping defect in the 8 affected contract files."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-KANI-RATCHET-NEW-FEATURE-SOUND",
+          "level": "note",
+          "message": {
+            "text": "New since 7061eb6dd1: c901a32544 (#4197 EV-6c part 2) adds `pv discharge check --kani <dir> --baseline <file>` and `pv discharge kani-ratchet` (crates/aprender-contracts-cli/src/commands/discharge_kani.rs, ratchet_down in crates/aprender-contracts/src/kani_assume.rs) plus contracts/kani-assume-baseline.json (181 assumes across 27 files). Ran the tests myself rather than trusting the commit message's numbers: cargo test -p aprender-contracts --lib kani_assume -> 15/15 passed; cargo test -p aprender-contracts-cli --test pvl_kani_assume -> 9/9 passed; cargo test -p aprender-contracts-cli --lib discharge -> 25/25 passed. All three match the commit message exactly. Clap wiring (lean_dir now Option<PathBuf> with required_unless_present=\"kani\", --kani conflicts_with_all the Lean-only flags) is exercised by the_lean_arms_are_refused_with_kani, and ratchet_down's min(was,now)-per-file / never-admits-a-new-file semantics are exercised by ratchet_down_only_ever_lowers_and_never_admits_a_new_file and the_ratchet_cannot_launder_a_rise. No defect found in this new surface."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-contracts-cli/src/commands/discharge_kani.rs" }, "region": { "startLine": 1 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-contracts/src/kani_assume.rs" }, "region": { "startLine": 270 } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["cargo", "test", "-p", "aprender-contracts", "--lib", "kani_assume"],
+            "exit_code": 0,
+            "failure_scenario": "Had the ratchet's downward-only semantics been wrong (e.g. admitting a new risen file, or writing the measured/higher value instead of the old/lower one for a risen file), the kani::assume ratchet could be laundered by the same commit that raised it; the three test suites above (15+9+25 = 49 tests) exercise exactly that boundary and all pass."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-MERGE-CONFLICT-RESOLUTION-DOCS-ONLY",
+          "level": "note",
+          "message": {
+            "text": "New since 7061eb6dd1: b9de7de5f6 (merge of origin/main aca6f2d7f6 into the branch) touches, relative to its first parent, only README.md (contract count 1837 -> 1855, matching contracts/census.json .n_files after the merge) and docs/roadmaps/roadmap.yaml (+653 lines, appended roadmap fragments PMAT-3177/GH-4175/GH-4191/etc. brought in by the merge and re-aggregated). git grep for literal '<<<<<<<'/'>>>>>>>' conflict markers at b9de7de5f6 found none; the only '=======' hits are markdown horizontal-rule separators inside doc files (crates/aprender-compute/book/.../three-target-spec.md and its docs/ mirrors), not leftover merge markers."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "README.md" }, "region": { "startLine": 61 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "docs/roadmaps/roadmap.yaml" }, "region": { "startLine": 17754 } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["git", "diff", "b9de7de5f6^1", "b9de7de5f6", "--stat"],
+            "exit_code": 0,
+            "failure_scenario": "A merge that silently dropped a hunk or left conflict markers in would show up either as a missing/garbled section in README.md or roadmap.yaml, or as a literal '<<<<<<<' string in tracked files; neither is present."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-ROADMAP-RESCOPE-MATCHES-QUORUM-FINDING",
+          "level": "note",
+          "message": {
+            "text": "New since 7061eb6dd1: 8229e2b9e4 changes only docs/roadmaps/entries/PMAT-4431.yaml and docs/roadmaps/roadmap.yaml (10 lines each), widening the ticket's stated scope from 'merge delta e7a52949d' to the full B3 fold, merge-base..head. This is the exact gap a prior quorum round (r3, aprender-59) flagged as a scope mismatch between the ticket text and what was actually being judged; the commit message names that round directly. No code changed."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "docs/roadmaps/entries/PMAT-4431.yaml" }, "region": { "startLine": 1 } } }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "A ticket whose stated scope is narrower than what a review round actually judges lets a reader trust the wrong diff boundary; this commit closes that gap by widening the ticket text to match the round."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-QUORUM-3-OF-3-PASS-CORROBORATES",
+          "level": "note",
+          "message": {
+            "text": "New since 7061eb6dd1: da82a475b5 commits docs/audits/quorum-PMAT-4431.json, a 3-lane quorum (sonnet-5, gemini-3.1-pro-high, haiku-4-5; none in the claude-opus-5-5 author's model family) run against head=8229e2b9e4 (one commit before this receipt's own head, i.e. everything this receipt reviews except the quorum-artifact commit itself) over the full origin/main..HEAD fold. agreed=true, all 3 lanes verdict=PASS. Lane 1's own findings are advisory only (a receipt-text scope wording lag, and three re-verified claims: the truncation-message format, the PMAT-4072 status/assignee sync, and the admission.rs refactor) -- none refute the ticket. Read the json directly rather than trusting the commit message's '3/3' claim."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "docs/audits/quorum-PMAT-4431.json" }, "region": { "startLine": 1 } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["jq", ".lanes[].verdict,.agreed", "docs/audits/quorum-PMAT-4431.json"],
+            "failure_scenario": "A quorum artifact claiming 3/3 PASS in its commit message but disagreeing in its own JSON (a lane FAIL, or agreed:false) would be a self-contradicting receipt; read directly, agreed=true and all three lanes.verdict=PASS."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Carried forward unchanged from the prior receipt: agent cuda-docs-reviewer not available and mcp nvidia-cuda-docs needs OAuth this non-interactive session cannot run. None of the 4 new-since-7061 commits touch a cuda path (git diff --stat for each against 'crates/aprender-serve/src/cuda' and 'gguf/cuda' is empty)."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "No new script/guard was added or edited in the aca6f2d7f6..da82a475b5 delta beyond what 7061eb6dd1 already recorded (74/74 mutants killed across 5 guards); not re-run this pass since none of those 5 guard files changed again (git diff --stat over the exact 5 paths since 7061eb6dd1 is empty)."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Not dispatched for this restamp: this review lane is read-only-git per its own operating rules (a git-mutating agy/subagent round is out of scope for it), and the task instructions for this pass named a Sonnet-only independent review. attempted: 0."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
