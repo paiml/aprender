@@ -1200,6 +1200,9 @@
         sh:maxCount 0 ;
     ] ;
     sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/bin/featureGated> ;
+    ] ;
+    sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> ;
         sh:maxCount 0 ;
     ] ;
@@ -1214,33 +1217,6 @@
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/auditRow> ;
         sh:minCount 1 ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/surface-audit-ledger> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/Dataset> ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/header> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:in ( "binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence" ) ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/rows> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/sha256> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:pattern "^[0-9a-f]{64}$" ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
     ] ;
 .
 
@@ -1284,7 +1260,7 @@
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/csv-train> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/Dataset> ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/dataset/csv-train> ;
     sh:closed true ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/csv/column> ;
@@ -2385,6 +2361,38 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/surface-audit-ledger> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/dataset/surface-audit-ledger> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/header> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/column> ;
+        sh:minCount 10 ;
+        sh:maxCount 10 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/rows> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/csv/producer> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
     ] ;
 .
 
