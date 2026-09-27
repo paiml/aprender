@@ -43,7 +43,14 @@ WASM_USE = re.compile(r"^\s*use\s+wasm_bindgen", re.M)
 # An out-of-line module declaration, possibly behind more attributes (`#[path = "…"]`,
 # `#[allow(…)]`) after the cfg: `#[cfg(test)] #[path = "g.rs"] pub(crate) mod guard;`
 ATTR = re.compile(r"\s*#\[[^\]]*\]")
-MOD_DECL = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;")
+# `(?<!\s)`: never START inside a whitespace run. The leading \s* made finditer
+# retry from every indentation column, quadratic per run -- most of --escapes'
+# wall time (#4527). A match from mid-run succeeds exactly when one from the run's
+# start does, so the leftmost match and its span are unchanged (fuzzed, 400k).
+MOD_DECL = re.compile(r"(?<!\s)\s*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;")
+# Every MOD_DECL match contains this, and it opens on a literal, which sre scans for
+# fast; a (comment-stripped) file without it has no `mod x;` and skips MOD_DECL.
+MOD_DECL_CORE = re.compile(r"mod\s+[A-Za-z_][A-Za-z0-9_]*\s*;")
 PATH_ATTR = re.compile(r'#\[\s*path\s*=\s*"([^"]+)"\s*\]')
 
 
@@ -114,6 +121,8 @@ def child_module_files(path, text):
     base = os.path.basename(path)
     sub = d if base in ("lib.rs", "main.rs", "mod.rs") else os.path.join(d, base[:-3])
     out = []
+    if not MOD_DECL_CORE.search(text):
+        return out
     for m in MOD_DECL.finditer(text):
         # the attributes directly above this declaration
         attrs, j = [], m.start()
