@@ -35,7 +35,7 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, example, gguf, json, lean, parity_receipt, pv_contract,
+    self, apr_model, binary, code, example, gguf, json, lean, parity_receipt, pv_contract,
     release_evidence, ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
@@ -289,7 +289,11 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         &extraction.gguf,
         &extraction.apr_model,
         &extraction.github,
-        &extraction.example.errors,
+        &[
+            extraction.example.errors.as_slice(),
+            extraction.binary.errors.as_slice(),
+        ]
+        .concat(),
     );
     let (inherited_shapes_applied, inherited_by_shape) =
         subsumption_of(contract_dir, graph, &shapes, &mut counted);
@@ -436,6 +440,7 @@ const COUNTED_ENTITY_TYPES: &[&str] = &[
     "code",
     "lean",
     "example",
+    "binary",
     "release-evidence",
 ];
 
@@ -457,6 +462,8 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
         "code" => extraction.code.symbols,
         "lean" => extraction.lean.statements,
         "example" => extraction.example.examples,
+        // ONT-4g: one per bin target, keyed binary/<package>/<target> — 29 targets, not 28 names
+        "binary" => extraction.binary.targets,
         // 0 by rule when no release subject was given (an ordinary PR has none): the extractor did not run.
         "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
         // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone). The extractor seeds every
@@ -552,6 +559,7 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
         ("example", example::positive_control()),
+        ("binary", binary::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
@@ -595,7 +603,7 @@ fn findings_of(
     gguf_stats: &gguf::GgufStats,
     apr_stats: &apr_model::AprStats,
     github: &json::github::GithubStats,
-    example_errors: &[gguf::ExtractError],
+    extractor_errors: &[gguf::ExtractError],
 ) -> Counted {
     let mut c = Counted {
         findings: Vec::new(),
@@ -647,7 +655,7 @@ fn findings_of(
         .errors
         .iter()
         .chain(apr_stats.errors.iter())
-        .chain(example_errors)
+        .chain(extractor_errors)
     {
         c.violations += 1;
         let mut f = LintFinding::new(

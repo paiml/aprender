@@ -151,8 +151,8 @@ entity_types:
   - {name: gguf, extractor: gguf, implemented: true}
   - {name: csv, extractor: csv, implemented: false}
   # ONT-4g (aprender#4502): one node per cargo bin target, keyed binary/<package>/<target>, read from the tracked
-  # snapshot scripts/dogfood_surfaces.sh --snapshot writes — never a live binary. Flipped to implemented by extract:binary.
-  - {name: binary, extractor: binary, implemented: false}
+  # snapshot scripts/dogfood_surfaces.sh --snapshot writes — never a live binary. Implemented by extract:binary (aprender#4476).
+  - {name: binary, extractor: binary, implemented: true}
   # ONT-4c3 (aprender#3577): the logit-parity receipts under evidence/parity/**. Subclasses `json` for now;
   # it moves under a shared `Receipt` class once quorum and dispatch receipts join, so the three families
   # inherit common shapes. NOT the throughput parity receipts — a different family with a different validator.
@@ -179,7 +179,7 @@ extractors:
   - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}
   - {name: gguf, reader: ontology/extract/gguf.rs, implemented: true}
   - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
-  - {name: binary, reader: ontology/extract/binary.rs, implemented: false}
+  - {name: binary, reader: ontology/extract/binary.rs, implemented: true}
   - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
 
