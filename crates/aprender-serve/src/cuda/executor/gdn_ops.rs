@@ -347,7 +347,13 @@ impl CudaExecutor {
             head_dim,
             n_rot,
         };
-        let cache_key = format!("gdn_partial_neox_rope_indirect_{num_heads}_{head_dim}_{n_rot}");
+        let cache_key = module_key!(
+            self,
+            "gdn_partial_neox_rope_indirect_{}_{}_{}",
+            num_heads,
+            head_dim,
+            n_rot
+        );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -389,8 +395,13 @@ impl CudaExecutor {
             num_kv_heads,
             head_dim,
         };
-        let cache_key =
-            format!("gdn_decode_attention_indirect_{num_heads}_{num_kv_heads}_{head_dim}");
+        let cache_key = module_key!(
+            self,
+            "gdn_decode_attention_indirect_{}_{}_{}",
+            num_heads,
+            num_kv_heads,
+            head_dim
+        );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -424,7 +435,7 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let kernel = trueno_gpu::kernels::gdn::KvRowScatterIndirectKernel::new(row);
         let kernel_type = KernelType::GdnKvRowScatterIndirect { row };
-        let cache_key = format!("gdn_kv_row_scatter_indirect_{row}");
+        let cache_key = module_key!(self, "gdn_kv_row_scatter_indirect_{}", row);
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
@@ -491,8 +502,14 @@ impl CudaExecutor {
             head_dim,
             split_len,
         };
-        let split_key =
-            format!("gdn_decode_attention_split_{num_heads}_{num_kv_heads}_{head_dim}_{split_len}");
+        let split_key = module_key!(
+            self,
+            "gdn_decode_attention_split_{}_{}_{}_{}",
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            split_len
+        );
         let split_name = self.gdn_prepare(&split_type, &split_key)?;
         let (gx, gy, _) = split.grid(seq_len);
         let (bx, _, _) = split.block();
@@ -516,7 +533,13 @@ impl CudaExecutor {
             head_dim,
             split_len,
         };
-        let reduce_key = format!("gdn_decode_attention_reduce_{num_heads}_{head_dim}_{split_len}");
+        let reduce_key = module_key!(
+            self,
+            "gdn_decode_attention_reduce_{}_{}_{}",
+            num_heads,
+            head_dim,
+            split_len
+        );
         let reduce_name = self.gdn_prepare(&reduce_type, &reduce_key)?;
         let (rx, _, _) = reduce.grid();
         let (rbx, _, _) = reduce.block();
