@@ -1,0 +1,16 @@
+- id: PMAT-4542
+  github_issue: 4542
+  item_type: task
+  title: 'LA-01: fill slots + record 0.71-0.73 themes and exit criteria (06x-release-schedule)'
+  status: inprogress
+  priority: high
+  assigned_to: la-impl
+  created: 2026-09-27T11:34:24Z
+  updated: 2026-09-27T11:34:24Z
+  spec: docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: epic #4540

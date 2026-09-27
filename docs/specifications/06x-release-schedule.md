@@ -458,4 +458,50 @@ Invariants (checked by the contract's `obligation_dag_is_acyclic_and_forward`): 
 | 2026-09-10 | infra#500 landed the same day (another session): disposable Docker runners `gx10-eph` / `yoga-eph` online; #3086 moves the CUDA asset build into `rust:1.93.0-bullseye` on them (glibc 2.31 floor) | G7 re-measured 12:30Z; §2 C "which runner" rule; 67-A1 CPU lane follows #3086; 67-D0 containment = ephemeral runner first, group restriction second |
 | 2026-09-10 | `agy /teamwork-preview` review, single lane, verdict FAIL (§10) | F1 G9/67-D0 re-measured; F2 G14; F3 remedy (smoke-cpu) with premise refuted; F4 67-E2 mirror-the-PR + over-cap workspace check + root-manifest FULL, R2; F5 §2 B rescoping stated; F6 67-F1 near-tie/defect rule |
 | 2026-09-17 | #3445 (measured: v0.68.0 tagged 06:35Z with milestone 0.68.0 at open 2, #3091 reopened 05:10Z; the autopilot's tag step read no milestone) | §4 steps 1 and 4 read the milestone with `scripts/check_milestone_cut.sh` at the freeze and immediately before the tag. Carry = re-milestone + `slipped_from:`. The train's own release epic (§5, closed at step 8) is the one admitted open item: the review measured #3078 open in milestone 0.67.0 at the v0.67.0 tag. Contract equation `milestone_settled_at_cut`, FALSIFY-REL-06X-009/010. Plan grilled 3/3 `do-not-implement-as-written` at v1, applied in v2 (`docs/audits/impl-PMAT-3445-plan.md`) |
+| 2026-09-27 | operator ruling (APR-LOOKAHEAD-001 v1.1 §2a; *"Going forward I ALWAYS want ONE dedicated worker on the next three epics"*) | §12 added: 0.71 = "Verbs Are Fast" (#3598), 0.72 = "Train What You Serve" (#4000), 0.73 = "Runs Everywhere" (#3999), each with its exit criteria; look-ahead slots L1/L2/L3 per APR-LOOKAHEAD-001 (LA-01 #4542) |
 
+## §12. Trains 0.71–0.73: themes and exit criteria (operator ruling 2026-09-27)
+
+Ruled 2026-09-27 and recorded here per APR-LOOKAHEAD-001 §2a (LA-01, #4542). A train
+ships only when every exit criterion holds, each with a receipt. A criterion that
+cannot be met by the cut moves to the next train through an operator ruling; it is
+never waived. A theme changes only by operator ruling, recorded in this section with
+its date. Each epic carries its criteria as its checklist; each look-ahead slot keeps
+the live status in its handoff file (`docs/lookahead/<train>.md`).
+
+| Train | Theme | Epic | Milestone | Look-ahead slot (while 0.70 is current) |
+|---|---|---|---|---|
+| 0.71 | **Verbs Are Fast** | #3598 | `0.71.0` | L1 |
+| 0.72 | **Train What You Serve** | #4000 | `0.72.0` | L2 |
+| 0.73 | **Runs Everywhere** | #3999 | `0.73.0` (a train milestone, separate from `backlog`) | L3 |
+
+**0.71 — Verbs Are Fast**
+- **V1** target: TTFT ≤ 2× llama.cpp (pin `d1d3c3396`) on Qwen3.5-4B, APR-OBS identity.
+- **V2** `apr serve` resident, with load + TTFT reported beside pp512/tg128 (#3596).
+- **V3** batched decode with a serving-shape parity receipt.
+- **V4** `--json-schema` constrained decoding.
+- **V5** kernel registry KREG-001 (#4539) live: unregistered kernels refused, 0 unregistered dispatches.
+- **V6** per-layer serve tracing (APR-OBS OBS-09) landed before the first performance PR.
+- **V7** EXT-001 CRUX competitor gates defined.
+
+**0.72 — Train What You Serve**
+- **T1** `apr finetune` (QLoRA), `apr distill`, `apr merge`, `apr quantize` complete end to end on Qwen 3.5 with 0 refusals (the qwen35 refusals are removed).
+- **T2** fine-tune throughput target: ≥ 0.8× Unsloth on the same GPU and model, with a committed measurement command.
+- **T3** Prometheus B2: one challenger (local Qwen3.5-27B teacher → 4B student, gold labels only, 0 sealed-test hashes in training data) judged by PRM-001 §5.4.
+- **T4** first improved dogfood model published to Hugging Face as an rc with receipts (EXT-001).
+- **T5** trained weights round-trip gguf ↔ safetensors ↔ .apr at cosine ≥ 0.98.
+
+**0.73 — Runs Everywhere**
+- **E1** Qwen3.5-4B `apr run` and `apr serve` pass parity (cosine ≥ 0.98 vs llama.cpp) on WGPU (intel, dual AMD), Metal (mini), aarch64 CPU and CUDA (gx10).
+- **E2** each backend target: ≥ 0.5× llama.cpp speed on the same host `[A]`, recalibrated by L3's measurement plan.
+- **E3** the MoE model Qwen3-Coder-30B (#3341) loads and runs with parity.
+- **E4** WGPU/Metal refusals removed.
+- **E5** kernel registry covers 100% of kernel keys these backends dispatch.
+- **E6** the Prometheus fallback options (intel-wgpu, mini-metal) become admissible cells.
+
+**Order rationale `[C]`.** 0.72 first: it unblocks programmes already running
+(Prometheus B2, EXT-001) that wait on the training verbs, and needs only CUDA. 0.73
+second: it builds on a kernel registry hardened through 0.71 and 0.72, which keeps new
+backends from reintroducing the wrong-layout bug class, and it puts idle hardware
+(intel's AMD GPUs, mini) to work. Alternative recorded: swap the two if external
+portability demos become the priority.
