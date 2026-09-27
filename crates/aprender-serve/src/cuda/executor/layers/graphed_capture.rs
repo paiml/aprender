@@ -65,7 +65,6 @@ impl CudaExecutor {
 
         if let Err(eager_err) = eager_result {
             self.graph_recording = false;
-            self.graph_capture_failed = true;
             eprintln!("[trueno#243] Eager forward during recording failed: {:?}", eager_err);
             // Re-prepare buffers and fall back to non-recorded eager
             let _ = self.stream.synchronize();
@@ -217,21 +216,17 @@ impl CudaExecutor {
                 // No kernels recorded — recording not wired to all ops yet.
                 // First token was computed by eager pass.
                 eprintln!("[trueno#243] 0 kernels recorded, using eager path for subsequent tokens");
+                // Drop the indirect buffers only after this token's kernels finished (C14).
+                let r = self.sync_first_token_logits(logits);
                 self.abandon_decode_graph_capture();
-                self.stream.synchronize()?;
-                if let Some(ref logits_buf) = self.workspace.logits_buf {
-                    logits_buf.copy_to_host(logits)?;
-                }
-                Ok(())
+                r
             },
             Err(graph_err) => {
-                self.abandon_decode_graph_capture();
                 eprintln!("[trueno#243] Manual graph build failed: {:?}", graph_err);
-                self.stream.synchronize()?;
-                if let Some(ref logits_buf) = self.workspace.logits_buf {
-                    logits_buf.copy_to_host(logits)?;
-                }
-                Ok(())
+                // Drop the indirect buffers only after this token's kernels finished (C14).
+                let r = self.sync_first_token_logits(logits);
+                self.abandon_decode_graph_capture();
+                r
             },
         }
     }

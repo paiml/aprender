@@ -300,6 +300,15 @@ impl CudaExecutor {
         self.seq_len_buf = None;
     }
 
+    /// Wait for the eager first token of a failed capture, then download its logits.
+    pub(crate) fn sync_first_token_logits(&mut self, logits: &mut [f32]) -> Result<(), GpuError> {
+        self.stream.synchronize()?;
+        if let Some(ref logits_buf) = self.workspace.logits_buf {
+            logits_buf.copy_to_host(logits)?;
+        }
+        Ok(())
+    }
+
     /// PMAT-045: Clear batched decode graphs (stale after workspace reallocation)
     pub fn clear_batched_decode_graphs(&mut self) {
         self.batched_decode_graphs.clear();

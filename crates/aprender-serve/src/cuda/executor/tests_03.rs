@@ -247,6 +247,33 @@ fn test_c14_abandoned_capture_drops_indirect_buffers() {
     assert!(!executor.has_decode_graph());
 }
 
+/// C14 wiring: every decode-capture failure path must go through
+/// `abandon_decode_graph_capture`. Setting only the flag reintroduces the frozen-position
+/// bug, and the helper test above cannot see a call site that stopped using it.
+#[test]
+fn test_c14_decode_capture_failures_all_abandon() {
+    for (file, src) in [
+        (
+            "graphed_capture.rs",
+            include_str!("layers/graphed_capture.rs"),
+        ),
+        (
+            "forward_graphed_decode.rs",
+            include_str!("layers/forward_graphed_decode.rs"),
+        ),
+    ] {
+        assert!(
+            !src.contains("self.graph_capture_failed = true"),
+            "{file}: a capture failure sets only the flag; call abandon_decode_graph_capture()"
+        );
+        assert_eq!(
+            src.matches("self.abandon_decode_graph_capture()").count(),
+            3,
+            "{file}: expected the eager-error, no-kernels and build-error paths"
+        );
+    }
+}
+
 #[test]
 #[serial]
 fn test_cov008_gemv_buffer_stats_initial() {

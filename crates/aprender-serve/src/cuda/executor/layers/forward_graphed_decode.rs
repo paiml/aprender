@@ -119,7 +119,6 @@ impl CudaExecutor {
 
         if let Err(eager_err) = eager_result {
             self.graph_recording = false;
-            self.graph_capture_failed = true;
             eprintln!("[trueno#243] Eager forward during recording failed: {:?}", eager_err);
             let r = self.forward_all_layers_gpu_to_logits(
                 input, logits, position, num_layers, hidden_dim,
@@ -143,24 +142,18 @@ impl CudaExecutor {
             },
             Ok(_) => {
                 eprintln!("[trueno#243] No kernels recorded (recording not wired to all ops yet)");
-                // First token was computed by eager pass, download logits
-                self.stream.synchronize()?;
-                if let Some(ref logits_buf) = self.workspace.logits_buf {
-                    logits_buf.copy_to_host(logits)?;
-                }
-                // Mark graph as failed so subsequent tokens use eager path
+                // First token was computed by eager pass; later tokens use eager.
+                // Drop the indirect buffers only after this token's kernels finished (C14).
+                let r = self.sync_first_token_logits(logits);
                 self.abandon_decode_graph_capture();
-                Ok(())
+                r
             },
             Err(graph_err) => {
-                self.abandon_decode_graph_capture();
                 eprintln!("[trueno#243] Manual graph build failed: {:?}, using eager", graph_err);
-                // First token was already computed, just download logits
-                self.stream.synchronize()?;
-                if let Some(ref logits_buf) = self.workspace.logits_buf {
-                    logits_buf.copy_to_host(logits)?;
-                }
-                Ok(())
+                // Drop the indirect buffers only after this token's kernels finished (C14).
+                let r = self.sync_first_token_logits(logits);
+                self.abandon_decode_graph_capture();
+                r
             },
         }
     }
