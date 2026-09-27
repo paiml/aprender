@@ -18287,6 +18287,26 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Cop row (aprender-cf, 2026-09-24), filed by aprender-70. Release-time gate scripts/package_tarball_build.sh, declared in [package.metadata.dogfood].gates (no workflow edit; cargo-free guard_tree cannot run it). The PR-time half is rows 14-16 of check_package_includes.sh --self-test, which ci.yml guard-cargo already runs. MEASURED on lambda (compile only): main 49fe19c28 RED in 9 crates in 275 s with a warm target -> filed #4129 (include! outside the .crate) and #4130 (shipped integration tests with stripped path-only dev-deps). Negative control OK in 288 s. On 4eb21dbac aprender-serve is absent from the RED rows (582 s). A defect in the gate''s own first draft: tar restores archived mtimes and cargo decides freshness by mtime, so a warm target dir reused a DIFFERENT build of the same name and version (a false green, caught by row 15). Unpacking with tar -m fixes it.'
+- id: GH-4129
+  github_issue: 4129
+  item_type: task
+  kind: code
+  title: 'Published tarballs of aprender-train, aprender-contracts, aprender-contracts-cli, aprender-present-terminal cannot compile their tests: include! of files outside the .crate'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T01:44:20.650601111+00:00
+  updated: 2026-09-24T01:44:20.650601111+00:00
+  spec: null
+  acceptance_criteria:
+  - 'aprender-train, aprender-contracts, aprender-contracts-cli, aprender-present-terminal: the #4114 tarball gate no longer lists them RED (their published tarballs compile their tests)'
+  - 'in tree every converted test RUNS (no SKIP) and a missing file FAILS it (panic), never skips; out of tree it SKIPs by name'
+  - 'one pattern with #4048/#4130: run-time read, SKIP <test>: out of tree ... on stderr, *_or_skip helper name (counted by the #4114 shrink report)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop row (aprender-cf, 2026-09-24). Pattern agreed with aprender-dd (#4130). MEASURED: the #4114 gate at 556994b7f on this tree (cdff936d2), lambda, compile-only, 404 s: the four crates are absent from the RED rows. Remaining RED: aprender-serve (#4048, fixed on the merge-back lineage) and the #4130 class. Shrink report: 43 run-time skip sites across 6 crates. gx10, in tree, per converted test (6 cases), with --nocapture: baseline 1 ok, 0 SKIP lines; the file moved -> rc 101, 0 SKIP, and the in-tree panic in 5 of 6. The 6th (contracts-cli validator.rs) cannot be measured by moving the file: validator.rs is a MODULE of the sibling crate, so moving it is a compile error (E0583). Its baseline shows the test runs in tree. NOT IN SCOPE on main: apr-cli golden_output.rs / thinking_budgets_mirror.rs and the aprender-orchestrate chat_template.rs include chat_template_3990 fixtures and thinking-budgets-v1.yaml; those files exist only on the 0.69.1 lineage (chore/0.69.1-merge-back), so they are fixed there.'
 - id: GH-4140
   github_issue: 4140
   item_type: task
@@ -18306,6 +18326,27 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'
+- id: GH-4151
+  github_issue: 4151
+  item_type: task
+  kind: code
+  title: cargo fmt --check never sees include!d .rs files — CI's fmt gate is blind to them (two 140-col lines passed)
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:10:40.669338522+00:00
+  updated: 2026-09-24T06:10:40.669338522+00:00
+  spec: null
+  acceptance_criteria:
+  - 'include!d .rs files are enumerated from source and checked with the pinned rustfmt (the owning crate edition)'
+  - 'a NEW misformatted include!d file (not in scripts/include_fmt_baseline.txt) is RED, named'
+  - 'the baseline growing is RED (shrink-only against merge-base with origin/main, lib_baseline_ratchet.sh set mode)'
+  - 'wired through check_package_includes.sh (ci.yml guard-cargo), with no workflow edit'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop ruling (aprender-cf, 2026-09-24): option B, a shrink-only ratchet. The mass reformat (A) and touched=clean (C) are deferred to a quiet window after the 0.70 fold. MEASURED on main 49fe19c28 with rustfmt 1.8.0-stable (254b59607d): 1778 include!d .rs files, 1584 misformatted (baselined). A full pass over them changes 1783 files, +135611/-128345. 163 remain misformatted after one pass (non-convergent, listed in the receipt separately). The instrument is pinned exactly in the baseline header, and a different rustfmt is "cannot check" (2).'
 - id: GH-4162
   github_issue: 4162
   item_type: task
@@ -18346,6 +18387,81 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: GH-4190
+  github_issue: 4190
+  item_type: task
+  kind: code
+  title: 'apr-format: golden_v2_f32_writer_is_byte_identical fails in tree (516 vs 1092 bytes) — a dark CI target'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
+- id: GH-4191
+  github_issue: 4191
+  item_type: task
+  kind: code
+  title: 'aprender-orchestrate: test_resolve_project_root_nonexistent_falls_back is host-dependent (stray /tmp/Cargo.toml)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
+- id: GH-4197
+  github_issue: 4197
+  item_type: task
+  title: 'PVL-001 EV-6c pt1: kani_assume.rs per-file kani::assume token count (use-import refused, fails closed) + rises + Baseline check; 14 tests; proc-macro2 dep; DELETE dead tests_12b.rs. NO CLI flag, baseline, Makefile, workflow'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:24:32.273397348+00:00
+  updated: 2026-09-24T08:24:32.273397348+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts --lib kani_assume: 14 passed. Mutations, each planted alone, restored sha-identical: group markers dropped reds a_group_boundary_breaks_the_sequence; rise as >= reds a_fall_or_a_removed_file_is_not_a_rise; import refusal off reds a_use_import_of_assume_is_refused_in_every_shape; consistency off reds an_inconsistent_baseline_is_refused; string literals counted reds comments_and_strings_never_count; target/ not skipped reds count_tree_keys_relative_paths_and_skips_target_and_hidden.'
+  - 'count_tree(crates/) on this tree: 177 in 26 files, fails closed on nothing. grep -c gives 187 in 28; the 10 extra are string literals in kani_gen/strategies.rs (9) and invariant_gen.rs (1), code generators whose output is counted.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ont-0.70
+  notes: 'Part 1 of PVL-001 EV-6c (Refs #4197, not Closes). The row probe runs pv discharge check --kani, a subcommand that exists only on EV-6a''s unmerged branch (#4139); part 2 adds the flag, contracts/kani-assume-baseline.json and make kani-ratchet after it lands. The spec''s baseline 254 [C v2] is stale; the measured count is 177. tests_12b.rs was deleted because fail-closed must hold on the real tree: it is not compiled (no mod/#[path]/include! names it) and has an unbalanced } at :35.'
+- id: GH-4198
+  github_issue: 4198
+  item_type: task
+  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring) = pv-obligation-gate.py; 11 golden tests, fixtures, ci fragment 460; tree_reader registry +2, surface_audit pv cites +11 lines. NO ci.yml/Makefile/pmat edit'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:50:11.471932980+00:00
+  updated: 2026-09-24T08:50:11.471932980+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts-cli --test pvl_obligations_golden: 11 passed. Goldens (pmat, broken, edge .stdout/.rc) were written by running pmat''s scripts/pv-obligation-gate.py (sha256 e4fa9719, pmat d70a78f67, PyYAML 6.0.3) over each fixture, never by pv; pv matches stdout byte for byte and the exit code (pmat 0 over 35 rc 0; broken 6 over 4 rc 1; edge 3 over 4 rc 1: merge keys incl. a chained merge, falsy applies_to/proved_type/document). A duplicate-key and a >64-bit-integer contract match the script''s measured output: the validate line only, 1 over 1 rc 1.'
+  - 'Mutations in obligations.rs, each planted alone, restored sha-identical, 17/17 red, each naming the test it reds: validate-always-passes, falsification-counts-every-entry, fn/type word boundary (3), binding-yaml-included, gate-flag-ignored, empty-corpus-reported-as-pass, equation-targets-not-skipped, merge-keys-not-resolved, merge-single-pass, everything-truthy, falsy-document-rejected, unused-bad-type-reported-eagerly (edge_fixture_follows_pyyaml_and_python_truthiness_as_the_script_does), symlinked-contracts-skipped (a_symlinked_contract_is_checked_like_its_target), reached-bad-type-silent (a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it), parse-line-after-validate (a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees).'
+  - 'Deliberate differences from the script, documented in the module doc: zero contracts is decline rc 2 (PVL-1), non-YAML/non-mapping/non-string input is a named problem not a traceback, src/ walked on disk, YAML 1.2 vs PyYAML 1.1 plain booleans, checks 2-3 not run on a document serde_yaml refuses (it fails validate on both sides, so the verdict agrees), word chars next to non-ASCII. Largest function cog 17 / cyc 6.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ont-0.70
+  notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -21960,6 +22076,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'This branch covers the skip defect, the global-config mv hazard, and did-not-measure. The COVERAGE_EXCLUDE_REGEX repair is deliberately NOT here: per the ticket, it moves the denominator and must be its own change.'
+- id: PMAT-3847
+  github_issue: 3847
+  item_type: task
+  title: 'ONT-4c: the first non-code contracts — README.md, CLAUDE.md, one .apr model file, one CSV — with their extractors'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-22T13:24:57Z
+  updated: 2026-09-22T13:24:57Z
+  spec: docs/specifications/paiml-ontology.md (paiml/infra, v4.11 §5 ONT-4c)
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3855
   github_issue: 3855
   item_type: task
@@ -22249,6 +22382,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:docs
   notes: null
+- id: PMAT-4016
+  github_issue: 4016
+  item_type: task
+  title: '#4016: llama.cpp fit is the placement gate for every model certification/test'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T00:44:37Z
+  updated: 2026-09-24T00:44:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4023
   github_issue: 4023
   item_type: task
@@ -22286,6 +22436,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4059
+  github_issue: 4059
+  item_type: task
+  title: 'binary-debt #2: the KEPT binaries'' CLI tests are dark in CI; wire them capped, and refuse a spawning test target no lane runs (#4059)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: scripts/check_bin_cli_tests_wired.sh
+  acceptance_criteria:
+  - 'every test target that SPAWNS a workspace binary (CARGO_BIN_EXE_<bin>, cargo_bin(, cargo_bin_cmd!) is derived from the tree (tests/<n>.rs, tests/<n>/main.rs, [[test]], autotests=false) and is either on a --test line with its own -p package, or ledgered in scripts/bin_cli_unwired_baseline.txt; drift either way is RED'
+  - 'the ledger is a shrink-only set baseline (check_baseline_ratchets.sh)'
+  - 'the KEPT binaries'' dark targets (apr-cli, the aprender facade, aprender-profile, aprender-orchestrate) are wired as capped per-crate fragments, each wall time measured on lambda first; the one huge target (the MoE live falsifier, 157 s with a model) is ledgered to #4179 for a nightly model-host lane'
+  - 'check_bin_cli_tests_wired.sh --self-test kills planted mutants: no cargo_bin_cmd!, name-only wiring, no dir targets, no word boundary, no \-continuation join'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'pv (aprender-contracts-cli): all 17 CLI test files were already wired on main@aa7c6ef03; the issue body is stale on that point.'
 - id: PMAT-4067
   github_issue: 4067
   item_type: task
@@ -22661,6 +22832,43 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4130
+  github_issue: 4130
+  item_type: bug
+  title: 'Published tarballs of aprender-core, aprender-orchestrate, aprender-cbtop, aprender-test-showcase ship integration tests whose path-only dev-dependencies cargo package strips'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/package_tarball_build.sh (#4114) no longer reports aprender-core, aprender-orchestrate, aprender-cbtop or aprender-test-showcase RED'
+  - 'no sibling dev-dependency is re-versioned (PMAT-955 / preflight R6)'
+  - 'what a tarball drops is printed and counted, never a silent shrink: excluded targets in the gate NOT SHIPPED list, lib-test reads via the agreed *_or_skip run-time pattern (SKIP by name out of tree, PANIC in tree)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4133
+  github_issue: 4133
+  item_type: task
+  title: 'CI: direct guard steps run under setsid --wait (#4133)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T01:27:53Z
+  updated: 2026-09-24T01:27:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4139
   github_issue: 4139
   item_type: task
@@ -22682,6 +22890,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Stacked on EV-5a (#4122). Scope from #4139 and PVL-001 EV-6a as amended by infra#992 (cop relay, 2026-09-24). Also withdraws a false L4 claim: cooperative-matrix-gemm-v1 cited the AXIOM f16_accumulation_error_bound as its lean_theorem; the reference becomes the `none -- ...` sentinel. MEASURED on lambda: check with lake elaboration rc 0 (164 pinned, 85 ORPHANED-ROOT, 7 PENDING); --strict rc 1; the pvl_mutation mutation turns scan and pin RED.'
+- id: PMAT-4142
+  github_issue: 4142
+  item_type: task
+  title: 'ci: the mutants gate mutates the WORKSPACE -- it was vacuous for crates/** (0 mutants on every crate diff)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The PR mutants job lists and runs cargo-mutants with --workspace (the fix for #4142: without it every crate diff listed 0 mutants and passed -- measured on #3772/#3737/#3707/#3706)'
+  - 'OPERATOR ruling via the cop (2026-09-24, verbatim "go with recommended yes"): on-PR --workspace -j N with a RED "too many to judge" cap of ~60 mutants, plus a nightly full run'
+  - 'The gate refuses rather than passes: a failed list, a run that wrote no outcomes, an unparseable outcomes.json, and a tested count that differs from the listed count are RED'
+  - 'scripts/mutants_diff_gate.sh --self-test: every rule deleted in a copy breaks the row that names it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'cargo-mutants 27 refuses `workspace = true` in .cargo/mutants.toml ("unknown field"), so the fix is the --workspace flag, which is a ci.yml edit approved by the operator through the cop. Measured on gx10 with the real tool: the #4139 diff at 820e8523 lists 270 mutants (269 at 9f5fbcc7b, the #4142 issue table) and the gate prints RED "too many to judge: 270 mutants in the diff > cap 60"; a README-only diff prints "0 mutants in the diff". Cost: ~85 s per aprender-contracts mutant, serially.'
 - id: PMAT-4160
   github_issue: 4160
   item_type: task
@@ -22719,6 +22948,43 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   subtasks: []
   estimated_effort: null
   labels:
+  - kind:code
+  notes: null
+- id: PMAT-4179
+  github_issue: 4179
+  item_type: task
+  title: 'binary-debt: qwen3_moe live falsifier nightly, fail-closed'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-88
+  created: 2026-09-24T16:20:28Z
+  updated: 2026-09-24T16:20:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4186
+  github_issue: 4186
+  item_type: task
+  title: 'P0: dogfood hosts run ONLY the latest green nightly apr/pv — apr_bin.sh + pv_bin.sh refuse anything older (arbiter manifest, fail closed)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-49
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - nightly mode (APR_BIN_REQUIRE / PV_BIN_REQUIRE=nightly) accepts only the manifest's green binary
+  - 'case table — stale/tagged/missing/malformed/stale-manifest/denylisted refuse; nightly accepts'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
   - kind:code
   notes: null
 - id: PMAT-4199
@@ -23314,6 +23580,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'
+- id: PMAT-4415
+  github_issue: 4415
+  item_type: task
+  title: 'Lever 0: guard-cargo/guard-tree stop at the first red step — run every guard and report every failure in one pass (RC #4318: 1 failure per run, 15–71 steps dark)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-5d
+  created: 2026-09-26T12:00:00+00:00
+  updated: 2026-09-26T12:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'each guard section (guard-tree, guard-cargo) in ci/sections.yml runs its guards through ONE step, bash scripts/ci_guards.sh <job>, under if: !cancelled() && steps.guard-setup.outcome == success; every guard step that can run outside a pull_request event lives in the <job>-steps manifest (if: false) and the runner executes all of them past a red step, one ::error per failure and one SUMMARY. The only steps left in the section are the ones that need the pull_request payload (both already !cancelled()) and the always() target-watch report — the same three #4457 kept — and check_guard_steps_run_all.sh refuses any other fail-fast step over the baseline'
+  - 'make guards-local and .githooks/pre-push run the same script and print the same ci_guards: sha256 line CI prints'
+  - 'the guard jobs are the guard-* sections the gate in .github/workflows/ci.yml reads; a gate that reads none, or an unreadable file, fails closed (rc 2)'
+  - 'scripts/guard_fail_fast_baseline.txt (shrink-only) and scripts/ci_guards_uncovered.txt name real car sections; check_guard_steps_run_all.sh --self-test goes RED on each planted mutant and is itself wired into CI'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Port of #4457 (PMAT-4415-guards-run-all, written against the pre-#4433 ci.yml) onto car/0.70.0 fat-job CI, as fold item from aprender-59. Workflow-surface change: 3/3 non-Claude-author quorum required; no push by the author.'
 - id: PMAT-4421
   github_issue: 4421
   item_type: task
@@ -23430,6 +23716,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4478
+  github_issue: 4478
+  item_type: task
+  title: 'ci: pr-review-sign receives an empty signing key — secret name misspelled (…_B vs …_B64), every PR''s present check RED'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-57
+  created: 2026-09-26 16:00:00+00:00
+  updated: '2026-09-26T16:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'ci.yml passes FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64, the name ci/sections.yml pr-review-sign reads'
+  - 'scripts/check_fat_secrets_passed.sh: every secrets.NAME on a non-comment line of ci/sections.yml (except GITHUB_TOKEN) has FAT_SECRET_NAME from secrets.NAME in ci.yml, and every FAT_SECRET_KEY reads secrets.KEY; 6-row case table carrying the #4441 shape verbatim as FAIL; RED on main''s ci.yml, GREEN on this tree'
+  - 'the guard is wired in ci/sections.yml (case table, then tree) and check_guards_are_wired.sh is GREEN'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found on #4431 CI run 36246483181: "carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty". #4441 (fat jobs) hand-wrote the env line with the trailing 64 dropped.'
 - id: PMAT-4481
   github_issue: 4481
   item_type: task
@@ -23471,309 +23777,19 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Blocked #4479 (ONT-10 chain head) twice on framework16-2. 0.70.0 path; branch 49/4507-fat-ws-aside off car/0.70.0.'
-- id: PMAT-4478
-  github_issue: 4478
+- id: PMAT-4514
+  github_issue: 4514
   item_type: task
-  title: 'ci: pr-review-sign receives an empty signing key — secret name misspelled (…_B vs …_B64), every PR''s present check RED'
-  status: in_progress
-  priority: critical
-  assigned_to: aprender-57
-  created: 2026-09-26 16:00:00+00:00
-  updated: '2026-09-26T16:00:00Z'
-  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
-  acceptance_criteria:
-  - 'ci.yml passes FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64, the name ci/sections.yml pr-review-sign reads'
-  - 'scripts/check_fat_secrets_passed.sh: every secrets.NAME on a non-comment line of ci/sections.yml (except GITHUB_TOKEN) has FAT_SECRET_NAME from secrets.NAME in ci.yml, and every FAT_SECRET_KEY reads secrets.KEY; 6-row case table carrying the #4441 shape verbatim as FAIL; RED on main''s ci.yml, GREEN on this tree'
-  - 'the guard is wired in ci/sections.yml (case table, then tree) and check_guards_are_wired.sh is GREEN'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: 'Found on #4431 CI run 36246483181: "carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty". #4441 (fat jobs) hand-wrote the env line with the trailing 64 dropped.'
-- id: GH-4129
-  github_issue: 4129
-  item_type: task
-  kind: code
-  title: 'Published tarballs of aprender-train, aprender-contracts, aprender-contracts-cli, aprender-present-terminal cannot compile their tests: include! of files outside the .crate'
+  title: 'FLOW-003 v1.1: queue/release-cycle model spec with review fixes'
   status: inprogress
   priority: medium
   assigned_to: null
-  created: 2026-09-24T01:44:20.650601111+00:00
-  updated: 2026-09-24T01:44:20.650601111+00:00
+  created: 2026-09-27T06:56:07Z
+  updated: 2026-09-27T06:56:11.885936345+00:00
   spec: null
-  acceptance_criteria:
-  - 'aprender-train, aprender-contracts, aprender-contracts-cli, aprender-present-terminal: the #4114 tarball gate no longer lists them RED (their published tarballs compile their tests)'
-  - 'in tree every converted test RUNS (no SKIP) and a missing file FAILS it (panic), never skips; out of tree it SKIPs by name'
-  - 'one pattern with #4048/#4130: run-time read, SKIP <test>: out of tree ... on stderr, *_or_skip helper name (counted by the #4114 shrink report)'
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Cop row (aprender-cf, 2026-09-24). Pattern agreed with aprender-dd (#4130). MEASURED: the #4114 gate at 556994b7f on this tree (cdff936d2), lambda, compile-only, 404 s: the four crates are absent from the RED rows. Remaining RED: aprender-serve (#4048, fixed on the merge-back lineage) and the #4130 class. Shrink report: 43 run-time skip sites across 6 crates. gx10, in tree, per converted test (6 cases), with --nocapture: baseline 1 ok, 0 SKIP lines; the file moved -> rc 101, 0 SKIP, and the in-tree panic in 5 of 6. The 6th (contracts-cli validator.rs) cannot be measured by moving the file: validator.rs is a MODULE of the sibling crate, so moving it is a compile error (E0583). Its baseline shows the test runs in tree. NOT IN SCOPE on main: apr-cli golden_output.rs / thinking_budgets_mirror.rs and the aprender-orchestrate chat_template.rs include chat_template_3990 fixtures and thinking-budgets-v1.yaml; those files exist only on the 0.69.1 lineage (chore/0.69.1-merge-back), so they are fixed there.'
-- id: GH-4151
-  github_issue: 4151
-  item_type: task
-  kind: code
-  title: cargo fmt --check never sees include!d .rs files — CI's fmt gate is blind to them (two 140-col lines passed)
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T06:10:40.669338522+00:00
-  updated: 2026-09-24T06:10:40.669338522+00:00
-  spec: null
-  acceptance_criteria:
-  - 'include!d .rs files are enumerated from source and checked with the pinned rustfmt (the owning crate edition)'
-  - 'a NEW misformatted include!d file (not in scripts/include_fmt_baseline.txt) is RED, named'
-  - 'the baseline growing is RED (shrink-only against merge-base with origin/main, lib_baseline_ratchet.sh set mode)'
-  - 'wired through check_package_includes.sh (ci.yml guard-cargo), with no workflow edit'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: 'Cop ruling (aprender-cf, 2026-09-24): option B, a shrink-only ratchet. The mass reformat (A) and touched=clean (C) are deferred to a quiet window after the 0.70 fold. MEASURED on main 49fe19c28 with rustfmt 1.8.0-stable (254b59607d): 1778 include!d .rs files, 1584 misformatted (baselined). A full pass over them changes 1783 files, +135611/-128345. 163 remain misformatted after one pass (non-convergent, listed in the receipt separately). The instrument is pinned exactly in the baseline header, and a different rustfmt is "cannot check" (2).'
-- id: GH-4190
-  github_issue: 4190
-  item_type: task
-  kind: code
-  title: 'apr-format: golden_v2_f32_writer_is_byte_identical fails in tree (516 vs 1092 bytes) — a dark CI target'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T12:00:00+00:00
-  updated: 2026-09-24T12:00:00+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - P2
   notes: null
-- id: GH-4191
-  github_issue: 4191
-  item_type: task
-  kind: code
-  title: 'aprender-orchestrate: test_resolve_project_root_nonexistent_falls_back is host-dependent (stray /tmp/Cargo.toml)'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T12:00:00+00:00
-  updated: 2026-09-24T12:00:00+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - P2
-  notes: null
-- id: GH-4197
-  github_issue: 4197
-  item_type: task
-  title: 'PVL-001 EV-6c pt1: kani_assume.rs per-file kani::assume token count (use-import refused, fails closed) + rises + Baseline check; 14 tests; proc-macro2 dep; DELETE dead tests_12b.rs. NO CLI flag, baseline, Makefile, workflow'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T08:24:32.273397348+00:00
-  updated: 2026-09-24T08:24:32.273397348+00:00
-  spec: null
-  acceptance_criteria:
-  - 'cargo test -p aprender-contracts --lib kani_assume: 14 passed. Mutations, each planted alone, restored sha-identical: group markers dropped reds a_group_boundary_breaks_the_sequence; rise as >= reds a_fall_or_a_removed_file_is_not_a_rise; import refusal off reds a_use_import_of_assume_is_refused_in_every_shape; consistency off reds an_inconsistent_baseline_is_refused; string literals counted reds comments_and_strings_never_count; target/ not skipped reds count_tree_keys_relative_paths_and_skips_target_and_hidden.'
-  - 'count_tree(crates/) on this tree: 177 in 26 files, fails closed on nothing. grep -c gives 187 in 28; the 10 extra are string literals in kani_gen/strategies.rs (9) and invariant_gen.rs (1), code generators whose output is counted.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - ont-0.70
-  notes: 'Part 1 of PVL-001 EV-6c (Refs #4197, not Closes). The row probe runs pv discharge check --kani, a subcommand that exists only on EV-6a''s unmerged branch (#4139); part 2 adds the flag, contracts/kani-assume-baseline.json and make kani-ratchet after it lands. The spec''s baseline 254 [C v2] is stale; the measured count is 177. tests_12b.rs was deleted because fail-closed must hold on the real tree: it is not compiled (no mod/#[path]/include! names it) and has an unbalanced } at :35.'
-- id: GH-4198
-  github_issue: 4198
-  item_type: task
-  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring) = pv-obligation-gate.py; 11 golden tests, fixtures, ci fragment 460; tree_reader registry +2, surface_audit pv cites +11 lines. NO ci.yml/Makefile/pmat edit'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T08:50:11.471932980+00:00
-  updated: 2026-09-24T08:50:11.471932980+00:00
-  spec: null
-  acceptance_criteria:
-  - 'cargo test -p aprender-contracts-cli --test pvl_obligations_golden: 11 passed. Goldens (pmat, broken, edge .stdout/.rc) were written by running pmat''s scripts/pv-obligation-gate.py (sha256 e4fa9719, pmat d70a78f67, PyYAML 6.0.3) over each fixture, never by pv; pv matches stdout byte for byte and the exit code (pmat 0 over 35 rc 0; broken 6 over 4 rc 1; edge 3 over 4 rc 1: merge keys incl. a chained merge, falsy applies_to/proved_type/document). A duplicate-key and a >64-bit-integer contract match the script''s measured output: the validate line only, 1 over 1 rc 1.'
-  - 'Mutations in obligations.rs, each planted alone, restored sha-identical, 17/17 red, each naming the test it reds: validate-always-passes, falsification-counts-every-entry, fn/type word boundary (3), binding-yaml-included, gate-flag-ignored, empty-corpus-reported-as-pass, equation-targets-not-skipped, merge-keys-not-resolved, merge-single-pass, everything-truthy, falsy-document-rejected, unused-bad-type-reported-eagerly (edge_fixture_follows_pyyaml_and_python_truthiness_as_the_script_does), symlinked-contracts-skipped (a_symlinked_contract_is_checked_like_its_target), reached-bad-type-silent (a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it), parse-line-after-validate (a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees).'
-  - 'Deliberate differences from the script, documented in the module doc: zero contracts is decline rc 2 (PVL-1), non-YAML/non-mapping/non-string input is a named problem not a traceback, src/ walked on disk, YAML 1.2 vs PyYAML 1.1 plain booleans, checks 2-3 not run on a document serde_yaml refuses (it fails validate on both sides, so the verdict agrees), word chars next to non-ASCII. Largest function cog 17 / cyc 6.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - ont-0.70
-  notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
-- id: PMAT-3847
-  github_issue: 3847
-  item_type: task
-  title: 'ONT-4c: the first non-code contracts — README.md, CLAUDE.md, one .apr model file, one CSV — with their extractors'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-22T13:24:57Z
-  updated: 2026-09-22T13:24:57Z
-  spec: docs/specifications/paiml-ontology.md (paiml/infra, v4.11 §5 ONT-4c)
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4016
-  github_issue: 4016
-  item_type: task
-  title: '#4016: llama.cpp fit is the placement gate for every model certification/test'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T00:44:37Z
-  updated: 2026-09-24T00:44:37Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4059
-  github_issue: 4059
-  item_type: task
-  title: 'binary-debt #2: the KEPT binaries'' CLI tests are dark in CI; wire them capped, and refuse a spawning test target no lane runs (#4059)'
-  status: in_progress
-  priority: high
-  assigned_to: aprender-36
-  created: 2026-09-24T00:00:00Z
-  updated: 2026-09-24T00:00:00Z
-  spec: scripts/check_bin_cli_tests_wired.sh
-  acceptance_criteria:
-  - 'every test target that SPAWNS a workspace binary (CARGO_BIN_EXE_<bin>, cargo_bin(, cargo_bin_cmd!) is derived from the tree (tests/<n>.rs, tests/<n>/main.rs, [[test]], autotests=false) and is either on a --test line with its own -p package, or ledgered in scripts/bin_cli_unwired_baseline.txt; drift either way is RED'
-  - 'the ledger is a shrink-only set baseline (check_baseline_ratchets.sh)'
-  - 'the KEPT binaries'' dark targets (apr-cli, the aprender facade, aprender-profile, aprender-orchestrate) are wired as capped per-crate fragments, each wall time measured on lambda first; the one huge target (the MoE live falsifier, 157 s with a model) is ledgered to #4179 for a nightly model-host lane'
-  - 'check_bin_cli_tests_wired.sh --self-test kills planted mutants: no cargo_bin_cmd!, name-only wiring, no dir targets, no word boundary, no \-continuation join'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: 'pv (aprender-contracts-cli): all 17 CLI test files were already wired on main@aa7c6ef03; the issue body is stale on that point.'
-- id: PMAT-4130
-  github_issue: 4130
-  item_type: bug
-  title: 'Published tarballs of aprender-core, aprender-orchestrate, aprender-cbtop, aprender-test-showcase ship integration tests whose path-only dev-dependencies cargo package strips'
-  status: in_progress
-  priority: high
-  assigned_to: aprender-dd
-  created: 2026-09-24T00:00:00Z
-  updated: 2026-09-24T00:00:00Z
-  spec: null
-  acceptance_criteria:
-  - 'scripts/package_tarball_build.sh (#4114) no longer reports aprender-core, aprender-orchestrate, aprender-cbtop or aprender-test-showcase RED'
-  - 'no sibling dev-dependency is re-versioned (PMAT-955 / preflight R6)'
-  - 'what a tarball drops is printed and counted, never a silent shrink: excluded targets in the gate NOT SHIPPED list, lib-test reads via the agreed *_or_skip run-time pattern (SKIP by name out of tree, PANIC in tree)'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4133
-  github_issue: 4133
-  item_type: task
-  title: 'CI: direct guard steps run under setsid --wait (#4133)'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T01:27:53Z
-  updated: 2026-09-24T01:27:53Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4142
-  github_issue: 4142
-  item_type: task
-  title: 'ci: the mutants gate mutates the WORKSPACE -- it was vacuous for crates/** (0 mutants on every crate diff)'
-  status: in_progress
-  priority: high
-  assigned_to: aprender-6c
-  created: 2026-09-24T00:00:00Z
-  updated: 2026-09-24T00:00:00Z
-  spec: null
-  acceptance_criteria:
-  - 'The PR mutants job lists and runs cargo-mutants with --workspace (the fix for #4142: without it every crate diff listed 0 mutants and passed -- measured on #3772/#3737/#3707/#3706)'
-  - 'OPERATOR ruling via the cop (2026-09-24, verbatim "go with recommended yes"): on-PR --workspace -j N with a RED "too many to judge" cap of ~60 mutants, plus a nightly full run'
-  - 'The gate refuses rather than passes: a failed list, a run that wrote no outcomes, an unparseable outcomes.json, and a tested count that differs from the listed count are RED'
-  - 'scripts/mutants_diff_gate.sh --self-test: every rule deleted in a copy breaks the row that names it'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: 'cargo-mutants 27 refuses `workspace = true` in .cargo/mutants.toml ("unknown field"), so the fix is the --workspace flag, which is a ci.yml edit approved by the operator through the cop. Measured on gx10 with the real tool: the #4139 diff at 820e8523 lists 270 mutants (269 at 9f5fbcc7b, the #4142 issue table) and the gate prints RED "too many to judge: 270 mutants in the diff > cap 60"; a README-only diff prints "0 mutants in the diff". Cost: ~85 s per aprender-contracts mutant, serially.'
-- id: PMAT-4179
-  github_issue: 4179
-  item_type: task
-  title: 'binary-debt: qwen3_moe live falsifier nightly, fail-closed'
-  status: inprogress
-  priority: medium
-  assigned_to: aprender-88
-  created: 2026-09-24T16:20:28Z
-  updated: 2026-09-24T16:20:28Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4186
-  github_issue: 4186
-  item_type: task
-  title: 'P0: dogfood hosts run ONLY the latest green nightly apr/pv — apr_bin.sh + pv_bin.sh refuse anything older (arbiter manifest, fail closed)'
-  status: in_progress
-  priority: critical
-  assigned_to: aprender-49
-  created: 2026-09-24T00:00:00Z
-  updated: 2026-09-24T00:00:00Z
-  spec: null
-  acceptance_criteria:
-  - nightly mode (APR_BIN_REQUIRE / PV_BIN_REQUIRE=nightly) accepts only the manifest's green binary
-  - 'case table — stale/tagged/missing/malformed/stale-manifest/denylisted refuse; nightly accepts'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - P0
-  - kind:code
-  notes: null
-- id: PMAT-4415
-  github_issue: 4415
-  item_type: task
-  title: 'Lever 0: guard-cargo/guard-tree stop at the first red step — run every guard and report every failure in one pass (RC #4318: 1 failure per run, 15–71 steps dark)'
-  status: inprogress
-  priority: high
-  assigned_to: aprender-5d
-  created: 2026-09-26T12:00:00+00:00
-  updated: 2026-09-26T12:00:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'each guard section (guard-tree, guard-cargo) in ci/sections.yml runs its guards through ONE step, bash scripts/ci_guards.sh <job>, under if: !cancelled() && steps.guard-setup.outcome == success; every guard step that can run outside a pull_request event lives in the <job>-steps manifest (if: false) and the runner executes all of them past a red step, one ::error per failure and one SUMMARY. The only steps left in the section are the ones that need the pull_request payload (both already !cancelled()) and the always() target-watch report — the same three #4457 kept — and check_guard_steps_run_all.sh refuses any other fail-fast step over the baseline'
-  - 'make guards-local and .githooks/pre-push run the same script and print the same ci_guards: sha256 line CI prints'
-  - 'the guard jobs are the guard-* sections the gate in .github/workflows/ci.yml reads; a gate that reads none, or an unreadable file, fails closed (rc 2)'
-  - 'scripts/guard_fail_fast_baseline.txt (shrink-only) and scripts/ci_guards_uncovered.txt name real car sections; check_guard_steps_run_all.sh --self-test goes RED on each planted mutant and is itself wired into CI'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: 'Port of #4457 (PMAT-4415-guards-run-all, written against the pre-#4433 ci.yml) onto car/0.70.0 fat-job CI, as fold item from aprender-59. Workflow-surface change: 3/3 non-Claude-author quorum required; no push by the author.'

@@ -283,8 +283,11 @@ measured_set_lines() { # measured_set_lines BASELINE_FILE -> `  "readme": {...},
         return 0
     fi
     local pvbin out base cmp
-    pvbin="${PV:-$(command -v pv 2>/dev/null || true)}"
-    [ -n "$pvbin" ] || { printf 'NO-GO: no pv on PATH (set PV=) — the measured sets cannot be computed\n' >&2; return 2; }
+    # PV= wins (the case table's fake); otherwise pv_bin.sh, never PATH (check_apr_bin_pinned PATHRES-PV)
+    if [ -z "${PV:-}" ]; then
+        . "$REPO_ROOT/scripts/pv_bin.sh" || { printf 'NO-GO: pv_bin.sh resolved no pv — the measured sets cannot be computed\n' >&2; return 2; }
+    fi
+    pvbin="$PV"
     out="$(mktemp)"
     "$pvbin" lint "$REPO_ROOT/contracts" --gate shapes --format json >"$out" 2>/dev/null || true
     if ! jq -e 'type == "object" and (.readme.verified_commands | type) == "array" and (.claude_md.verified_commands | type) == "array"' "$out" >/dev/null 2>&1; then
