@@ -1,0 +1,76 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-09-27'
+  author: PAIML Engineering
+  registry: false
+  references:
+  - 'TRACE-001 TR-03 (paiml/aprender#4558) — docs/specifications/TRACE-001-tracing-consumers.md'
+  - 'crates/aprender-serve/src/api/mod_create_demo.rs — realizar::api::build_trace_data'
+  - 'crates/apr-cli/src/commands/serve/handler_apr_cpu_completion.rs — insert_trace_data'
+  description: >
+    The `X-Trace-Level` payload that `apr serve` returns on the APR CPU chat
+    completion path. Before TR-03 it was built by hand as a JSON object that
+    reported `"layers": 28` for every model and carried no `provenance`, so a
+    36-layer Qwen3.5-4B trace claimed 28 layers (R-1: no unmeasured attribution).
+    It now comes from `realizar::api::build_trace_data`, the same builder the
+    realizar server uses, fed with the loaded transformer's `config.num_layers`.
+
+equations:
+  payload_shape:
+    formula: |
+      level ∈ {brick, step, layer} → exactly one key ∈ {brick_trace, step_trace, layer_trace}
+      payload = TraceData { level, operations, total_time_us, breakdown, provenance }
+      layer:  operations = num_layers(model)
+      all:    total_time_us = measured wall-clock latency in µs
+      all:    provenance = "wall_clock_total"
+      all:    breakdown[0].details names num_layers(model), never a constant
+    domain: chat completion response with X-Trace-Level header
+    codomain: JSON object
+    invariants:
+    - "No level, or an unknown level, adds no *_trace key"
+    - "The reported layer count is the loaded model's config.num_layers, not a constant"
+    - "Every payload carries provenance; no per-operation timing is fabricated"
+
+proof_obligations:
+- id: SERVE-TRACE-INV-001
+  type: invariant
+  property: "reported layer count == loaded model's config.num_layers"
+- id: SERVE-TRACE-INV-002
+  type: invariant
+  property: "every trace payload carries provenance = wall_clock_total"
+- id: SERVE-TRACE-INV-003
+  type: invariant
+  property: "absent or unknown trace level leaves the response unchanged"
+
+falsification_tests:
+- id: FALSIFY-SERVE-TRACE-PAYLOAD-001
+  rule: the payload reports the model's own layer count
+  prediction: "insert_trace_data with num_layers=36 yields layer_trace.operations == 36 and every level's details name '36 layers', never '28 layers'"
+  test: "cargo test -p apr-cli --lib insert_trace_data_reports_the_model_layer_count_and_provenance"
+  if_fails: "the APR CPU trace payload is using a constant layer count again (the pre-TR-03 hard-coded 28)"
+- id: FALSIFY-SERVE-TRACE-PAYLOAD-002
+  rule: every payload carries provenance
+  prediction: "brick_trace, step_trace and layer_trace each have provenance == 'wall_clock_total'"
+  test: "cargo test -p apr-cli --lib insert_trace_data_reports_the_model_layer_count_and_provenance"
+  if_fails: "the payload no longer comes from realizar::api::build_trace_data"
+- id: FALSIFY-SERVE-TRACE-PAYLOAD-003
+  rule: no level, no trace
+  prediction: "None or an unknown level adds no *_trace key"
+  test: "cargo test -p apr-cli --lib insert_trace_data_none_level_is_noop insert_trace_data_unknown_level_is_noop"
+  if_fails: "trace keys leak into untraced responses"
+- id: FALSIFY-SERVE-TRACE-PAYLOAD-004
+  rule: live check on a real model (report-only, R-6)
+  prediction: "POST /v1/chat/completions with X-Trace-Level: layer against Qwen3.5-4B returns layer_trace.operations equal to its config num_layers and provenance wall_clock_total"
+  test: "apr serve <qwen3.5-4b.apr>; curl -H 'X-Trace-Level: layer' .../v1/chat/completions | jq .layer_trace"
+  if_fails: "the handler is not passing the loaded transformer's num_layers into the builder"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: partial
+  notes: |
+    FALSIFY-001..003 are unit tests in handler_apr_cpu_completion.rs. FALSIFY-004 is
+    a live, report-only check (R-6) and is not wired into CI.

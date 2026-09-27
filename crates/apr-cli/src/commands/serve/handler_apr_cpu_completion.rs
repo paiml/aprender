@@ -294,18 +294,33 @@ fn build_cpu_sse_stream(
     Sse::new(stream).into_response()
 }
 
-/// Insert trace data into a chat completion response based on trace level.
+/// Insert the `X-Trace-Level` payload into a chat completion response.
+///
+/// TR-03 (#4558): the payload comes from `realizar::api::build_trace_data`, the
+/// builder the realizar server uses, so it carries the loaded model's real layer
+/// count and its `provenance` (`wall_clock_total`). It used to be a hand-built
+/// payload that reported 28 layers for every model, with no provenance.
 #[cfg(feature = "inference")]
-fn insert_trace_data(response: &mut serde_json::Value, trace_level: Option<&str>, trace_data: serde_json::Value) {
-    let Some(level) = trace_level else { return };
-    let key = match level {
-        "brick" => "brick_trace",
-        "step" => "step_trace",
-        "layer" => "layer_trace",
-        _ => return,
-    };
-    if let Some(obj) = response.as_object_mut() {
-        obj.insert(key.to_string(), trace_data);
+fn insert_trace_data(
+    response: &mut serde_json::Value,
+    trace_level: Option<&str>,
+    latency_us: u64,
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    num_layers: usize,
+) {
+    let (brick, step, layer) = realizar::api::build_trace_data(
+        trace_level,
+        latency_us,
+        prompt_tokens,
+        completion_tokens,
+        num_layers,
+    );
+    let Some(obj) = response.as_object_mut() else { return };
+    for (key, data) in [("brick_trace", brick), ("step_trace", step), ("layer_trace", layer)] {
+        if let Some(value) = data.and_then(|d| serde_json::to_value(d).ok()) {
+            obj.insert(key.to_string(), value);
+        }
     }
 }
 
@@ -392,11 +407,14 @@ async fn handle_apr_cpu_chat_completion(
         "_apr_metrics": {"latency_ms": latency_ms, "tok_per_sec": tok_per_sec}
     });
 
-    let trace_data = serde_json::json!({
-        "total_time_us": latency_ms * 1000, "prompt_tokens": out.input_token_count,
-        "completion_tokens": out.tokens_generated, "layers": 28
-    });
-    insert_trace_data(&mut response, trace_level.as_deref(), trace_data);
+    insert_trace_data(
+        &mut response,
+        trace_level.as_deref(),
+        latency_ms * 1000,
+        out.input_token_count,
+        out.tokens_generated,
+        s.num_layers,
+    );
 
     Json(response).into_response()
 }
@@ -723,7 +741,7 @@ mod apr_cpu_completion_tests {
     #[test]
     fn insert_trace_data_none_level_is_noop() {
         let mut resp = serde_json::json!({"a": 1});
-        insert_trace_data(&mut resp, None, serde_json::json!({"x": 1}));
+        insert_trace_data(&mut resp, None, 1_000, 3, 4, 36);
         assert!(resp.get("brick_trace").is_none());
         assert!(resp.get("step_trace").is_none());
         assert!(resp.get("layer_trace").is_none());
@@ -732,21 +750,34 @@ mod apr_cpu_completion_tests {
     #[test]
     fn insert_trace_data_unknown_level_is_noop() {
         let mut resp = serde_json::json!({"a": 1});
-        insert_trace_data(&mut resp, Some("garbage"), serde_json::json!({"x": 1}));
+        insert_trace_data(&mut resp, Some("garbage"), 1_000, 3, 4, 36);
         assert_eq!(resp.as_object().expect("obj").len(), 1);
     }
 
+    /// TR-03 (#4558), `serve-trace-payload-v1`: every level reports the model's
+    /// own layer count (36 here, and never the old hard-coded 28), the measured
+    /// wall-clock total, and `provenance: wall_clock_total`.
     #[test]
-    fn insert_trace_data_maps_levels_to_keys() {
+    fn insert_trace_data_reports_the_model_layer_count_and_provenance() {
         for (level, key) in [
             ("brick", "brick_trace"),
             ("step", "step_trace"),
             ("layer", "layer_trace"),
         ] {
             let mut resp = serde_json::json!({});
-            insert_trace_data(&mut resp, Some(level), serde_json::json!({"layers": 28}));
-            assert_eq!(resp[key]["layers"], 28, "level {level} → key {key}");
+            insert_trace_data(&mut resp, Some(level), 12_345, 3, 4, 36);
+            let t = &resp[key];
+            assert_eq!(t["level"], level, "level {level} → key {key}");
+            assert_eq!(t["total_time_us"], 12_345, "{key}");
+            assert_eq!(t["provenance"], "wall_clock_total", "{key}");
+            let details = t["breakdown"][0]["details"].as_str().expect("details");
+            assert!(details.contains("36 layers"), "{key}: {details}");
+            assert!(!details.contains("28 layers"), "{key}: {details}");
+            assert_eq!(resp.as_object().expect("obj").len(), 1, "one key per level");
         }
+        let mut resp = serde_json::json!({});
+        insert_trace_data(&mut resp, Some("layer"), 1, 0, 0, 36);
+        assert_eq!(resp["layer_trace"]["operations"], 36);
     }
 
     // ---- ollama_sampling ----------------------------------------------
