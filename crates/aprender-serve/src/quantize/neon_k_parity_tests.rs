@@ -4,7 +4,10 @@
 //! kernels; on x86_64 the same tests exercise the AVX2 kernels, and the
 //! `kernel_path` test asserts the path is NOT neon there.
 
-use super::fused_k::{fused_q4k_dot, fused_q4k_dot_kernel_path, fused_q4k_dot_simd};
+use super::fused_k::{
+    fused_q4k_dot, fused_q4k_dot_kernel_path, fused_q4k_dot_simd, fused_q4k_q8k_dot,
+    fused_q4k_q8k_dot_kernel_path, fused_q4k_q8k_dot_simd,
+};
 use super::fused_q5k_q6k::{fused_q6k_dot, fused_q6k_dot_kernel_path, fused_q6k_dot_simd};
 use super::types::QK_K;
 
@@ -163,5 +166,65 @@ fn falsify_neon_q4k_002_kernel_path_is_honest() {
     } else {
         // Not aarch64: the NEON claim is not tested here, and must not be made.
         assert!(!p4.contains("neon") && !p6.contains("neon"), "{p4} {p6}");
+    }
+}
+
+fn q8k_row(rng: &mut Rng, nsb: usize) -> (Vec<f32>, Vec<i8>) {
+    let scales = (0..nsb).map(|_| 0.001 + rng.unit().abs() * 0.02).collect();
+    let quants = (0..nsb * QK_K).map(|_| rng.byte() as i8).collect();
+    (scales, quants)
+}
+
+/// q4k·q8k: the dispatched kernel (sdot or widen on aarch64) matches the scalar oracle.
+#[test]
+fn falsify_neon_q4k_001_q8k_parity_10k_blocks() {
+    let mut rng = Rng(0x0073_0003_0008);
+    for i in 0..BLOCKS {
+        let w = q4k_block(&mut rng);
+        let (s, q) = q8k_row(&mut rng, 1);
+        let want = fused_q4k_q8k_dot(&w, &s, &q).expect("scalar");
+        let got = fused_q4k_q8k_dot_simd(&w, &s, &q).expect("simd");
+        assert!(within(got, want), "block {i}: simd {got} vs scalar {want}");
+    }
+    for n in [2usize, 7, 16] {
+        let w: Vec<u8> = (0..n).flat_map(|_| q4k_block(&mut rng)).collect();
+        let (s, q) = q8k_row(&mut rng, n);
+        let want = fused_q4k_q8k_dot(&w, &s, &q).expect("scalar");
+        let got = fused_q4k_q8k_dot_simd(&w, &s, &q).expect("simd");
+        assert!(within(got, want), "n={n}: simd {got} vs scalar {want}");
+    }
+}
+
+/// Both aarch64 q4k·q8k kernels, called directly, so the one the dispatcher does
+/// not pick on this host is still checked against the oracle.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_q4k_q8k_widen_and_sdot_match_scalar() {
+    use super::neon_k::{fused_q4k_q8k_dot_neon_sdot, fused_q4k_q8k_dot_neon_widen};
+    let mut rng = Rng(0x0073_0003_0009);
+    let sdot = std::arch::is_aarch64_feature_detected!("dotprod");
+    for i in 0..2_000 {
+        let w = q4k_block(&mut rng);
+        let (s, q) = q8k_row(&mut rng, 1);
+        let want = fused_q4k_q8k_dot(&w, &s, &q).expect("scalar");
+        // SAFETY: NEON is baseline on aarch64.
+        let got = unsafe { fused_q4k_q8k_dot_neon_widen(&w, &s, &q) }.expect("widen");
+        assert!(within(got, want), "block {i}: widen {got} vs scalar {want}");
+        if sdot {
+            // SAFETY: dotprod was detected above.
+            let got = unsafe { fused_q4k_q8k_dot_neon_sdot(&w, &s, &q) }.expect("sdot");
+            assert!(within(got, want), "block {i}: sdot {got} vs scalar {want}");
+        }
+    }
+}
+
+/// FALSIFY-NEON-Q4K-002 for q4k·q8k: the path label names the kernel reached.
+#[test]
+fn falsify_neon_q4k_002_q8k_kernel_path_is_honest() {
+    let p = fused_q4k_q8k_dot_kernel_path();
+    if cfg!(target_arch = "aarch64") {
+        assert!(p == "q4k-q8k/neon-sdot" || p == "q4k-q8k/neon-widen", "{p}");
+    } else {
+        assert!(!p.contains("neon"), "{p}");
     }
 }

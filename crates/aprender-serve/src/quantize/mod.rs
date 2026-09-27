@@ -137,7 +137,7 @@ pub mod direct_f32;
 pub use direct_f32::fused_q4k_parallel_matvec_f32_into;
 pub use fused_k::{
     fused_q4k_dot, fused_q4k_dot_kernel_path, fused_q4k_dot_simd, fused_q4k_q8k_dot,
-    fused_q4k_q8k_dot_simd,
+    fused_q4k_q8k_dot_kernel_path, fused_q4k_q8k_dot_simd,
 };
 pub use fused_q5k_q6k::{
     fused_q4k_q8_dot, fused_q5k_dot, fused_q5k_dot_simd, fused_q6k_dot, fused_q6k_dot_kernel_path,

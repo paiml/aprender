@@ -207,3 +207,181 @@ pub(crate) unsafe fn fused_q6k_dot_neon(q6k_data: &[u8], activations: &[f32]) ->
     }
     Ok(vaddvq_f32(acc))
 }
+
+/// Integer sums for one 64-value Q4_K chunk against Q8_K quants:
+/// (Σ lo·q8[0..32], Σ q8[0..32], Σ hi·q8[32..64], Σ q8[32..64]).
+///
+/// # Safety
+/// `q` must point at 32 readable bytes and `a` at 64 readable i8 values.
+#[inline]
+#[target_feature(enable = "neon")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn q4k_q8k_chunk_widen(q: *const u8, a: *const i8) -> (i32, i32, i32, i32) {
+    let mask = vdupq_n_u8(0x0F);
+    let (q0, q1) = (vld1q_u8(q), vld1q_u8(q.add(16)));
+    let (a0, a1, a2, a3) = (
+        vld1q_s8(a),
+        vld1q_s8(a.add(16)),
+        vld1q_s8(a.add(32)),
+        vld1q_s8(a.add(48)),
+    );
+    // Nibbles are 0..=15, so they are exact as i8; |nibble·q8| ≤ 15·128 fits i16.
+    let mul = |w: int8x16_t, x: int8x16_t, acc: int32x4_t| {
+        let lo = vmull_s8(vget_low_s8(w), vget_low_s8(x));
+        let hi = vmull_high_s8(w, x);
+        vpadalq_s16(vpadalq_s16(acc, lo), hi)
+    };
+    let s = |w: uint8x16_t| vreinterpretq_s8_u8(w);
+    let zero = vdupq_n_s32(0);
+    let lo = mul(
+        s(vandq_u8(q1, mask)),
+        a1,
+        mul(s(vandq_u8(q0, mask)), a0, zero),
+    );
+    let hi = mul(
+        s(vshrq_n_u8::<4>(q1)),
+        a3,
+        mul(s(vshrq_n_u8::<4>(q0)), a2, zero),
+    );
+    let qsum = |x: int8x16_t, y: int8x16_t| vaddlvq_s16(vaddq_s16(vpaddlq_s8(x), vpaddlq_s8(y)));
+    (vaddvq_s32(lo), qsum(a0, a1), vaddvq_s32(hi), qsum(a2, a3))
+}
+
+/// `acc + Σ_4 a·b` per i32 lane: one SDOT instruction.
+///
+/// `vdotq_s32` is still unstable (`stdarch_neon_dotprod`) on the pinned toolchain,
+/// so this is the instruction itself. Pure register op: no memory, no stack.
+///
+/// # Safety
+/// The CPU must have the `dotprod` feature.
+#[inline]
+#[target_feature(enable = "neon,dotprod")]
+unsafe fn sdot(mut acc: int32x4_t, a: int8x16_t, b: int8x16_t) -> int32x4_t {
+    // SAFETY: register-only instruction; dotprod is guaranteed by the caller.
+    unsafe {
+        std::arch::asm!(
+            "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+            acc = inout(vreg) acc,
+            a = in(vreg) a,
+            b = in(vreg) b,
+            options(pure, nomem, nostack, preserves_flags),
+        );
+    }
+    acc
+}
+
+/// Same as `q4k_q8k_chunk_widen`, with the products done by SDOT.
+///
+/// # Safety
+/// Requires the `dotprod` feature (checked by the caller) plus the bounds of
+/// `q4k_q8k_chunk_widen`.
+#[inline]
+#[target_feature(enable = "neon,dotprod")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn q4k_q8k_chunk_sdot(q: *const u8, a: *const i8) -> (i32, i32, i32, i32) {
+    let mask = vdupq_n_u8(0x0F);
+    let (q0, q1) = (vld1q_u8(q), vld1q_u8(q.add(16)));
+    let (a0, a1, a2, a3) = (
+        vld1q_s8(a),
+        vld1q_s8(a.add(16)),
+        vld1q_s8(a.add(32)),
+        vld1q_s8(a.add(48)),
+    );
+    let s = |w: uint8x16_t| vreinterpretq_s8_u8(w);
+    let zero = vdupq_n_s32(0);
+    let lo = sdot(
+        sdot(zero, s(vandq_u8(q0, mask)), a0),
+        s(vandq_u8(q1, mask)),
+        a1,
+    );
+    let hi = sdot(
+        sdot(zero, s(vshrq_n_u8::<4>(q0)), a2),
+        s(vshrq_n_u8::<4>(q1)),
+        a3,
+    );
+    let qsum = |x: int8x16_t, y: int8x16_t| vaddlvq_s16(vaddq_s16(vpaddlq_s8(x), vpaddlq_s8(y)));
+    (vaddvq_s32(lo), qsum(a0, a1), vaddvq_s32(hi), qsum(a2, a3))
+}
+
+/// Stamps a Q4_K × Q8_K kernel around a chunk function. The float combine is
+/// the scalar `fused_q4k_q8k_dot`'s, term for term; the integer sums are exact,
+/// so the result matches the scalar oracle bit for bit.
+macro_rules! q4k_q8k_neon_kernel {
+    ($name:ident, $chunk:ident, $features:literal) => {
+        /// NEON Q4_K × Q8_K dot. Same checks and result as `fused_q4k_q8k_dot`.
+        ///
+        /// # Safety
+        /// The target features named in the attribute must be present. Reads are
+        /// bounded by the length checks below.
+        #[target_feature(enable = $features)]
+        #[allow(unsafe_op_in_unsafe_fn)]
+        pub(crate) unsafe fn $name(
+            q4k_data: &[u8],
+            q8k_scales: &[f32],
+            q8k_quants: &[i8],
+        ) -> Result<f32> {
+            if !q4k_data.len().is_multiple_of(Q4K_SUPER_BLOCK_BYTES) {
+                return Err(RealizarError::InvalidShape {
+                    reason: format!(
+                        "Q4_K data length {} is not a multiple of {}",
+                        q4k_data.len(),
+                        Q4K_SUPER_BLOCK_BYTES
+                    ),
+                });
+            }
+            let num_super_blocks = q4k_data.len() / Q4K_SUPER_BLOCK_BYTES;
+            if q8k_scales.len() < num_super_blocks {
+                return Err(RealizarError::InvalidShape {
+                    reason: format!(
+                        "Q8_K scales count {} < expected {}",
+                        q8k_scales.len(),
+                        num_super_blocks
+                    ),
+                });
+            }
+            if q8k_quants.len() < num_super_blocks * QK_K {
+                return Err(RealizarError::InvalidShape {
+                    reason: format!(
+                        "Q8_K quants count {} < expected {}",
+                        q8k_quants.len(),
+                        num_super_blocks * QK_K
+                    ),
+                });
+            }
+
+            let mut total_acc = 0.0f32;
+            for sb_idx in 0..num_super_blocks {
+                let sb =
+                    &q4k_data[sb_idx * Q4K_SUPER_BLOCK_BYTES..(sb_idx + 1) * Q4K_SUPER_BLOCK_BYTES];
+                let d = read_f16(&sb[0..2]);
+                let dmin = read_f16(&sb[2..4]);
+                let mut scales = [0u8; 12];
+                scales.copy_from_slice(&sb[4..16]);
+                let q8_scale = q8k_scales[sb_idx];
+                let q8 = &q8k_quants[sb_idx * QK_K..(sb_idx + 1) * QK_K];
+
+                for j in (0..QK_K).step_by(64) {
+                    let is = j / 32;
+                    let (sc1, m1) = extract_scale_min(&scales, is);
+                    let (sc2, m2) = extract_scale_min(&scales, is + 1);
+                    // SAFETY: sb has 144 bytes and 16 + j/2 + 32 <= 144; q8 has 256
+                    // values and j + 64 <= 256.
+                    let (sum_lo, q8_sum_lo, sum_hi, q8_sum_hi) =
+                        $chunk(sb.as_ptr().add(16 + j / 2), q8.as_ptr().add(j));
+                    total_acc += d * sc1 * q8_scale * (sum_lo as f32)
+                        - dmin * m1 * q8_scale * (q8_sum_lo as f32);
+                    total_acc += d * sc2 * q8_scale * (sum_hi as f32)
+                        - dmin * m2 * q8_scale * (q8_sum_hi as f32);
+                }
+            }
+            Ok(total_acc)
+        }
+    };
+}
+
+q4k_q8k_neon_kernel!(fused_q4k_q8k_dot_neon_widen, q4k_q8k_chunk_widen, "neon");
+q4k_q8k_neon_kernel!(
+    fused_q4k_q8k_dot_neon_sdot,
+    q4k_q8k_chunk_sdot,
+    "neon,dotprod"
+);

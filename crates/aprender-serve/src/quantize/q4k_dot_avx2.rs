@@ -355,6 +355,43 @@ pub fn fused_q4k_q8k_dot_simd(
         }
     }
 
+    // 0.73 R3: SDOT when the CPU has dotprod, else the baseline-NEON widening kernel.
+    #[cfg(target_arch = "aarch64")]
+    let result = if std::arch::is_aarch64_feature_detected!("dotprod") {
+        // SAFETY: dotprod verified at runtime; the kernel re-validates shapes.
+        unsafe { super::neon_k::fused_q4k_q8k_dot_neon_sdot(q4k_data, q8k_scales, q8k_quants) }
+    } else {
+        // SAFETY: NEON is aarch64 baseline; the kernel re-validates shapes.
+        unsafe { super::neon_k::fused_q4k_q8k_dot_neon_widen(q4k_data, q8k_scales, q8k_quants) }
+    };
     // pmat-ignore: hardware-path (scalar fallback tested directly via fused_q4k_q8k_dot)
-    fused_q4k_q8k_dot(q4k_data, q8k_scales, q8k_quants)
+    #[cfg(not(target_arch = "aarch64"))]
+    let result = fused_q4k_q8k_dot(q4k_data, q8k_scales, q8k_quants);
+    result
+}
+
+/// Name of the kernel `fused_q4k_q8k_dot_simd` dispatches to on this host (0.73 R3 E-R3-2).
+///
+/// Uses the same predicates as the dispatcher: `q4k-q8k/avx512vnni`, `q4k-q8k/avx2`,
+/// `q4k-q8k/neon-sdot`, `q4k-q8k/neon-widen` or `q4k-q8k/scalar`.
+#[must_use]
+pub fn fused_q4k_q8k_dot_kernel_path() -> &'static str {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni") {
+            return "q4k-q8k/avx512vnni";
+        }
+        if is_x86_feature_detected!("avx2") {
+            return "q4k-q8k/avx2";
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    let path = if std::arch::is_aarch64_feature_detected!("dotprod") {
+        "q4k-q8k/neon-sdot"
+    } else {
+        "q4k-q8k/neon-widen"
+    };
+    #[cfg(not(target_arch = "aarch64"))]
+    let path = "q4k-q8k/scalar";
+    path
 }
