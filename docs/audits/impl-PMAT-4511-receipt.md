@@ -65,7 +65,7 @@ restored, checked by cksum.
 - flags against `--help`
 - keys against the `app.rs` handlers
 - panels against `PanelType::all()` through `parse_panel_type`
-- every flag has a `docs/audits/surface_audit.csv` row (15 aprender-viz-ttop rows)
+- every flag has a `docs/audits/surface_audit.csv` row (14 aprender-viz-ttop rows: 13 flags + the base command)
 
 Its parsers carry a case table. That table caught the old help parser dropping any flag whose
 description contained ", ".
