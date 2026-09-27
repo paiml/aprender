@@ -61,6 +61,7 @@ pub mod adamw;
 pub mod alibi;
 pub mod cma_es;
 pub mod conv1d;
+pub mod crux_trace;
 pub mod embedding;
 pub mod f16_convert;
 pub mod gated_delta_net;

@@ -309,7 +309,7 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 | CRUX-E-24 | RAG eval (RAGAS / TruLens) | ecosystem | ❌ | 3 |
 | CRUX-E-25 | Vision-language benchmark harness | OpenCLIP eval | ❌ | 2 |
 
-### Category F — Debug & Analysis (20 stories)
+### Category F — Debug & Analysis (24 stories; F-22..F-25 added by TRACE-001 TR-11, 2026-09-27)
 
 | ID | Story | Competitor verb | S | D |
 |----|-------|----------------|---|---|
@@ -333,6 +333,10 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 | CRUX-F-19 | `apr explain` token selection rationale | — | ❌ | 3 |
 | CRUX-F-20 | GGUF metadata dump | `gguf-dump.py` | ✅ | 5 |
 | CRUX-F-21 | `apr qa` 8-gate golden-test runner | — | ✅ | 5 |
+| CRUX-F-22 | renacer syscall trace vs strace (E-S1/E-S2) | `strace`, `perf trace` | 🔨 | 3 |
+| CRUX-F-23 | `renacer validate` golden-trace regression | `strace -c` diff | 🔨 | 3 |
+| CRUX-F-24 | `cgp profile` kernel agreement (E-S3) | `nsys`, `ncu` | 🔨 | 3 |
+| CRUX-F-25 | BrickTracer per-op attribution | PyTorch profiler, `perf record` | 🔨 | 3 |
 
 > ID gap: **CRUX-F-10** dropped — activation histograms subsumed by F-04 + F-09.
 

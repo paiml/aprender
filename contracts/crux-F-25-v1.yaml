@@ -1,0 +1,86 @@
+# CRUX-F-25 — Per-op time attribution: BrickTracer vs PyTorch profiler / perf record (TRACE-001 TR-11)
+
+metadata:
+  id: CRUX-F-25
+  version: "1.0.0"
+  created: "2026-09-27"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: partial
+  gap_effect: unmeasured
+  description: >
+    BrickTracer's per-op attribution never claims time it did not measure: the
+    sum of measured components is at most the wall time, and a breakdown whose
+    provenance is NotInstrumented or WallClockTotal carries null components,
+    never zero-filled and never set equal to the total (TRACE-001 R-1, the F1
+    defect `compute_us: duration_us`). Competitors are the PyTorch profiler and
+    `perf record` on CPU. gap_effect stays `unmeasured` until TR-15 commits the
+    first record.
+  competitor_arms:
+  - tool: pytorch profiler
+    version: "2.10.0+cpu"
+    digest: "sha256:6becf15db5245997dff7ece407a018db17495fa5fc93ae636aef1392160cbb45"
+    pinned_on: noah-Lambda-Vector torch/lib/libtorch_cpu.so (2026-09-27)
+  - tool: perf record
+    version: "6.8.12"
+    digest: "sha256:df3635358e31252e2f99dfc1031b2c2118614e691e39e4cd84e9c7ffdc5b794b"
+    pinned_on: noah-Lambda-Vector /usr/lib/linux-tools/6.8.0-90-generic/perf (2026-09-27)
+  references:
+  - 'spec: docs/specifications/TRACE-001-tracing-consumers.md §2.1, §2.4 (branch docs/trace001-obs-specs)'
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml'
+  - 'metric: crates/aprender-contracts/src/kernels/crux_trace.rs'
+equations:
+  op_attribution:
+    formula: |
+      provenance = Measured        =>  some component measured  and  sum(measured components) <= wall
+      provenance != Measured       =>  every component is null
+    domain: "provenance in {Measured, WallClockTotal, NotInstrumented}, components (Option<us>), wall (us)"
+    codomain: "Ok | SumExceedsWall | ComponentUnderUnmeasured | MeasuredWithoutComponents"
+    invariants:
+    - "unmeasured is null, never zero and never the total"
+
+proof_obligations:
+- id: CRUX-F25-INV-001
+  type: invariant
+  property: "sum of measured components <= wall under Measured"
+- id: CRUX-F25-INV-002
+  type: invariant
+  property: "no component is set under NotInstrumented or WallClockTotal"
+- id: CRUX-F25-INV-003
+  type: invariant
+  property: "Measured with no measured component is rejected"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-25-001
+  rule: sum of components exceeds wall
+  prediction: "SumExceedsWall { sum_us: 1100, wall_us: 1000 }"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f25_001_sum_exceeds_wall -- --exact
+  if_fails: a breakdown could attribute more time than was spent
+- id: FALSIFY-CRUX-F-25-002
+  rule: zero-filled components under an unmeasured provenance
+  prediction: "ComponentUnderUnmeasured for a Some(0) under NotInstrumented and compute_us == duration_us under WallClockTotal; MeasuredWithoutComponents for all-null Measured"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f25_002_zero_fill_under_not_instrumented -- --exact
+  if_fails: the F1 defect (100% attributed to compute with no events) would pass
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-25
+  priority: medium
+  auto_created: false

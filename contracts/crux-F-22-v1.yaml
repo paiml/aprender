@@ -1,0 +1,120 @@
+# CRUX-F-22 — Syscall tracing: renacer vs strace (TRACE-001 TR-11, E-S1/E-S2)
+
+metadata:
+  id: CRUX-F-22
+  version: "1.0.0"
+  created: "2026-09-27"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: partial
+  gap_effect: unmeasured
+  description: >
+    renacer (in-tree, crates/aprender-profile, resolved by scripts/renacer_bin.sh
+    per TRACE-001 R-2) traces the same deterministic workload as strace with
+    per-syscall counts that agree within strace's own run-to-run noise (E-S1),
+    and its tracing overhead is reported every release as
+    gap_effect = ln(rho_renacer / rho_strace) (E-S2). gap_effect stays
+    `unmeasured` until TR-15 commits the first record.
+  competitor_arms:
+  - tool: strace
+    version: "5.16"
+    digest: "sha256:38a5c75cb29dd85ddd7780d54f5bf595554d7a1b5c42524b23065f5dc4c4b01d"
+    pinned_on: noah-Lambda-Vector /usr/bin/strace (2026-09-27)
+  - tool: perf trace
+    version: "6.8.12"
+    digest: "sha256:df3635358e31252e2f99dfc1031b2c2118614e691e39e4cd84e9c7ffdc5b794b"
+    pinned_on: noah-Lambda-Vector /usr/lib/linux-tools/6.8.0-90-generic/perf (2026-09-27)
+  - tool: bpftrace
+    refused:
+      reason: "not installed on any measured host (command -v bpftrace empty on noah-Lambda-Vector, 2026-09-27); arm stays Refused until forjar declares it"
+  references:
+  - 'spec: docs/specifications/TRACE-001-tracing-consumers.md §2.4 E-S1, E-S2 (branch docs/trace001-obs-specs)'
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml'
+  - 'metric: crates/aprender-contracts/src/kernels/crux_trace.rs'
+equations:
+  syscall_divergence:
+    formula: |
+      D(t1, t2) = sum_s |n_t1(s) - n_t2(s)| / sum_s n_t2(s)
+    domain: "two per-syscall count maps from runs of one deterministic workload"
+    codomain: "D in [0, inf), undefined (None) when sum_s n_t2(s) = 0"
+    invariants:
+    - "D >= 0"
+    - "D(t, t) = 0 on identical count vectors"
+    - "D is invariant to the order in which syscalls are reported"
+  parity_ok:
+    formula: |
+      parity_ok <=> med_runs D(renacer, strace) <= q_0.95( D(strace, strace) )
+    domain: "ABBA-interleaved renacer/strace runs plus strace self-noise runs"
+    codomain: "bool, or None when either sample is empty or non-finite"
+    invariants:
+    - "the threshold is strace's own noise quantile, never an invented constant"
+  overhead_gap_effect:
+    formula: |
+      rho_t = wall_traced / wall_untraced
+      gap_effect = ln(rho_renacer / rho_strace)
+    domain: "rho_renacer, rho_strace finite and > 0"
+    codomain: "real; < 0 means renacer is cheaper"
+    invariants:
+    - "an unreported or non-positive overhead yields None, never 0"
+
+proof_obligations:
+- id: CRUX-F22-INV-001
+  type: invariant
+  property: "D >= 0, D(t,t) = 0, and D is invariant to syscall ordering"
+- id: CRUX-F22-GATE-002
+  type: invariant
+  property: "a renacer build that drops openat events fails parity_ok against strace noise"
+- id: CRUX-F22-INV-003
+  type: invariant
+  property: "overhead gap_effect is None when either overhead is unreported"
+
+kani_harnesses:
+- id: KANI-CRUX-D
+  obligation: CRUX-F22-INV-001
+  property: "numerator = 0 iff identical vectors; D(t,t) = 0; order invariance under a shared swap"
+  bound: 4
+  strategy: exhaustive
+  harness: verify_crux_d_identity_and_order
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-22-001
+  rule: renacer dropping openat events fails E-S1 parity
+  prediction: "parity_ok(cross, noise) == Some(false) for a planted renacer that drops every openat"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f22_001_renacer_dropping_openat_fails_parity -- --exact
+  if_fails: E-S1 cannot detect a tracer that loses a syscall class — the parity gate is theater
+- id: FALSIFY-CRUX-F-22-002
+  rule: unreported overhead is not a number
+  prediction: "overhead_gap_effect(NaN, rho) and parity_ok over an empty sample are None"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f22_002_unreported_overhead_is_not_a_number -- --exact
+  if_fails: an unmeasured overhead or parity would be reported as a value (R-1)
+- id: FALSIFY-CRUX-F-22-003
+  rule: D identity and order invariance
+  prediction: "D(t,t) = 0, D > 0 on a planted extra fsync, same permutation leaves D unchanged"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f22_003_d_identity_and_order -- --exact
+  if_fails: KANI-CRUX-D's properties do not hold on the shipped implementation
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-22
+  priority: medium
+  auto_created: false
