@@ -22507,3 +22507,26 @@ roadmap:
   labels:
   - kind:code
   notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
+- id: PMAT-4502
+  github_issue: 4502
+  item_type: task
+  title: 'batch/ont-10: every remaining ONT-10 row for 0.70.0 (one PR, one quorum, one CI)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-88
+  created: 2026-09-27T10:17:06Z
+  updated: 2026-09-27T10:17:06Z
+  spec: null
+  acceptance_criteria:
+  - 'every ONT-10 row on the batch lands in this one PR (no per-row PRs); origin/main merged in without rebase or force'
+  - 'Sigma binary is implemented by extract:binary from the tracked evidence/binary/snapshot.jsonl, one node per cargo bin target keyed binary/<package>/<target>; binary-target is NOT in armed_shapes'
+  - 'scripts/surface_audit_bins_gate.sh is GREEN (every [[bin]] has a docs/audits/surface_audit.csv row) and RED on an empty ledger'
+  - 'pv validate passes on contracts/binary-surface-v1.yaml and every contracts/bin-*.yaml; the aprender-contracts lib is green'
+  - 'a gate still RED stays in its contract with the observed value in if_fails, never dropped'
+  - '(process, not diff content) one quorum on the combined head; pmat-merge arms with --match-head-commit'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ONT-10 epic carrier; rows and owners in cop-inbox gates/ont10-sizing.md. Refs #4079 #3269 #4476.'
