@@ -261,7 +261,6 @@ quant_types:
     # affine min `m` dropped: row 34 GPU -13.5 vs CPU -9.
     # Q5_1 is the only AFFINE type here (`w = q*d + m`), so a kernel that drops
     # the min gives the right spread around the wrong centre.
-    reason: ''
   - name: Q8_0
     ggml_type: 8
     gpu_supported: true
@@ -281,7 +280,6 @@ quant_types:
     # Planted faults RED on real bytes: scale/min nibbles swapped; half selector
     # L&1 not (L&3)>>1 (the decoder's own historical bug class); affine min dropped;
     # shift from h not s. Every run exclusive via scripts/lib/gpu_exclusive_run.sh.
-    reason: ''
   - name: Q3_K
     ggml_type: 11
     gpu_supported: false
@@ -317,7 +315,6 @@ quant_types:
     # CPU 4815.1; scale nibble dropped: GPU 351.4 vs CPU -2.6.
     # "IQ also fails the CPU dequant path" was about aprender-CORE; the
     # aprender-SERVE decoder (the A/B oracle) has worked since PMAT-3477.
-    reason: ''
   - name: IQ2_XS
     ggml_type: 17
     gpu_supported: false
@@ -333,7 +330,6 @@ quant_types:
     # (2048,1024) 2.346e-7 -- bar 1e-5, NaN-prefilled, 0 unwritten; positive
     # control on real bytes 8.005e3 RED. Planted faults RED first: sign-code width
     # 7->8, aux u16 halves swapped, row stride 98->96, 2nd grid index reads 1st.
-    reason: ''
   - name: IQ1_S
     ggml_type: 19
     gpu_supported: false
@@ -348,7 +344,6 @@ quant_types:
     # kernel did not, and nothing else in the tree would have noticed.
     # IQ4_NL needed elements-per-block as a TYPE PROPERTY (32/18), not the
     # hardcoded 256 the dispatch assumed, or every row would be under-read 8x.
-    reason: ''
   - name: IQ3_S
     ggml_type: 21
     gpu_supported: true
@@ -359,7 +354,6 @@ quant_types:
     # row 13 GPU 9311 vs CPU 1209; 9th grid bit from 2l+1: row 13 GPU 11085 vs
     # CPU 1209; sign bits ignored: row 1 GPU -17453 vs CPU 1523.
     # The CPU dequant path has worked since PMAT-3477; only the GEMV was absent.
-    reason: ''
   - name: IQ2_S
     ggml_type: 22
     gpu_supported: true
@@ -372,7 +366,6 @@ quant_types:
     # |err|/sum|w||x| 1.903e-7, bar 1e-5, NaN-prefilled. Planted faults RED:
     # sign bits ignored, qh high bits dropped, scale nibble by l&1 not l>>1,
     # grid lo/hi words swapped. Runs via scripts/lib/gpu_exclusive_run.sh.
-    reason: ''
   - name: IQ4_XS
     ggml_type: 23
     gpu_supported: true
