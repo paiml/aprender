@@ -79,8 +79,8 @@ apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http
 apr,POST /v1/embeddings,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:142,high
 apr,POST /v1/explain,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:145,high
 apr,POST /v1/gpu/warmup,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:148,medium
-apr,POST /v1/logprobs,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:183,low
-apr,POST /v1/perplexity,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:184,low
+apr,POST /v1/logprobs,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:222,low
+apr,POST /v1/perplexity,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:223,low
 apr,POST /v1/predict,5,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:144,high
 apr,apr attn-parity-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:996,high
 apr,apr attn-viz-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1020,high

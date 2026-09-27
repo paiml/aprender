@@ -14,7 +14,12 @@
 #   other 4 rows are stream:true modes of a route already counted: POST /api/chat, /api/generate,
 #   /v1/chat/completions, /v1/completions). 2 of the 43 — POST /v1/logprobs, POST /v1/perplexity — are in
 #   cuda_routes(), behind #[cfg(feature = "cuda")], so the DEFAULT build mounts 41. Their 2 ledger rows are
-#   orphans, RED today, the same class as S9's 15 feature-gated command rows.
+#   bin:ledgerOrphanRoute on a default snapshot (LIVE RED), the same class as S9's 15 feature-gated command rows.
+#   They are NOT a ledger defect: they are the only 2 HTTP rows whose verified_hardware is `nvidia-cuda` alone
+#   (every CPU-servable row reads `x86_64-linux[;nvidia-cuda]`), so the ledger already declares them cuda-only.
+#   dogfood_reconcile.py scopes HTTP rows out, so its FEATURE_GATED set cannot carry them; the RED clears when
+#   extract:binary honours the declared gate (snapshot the --features cuda router, or treat a cuda-only
+#   verified_hardware row as an enumerated allowance) — never by a count tolerance, never by deleting the rows.
 #   The 10th non-CLI row, "HTTP 404 fallback route index", is a behaviour of every router (the fallback lists
 #   `routes`), shaped here as bin:notFoundListsRoutes.
 #
@@ -103,7 +108,8 @@ shapes:
           - "POST /v1/explain"
           - "POST /v1/gpu/warmup"
           - "POST /v1/predict"
-      # LIVE RED 2026-09-26: POST /v1/logprobs and POST /v1/perplexity have ledger rows but mount only under --features cuda
+      # LIVE RED 2026-09-26 on a default snapshot: POST /v1/logprobs and POST /v1/perplexity mount only under --features cuda;
+      # their ledger rows declare it (verified_hardware = nvidia-cuda, router.rs:222-223 cuda_routes)
       - {path: bin:unledgeredRoute, maxCount: 0}
       - {path: bin:ledgerOrphanRoute, maxCount: 0}
       - path: bin:mcpTool
@@ -172,6 +178,6 @@ falsification_tests:
     rule: 'ledger rows exist and resolve'
     prediction: "docs/audits/surface_audit.csv has ≥1 row per route and per MCP tool with binary = apr (47 HTTP + 9 mcp on 2026-09-26)"
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
-    if_fails: "LIVE RED 2026-09-26: 2 ledger rows (POST /v1/logprobs, POST /v1/perplexity) name cuda-only routes; the 9 mcp rows and the other 41 routes join"
+    if_fails: "LIVE RED 2026-09-26 on a default-feature snapshot: 2 ledger rows (POST /v1/logprobs, POST /v1/perplexity) name cuda-only routes; the 9 mcp rows and the other 41 routes join. Not a ledger defect: both rows declare verified_hardware = nvidia-cuda (the only cuda-only HTTP rows), so the RED clears when extract:binary honours that declared gate, as S12 and S9/S10 clear via FEATURE_GATED"
     mutation: 'delete every apr row; must turn RED naming apr'
 
