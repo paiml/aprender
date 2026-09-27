@@ -19,6 +19,11 @@
 #   default), and no command of the simular CLI starts that server under any feature: nothing in src/cli
 #   references it. So the binary serves no route and the 3 rows are bin:ledgerOrphan — RED today. The fix is
 #   in the ledger (attribute the rows to the library, or to a command that serves them), not in this shape.
+#   RULED 2026-09-27 (cop, for 0.70): no new command and no new row kind. The 3 rows keep the ledger's existing
+#   unjoinable kind: their feature now opens `unserved: GET …`, which is neither a route row (`VERB /path`) nor a
+#   command row (`simular …`), so the extractor counts them in bin:auditRow and joins them to nothing
+#   (crates/aprender-contracts/src/ontology/extract/binary.rs parse_ledger). A web serve command is post-0.70
+#   scope, under its own ticket.
 #
 # KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
 # ──────────────────────────────────────────────
@@ -81,7 +86,7 @@ shapes:
 equations:
   surface_equals_snapshot:
     formula: "commands(binary/aprender-simulate/simular) = C, |C| = 9, C = the leaves of the --help walk of the default-feature build ∪ user-defined `help` subcommands; routes(simular) = ∅ ∧ ledgerOrphan = { r ∈ csv : r.binary = simular ∧ key(r) ∉ C ∪ routes(simular) }; key(r) = the command after 'simular ', or 'METHOD /path' for an HTTP row"
-    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is simular (12 on 2026-09-26: 9 CLI, 3 HTTP)"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target; docs/audits/surface_audit.csv rows whose binary column is simular (12 on 2026-09-26: 9 CLI, 3 HTTP; since 2026-09-27 the 3 HTTP rows are `unserved:` rows, joined to nothing)"
     codomain: "set equality, or a Fail naming each member of the symmetric difference; literals on the focus node, one per orphan row or unledgered command"
     invariants:
       - "in + minCount 9 + maxCount 9 is set equality: an added, dropped or renamed command is a violation naming it"
@@ -135,11 +140,11 @@ falsification_tests:
     if_fails: 'the dogfood coverage ratio is computed over a ledger that silently omits a shipped surface member'
     mutation: 'delete every simular row; must turn RED naming simular'
   - id: FALSIFY-BIN-SIMULAR-006
-    rule: 'library routes attributed to binary are red today'
-    prediction: 'on today''s snapshot GET /, GET /health and GET /ws are bin:ledgerOrphan: the shape is RED with 3 results'
-    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g), on the b6cf6d2ed snapshot'
+    rule: 'a library route is never credited to the binary'
+    prediction: 'the 3 visualization rows open `unserved: GET …`: parse_ledger puts them in bin:auditRow only, so simular has 0 bin:ledgerOrphanRoute and 0 bin:ledgerOrphan (observed RED 2026-09-26 at b6cf6d2ed with 3 results, while the rows read `GET / …`)'
+    test: 'pv lint contracts/ --gate shapes --format json (after ONT-4g); parse_ledger in crates/aprender-contracts/src/ontology/extract/binary.rs'
     if_fails: 'The ledger would credit the simular binary with a web UI no user of it can reach.'
-    mutation: 'the edit in the prediction; must turn RED — verdict Fail, 3 results on binary/aprender-simulate/simular path bin:ledgerOrphan'
+    mutation: 'restore any one row to `GET /health (visualization)`; must turn RED, verdict Fail on binary/aprender-simulate/simular path bin:ledgerOrphanRoute naming GET /health'
   - id: FALSIFY-BIN-SIMULAR-007
     rule: 'user defined help counts'
     prediction: 'an extractor that drops every subcommand named help (not only clap''s auto one) makes simular-commands RED on minCount 9 and the `simular help` ledger row an orphan'
