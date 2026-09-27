@@ -1,0 +1,156 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.41.1",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"contract census contract count\" --limit 5 --format json"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-DELTA-003",
+          "level": "note",
+          "message": {
+            "text": "Restamp at new head 5c54a8e964. Delta vs the prior receipt head 12282780c8: two commits, 6a80c6acd2 (evidence(pr-review/4502): v2 receipt at 12282780c8 -- writes only evidence/pr-review/4502/12282780c.../, excluded from review, same pattern as the prior restamp) and the reviewable one, 5c54a8e964 itself: a merge of origin/car/0.70.0 (7d0d403ad0) into batch/ont-10, second parent 7d0d403ad0, first parent 6a80c6acd2. base_sha is unchanged (aca6f2d7, still merge-base(origin/main,HEAD)). affected_crates unchanged (this merge adds no new crate; it brings existing crates -- aprender-serve, apr-cli, aprender-core -- into this branch's history for the first time, already listed)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "log", "--oneline", "12282780c83fa5a3b0ccfd1467d691393281a4dd..5c54a8e9642174f2b774788c10fc7d10d6f51abb"],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "Treating the whole 30-file merge diff as this pass's review surface (rather than the ~3 files the coordinator's message named) would either miss the CUDA-path files the merge newly introduces to this branch, or waste session budget re-reviewing car/0.70.0 content already reviewable on its own branch.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CONFLICT-CENSUS-001",
+          "level": "note",
+          "message": {
+            "text": "Confirmed: contracts/census.json at the new head is byte-identical to its value on origin/car/0.70.0 (7d0d403ad0) -- `git diff 7d0d403ad0 5c54a8e964 -- contracts/census.json` returns 0 bytes. The conflict was resolved by taking car's side verbatim, matching the coordinator's stated resolution."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "7d0d403ad0b03487b008515dc57e1375044d5fd1", "5c54a8e9642174f2b774788c10fc7d10d6f51abb", "--", "contracts/census.json"],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "If census.json had NOT actually taken car's side (e.g. a botched 3-way merge left it mid-conflict-marker or mixed), the artifact powering pv lint's file walk would be corrupt with no diff signal to catch it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CONFLICT-CENSUS-STALE-002",
+          "level": "warning",
+          "message": {
+            "text": "The census.json resolution above (taking car's side, n_files=1837) is internally inconsistent with the merge's OWN README resolution at the same head. README.md's YAML frontmatter `contract_count: 1837` mirrors census.json (also car's stale value -- car's own tip has n_files=1837 too, confirmed by inspecting contracts/census.json at 7d0d403ad0). But README.md's body table + CONTRACT_COUNT block state 1890, and `bash scripts/check_readme_claims.sh` -- the CI gate that owns this claim -- independently measures the merge tree via `git archive 5c54a8e964 -- contracts,*.yaml` (NOT via census.json) and gets 1890, so it PASSES the body block at 1890 while never checking the frontmatter field at all. Net result at this one head: two different provenance paths for 'the contract count' disagree (frontmatter+census.json=1837 vs CI-verified body=1890) and no existing gate catches the disagreement because each checks a different field. Coordinator's claim 'README vs car is still 1844->1890' is accurate for the body/table occurrences (confirmed: 2 insertions/2 deletions, both 1844->1890, in `git diff origin/car/0.70.0...HEAD -- README.md`) but does not mention the frontmatter regression, which this pass measured independently."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "scripts/check_readme_claims.sh"],
+            "exit_code": 0,
+            "stdout_sha256": "2a7c0e51cf3e612c53ae958eef02369eff470a79759a174124fe320e1c46ddd0",
+            "failure_scenario": "A reader or downstream tool trusting census.json/frontmatter (1837) while another trusts the README table (1890) will compute two different 'total contracts' figures from the same committed tree, and no CI gate flags the split because FALSIFY-README-002 only validates the CONTRACT_COUNT block against a live git-archive count, never against census.json's cached n_files or the frontmatter field.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CONTRACTS-NT-001",
+          "level": "note",
+          "message": {
+            "text": "contracts/contracts.nt shows a large diff at the new head (1541 insertions, 1267 deletions) consistent with a full regeneration rather than a hand-merge, matching the coordinator's claim ('regenerated via pv extract'). This pass did NOT independently re-run `pv extract` to byte-verify the regeneration (out of this bounded session's budget -- a full contracts.nt regen walks the whole contracts/ tree). This is recorded as asserted/advisory, not cited or measured against a re-generated copy."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Diff shape (near-total rewrite, no localized conflict-marker residue, line count in the same order of magnitude as census.json's n_files) is consistent with regeneration, but this is a plausibility judgement, not a verified regeneration.",
+            "failure_scenario": "If contracts.nt were instead a partial hand-edit that happens to produce a large diff (e.g. a bad merge that duplicated triples), this check would not distinguish that from a clean regen; only an actual `pv extract` re-run and byte-compare would.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The nvidia-cuda-docs MCP server still requires an interactive OAuth dynamic-client-registration flow not completed in this session; only authenticate/complete_authentication tools present, not search_cuda_docs. Unchanged from the prior two receipts (3b8f6dea82, 12282780c8)."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["ToolSearch", "select:mcp__nvidia-cuda-docs__search_cuda_docs"],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-003",
+          "level": "warning",
+          "message": {
+            "text": "UNLIKE the prior two receipts, this delta DOES match the S3.B path trigger, checked via the guard's own --match-path predicate (not by eye) against every file the merge changes: 3 matches -- `.github/workflows/cuda-nightly.yml`, `crates/aprender-serve/src/cuda/executor/iq4_nl_device_ab_tests.rs`, `crates/aprender-serve/src/cuda/gemv_entry_name_tests_3477.rs`. These are pre-existing car/0.70.0 files newly entering this branch's history via the merge, not new device-behaviour claims authored by this PR -- but the S3.0 encoding requires reporting the actual trigger state honestly rather than narrating around it, and this delta's trigger state is a change from 'not-triggered/carried-forward' to 'triggered-and-still-unreachable'. No device-behaviour claim from these 3 files was evaluated against CUDA docs this session (server unreachable); recorded as a no-authority-found gap, not a silent pass."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "-c", "git diff --name-only 12282780c8 5c54a8e964 -- . ':!evidence/pr-review/' | xargs -I{} scripts/check_pr_review_receipt.sh --match-path {}"],
+            "exit_code": 1,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "Reporting this consultation identically to the prior receipt's 'zero path matches, carried forward' framing would misstate this delta's actual trigger state and could let a reviewer believe the delta was checked against a narrower, false surface.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "for f in <merge-delta files, evidence/pr-review excluded>; do scripts/check_pr_review_receipt.sh --match-crux-surface \"$f\"; done"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-004",
+          "level": "note",
+          "message": {
+            "text": "S3.C surface trigger re-checked against every file this merge changes (30 paths, evidence/pr-review/** excluded) via the guard's own --match-crux-surface predicate: zero matches. No CLI subcommand, HTTP route, MCP tool, config key or output format is added or changed by this merge. gap_effect: none, unchanged from the prior receipt."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "-c", "git diff --name-only 12282780c8 5c54a8e964 -- . ':!evidence/pr-review/' | xargs -I{} scripts/check_pr_review_receipt.sh --match-crux-surface {}"],
+            "exit_code": 1,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "A user-facing surface change riding in on a large generated-file merge would go unreviewed by CRUX if this predicate check were skipped in favor of eyeballing the diffstat.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
