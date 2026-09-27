@@ -1,0 +1,26 @@
+2026-09-27T14:41:18Z
+noah-Lambda-Vector
+aca6f2d7f6c436426ab3d78721474853f82a8448
+ M Cargo.lock
+ M crates/apr-cli/Cargo.toml
+ M crates/apr-cli/src/commands/serve/handlers.rs
+ M crates/apr-cli/src/commands/serve/mod.rs
+ M crates/apr-cli/src/commands/serve/safetensors.rs
+ M crates/apr-cli/src/commands/serve/server.rs
+ M crates/apr-cli/src/commands/serve/server_runtime.rs
+ M crates/aprender-profile/Cargo.toml
+ M crates/aprender-profile/src/lib.rs
+?? crates/apr-cli/src/commands/serve/otel.rs
+apr 0.69.3 (aca6f2d7f6)
+d3bba556c94d1363394cd2b5b113e5b2d35ace9286da435534cc3f7185dec728  /mnt/nvme-raid0/targets/m0694-3850/release/apr
+1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32  /home/noah/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+ready_after=2s
+chat_rc=0
+chat2_rc=0
+lint body-001.json --require-apr-span rc=0
+lint body-001.json --require-genai-attrs rc=0
+lint body-001.json --expect-trace-id 0af7651916cd43dd8448eb211c80319c rc=0
+lint body-002.json --require-apr-span rc=0
+lint body-002.json --require-genai-attrs rc=0
+lint body-002.json --expect-trace-id 0af7651916cd43dd8448eb211c80319c rc=5
+done 2026-09-27T14:41:53Z dir=/mnt/nvme-raid0/tmp/k08-live/out-144118

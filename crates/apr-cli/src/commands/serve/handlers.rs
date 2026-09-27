@@ -745,7 +745,7 @@ fn run_wgpu_server(app: axum::Router, config: &ServerConfig) -> Result<()> {
         );
         println!("  POST /v1/chat/completions - Chat completions (WGPU)");
         println!("  GET  /health              - Health check");
-        axum::serve(listener, app)
+        axum::serve(listener, crate::commands::serve::otel::layer(app))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Serve: {e}")))?;
         Ok::<(), CliError>(())
@@ -1486,7 +1486,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
         print_apr_cpu_banner(&bind_addr, is_transformer);
 
-        axum::serve(listener, app)
+        axum::serve(listener, crate::commands::serve::otel::layer(app))
             .with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;

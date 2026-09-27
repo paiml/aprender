@@ -9,6 +9,19 @@ pub mod auth;
 pub mod handlers;
 #[cfg(feature = "inference")]
 pub mod ollama;
+#[cfg(feature = "otel")]
+pub mod otel;
+/// Without the `otel` feature there is no request tracing: the router is
+/// returned unchanged.
+#[cfg(all(feature = "inference", not(feature = "otel")))]
+pub mod otel {
+    #[must_use]
+    pub fn layer(router: axum::Router) -> axum::Router {
+        router
+    }
+
+    pub fn set_served_model(_model_path: &std::path::Path) {}
+}
 pub(crate) mod route_index;
 pub mod routes;
 #[cfg(feature = "inference")]
@@ -321,6 +334,8 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     if !model_path.exists() {
         return Err(CliError::FileNotFound(model_path.to_path_buf()));
     }
+    #[cfg(feature = "inference")]
+    otel::set_served_model(model_path);
 
     let state = ServerState::new(model_path.to_path_buf(), config.clone())?;
 

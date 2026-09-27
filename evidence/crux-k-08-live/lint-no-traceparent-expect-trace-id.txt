@@ -1,0 +1,3 @@
+otlp-lint report for /mnt/nvme-raid0/tmp/k08-live/out-144118/sink/body-002.json
+  trace_propagation: TraceIdNotFound { expected: "0af7651916cd43dd8448eb211c80319c", ids_seen: ["0e9eff42dbbf74619dfa5191f438b3ae"] }
+error: Validation failed: otlp-lint trace-propagation gate rejected body: TraceIdNotFound { expected: "0af7651916cd43dd8448eb211c80319c", ids_seen: ["0e9eff42dbbf74619dfa5191f438b3ae"] }

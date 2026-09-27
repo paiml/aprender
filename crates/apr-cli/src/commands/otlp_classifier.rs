@@ -33,8 +33,9 @@
 //! }
 //! ```
 //!
-//! Full discharge blocks on a live `apr serve` OTLP exporter wired to
-//! `OTEL_EXPORTER_OTLP_ENDPOINT` — tracked as BLOCKER-UPSTREAM-MISSING.
+//! The live exporter is `apr serve` with `OTEL_EXPORTER_OTLP_ENDPOINT` set
+//! (`commands/serve/otel.rs`, TR-13 #4568); `evidence/crux-k-08-live/` runs
+//! these classifiers on its exported bodies.
 
 use serde_json::Value;
 

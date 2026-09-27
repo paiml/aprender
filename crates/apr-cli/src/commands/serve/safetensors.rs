@@ -184,7 +184,7 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
         }
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        axum::serve(listener, app)
+        axum::serve(listener, crate::commands::serve::otel::layer(app))
             .with_graceful_shutdown(super::handlers::shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
@@ -345,7 +345,7 @@ pub(crate) fn start_sharded_safetensors_server(
         }
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        axum::serve(listener, app)
+        axum::serve(listener, crate::commands::serve::otel::layer(app))
             .with_graceful_shutdown(super::handlers::shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;

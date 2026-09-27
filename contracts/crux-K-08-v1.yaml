@@ -3,16 +3,21 @@
 # - classifier: crates/apr-cli/src/commands/otlp_classifier.rs (11 unit tests)
 # - CLI surface: `apr otlp-lint --otlp-file FILE [--require-apr-span] [--require-genai-attrs] [--expect-trace-id HEX32]`
 # - e2e: crates/apr-cli/tests/falsification_crux_k_08.rs (11 tests)
-# Full discharge blocks on a live `apr serve` OTLP exporter wired to
-# `OTEL_EXPORTER_OTLP_ENDPOINT` emitting `apr.inference` spans with
-# gen_ai.* attributes and W3C trace-context propagation — tracked as
-# BLOCKER-UPSTREAM-MISSING.
+# v1.2.0 (TR-13, #4568, TRACE-001): the live exporter exists.
+# - exporter: crates/aprender-profile/src/request_span.rs (renacer RequestSpanExporter)
+# - wiring:   crates/apr-cli/src/commands/serve/otel.rs, layered on every
+#             `apr serve` router; feature `otel` (default), off at runtime
+#             unless OTEL_EXPORTER_OTLP_ENDPOINT is set
+# - live run: evidence/crux-k-08-live/ — FALSIFY-CRUX-K-08-001..003 FULL.
+# CK0FA08-EQ-004 (equivalence with a reference implementation, e.g. vLLM's
+# OTel instrumentation) is Refused: no reference server is installed on the
+# measuring host, so no side-by-side capture exists. It is NOT discharged.
 
 metadata:
   id: CRUX-K-08
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
-  updated: "2026-05-16"
+  updated: "2026-09-27"
   author: PAIML Engineering
   registry: true
   status: partial
@@ -22,7 +27,7 @@ metadata:
   category: "K — Ecosystem & Integration"
   competitor: ecosystem
   demand_score: 4  # 1..5, high priority in pmat work
-  intake_status: missing
+  intake_status: partial
   description: >
     OpenTelemetry traces. Root-cause workflow extracted from ecosystem UX — see master
     subspec §5.K and §2 Five Whys methodology for rationale. This
@@ -125,8 +130,14 @@ falsification_tests:
       `NotAnObject` and `MissingResourceSpans` surface malformed bodies
       before they reach the live exporter.
     scope: "(body, span_name) -> OtlpSpanPresentOutcome (pure)"
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
-    full_discharge_blocked_on: "live aprender-serve OTLP exporter emitting `apr.inference` spans"
+    live_evidence:
+      path: evidence/crux-k-08-live/
+      harness: evidence/crux-k-08-live/run.sh
+      server: "apr serve run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (CPU), OTEL_EXPORTER_OTLP_PROTOCOL=http/json"
+      built_from: "aca6f2d7f6 + the TR-13 diff (stamp.txt lists the dirty paths; they are this commit)"
+      gate: "apr otlp-lint --require-apr-span on the exported body: rc=0 (both requests)"
+      control: "same server with no OTEL_EXPORTER_OTLP_ENDPOINT: 0 bodies at the sink (off-result.txt)"
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-K-08-002
   rule: "GenAI semantic conventions present on inference span"
@@ -153,8 +164,14 @@ falsification_tests:
       verifies the K08_REQUIRED_ATTRIBUTES set is a subset. Missing keys
       are reported lexicographically so diffs are stable across runs.
     scope: "(body, required_keys) -> OtlpAttributesOutcome (pure)"
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
-    full_discharge_blocked_on: "live aprender-serve OTLP exporter populating gen_ai.* + apr.tokens.* attributes"
+    live_evidence:
+      path: evidence/crux-k-08-live/
+      harness: evidence/crux-k-08-live/run.sh
+      server: "apr serve run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (CPU), OTEL_EXPORTER_OTLP_PROTOCOL=http/json"
+      built_from: "aca6f2d7f6 + the TR-13 diff (stamp.txt lists the dirty paths; they are this commit)"
+      gate: "apr otlp-lint --require-genai-attrs: rc=0; apr.tokens.prompt=33, apr.tokens.output=8 equal the response usage (chat-response.json)"
+      control: "unit: falsify_k08_unobserved_values_are_absent_not_zero — missing usage is omitted, never zero"
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-K-08-003
   rule: "W3C trace-context propagation: incoming traceparent reused in exported span"
@@ -189,8 +206,14 @@ falsification_tests:
       match; on miss it reports `TraceIdNotFound { ids_seen }` listing the
       actual trace-ids so divergence is debuggable.
     scope: "(body, expected_trace_id) -> OtlpTracePropagationOutcome (pure)"
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
-    full_discharge_blocked_on: "live aprender-serve OTLP exporter wiring W3C traceparent into emitted spans"
+    live_evidence:
+      path: evidence/crux-k-08-live/
+      harness: evidence/crux-k-08-live/run.sh
+      server: "apr serve run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (CPU), OTEL_EXPORTER_OTLP_PROTOCOL=http/json"
+      built_from: "aca6f2d7f6 + the TR-13 diff (stamp.txt lists the dirty paths; they are this commit)"
+      gate: "apr otlp-lint --expect-trace-id 0af7651916cd43dd8448eb211c80319c on the traceparent request: rc=0, parentSpanId 00f067aa0ba902b7"
+      control: "the request sent without traceparent: same lint rc=5 (TraceIdNotFound), so the gate can fail"
+    discharge_status: FULL
 
 proof_obligations:
 - id: CK0FA08-INV-001
@@ -206,11 +229,13 @@ proof_obligations:
   type: equivalence
   property: "apr serve OpenTelemetry instrumentation matches GenAI semantic conventions and OTLP export protocol as implemented by opentelemetry-instrumentation reference libraries"
   reference: "https://opentelemetry.io/docs/specs/semconv/gen-ai/"
+  status: "Refused{reason: no reference server (vLLM) on the measuring host; no side-by-side capture}"
 
 verification_summary:
   total_obligations: 4
   proven: 0
-  tested: 0
+  tested: 3
+  refused: 1  # CK0FA08-EQ-004
   status: spec-complete
 
 pmat_work_tracking:

@@ -426,7 +426,7 @@ stories:
   - { id: CRUX-K-05, title: "apr ui Gradio web UI",                competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-05-v1.yaml }
   # CRUX-K-06 dropped pre-v1.0.0: Jupyter %%apr magic deferred
   - { id: CRUX-K-07, title: "Prometheus /metrics endpoint",        competitor: vllm,        demand_score: 4, status: missing,   contract: crux-K-07-v1.yaml }
-  - { id: CRUX-K-08, title: "OpenTelemetry traces",                competitor: ecosystem,   demand_score: 4, status: missing,   contract: crux-K-08-v1.yaml }
+  - { id: CRUX-K-08, title: "OpenTelemetry traces",                competitor: ecosystem,   demand_score: 4, status: partial,   contract: crux-K-08-v1.yaml }
   - { id: CRUX-K-09, title: "Safetensors metadata round-trip",     competitor: huggingface, demand_score: 5, status: supported, contract: crux-K-09-v1.yaml }
   - { id: CRUX-K-10, title: "GGUF general.* metadata round-trip",  competitor: llama_cpp,   demand_score: 4, status: partial,   contract: crux-K-10-v1.yaml }
   - { id: CRUX-K-11, title: "Modelfile DSL parser (Ollama)",       competitor: ollama,      demand_score: 3, status: missing,   contract: crux-K-11-v1.yaml }

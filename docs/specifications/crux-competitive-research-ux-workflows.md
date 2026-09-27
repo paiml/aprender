@@ -447,7 +447,7 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 | CRUX-K-04 | LlamaIndex LLM provider | LlamaIndex | 🔨 | 4 |
 | CRUX-K-05 | `apr ui` Gradio web UI | Gradio | ❌ | 3 |
 | CRUX-K-07 | Prometheus `/metrics` endpoint | vLLM Prom | ❌ | 4 |
-| CRUX-K-08 | OpenTelemetry traces | OTEL | ❌ | 4 |
+| CRUX-K-08 | OpenTelemetry traces | OTEL | 🔨 | 4 |
 | CRUX-K-09 | Safetensors metadata round-trip | safetensors spec | ✅ | 5 |
 | CRUX-K-10 | GGUF `general.*` metadata round-trip | llama.cpp | 🔨 | 4 |
 | CRUX-K-11 | Modelfile DSL parser (Ollama) | `ollama create -f` | ❌ | 3 |

@@ -66,6 +66,8 @@ pub mod otlp_types;
 pub mod process_tracer; // Sprint 59: Process-level syscall tracing for ptop integration (SPEC-057)
 pub mod profiling;
 pub mod regression; // Single-Shot Compile Tooling: Statistical regression detection (Section 6.4)
+#[cfg(feature = "otlp")]
+pub mod request_span; // TR-13 (#4568): per-request OTLP spans for `apr serve` (CRUX-K-08)
 pub mod ring_buffer; // Sprint 40: Lock-free ring buffer for span export (Toyota Way: Heijunka)
 pub mod rle_compression; // Sprint 41: Run-length encoding for tight loop compression (Toyota Way: Muda)
 pub mod semantic_equivalence; // Sprint 40: Semantic Equivalence (Specification Section 6.3)

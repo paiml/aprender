@@ -72,7 +72,7 @@ path = "src/bin/apr-corpus-ingest.rs"
 [features]
 # crates.io install: minimal features (inspect, validate, lint, etc.)
 # Full features enabled locally via workspace Cargo.toml default-members
-default = ["hf-hub", "safetensors-compare", "inference", "training", "visualization", "zram"]
+default = ["hf-hub", "safetensors-compare", "inference", "training", "visualization", "zram", "otel"]
 hf-hub = ["aprender/hf-hub-integration"]
 # Xet CAS upload for files > 5 GiB (F-PUB-LFS-001, spec §12.8).
 # Off by default: `hf-xet` adds ~4 MB to the release binary. Users who ship
@@ -108,6 +108,9 @@ cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]
 visualization = ["renacer", "trueno-viz"]
+# TR-13 (#4568, CRUX-K-08): `apr serve` exports one OTLP `apr.inference` span per
+# request when OTEL_EXPORTER_OTLP_ENDPOINT is set. Off at runtime unless set.
+otel = ["inference", "renacer"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
 training-gpu = ["training"]

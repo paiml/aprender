@@ -320,7 +320,7 @@ fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result
         );
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        axum::serve(listener, app)
+        axum::serve(listener, crate::commands::serve::otel::layer(app))
             .with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
@@ -438,7 +438,7 @@ fn start_gguf_server_gpu_batched(
         );
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        axum::serve(listener, app)
+        axum::serve(listener, crate::commands::serve::otel::layer(app))
             .with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
