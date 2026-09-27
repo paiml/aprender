@@ -20,13 +20,6 @@ end
 section
 namespace ProvableContracts.FP8
 open ProvableContracts.Quantization
-theorem _root_.PvlChallenge.ProvableContracts.FP8.decode_abs_le (maxv : ℝ) (neg : Bool) (mag : ℝ) (h : 0 ≤ maxv) : |fp8Decode maxv neg mag| ≤ maxv := sorry
-end ProvableContracts.FP8
-end
-
-section
-namespace ProvableContracts.FP8
-open ProvableContracts.Quantization
 theorem _root_.PvlChallenge.ProvableContracts.FP8.gridRound_mono (ulp : ℝ) (h : ulp > 0) {x₁ x₂ : ℝ} (hle : x₁ ≤ x₂) : gridRound ulp x₁ ≤ gridRound ulp x₂ := sorry
 end ProvableContracts.FP8
 end
@@ -42,27 +35,6 @@ section
 namespace ProvableContracts.FP8
 open ProvableContracts.Quantization
 theorem _root_.PvlChallenge.ProvableContracts.FP8.range_e5m2 (neg : Bool) (mag : ℝ) : |fp8Decode E5M2_MAX neg mag| ≤ E5M2_MAX := sorry
-end ProvableContracts.FP8
-end
-
-section
-namespace ProvableContracts.FP8
-open ProvableContracts.Quantization
-theorem _root_.PvlChallenge.ProvableContracts.FP8.roundtrip_e4m3 (x ulp : ℝ) (h : ulp > 0) : |gridRound ulp x - x| ≤ ulp / 2 := sorry
-end ProvableContracts.FP8
-end
-
-section
-namespace ProvableContracts.FP8
-open ProvableContracts.Quantization
-theorem _root_.PvlChallenge.ProvableContracts.FP8.roundtrip_e5m2 (x ulp : ℝ) (h : ulp > 0) : |gridRound ulp x - x| ≤ ulp / 2 := sorry
-end ProvableContracts.FP8
-end
-
-section
-namespace ProvableContracts.FP8
-open ProvableContracts.Quantization
-theorem _root_.PvlChallenge.ProvableContracts.FP8.roundtrip_ulp (x ulp : ℝ) (h : ulp > 0) : |gridRound ulp x - x| ≤ ulp / 2 := sorry
 end ProvableContracts.FP8
 end
 

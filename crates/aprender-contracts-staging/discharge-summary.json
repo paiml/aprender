@@ -1,17 +1,17 @@
 {
-  "tree_sha": "8671a7ac7d8d33f7c155d0f5621a119b21ca80bc",
+  "tree_sha": "82e0ff7064f76dba6224ef98f811e4bc484e0eaa",
   "toolchain": "leanprover/lean4:v4.29.0-rc4",
   "mathlib_rev": "1d042d3e1e93904b24c4fe209c75d2adbb22ee24",
   "build_exit": 0,
-  "lake_exit": null,
-  "leanchecker_exit": null,
-  "axioms_ok": false,
-  "escapes_ok": false,
-  "challenges_closed": null,
+  "lake_exit": 0,
+  "leanchecker_exit": 0,
+  "axioms_ok": true,
+  "escapes_ok": true,
+  "challenges_closed": "249/249",
   "modules": [
     {
       "path": "ProvableContracts.lean",
-      "blake3": "3ed99f662eccf2ea913e10537ddd577d025237ab4786fd1abfd3978ef4e479ff",
+      "blake3": "868293aa57237ba467d974e1925b9f258491d9750bf67f0c599a9c7baab26f67",
       "theorems": []
     },
     {
@@ -85,8 +85,18 @@
       "theorems": []
     },
     {
+      "path": "ProvableContracts/Defs/GPU.lean",
+      "blake3": "0d7219a00de8b2f23a8eae2c7da8cb799d4c17206dadd8780435d47700dab585",
+      "theorems": []
+    },
+    {
       "path": "ProvableContracts/Defs/Gelu.lean",
       "blake3": "3643ad665444dca2f27ed6d517aca1e2d3f152c50e8ed6b01a585d8262e02cad",
+      "theorems": []
+    },
+    {
+      "path": "ProvableContracts/Defs/Image.lean",
+      "blake3": "d001a2421d8265da7b16d82fe42266ac906c5583cfb3e1de45188233ea7caba5",
       "theorems": []
     },
     {
@@ -120,6 +130,11 @@
       "theorems": []
     },
     {
+      "path": "ProvableContracts/Defs/Rand.lean",
+      "blake3": "73ea4a4a396f1a1fd799ba41a135550f991c5e05dfc5b96516bea4c202bb82c5",
+      "theorems": []
+    },
+    {
       "path": "ProvableContracts/Defs/SVD.lean",
       "blake3": "d893ef3182a648340aeb9a0973ce2caf0b3b58d73922cc6e0c070f9eed8a5101",
       "theorems": []
@@ -145,6 +160,11 @@
       "theorems": []
     },
     {
+      "path": "ProvableContracts/Defs/Tensor.lean",
+      "blake3": "c3cde3c8d4793f8c15da9db0b60072b72cce305ab3e006e9392d20bbed3375b0",
+      "theorems": []
+    },
+    {
       "path": "ProvableContracts/Defs/Transpose.lean",
       "blake3": "93e185d9d031ef6f23ea7bc2b5f9783f72eef1d214f2d3731287d2214ed16b5b",
       "theorems": []
@@ -164,12 +184,55 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/AdamW/Adam_Moments.lean",
+      "blake3": "243cdcb2bd0274b10a6bcd4a976e1c2efd3dccab216d2c0fb7f29b674b1bda4b",
+      "theorems": [
+        "ProvableContracts.AdamW.Moments.adam_moments",
+        "ProvableContracts.AdamW.Moments.adam_moment_bounded"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/AdamW/Adam_Variance.lean",
+      "blake3": "491a7934f1cd7dc82fb2ccb8d926403ad181745b1a34dc690df2720ba9aef8dc",
+      "theorems": [
+        "ProvableContracts.AdamW.Variance.adam_variance"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/AdamW/Analytic.lean",
+      "blake3": "195f8a121a5ff0471a101a3ca3a2a64479bb5732eb98852827ec986e6ada1d67",
+      "theorems": [
+        "ProvableContracts.AdamW.Analytic.precondition_satisfiable",
+        "ProvableContracts.AdamW.Analytic.denom_pos",
+        "ProvableContracts.AdamW.Analytic.variance_update_nonneg",
+        "ProvableContracts.AdamW.Analytic.v_seq_nonneg",
+        "ProvableContracts.AdamW.Analytic.loop_variant_decreasing",
+        "ProvableContracts.AdamW.Analytic.loop_variant_nonneg",
+        "ProvableContracts.AdamW.Analytic.bias_denom_pos",
+        "ProvableContracts.AdamW.Analytic.vhat_nonneg"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/AdamW/Bias_Correction.lean",
+      "blake3": "889d45fe4da398a0c1b8de080fa5afede2504c541e06387b16d1af09c9d0c3a7",
+      "theorems": [
+        "ProvableContracts.AdamW.BiasCorrection.bias_correction"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/AdamW/WeightDecay.lean",
       "blake3": "3b91d4745f558e6d9585050c8afc3cf869d80bc0a7eb573366b85d10154a182a",
       "theorems": [
         "ProvableContracts.AdamW.decay_update_eq",
         "ProvableContracts.AdamW.weight_decay_reduces_magnitude",
         "ProvableContracts.AdamW.weight_decay_strict"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/AdamW/Weight_Update.lean",
+      "blake3": "0b6f4271fb73b299c27523c4b10fa75de8ad0c9ce7452cb9abdbee429ad0f5aa",
+      "theorems": [
+        "ProvableContracts.AdamW.WeightUpdate.weight_update"
       ]
     },
     {
@@ -198,6 +261,22 @@
         "ProvableContracts.Alibi.alibi_slope_lt_one",
         "ProvableContracts.Alibi.alibi_slope_ggml",
         "ProvableContracts.Alibi.alibi_slope_strict_anti"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/AprCode/HarnessIrRoundtrip.lean",
+      "blake3": "57fe32258bfbf13c8e81985ee3f76f6479c8c7aa5015e8e1cd6843db8d1ef37e",
+      "theorems": [
+        "ProvableContracts.AprCode.block_roundtrip",
+        "ProvableContracts.AprCode.list_roundtrip",
+        "ProvableContracts.AprCode.message_roundtrip",
+        "ProvableContracts.AprCode.gem_block_roundtrip",
+        "ProvableContracts.AprCode.gem_list_roundtrip",
+        "ProvableContracts.AprCode.cross_harness_block",
+        "ProvableContracts.AprCode.cross_harness_list",
+        "ProvableContracts.AprCode.tool_anth_roundtrip",
+        "ProvableContracts.AprCode.tool_gem_roundtrip",
+        "ProvableContracts.AprCode.tool_schema_identical"
       ]
     },
     {
@@ -238,6 +317,20 @@
       "theorems": [
         "ProvableContracts.BLAS.syrk_symmetric",
         "ProvableContracts.BLAS.syrk_symmetric_elem"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/BLAS/Trmm.lean",
+      "blake3": "54a58e3e6f9431a6dd47e4f6bbd8434167a1b4abca884884e01335149eaead6c",
+      "theorems": [
+        "ProvableContracts.BLAS.trmm_assoc"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/BLAS/Trsm.lean",
+      "blake3": "0cd608133b8279b41e20efdcf0b8c672b83a1559d5747c3c8e6ddd6814b12dce",
+      "theorems": [
+        "ProvableContracts.BLAS.trsm_identity"
       ]
     },
     {
@@ -353,6 +446,23 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/CrossEntropy/CoreSoftmaxInvariants.lean",
+      "blake3": "6a7bc21357cd539df86d5085b0a4d7879fcc21883bfc31afa57f48e7c4af463f",
+      "theorems": [
+        "ProvableContracts.SoftmaxCore.lsum_cons",
+        "ProvableContracts.SoftmaxCore.lsum_nonneg",
+        "ProvableContracts.SoftmaxCore.softmax_denom_pos",
+        "ProvableContracts.SoftmaxCore.softmax_num_le_denom",
+        "ProvableContracts.SoftmaxCore.softmax_num_lt_denom",
+        "ProvableContracts.SoftmaxCore.softmax_partition",
+        "ProvableContracts.LogSoftmaxCore.log_softmax_decomp",
+        "ProvableContracts.LogSoftmaxCore.log_softmax_nonpos",
+        "ProvableContracts.CrossEntropyCore.mul_nonpos_of_nonneg_nonpos",
+        "ProvableContracts.CrossEntropyCore.dot_nonpos",
+        "ProvableContracts.CrossEntropyCore.cross_entropy_nonneg"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/CrossEntropy/LogSoftmaxBound.lean",
       "blake3": "e493f241173eaf272857e137bce0d44b3cd4e59296853d1801a13d28aeb861f6",
       "theorems": [
@@ -377,6 +487,19 @@
         "ProvableContracts.CrossEntropy.hasDerivAt_log_exp_add_const",
         "ProvableContracts.CrossEntropy.ce_onehot_backward",
         "ProvableContracts.CrossEntropy.cross_entropy_onehot_backward"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/DPO.lean",
+      "blake3": "37c7a16204d27a49d4c810f4ba77de5b8946feb046238af0e7d11e244c0d05f5",
+      "theorems": [
+        "ProvableContracts.DPO.sigmoid_bounded",
+        "ProvableContracts.DPO.dpo_loss_nonneg",
+        "ProvableContracts.DPO.dpo_loss_eq_log",
+        "ProvableContracts.DPO.dpo_loss_zero_at_strong_preference",
+        "ProvableContracts.DPO.dpo_loss_tendsto_zero",
+        "ProvableContracts.DPO.dpo_gradient_formula",
+        "ProvableContracts.DPO.dpo_gradient_scale_nonpos"
       ]
     },
     {
@@ -475,6 +598,47 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/F16/Conversion.lean",
+      "blake3": "23597f3e844cccfa399c2a08b30f523d8dc78a3acffd0ad8eb989925e457c465",
+      "theorems": [
+        "ProvableContracts.F16.sign_preserved",
+        "ProvableContracts.F16.exp_rebiased",
+        "ProvableContracts.F16.mant_preserved",
+        "ProvableContracts.F16.mant_padding_zero",
+        "ProvableContracts.F16.bias_trick_correct",
+        "ProvableContracts.F16.roundtrip_identity",
+        "ProvableContracts.F16.toF32Bits_monotone"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/FFT/Bluestein.lean",
+      "blake3": "9d9cc98999ad342f26eeb82118e99963f1c22b2a1dd7bf380b7d1425f9167c39",
+      "theorems": [
+        "ProvableContracts.FFT.bluestein_identity"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/FFT/Fft2d.lean",
+      "blake3": "9a86ca928e39859156c2c7c298fb75cf7019b00c158fa933f3a362dee99e1dbe",
+      "theorems": [
+        "ProvableContracts.FFT.fft2d_separable"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/FFT/Fft3d.lean",
+      "blake3": "4a6f5127bf84ea0cfd70151ca2a849656ef32643b8a479c839846176acf88628",
+      "theorems": [
+        "ProvableContracts.FFT.fft3d_separable"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/FFT/FftBatched.lean",
+      "blake3": "ac3b41755b0c5e3000838b0fd5825898a57ceae4d8b6a60ee0f005ca41e34c7c",
+      "theorems": [
+        "ProvableContracts.FFT.batch_independence"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/FFT/Parseval.lean",
       "blake3": "325d89c3184db3c4a5a0970f4bed6e1a42636c4969c53b5012ae372266a81a94",
       "theorems": [
@@ -504,11 +668,48 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/Fusion/Correctness.lean",
+      "blake3": "dea69eb17c53dab1bec3d25961ea817317062830e3bd52a2c52d0f51147840ba",
+      "theorems": [
+        "ProvableContracts.Fusion.swiglu_fusion_correct",
+        "ProvableContracts.Fusion.matvec_append",
+        "ProvableContracts.Fusion.matvec_append3",
+        "ProvableContracts.Fusion.pipeline_fusion_correct",
+        "ProvableContracts.Fusion.gemm_bias_gelu_fusion"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/GEMV/Correctness.lean",
       "blake3": "b4aa0cfee27bcef05a25371a8abc9056a9f03ad68c39af07467c4f14c7aa7e4b",
       "theorems": [
         "ProvableContracts.GEMV.gemv_element",
         "ProvableContracts.GEMV.gemv_output_type"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/GPU/DimensionIndependence.lean",
+      "blake3": "fd36811e54954728dd10d71c9c8e25003f07beeb563b841d2662886a3933c845",
+      "theorems": [
+        "ProvableContracts.GPU.const_is_dimension_independent"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/GatedDeltaNet/Recurrence.lean",
+      "blake3": "595f6e31249a4ccefaae7c239aa1e123a9df82a3d89e177b357b23f5380572db",
+      "theorems": [
+        "ProvableContracts.GatedDeltaNet.decay_mem_unit_interval",
+        "ProvableContracts.GatedDeltaNet.decay_pos",
+        "ProvableContracts.GatedDeltaNet.decay_lt_one",
+        "ProvableContracts.GatedDeltaNet.outer_shape",
+        "ProvableContracts.GatedDeltaNet.write_preserves_shape",
+        "ProvableContracts.GatedDeltaNet.write_iterate_preserves_shape",
+        "ProvableContracts.GatedDeltaNet.conv1d_causal",
+        "ProvableContracts.GatedDeltaNet.conv1d_future_indep",
+        "ProvableContracts.GatedDeltaNet.normSq_nonneg",
+        "ProvableContracts.GatedDeltaNet.normSq_pos_of_ne",
+        "ProvableContracts.GatedDeltaNet.l2norm_pos_of_ne",
+        "ProvableContracts.GatedDeltaNet.normalize_same_direction",
+        "ProvableContracts.GatedDeltaNet.normalize_scalar_pos"
       ]
     },
     {
@@ -544,6 +745,19 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean",
+      "blake3": "ac9acdfa1c41a41358288dc000e638a65108bdfea5e02998af7fc0e3f4645bfa",
+      "theorems": [
+        "ProvableContracts.GgufExportSymmetry.export_rejects_aprq8",
+        "ProvableContracts.GgufExportSymmetry.export_rejects_aprq4",
+        "ProvableContracts.GgufExportSymmetry.import_rejects_q8_0",
+        "ProvableContracts.GgufExportSymmetry.dtype_roundtrip",
+        "ProvableContracts.GgufExportSymmetry.dtype_roundtrip_section",
+        "ProvableContracts.GgufExportSymmetry.export_preserves_shape",
+        "ProvableContracts.GgufExportSymmetry.export_import_roundtrip"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/Gqa/ConvexBound.lean",
       "blake3": "8b9f9a45dc3f2c6c80940d4149951f2262085d7d40a3a712f46c0267ec92f7fc",
       "theorems": [
@@ -561,12 +775,76 @@
     },
     {
       "path": "ProvableContracts/Theorems/Gqa/HeadMapping.lean",
-      "blake3": "b4dbf33340f74b5a4f128bbd94148cb980be7d74b017af982c1a00043824877d",
+      "blake3": "952050c4d0739baf6a7a7022d47c26b41c674dc399f0c17e7f8af8b075f9155d",
       "theorems": [
         "ProvableContracts.Gqa.kvHead_group",
         "ProvableContracts.Gqa.kvHead_surjective",
         "ProvableContracts.Gqa.kvHead_eq_mul_div",
         "ProvableContracts.Gqa.kvHead_group_one"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/Canny.lean",
+      "blake3": "fd63fc35fa39d724b98f605a396ab14b5128aab5751476d7f6caed549624d9d4",
+      "theorems": [
+        "ProvableContracts.Image.canny_threshold_ordering"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/ConnectedComponents.lean",
+      "blake3": "87adf362649a9bfede2771ea2910137c316553efe02335d68f19069342b92dd5",
+      "theorems": [
+        "ProvableContracts.Image.components_bounded"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/Conv2d.lean",
+      "blake3": "9f54bd05715c1e9c05fb2d9b222fa2fc1dda9bd100273506b0c5cac1b3ef8a55",
+      "theorems": [
+        "ProvableContracts.Image.conv2d_output_positive"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/Histogram.lean",
+      "blake3": "93795af09014a97d64832fd58eb24dcccf555643c9a006a7319b4277e1fed652",
+      "theorems": [
+        "ProvableContracts.Image.histogram_sum_const"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/HsvRoundtrip.lean",
+      "blake3": "8ed6c3c1fecbb18e13950bd0b4fc909f6eb58d2b2015a19348ccf64ac3d2ae2a",
+      "theorems": [
+        "ProvableContracts.Image.hsv_value_achromatic"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/Morphology.lean",
+      "blake3": "bfacd257948e356d5f1a13ca8ce8f40602aa966499a7234bc0648609958880df",
+      "theorems": [
+        "ProvableContracts.Image.opening_anti_extensive"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/Resize.lean",
+      "blake3": "c52ab2b0f54d31d1d9773eb634025ab1f8d767b0d605f24d023bea68f29e0a2d",
+      "theorems": [
+        "ProvableContracts.Image.lerp_bounded"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/RgbToGray.lean",
+      "blake3": "8216f939444e762acf680deec405088cfec94d8e981a992224be49ca6fbc9225",
+      "theorems": [
+        "ProvableContracts.Image.rgb_coefficients_sum",
+        "ProvableContracts.Image.rgb_to_gray_unit"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Image/Sobel.lean",
+      "blake3": "765fb904e36480bf442e5b1a88d3c935e8622e7df8e181939e241b7857e95d4b",
+      "theorems": [
+        "ProvableContracts.Image.sobel_magnitude_nonneg"
       ]
     },
     {
@@ -620,10 +898,74 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/LoRA/Dare_Unbiased.lean",
+      "blake3": "4ff1c102df776c5f54b0aa27a5646747988609e848c553e01071472d8f90186b",
+      "theorems": [
+        "ProvableContracts.LoRA.Dare.dare_unbiased"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/LoRA/Lora_Shape.lean",
+      "blake3": "3bd979c6cea2a43182fc063bce266b7f571fd5bdb80b1cb8a6d2fb5f2bb05e11",
+      "theorems": [
+        "ProvableContracts.LoRA.Shape.lora_shape",
+        "ProvableContracts.LoRA.Shape.lora_shape_matches_base"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/LoRA/Shape_Preservation.lean",
+      "blake3": "0ba7cc969a8abada0f20c4a93b69e725de49f93f5cc009c306920639e9542294",
+      "theorems": [
+        "ProvableContracts.LoRA.ShapePreservation.shape_preservation"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/LoRA/Task_Vector.lean",
+      "blake3": "9b2d6d7543ef55d9dcdcbc3d36b77367b6bdf7de4c36458e1f93ebd852ab6afd",
+      "theorems": [
+        "ProvableContracts.LoRA.TaskVector.task_vector_roundtrip"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Lora/MergeForwardEquiv.lean",
+      "blake3": "737590c68cbd91480f77225e29bd4cc1ef7355ae1cd1a0c1e53f320ba4f4664b",
+      "theorems": [
+        "ProvableContracts.Lora.dot_vadd_left",
+        "ProvableContracts.Lora.dot_smul_left",
+        "ProvableContracts.Lora.matvec_madd",
+        "ProvableContracts.Lora.matvec_msmul",
+        "ProvableContracts.Lora.dot_vecmat",
+        "ProvableContracts.Lora.matvec_matmul_assoc",
+        "ProvableContracts.Lora.merge_distributes",
+        "ProvableContracts.Lora.lora_merge_forward_equiv",
+        "ProvableContracts.Lora.composed_affine",
+        "ProvableContracts.Lora.composed_affine_scaled"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/MatMul/Associativity.lean",
       "blake3": "35cbf16f0682f8b89c70447cf789dc6be40eb83b6c58cf4c5ad544632ed245d9",
       "theorems": [
         "ProvableContracts.MatMul.matmul_assoc"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/MatMul/CooperativeTiling.lean",
+      "blake3": "964cfb9d7160e0f903f284bbc9e197c2ad5a839b1ab3aac8dbb58e3ebf5856b9",
+      "theorems": [
+        "ProvableContracts.CooperativeMatrix.tiled_k_sum_eq_full_sum",
+        "ProvableContracts.CooperativeMatrix.matmul_block_sum",
+        "ProvableContracts.CooperativeMatrix.roundingModel_id",
+        "ProvableContracts.CooperativeMatrix.rounded_product_error",
+        "ProvableContracts.CooperativeMatrix.f16_input_rounding_error_bound"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/MatMul/Distributivity.lean",
+      "blake3": "c036b42a1d75c6920fefb9a055d6bec73a8c592649b23657a6e0d0c5f4bf8fe9",
+      "theorems": [
+        "ProvableContracts.MatMul.matmul_left_distrib",
+        "ProvableContracts.MatMul.matmul_right_distrib"
       ]
     },
     {
@@ -635,12 +977,80 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/MatMul/MatVecLinearity.lean",
+      "blake3": "a07d934eaba82a8d242ff20d380ad2c4eb07e67ecdef42f1c50d19bb3a898330",
+      "theorems": [
+        "ProvableContracts.MatMul.matvec_add",
+        "ProvableContracts.MatMul.matvec_smul"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/MatMul/Shape.lean",
+      "blake3": "6f96d511c1b8ab820aadf4ba5a6d49a5c4c3b9eca31a7fe740be47f76a0bf236",
+      "theorems": [
+        "ProvableContracts.MatMul.Shape.matmul_output_shape",
+        "ProvableContracts.MatMul.Shape.matmul_output_len",
+        "ProvableContracts.MatMul.Shape.matmul_shape_inner_cancels"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/MatMul/TransposeMul.lean",
+      "blake3": "db7d1f84facef23e565d4c03e3f6e69cd4917c0c9fb3984e781f300cd9196893",
+      "theorems": [
+        "ProvableContracts.MatMul.matmul_transpose"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Metrics/Regression.lean",
+      "blake3": "778e6df1ce5d788f138a9039e74651dd8967de526d7e95a41011880c6ea8c1be",
+      "theorems": [
+        "ProvableContracts.Metrics.Regression.int_sq_nonneg",
+        "ProvableContracts.Metrics.Regression.iabs_nonneg",
+        "ProvableContracts.Metrics.Regression.iabs_zero",
+        "ProvableContracts.Metrics.Regression.sseR_nonneg",
+        "ProvableContracts.Metrics.Regression.mse_nonneg",
+        "ProvableContracts.Metrics.Regression.saeR_nonneg",
+        "ProvableContracts.Metrics.Regression.mae_nonneg",
+        "ProvableContracts.Metrics.Regression.residuals_swap",
+        "ProvableContracts.Metrics.Regression.sseR_map_neg",
+        "ProvableContracts.Metrics.Regression.mse_symm",
+        "ProvableContracts.Metrics.Regression.residuals_self",
+        "ProvableContracts.Metrics.Regression.sseR_replicate_zero",
+        "ProvableContracts.Metrics.Regression.saeR_replicate_zero",
+        "ProvableContracts.Metrics.Regression.mse_self_zero",
+        "ProvableContracts.Metrics.Regression.mae_self_zero",
+        "ProvableContracts.Metrics.Regression.rmse_self_zero",
+        "ProvableContracts.Metrics.Regression.sqrt_zero_unique",
+        "ProvableContracts.Metrics.Regression.rmse_nonneg"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Metrics/RegressionAnalytic.lean",
+      "blake3": "dd99243dc057adb30f9cf6db256e0b12132811801bdb9ca6e4830f44096ec9af",
+      "theorems": [
+        "ProvableContracts.Metrics.RegressionAnalytic.r_squared_le_one",
+        "ProvableContracts.Metrics.RegressionAnalytic.r_squared_perfect",
+        "ProvableContracts.Metrics.RegressionAnalytic.mae_le_rmse"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/QR/Orthogonality.lean",
       "blake3": "f01be66835968ae2cb8e856fa1d4e1b69325b0a8e24bf6342c275eac27e48eac",
       "theorems": [
         "ProvableContracts.QR.orthogonal_left_inverse",
         "ProvableContracts.QR.orthogonal_transpose",
         "ProvableContracts.QR.orthogonal_columns"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Quantization/NF4Dequant.lean",
+      "blake3": "3d70edbabc7fe2a2d277537cafeaa35254a5501adbcb2a61ad53326ca3824046",
+      "theorems": [
+        "ProvableContracts.NF4.gpu_cpu_parity",
+        "ProvableContracts.NF4.nf4_lut_q_monotone",
+        "ProvableContracts.NF4.nf4_lut_q_bounded",
+        "ProvableContracts.NF4.nf4_lut_monotone",
+        "ProvableContracts.NF4.nf4_lut_bounded"
       ]
     },
     {
@@ -675,11 +1085,47 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/RMSNorm/NormalizedRMS.lean",
+      "blake3": "9fc934e416957090fc78f333b0a83d4788f4eb4b75e388bc4b4de4780073e225",
+      "theorems": [
+        "ProvableContracts.RMSNorm.rms_sq_zero_eps",
+        "ProvableContracts.RMSNorm.normalized_mean_sq_one",
+        "ProvableContracts.RMSNorm.normalized_rms_one"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/RMSNorm/ScaleInvariance.lean",
       "blake3": "b4518fe0c953936706a5f802b2c41d5796d39389b313d7229caaef5c566fa0e0",
       "theorems": [
         "ProvableContracts.RMSNorm.mean_sq_scale",
         "ProvableContracts.RMSNorm.rms_scale_zero_eps"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Rand/Philox.lean",
+      "blake3": "591fb66eb476d2abcbec4445ceeed76f53a88591fea448303c06d6e1acfcc5ee",
+      "theorems": [
+        "ProvableContracts.Rand.philox_deterministic"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Rand/Threefry.lean",
+      "blake3": "f21f7c21fc3eadab112fc4b690814ff190e25eb3160f9f31673425938a37c91d",
+      "theorems": [
+        "ProvableContracts.Rand.threefry_deterministic"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Rope/Rope.lean",
+      "blake3": "7858159da6ba7f0666f60044073c790cc4861199b3537cdbd764f8c45c954c71",
+      "theorems": [
+        "ProvableContracts.Rope.rope_norm_sq",
+        "ProvableContracts.Rope.rope_identity",
+        "ProvableContracts.Rope.rope_angle_add",
+        "ProvableContracts.Rope.rope_relative",
+        "ProvableContracts.Rope.ropePairs_normSq",
+        "ProvableContracts.Rope.ropePairs_norm_le",
+        "ProvableContracts.Rope.ropeList_length"
       ]
     },
     {
@@ -735,6 +1181,14 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/Sigmoid/SiluAsymptotic.lean",
+      "blake3": "10b4e34254715e01fe66c0f3cca4e012d781202039d7e78ebd6d5b2c033305e2",
+      "theorems": [
+        "ProvableContracts.Sigmoid.silu_lt_self",
+        "ProvableContracts.Sigmoid.silu_gap_bound"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/Sigmoid/SiluLowerBound.lean",
       "blake3": "9126b1d1e20bd58446cdda7770b8472ce3d73b59ea7454a6fc563450395e3d8c",
       "theorems": [
@@ -752,6 +1206,15 @@
         "ProvableContracts.Sigmoid.silu_strictMono_pos",
         "ProvableContracts.Sigmoid.sigmoid_mono",
         "ProvableContracts.Sigmoid.silu_mono_nonneg"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Sigmoid/SiluSign.lean",
+      "blake3": "a8ff17688243bc7b81b326ff793e073f46771774c528c7a5c88958f79dd9da6d",
+      "theorems": [
+        "ProvableContracts.Sigmoid.silu_pos_of_pos",
+        "ProvableContracts.Sigmoid.silu_neg_of_neg",
+        "ProvableContracts.Sigmoid.silu_sign"
       ]
     },
     {
@@ -815,12 +1278,96 @@
       ]
     },
     {
+      "path": "ProvableContracts/Theorems/Sparse/BsrSpmv.lean",
+      "blake3": "8db64d33c0fc977aa104d0e047fcf64664d7a1cd2999a3a410c3f0c3f926755c",
+      "theorems": [
+        "ProvableContracts.Sparse.bsr_spmv_linear"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Sparse/SellSpmv.lean",
+      "blake3": "93bf39eb100e503fc47a43fb4d37d1d1d6931c3caedfc7f6f0f5971b79d621ae",
+      "theorems": [
+        "ProvableContracts.Sparse.sell_spmv_add"
+      ]
+    },
+    {
       "path": "ProvableContracts/Theorems/Sparse/SpMVLinear.lean",
       "blake3": "0fe71c2ce88b53ef984aca46b4bf87a2817cda4424efb63b0a4af60dcea74017",
       "theorems": [
         "ProvableContracts.Sparse.spmv_add",
         "ProvableContracts.Sparse.spmv_smul",
         "ProvableContracts.Sparse.spmv_zero"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Sparse/Spgemm.lean",
+      "blake3": "e4b49144098a73bdb4e19fbda141421617184ef724dd39ef2b1413c95bffe4ad",
+      "theorems": [
+        "ProvableContracts.Sparse.spgemm_assoc"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Sparse/Spmm.lean",
+      "blake3": "95c1a80c1facf7ae3d2f9491f1e0602831e4a64dc05f81d85a4e17c87330c9c4",
+      "theorems": [
+        "ProvableContracts.Sparse.spmm_left_distrib"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Tensor/Einsum.lean",
+      "blake3": "f6d0f5a9f0adff716fcda139b8f241add17f2d0565b3e44515f9ed9824b297ca",
+      "theorems": [
+        "ProvableContracts.Tensor.einsum_assoc",
+        "ProvableContracts.Tensor.einsum_identity"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/TensorLayout/IndexAlgebra.lean",
+      "blake3": "43b11e601c4ef3eb565c2029aafa4fca32091fce91a17cb926ad83ffd093b59b",
+      "theorems": [
+        "ProvableContracts.TensorLayout.idx_def",
+        "ProvableContracts.TensorLayout.idx_lt",
+        "ProvableContracts.TensorLayout.unrow_idx",
+        "ProvableContracts.TensorLayout.uncol_idx",
+        "ProvableContracts.TensorLayout.idx_unrow_uncol",
+        "ProvableContracts.TensorLayout.idx_injective",
+        "ProvableContracts.TensorLayout.transpose_reindex",
+        "ProvableContracts.TensorLayout.transpose_reindex_bijective",
+        "ProvableContracts.TensorLayout.transpose_shape_swap",
+        "ProvableContracts.TensorLayout.transpose_shape_involution",
+        "ProvableContracts.TensorLayout.transpose_shape_1d_identity",
+        "ProvableContracts.TensorLayout.transpose_size_preserved",
+        "ProvableContracts.TensorLayout.row_stride",
+        "ProvableContracts.TensorLayout.col_stride",
+        "ProvableContracts.TensorLayout.row_block_lower",
+        "ProvableContracts.TensorLayout.row_block_upper"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/TensorTranspose/Roundtrip.lean",
+      "blake3": "810d065ed1e2d05bd90e19bd478a4f2bf6bb7446e0b7fbb6860e202b183b371d",
+      "theorems": [
+        "ProvableContracts.TensorTranspose.transpose_shape",
+        "ProvableContracts.TensorTranspose.transpose_element",
+        "ProvableContracts.TensorTranspose.transpose_involution",
+        "ProvableContracts.TensorTranspose.roundtrip_preserves_element",
+        "ProvableContracts.TensorTranspose.shape_transpose_involution",
+        "ProvableContracts.TensorTranspose.shape_transpose_involution_vec",
+        "ProvableContracts.TensorTranspose.swapIdx_involutive",
+        "ProvableContracts.TensorTranspose.swapIdx_injective",
+        "ProvableContracts.TensorTranspose.swapIdx_surjective"
+      ]
+    },
+    {
+      "path": "ProvableContracts/Theorems/Tokenizer.lean",
+      "blake3": "1a231720585cb3d3cf960eb580c5ef74d2340047446a7534c56cb860478fdbf1",
+      "theorems": [
+        "ProvableContracts.Tokenizer.encode_lt_vocab_size",
+        "ProvableContracts.Tokenizer.decode_encode",
+        "ProvableContracts.Tokenizer.decode_left_inverse_encode",
+        "ProvableContracts.Tokenizer.encode_injOn",
+        "ProvableContracts.Tokenizer.merge_rank_unique"
       ]
     },
     {

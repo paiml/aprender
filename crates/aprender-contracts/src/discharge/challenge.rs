@@ -51,12 +51,15 @@ pub fn render(lean_dir: &Path, contract_dir: &Path) -> Result<Rendered, String> 
     let binding = bind(&tree, contract_dir);
     let mut out = Rendered::default();
     let mut sources: BTreeMap<&str, String> = BTreeMap::new();
+    // Two obligations may bind one theorem; a second restatement is a duplicate declaration and the file fails to
+    // elaborate (silu-kernel-v1: `sigmoid_lt_exp`, #4244). So may two CONTRACTS (attention-kernel-v1 and
+    // attention-scaling-v1: `attention_weight_pos`, #4502): the root imports every Challenge file, so the second
+    // file re-declares `PvlChallenge.X` -- 132 DUPLICATE rows. One challenge per root across the whole directory,
+    // in the first contract (stem order) that binds it; the comparator matches by name, not by file.
+    let mut seen = BTreeSet::new();
     for (stem, roots) in &binding.by_contract {
         let mut blocks = Vec::new();
         let mut imports = BTreeSet::new();
-        // Two obligations may bind one theorem; a second restatement is a duplicate declaration and the file
-        // fails to elaborate (silu-kernel-v1: `sigmoid_lt_exp`, #4244). One challenge per root.
-        let mut seen = BTreeSet::new();
         for root in roots.iter().filter(|r| seen.insert(r.fqn.as_str())) {
             match restate(&tree, root, &mut sources) {
                 Ok(block) => {

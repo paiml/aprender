@@ -218,3 +218,30 @@ fn a_theorem_declared_in_two_modules_is_restated_once() {
         "{text}"
     );
 }
+
+/// #4502: attention-kernel-v1 and attention-scaling-v1 both bind `attention_weight_pos`, and each file declared
+/// `PvlChallenge.…attention_weight_pos` -- the comparator saw 132 DUPLICATE rows across 87 names. One declaration
+/// across the whole directory, in the first contract that binds the root.
+#[test]
+fn a_theorem_bound_by_two_contracts_is_restated_once_across_files() {
+    let d = fixture();
+    std::fs::write(
+        d.path().join("contracts/gelu-v2.yaml"),
+        "equations:\n  e:\n    lean_theorem: ProvableContracts.Gelu.gelu_bound\n",
+    )
+    .expect("write second contract");
+    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let decl = "theorem _root_.PvlChallenge.ProvableContracts.Gelu.gelu_bound";
+    let n: usize = r.files.values().map(|t| t.matches(decl).count()).sum();
+    assert_eq!(n, 1, "{:#?}", r.files);
+    assert!(
+        r.files["Challenge/gelu-v1.lean"].contains(decl),
+        "{:#?}",
+        r.files
+    );
+    assert!(
+        !r.files.contains_key("Challenge/gelu-v2.lean"),
+        "a contract left with no root of its own writes no file: {:#?}",
+        r.files
+    );
+}

@@ -1,10 +1,7 @@
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
 import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
-import ProvableContracts.Theorems.Sigmoid.SiluAsymptotic
 import ProvableContracts.Theorems.Sigmoid.SiluLowerBound
 import ProvableContracts.Theorems.Sigmoid.SiluMonotone
-import ProvableContracts.Theorems.Sigmoid.SiluSign
-import ProvableContracts.Theorems.Sigmoid.SiluZero
 import ProvableContracts.Theorems.Sigmoid.SwigluGating
 import ProvableContracts.Theorems.Sigmoid.SwigluZero
 
@@ -64,75 +61,6 @@ section
 namespace ProvableContracts.Sigmoid
 open Real
 theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.sigmoid_symmetry (x : ℝ) : sigmoid (-x) = 1 - sigmoid x := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_gap_bound {x : ℝ} (hx : 0 < x) : 0 < x - silu x ∧ x - silu x < x * Real.exp (-x) := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_gt_neg_inv_e (x : ℝ) : silu x > -(1 / Real.exp 1) := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_gt_neg_one (x : ℝ) : silu x > -1 := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_lt_self {x : ℝ} (hx : 0 < x) : silu x < x := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_mono_nonneg {a b : ℝ} (ha : 0 ≤ a) (hab : a < b) : silu a < silu b := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_neg_of_neg {x : ℝ} (hx : x < 0) : silu x < 0 := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_pos_of_pos {x : ℝ} (hx : 0 < x) : 0 < silu x := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_sign (x : ℝ) : (0 < x → 0 < silu x) ∧ (x < 0 → silu x < 0) := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_strictMono_pos {x y : ℝ} (hx : 0 < x) (hxy : x < y) : silu x < silu y := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.silu_zero : silu 0 = 0 := sorry
 end ProvableContracts.Sigmoid
 end
 
