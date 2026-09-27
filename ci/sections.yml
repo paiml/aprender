@@ -1499,6 +1499,24 @@ jobs:
             --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
           setsid --wait bash scripts/check_pr_ont_delta.sh \
             --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
+      # DUP-001 (#4536), WIRED. The check was built on 76/4536-dup-001 and nothing ran
+      # it: #4429 (release car) and #4502 carried the same changes for hours, 53 files /
+      # 161 conflicting hunks, and no job said so. The only patch-id use on main was the
+      # pr-review receipt binding (Arm 4), one id per PR that is never compared across
+      # PRs. Measured 2026-09-27 19:0xZ: `--pr 4502` FAILs against 7 other open PRs.
+      #
+      # The case table runs on every event; the cross-PR check only on pull_request
+      # (merge_group has no PR payload, and a queued batch is checked as its PRs were).
+      - name: "DUP-001 case table: 22 rows, must-match and must-not-match"
+        if: "!cancelled()"
+        run: setsid --wait bash scripts/check_pr_duplicate_patches.sh --self-test
+      - name: A PR may not carry a change another open PR already carries (DUP-001)
+        # `!cancelled()`, same reason as the two PR-body steps above: an unrelated red
+        # step must not skip it. It reads the open-PR list and git, nothing this job built.
+        if: "!cancelled() && github.event_name == 'pull_request'"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: setsid --wait bash scripts/check_pr_duplicate_patches.sh
       # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
       # and takes its own final probe first -- without that, a failure at
       # step K leaves the last recorded boundary BEFORE K and the table
