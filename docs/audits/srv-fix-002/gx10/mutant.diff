@@ -1,0 +1,22 @@
+diff --git a/crates/aprender-gpu/src/kernels/gdn/prefill_flash_attention.rs b/crates/aprender-gpu/src/kernels/gdn/prefill_flash_attention.rs
+index 293c743b0..332983da4 100644
+--- a/crates/aprender-gpu/src/kernels/gdn/prefill_flash_attention.rs
++++ b/crates/aprender-gpu/src/kernels/gdn/prefill_flash_attention.rs
+@@ -274,7 +274,7 @@ impl Kernel for PrefillFlashAttention256Kernel {
+         let q_stride = self.num_heads * FLASH_HEAD_DIM;
+         let kv_stride = self.num_kv_heads * FLASH_HEAD_DIM;
+         // exp(x * scale) == ex2(x * scale * log2 e); scale = 1/sqrt(256).
+-        let c_exp = std::f32::consts::LOG2_E / (FLASH_HEAD_DIM as f32).sqrt();
++        let c_exp = 1.25 * std::f32::consts::LOG2_E / (FLASH_HEAD_DIM as f32).sqrt(); // MUTANT P2
+ 
+         PtxKernel::new(self.name())
+             .param(PtxType::U64, "q_ptr") // f32 [rows][num_heads * 256]
+@@ -725,7 +725,7 @@ impl Kernel for PrefillFlashCombine256Kernel {
+     fn build_ptx(&self) -> PtxKernel {
+         let q_stride = self.num_heads * FLASH_HEAD_DIM;
+         let num_heads = self.num_heads;
+-        let c_exp = std::f32::consts::LOG2_E / (FLASH_HEAD_DIM as f32).sqrt();
++        let c_exp = 1.25 * std::f32::consts::LOG2_E / (FLASH_HEAD_DIM as f32).sqrt(); // MUTANT P2
+         PtxKernel::new(self.name())
+             .param(PtxType::U64, "part_o_ptr")
+             .param(PtxType::U64, "part_ml_ptr")

@@ -1,0 +1,7 @@
+apr-flash rc=0
+apr-f32 rc=0
+nsys pid 2135002
+llama curl rc=0
+server pid 2135037
+nsys llama rc=0
+{"cache_n":0,"prompt_n":28920,"prompt_ms":7451.572,"prompt_per_token_ms":0.25766154910096817,"prompt_per_second":3881.060264867601,"predicted_n":64,"predicted_ms":1224.924,"predicted_per_token_ms":19.443238095238094,"predicted_per_second":51.431762297089456}
