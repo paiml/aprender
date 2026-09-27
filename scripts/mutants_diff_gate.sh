@@ -18,11 +18,16 @@
 #   5. An unparseable outcomes.json is RED (not being able to measure is not measuring zero), and so is a
 #      TESTED count that differs from the LISTED count.
 #   6. missed + timeout > --max-missed is RED, naming each survivor.
+#   0. (operator 2026-09-27, verbatim "exempt the car") a release car -- head ref car/* pushed to THIS repo, not a
+#      fork -- is not judged here: `--exempt-ref REF HEAD_REPO BASE_REPO` exits 0 and says so, and mutants-nightly.yml
+#      (uncapped) judges the car's content once it lands on main. Every other PR keeps the cap. The repo check is
+#      load-bearing: a fork chooses its own branch name and could call it car/anything.
 #   --exclude-crate NAME (repeatable) keeps crates/NAME/** out of mutation, for the crates CI's workspace-test also
 #   excludes (aprender-gpu, aprender-cuda-edge, aprender-compute: hardware, or a harness that segfaults at exit on a
 #   clean pass, so cargo-mutants would read its baseline as failed). The exclusion is printed, never silent.
 #
 #   bash scripts/mutants_diff_gate.sh <diff> [--cap N] [--jobs J] [--max-missed M] [--out DIR] [--exclude-crate NAME]...
+#   bash scripts/mutants_diff_gate.sh --exempt-ref <head-ref> <head-repo> <base-repo>   # exit 0 exempt . 1 judge it
 #   bash scripts/mutants_diff_gate.sh --self-test
 # exit 0 judged and within --max-missed . 1 RED . 2 usage
 # Seam (the self-test only): MUTANTS_GATE_CARGO replaces `cargo`.
@@ -58,6 +63,12 @@ gate() { # gate <diff> <cap> <jobs> <max-missed> <out> [excluded crate...]
     return 1
   fi
   judge "$oc" "$n" "$max" "$out"
+}
+
+exempt_ref() { # exempt_ref <head-ref> <head-repo> <base-repo> -- 0 iff a car of THIS repo (rule 0)
+  [ -n "$2" ] && [ "$2" = "$3" ] || return 1
+  [[ $1 == car/?* ]] || return 1
+  echo "car/*: deferred to mutants-nightly (uncapped, operator 2026-09-27)"
 }
 
 field() { # field <json> <key> -> the first `"key": <int>` (top-level summary keys; outcome entries carry none)
@@ -146,6 +157,19 @@ STUB
         STUB_OUTCOMES="$(cat "$(dirname "$SELF")/mutants_diff_gate.real-outcomes.json")"
     : > "$T/empty.diff"
     GATE_DIFF="$T/empty.diff" row empty-diff-passes 0 "empty diff" STUB_LIST='a\n'
+    xrow() { # xrow <name> <want rc> <head-ref> <head-repo> <base-repo> -- rule 0, the car exemption
+      local name=$1 want=$2 rc=0; shift 2
+      bash "$GATE_SCRIPT" --exempt-ref "$@" > "$T/x-$name" 2>&1 || rc=$?
+      if [ "$rc" = "$want" ] && { [ "$want" != 0 ] || grep -qF "deferred to mutants-nightly" "$T/x-$name"; }; then echo "ok    $name"
+      else echo "FAIL  $name -- rc $rc (want $want): $(tr '\n' ' ' < "$T/x-$name" | cut -c1-160)"; fi
+    }
+    xrow car-is-exempt 0 car/0.70.0 paiml/aprender paiml/aprender
+    xrow non-car-is-judged 1 feat/x paiml/aprender paiml/aprender
+    xrow nested-car-is-judged 1 fix/car/0.70.0 paiml/aprender paiml/aprender
+    xrow car-prefix-word-is-judged 1 cargo/x paiml/aprender paiml/aprender
+    xrow bare-car-is-judged 1 car/ paiml/aprender paiml/aprender
+    xrow fork-car-is-judged 1 car/0.70.0 someone/aprender paiml/aprender
+    xrow unknown-repo-is-judged 1 car/0.70.0 "" ""
   }
   GATE_SCRIPT=$SELF
   local o; o=$(table); printf '%s\n' "$o"; grep -q '^FAIL' <<< "$o" && bad=1
@@ -172,6 +196,11 @@ count-mismatch-ok~tested-count-mismatch-is-red~  if [ "$total" -ne "$n" ]; then~
 timeout-not-counted~timeout-counts-as-uncaught~  if [ $((missed + timeout)) -gt "$max" ]; then~  if [ "$missed" -gt "$max" ]; then
 exclusion-dropped-on-run~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --no-times~  "$cargo" mutants --workspace --no-times
 exclusion-dropped-on-list~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --in-diff "$diff" --list~  "$cargo" mutants --workspace --in-diff "$diff" --list
+car-glob-widened~nested-car-is-judged~  [[ $1 == car/?* ]] || return 1~  [[ $1 == *car/?* ]] || return 1
+car-prefix-unanchored~car-prefix-word-is-judged~  [[ $1 == car/?* ]] || return 1~  [[ $1 == car?* ]] || return 1
+fork-not-checked~fork-car-is-judged~  [ -n "$2" ] && [ "$2" = "$3" ] || return 1~  :
+empty-repo-accepted~unknown-repo-is-judged~  [ -n "$2" ] && [ "$2" = "$3" ] || return 1~  [ "$2" = "$3" ] || return 1
+exempt-never~car-is-exempt~  [[ $1 == car/?* ]] || return 1~  return 1
 survivors-unnamed~missed-is-red-and-named~    cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'~    :
 MUT
   echo "mutants_diff_gate self-test: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
@@ -182,6 +211,10 @@ main() {
   local diff="" cap=60 jobs=4 max=0 out=mutants-gate
   local -a excl=()
   [ "${1:-}" = "--self-test" ] && { self_test; exit $?; }
+  if [ "${1:-}" = "--exempt-ref" ]; then
+    [ $# -eq 4 ] || { echo "usage: mutants_diff_gate.sh --exempt-ref <head-ref> <head-repo> <base-repo>" >&2; exit 2; }
+    exempt_ref "$2" "$3" "$4"; exit $?
+  fi
   while [ $# -gt 0 ]; do
     case "$1" in
       --cap) cap=$2; shift 2 ;;

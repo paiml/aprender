@@ -2,7 +2,7 @@
 schema_version: "1.0"
 kind: library
 entrypoints: [crates/aprender-contracts-cli]
-contract_count: 1844
+contract_count: 1837
 ---
 
 <p align="center">

@@ -3656,8 +3656,20 @@ jobs:
         # cargo-mutants --in-diff takes a unified diff and mutates ONLY the
         # lines it adds/changes. We diff the PR head against the merge-base with
         # the target branch so the scope is exactly "what this PR introduces".
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # Rule 0 (operator 2026-09-27, verbatim "exempt the car"): a car/* PR of this repo is judged by
+          # mutants-nightly (uncapped) after it lands; every other PR keeps MUTANTS_CAP. Case table:
+          # scripts/mutants_diff_gate.sh --self-test (car, non-car, nested, fork rows).
+          if bash scripts/mutants_diff_gate.sh --exempt-ref "$HEAD_REF" "$HEAD_REPO" "$BASE_REPO"; then
+            echo "has_rs=false" >> "$GITHUB_OUTPUT"
+            : > pr.diff
+            exit 0
+          fi
           BASE_REF="${{ github.event.pull_request.base.ref }}"
           # NOT --depth=1: a shallow base commit has no shared ancestor with the
           # fetch-depth:0 PR head, so `git merge-base` finds none and (under

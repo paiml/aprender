@@ -110,7 +110,10 @@ self_test() {
     mkdir -p "$repo" && git -C "$repo" init -q && mkdir -p "$repo/ci"
     fixture "$repo/ci/sections.yml" pass fail pass fail
     local got
-    ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
+    # env -u GITHUB_ACTIONS: this fixture has no manifest job, and under CI the runner
+    # refuses one ("no manifest job ... nothing to run", rc 2) -- the row tests the LOCAL
+    # run-past-failure path, so it must not inherit the CI job's mode.
+    ( cd "$repo" && env -u GITHUB_ACTIONS CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
     got=$?
     n=$((n + 1))
     if [ "$got" -eq 1 ] && grep -q '^SUMMARY: 2 failed / 4 ran / 0 skipped$' "$d/out"; then
@@ -121,7 +124,7 @@ self_test() {
         fail=1
     fi
     fixture "$repo/ci/sections.yml" event
-    ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
+    ( cd "$repo" && env -u GITHUB_ACTIONS CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
     got=$?
     n=$((n + 1))
     if [ "$got" -eq 2 ]; then
@@ -334,7 +337,7 @@ reader_rows() {
     got="$(bash "$LIB" --workflow "$d/g_sec.yml" --gate-workflow "$d/g_ci.yml" check-run-all --baseline "$d/base_xy" 2>&1)"; rc=$?
     n=$((n + 1))
     if [ "$rc" = 0 ] && [ "$(printf '%s\n' "$got" | grep -c '^ok ')" = 2 ] \
-        && printf '%s\n' "$got" | grep -q '^ok   guard-x: 2 fail-fast' && printf '%s\n' "$got" | grep -q '^ok   guard-y: 0 fail-fast'; then
+        && grep -q '^ok   guard-x: 2 fail-fast' <<<"$got" && grep -q '^ok   guard-y: 0 fail-fast' <<<"$got"; then
         printf 'ok   %-58s\n' "gate reads X86:guard-x + res guard-y -> exactly those 2"
     else printf 'FAIL %-58s rc=%s\n' "gate reads X86:guard-x + res guard-y -> exactly those 2" "$rc"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
     gfixture "$d/g_sec.yml" "$d/g_ci.yml" 'echo no guard read here'
