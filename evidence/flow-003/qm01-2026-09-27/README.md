@@ -78,3 +78,21 @@ the ρ_HOL > 0.6 stop line. So the head of line is not the bottleneck at today's
 → merged), entries, first_try, ejects. There are 39 rows, all class x. On the first try, 29 passed, 3 failed
 (ejected), 6 were removed `manual` and 1 left with a `merge_conflict`. There were 3 ejects in total. Median wait
 is 54.3 min and the max is 443.7 min.
+
+## Fold size k (Lemma 1, Thm 1, Cor 3) at the measured inputs
+
+`derived.fold` uses q 0.14, f 1.0 (**n = 1**), C 43.6, F 4.0, φ 0.019 and ρ_rel 0.126 min. The self-test checks
+the closed forms against the four §6.1 oracle rows. A mutant that drops `r·ρ` fails two of those rows.
+
+| k | EM | E[T_fold], best r | per PR | bisect upper (ident 0.29) | per PR |
+|---|---|---|---|---|---|
+| 1 | 0.140 | 50.3 min (r=1) | 50.3 | 50.3 | 50.3 |
+| 2 | 0.260 | 56.0 | 28.0 | 64.1 | 32.0 |
+| 4 | 0.453 | 65.2 | 16.3 | 93.3 | 23.3 |
+| 8 | 0.701 | 77.0 | 9.6 | 142.3 | 17.8 |
+
+- Folding still pays per PR, even at the bisection upper bound. That bound charges ⌈log₂k⌉ extra cycles to each
+  defect cycle that names no failing test, which is 71% of them.
+- r* = 1 at every k, but the gain from r = 0 to r = 1 is only about 0.8 min. φ* ≈ 0.0004–0.002 because ρ_rel is
+  about 8 s (nextest retries a single test, not the whole cycle).
+- f = 1 rests on one fix, so EM is optimistic. EM equals 1−(1−q)^k exactly when f = 1.

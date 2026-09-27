@@ -1046,7 +1046,113 @@
       "split": 0.0339,
       "blind": 0.0339,
       "formula": "FLOW-003 v1.1 Prop 11: lambda' qbar' Tbar, B=1, r=0 (lower bound, Thm 8 tightness)"
-    }
+    },
+    "fold": [
+      {
+        "k": 1,
+        "EM": 0.14,
+        "E_T_fold_by_r": [
+          51.0812,
+          50.2645,
+          50.2664,
+          50.2837
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 50.2645,
+        "phi_star_release": 0.0004
+      },
+      {
+        "k": 2,
+        "EM": 0.2604,
+        "E_T_fold_by_r": [
+          56.8103,
+          56.0087,
+          56.0258,
+          56.0582
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 64.093,
+        "phi_star_release": 0.0008
+      },
+      {
+        "k": 3,
+        "EM": 0.3639,
+        "E_T_fold_by_r": [
+          61.7372,
+          60.9487,
+          60.9788,
+          61.0243
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 83.5464,
+        "phi_star_release": 0.0011
+      },
+      {
+        "k": 4,
+        "EM": 0.453,
+        "E_T_fold_by_r": [
+          65.9744,
+          65.1971,
+          65.2384,
+          65.2952
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 93.3239,
+        "phi_star_release": 0.0013
+      },
+      {
+        "k": 5,
+        "EM": 0.5296,
+        "E_T_fold_by_r": [
+          69.6184,
+          68.8507,
+          68.9017,
+          68.9681
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 118.1735,
+        "phi_star_release": 0.0015
+      },
+      {
+        "k": 6,
+        "EM": 0.5954,
+        "E_T_fold_by_r": [
+          72.7523,
+          71.9929,
+          72.0521,
+          72.1268
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 127.4496,
+        "phi_star_release": 0.0017
+      },
+      {
+        "k": 7,
+        "EM": 0.6521,
+        "E_T_fold_by_r": [
+          75.4474,
+          74.6951,
+          74.7615,
+          74.8433
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 135.4271,
+        "phi_star_release": 0.0019
+      },
+      {
+        "k": 8,
+        "EM": 0.7008,
+        "E_T_fold_by_r": [
+          77.7651,
+          77.019,
+          77.0915,
+          77.1794
+        ],
+        "r_best": 1,
+        "E_T_fold_bisect_upper": 142.2877,
+        "phi_star_release": 0.002
+      }
+    ]
   },
   "unknown": [],
   "low_n": [

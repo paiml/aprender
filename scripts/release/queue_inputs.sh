@@ -49,6 +49,18 @@ set -euo pipefail
 REPO="paiml/aprender"
 # Release PRs: the fold / train branches that carry k PRs in one push (Thm 2's release PR).
 RELEASE_BRANCH_RE='^(car/|rc/|release[/-]|batch/|fold/|replace/b[0-9])'
+# Closed forms from FLOW-003 §4, shared by compute and the self-test oracle rows.
+MODEL_JQ=$(cat <<'JQ'
+# Lemma 1: EM(k) = sum_{n>=0} 1 - (1 - q(1-f)^n)^k (truncated once a term is < 1e-12, at most 500 terms).
+def em($k; $q; $f): [range(0; 500) as $n | 1 - pow(1 - $q * pow(1 - $f; $n); $k)] | map(select(. >= 1e-12)) | add // 0;
+# Theorem 1: E[T_fold(k,r)] = EM (C + r rho + F) + (C + rho S_r) / (1 - phi^(r+1)), S_r = sum_{j=1..r} phi^j.
+def t_fold($k; $r; $q; $f; $c; $ff; $phi; $rho):
+  em($k; $q; $f) * ($c + $r * $rho + $ff) + ($c + $rho * ([range(1; $r + 1) as $j | pow($phi; $j)] | add // 0)) / (1 - pow($phi; $r + 1));
+# Corollary 3 break-even: phi (C - rho) / (1 - phi^2) = rho EM, positive root.
+def phi_star($em; $c; $rho): if $rho <= 0 or $em <= 0 then null
+  else ((-($c - $rho)) + ((($c - $rho) * ($c - $rho)) + 4 * $rho * $em * $rho * $em | sqrt)) / (2 * $rho * $em) end;
+JQ
+)
 # The maintainer attestation label (§5.1 class a). No such label exists in paiml/aprender as of
 # 2026-09-27, so class a is empty and never PASSes.
 ATTEST_LABEL="${ATTEST_LABEL:-maintainer-attested}"
@@ -177,19 +189,7 @@ compute() {
     local start end
     read -r start end < "$d/window.txt"
 
-    jq -n --arg start "$start" --arg end "$end" --arg relre "$RELEASE_BRANCH_RE" \
-        --slurpfile mg <(cat "$d/mg_runs.jsonl") \
-        --slurpfile ci <(cat "$d/ci_runs.jsonl") \
-        --slurpfile prs "$d/prs_created.json" \
-        --slurpfile tl <(cat "$d/timelines.jsonl") \
-        --rawfile retr "$d/retries.tsv" \
-        --rawfile harv "$d/harvested_runs.txt" \
-        --rawfile ident "$d/ident.tsv" \
-        --slurpfile meta <(cat "$d/pr_meta.jsonl") \
-        --rawfile readset "$d/readset.txt" \
-        --arg attest "$ATTEST_LABEL" \
-        --argjson qsave "$P12_Q_SAVING" --argjson kdiff "$P12_KAPPA_DIFF" --argjson dcost "$P12_D" \
-        -f /dev/stdin <<'JQ'
+    { printf '%s\n' "$MODEL_JQ"; cat <<'JQ'
 def median: sort | if length == 0 then null
     elif length % 2 == 1 then .[length / 2 | floor] else (.[length / 2 - 1] + .[length / 2]) / 2 end;
 def mean: if length == 0 then null else add / length end;
@@ -418,6 +418,20 @@ def backout($qe; $f): if $qe == null or $f == null or $qe >= 1 then null else $q
        else {split: ($lm * ([$cs[] | .pi_eff.value * .q_eff.value] | add) * ([$cs[] | .pi_eff.value * .T.value] | add) | r4),
              blind: ($lm * .inputs.q_eff.value * .inputs.T.value | r4),
              formula: "FLOW-003 v1.1 Prop 11: lambda' qbar' Tbar, B=1, r=0 (lower bound, Thm 8 tightness)"} end))
+# Fold size (Thm 1, Lemma 1, Cor 3) at the measured inputs, k = 1..8, r = 0..3. The bisect bound adds
+# ceil(log2 k) cycles to each defect cycle that names no test (share 1 - ident_rate; Thm 2 remark, QM-07).
+| .inputs as $in
+| .derived.fold = (
+    if any($in.q, $in.f, $in.C, $in.F, $in.phi, $in.rho_rel, $in.ident_rate; .value == null) then null
+    else [range(1; 9) as $k
+          | em($k; $in.q.value; $in.f.value) as $em
+          | [range(0; 4) as $r | t_fold($k; $r; $in.q.value; $in.f.value; $in.C.value; $in.F.value; $in.phi.value; $in.rho_rel.value)] as $t
+          | ($t | index($t | min)) as $rbest
+          | {k: $k, EM: ($em | r4), E_T_fold_by_r: ($t | map(r4)), r_best: $rbest,
+             E_T_fold_bisect_upper: ($t[$rbest] + $em * (1 - $in.ident_rate.value)
+                                       * ([range(0; 4)] | map(select(pow(2; .) >= $k)) | first) * $in.C.value | r4),
+             phi_star_release: (phi_star($em; $in.C.value; $in.rho_rel.value) | r4)}]
+    end)
 | .unknown = [.inputs | to_entries[] | select(.value.n == 0 or .value.value == null) | .key]
 | .low_n = [.inputs | to_entries[] | select(.value.n > 0 and .value.n < 5 and .key != "window_days") | .key]
 | .verdict = (if .inputs.n_runs.n == 0 then "RED: empty window"
@@ -425,6 +439,19 @@ def backout($qe; $f): if $qe == null or $f == null or $qe >= 1 then null else $q
               elif (.derived.release_cycles.unclassified_red | length) > 0 then "RED: red release cycles missing from ident.tsv"
               else "GREEN" end)
 JQ
+    } | jq -n --arg start "$start" --arg end "$end" --arg relre "$RELEASE_BRANCH_RE" \
+        --slurpfile mg <(cat "$d/mg_runs.jsonl") \
+        --slurpfile ci <(cat "$d/ci_runs.jsonl") \
+        --slurpfile prs "$d/prs_created.json" \
+        --slurpfile tl <(cat "$d/timelines.jsonl") \
+        --rawfile retr "$d/retries.tsv" \
+        --rawfile harv "$d/harvested_runs.txt" \
+        --rawfile ident "$d/ident.tsv" \
+        --slurpfile meta <(cat "$d/pr_meta.jsonl") \
+        --rawfile readset "$d/readset.txt" \
+        --arg attest "$ATTEST_LABEL" \
+        --argjson qsave "$P12_Q_SAVING" --argjson kdiff "$P12_KAPPA_DIFF" --argjson dcost "$P12_D" \
+        -f /dev/stdin
 }
 
 # readset <tree> <raw-dir>: the paths a build, test or guard reads by name, from the tree at <tree>.
@@ -548,6 +575,15 @@ EOF
     check "T = median of passed entries (20, 40, 30 -> 30)" '.inputs.T.value == 30 and .inputs.T.n == 3' "$out"
     check "merged rows: pr1 x, 140 min wait, 2 entries, first try fail, 1 eject" '.derived.merged_pr_rows | map(select(.pr == 1))[0] | .class == "x" and .mq_wait_min == 140 and .entries == 2 and .first_try == "fail" and .ejects == 1' "$out"
     check "merged rows: pr2 docs, 100 min; pr3 first try pass, 0 ejects" '(.derived.merged_pr_rows | map(select(.pr == 2))[0] | .class == "d" and .mq_wait_min == 100) and (.derived.merged_pr_rows | map(select(.pr == 3))[0] | .first_try == "pass" and .ejects == 0)' "$out"
+    # Theorem 1 oracle rows, spec §6.1 (recomputed independently there to 4 s.f.).
+    for row in "5 0 0.1 0.8 80 20 0.02 10 134.67" "5 2 0.1 0.8 80 20 0.02 10 143.86" \
+               "5 1 0.2 0.8 30 20 0.1 10 85.69" "8 1 0.1 0.8 80 20 0.05 10 164.12"; do
+        set -- $row
+        check "Thm 1 oracle k=$1 r=$2 q=$3 f=$4 C=$5 F=$6 phi=$7 rho=$8 -> $9" \
+            "(. * 100 | round) == ($9 * 100 | round)" \
+            "$(jq -n "$MODEL_JQ t_fold($1; $2; $3; $4; $5; $6; $7; $8)")"
+    done
+    check "fold table k=1..8 with EM rising in k" '.derived.fold | length == 8 and (map(.EM) | . == sort)' "$out"
     check "rho_HOL blind = lambda'/60 * q' * T" '.derived.rho_hol.blind == ((.inputs.lambda_eff_per_h.value / 60 * .inputs.q_eff.value * .inputs.T.value * 10000 | round) / 10000)' "$out"
     check "q' raw = 2 failed / 5" '.derived.q_prime_raw == 0.4' "$out"
     check "flaky failed entry (pr2, no push) removed from q'" '.derived.entries.failed_flaky == 1 and .derived.q_prime_defect == 0.25' "$out"
