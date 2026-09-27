@@ -85,7 +85,7 @@ equations:
 proof_obligations:
 - type: invariant
   property: timings are absent unless both phases were measured
-  formal: "to_timings(p) = None  ⟸  p.prefill_ms = None ∨ p.decode_ms = None"
+  formal: "p.prefill_ms = None ∨ p.decode_ms = None ⟹ to_timings(p) = None"
   applies_to: all
 - type: invariant
   property: the phases partition wall time
