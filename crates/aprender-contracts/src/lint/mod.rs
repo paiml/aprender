@@ -543,7 +543,15 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         || {
             let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
             let baseline = duplicate_stems::read_baseline(project_root);
-            duplicate_stems::run_duplicate_stem_gate(&duplicates, &baseline)
+            // #4538: the crate-local copies Σ refuses, on their own shrink-only ratchet.
+            let crate_refused = duplicate_stems::scan_crate_refusals(config.contract_dir);
+            let crate_baseline = duplicate_stems::read_crate_baseline(project_root);
+            duplicate_stems::run_duplicate_stem_gate_with_crates(
+                &duplicates,
+                &baseline,
+                &crate_refused,
+                &crate_baseline,
+            )
         },
         "duplicate-stems",
         validation_passed,

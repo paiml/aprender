@@ -53,6 +53,16 @@ pub fn run(
     for w in &extraction.warnings {
         eprintln!("warning: {w}");
     }
+    for r in &extraction.refused {
+        eprintln!(
+            "refused: PV-DUP-001 crate contract `{}` differs from another copy, not unioned: {}",
+            r.stem,
+            r.paths.join(", ")
+        );
+    }
+    for b in &extraction.code.refused_bindings {
+        eprintln!("refused: PV-DUP-001 binding names a refused crate copy: {b}");
+    }
     let graph = extraction.graph;
     if graph.is_empty() {
         eprintln!("decline: no contracts under {}", contract_dir.display());

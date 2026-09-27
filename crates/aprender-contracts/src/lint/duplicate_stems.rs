@@ -52,6 +52,11 @@ use super::{GateDetail, GateExtra, GateResult, Verdict};
 /// Path of the ratchet baseline, relative to the project root.
 pub const BASELINE_REL_PATH: &str = "scripts/contract_duplicate_stem_baseline.txt";
 
+/// #4538: ratchet baseline of crate-local contract stems Σ refuses (a `crates/*/contracts` copy whose bytes differ
+/// from another copy of the stem). Separate from [`BASELINE_REL_PATH`]: those stems are top-level duplicates the
+/// graph unions, these are crate copies it drops. Shrink-only.
+pub const CRATE_BASELINE_REL_PATH: &str = "scripts/contract_crate_stem_refused_baseline.txt";
+
 /// One contract stem claimed by more than one file, with divergent content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DuplicateStem {
@@ -103,6 +108,24 @@ fn build_duplicate(stem: &str, paths: &[std::path::PathBuf]) -> Option<Duplicate
     })
 }
 
+/// #4538: the crate-local contract stems Σ refuses — one entry per stem, with every copy (top level and crate) and
+/// the number of distinct contents. The same walk Σ extract uses ([`crate::ontology::extract::pv_contract::corpus`]),
+/// so the gate and the graph cannot disagree about what was dropped.
+pub fn scan_crate_refusals(contract_dir: &Path) -> Vec<DuplicateStem> {
+    let root = crate::ontology::extract::repo_root(contract_dir);
+    crate::ontology::extract::pv_contract::corpus(contract_dir)
+        .refused
+        .into_iter()
+        .filter_map(|r| {
+            let paths: Vec<std::path::PathBuf> = r.paths.iter().map(|p| root.join(p)).collect();
+            build_duplicate(&r.stem, &paths).map(|mut d| {
+                d.paths = r.paths;
+                d
+            })
+        })
+        .collect()
+}
+
 /// The set of stems that must NOT be resolved to a single contract.
 pub fn ambiguous_stems(duplicates: &[DuplicateStem]) -> BTreeSet<String> {
     duplicates.iter().map(|d| d.stem.clone()).collect()
@@ -111,7 +134,16 @@ pub fn ambiguous_stems(duplicates: &[DuplicateStem]) -> BTreeSet<String> {
 /// Read the ratchet baseline. A missing file means an EMPTY baseline, which makes
 /// every divergent stem a hard error — the safe direction for a tree that has none.
 pub fn read_baseline(project_root: &Path) -> BTreeSet<String> {
-    let path = project_root.join(BASELINE_REL_PATH);
+    read_baseline_at(project_root, BASELINE_REL_PATH)
+}
+
+/// Read the #4538 crate-refusal baseline; missing means empty, as for [`read_baseline`].
+pub fn read_crate_baseline(project_root: &Path) -> BTreeSet<String> {
+    read_baseline_at(project_root, CRATE_BASELINE_REL_PATH)
+}
+
+fn read_baseline_at(project_root: &Path, rel: &str) -> BTreeSet<String> {
+    let path = project_root.join(rel);
     let Ok(text) = std::fs::read_to_string(path) else {
         return BTreeSet::new();
     };
@@ -123,18 +155,26 @@ pub fn read_baseline(project_root: &Path) -> BTreeSet<String> {
 }
 
 /// Run PV-DUP-001. Fails on any divergent stem outside the baseline, and on any
-/// baseline entry that no longer diverges (so the ratchet cannot be left slack).
+/// baseline entry that no longer diverges (so the ratchet cannot be left slack). Top-level only; the lint pipeline
+/// calls [`run_duplicate_stem_gate_with_crates`].
+#[cfg(test)]
 pub(crate) fn run_duplicate_stem_gate(
     duplicates: &[DuplicateStem],
     baseline: &BTreeSet<String>,
 ) -> (GateResult, Vec<LintFinding>) {
-    let start = Instant::now();
-    let found: BTreeSet<String> = ambiguous_stems(duplicates);
+    run_duplicate_stem_gate_with_crates(duplicates, baseline, &[], &BTreeSet::new())
+}
 
+/// The failures of one ratchet: unbaselined stems, stale baseline entries, and their findings.
+fn ratchet(
+    duplicates: &[DuplicateStem],
+    baseline: &BTreeSet<String>,
+    baseline_path: &str,
+    what: &str,
+) -> (Vec<String>, Vec<String>, Vec<LintFinding>) {
+    let found: BTreeSet<String> = ambiguous_stems(duplicates);
     let unbaselined: Vec<String> = found.difference(baseline).cloned().collect();
     let stale: Vec<String> = baseline.difference(&found).cloned().collect();
-    let passed = unbaselined.is_empty() && stale.is_empty();
-
     let mut findings = Vec::new();
     for stem in &unbaselined {
         let paths = duplicates
@@ -145,10 +185,7 @@ pub(crate) fn run_duplicate_stem_gate(
             LintFinding::new(
                 "PV-DUP-001",
                 RuleSeverity::Error,
-                format!(
-                    "Stem `{stem}` is claimed by multiple files with DIVERGENT content, \
-                     so it cannot be resolved to one contract: {paths}"
-                ),
+                format!("Stem `{stem}` {what}: {paths}"),
                 format!("contracts/{stem}.yaml"),
             )
             .with_stem(stem.clone()),
@@ -159,12 +196,46 @@ pub(crate) fn run_duplicate_stem_gate(
             "PV-DUP-002",
             RuleSeverity::Error,
             format!(
-                "Stem `{stem}` no longer diverges — remove it from {BASELINE_REL_PATH}. \
+                "Stem `{stem}` no longer diverges — remove it from {baseline_path}. \
                  The ratchet only turns one way."
             ),
-            BASELINE_REL_PATH.to_string(),
+            baseline_path.to_string(),
         ));
     }
+    (unbaselined, stale, findings)
+}
+
+/// PV-DUP-001 over both ratchets: top-level divergent stems against [`BASELINE_REL_PATH`], and (#4538) the
+/// crate-local copies Σ refuses against [`CRATE_BASELINE_REL_PATH`]. One gate, each ratchet judged on its own.
+pub(crate) fn run_duplicate_stem_gate_with_crates(
+    duplicates: &[DuplicateStem],
+    baseline: &BTreeSet<String>,
+    crate_refused: &[DuplicateStem],
+    crate_baseline: &BTreeSet<String>,
+) -> (GateResult, Vec<LintFinding>) {
+    let start = Instant::now();
+    let found: BTreeSet<String> = ambiguous_stems(duplicates);
+    let (mut unbaselined, mut stale, mut findings) = ratchet(
+        duplicates,
+        baseline,
+        BASELINE_REL_PATH,
+        "is claimed by multiple files with DIVERGENT content, so it cannot be resolved to one contract",
+    );
+    let (crate_unbaselined, crate_stale, crate_findings) = ratchet(
+        crate_refused,
+        crate_baseline,
+        CRATE_BASELINE_REL_PATH,
+        "has a crate-local copy whose content differs from another copy, so Σ refuses it and does not union it",
+    );
+    unbaselined.extend(crate_unbaselined);
+    stale.extend(crate_stale);
+    findings.extend(crate_findings);
+    let passed = unbaselined.is_empty() && stale.is_empty();
+    let baselined = found.intersection(baseline).count()
+        + ambiguous_stems(crate_refused)
+            .intersection(crate_baseline)
+            .count();
+    let all: Vec<&DuplicateStem> = duplicates.iter().chain(crate_refused).collect();
 
     // `detail` uses `Validate`, the truest of the eight FROZEN `GateDetail` variants
     // (see the doc comment on `GateDetail`: a ninth variant is a compile error in the
@@ -178,7 +249,7 @@ pub(crate) fn run_duplicate_stem_gate(
     // expressible in that vocabulary and is carried in `extra` instead, losing
     // nothing: `GateExtra::DuplicateStems` has the same five fields, and the same
     // JSON key names, that a dedicated `GateDetail` variant would have had.
-    let implicated_files = duplicates.iter().map(|d| d.paths.len()).sum();
+    let implicated_files = all.iter().map(|d| d.paths.len()).sum();
     let error_messages: Vec<String> = findings.iter().map(|f| f.message.clone()).collect();
     let result = GateResult {
         name: "duplicate-stems".into(),
@@ -189,15 +260,15 @@ pub(crate) fn run_duplicate_stem_gate(
         detail: GateDetail::Validate {
             contracts: implicated_files,
             errors: unbaselined.len() + stale.len(),
-            warnings: found.intersection(baseline).count(),
+            warnings: baselined,
             error_messages,
         },
         extra: Some(GateExtra::DuplicateStems {
-            divergent: duplicates.len(),
-            baselined: found.intersection(baseline).count(),
+            divergent: all.len(),
+            baselined,
             unbaselined,
             stale,
-            divergent_stems: duplicates
+            divergent_stems: all
                 .iter()
                 .map(|d| {
                     format!(
