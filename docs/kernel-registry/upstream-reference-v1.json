@@ -1,0 +1,320 @@
+{
+ "schema": "apr-kernel-registry-upstream-reference/v1",
+ "note": "KREG-001 (aprender#4539) phase 1: FACTS ONLY about how two upstreams key the same kernels. No code is copied: only type ids, block sizes, block byte sizes and yes/no support, read at the pinned commits. Cross-checked against crates/aprender-serve/kernel-registry.json by realizar::kernel_registry tests (FALSIFY-KREG-007). APR_Q4/APR_Q8 (ids 128/129) are aprender-only and have no upstream row.",
+ "upstreams": {
+  "llama_cpp": {
+   "repo": "https://github.com/ggml-org/llama.cpp",
+   "license": "MIT",
+   "commit": "d1d3c3396aa13a5f239109a822666c4870490ad5",
+   "paths": {
+    "ggml_type": "ggml/include/ggml.h",
+    "block_elems": "ggml/src/ggml.c type_traits",
+    "type_size": "ggml/src/ggml-common.h static_assert size formulas",
+    "cpu_vec_dot_type": "ggml/src/ggml-cpu/ggml-cpu.c type_traits_cpu",
+    "cuda_mmvq": "ggml/src/ggml-cuda/mmvq.cu mul_mat_vec_q_switch_type",
+    "metal_mul_mv": "ggml/src/ggml-metal/kernels/mul_mv.metal",
+    "vulkan_mul_mat_vec": "ggml/src/ggml-vulkan/ggml-vulkan.cpp pipeline_dequant_mul_mat_vec_f32_f32"
+   }
+  },
+  "vllm": {
+   "repo": "https://github.com/vllm-project/vllm",
+   "license": "Apache-2.0",
+   "commit": "b5f8c3092d1e1466b2b9c516fb39e5b2c15e774b",
+   "paths": {
+    "gguf_mul_mat_vec_a8": "csrc/quantization/gguf/gguf_kernel.cu ggml_mul_mat_vec_a8"
+   }
+  }
+ },
+ "caveats": [
+  "type_size is derived from ggml-common.h static_assert formulas (QK_K=256, sizeof(ggml_half)=2), not from a compiled sizeof",
+  "metal BF16: whether its kernel instantiation is behind a preprocessor guard was not checked",
+  "llama.cpp CUDA serves F32/F16/BF16 through mmv (not mmvq); cuda_mmvq=false means only that the quantized MMVQ path does not cover it"
+ ],
+ "rows": [
+  {
+   "qtype": "F32",
+   "ggml_type": 0,
+   "block_elems": 1,
+   "type_size": 4,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "F32",
+    "cuda_mmvq": false,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": false
+   }
+  },
+  {
+   "qtype": "F16",
+   "ggml_type": 1,
+   "block_elems": 1,
+   "type_size": 2,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "F16",
+    "cuda_mmvq": false,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": false
+   }
+  },
+  {
+   "qtype": "Q4_0",
+   "ggml_type": 2,
+   "block_elems": 32,
+   "type_size": 18,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_0",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q4_1",
+   "ggml_type": 3,
+   "block_elems": 32,
+   "type_size": 20,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_1",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q5_0",
+   "ggml_type": 6,
+   "block_elems": 32,
+   "type_size": 22,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_0",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q5_1",
+   "ggml_type": 7,
+   "block_elems": 32,
+   "type_size": 24,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_1",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q8_0",
+   "ggml_type": 8,
+   "block_elems": 32,
+   "type_size": 34,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_0",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q2_K",
+   "ggml_type": 10,
+   "block_elems": 256,
+   "type_size": 84,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q3_K",
+   "ggml_type": 11,
+   "block_elems": 256,
+   "type_size": 110,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q4_K",
+   "ggml_type": 12,
+   "block_elems": 256,
+   "type_size": 144,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q5_K",
+   "ggml_type": 13,
+   "block_elems": 256,
+   "type_size": 176,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "Q6_K",
+   "ggml_type": 14,
+   "block_elems": 256,
+   "type_size": 210,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "IQ2_XXS",
+   "ggml_type": 16,
+   "block_elems": 256,
+   "type_size": 66,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "IQ3_XXS",
+   "ggml_type": 18,
+   "block_elems": 256,
+   "type_size": 98,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "IQ4_NL",
+   "ggml_type": 20,
+   "block_elems": 32,
+   "type_size": 18,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_0",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "IQ3_S",
+   "ggml_type": 21,
+   "block_elems": 256,
+   "type_size": 110,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "IQ2_S",
+   "ggml_type": 22,
+   "block_elems": 256,
+   "type_size": 82,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "IQ4_XS",
+   "ggml_type": 23,
+   "block_elems": 256,
+   "type_size": 136,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "Q8_K",
+    "cuda_mmvq": true,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": true
+   }
+  },
+  {
+   "qtype": "BF16",
+   "ggml_type": 30,
+   "block_elems": 1,
+   "type_size": 2,
+   "llama_cpp": {
+    "cpu_vec_dot_type": "BF16",
+    "cuda_mmvq": false,
+    "metal_mul_mv": true,
+    "vulkan_mul_mat_vec": true
+   },
+   "vllm": {
+    "gguf_mul_mat_vec_a8": false
+   }
+  }
+ ]
+}
