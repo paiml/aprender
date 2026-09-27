@@ -183,7 +183,9 @@ fn bench_text_generation(model: &realizar::layers::Model, _config: &realizar::la
     );
 
     let gen_configs = [
-        ("Greedy", GenerationConfig::default()),
+        // 20 like the other two. The default is 100, and with no KV cache each token
+        // re-runs the whole prefix: 100 tokens took 57 s per call in a debug build.
+        ("Greedy", GenerationConfig::default().with_max_tokens(20)),
         (
             "Top-k (k=5)",
             GenerationConfig {
@@ -426,8 +428,8 @@ fn bench_correctness(model: &realizar::layers::Model, config: &realizar::layers:
         if no_nan { GREEN } else { RED }
     );
 
-    // Check generation produces valid tokens
-    let gen_config = GenerationConfig::default();
+    // Check generation produces valid tokens (validity, not length: 20 is enough)
+    let gen_config = GenerationConfig::default().with_max_tokens(20);
     let generated = model.generate(&tokens, &gen_config).expect("generate");
     let tokens_valid = generated.iter().all(|&t| t < config.vocab_size);
     println!(
@@ -481,7 +483,7 @@ fn bench_throughput_summary(
     // Measure sustained generation throughput
     let gen_config = GenerationConfig {
         cancel: realizar::generate::CancelToken::never(),
-        max_tokens: 50,
+        max_tokens: 20,
         ..GenerationConfig::default()
     };
 

@@ -401,5 +401,7 @@ replace = "## [{{version}}] - {{date}}"
 # to be classed as such (scripts/dogfood_examples.sh, #3560 R5 / #3182). An
 # example that stops printing its line, or that exits 0, is no longer excused.
 [package.metadata.dogfood-examples]
+qa_chat = { class = "needs-data", expect = "No model found", reason = "loads a GGUF from ~/.cache (qwen2.5-coder-1.5b q4_k_m); with one present it runs a CPU+GPU perf suite past the harness timeout" }
+qa_serve = { class = "needs-data", expect = "No model found", reason = "starts apr serve on a GGUF from ~/.cache (qwen2.5-coder-0.5b q4_k_m or pacha d4c4d9763127153c)" }
 publish_shell_safety = { class = "needs-data", expect = "Missing model artifacts", reason = "checks a published model's artifacts" }
 qa_verify = { class = "long-running", reason = "runs the workspace's cargo test, clippy and doc inside itself" }
