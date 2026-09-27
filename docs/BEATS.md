@@ -99,8 +99,9 @@ apr **loses** speed in these **specific, narrow** cases (not a blanket concessio
 **Why apr wins / loses sklearn:** apr's wedge is the cache-friendly ikj SIMD matmul
 plus a static, Python-free runtime — so it **wins** the LAPACK-free O(nd) tasks
 (cold-start ~528×, normal-equations LinReg 1.78×, the Naive-Bayes family 1.6–1.9×,
-GaussianNB 4.9×, GMM ~4×) and loses only the **LAPACK/BLAS-bound** ones (PCA-SVD,
-KMeans, Ridge/Lasso) until apr's decomposition is optimized. This is a **specific,
+GaussianNB 4.9×, GMM ~4×, PCA 1.8–3.6× since #3148 moved it onto the thin/randomized
+SVD) and loses only the **LAPACK/BLAS-bound** ones (KMeans, Ridge/Lasso) until apr's
+decomposition is optimized. This is a **specific,
 named** set of losses — not a blanket speed concession. See
 `memory project_sklearn_speed_beat_selection`.
 
