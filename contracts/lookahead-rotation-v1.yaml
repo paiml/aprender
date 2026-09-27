@@ -1,0 +1,76 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-27'
+  author: PAIML Engineering
+  description: "When train N publishes to crates.io the slots rotate (APR-LOOKAHEAD-001 §3.3, Proposition 1, LA-07 #4548). `lookahead.py rotate` makes it one atomic state write: L2 becomes L1, L3 becomes L2, a new L3 opens for N+4, and the old L1 worker moves to the pool as epic lead of its train. The steps run in the fixed order HANDOFF → STATE → LAUNCH → ANNOUNCE and are logged, so the N+4 slot is committed and its worker launched before the release is announced. `lookahead.py rotation-audit` refuses any other order. A slip (published ≠ current train) rotates nothing."
+  kind: pattern
+  references:
+    - "docs/specifications/APR-LOOKAHEAD-001-rolling-epic-workers.md — §3.3 events, Proposition 1 and 'why the rotation spawns before it announces', §9 LA-07"
+    - "scripts/lookahead/lookahead.py — `rotate` and `rotation-audit` verbs"
+    - "scripts/check_lookahead.sh — LA-07 rows and mutants"
+    - "contracts/lookahead-state-v1.yaml — the I1/I2 legality the rotated state must keep"
+
+five_whys:
+  symptom: "At every release the look-ahead window would shrink to two trains until someone noticed."
+  why_1: "A rotation done by hand is several edits; between them the state is {N+2, N+3} with N+4 missing (I1 broken)."
+  why_2: "If the release is announced first, a respawn tick can see an empty L3 and spawn a worker while the rotation spawns another (I2 broken)."
+  why_3: "The old L1 worker has no recorded place after the rotation, so its train loses its lead."
+  why_4: "The order of steps is the proof of Proposition 1, and nothing recorded or checked the order."
+  why_5: "No planted announce-before-spawn log ever ran against a checker."
+  root_cause: "Rotation was a sequence of manual acts. The remedy is one atomic write in a fixed, logged order, plus an audit that refuses any other order."
+
+equations:
+  rotation:
+    formula: "rotate(S) = S' with S'.current = S.L1.train, S'.L1 = S.L2, S'.L2 = S.L3, S'.L3 = {train: S.L3.train + 1, worker: fresh}, S'.pool = S.pool ++ [S.L1.worker as epic lead]"
+    domain: "a legal state whose current train was just published"
+    codomain: "one atomic write of a legal state | REFUSED (state untouched)"
+    invariants:
+      - "slots(S') = {N+2, N+3, N+4} = {N'+1, N'+2, N'+3} for N' = N+1"
+      - "a fresh L3 worker that already holds a slot is refused (I2)"
+      - "published ≠ current train is a slip and rotates nothing"
+  rotation_order:
+    formula: "log(rotate) = [HANDOFF, STATE, LAUNCH, ANNOUNCE] exactly"
+    domain: "the rotation's step log"
+    codomain: "OK | VIOLATION ROTATION naming the first differing step"
+
+proof_obligations:
+  - id: LAT-INV-001
+    type: invariant
+    property: "A dry-run rotation 0.70 → 0.71 leaves slots {0.72, 0.73, 0.74} and writes nothing"
+    formal: "rotate_dry(S_{0.70}) ⇒ slots = {0.72, 0.73, 0.74} ∧ file(S) unchanged"
+    applies_to: rotation
+  - id: LAT-INV-002
+    type: invariant
+    property: "An announce-before-spawn ordering fails"
+    formal: "index(ANNOUNCE) < index(STATE) ∨ index(ANNOUNCE) < index(LAUNCH) ⇒ rotation-audit = 1"
+    applies_to: rotation_order
+  - id: LAT-INV-003
+    type: invariant
+    property: "The old L1 worker goes to the pool as epic lead"
+    formal: "S.L1.worker ∈ S'.pool with train = S.L1.train"
+    applies_to: rotation
+  - id: LAT-INV-004
+    type: invariant
+    property: "The guard still fails on the defects it names"
+    formal: "∀ m ∈ {announce-first, audit-unchecked, slip-rotates, l1-not-pooled}: guard(m) ≠ 0"
+    applies_to: rotation_order
+
+falsification_tests:
+  - id: FALSIFY-LAT-001
+    rule: "A dry-run 0.70 → 0.71 leaves {0.72, 0.73, 0.74}; the real rotation is one legal write in order; a planted announce-before-spawn log fails"
+    prediction: "the LA-07 rows of the case table are GREEN"
+    test: "bash scripts/check_lookahead.sh"
+    if_fails: "A rotation can leave N+4 uncovered, put two workers on L3, or drop the old L1 worker"
+  - id: FALSIFY-LAT-002
+    rule: "The guard can still fail"
+    prediction: "every LA-07 mutant turns at least one row RED"
+    test: "bash scripts/check_lookahead.sh --self-test"
+    if_fails: "The rotation rows are theater"
+
+qa_gate:
+  id: F-LAT-001
+  name: "Rotation is atomic and spawns before it announces"
+  description: "lookahead.py rotate writes the rotated state once, in the order HANDOFF → STATE → LAUNCH → ANNOUNCE; rotation-audit refuses any other order. scripts/check_lookahead.sh runs in guard_tree.sh's --no-cargo step."
+  checks:
+    - "rotation"
+    - "rotation_order"

@@ -271,6 +271,30 @@ FIX
     row "budget5h/s7-one-window-no-stop" 0 'SLOT L3 active' -- la budget "$G" --window-pct 10 --share-pct 16 --prev-share-pct 14
     row "budget5h/no-reading-cannot-judge" 2 'CANNOT-JUDGE' -- la budget "$G"
     row "budget5h/reading-over-100-cannot-judge" 2 'CANNOT-JUDGE' -- la budget "$G" --window-pct 186
+
+    # LA-07 lookahead-rotation-v1 ---------------------------------------------------
+    local RR="$T/rot-root" RS="$T/rot.json" RL="$T/rot.log"
+    handoffs_in() { mkdir -p "$1/docs/lookahead"; for t in "${@:2}"; do
+        printf '```json lookahead-handoff\n{"train": "%s", "updated": "2026-09-27T11:00:00Z"}\n```\n' "$t" > "$1/docs/lookahead/$t.md"; done; }
+    handoffs_in "$RR" 0.71 0.72 0.73
+    cp "$G" "$RS"
+    row "rotate/dry-run-0.70-to-0.71" 0 '^DRY-RUN slots L1=0.72 L2=0.73 L3=0.74$' -- la rotate "$RS" --published 0.70 --new-l3-worker la-74 --now "$NOW" --dry-run
+    row "rotate/dry-run-writes-nothing" 0 '^' -- cmp "$G" "$RS"
+    row "rotate/slip-rotates-nothing" 1 '^REFUSED: published 0.69' -- la rotate "$RS" --published 0.69 --new-l3-worker la-74 --now "$NOW" --root "$RR"
+    row "rotate/new-l3-already-in-a-slot-refused" 1 'REFUSED: the rotated state would be illegal \(I2' -- la rotate "$RS" --published 0.70 --new-l3-worker la-72 --now "$NOW" --root "$RR"
+    row "rotate/refusal-left-state-untouched" 0 '^' -- cmp "$G" "$RS"
+    # the real rotation: spawn N+4 (state + launch) strictly before the announcement
+    row "rotate/order-handoff-state-launch-announce" 0 '^STEP HANDOFF.*STEP STATE.*STEP LAUNCH.*STEP ANNOUNCE[^S]*$' -- sh -c "python3 '$SUBJECT' rotate '$RS' --published 0.70 --new-l3-worker la-74 --now '$NOW' --root '$RR' --log '$RL' | tr '\n' ' '"
+    row "rotate/one-write-legal" 0 '^OK .*: current 0.71, slots L1=0.72:la-72, L2=0.73:la-73, L3=0.74:la-74' -- la validate "$RS"
+    row "rotate/old-l1-to-pool" 0 '"worker": "kreg", "train": "0.71", "role": "epic lead"' -- python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))['pool']))" "$RS"
+    row "rotate/n+4-handoff-opened" 0 '"train": "0.74"' -- cat "$RR/docs/lookahead/0.74.md"
+    row "rotate/log-audits-ok" 0 '^OK rotation HANDOFF -> STATE -> LAUNCH -> ANNOUNCE$' -- la rotation-audit "$RL"
+    row "rotate/next-tick-legal" 0 '"I1": "ok"' -- la tick "$RS" --now "$NOW" --root "$RR" --hb-dir "$T/nohb"
+    # a planted announce-before-spawn ordering fails
+    printf '{"step": "HANDOFF"}\n{"step": "ANNOUNCE"}\n{"step": "STATE"}\n{"step": "LAUNCH"}\n' > "$T/bad-order.log"
+    row "rotate/announce-before-spawn-fails" 1 'VIOLATION ROTATION: .*first difference at step 2' -- la rotation-audit "$T/bad-order.log"
+    printf '{"step": "HANDOFF"}\n{"step": "STATE"}\n{"step": "LAUNCH"}\n{"step": "LAUNCH"}\n{"step": "ANNOUNCE"}\n' > "$T/two-launch.log"
+    row "rotate/two-l3-launches-fail" 1 'VIOLATION ROTATION' -- la rotation-audit "$T/two-launch.log"
 }
 
 run_all() {
@@ -311,6 +335,10 @@ MUTANTS=(
   "l1-pauses-with-l2|        mode[\"L2\"] = \"paused\"|        mode[\"L2\"] = mode[\"L1\"] = \"paused\""
   "account-ignores-train|    if account is not None and account >= 100 and train_needs:|    if account is not None and account >= 100:"
   "s7-one-window|share > SHARE_CAP_PCT and prev_share > SHARE_CAP_PCT:|share > SHARE_CAP_PCT:"
+  "announce-first|ROTATION_ORDER = [\"HANDOFF\", \"STATE\", \"LAUNCH\", \"ANNOUNCE\"]|ROTATION_ORDER = [\"HANDOFF\", \"ANNOUNCE\", \"STATE\", \"LAUNCH\"]"
+  "audit-unchecked|    if steps != ROTATION_ORDER:|    if False:"
+  "slip-rotates|    if opts[\"published\"] != state[\"current_train\"]:|    if False:"
+  "l1-not-pooled|\"role\": \"epic lead\", \"since\": fmt_ts(now)}]}|\"role\": \"epic lead\", \"since\": fmt_ts(now)}][:0]}"
   "cannot-judge-passes|        return 2\n\n\nif __name__|        return 0\n\n\nif __name__"
 )
 

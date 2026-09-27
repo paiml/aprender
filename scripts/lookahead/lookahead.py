@@ -14,6 +14,8 @@ The cop is the single writer of that file; workers write heartbeat files.
   readiness STATE                     LA-05  §6 Definition of Ready, judged against the tree
   latency --tag V --tag-at T ...      LA-05  train-start latency receipt (tag N -> first PR of N+1)
   budget STATE --window-pct X         LA-06  §5 pause ladder: which slots run this window
+  rotate STATE --published X.Y ...    LA-07  atomic rotation; N+4 committed + launched before announce
+  rotation-audit LOG                  LA-07  a rotation log is legal only in that order
 
 Exit codes, shared by every verb:
   0  the property holds (or the action was done)
@@ -754,10 +756,130 @@ def cmd_budget(args):
     return 1 if stops else 0
 
 
+# ---- LA-07: rotation (§3.3, Proposition 1) ----------------------------------------
+# The order is the proof: the N+4 slot exists in the committed state, and its worker
+# is launched, BEFORE the release is announced. A reader of the state never sees
+# {N+2, N+3} alone (I1), and a tick cannot race the rotation into two L3s (I2).
+ROTATION_ORDER = ["HANDOFF", "STATE", "LAUNCH", "ANNOUNCE"]
+
+
+def rotated(state, new_worker, now):
+    old = json.loads(json.dumps(state))
+    n1 = old["slots"]["L1"]
+    n4 = train_add(old["slots"]["L3"]["train"], 1)
+    new = {"current_train": n1["train"],
+           "slots": {"L1": old["slots"]["L2"], "L2": old["slots"]["L3"],
+                     "L3": {"train": n4, "worker": new_worker, "tmux": new_worker, "since": fmt_ts(now),
+                            "heartbeat": fmt_ts(now), "handoff": f"docs/lookahead/{n4}.md"}},
+           "pool": list(old.get("pool") or []) + [{"worker": n1["worker"], "train": n1["train"],
+                                                   "role": "epic lead", "since": fmt_ts(now)}]}
+    return new, n1
+
+
+HANDOFF_SKELETON = """# Look-ahead handoff — train {train} (L3)
+
+Opened by the rotation of {when} (APR-LOOKAHEAD-001 §3.3). The L3 worker proposes
+the theme (§2a) and lands this file on `main`.
+
+```json lookahead-handoff
+{{
+  "train": "{train}",
+  "slot": "L3",
+  "theme": "",
+  "updated": "{when}",
+  "exit_criteria": {{}},
+  "rows": [],
+  "first5_prs": [],
+  "rulings_pending": [],
+  "risk_register": null,
+  "measurement_plan": null
+}}
+```
+
+## Done
+
+## Next
+
+## Risks
+
+## Rulings needed
+
+## Baselines
+"""
+
+
+def log_step(log, step, detail, now):
+    print(f"STEP {step}: {detail}")
+    if log:
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"step": step, "at": fmt_ts(now), "detail": detail}) + "\n")
+
+
+def cmd_rotate(args):
+    """LA-07: train N published to crates.io -> one atomic state write that relabels
+    L2->L1, L3->L2, opens L3 for N+4 and moves the old L1 worker to the pool."""
+    pos, opts = parse_opts(args, {"published", "new_l3_worker", "now", "root", "log"}, bools=("dry_run",))
+    if len(pos) != 1 or not opts.get("published") or not opts.get("new_l3_worker"):
+        raise CannotJudge("usage: rotate STATE --published X.Y --new-l3-worker NAME [--now T] [--root REPO] [--log F] [--dry-run]")
+    state, bad = load_legal_state(pos[0])
+    if bad:
+        raise CannotJudge(f"{pos[0]} is not a legal state ({bad[0][0]}: {bad[0][1]}); repair before rotating")
+    if opts["published"] != state["current_train"]:
+        print(f"REFUSED: published {opts['published']} is not the current train {state['current_train']}; a slip rotates nothing")
+        return 1
+    new_worker, now = opts["new_l3_worker"], now_from(opts)
+    new, n1 = rotated(state, new_worker, now)
+    after = state_violations(json.loads(json.dumps(new)), [])
+    if after:
+        print(f"REFUSED: the rotated state would be illegal ({after[0][0]}: {after[0][1]})")
+        return 1
+    if opts.get("dry_run"):
+        print(json.dumps(new, indent=2))
+        print("DRY-RUN slots " + " ".join(f"{s}={new['slots'][s]['train']}" for s in SLOTS))
+        return 0
+    root, log, n4 = opts.get("root") or ROOT, opts.get("log"), new["slots"]["L3"]["train"]
+    for step in ROTATION_ORDER:
+        if step == "HANDOFF":
+            rel = new["slots"]["L3"]["handoff"]
+            path = os.path.join(root, rel)
+            if not os.path.exists(path):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(HANDOFF_SKELETON.format(train=n4, when=fmt_ts(now)))
+            log_step(log, step, f"{rel} present (the new L3 worker lands it on main)", now)
+        elif step == "STATE":
+            write_atomic(pos[0], new)
+            log_step(log, step, "slots " + " ".join(f"{s}={new['slots'][s]['train']}" for s in SLOTS)
+                     + f"; {n1['worker']} -> pool as {n1['train']} epic lead", now)
+        elif step == "LAUNCH":
+            log_step(log, step, f"tmux={new_worker} prompt={launch_prompt('L3', n4)!r}", now)
+        elif step == "ANNOUNCE":
+            log_step(log, step, f"{opts['published']} published; current train is now {new['current_train']}", now)
+    return 0
+
+
+def cmd_rotation_audit(args):
+    """LA-07: a rotation log is legal only in ROTATION_ORDER, each step once."""
+    if len(args) != 1:
+        raise CannotJudge("usage: rotation-audit LOG")
+    try:
+        with open(args[0], encoding="utf-8") as fh:
+            steps = [json.loads(line)["step"] for line in fh if line.strip()]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CannotJudge(f"{args[0]}: {exc}") from exc
+    if steps != ROTATION_ORDER:
+        first = next((i for i, (a, b) in enumerate(zip(steps, ROTATION_ORDER)) if a != b), min(len(steps), len(ROTATION_ORDER)))
+        print(f"VIOLATION ROTATION: steps {steps}, want {ROTATION_ORDER} (first difference at step {first + 1}); "
+              "announcing before the N+4 slot is committed and launched breaks I1/I2")
+        return 1
+    print("OK rotation " + " -> ".join(steps))
+    return 0
+
+
 VERBS = {"validate": cmd_validate, "heartbeat": cmd_heartbeat, "tick": cmd_tick,
          "respawn": cmd_respawn, "prompt": cmd_prompt, "pr-budget": cmd_pr_budget,
          "readiness": cmd_readiness, "latency": cmd_latency,
-         "budget": cmd_budget}
+         "budget": cmd_budget, "rotate": cmd_rotate, "rotation-audit": cmd_rotation_audit}
 
 
 def main(argv):
