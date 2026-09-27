@@ -286,6 +286,21 @@ fn test_auto_config_at_least_half_for_decode() {
     }
 }
 
+#[test]
+fn test_for_cpus_decode_is_at_least_half_for_every_core_count() {
+    // `auto` reads the host's rayon pool, so only one core count is ever
+    // exercised; odd counts (a CI slice, a sized pool) were the failing case.
+    for n in 0..=129 {
+        let c = ThreadConfig::for_cpus(n);
+        assert_eq!(c.n_threads_batch, n.max(1), "n={n}");
+        assert!(c.n_threads_decode >= 1, "n={n}");
+        assert!(c.n_threads_decode * 2 >= c.n_threads_batch, "n={n}");
+        assert!(c.n_threads_decode <= c.n_threads_batch, "n={n}");
+    }
+    assert_eq!(ThreadConfig::for_cpus(3).n_threads_decode, 2);
+    assert_eq!(ThreadConfig::for_cpus(8).n_threads_decode, 4);
+}
+
 // ============================================================================
 // Stress Tests
 // ============================================================================
