@@ -7,6 +7,8 @@
 #   queue_inputs.sh ident   <raw-dir>          write <raw-dir>/ident.tsv (red release cycles, mechanical rule)
 #   queue_inputs.sh readset <tree> <raw-dir>   write <raw-dir>/readset.txt: the .md paths a build/test reads
 #   queue_inputs.sh prop12  <queue-inputs.json> print the Prop 12 verdict per service class (#4519)
+#   queue_inputs.sh untangle [inbox-dir] [days] weekly untangle tally: conflicts per PR + first-CI-run green
+#                                              rate (target >= 0.9) from '| untangle |' inbox lines; no rows = NO-DATA, rc 1
 #   queue_inputs.sh self-test                  planted fixtures, incl. the empty-window and [U] REDs
 #
 # Every input carries {value, n, window, command, method}. The raw files ARE the receipt: compute reads
@@ -519,7 +521,7 @@ cmd_compute() {
 }
 
 self_test() {
-    local t fails=0 rc out
+    local t fails=0 rc out uo
     t=$(mktemp -d)
     trap 'rm -rf -- "${t:?}"' RETURN
     mk() {  # mk <dir>: a small planted window
@@ -576,14 +578,27 @@ EOF
     check "merged rows: pr1 x, 140 min wait, 2 entries, first try fail, 1 eject" '.derived.merged_pr_rows | map(select(.pr == 1))[0] | .class == "x" and .mq_wait_min == 140 and .entries == 2 and .first_try == "fail" and .ejects == 1' "$out"
     check "merged rows: pr2 docs, 100 min; pr3 first try pass, 0 ejects" '(.derived.merged_pr_rows | map(select(.pr == 2))[0] | .class == "d" and .mq_wait_min == 100) and (.derived.merged_pr_rows | map(select(.pr == 3))[0] | .first_try == "pass" and .ejects == 0)' "$out"
     # Theorem 1 oracle rows, spec §6.1 (recomputed independently there to 4 s.f.).
-    for row in "5 0 0.1 0.8 80 20 0.02 10 134.67" "5 2 0.1 0.8 80 20 0.02 10 143.86" \
-               "5 1 0.2 0.8 30 20 0.1 10 85.69" "8 1 0.1 0.8 80 20 0.05 10 164.12"; do
-        set -- $row
-        check "Thm 1 oracle k=$1 r=$2 q=$3 f=$4 C=$5 F=$6 phi=$7 rho=$8 -> $9" \
-            "(. * 100 | round) == ($9 * 100 | round)" \
-            "$(jq -n "$MODEL_JQ t_fold($1; $2; $3; $4; $5; $6; $7; $8)")"
-    done
+    while read -r k r q f c ff phi rho want; do
+        check "Thm 1 oracle k=$k r=$r q=$q f=$f C=$c F=$ff phi=$phi rho=$rho -> $want" '. == true' \
+            "$(jq -n --argjson w "$want" "$MODEL_JQ"' (t_fold('"$k; $r; $q; $f; $c; $ff; $phi; $rho"') - $w | fabs) < 0.005')"
+    done <<'ROWS'
+5 0 0.1 0.8 80 20 0.02 10 134.67
+5 2 0.1 0.8 80 20 0.02 10 143.86
+5 1 0.2 0.8 30 20 0.1 10 85.69
+8 1 0.1 0.8 80 20 0.05 10 164.12
+ROWS
     check "fold table k=1..8 with EM rising in k" '.derived.fold | length == 8 and (map(.EM) | . == sort)' "$out"
+    # Untangle tally: #1 corrected by a later line; #2 red; #3 claim only; empty input = NO-DATA.
+    printf '%s\n' '| 09:00 | untangle | #1 | pushed conflicts=4 generated=3 first-run: red |' \
+        '| 10:00 | untangle | #1 | re-run conflicts=2 generated=1 first-run: green |' \
+        '| 10:05 | aprender-89 | #9 | conflicts=99 first-run: red (not an untangle line) |' \
+        '09:36Z | untangle | #2 | conflicts=1 generated=0 first-run=red' \
+        '09:40Z | untangle | #3 | CLAIM' > "$t/untangle.md"
+    uo=$(untangle_tally "$t/untangle.md")
+    check "untangle: last line per PR wins, other sessions ignored" '.conflicts.total == 3 and .conflicts.generated == 1 and .conflicts.per_pr == 1.5 and .prs == 3' "$uo"
+    check "untangle: 1 green of 2 first runs -> MISSED" '.first_run.rate == 0.5 and .verdict == "MISSED"' "$uo"
+    : > "$t/empty.md"
+    check "untangle: no lines is NO-DATA, never MET" '.verdict == "NO-DATA" and .first_run.rate == null' "$(untangle_tally "$t/empty.md")"
     check "rho_HOL blind = lambda'/60 * q' * T" '.derived.rho_hol.blind == ((.inputs.lambda_eff_per_h.value / 60 * .inputs.q_eff.value * .inputs.T.value * 10000 | round) / 10000)' "$out"
     check "q' raw = 2 failed / 5" '.derived.q_prime_raw == 0.4' "$out"
     check "flaky failed entry (pr2, no push) removed from q'" '.derived.entries.failed_flaky == 1 and .derived.q_prime_defect == 0.25' "$out"
@@ -662,12 +677,54 @@ EOF
     printf 'queue_inputs self-test: %s FAIL\n' "$fails"; return 1
 }
 
+# untangle_tally <file>...: one JSON verdict over every '| untangle |' line in the files. Per PR the LAST
+# conflicts=N generated=M and the LAST first-run: green|red win (a later line corrects an earlier one).
+untangle_tally() {
+    { grep -h -- '| untangle |' "$@" 2>/dev/null || true; } | jq -R -s '
+      [split("\n")[] | select(length > 0)
+       | {pr: (capture("#(?<n>[0-9]+)").n // null),
+          conflicts: ((capture("conflicts=(?<v>[0-9]+)").v // null) | if . == null then null else tonumber end),
+          generated: ((capture("generated=(?<v>[0-9]+)").v // null) | if . == null then null else tonumber end),
+          first_run: (capture("first-run[:=] *(?<v>green|red)").v // null)}
+       | select(.pr != null)] as $l
+      | [$l | group_by(.pr)[]
+         | {pr: (.[0].pr | tonumber),
+            conflicts: ([.[] | select(.conflicts != null) | .conflicts] | last),
+            generated: ([.[] | select(.generated != null) | .generated] | last),
+            first_run: ([.[] | select(.first_run != null) | .first_run] | last)}] as $rows
+      | [$rows[] | select(.conflicts != null)] as $c
+      | [$rows[] | select(.first_run != null)] as $fr
+      | ([$fr[] | select(.first_run == "green")] | length) as $g
+      | {lines: ($l | length), prs: ($rows | length),
+         conflicts: {n: ($c | length), total: ([$c[] | .conflicts] | add // 0),
+                     per_pr: (if ($c | length) > 0 then (([$c[] | .conflicts] | add) / ($c | length) * 100 | round / 100) else null end),
+                     generated: ([$c[] | .generated // 0] | add // 0)},
+         first_run: {n: ($fr | length), green: $g, red: (($fr | length) - $g),
+                     rate: (if ($fr | length) > 0 then ($g / ($fr | length) * 1000 | round / 1000) else null end), target: 0.9},
+         rows: $rows}
+      | .verdict = (if .first_run.n == 0 then "NO-DATA" elif .first_run.rate >= 0.9 then "MET" else "MISSED" end)'
+}
+
+# untangle_week [inbox-dir] [days]: inbox.md plus processed/inbox-<date>.md for the last <days> days.
+untangle_week() {
+    local dir="${1:-/mnt/nvme-raid0/cop-inbox}" days="${2:-7}" i dt out
+    local files=("$dir/inbox.md")
+    for ((i = 0; i < days; i++)); do
+        dt=$(date -u -d "-$i day" +%F)
+        if [ -f "$dir/processed/inbox-$dt.md" ]; then files+=("$dir/processed/inbox-$dt.md"); fi
+    done
+    out=$(untangle_tally "${files[@]}" | jq --arg d "$days" '. + {window_days: ($d | tonumber)}')
+    printf '%s\n' "$out"
+    printf '%s' "$out" | jq -e '.verdict == "MET"' >/dev/null
+}
+
 case "${1:-}" in
     fetch) [ $# -ge 2 ] || die "usage: fetch <raw-dir> [days]"; fetch "$2" "${3:-7}" ;;
     compute) [ $# -eq 2 ] || die "usage: compute <raw-dir>"; cmd_compute "$2" ;;
     ident) [ $# -eq 2 ] || die "usage: ident <raw-dir>"; ident "$2" ;;
     readset) [ $# -eq 3 ] || die "usage: readset <tree> <raw-dir>"; readset "$2" "$3" ;;
     prop12) [ $# -eq 2 ] || die "usage: prop12 <queue-inputs.json>"; prop12_lines < "$2" ;;
+    untangle) shift; untangle_week "$@" ;;
     self-test) self_test ;;
     *) die "usage: queue_inputs.sh fetch <raw-dir> [days] | compute <raw-dir> | self-test" ;;
 esac
