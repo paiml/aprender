@@ -144,3 +144,65 @@ fn apr_dtype_to_ggml(dtype: crate::format::v2::TensorDType) -> Option<crate::for
     }
 }
 
+
+/// ONT-10 L4 simulation witness for `apr_dtype_to_ggml` (fusion.rs:118).
+///
+/// The Lean model `exportDtype` (`ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean`)
+/// transcribes the match above arm for arm; `exportDtypeTable_eq` there PROVES the table below.
+/// This test runs the Rust fn on every `TensorDType` variant and requires the same table, so the
+/// Lean model and the Rust item cannot drift apart silently.
+#[cfg(test)]
+mod export_tests_ges_l4_witness {
+    use super::apr_dtype_to_ggml;
+    use crate::format::v2::TensorDType;
+
+    /// `#eval exportDtypeTable` — Lean output, verbatim.
+    const LEAN_EXPORT_DTYPE_TABLE: &str = "F32=>F32;F16=>F16;BF16=>none;F64=>none;I32=>none;\
+I64=>none;I8=>none;U8=>none;AprQ4=>none;AprQ8=>none;Q4K=>Q4K;Q6K=>Q6K";
+
+    /// Every variant, in declaration order. The match makes adding a variant a compile error
+    /// here until the domain (and the Lean `allAprDTypes`) grows with it.
+    fn all_dtypes() -> [TensorDType; 12] {
+        let _exhaustive = |d: TensorDType| match d {
+            TensorDType::F32
+            | TensorDType::F16
+            | TensorDType::BF16
+            | TensorDType::F64
+            | TensorDType::I32
+            | TensorDType::I64
+            | TensorDType::I8
+            | TensorDType::U8
+            | TensorDType::AprQ4
+            | TensorDType::AprQ8
+            | TensorDType::Q4K
+            | TensorDType::Q6K => (),
+        };
+        [
+            TensorDType::F32,
+            TensorDType::F16,
+            TensorDType::BF16,
+            TensorDType::F64,
+            TensorDType::I32,
+            TensorDType::I64,
+            TensorDType::I8,
+            TensorDType::U8,
+            TensorDType::AprQ4,
+            TensorDType::AprQ8,
+            TensorDType::Q4K,
+            TensorDType::Q6K,
+        ]
+    }
+
+    #[test]
+    fn apr_dtype_to_ggml_matches_lean_export_dtype_on_all_variants() {
+        let rust_table = all_dtypes()
+            .iter()
+            .map(|&d| {
+                let g = apr_dtype_to_ggml(d).map_or_else(|| "none".to_string(), |g| format!("{g:?}"));
+                format!("{d:?}=>{g}")
+            })
+            .collect::<Vec<_>>()
+            .join(";");
+        assert_eq!(rust_table, LEAN_EXPORT_DTYPE_TABLE);
+    }
+}
