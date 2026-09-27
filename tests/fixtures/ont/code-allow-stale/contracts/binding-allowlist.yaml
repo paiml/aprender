@@ -1,0 +1,6 @@
+# Three stale lines and one placeholder: every one is a violation of allowlisted-symbols-ticketed.
+schema: ont.paiml.dev/binding-allowlist/v1alpha1
+entries:
+  - {symbol: "kern::nn::functional::no_such_function", reason: "the contract claims it", ticket: "TBD"}
+  - {symbol: "kern::nn::functional::softmax", reason: "it resolves, so this line is stale", ticket: "#3559"}
+  - {symbol: "kern::gone::vanished", reason: "no binding names it", ticket: "paiml/aprender#3559"}

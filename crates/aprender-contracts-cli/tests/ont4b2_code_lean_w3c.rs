@@ -109,6 +109,51 @@ fn an_unarmed_shape_reports_the_ghost_and_an_armed_one_fails_on_it() {
 }
 
 #[test]
+fn an_allowlisted_ghost_is_counted_apart_and_passes_the_armed_resolve_shape() {
+    // #3559: the SAME ghost as code-ghost, excused by binding-allowlist.yaml with a reason and a ticket.
+    let r = gate("code-allow");
+    assert_eq!(r.code, 0, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Pass", "{}", show(&r));
+    assert_eq!(v["violations"], 0, "{}", show(&r));
+    assert_eq!(v["symbols_resolved"], 1, "{}", show(&r));
+    assert_eq!(v["symbols_allowlisted"], 1, "{}", show(&r));
+    assert_eq!(v["symbols_unresolved"], 0, "{}", show(&r));
+}
+
+#[test]
+fn a_stale_or_placeholder_allowlist_line_fails_naming_the_symbol() {
+    let r = gate("code-allow-stale");
+    assert_eq!(r.code, 1, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Fail", "{}", show(&r));
+    let findings = v["findings"].as_array().expect("findings").clone();
+    let names = |sym: &str| {
+        findings.iter().any(|f| {
+            f["message"].as_str().is_some_and(|m| {
+                m.contains(&format!("symbol/{sym}>")) || m.contains(&format!("symbol/{sym} "))
+            } && m.contains("allowlisted-symbols-ticketed"))
+        })
+    };
+    // A placeholder ticket, an entry for a symbol that resolves, an entry no binding names.
+    for sym in [
+        "kern::nn::functional::no_such_function",
+        "kern::nn::functional::softmax",
+        "kern::gone::vanished",
+    ] {
+        assert!(names(sym), "{sym} is a ledger violation: {}", show(&r));
+    }
+    // The excused ghost is still not a bound-symbols-resolve violation: the ledger fails, not the resolve shape.
+    assert!(
+        !findings.iter().any(|f| f["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("bound-symbols-resolve"))),
+        "{}",
+        show(&r)
+    );
+}
+
+#[test]
 fn a_theorem_file_carrying_sorry_grounds_nothing_and_the_shape_says_so() {
     let r = gate("lean-sorry");
     assert_eq!(r.code, 1, "{}", show(&r));

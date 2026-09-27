@@ -30,9 +30,11 @@ pub fn parse_contract(path: &Path) -> Result<Contract, ContractError> {
 /// tree does NOT hold (`contracts/external-corpora.yaml`). Adding a file here is
 /// how the corpus keeps ONE definition of "a contract file" — the census, the
 /// linter and the validator all read this list.
-const NON_CONTRACT_FILENAMES: [&str; 4] = [
+const NON_CONTRACT_FILENAMES: [&str; 5] = [
     "binding.yaml",
     "binding.yml",
+    // #3559: the ghost-binding debt ledger extract:code reads (ONT-001 §4), not a contract.
+    "binding-allowlist.yaml",
     "external-corpora.yaml",
     // ONT-2b: Σ (`contracts/ontology.yaml`) declares what contracts may SAY; it is not one of them and has
     // no `metadata:`. Measured before this line existed: adding Σ took `pv lint contracts/` from 1792

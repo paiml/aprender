@@ -1,0 +1,24 @@
+# #3559 fixture: bound-symbols-resolve AND the allowlist's own shape, both armed. The ghost is excused by
+# binding-allowlist.yaml, so the first passes; the second grades the ledger itself.
+name: ont-code-shape
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: the armed form of bound-symbols-resolve
+shapes:
+  - id: bound-symbols-resolve
+    targetClass: ont:Symbol
+    properties:
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [true]}
+  - id: allowlisted-symbols-ticketed
+    targetClass: ont:AllowlistedSymbol
+    properties:
+      - {path: sym:implements, minCount: 1, nodeKind: IRI, class: ont:Contract}
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [false]}
+      - {path: sym:allowlistReason, minCount: 1, maxCount: 1, minLength: 1}
+      - {path: sym:allowlistTicket, minCount: 1, maxCount: 1, pattern: '^(paiml/[A-Za-z0-9._-]+)?#[0-9]+$'}

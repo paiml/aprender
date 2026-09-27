@@ -354,6 +354,8 @@ pub enum GateExtra {
         /// ONT-4b2: bound Rust symbols the `syn` walk resolved / could not resolve.
         symbols_resolved: usize,
         symbols_unresolved: usize,
+        /// Unresolved symbols `contracts/binding-allowlist.yaml` excuses — the debt ledger, never counted as resolved.
+        symbols_allowlisted: usize,
         /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
         lean_statements: usize,
         lean_refs_unresolved: usize,

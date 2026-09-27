@@ -401,6 +401,7 @@ fn run_or_answer(
             w3c_cases_n: w3c_run.results.len(),
             symbols_resolved: extraction.code.resolved,
             symbols_unresolved: extraction.code.unresolved,
+            symbols_allowlisted: extraction.code.allowlisted,
             lean_statements: extraction.lean.statements,
             lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
             release: extraction.release.clone().map(Box::new),

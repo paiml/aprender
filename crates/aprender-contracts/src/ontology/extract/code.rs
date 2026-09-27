@@ -19,8 +19,10 @@
 //! are recorded by path (`inline`, `kernel`, …) so ONT-4c3 can type a `#[kernel]` symbol `ont:Kernel` from the
 //! same walk. Deterministic: registries and bindings are visited in byte order and the graph is a set (R-15).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
 
 use crate::binding::{parse_binding, BindingRegistry, ImplStatus};
 use crate::ontology::rdf::{iri, ont, Graph, Term, PROV_ENTITY, RDF_TYPE};
@@ -61,6 +63,9 @@ pub struct CodeStats {
     pub symbols: usize,
     pub resolved: usize,
     pub unresolved: usize,
+    /// Unresolved AND named by `binding-allowlist.yaml` — the debt ledger, reported apart from `resolved` and
+    /// `unresolved`: `resolved + unresolved + allowlisted == symbols`. Its goal is 0.
+    pub allowlisted: usize,
     pub files_parsed: usize,
 }
 
@@ -721,10 +726,94 @@ pub fn symbol_iri(b: &Bound) -> String {
     iri("symbol", &format!("{}::{}", b.module_path, b.function))
 }
 
+/// The allowlist's file name under the contract dir (ONT-001 §4 artifact table).
+pub const ALLOWLIST_FILE: &str = "binding-allowlist.yaml";
+/// The allowlist's schema id; a file carrying any other is read as empty.
+pub const ALLOWLIST_SCHEMA: &str = "ont.paiml.dev/binding-allowlist/v1alpha1";
+
+/// One `binding-allowlist.yaml` entry: a bound symbol known not to resolve, why, and the ticket that retires it.
+/// `symbol` is `<module_path>::<function>` after [`bound_of`]'s normalization — the symbol IRI's tail.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AllowEntry {
+    pub symbol: String,
+    pub reason: String,
+    pub ticket: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AllowFile {
+    schema: String,
+    #[serde(default)]
+    entries: Vec<AllowEntry>,
+}
+
+/// `binding-allowlist.yaml` under `contract_dir`, keyed by symbol. Absent, unparsable or of another schema, it is
+/// EMPTY: the allowlist only ever excuses, so a broken one excuses nothing and every ghost stays a violation
+/// (fail-closed). A duplicate symbol keeps its first entry.
+#[must_use]
+pub fn allowlist(contract_dir: &Path) -> BTreeMap<String, AllowEntry> {
+    let Ok(text) = std::fs::read_to_string(contract_dir.join(ALLOWLIST_FILE)) else {
+        return BTreeMap::new();
+    };
+    parse_allowlist(&text)
+}
+
+fn parse_allowlist(text: &str) -> BTreeMap<String, AllowEntry> {
+    let mut out = BTreeMap::new();
+    let Ok(file) = serde_yaml::from_str::<AllowFile>(text) else {
+        return out;
+    };
+    if file.schema != ALLOWLIST_SCHEMA {
+        return out;
+    }
+    for e in file.entries {
+        out.entry(e.symbol.clone()).or_insert(e);
+    }
+    out
+}
+
+/// The allowlist facts on `s`: typed `ont:AllowlistedSymbol`, with the entry's reason and ticket. The
+/// `allowlisted-symbols-ticketed` shape reads them: an entry for a symbol that resolves, that no binding names, or
+/// that carries no reason or no ticket number is a violation — the ledger cannot hold a stale line.
+fn emit_allow(g: &mut Graph, s: &str, e: &AllowEntry) {
+    g.insert(s.to_string(), RDF_TYPE, Term::iri(ont("AllowlistedSymbol")));
+    g.insert(
+        s.to_string(),
+        sym("allowlistReason"),
+        Term::string(&e.reason),
+    );
+    g.insert(
+        s.to_string(),
+        sym("allowlistTicket"),
+        Term::string(&e.ticket),
+    );
+}
+
 /// One bound symbol into `g`, resolved or not.
 pub fn emit(g: &mut Graph, b: &Bound, found: &Result<Resolved, Unresolved>) {
+    emit_as(g, b, found, None);
+}
+
+/// [`emit`], with the symbol's allowlist entry if it has one. An allowlisted symbol that does NOT resolve is typed
+/// `ont:AllowlistedSymbol` INSTEAD of `ont:Symbol`, so `bound-symbols-resolve` does not target it; one that does
+/// resolve keeps `ont:Symbol` and gains `ont:AllowlistedSymbol`, so its stale entry is a violation.
+fn emit_as(
+    g: &mut Graph,
+    b: &Bound,
+    found: &Result<Resolved, Unresolved>,
+    allow: Option<&AllowEntry>,
+) {
     let s = symbol_iri(b);
-    g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Symbol")));
+    match (allow, found) {
+        (Some(e), Err(_)) => emit_allow(g, &s, e),
+        (Some(e), Ok(_)) => {
+            emit_allow(g, &s, e);
+            g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Symbol")));
+        }
+        (None, _) => g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Symbol"))),
+    }
     g.insert(s.clone(), RDF_TYPE, Term::iri(PROV_ENTITY));
     let krate = b.module_path.split("::").next().unwrap_or_default();
     g.insert(s.clone(), sym("crate"), Term::string(krate));
@@ -775,18 +864,29 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> CodeStats {
     let ws = Workspace::scan(root);
     let mut resolver = Resolver::new(&ws);
     let mut stats = CodeStats::default();
+    let allow = allowlist(contract_dir);
+    let mut named = BTreeSet::new();
     for (_file, registry) in registries(contract_dir) {
         stats.registries += 1;
         for b in bound_of(&registry) {
             let found = resolver.resolve(&b.module_path, &b.function);
-            if found.is_ok() {
-                stats.resolved += 1;
-            } else {
-                stats.unresolved += 1;
+            let key = format!("{}::{}", b.module_path, b.function);
+            let entry = allow.get(&key);
+            match (&found, entry) {
+                (Ok(_), _) => stats.resolved += 1,
+                (Err(_), Some(_)) => stats.allowlisted += 1,
+                (Err(_), None) => stats.unresolved += 1,
             }
             stats.symbols += 1;
-            emit(g, &b, &found);
+            if entry.is_some() {
+                named.insert(key);
+            }
+            emit_as(g, &b, &found, entry);
         }
+    }
+    // An entry no binding names: a node with no `sym:implements`, which the shape refuses.
+    for (key, e) in allow.iter().filter(|(k, _)| !named.contains(*k)) {
+        emit_allow(g, &iri("symbol", key), e);
     }
     stats.files_parsed = resolver.files_parsed();
     stats
@@ -962,6 +1062,42 @@ mod tests {
         let mut g2 = Graph::new();
         extract(&dir, &mut g2);
         assert_eq!(nt, g2.to_ntriples());
+    }
+
+    #[test]
+    fn the_allowlist_reads_only_its_own_schema_and_a_broken_one_excuses_nothing() {
+        let ok = "schema: ont.paiml.dev/binding-allowlist/v1alpha1\nentries:\n  - {symbol: a::f, reason: r, ticket: '#1'}\n  - {symbol: a::f, reason: second, ticket: '#2'}\n";
+        let got = parse_allowlist(ok);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got["a::f"].reason, "r", "a duplicate keeps its first entry");
+        let other = ok.replace("v1alpha1", "v9");
+        assert!(parse_allowlist(&other).is_empty(), "another schema");
+        let extra = ok.replace("ticket: '#1'", "ticket: '#1', owner: x");
+        assert!(parse_allowlist(&extra).is_empty(), "an unknown key");
+        assert!(parse_allowlist("entries: [").is_empty(), "unparsable");
+        assert!(allowlist(Path::new("/nonexistent/contracts")).is_empty());
+    }
+
+    #[test]
+    fn an_allowlisted_ghost_is_retyped_and_counted_apart() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/ont/code-allow-stale/contracts");
+        let mut g = Graph::new();
+        let stats = extract(&dir, &mut g);
+        assert_eq!(
+            (stats.symbols, stats.resolved, stats.allowlisted, stats.unresolved),
+            (2, 1, 1, 0)
+        );
+        let ghost = iri("symbol", "kern::nn::functional::no_such_function");
+        let stale = iri("symbol", "kern::nn::functional::softmax");
+        let orphan = iri("symbol", "kern::gone::vanished");
+        let symbols = g.instances_of(&ont("Symbol"));
+        let allowed = g.instances_of(&ont("AllowlistedSymbol"));
+        assert!(!symbols.iter().any(|s| *s == ghost), "an excused ghost leaves ont:Symbol");
+        assert!(allowed.iter().any(|s| *s == ghost));
+        assert!(symbols.iter().any(|s| *s == stale) && allowed.iter().any(|s| *s == stale));
+        assert!(allowed.iter().any(|s| *s == orphan));
+        assert!(g.objects(&orphan, &sym("implements")).is_empty());
     }
 
     #[test]

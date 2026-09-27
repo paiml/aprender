@@ -146,6 +146,16 @@ shapes:
       - {path: sym:name, minCount: 1, maxCount: 1}
       - {path: sym:implements, minCount: 1, nodeKind: IRI, class: ont:Contract}
       - {path: sym:resolved, minCount: 1, maxCount: 1, in: [true]}
+  # #3559: the ghost-binding debt ledger. An unresolved symbol binding-allowlist.yaml excuses is typed
+  # AllowlistedSymbol instead of Symbol; its entry must name a bound symbol that still does not resolve, a reason,
+  # and a real ticket. A stale entry (the symbol resolves, or no binding names it) is a violation here.
+  - id: allowlisted-symbols-ticketed
+    targetClass: ont:AllowlistedSymbol
+    properties:
+      - {path: sym:implements, minCount: 1, nodeKind: IRI, class: ont:Contract}
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [false]}
+      - {path: sym:allowlistReason, minCount: 1, maxCount: 1, minLength: 1}
+      - {path: sym:allowlistTicket, minCount: 1, maxCount: 1, pattern: '^(paiml/[A-Za-z0-9._-]+)?#[0-9]+$'}
   # REPORTED, not armed: three theorem files carry `sorry`.
   - id: lean-statements-grounded
     targetClass: ont:Statement

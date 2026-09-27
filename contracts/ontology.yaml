@@ -28,6 +28,7 @@ concepts:
   Proof: {doc: "a Kani harness or Lean theorem discharging an obligation"}
   Doc: {doc: "a prose document under contract (README.md, CLAUDE.md)"}
   Symbol: {doc: "a Rust symbol a binding names — a free fn or an impl method; the focus node of extract:code (ONT-4b2: ont:Symbol with sym:crate, sym:module, sym:resolved)"}
+  AllowlistedSymbol: {doc: "a bound symbol that does not resolve and binding-allowlist.yaml excuses with a reason and a ticket — the ghost-binding debt ledger, whose goal is empty; typed instead of Symbol while unresolved (#3559)"}
   Statement: {doc: "a Lean theorem in the in-tree Theorems tree; the focus node of extract:lean (ONT-4b2: ont:Statement with lean:sorryFree, lean:modelOf)"}
   Model: {doc: "a model file — an .apr container or a GGUF; the ladder's rungs are the ones the release measures (ONT-4c1: model:Model, model:RequiredModel, model:Receipt)"}
   Dataset: {doc: "a CSV or corpus file"}
