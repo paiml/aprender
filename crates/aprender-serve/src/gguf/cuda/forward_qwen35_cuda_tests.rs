@@ -1048,6 +1048,12 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
             .forward_single(token, &mut gpu_state, pos)
             .expect("gpu forward");
         let gpu_ms = t0.elapsed().as_secs_f64() * 1e3;
+        if let Ok(dir) = std::env::var("QWEN35_E2E_DUMP") {
+            for (side, v) in [("gpu", &got), ("cpu", &want)] {
+                let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+                std::fs::write(format!("{dir}/{side}_pos{pos}.f32"), bytes).expect("dump");
+            }
+        }
         let (cos, linf) =
             assert_forward_parity(&got, &want, LOGITS_BUDGET, &format!("pos {pos} logits"));
         eprintln!(
