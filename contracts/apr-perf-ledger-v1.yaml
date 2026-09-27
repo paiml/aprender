@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: schema
   created: '2026-09-26'
   author: PAIML Engineering
@@ -9,6 +9,7 @@ metadata:
   - 'paiml/infra#1057 — per-binary perf ledger (OBS-05 closes it)'
   - 'scripts/llama_pin.toml — the comparator pin (build_commit)'
   - 'aprender#4487 — OBS-00'
+  - 'aprender#4492 — OBS-05 (admission checks: crates/aprender-qa-report/src/obs_ledger.rs)'
   description: >
     The nightly benchmark ledger: one row per host x backend per night, written by
     a forjar timer running PINNED apr and PINNED llama.cpp on the same GGUF, on the
@@ -26,7 +27,7 @@ equations:
               apr:   { load_ms, ttft_ms, pp512_tok_s, tg128_tok_s, wall_ms, median, mad },
               llama: { build_commit, same fields },
               ratio: { load, ttft, prefill, decode } }
-      REQUIRE: prompt_n >= 8 AND reps = 5                 (R-3; §2.4)
+      REQUIRE: prompt_n >= 8; order = ABBA design, 3 blocks each ABBA or BAAB (v1.3 §2.4)
       REQUIRE: llama.build_commit = scripts/llama_pin.toml build_commit
     domain: 'one line of the nightly ledger'
     codomain: bool
@@ -53,37 +54,122 @@ equations:
     domain: 'the ratio fields'
     codomain: bool
 
+  chain_and_anchor:
+    formula: |
+      h0 = sha256(schema || host || backend || epoch_start)
+      h_k = sha256(canon(row_k));  row_k.prev_row_sha256 = h_{k-1}
+      anchor (n_rows, h_n) is written by the RED job; lines < n_rows or h_n mismatch => RED
+    domain: 'one series file of the ledger (E8)'
+    codomain: 'Anchor, or the first broken line'
+    invariants:
+    - 'The chain alone cannot see tail truncation (T5); only the anchor catches it.'
+
+  abba_block_stat:
+    formula: |
+      l_b = 1/2 [ ln(xA1/xB1) + ln(xA2/xB2) ]
+      ABBA pairs (A@t, B@t+w), (A@t+3w, B@t+2w); BAAB pairs (A@t+w, B@t), (A@t+2w, B@t+3w)
+      L_n = median of l_b over the first 3 blocks, by time, quiet at start AND end
+    domain: 'the blocks of one host x backend x band night (E1, E2, §2.8)'
+    codomain: 'L_n, or skipped{blocks_valid} when fewer than 3 valid blocks exist'
+    invariants:
+    - 'Linear drift cancels inside a block (T1).'
+    - 'A voided block never enters E2; a skip is a row, never a gap.'
+
+  admissibility:
+    formula: |
+      admit(r) = identity complete (20 fields present)
+               AND (backend in GPU => gpu_proof != null) AND (backend = cpu => gpu_proof = null)
+               AND order.design = ABBA AND |order.blocks| = 3
+               AND quiescence_proof: lease present, foreign_gpu_procs = [], train_active = false
+               AND writer uid not in subject uids AND mode & 022 = 0     (E12, §2.7)
+    domain: 'one ledger line (<= 4096 bytes)'
+    codomain: 'admitted, or the named Refusal'
+
 falsification_tests:
 - id: FALSIFY-OBS-PERF-001
   rule: a missing host row is RED
-  prediction: 'A night with rows for every declared series but one is Liveness RED, naming that host x backend.'
-  test: 'NOT YET WRITTEN — lands with OBS-05'
+  prediction: 'A night with rows for every declared series but one is Liveness RED, naming that host x backend. A refused row counts as absent; a skip row is reported, never missing.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_declared_series_without_a_row_is_red_and_named'
   if_fails: 'a host that stopped running looks like a host with nothing to report'
-  mutation: 'derive DECLARED_SERIES from the rows present; the missing-host case must turn RED'
+  mutation: 'derive DECLARED_SERIES from the rows present; must turn RED (killed)'
 - id: FALSIFY-OBS-PERF-002
   rule: an empty ledger is RED
   prediction: 'A ledger with 0 rows is RED, never 0/0.'
-  test: 'NOT YET WRITTEN — lands with OBS-05'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::an_empty_ledger_is_red'
   if_fails: 'every rule passes vacuously over nothing (R-2)'
-  mutation: 'return GREEN when there are no rows to check; the empty case must turn RED'
+  mutation: 'red() ignores the empty flag; must turn RED (killed)'
 - id: FALSIFY-OBS-PERF-003
   rule: version and sha are required
-  prediction: 'A row missing apr_version, apr_tag or binary_sha256 is REJECTED.'
-  test: 'NOT YET WRITTEN — lands with OBS-05 (reuses FALSIFY-OBS-ID-001)'
+  prediction: 'A row missing any of the 20 identity fields, including apr_version, apr_tag and binary_sha256, is REJECTED, naming the field.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_row_missing_any_identity_field_is_refused_and_named'
   if_fails: 'the release-tag baseline compares against an unknown build'
-  mutation: 'drop binary_sha256 from the writer; must turn RED'
+  mutation: 'drop binary_sha256 from the identity list; must turn RED (killed)'
 - id: FALSIFY-OBS-PERF-004
   rule: a GPU row needs gpu_proof
-  prediction: 'A backend=cuda row with gpu_proof null is excluded from the CUDA series as backend_unproven.'
-  test: 'NOT YET WRITTEN — lands with OBS-05 (reuses FALSIFY-OBS-ID-002)'
+  prediction: 'A backend=cuda row with gpu_proof null is backend_unproven; a cpu row carrying a gpu_proof is refused.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_gpu_row_without_gpu_proof_is_backend_unproven'
   if_fails: 'a CPU fallback on gx10 is filed as a CUDA number'
-  mutation: 'admit cuda rows without reading gpu_proof; must turn RED'
+  mutation: 'admit cuda rows with a null proof; admit cpu rows with a proof — each must turn RED (killed)'
 - id: FALSIFY-OBS-PERF-005
   rule: no ratio across mismatched identity
-  prediction: 'A ratio over rows with different model_sha256 or crate_tarball_sha256 is FATAL.'
-  test: 'NOT YET WRITTEN — lands with OBS-05 (reuses FALSIFY-OBS-ID-003)'
+  prediction: 'A ratio over rows differing in host, backend, tier, band or model_sha256, or with any of them absent, is FATAL; a crate_tarball_sha256 or binary_sha256 difference is annotated.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_ratio_across_mismatched_identity_is_fatal'
   if_fails: 'a model or build change reads as a speed regression'
-  mutation: 'compute the ratio on host alone; the mismatched case must turn RED'
+  mutation: 'compare on host alone; drop model_sha256; treat absent = absent as equal — each must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-006
+  rule: a non-ABBA order is refused
+  prediction: 'order.design other than ABBA, a missing seed, or a block count other than 3 is NotAbba.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_blocked_order_row_is_refused'
+  if_fails: 'a blocked AAAA/BBBB run lets drift read as a ratio'
+  mutation: 'accept any design; accept any non-empty block count — each must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-007
+  rule: a row without a passing quiescence proof is host_unproven
+  prediction: 'No proof, no lease, foreign GPU processes, or train_active (or either unread) is HostUnproven with the reasons named.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_row_without_a_passing_quiescence_proof_is_host_unproven'
+  if_fails: 'a night measured under a training job is compared against a quiet one'
+  mutation: 'skip the lease, foreign-procs or train_active check — each must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-008
+  rule: the subject cannot write the ledger
+  prediction: 'A ledger owned by a subject uid, or group/world writable, is refused (E12).'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_ledger_writable_by_the_subject_is_refused'
+  if_fails: 'the binary under test can edit its own score'
+  mutation: 'skip the uid check; skip the mode check — each must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-009
+  rule: a mid-file edit breaks the chain
+  prediction: 'Editing any value in row k fails verify_chain at line k+1.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_mid_file_edit_breaks_the_chain'
+  if_fails: 'a history rewrite is invisible'
+  mutation: 'skip the prev_row_sha256 comparison; must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-010
+  rule: tail truncation below the anchor is RED
+  prediction: 'Dropping the last row passes the chain alone and fails against the anchor as BelowAnchor.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::tail_truncation_below_the_anchor_is_caught_only_by_the_anchor'
+  if_fails: 'deleting a bad night hides a regression (T5)'
+  mutation: 'skip the n_rows comparison; must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-011
+  rule: a voided block never enters E2
+  prediction: 'A block not quiet at start or end is dropped; fewer than 3 valid blocks is skipped{blocks_valid}, never a number.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_voided_block_never_enters_e2'
+  if_fails: 'a pre-empted block drags the nightly median'
+  mutation: 'filter on quiet_start alone; on quiet_end alone — each must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-012
+  rule: ABBA and BAAB cancel linear drift
+  prediction: 'Under a linear drift of both arms, l_b equals the true ratio for either order (T1).'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::abba_and_baab_cancel_linear_drift'
+  if_fails: 'thermal ramp reads as a speed difference'
+  mutation: 'mis-pair ABBA; mis-pair BAAB — each must turn RED (killed)'
+- id: FALSIFY-OBS-PERF-P01
+  rule: 'positive: an rc.1 night on every declared series is admitted and GREEN'
+  prediction: 'v0.71.0-rc.1 rows for every declared series admit, chain, and give a GREEN night.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::an_rc1_night_is_admitted_and_green'
+  if_fails: 'the checks refuse the rows they exist to admit'
+  mutation: 'covered by the refusal mutants above'
+- id: FALSIFY-OBS-PERF-P02
+  rule: 'positive: a night from 3 non-contiguous valid blocks is measured'
+  prediction: 'Valid blocks listed out of time order, around a pre-empted one, give the median of the first 3 by time.'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_night_from_three_non_contiguous_valid_blocks_is_measured'
+  if_fails: 'a single pre-emption voids the night, or a late block replaces an early one'
+  mutation: 'drop the time sort; must turn RED (killed)'
 
 proof_obligations:
 - type: invariant
@@ -93,14 +179,35 @@ proof_obligations:
   property: 'An empty ledger is RED (FALSIFY-OBS-PERF-002)'
   formal: '|ledger| = 0 ⇒ verdict = RED'
 - type: invariant
-  property: 'Version and sha are present on every row (FALSIFY-OBS-PERF-003)'
-  formal: '∀ r: r.apr_version, r.apr_tag, r.binary_sha256 ≠ null'
+  property: 'Identity is complete on every row (FALSIFY-OBS-PERF-003)'
+  formal: '∀ r, f ∈ IDENTITY: r.f present'
 - type: invariant
   property: 'GPU series admit only proven rows (FALSIFY-OBS-PERF-004)'
   formal: '∀ r ∈ gpu_series: r.gpu_proof ≠ null'
 - type: soundness
   property: 'Ratios never cross identity (FALSIFY-OBS-PERF-005)'
-  formal: '∀ ratio(a, b): ident(a) = ident(b)'
+  formal: '∀ ratio(a, b): a.f = b.f for f ∈ {host, backend, tier, band, model_sha256}'
+- type: invariant
+  property: 'Order is ABBA with 3 blocks (FALSIFY-OBS-PERF-006)'
+  formal: 'admit(r) ⇒ r.order.design = ABBA ∧ |r.order.blocks| = 3'
+- type: invariant
+  property: 'Admitted rows are quiescent (FALSIFY-OBS-PERF-007)'
+  formal: 'admit(r) ⇒ lease(r) ∧ foreign_gpu_procs(r) = [] ∧ ¬train_active(r)'
+- type: invariant
+  property: 'Recorder is not the subject (FALSIFY-OBS-PERF-008)'
+  formal: 'owner_uid ∉ subject_uids ∧ mode & 022 = 0'
+- type: invariant
+  property: 'The chain links every row (FALSIFY-OBS-PERF-009)'
+  formal: '∀ k ≥ 1: row_k.prev_row_sha256 = sha256(canon(row_{k-1}))'
+- type: invariant
+  property: 'The anchor bounds truncation (FALSIFY-OBS-PERF-010)'
+  formal: 'lines ≥ anchor.n_rows ∧ h(anchor.n_rows) = anchor.h_n'
+- type: invariant
+  property: 'Only quiet blocks enter E2 (FALSIFY-OBS-PERF-011)'
+  formal: 'b ∈ E2 ⇒ quiet_start(b) ∧ quiet_end(b)'
+- type: invariant
+  property: 'Linear drift cancels (FALSIFY-OBS-PERF-012)'
+  formal: 'x(t) = r0 (1 + c t) ⇒ l_b = ln(r0)'
 
 qa_gate:
   id: F-OBS-PERF-GATE-001
@@ -113,13 +220,20 @@ qa_gate:
   - gpu_rows_proven
   - ratio_within_identity
   - comparator_pinned
+  - abba_order
+  - quiescence_proven
+  - recorder_not_subject
+  - chain_and_anchor
+  - voided_blocks_excluded
   pass_criteria: >
     All checks hold. RED rules over this ledger (OBS-06/07) are report-only through
     0.70; blocking at the 0.71 final needs an operator ruling (spec §4, §8 S-7).
+    comparator_pinned and the 13-of-14 nights need the forjar recorder, which does
+    not exist yet (§1 G4).
 
 verification_summary:
-  total_obligations: 5
+  total_obligations: 12
   proven: 0
-  tested: 0
-  status: proposed
-  notes: 'Shape only (OBS-00). The writer is a forjar timer (infra), so OBS-05 is NotRun until the fleet_perf_dir issue lands.'
+  tested: 12
+  status: tested
+  notes: 'Admission checks in aprender-qa-report (obs_ledger.rs); 15 unit tests over synthetic rc.1 specimens, 22/22 planted mutants killed. No live ledger rows exist yet — the writer is a forjar timer (infra).'

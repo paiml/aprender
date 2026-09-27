@@ -32,7 +32,7 @@ pub const RECEIPT_IDENTITY: [&str; 11] = [
 /// Longest admissible ledger line in bytes.
 pub const MAX_LINE_BYTES: usize = 4096;
 
-fn known(v: Option<&Value>) -> bool {
+pub(crate) fn known(v: Option<&Value>) -> bool {
     match v {
         None | Some(Value::Null) => false,
         Some(Value::String(s)) => !s.is_empty() && s != "unknown",

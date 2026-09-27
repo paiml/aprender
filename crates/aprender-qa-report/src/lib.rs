@@ -45,6 +45,7 @@ pub mod markdown;
 pub mod mqs;
 pub mod obs_backfill;
 pub mod obs_epoch;
+pub mod obs_ledger;
 pub mod popperian;
 pub mod proof_status;
 pub mod ticket;

@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.0.1
   kind: schema
   created: '2026-09-26'
   author: PAIML Engineering
@@ -96,14 +96,14 @@ falsification_tests:
   rule: a GPU claim needs gpu_proof
   prediction: 'A row with backend=cuda and gpu_proof=null is excluded from the GPU series as
     backend_unproven; a row with backend=cpu and a non-null gpu_proof is REJECTED.'
-  test: 'NOT YET WRITTEN — lands with OBS-05 (apr-perf-ledger-v1 falsifier "GPU row without gpu_proof")'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_gpu_row_without_gpu_proof_is_backend_unproven'
   if_fails: 'a CPU run on a CUDA host is filed as a GPU number (the #2644 device:GPU mislabel)'
   mutation: 'accept any non-cpu backend without reading gpu_proof; the backend=cuda/null case must turn RED'
 - id: FALSIFY-OBS-ID-003
   rule: no ratio across mismatched identity
   prediction: 'Two rows differing in crate_tarball_sha256, model_sha256 or backend produce
     FATAL, never a ratio.'
-  test: 'NOT YET WRITTEN — lands with OBS-05/OBS-06'
+  test: 'crates/aprender-qa-report/src/obs_ledger_tests.rs::a_ratio_across_mismatched_identity_is_fatal'
   if_fails: 'a model or build change reads as a speed regression or a speed win'
   mutation: 'compare on host only; the mismatched-model case must turn RED'
 - id: FALSIFY-OBS-ID-004
@@ -131,14 +131,14 @@ proof_obligations:
 verification_summary:
   total_obligations: 4
   proven: 0
-  tested: 0
+  tested: 2
   status: proposed
   notes: >
-    OBS-00 commits the shape only. Every falsifier above names the row that
-    lands its test, and none is written yet, so tested is 0 and the count says
-    so rather than leaving a reader to discover it. The ledgers' writers are
-    forjar-declared (spec §0.7): the per-host fleet_perf_dir is filed as a
-    paiml/infra issue, and the rows that depend on it are NotRun until it lands.
+    ID-002 and ID-003 are tested by OBS-05 (aprender#4492) in
+    crates/aprender-qa-report/src/obs_ledger_tests.rs, with planted mutants
+    killed. ID-001 (the shared receipt lint, OBS-01) and ID-004 are not
+    written yet. The ledgers writers are forjar-declared (spec §0.7) and are
+    NotRun until the per-host fleet_perf_dir lands.
 
 qa_gate:
   id: F-OBS-ID-GATE-001
