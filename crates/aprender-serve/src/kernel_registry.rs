@@ -618,6 +618,49 @@ mod tests {
         }
     }
 
+    /// FALSIFY-KREG-007: every row's (qtype, ggml_type, block_elems) matches the facts read
+    /// from llama.cpp and vLLM at the commits pinned in
+    /// `docs/kernel-registry/upstream-reference-v1.json`. A wrong type id or block size would
+    /// admit a kernel for bytes it cannot decode. APR-native ids (>= 128) have no upstream row.
+    #[test]
+    fn every_row_agrees_with_the_upstream_reference() {
+        let doc: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../docs/kernel-registry/upstream-reference-v1.json"
+        ))
+        .expect("reference json");
+        let refs = doc["rows"].as_array().expect("rows");
+        let r = registry().expect("registry");
+        let mut checked = 0;
+        for row in r.rows().iter().filter(|row| row.ggml_type < 128) {
+            let upstream = refs
+                .iter()
+                .find(|u| u["ggml_type"].as_u64() == Some(u64::from(row.ggml_type)))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: ggml_type {} has no upstream row",
+                        row.kernel_id, row.ggml_type
+                    )
+                });
+            assert!(
+                upstream["qtype"]
+                    .as_str()
+                    .is_some_and(|q| q.eq_ignore_ascii_case(&row.qtype)),
+                "{}: qtype {} vs upstream {}",
+                row.kernel_id,
+                row.qtype,
+                upstream["qtype"]
+            );
+            assert_eq!(
+                upstream["block_elems"].as_u64(),
+                Some(u64::from(row.block_elems)),
+                "{}",
+                row.kernel_id
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "no row was checked");
+    }
+
     /// KREG coverage (CUDA): the registry's `cuda` rows and the ids `WeightQuantType` declares
     /// (one `gemv_dispatch` arm each — that match is exhaustive) are the same set, derived here
     /// over every id rather than from a hand-kept count. A variant with no row would be
