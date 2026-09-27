@@ -876,9 +876,17 @@ impl<'a> Qwen35CudaModel<'a> {
             .iter()
             .any(|v| std::env::var_os(v).is_some())
         {
+            eprintln!(
+                "[qwen35] decode GEMV q4k={:?} q6k={:?} (env override)",
+                profile.q4k, profile.q6k
+            );
             return;
         }
         (profile.q4k, profile.q6k) = Self::production_gemv(profile.cc);
+        eprintln!(
+            "[qwen35] decode GEMV q4k={:?} q6k={:?} (production, sm_{})",
+            profile.q4k, profile.q6k, profile.cc
+        );
     }
 
     /// Set the float (non-DP4A) Q4_K / Q6_K variants on a profile.
