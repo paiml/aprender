@@ -19,7 +19,10 @@
 # model this host holds that the run did not prove.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
-#                                      [--only <rung-id>]
+#                                      [--only <rung-id>] [--no-cache]
+#   --no-cache  re-measure every cell. By default a cell that THIS binary (same bytes, same HEAD)
+#           already proved green on this host under this contract, against the same model sha256,
+#           is copied from <dir>/<host>.json with "cached_from" and not re-read (#4520 step 5).
 #   --only  measure exactly ONE rung and write a SEPARATE receipt,
 #           <dir>/<host>.only-<id>.json. For separating a flake from a defect: a
 #           single rung costs minutes where the sweep costs hours, and #3936 spent
@@ -46,12 +49,15 @@ HOST_ID=""
 OUT_DIR=""
 DRY=0
 ONLY=""
+NO_CACHE=0
 ORIG_ARGS=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "model_ladder: --out needs a value" >&2; exit 2; };  OUT_DIR="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
+    # #4520 step 5: measure every cell even when this binary already proved it green on this host
+    --no-cache) NO_CACHE=1; shift ;;
     --only) [ $# -ge 2 ] || { echo "model_ladder: --only needs a value" >&2; exit 2; }; ONLY="$2"; shift 2 ;;
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
@@ -489,6 +495,10 @@ SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # apr_sha: the full 40-hex HEAD, which scripts/apr_bin.sh proved the binary was built from. The
 # release-readiness shape (#3715) compares it to the release commit by exact equality.
 APR_SHA=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+# #4520 step 5: the receipt-cache key names the binary's BYTES and the contract that judged it, so a
+# rebuild or a changed judge is a miss (scripts/lib/ladder_cache.py). "unknown" is never a hit.
+APR_BIN_SHA=$(sha256sum "$APR" 2>/dev/null | cut -d' ' -f1); [ -n "$APR_BIN_SHA" ] || APR_BIN_SHA=unknown
+CONTRACT_SHA=$(sha256sum "$LADDER" 2>/dev/null | cut -d' ' -f1); [ -n "$CONTRACT_SHA" ] || CONTRACT_SHA=unknown
 VERSION=$(cargo metadata --no-deps --offline --format-version 1 2>/dev/null | python3 -c '
 import json, os, sys
 m = json.load(sys.stdin)
@@ -926,6 +936,16 @@ measure() {
   local rid=$1 rfile=$2 path=$3 got=$4 rbackends=$5 rreq=$6 rinv=$7
   # #4520: the meter attributes every apr call below to this cell and its file size (the budget base)
   export LADDER_METER_CELL="$rid" LADDER_METER_FILE_BYTES; LADDER_METER_FILE_BYTES=$(stat -Lc %s "$path" 2>/dev/null)
+  # #4520 step 5: this binary already proved this exact cell green on this host -- copy, do not re-read
+  local cached
+  if [ "$NO_CACHE" != 1 ] && [ -z "$ONLY" ] \
+     && cached=$(python3 scripts/lib/ladder_cache.py "$OUT_DIR/$HOST.json" "$HOST" "$APR_SHA" "$APR_BIN_SHA" \
+                   "$CONTRACT_SHA" "$rid" "$got" "$rbackends" 2>/dev/null); then
+    ladder_append "$ROWS" "$cached"
+    EXECUTED=$((EXECUTED + 1))
+    printf '  [CACHED] %-30s green at this binary+model+contract (--no-cache re-measures)\n' "$rid"
+    return
+  fi
   local probe_why
   probe_why=$(ladder_disk_probe "$WORK") || ladder_write_decline "before $rid: $probe_why"
   local qa_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.qa.json" cap_flag="" qa_rc qa_row be_json first b flag run_out run_rc fb ran row why
@@ -1427,13 +1447,14 @@ mkdir -p "$OUT_DIR"
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
 RECEIPT_TMP="$OUT_DIR/.$RECEIPT_BASE.json.tmp.$$"
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
-LADDER_CONTRACT="$LADDER" python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
+LADDER_CONTRACT="$LADDER" LADDER_APR_BIN_SHA="$APR_BIN_SHA" LADDER_CONTRACT_SHA="$CONTRACT_SHA" python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
 import json, os, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 _bx = os.environ.get("LADDER_BOX_EVENTS")
 host_box = [json.loads(l) for l in open(_bx) if l.strip()] if _bx and os.path.isfile(_bx) else None
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
 out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
+       "apr_bin_sha256": os.environ.get("LADDER_APR_BIN_SHA"), "contract_sha256": os.environ.get("LADDER_CONTRACT_SHA"),
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),

@@ -631,6 +631,9 @@ gates = [
     # #4520 — and a cell over its declared byte/RSS/wall budget is RED. The ladder re-read a
     # 17 GB GGUF per verb and held lambda at IO PSI 90% with nothing in the receipt saying so.
     "scripts/check_ladder_budgets.sh",
+    # #4520 step 5 — and a rerun of the same binary copies only an EXACT green (binary bytes, HEAD,
+    # contract, model sha, backends, host); every key field has a must-miss row.
+    "scripts/check_ladder_cache.sh",
     # #3894 — and the probe must be able to record `used_gpu: false`. A recorder
     # that can only say "true" launders an unverified CUDA claim into every cell.
     "scripts/check_serve_backend_record.sh",
