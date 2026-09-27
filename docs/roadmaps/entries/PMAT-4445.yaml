@@ -1,0 +1,19 @@
+- id: PMAT-4445
+  github_issue: 4445
+  item_type: task
+  title: 'apr bench (qwen35 --fast) refuses every run with warmup+iterations > 1: one session reuses its own prefix cache'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-bb
+  created: 2026-09-27T11:13:42+00:00
+  updated: 2026-09-27T11:13:42+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Session::forget_prefix drops the held positions and the #4214 checkpoint, so the next turn prefills its whole prompt (Turn::reused == 0)'
+  - 'bench_qwen35 calls forget_prefix before every warmup turn and every timed turn, so warmup >= 1 with iterations >= 2 no longer trips the reused != 0 guard; the guard itself is unchanged'
+  - 'session::tests::forget_prefix_makes_the_same_prompt_prefill_whole_again repeats one prompt 3 times and asserts reused == 0, no checkpoint restore, and 3 prefills from position 0; it goes RED when forget_prefix is a no-op (measured 2026-09-27)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Adopted from aprender-ea orphan fix/4445-bench-fresh-prefill @65fd973170 (09-25, never PRed). The bug exists only with the #4214 checkpoint, i.e. car/0.70.0 (#4429); main before #4429 does not reuse an identical prompt. Cop ruling 2026-09-27: not folded into the car; own PR on main the moment #4429 merges, before the rc.1 tag.'
