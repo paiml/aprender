@@ -3,13 +3,13 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "cb7c708ed2e0c8fc15d4cae6a6fbe04ae6210a76",
-  "diff_sha256": "0588796b804e1ff4d6cd675b8ad6871b824aa10260aaf98726fcfaa2c459c97b",
+  "head": "2989217f66eabee4d86324b847e7ffe3ed2d32c9",
+  "diff_sha256": "36dc6cdec5c0949725d929f5a3173cf5894a2d2cd9860eec66f5a708cd3ab469",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 33494,
-  "prompt_sha256": "3ffc02165c047e605b0eddacf3eb82640dae6357edd333843b327864193484cb",
+  "prompt_bytes": 58317,
+  "prompt_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,9 +21,9 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff fixes the #4441 truncation (FAT_SECRET_PR_REVIEW_SIGNING_KEY_B → _B64) matching the one secret ci/sections.yml actually reads, adds a non-vacuous guard script wired into x86-main before Sections run, updates the arm4 step title to the correct row count (25, verified by grep), and adds a real fingerprint-idempotence fix/test excluding docs/audits/quorum-*.json from the patch-id diff per the operator's #4512-scope instruction. Traced the self-tests' logic and confirmed they are not vacuous (each would fail without the corresponding code fix). No out-of-scope changes (permissions/triggers/secret values untouched).",
+      "summary": "The diff correctly fixes the #4441 truncation (FAT_SECRET_PR_REVIEW_SIGNING_KEY_B → _B64) to match what ci/sections.yml's pr-review-sign section actually reads (verified: sections.yml:2751 secrets.PR_REVIEW_SIGNING_KEY_B64, and x86-main runs pr-review-sign as a section, ci.yml:110). Adds a non-vacuous guard script (check_ci_fat_secrets_plumbed.sh) whose self-test carries the #4441 defect byte-for-byte and is wired into x86-main's steps before Sections run (self-test then guard, matching AC4). Adds the operator-ordered fingerprint idempotence fix in pr_review_patch_id.sh (excludes docs/audits/quorum-*.json glob) with a genuine self-test in check_pr_review_arm4.sh proving head=+receipt=+quorum=re-stamp equality plus a control case that an unrelated file still moves the fingerprint. Arm4 step-name row count (23→25) matches the two new case-table rows added. No permissions/triggers/secret-value changes, no scope creep beyond the ticket and the operator's explicit fingerprint-exclusion instruction.",
       "findings": [],
-      "raw_bytes": 2163,
+      "raw_bytes": 2929,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -34,10 +34,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "3ffc02165c047e605b0eddacf3eb82640dae6357edd333843b327864193484cb",
+      "brief_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
       "trace": {
-        "input_sha256": "f8e72f2337d7b8c6cf24908b4b188a76bd9e9c9defd7e3fc886ec63103ae56e7",
-        "output_sha256": "17662e71f82e4a6f5f198cd60c2d8dc92910e87d67e70e1baf6bacc4a460baa3",
+        "input_sha256": "5554e76c28032e3077f72c434a9027fe0e9eec257c79ac2704b550acdace9684",
+        "output_sha256": "ad38ab9e1d81abc8299f8e22ea03d64c78cdcd3a543665e26915d55227f0a76c",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -64,22 +64,22 @@
           "claim": "Plumbs FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64 instead of the truncated _B suffix.",
           "file": ".github/workflows/ci.yml",
           "grounding": "cited",
-          "line": 90
-        },
-        {
-          "claim": "Guard script self-test carries the #4441 truncation byte for byte and asserts it fails (returns RED).",
-          "file": "scripts/check_ci_fat_secrets_plumbed.sh",
-          "grounding": "cited",
-          "line": 86
+          "line": 88
         },
         {
           "claim": "The x86-main job runs check_ci_fat_secrets_plumbed.sh --self-test and then the guard on the tree before the sections run.",
           "file": ".github/workflows/ci.yml",
           "grounding": "cited",
-          "line": 101
+          "line": 100
         },
         {
-          "claim": "Excludes both evidence/pr-review/<pr> and docs/audits/quorum-*.json from the fingerprint input set.",
+          "claim": "Guard script self-test carries the #4441 truncation byte for byte and asserts it fails (returns RED).",
+          "file": "scripts/check_ci_fat_secrets_plumbed.sh",
+          "grounding": "cited",
+          "line": 88
+        },
+        {
+          "claim": "Excludes docs/audits/quorum-*.json from the fingerprint input set.",
           "file": "scripts/lib/pr_review_patch_id.sh",
           "grounding": "cited",
           "line": 70
@@ -91,8 +91,8 @@
           "line": 388
         }
       ],
-      "raw_bytes": 4083,
-      "err_bytes": 0,
+      "raw_bytes": 5350,
+      "err_bytes": 103,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -102,10 +102,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "3ffc02165c047e605b0eddacf3eb82640dae6357edd333843b327864193484cb",
+      "brief_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
       "trace": {
-        "input_sha256": "4654db9389b7ccafdbfa50963fb315ea90afffff7b45efe3ad4476527233895b",
-        "output_sha256": "c87120cfd295897446b2f65c91218d07e6dbde4814030d34312f5e53509b70ca",
+        "input_sha256": "d970a2e3ddb42c968d25a1b5e4eb94e4697e2ef88649b34c841b8a2b624d0b73",
+        "output_sha256": "af3f4c562e2b1b4e8b85017cd569fc2d5ba752a7ca6e3c6c6da4a4a6ae22f767",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -126,9 +126,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "All five acceptance criteria are met. The secret name is fixed in ci.yml, a regression guard with self-test is added to catch truncation, fingerprint idempotence is tested, and the guard runs before sections. Evidence files show the fix was applied successfully in the context of PR #4512.",
+      "summary": "All five acceptance criteria for PMAT-4510 are fully implemented. The diff fixes the FAT_SECRET_PR_REVIEW_SIGNING_KEY_B truncation to _B64 in ci.yml, adds a regression guard script with self-test (carrying the #4441 defect byte-for-byte), wires it into x86-main before sections run, and adds fingerprint idempotence exclusions (evidence/pr-review/<pr> and docs/audits/quorum-*.json) with comprehensive self-tests. Receipts are now signed (minisig files present). No out-of-scope changes to permissions, triggers, or secret values. All three independent lanes report PASS.",
       "findings": [],
-      "raw_bytes": 1488,
+      "raw_bytes": 2049,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -139,10 +139,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "3ffc02165c047e605b0eddacf3eb82640dae6357edd333843b327864193484cb",
+      "brief_sha256": "d1feee3e533b77f14107feedb9b098ecab3ef96d3caa48ec65e985f03802bca8",
       "trace": {
-        "input_sha256": "3337a45e3499499c1f56142dcc3a8bbddbe18bd724246b5d7afedb857c5bd744",
-        "output_sha256": "64fc49dfe933de6dda26b8a6dd13d8dce3276f6ee5a19c3f7868151979711b36",
+        "input_sha256": "6867fcee0c2956915947220f863b43c1eba17c9146491be8efb44af4fbe7d46e",
+        "output_sha256": "b9a9bdcdd66c886b8908667fb607b0a784a4e5d858c213307698ebbfb62b6133",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -164,7 +164,7 @@
   "dedup": [
     {
       "file": ".github/workflows/ci.yml",
-      "line": 90,
+      "line": 88,
       "lanes_agreeing": [
         2
       ],
@@ -174,7 +174,7 @@
     },
     {
       "file": ".github/workflows/ci.yml",
-      "line": 101,
+      "line": 100,
       "lanes_agreeing": [
         2
       ],
@@ -184,7 +184,7 @@
     },
     {
       "file": "scripts/check_ci_fat_secrets_plumbed.sh",
-      "line": 86,
+      "line": 88,
       "lanes_agreeing": [
         2
       ],
@@ -209,7 +209,7 @@
         2
       ],
       "claims": [
-        "Excludes both evidence/pr-review/<pr> and docs/audits/quorum-*.json from the fingerprint input set."
+        "Excludes docs/audits/quorum-*.json from the fingerprint input set."
       ]
     }
   ],
@@ -271,7 +271,7 @@
         ".github/workflows/pr-review-quorum.yml",
         "scripts/check_ci_fat_secrets_plumbed.sh"
       ],
-      "paths": 10,
+      "paths": 14,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -291,10 +291,10 @@
           "bucket": "gemini",
           "budget": 86,
           "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
-          "window_start": 1790573368,
-          "window_calls": 17,
+          "window_start": null,
+          "window_calls": 0,
           "window_429": 0,
-          "hour_calls": 3,
+          "hour_calls": 0,
           "share": 17,
           "want": 2,
           "state": "open",
@@ -312,7 +312,7 @@
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 33494 bytes > 24576"
+    "skipped": "brief 58317 bytes > 24576"
   },
   "advisory_lane": {
     "state": "answered",
@@ -332,7 +332,7 @@
       "server_holds_gpu": true,
       "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
       "trace_lines": [
-        "1463624, 309 MiB"
+        "1463624, 311 MiB"
       ]
     },
     "apr": "0.70.0",
@@ -343,29 +343,29 @@
     "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
     "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
     "rc": 0,
-    "wall_s": 40,
-    "collected_s": 556,
-    "budget_s": 164,
-    "budget_basis": "ledger: 2 x p95 82 s over 62 gx10-cuda Verdict rows",
+    "wall_s": 42,
+    "collected_s": 1541,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 72 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 33494,
-      "sent_bytes": 33663,
+      "bytes": 58317,
+      "sent_bytes": 58486,
       "max_bytes": 196608
     },
     "trace": {
-      "input_sha256": "ca448696a7f3e3cfa412ae81dd26ec8bb57438e6e25c857d2864f27a92d04e11",
+      "input_sha256": "116aa270b1b9d4fd095d79bea8c8c9ef8688d1443b903ab365ff9c147d54ca00",
       "raw": "advisory.json"
     },
     "attempts": [
       {
         "host": "gx10",
         "ok": true,
-        "wall_s": 40,
+        "wall_s": 42,
         "used_gpu": true,
-        "ts": "2026-09-28T08:56:59.572Z",
-        "wall_ms": 40361,
-        "request_id": "01a0e73b-51b1-7d38-8bef-57e18f931eb5",
-        "load1": 5.14,
+        "ts": "2026-09-28T11:40:39.986Z",
+        "wall_ms": 41484,
+        "request_id": "01a0e7d1-2aaf-799d-8d35-591ba53da45e",
+        "load1": 1.49,
         "cold": false
       }
     ],
