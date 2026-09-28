@@ -1,0 +1,11 @@
+T-4 dry-run receipt, pv-v0.69.2 (peels to cd25f8bd6f), 2026-09-28, intel, cargo 1.93.0, git archive of the tag
+cmd: cargo publish --dry-run --allow-dirty -p aprender-contracts -p aprender-contracts-cli (allow-dirty: archive has no .git)
+    Packaged 249 files, 2.4MiB (542.5KiB compressed)
+    Packaged 104 files, 633.8KiB (151.2KiB compressed)
+   Uploading aprender-contracts v0.69.2 (crates/aprender-contracts)
+warning: aborting upload due to dry run
+   Uploading aprender-contracts-cli v0.69.2 (crates/aprender-contracts-cli)
+warning: aborting upload due to dry run
+RC=0
+clean-room run (dispatched): paiml/infra 36422691130
+b2-gpu run (dispatched): paiml/aprender 36422756872
