@@ -178,7 +178,11 @@ fn mut_ci_text() -> String {
     let root = mut_workspace_root();
     let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read ci.yml");
     let sections = std::fs::read_to_string(root.join("ci/sections.yml")).unwrap_or_default();
-    format!("{ci}\n{sections}")
+    // #4142/#4427: the `mutants` section calls this script; the `cargo mutants`
+    // flags (--timeout included) live here, not in the YAML.
+    let gate = std::fs::read_to_string(root.join("scripts/mutants_diff_gate.sh"))
+        .expect("read scripts/mutants_diff_gate.sh");
+    format!("{ci}\n{sections}\n{gate}")
 }
 
 /// MUT-05: CI mutation testing workflow exists
