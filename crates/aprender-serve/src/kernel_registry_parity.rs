@@ -233,6 +233,10 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
     m
 }
 
+/// Above any f32 accumulation error at these K (measured: 2e-7..1.3e-6) and below any 8-bit
+/// activation quantization (measured: 3.7e-3..5.6e-3), with an order of magnitude to each side.
+const F32_CEILING: f64 = 1e-4;
+
 /// Twice the measured error, rounded UP to one significant digit: a bound read off the
 /// measurement with a stated margin, never typed from memory.
 fn tolerance_from(measured: f64) -> f64 {
@@ -423,9 +427,12 @@ fn committed_parity_receipts_hold_on_this_host() {
         // serves something measurably coarser. (#4539: q4_k declared f32 and served Q8_K.)
         let fp32 = measure(kernel(id), w, true);
         match row.precision.as_str() {
+            // Both halves: the FP32 scope reaches only Q4_K, so "no coarser than the scope" alone
+            // would pass a Q8_0 kernel declared f32 (its scope run is quantized too).
             "f32" => assert!(
-                now.max_rel_err <= fp32.max_rel_err,
-                "{id}: precision=f32, yet the served path ({}) is coarser than FP32 ({})",
+                now.max_rel_err <= fp32.max_rel_err && now.max_rel_err < F32_CEILING,
+                "{id}: precision=f32, yet the served path ({}) is coarser than FP32 ({}) or \
+                 than {F32_CEILING}",
                 now.max_rel_err,
                 fp32.max_rel_err
             ),
