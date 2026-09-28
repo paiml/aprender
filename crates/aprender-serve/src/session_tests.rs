@@ -292,6 +292,22 @@ fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
         "a repeat penalty needs the logits"
     );
 }
+// #4445: `apr bench` repeats one prompt and must time a whole prefill each time.
+// An extending prompt would resume the held state; after forget_prefix it may not.
+#[test]
+fn forget_prefix_makes_an_extending_prompt_prefill_whole_again() {
+    let mut s = Session::new(Scripted::new(3, 100));
+    let t1 = s
+        .generate(&[7401, 7402], &greedy(1), &mut |_| true)
+        .expect("t1");
+    let mut p2 = t1.tokens.clone();
+    p2.extend([7403, 7404]);
+    s.forget_prefix();
+    assert_eq!(s.processed_len(), 0);
+    let t2 = s.generate(&p2, &greedy(1), &mut |_| true).expect("t2");
+    assert_eq!(t2.reused, 0, "resumed a prefix after forget_prefix");
+    assert_eq!(s.engine().calls.last(), Some(&(p2.len(), 0)));
+}
 
 // #4214 / #4274: a prompt that repeats, or re-renders, an earlier turn's history
 // resumes from the checkpoint the earlier turn left, not from position 0.
@@ -411,4 +427,18 @@ fn a_device_argmax_from_below_the_checkpoint_drops_it() {
         "position 0 was rewritten under the checkpoint"
     );
     assert_eq!(s.engine().inner.restores, 0);
+}
+
+// #4445 x #4214: `apr bench` on a checkpointing arch (qwen35) repeats the same
+// prompt. forget_prefix must drop the checkpoint too, or the repeat restores it
+// and the bench times a partial prefill.
+#[test]
+fn forget_prefix_drops_the_checkpoint_so_a_repeat_prefills_whole() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    let prompt = [7871, 7872, MARK, 7873];
+    s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
+    s.forget_prefix();
+    let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
+    assert_eq!(t2.reused, 0, "restored a checkpoint after forget_prefix");
+    assert_eq!(s.engine().restores, 0);
 }
