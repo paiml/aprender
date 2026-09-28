@@ -754,6 +754,7 @@ fn check_by_kind(
     }
 }
 
+#[cfg(not(feature = "schema-validation"))]
 fn check_structure(
     instance: &serde_json::Value,
     schema: &serde_json::Value,

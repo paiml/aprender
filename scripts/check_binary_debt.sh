@@ -121,10 +121,18 @@ ceil_legacy = c["ceilings"]["current"]["legacy_names"]
 top = load_toml(os.path.join(root, "Cargo.toml"))
 ver = (top.get("workspace", {}).get("package", {}).get("version")
        or top.get("package", {}).get("version") or "0.0.0")
-vkey = tuple(int(x) for x in ver.split("-")[0].split(".")[:3])
+def semver_key(v, what):
+    # MAJOR.MINOR.PATCH exactly: a 4th component is refused loudly, never dropped
+    parts = str(v).split("-")[0].split(".")
+    if len(parts) != 3 or not all(x.isdigit() for x in parts):
+        sys.exit("FAIL: %s %r is not MAJOR.MINOR.PATCH" % (what, v))
+    return tuple(int(x) for x in parts)
+
+
+vkey = semver_key(ver, "workspace version")
 bound = "current"
 for rel in c["ceilings"].get("releases", []):
-    rkey = tuple(int(x) for x in str(rel["release"]).split(".")[:3])
+    rkey = semver_key(rel["release"], "ceiling release")
     if rel.get("armed") is True and vkey >= rkey:
         if rel["binary_debt"] < ceil_debt or rel["legacy_names"] < ceil_legacy:
             bound = rel["release"]

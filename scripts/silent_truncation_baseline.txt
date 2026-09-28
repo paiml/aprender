@@ -57,7 +57,6 @@ display	crates/aprender-train/scripts/benchmark_cuda_training.py|0500258e|0	prin
 display	crates/aprender-train/scripts/benchmark_cuda_training.py|4a0c7150|0	print(f" Output preview: {output[:1000]}")
 display	crates/aprender-train/src/transformer/cuda_block.rs|4d37766d|0	eprintln!("[TRACE] uploaded ptr={:?} len={} copy_ok={verify_ok} nonzero={nz} verify[:5]={verify5:?}", buf.as_ptr(), buf.len());
 display	scripts/check_kind_labels_derived.sh|b81ad491|0	undecidable.append((r['id'], pid, [str(x)[:70] for x in (r.get('A') or ['-'])][:2]))
-display	scripts/check_pathonly_devdeps_unused_in_src.sh|fdfcf2f7|0	rows.append(f"{rel_m}|{alias}|{rel_s}:{n}:{stripped[:100]}")
 display	scripts/check_thresholds_in_matrix.sh|553c4ce1|0	"constant `%s`" % stripped[:96]))
 display	scripts/check_thresholds_in_matrix.sh|9acbe18d|0	"literal in `%s`" % stripped[:96]))
 display	scripts/check_verifier_pinning.sh|5196de0f|0	print("ROW FAIL bypass at line %d: %s" % (n, l[:80]))
@@ -134,4 +133,3 @@ numeric	scripts/reference_layer0.py|c8104aca|0	print(f"Q first 3: {q[:3].numpy()
 numeric	scripts/reference_layer0.py|cdb76739|0	print(f"Out proj first 3: {out_proj[:3].numpy().tolist()}")
 numeric	scripts/reference_layer0.py|e442df29|0	print(f"Norm weight first 5: {norm_weight[:5].tolist()}")
 numeric	scripts/reference_layer0.py|e8a6edf1|0	print(f"Layer RMSNorm first 3: {normed_np[:3].tolist()}")
-numeric	scripts/check_binary_debt.sh|e0128f2a|0	rkey = tuple(int(x) for x in str(rel["release"]).split(".")[:3])

@@ -182,6 +182,8 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
             printf 'none\tfold ledger (#4430); exact-match against the observed [[bin]] set, a row whose bin is gone FAILS (scripts/check_bin_names_aprender.sh)\n' ;;
         bin_renames.txt)
             printf 'none\tdeclared [[bin]] renames <old> <new> (#4430); read by the dogfood ledger gate to map comparand rows (scripts/lib/dogfood_coverage_gate.py)\n' ;;
+        feature_renames.txt)
+            printf 'none\tdeclared dogfood feature renames <bin>TAB<old>TAB<new> (#4502 ruling b); a stale <old> or missing <new> FAILS in scripts/lib/dogfood_coverage_gate.py\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
         # #4023. coverage-solo.txt EXCLUDES NOTHING: its tests still run and are still

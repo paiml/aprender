@@ -294,7 +294,7 @@ for dirpath, dirnames, filenames in os.walk(root):
                     if pat.search(line):
                         rel_m = os.path.relpath(manifest, root)
                         rel_s = os.path.relpath(path, root)
-                        rows.append(f"{rel_m}|{alias}|{rel_s}:{n}:{stripped[:100]}")
+                        rows.append(f"{rel_m}|{alias}|{rel_s}:{n}:{stripped}")
 if unread:
     # the fallback met a shape it does not parse: those manifests were NOT read, so the
     # scan is not a verdict. Fleet state (the runner lacks a full reader), never a pass.
