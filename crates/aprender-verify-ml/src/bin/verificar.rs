@@ -271,6 +271,16 @@ fn parse_language(s: &str) -> Language {
 }
 
 #[allow(clippy::too_many_lines, clippy::unwrap_used)]
+/// Print each line to stderr and exit 1 unless `ok`.
+fn exit_unless(ok: bool, lines: &[&str]) {
+    if !ok {
+        for l in lines {
+            eprintln!("{l}");
+        }
+        std::process::exit(1);
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -470,11 +480,13 @@ fn main() {
             use std::path::Path;
 
             let input_path = Path::new(&input);
-            if !input_path.is_dir() {
-                // A file here used to reach read_dir's expect() and panic (exit 101).
-                eprintln!("Error: Input directory '{input}' does not exist or is not a directory");
-                std::process::exit(1);
-            }
+            // A file here used to reach read_dir's expect() and panic (exit 101).
+            exit_unless(
+                input_path.is_dir(),
+                &[&format!(
+                    "Error: Input directory '{input}' does not exist or is not a directory"
+                )],
+            );
 
             let transpiler_list: Vec<&str> = transpilers.split(',').map(str::trim).collect();
             println!("Verification Pipeline");
@@ -554,10 +566,10 @@ fn main() {
             use indicatif::{ProgressBar, ProgressStyle};
 
             // A missing input used to "train" and write a model anyway, exit 0.
-            if !std::path::Path::new(&input).exists() {
-                eprintln!("Error: Training input '{input}' does not exist");
-                std::process::exit(1);
-            }
+            exit_unless(
+                std::path::Path::new(&input).exists(),
+                &[&format!("Error: Training input '{input}' does not exist")],
+            );
 
             println!("Model Training Pipeline");
             println!("=======================");
@@ -620,11 +632,13 @@ fn main() {
             println!();
 
             // Check if model exists
-            if !std::path::Path::new(&model).exists() {
-                eprintln!("Error: Model file '{model}' not found");
-                eprintln!("Run `aprender-verify train` first to create a model");
-                std::process::exit(1);
-            }
+            exit_unless(
+                std::path::Path::new(&model).exists(),
+                &[
+                    &format!("Error: Model file '{model}' not found"),
+                    "Run `aprender-verify train` first to create a model",
+                ],
+            );
 
             // Placeholder metrics
             let metrics = serde_json::json!({
