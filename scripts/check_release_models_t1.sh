@@ -31,6 +31,8 @@
 #                    `choom -n 1000`, and this wrapper takes NO flock -- the GPU lock is the
 #                    ladder's own, per apr call, and a second one here would deadlock it. No build
 #                    runs under a flock.
+#   cells-measured   both hosts' ladders run with `--cells`, so each receipt carries cells[] and
+#                    release-readiness-v1 has cells to grade (#3715; #3712 row B).
 # T-4, R7: rule_r7() is EXTRACTED from scripts/check_publish_preflight.sh and run on a tagged tree
 # with the judge stub and committed receipts -- cargo-free, so every decision can be mutated here.
 # (That the full gate CALLS rule_r7 is proved by that script's own --selftest rows r7_*, which need
@@ -52,6 +54,8 @@
 #   autopilot-no-die the autopilot `models` step no longer dies on NO-GO     -> red-cell
 #   no-choom         gx10's ladder runs without `choom -n 1000`              -> oom-victim
 #   wrapper-flock    lambda's ladder wrapped in `flock /tmp/apr-gpu.lock`    -> oom-victim
+#   no-cells-remote  gx10's ladder runs without `--cells`                    -> cells-measured
+#   no-cells-local   lambda's ladder runs without `--cells`                  -> cells-measured
 #   r7-no-version    the judge is called without --version <v>              -> r7-green
 #   r7-red-is-go     the judge's rc 1 read as ok                             -> r7-red
 #   r7-no-fail-lines the judge's FAIL lines dropped from the refusal         -> r7-missing
@@ -77,8 +81,8 @@ A_DISK='if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ];
 A_DIE='  [ $rc -eq 0 ] || die "T-1 model matrix NO-GO'
 A_RDIE='  [ $rc -eq 0 ] || die "T-1 release-readiness-v1'
 A_RNODR='  [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt'
-A_CHOOM_R='choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST'
-A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"'
+A_CHOOM_R='choom -n 1000 -- bash scripts/model_ladder.sh --cells --host $REMOTE_HOST'
+A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --cells --host "$LOCAL_HOST"'
 R_VER='    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?'
 R_RED='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \'
 # The FAIL-lines line also appears on the emergency-scope path (#4046 merge-back), so the
@@ -202,8 +206,9 @@ fixture() {
     # model_ladder.sh stub: measures by the apr in the target dir; FX_NO_RECEIPT_HOST / FX_RED_HOST
     cat > "$r/scripts/model_ladder.sh" <<'STUB'
 #!/usr/bin/env bash
-while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --out) o=$2; shift 2 ;; *) shift ;; esac; done
+c=0; while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --out) o=$2; shift 2 ;; --cells) c=1; shift ;; *) shift ;; esac; done
 printf 'ladder host=%s oom=%s flock=%s\n' "$h" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
+printf 'cells host=%s cells=%s\n' "$h" "$c" >> "$FX_LOG"
 [ "${FX_NO_RECEIPT_HOST:-}" = "$h" ] && { echo "fixture: measured nothing on $h"; exit 2; }
 apr="${CARGO_TARGET_DIR:-$PWD/target}/release/apr"
 v=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
@@ -324,6 +329,20 @@ oom_victim() {
     return 0
 }
 
+# cells (#3715): each host's ladder runs with --cells, so the receipt carries cells[] for readiness to grade.
+# Without it every cell is missing: 1008 of the 1101 violations on the 0.69.1 receipts.
+cells_measured() {
+    local n="cells-$1" d; d="$TMP/cells-$1"
+    models "$n" "$2" "$3" || return 2
+    [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(tail -n 1 "$d/ap/STATUS" 2>/dev/null)"; return 1; }
+    local h
+    for h in lambda gx10; do
+        grep -qx "cells host=$h cells=1" "$d/wrap.log" \
+            || { printf '%s ladder ran without --cells: %s\n' "$h" "$(grep "^cells host=$h" "$d/wrap.log" | tr '\n' ' ')"; return 1; }
+    done
+    return 0
+}
+
 # ---- readiness (#3715): release-readiness-v1 at T-1, its own step after models -------------------
 r_goes() { # TAG AUTOPILOT MODELS_T1 WORD LINE ENV... -> 0 when the step continued and said READINESS WORD
     local n="$1" d="$TMP/$1" word=$4 line=$5 a=$2 m=$3 mc; shift 5
@@ -352,7 +371,7 @@ r_no_dr()   { r_stops "rnodr-$1" "$2" "$3" "T-1 readiness: no dogfood receipt" F
 # ---- the rows ---------------------------------------------------------------------------------
 for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
-            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim"; do
+            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim" "cells-measured cells_measured"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
@@ -429,8 +448,10 @@ mutant no-disk-check    "$MODELS" "$A_DISK" 'if false; then' disk
 mutant autopilot-no-die "$AUTOPILOT" "$A_DIE" '  [ $rc -eq $rc ] || die "T-1 model matrix NO-GO' red_cell autopilot
 mutant readiness-no-die  "$AUTOPILOT" "$A_RDIE" '  [ $rc -eq $rc ] || die "T-1 release-readiness-v1' r_fail autopilot
 mutant readiness-no-dr   "$AUTOPILOT" "$A_RNODR" '  true || die "T-1 readiness: no dogfood receipt' r_no_dr autopilot
-mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST' oom_victim
-mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' oom_victim
+mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --cells --host $REMOTE_HOST' oom_victim
+mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --cells --host "$LOCAL_HOST"' oom_victim
+mutant no-cells-remote  "$MODELS" "$A_CHOOM_R" 'choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST' cells_measured
+mutant no-cells-local   "$MODELS" "$A_CHOOM_L" '    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' cells_measured
 mutant r7-no-version    "$PREFLIGHT" "$R_VER" '    out="$(cd "$root" && bash "$judge" 2>&1)"; rc=$?' r7_green preflight
 mutant r7-red-is-go     "$PREFLIGHT" "$R_RED" '        *) return 0; printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \' r7_red preflight
 mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" "$R_LINES_HEAD"$'\n''               "" ;;' r7_missing preflight
@@ -438,6 +459,6 @@ mutant r7-decline-is-go "$PREFLIGHT" "$R_DECLINE" '        2) return 0; echo "FA
 mutant r7-no-judge-ok   "$PREFLIGHT" "$R_NOJUDGE" '    if false; then' r7_nojudge preflight
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 37 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 37 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 40 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 40 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"

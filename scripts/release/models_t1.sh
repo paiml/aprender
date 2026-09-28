@@ -16,7 +16,10 @@
 #                first. NEVER ~/src/aprender/target: a shared cache under an old checkout is how
 #                a stale instrument agrees with itself (#3600).
 #   2. prove the binary before measuring: `apr --version` must read "apr <v> (<release sha9>)"
-#   3. `choom -n 1000 -- bash scripts/model_ladder.sh --host <id> --out <dir>`: the fleet GPU rule
+#   3. `choom -n 1000 -- bash scripts/model_ladder.sh --cells --host <id> --out <dir>`. `--cells` makes the
+#      receipt carry `cells[]`, one row per owed (model, verb, thinking, context rung) cell (#3712 row B).
+#      Without it no release receipt names a cell, and release-readiness-v1 grades every cell missing:
+#      1008 of the 1101 violations measured on 0.69.1 (#3715). It costs hours of GPU per host. The fleet GPU rule
 #      (cop, 2026-09-21, after gx10's 15:56Z global OOM killed 18 CI containers) makes THIS run,
 #      never the CI pool, the OOM victim; oom_score_adj is inherited across fork, so every apr the
 #      ladder starts is covered. The GPU LOCK is model_ladder.sh's own, per apr call (#3712 row B):
@@ -60,7 +63,7 @@ local_leg() {
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
     [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
-    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out "$out"
+    choom -n 1000 -- bash scripts/model_ladder.sh --cells --host "$LOCAL_HOST" --out "$out"
 }
 
 remote_leg() {
@@ -91,7 +94,7 @@ cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/bui
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
 [ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
-choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --out "\$dir/out"; lrc=\$?
+choom -n 1000 -- bash scripts/model_ladder.sh --cells --host $REMOTE_HOST --out "\$dir/out"; lrc=\$?
 if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then
   echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$REMOTE_HOST.json"; echo "---END RECEIPT---"
 fi
