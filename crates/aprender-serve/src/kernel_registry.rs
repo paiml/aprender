@@ -706,9 +706,8 @@ mod tests {
             "source_sha256": "a", "row_sha256": "b", "toolchain": "1.93.0",
             "driver": "none", "device": "x86_64+avx2", "oracle": "in_tree"}});
         assert_eq!(InputSet::from_receipt(&rc), Ok(base));
-        let err = InputSet::from_receipt(&serde_json::json!({"input_set": {}}))
-            .err()
-            .expect("refused");
+        let err =
+            InputSet::from_receipt(&serde_json::json!({"input_set": {}})).expect_err("refused");
         assert!(err.contains("source_sha256"), "{err}");
     }
 
