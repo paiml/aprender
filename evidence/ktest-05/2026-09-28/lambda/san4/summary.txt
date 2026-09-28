@@ -1,0 +1,4 @@
+padzero rc=0 ========= ERROR SUMMARY: 0 errors skipped= strides=0
+nofp8 rc=0 ========= ERROR SUMMARY: 0 errors skipped= strides=0
+padzero_only rc=0 ========= ERROR SUMMARY: 257 errors skipped=68384 errors were skipped strides=256
+skipwarm_only rc=0 ========= ERROR SUMMARY: 12336 errors skipped=1417728 errors were skipped strides=12288
