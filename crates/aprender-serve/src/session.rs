@@ -196,6 +196,22 @@ impl<F: ArchForward> Session<F> {
         self.processed.len()
     }
 
+    /// Drop every prefix the session could resume from — the held positions
+    /// (and, where the session has one, the #4214 checkpoint) — so the next turn prefills its whole prompt
+    /// (`Turn::reused == 0`). `apr bench` needs this: it times the same prompt
+    /// repeatedly, and a resumed prefix would report decode as prefill (#4445).
+    pub fn forget_prefix(&mut self) {
+        // Exhaustive on purpose: a field added to Session (the car's #4214
+        // `checkpoint` is one) fails to compile here until it is reset too, so
+        // no merge can leave a resumable prefix behind silently.
+        let Self {
+            forward: _,
+            processed,
+            id: _,
+        } = self;
+        processed.clear();
+    }
+
     /// `tokens` strictly extends what the state holds.
     fn extends(&self, tokens: &[u32]) -> bool {
         !self.processed.is_empty()
