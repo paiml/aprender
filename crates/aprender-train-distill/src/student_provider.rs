@@ -145,6 +145,19 @@ pub trait StudentLogitsProvider {
     fn max_batch(&self) -> Option<usize> {
         None
     }
+
+    /// Take the configured learning rate before step 0.
+    ///
+    /// distill-batch-honesty-v1 (FALSIFY-DBH-006): the pipeline calls this
+    /// with `training.learning_rate` before the first step. It is required,
+    /// not defaulted, so a backend cannot silently keep its own rate: the
+    /// CUDA student trained at `TransformerTrainConfig::new`'s 1e-3 while
+    /// the config and receipts said 1e-4.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend cannot train at `lr`.
+    fn set_learning_rate(&mut self, lr: f32) -> Result<()>;
 }
 
 /// Fixture student for unit testing the orchestration layer.
@@ -201,6 +214,11 @@ impl StudentLogitsProvider for FixtureStudent {
             .iter()
             .map(|ids| (0..ids.len().max(1)).map(|_| self.logits.clone()).collect())
             .collect())
+    }
+
+    fn set_learning_rate(&mut self, lr: f32) -> Result<()> {
+        self.learning_rate = lr;
+        Ok(())
     }
 
     fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()> {
@@ -388,6 +406,11 @@ mod cuda_backend {
 
         fn max_batch(&self) -> Option<usize> {
             Some(1)
+        }
+
+        fn set_learning_rate(&mut self, lr: f32) -> Result<()> {
+            self.trainer.set_lr(lr);
+            Ok(())
         }
 
         /// PMAT-699 P0 fix: pull trained weights from GPU and write them
