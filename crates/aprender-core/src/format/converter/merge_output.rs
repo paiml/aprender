@@ -4,7 +4,8 @@
 // produced metadata-free F32 SafeTensors (first bytes `23 eb 00 00`) that
 // `apr inspect` then read as an inferred llama. MOF-004: an APR output keeps a
 // tensor's half dtype (BF16/F16) when every input stores it so; a merge no longer
-// doubles a bf16 model to F32. SafeTensors output is still F32.
+// doubles a bf16 model to F32 unless `MergeOptions::widen` (`apr merge --widen`)
+// asks for it. SafeTensors output is still F32.
 
 /// True when the output path asks for the APR container (`.apr`, any case).
 fn merge_output_is_apr(path: &Path) -> bool {
@@ -98,6 +99,7 @@ fn save_merged_model(
     strategy: MergeStrategy,
     inputs: &[&Path],
     dtype_sources: &[&Path],
+    widen: bool,
 ) -> Result<()> {
     if !merge_output_is_apr(output_path) {
         return save_safetensors(output_path, merged).map_err(|e| AprenderError::FormatError {
@@ -121,7 +123,11 @@ fn save_merged_model(
                 .collect(),
         ),
     );
-    let dtypes = merge_output_dtypes(dtype_sources)?;
+    let dtypes = if widen {
+        BTreeMap::new()
+    } else {
+        merge_output_dtypes(dtype_sources)?
+    };
     let mut writer = AprV2Writer::new(metadata);
     for (name, (data, shape)) in merged {
         match dtypes.get(name) {

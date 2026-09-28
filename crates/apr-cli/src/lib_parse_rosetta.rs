@@ -351,6 +351,7 @@
             seed: 42,
             plan: false,
                 force: true,
+                widen: false,
             };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths.len(), 3);

@@ -187,6 +187,32 @@ fn falsify_mof_004_bf16_inputs_give_bf16_output() {
     }
 }
 
+/// FALSIFY-MOF-004 "unless asked to widen": the same bf16/f16 inputs with
+/// `widen` give an F32 output, values exact. Ignoring the flag turns this RED.
+#[test]
+fn falsify_mof_004_widen_writes_f32() {
+    for dtype in [TensorDType::BF16, TensorDType::F16] {
+        let dir = tempdir().expect("tempdir");
+        let (a, b, out) = (dir.path().join("a.apr"), dir.path().join("b.apr"), dir.path().join("m.apr"));
+        let one = write_apr_dtype(&a, dtype, 1.0);
+        write_apr_dtype(&b, dtype, 3.0);
+        let options = MergeOptions {
+            widen: true,
+            ..average()
+        };
+
+        apr_merge(&[a.clone(), b], out.clone(), options).expect("merge");
+
+        let dtypes = input_tensor_dtypes(&out).expect("read output index");
+        assert_eq!(dtypes.values().copied().collect::<Vec<_>>(), vec![TensorDType::F32], "{dtype:?} in, --widen");
+        let (in_len, out_len) = (fs::metadata(&a).expect("a").len(), fs::metadata(&out).expect("out").len());
+        assert!(out_len as f64 > in_len as f64 * 1.9, "{dtype:?}: output {out_len} B vs input {in_len} B — not widened?");
+        let merged = load_model_tensors(&out).expect("load merged");
+        let two: Vec<f32> = one.iter().map(|v| 2.0 * v).collect();
+        assert_eq!(merged.values().next().expect("one tensor").0, two);
+    }
+}
+
 #[test]
 fn mixed_input_dtypes_widen_to_f32() {
     let dir = tempdir().expect("tempdir");
