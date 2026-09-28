@@ -1,11 +1,20 @@
 {
-  "build_identity": "2b4af43da1bb4e195d7ee5036112f0072107b22e",
+  "build_identity": "090942910d",
   "fp32_activations": {
     "max_abs_err": 0.00006229749033082044,
     "max_rel_err": 1.939624445869695e-7
   },
   "host": "mac-server",
   "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "in_tree_dequant_f64",
+    "row_sha256": "6fa760d08f8a97ac3e6e74e5e836ac340ef117ddd89d3d4edfefc6d224c62171",
+    "source_sha256": "20899044beaa9fe4d4ff2986f02cf76b6a61393a9526fca95468168600076b04",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "dbf9209337349a7665d6f79bff6c0f75ccb5e308fe1356f36cc93552d430162e",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -18,6 +27,7 @@
   "kernel_id": "cpu.matvec.q6_k",
   "oracle": "in_tree_dequant_f64",
   "oracle_independent": false,
+  "quantized_activation_oracle": null,
   "registry_precision": "f32",
   "schema": "kernel-parity-receipt/v1",
   "served": {
@@ -26,7 +36,7 @@
   },
   "source_fn": "fused_q6k_parallel_matvec",
   "tolerance_rel": 4e-7,
-  "ts": "2026-09-28T07:10:11Z",
+  "ts": "2026-09-28T11:18:08Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,

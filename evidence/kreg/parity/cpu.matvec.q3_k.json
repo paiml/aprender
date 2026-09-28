@@ -1,7 +1,16 @@
 {
-  "build_identity": "08f1b37d465850e89813a20ddf6129a71855dbf9",
+  "build_identity": "090942910d",
   "host": "mac-server",
   "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/Q3_K@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@ref.bin:b1d884cc16af5f390b1124c2a6d62e5aea07148b3102e9d7eaa2a2b06058ce60,weights.bin:b3ba87bdbb4b1c6f51f1b0a2b7f5b9cca994aa66c341884fb4c62457f27c75cc,x.bin:8f512591a7f20764589caff6875fc94d8f9c444e6b3e1e68d5af0811df7187c4",
+    "row_sha256": "7f26841cc82152e7e10b4079b595d5cc7c03c9fa8a39a5410b667d6d84573771",
+    "source_sha256": "5ee9e074fbac29de6cdbccc38021302057f94477d541a42f8976af231b87ea58",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "f9fa35725a793813bc977b243ce280f2dc58cf423a938e7bdd9e5f4dea4b0e6f",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -31,7 +40,7 @@
   },
   "source_fn": "dequantize_q3_k",
   "tolerance_rel": 2e-6,
-  "ts": "2026-09-28T07:47:33Z",
+  "ts": "2026-09-28T11:18:14Z",
   "workload": {
     "in_dim": 1024,
     "out_dim": 32,
