@@ -84,6 +84,8 @@ REASSIGN="docs/audits/cluster_reassignments.yaml"
 # Declared bin renames (#4430): the comparand's rows for <old> are compared as
 # rows of <new>. They must still exist; an unapplied rename is RED.
 RENAMES="scripts/bin_renames.txt"
+# Declared feature renames: `<bin>\t<old feature>\t<new feature>`. Same rules, per row.
+FRENAMES="scripts/feature_renames.txt"
 SKILL=".claude/skills/apr-dogfood/SKILL.md"
 BASE_REF="${DOGFOOD_BASE_REF:-origin/main}"
 
@@ -359,7 +361,7 @@ run_gate() {
   done
   python3 "$root/$GATE_PY" --base "$basecsv" --head "$root/$LEDGER" \
     --the44 "$root/$THE44" --reassignments "$root/$REASSIGN" \
-    --renames "$root/$RENAMES" --comparand-source "$mode" "${pairargs[@]}"
+    --renames "$root/$RENAMES" --feature-renames "$root/$FRENAMES" --comparand-source "$mode" "${pairargs[@]}"
   rc=$?
   rm -f "$basecsv"
 
@@ -821,6 +823,31 @@ if [ "${1:-}" = "--self-test" ]; then
   git -C "$TD" checkout -q -- "$LEDGER"
   rm -f "${TD:?}/${RENAMES:?}"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M12 (G2.2 feature renames): rewording one feature drops its comparand row --
+  #     RED unless DECLARED; a declaration the ledger does not follow, or one whose
+  #     target is not in the ledger, is RED too.
+  printf 'M12 G2.2 feature renames — reword one demo feature in the ledger\n'
+  local_old="$(awk -F, 'NR>1 && $1=="demo" && $3+0 > 4 {print $2; exit}' "$TD/$LEDGER")"
+  if [ -z "$local_old" ]; then
+    printf '  M12 FAIL: no demo row to reword -- the case cannot run\n' >&2; FAILED=1
+  else
+    awk -F, -v OFS=, -v o="$local_old" 'NR>1 && $1=="demo" && $2==o && !d {$2=o " (reworded)"; d=1} {print}' \
+      "$TD/$LEDGER" > "$TD/$LEDGER.m12" && mv -- "$TD/$LEDGER.m12" "$TD/$LEDGER"
+    selftest_run "$TD" "feature reworded, rename undeclared" "RED" || FAILED=1
+    printf 'demo\t%s\t%s (reworded)\n' "$local_old" "$local_old" > "$TD/$FRENAMES"
+    selftest_run "$TD" "feature reworded, rename declared" "GREEN" || FAILED=1
+    git -C "$TD" checkout -q -- "$LEDGER"
+    selftest_run "$TD" "feature rename declared, ledger not reworded" "RED" || FAILED=1
+    printf 'demo\t%s\t%s (nosuch)\n' "$local_old" "$local_old" > "$TD/$FRENAMES"
+    awk -F, -v OFS=, -v o="$local_old" 'NR>1 && $1=="demo" && $2==o && !d {$2=o " (reworded)"; d=1} {print}' \
+      "$TD/$LEDGER" > "$TD/$LEDGER.m12" && mv -- "$TD/$LEDGER.m12" "$TD/$LEDGER"
+    selftest_run "$TD" "feature rename to a text not in the ledger" "RED" || FAILED=1
+    git -C "$TD" checkout -q -- "$LEDGER"
+    rm -f "${TD:?}/${FRENAMES:?}"
+    selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  fi
   printf '\n'
 
   if [ "$FAILED" -eq 0 ]; then

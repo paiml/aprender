@@ -183,6 +183,56 @@ def apply_renames(base, head, renames, findings):
     return out, True
 
 
+def read_feature_renames(path):
+    """{(bin, old feature): new feature} from TAB-separated `<bin>\t<old>\t<new>` rows
+    (scripts/feature_renames.txt). Features hold spaces, so TABs separate; a comment
+    is a whole line starting with `#`."""
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            line = line.rstrip("\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            f = line.split("\t")
+            if len(f) != 3 or not all(x.strip() for x in f):
+                raise Fail(f"{path}:{n}: want `<bin>\\t<old feature>\\t<new feature>`, got {f}")
+            out[(f[0].strip(), f[1].strip())] = f[2].strip()
+    return out
+
+
+def apply_feature_renames(base, head, renames, findings):
+    """A declared FEATURE rename carries one comparand row to its new feature text,
+    under the same two rules as a bin rename: the old text still in the working
+    ledger is an unapplied rename (it would double-count), and a new text the
+    working ledger lacks would launder a deletion. Both RED."""
+    head_keys = {key(r) for r in head}
+    stale = sorted(f"{b}: {o}" for (b, o) in renames if (b, o) in head_keys)
+    nowhere = sorted(f"{b}: {o} -> {n}" for (b, o), n in renames.items()
+                     if (b, n) not in head_keys)
+    if stale:
+        findings.append("G2.2 feature renames FAIL: declared feature rename(s) not "
+                        "applied (old text still in the working ledger): " + ", ".join(stale))
+    if nowhere:
+        findings.append("G2.2 feature renames FAIL: declared rename target(s) not in "
+                        "the working ledger: " + ", ".join(nowhere))
+    if stale or nowhere:
+        return base, False
+    out, n = [], 0
+    for r in base:
+        new = renames.get(key(r))
+        if new is not None:
+            r = dict(r)
+            r["feature"] = new
+            n += 1
+        out.append(r)
+    if renames:
+        print(f"  G2.2 feature renames {n} comparand row(s) carried across "
+              f"{len(renames)} declared feature rename(s)")
+    return out, True
+
+
 def broken_and_ungated(rows):
     return {key(r) for r in rows if quality(r) <= 4 and not covered(r)}
 
@@ -827,6 +877,9 @@ def run(args):
     rename_findings = []
     base, renames_ok = apply_renames(base, head, read_renames(args.renames),
                                      rename_findings)
+    base, frenames_ok = apply_feature_renames(
+        base, head, read_feature_renames(args.feature_renames), rename_findings)
+    renames_ok = renames_ok and frenames_ok
     declared = parse_reassignments(args.reassignments)
     release = bool(os.environ.get("DOGFOOD_RELEASE"))
 
@@ -872,6 +925,8 @@ def main(argv=None):
                    help="declared cluster reassignment log (yaml)")
     p.add_argument("--renames", default=None,
                    help="declared bin renames, `<old> <new>` per line (#4430)")
+    p.add_argument("--feature-renames", default=None,
+                   help="declared feature renames, `<bin>\\t<old>\\t<new>` per line")
     p.add_argument("--comparand-source", default=None,
                    help="ARMED|BOOTSTRAP -- how the shell wrapper resolved the "
                         "comparand, so the banner can name the path that ran")
