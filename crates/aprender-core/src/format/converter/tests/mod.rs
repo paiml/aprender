@@ -30,4 +30,5 @@ mod coverage_gap_quantized_save;
 /// dogfooding the crates.io 0.63.0 binary.
 mod dogfood_2392;
 /// qwen35-format-roundtrip-v1 QFR-003: export writes the source config.json.
+mod qfr_001_002_value_roundtrip;
 mod qfr_003_config_roundtrip;

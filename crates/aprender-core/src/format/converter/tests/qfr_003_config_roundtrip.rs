@@ -10,7 +10,7 @@ use std::fs;
 
 /// A source config whose identity the tensors cannot reveal: the class,
 /// family and a Qwen3.5-only key.
-fn source_config() -> serde_json::Value {
+pub(super) fn source_config() -> serde_json::Value {
     serde_json::json!({
         "architectures": ["Qwen3_5ForCausalLM"],
         "model_type": "qwen3_5",
@@ -26,7 +26,7 @@ fn source_config() -> serde_json::Value {
     })
 }
 
-fn import_hf_dir(dir: &Path, config: Option<&serde_json::Value>) -> PathBuf {
+pub(super) fn import_hf_dir(dir: &Path, config: Option<&serde_json::Value>) -> PathBuf {
     let st = dir.join("model.safetensors");
     fs::write(&st, build_pygmy_safetensors()).expect("write safetensors");
     if let Some(cfg) = config {
