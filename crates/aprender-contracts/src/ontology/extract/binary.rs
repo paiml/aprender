@@ -324,6 +324,24 @@ pub fn bins_of(dir: &Path, manifest: &str) -> Vec<(String, String)> {
     let Some(package) = manifest_names(manifest).package else {
         return Vec::new();
     };
+    let (mut names, paths, autobins) = declared_bins(manifest);
+    if autobins {
+        // cargo skips a discovered file a declared [[bin]] already uses
+        if dir.join("src/main.rs").is_file() && !paths.contains("src/main.rs") {
+            names.insert(package.clone());
+        }
+        if let Ok(rd) = std::fs::read_dir(dir.join("src/bin")) {
+            names.extend(
+                rd.flatten()
+                    .filter_map(|e| discovered_bin(&e.path(), &paths)),
+            );
+        }
+    }
+    names.into_iter().map(|n| (package.clone(), n)).collect()
+}
+
+/// The `[[bin]]` names and paths one manifest declares, and its `autobins` setting.
+fn declared_bins(manifest: &str) -> (BTreeSet<String>, BTreeSet<String>, bool) {
     let mut names = BTreeSet::new();
     let mut paths = BTreeSet::new();
     let mut autobins = true;
@@ -349,31 +367,24 @@ pub fn bins_of(dir: &Path, manifest: &str) -> Vec<(String, String)> {
             _ => {}
         }
     }
-    if autobins {
-        // cargo skips a discovered file a declared [[bin]] already uses
-        if dir.join("src/main.rs").is_file() && !paths.contains("src/main.rs") {
-            names.insert(package.clone());
-        }
-        if let Ok(rd) = std::fs::read_dir(dir.join("src/bin")) {
-            for p in rd.flatten().map(|e| e.path()) {
-                let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
-                let file = if p.is_dir() {
-                    format!("src/bin/{stem}/main.rs")
-                } else {
-                    format!("src/bin/{stem}.rs")
-                };
-                let is_target = if p.is_dir() {
-                    p.join("main.rs").is_file()
-                } else {
-                    p.extension().is_some_and(|e| e == "rs")
-                } && !paths.contains(&file);
-                if is_target && !stem.is_empty() {
-                    names.insert(stem.to_string());
-                }
-            }
-        }
-    }
-    names.into_iter().map(|n| (package.clone(), n)).collect()
+    (names, paths, autobins)
+}
+
+/// The bin cargo auto-discovers at `src/bin/<x>.rs` or `src/bin/<x>/main.rs`, unless a `[[bin]]` uses that file.
+fn discovered_bin(p: &Path, declared_paths: &BTreeSet<String>) -> Option<String> {
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+    let (file, is_target) = if p.is_dir() {
+        (
+            format!("src/bin/{stem}/main.rs"),
+            p.join("main.rs").is_file(),
+        )
+    } else {
+        (
+            format!("src/bin/{stem}.rs"),
+            p.extension().is_some_and(|e| e == "rs"),
+        )
+    };
+    (is_target && !stem.is_empty() && !declared_paths.contains(&file)).then(|| stem.to_string())
 }
 
 /// The bin targets of every member of the workspace under `root`, or `None` when `root` is not a workspace root.
