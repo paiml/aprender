@@ -60,6 +60,10 @@
 #   PR_REVIEW_SIGNING_PASSWORD passphrase, or empty for a `-W` (unencrypted) key
 #   PR_REVIEW_PUBKEY           public key to verify against (default .github/pr-review.pub)
 #   PR_REVIEW_GIT_DIR          repository the patch-id is computed in (default: this one)
+#   PR_REVIEW_SIGN_BIND        optional "pr=<N> head=<sha> pid=<patch-id>", appended to the
+#                              TRUSTED comment (covered by the global signature). The CI signer
+#                              sets it, and Arm 4 requires head= to be the PR head it judges
+#                              and pid= the diff it computes (B1, #4512)
 #
 # EXIT
 #   0  receipt.intoto.jsonl.minisig exists and VERIFIES under the public key
@@ -157,7 +161,7 @@ sign_receipt() {
     # an empty line, so both shapes take the same path and neither can hang a CI job.
     printf '%s\n' "${PR_REVIEW_SIGNING_PASSWORD:-}" \
       | minisign -S -s "$keyfile" -m "$rcpt" \
-                 -t "PR-REVIEW-SKILL-002 v2 §4.3 receipt" \
+                 -t "PR-REVIEW-SKILL-002 v2 §4.3 receipt${PR_REVIEW_SIGN_BIND:+ $PR_REVIEW_SIGN_BIND}" \
                  -c "signed by the CI signer" >/dev/null 2>&1
     rc=${PIPESTATUS[1]}
     [ "$rc" -eq 0 ] || fail "minisign -S failed (rc $rc); the key may be passphrase-protected with PR_REVIEW_SIGNING_PASSWORD unset"

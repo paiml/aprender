@@ -22151,6 +22151,28 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4510
+  github_issue: 4510
+  item_type: task
+  title: 'ci.yml plumbs the receipt signing secret under a truncated name; a guard ties section secrets to their plumbing'
+  status: in_progress
+  priority: high
+  assigned_to: infra-83
+  created: 2026-09-27 07:00:00+00:00
+  updated: '2026-09-27T07:00:00Z'
+  spec: null
+  acceptance_criteria:
+  - '.github/workflows/ci.yml plumbs FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64, the name ci/sections.yml reads'
+  - 'scripts/check_ci_fat_secrets_plumbed.sh is GREEN on this tree, RED with the #4441 line restored, and its self-test carries that line byte for byte'
+  - 'the pr-review-sign step on a PR with an unsigned receipt signs it instead of reporting an empty key'
+  - 'the x86-main job of .github/workflows/ci.yml runs scripts/check_ci_fat_secrets_plumbed.sh --self-test and then the guard on the tree, before the sections run, so a future truncation fails ci / gate'
+  - 'Operator, verbatim (2026-09-28, via the cop): "Fix inside #4512 (same scope: guard/plumbing): exclude the receipt path(s) from the fingerprint input set ... add a test: re-running the stamp on an unchanged diff gives the same fingerprint (idempotent)." scripts/lib/pr_review_patch_id.sh excludes evidence/pr-review/<pr> and docs/audits/quorum-*.json; scripts/check_pr_review_arm4.sh --self-test proves head = +receipt = +quorum = re-stamp, and that a control file (docs/audits/other.json) still moves the fingerprint'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found on #4431 run 36297914139 (x86-main pr-review-sign). Regressed in #4441 (a016cee94).'
 - id: PMAT-4514
   github_issue: 4514
   item_type: task

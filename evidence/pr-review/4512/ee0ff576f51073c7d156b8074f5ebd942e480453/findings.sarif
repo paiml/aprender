@@ -1,0 +1,192 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "pmat",
+        "status": "consulted-found-nothing",
+        "index_commit": "ee0ff576f51073c7d156b8074f5ebd942e480453",
+        "index_is_ancestor": true,
+        "index_worktree_dirty": false,
+        "complexity_delta": [],
+        "tdg_delta": [],
+        "satd_introduced": [],
+        "duplication_hits": 2,
+        "duplication_note": "2 coincidental lexical name-collision hits on the common shell function name 'check_pair' against an unrelated file (evidence/parity .../compare_raw_logits.py); not a clone of the PR's new logic."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "1.0.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "mutation",
+        "status": "consulted-found-nothing",
+        "scope": "guard-touching",
+        "attempted": 3,
+        "killed": 3,
+        "survivors": []
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "informationUri": "n/a",
+          "rules": [
+            {
+              "id": "ci-workflow-plumbing-fix",
+              "shortDescription": {
+                "text": "The CI workflow .github/workflows/ci.yml correctly fixes the FAT_SECRET truncation bug by using FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64."
+              }
+            },
+            {
+              "id": "fat-secrets-guard-tree",
+              "shortDescription": {
+                "text": "The script scripts/check_ci_fat_secrets_plumbed.sh successfully verifies that the secrets read by ci/sections.yml are properly plumbed in .github/workflows/ci.yml on the current tree."
+              }
+            },
+            {
+              "id": "fat-secrets-guard-selftest",
+              "shortDescription": {
+                "text": "The check_ci_fat_secrets_plumbed.sh --self-test executes correctly and validates its ability to catch the exact #4441 defect (truncated name)."
+              }
+            },
+            {
+              "id": "patch-id-quorum-exclusion",
+              "shortDescription": {
+                "text": "The pr_review_patch_id.sh script now excludes docs/audits/quorum-*.json from diffs, making the review fingerprint idempotent. Validated by the check_pr_review_arm4.sh --self-test execution."
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "ci-workflow-plumbing-fix",
+          "level": "note",
+          "message": {
+            "text": "The CI workflow .github/workflows/ci.yml correctly fixes the FAT_SECRET truncation bug by using FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "asserted",
+            "consultation": "antigravity",
+            "failure_scenario": "If FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (truncated) ships instead of _B64, the receipt signer reads an empty key and every PR-review receipt goes unsigned/unverifiable fleet-wide."
+          }
+        },
+        {
+          "ruleId": "fat-secrets-guard-tree",
+          "level": "note",
+          "message": {
+            "text": "The script scripts/check_ci_fat_secrets_plumbed.sh successfully verifies that the secrets read by ci/sections.yml are properly plumbed in .github/workflows/ci.yml on the current tree."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ci_fat_secrets_plumbed.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "measured",
+            "consultation": "antigravity",
+            "failure_scenario": "If this guard were absent or wrong, a future truncated/renamed FAT_SECRET_ plumbing line would again silently expand to empty on both GitHub's and fat_driver's sides with no CI signal."
+          }
+        },
+        {
+          "ruleId": "fat-secrets-guard-selftest",
+          "level": "note",
+          "message": {
+            "text": "The check_ci_fat_secrets_plumbed.sh --self-test executes correctly and validates its ability to catch the exact #4441 defect (truncated name)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ci_fat_secrets_plumbed.sh"
+                },
+                "region": {
+                  "startLine": 65
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "measured",
+            "consultation": "antigravity",
+            "failure_scenario": "If the guard's own detection logic regressed, it could report PASS on a workflow that reintroduces the #4441 truncation, defeating the guard's purpose."
+          }
+        },
+        {
+          "ruleId": "patch-id-quorum-exclusion",
+          "level": "note",
+          "message": {
+            "text": "The pr_review_patch_id.sh script now excludes docs/audits/quorum-*.json from diffs, making the review fingerprint idempotent. Validated by the check_pr_review_arm4.sh --self-test execution."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_arm4.sh"
+                },
+                "region": {
+                  "startLine": 236
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "grounding": "measured",
+            "consultation": "antigravity",
+            "failure_scenario": "If the quorum verdict file were not excluded from the patch-id diff, committing docs/audits/quorum-*.json after the receipt would change the fingerprint and invalidate an already-signed receipt."
+          }
+        }
+      ],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted-found-something",
+        "model_id": "gemini-3.1-pro-high",
+        "reviewed_by_primary": false,
+        "precision_class": "advisory"
+      }
+    }
+  ]
+}
