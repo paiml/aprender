@@ -9,6 +9,7 @@
 //! - DARE: Drop And Rescale (requires base model)
 
 use crate::error::{AprenderError, Result};
+use crate::format::v2::{AprV2Metadata, AprV2Writer};
 use crate::serialization::safetensors::save_safetensors;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -481,3 +482,4 @@ fn vector_norm(v: &[f32]) -> f64 {
 
 include!("ties_merge.rs");
 include!("advanced_merge.rs");
+include!("merge_output.rs");

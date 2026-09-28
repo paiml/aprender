@@ -209,6 +209,13 @@ pub fn apr_merge<P: AsRef<Path>>(
     // Validate inputs and options
     validate_merge_options(inputs, &options)?;
 
+    // MOF-005: refuse mismatched architectures before loading any tensor
+    let mut arch_paths: Vec<&Path> = inputs.iter().map(AsRef::as_ref).collect();
+    if let Some(base) = &options.base_model {
+        arch_paths.push(base.as_path());
+    }
+    let source_metadata = check_merge_architectures(&arch_paths)?;
+
     // Load all models
     let all_tensors = load_all_models(inputs)?;
 
@@ -303,9 +310,14 @@ pub fn apr_merge<P: AsRef<Path>>(
 
     // Save merged model
     let output_path = output.as_ref();
-    save_safetensors(output_path, &merged).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to save merged model: {e}"),
-    })?;
+    let input_paths: Vec<&Path> = inputs.iter().map(AsRef::as_ref).collect();
+    save_merged_model(
+        output_path,
+        &merged,
+        source_metadata,
+        options.strategy,
+        &input_paths,
+    )?;
 
     // Get output file size
     let output_size = fs::metadata(output_path)
