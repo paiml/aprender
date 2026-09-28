@@ -176,36 +176,26 @@ pub fn judge_model(
     judge(yhat, oracle, &bounds)
 }
 
+/// The half of §3.2 that needs no error model: the NaN and Inf rules alone.
+///
+/// A `Fail` here is RED for any model. A `Pass` is NOT a kernel pass: it says only that no element
+/// broke the NaN/Inf rules, and the margin still needs a declared model ([`judge_model`]). This is
+/// how a kernel whose model is refused (S-1) can still be caught producing NaN or Inf (F-6).
+///
+/// # Errors
+/// [`Refusal::LengthMismatch`] when the buffers differ in length.
+pub fn screen(yhat: &[f32], oracle: &[f64]) -> Result<Verdict, Refusal> {
+    let unbounded = vec![f64::INFINITY; oracle.len()];
+    judge(yhat, oracle, &unbounded).map(|r| r.verdict)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::error_model::Dtype;
     use crate::oracle;
 
-    /// splitmix64: a seeded, dependency-free generator so every failure reproduces from its seed.
-    struct Rng(u64);
-
-    impl Rng {
-        fn next_u64(&mut self) -> u64 {
-            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-            let mut z = self.0;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-            z ^ (z >> 31)
-        }
-
-        /// Uniform in [lo, hi).
-        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-        fn uniform(&mut self, lo: f32, hi: f32) -> f32 {
-            let u = (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
-            (f64::from(lo) + u * f64::from(hi - lo)) as f32
-        }
-
-        #[allow(clippy::cast_possible_truncation)]
-        fn below(&mut self, n: usize) -> usize {
-            (self.next_u64() % n as u64) as usize
-        }
-    }
+    use crate::rng::SplitMix64 as Rng;
 
     /// A GEMV "kernel" summing in f32 in the given order, with or without FMA.
     fn f32_dot_in_order(w: &[f32], x: &[f32], order: &[usize], fma: bool) -> f32 {
@@ -243,7 +233,7 @@ mod tests {
         const ROWS: usize = 1_000_000;
         const K: usize = 16;
         const TILE: usize = 16;
-        let mut rng = Rng(0x4B54_4553_5402);
+        let mut rng = Rng::new(0x4B54_4553_5402);
         let w: Vec<f32> = (0..ROWS * K).map(|_| rng.uniform(-1.0, 1.0)).collect();
         let x: Vec<f32> = (0..K).map(|_| rng.uniform(-1.0, 1.0)).collect();
         let order: Vec<usize> = (0..K).collect();
@@ -290,7 +280,7 @@ mod tests {
     /// on the adversarial inputs of §3.3 (cancellation pairs, wide dynamic range).
     #[test]
     fn k1a_bound_holds_for_every_order() {
-        let mut rng = Rng(0x004B_3141);
+        let mut rng = Rng::new(0x004B_3141);
         for &k in &[1_usize, 2, 7, 64, 1000, 4096, 65_536] {
             let mut w: Vec<f32> = Vec::with_capacity(k);
             let mut x: Vec<f32> = Vec::with_capacity(k);
@@ -343,7 +333,7 @@ mod tests {
     #[test]
     fn f2_f16_accumulator_is_red_or_refused() {
         const K: usize = 4096;
-        let mut rng = Rng(0xF2);
+        let mut rng = Rng::new(0xF2);
         let w: Vec<f32> = (0..K).map(|_| rng.uniform(0.0, 1.0)).collect();
         let x: Vec<f32> = (0..K).map(|_| rng.uniform(0.0, 1.0)).collect();
         let order: Vec<usize> = (0..K).collect();
@@ -449,5 +439,24 @@ mod tests {
                 bound: 1
             })
         );
+    }
+
+    #[test]
+    fn screen_judges_nan_and_inf_only() {
+        // any finite error, however large, is not the screen's business
+        assert_eq!(screen(&[1e30, -5.0], &[0.0, 5.0]), Ok(Verdict::Pass));
+        assert_eq!(
+            screen(&[1.0, f32::NAN], &[1.0, 2.0]),
+            Ok(Verdict::Fail(Failure::UnexpectedNaN { index: 1 }))
+        );
+        assert_eq!(
+            screen(&[f32::INFINITY], &[1.0]),
+            Ok(Verdict::Fail(Failure::InfMismatch { index: 0 }))
+        );
+        assert_eq!(
+            screen(&[2.0], &[f64::NAN]),
+            Ok(Verdict::Fail(Failure::MissingNaN { index: 0 }))
+        );
+        assert!(screen(&[1.0], &[1.0, 2.0]).is_err());
     }
 }

@@ -6,6 +6,10 @@
 //! receipts stay comparable with llama.cpp's `test-backend-ops`, but NMSE never decides: one wrong
 //! tile in a million outputs moves it by ~1e-11 (F-12, tested below).
 //!
+//! What a kernel is run on comes from [`shapes`] (§4: dimension classes derived from the
+//! registered tile and vector width) and [`inputs`] (§3.3: typical and adversarial values, each
+//! reproducible from its seed). F-1 and F-6 are planted in `falsifiers`.
+//!
 //! The oracle is independent by construction. This crate has no dependencies, so it cannot call
 //! the optimized backend it judges (§0.3 "the producer is never the gate");
 //! `oracle_has_no_dependencies` refuses a manifest that adds one.
@@ -14,11 +18,18 @@
 //! a kernel that quantizes its activations, the round-tripped activations it actually consumed.
 
 pub mod error_model;
+#[cfg(test)]
+mod falsifiers;
+pub mod inputs;
 pub mod margin;
 pub mod oracle;
+pub mod rng;
+pub mod shapes;
 
 pub use error_model::{Bound, Dtype, ErrorModel, Refusal};
-pub use margin::{judge, Failure, Report, Verdict};
+pub use inputs::{generate, Input, InputClass};
+pub use margin::{judge, screen, Failure, Report, Verdict};
+pub use shapes::{Dim, ShapeClass};
 
 #[cfg(test)]
 mod tests {
