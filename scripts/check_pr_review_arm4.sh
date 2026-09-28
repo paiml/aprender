@@ -194,7 +194,8 @@ check_signature() {
         [.check_runs[]? | select(.name == "pr-review-signature" and .head_sha == $h
                                  and .app.slug == "github-actions" and .conclusion == "success")]
         | sort_by(.completed_at // "")
-        | map((.output.text // "{}") | (fromjson? // {}) | .[$k] // empty | select(type == "string"))
+        | map((.output.text // "{}") | (fromjson? // {})
+              | if type == "object" then (.[$k] // empty) else empty end | select(type == "string"))
         | last // empty' 2>/dev/null)
     if [ -z "$sig" ]; then
         echo "  A2b $src is UNSIGNED: no committed .minisig and no pr-review-signature" >&2
@@ -645,6 +646,22 @@ self_test() {
     prior_attempt "$cs/prior-wpid.json"  "$cs/wpid.json"
     prior_attempt "$cs/prior-wsha.json"  "$cs/wsha.json"
     prior_attempt "$cs/prior-other.json" "$cs/other.json"
+    # A newer run whose text is valid JSON but not an object (an array) must not
+    # crash the selector into UNSIGNED: jq `.[$k]` on an array is a hard error.
+    jq --arg h "$tip" '.check_runs += [{name: "pr-review-signature", head_sha: $h,
+        conclusion: "success", completed_at: "2026-09-28T17:00:00Z",
+        app: {slug: "github-actions"}, output: {text: "[]"}}]' \
+        "$cs/prior-good.json" > "$cs/prior-array.json"
+    # The API itself, not an injected file: a `gh` shim on PATH answers the listing
+    # the way GitHub does - filter=all returns every attempt, anything else returns
+    # only the newest (unsigned) runs. Without this row, deleting filter=all from
+    # check_runs_json left the whole table GREEN (#4618 review, mutant survived).
+    local ghshim="$ST_ROOT/ghshim"; mkdir -p "$ghshim"
+    jq '.check_runs |= map(select(.completed_at != "2026-09-28T15:00:00Z"))' \
+        "$cs/prior-good.json" > "$cs/latest-only.json"
+    printf '#!/usr/bin/env bash\ncase "$*" in *filter=all*) cat -- %q ;; *) cat -- %q ;; esac\n' \
+        "$cs/prior-good.json" "$cs/latest-only.json" > "$ghshim/gh"
+    chmod +x "$ghshim/gh"
 
     printf '#!/usr/bin/env bash\nexit 0\n' > "$ST_ROOT/accept-everything.sh"
     printf '#!/usr/bin/env bash\nexit 1\n' > "$ST_ROOT/refuse-everything.sh"
@@ -755,6 +772,10 @@ self_test() {
         "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-wsha.json"
     row check-sig-prior-other-sha 1 "#4598 control: the only signed run is on another commit, beside newer unsigned ones" \
         "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-other.json"
+    row check-sig-prior-array-text 0 "#4618: a newer run's text is a JSON array, not an object; the earlier signature still reads" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-array.json"
+    row check-sig-api-all-attempts 0 "#4618: through the API (gh shim), not a file: only filter=all sees the earlier attempt's signature" \
+        "$csig"   999 "$tip"  PATH="$ghshim:$PATH" GITHUB_REPOSITORY=paiml/aprender
     row check-sig-queue           0 "B1: merge_group squash; the signature is looked up on the PR head" \
         "$csig"   999 "$squash"  ARM4_CHECK_RUNS_FILE="$cs/good.json" ARM4_PR_HEAD_SHA="$tip" GITHUB_EVENT_NAME=merge_group
 
@@ -762,7 +783,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 37/37 rows + 2 fingerprint checks, both polarities ---"
+    echo "--- 39/39 rows + 2 fingerprint checks, both polarities ---"
     return 0
 }
 
