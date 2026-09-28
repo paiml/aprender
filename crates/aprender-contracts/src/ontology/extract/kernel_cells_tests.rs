@@ -139,6 +139,109 @@ fn arch_rows_serve_their_arch_and_the_map_is_the_superset() {
     );
 }
 
+fn op_row(id: &str, backend: &str, arch: &str, archs: Option<&str>) -> String {
+    let archs = archs.map_or_else(String::new, |a| format!(r#","archs":{a}"#));
+    format!(
+        r#"{{"kernel_id":"{id}","backend":"{backend}","ggml_type":null,"layout":"{ROW_MAJOR}","arch":"{arch}"{archs}}}"#
+    )
+}
+
+fn shape(ts: &[u32], arch: Option<&str>) -> ModelShape {
+    ModelShape {
+        types: types(ts),
+        arch: arch.map(str::to_string),
+    }
+}
+
+/// #3715 P1: per-forward ops (`ggml_type: null`) are on every model's path of their backend and host arch,
+/// narrowed by `archs` when the model's architecture is known; unknown takes them all. They never serve a
+/// tensor type, and a model with no types gets none, so it stays RED.
+#[test]
+fn op_rows_join_every_model_map_of_their_backend() {
+    let mut raw = vec![
+        row("cpu.matvec.q4_k", "cpu", 12, ROW_MAJOR, ANY_ARCH),
+        op_row("cpu.rmsnorm.f32", "cpu", ANY_ARCH, None),
+        op_row("cpu.layernorm.f32", "cpu", ANY_ARCH, Some(r#"["phi2"]"#)),
+        op_row("cpu.rope.f32.avx512", "cpu", "x86_64", None),
+        op_row("cuda.rmsnorm.f32", "cuda", ANY_ARCH, None),
+    ];
+    let rows = registry(&raw);
+    let map = |host_arch, m: &ModelShape| model_kernel_map(&rows, "cpu", host_arch, m);
+    let q = shape(&[12], Some("qwen2"));
+    assert_eq!(
+        map("x86_64", &q).uses,
+        ids(&["cpu.matvec.q4_k", "cpu.rmsnorm.f32", "cpu.rope.f32.avx512"])
+    );
+    assert_eq!(
+        map("aarch64", &q).uses,
+        ids(&["cpu.matvec.q4_k", "cpu.rmsnorm.f32"])
+    );
+    assert_eq!(
+        map("aarch64", &shape(&[12], Some("phi2"))).uses,
+        ids(&["cpu.layernorm.f32", "cpu.matvec.q4_k", "cpu.rmsnorm.f32"])
+    );
+    // Unknown architecture: the superset.
+    assert_eq!(
+        map("aarch64", &shape(&[12], None)).uses,
+        ids(&["cpu.layernorm.f32", "cpu.matvec.q4_k", "cpu.rmsnorm.f32"])
+    );
+    // No tensor types: no op rows, nothing to satisfy minCount 1.
+    assert_eq!(
+        map("x86_64", &shape(&[], Some("qwen2"))),
+        KernelMap::default()
+    );
+    // An op row serves no tensor type: an f32 tensor with no typed row is still unregistered.
+    assert_eq!(
+        map("x86_64", &shape(&[0, 12], None)).unregistered,
+        types(&[0])
+    );
+    // Removing an op row drops exactly that kernel from every map.
+    raw.retain(|r| !r.contains("cpu.rmsnorm.f32"));
+    let without = registry(&raw);
+    assert_eq!(
+        model_kernel_map(&without, "cpu", "aarch64", &q).uses,
+        ids(&["cpu.matvec.q4_k"])
+    );
+}
+
+/// The op-row fields are read whole or the registry is refused.
+#[test]
+fn op_row_fields_are_refused_when_malformed() {
+    let refused = |rows: &[String], want: &str| {
+        let e = parse_registry(
+            F,
+            format!(r#"{{"kernels":[{}]}}"#, rows.join(",")).as_bytes(),
+        )
+        .expect_err(want);
+        assert!(e.what.contains(want), "{} !~ {want}", e.what);
+    };
+    // An absent ggml_type is not an op row.
+    refused(
+        &[format!(
+            r#"{{"kernel_id":"k","backend":"cpu","layout":"{ROW_MAJOR}","arch":"any"}}"#
+        )],
+        "`ggml_type` missing",
+    );
+    refused(
+        &[format!(
+            r#"{{"kernel_id":"k","backend":"cpu","ggml_type":"f32","layout":"{ROW_MAJOR}","arch":"any"}}"#
+        )],
+        "neither a u32 nor null",
+    );
+    let typed_with_archs =
+        row("k", "cpu", 12, ROW_MAJOR, ANY_ARCH).replace('}', r#","archs":["qwen2"]}"#);
+    refused(&[typed_with_archs], "`archs` on a typed row");
+    for archs in [r#"[]"#, r#""qwen2""#, r#"[""]"#, r#"[1]"#, r#"["a","a"]"#] {
+        refused(
+            &[op_row("k", "cpu", ANY_ARCH, Some(archs))],
+            "`archs` not a non-empty list",
+        );
+    }
+    let rows = registry(&[op_row("k", "cpu", ANY_ARCH, Some(r#"["a","b"]"#))]);
+    assert_eq!(rows[0].ggml_type, None);
+    assert_eq!(rows[0].archs, Some(ids(&["a", "b"])));
+}
+
 /// A non-row-major row never serves a GGUF/APR tensor (LAYOUT-001/002).
 #[test]
 fn a_col_major_row_serves_nothing() {
@@ -462,10 +565,14 @@ mod rr2 {
     /// The RR2 inputs as one `CellHost`, for [`build_cells`].
     fn cell_host(types_of_c: Option<&[u32]>, drop_kernel: Option<&str>) -> CellHost {
         let rows = registry();
-        let mut models: BTreeMap<String, Option<BTreeSet<u32>>> = BTreeMap::new();
+        let mut models: BTreeMap<String, Option<ModelShape>> = BTreeMap::new();
         for (m, ts) in MODELS {
             let ts = if m == "C" { types_of_c } else { Some(ts) };
-            models.insert(m.to_string(), ts.map(types));
+            let shape = ts.map(|ts| ModelShape {
+                types: types(ts),
+                arch: None,
+            });
+            models.insert(m.to_string(), shape);
         }
         CellHost {
             id: HOST.to_string(),
@@ -495,8 +602,12 @@ mod rr2 {
     }
 
     fn built_red(h: &CellHost) -> BTreeSet<String> {
+        built_red_with(&registry(), h)
+    }
+
+    fn built_red_with(rows: &[RegistryRow], h: &CellHost) -> BTreeSet<String> {
         let mut g = Graph::new();
-        build_cells(&mut g, &registry(), std::slice::from_ref(h));
+        build_cells(&mut g, rows, std::slice::from_ref(h));
         let report = validate(&g, &shapes());
         assert!(report.focus_nodes_n > 0, "vacuous");
         report.results.iter().map(|r| r.focus.clone()).collect()
@@ -509,6 +620,26 @@ mod rr2 {
         let red = built_red(&cell_host(Some(&[8]), Some("cuda.gemv.q6_k")));
         let want: BTreeSet<String> = [mc("A"), kc("cuda.gemv.q6_k")].into_iter().collect();
         assert_eq!(red, want);
+    }
+
+    /// #3715 P1, RR2-F1 for a per-forward op: every model with tensor types uses the op row, so removing its
+    /// receipt fails every one of them and that kernel cell; a model with no types was RED already.
+    #[test]
+    fn build_cells_f1_for_an_op_row_reds_every_typed_model() {
+        const OP: &str = "cuda.rmsnorm.f32";
+        let mut rows = registry();
+        rows.extend(super::registry(&[op_row(OP, "cuda", ANY_ARCH, None)]));
+        let mut h = cell_host(Some(&[8]), None);
+        h.kernels.insert(OP.to_string(), PASS);
+        h.sanitized.insert(OP.to_string(), SAN);
+        assert_eq!(built_red_with(&rows, &h), BTreeSet::new());
+        h.kernels.remove(OP);
+        let want: BTreeSet<String> = [mc("A"), mc("B"), mc("C"), kc(OP)].into_iter().collect();
+        assert_eq!(built_red_with(&rows, &h), want);
+        let mut h = cell_host(None, None);
+        h.kernels.insert(OP.to_string(), PASS);
+        h.sanitized.insert(OP.to_string(), SAN);
+        assert_eq!(built_red_with(&rows, &h), [mc("C")].into_iter().collect());
     }
 
     /// Through the builder, a smoke receipt is judged against its own model's static map: B (q4_k only)
@@ -710,15 +841,21 @@ fn models_from_inventory_reads_types_whole_or_not_at_all() {
     let r = crate::ontology::receipts::parse(
         "gx10.json",
         r#"{"schema":"apr-model-ladder-receipt/v2","host":"gx10","inventory":[
-          {"file":"a.gguf","sha256":"AA","tensor_types":[12,14,0]},
+          {"file":"a.gguf","sha256":"AA","arch":"qwen2","tensor_types":[12,14,0]},
           {"file":"b.gguf","sha256":"bb","tensor_types":[12,"q6_k"]},
           {"file":"c.gguf","sha256":"cc"},
           {"file":"d.gguf","tensor_types":[8]}]}"#,
     )
     .expect("a v2 receipt");
     let m = models_from_inventory(&r.inventory);
-    let want: BTreeMap<String, Option<BTreeSet<u32>>> = [
-        ("aa".to_string(), Some(types(&[0, 12, 14]))),
+    let want: BTreeMap<String, Option<ModelShape>> = [
+        (
+            "aa".to_string(),
+            Some(ModelShape {
+                types: types(&[0, 12, 14]),
+                arch: Some("qwen2".to_string()),
+            }),
+        ),
         ("bb".to_string(), None),
         ("cc".to_string(), None),
     ]

@@ -30,9 +30,22 @@ pub const ANY_ARCH: &str = "any";
 pub struct RegistryRow {
     pub kernel_id: String,
     pub backend: String,
-    pub ggml_type: u32,
+    /// The tensor type the row serves, or `None` (`"ggml_type": null`) for a per-forward op such as RMSNorm,
+    /// RoPE or attention: it runs on f32 activations whatever the file's types, so every model on the row's
+    /// backend uses it ([`op_kernels`]).
+    pub ggml_type: Option<u32>,
     pub layout: String,
     pub arch: String,
+    /// An op row's model architectures (`general.architecture`), e.g. LayerNorm for `phi2` only; `None`
+    /// serves every architecture. Typed rows carry none: a tensor type is served whatever the model.
+    pub archs: Option<BTreeSet<String>>,
+}
+
+/// What the static map reads of one model file: its per-tensor ggml types and its `general.architecture`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelShape {
+    pub types: BTreeSet<u32>,
+    pub arch: Option<String>,
 }
 
 /// One model's kernels on one host, or the types no row serves.
@@ -89,25 +102,112 @@ pub fn parse_registry(file: &str, bytes: &[u8]) -> Result<Vec<RegistryRow>, Extr
                     format!("kernels[{i}]: duplicate kernel_id `{kernel_id}`"),
                 ));
             }
-            let ggml_type = row
-                .get("ggml_type")
-                .and_then(serde_json::Value::as_u64)
-                .and_then(|t| u32::try_from(t).ok())
-                .ok_or_else(|| {
-                    refuse(
-                        file,
-                        format!("kernels[{i}]: `ggml_type` missing or not a u32"),
-                    )
-                })?;
+            // An absent key is refused, not read as an op row: a typo would otherwise put a matvec row on
+            // every model's path.
+            let ggml_type = match row.get("ggml_type") {
+                Some(serde_json::Value::Null) => None,
+                t => Some(
+                    t.and_then(serde_json::Value::as_u64)
+                        .and_then(|t| u32::try_from(t).ok())
+                        .ok_or_else(|| {
+                            refuse(
+                                file,
+                                format!(
+                                    "kernels[{i}]: `ggml_type` missing, or neither a u32 nor null"
+                                ),
+                            )
+                        })?,
+                ),
+            };
+            let archs = parse_archs(file, i, row, ggml_type.is_none())?;
             Ok(RegistryRow {
                 kernel_id,
                 backend: field(file, i, row, "backend")?.to_string(),
                 ggml_type,
                 layout: field(file, i, row, "layout")?.to_string(),
                 arch: field(file, i, row, "arch")?.to_string(),
+                archs,
             })
         })
         .collect()
+}
+
+/// An op row's `archs`: absent, or a non-empty list of non-empty strings, each once. A typed row with one is
+/// refused: it would read as narrowing a tensor type to some models, which the map does not do.
+fn parse_archs(
+    file: &str,
+    i: usize,
+    row: &serde_json::Value,
+    op_row: bool,
+) -> Result<Option<BTreeSet<String>>, ExtractError> {
+    let Some(v) = row.get("archs") else {
+        return Ok(None);
+    };
+    if !op_row {
+        return Err(refuse(
+            file,
+            format!(
+                "kernels[{i}]: `archs` on a typed row (only a `ggml_type: null` op row has one)"
+            ),
+        ));
+    }
+    let bad = || {
+        refuse(
+            file,
+            format!("kernels[{i}]: `archs` not a non-empty list of distinct names"),
+        )
+    };
+    let list = v.as_array().filter(|a| !a.is_empty()).ok_or_else(bad)?;
+    let mut out = BTreeSet::new();
+    for a in list {
+        let name = a.as_str().filter(|s| !s.is_empty()).ok_or_else(bad)?;
+        if !out.insert(name.to_string()) {
+            return Err(bad());
+        }
+    }
+    Ok(Some(out))
+}
+
+/// The per-forward op rows a model of `model_arch` uses on a `backend` host of `host_arch`. An unknown
+/// architecture takes every op row of the backend, the superset: each then needs a receipt, so not knowing
+/// the architecture can only add RED cells, never drop one.
+#[must_use]
+pub fn op_kernels(
+    rows: &[RegistryRow],
+    backend: &str,
+    host_arch: &str,
+    model_arch: Option<&str>,
+) -> BTreeSet<String> {
+    rows.iter()
+        .filter(|r| {
+            r.ggml_type.is_none()
+                && r.backend == backend
+                && r.layout == ROW_MAJOR
+                && (r.arch == ANY_ARCH || r.arch == host_arch)
+                && match (&r.archs, model_arch) {
+                    (Some(archs), Some(m)) => archs.contains(m),
+                    _ => true,
+                }
+        })
+        .map(|r| r.kernel_id.clone())
+        .collect()
+}
+
+/// A model's whole static map: the rows serving its tensor types plus its per-forward op rows. A model with
+/// no tensor types gets no op rows either, so its cell has no `usesKernel` edge and `minCount 1` stays RED.
+#[must_use]
+pub fn model_kernel_map(
+    rows: &[RegistryRow],
+    backend: &str,
+    host_arch: &str,
+    model: &ModelShape,
+) -> KernelMap {
+    let mut map = static_kernel_map(rows, backend, host_arch, &model.types);
+    if !model.types.is_empty() {
+        map.uses
+            .extend(op_kernels(rows, backend, host_arch, model.arch.as_deref()));
+    }
+    map
 }
 
 /// Every row that could serve each of `types` on a `backend` host of `host_arch` (see the module note on
@@ -123,7 +223,9 @@ pub fn static_kernel_map(
     for r in rows.iter().filter(|r| {
         r.backend == backend && r.layout == ROW_MAJOR && (r.arch == ANY_ARCH || r.arch == host_arch)
     }) {
-        by_type.entry(r.ggml_type).or_default().push(r);
+        if let Some(t) = r.ggml_type {
+            by_type.entry(t).or_default().push(r);
+        }
     }
     let mut map = KernelMap::default();
     for t in types {
@@ -911,9 +1013,10 @@ pub struct CellHost {
     pub backend: String,
     /// The arch the registry rows and receipts are matched on (see [`judge_parity_receipt`]).
     pub arch: String,
-    /// Model sha256 → its per-tensor ggml types, or `None` when no receipt recorded them. A `None` model
-    /// gets a ModelCell with no `usesKernel` edge, which `minCount 1` rejects: unknown is RED, never skipped.
-    pub models: BTreeMap<String, Option<BTreeSet<u32>>>,
+    /// Model sha256 → its per-tensor ggml types and architecture, or `None` when no receipt recorded the
+    /// types. A `None` model gets a ModelCell with no `usesKernel` edge, which `minCount 1` rejects: unknown
+    /// is RED, never skipped.
+    pub models: BTreeMap<String, Option<ModelShape>>,
     /// Kernel id → the judged receipt measured for this host.
     pub kernels: BTreeMap<String, KernelEvidence>,
     /// Model sha256 → its judged smoke receipt.
@@ -922,16 +1025,22 @@ pub struct CellHost {
     pub sanitized: BTreeMap<String, SanitizerEvidence>,
 }
 
-/// A host's models for [`CellHost::models`], from its measured inventory: sha256 → `tensor_types`. A row with
-/// no hash is left out (release-evidence already reports it as unmeasured); a row with no readable
-/// `tensor_types` maps to `None`, which [`build_cells`] turns RED.
+/// A host's models for [`CellHost::models`], from its measured inventory: sha256 → `tensor_types` and `arch`.
+/// A row with no hash is left out (release-evidence already reports it as unmeasured); a row with no
+/// readable `tensor_types` maps to `None`, which [`build_cells`] turns RED.
 #[must_use]
 pub fn models_from_inventory(
     items: &[crate::ontology::receipts::InventoryItem],
-) -> BTreeMap<String, Option<BTreeSet<u32>>> {
+) -> BTreeMap<String, Option<ModelShape>> {
     items
         .iter()
-        .filter_map(|i| Some((i.sha256.clone()?, i.tensor_types.clone())))
+        .filter_map(|i| {
+            let shape = i.tensor_types.clone().map(|types| ModelShape {
+                types,
+                arch: i.arch.clone(),
+            });
+            Some((i.sha256.clone()?, shape))
+        })
         .collect()
 }
 
@@ -941,9 +1050,9 @@ pub fn models_from_inventory(
 pub fn build_cells(g: &mut Graph, rows: &[RegistryRow], hosts: &[CellHost]) {
     for h in hosts {
         let mut used = BTreeSet::new();
-        for (sha, types) in &h.models {
-            let map = types.as_ref().map_or_else(KernelMap::default, |ts| {
-                static_kernel_map(rows, &h.backend, &h.arch, ts)
+        for (sha, shape) in &h.models {
+            let map = shape.as_ref().map_or_else(KernelMap::default, |m| {
+                model_kernel_map(rows, &h.backend, &h.arch, m)
             });
             used.extend(map.uses.iter().cloned());
             emit_model_cell(g, &h.id, sha, &map);
