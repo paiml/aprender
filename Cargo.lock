@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-build-sha"
-version = "0.69.3"
+version = "0.69.4"
 
 [[package]]
 name = "aprender-cbtop"
@@ -1809,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-update"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "flate2",
  "semver",

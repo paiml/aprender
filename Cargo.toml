@@ -298,7 +298,7 @@ aprender-train-common = { path = "crates/aprender-train-common", version = "0.69
 aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.69.3" }
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.69.3" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.69.4" }
-aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.69.3" }
+aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.69.4" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.69.3" }
 aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.69.3" }
 aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.69.3" }
@@ -318,7 +318,7 @@ aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.69.3" }
 aprender-cgp = { path = "crates/aprender-cgp", version = "0.69.3" }
 aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.69.3" }
 aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.69.4" }
-aprender-update = { path = "crates/aprender-update", version = "0.69.3" }
+aprender-update = { path = "crates/aprender-update", version = "0.69.4" }
 aprender-data = { path = "crates/aprender-data", version = "0.69.3" }
 
 # Additional external deps needed by sub-crates
