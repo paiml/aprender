@@ -1,0 +1,3 @@
+PROP12 class=d n=0 q=null q_upper95=null q*=0.25 NOT-DECIDED
+PROP12 class=a n=0 q=null q_upper95=null q*=0.25 NOT-DECIDED
+PROP12 class=x n=39 q=0.1143 q_upper95=0.3085 q*=0.25 NOT-DECIDED
