@@ -6,7 +6,10 @@ fn n(src: &str) -> u64 {
 
 fn count_of(files: &[(&str, u64)]) -> Count {
     let files: BTreeMap<String, u64> = files.iter().map(|(p, c)| ((*p).to_owned(), *c)).collect();
-    Count { total: files.values().sum(), files }
+    Count {
+        total: files.values().sum(),
+        files,
+    }
 }
 
 #[test]
@@ -38,7 +41,10 @@ fn comments_and_strings_never_count() {
 
 #[test]
 fn a_different_path_does_not_count() {
-    assert_eq!(n("fn f() { kani::any(); other::assume(x); assume(y); kani::assume_unchecked(z); }"), 0);
+    assert_eq!(
+        n("fn f() { kani::any(); other::assume(x); assume(y); kani::assume_unchecked(z); }"),
+        0
+    );
 }
 
 #[test]
@@ -64,7 +70,10 @@ fn a_use_import_of_assume_is_refused_in_every_shape() {
 
 #[test]
 fn a_use_of_kani_without_assume_is_accepted() {
-    assert_eq!(n("use kani::any; fn f() { let _ = any::<u8>(); kani::assume(true); }"), 1);
+    assert_eq!(
+        n("use kani::any; fn f() { let _ = any::<u8>(); kani::assume(true); }"),
+        1
+    );
 }
 
 #[test]
@@ -80,7 +89,14 @@ fn a_rise_is_rejected_per_file_even_when_the_total_is_unchanged() {
     let base = baseline_of(&count_of(&[("a.rs", 5)]), "make kani-ratchet");
     // Five assumes moved from a.rs to b.rs: the total holds, b.rs rose from 0.
     let moved = count_of(&[("b.rs", 5)]);
-    assert_eq!(rises(&moved, &base), vec![Rise { path: "b.rs".into(), was: 0, now: 5 }]);
+    assert_eq!(
+        rises(&moved, &base),
+        vec![Rise {
+            path: "b.rs".into(),
+            was: 0,
+            now: 5
+        }]
+    );
 }
 
 #[test]
@@ -93,7 +109,14 @@ fn a_fall_or_a_removed_file_is_not_a_rise() {
 #[test]
 fn one_more_assume_in_a_listed_file_is_a_rise() {
     let base = baseline_of(&count_of(&[("a.rs", 5)]), "make kani-ratchet");
-    assert_eq!(rises(&count_of(&[("a.rs", 6)]), &base), vec![Rise { path: "a.rs".into(), was: 5, now: 6 }]);
+    assert_eq!(
+        rises(&count_of(&[("a.rs", 6)]), &base),
+        vec![Rise {
+            path: "a.rs".into(),
+            was: 5,
+            now: 6
+        }]
+    );
 }
 
 #[test]
@@ -125,7 +148,10 @@ fn count_tree_keys_relative_paths_and_skips_target_and_hidden() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     for (rel, body) in [
-        ("a/src/lib.rs", "fn f() { kani::assume(true); kani::assume(false); }"),
+        (
+            "a/src/lib.rs",
+            "fn f() { kani::assume(true); kani::assume(false); }",
+        ),
         ("a/src/none.rs", "fn g() {}"),
         ("a/target/debug/gen.rs", "fn h() { kani::assume(true); }"),
         (".hidden/x.rs", "fn i() { kani::assume(true); }"),
@@ -144,5 +170,7 @@ fn count_tree_fails_closed_on_an_untokenizable_file() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("ok.rs"), "fn f() { kani::assume(true); }").unwrap();
     std::fs::write(dir.path().join("bad.rs"), "fn f() { \"open").unwrap();
-    assert!(matches!(count_tree(dir.path()), Err(CountError::Tokenize { path, .. }) if path == "bad.rs"));
+    assert!(
+        matches!(count_tree(dir.path()), Err(CountError::Tokenize { path, .. }) if path == "bad.rs")
+    );
 }
