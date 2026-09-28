@@ -119,7 +119,7 @@ PY
 }
 
 judge() { # judge mode root version commit receipts dogfood out
-    local mode="$1" root="$2" version="$3" commit="$4" receipts="$5" dogfood="$6" out="$7"
+    local mode="$1" root="$2" version="$3" commit="$4" receipts="$5" dogfood="$6" out="$7" surface="${8:-}"
     local pv pvv rc rx sum label
     local -a args
     pv="${RELEASE_READINESS_PV:-}"
@@ -136,6 +136,7 @@ judge() { # judge mode root version commit receipts dogfood out
     args=(lint --gate shapes --shape "$SHAPE" --release-version "$version" --release-commit "$commit")
     [ -n "$receipts" ] && args+=(--receipts "$receipts")
     [ -n "$dogfood" ] && args+=(--dogfood-receipt "$dogfood")
+    [ -n "$surface" ] && args+=(--surface "$surface")
     if rx="$(receipts_commit "$root" "${receipts:-$root/evidence/dogfood/models/$version}" "$commit" 3>"$out")"; then
         args+=(--receipts-commit "$rx")
     fi
@@ -168,10 +169,10 @@ judge() { # judge mode root version commit receipts dogfood out
 }
 
 main() {
-    local root="" version="" commit="" receipts="" dogfood="" out="" mode tmpout rc
+    local root="" version="" commit="" receipts="" dogfood="" surface="" out="" mode tmpout rc
     while [ $# -gt 0 ]; do
         case "$1" in
-            --root|--version|--commit|--receipts|--dogfood-receipt|--out)
+            --root|--version|--commit|--receipts|--dogfood-receipt|--surface|--out)
                 [ $# -ge 2 ] || caller_error "$1 needs a value" ;;
         esac
         case "$1" in
@@ -180,6 +181,7 @@ main() {
             --commit) commit="$2"; shift 2 ;;
             --receipts) receipts="$2"; shift 2 ;;
             --dogfood-receipt) dogfood="$2"; shift 2 ;;
+            --surface) surface="$2"; shift 2 ;;
             --out) out="$2"; shift 2 ;;
             *) caller_error "unknown argument $1" ;;
         esac
@@ -191,8 +193,13 @@ main() {
     [ -n "$root" ] || root="$(cd -- "$(dirname -- "$SCRIPT_PATH")/../.." && pwd)"
     git -C "$root" rev-parse --verify --quiet HEAD >/dev/null || { echo "FAIL  R8 $root is not a git repository"; exit 2; }
     [ -z "$dogfood" ] || [ -f "$dogfood" ] || caller_error "--dogfood-receipt $dogfood does not exist"
+    # #3745: pv derives the release cells from the candidate's `apr surface --json` -- no surface, no cells,
+    # no pass. T-1 passes the one it just took from the release-built apr; T-4 reads the committed copy.
+    # It lives outside the receipts dir, because pv reads every *.json there as a host receipt.
+    [ -n "$surface" ] || surface="$root/evidence/release/surface/$version.json"
+    [ -f "$surface" ] || surface=""
     if [ -n "$out" ]; then tmpout="$out"; else tmpout="$(mktemp)"; fi
-    judge "$mode" "$root" "$version" "$commit" "$receipts" "$dogfood" "$tmpout"; rc=$?
+    judge "$mode" "$root" "$version" "$commit" "$receipts" "$dogfood" "$tmpout" "$surface"; rc=$?
     if [ "$rc" = 2 ] && [ "$mode" = report ]; then
         echo "WARN  R8 REPORT-ONLY could not judge (rc 2), recorded and not a stop until #3712 lands (DEFAULT_MODE in $PROG)"
         rc=0
@@ -254,6 +261,11 @@ STUB
     row pass_prints_the_enforce_line             0 "ok    R8 #3715 ENFORCE PASS version=1.2.3 commit=$(git -C "$d" rev-parse HEAD) pv=pv_9.9.9-stub out_sha256=" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow pass_asks_the_shape                   "--gate shapes --shape release-readiness-v1 --release-version 1.2.3 --release-commit $c"
     argrow receipts_commit_earned_is_passed      "--receipts-commit $x"
+    argrow no_surface_is_not_invented            "!--surface"
+    d="$tmp/v"; mk "$d"; mkdir -p "$d/evidence/release/surface"; printf '{}\n' > "$d/evidence/release/surface/1.2.3.json"
+    row committed_surface_runs                   0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    argrow committed_surface_is_passed           "--surface $d/evidence/release/surface/1.2.3.json"
+    d="$tmp/r"
     row bare_fail_refuses                        1 "FAIL  R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=1
     row bare_fail_names_the_count                1 "3 violation(s): cell=3" "$d" FX_PV_RC=1
     row fail_under_enforce_refuses               1 "FAIL  R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=1 RELEASE_READINESS_MODE=enforce
