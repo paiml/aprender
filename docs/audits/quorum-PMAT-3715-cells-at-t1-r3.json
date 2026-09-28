@@ -1,0 +1,318 @@
+{
+  "ticket": "PMAT-3715,PMAT-3712",
+  "base": "origin/ont/0.70-c2",
+  "base_resolved": "origin/ont/0.70-c2",
+  "base_note": "no origin/origin/ont/0.70-c2 exists; judged against the local ref",
+  "head": "9d8391246b47d829844b1e10844b9dc5e3e68489",
+  "diff_sha256": "23f0a2fd28f8920d95f7b1b1308317e78076616835a54069687e5f9d53fd87de",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 117000,
+  "prompt_sha256": "b4ee728c32162ddb6e924fdee76b94865ab470ad952d618e2be77271470bb987",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Scripts-only diff cherry-picks the #3712 cells[] producer and wires `--cells` into scripts/release/models_t1.sh on both hosts. It directly and verifiably resolves all four quorum-2 findings the receipt names: (1) receipt scope corrected to this diff's files, (2) cells_for now raises a named refusal (rc 1, \"cells: refused --\") when load_rungs fails instead of silently measuring 0 rows, (3) the off-mode prompt is now sized by mode.max_tokens (not the thinking budget), fixed at model_ladder_cells_produce.py's measure_item via `budget = a.max_tokens_thinking if mode == \"on\" else a.max_tokens`, (4) cmd_measure refuses (rc 2, \"cells: refused -- --only ... names no inventory model\") when --only matches no inventory row instead of writing 0 cells at rc 0, and model_ladder.sh counts a nonzero cells_rc as RED. Traced the owed_rungs refactor in scripts/lib/model_ladder_cells.py and confirmed it is a byte-for-byte behavioral no-op (extracted, not changed) shared correctly by both judge and producer. Verified internal arithmetic in the new test harness (check_ladder_cells_producer.sh) and fake_apr.py fixture: 2 rungs × 4 verbs × 2 modes = 16 owed cells, 4 `code` cells always fail (backend null, apr's known gap) leaving 12 pass; 4 verbs × 2 modes = 8 refused cells on the capacity-refusal case, matching the case table's asserted counts. The wiring into scripts/model_ladder.sh (enrich always, measure only under --cells) and scripts/release/models_t1.sh (--cells added on both local and remote legs) matches the receipt's described mechanism exactly, and the row-count ratchet bump 37→40 matches the one new `cells-measured` row plus its two new mutants. No test asserts the opposite of the ticket, no gate is weakened, and no receipt claim is unbacked by the diff.",
+      "findings": [],
+      "raw_bytes": 4495,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b4ee728c32162ddb6e924fdee76b94865ab470ad952d618e2be77271470bb987",
+      "trace": {
+        "input_sha256": "cf102586d7778d97ce22f14267fb5c92c0a5833a5bba214e7470635d8712c406",
+        "output_sha256": "e31a7ed3c304d999c837b1cc579eec11ffcd562b03994ee346d847368ca3c491",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff (scripts-only, base ont/0.70-c2) cherry-picks the #3712 row-B cells[] producer and wires `model_ladder.sh --cells` into `scripts/release/models_t1.sh` on both host legs. Verified all four quorum-2 findings the receipt claims to fix are actually fixed in the diff, each with a matching test case and a mutant that kills on reversion: (1) `cells_for` now raises `SystemExit(\"cells: refused -- ...\")` when `load_rungs` fails, giving rc 1 with the named message instead of a silent 0-row rc-0 write; (2) the off-mode prompt budget is sized by `a.max_tokens` (not the thinking budget), so it no longer falls short of its rung — confirmed by the `offmode-budget` mutant which correctly re-breaks it; (3) `--only` naming no inventory model now returns rc 2 with a `cells: refused` message via the `only-vacuity` guard; and the shared `owed_rungs` enumeration is genuinely factored into `model_ladder_cells.py` and imported (not re-derived) by the producer, so judge and producer can't drift. `check_ladder_cells_producer.sh`'s 12 cases and 9 mutants match the receipt's counts, and each mutant's sed target matches real source lines. `check_release_models_t1.sh`'s vacuity-floor bump (37→40) is backed by exactly 3 new rows (1 case + 2 mutants) added in the diff, not padding. The diff is scoped as claimed — no Rust/contract changes, consistent with section 7's disclaimer that sections 4/6 evidence belongs to earlier bases. The `apr code` backend-null gap is disclosed, not hidden, and correctly explains why this lands on the FINAL path rather than rc.1.",
+      "findings": [],
+      "raw_bytes": 4038,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b4ee728c32162ddb6e924fdee76b94865ab470ad952d618e2be77271470bb987",
+      "trace": {
+        "input_sha256": "3a791179b9a405475e139ee623ce9a3624c50bf5ff20bed48667a315ddd06408",
+        "output_sha256": "ae4ba9085f61805f2286428e35a9145cc2be392b2440ce1b28dd38bf1f8b3c10",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-3712 row B (cells[] producer) and wires it into T-1 (scripts/release/models_t1.sh). All Quorum 2 findings are addressed by guards in the code backed by test cases with kill-proof mutants: (1) rungs failure handling with SystemExit, (2) per-mode prompt budget sizing, (3) --only vacuity detection and rc 2 refusal, (4) integration that increments RED on producer failure. Test harness (check_ladder_cells_producer.sh) covers 12 cases + 9/9 mutants killed. Integration test (check_release_models_t1.sh) adds cells-measured row and mutants for no-cells-{remote,local}. Row count floor validated (37→40). The receipt correctly scopes Sections 4/6 evidence as not applying to this scripts-only diff.",
+      "findings": [],
+      "raw_bytes": 2349,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "b4ee728c32162ddb6e924fdee76b94865ab470ad952d618e2be77271470bb987",
+      "trace": {
+        "input_sha256": "a66ab1a44da7d1f0bd02f3cdea3e2698dee916add42ebe5d4585167702037b35",
+        "output_sha256": "e2a2a0174efc6d25e05e94a53a21ef5175de5fbfac2b7ccb04b0a34a08de3f66",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 10,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 117000 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "FAIL",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "FAIL",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1463624, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 43,
+    "collected_s": 586,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 55 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 117000,
+      "sent_bytes": 117169,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "8d588663ef01a95f1e614dd641117a8cf39133553fe04d1895f35c538e0c8e74",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 43,
+        "used_gpu": true,
+        "ts": "2026-09-28T06:49:59.518Z",
+        "wall_ms": 43149,
+        "request_id": "01a0e6c7-0bd2-7c9e-b470-b9829db48e6f",
+        "load1": 12.39,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": false,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
