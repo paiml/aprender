@@ -20,6 +20,9 @@ use std::path::Path;
 #[path = "publish_license.rs"]
 mod publish_license;
 use publish_license::resolve_license;
+#[path = "publish_provenance.rs"]
+mod publish_provenance;
+use publish_provenance::card_provenance;
 #[cfg(feature = "hf-hub")]
 use std::sync::Arc;
 
@@ -576,7 +579,14 @@ pub fn execute(
             ))
         })?
     } else {
-        model_card.to_huggingface_extended(pipeline_tag, library_name, tags, &file_names)
+        let provenance = card_provenance(repo_id, &files, &companion_files)?;
+        provenance.warn_if_unattributed();
+        provenance.insert_into(&model_card.to_huggingface_extended(
+            pipeline_tag,
+            library_name,
+            tags,
+            &file_names,
+        ))
     };
 
     if dry_run {
@@ -806,6 +816,8 @@ fn find_companion_files(directory: &Path) -> Result<Vec<std::path::PathBuf>, Cli
         "merges.txt",
         "special_tokens_map.json",
         "chat_template.jinja",
+        // HRP-004: the train-run receipt the card cites travels with it.
+        "train_receipt.json",
     ];
 
     let mut files = Vec::new();
@@ -1015,22 +1027,19 @@ impl ModelCardExt for ModelCard {
             }
         }
 
-        // Model index (results, dataset, and metrics are all required by HuggingFace)
-        output.push_str("model-index:\n");
-        let _ = writeln!(output, "  - name: {}", self.model_id);
-        output.push_str("    results:\n");
-        output.push_str("      - task:\n");
-        let _ = writeln!(output, "          type: {}", pipeline_tag);
-        output.push_str("        dataset:\n");
-        output.push_str("          name: custom\n");
-        output.push_str("          type: custom\n");
-        output.push_str("        metrics:\n");
-        if self.metrics.is_empty() {
-            // Add placeholder metric when none provided (required by HuggingFace)
-            output.push_str("          - name: accuracy\n");
-            output.push_str("            type: custom\n");
-            output.push_str("            value: N/A\n");
-        } else {
+        // Model index: HuggingFace requires results, dataset and metrics once
+        // it is present, so it is written only with measured metrics. The old
+        // placeholder (accuracy: N/A) showed a fake metric (HRP-004).
+        if !self.metrics.is_empty() {
+            output.push_str("model-index:\n");
+            let _ = writeln!(output, "  - name: {}", self.model_id);
+            output.push_str("    results:\n");
+            output.push_str("      - task:\n");
+            let _ = writeln!(output, "          type: {}", pipeline_tag);
+            output.push_str("        dataset:\n");
+            output.push_str("          name: custom\n");
+            output.push_str("          type: custom\n");
+            output.push_str("        metrics:\n");
             for (key, value) in &self.metrics {
                 let _ = writeln!(output, "          - name: {}", key);
                 output.push_str("            type: custom\n");

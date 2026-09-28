@@ -561,13 +561,27 @@ fn test_model_card_extended_bibtex_citation() {
 
 #[test]
 fn test_model_card_extended_model_index() {
-    let card = ModelCard::new("paiml/test-model", "1.0.0").with_name("Test Model");
+    let card = ModelCard::new("paiml/test-model", "1.0.0")
+        .with_name("Test Model")
+        .with_metric("perplexity", 12.5);
 
     let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
 
     assert!(output.contains("model-index:"));
     assert!(output.contains("- name: paiml/test-model"));
     assert!(output.contains("type: text-generation"));
+    assert!(output.contains("value: 12.5"));
+}
+
+/// HRP-004: no measured metric means no model-index, never `value: N/A`.
+#[test]
+fn test_model_card_extended_no_metrics_no_model_index() {
+    let card = ModelCard::new("paiml/test-model", "1.0.0").with_name("Test Model");
+
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
+
+    assert!(!output.contains("model-index:"), "{output}");
+    assert!(!output.contains("N/A"), "{output}");
 }
 
 #[test]
