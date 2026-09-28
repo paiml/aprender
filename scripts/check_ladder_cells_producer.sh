@@ -114,6 +114,28 @@ PY2
   printf 'FAIL  %s\n' "offmode: an off-mode prompt was sized by the thinking budget and fell below its rung"; return 1
 }
 
+# selflock <lib> -> under the GPU lock, the producer never waits on ITSELF: `apr serve` holds the lock for its whole
+# life, so a serve kept up across rungs made the next rung's locked `apr run` wait --lock-wait and be refused (rc 75),
+# and every cell after it (09-28 gx10 pilot, #3715). With a 3 s wait, every owed row must still be measured.
+selflock() {
+  local lib=$1 d
+  SEQ=$((SEQ + 1)); d="$WORK/lock.$SEQ"; mkdir -p "$d" || return 1
+  FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" enrich --apr "$FAKE" \
+      --inventory "$WORK/inventory.jsonl" --models "$WORK/models.txt" --out "$d/inv.jsonl" > /dev/null 2>&1
+  FAKE_APR_MODE=good timeout 300 python3 "$lib/model_ladder_cells_produce.py" measure --apr "$FAKE" \
+      --inventory "$d/inv.jsonl" --models "$WORK/models.txt" --ladder "$WORK/ladder.yaml" \
+      --rungs "$WORK/rungs.json" --work "$d" --timeout 60 --serve-ceiling 30 \
+      --lock "$d/gpu.lock" --lock-wait 3 --out "$d/cells.json" > "$d/log" 2>&1
+  if python3 - "$d/cells.json" <<'PY3'
+import json, sys
+cells = json.load(open(sys.argv[1]))
+ok = len(cells) == 16 and all(c["verdict"] == "pass" for c in cells) and not [c for c in cells if c.get("rc") == 75]
+sys.exit(0 if ok else 1)
+PY3
+  then printf 'ok    %s\n' "selflock: under the GPU lock, a serve never holds it while the next rung's run waits (16 rows, all measured)"; return 0; fi
+  printf 'FAIL  %s\n' "selflock: the producer waited on its own serve's GPU lock and refused its own cells"; return 1
+}
+
 cases() { # cases <lib> -> 0 all as expected
   local lib=$1 r=0
   expect "$lib" "enrich derives the owed-set terms from the header (arch, context, both thinking modes, KV)" good \
@@ -134,6 +156,7 @@ cases() { # cases <lib> -> 0 all as expected
   printf '{"schema": "apr-release-context-rungs/v1", "rungs": []}\n' > "$WORK/rungs-empty.json"
   measure_rc "$lib" "rungs-empty: a rungs file the judge FAILs refuses by name, never 0 rows" 1 --rungs "$WORK/rungs-empty.json" || r=1
   offmode "$lib" || r=1
+  selflock "$lib" || r=1
   return $r
 }
 
@@ -163,6 +186,7 @@ mutant refusal    's/if rc != 0 and ref is not None:/if False:/'
 mutant think      's/if "<\/think>" in text:/if False:/'
 mutant only-vacuity 's/if a.only and not matched:/if False:/'
 mutant rungs-silent 's/^    if rc:$/    if False:/'
+mutant serve-inline 's/deferred.append((len(rows) - 1, prompt, mode, budget, measured))/serve = serve or Serve(R, path, a.serve_ceiling); rows[-1] = measure_serve(serve, prompt, mode, budget, rows[-1], R.timeout)/'
 mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(tok, int(ctx) - a.max_tokens_thinking - 1)/'
 
 [ "$bad" = 0 ] && { echo "check_ladder_cells_producer: all cases and mutants as expected"; exit 0; }

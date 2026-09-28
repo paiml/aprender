@@ -344,6 +344,10 @@ def measure_item(R, item, path, L, rungs_doc, a):
     for rid, tok, mode, verb in owed:
         by_rung.setdefault((rid, tok), []).append((mode, verb))
     serve = None
+    # The serve cells run LAST, after every run/chat/code cell of this model. `apr serve` holds the GPU lock for its
+    # whole life, so a serve kept up across rungs made the next rung's locked `apr run` wait LOCK_WAIT and be refused,
+    # and every cell after it (09-28 pilot, #3715). Deferring keeps ONE serve per model and never waits on ourselves.
+    deferred = []
     try:
         for (rid, tok), jobs in sorted(by_rung.items(), key=lambda kv: kv[0][1] or 0):
             if tok is None:
@@ -379,14 +383,22 @@ def measure_item(R, item, path, L, rungs_doc, a):
                             open(pf, "w").write(prompt)
                         measured = row["prompt_tokens"] or None
                     elif verb == "serve":
-                        serve = serve or Serve(R, path, a.serve_ceiling)
-                        row = measure_serve(serve, prompt, mode, budget, row, R.timeout)
+                        rows.append(row)
+                        deferred.append((len(rows) - 1, prompt, mode, budget, measured))
+                        continue
                     else:
                         row = (measure_chat if verb == "chat" else measure_code)(R, path, prompt, mode, budget, row)
                     if row["prompt_tokens"] is None and measured:
                         row["prompt_tokens"] = measured
                         row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
                     rows.append(row)
+        for i, prompt, mode, budget, measured in deferred:
+            serve = serve or Serve(R, path, a.serve_ceiling)
+            row = measure_serve(serve, prompt, mode, budget, rows[i], R.timeout)
+            if row["prompt_tokens"] is None and measured:
+                row["prompt_tokens"] = measured
+                row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
+            rows[i] = row
     finally:
         if serve:
             serve.close()
