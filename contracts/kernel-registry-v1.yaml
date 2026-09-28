@@ -184,7 +184,7 @@ falsification_tests:
   - id: FALSIFY-KREG-012
     rule: a receipt whose input set no longer recomputes from the tree is stale, and the stale parts are named (KTEST-001 F-8, receipt reuse)
     prediction: an unchanged set is fresh; editing any one of source, row, toolchain, driver, device or oracle names exactly that part; a digest that does not match the recorded parts is stale whatever the parts say; every committed receipt is fresh against its own tree and the reuse count is printed
-    test: cargo test -p aprender-serve --lib kernel_registry:: -- f8_a_stale_input_set_is_named committed_parity_receipts_are_fresh_against_this_tree
+    test: 'cargo test -p aprender-serve --lib kernel_registry:: -- f8_a_stale_input_set_is_named committed_parity_receipts_are_fresh_against_this_tree'
     if_fails: a receipt measured against an older kernel source passes a release, or every release re-measures every kernel
   - id: FALSIFY-KREG-009
     rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
