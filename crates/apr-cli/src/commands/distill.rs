@@ -892,6 +892,20 @@ fn run_cuda_backend(
     };
     let student_provider = CudaStudentProvider::for_training(student_dir, student_config)
         .map_err(|e| CliError::ValidationFailed(format!("CudaStudentProvider load: {e}")))?;
+    // distill-batch-honesty-v1 DBH-001: opt in to an averaged multi-row step
+    // (one optimizer step from the mean of N rows, ~N x the step time).
+    // Unset keeps one row per step, so the default run is unchanged.
+    let kd_rows: usize = std::env::var("APR_DISTILL_BATCH_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n: &usize| n >= 1)
+        .unwrap_or(1);
+    if kd_rows > 1 {
+        eprintln!(
+            "[DBH-001] APR_DISTILL_BATCH_SIZE={kd_rows}: one step from the mean of {kd_rows} rows"
+        );
+    }
+    let student_provider = student_provider.with_max_batch(kd_rows);
 
     // Build minimal DistillConfig pointing at on-disk paths. The pipeline
     // uses these for the file-load passthroughs; the providers we just

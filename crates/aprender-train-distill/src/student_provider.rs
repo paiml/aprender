@@ -76,6 +76,23 @@ pub trait StudentLogitsProvider {
     /// optimizer step fails.
     fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()>;
 
+    /// One KD update from `gradient`, given the `input_ids` rows it was
+    /// computed on (distill-batch-honesty-v1 DBH-001).
+    ///
+    /// The pipeline calls this, not `apply_kd_gradient`, so a backend that
+    /// must re-run the forward per row (the CUDA student) gets every row's
+    /// ids instead of only the last one it cached. The default ignores the
+    /// ids: a backend whose `apply_kd_gradient` already trains on every row
+    /// needs nothing more.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the rows and gradients disagree or the update fails.
+    fn apply_kd_step(&mut self, input_ids: &[Vec<u32>], gradient: &[Vec<f32>]) -> Result<()> {
+        let _ = input_ids;
+        self.apply_kd_gradient(gradient)
+    }
+
     /// Per-position forward pass: logits at EVERY position of each input
     /// window, shape `[batch][position][vocab]`. Pairs with
     /// [`TeacherLogitsProvider::logits_per_position`] for full-sequence KD.
@@ -290,6 +307,9 @@ mod cuda_backend {
         // re-establish. None means "no logits_for_batch has been
         // called yet" — apply_kd_gradient errors in that state.
         last_input_ids: Option<Vec<u32>>,
+        // distill-batch-honesty-v1 DBH-001: rows one step may train on.
+        // 1 unless `with_max_batch` opts in to the averaged batch step.
+        max_rows: usize,
     }
 
     impl CudaStudentProvider {
@@ -316,7 +336,18 @@ mod cuda_backend {
                 trainer,
                 vocab_size,
                 last_input_ids: None,
+                max_rows: 1,
             })
+        }
+
+        /// Train up to `rows` rows per step: `apply_kd_step` runs each
+        /// row's forward + backward into the accumulator and takes ONE
+        /// optimizer step from their mean (DBH-001, FALSIFY-DBH-008).
+        /// Costs about `rows` x the one-row step time.
+        #[must_use]
+        pub fn with_max_batch(mut self, rows: usize) -> Self {
+            self.max_rows = rows.max(1);
+            self
         }
     }
 
@@ -404,8 +435,37 @@ mod cuda_backend {
             Ok(())
         }
 
+        fn apply_kd_step(&mut self, input_ids: &[Vec<u32>], gradient: &[Vec<f32>]) -> Result<()> {
+            if gradient.len() <= 1 {
+                return self.apply_kd_gradient(gradient);
+            }
+            if input_ids.len() != gradient.len() || gradient.len() > self.max_rows {
+                return Err(entrenar_common::EntrenarError::Internal {
+                    message: format!(
+                        "CudaStudentProvider.apply_kd_step: {} id rows, {} gradient rows, \
+                         capacity {} (distill-batch-honesty-v1 DBH-001)",
+                        input_ids.len(),
+                        gradient.len(),
+                        self.max_rows
+                    ),
+                });
+            }
+            let rows: Vec<(&[u32], &[f32])> = input_ids
+                .iter()
+                .zip(gradient)
+                .map(|(i, g)| (i.as_slice(), g.as_slice()))
+                .collect();
+            self.trainer.kd_step_batch(&rows).ok_or_else(|| {
+                entrenar_common::EntrenarError::Internal {
+                    message: "CudaTransformerTrainer.kd_step_batch returned None (CUDA \
+                              stream poisoned, empty row or gradient shape mismatch)"
+                        .to_string(),
+                }
+            })
+        }
+
         fn max_batch(&self) -> Option<usize> {
-            Some(1)
+            Some(self.max_rows)
         }
 
         fn set_learning_rate(&mut self, lr: f32) -> Result<()> {

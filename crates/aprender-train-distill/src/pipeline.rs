@@ -561,7 +561,9 @@ impl<'a> Pipeline<'a> {
                             logits_vv.into_iter().next().unwrap_or_default()
                         },
                     )?;
-                    self.student.apply_kd_gradient(&grads)?;
+                    // DBH-001: hand the rows over with their gradients so a
+                    // backend that re-runs the forward trains on every row.
+                    self.student.apply_kd_step(&dummy_batch, &grads)?;
                     (loss, dummy_batch, labels)
                 };
                 best_loss = best_loss.min(loss);
@@ -2449,5 +2451,65 @@ mod dbh_tests {
             "rate handed over once, before step 0"
         );
         assert_eq!(applied.lock().expect("lock").len(), 2, "both steps trained");
+    }
+
+    /// Records the rows every `apply_kd_step` receives. A backend that must
+    /// re-run the forward (the CUDA student) trains only on these ids.
+    struct IdStudent {
+        inner: FixtureStudent,
+        steps: Arc<Mutex<Vec<(Vec<Vec<u32>>, usize)>>>,
+    }
+
+    impl StudentLogitsProvider for IdStudent {
+        fn vocab_size(&self) -> usize {
+            self.inner.vocab_size()
+        }
+        fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+            self.inner.logits_for_batch(input_ids)
+        }
+        fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()> {
+            self.inner.apply_kd_gradient(gradient)
+        }
+        fn apply_kd_step(&mut self, input_ids: &[Vec<u32>], gradient: &[Vec<f32>]) -> Result<()> {
+            self.steps
+                .lock()
+                .expect("lock")
+                .push((input_ids.to_vec(), gradient.len()));
+            self.apply_kd_gradient(gradient)
+        }
+        fn set_learning_rate(&mut self, lr: f32) -> Result<()> {
+            self.inner.set_learning_rate(lr)
+        }
+    }
+
+    /// FALSIFY-DBH-001 (CPU half): every step hands the student ALL the
+    /// batch's rows, in order, next to one gradient per row. The planted
+    /// variant is the pre-fix pipeline, which called `apply_kd_gradient`
+    /// with gradients only: `steps` stays empty, and the CUDA student could
+    /// re-run the forward for nothing but the last row it had cached.
+    #[test]
+    fn falsify_dbh_001_student_gets_every_row_with_its_gradient() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let config = tiny_config(&tmp, 4);
+        let steps = Arc::new(Mutex::new(Vec::new()));
+        let student = IdStudent {
+            inner: FixtureStudent::new(VOCAB, 0.0, 0.1),
+            steps: Arc::clone(&steps),
+        };
+        Pipeline::new(&config)
+            .with_per_position(false)
+            .with_max_steps(Some(2))
+            .with_batch_source(Box::new(FixedSource))
+            .with_teacher(Box::new(ScaledTeacher(VOCAB)))
+            .with_student(Box::new(student))
+            .execute()
+            .expect("run completes");
+        let want: Vec<Vec<u32>> = (0..4).map(FixedSource::row).collect();
+        let steps = steps.lock().expect("lock").clone();
+        assert_eq!(steps.len(), 2, "one apply_kd_step per step: {steps:?}");
+        for (ids, n_grad) in &steps {
+            assert_eq!(ids, &want, "every row, in batch order");
+            assert_eq!(*n_grad, 4, "one gradient per row");
+        }
     }
 }
