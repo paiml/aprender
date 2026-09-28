@@ -4,7 +4,11 @@
 //! with an f64 dot product over the SAME weights dequantized by the crate's `dequantize_*`. That
 //! oracle is IN-TREE: it shares the block decoding with the kernel, so it catches the fused/SIMD dot
 //! drifting from the scalar decode, not a decode that is wrong in both. The receipt says so
-//! (`oracle_independent: false`); an independent llama.cpp oracle is the follow-up.
+//! (`oracle_independent: false`).
+//!
+//! The dequant-only and IQ rows are measured against an INDEPENDENT oracle instead: fixtures that
+//! `scripts/kreg_ggufpy_oracle.py` wrote from llama.cpp's gguf-py (its own decoders and grid
+//! tables) under `evidence/kreg/oracle/<TYPE>/`. Their receipts say `oracle_independent: true`.
 //!
 //! Two tests:
 //! - `emit_parity_receipts` (ignored) measures and writes the receipts. Run it on the host whose
@@ -16,10 +20,11 @@
 
 use super::*;
 use crate::quantize::{
-    dequantize_q4_0, dequantize_q4_k, dequantize_q5_k, dequantize_q6_k, dequantize_q8_0,
+    dequantize_q2_k, dequantize_q3_k, dequantize_q4_0, dequantize_q4_1, dequantize_q4_k,
+    dequantize_q5_0, dequantize_q5_1, dequantize_q5_k, dequantize_q6_k, dequantize_q8_0,
     fused_q4_0_q8_0_parallel_matvec, fused_q4k_parallel_matvec, fused_q5k_parallel_matvec,
-    fused_q6k_parallel_matvec, fused_q8_0_q8_0_parallel_matvec, quantize_activations_q8_0,
-    with_fp32_activations, QK_K,
+    fused_q6k_parallel_matvec, fused_q8_0_q8_0_parallel_matvec, iq_parallel_matvec,
+    quantize_activations_q8_0, with_fp32_activations, QK_K,
 };
 use rand::{Rng, SeedableRng};
 
@@ -293,9 +298,7 @@ fn repo_root() -> std::path::PathBuf {
 
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
-    let served = measure(k, k.workload, false);
-    let fp32 = measure(k, k.workload, true);
+fn receipt_header(id: &str, source_fn: &str, row: &KernelRow) -> serde_json::Value {
     let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
         .ok()
         .or_else(|| std::env::var("HOSTNAME").ok())
@@ -305,27 +308,212 @@ fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
     let sha = std::env::var("KREG_GIT_SHA").expect("KREG_GIT_SHA: the commit that was measured");
     serde_json::json!({
         "schema": SCHEMA,
-        "kernel_id": k.id,
-        "source_fn": k.source_fn,
+        "kernel_id": id,
+        "source_fn": source_fn,
         "registry_precision": row.precision,
         "host": host,
         "host_arch": host_arch(),
         "isa_detected": isa_detected(),
         "build_identity": sha,
         "ts": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        "oracle": ORACLE,
-        "oracle_independent": false,
-        "workload": {
-            "in_dim": k.workload.in_dim,
-            "out_dim": k.workload.out_dim,
-            "seed": k.workload.seed,
-            "trials": k.workload.trials,
-        },
-        "served": {"max_abs_err": served.max_abs_err, "max_rel_err": served.max_rel_err},
-        "fp32_activations": {"max_abs_err": fp32.max_abs_err, "max_rel_err": fp32.max_rel_err},
-        "quantized_activation_oracle": served.quantized_act_rel_err.map(|e| serde_json::json!({"max_rel_err": e})),
-        "tolerance_rel": tolerance_from(served.max_rel_err),
     })
+}
+
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
+    let served = measure(k, k.workload, false);
+    let fp32 = measure(k, k.workload, true);
+    let mut doc = receipt_header(k.id, k.source_fn, row);
+    doc["oracle"] = ORACLE.into();
+    doc["oracle_independent"] = false.into();
+    doc["workload"] = serde_json::json!({
+        "in_dim": k.workload.in_dim,
+        "out_dim": k.workload.out_dim,
+        "seed": k.workload.seed,
+        "trials": k.workload.trials,
+    });
+    doc["served"] =
+        serde_json::json!({"max_abs_err": served.max_abs_err, "max_rel_err": served.max_rel_err});
+    doc["fp32_activations"] =
+        serde_json::json!({"max_abs_err": fp32.max_abs_err, "max_rel_err": fp32.max_rel_err});
+    doc["quantized_activation_oracle"] = served
+        .quantized_act_rel_err
+        .map(|e| serde_json::json!({"max_rel_err": e}))
+        .into();
+    doc["tolerance_rel"] = tolerance_from(served.max_rel_err).into();
+    doc
+}
+
+/// A row measured against the gguf-py fixtures: the kernel is run on the fixture's bytes.
+struct FixtureKernel {
+    id: &'static str,
+    source_fn: &'static str,
+    ggml_type: &'static str,
+    /// `(ggml_type_id, weights, x, in_dim, out_dim) -> y`, the row's own served path.
+    eval: fn(u32, &[u8], &[f32], usize, usize) -> Vec<f32>,
+}
+
+const GGUF_PY_ORACLE: &str = "gguf_py_dequant_f64";
+const ORACLE_DIR: &str = "evidence/kreg/oracle";
+
+/// A dequant-only row serves `dequantize_*` followed by an f32 dot, row by row.
+fn dequant_then_dot(
+    dequant: fn(&[u8]) -> crate::error::Result<Vec<f32>>,
+    w: &[u8],
+    x: &[f32],
+    in_dim: usize,
+    out_dim: usize,
+) -> Vec<f32> {
+    let dense = dequant(w).expect("the fixture dequantizes");
+    assert_eq!(dense.len(), in_dim * out_dim, "dequantized length");
+    dense
+        .chunks_exact(in_dim)
+        .map(|row| row.iter().zip(x).map(|(a, b)| a * b).sum())
+        .collect()
+}
+
+fn iq(t: u32, w: &[u8], x: &[f32], i: usize, o: usize) -> Vec<f32> {
+    iq_parallel_matvec(t, w, x, i, o).expect("iq_parallel_matvec on the fixture")
+}
+
+macro_rules! dequant_row {
+    ($id:literal, $f:ident, $t:literal) => {
+        FixtureKernel {
+            id: $id,
+            source_fn: stringify!($f),
+            ggml_type: $t,
+            eval: |_, w, x, i, o| dequant_then_dot($f, w, x, i, o),
+        }
+    };
+}
+
+macro_rules! iq_row {
+    ($id:literal, $t:literal) => {
+        FixtureKernel {
+            id: $id,
+            source_fn: "iq_parallel_matvec_into",
+            ggml_type: $t,
+            eval: iq,
+        }
+    };
+}
+
+const FIXTURE_KERNELS: &[FixtureKernel] = &[
+    dequant_row!("cpu.matvec.q4_1", dequantize_q4_1, "Q4_1"),
+    dequant_row!("cpu.matvec.q5_0", dequantize_q5_0, "Q5_0"),
+    dequant_row!("cpu.matvec.q5_1", dequantize_q5_1, "Q5_1"),
+    dequant_row!("cpu.matvec.q2_k", dequantize_q2_k, "Q2_K"),
+    dequant_row!("cpu.matvec.q3_k", dequantize_q3_k, "Q3_K"),
+    iq_row!("cpu.matvec.iq2_xxs", "IQ2_XXS"),
+    iq_row!("cpu.matvec.iq3_xxs", "IQ3_XXS"),
+    iq_row!("cpu.matvec.iq4_nl", "IQ4_NL"),
+    iq_row!("cpu.matvec.iq3_s", "IQ3_S"),
+    iq_row!("cpu.matvec.iq2_s", "IQ2_S"),
+    iq_row!("cpu.matvec.iq4_xs", "IQ4_XS"),
+];
+
+fn fixture_kernel(id: &str) -> &'static FixtureKernel {
+    FIXTURE_KERNELS
+        .iter()
+        .find(|k| k.id == id)
+        .unwrap_or_else(|| panic!("{id}: no fixture kernel"))
+}
+
+struct Fixture {
+    meta: serde_json::Value,
+    weights: Vec<u8>,
+    x: Vec<f32>,
+    reference: Vec<f64>,
+}
+
+/// Load a fixture and refuse one whose files are not the ones its `meta.json` hashed.
+fn fixture(ggml_type: &str) -> Fixture {
+    use sha2::{Digest, Sha256};
+    let dir = repo_root().join(ORACLE_DIR).join(ggml_type);
+    let read =
+        |f: &str| std::fs::read(dir.join(f)).unwrap_or_else(|e| panic!("{ggml_type}/{f}: {e}"));
+    let meta: serde_json::Value =
+        serde_json::from_slice(&read("meta.json")).expect("fixture meta.json");
+    assert_eq!(
+        meta["oracle"], GGUF_PY_ORACLE,
+        "{ggml_type}: fixture oracle"
+    );
+    assert_eq!(meta["ggml_type"], ggml_type, "{ggml_type}: fixture type");
+    let mut load = |f: &str| {
+        let b = read(f);
+        assert_eq!(
+            meta["sha256"][f].as_str(),
+            Some(format!("{:x}", Sha256::digest(&b)).as_str()),
+            "{ggml_type}/{f}: bytes are not the ones meta.json hashed"
+        );
+        b
+    };
+    let weights = load("weights.bin");
+    let x = load("x.bin")
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    let reference = load("ref.bin")
+        .chunks_exact(8)
+        .map(|c| f64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
+        .collect();
+    Fixture {
+        meta,
+        weights,
+        x,
+        reference,
+    }
+}
+
+/// The kernel's error against gguf-py, normalized by the largest |reference| as `measure` does.
+fn measure_fixture(k: &FixtureKernel, f: &Fixture) -> Measured {
+    let dim = |key: &str| f.meta[key].as_u64().expect("fixture dim") as usize;
+    let (in_dim, out_dim) = (dim("in_dim"), dim("out_dim"));
+    assert_eq!(f.x.len(), in_dim, "{}: x length", k.id);
+    assert_eq!(f.reference.len(), out_dim, "{}: ref length", k.id);
+    let type_id = f.meta["ggml_type_id"].as_u64().expect("ggml_type_id") as u32;
+    let y = (k.eval)(type_id, &f.weights, &f.x, in_dim, out_dim);
+    assert_eq!(y.len(), out_dim, "{}: output length", k.id);
+    let scale = f.reference.iter().fold(0f64, |m, r| m.max(r.abs()));
+    assert!(
+        scale > 0.0,
+        "{}: an all-zero reference measures nothing",
+        k.id
+    );
+    let max_abs_err = y
+        .iter()
+        .zip(&f.reference)
+        .map(|(a, r)| (f64::from(*a) - r).abs())
+        .fold(0f64, f64::max);
+    Measured {
+        max_abs_err,
+        max_rel_err: max_abs_err / scale,
+        quantized_act_rel_err: None,
+    }
+}
+
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn fixture_receipt(k: &FixtureKernel, row: &KernelRow) -> serde_json::Value {
+    let f = fixture(k.ggml_type);
+    let served = measure_fixture(k, &f);
+    let mut doc = receipt_header(k.id, k.source_fn, row);
+    let m = &f.meta;
+    doc["oracle"] = GGUF_PY_ORACLE.into();
+    doc["oracle_independent"] = true.into();
+    doc["oracle_fixture"] = serde_json::json!({
+        "dir": format!("{ORACLE_DIR}/{}", k.ggml_type),
+        "llama_cpp_commit": m["llama_cpp_commit"],
+        "sha256": m["sha256"],
+    });
+    doc["workload"] = serde_json::json!({
+        "in_dim": m["in_dim"], "out_dim": m["out_dim"], "seed": m["seed"], "trials": 1,
+    });
+    doc["served"] =
+        serde_json::json!({"max_abs_err": served.max_abs_err, "max_rel_err": served.max_rel_err});
+    doc["tolerance_rel"] = tolerance_from(served.max_rel_err).into();
+    doc
 }
 
 #[test]
@@ -336,22 +524,34 @@ fn emit_parity_receipts() {
     let r = registry().expect("registry");
     // KREG_EMIT=<id,id>: re-measure only these, so a new row does not re-stamp the others.
     let only = std::env::var("KREG_EMIT").ok();
-    for k in KERNELS.iter().filter(|k| {
+    let wanted = |id: &str| {
         only.as_deref()
-            .is_none_or(|o| o.split(',').any(|id| id == k.id))
-    }) {
+            .is_none_or(|o| o.split(',').any(|w| w == id))
+    };
+    let row_for = |id: &str, source_fn: &str| {
         let row = r
             .rows()
             .iter()
-            .find(|row| row.kernel_id == k.id)
-            .unwrap_or_else(|| panic!("{} is not a registry row", k.id));
+            .find(|row| row.kernel_id == id)
+            .unwrap_or_else(|| panic!("{id} is not a registry row"));
         assert_eq!(
-            row.source_fn, k.source_fn,
-            "{}: harness and row name different fns",
-            k.id
+            row.source_fn, source_fn,
+            "{id}: harness and row name different fns"
         );
-        let doc = receipt(k, row);
-        let path = out.join(format!("{}.json", k.id));
+        row
+    };
+    let docs = KERNELS
+        .iter()
+        .filter(|k| wanted(k.id))
+        .map(|k| (k.id, receipt(k, row_for(k.id, k.source_fn))))
+        .chain(
+            FIXTURE_KERNELS
+                .iter()
+                .filter(|k| wanted(k.id))
+                .map(|k| (k.id, fixture_receipt(k, row_for(k.id, k.source_fn)))),
+        );
+    for (id, doc) in docs {
+        let path = out.join(format!("{id}.json"));
         let text = serde_json::to_string_pretty(&doc).expect("receipt json");
         std::fs::write(&path, text + "\n").expect("write receipt");
         eprintln!("{}: {}", path.display(), doc["served"]);
@@ -407,6 +607,11 @@ fn committed_parity_receipts_hold_on_this_host() {
             row.precision.as_str(),
             "{id}: precision drifted"
         );
+        if rc["oracle"] == GGUF_PY_ORACLE {
+            check_fixture_receipt(id, path, &rc, row);
+            continue;
+        }
+        assert_eq!(rc["oracle"], ORACLE, "{path}: unknown oracle");
         let wl = &rc["workload"];
         let dim = |k: &str| wl[k].as_u64().expect("workload field") as usize;
         let w = Workload {
@@ -457,6 +662,37 @@ fn committed_parity_receipts_hold_on_this_host() {
             },
             p => panic!("{id}: no precision check for {p}"),
         }
+    }
+}
+
+/// The gguf-py half of FALSIFY-KREG-009: the fixture is the one the receipt measured, the kernel
+/// still lands within `tolerance_rel` of gguf-py, and `precision=f32` means f32-exact against it.
+fn check_fixture_receipt(id: &str, path: &str, rc: &serde_json::Value, row: &KernelRow) {
+    assert_eq!(
+        rc["oracle_independent"], true,
+        "{path}: a gguf-py receipt is independent"
+    );
+    let k = fixture_kernel(id);
+    assert_eq!(rc["source_fn"], k.source_fn, "{path}: source_fn");
+    let f = fixture(k.ggml_type);
+    assert_eq!(
+        rc["oracle_fixture"]["sha256"], f.meta["sha256"],
+        "{path}: the fixture changed since the receipt was measured"
+    );
+    let bound = rc["tolerance_rel"].as_f64().expect("tolerance_rel");
+    let now = measure_fixture(k, &f);
+    assert!(
+        now.max_rel_err <= bound,
+        "{id}: max_rel_err {} > receipt tolerance {bound} against gguf-py ({path})",
+        now.max_rel_err
+    );
+    match row.precision.as_str() {
+        "f32" => assert!(
+            now.max_rel_err < F32_CEILING,
+            "{id}: precision=f32, yet it is {} from gguf-py (ceiling {F32_CEILING})",
+            now.max_rel_err
+        ),
+        p => panic!("{id}: no gguf-py precision check for {p}"),
     }
 }
 
