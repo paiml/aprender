@@ -1,0 +1,84 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "rules": [
+            { "id": "PRREV-PMAT", "name": "pmat quality and duplication" }
+          ]
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "unknown",
+          "rules": [
+            { "id": "PRREV-MUTATION", "name": "mutation testing on the diff scope" }
+          ]
+        }
+      },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Not attempted. This review lane operates under an explicit hard rule: never run cargo test, cargo mutants, or any cargo build/test on this host (lambda, under heavy load), not even narrowly scoped. The mutation trigger fired mechanically for all 11 changed files (scripts/check_pr_review_receipt.sh --match-mutation-trigger), so a real cargo-mutants run is owed and was not performed. The author's own PR-body mutation claim (aprender-3d, unverified by this review) is: 'mutation on the #4599 diff, scoped: 4/4 mutants killed'."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "rules": [
+            { "id": "PRREV-AGY", "name": "cross-vendor review (gemini-3.1-pro-high)" }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "PRREV-AGY",
+          "level": "note",
+          "message": {
+            "text": "truncate_sliding_window can silently skip a large older ToolResult while keeping its preceding AssistantToolUse, leaving an orphaned tool_use that a strict LLM API's alternation check would reject. This PR hardens only age==0 (the newest message, via the new ContextError::ExceedsLimit branch); the pre-existing skip-without-break behavior for age>0 (the 'else if recent_msgs.len() >= self.config.min_messages { break; }' arm and its implicit fallthrough) is unchanged by this diff. Confirmed by direct code reading (this reviewer could not execute cargo to reproduce an API-level rejection, per this lane's no-cargo-on-host rule): the mechanism exists in both the pre-PR and post-PR versions of this function, so it is a pre-existing gap this PR does not introduce or claim to close, not a regression."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-orchestrate/src/serve/context.rs"
+                },
+                "region": { "startLine": 262, "endLine": 276 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "If an older turn contains a large ToolResult that exceeds the remaining budget, truncate_sliding_window skips it but may still have room for the preceding AssistantToolUse, leaving an orphaned tool_use in history; strict LLM APIs reject that as invalid alternation. This PR only hardens age==0 (the newest message); older messages keep the pre-existing skip-without-break behavior.",
+            "source": "agy gemini-3.1-pro-high on e3d9361e6, model-pinned run in an isolated rsync tree at .pr-review-diff.patch",
+            "excerpt": "If an older turn contains a large ToolResult that exceeds the remaining budget, truncate_sliding_window skips it but may still have room for the preceding AssistantToolUse, leaving an orphaned tool_use in history; strict LLM APIs reject that as invalid alternation. This PR only hardens age==0 (the newest message); older messages keep the pre-existing skip-without-break behavior.",
+            "excerpt_sha256": "4ed96953024d7cf55d6c954bc2ac23b087e125d730950a0531dac580b8d21b9a",
+            "disposition": "not reverified by the primary (cargo forbidden on this host); code-read confirms the mechanism is real and unchanged by this diff, i.e. pre-existing and out of scope for #4599 — not a blocking finding against this PR",
+            "agy_id": "skipped_intermediate_tool_result",
+            "baselineState": "pre-existing"
+          }
+        }
+      ]
+    }
+  ]
+}
