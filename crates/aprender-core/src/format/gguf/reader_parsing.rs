@@ -7,6 +7,48 @@ impl GgufReader {
         Self::from_bytes(data)
     }
 
+    /// Parse ONLY the header (metadata + tensor infos) of a GGUF file, never its tensor data.
+    ///
+    /// #4520 step 2 / #3761: `apr inspect --json` on Qwen3.5-27B-Q4_K_M read all 16.7 GB
+    /// and peaked at 32.8 GB RSS (`from_file`, then a copy of every tensor) to report
+    /// numbers the header holds. The header is read as a prefix that doubles until it
+    /// parses (16 MiB first, 256 MiB cap, the #3750 policy). A small file that does not
+    /// parse is that parse error; a header still unparsed at the cap is refused rather
+    /// than read whole. The reader's `data` is the prefix, so tensor bytes are NOT available from
+    /// it: size tensors with [`Self::tensor_extents`] against the returned file length.
+    pub fn header_from_file<P: AsRef<Path>>(path: P) -> Result<(Self, u64)> {
+        Self::header_from_file_within(
+            path,
+            crate::format::prefix::HEADER_FIRST_READ,
+            crate::format::prefix::HEADER_READ_CAP,
+        )
+    }
+
+    /// [`Self::header_from_file`] with the first read and the cap as parameters (the case
+    /// table uses small ones). The prefix grows through the ONE bounded-prefix policy
+    /// (`parse_growing_prefix_within`), so a header that still does not parse at `cap` is
+    /// refused by name, never read to EOF: a corrupt 17 GB GGUF costs `cap`, not 17 GB.
+    pub fn header_from_file_within<P: AsRef<Path>>(
+        path: P,
+        first: usize,
+        cap: usize,
+    ) -> Result<(Self, u64)> {
+        let path = path.as_ref();
+        let file_len = std::fs::metadata(path).map_err(AprenderError::Io)?.len();
+        // A FormatError contributes its message, not its Display: the prefix policy
+        // wraps it in its own FormatError, and "Invalid model format: … Invalid model
+        // format: …" is the core prefix leaking under the CLI's (#3661).
+        let parse = |bytes: Vec<u8>| {
+            Self::from_bytes(bytes).map_err(|e| match e {
+                AprenderError::FormatError { message } => message,
+                other => other.to_string(),
+            })
+        };
+        let reader = crate::format::prefix::parse_growing_prefix_within(path, first, cap, parse)
+            .map_err(|message| AprenderError::FormatError { message })?;
+        Ok((reader, file_len))
+    }
+
     /// Load a GGUF file preserving ALL metadata keys (no architecture
     /// whitelist).
     ///

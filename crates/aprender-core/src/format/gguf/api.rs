@@ -340,12 +340,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
     // Propagate raw GGUF KV metadata to downstream consumers (inspect/rosetta) so they
     // can display authentic on-disk keys instead of fabricated ML-shorthand names.
     // #3733: EVERY header key, including those outside the reader's parse allowlist.
-    let raw_metadata: BTreeMap<String, String> = reader
-        .metadata
-        .iter()
-        .chain(&reader.display_only_metadata)
-        .map(|(k, v)| (k.clone(), gguf_value_display(v)))
-        .collect();
+    let raw_metadata = gguf_raw_metadata(&reader);
 
     Ok(GgufRawLoadResult {
         tensors,
@@ -353,6 +348,18 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         model_config,
         raw_metadata,
     })
+}
+
+/// Every header key of `reader` with its display string: parsed keys and the
+/// display-only ones (#3733). Shared by [`load_gguf_raw`] and header-only `apr inspect`
+/// (#4520 step 2), so both print the same metadata.
+pub fn gguf_raw_metadata(reader: &GgufReader) -> BTreeMap<String, String> {
+    reader
+        .metadata
+        .iter()
+        .chain(&reader.display_only_metadata)
+        .map(|(k, v)| (k.clone(), gguf_value_display(v)))
+        .collect()
 }
 
 /// Format a `GgufValue` as a human-readable display string.
@@ -383,3 +390,7 @@ fn gguf_value_display(v: &crate::format::gguf::types::GgufValue) -> String {
 #[cfg(test)]
 #[path = "api_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "header_from_file_tests.rs"]
+mod header_from_file_tests;
