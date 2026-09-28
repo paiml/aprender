@@ -1265,10 +1265,133 @@ mod tests {
         assert!(WeightQuantType::admitted_by(&only_q4k, GGUF_TYPE_Q4_K).is_some());
     }
 
-    /// FALSIFY-KREG-005: every row names a function that exists in its source file.
+    /// Lexical `..`/`.` removal, so an include path and a row path compare equal.
+    fn norm(p: &std::path::Path) -> std::path::PathBuf {
+        use std::path::Component;
+        let mut out = std::path::PathBuf::new();
+        for c in p.components() {
+            match c {
+                Component::ParentDir => {
+                    out.pop();
+                },
+                Component::CurDir => {},
+                c => out.push(c),
+            }
+        }
+        out
+    }
+
+    /// `x` of a `mod x;` / `pub mod x;` / `pub(crate) mod x;` line; an inline `mod x {` is not one.
+    fn mod_decl(t: &str) -> Option<&str> {
+        let t = match t.strip_prefix("pub") {
+            Some(r) => match r.strip_prefix('(') {
+                Some(r) => r.split_once(')').map_or(r, |(_, a)| a),
+                None => r,
+            },
+            None => t,
+        };
+        let name = t
+            .trim_start()
+            .strip_prefix("mod ")?
+            .trim()
+            .strip_suffix(';')?
+            .trim();
+        let ok = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        ok.then_some(name)
+    }
+
+    /// The first `"…"` literal after `head` on the line.
+    fn quoted_after<'a>(t: &'a str, head: &str) -> Option<&'a str> {
+        let rest = &t[t.find(head)? + head.len()..];
+        let rest = &rest[rest.find('"')? + 1..];
+        Some(&rest[..rest.find('"')?])
+    }
+
+    /// The files rustc compiles into a crate, walked from `lib`: `mod x;` (x.rs or x/mod.rs in
+    /// the module dir), `#[path = "…"] mod x;`, and `include!("…")` (the included text keeps
+    /// the includer's module dir). Anything it does not understand is not reached, so a row
+    /// in such a file fails closed.
+    fn compiled_files(
+        root: &std::path::Path,
+        lib: &str,
+    ) -> std::collections::HashSet<std::path::PathBuf> {
+        let lib = std::path::PathBuf::from(lib);
+        let dir = lib
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![(lib, dir)];
+        while let Some((file, mdir)) = stack.pop() {
+            let Ok(src) = std::fs::read_to_string(root.join(&file)) else {
+                continue;
+            };
+            if !seen.insert(file.clone()) {
+                continue;
+            }
+            let here = file
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default();
+            let mut path_attr: Option<String> = None;
+            for line in src.lines() {
+                let t = line.trim();
+                if t.starts_with("//") {
+                    continue;
+                }
+                if t.starts_with("#[path") {
+                    path_attr = quoted_after(t, "#[path").map(str::to_string);
+                    continue;
+                }
+                if let Some(inc) = quoted_after(t, "include!(") {
+                    stack.push((norm(&here.join(inc)), mdir.clone()));
+                }
+                if let Some(name) = mod_decl(t) {
+                    if let Some(p) = path_attr.take() {
+                        let f = norm(&here.join(p));
+                        let d = f.with_extension("");
+                        stack.push((f, d));
+                    } else {
+                        let d = mdir.join(name);
+                        for f in [mdir.join(format!("{name}.rs")), d.join("mod.rs")] {
+                            if root.join(&f).is_file() {
+                                stack.push((f, d));
+                                break;
+                            }
+                        }
+                    }
+                }
+                if !t.starts_with("#[") {
+                    path_attr = None;
+                }
+            }
+        }
+        seen
+    }
+
+    /// FALSIFY-KREG-005: every row names a function that exists in its source file, and that
+    /// file is compiled into its crate (a dead `include!` twin with the same fn is not).
     #[test]
     fn falsify_kreg_005_every_row_names_a_real_fn() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut compiled = std::collections::HashSet::new();
+        for lib in [
+            "crates/aprender-serve/src/lib.rs",
+            "crates/aprender-compute/src/lib.rs",
+        ] {
+            compiled.extend(compiled_files(&root, lib));
+        }
+        // The walker must tell a dead twin from a live file, or the check below is vacuous.
+        let twin = "crates/aprender-serve/src/cuda/executor/kernel.rs";
+        if root.join(twin).is_file() {
+            assert!(
+                !compiled.contains(std::path::Path::new(twin)),
+                "{twin} is not compiled"
+            );
+        }
+        assert!(compiled.contains(std::path::Path::new(
+            "crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs"
+        )));
         let r = registry().expect("registry");
         let kernels = r
             .rows()
@@ -1286,6 +1409,11 @@ mod tests {
                 .match_indices(&needle)
                 .any(|(i, _)| src[i + needle.len()..].starts_with(['(', '<']));
             assert!(found, "{id}: `{needle}` not in {file}");
+            let f = norm(std::path::Path::new(file.as_str()));
+            assert!(
+                compiled.contains(&f),
+                "{id}: {file} is not compiled into its crate (no mod/include! chain from lib.rs)"
+            );
         }
     }
 
