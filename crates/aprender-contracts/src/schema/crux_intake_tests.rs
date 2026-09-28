@@ -279,7 +279,12 @@ fn beat_incumbents_cannot_name_the_crux_corpus() {
 /// A real scaffolded crux contract still parses and validates.
 #[test]
 fn real_crux_contract_still_validates() {
-    let yaml = include_str!("../../../../contracts/crux-I-10-v1.yaml");
+    let Some(yaml_owned) =
+        crate::schema::workspace_contract_or_skip("real_crux_contract_still_validates", "crux-I-10-v1.yaml")
+    else {
+        return;
+    };
+    let yaml: &str = &yaml_owned;
     let contract = parse_contract_str(yaml).expect("crux-I-10 parses");
     assert_eq!(contract.metadata.competitor.as_deref(), Some("ecosystem"));
     assert_eq!(contract.metadata.demand_score, Some(4));
@@ -293,7 +298,12 @@ fn real_crux_contract_still_validates() {
 /// because nothing parsed the field.
 #[test]
 fn apr_lint_producers_carries_a_vocabulary_intake_status() {
-    let yaml = include_str!("../../../../contracts/apr-lint-producers-v1.yaml");
+    let Some(yaml_owned) =
+        crate::schema::workspace_contract_or_skip("apr_lint_producers_carries_a_vocabulary_intake_status", "apr-lint-producers-v1.yaml")
+    else {
+        return;
+    };
+    let yaml: &str = &yaml_owned;
     let contract = parse_contract_str(yaml).expect("apr-lint-producers parses");
     assert_eq!(
         contract.metadata.intake_status,
@@ -339,7 +349,12 @@ stories:
 /// iterate an empty vec and pass.
 #[test]
 fn the_real_crux_registry_rows_are_all_in_domain() {
-    let yaml = include_str!("../../../../contracts/crux-competitive-research-ux-v1.yaml");
+    let Some(yaml_owned) =
+        crate::schema::workspace_contract_or_skip("the_real_crux_registry_rows_are_all_in_domain", "crux-competitive-research-ux-v1.yaml")
+    else {
+        return;
+    };
+    let yaml: &str = &yaml_owned;
     let contract = parse_contract_str(yaml).expect("crux registry parses");
     assert!(
         contract.stories.len() >= 250,

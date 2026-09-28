@@ -16,7 +16,7 @@ use entrenar_common::cli::{styles, CommonArgs};
 #[derive(Parser)]
 #[command(name = "entrenar-bench")]
 #[command(about = "Distillation benchmarking and hyperparameter sweep tool")]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

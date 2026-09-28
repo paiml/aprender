@@ -251,6 +251,7 @@ name = "apr-cli"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-cgp",
  "aprender-common",
  "aprender-compute",
@@ -366,10 +367,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-build-sha"
+version = "0.69.3"
+
+[[package]]
 name = "aprender-cbtop"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
  "aprender-gpu",
@@ -396,6 +402,7 @@ name = "aprender-cgp"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-gpu",
  "aprender-update",
  "chrono",
@@ -474,6 +481,7 @@ name = "aprender-compute-xtask"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "bashrs",
  "clap",
  "colored 2.2.0",
@@ -505,6 +513,7 @@ dependencies = [
 name = "aprender-contracts-cli"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-contracts",
  "aprender-update",
  "clap",
@@ -620,6 +629,7 @@ name = "aprender-data"
 version = "0.69.3"
 dependencies = [
  "aes-gcm",
+ "aprender-build-sha",
  "aprender-test-lib",
  "aprender-update",
  "argon2",
@@ -673,6 +683,7 @@ name = "aprender-db"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
  "aprender-update",
@@ -748,6 +759,7 @@ dependencies = [
 name = "aprender-explain"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-gpu",
  "aprender-present-core",
  "aprender-present-terminal",
@@ -866,6 +878,7 @@ name = "aprender-orchestrate"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
@@ -936,6 +949,7 @@ dependencies = [
 name = "aprender-present-cli"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-present-yaml",
  "aprender-update",
  "clap",
@@ -1002,6 +1016,7 @@ dependencies = [
 name = "aprender-present-terminal"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-present-core",
  "aprender-update",
  "bitvec",
@@ -1067,6 +1082,7 @@ version = "0.69.3"
 dependencies = [
  "addr2line 0.25.1",
  "anyhow",
+ "aprender-build-sha",
  "aprender-compute",
  "aprender-core",
  "aprender-db",
@@ -1128,6 +1144,7 @@ dependencies = [
 name = "aprender-ptx-debug"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-update",
  "clap",
  "proptest",
@@ -1138,6 +1155,7 @@ dependencies = [
 name = "aprender-qa-certify"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-update",
  "chrono",
  "clap",
@@ -1150,6 +1168,7 @@ dependencies = [
 name = "aprender-qa-cli"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-qa-certify",
  "aprender-qa-gen",
  "aprender-qa-report",
@@ -1267,6 +1286,7 @@ name = "aprender-rag-cli"
 version = "0.69.3"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-rag",
  "aprender-update",
  "assert_cmd",
@@ -1410,6 +1430,7 @@ dependencies = [
 name = "aprender-simulate"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-contracts",
  "aprender-contracts-macros",
  "aprender-present-core",
@@ -1479,6 +1500,7 @@ dependencies = [
 name = "aprender-test-cli"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-test-lib",
  "aprender-update",
  "assert_cmd",
@@ -1666,6 +1688,7 @@ dependencies = [
 name = "aprender-train-bench"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "aprender-update",
@@ -1696,6 +1719,7 @@ dependencies = [
 name = "aprender-train-distill"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "aprender-update",
@@ -1718,6 +1742,7 @@ dependencies = [
 name = "aprender-train-inspect"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "aprender-update",
@@ -1735,6 +1760,7 @@ dependencies = [
 name = "aprender-train-lora"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "aprender-update",
@@ -1752,6 +1778,7 @@ dependencies = [
 name = "aprender-train-shell"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "aprender-update",
@@ -1822,6 +1849,7 @@ dependencies = [
 name = "aprender-verify-ml"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-compute",
  "aprender-core",
  "aprender-profile",
@@ -1901,6 +1929,7 @@ dependencies = [
 name = "aprender-zram-cli"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-update",
  "aprender-zram-adaptive",
  "aprender-zram-core",
@@ -1928,6 +1957,7 @@ dependencies = [
 name = "aprender-zram-generator"
 version = "0.69.3"
 dependencies = [
+ "aprender-build-sha",
  "aprender-update",
  "aprender-zram-core",
  "clap",

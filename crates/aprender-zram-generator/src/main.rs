@@ -30,7 +30,7 @@ use std::process::ExitCode;
 #[derive(Debug, Parser)]
 #[command(
     name = "trueno-zram-generator",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     about = "systemd generator for zram device configuration",
     long_about = "systemd generator for zram device configuration.\n\n\
                   systemd invokes generators as `generator <NORMAL_DIR> <EARLY_DIR> <LATE_DIR>`; \

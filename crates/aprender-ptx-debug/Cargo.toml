@@ -22,6 +22,9 @@ clap.workspace = true
 unsafe_code = "allow"
 
 
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 aprender-update = { workspace = true }  # EPIC #4232 update check (not wasm32: ureq)
 

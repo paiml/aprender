@@ -40,7 +40,7 @@ use tungstenite::accept;
 #[derive(Parser)]
 #[command(name = "presentar")]
 #[command(about = "WASM-first visualization framework CLI")]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

@@ -9,25 +9,25 @@
 /// three pieces `.</` `s` `>` -- the shape measured on TinyLlama.
 fn spm_vocab_model(token_types: Option<&[i32]>) -> GGUFModel {
     let tokens = [
-        "<unk>", // 0  UNKNOWN
-        "<s>",   // 1  CONTROL
-        "</s>",  // 2  CONTROL (eos)
-        "▁Hi",   // 3
-        ".",     // 4
-        ".</",   // 5  the piece greedy matching wrongly chose
-        "s",     // 6
-        ">",     // 7
+        "<unk>",  // 0  UNKNOWN
+        "<s>",    // 1  CONTROL
+        "</s>",   // 2  CONTROL (eos)
+        "▁Hi",    // 3
+        ".",      // 4
+        ".</",    // 5  the piece greedy matching wrongly chose
+        "s",      // 6
+        ">",      // 7
         "[INST]", // 8  USER_DEFINED
-        "<|x|>", // 9  NORMAL despite its <|...|> shape
-        "▁",     // 10
-        "[",     // 11
-        "I",     // 12
-        "N",     // 13
-        "T",     // 14
-        "]",     // 15
-        "<",     // 16
-        "|",     // 17
-        "x",     // 18
+        "<|x|>",  // 9  NORMAL despite its <|...|> shape
+        "▁",      // 10
+        "[",      // 11
+        "I",      // 12
+        "N",      // 13
+        "T",      // 14
+        "]",      // 15
+        "<",      // 16
+        "|",      // 17
+        "x",      // 18
     ];
     let mut b = GGUFBuilder::new()
         .architecture("llama")
@@ -50,15 +50,26 @@ fn control_eos_inside_text_encodes_as_the_eos_id_3993() {
     let model = spm_vocab_model(Some(&LLAMA_TYPES));
     let ids = model.encode("Hi.</s>").expect("vocabulary");
     // llama.cpp: `▁Hi` `.` `</s>`. Before #3993: `▁Hi` `.</` `s` `>`.
-    assert_eq!(ids, vec![3, 4, 2], "`</s>` in text must be the CONTROL token, not `.</` `s` `>`");
+    assert_eq!(
+        ids,
+        vec![3, 4, 2],
+        "`</s>` in text must be the CONTROL token, not `.</` `s` `>`"
+    );
 }
 
 #[test]
 fn user_defined_tokens_are_split_out_like_control_tokens_3993() {
     let model = spm_vocab_model(Some(&LLAMA_TYPES));
     let ids = model.encode("[INST]Hi").expect("vocabulary");
-    assert_eq!(ids.first(), Some(&8), "USER_DEFINED `[INST]` is special: {ids:?}");
-    assert!(ids.contains(&3), "the text after it is still encoded: {ids:?}");
+    assert_eq!(
+        ids.first(),
+        Some(&8),
+        "USER_DEFINED `[INST]` is special: {ids:?}"
+    );
+    assert!(
+        ids.contains(&3),
+        "the text after it is still encoded: {ids:?}"
+    );
 }
 
 /// Regression guard, not a must-RED (it passed before #3993): a file without a
@@ -67,7 +78,11 @@ fn user_defined_tokens_are_split_out_like_control_tokens_3993() {
 #[test]
 fn without_token_types_the_gh320_pattern_still_marks_specials_3993() {
     let ids = spm_vocab_model(None).encode("Hi<|x|>").expect("vocabulary");
-    assert_eq!(ids, vec![3, 9], "fallback: `<|x|>` is special without token types");
+    assert_eq!(
+        ids,
+        vec![3, 9],
+        "fallback: `<|x|>` is special without token types"
+    );
     // ...and without types, `</s>` is NOT special: that is the #3993 defect, confined to
     // files that carry no type table (every llama.cpp-produced GGUF carries one).
     let ids = spm_vocab_model(None).encode("Hi.</s>").expect("vocabulary");

@@ -13,6 +13,12 @@ keywords = ["ai-agent", "ml-serving", "code-analysis", "transpiler", "sovereign-
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 exclude = [
+    # #4130: test targets that cannot compile from the published .crate, so they are not shipped (cargo drops a
+    # target whose file is excluded). Each either uses a PATH-ONLY sibling dev-dependency, which `cargo package`
+    # strips (PMAT-955 / preflight R6 forbid versioning it: the 0.65.0 publish cycle), or `include_str!`s a file
+    # outside this crate (the repo-root contracts/, CLAUDE.md, LICENSE, apr-cli sources). They still run in the
+    # workspace. Root-anchored (CB-510). Measured by scripts/package_tarball_build.sh (#4114).
+    "/tests/cuda_edge_cases.rs",
     "book/",
     "docs/specifications/",
     ".github/",
@@ -309,6 +315,7 @@ sovereign-stack = [
 ]
 
 [build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
