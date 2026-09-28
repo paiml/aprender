@@ -95,9 +95,12 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 | Source | What it says | Consumed by | Verdict |
 |---|---|---|---|
 | `aprender-serve/src/quantize/simd_backend.rs:41` `detect_simd_backend()` | `SimdBackend::Neon` on every aarch64 host, from arch alone | serve: tests only (`simd_backend.rs:319`, `tests_coverage_detect_simd.rs`); `aprender-zram/bins/trueno-ublk/src/device/mod.rs:351` | Arch label, not kernel path. Harmless today (no serve prod consumer). A trap if a receipt ever reads it: that is why E-R3-2 asks for `kernel_path()` per dispatcher, never this |
-| `docs/audits/impl-PMAT-989-receipt.md:52,60` | gx10 / mini `backend: cpu … class=neon` | receipt prose | Host-class label. It must not be read as "Q4K/Q6K ran NEON". Emitter not located in a 10-min timebox; open item for R3 impl |
+| `docs/audits/impl-PMAT-989-receipt.md:52,60` | gx10 / mini `backend: cpu … class=neon` | receipt prose | Host-class label. It must not be read as "Q4K/Q6K ran NEON". Emitter: `aprender-compute/src/registry/mod.rs:438` `render_entry` prints `class={compute_class}`, set at :606 from `cpu_isa()` (:614), which returns `"neon"` for any aarch64 build (:627) and the widest detected ISA on x86. It is an ISA-availability label for the host, never the kernel a Q4K/Q6K dot took |
 | `contracts/trueno/neon-dequant-v1.yaml` (+ generated `contract_*_neon_q4k_dequant!` macros in `aprender-compute/src/generated_contracts.rs`) | NEON Q4K/Q6K/Q8_0 **dequant** equations with Lean theorems | aprender-compute | Dequant, not the fused dot. It is a separate kernel family, but R3's oracle tests can reuse its fixtures (block builders, ε). Check before R3 writes a new block generator |
 | `docs/build-ledger/2026-09-13/e45eaab47-reconcile.json:85` | "remaining: NEON path for Q4_K and Q6_K GEMV, and an ARM speed gate" | ledger | Correct (it names the gap) |
 | `docs/specifications/0.66-performance-parity-report.md:175` | G5 "GB10 decode 0.66× … Q4_K GEMV scalar on aarch64 (#2567)" | spec | Correct: attributes the GB10 gap to scalar |
 
 **Consequence for R3's exit (adds to E-R3-2):** a NEON number is admissible only with `kernel_path()` in the receipt. The `detect_simd_backend()` value and `class=neon` are never proof, which is the same rule as OBS-18's gpu_proof.
+
+## 12. Status (cop ruling 2026-09-28 10:20Z)
+R3 is a **FINDING, not a minted row**. The mint is deferred (only the cop mints, freeze on). Nothing here is code. When it is minted, the scope is §2 plus §11's rule: `kernel_path()` in every receipt; `cpu_isa()`/`class=` and `detect_simd_backend()` are host labels, never proof. Checked at c115c5ed02.
