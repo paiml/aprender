@@ -29,7 +29,8 @@ fn test_run_insufficient_files() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     // Debug: unreachable (panicked above). Release: must be a rejection, not a successful merge.
     #[cfg(not(debug_assertions))]
@@ -55,7 +56,8 @@ fn test_run_empty_files() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     // Debug: unreachable (panicked above). Release: must be a rejection, not a successful merge.
     #[cfg(not(debug_assertions))]
@@ -82,7 +84,8 @@ fn test_run_file_not_found() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     assert!(result.is_err());
     match result {
@@ -109,7 +112,8 @@ fn test_run_second_file_not_found() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     assert!(result.is_err());
     match result {
@@ -134,7 +138,8 @@ fn test_run_unknown_strategy() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     assert!(result.is_err());
     match result {
@@ -161,7 +166,8 @@ fn test_run_ties_without_base_model() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     assert!(result.is_err());
     match result {
@@ -190,7 +196,8 @@ fn test_run_dare_without_base_model() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     assert!(result.is_err());
     match result {
@@ -224,7 +231,8 @@ fn test_run_slerp_with_three_models() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     assert!(result.is_err());
 }
@@ -294,7 +302,8 @@ fn test_run_invalid_apr_files() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     // Should fail because files are not valid APR
     assert!(result.is_err());
@@ -319,8 +328,63 @@ fn test_run_with_weights() {
         42,
         false,
         false,
-        true, // #2392: force — these tests predate the overwrite guard
+        true,  // #2392: force — these tests predate the overwrite guard
+        false, // widen
     );
     // Will fail at actual merge, but tests weight parsing path
     assert!(result.is_err());
+}
+
+/// FALSIFY-MOF-004 through the CLI: `apr merge --widen` reaches the writer.
+/// Two f16 inputs merge to an f16 .apr by default and to an F32 .apr (about
+/// twice the size) with `--widen`; parse, dispatch and `run` all carry it.
+#[test]
+fn falsify_mof_004_widen_flag_reaches_the_writer() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+    use clap::Parser as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let data: Vec<f32> = (0..64 * 64).map(|i| (i % 16) as f32 / 4.0).collect();
+    let inputs: Vec<PathBuf> = ["a.apr", "b.apr"]
+        .iter()
+        .map(|n| {
+            let mut w = AprV2Writer::new(AprV2Metadata::default());
+            w.add_f16_tensor("w", vec![64, 64], &data);
+            let p = dir.path().join(n);
+            std::fs::write(&p, w.write().expect("encode")).expect("write");
+            p
+        })
+        .collect();
+    let size = |widen: bool| {
+        let out = dir.path().join(format!("m-{widen}.apr"));
+        let mut argv = vec!["apr".to_string(), "merge".to_string()];
+        argv.extend(inputs.iter().map(|p| p.display().to_string()));
+        argv.extend(["-o".to_string(), out.display().to_string()]);
+        if widen {
+            argv.push("--widen".to_string());
+        }
+        // 16 MB stack: clap's parse of the full `Commands` enum overflows the
+        // 2 MiB test-thread stack in debug builds (same as data.rs parse_cli).
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                let cli = crate::Cli::try_parse_from(&argv).expect("parse");
+                crate::dispatch_model_commands(&cli)
+                    .expect("merge is a model command")
+                    .expect("merge");
+            })
+            .expect("spawn merge thread")
+            .join()
+            .expect("merge thread");
+        std::fs::metadata(&out).expect("output").len()
+    };
+    let input = std::fs::metadata(&inputs[0]).expect("input").len();
+    let (kept, widened) = (size(false), size(true));
+    assert!(
+        (kept as f64) < input as f64 * 1.02,
+        "default: {kept} B vs {input} B in"
+    );
+    assert!(
+        widened as f64 > input as f64 * 1.9,
+        "--widen: {widened} B vs {input} B in"
+    );
 }

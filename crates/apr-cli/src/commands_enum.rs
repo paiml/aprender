@@ -793,6 +793,10 @@ pub enum Commands {
         /// #2392: Overwrite an existing output file (refused without it)
         #[arg(short, long)]
         force: bool,
+        /// Write an .apr output as F32 even when every input is BF16/F16
+        /// (default: keep the inputs' half dtype; merge-output-fidelity-v1 MOF-004)
+        #[arg(long)]
+        widen: bool,
     },
     /// Quantize model weights (GH-243)
     Quantize {

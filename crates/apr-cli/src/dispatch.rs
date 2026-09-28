@@ -1008,6 +1008,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             seed,
             plan,
             force,
+            widen,
         } => {
             let resolved: std::result::Result<Vec<std::path::PathBuf>, _> = files
                 .iter()
@@ -1026,6 +1027,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     cli.json,
                     *plan,
                     *force,
+                    *widen,
                 ),
                 Err(e) => Err(e),
             }

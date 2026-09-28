@@ -318,6 +318,7 @@ pub fn apr_merge<P: AsRef<Path>>(
         options.strategy,
         &input_paths,
         &arch_paths,
+        options.widen,
     )?;
 
     // Get output file size
