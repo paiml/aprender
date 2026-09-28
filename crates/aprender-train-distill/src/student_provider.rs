@@ -133,6 +133,18 @@ pub trait StudentLogitsProvider {
     fn save_checkpoint(&mut self, _path: &std::path::Path) -> Result<()> {
         Ok(())
     }
+
+    /// Largest batch whose every row this provider trains on in one
+    /// `apply_kd_gradient` call. `None` means no limit.
+    ///
+    /// distill-batch-honesty-v1 (FALSIFY-DBH-002): a provider that can
+    /// only apply one row per step MUST return `Some(1)`, and the pipeline
+    /// refuses a larger `training.batch_size` by name before step 0. The
+    /// alternative is the S-R6 failure: the loss averages B rows, the
+    /// update uses one, and the log says batch B.
+    fn max_batch(&self) -> Option<usize> {
+        None
+    }
 }
 
 /// Fixture student for unit testing the orchestration layer.
@@ -339,10 +351,23 @@ mod cuda_backend {
                         .to_string(),
                 });
             };
-            // Apply only the LAST gradient (matches the batch_size=1
-            // limitation documented on the struct). Future Phase 2e fuses
-            // input_ids + gradient into a single trait call so larger
-            // batches can be processed correctly.
+            // One row per step: `max_batch` returns Some(1) and the
+            // pipeline refuses a larger batch before step 0. A multi-row
+            // gradient here means a caller bypassed that check; refuse it
+            // rather than train on the last row only (distill-batch-
+            // honesty-v1, S-R6). Phase 2e fuses input_ids + gradient into
+            // one trait call so larger batches can be processed correctly.
+            if gradient.len() > 1 {
+                return Err(entrenar_common::EntrenarError::Internal {
+                    message: format!(
+                        "CudaStudentProvider.apply_kd_gradient: got {} gradient \
+                         rows, can train 1 per step (max_batch = 1); refusing \
+                         instead of dropping {} rows (distill-batch-honesty-v1)",
+                        gradient.len(),
+                        gradient.len() - 1
+                    ),
+                });
+            }
             let last_grad =
                 gradient
                     .last()
@@ -359,6 +384,10 @@ mod cuda_backend {
                         .to_string(),
                 })?;
             Ok(())
+        }
+
+        fn max_batch(&self) -> Option<usize> {
+            Some(1)
         }
 
         /// PMAT-699 P0 fix: pull trained weights from GPU and write them
