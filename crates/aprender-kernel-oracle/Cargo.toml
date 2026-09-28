@@ -1,0 +1,17 @@
+[package]
+name = "aprender-kernel-oracle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "KTEST-02: f64 scalar reference kernels and the per-element error-bound margin harness"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# No dependencies, on purpose (KTEST-001 §0.3): the oracle is the mathematical
+# definition in f64, and it must not be able to reach an optimized backend.
+# `oracle_has_no_dependencies` in src/lib.rs refuses any entry added here.
+[dependencies]
+
+[lints]
+workspace = true
