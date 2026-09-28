@@ -858,15 +858,40 @@ fn oracle_now(rc: &serde_json::Value, row: &KernelRow) -> String {
     }
 }
 
+/// `KREG_INPUT_SETS_OUT`: the input-set hashes recomputed from the tree at `KREG_GIT_SHA`, one
+/// per committed receipt, for the release-readiness v2 extractor. A kernel cell is fresh when its
+/// receipt's `input_set_hash` equals the one here (design §5); aprender-contracts cannot compute
+/// it itself without a second copy of [`InputSet`].
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn write_input_sets(
+    out: &str,
+    sets: serde_json::Map<String, serde_json::Value>,
+    fresh: usize,
+    total: usize,
+) {
+    let sha = std::env::var("KREG_GIT_SHA").expect("KREG_GIT_SHA: the commit the sets are for");
+    let doc = serde_json::json!({
+        "schema": "kreg-input-sets/v1",
+        "build_identity": sha,
+        "reuse": {"fresh": fresh, "total": total},
+        "input_sets": sets,
+    });
+    let text = serde_json::to_string_pretty(&doc).expect("input sets json");
+    std::fs::write(out, text + "\n").unwrap_or_else(|e| panic!("{out}: {e}"));
+}
+
 /// FALSIFY-KREG-012 (KTEST-07 F-8): every committed receipt's input set, recomputed from this
 /// tree on the device the receipt names, is the one it recorded, so the gate may reuse it without
 /// re-measuring. A kernel source, row, toolchain or fixture edit makes that receipt stale, and
 /// the test names the receipt and the parts. The reuse count is printed for the gate's report.
 #[test]
+#[allow(clippy::disallowed_methods)] // serde_json::json! unwraps internally
 fn committed_parity_receipts_are_fresh_against_this_tree() {
     let r = registry().expect("registry");
     let all = committed();
     let mut stale = Vec::new();
+    let mut sets = serde_json::Map::new();
     for (entry, rc) in &all {
         let path = entry["receipt"].as_str().expect("receipt path");
         let id = rc["kernel_id"].as_str().expect("kernel_id");
@@ -885,9 +910,20 @@ fn committed_parity_receipts_are_fresh_against_this_tree() {
         )
         .unwrap_or_else(|e| panic!("{path}: {e}"));
         let hash = rc["input_set_hash"].as_str().unwrap_or("");
-        if let Freshness::Stale(parts) = was.freshness(hash, &now) {
+        let parts = match was.freshness(hash, &now) {
+            Freshness::Fresh => Vec::new(),
+            Freshness::Stale(parts) => parts,
+        };
+        if !parts.is_empty() {
             stale.push(format!("{path}: stale {}", parts.join(",")));
         }
+        sets.insert(
+            id.to_string(),
+            serde_json::json!({"receipt": path, "input_set_hash": now.hash(), "stale": parts}),
+        );
+    }
+    if let Ok(out) = std::env::var("KREG_INPUT_SETS_OUT") {
+        write_input_sets(&out, sets, all.len() - stale.len(), all.len());
     }
     eprintln!(
         "kreg receipt reuse: {}/{} fresh",
