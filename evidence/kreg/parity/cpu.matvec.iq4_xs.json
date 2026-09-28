@@ -1,0 +1,41 @@
+{
+  "build_identity": "08f1b37d465850e89813a20ddf6129a71855dbf9",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.matvec.iq4_xs",
+  "oracle": "gguf_py_dequant_f64",
+  "oracle_fixture": {
+    "dir": "evidence/kreg/oracle/IQ4_XS",
+    "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
+    "sha256": {
+      "ref.bin": "25c3f6f5e9e8358e6be339264cfb4e34235792fbf8b8f56224962645c5d87f5f",
+      "weights.bin": "da6950a47eebbd344c5c862fa042ab11fd3d09d1de7d98e6053edc99d1d737a8",
+      "x.bin": "c760379f9a6be7968e0937abf9f681e3322230d3e81cb77776f5342a2a0da3d0"
+    }
+  },
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.00039564490180055145,
+    "max_rel_err": 5.808875172139884e-7
+  },
+  "source_fn": "iq_parallel_matvec_into",
+  "tolerance_rel": 2e-6,
+  "ts": "2026-09-28T07:47:33Z",
+  "workload": {
+    "in_dim": 1024,
+    "out_dim": 32,
+    "seed": 4562,
+    "trials": 1
+  }
+}

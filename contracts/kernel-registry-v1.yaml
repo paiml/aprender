@@ -52,7 +52,8 @@ metadata:
     - 'crates/aprender-serve/src/kernel_registry.rs — the runtime gate'
     - 'crates/aprender-contracts/src/lint/kernel_registry_v1_tests.rs — the case table, both arms, on the REAL contract and registry'
     - 'crates/aprender-serve/src/kernel_registry_parity.rs — the parity receipts a tolerance path points at (FALSIFY-KREG-009)'
-    - 'evidence/kreg/parity/ — the receipts; oracle in_tree_dequant_f64 (not independent: an llama.cpp oracle is the follow-up)'
+    - 'evidence/kreg/parity/ — the receipts; oracle in_tree_dequant_f64 for the fused kernels (not independent), gguf_py_dequant_f64 for the dequant-only and IQ rows (independent)'
+    - 'evidence/kreg/oracle/ — gguf-py fixtures written by scripts/kreg_ggufpy_oracle.py (llama.cpp gguf-py decoders; meta.json pins the commit and file sha256)'
 
 entity:
   type: json
