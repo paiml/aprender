@@ -158,6 +158,7 @@ falsification_tests:
       every committed receipt, re-measured with its own seed and workload, stays within its tolerance_rel;
       the row's tolerance is that receipt's path; a precision=f32 row serves exactly what the FP32 scope
       computes, and a quantized-precision row serves something measurably coarser. Mutants: a q5_k row
-      re-declared q8_k, a q6_k bound below the measurement, and a q4_k row reset to unmeasured are each RED
+      re-declared q8_k, a q8_0 row re-declared f32, a q6_k bound below the measurement, and a q4_k row reset to
+      unmeasured are each RED
     test: cargo test -p aprender-serve --lib kernel_registry::parity
     if_fails: a receipt is a file that was once true, and a row can declare an activation precision it does not serve
