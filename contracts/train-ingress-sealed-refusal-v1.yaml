@@ -1,0 +1,62 @@
+metadata:
+  kind: pattern
+  version: 1.1.0
+  created: '2026-09-28'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The 0.72 R11 data half: no sealed eval item reaches an apr training run. Spike S-R11b (2026-09-28, desk,
+    origin/main aca6f2d7f6) found that no trainer loader (finetune, distill prompts, pretrain shards) consults a
+    sealed set. The sealed split is defined only by trace-split-guard-v1 (TSG-004) and trace-dedup-v1 on the
+    unmerged rex/001 branches, with no implementation. apr data decontaminate and apr eval contamination only
+    report. This contract puts the refusal at trainer ingress, so a run cannot bypass the split.
+  references:
+  - 'branch la-72/0.72-shaping: docs/specifications/aprender-train/train-what-you-serve-0.72.md §R11, Spike S-R11b (not on main until the 0.72 shaping PR lands)'
+  - 'trace-split-guard-v1 FALSIFY-TSG-004 and trace-dedup-v1 (origin/rex/001-prm-s1-v2, unmerged)'
+  - crates/aprender-data/src/quality/decontaminate.rs (ngram_overlap, report-only today)
+  - 'train-run-receipt-v1 (branch la-72/0.72-shaping; the receipt records the sealed manifest sha)'
+status: PROPOSED
+equations:
+  ingress_refusal:
+    formula: 'train(D, S) runs ⇒ ∀ d ∈ D: norm(d) ∉ norm(S) ∧ ¬near_dup(d, S); otherwise exit ≠ 0 naming each sealed id hit'
+    domain: 'S = sealed manifest (ids, sha256 and normalised shingles of each sealed item); D = every sample a training verb reads (finetune corpus, distill prompts, pretrain shards)'
+    invariants:
+    - 'norm = the trace-dedup-v1 normaliser (re-path, re-indent, rename). An exact-sha check alone does not satisfy this contract'
+    - 'The refusal happens before step 0; a partially trained run on sealed data is a FAIL even if it later aborts'
+    - 'The receipt (train-run-receipt-v1) records sealed_manifest_sha256 and sealed_hits = 0'
+    preconditions:
+    - 'CPU-only tests on tiny fixtures; no model weights needed (the check runs before model load)'
+proof_obligations:
+- type: invariant
+  property: No sealed item is trained on
+  formal: '∀ runs r: sealed_hits(r) = 0 ∧ receipt(r).sealed_manifest_sha256 is set'
+  applies_to: all
+- type: invariant
+  property: The check cannot be vacuous
+  formal: '|S| = 0 ∨ S unreadable ⇒ refuse for an rc-bound run'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TIS-001
+  rule: An exact sealed item is refused
+  prediction: 'a finetune corpus with one sample byte-equal to a sealed item exits non-zero before step 0 and names the sealed id'
+  test: 'IN-TREE: crates/apr-cli/src/commands/sealed_ingress.rs::falsify_tis_001_sealed_item_in_corpus_is_refused. CPU fixture: 3-item sealed manifest, 20-sample instruct JSONL with sealed item 2 inserted at row 11'
+  if_fails: 'the trainer ingests sealed data (S-R11b: no loader checks today)'
+- id: FALSIFY-TIS-002
+  rule: Planted falsifier — a perturbed sealed item is refused
+  prediction: 'the same sealed diff re-indented, re-pathed and with one identifier renamed is refused; a check that compares sha256 only turns this RED'
+  test: 'NOT YET IMPLEMENTED (exact matching only; near-duplicate detection is open 0.72 work, so this row stays RED by design). Planned: same fixture, sealed item perturbed per trace-dedup-v1 FALSIFY-TDD-001'
+  if_fails: 'contamination passes under a new sha, the case TSG-004 exists to stop'
+- id: FALSIFY-TIS-003
+  rule: Every ingress is covered
+  prediction: 'TIS-001 holds for apr finetune (instruct corpus), apr distill (prompts JSONL) and apr pretrain (shard reader)'
+  test: 'IN-TREE: crates/apr-cli/src/commands/sealed_ingress.rs::falsify_tis_003_every_ingress_is_covered + crates/apr-cli/src/commands/distill_include_01.rs::falsify_tis_003_distill_prompts_hook_refuses_sealed_prompt (finetune + distill checked; rc-bound pretrain refused by name because u32 shards cannot be checked against a sha-only manifest). Original plan: one fixture per loader: load_instruct_corpus, read_prompts_jsonl, ShardBatchIter'
+  if_fails: 'a guard on one verb only is bypassed by the other two'
+- id: FALSIFY-TIS-004
+  rule: Unrelated data is not refused
+  prediction: 'a corpus with no sealed item and no near-duplicate trains; false refusals = 0 on the fixture'
+  test: 'IN-TREE: crates/apr-cli/src/commands/sealed_ingress.rs::falsify_tis_004_clean_corpus_passes (fixture minus the inserted item)'
+  if_fails: 'an over-eager guard gets disabled, which is worse than a narrow one'
+- id: FALSIFY-TIS-005
+  rule: No manifest, no rc run
+  prediction: 'an rc-bound training run with no sealed manifest, or an empty one, exits non-zero; the receipt never shows sealed_hits = 0 against an empty set'
+  test: 'IN-TREE: crates/apr-cli/src/commands/sealed_ingress.rs::falsify_tis_005_rc_bound_without_manifest_is_refused + ::falsify_tis_005_empty_manifest_is_refused + ::falsify_tis_005_unreadable_manifest_is_refused. Same fixture, --sealed-manifest omitted and then an empty file'
+  if_fails: '"0 sealed hashes in train data" is claimed vacuously'
