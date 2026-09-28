@@ -1750,7 +1750,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             directory,
             repo_id,
             model_name.as_deref(),
-            license,
+            license.as_deref(),
             pipeline_tag,
             library_name.as_deref(),
             tags.as_ref().map_or(&[], std::vec::Vec::as_slice),

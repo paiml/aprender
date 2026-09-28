@@ -34,7 +34,7 @@
             directory: PathBuf::from("/tmp/models"),
             repo_id: "org/repo".to_string(),
             model_name: None,
-            license: "mit".to_string(),
+            license: Some("mit".to_string()),
             pipeline_tag: "text-generation".to_string(),
             library_name: None,
             tags: None,

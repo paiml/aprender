@@ -16,6 +16,10 @@ use aprender::format::model_card::ModelCard;
 use aprender::hf_hub::{HfHubClient, PushOptions, UploadProgress};
 use std::fs;
 use std::path::Path;
+
+#[path = "publish_license.rs"]
+mod publish_license;
+use publish_license::resolve_license;
 #[cfg(feature = "hf-hub")]
 use std::sync::Arc;
 
@@ -452,7 +456,7 @@ pub fn execute(
     directory: &Path,
     repo_id: &str,
     model_name: Option<&str>,
-    license: &str,
+    license: Option<&str>,
     pipeline_tag: &str,
     library_name: Option<&str>,
     tags: &[String],
@@ -467,7 +471,7 @@ pub fn execute(
     // matter, where the Hub ignores an unrecognised value — and it is the same
     // field `apr validate-manifest` FALSIFY-PM-004 fails closed on. Reject it
     // here rather than after the upload (issue #2391).
-    if let Some(why) = crate::commands::spdx::reject_reason("--license", license) {
+    if let Some(why) = license.and_then(|l| crate::commands::spdx::reject_reason("--license", l)) {
         return Err(CliError::ValidationFailed(format!("apr publish: {why}")));
     }
 
@@ -541,10 +545,24 @@ pub fn execute(
         }
     }
 
+    // HRP-003: the card licence is --license or the base model's, never a
+    // default. A manifest publish sends no generated card, so it needs neither.
+    let license = if manifest.is_some() {
+        license.unwrap_or("custom").to_string()
+    } else {
+        let resolved = resolve_license(license, &files, &companion_files)?;
+        if verbose || resolved.source != "--license" {
+            eprintln!(
+                "apr publish: license {} (from {})",
+                resolved.spdx, resolved.source
+            );
+        }
+        resolved.spdx
+    };
     let (model_card, file_names) = generate_model_card(
         repo_id,
         model_name,
-        license,
+        &license,
         pipeline_tag,
         library_name,
         tags,
