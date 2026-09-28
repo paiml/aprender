@@ -42,12 +42,15 @@ gpu_band_acquire() { # gpu_band_acquire TAG DIR
     rm -f -- "$ready" "$dir/gpu-expired-$tag"
     : > "$dir/gpu-pids-$tag" || return 1
     # The holder: queue, then (holding the lock) write the ready file, sleep as a CHILD, and on the
-    # time limit kill the band's servers before exiting. TERM kills the sleep and exits at once.
+    # time limit kill the band's servers before exiting. TERM kills the sleep, WAITS for it, exits.
+    # The sleep inherits the queue's lock fd, so the lock is free only once the sleep is gone: without
+    # the wait, release returned while a slow-dying sleep still held it (diag run 36384418038, P1).
+    # The sleep starts before the ready file, so a TERM (sent only after ready) always finds $s set.
     # shellcheck disable=SC2086,SC2016
     $GPU_BAND_Q bash -c '
-        trap "kill \$s 2> /dev/null; exit 0" TERM
-        printf "%s\n" "$$" > "$1"
+        trap "kill \$s 2> /dev/null; wait \$s 2> /dev/null; exit 0" TERM
         sleep "$2" & s=$!
+        printf "%s\n" "$$" > "$1"
         wait "$s"
         : > "$4"
         while read -r p; do [ -n "$p" ] && kill "$p" 2> /dev/null; done < "$3"
