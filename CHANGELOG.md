@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known issues
+- **Qwen3 on GB10 (sm_121, and the sm_12x family) is correct but very slow, and is not claimed for
+  0.70 (#4590).** Dense Qwen3 on sm_12x prefills one token at a time, the sm_12x default, because the
+  generic batched prefill corrupts the KV cache there (FALSIFY-CPU-GPU-009). Measured on 0.70.0
+  (8d021f61e) at an 8k think-on prompt: Qwen3-1.7B 967 s, Qwen3-8B 2163 s, against 63-80 s for
+  Qwen3.5-9B on the same host (Qwen3.5 has its own batched prefill, #3596). `apr` prints a
+  `[KNOWN-ISSUE #4590]` warning when it loads Qwen3 on sm_12x. The release gate does not owe the
+  Qwen3 x GB10 cells (`cells.declaimed` in `contracts/model-capability-ladder-v1.yaml`); every other
+  host still owes every Qwen3 cell. Planned for 0.70.1: native sm_121 SASS, then a re-test of batched
+  prefill on GB10.
+
 ## [0.69.3] - 2026-09-24
 
 0.69.3 is an emergency early release, authorized by the operator: "we need near parity apr serve
