@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-common"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "clap",
  "lz4_flex 0.11.6",
@@ -493,7 +493,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "aprender-contracts-macros",
  "blake3",
@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-cli"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-common",
@@ -529,7 +529,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.69.3"
+version = "0.69.4"
 dependencies = [
  "proc-macro2",
  "quote",

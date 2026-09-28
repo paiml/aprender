@@ -1,6 +1,6 @@
 [package]
 name = "aprender-common"
-version.workspace = true
+version = "0.69.4"
 edition = "2024"
 authors = ["Noah Gift <noah@paiml.com>"]
 description = "Shared utilities for the Batuta stack: formatting, system info, display helpers"
