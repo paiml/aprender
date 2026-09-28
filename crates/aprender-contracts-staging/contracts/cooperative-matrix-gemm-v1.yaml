@@ -1,0 +1,78 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: >
+    Cooperative matrix GEMM — hardware tensor core acceleration via
+    VK_KHR_cooperative_matrix (wgpu 29.0+). Replaces software tiled GEMM
+    (375 GFLOPS) with hardware WMMA (expected 1000+ GFLOPS on GB10).
+  references:
+    - "VK_KHR_cooperative_matrix Vulkan extension"
+    - "wgpu v29.0.0 cooperative matrix support (2026-03-19)"
+    - "NVIDIA Blackwell GB10: BF16+FP8 cooperative matrix, revision 2"
+
+equations:
+  cooperative_gemm:
+    formula: "C[m,n] = α * Σ_k A[m,k] * B[k,n] + β * C[m,n]"
+    domain: "A ∈ ℝ^{M×K}, B ∈ ℝ^{K×N}, α,β ∈ ℝ"
+    codomain: "C ∈ ℝ^{M×N}"
+    invariants:
+      - "Result matches software tiled GEMM within ε < 1e-3 (f32)"
+      - "F16 input, F32 accumulation (GB10 config 3: M=16 K=16 N=16)"
+    lean_theorem: ProvableContracts.CooperativeMatrix.matmul_block_sum
+  f16_error_bound:
+    formula: "|C_f32_accum - C_exact| ≤ K * ε_f16 * max|A| * max|B|"
+    domain: "K reduction dimension, ε_f16 = 2^{-10}"
+    codomain: "error bound ∈ ℝ≥0"
+    lean_theorem: ProvableContracts.CooperativeMatrix.f16_accumulation_error_bound
+    notes:
+      - "Uses wgpu::Features::SUBGROUP_VERTEX_STAGE or cooperative_matrix feature"
+      - "Dispatch: ceil(M/coop_M) × ceil(N/coop_N) workgroups"
+
+invariants:
+  parity_with_tiled:
+    statement: "|coop_result - tiled_result| < 1e-3 for all elements"
+    rationale: "Hardware GEMM must match software reference"
+
+  throughput_improvement:
+    statement: "coop_gflops >= 2 * tiled_gflops"
+    rationale: "Tensor cores should at least double throughput"
+
+  fallback:
+    statement: "If cooperative matrix not available, fall back to tiled GEMM"
+    rationale: "Not all GPUs support VK_KHR_cooperative_matrix"
+
+falsification_tests:
+  - id: FALSIFY-COOP-001
+    rule: parity_with_tiled
+    prediction: "max |coop - tiled| < 1e-3"
+    if_fails: "Cooperative matrix GEMM diverges from tiled reference"
+  - id: FALSIFY-COOP-002
+    rule: throughput_improvement
+    prediction: "coop GFLOPS > 2 * tiled GFLOPS"
+    if_fails: "Cooperative matrix provides no performance benefit"
+  - id: FALSIFY-COOP-003
+    rule: fallback
+    prediction: "Falls back to tiled GEMM, no crash"
+    if_fails: "Missing fallback causes crash on unsupported hardware"
+
+proof_obligations:
+  - type: postcondition
+    property: Parity with tiled reference
+    formal: "|coop - tiled| < 1e-3"
+
+kani_harnesses:
+  - id: KANI-COOP-001
+    obligation: parity_with_tiled
+    property: Output parity
+    bound: 8
+    strategy: bounded_int
+
+qa_gate:
+  id: F-COOP-GEMM-001
+  name: Cooperative Matrix GEMM Contract
+  description: Quality gate for cooperative matrix GEMM hardware tensor core acceleration
+  checks:
+  - validation
+  - falsification
+
