@@ -543,7 +543,10 @@ pub fn extract_at(root: &Path, g: &mut Graph) -> BinaryStats {
     stats.ledger_rows = ledger.values().map(|e| e.rows.len()).sum();
     emit_all(g, &targets, &ledger, &mut stats);
     if let Some(census) = &census {
-        if targets.is_empty() {
+        // a workspace whose manifests declare no bin target has nothing to snapshot: census and snapshot agree
+        // on zero, which is a measurement. The vacuous case is a census that names targets and a snapshot
+        // that reads none.
+        if targets.is_empty() && !census.is_empty() {
             refuse(
                 &mut stats.errors,
                 SNAPSHOT,
