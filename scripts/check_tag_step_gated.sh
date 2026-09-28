@@ -33,21 +33,28 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
 
-# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc>]] -- extract cut_tag(), run
+# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness>]]] -- extract cut_tag(), run
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
 # Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} d fn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} d fn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
-    mkdir -p "$d/scripts/release"
+    mkdir -p "$d/scripts/release" "$d/ap"
+    # #3715 B1: the readiness step's log, as the T-1 `readiness` step leaves it (or does not)
+    case "$rdy" in
+        pass)   printf 'ok    R8 release-readiness-v1 for 0.0.0: Pass\nok    R8 #3715 ENFORCE PASS version=0.0.0 commit=deadbeef pv=pv_x out_sha256=0\n' > "$d/ap/readiness-t1.log" ;;
+        report) printf 'WARN  R8 REPORT-ONLY release-readiness-v1 for 0.0.0: Fail, 3 violation(s)\n' > "$d/ap/readiness-t1.log" ;;
+        stale)  printf 'ok    R8 #3715 ENFORCE PASS version=0.0.0 commit=cafef00d pv=pv_x out_sha256=0\n' > "$d/ap/readiness-t1.log" ;;
+        absent) : ;;
+    esac
     printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo CALL-MUST-CARRY >> %q; exit %s; fi\necho CALL-STRICT >> %q; exit %s\n' \
         "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
     printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
     {
         printf 'set -uo pipefail\n'
-        printf 'REPO_ROOT=%q\nLOG=%q\n' "$d" "$d/log"
+        printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\n' "$d" "$d/log" "$d/ap"
         printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
         printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
         printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; }\n'
@@ -95,6 +102,13 @@ judge() {
     if grep -q 'GIT-TAG' <<< "$out"; then
         printf 'FAIL  carry rc=2 -> A TAG WAS CUT over a failed carry\n%s\n' "$out" >&2; bad=1
     else printf 'ok    carry rc=2 -> no tag\n'; fi
+    # #3715 B1: no ENFORCED readiness Pass for exactly this version+commit -> no tag, nothing carried
+    for r in absent report stale; do
+        out=$(run_cut_tag "$ap" 0 0 0 "$r") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out"; then
+            printf 'FAIL  readiness %s -> a tag was cut or the milestone was touched without an enforced #3715 Pass\n%s\n' "$r" "$out" >&2; bad=1
+        else printf 'ok    readiness %s -> no tag, nothing carried\n' "$r"; fi
+    done
     return "$bad"
 }
 
@@ -148,6 +162,15 @@ if [ "${1:-}" = "--self-test" ]; then
         nok "MUTANT 5 (carry call deleted) PASSED"
     else
         ok "mutant 5: carry call deleted -> RED"
+    fi
+    # M6 (#3715 B1): the readiness requirement deleted -> a skipped or report-mode readiness step tags.
+    sed '/ENFORCE PASS for\|index(\$0, n) == 1/d; /no .#3715 ENFORCE PASS/d' "$SUBJECT" > "$d/m6.sh"
+    if cmp -s "$SUBJECT" "$d/m6.sh"; then
+        nok "MUTANT 6 could not be built -- the readiness check line did not match; vacuous"
+    elif judge "$d/m6.sh" > "$d/m6.out" 2>&1; then
+        nok "MUTANT 6 (readiness requirement deleted) PASSED"
+    else
+        ok "mutant 6: #3715 readiness requirement deleted -> RED"
     fi
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
     if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then

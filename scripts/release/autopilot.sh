@@ -189,6 +189,13 @@ fi
 #       open item.
 cut_tag() {
     local v=$1 t=$2 mc=$3 rc=0
+    # #3715 B1 (operator 2026-09-28: "missing or skipped step -> release refused"). FIRST, ahead of the
+    # carry and of `git tag`: the readiness step's log must hold an ENFORCED Pass for exactly this version
+    # and commit. A run started past `readiness`, a report-mode Pass, a Fail, or no log -> no tag.
+    local need="ok    R8 #3715 ENFORCE PASS version=$v commit=$mc pv="
+    awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
+        || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
+    say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MUST-CARRY $v: no open must-carry issue (check_milestone_cut.sh --must-carry rc=0)" ;;
