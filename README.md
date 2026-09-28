@@ -116,7 +116,7 @@ A non-`pass` cell names the gates the receipt records, which is not always the c
 <!-- RELEASE_MATRIX_END -->
 
 > **Known issue — GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590).** Output is correct; only prefill speed is affected. On GB10 (sm_121) every dense
-> model (Qwen2.5, Qwen3) is withdrawn from this release's claims (`cells.declaimed` in
+> model (Qwen2.5, Qwen3) and the Qwen3 MoE models (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) are withdrawn from this release's claims (`cells.declaimed` in
 > [`contracts/model-capability-ladder-v1.yaml`](contracts/model-capability-ladder-v1.yaml)); Qwen3.5 on
 > GB10 and every model on other hosts are still claimed and gated.
 

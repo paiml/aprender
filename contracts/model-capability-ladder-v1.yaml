@@ -246,6 +246,18 @@ ladder:
           GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output,
           prefill speed only: sm_12x prefills every dense arch one token at a time (select_prefill_path). Withdrawn,
           not waived: lambda still owes every Qwen2 cell, and gx10 still owes every Qwen3.5 (hybrid) cell.
+      # 3715-H4 (operator ruling 2026-09-28 20:00Z: prepare on the G1-G5 pattern, land only on the operator's word).
+      # G1 counted qwen3moe on gx10 as a pre-load refusal (no CUDA forward, #3714); the 0.70.0 dev apr now RUNS it,
+      # so its cells are owed, and every H4 sample timed out at the 600 s H1 cap (FAIL, never skip).
+      - arch: qwen3moe
+        host: gx10
+        issue: 4590
+        until: "0.70.1"
+        why: >-
+          GB10 MoE models: every 20k H4 sample (run/chat/serve/code, Qwen3-30B-A3B-Instruct-2507) hit the 600 s
+          per-cell timeout on 0.70.0-dev 8d021f61e. select_prefill_path is arch-agnostic: sm_12x prefills every
+          non-forced arch serially, qwen3moe included (not separately traced). Withdrawn, not waived: lambda still
+          owes every qwen3moe cell it holds, and gx10 still owes every Qwen3.5 (hybrid) cell.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds
