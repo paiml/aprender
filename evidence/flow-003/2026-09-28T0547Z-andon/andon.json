@@ -1,0 +1,195 @@
+{
+  "schema": "andon-v1",
+  "at": "2026-09-28T05:47:33Z",
+  "q": 0.1395,
+  "q_source": "evidence/flow-003/2026-09-27T1802Z/queue-inputs.json",
+  "k_max": 1,
+  "k_rule": "k <= min(4, floor(ln 0.8 / ln(1 - q)))",
+  "red_limit_h": 12,
+  "open_prs": 23,
+  "red_over_12h": [
+    {
+      "pr": 4576,
+      "branch": "91/3761-on-main",
+      "red_since": "2026-09-27T15:10:24Z",
+      "red_h": 14.6,
+      "lower_bound": true,
+      "pushes_red": 1,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4550,
+      "branch": "49/3718-prompt-overlength",
+      "red_since": "2026-09-27T12:52:09Z",
+      "red_h": 16.9,
+      "lower_bound": true,
+      "pushes_red": 2,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4535,
+      "branch": "91/4351-on-main",
+      "red_since": "2026-09-27T12:22:00Z",
+      "red_h": 17.4,
+      "lower_bound": true,
+      "pushes_red": 1,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4533,
+      "branch": "docs/flow-003-v2.1",
+      "red_since": "2026-09-27T13:21:53Z",
+      "red_h": 16.4,
+      "lower_bound": true,
+      "pushes_red": 1,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4517,
+      "branch": "cb/4462-fork-attest",
+      "red_since": "2026-09-27T08:39:21Z",
+      "red_h": 21.1,
+      "lower_bound": true,
+      "pushes_red": 2,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4512,
+      "branch": "fix/4510-signing-secret-name",
+      "red_since": "2026-09-27T09:47:13Z",
+      "red_h": 20,
+      "lower_bound": true,
+      "pushes_red": 1,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4503,
+      "branch": "49/docs-only-tier-4472",
+      "red_since": "2026-09-26T20:11:58Z",
+      "red_h": 33.6,
+      "lower_bound": true,
+      "pushes_red": 2,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4501,
+      "branch": "1c/4497-loop-admission",
+      "red_since": "2026-09-26T19:34:06Z",
+      "red_h": 34.2,
+      "lower_bound": true,
+      "pushes_red": 1,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4459,
+      "branch": "rex/001",
+      "red_since": "2026-09-26T03:32:43Z",
+      "red_h": 50.2,
+      "lower_bound": true,
+      "pushes_red": 3,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4457,
+      "branch": "PMAT-4415-guards-run-all",
+      "red_since": "2026-09-26T01:16:24Z",
+      "red_h": 52.5,
+      "lower_bound": true,
+      "pushes_red": 1,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4448,
+      "branch": "readme-tweak",
+      "red_since": "2026-09-25T20:09:22Z",
+      "red_h": 57.6,
+      "lower_bound": true,
+      "pushes_red": 4,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4431,
+      "branch": "fold/b3-onto-main",
+      "red_since": "2026-09-25T20:21:17Z",
+      "red_h": 57.4,
+      "lower_bound": true,
+      "pushes_red": 4,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4428,
+      "branch": "batch/b1r-serve-perf-runtime",
+      "red_since": "2026-09-25T18:45:15Z",
+      "red_h": 59,
+      "lower_bound": true,
+      "pushes_red": 7,
+      "action": "SPLIT"
+    },
+    {
+      "pr": 4414,
+      "branch": "feat/4232-on-main",
+      "red_since": "2026-09-26T12:17:08Z",
+      "red_h": 41.5,
+      "lower_bound": false,
+      "pushes_red": 1,
+      "action": "SPLIT"
+    }
+  ],
+  "over_k_cap": [
+    {
+      "pr": 4502,
+      "branch": "batch/ont-10",
+      "k": 2,
+      "folded": [
+        4431,
+        4479
+      ],
+      "lower_bound": true
+    },
+    {
+      "pr": 4431,
+      "branch": "fold/b3-onto-main",
+      "k": 36,
+      "folded": [
+        4003,
+        4009,
+        4011,
+        4012,
+        4013,
+        4014,
+        4046,
+        4092,
+        4093,
+        4095,
+        4115,
+        4119,
+        4121,
+        4123,
+        4136,
+        4137,
+        4150,
+        4163,
+        4171,
+        4177,
+        4183,
+        4196,
+        4204,
+        4205,
+        4216,
+        4217,
+        4226,
+        4227,
+        4230,
+        4237,
+        4243,
+        4248,
+        4281,
+        4289,
+        4301,
+        4317
+      ],
+      "lower_bound": false
+    }
+  ],
+  "verdict": "ANDON red>12h:#4576,#4550,#4535,#4533,#4517,#4512,#4503,#4501,#4459,#4457,#4448,#4431,#4428,#4414 k>1:#4502(k2),#4431(k36)"
+}

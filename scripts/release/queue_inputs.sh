@@ -13,6 +13,8 @@
 #                                              PR age, conflicts, change-fail, release cycle, merge commits)
 #   queue_inputs.sh runner-wait-fetch <raw-dir> [days] / runner-wait <raw-dir> [runner-re]   queued->started
 #                                              p50/p90 of jobs on matching runners (default ^framework16, infra#1237)
+#   queue_inputs.sh andon-fetch <raw-dir> [days] / andon <raw-dir> <q|queue-inputs.json>   0.71 andon: open PRs
+#                                              red > 12 h (SPLIT) or folding k > min(4, ln0.8/ln(1-q)) PRs; rc 1
 #   queue_inputs.sh self-test                  planted fixtures, incl. the empty-window and [U] REDs
 #
 # Every input carries {value, n, window, command, method}. The raw files ARE the receipt: compute reads
@@ -114,7 +116,8 @@ fetch() {
     local d="$1" days="${2:-7}" start end
     mkdir -p -- "$d"
     if [ ! -s "$d/window.txt" ]; then             # a resumed fetch keeps its original window
-        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        # The window end is the one clock read; it is recorded in window.txt and compute reads only that.
+        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002
         start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
         printf '%s %s\n' "$start" "$end" > "$d/window.txt"
     fi
@@ -157,7 +160,7 @@ fetch() {
             q+='}}'
             gh api graphql -f query="$q" -q '.data.repository[] | {number, isCrossRepository, changedFiles,
                 files: [.files.nodes[].path], labels: [.labels.nodes[].name]}' | jq -c . >> "$d/pr_meta.part" || return 1
-        done < <({ cat -- "$d/mq_prs.txt"; jq -r --arg s "$start" '.[] | select(.createdAt >= $s) | .number' \
+        done < <({ jq -r . "$d/mq_prs.txt"; jq -r --arg s "$start" '.[] | select(.createdAt >= $s) | .number' \
                     "$d/prs_created.json"; } | sort -un)
         mv -- "$d/pr_meta.part" "$d/pr_meta.jsonl"
     fi
@@ -700,10 +703,10 @@ J
 {"number":4,"changedFiles":1,"files":["a.rs"],"armed":null,"queued":null,"last_push":"2026-01-07T00:00:00Z","merge_commits":[]}
 J
     cat > "$dd/ci_runs.jsonl" <<'J'
-{"id":1,"event":"pull_request","head_branch":"b1","conclusion":"success","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:10:00Z"}
-{"id":2,"event":"pull_request","head_branch":"b2","conclusion":"success","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:03:00Z"}
-{"id":3,"event":"pull_request","head_branch":"fold/x","conclusion":"failure","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:20:00Z"}
-{"id":4,"event":"pull_request","head_branch":"b1","conclusion":"cancelled","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T09:00:00Z"}
+{"id":1,"event":"pull_request","head_sha":"s1a","head_branch":"b1","conclusion":"success","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:10:00Z"}
+{"id":2,"event":"pull_request","head_sha":"s2a","head_branch":"b2","conclusion":"success","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:03:00Z"}
+{"id":3,"event":"pull_request","head_sha":"s3a","head_branch":"fold/x","conclusion":"failure","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:20:00Z"}
+{"id":4,"event":"pull_request","head_sha":"s1b","head_branch":"b1","conclusion":"cancelled","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T09:00:00Z"}
 {"id":5,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-1-x","conclusion":"success","created_at":"2026-01-02T00:40:00Z","updated_at":"2026-01-02T00:55:00Z"}
 {"id":6,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-2-x","conclusion":"failure","created_at":"2026-01-02T22:00:00Z","updated_at":"2026-01-02T23:30:00Z"}
 {"id":7,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-2-y","conclusion":"success","created_at":"2026-01-02T23:30:00Z","updated_at":"2026-01-02T23:55:00Z"}
@@ -723,6 +726,65 @@ J
     check "dora: MQ entry = successful merge_group runs only; [15,25] p50 15, failure excluded" '.metrics.mq_entry_p50_min.value == 15 and .metrics.mq_entry_p50_min.n == 2' "$uo"
     check "dora: open PRs counted (1 <= 10)" '.metrics.open_prs.value == 1 and .metrics.open_prs.ok == true' "$uo"
     check "dora: verdict names the misses" '.verdict | startswith("MISSED") and test("change_fail_rate")' "$uo"
+    check "dora 0.71: open->green = createdAt -> first green; open #4 never green at 24 h is a censored miss" '.metrics.open_to_green_p90_h.n == 3 and .metrics.open_to_green_p90_h.value == 0.17 and ([.detail.open_to_green[] | select(.censored) | .pr] == [4])' "$uo"
+    check "dora 0.71: pushes/PR = distinct head_sha per merged PR (2,1,1 -> 1.33 <= 2)" '.metrics.pushes_per_pr_avg.value == 1.33 and .metrics.pushes_per_pr_avg.n == 3 and .metrics.pushes_per_pr_avg.ok == true' "$uo"
+    check "dora 0.71: no release PR open > 24 h -> 0, MET" '.metrics.release_prs_over_24h.value == 0 and .metrics.release_prs_over_24h.ok == true' "$uo"
+    # Mutants: 3 more pushes on b1 (5,1,1 -> 2.33) and PR 4 on a car/ branch opened 48 h before the end -> both RED.
+    cp -r -- "$dd" "$t/dora71"
+    for i in 21 22 23; do printf '{"id":%s,"event":"pull_request","head_sha":"s1x%s","head_branch":"b1","conclusion":"failure","created_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:05:00Z"}\n' "$i" "$i" >> "$t/dora71/ci_runs.jsonl"; done
+    printf '%s\n' '[{"number":4,"createdAt":"2026-01-06T00:00:00Z","headRefName":"car/0.71.0","baseRefName":"main","isDraft":false,"mergeable":"MERGEABLE"},{"number":5,"createdAt":"2026-01-07T04:00:00Z","headRefName":"rc/0.71.1","baseRefName":"main","isDraft":false,"mergeable":"MERGEABLE"}]' > "$t/dora71/open.json"
+    uo=$(dora_compute "$t/dora71")
+    check "dora 0.71 mutant: 7 pushes over 3 PRs = 2.33 misses <= 2" '.metrics.pushes_per_pr_avg.value == 2.33 and .metrics.pushes_per_pr_avg.ok == false' "$uo"
+    check "dora 0.71 mutant: car/ PR open 48 h -> release_prs_over_24h RED, named; rc/ PR at 20 h not counted" '.metrics.release_prs_over_24h.value == 1 and .metrics.release_prs_over_24h.ok == false and .detail.release_prs_over_24h == [4] and (.verdict | test("release_prs_over_24h"))' "$uo"
+    uo=$(dora_compute "$dd")
+    printf '%s' "$uo" | dora_line | grep -q 'open->green p90 0.17h (n3) | pushes/PR 1.33 | release PRs>24h 0' \
+        && printf '  ok    dora line carries the 3 0.71 targets\n' || { printf '  FAIL  dora line carries the 3 0.71 targets\n'; fails=$((fails + 1)); }
+
+    # 0.71 andon: planted open PRs with known red ages and fold sets.
+    local ad="$t/andon"; mkdir -p "$ad"
+    printf '2026-01-01T00:00:00Z 2026-01-08T00:00:00Z\n' > "$ad/window.txt"
+    cat > "$ad/ci_runs.jsonl" <<'J'
+{"id":1,"event":"pull_request","head_sha":"a1","head_branch":"b10","conclusion":"success","created_at":"2026-01-06T00:00:00Z","updated_at":"2026-01-06T00:20:00Z"}
+{"id":2,"event":"pull_request","head_sha":"a2","head_branch":"b10","conclusion":"failure","created_at":"2026-01-07T00:00:00Z","updated_at":"2026-01-07T00:30:00Z"}
+{"id":3,"event":"pull_request","head_sha":"a3","head_branch":"b10","conclusion":"failure","created_at":"2026-01-07T06:00:00Z","updated_at":"2026-01-07T06:30:00Z"}
+{"id":4,"event":"pull_request","head_sha":"c1","head_branch":"b11","conclusion":"failure","created_at":"2026-01-07T20:00:00Z","updated_at":"2026-01-07T20:30:00Z"}
+{"id":5,"event":"pull_request","head_sha":"c2","head_branch":"b11","conclusion":"cancelled","created_at":"2026-01-07T21:00:00Z","updated_at":"2026-01-07T21:01:00Z"}
+{"id":6,"event":"pull_request","head_sha":"d1","head_branch":"b12","conclusion":"failure","created_at":"2026-01-05T00:00:00Z","updated_at":"2026-01-05T00:30:00Z"}
+{"id":7,"event":"pull_request","head_sha":"d2","head_branch":"b12","conclusion":"success","created_at":"2026-01-05T02:00:00Z","updated_at":"2026-01-05T02:30:00Z"}
+{"id":8,"event":"pull_request","head_sha":"e1","head_branch":"b14","conclusion":"failure","created_at":"2026-01-06T00:00:00Z","updated_at":"2026-01-06T00:00:00Z"}
+{"id":9,"event":"pull_request","head_sha":"f1","head_branch":"b15","conclusion":"failure","created_at":"2026-01-06T00:00:00Z","updated_at":"2026-01-06T00:00:00Z"}
+{"id":10,"event":"merge_group","head_sha":"g1","head_branch":"b11","conclusion":"failure","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}
+J
+    cat > "$ad/open.json" <<'J'
+[{"number":10,"createdAt":"2026-01-05T00:00:00Z","headRefName":"b10","headRefOid":"a3","baseRefName":"main","isDraft":false,"body":""},
+ {"number":11,"createdAt":"2026-01-07T00:00:00Z","headRefName":"b11","headRefOid":"c2","baseRefName":"main","isDraft":false,"body":"see #10"},
+ {"number":12,"createdAt":"2026-01-05T00:00:00Z","headRefName":"b12","headRefOid":"d2","baseRefName":"main","isDraft":false,"body":null},
+ {"number":13,"createdAt":"2026-01-07T00:00:00Z","headRefName":"fold/y","headRefOid":"y9","baseRefName":"main","isDraft":false,"body":"Batch.\nFolds #23 and #24.\nRefs #4513, see #11"},
+ {"number":14,"createdAt":"2026-01-05T00:00:00Z","headRefName":"b14","headRefOid":"e1","baseRefName":"main","isDraft":true,"body":""},
+ {"number":15,"createdAt":"2026-01-05T00:00:00Z","headRefName":"b15","headRefOid":"f1","baseRefName":"main","isDraft":false,"body":""}]
+J
+    printf '%s\n' '[{"number":10,"state":"OPEN","headRefOid":"a3"},{"number":11,"state":"OPEN","headRefOid":"c2"},{"number":13,"state":"OPEN","headRefOid":"y9"},{"number":20,"state":"CLOSED","headRefOid":"h20"},{"number":21,"state":"CLOSED","headRefOid":"h21"},{"number":22,"state":"MERGED","headRefOid":"h22"},{"number":23,"state":"CLOSED","headRefOid":"h23"}]' > "$ad/heads.json"
+    cat > "$ad/commits.jsonl" <<'J'
+{"number":10,"total":3,"oids":["a1","a2","a3"]}
+{"number":13,"total":6,"oids":["h20","h21","h22","x1","y9"]}
+J
+    uo=$(andon_compute "$ad" 0.1395)
+    check "andon: q 0.1395 -> k_max = floor(ln .8 / ln .8605) = 1" '.k_max == 1' "$uo"
+    check "andon: #10 red since its first failure after the last green, across 2 red pushes: 23.5 h, SPLIT" '[.red_over_12h[] | select(.pr == 10)][0] | .red_h == 23.5 and .pushes_red == 2 and .lower_bound == false and .action == "SPLIT"' "$uo"
+    check "andon: #15 red since the first fetched run, no green -> 48 h lower bound" '[.red_over_12h[] | select(.pr == 15)][0] | .red_h == 48 and .lower_bound == true' "$uo"
+    check "andon: red 3.5 h (#11, cancelled rerun ignored), green-latest #12, draft #14 not flagged" '[.red_over_12h[] | .pr] == [10, 15]' "$uo"
+    check "andon: #13 folds heads #20 #21 + body fold line #23; merged #22, issue #24, 'see #11' not counted -> k 3 > 1" '.over_k_cap == [{"pr":13,"branch":"fold/y","k":3,"folded":[20,21,23],"lower_bound":false}]' "$uo"
+    check "andon: verdict names both andons" '.verdict == "ANDON red>12h:#10,#15 k>1:#13(k3)"' "$uo"
+    printf '%s\n' '{"inputs":{"q":{"value":0.01}}}' > "$t/qi.json"
+    uo=$(andon_compute "$ad" "$t/qi.json")
+    check "andon: q 0.01 from a queue-inputs file -> k_max capped at 4, #13 within cap" '.k_max == 4 and .over_k_cap == [] and .q == 0.01' "$uo"
+    printf '[]\n' > "$ad/open.json"
+    uo=$(andon_compute "$ad" 0.1395)
+    check "andon: no open PRs -> GREEN" '.verdict == "GREEN" and .open_prs == 0' "$uo"
+    if (andon_compute "$ad" "$t/nope.json") >/dev/null 2>&1; then
+        printf '  FAIL  andon: an unreadable q source must refuse\n'; fails=$((fails + 1))
+    else printf '  ok    andon: an unreadable q source refuses (rc != 0)\n'; fi
+
     for f in ci_runs.jsonl pr_dora.jsonl main_commits.jsonl; do : > "$dd/$f"; done
     printf '[]\n' > "$dd/merged.json"; printf '[]\n' > "$dd/open.json"
     uo=$(dora_compute "$dd")
@@ -793,7 +855,8 @@ runner_wait_fetch() {
     local d="$1" days="${2:-7}" start end
     mkdir -p -- "$d/jobs"
     if [ ! -s "$d/window.txt" ]; then
-        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        # The window end is the one clock read; it is recorded in window.txt and compute reads only that.
+        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002
         start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
         printf '%s %s\n' "$start" "$end" > "$d/window.txt"
     fi
@@ -841,7 +904,8 @@ dora_fetch() {
     local d="$1" days="${2:-7}" start end
     mkdir -p -- "$d"
     if [ ! -s "$d/window.txt" ]; then
-        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        # The window end is the one clock read; it is recorded in window.txt and compute reads only that.
+        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002
         start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
         printf '%s %s\n' "$start" "$end" > "$d/window.txt"
     fi
@@ -937,6 +1001,26 @@ $merged[0] as $mg | $open[0] as $op
 # A two-parent commit that pulls main in is a resolution; one that pulls a PR branch into a fold is a fold.
 | [$pd[] | .number as $n | .merge_commits[] | select(.date | inwin) | . + {pr: $n}] as $mc_all
 | [$mc_all[] | select(.headline | test("\\bmain\\b"))] as $mc
+# 0.71 flow targets (operator via the cop, 2026-09-28). PRs created in the window only: the runs file starts
+# at the window, so an older PR's first green or first push may predate it.
+| [($mg + $op)[] | select((.createdAt | inwin) and (.isDraft != true))] as $pw
+| (reduce ($ci[] | select(.event == "pull_request")) as $r ({};
+      .[$r.head_branch] |= ((. // {green: null, shas: []})
+        | .shas += [$r.head_sha]
+        | if $r.conclusion == "success" and (.green == null or $r.updated_at < .green) then .green = $r.updated_at else . end))) as $runs_of
+# Open -> green: createdAt -> first successful pull_request ci.yml run on the head branch. An open PR never
+# green and older than 12 h is a censored miss (its age at window end); one younger than 12 h is pending.
+| [$pw[] | . as $p | $runs_of[$p.headRefName].green as $g
+   | if $g != null and $g >= $p.createdAt then {pr: $p.number, h: (mins($p.createdAt; $g) / 60), censored: false}
+     elif $g == null and $p.mergedAt == null and (mins($p.createdAt; $end) / 60) > 12
+       then {pr: $p.number, h: (mins($p.createdAt; $end) / 60), censored: true}
+     else empty end] as $o2g
+| [$o2g[] | .h] as $o2g_h
+# Pushes per PR: distinct head_sha among pull_request ci.yml runs on the branch (every push triggers one), merged PRs.
+| [$pw[] | select(.mergedAt != null) | . as $p | ($runs_of[$p.headRefName].shas // [] | unique | length)
+   | select(. > 0)] as $pushes
+# Release PRs open > 24 h at window end.
+| [$op[] | select((.headRefName | test($relre)) and (mins(.createdAt; $end) / 60) > 24) | .number] as $rel_old
 | {window: "\($start)/\($end)",
    metrics: {
      lead_time_p50_min: m($lead | pct(0.5); ($lead | length); "< 60"; (($lead | pct(0.5)) < 60);
@@ -968,8 +1052,18 @@ $merged[0] as $mg | $open[0] as $op
      merge_commit_resolutions: m($mc | length; ($pd | length); "<= 2 (-> 0)"; (($mc | length) <= 2);
                                  "two-parent commits on PR branches, committed in the window, whose headline pulls in main"),
      fold_merges: m(($mc_all | length) - ($mc | length); ($pd | length); "report"; true;
-                    "other two-parent commits on PR branches (folds of PR branches into a batch)")},
+                    "other two-parent commits on PR branches (folds of PR branches into a batch)"),
+     open_to_green_p50_h: m($o2g_h | pct(0.5); ($o2g_h | length); "report"; true;
+                            "createdAt -> first successful pull_request ci.yml run, PRs created in the window"),
+     open_to_green_p90_h: m($o2g_h | pct(0.9); ($o2g_h | length); "<= 12"; (($o2g_h | pct(0.9)) <= 12);
+                            "same, p90; an open PR never green and > 12 h old counts at its age (0.71 target)"),
+     pushes_per_pr_avg: m(if ($pushes | length) > 0 then ($pushes | add) / ($pushes | length) else null end;
+                          ($pushes | length); "<= 2"; (($pushes | length) > 0 and (($pushes | add) / ($pushes | length)) <= 2);
+                          "distinct head_sha of pull_request ci.yml runs, merged PRs created in the window (0.71 target)"),
+     release_prs_over_24h: m($rel_old | length; ($op | length); "0"; (($rel_old | length) == 0);
+                             "open PRs on release branches (\($relre)) created > 24 h before window end (0.71 target)")},
    detail: {conflicted_prs: $conflicted, reverts: [$reverts[] | .subject], merge_commits: $mc, merge_resolutions_by_pr: ($mc | group_by(.pr) | map({pr: .[0].pr, n: length}) | sort_by(-.n)),
+            open_to_green: $o2g, release_prs_over_24h: $rel_old,
             unarmed_merged_into_main: ($unarmed | length), ci_runs: {code: ($ci_code | length), docs: ($ci_docs | length)}}}
 | .missed = [.metrics | to_entries[] | select(.value.ok == false) | .key]
 | .no_data = [.metrics | to_entries[] | select(.value.ok == null) | .key]
@@ -979,7 +1073,106 @@ JQ
 }
 
 dora_line() {  # one inbox-sized line from dora_compute JSON on stdin
-    jq -r '.metrics as $m | "DORA 7d: lead p50 \($m.lead_time_p50_min.value)m (n\($m.lead_time_p50_min.n)) | CI p50 code \($m.ci_p50_code_min.value)m docs \($m.ci_p50_docs_min.value)m | MQ wait p50 \($m.mq_wait_p50_min.value)m p90 \($m.mq_wait_p90_min.value)m (n\($m.mq_wait_p50_min.n)) | MQ entry p50 \($m.mq_entry_p50_min.value)m p90 \($m.mq_entry_p90_min.value)m (n\($m.mq_entry_p50_min.n)) | PR age p90 merged \($m.pr_age_p90_h_merged.value)h open \($m.pr_age_p90_h_open.value)h | open PRs \($m.open_prs.value) | conflicted>4h \($m.conflicted_over_4h.value) | change-fail \($m.change_fail_rate.value) | release p50 \($m.release_cycle_p50_min.value)m | main-merges \($m.merge_commit_resolutions.value) (+\($m.fold_merges.value) fold) -> \(.verdict)"'
+    jq -r '.metrics as $m | "DORA 7d: lead p50 \($m.lead_time_p50_min.value)m (n\($m.lead_time_p50_min.n)) | CI p50 code \($m.ci_p50_code_min.value)m docs \($m.ci_p50_docs_min.value)m | MQ wait p50 \($m.mq_wait_p50_min.value)m p90 \($m.mq_wait_p90_min.value)m (n\($m.mq_wait_p50_min.n)) | MQ entry p50 \($m.mq_entry_p50_min.value)m p90 \($m.mq_entry_p90_min.value)m (n\($m.mq_entry_p50_min.n)) | PR age p90 merged \($m.pr_age_p90_h_merged.value)h open \($m.pr_age_p90_h_open.value)h | open PRs \($m.open_prs.value) | conflicted>4h \($m.conflicted_over_4h.value) | change-fail \($m.change_fail_rate.value) | release p50 \($m.release_cycle_p50_min.value)m | main-merges \($m.merge_commit_resolutions.value) (+\($m.fold_merges.value) fold) | open->green p90 \($m.open_to_green_p90_h.value)h (n\($m.open_to_green_p90_h.n)) | pushes/PR \($m.pushes_per_pr_avg.value) | release PRs>24h \($m.release_prs_over_24h.value) -> \(.verdict)"'
+}
+
+# ---- 0.71 flow andon (operator via the cop, 2026-09-28; #4513 FLOW-003) --------------------------------
+# No end-of-train car. A PR is red > 12 h -> split it. A PR folds k PRs with k <= min(4, floor(ln 0.8 / ln(1 - q))),
+# q the per-PR defect rate from queue-inputs-v1 (.inputs.q.value).
+#
+# andon_fetch <raw-dir> [days]: open PRs (with body + head oid), their last 100 commits, the heads of PRs
+# updated in the window, and ci.yml runs of the window. Read-only; resumable.
+andon_fetch() {
+    local d="$1" days="${2:-7}" start end
+    mkdir -p -- "$d"
+    if [ ! -s "$d/window.txt" ]; then
+        # The window end is the one clock read; it is recorded in window.txt and compute reads only that.
+        end=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002
+        start=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ)
+        printf '%s %s\n' "$start" "$end" > "$d/window.txt"
+    fi
+    read -r start end < "$d/window.txt"
+    local runq='.workflow_runs[] | {id,name,event,head_sha,head_branch,status,conclusion,created_at,updated_at,run_attempt}'
+    fetch_ci_runs "$d" "$start" "$end" "$runq" || return 1
+    ghj "$d/open.json" pr list -R "$REPO" --state open --limit 500 \
+        --json number,createdAt,headRefName,headRefOid,baseRefName,isDraft,body || return 1
+    ghj "$d/heads.json" pr list -R "$REPO" --state all --search "updated:>=${start%%T*}" --limit 1000 \
+        --json number,state,headRefOid || return 1
+    [ "$(jq length "$d/heads.json")" -lt 1000 ] || die "PR head list hit the 1000-row cap"
+    if [ ! -s "$d/commits.jsonl" ]; then
+        local batch q n
+        : > "$d/commits.part"
+        while mapfile -t -n 25 batch && [ "${#batch[@]}" -gt 0 ]; do
+            q='query{repository(owner:"paiml",name:"aprender"){'
+            for n in "${batch[@]}"; do
+                q+="p$n:pullRequest(number:$n){number commits(last:100){totalCount nodes{commit{oid}}}}"
+            done
+            q+='}}'
+            gh api graphql -f query="$q" -q '.data.repository[] | select(. != null)
+                | {number, total: .commits.totalCount, oids: [.commits.nodes[].commit.oid]}' \
+                >> "$d/commits.part" || return 1
+            sleep 1
+        done < <(jq -r '.[].number' "$d/open.json" | sort -un)
+        jq -c . "$d/commits.part" > "$d/commits.jsonl"
+        rm -f -- "${d:?}/commits.part"
+    fi
+}
+
+# andon_compute <raw-dir> <q | queue-inputs.json>: andon-v1 JSON; rc 1 when any PR is red > 12 h or over the k cap.
+#   red age  open non-draft PR whose latest completed (success|failure) pull_request ci.yml run failed: window
+#            end - the first failure after its last success. The streak spans pushes (a new red push does not
+#            reset it). No success in the window -> the age is a lower bound from the first failure fetched.
+#   k        PRs a PR carries: other open or closed-unmerged PRs whose head commit is among its last 100
+#            commits, union "fold"-lines in its body naming #N (N such a PR); k = max(1, |that set|).
+#            More than 100 commits -> k is a lower bound.
+andon_compute() {
+    local d="$1" qsrc="$2" q f
+    for f in window.txt ci_runs.jsonl open.json heads.json commits.jsonl; do
+        [ -f "$d/$f" ] || die "missing $d/$f"
+    done
+    if [ -f "$qsrc" ]; then q=$(jq -r '.inputs.q.value // empty' "$qsrc"); else q="$qsrc"; fi
+    [[ "$q" =~ ^0?\.[0-9]+$|^0$ ]] || die "q '$q' is not a number in [0,1) (from $qsrc)"
+    local start end
+    read -r start end < "$d/window.txt"
+    jq -n --arg end "$end" --argjson q "$q" --arg qsrc "$qsrc" \
+        --slurpfile ci <(cat "$d/ci_runs.jsonl") --slurpfile open "$d/open.json" --slurpfile heads "$d/heads.json" \
+        --slurpfile cm <(cat "$d/commits.jsonl") -f /dev/stdin <<'JQ'
+def hours($a; $b): (($b | fromdate) - ($a | fromdate)) / 3600;
+$open[0] as $op
+| (if $q <= 0 then 4 else ([4, ((0.8 | log) / ((1 - $q) | log) | floor)] | min) end | [., 1] | max) as $kmax
+| (reduce $cm[] as $c ({}; .[$c.number | tostring] = $c)) as $cm_of
+| [$heads[0][] | select(.state != "MERGED")] as $live
+| (reduce $live[] as $h ({}; .[$h.headRefOid] = $h.number)) as $pr_of_head
+| ([$live[] | .number] | map(tostring) | INDEX(.)) as $live_set
+| [$op[] | select(.isDraft | not) | . as $p
+   | [$ci[] | select(.event == "pull_request" and .head_branch == $p.headRefName
+                     and (.conclusion == "success" or .conclusion == "failure"))] | sort_by(.created_at) as $runs
+   | select(($runs | length) > 0 and ($runs[-1].conclusion == "failure"))
+   | ([$runs | to_entries[] | select(.value.conclusion == "success") | .key] | max) as $ls
+   | $runs[(if $ls == null then 0 else $ls + 1 end)] as $first_red
+   | {pr: $p.number, branch: $p.headRefName, red_since: $first_red.updated_at,
+      red_h: (hours($first_red.updated_at; $end) * 10 | round / 10), lower_bound: ($ls == null),
+      pushes_red: ([$runs[(if $ls == null then 0 else $ls + 1 end):][] | .head_sha] | unique | length)}
+   | select(.red_h > 12) | . + {action: "SPLIT"}] as $red
+| [$op[] | . as $p | ($cm_of[$p.number | tostring] // {total: 0, oids: []}) as $c
+   | ([$c.oids[] | $pr_of_head[.] // empty | select(. != $p.number)]
+      + [($p.body // "") | split("\n")[] | select(test("(?i)\\bfold"))
+         | scan("#([0-9]+)") | .[0] | select($live_set[.] != null) | tonumber | select(. != $p.number)]
+      | unique) as $folded
+   | {pr: $p.number, branch: $p.headRefName, k: ([($folded | length), 1] | max), folded: $folded,
+      lower_bound: ($c.total > 100)}
+   | select(.k > $kmax)] as $over
+| {schema: "andon-v1", at: $end, q: $q, q_source: $qsrc, k_max: $kmax,
+   k_rule: "k <= min(4, floor(ln 0.8 / ln(1 - q)))", red_limit_h: 12,
+   open_prs: ($op | length), red_over_12h: $red, over_k_cap: $over,
+   verdict: (if ($red | length) + ($over | length) == 0 then "GREEN"
+             else "ANDON" + (if ($red | length) > 0 then " red>12h:" + ([$red[] | "#\(.pr)"] | join(",")) else "" end)
+                  + (if ($over | length) > 0 then " k>\($kmax):" + ([$over[] | "#\(.pr)(k\(.k))"] | join(",")) else "" end) end)}
+JQ
+}
+
+andon_line() {  # one inbox-sized line from andon_compute JSON on stdin
+    jq -r '"0.71 andon: \(.open_prs) open PRs, q \(.q) -> k<=\(.k_max) | red>12h: \([.red_over_12h[] | "#\(.pr) \(.red_h)h\(if .lower_bound then "+" else "" end) SPLIT"] | join(", ") | if . == "" then "none" else . end) | over k cap: \([.over_k_cap[] | "#\(.pr) k=\(.k)\(if .lower_bound then "+" else "" end) (\(.folded | map("#\(.)") | join(" ")))"] | join(", ") | if . == "" then "none" else . end) -> \(.verdict)"'
 }
 
 case "${1:-}" in
@@ -995,6 +1188,10 @@ case "${1:-}" in
     dora-line) dora_line ;;
     dora) [ $# -eq 2 ] || die "usage: dora <raw-dir>"; out=$(dora_compute "$2"); printf '%s\n' "$out"
           printf '%s' "$out" | dora_line >&2; printf '%s' "$out" | jq -e '.verdict == "MET"' >/dev/null ;;
+    andon-fetch) [ $# -ge 2 ] || die "usage: andon-fetch <raw-dir> [days]"; andon_fetch "$2" "${3:-7}" ;;
+    andon) [ $# -eq 3 ] || die "usage: andon <raw-dir> <q | queue-inputs.json>"; out=$(andon_compute "$2" "$3")
+           printf '%s\n' "$out"; printf '%s' "$out" | andon_line >&2; printf '%s' "$out" | jq -e '.verdict == "GREEN"' >/dev/null ;;
+    andon-line) andon_line ;;
     self-test) self_test ;;
     *) die "usage: queue_inputs.sh fetch <raw-dir> [days] | compute <raw-dir> | self-test" ;;
 esac
