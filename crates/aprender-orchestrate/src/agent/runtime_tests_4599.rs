@@ -33,7 +33,10 @@ const FAILING_CELLS: [(&str, &str, &str, usize); 8] = [
     ("gx10", "consumer-max", "on", 510_772),
 ];
 
-/// Records the user messages of every request it is sent.
+/// Records the user messages of every request it is sent, and echoes the input it received as
+/// `usage.input_tokens` under a byte-level tokenizer (1 byte = 1 token): exact, so a single lost
+/// byte changes the count. (The 4-bytes-per-token estimate would not: 212,046 and 212,045 bytes
+/// both estimate to 53,012.)
 struct RecordingDriver {
     window: usize,
     seen: Mutex<Vec<String>>,
@@ -53,8 +56,10 @@ impl RecordingDriver {
 impl LlmDriver for RecordingDriver {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, AgentError> {
         let mut seen = self.seen.lock().expect("lock");
+        let mut input_tokens = 0u64;
         for m in &request.messages {
             if let Message::User(text) = m {
+                input_tokens += text.len() as u64;
                 seen.push(text.clone());
             }
         }
@@ -62,7 +67,7 @@ impl LlmDriver for RecordingDriver {
             text: NEEDLE.into(),
             stop_reason: StopReason::EndTurn,
             tool_calls: vec![],
-            usage: TokenUsage::default(),
+            usage: TokenUsage { input_tokens, output_tokens: 0 },
         })
     }
 
@@ -103,23 +108,51 @@ async fn run(prompt: &str, driver: &RecordingDriver) -> Result<AgentLoopResult, 
     .await
 }
 
+/// The cell verdict: the model received exactly one user message, identical to the prompt
+/// (needle at the head, tail present), and the echoed input token count equals the prompt's.
+fn cell_verdict(prompt: &str, sent: &[String], echoed_input_tokens: u64) -> Result<(), String> {
+    if sent.len() != 1 {
+        return Err(format!("{} user messages reached the model, want 1", sent.len()));
+    }
+    if echoed_input_tokens != prompt.len() as u64 {
+        return Err(format!("echoed input tokens {echoed_input_tokens} != {}", prompt.len()));
+    }
+    if !sent[0].starts_with("The passphrase is TANGERINE-4417") {
+        return Err("the needle at token 0 is missing".into());
+    }
+    if sent[0] != prompt {
+        return Err("the prompt the model received differs from the one sent (tail lost?)".into());
+    }
+    Ok(())
+}
+
 /// FALSIFY-4599-001: at the model's own context length, every failing #3715 cell sends the
-/// whole prompt, needle included.
+/// whole prompt: echoed input token count == expected, needle and tail included.
 #[tokio::test]
 async fn falsify_4599_001_failing_cells_fit_the_models_window() {
     for (host, rung, think, bytes) in FAILING_CELLS {
         let prompt = needle_prompt(bytes);
         let driver = RecordingDriver::new(QWEN35_CONTEXT);
         let r = run(&prompt, &driver).await;
-        assert!(r.is_ok(), "{host} {rung} think {think} ({bytes} B): {r:?}");
-        let sent = driver.user_messages();
-        assert_eq!(sent.len(), 1, "{host} {rung} think {think}: one user message");
-        assert_eq!(sent[0].len(), bytes, "{host} {rung} think {think}: the prompt was cut");
-        assert!(sent[0].starts_with("The passphrase is TANGERINE-4417"), "{host} {rung}: needle");
-        assert!(
-            sent[0] == prompt,
-            "{host} {rung} think {think}: the tail of the prompt is missing"
-        );
+        let r = r.unwrap_or_else(|e| panic!("{host} {rung} think {think} ({bytes} B): {e}"));
+        assert_eq!(r.usage.input_tokens, bytes as u64, "{host} {rung} think {think}: echoed");
+        let v = cell_verdict(&prompt, &driver.user_messages(), r.usage.input_tokens);
+        assert_eq!(v, Ok(()), "{host} {rung} think {think} ({bytes} B)");
+    }
+}
+
+/// FALSIFY-4599-008: a planted 1-byte truncation is RED. For both rungs, a model that received
+/// the prompt minus its last byte fails the cell verdict, on the count and on the content.
+#[test]
+fn falsify_4599_008_planted_one_byte_truncation_is_red() {
+    for bytes in [212_046, 510_772] {
+        let prompt = needle_prompt(bytes);
+        let cut = prompt[..bytes - 1].to_string();
+        let v = cell_verdict(&prompt, &[cut.clone()], cut.len() as u64);
+        assert!(v.is_err(), "{bytes} B: a 1-byte truncation passed the cell verdict");
+        // Content alone catches it too, if a driver echoed the right count by accident.
+        assert!(cell_verdict(&prompt, &[cut], bytes as u64).is_err(), "{bytes} B: content");
+        assert_eq!(cell_verdict(&prompt, &[prompt.clone()], bytes as u64), Ok(()));
     }
 }
 
