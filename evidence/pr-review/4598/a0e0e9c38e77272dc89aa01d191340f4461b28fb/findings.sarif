@@ -10,32 +10,6 @@
           "rules": []
         }
       },
-      "results": []
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "pr-review-mutation",
-          "informationUri": "https://github.com/paiml/aprender",
-          "rules": []
-        }
-      },
-      "results": []
-    },
-    {
-      "tool": {
-        "driver": {
-          "name": "pr-review-reviewer",
-          "informationUri": "https://github.com/paiml/aprender",
-          "rules": [
-            {
-              "id": "duplicate-guard-logic",
-              "name": "DuplicateGuardLogic",
-              "shortDescription": { "text": "New guard logic duplicates existing, already-CI-gated guard logic under a different name." }
-            }
-          ]
-        }
-      },
       "results": [
         {
           "ruleId": "duplicate-guard-logic",
@@ -47,33 +21,60 @@
           "locations": [
             {
               "physicalLocation": {
-                "artifactLocation": { "uri": "scripts/ci/fat_driver.py" },
-                "region": { "startLine": 376 }
+                "artifactLocation": {
+                  "uri": "scripts/ci/fat_driver.py"
+                },
+                "region": {
+                  "startLine": 376
+                }
               }
             }
           ],
           "relatedLocations": [
             {
               "physicalLocation": {
-                "artifactLocation": { "uri": "scripts/check_ci_fat_secrets_plumbed.sh" },
-                "region": { "startLine": 1 }
+                "artifactLocation": {
+                  "uri": "scripts/check_ci_fat_secrets_plumbed.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
               },
-              "message": { "text": "Pre-existing guard already performing this check, CI-gated since #4512." }
+              "message": {
+                "text": "Pre-existing guard already performing this check, CI-gated since #4512."
+              }
             }
-          ]
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Two independently maintained checks of the same FAT_SECRET plumbing (fat_driver.py secret_wiring_gaps and check_ci_fat_secrets_plumbed.sh) diverge: a secret-name shape fixed in one regex is not mirrored in the other, so one reports green while the other reports red for the same ci/sections.yml + ci.yml pair."
+          }
         }
       ]
     },
     {
       "tool": {
         "driver": {
-          "name": "pr-review-crux",
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
           "informationUri": "https://github.com/paiml/aprender",
           "rules": [
             {
               "id": "crux-surface-scan-false-positive",
               "name": "CruxSurfaceScanFalsePositive",
-              "shortDescription": { "text": "S3.C CRUX_SURFACE_RE fired on prose inside a committed evidence/receipt file, not on an actual product surface." }
+              "shortDescription": {
+                "text": "S3.C CRUX_SURFACE_RE fired on prose inside a committed evidence/receipt file, not on an actual product surface."
+              }
             }
           ]
         }
@@ -89,13 +90,32 @@
           "locations": [
             {
               "physicalLocation": {
-                "artifactLocation": { "uri": "evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl" },
-                "region": { "startLine": 1 }
+                "artifactLocation": {
+                  "uri": "evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl"
+                },
+                "region": {
+                  "startLine": 1
+                }
               }
             }
-          ]
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "CRUX_SURFACE_RE scans added lines under evidence/pr-review/**, so the literal ToolDefinition in a committed receipt makes a diff that touches no CRUX surface require a CRUX consultation, and A4 rejects a receipt that honestly records crux not-triggered."
+          }
         }
       ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "results": []
     }
   ]
 }
