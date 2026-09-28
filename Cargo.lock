@@ -482,7 +482,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.69.1"
+version = "0.69.2"
 dependencies = [
  "aprender-contracts-macros",
  "criterion 0.5.1",
@@ -500,7 +500,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-cli"
-version = "0.69.1"
+version = "0.69.2"
 dependencies = [
  "aprender-contracts",
  "clap",
