@@ -1444,11 +1444,14 @@ rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
 # #4590: a (host, arch) the release DE-CLAIMS leaves inventory[] -- the universe released pv owes cells on --
 # and is kept, whole, in declaimed_inventory[], so the receipt still says the file was held and measured.
+# D2 (#3715): an entry may instead name ONE artifact by sha256; only a file with those exact bytes leaves.
 import yaml
-dcl = {d.get("arch") for d in ((yaml.safe_load(open(sys.argv[18]))["ladder"].get("cells") or {}).get("declaimed") or [])
-       if d.get("host") == sys.argv[3]}
-held = [i for i in inv if i.get("arch") in dcl]
-inv = [i for i in inv if i.get("arch") not in dcl]
+dcl = [d for d in ((yaml.safe_load(open(sys.argv[18]))["ladder"].get("cells") or {}).get("declaimed") or [])
+       if d.get("host") == sys.argv[3]]
+def gone(i):
+    return any(str(d.get("sha256")) == str(i.get("sha256") or "").lower() if d.get("sha256") else d.get("arch") == i.get("arch") for d in dcl)
+held = [i for i in inv if gone(i)]
+inv = [i for i in inv if not gone(i)]
 out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),

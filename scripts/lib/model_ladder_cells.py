@@ -24,6 +24,8 @@ consumers[].max_prompt_tokens, and a consumer without a number is a violation, n
 judge(ladder, receipts, rungs_doc, out) -> 0 green | 1 red. `receipts` maps host id -> receipt;
 `rungs_doc` is the parsed context-rungs file, or None when it is missing or unreadable (a named FAIL).
 """
+import re
+
 RUNGS_SCHEMA = "apr-release-context-rungs/v1"
 MAX_LINES_PER_MODEL = 12
 
@@ -230,10 +232,16 @@ def _judge_host(hid, R, S, rc, out):
     # in the contract owes every cell, so moving a file out of inventory[] exempts nothing by itself.
     for item in (R.get("inventory") or []) + (R.get("declaimed_inventory") or []):
         f = item.get("file")
-        d = S["declaimed"].get((hid, item.get("arch")))
+        d = declaim_of(S["declaimed"], hid, item)
         if d:  # printed on every run, so a de-claim cannot decay into an absence nobody re-reads
-            out(f"DECLAIMED {hid:7} {f}: arch {d['arch']} is not claimed on {hid} -- #{d['issue']}, restored in {d['until']}: {_loud(d['why'], 100)}")
+            what = f"file sha256 {d['sha256'][:12]}" if d.get("sha256") else f"arch {d['arch']}"
+            out(f"DECLAIMED {hid:7} {f}: {what} is not claimed on {hid} -- #{d['issue']}, restored in {d['until']}: {_loud(d['why'], 100)}")
             continue
+        stale = S["declaimed"].get((hid, FILE_KEY + str(f)))
+        if stale:  # the entry's label names this file, its bytes are another artifact: nothing is withdrawn
+            out(f"FAIL  {hid:7} {f}: cells.declaimed names {f} by sha256 {stale['sha256'][:12]}, but {hid} holds "
+                f"{str(item.get('sha256'))[:12]} -- a different artifact is a different claim, so it owes every cell")
+            rc = host_rc = 1
         fails = _judge_item(item, rows, total, S, tally)
         for i, w in enumerate(fails):
             if i == MAX_LINES_PER_MODEL:
@@ -273,26 +281,52 @@ def _passes_nowhere(passed_anywhere, failed_somewhere, out):
     return rc
 
 
+SHA_KEY, FILE_KEY = "sha256:", "file:"
+
+
+def declaim_of(dec, host, item):
+    """-> the cells.declaimed entry that withdraws `item` (an inventory row) on `host`, or None. A file entry
+    matches the exact artifact, by sha256 and never by name; an arch entry matches every file of that arch."""
+    return dec.get((host, SHA_KEY + str(item.get("sha256") or "").lower())) or dec.get((host, item.get("arch")))
+
+
 def declaimed(C, hosts, out):
-    """-> ({(host, arch): entry}, rc). `cells.declaimed` names an arch the release does NOT claim on one host.
+    """-> ({(host, key): entry}, rc). `cells.declaimed` names what the release does NOT claim on one host.
 
     Operator ruling 2026-09-28 (#3715 -> #4590): Qwen3 on GB10 is correct but 27-34x slow (serial prefill on
     sm_121), so it is DE-CLAIMED for 0.70 -- apr warns, a known-issue note ships -- and only those cells leave
     the owed set. Every other host still owes them. An entry must carry the issue, the release that restores
-    it, and why, and name a declared host; a bare one is a FAIL, never a quiet exemption."""
+    it, and why, and name a declared host; a bare one is a FAIL, never a quiet exemption.
+
+    An entry names EITHER an `arch` (every file of it; key (host, arch)) OR one artifact by `sha256` plus the
+    `file` it is held as (key (host, "sha256:<hex>"); operator ruling D2 2026-09-28 20:10Z, per BIN-001
+    identity: a withdrawal is keyed by what was measured, not by a name another file can share). The file
+    form withdraws those bytes only: a re-quantised or re-downloaded file under the same name still owes
+    every cell, and the judge says so."""
     got, rc = {}, 0
     for d in C.get("declaimed") or []:
         d = d or {}
-        bad = [k for k in ("arch", "host", "until", "why") if not str(d.get(k) or "").strip()]
+        by_file = "sha256" in d or "file" in d
+        need = ("sha256", "file", "host", "until", "why") if by_file else ("arch", "host", "until", "why")
+        bad = [k for k in need if not str(d.get(k) or "").strip()]
+        if by_file and "arch" in d:
+            bad.append("one key (arch OR sha256+file, not both)")
+        # A str, not just 64 hex digits: an unquoted all-digit hash is a YAML int (and loses its leading zeros).
+        if by_file and d.get("sha256") and not (isinstance(d["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", d["sha256"])):
+            bad.append("sha256 (64 lowercase hex)")
         if not isinstance(d.get("issue"), int) or d.get("issue") <= 0:
             bad.append("issue")
         if d.get("host") and d.get("host") not in hosts:
             bad.append(f"host {d.get('host')!r} (not a declared host)")
         if bad:  # a bare de-claim is a FAIL, never a quiet exemption
-            out(f"FAIL  cells.declaimed entry {d!r} lacks {', '.join(bad)} -- a de-claim names its arch, host, issue, restoring release and reason")
+            out(f"FAIL  cells.declaimed entry {d!r} lacks {', '.join(bad)} -- a de-claim names its arch or artifact (sha256 + file), host, issue, restoring release and reason")
             rc = 1
             continue
-        got[(d["host"], d["arch"])] = d
+        if by_file:
+            got[(d["host"], SHA_KEY + d["sha256"])] = d
+            got.setdefault((d["host"], FILE_KEY + d["file"]), d)  # only to name a stale entry, never to withdraw
+        else:
+            got[(d["host"], d["arch"])] = d
     return got, rc
 
 
@@ -305,9 +339,10 @@ def declaim_still_claimed(L, dec, out):
     rc = 0
     for r in L.get("rungs") or []:
         for h in sorted(set(r.get("hosts") or req)):
-            d = dec.get((h, r.get("arch")))
+            d = declaim_of(dec, h, r)  # D2: a rung carries its artifact's sha256, so a file de-claim reaches it too
             if d:  # a claim the de-claim withdraws
-                out(f"FAIL  rung {r.get('id')} still claims arch {r.get('arch')} on {h}, which cells.declaimed withdraws (#{d['issue']}) -- narrow its hosts: or drop the de-claim")
+                what = f"file {r.get('gguf')} (sha256 {str(r.get('sha256'))[:12]})" if d.get("sha256") else f"arch {r.get('arch')}"
+                out(f"FAIL  rung {r.get('id')} still claims {what} on {h}, which cells.declaimed withdraws (#{d['issue']}) -- narrow its hosts: or drop the de-claim")
                 rc = 1
     reps = ((L.get("cells") or {}).get("long_rungs_for") or {}).get("representatives") or {}
     for arch in sorted(reps):
@@ -372,7 +407,7 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
         "long_ids": {r["id"] for r in rungs if r.get("long")},
         "passed_anywhere": {},  # (sha, verb, mode, rung) -> bool
         "failed_somewhere": set(),  # keys already reported by a per-host FAIL
-        "declaimed": dec,  # (host, arch) -> the cells.declaimed entry (#4590)
+        "declaimed": dec,  # (host, arch | "sha256:<hex>" | "file:<name>") -> the cells.declaimed entry (#4590, D2)
     }
     for hid, R in receipts.items():
         rc = _judge_host(hid, R, S, rc, out)

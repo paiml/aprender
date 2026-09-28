@@ -29,9 +29,9 @@
 # job runs on the fleet. x86_64 builds on yoga and aarch64 natively on gx10, both
 # inside rust:1.93.0-bullseye (binary-release.yml's CPU-lane pattern), so the
 # nightly's glibc floor is 2.31; the ubuntu-latest build needed GLIBC_2.39 and did
-# not run on lambda's 22.04. Windows is gone: no self-hosted Windows runner is
-# registered and there is no hosted fallback. macOS came back with a box for it
-# (#3204): aarch64-apple-darwin builds host-native on mini-m4 (build-darwin).
+# not run on lambda's 22.04. The macOS and Windows targets are gone: no self-hosted
+# macOS or Windows runner is registered in the org, and there is no hosted
+# fallback. They come back when a box for them does.
 
 name: Nightly
 
@@ -68,9 +68,16 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     outputs:
       decision: ${{ steps.gate.outputs.decision }}
+      sha: ${{ steps.gate.outputs.sha }}
     steps:
+      # The nightly ships main, never the dispatching ref: a `workflow_dispatch` from
+      # a PR branch would otherwise publish that branch as "nightly" (operator
+      # 2026-09-28). gate resolves main's head ONCE; build and publish check out that
+      # exact sha, so a push to main mid-run cannot split one nightly across two heads.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: main
 
       - name: Case table
         run: python3 scripts/nightly_manifest.py --self-test
@@ -81,11 +88,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          NIGHTLY_SHA=$(git rev-parse HEAD)
+          echo "sha=$NIGHTLY_SHA" >> "$GITHUB_OUTPUT"
           # A missing manifest (first run) is "no previous verdict", not an error.
           bash scripts/nightly_fetch_manifest.sh prev-manifest.json
-          d=$(python3 scripts/nightly_manifest.py gate --sha "$GITHUB_SHA" --prev prev-manifest.json)
+          d=$(python3 scripts/nightly_manifest.py gate --sha "$NIGHTLY_SHA" --prev prev-manifest.json)
           echo "decision=$d" >> "$GITHUB_OUTPUT"
-          echo "### nightly gate for \`${GITHUB_SHA:0:9}\`: **$d**" >> "$GITHUB_STEP_SUMMARY"
+          echo "### nightly gate for \`${NIGHTLY_SHA:0:9}\`: **$d**" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Build: Linux x86_64 on yoga, aarch64 natively on gx10 ──
   build:
@@ -103,9 +112,13 @@ jobs:
             host: gx10
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
     runs-on: ${{ fromJSON(matrix.labels) }}
+    env:
+      NIGHTLY_SHA: ${{ needs.gate.outputs.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
       # A sibling container through the mounted socket, as in binary-release.yml's
       # CPU lanes: every bind-mount path must exist on the HOST (the work root is
@@ -130,6 +143,10 @@ jobs:
           BIN_ARGS=$(python3 scripts/nightly_manifest.py bins --metadata "$RUNNER_TEMP/metadata.json" --format cargo)
           echo "NIGHTLY_BINS=$NIGHTLY_BINS" >> "$GITHUB_ENV"
           echo "Shipping $(echo "$NIGHTLY_BINS" | tr ',' '\n' | wc -l) bins: $NIGHTLY_BINS"
+          # Inside the container git cannot read the mounted checkout, so without the
+          # override every CPU bin printed +no-git and record() failed version-no-sha
+          # (run 36366064406). Both builds (CPU and cuda) get the same override.
+          APR_SHA=$(git rev-parse --short HEAD)
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "$CACHE/registry:/usr/local/cargo/registry" \
@@ -139,6 +156,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e T="$T" \
             -e BIN_ARGS="$BIN_ARGS" \
+            -e APR_GIT_SHA_OVERRIDE="$APR_SHA" \
             rust:1.93.0-bullseye \
             sh -c 'set -e; ldd --version | head -1; cargo build --locked --release $BIN_ARGS --target "$T"'
           mkdir -p "target/$T/release" dist
@@ -162,7 +180,6 @@ jobs:
           # The driver is dlopen'd at run time (aprender-gpu: dep:libloading), so
           # the bullseye image needs no toolkit -- binary-release.yml's cuda lane.
           # Record proves the feature took (libcuda.so in the executable).
-          APR_SHA=$(git rev-parse --short=9 HEAD)
           mkdir -p "$CACHE/target-cuda"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -200,7 +217,7 @@ jobs:
           # NIGHTLY_BINS is unset only when the build step died before deriving
           # it; build.outcome is then failure and record returns build-failed
           # without reading --bins, so "none" is never probed as a bin.
-          python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$GITHUB_SHA" \
+          python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$NIGHTLY_SHA" \
             --bins "${NIGHTLY_BINS:-none}" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
             --variants apr:cuda \
             --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-${{ matrix.target }}.json"
@@ -214,68 +231,18 @@ jobs:
           path: dist/*
           if-no-files-found: warn
 
-  # ── Build apr: macOS aarch64 natively on mini-m4 (#3204) ──
-  # Host-native: there is no docker on macOS and no glibc floor to pin, so the
-  # toolchain is rust-toolchain.toml via the runner's rustup, as in ci.yml's
-  # mac-check. A LITERAL runs-on list, not fromJSON, so check_runner_labels.sh
-  # sees the apple-silicon label. Gated on the same `gate` decision as the Linux
-  # matrix (car's `check-activity` job does not exist on this branch -- folded
-  # into `gate`'s reused/build/red-ci/ci-pending verdict, #4189). One box with
-  # 16 GB: this leg must not hold the Linux nightly hostage -- `publish-darwin`
-  # below only uploads when this job is green, and the darwin tarball is
-  # simply absent that night otherwise; it never blocks or is blocked by
-  # `publish` (that job's per-arch manifest tracks Linux targets only).
-  build-darwin:
-    needs: gate
-    if: needs.gate.outputs.decision == 'build'
-    name: apr aarch64-apple-darwin on mini
-    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
-    timeout-minutes: 90
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_TERM_COLOR: never
-      T: aarch64-apple-darwin
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Build apr (host-native, pinned toolchain)
-        run: |
-          set -euo pipefail
-          rustup show active-toolchain
-          cargo build --release --locked -p apr-cli --target "$T"
-          "target/$T/release/apr" --version
-
-      - name: Package
-        run: |
-          set -euo pipefail
-          ARCHIVE="apr-$T"
-          rm -rf "$ARCHIVE" "$ARCHIVE.tar.gz" "$ARCHIVE.tar.gz.sha256"
-          mkdir -p "$ARCHIVE"
-          cp "target/$T/release/apr" "$ARCHIVE/"
-          for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
-            if [ -f "$f" ]; then cp "$f" "$ARCHIVE/"; fi
-          done
-          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
-          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
-          echo "Packaged: ${ARCHIVE}.tar.gz ($(du -h "${ARCHIVE}.tar.gz" | cut -f1))"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: apr-aarch64-apple-darwin
-          path: |
-            apr-aarch64-apple-darwin.tar.gz
-            apr-aarch64-apple-darwin.tar.gz.sha256
-
   # ── Publish per arch, then the manifest ──────────────────
   publish:
     needs: [gate, build]
     if: always() && needs.gate.result == 'success'
     runs-on: [self-hosted, Linux, X64, clean-room]
+    env:
+      NIGHTLY_SHA: ${{ needs.gate.outputs.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
       # A runner that died uploaded nothing; merge records that arch red, so
       # an empty download must not stop the other arch from publishing.
@@ -294,7 +261,7 @@ jobs:
           mkdir -p dist
           bash scripts/nightly_fetch_manifest.sh prev-manifest.json
           python3 scripts/nightly_manifest.py merge --prev prev-manifest.json --fragments dist \
-            --sha "$GITHUB_SHA" --decision "${{ needs.gate.outputs.decision }}" \
+            --sha "$NIGHTLY_SHA" --decision "${{ needs.gate.outputs.decision }}" \
             --run-id "$GITHUB_RUN_ID" --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             > nightly-manifest.json
           cat nightly-manifest.json
@@ -304,43 +271,15 @@ jobs:
       - name: Publish green arches, then nightly-manifest.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/nightly_manifest.py publish --manifest nightly-manifest.json --dist dist --sha "$GITHUB_SHA"
+        run: python3 scripts/nightly_manifest.py publish --manifest nightly-manifest.json --dist dist --sha "$NIGHTLY_SHA"
 
       - name: Fail the run on a red verdict (the arbiter tickets it from the manifest)
         env:
           DECISION: ${{ steps.merge.outputs.decision }}
         run: |
-          echo "### nightly: **$DECISION** at \`${GITHUB_SHA:0:9}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### nightly: **$DECISION** at \`${NIGHTLY_SHA:0:9}\`" >> "$GITHUB_STEP_SUMMARY"
           case "$DECISION" in
             built|reused) exit 0 ;;
-            ci-pending) echo "::warning::required checks not finished on ${GITHUB_SHA:0:9}; last green kept"; exit 0 ;;
-            *) echo "::error::nightly $DECISION at ${GITHUB_SHA:0:9}; see nightly-manifest.json"; exit 1 ;;
+            ci-pending) echo "::warning::required checks not finished on ${NIGHTLY_SHA:0:9}; last green kept"; exit 0 ;;
+            *) echo "::error::nightly $DECISION at ${NIGHTLY_SHA:0:9}; see nightly-manifest.json"; exit 1 ;;
           esac
-
-  # ── Attach the darwin asset to the nightly release ────────
-  # `publish`'s manifest system (scripts/nightly_manifest.py) tracks the Linux
-  # targets only; it neither knows about nor deletes unlisted assets, so this
-  # upload is additive and independent -- a red/skipped darwin leg leaves the
-  # Linux assets alone, and a red Linux leg (this job needs `publish` only so
-  # the "nightly" release already exists) does not block the mac asset.
-  publish-darwin:
-    needs: [gate, build-darwin, publish]
-    if: always() && needs.gate.outputs.decision == 'build' && needs.build-darwin.result == 'success'
-    runs-on: [self-hosted, Linux, X64, clean-room]
-    steps:
-      - name: Download darwin artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: apr-aarch64-apple-darwin
-          path: dist-darwin
-
-      - name: Upload to the nightly release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: nightly
-          name: Nightly Build
-          prerelease: true
-          make_latest: false
-          files: |
-            dist-darwin/apr-aarch64-apple-darwin.tar.gz
-            dist-darwin/apr-aarch64-apple-darwin.tar.gz.sha256

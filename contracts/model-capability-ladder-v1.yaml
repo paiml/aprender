@@ -257,6 +257,18 @@ ladder:
           20k rung (0d H4 19:51Z, 12+12 cells). The 0.69.1 pre-load refusal is gone in 0.70.0-dev, so the
           cells run and time out. Withdrawn, not waived: lambda holds both files and still owes every
           qwen3moe cell; gx10 still owes every Qwen3.5 (hybrid) cell. Operator D1 APPROVED 2026-09-28 20:10Z.
+      # D2 (operator ruling 2026-09-28 20:10Z, #3715): ONE artifact, keyed by its bytes (BIN-001 identity), not
+      # its arch -- an arch entry for qwen35 would withdraw the flagship family, which passes on gx10 (44-286 s).
+      - sha256: a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54
+        file: Qwen3.5-0.8B-UD-IQ2_XXS.gguf
+        host: gx10
+        issue: 3715
+        until: "0.70.1"
+        why: >-
+          all 4 verbs time out at 600 s on GB10 (run/chat/serve/code at 20k think-on, rc 124; H4 run,
+          apr 0.70.0 8d021f61e, 3715-run/h4/gx10). Withdrawn by data, not waived: every other gx10 Qwen3.5 file
+          still owes every cell, lambda still owes this file's cells, and a re-quantised file under the same
+          name is a different artifact and owes them too.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds

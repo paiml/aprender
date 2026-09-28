@@ -439,9 +439,10 @@ def cmd_measure(a):
             if a.only and a.only not in (it["file"], "inv:" + it["file"]):
                 continue
             matched += 1
-            d = dec.get((a.host, it.get("arch")))
+            d = J.declaim_of(dec, a.host, it)
             if d:  # the judge owes nothing here (#4590); hours of cells would measure a claim the release does not make
-                print(f"cells: {it['file']} DECLAIMED on {a.host} (arch {d['arch']}, #{d['issue']}) -- not measured", file=sys.stderr)
+                what = f"sha256 {d['sha256'][:12]}" if d.get("sha256") else f"arch {d['arch']}"
+                print(f"cells: {it['file']} DECLAIMED on {a.host} ({what}, #{d['issue']}) -- not measured", file=sys.stderr)
                 continue
             rows += measure_item(R, it, paths[it["file"]], L, rungs_doc, a)
     if a.only and not matched:
