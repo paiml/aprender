@@ -18462,6 +18462,28 @@ roadmap:
   labels:
   - ont-0.70
   notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
+- id: GH-4351
+  github_issue: 4351
+  item_type: task
+  kind: code
+  title: 'proof_status Lean scan: ''sorry'' in a doc comment, and the domain.file citation form, deny credit to sorry-free theorems'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-91
+  created: 2026-09-27T10:32:43+00:00
+  updated: 2026-09-27T10:32:43+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a sorry inside a Lean line or block comment (incl. doc comments), a string, or an identifier like sorry_free is not counted; a real sorry term still is'
+  - 'a theorem cited in the Theorems.<Domain>.<File> form is resolved to its file and credited when that file is sorry-free'
+  - 'a char literal such as the double-quote char does not open a phantom string that hides a later real sorry'
+  - 'an unterminated comment or string reads as sorry (fail closed); nested /- -/ comments are tracked'
+  - 'a case table in proof_status_tests.rs covers each row; putting back a naive substring scan turns it RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Implemented on origin/GH-4351-lean-scan-false-negatives (7c128efeb7, 91158042a2 = the quorum-round fix); cherry-picked onto main as 91/4351-on-main by aprender-91. MEASURED on main 761d6247de + the two commits: cargo test -p aprender-contracts --lib proof_status 61/61 pass; clippy -D warnings clean; fmt clean. MUTANT: lean_has_sorry replaced by src.contains("sorry") -> 2 FAILED (lean_has_sorry_case_table, lean_scan_grounds_comment_sorry_file_and_dotted_form), 59 pass; restored, porcelain clean.'
 - id: PMAT-3351
   github_issue: 3347
   item_type: task

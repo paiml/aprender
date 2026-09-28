@@ -497,10 +497,20 @@ enum LeanScan {
     EndsInLineComment,
 }
 
+/// Whether an identifier runs up to byte `i`. A prime continues one only after an identifier
+/// byte (`x'`, `x''`); in `xs[j]'sorry` the prime is a subscript proof and `sorry` is a token.
+fn ident_continues_into(b: &[u8], i: usize) -> bool {
+    let mut j = i;
+    while j > 0 && b[j - 1] == b'\'' {
+        j -= 1;
+    }
+    j > 0 && is_lean_ident_byte(b[j - 1])
+}
+
 /// `sorry` as a whole Lean token at byte `i`.
 fn sorry_token_at(b: &[u8], i: usize) -> bool {
     b[i..].starts_with(b"sorry")
-        && (i == 0 || !is_lean_ident_byte(b[i - 1]))
+        && !ident_continues_into(b, i)
         && b.get(i + 5).is_none_or(|&c| !is_lean_ident_byte(c))
 }
 
