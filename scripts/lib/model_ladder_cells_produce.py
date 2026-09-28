@@ -224,6 +224,7 @@ class Runner:
     def __init__(self, apr, lock, wait, timeout):
         self.apr, self.lock, self.wait, self.timeout = apr, lock, wait, timeout
         self.timed_out = False
+        self.deadline = None  # H1: one deadline per CELL, shared by every apr call in it (density retries)
 
     def argv(self, args):
         pre = ["flock", "-E", "75", "-w", str(self.wait), self.lock, "choom", "-n", "1000", "--"] if self.lock else []
@@ -236,7 +237,8 @@ class Runner:
         p = subprocess.Popen(self.argv(args), stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         try:
-            out, err = p.communicate(stdin, timeout=self.timeout)
+            left = self.timeout if self.deadline is None else max(1.0, self.deadline - time.monotonic())
+            out, err = p.communicate(stdin, timeout=left)
             return p.returncode, out, err
         except subprocess.TimeoutExpired:
             os.killpg(p.pid, signal.SIGKILL)
@@ -461,6 +463,7 @@ def measure_item(R, item, path, L, rungs_doc, a):
                 for verb in verbs:
                     row = base_row(item, verb, mode, rid, budget)
                     R.timeout, R.timed_out, t0 = cell_timeout(a, item, verb), False, time.monotonic()
+                    R.deadline = t0 + R.timeout  # the timeout bounds the CELL: 3 density retries share it
                     if verb == "run":
                         for _attempt in range(3):  # the first rung's density is a guess; apr's count corrects it
                             row = measure_run(R, path, pf, mode, budget, base_row(item, verb, mode, rid, budget))
@@ -484,6 +487,7 @@ def measure_item(R, item, path, L, rungs_doc, a):
                         row["prompt_tokens"] = measured
                         row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
                     rows.append(row)
+        R.deadline = None
         for i, prompt, mode, budget, measured in deferred:
             t0, tmo = time.monotonic(), cell_timeout(a, item, "serve")
             serve = serve or Serve(R, path, a.serve_ceiling)

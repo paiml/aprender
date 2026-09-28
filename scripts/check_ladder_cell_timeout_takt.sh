@@ -46,6 +46,15 @@ case("timeout-kills-the-group", rc == 124 and R.timed_out and not alive and el <
 if alive:
     os.kill(gpid, 9)
 
+# H1-a2: the timeout bounds the CELL, not each apr call: two 1.5 s calls under one 2 s cell deadline -> the 2nd times out.
+slow = os.path.join(w, "slow-apr")
+open(slow, "w").write("#!/bin/sh\nsleep 1.5\n")
+os.chmod(slow, 0o755)
+R = P.Runner(slow, "", 5, 2)
+R.deadline = time.monotonic() + R.timeout
+rc1 = R.call(["run"])[0]; rc2 = R.call(["run"])[0]
+case("timeout-bounds-the-cell-not-the-call", rc1 == 0 and rc2 == 124 and R.timed_out, f"rc1={rc1} rc2={rc2}")
+
 # H1-b: the row a timeout produces is a FAIL naming the timeout, and carries timeout_s.
 row = P.stamp({"verdict": "pass", "reason": "answered"}, time.monotonic(), 600, True)
 case("timeout-row-is-fail", row["verdict"] == "fail" and row["reason"].startswith("TIMEOUT") and row["timeout_s"] == 600
@@ -101,9 +110,10 @@ mutant no-new-session 'text=True, start_new_session=True)' 'text=True)'
 mutant timeout-not-fail '        row["verdict"] = "fail"
 ' '        pass
 '
+mutant per-call-not-per-cell 'left = self.timeout if self.deadline is None else' 'left = self.timeout if True else'
 mutant no-floor 'return max(int(t), TIMEOUT_FLOOR_S) if' 'return int(t) if'
 mutant takt-always-ok 'ok = done >= self.RATIO * plan' 'ok = True'
 mutant takt-no-andon-file '                with open(self.log + ".andon", "a") as f:
                     f.write(line + "\n")' '                pass'
-[ "$bad" = 0 ] && { echo "PASS H1 timeout (group kill, FAIL, timeout_s) + H5 takt: all cases and 6 mutants"; exit 0; }
+[ "$bad" = 0 ] && { echo "PASS H1 timeout (group kill, FAIL, timeout_s) + H5 takt: all cases and 7 mutants"; exit 0; }
 echo "RED"; exit 1
