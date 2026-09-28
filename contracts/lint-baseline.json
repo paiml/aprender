@@ -6,7 +6,7 @@
   "claude_md": {"verified_commands":["setsid --wait bash scripts/check_package_includes.sh"],"withdrawn":[]},
   "contracts_without_valid_under": 386,
   "command": "make lint-ratchet",
-  "unpaired_theorem_modules": 130,
+  "unpaired_theorem_modules": 129,
   "contracts_without_depends_on": 278,
   "underived_proved_claims": 95,
   "ont": {
