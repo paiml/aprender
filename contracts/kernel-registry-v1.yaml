@@ -160,6 +160,8 @@ falsification_tests:
       the row's tolerance is that receipt's path; a precision=f32 row serves exactly what the FP32 scope
       computes, and a quantized-precision row serves something measurably coarser. Mutants: a q5_k row
       re-declared q8_k, a q8_0 row re-declared f32, a q6_k bound below the measurement, and a q4_k row reset to
-      unmeasured are each RED
+      unmeasured are each RED. A gguf-py receipt re-measures against its pinned fixture: one flipped fixture
+      byte, a q4_1 min added with the wrong sign, and one IQ2_XXS grid entry changed (a table the decoder and
+      kernel share, invisible to the in-tree oracle) are each RED
     test: cargo test -p aprender-serve --lib kernel_registry::parity
     if_fails: a receipt is a file that was once true, and a row can declare an activation precision it does not serve
