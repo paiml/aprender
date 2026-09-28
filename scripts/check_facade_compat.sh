@@ -126,6 +126,27 @@ FACADE_WS="${REPO_ROOT}/crates/facades"
 # the defect class this repo names most often. The claim just has to be true.
 . "${REPO_ROOT}/scripts/cargo_classify.sh" || exit 1
 
+# SCOPED RELEASES (#4604): the ONLY crates allowed off the workspace version, each at ONE exact
+# version. A crate listed here but back on the workspace version passes as before; a crate off the
+# workspace version that is not listed, or at any other version, is RED. Edit with the scoped bump.
+# Defined ABOVE --self-test so its scoped-allowlist rows can reach them; pub_ver reads the globals
+# WS_VER and ROOT_MD, which the main path sets below and each self-test row sets for itself.
+scoped_ver() {
+    case $1 in
+        aprender-build-sha|aprender-update|aprender-contracts-macros|aprender-common|aprender-contracts|aprender-contracts-cli) echo 0.69.4 ;;
+        *) return 1 ;;
+    esac
+}
+pub_ver() { # pub_ver <crate> -> the version this tree publishes for it, or rc 1 (unreadable, or off-workspace undeclared)
+    local v sv
+    v=$( python3 "$FACTS" --version-of "$ROOT_MD" "$1" ) || return 1
+    [ -n "$v" ] && [ -n "$WS_VER" ] || return 1
+    [ "$v" = "$WS_VER" ] && { printf '%s\n' "$v"; return 0; }
+    sv=$(scoped_ver "$1") || return 1
+    [ "$v" = "$sv" ] || return 1
+    printf '%s\n' "$v"
+}
+
 if [ "${1:-}" = "--self-test" ]; then
     # Must-match / must-not-match table for the structural checker. Fixtures are
     # committed JSON under scripts/lib/facade_cases/ rather than inline
@@ -180,8 +201,39 @@ if [ "${1:-}" = "--self-test" ]; then
     # once: break the regex and THIS self-test turns red too.
     cargo_classify_selftest || fails=1
 
+    # ---- The SCOPED-RELEASE allowlist (#4604): scoped_ver / pub_ver ----------
+    # A widened allowlist is the one edit that turns a RED here into a GREEN, so each
+    # rule gets a row that only it can fail: every listed crate at its pin (S1-S6), the
+    # workspace path (S7), an unlisted crate at the pin (S8), a listed crate OFF its pin
+    # (S9), an unreadable workspace version (S10), a crate the metadata lacks (S11).
+    # Mutation set: scripts/mutate_facade_compat_guard.sh.
+    scoped_rows=0
+    pub_case() {  # name want_rc ws_ver fixture crate want_stdout
+        local out got
+        scoped_rows=$((scoped_rows + 1))
+        out="$( WS_VER="$3"; ROOT_MD="$CASES/$4"; pub_ver "$5" )"; got=$?
+        if [ "$got" != "$2" ]; then
+            printf 'FAIL  %s: pub_ver %s exit %s, expected %s\n' "$1" "$5" "$got" "$2"; fails=1; return
+        fi
+        if [ "$2" = 0 ] && [ "$out" != "$6" ]; then
+            printf 'FAIL  %s: pub_ver %s printed "%s", expected "%s"\n' "$1" "$5" "$out" "$6"; fails=1; return
+        fi
+        printf 'ok    %s\n' "$1"
+    }
+    pub_case 'S1 scoped aprender-build-sha at its pin is published'        0 0.70.0 root_scoped.json aprender-build-sha 0.69.4
+    pub_case 'S2 scoped aprender-update at its pin is published'           0 0.70.0 root_scoped.json aprender-update 0.69.4
+    pub_case 'S3 scoped aprender-contracts-macros at its pin is published' 0 0.70.0 root_scoped.json aprender-contracts-macros 0.69.4
+    pub_case 'S4 scoped aprender-common at its pin is published'           0 0.70.0 root_scoped.json aprender-common 0.69.4
+    pub_case 'S5 scoped aprender-contracts at its pin is published'        0 0.70.0 root_scoped.json aprender-contracts 0.69.4
+    pub_case 'S6 scoped aprender-contracts-cli at its pin is published'    0 0.70.0 root_scoped.json aprender-contracts-cli 0.69.4
+    pub_case 'S7 a crate at the workspace version is published'            0 0.70.0 root_scoped.json aprender-core 0.70.0
+    pub_case 'S8 an UNLISTED crate at the scoped pin is REJECTED'          1 0.70.0 root_scoped.json aprender-serve ''
+    pub_case 'S9 a listed crate OFF its pin is REJECTED'                   1 0.70.0 root_scoped_drift.json aprender-contracts ''
+    pub_case 'S10 an unreadable workspace version is REJECTED'             1 ''     root_scoped.json aprender-contracts ''
+    pub_case 'S11 a crate the metadata does not list is REJECTED'          1 0.70.0 root_scoped.json aprender-nosuch ''
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (8/8 structural + classifier table above)\n'
+    printf '\nSELF-TEST PASSED (8/8 structural + %s/%s scoped-allowlist + classifier table above)\n' "$scoped_rows" "$scoped_rows"
     exit 0
 fi
 
@@ -395,29 +447,11 @@ else
 fi
 
 WS_VER="$(awk -F'\"' '/^version *=/{print $2; exit}' Cargo.toml)"
-# SCOPED RELEASES (#4604): the ONLY crates allowed off the workspace version, each at ONE exact
-# version. A crate listed here but back on the workspace version passes as before; a crate off the
-# workspace version that is not listed, or at any other version, is RED. Edit with the scoped bump.
-scoped_ver() {
-    case $1 in
-        aprender-build-sha|aprender-update|aprender-contracts-macros|aprender-common|aprender-contracts|aprender-contracts-cli) echo 0.69.4 ;;
-        *) return 1 ;;
-    esac
-}
-pub_ver() { # pub_ver <crate> -> the version this tree publishes for it, or rc 1 (unreadable, or off-workspace undeclared)
-    local v sv
-    v=$( python3 "$FACTS" --version-of "$ROOT_MD" "$1" ) || return 1
-    [ -n "$v" ] && [ -n "$WS_VER" ] || return 1
-    [ "$v" = "$WS_VER" ] && { printf '%s\n' "$v"; return 0; }
-    sv=$(scoped_ver "$1") || return 1
-    [ "$v" = "$sv" ] || return 1
-    printf '%s\n' "$v"
-}
 
 # CURRENCY did not disappear -- it moved to the crate that now owns the name.
 printf -- '\n--- CURRENCY: the tool the facade points AT is the current one -------\n'
 # "Current" = the workspace version, or EXACTLY the version a declared scoped release pins
-# (scoped_ver below). A crate off the workspace version at any other version is RED, so the only
+# (scoped_ver, above). A crate off the workspace version at any other version is RED, so the only
 # input this admits that the old workspace-only check refused is the declared set itself.
 WANT="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts-cli )"
 if WANT_PUB=$(pub_ver aprender-contracts-cli); then

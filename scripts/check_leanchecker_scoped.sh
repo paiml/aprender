@@ -80,6 +80,11 @@ self_test() {
     row 1 'nice lake env leanchecker ProvableContracts'
     row 1 'pv discharge check --leanchecker --leanchecker-unscoped lean'
     row 1 'pv discharge run lean --leanchecker-unscoped'
+    # each row below is the only one that kills one mutant (scripts/mutate_leanchecker_scoped_guard.sh)
+    row 1 'env MemoryMax=24G lake env leanchecker ProvableContracts'
+    row 1 'make lean;leanchecker ProvableContracts'
+    row 1 'lake env leanchecker'
+    row 1 'x=$(lake env leanchecker)'
     # must NOT be RED
     row 0 'systemd-run --user --scope --slice=agent.slice -p MemoryMax=24G -p CPUQuota=800% lake env leanchecker ProvableContracts'
     row 0 'pv discharge check --leanchecker crates/aprender-contracts-staging/lean'

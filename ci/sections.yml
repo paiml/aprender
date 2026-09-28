@@ -2051,6 +2051,21 @@ jobs:
       # (text-only, no build) runs first, per the convention above.
       - name: Renamed-crate facades case table
         run: setsid --wait bash scripts/check_facade_compat.sh --self-test
+      # #4587 review B3 (PR-REVIEW-SKILL-002 v2 S3.D): a guard with only its own
+      # self-test is a guard nobody has shown can turn RED. Each mutation set applies
+      # every drop/flip to a COPY and fails on any survivor or any patch that did not
+      # apply. The two lean guards were added with no CI caller at all; they run here.
+      - name: scoped facade allowlist can still turn RED (17 mutants)
+        run: setsid --wait bash scripts/mutate_facade_compat_guard.sh
+      - name: lean guards (leanchecker scoped, modules reachable) + their mutation sets
+        run: |
+          set -euo pipefail
+          bash scripts/check_leanchecker_scoped.sh --self-test
+          bash scripts/check_leanchecker_scoped.sh
+          bash scripts/check_lean_modules_reachable.sh --self-test
+          bash scripts/check_lean_modules_reachable.sh
+          bash scripts/mutate_leanchecker_scoped_guard.sh
+          bash scripts/mutate_lean_modules_reachable_guard.sh
       - name: provable-contracts 0.3.1 code still compiles against the facades
         run: setsid --wait bash scripts/check_facade_compat.sh
       # aprender#2628: check_facade_compat.sh proves the facades COMPILE and are
