@@ -391,16 +391,20 @@ fn merge_tensors(
 
     for (name, (_, shape)) in reference {
         let data_len = all_tensors[0].get(name).map(|(d, _)| d.len()).unwrap_or(0);
-        let mut merged_data = vec![0.0f32; data_len];
+        // FALSIFY-MOF-001: accumulate in f64. An f32 x f32 product is exact in
+        // f64, so merging M with itself under weights that sum to 1 returns M
+        // bit for bit; an f32 accumulator drifted 1 ulp on 0.7/0.3.
+        let mut acc = vec![0.0f64; data_len];
 
         for (model_idx, model_tensors) in all_tensors.iter().enumerate() {
             let (data, _) = model_tensors.get(name).expect("validated above");
-            let weight = weights[model_idx];
+            let weight = f64::from(weights[model_idx]);
             for (i, &val) in data.iter().enumerate() {
-                merged_data[i] += val * weight;
+                acc[i] += f64::from(val) * weight;
             }
         }
 
+        let merged_data: Vec<f32> = acc.into_iter().map(|v| v as f32).collect();
         merged.insert(name.clone(), (merged_data, shape.clone()));
     }
     merged
