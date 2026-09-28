@@ -430,12 +430,19 @@ def cmd_measure(a):
     paths = dict(l.rstrip("\n").split("|", 1) for l in open(a.models) if "|" in l)
     R = Runner(a.apr, a.lock, a.lock_wait, a.timeout)
     rows, matched = [], 0
+    dec, drc = J.declaimed(L.get("cells") or {}, {h.get("id") for h in L.get("hosts") or []}, lambda w: print("cells: refused -- " + w, file=sys.stderr))
+    if drc:
+        return 1
     for l in open(a.inventory):
         if l.strip():
             it = json.loads(l)
             if a.only and a.only not in (it["file"], "inv:" + it["file"]):
                 continue
             matched += 1
+            d = dec.get((a.host, it.get("arch")))
+            if d:  # the judge owes nothing here (#4590); hours of cells would measure a claim the release does not make
+                print(f"cells: {it['file']} DECLAIMED on {a.host} (arch {d['arch']}, #{d['issue']}) -- not measured", file=sys.stderr)
+                continue
             rows += measure_item(R, it, paths[it["file"]], L, rungs_doc, a)
     if a.only and not matched:
         # model_ladder.sh accepts a rung id for --only; cells are owed per INVENTORY model, so a rung id
@@ -463,6 +470,7 @@ def main(argv=None):
     m.add_argument("--rungs", required=True)
     m.add_argument("--work", required=True)
     m.add_argument("--lock", default="")
+    m.add_argument("--host", default="", help="this host's ladder id: a cells.declaimed arch on it is not measured")
     m.add_argument("--lock-wait", type=int, default=1800)
     m.add_argument("--timeout", type=int, default=3600, help="per apr call, seconds")
     m.add_argument("--serve-ceiling", type=int, default=600)

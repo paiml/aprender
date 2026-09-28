@@ -879,6 +879,8 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/    if not fit:/    if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/        if gone:/        if False:/'
+    cmutant declaim-skip    green-cells-declaimed           's/        if d:  # printed on every run/        if False:  # printed on every run/'
+    cmutant declaim-bare    red-cells-declaimed-bare        's/        if bad:  # a bare de-claim/        if False:  # a bare de-claim/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
     xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>

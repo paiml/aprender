@@ -225,6 +225,17 @@ ladder:
           now refuses it by name at pre-load rather than silently falling back to CPU, so a
           long-rung representative for it would owe cells no code can satisfy and a
           RefusalCell would be a false arithmetic claim. Restore this key with #3714.
+    # #4590 (operator 2026-09-28, #3715): an arch the release does NOT claim on one host. Only these cells
+    # leave the owed set, on that host only; the judge prints the entry on every run, and apr warns at load.
+    declaimed:
+      - arch: qwen3
+        host: gx10
+        issue: 4590
+        until: "0.70.1"
+        why: >-
+          correct but 27-34x slower than Qwen3.5 on GB10 sm_121 (8k think-on: Qwen3-1.7B 967 s, Qwen3-8B
+          2163 s vs Qwen3.5-9B 63-80 s; serial prefill, the sm12x default). 0.70.1 P0 ships native sm_121
+          SASS and re-tests batched prefill on GB10. lambda still owes every Qwen3 cell.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds
