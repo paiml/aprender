@@ -1096,9 +1096,22 @@ andon_fetch() {
     fetch_ci_runs "$d" "$start" "$end" "$runq" || return 1
     ghj "$d/open.json" pr list -R "$REPO" --state open --limit 500 \
         --json number,createdAt,headRefName,headRefOid,baseRefName,isDraft,body || return 1
-    ghj "$d/heads.json" pr list -R "$REPO" --state all --search "updated:>=${start%%T*}" --limit 1000 \
-        --json number,state,headRefOid || return 1
-    [ "$(jq length "$d/heads.json")" -lt 1000 ] || die "PR head list hit the 1000-row cap"
+    # Heads over 30 days whatever the run window: a PR folded a week ago is still carried by the fold. In
+    # 5-day slices of last update (each PR falls in one), and a slice at the 1000-row cap is refused.
+    if [ ! -s "$d/heads.json" ]; then
+        local e0 i
+        e0=$(date -u -d "$end" +%s)
+        : > "$d/heads.part"
+        for i in 0 5 10 15 20 25; do
+            gh pr list -R "$REPO" --state all --limit 1000 --json number,state,headRefOid --search \
+                "updated:$(date -u -d "@$(( e0 - (i + 5) * 86400 ))" +%F)..$(date -u -d "@$(( e0 - i * 86400 ))" +%F)" \
+                > "$d/slice.tmp" || return 1
+            [ "$(jq length "$d/slice.tmp")" -lt 1000 ] || die "PR head slice $i hit the 1000-row cap"
+            jq -c '.[]' "$d/slice.tmp" >> "$d/heads.part"
+        done
+        jq -s 'unique_by(.number)' "$d/heads.part" > "$d/heads.json"
+        rm -f -- "${d:?}/heads.part" "${d:?}/slice.tmp"
+    fi
     if [ ! -s "$d/commits.jsonl" ]; then
         local batch q n
         : > "$d/commits.part"
