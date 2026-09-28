@@ -88,11 +88,13 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     );
     assert_eq!(v["extra"]["pc_shape"], "fired", "{}", show(&r));
     // ONT-4b: exactly one, from ont:id minCount. ONT-4c1 plants a bare model:Model too, which draws
-    // ladder-measured's two minCounts: three on this corpus, and never zero.
+    // ladder-measured's two minCounts: three. ONT-4c4 arms kernel-parity (reference, parityReceipt) and
+    // kernel-safety (safety, registerBudget) against the bare ont:KernelSymbol plant, four more: seven,
+    // and never zero. kernel-timing has only a maxCount, so the bare plant draws nothing from it.
     assert_eq!(
         v["extra"]["plant_violations"],
-        3,
-        "ont:id minCount + ladder-measured's two (ONT-4c1)\n{}",
+        7,
+        "ont:id minCount + ladder-measured's two (ONT-4c1) + kernel-parity's two and kernel-safety's two (ONT-4c4)\n{}",
         show(&r)
     );
 }
