@@ -1049,4 +1049,25 @@ mod tests {
             _ => panic!("expected ValidationFailed for unknown strategy"),
         }
     }
+
+    /// FALSIFY-TIS-003: the prompts file named in a distill config is checked
+    /// against the sealed manifest; dropping the hook turns this RED.
+    #[test]
+    fn falsify_tis_003_distill_prompts_hook_refuses_sealed_prompt() {
+        use sha2::{Digest, Sha256};
+        let _l = crate::commands::sealed_ingress::TEST_ACTIVE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sealed = "tis-003 sealed prompt 7f3a";
+        let m = dir.path().join("m.txt");
+        std::fs::write(&m, format!("S-9 {:x}\n", Sha256::digest(sealed.as_bytes()))).expect("write");
+        let p = dir.path().join("prompts.jsonl");
+        std::fs::write(&p, format!("{}\n", serde_json::json!({"prompt": sealed}))).expect("write");
+        crate::commands::sealed_ingress::enforce("distill", false, Some(&m), &[]).expect("gate");
+        let r = read_prompts_jsonl(&p);
+        crate::commands::sealed_ingress::activate("distill", None);
+        let err = r.expect_err("sealed prompt must be refused").to_string();
+        assert!(err.contains("S-9") && err.contains("TIS-001"), "{err}");
+    }
 }
