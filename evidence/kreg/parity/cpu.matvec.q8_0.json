@@ -1,0 +1,39 @@
+{
+  "build_identity": "50bfa9b6f9a884e041f8947f9ed20c0e77f9f645",
+  "fp32_activations": {
+    "max_abs_err": 0.31130200636971495,
+    "max_rel_err": 0.00373872448350238
+  },
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.matvec.q8_0",
+  "oracle": "in_tree_dequant_f64",
+  "oracle_independent": false,
+  "quantized_activation_oracle": {
+    "max_rel_err": 2.0240994602880252e-7
+  },
+  "registry_precision": "q8_0",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.31130200636971495,
+    "max_rel_err": 0.00373872448350238
+  },
+  "source_fn": "fused_q8_0_q8_0_parallel_matvec",
+  "tolerance_rel": 0.008,
+  "ts": "2026-09-28T07:29:59Z",
+  "workload": {
+    "in_dim": 2048,
+    "out_dim": 1024,
+    "seed": 4539,
+    "trials": 4
+  }
+}

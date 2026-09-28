@@ -1,7 +1,7 @@
 {
  "schema": "apr-kernel-registry-receipts/v1",
  "note": "KREG-001 AC-3 (aprender#4539, OBS-15 #4574), RATCHET per cop ruling 2026-09-27 13:13Z: a registry row is admitted with a per-arch parity receipt from a host whose arch equals the row's arch (any host for an arch=any row). Until 0.73 the rows without one are counted and that count must equal unreceipted_max; lower unreceipted_max when you add a receipt, never raise it. From version 0.73.0 unreceipted_max must be 0 (hard RED). Checked by realizar::kernel_registry tests (FALSIFY-KREG-008).",
- "unreceipted_max": 38,
+ "unreceipted_max": 36,
  "hard_red_at": "0.73.0",
  "receipts": [
   {
@@ -18,6 +18,16 @@
    "kernel_id": "cpu.matvec.q6_k",
    "host_arch": "x86_64",
    "receipt": "evidence/kreg/parity/cpu.matvec.q6_k.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.q4_0",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.q4_0.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.q8_0",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.q8_0.json"
   }
  ]
 }
