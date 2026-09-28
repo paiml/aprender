@@ -108,6 +108,14 @@ pub enum ModelOpsCommands {
         /// PMAT-486: Enable StepProfiler for per-phase wall-clock timing
         #[arg(long)]
         profile: bool,
+        /// Mark this run as release-candidate bound: it must name a sealed
+        /// manifest (train-ingress-sealed-refusal-v1 FALSIFY-TIS-005).
+        #[arg(long)]
+        rc_bound: bool,
+        /// Sealed test-set manifest (`<id> <sha256> [hunk,…]` per line). Required
+        /// with --rc-bound; an empty or unreadable manifest is refused.
+        #[arg(long, value_name = "PATH")]
+        sealed_manifest: Option<PathBuf>,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {
@@ -197,5 +205,13 @@ pub enum ModelOpsCommands {
         /// corpus directory.
         #[arg(long, value_name = "DIR")]
         dataset: Option<PathBuf>,
+        /// Mark this run as release-candidate bound: it must name a sealed
+        /// manifest (train-ingress-sealed-refusal-v1 FALSIFY-TIS-005).
+        #[arg(long)]
+        rc_bound: bool,
+        /// Sealed test-set manifest (`<id> <sha256> [hunk,…]` per line). Required
+        /// with --rc-bound; an empty or unreadable manifest is refused.
+        #[arg(long, value_name = "PATH")]
+        sealed_manifest: Option<PathBuf>,
     },
 }
