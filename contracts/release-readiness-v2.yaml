@@ -43,7 +43,7 @@ metadata:
     Removing one kernel receipt turns exactly the model cells whose static map uses that kernel RED; a tensor
     type no registry row serves turns its model cell RED.
   references:
-    - 'aprender#3715 (v2 design), aprender#4539 KREG-001 (the registry and parity receipts), #3430'
+    - 'aprender#3715 (v2 design), aprender#4539 KREG-001 (the registry and parity receipts; contracts/kernel-registry-v1.yaml lands with it), #3430'
     - 'docs/specifications/release-readiness-v2-kernel-cells.md'
     - 'crates/aprender-contracts/src/ontology/extract/{kernel_cells.rs, kernel_cells_tests.rs, gguf.rs}'
 
@@ -51,7 +51,7 @@ entity:
   type: release-evidence
 
 relations:
-  depends_on: [ont-shapes-v1, release-readiness-v1, kernel-registry-v1]
+  depends_on: [ont-shapes-v1, release-readiness-v1]
 
 shapes:
   - id: release-readiness-v2.kernel
