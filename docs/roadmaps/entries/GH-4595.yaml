@@ -12,7 +12,7 @@
   - aprender-contracts + aprender-contracts-cli 0.69.2, branch release/pv-0.69.2 = v0.69.1 plus only the rows below.
   - allowEmpty is PARSED by the shapes schema (bootstrap, inert for every existing shape); pv 0.69.2 lint --gate shapes on the PR-1 tree passes where 0.69.1 exits 3.
   - publish_strict.sh --only <crates> --tag <tag>; a lone CLI publish is refused while aprender-contracts 0.69.2 is not live.
-  - publish_strict.sh fails closed unless the recorded infra clean-room.yml run has a green clean-room (aprender) job whose artifact names the tag sha.
+  - publish_strict.sh fails closed unless the recorded infra clean-room.yml run has a green clean-room (aprender) job that tested the tag sha, API-checked (issue row 3). Proof is the result-aprender artifact when uploaded (it must name the tag sha, no fallback), else the job's own API log line naming the tag sha as tested-sha, written by assert-tested-ref.sh, which fails the job on any other commit. Run 36422691130 went green on the tag and uploaded no artifact.
   - Tag pv-v0.69.2 (matches no workflow trigger), no GitHub release; after publish, cargo install aprender-contracts-cli@0.69.2 in a clean container gives pv --version 0.69.2.
   - 'Out of scope: PMAT-3610 per-shape vacuity acceptance; it stays open and is not closed by this release.'
   phases: []
