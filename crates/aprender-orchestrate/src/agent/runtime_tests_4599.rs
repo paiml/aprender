@@ -227,5 +227,10 @@ fn falsify_4599_007_older_turns_may_still_be_evicted() {
         vec![Message::User("x".repeat(100_000)), Message::Assistant("old answer".into())];
     msgs.extend(tool_turn("what is in big.rs?", 20_000));
     let kept = truncate_messages(&msgs, &ctx_32k()).expect("the current turn fits");
-    assert!(matches!(&kept[0], Message::User(p) if p == "what is in big.rs?"), "{kept:?}");
+    // The 100 KB old prompt is evicted; the current turn is kept whole, prompt first. (A small
+    // older message can survive past the evicted one: pre-existing, not #4599's.)
+    assert!(!kept.iter().any(|m| matches!(m, Message::User(p) if p.len() == 100_000)));
+    let turn = &kept[kept.len() - 3..];
+    assert!(matches!(&turn[0], Message::User(p) if p == "what is in big.rs?"), "{kept:?}");
+    assert!(matches!(&turn[2], Message::ToolResult(r) if r.content.len() == 20_000));
 }
