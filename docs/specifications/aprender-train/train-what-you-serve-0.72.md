@@ -244,6 +244,55 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - Real batch > 1 needs Phase 2e: a fused `(input_ids, gradient)` step on the trainer, sized with R6.
   - Any CUDA distill loss curve recorded so far at batch > 1 measured effective batch 1. Treat those receipts as batch 1.
 
+### Design D-R6 — DBH-001: a CUDA distill step that trains every row (Phase 2e) · `[A]` (2026-09-28, desk, dbh @5135ca473c)
+- **Where it stands:** DBH-002..005 are on branches (`la-72/dbh-002-distill-batch-refusal`, `la-72/dbh-004-005-per-position-and-loss`).
+  CUDA declares `max_batch = Some(1)`, the pipeline refuses a larger batch before step 0, and per-position KD refuses
+  a trailing-only student. So nothing trains silently wrong. DBH-001 is what lifts the refusal: B > 1 that really trains.
+- **The desk read found two more defects on the same path, present at B = 1 today (contract rows DBH-006/007):**
+  - **DBH-006, the configured learning rate never reaches the student.** `CudaStudentProvider::for_training` calls
+    `CudaTransformerTrainer::for_inference`, which builds `TransformerTrainConfig::new` with `lr: 0.001`, no warmup and
+    no `max_steps`. `DistillConfig.training.learning_rate` (1e-4 in the crate, 2e-4 in the CLI) is logged and
+    written into receipts, but no call passes it to the trainer. Every CUDA distill run so far trained at AdamW 1e-3, 5–10×
+    the logged rate.
+  - **DBH-007, the embedding table never moves, and its gradient grows without bound.** `forward_backward_with_grad`
+    runs `gpu_backward(accumulate_only = false)`: that steps the blocks, the LM head and the final norm on the GPU. It
+    then runs `embed_backward`, which scatter-adds into the CPU embedding `grad`. Only `optimizer_step()` steps
+    `embed_optimizer` and zeroes that `grad`, and only `train_batch` and `apply_ddp_gradients` call it. So in distill the
+    embedding weights stay at the checkpoint for the whole run, and the step counter stays at 0. The CPU gradient
+    buffer adds every step's embedding gradient into a sum that is never applied and never reset.
+- **Design, which reuses the existing R-038 accumulation path and adds no kernel:**
+  1. Trait: `StudentLogitsProvider::apply_kd_step(&mut self, input_ids: &[Vec<u32>], gradient: &[Vec<f32>])`. The
+     default is `apply_kd_gradient(gradient)`, so CPU providers are unchanged. `Pipeline` calls `apply_kd_step` with the
+     rows it drew, and the provider no longer needs to cache `last_input_ids`.
+  2. Trainer: `CudaTransformerTrainer::kd_step_batch(&mut self, rows: &[(&[u32], &[f32])]) -> Option<()>`. It:
+     - calls `ensure_grad_accum()` and zeroes the embedding grad (the same as `train_batch` at `accumulated_batches == 0`);
+     - for each row, runs `gpu_forward`, uploads that row's gradient into the last-position slice, runs
+       `gpu_backward(accumulate_only = true)` then `embed_backward`, and adds 1 to `accumulated_count`;
+     - then runs `gpu_optimizer_from_accum()`, which calls `accum.average()`, so the update is the MEAN of the per-row
+       gradients and matches the mean the pipeline logs (DBH-005);
+     - then runs `optimizer_step()`, which steps the embedding, syncs the LR and adds 1 to `step`. That also fixes
+       DBH-007 at B = 1.
+  3. Construction: `CudaStudentProvider::for_training(dir, model_config, lr)` builds the `TransformerTrainConfig` with
+     that `lr` (plus warmup and max_steps once DistillConfig carries them) before `with_model`. That fixes DBH-006.
+     `accumulation_steps` is set to B for the step, because the NF4-LoRA arm of `gpu_backward` scales LR by
+     `1/accumulation_steps` on each micro-row.
+  4. `max_batch` becomes `None`. The DBH-002 refusal path stays for any provider that still declares a limit.
+  5. Per-position stays trailing-only on CUDA. Sequence KD needs an all-positions gradient upload, and until it exists
+     DBH-004 refuses.
+- **Cost, which R6 must size:** the CPU accumulator is one f32 copy of every block parameter. For the 4B student that is
+  about 16 GB of host RAM, plus one D2H copy of all block grads per row. The GPU accumulator (`gpu_grad_accum`, ALB-091)
+  avoids the D2H cost but needs about 16 GB of VRAM, which a 24 GB 4090 holding the 4B model and its AdamW state does not have
+  (S-R17). Wall time per step is about B × the B = 1 step, since there is no real batching of the forward. Rows
+  are accumulated, not fused. A fused `[B, S]` forward is out of scope for this design and would need a kernel.
+- **Alternative rejected:** B micro-steps (one optimizer step per row). It is cheap, but it is B steps at the full LR
+  logged as one, the same telemetry lie as S-R6 in a new form.
+- **Falsifiers:** DBH-001 needs a GPU: B = 2 on distinct rows must differ from B = 1 on the last row, and must equal the
+  mean-gradient update within 1e-4. DBH-006 and DBH-007 have CPU-checkable halves: the provider's trainer must report the
+  configured lr, and the step count and embedding checksum must change after one step. Their GPU halves wait for
+  train-idle.
+- **Order:** DBH-006/007 are a small fix at B = 1 and go first; every CUDA distill receipt before them trained at 1e-3
+  with a frozen embedding. DBH-001 follows, sized by R6. Nothing here touches GDN, so it does not wait on R2.
+
 ### Spike S-R7 — does `apr merge` keep a Qwen3.5 model a Qwen3.5 model? · `[V]` (2026-09-28, measured, CPU)
 - **Setup:** apr 0.69.3 @574583d382 (private target dir). Inputs are the S-R10 Qwen3.5-0.8B .apr (489 tensors, bf16,
   2.77 GB) and its bit-identical round-trip copy. Every strategy was run on that identity case: average, weighted 0.7/0.3,

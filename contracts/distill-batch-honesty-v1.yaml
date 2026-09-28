@@ -1,6 +1,6 @@
 metadata:
   kind: pattern
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-28'
   author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
   description: >-
@@ -26,6 +26,8 @@ equations:
     - 'A row whose logits enter the reported loss contributes to the update (loss rows = update rows)'
     - 'A provider that can only apply one row declares max_batch = 1 and the pipeline refuses B > 1 by name before step 0'
     - 'Per-position KD applies B·P rows or refuses; one row of B·P is a FAIL'
+    - 'The student trains at the configured learning rate (DistillConfig.training.learning_rate), not a trainer default'
+    - 'Every trainable tensor the backward writes a gradient for is stepped and its gradient reset each optimizer step (the embedding table included)'
     preconditions:
     - the same batch source and seed for the compared runs
 proof_obligations:
@@ -64,3 +66,18 @@ falsification_tests:
   prediction: 'the per-step loss logged by Pipeline is the mean over exactly the rows the update used'
   test: 'mock provider at B=4 returning distinct per-row losses; logged loss == mean of the applied rows'
   if_fails: 'the logged loss averages rows that were never trained on'
+- id: FALSIFY-DBH-006
+  rule: The configured learning rate reaches the CUDA student
+  prediction: 'CudaStudentProvider built from a DistillConfig with learning_rate 2e-4 has a trainer whose current_lr() at step 0 is 2e-4 (no warmup) and whose AdamW update size scales with it'
+  test: 'CPU half: construction plumbs lr into TransformerTrainConfig before with_model (unit test on the config builder); GPU half (train-idle): one step at lr a vs 2a, block weight delta ratio ~2'
+  if_fails: 'every CUDA distill run trains at TransformerTrainConfig::new lr 0.001 whatever the receipt says (desk 2026-09-28, for_inference builds its own config)'
+- id: FALSIFY-DBH-007
+  rule: A distill step steps the embedding table and resets its gradient
+  prediction: 'after one CUDA distill step at lr > 0 the embedding-table checksum differs from the checkpoint, the trainer step counter is 1, and the CPU embedding grad is zero or absent at the start of step 2'
+  test: 'GPU (train-idle): one apply step on a tiny checkpoint, compare embed_tokens checksum and step(); planted variant = forward_backward_with_grad as at 5135ca473c (no optimizer_step) stays RED'
+  if_fails: 'embedding frozen for the whole run and its gradient summed unbounded across steps (forward_backward_with_grad never calls optimizer_step)'
+- id: FALSIFY-DBH-008
+  rule: Accumulated B-row update equals the mean-gradient update
+  prediction: 'kd_step_batch on rows a,b yields the same weights (tol 1e-4 rel) as one step with gradient (g_a+g_b)/2 applied through the same accumulator; B micro-steps (one optimizer step per row) differ'
+  test: 'GPU (train-idle), same seed and checkpoint; the micro-step variant is the planted RED'
+  if_fails: 'rows are summed (B x lr) or stepped per row (B steps logged as one)'
