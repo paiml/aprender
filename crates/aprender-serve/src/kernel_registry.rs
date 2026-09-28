@@ -272,6 +272,21 @@ pub const ERROR_MODELS: [&str; 8] = [
     "EM-NONDET",
 ];
 
+/// The per-forward ops an `ops[]` row may name. The `kernel-registry-v1.op` shape holds the same
+/// closed set, and `the_op_set_is_the_contracts` keeps the two equal.
+pub const OPS: [&str; 10] = [
+    "embed",
+    "rmsnorm",
+    "layernorm",
+    "rope",
+    "attention",
+    "kv_write",
+    "swiglu",
+    "gelu",
+    "residual_add",
+    "argmax",
+];
+
 /// A cross-field rule SHACL Core cannot state: an atomics-based kernel (`EM-NONDET`) is never
 /// `bitwise`, and a row outside the closed sets is refused here too, not only by the shape.
 fn check_determinism(row: &KernelRow) -> std::result::Result<(), String> {
@@ -459,10 +474,13 @@ pub struct Registry {
     table: Vec<Vec<u16>>,
 }
 
-/// An op row this registry could not answer for: an unknown backend, a bad error model, or an
+/// An op row this registry could not answer for: an unknown op or backend, a bad error model, or an
 /// `archs` list that is empty or repeats a name (the shape cannot see either).
 fn check_op(op: &OpRow) -> std::result::Result<(), String> {
     let refuse = |why: &str| Err(format!("kernel registry: op `{}` {why}", op.kernel_id));
+    if !OPS.contains(&op.op.as_str()) {
+        return refuse(&format!("has unknown op `{}`", op.op));
+    }
     if Backend::parse(&op.backend).is_none() {
         return refuse(&format!("has unknown backend `{}`", op.backend));
     }
@@ -1375,6 +1393,34 @@ mod tests {
         assert!(e.contains("ops"), "{e}");
     }
 
+    /// An op outside the closed set is refused at parse, not only by the shape, and the set is the
+    /// one `kernel-registry-v1.op` declares.
+    #[test]
+    fn the_op_set_is_the_contracts() {
+        let k = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major");
+        let bad =
+            op_json("cpu.residual.f32", "").replace(r#""op":"rmsnorm""#, r#""op":"residual""#);
+        let e = Registry::parse(&op_doc(std::slice::from_ref(&k), &[bad]))
+            .err()
+            .expect("an unknown op is refused");
+        assert!(e.contains("unknown op `residual`"), "{e}");
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let yaml = std::fs::read_to_string(root.join("contracts/kernel-registry-v1.yaml"))
+            .expect("the contract is readable");
+        let line = yaml
+            .lines()
+            .skip_while(|l| !l.contains("id: kernel-registry-v1.op"))
+            .find(|l| l.contains("{path: kreg:op,"))
+            .expect("the kernel-registry-v1.op shape names kreg:op");
+        let set = line
+            .split_once("in: [")
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(set, _)| set.split(',').map(str::trim).collect::<Vec<_>>())
+            .expect("kreg:op has an `in` list");
+        assert_eq!(set, OPS, "OPS and the kernel-registry-v1.op shape disagree");
+    }
+
     /// The committed registry registers every per-forward op of the CPU decode path, and a trace
     /// of their ids is fully registered (S-REG covers ops, not only kernels).
     #[test]
@@ -1388,6 +1434,10 @@ mod tests {
             "cpu.attention.f32",
             "cpu.swiglu.f32",
             "cpu.gelu.f32",
+            "cpu.embed.f32",
+            "cpu.kv_write.f32",
+            "cpu.residual_add.f32",
+            "cpu.argmax.f32",
         ] {
             assert!(ids.contains(&want), "{want} not in {ids:?}");
         }

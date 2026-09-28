@@ -98,8 +98,8 @@ reads them; a registry with no `ops[]`, a type key on an op, `archs` on a typed 
 the two arrays refuses the registry.
 
 **Coverage gap, and the first finding for 0.71:** the registry holds 41 `kernels[]` rows, all
-`matvec` or `gemv`, and six CPU `ops[]` rows (RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU), none with a
-receipt. Embedding, KV write, residual add, sampling and every CUDA op are not registered. Under the
+`matvec` or `gemv`, and ten CPU `ops[]` rows (embedding, RMSNorm, LayerNorm, RoPE, attention, KV write, SwiGLU,
+GELU, residual add, greedy argmax), none with a receipt. No CUDA op is registered, and neither is top-k/top-p sampling. Under the
 unregistered-kernel falsifier, **every model is RED today**. That is correct: it is the "0
 unvalidated cells" target stated honestly. Registering the remaining dispatch ops is phase P1.
 
@@ -148,8 +148,8 @@ Long-context risk moves to the attention kernels' shape classes, and that needs 
 
 ## 8. Phases
 
-- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ops[]`; six CPU op
-  rows are registered, CUDA's are open); per-tensor qtype in the
+- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ops[]`; ten CPU op
+  rows cover the CPU decode path; CUDA's and sampling are open); per-tensor qtype in the
   GGUF extractor; `release-readiness-v2.yaml` shapes; extractor edges; the RR2-F1…F6 case table.
 - **P2:** CUDA kernel receipts on lambda (sm_89) and gx10 (sm_121); the `kernel_path` emitter in the
   smoke.
