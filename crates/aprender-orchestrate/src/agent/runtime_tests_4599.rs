@@ -134,12 +134,15 @@ async fn falsify_4599_002_failing_cells_are_refused_not_dropped_at_32k() {
     }
 }
 
-/// FALSIFY-4599-003: the issue's own boundary. A >105 KB prompt at 32K is refused; a 70 KB
-/// prompt (the 20k rung, which passed) still goes through whole.
+/// FALSIFY-4599-003: the issue's own boundary. A prompt over the 32K budget is refused; a 70 KB
+/// prompt (the 20k rung, which passed) still goes through whole. The budget here is
+/// 32768 − 4096 reserve = 28672 estimated tokens (4 bytes each, no system prompt or tools), so
+/// 128 KiB is over it; in `apr code` the system prompt and tool schemas lower the boundary
+/// further, to the ~105 KB the issue observed.
 #[tokio::test]
-async fn falsify_4599_003_prompt_over_105kb_is_refused_at_32k() {
+async fn falsify_4599_003_prompt_over_budget_is_refused_at_32k() {
     let driver = RecordingDriver::new(OLD_CODE_WINDOW);
-    let r = run(&needle_prompt(110 * 1024), &driver).await;
+    let r = run(&needle_prompt(128 * 1024), &driver).await;
     assert!(matches!(r, Err(AgentError::ContextOverflow { .. })), "got {r:?}");
     assert!(driver.user_messages().is_empty());
 

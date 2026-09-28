@@ -227,7 +227,11 @@ async fn test_non_retryable_error_fails_immediately() {
 /// Context truncation: small window driver truncates long conversations.
 #[tokio::test]
 async fn test_context_truncation_small_window() {
-    let manifest = default_manifest();
+    // #4599: the output reserve must leave room for the newest message. With the default
+    // reserve the 200-token window has no input budget, and a window that fits nothing is now a
+    // `ContextOverflow`, not an empty conversation sent to the model.
+    let mut manifest = default_manifest();
+    manifest.model.max_tokens = 64;
 
     // Driver with 200-token context window (tiny)
     struct TinyWindowDriver {
