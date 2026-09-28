@@ -370,8 +370,8 @@ pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
 
 /// aprender#3715 v2: one `CellHost` per required host, over the same universe v1 grades. A model's tensor
 /// types come from any of the host's inventory rows with its hash; a ladder-only model has none and is RED.
-/// No smoke or sanitizer receipts are read yet (OBS-15 `kernel_path`), so every model cell is RED on its
-/// smoke and every kernel cell on S-SAN: absent evidence, stated.
+/// No sanitizer receipts are read yet (attribution needs the smoke's `kernel_path`), so every cuda kernel
+/// cell is RED on S-SAN: absent evidence, stated.
 fn emit_v2(g: &mut Graph, views: &[HostView<'_>], v2: &super::kernel_cells::V2Evidence) {
     let hosts: Vec<super::kernel_cells::CellHost> = views
         .iter()
@@ -392,7 +392,7 @@ fn emit_v2(g: &mut Graph, views: &[HostView<'_>], v2: &super::kernel_cells::V2Ev
                     .map(|sha| (sha.clone(), types.get(sha).cloned().flatten()))
                     .collect(),
                 kernels: v2.kernels.get(&v.decl.id).cloned().unwrap_or_default(),
-                smokes: BTreeMap::new(),
+                smokes: v2.smokes.get(&v.decl.id).cloned().unwrap_or_default(),
                 sanitized: BTreeMap::new(),
             }
         })

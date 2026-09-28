@@ -281,6 +281,8 @@ mod rr2 {
         Stale(&'static str),
         /// RR2-F5: model A has no smoke receipt.
         NoSmoke,
+        /// RR2-F3's precondition: model B's smoke names no registry kernel path, so the map was never checked.
+        NoKernelPath,
         /// RR2-F6: the kernel's receipt was measured on another arch.
         ForeignArch(&'static str),
         /// S-SAN: no sanitizer run covers the kernel.
@@ -311,6 +313,7 @@ mod rr2 {
             let smoke = SmokeEvidence {
                 pass: true,
                 fresh: true,
+                kernel_path_known: !(m == "B" && matches!(plant, Some(Plant::NoKernelPath))),
                 unpredicted: if m == "B" && matches!(plant, Some(Plant::Unpredicted)) {
                     ids(&["cuda.gemv.q6_k"])
                 } else {
@@ -412,6 +415,7 @@ mod rr2 {
                 vec![mc("A"), kc("cuda.gemv.q6_k")],
             ),
             ("F5 no smoke", Plant::NoSmoke, vec![mc("A")]),
+            ("F3 no kernel path", Plant::NoKernelPath, vec![mc("B")]),
             (
                 "F6 foreign arch",
                 Plant::ForeignArch("cuda.gemv.q8_0"),
@@ -446,6 +450,7 @@ mod rr2 {
         let smoke = SmokeEvidence {
             pass: true,
             fresh: true,
+            kernel_path_known: true,
             unpredicted: BTreeSet::new(),
         };
         emit_smoke(&mut g, HOST, "D", Some(&smoke));
@@ -474,11 +479,13 @@ mod rr2 {
                 .collect(),
             smokes: MODELS
                 .iter()
-                .map(|(m, _)| {
-                    let s = SmokeEvidence {
+                .map(|(m, ts)| {
+                    let s = SmokeReceipt {
                         pass: true,
                         fresh: true,
-                        unpredicted: BTreeSet::new(),
+                        dispatched: Some(
+                            static_kernel_map(&rows, "cuda", "sm_89", &types(ts)).uses,
+                        ),
                     };
                     ((*m).to_string(), s)
                 })
@@ -504,10 +511,25 @@ mod rr2 {
         assert_eq!(red, want);
     }
 
+    /// Through the builder, a smoke receipt is judged against its own model's static map: B (q4_k only)
+    /// dispatching q6_k is unpredicted and RED, the same id is predicted for A; a `trace` or null path is
+    /// RED on B alone.
+    #[test]
+    fn build_cells_judges_each_smoke_against_its_own_model() {
+        let mut h = cell_host(Some(&[8]), None);
+        let b = h.smokes.get_mut("B").expect("B");
+        b.dispatched = Some(ids(&["cuda.gemv.q4_k", "cuda.gemv.q6_k"]));
+        assert_eq!(built_red(&h), [mc("B")].into_iter().collect());
+        let mut h = cell_host(Some(&[8]), None);
+        h.smokes.get_mut("B").expect("B").dispatched = None;
+        assert_eq!(built_red(&h), [mc("B")].into_iter().collect());
+    }
+
     /// `build_cells` asks for a sanitizer run on cuda hosts only: a kernel with none is RED on cuda and
     /// green on a cpu host with the same receipts.
     #[test]
     fn build_cells_sanitizer_is_cuda_only() {
+        // (the smoke of C below dispatches the cpu kernel: a cuda id would be unpredicted there)
         let mut h = cell_host(Some(&[8]), None);
         h.sanitized.remove("cuda.gemv.q8_0");
         assert_eq!(built_red(&h), [kc("cuda.gemv.q8_0")].into_iter().collect());
@@ -519,6 +541,7 @@ mod rr2 {
             .into_iter()
             .collect();
         h.sanitized.clear();
+        h.smokes.get_mut("C").expect("C's smoke").dispatched = Some(ids(&["cpu.matvec.q8_0"]));
         let mut g = Graph::new();
         build_cells(&mut g, &rows, std::slice::from_ref(&h));
         let report = validate(&g, &shapes());
@@ -908,4 +931,151 @@ fn read_host_kernels_judges_each_receipt_against_its_own_key() {
     let none =
         read_host_kernels(&dir.path().join("absent"), "cpu", "x86_64", &sets).expect("absent");
     assert!(none.is_empty());
+}
+
+const SMOKE_SHA: &str = "abababababababababababababababababababababababababababababababab";
+
+fn smoke_json(host: &str, apr_sha: &str, verdict: &str, kernel_path: &str) -> String {
+    format!(
+        r#"{{"schema":"{SMOKE_SCHEMA}","host":"{host}","model_sha256":"{SMOKE_SHA}","apr_sha":"{apr_sha}",
+            "verdict":"{verdict}","kernel_path":{kernel_path}}}"#
+    )
+}
+
+fn kpath(source: &str, ids: &[&str]) -> String {
+    let entries: Vec<String> = ids
+        .iter()
+        .map(|k| {
+            format!(
+                r#"{{"op":"gemv","kernel_id":"{k}","qtype":"q4_k","layout":"row_major","arch":"sm_89","shape_class":"m1","precision":"f32"}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"source":"{source}","entries":[{}]}}"#,
+        entries.join(",")
+    )
+}
+
+/// RR2-F3's input: the smoke judge. `kernel_path` is the `apr-kernel-path-v1` object (OBS-15, aprender#4574).
+#[test]
+fn the_smoke_judge_case_table() {
+    let judge = |json: &str| judge_smoke_receipt("s.json", json.as_bytes(), "lambda", "mc");
+    let ok = |json: &str| judge(json).expect("a smoke receipt").1;
+    let good = ok(&smoke_json(
+        "lambda",
+        "mc",
+        "pass",
+        &kpath("kreg", &["cuda.gemv.q4_k", "cuda.gemv.q6_k"]),
+    ));
+    assert_eq!(
+        (good.pass, good.fresh, good.dispatched),
+        (true, true, Some(ids(&["cuda.gemv.q4_k", "cuda.gemv.q6_k"])))
+    );
+    assert_eq!(
+        judge(&smoke_json("lambda", "mc", "pass", "null"))
+            .expect("null path")
+            .0,
+        SMOKE_SHA
+    );
+    for (json, want, why) in [
+        (
+            smoke_json("lambda", "old", "pass", "null"),
+            (true, false, None),
+            "another commit: stale",
+        ),
+        (
+            smoke_json("lambda", "mc", "fail", "null"),
+            (false, true, None),
+            "verdict fail",
+        ),
+        (
+            smoke_json("lambda", "mc", "pass", &kpath("trace", &["q4k_gemv@q4_k"])),
+            (true, true, None),
+            "trace labels are not registry ids",
+        ),
+        (
+            smoke_json("lambda", "mc", "pass", "null").replace(r#","kernel_path":null"#, ""),
+            (true, true, None),
+            "absent path",
+        ),
+    ] {
+        let r = ok(&json);
+        assert_eq!((r.pass, r.fresh, r.dispatched), want, "{why}");
+    }
+    let good_json = smoke_json("lambda", "mc", "pass", &kpath("kreg", &["cuda.gemv.q4_k"]));
+    for (bad, why) in [
+        ("[]".to_string(), "not an object"),
+        (
+            good_json.replace(SMOKE_SCHEMA, "rr2-smoke-receipt/v0"),
+            "schema",
+        ),
+        (
+            smoke_json("gx10", "mc", "pass", "null"),
+            "another host's receipt",
+        ),
+        (good_json.replace(SMOKE_SHA, "AB"), "short sha"),
+        (
+            good_json.replace(SMOKE_SHA, &SMOKE_SHA.to_uppercase()),
+            "uppercase sha",
+        ),
+        (good_json.replace(r#""apr_sha":"mc","#, ""), "no apr_sha"),
+        (good_json.replace(r#""verdict":"pass","#, ""), "no verdict"),
+        (
+            smoke_json("lambda", "mc", "pass", "7"),
+            "path not an object",
+        ),
+        (
+            smoke_json("lambda", "mc", "pass", &kpath("guess", &["x"])),
+            "unknown source",
+        ),
+        (
+            smoke_json("lambda", "mc", "pass", r#"{"source":"kreg","entries":[]}"#),
+            "no entries",
+        ),
+        (
+            smoke_json("lambda", "mc", "pass", &kpath("kreg", &["unknown"])),
+            "entry names no kernel",
+        ),
+        (
+            smoke_json("lambda", "mc", "pass", &kpath("kreg", &[""])),
+            "empty kernel id",
+        ),
+    ] {
+        assert!(judge(&bad).is_err(), "{why} must be refused");
+    }
+    // `against`: unpredicted is dispatched minus uses; no path is known-false, never "ran nothing".
+    let uses = ids(&["cuda.gemv.q4_k"]);
+    let r = SmokeReceipt {
+        pass: true,
+        fresh: true,
+        dispatched: Some(ids(&["cuda.gemv.q4_k", "cuda.gemv.q6_k"])),
+    };
+    let j = r.against(&uses);
+    assert!(j.kernel_path_known);
+    assert_eq!(j.unpredicted, ids(&["cuda.gemv.q6_k"]));
+    let j = SmokeReceipt {
+        dispatched: None,
+        ..r
+    }
+    .against(&uses);
+    assert!(!j.kernel_path_known && j.unpredicted.is_empty());
+}
+
+#[test]
+fn read_host_smokes_keys_by_model_and_refuses_a_second_receipt() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json = smoke_json("lambda", "mc", "pass", &kpath("kreg", &["cuda.gemv.q4_k"]));
+    std::fs::write(dir.path().join("a.json"), &json).expect("write");
+    std::fs::write(dir.path().join("notes.txt"), "not read").expect("write");
+    let got = read_host_smokes(dir.path(), "lambda", "mc").expect("a smoke dir");
+    assert_eq!(got.keys().collect::<Vec<_>>(), vec![SMOKE_SHA]);
+    std::fs::write(dir.path().join("b.json"), &json).expect("write");
+    assert!(
+        read_host_smokes(dir.path(), "lambda", "mc").is_err(),
+        "two receipts, one model"
+    );
+    assert!(read_host_smokes(&dir.path().join("absent"), "lambda", "mc")
+        .expect("absent")
+        .is_empty());
 }

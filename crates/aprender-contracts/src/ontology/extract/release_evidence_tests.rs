@@ -498,6 +498,17 @@ fn v2_cells_join_the_release_graph_only_when_asked() {
         ),
     )
     .expect("parity receipt");
+    std::fs::create_dir_all(v2.join("lambda/smoke")).expect("smoke dir");
+    std::fs::write(
+        v2.join("lambda/smoke/a.json"),
+        format!(
+            r#"{{"schema":"{}","host":"lambda","model_sha256":"{SHA_A}","apr_sha":"{MC}","verdict":"pass",
+               "kernel_path":{{"source":"kreg","entries":[{{"op":"gemv","kernel_id":"cuda.gemv.q4_k","qtype":"q4_k",
+               "layout":"row_major","arch":"sm_89","shape_class":"m1","precision":"f32"}}]}}}}"#,
+            kernel_cells::SMOKE_SCHEMA
+        ),
+    )
+    .expect("smoke receipt");
 
     let mut off = Graph::new();
     extract(&mut off, &c, &subject()).expect("extracts");
@@ -528,6 +539,20 @@ fn v2_cells_join_the_release_graph_only_when_asked() {
     assert_eq!(
         g.objects(&lambda_kc, &rel("archMatch")),
         vec![&Term::boolean(true)]
+    );
+    let smoke = kernel_cells::smoke_cell("lambda", SHA_A);
+    assert_eq!(
+        g.objects(&smoke, &rel("kernelPathKnown")),
+        vec![&Term::boolean(true)],
+        "the smoke read from <dir>/lambda/smoke"
+    );
+    assert!(
+        g.objects(
+            &kernel_cells::model_cell("lambda", SHA_A),
+            &rel("unpredictedKernel")
+        )
+        .is_empty(),
+        "it dispatched only the predicted kernel"
     );
     let gx10_kc = kernel_cells::kernel_cell("gx10", "cuda.gemv.q4_k");
     assert!(

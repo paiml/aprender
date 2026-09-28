@@ -222,8 +222,39 @@ pub struct SmokeEvidence {
     pub pass: bool,
     /// Ran at the release commit.
     pub fresh: bool,
+    /// The smoke named the registry kernels it dispatched (`kernel_path` from KREG, OBS-15). Without it the
+    /// static map was never checked against a run, so the smoke is RED (`kernelPathKnown`).
+    pub kernel_path_known: bool,
     /// The kernel ids the run dispatched (`kernel_path`, OBS-15) that the static map did not predict (RR2-F3).
     pub unpredicted: BTreeSet<String>,
+}
+
+/// One judged smoke receipt, before the static map is known: [`build_cells`] turns it into a
+/// [`SmokeEvidence`] against the model's `uses`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmokeReceipt {
+    pub pass: bool,
+    pub fresh: bool,
+    /// The registry kernel ids of a `source: kreg` `kernel_path`; `None` when the path is null or from the
+    /// trace (labels, not registry ids).
+    pub dispatched: Option<BTreeSet<String>>,
+}
+
+impl SmokeReceipt {
+    /// Judge the run against the kernels the static map predicted for its model.
+    #[must_use]
+    pub fn against(&self, uses: &BTreeSet<String>) -> SmokeEvidence {
+        SmokeEvidence {
+            pass: self.pass,
+            fresh: self.fresh,
+            kernel_path_known: self.dispatched.is_some(),
+            unpredicted: self
+                .dispatched
+                .as_ref()
+                .map(|d| d.difference(uses).cloned().collect())
+                .unwrap_or_default(),
+        }
+    }
 }
 
 /// The smoke edge of a model cell. `None` writes no edge: `minCount 1` rejects the model cell (RR2-F5).
@@ -241,7 +272,114 @@ pub fn emit_smoke(g: &mut Graph, host: &str, model_sha256: &str, evidence: Optio
         rel("verdict"),
         Term::string(if e.pass { "pass" } else { "fail" }),
     );
-    g.insert(smoke, rel("fresh"), Term::boolean(e.fresh));
+    g.insert(smoke.clone(), rel("fresh"), Term::boolean(e.fresh));
+    g.insert(
+        smoke,
+        rel("kernelPathKnown"),
+        Term::boolean(e.kernel_path_known),
+    );
+}
+
+/// The v2 per-(model, host) e2e smoke receipt.
+pub const SMOKE_SCHEMA: &str = "rr2-smoke-receipt/v1";
+
+/// Judge one `rr2-smoke-receipt/v1` found in `host`'s smoke directory: `{schema, host, model_sha256, apr_sha,
+/// verdict, kernel_path}`, where `kernel_path` is `null` or an `apr-kernel-path-v1` object (OBS-15,
+/// aprender#4574). Returns the model's sha256 and the judged receipt.
+///
+/// - `pass`: `verdict` is `pass`;
+/// - `fresh`: `apr_sha` is the release commit;
+/// - `dispatched`: the entries' `kernel_id`s when `source` is `kreg`; `None` for `null` or `trace`.
+///
+/// # Errors
+/// Not JSON; another schema; `host` not the directory's host; `model_sha256` not 64 lowercase hex; `apr_sha`
+/// or `verdict` absent; a `kernel_path` that is neither null nor an object, has an unknown source, no
+/// entries, or an entry without a `kernel_id`. A path that names no kernel is refused, never read as "ran none".
+pub fn judge_smoke_receipt(
+    file: &str,
+    bytes: &[u8],
+    host: &str,
+    release_sha: &str,
+) -> Result<(String, SmokeReceipt), ExtractError> {
+    let doc: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| refuse(file, format!("not JSON: {e}")))?;
+    let text = |k: &str| doc.get(k).and_then(serde_json::Value::as_str);
+    if text("schema") != Some(SMOKE_SCHEMA) {
+        return Err(refuse(file, format!("schema is not {SMOKE_SCHEMA}")));
+    }
+    if text("host") != Some(host) {
+        return Err(refuse(
+            file,
+            format!("host is not {host}, the directory it sits in"),
+        ));
+    }
+    let sha = text("model_sha256")
+        .filter(|s| {
+            s.len() == 64
+                && s.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+        .ok_or_else(|| refuse(file, "model_sha256 is not 64 lowercase hex"))?;
+    let apr_sha = text("apr_sha").ok_or_else(|| refuse(file, "apr_sha absent"))?;
+    let verdict = text("verdict").ok_or_else(|| refuse(file, "verdict absent"))?;
+    let dispatched = match doc.get("kernel_path") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Object(p)) => {
+            let source = p.get("source").and_then(serde_json::Value::as_str);
+            let entries = p
+                .get("entries")
+                .and_then(serde_json::Value::as_array)
+                .filter(|e| !e.is_empty())
+                .ok_or_else(|| refuse(file, "kernel_path has no entries"))?;
+            let ids = entries
+                .iter()
+                .map(|e| {
+                    e.get("kernel_id")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|k| !k.is_empty() && *k != "unknown")
+                        .map(str::to_string)
+                        .ok_or_else(|| refuse(file, "a kernel_path entry has no kernel_id"))
+                })
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            match source {
+                Some("kreg") => Some(ids),
+                Some("trace") => None,
+                _ => return Err(refuse(file, "kernel_path source is neither kreg nor trace")),
+            }
+        }
+        Some(_) => return Err(refuse(file, "kernel_path is neither null nor an object")),
+    };
+    Ok((
+        sha.to_string(),
+        SmokeReceipt {
+            pass: verdict == "pass",
+            fresh: apr_sha == release_sha,
+            dispatched,
+        },
+    ))
+}
+
+/// Read every top-level `*.json` in `dir` (name order) as `host`'s smoke receipts. A missing directory is no
+/// smokes (each model cell RED on RR2-F5).
+///
+/// # Errors
+/// An unreadable directory or file, a refused receipt ([`judge_smoke_receipt`]), or two receipts for one model.
+pub fn read_host_smokes(
+    dir: &std::path::Path,
+    host: &str,
+    release_sha: &str,
+) -> Result<BTreeMap<String, SmokeReceipt>, ExtractError> {
+    let mut out = BTreeMap::new();
+    for (name, bytes) in json_files(dir)? {
+        let (sha, r) = judge_smoke_receipt(&name, &bytes, host, release_sha)?;
+        if out.insert(sha.clone(), r).is_some() {
+            return Err(refuse(
+                &name,
+                format!("a second smoke receipt for model {sha}"),
+            ));
+        }
+    }
+    Ok(out)
 }
 
 /// The parity receipt schema this module judges (KREG-001 AC-3).
@@ -356,6 +494,27 @@ pub fn parse_input_sets(
         .collect()
 }
 
+/// The top-level `*.json` files of `dir` in name order, as (path, bytes). A missing directory has none.
+fn json_files(dir: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, ExtractError> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Ok(Vec::new());
+    };
+    let mut files: Vec<std::path::PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some("json"))
+        .collect();
+    files.sort();
+    files
+        .iter()
+        .map(|f| {
+            let name = f.to_string_lossy().into_owned();
+            let bytes = std::fs::read(f).map_err(|e| refuse(&name, format!("unreadable: {e}")))?;
+            Ok((name, bytes))
+        })
+        .collect()
+}
+
 /// Every parity receipt in one host's directory (`*.json`, top level, in name order), judged against
 /// `input_sets` (from [`parse_input_sets`]), as [`CellHost::kernels`]. A kernel `input_sets` does not list
 /// judges stale. An absent directory yields no evidence, so every kernel cell on the host is RED.
@@ -369,19 +528,8 @@ pub fn read_host_kernels(
     host_arch: &str,
     input_sets: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, KernelEvidence>, ExtractError> {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return Ok(BTreeMap::new());
-    };
-    let mut files: Vec<std::path::PathBuf> = rd
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some("json"))
-        .collect();
-    files.sort();
     let mut out = BTreeMap::new();
-    for f in &files {
-        let name = f.to_string_lossy();
-        let bytes = std::fs::read(f).map_err(|e| refuse(&name, format!("unreadable: {e}")))?;
+    for (name, bytes) in json_files(dir)? {
         let want_of = |id: &str| input_sets.get(id).map_or("", String::as_str);
         // The receipt names its own kernel; judge once to learn it, then against that kernel's key.
         let (id, _) = judge_parity_receipt(&name, &bytes, backend, host_arch, "")?;
@@ -407,6 +555,8 @@ pub struct V2Evidence {
     pub rows: Vec<RegistryRow>,
     /// Host id → kernel id → judged receipt.
     pub kernels: BTreeMap<String, BTreeMap<String, KernelEvidence>>,
+    /// Host id → model sha256 → judged smoke receipt (`<dir>/<host>/smoke/*.json`).
+    pub smokes: BTreeMap<String, BTreeMap<String, SmokeReceipt>>,
 }
 
 /// Read v2 evidence for `hosts` (id, cuda arch) at `release_sha`. No `input-sets.json` → every kernel
@@ -437,7 +587,18 @@ pub fn read_v2(
             Ok(((*id).to_string(), k))
         })
         .collect::<Result<_, ExtractError>>()?;
-    Ok(V2Evidence { rows, kernels })
+    let smokes = hosts
+        .iter()
+        .map(|(id, _)| {
+            let s = read_host_smokes(&dir.join(id).join("smoke"), id, release_sha)?;
+            Ok(((*id).to_string(), s))
+        })
+        .collect::<Result<_, ExtractError>>()?;
+    Ok(V2Evidence {
+        rows,
+        kernels,
+        smokes,
+    })
 }
 
 /// The KTEST-05 sanitizer receipt schema (`scripts/ktest/cuda_sanitizer_receipt.sh`, `receipt.json`).
@@ -572,8 +733,8 @@ pub struct CellHost {
     pub models: BTreeMap<String, Option<BTreeSet<u32>>>,
     /// Kernel id → the judged receipt measured for this host.
     pub kernels: BTreeMap<String, KernelEvidence>,
-    /// Model sha256 → its judged smoke.
-    pub smokes: BTreeMap<String, SmokeEvidence>,
+    /// Model sha256 → its judged smoke receipt.
+    pub smokes: BTreeMap<String, SmokeReceipt>,
     /// Kernel id → the judged sanitizer run that dispatched it (S-SAN). Read on `cuda` hosts only.
     pub sanitized: BTreeMap<String, SanitizerEvidence>,
 }
@@ -603,7 +764,8 @@ pub fn build_cells(g: &mut Graph, rows: &[RegistryRow], hosts: &[CellHost]) {
             });
             used.extend(map.uses.iter().cloned());
             emit_model_cell(g, &h.id, sha, &map);
-            emit_smoke(g, &h.id, sha, h.smokes.get(sha));
+            let smoke = h.smokes.get(sha).map(|r| r.against(&map.uses));
+            emit_smoke(g, &h.id, sha, smoke.as_ref());
         }
         for k in &used {
             emit_kernel_cell(g, &h.id, k, h.kernels.get(k).copied());

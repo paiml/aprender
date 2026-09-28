@@ -27,7 +27,7 @@ measured and which are derived.
 |------|-----|----------|------|
 | `release:KernelParityCell` | kernel_id × backend × shape_class | a `kernel-parity-receipt/v1` (KREG AC-3) whose `host_arch`/`sm` is the host's, `verdict` pass, fresh | seconds each (CPU receipts today: 0.1 s for 11 rows) |
 | `release:ModelCell` | model × host | **derived**: one `release:usesKernel` edge per kernel on the model's dispatch path on that host's backend | 0: no run |
-| `release:SmokeCell` | model × host | one e2e `apr run` (short prompt, 1 context rung) receipt, verdict pass, fresh | ~1–2 min each |
+| `release:SmokeCell` | model × host | one e2e `apr run` (short prompt, 1 context rung) `rr2-smoke-receipt/v1`, verdict pass, fresh, with a `kernel_path` from KREG | ~1–2 min each |
 
 The class is `release:KernelParityCell`, not `release:KernelCell`. v1's extractor already emits
 `release:KernelCell` for its per-(host, kernel, quant) diff cells, and `release-readiness-v1.kernel`
@@ -75,6 +75,13 @@ This map comes from two independent sources, and they must agree:
   `contracts/kernel-registry-v1.yaml:86-87`). **Gap:** no emitter writes it into a receipt yet. Rule:
   observed ⊆ static, and a kernel that ran but was not predicted is RED. Without this check the static
   map is a claim nobody tested.
+
+**The smoke receipt** (`rr2-smoke-receipt/v1`, `<v2-dir>/<host>/smoke/*.json`) is `{schema, host,
+model_sha256, apr_sha, verdict, kernel_path}`. `kernel_path` is the `apr-kernel-path-v1` object that
+OBS-15 defines (aprender#4574, aprender-01); v2 does not define a second one. Only a `source: kreg` path
+names registry ids, so a `null` or `source: trace` path sets `release:kernelPathKnown false` on the smoke,
+and the model cell is RED: the static map was not checked against a run. `kernel_cells::judge_smoke_receipt`
+reads it; `build_cells` judges each receipt against its own model's static map.
 
 `apr parity --per-op` kernel-diff receipts (`release_inputs.rs:289-325`) already record a dispatch
 path, but under labels such as `q4k_gemv@q4_k` rather than registry `kernel_id`s. v2 maps those

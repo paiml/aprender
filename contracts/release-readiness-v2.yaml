@@ -17,7 +17,8 @@
 #       static map: per-tensor ggml types through the registry, extract/kernel_cells.rs), unregisteredQtype for a
 #       type no row serves, unpredictedKernel for a dispatched kernel the map did not predict, and the smoke edge.
 #       It never writes a verdict: the shape below is the derivation.
-#   release:SmokeCell   (host, model sha256): one e2e run.
+#   release:SmokeCell   (host, model sha256): one e2e run (rr2-smoke-receipt/v1). kernelPathKnown is true only when
+#       its kernel_path (apr-kernel-path-v1, OBS-15) names registry ids, so an unchecked static map is RED.
 #
 # NOT ARMED. `armed_shapes` in contracts/lint-baseline.json does not list these shapes, so an ordinary PR's
 # shapes gate reports them and cannot fail on them. They are armed at P3 with the v2 extractor wiring.
@@ -74,7 +75,8 @@ shapes:
       - {path: release:unpredictedKernel, maxCount: 0}
       - {path: release:smoke, minCount: 1, maxCount: 1, nodeKind: IRI, class: release:SmokeCell,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
-                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:kernelPathKnown, minCount: 1, maxCount: 1, in: [true]}]}}
   # KTEST-001 S-SAN: a cuda kernel cell also needs a clean compute-sanitizer run (memcheck, racecheck,
   # initcheck, synccheck; KTEST-05) that dispatched it, at most 7 days old. Kernel cells only: the model
   # node above reads the parity fields, so a cpu kernel is never asked for one.
@@ -144,6 +146,11 @@ falsification_tests:
     prediction: "a receipt missing, repeating or failing any of the four tools judges not clean whatever its own `clean` says; age > 7 d or dated after the gate judges stale; each of no run, dirty, stale fails exactly that kernel cell; a cpu host is asked for none"
     test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
     if_fails: a cuda kernel ships with no race/memory check, or on a sanitizer run from an older tree
+  - id: FALSIFY-RR2-004
+    rule: RR2-F3, the smoke judge
+    prediction: "a kreg kernel_path's ids outside the model's static map are unpredictedKernel (RED); a null or trace path is kernelPathKnown false (RED); another host, a bad sha, an unknown source, no entries or an entry naming no kernel is refused; a second receipt for one model refuses the directory"
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
+    if_fails: a model passes on a static map no run ever checked, or a kernel nobody predicted ships unmeasured
 
 qa_gate:
   id: F-RR2-001
