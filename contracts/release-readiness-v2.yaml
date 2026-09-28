@@ -75,6 +75,14 @@ shapes:
       - {path: release:smoke, minCount: 1, maxCount: 1, nodeKind: IRI, class: release:SmokeCell,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  # KTEST-001 S-SAN: a cuda kernel cell also needs a clean compute-sanitizer run (memcheck, racecheck,
+  # initcheck, synccheck; KTEST-05) that dispatched it, at most 7 days old. Kernel cells only: the model
+  # node above reads the parity fields, so a cpu kernel is never asked for one.
+  - id: release-readiness-v2.sanitizer
+    targetClass: release:SanitizedKernelCell
+    properties:
+      - {path: release:sanitizerClean, minCount: 1, maxCount: 1, in: [true]}
+      - {path: release:sanitizerFresh, minCount: 1, maxCount: 1, in: [true]}
 
 equations:
   static_map:
@@ -110,6 +118,10 @@ invariants:
     property: a model tensor type no registry row serves fails that model cell
     formal: 't ∈ types(m) ∧ ¬∃ r serving t on h ⇒ Fail(v2.model, (m, h))'
     prose: false
+  - id: RR2-INV-004
+    property: a cuda kernel cell with no, a dirty, or a stale (> 7 d) sanitizer run fails that kernel cell only
+    formal: 'backend(h) = cuda ∧ ¬(clean(san(k, h)) ∧ age(san(k, h)) ≤ 7d) ⇒ Fail(v2.sanitizer, (k, h))'
+    prose: false
   - id: RR2-INV-003
     property: a kernel receipt measured on another arch fails that kernel cell and its dependants
     formal: '¬archMatch(k, h) ⇒ Fail(v2.kernel, (k, h)) ∧ ∀ m: k ∈ uses(m, h) ⇒ Fail(v2.model, (m, h))'
@@ -126,6 +138,12 @@ falsification_tests:
     prediction: "the all-green graph conforms; RR2-F1 (one kernel receipt removed) fails exactly the model cells using it plus that kernel cell; RR2-F2 unregistered qtype, RR2-F3 unpredicted kernel, RR2-F4 stale receipt, RR2-F5 no smoke, RR2-F6 foreign-arch receipt each fail naming their cells"
     test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells::tests::rr2
     if_fails: a model cell passes with a kernel nobody measured on that host
+
+  - id: FALSIFY-RR2-003
+    rule: S-SAN, the sanitizer judge and shape
+    prediction: "a receipt missing, repeating or failing any of the four tools judges not clean whatever its own `clean` says; age > 7 d or dated after the gate judges stale; each of no run, dirty, stale fails exactly that kernel cell; a cpu host is asked for none"
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
+    if_fails: a cuda kernel ships with no race/memory check, or on a sanitizer run from an older tree
 
 qa_gate:
   id: F-RR2-001

@@ -356,6 +356,125 @@ pub fn parse_input_sets(
         .collect()
 }
 
+/// The KTEST-05 sanitizer receipt schema (`scripts/ktest/cuda_sanitizer_receipt.sh`, `receipt.json`).
+pub const SANITIZER_SCHEMA: &str = "ktest-05-sanitizer-receipt-v1";
+
+/// The compute-sanitizer tools a clean run must hold, each once (KTEST-001 S-SAN).
+pub const SANITIZER_TOOLS: [&str; 4] = ["memcheck", "racecheck", "initcheck", "synccheck"];
+
+/// The S-SAN freshness window: a sanitizer receipt older than this does not cover the release.
+pub const SANITIZER_MAX_AGE_S: i64 = 7 * 86_400;
+
+/// What one sanitizer run says about the kernels attributed to it, as the extractor judged it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SanitizerEvidence {
+    /// Every tool of [`SANITIZER_TOOLS`] ran and reported `CLEAN` (or `ADVISORY_RED`, the script's
+    /// recorded advisory policy for initcheck).
+    pub clean: bool,
+    /// The run is at most [`SANITIZER_MAX_AGE_S`] old at the gate, and not dated after it.
+    pub fresh: bool,
+}
+
+/// Seconds since the Unix epoch of a `YYYY-MM-DDTHH:MM:SSZ` stamp, or `None` for any other form.
+fn utc_seconds(stamp: &str) -> Option<i64> {
+    let b = stamp.as_bytes();
+    if b.len() != 20
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || b[10] != b'T'
+        || b[13] != b':'
+        || b[16] != b':'
+        || b[19] != b'Z'
+    {
+        return None;
+    }
+    let num = |r: std::ops::Range<usize>| stamp.get(r)?.parse::<i64>().ok();
+    let (y, m, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (hh, mm, ss) = (num(11..13)?, num(14..16)?, num(17..19)?);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 60 {
+        return None;
+    }
+    // Days from civil (H. Hinnant), proleptic Gregorian.
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era * 146_097 + doe - 719_468) * 86_400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// Judge one KTEST-05 sanitizer `receipt.json` at gate time `now_utc` (`YYYY-MM-DDTHH:MM:SSZ`).
+///
+/// The receipt's own `clean` field is not read: the script accepts a subset of tools, so `clean` is
+/// recomputed here and requires every tool of [`SANITIZER_TOOLS`], each exactly once. A run covers
+/// only the kernels the caller attributes to it (its `kernel_path`, OBS-15); an unattributed kernel
+/// gets no evidence and its cell is RED.
+///
+/// # Errors
+/// Not JSON, another schema, `now_utc` unreadable, or `tools` not a list: the file is refused.
+pub fn judge_sanitizer_receipt(
+    file: &str,
+    bytes: &[u8],
+    now_utc: &str,
+) -> Result<SanitizerEvidence, ExtractError> {
+    let doc: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| refuse(file, format!("not JSON: {e}")))?;
+    let schema = doc.get("schema").and_then(serde_json::Value::as_str);
+    if schema != Some(SANITIZER_SCHEMA) {
+        return Err(refuse(
+            file,
+            format!("schema {schema:?}, want `{SANITIZER_SCHEMA}`"),
+        ));
+    }
+    let now = utc_seconds(now_utc).ok_or_else(|| {
+        refuse(
+            file,
+            format!("gate time {now_utc:?} is not YYYY-MM-DDTHH:MM:SSZ"),
+        )
+    })?;
+    let tools = doc
+        .get("tools")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| refuse(file, "`tools` missing or not a list"))?;
+    let clean = SANITIZER_TOOLS.iter().all(|want| {
+        let rows: Vec<_> = tools
+            .iter()
+            .filter(|r| r.get("tool").and_then(serde_json::Value::as_str) == Some(want))
+            .collect();
+        rows.len() == 1
+            && matches!(
+                rows[0].get("verdict").and_then(serde_json::Value::as_str),
+                Some("CLEAN" | "ADVISORY_RED")
+            )
+    });
+    let fresh = doc
+        .get("utc")
+        .and_then(serde_json::Value::as_str)
+        .and_then(utc_seconds)
+        .is_some_and(|at| (0..=SANITIZER_MAX_AGE_S).contains(&(now - at)));
+    Ok(SanitizerEvidence { clean, fresh })
+}
+
+/// The S-SAN fields of a cuda kernel cell: it becomes a `release:SanitizedKernelCell` as well, which
+/// the `release-readiness-v2.sanitizer` shape targets. `None` writes the type and no fields, so
+/// `minCount 1` rejects it: a kernel no sanitizer run covered is RED, never skipped.
+pub fn emit_sanitizer(
+    g: &mut Graph,
+    host: &str,
+    kernel_id: &str,
+    evidence: Option<SanitizerEvidence>,
+) {
+    let cell = kernel_cell(host, kernel_id);
+    g.insert(
+        cell.clone(),
+        RDF_TYPE,
+        Term::iri(rel("SanitizedKernelCell")),
+    );
+    let Some(e) = evidence else { return };
+    g.insert(cell.clone(), rel("sanitizerClean"), Term::boolean(e.clean));
+    g.insert(cell, rel("sanitizerFresh"), Term::boolean(e.fresh));
+}
+
 /// One required host of the v2 gate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellHost {
@@ -371,6 +490,8 @@ pub struct CellHost {
     pub kernels: BTreeMap<String, KernelEvidence>,
     /// Model sha256 → its judged smoke.
     pub smokes: BTreeMap<String, SmokeEvidence>,
+    /// Kernel id → the judged sanitizer run that dispatched it (S-SAN). Read on `cuda` hosts only.
+    pub sanitized: BTreeMap<String, SanitizerEvidence>,
 }
 
 /// A host's models for [`CellHost::models`], from its measured inventory: sha256 → `tensor_types`. A row with
@@ -402,6 +523,9 @@ pub fn build_cells(g: &mut Graph, rows: &[RegistryRow], hosts: &[CellHost]) {
         }
         for k in &used {
             emit_kernel_cell(g, &h.id, k, h.kernels.get(k).copied());
+            if h.backend == "cuda" {
+                emit_sanitizer(g, &h.id, k, h.sanitized.get(k).copied());
+            }
         }
     }
 }

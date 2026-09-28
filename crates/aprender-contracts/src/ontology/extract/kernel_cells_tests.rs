@@ -253,7 +253,7 @@ mod rr2 {
         let doc: serde_yaml::Value = serde_yaml::from_str(&text).expect("the contract is YAML");
         let s =
             parse_shapes("release-readiness-v2", &doc).expect("shapes inside the engine's subset");
-        assert_eq!(s.len(), 2, "the kernel and model shapes");
+        assert_eq!(s.len(), 3, "the kernel, model and sanitizer shapes");
         s
     }
 
@@ -283,7 +283,18 @@ mod rr2 {
         NoSmoke,
         /// RR2-F6: the kernel's receipt was measured on another arch.
         ForeignArch(&'static str),
+        /// S-SAN: no sanitizer run covers the kernel.
+        NoSan(&'static str),
+        /// S-SAN: the covering sanitizer run found something.
+        DirtySan(&'static str),
+        /// S-SAN: the covering sanitizer run is older than 7 days.
+        StaleSan(&'static str),
     }
+
+    const SAN: SanitizerEvidence = SanitizerEvidence {
+        clean: true,
+        fresh: true,
+    };
 
     fn graph(plant: Option<Plant>) -> Graph {
         let rows = registry();
@@ -323,6 +334,19 @@ mod rr2 {
                 _ => Some(PASS),
             };
             emit_kernel_cell(&mut g, HOST, k, e);
+            let san = match plant {
+                Some(Plant::NoSan(x)) if x == k => None,
+                Some(Plant::DirtySan(x)) if x == k => Some(SanitizerEvidence {
+                    clean: false,
+                    ..SAN
+                }),
+                Some(Plant::StaleSan(x)) if x == k => Some(SanitizerEvidence {
+                    fresh: false,
+                    ..SAN
+                }),
+                _ => Some(SAN),
+            };
+            emit_sanitizer(&mut g, HOST, k, san);
         }
         g
     }
@@ -399,6 +423,21 @@ mod rr2 {
         }
     }
 
+    /// S-SAN: a kernel with no, a dirty, or a stale sanitizer run is RED on its own kernel cell. Model
+    /// cells are not derived through it: the v2.model node reads the parity fields only, so a CPU kernel
+    /// (no sanitizer) never needs one.
+    #[test]
+    fn rr2_s_san_each_red_names_only_its_kernel_cell() {
+        let k = "cuda.gemv.q6_k";
+        for (name, plant) in [
+            ("no run", Plant::NoSan(k)),
+            ("dirty", Plant::DirtySan(k)),
+            ("stale", Plant::StaleSan(k)),
+        ] {
+            assert_eq!(red(Some(plant)), set(&[kc(k)]), "{name}");
+        }
+    }
+
     /// A model cell with no kernel edge at all (no tensor types read) is RED, never vacuously green.
     #[test]
     fn rr2_a_model_cell_with_no_kernels_is_red() {
@@ -444,6 +483,7 @@ mod rr2 {
                     ((*m).to_string(), s)
                 })
                 .collect(),
+            sanitized: rows.iter().map(|r| (r.kernel_id.clone(), SAN)).collect(),
         }
     }
 
@@ -462,6 +502,23 @@ mod rr2 {
         let red = built_red(&cell_host(Some(&[8]), Some("cuda.gemv.q6_k")));
         let want: BTreeSet<String> = [mc("A"), kc("cuda.gemv.q6_k")].into_iter().collect();
         assert_eq!(red, want);
+    }
+
+    /// `build_cells` asks for a sanitizer run on cuda hosts only: a kernel with none is RED on cuda and
+    /// green on a cpu host with the same receipts.
+    #[test]
+    fn build_cells_sanitizer_is_cuda_only() {
+        let mut h = cell_host(Some(&[8]), None);
+        h.sanitized.remove("cuda.gemv.q8_0");
+        assert_eq!(built_red(&h), [kc("cuda.gemv.q8_0")].into_iter().collect());
+        h.backend = "cpu".to_string();
+        let mut g = Graph::new();
+        build_cells(&mut g, &registry(), std::slice::from_ref(&h));
+        assert!(
+            g.iter()
+                .all(|t| t.object != Term::iri(rel("SanitizedKernelCell"))),
+            "a cpu host got a sanitizer cell"
+        );
     }
 
     /// A model whose tensor types no receipt recorded is RED, never skipped; the others stay green.
@@ -696,4 +753,110 @@ fn input_sets_are_read_whole_for_the_release_commit_only() {
     )
     .expect("judged");
     assert!(!stale.fresh);
+}
+
+/// A real KTEST-05 receipt (evidence/ktest-05/2026-09-28/gx10/san/receipt.json on
+/// la-71/ktest-05-cuda-arch-sanitizer), trimmed to the judged fields.
+const SAN_RC: &str = r#"{"schema":"ktest-05-sanitizer-receipt-v1","utc":"2026-09-28T12:53:20Z","tools":[
+  {"tool":"memcheck","verdict":"CLEAN"},{"tool":"racecheck","verdict":"CLEAN"},
+  {"tool":"initcheck","verdict":"CLEAN"},{"tool":"synccheck","verdict":"CLEAN"}],"clean":true}"#;
+
+/// Case table for `judge_sanitizer_receipt`: a missing, duplicated or RED tool is not clean whatever the
+/// receipt's own `clean` says; the window is 7 days, closed, and a run dated after the gate is stale.
+#[test]
+fn the_sanitizer_judge_case_table() {
+    let now = "2026-09-28T16:00:00Z";
+    let ok = SanitizerEvidence {
+        clean: true,
+        fresh: true,
+    };
+    let dirty = SanitizerEvidence { clean: false, ..ok };
+    let stale = SanitizerEvidence { fresh: false, ..ok };
+    let no_sync = SAN_RC.replace(r#",{"tool":"synccheck","verdict":"CLEAN"}"#, "");
+    let cases: Vec<(&str, String, &str, SanitizerEvidence)> = vec![
+        ("the gx10 receipt", SAN_RC.to_string(), now, ok),
+        ("a tool missing, clean:true kept", no_sync, now, dirty),
+        (
+            "memcheck twice",
+            SAN_RC.replace("synccheck", "memcheck"),
+            now,
+            dirty,
+        ),
+        (
+            "memcheck RED",
+            SAN_RC.replacen(r#""CLEAN""#, r#""RED""#, 1),
+            now,
+            dirty,
+        ),
+        (
+            "no summary",
+            SAN_RC.replacen(r#""CLEAN""#, r#""RED_NO_SUMMARY""#, 1),
+            now,
+            dirty,
+        ),
+        (
+            "initcheck advisory",
+            SAN_RC.replace(
+                r#""initcheck","verdict":"CLEAN""#,
+                r#""initcheck","verdict":"ADVISORY_RED""#,
+            ),
+            now,
+            ok,
+        ),
+        (
+            "exactly 7 days old",
+            SAN_RC.to_string(),
+            "2026-10-05T12:53:20Z",
+            ok,
+        ),
+        (
+            "7 days + 1 s",
+            SAN_RC.to_string(),
+            "2026-10-05T12:53:21Z",
+            stale,
+        ),
+        (
+            "dated after the gate",
+            SAN_RC.to_string(),
+            "2026-09-28T12:53:19Z",
+            stale,
+        ),
+        (
+            "no utc",
+            SAN_RC.replace(r#""utc""#, r#""when""#),
+            now,
+            stale,
+        ),
+        (
+            "utc not a stamp",
+            SAN_RC.replace("2026-09-28T12:53:20Z", "2026-09-28 12:53"),
+            now,
+            stale,
+        ),
+    ];
+    for (name, json, at, want) in cases {
+        let got = judge_sanitizer_receipt("receipt.json", json.as_bytes(), at).expect(name);
+        assert_eq!(got, want, "{name}");
+    }
+    for (name, json, at) in [
+        ("not JSON", "{".to_string(), now),
+        (
+            "another schema",
+            SAN_RC.replace("ktest-05-sanitizer-receipt-v1", "v0"),
+            now,
+        ),
+        ("no tools", SAN_RC.replace(r#""tools""#, r#""t""#), now),
+        ("gate time unreadable", SAN_RC.to_string(), "today"),
+    ] {
+        assert!(
+            judge_sanitizer_receipt("receipt.json", json.as_bytes(), at).is_err(),
+            "{name}"
+        );
+    }
+    // Month and leap-year arithmetic: 2028-02-28 → 2028-03-01 is 2 days.
+    let leap = SAN_RC.replace("2026-09-28T12:53:20Z", "2028-02-28T00:00:00Z");
+    let e = judge_sanitizer_receipt("r", leap.as_bytes(), "2028-03-01T00:00:00Z").expect("leap");
+    assert!(e.fresh);
+    assert_eq!(utc_seconds("1970-01-01T00:00:00Z"), Some(0));
+    assert_eq!(utc_seconds("2000-03-01T00:00:00Z"), Some(951_868_800));
 }
