@@ -1,0 +1,20 @@
+- id: PMAT-4445
+  github_issue: 4445
+  item_type: task
+  title: 'apr bench (qwen35 --fast) refuses every run with warmup+iterations > 1: one session reuses its own prefix cache'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-bb
+  created: 2026-09-27T11:13:42+00:00
+  updated: 2026-09-27T11:13:42+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Session::forget_prefix drops every prefix the session can resume from. On main that is the held positions (Session has no checkpoint yet); it destructures Session exhaustively, so a merge that adds the #4214 checkpoint field does not compile until forget_prefix resets it too'
+  - 'bench_qwen35 calls forget_prefix before every warmup turn and every timed turn, so every timed turn prefills its whole prompt; the reused != 0 guard itself is unchanged'
+  - 'session::tests::forget_prefix_makes_an_extending_prompt_prefill_whole_again: an extending prompt, which on main would resume (reused == 2), prefills from position 0 after forget_prefix; RED when forget_prefix does not clear (mutant measured 2026-09-27, panics at session_tests.rs:248)'
+  - 'When this meets car/0.70.0 (#4429), the resolution is the car-side form already reviewed on bb/4445-bench-fresh-prefill @9c34ca648d: forget_prefix also sets checkpoint = None, plus session::tests::forget_prefix_makes_the_same_prompt_prefill_whole_again (identical prompt 3x, reused == 0, no restore; RED on a forget_prefix that keeps the checkpoint, measured)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Adopted from aprender-ea orphan fix/4445-bench-fresh-prefill @65fd973170 (09-25, never PRed). The bug exists only with the #4214 checkpoint, i.e. car/0.70.0 (#4429); main before #4429 does not reuse an identical prompt. Cop ruling 2026-09-27: not folded into the car; own PR on main the moment #4429 merges, before the rc.1 tag. Superseded 2026-09-27 ~14:00Z by operator "make it faster" (via cop): open on main NOW, in parallel with the car. Until the car lands this change is inert on main (an identical prompt already prefills whole there); it pre-lands the bench wiring and the API so the car merge needs only the checkpoint line, which the exhaustive destructure forces.'
