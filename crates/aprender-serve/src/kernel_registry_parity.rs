@@ -298,7 +298,7 @@ fn repo_root() -> std::path::PathBuf {
 
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn receipt_header(id: &str, source_fn: &str, row: &KernelRow) -> serde_json::Value {
+fn receipt_header(id: &str, source_fn: &str, row: &KernelRow, oracle: &str) -> serde_json::Value {
     let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
         .ok()
         .or_else(|| std::env::var("HOSTNAME").ok())
@@ -306,6 +306,12 @@ fn receipt_header(id: &str, source_fn: &str, row: &KernelRow) -> serde_json::Val
         .filter(|h| !h.is_empty())
         .expect("a receipt names its host");
     let sha = std::env::var("KREG_GIT_SHA").expect("KREG_GIT_SHA: the commit that was measured");
+    let device = std::iter::once(host_arch())
+        .chain(isa_detected())
+        .collect::<Vec<_>>()
+        .join("+");
+    let set = InputSet::from_tree(&repo_root(), row, "none", &device, oracle)
+        .unwrap_or_else(|e| panic!("{id}: {e}"));
     serde_json::json!({
         "schema": SCHEMA,
         "kernel_id": id,
@@ -315,6 +321,15 @@ fn receipt_header(id: &str, source_fn: &str, row: &KernelRow) -> serde_json::Val
         "host_arch": host_arch(),
         "isa_detected": isa_detected(),
         "build_identity": sha,
+        "input_set": {
+            "source_sha256": set.source_sha256,
+            "row_sha256": set.row_sha256,
+            "toolchain": set.toolchain,
+            "driver": set.driver,
+            "device": set.device,
+            "oracle": set.oracle,
+        },
+        "input_set_hash": set.hash(),
         "ts": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
     })
 }
@@ -324,7 +339,7 @@ fn receipt_header(id: &str, source_fn: &str, row: &KernelRow) -> serde_json::Val
 fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
     let served = measure(k, k.workload, false);
     let fp32 = measure(k, k.workload, true);
-    let mut doc = receipt_header(k.id, k.source_fn, row);
+    let mut doc = receipt_header(k.id, k.source_fn, row, ORACLE);
     doc["oracle"] = ORACLE.into();
     doc["oracle_independent"] = false.into();
     doc["workload"] = serde_json::json!({
@@ -356,6 +371,27 @@ struct FixtureKernel {
 
 const GGUF_PY_ORACLE: &str = "gguf_py_dequant_f64";
 const ORACLE_DIR: &str = "evidence/kreg/oracle";
+
+/// The oracle part of a fixture receipt's input set: the oracle, its dir, llama.cpp commit and
+/// every fixture file's sha256 (sorted by name), so a regenerated fixture makes the receipt stale.
+fn fixture_oracle(ggml_type: &str, meta: &serde_json::Value) -> String {
+    let shas: Vec<String> = meta["sha256"]
+        .as_object()
+        .map(|o| {
+            let mut v: Vec<String> = o
+                .iter()
+                .map(|(f, h)| format!("{f}:{}", h.as_str().unwrap_or("?")))
+                .collect();
+            v.sort();
+            v
+        })
+        .unwrap_or_default();
+    format!(
+        "{GGUF_PY_ORACLE}@{ORACLE_DIR}/{ggml_type}@{}@{}",
+        meta["llama_cpp_commit"].as_str().unwrap_or("?"),
+        shas.join(",")
+    )
+}
 
 /// A dequant-only row serves `dequantize_*` followed by an f32 dot, row by row.
 fn dequant_then_dot(
@@ -498,8 +534,8 @@ fn measure_fixture(k: &FixtureKernel, f: &Fixture) -> Measured {
 fn fixture_receipt(k: &FixtureKernel, row: &KernelRow) -> serde_json::Value {
     let f = fixture(k.ggml_type);
     let served = measure_fixture(k, &f);
-    let mut doc = receipt_header(k.id, k.source_fn, row);
     let m = &f.meta;
+    let mut doc = receipt_header(k.id, k.source_fn, row, &fixture_oracle(k.ggml_type, m));
     doc["oracle"] = GGUF_PY_ORACLE.into();
     doc["oracle_independent"] = true.into();
     doc["oracle_fixture"] = serde_json::json!({
@@ -606,6 +642,12 @@ fn committed_parity_receipts_hold_on_this_host() {
             rc["registry_precision"],
             row.precision.as_str(),
             "{id}: precision drifted"
+        );
+        assert!(
+            rc["input_set_hash"]
+                .as_str()
+                .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())),
+            "{path}: no input_set_hash, so the release gate cannot judge it fresh"
         );
         if rc["oracle"] == GGUF_PY_ORACLE {
             check_fixture_receipt(id, path, &rc, row);
