@@ -1370,6 +1370,7 @@ dependencies = [
  "aprender-data",
  "aprender-db",
  "aprender-gpu",
+ "aprender-kernel-oracle",
  "aprender-present-terminal",
  "aprender-profile-core",
  "aprender-quant",

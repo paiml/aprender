@@ -1,5 +1,5 @@
 {
-  "build_identity": "090942910d",
+  "build_identity": "e2d210244d",
   "fp32_activations": {
     "max_abs_err": 0.00006115660693239988,
     "max_rel_err": 2.6154581057574455e-7
@@ -25,9 +25,19 @@
     "avx512vnni"
   ],
   "kernel_id": "cpu.matvec.q4_k",
+  "margin": {
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.00009537473688832739,
+    "nmse": 1.104620431852717e-14,
+    "p999_margin": 0.00009537473688832739,
+    "verdict": "pass"
+  },
   "oracle": "in_tree_dequant_f64",
   "oracle_independent": false,
-  "quantized_activation_oracle": null,
+  "quantized_activation_oracle": {
+    "max_rel_err": 1.3720446505396093e-7
+  },
   "registry_precision": "q8_k",
   "schema": "kernel-parity-receipt/v1",
   "served": {
@@ -36,7 +46,7 @@
   },
   "source_fn": "fused_q4k_parallel_matvec",
   "tolerance_rel": 0.02,
-  "ts": "2026-09-28T11:18:07Z",
+  "ts": "2026-09-28T12:09:28Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,
