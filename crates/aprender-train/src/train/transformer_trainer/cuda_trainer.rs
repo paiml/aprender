@@ -3758,3 +3758,10 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+// GPU falsifiers for distill-batch-honesty-v1 DBH-001/006/007/008 and the
+// DDP CPU-accumulator path. `#[ignore]`d: CI has no GPU. Run on a GPU host
+// with `cargo test -p aprender-train --features cuda --lib gpu_falsify -- --ignored`.
+#[cfg(all(test, feature = "cuda"))]
+#[path = "cuda_trainer_gpu_falsify.rs"]
+mod gpu_falsify;
