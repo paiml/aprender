@@ -477,7 +477,8 @@ impl PrefillPath {
 pub struct PrefillPathChoice {
     /// The path itself.
     pub path: PrefillPath,
-    /// Why: `"env=0"`, `"env forced"`, `"sm12x default"` or `"default"`.
+    /// Why: `"env=0"`, `"env forced"`, `"default"`, or a model-class
+    /// downgrade set after detection (`GpuProfile::disable_fp8_for_qk_norm`).
     pub reason: &'static str,
     /// The compute capability the decision was made against (major*10 + minor).
     pub cc: u32,
@@ -496,30 +497,34 @@ pub struct PrefillPathChoice {
 /// * `BATCHED_PREFILL=0` → serial, everywhere (the documented opt-out).
 /// * `BATCHED_PREFILL=<anything else>` → batched, everywhere. Explicit opt-in
 ///   forces batched even on sm_12x, for A/B testing the KV-scatter fix.
-/// * unset → batched, EXCEPT `cc >= 120` (the sm_12x family: RTX 50 sm_120,
-///   GB10 sm_121), where the batched prefill path writes a corrupt KV cache
-///   and every subsequent decode step reads poisoned K/V
-///   (contracts/apr-cpu-vs-gpu-output-parity-v1.yaml, FALSIFY-CPU-GPU-009).
+/// * unset → batched, on every compute capability.
 ///
-/// The predicate is a compute-capability inequality, NOT an architecture
-/// test: datacenter Blackwell (sm_100/sm_103) and Thor (sm_110) sit below
-/// 120 and keep the batched path. The defect is recorded on GB10 only;
-/// widen on evidence, never by architecture name.
+/// #4590: this used to answer serial for `cc >= 120` (sm_12x), on a
+/// 2026-06-16 measurement of a v0.49-era build (FALSIFY-CPU-GPU-009). On
+/// apr 0.70.0 (8d021f61e) that corruption does not reproduce on GB10: batched
+/// equals serial token-for-token on Qwen3-1.7B, Qwen3-8B and the PMAT-810
+/// prompts on coder-1.5b, and equals the RTX 4090 output; compute-sanitizer
+/// synccheck/memcheck/racecheck report 0 hazards on the batched prefill
+/// kernels. The serial default cost GB10 >20× on an ~8k-token prompt (timeout
+/// at 1200 s vs 54.7 s). FALSIFY-CPU-GPU-009b is the on-device gate that
+/// turns red if the batched path goes wrong on sm_12x again. The packed
+/// MULTI-prompt prefill was not re-measured, so it stays refused on sm_12x —
+/// see `GpuProfile::multi_prompt_prefill_allowed`.
 #[must_use]
 pub fn select_prefill_path(cc: u32, batched_prefill_env: Option<&str>) -> PrefillPathChoice {
     let (path, reason) = match batched_prefill_env {
         Some("0") => (PrefillPath::Serial, "env=0"),
         Some(_) => (PrefillPath::Batched, "env forced"),
-        None if cc >= SM12X_MIN_CC => (PrefillPath::Serial, "sm12x default"),
         None => (PrefillPath::Batched, "default"),
     };
     PrefillPathChoice { path, reason, cc }
 }
 
-/// Compute capability at and above which the batched prefill path is refused
-/// by default: the sm_12x family (RTX 50 sm_120, GB10 sm_121) and anything
-/// numerically above it. Not "Blackwell": sm_100/103/110 are Blackwell too
-/// and are below this line (§9 #1a is recorded on GB10 only).
+/// Compute capability at and above which the packed MULTI-prompt prefill is
+/// refused by default: the sm_12x family (RTX 50 sm_120, GB10 sm_121) and
+/// anything numerically above it. Not "Blackwell": sm_100/103/110 are
+/// Blackwell too and are below this line (§9 #1a is recorded on GB10 only).
+/// Since #4590 it no longer gates the single-prompt batched prefill.
 pub const SM12X_MIN_CC: u32 = 120;
 
 impl GpuProfile {
@@ -536,7 +541,11 @@ impl GpuProfile {
     /// refused too — same predicate, one answer.
     #[must_use]
     pub fn multi_prompt_prefill_allowed(&self) -> bool {
+        // #4590 re-measured the single-prompt batched prefill on GB10, not the
+        // packed multi-prompt KV scatter (§9 #1a). That one keeps its sm_12x
+        // refusal until it has its own receipt; `BATCHED_PREFILL=1` still opts in.
         self.prefill_path.path == PrefillPath::Batched
+            && (self.cc < SM12X_MIN_CC || self.prefill_path.reason == "env forced")
     }
 }
 
@@ -758,10 +767,10 @@ mod pmat810_prefill_path_tests {
     fn select_prefill_path_table() {
         let cases: [(u32, Option<&str>, PrefillPath, &str); 6] = [
             (89, None, PrefillPath::Batched, "default"),
-            (121, None, PrefillPath::Serial, "sm12x default"),
+            (121, None, PrefillPath::Batched, "default"),
             (89, Some("0"), PrefillPath::Serial, "env=0"),
             (121, Some("1"), PrefillPath::Batched, "env forced"),
-            (120, None, PrefillPath::Serial, "sm12x default"),
+            (120, None, PrefillPath::Batched, "default"),
             (75, Some("anything"), PrefillPath::Batched, "env forced"),
         ];
         for (cc, env, expected_path, expected_reason) in cases {
@@ -775,21 +784,21 @@ mod pmat810_prefill_path_tests {
         }
     }
 
-    /// The boundary is `>= 120`, not `> 120`, and it is numeric: Hopper
-    /// (sm_90), datacenter Blackwell (sm_100/sm_103) and Thor (sm_110) all
-    /// keep the batched path, because the §9 #1a corruption is recorded on
-    /// GB10 (sm_121) only. RTX 50 (sm_120) shares the family and is refused.
+    /// #4590 planted falsifier: no compute capability defaults to serial.
+    /// Re-inserting a `cc >= SM12X_MIN_CC => Serial` arm (the pre-#4590 rule,
+    /// which cost GB10 >20× on long prompts with no correctness gain on 0.70)
+    /// turns this red on the sm_12x rows.
     #[test]
-    fn sm12x_boundary_is_inclusive_at_120_and_numeric() {
-        for cc in [90u32, 100, 103, 110] {
+    fn no_compute_capability_defaults_to_serial() {
+        for cc in [75u32, 89, 90, 100, 103, 110, 120, 121, 130] {
+            let choice = select_prefill_path(cc, None);
             assert_eq!(
-                select_prefill_path(cc, None).path,
+                choice.path,
                 PrefillPath::Batched,
-                "cc={cc} is below the sm_12x line and keeps the batched prefill"
+                "cc={cc} must default to the batched prefill (#4590)"
             );
+            assert_eq!(choice.reason, "default", "cc={cc}");
         }
-        assert_eq!(select_prefill_path(120, None).path, PrefillPath::Serial);
-        assert_eq!(select_prefill_path(121, None).path, PrefillPath::Serial);
     }
 
     /// §9 #1a: the multi-prompt guard must answer with the SAME predicate, so
@@ -810,7 +819,7 @@ mod pmat810_prefill_path_tests {
             );
         }
         assert!(select_prefill_path(89, None).path == PrefillPath::Batched);
-        assert!(select_prefill_path(121, None).path == PrefillPath::Serial);
+        assert!(select_prefill_path(121, Some("0")).path == PrefillPath::Serial);
     }
 }
 
@@ -929,20 +938,17 @@ mod pp_llama_report_serialisation_tests {
         assert_eq!(object["prefill_path"]["cc"].as_u64(), Some(89));
     }
 
-    /// The Blackwell profile must serialise as SERIAL — the dead
+    /// A serial profile must serialise as SERIAL, with its reason — the dead
     /// `batched_prefill: bool` this replaced would have said `true` here while
     /// the engine ran serial, which is the PP-2 violation §5.2 exists to close.
     #[test]
-    fn a_blackwell_profile_reports_serial_prefill() {
+    fn a_serial_profile_reports_serial_prefill() {
         let mut p = profile();
         p.cc = 121;
-        p.prefill_path = select_prefill_path(121, None);
+        p.prefill_path = select_prefill_path(121, Some("0"));
         let json = serde_json::to_value(p).expect("serialize");
         assert_eq!(json["prefill_path"]["path"].as_str(), Some("serial"));
-        assert_eq!(
-            json["prefill_path"]["reason"].as_str(),
-            Some("sm12x default")
-        );
+        assert_eq!(json["prefill_path"]["reason"].as_str(), Some("env=0"));
     }
 
     /// §10 / §12 kill criterion: the sizing block must carry every input, so a
@@ -1132,11 +1138,18 @@ impl GpuProfile {
     /// already does by default. `FP8_PREFILL=1` forces FP8 back for A/B testing,
     /// and an explicit `BATCHED_PREFILL` keeps its own answer. Returns `true`
     /// when it changed anything, so the caller can print why.
+    ///
+    /// #4590: the serial half is a MEMORY rule, not a correctness one — FP16
+    /// batched prefill passes parity. So serial is taken only when
+    /// `fp16_cache_fits` is false (see [`fp16_prefill_cache_fits`]); a card with
+    /// room for the FP16 cache (GB10's 128 GB, or a small Qwen3 on 24 GB) keeps
+    /// the batched prefill, which is >20× faster on an ~8k-token prompt.
     pub fn disable_fp8_for_qk_norm(
         &mut self,
         has_qk_norm: bool,
         forced_fp8: Option<&str>,
         forced_batched: Option<&str>,
+        fp16_cache_fits: bool,
     ) -> bool {
         if !has_qk_norm || forced_fp8 == Some("1") {
             return false;
@@ -1147,16 +1160,56 @@ impl GpuProfile {
             self.fp8_decode = false;
             changed = true;
         }
-        if forced_batched.is_none() && self.prefill_path.path == PrefillPath::Batched {
+        if forced_batched.is_none()
+            && !fp16_cache_fits
+            && self.prefill_path.path == PrefillPath::Batched
+        {
             self.prefill_path = PrefillPathChoice {
                 path: PrefillPath::Serial,
-                reason: "qk-norm model (#3413/#3483)",
+                reason: QK_NORM_NO_ROOM_REASON,
                 cc: self.cc,
             };
             changed = true;
         }
         changed
     }
+}
+
+/// Why a QK-norm model took the serial prefill: its FP16 prefill cache did not
+/// fit in free VRAM (#3413/#3483 for FP8, #4590 for the memory rule).
+pub const QK_NORM_NO_ROOM_REASON: &str =
+    "qk-norm model, fp16 prefill cache exceeds free vram (#4590)";
+
+/// GH-178's runtime + cuBLAS workspace reserve, reused by [`fp16_prefill_cache_fits`].
+pub const FP16_PREFILL_RESERVE_BYTES: usize = 3_500_000_000;
+
+/// Weight elements the prefill GEMM cache holds: every per-layer projection
+/// (Q, K, V, O, gate, up, down). Embedding and LM head are not cached.
+#[must_use]
+pub fn prefill_cache_params(
+    num_layers: usize,
+    hidden_dim: usize,
+    q_dim: usize,
+    kv_dim: usize,
+    intermediate_dim: usize,
+) -> usize {
+    let attn = hidden_dim * (q_dim + 2 * kv_dim) + q_dim * hidden_dim;
+    let ffn = 3 * hidden_dim * intermediate_dim;
+    num_layers * (attn + ffn)
+}
+
+/// #4590: does the FP16 prefill cache (2 B/param) fit beside the quantized
+/// weights (≤1 B/param) and the GH-178 reserve? A failed VRAM query answers
+/// `false` — serial is the safe side. Qwen3-8B (6.95 G params → 24.4 GB) does
+/// not fit a 24 GB RTX 4090, which is the OOM the serial rule was written for.
+#[must_use]
+pub fn fp16_prefill_cache_fits(free_vram_bytes: Option<usize>, params: usize) -> bool {
+    free_vram_bytes.is_some_and(|free| {
+        params
+            .saturating_mul(3)
+            .saturating_add(FP16_PREFILL_RESERVE_BYTES)
+            <= free
+    })
 }
 
 #[cfg(test)]
@@ -1180,15 +1233,50 @@ mod pmat3477_fp8_qk_norm_tests {
     }
 
     // The measured case: a QK-norm model on sm_89 loses FP8 (Qwen3-8B under FP8
-    // batched prefill scored cosine −0.0972 vs CPU) AND takes the serial prefill
-    // (the FP16 batched cache OOMed 8B beside apr qa's CPU twin on 24 GB).
+    // batched prefill scored cosine −0.0972 vs CPU) AND, when the FP16 cache does
+    // not fit (8B OOMed beside apr qa's CPU twin on 24 GB), takes the serial prefill.
     #[test]
-    fn qk_norm_model_gets_serial_prefill_without_fp8() {
+    fn qk_norm_model_without_room_gets_serial_prefill_without_fp8() {
         let mut p = profile(true);
-        assert!(p.disable_fp8_for_qk_norm(true, None, None));
+        assert!(p.disable_fp8_for_qk_norm(true, None, None, false));
         assert!(!p.fp8_prefill && !p.fp8_decode);
         assert_eq!(p.prefill_path.path, PrefillPath::Serial);
-        assert_eq!(p.prefill_path.reason, "qk-norm model (#3413/#3483)");
+        assert_eq!(p.prefill_path.reason, QK_NORM_NO_ROOM_REASON);
+    }
+
+    // #4590: FP16 batched prefill is correct for QK-norm models, so with room for
+    // its cache the model loses FP8 but KEEPS the batched prefill.
+    #[test]
+    fn qk_norm_model_with_room_keeps_batched_prefill_without_fp8() {
+        let mut p = profile(true);
+        assert!(p.disable_fp8_for_qk_norm(true, None, None, true));
+        assert!(!p.fp8_prefill && !p.fp8_decode);
+        assert_eq!(p.prefill_path.path, PrefillPath::Batched);
+        assert_eq!(p.prefill_path.reason, "default");
+    }
+
+    // The memory rule, on the two cards it was measured against.
+    #[test]
+    fn fp16_cache_fit_matches_the_measured_cards() {
+        // Qwen3-8B: 36 layers, hidden 4096, q 4096, kv 1024, ffn 12288.
+        let q3_8b = prefill_cache_params(36, 4096, 4096, 1024, 12288);
+        // Qwen3-1.7B: 28 layers, hidden 2048, q 2048, kv 1024, ffn 6144.
+        let q3_1_7b = prefill_cache_params(28, 2048, 2048, 1024, 6144);
+        let rtx4090_free = Some(23_500_000_000);
+        let gb10_free = Some(100_000_000_000);
+        assert!(
+            !fp16_prefill_cache_fits(rtx4090_free, q3_8b),
+            "8B OOMed on 24 GB"
+        );
+        assert!(fp16_prefill_cache_fits(rtx4090_free, q3_1_7b));
+        assert!(
+            fp16_prefill_cache_fits(gb10_free, q3_8b),
+            "GB10 has room for 8B"
+        );
+        assert!(
+            !fp16_prefill_cache_fits(None, q3_1_7b),
+            "failed query is serial"
+        );
     }
 
     // A model without QK-norm (the qwen2.5 control: 4/4 prompts pass under
@@ -1196,7 +1284,7 @@ mod pmat3477_fp8_qk_norm_tests {
     #[test]
     fn no_qk_norm_keeps_fp8_and_batched() {
         let mut p = profile(true);
-        assert!(!p.disable_fp8_for_qk_norm(false, None, None));
+        assert!(!p.disable_fp8_for_qk_norm(false, None, None, false));
         assert!(p.fp8_prefill && p.fp8_decode);
         assert_eq!(p.prefill_path.path, PrefillPath::Batched);
     }
@@ -1205,7 +1293,7 @@ mod pmat3477_fp8_qk_norm_tests {
     #[test]
     fn forced_fp8_is_honoured() {
         let mut p = profile(true);
-        assert!(!p.disable_fp8_for_qk_norm(true, Some("1"), None));
+        assert!(!p.disable_fp8_for_qk_norm(true, Some("1"), None, false));
         assert!(p.fp8_prefill);
         assert_eq!(p.prefill_path.path, PrefillPath::Batched);
     }
@@ -1215,16 +1303,16 @@ mod pmat3477_fp8_qk_norm_tests {
     fn explicit_batched_prefill_is_kept() {
         let mut p = profile(true);
         p.prefill_path = select_prefill_path(89, Some("1"));
-        assert!(p.disable_fp8_for_qk_norm(true, None, Some("1")));
+        assert!(p.disable_fp8_for_qk_norm(true, None, Some("1"), false));
         assert!(!p.fp8_prefill);
         assert_eq!(p.prefill_path.path, PrefillPath::Batched);
     }
 
-    // Already serial and FP8 already off (GB10 defaults, or FP8_PREFILL=0): no change.
+    // Already serial and FP8 already off (BATCHED_PREFILL=0 with FP8_PREFILL=0): no change.
     #[test]
     fn already_serial_and_off_is_not_a_change() {
         let mut p = profile(false);
-        p.prefill_path = select_prefill_path(121, None);
-        assert!(!p.disable_fp8_for_qk_norm(true, None, None));
+        p.prefill_path = select_prefill_path(121, Some("0"));
+        assert!(!p.disable_fp8_for_qk_norm(true, None, Some("0"), false));
     }
 }

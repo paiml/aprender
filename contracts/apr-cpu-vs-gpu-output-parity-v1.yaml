@@ -1,6 +1,6 @@
 metadata:
   kind: schema
-  version: 1.11.0
+  version: 1.12.0
   status: ACTIVE
   created: '2026-05-03'
   author: PAIML Engineering
@@ -18,6 +18,7 @@ metadata:
   - 'crates/aprender-serve/src/gguf/cuda/mod.rs — the SKIP_PARITY_GATE bypass, anchored by SYMBOL not line: grep for the literal SKIP_PARITY_GATE. The former anchor :268-279 was stale (it is a doc comment about qtype resolution), and the review that caught it proposed :333/:349 — which had ALREADY drifted to :390/:406 by the time it was read. A line number inside a contract is not an anchor.'
   - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
   changelog:
+  - '1.12.0 - 2026-09-28 - added FALSIFY-CPU-GPU-009b (#4590). The PMAT-810 sm_12x serial-prefill default no longer reproduces a defect on apr 0.70.0 (batched == serial == RTX 4090 on GB10, sanitizer-clean) and cost GB10 >20x on long prompts; select_prefill_path now defaults batched on every cc. QK-norm models keep FP8 off but go serial only when the FP16 prefill cache does not fit free VRAM. The packed multi-prompt prefill keeps its sm_12x refusal.'
   - '1.11.0 - 2026-06-21 - added FALSIFY-CPU-GPU-011 + a Blackwell GRAPH-replay-parity invariant (PMAT-886a), and FIXED the PMAT-810 root cause so Blackwell now uses the fast graphed decode. ROOT CAUSE (gx10 GB10 sm_121, on-device GRAPH_AB_TEST per-buffer scan): the plain MWV (fp32-activation) Q4K GEMV mwv_q4k_gemv_into — the DEFAULT Q4K variant on Blackwell (Q4kVariant::Mwv, PMAT-806) — was MISSING its `if self.graph_recording { graph_recorded_kernels.push(...) }` block, while the sibling mwv_dp4a/hw_dp4a variants (used on discrete sm_89 DP4A GPUs) HAVE it (realizr#198). So on Blackwell the ~6 Q4K GEMVs/layer (Q,K,V,output,gate-or-fused,up,down) executed during the eager capture pass but were NEVER added to the manual graph; on cuGraphLaunch replay those kernels were ABSENT, leaving q/k/v + residual + ffn buffers STALE -> garbage (apr parity avg cosine 0.5336/0.1912). RTX 4090 (sm_89) was unaffected because it routes Q4K to the recorded DP4A variant. The CUDA graph mechanism itself is correct on sm_121 (a manual add_kernel_node reproducer + the stream-capture test both pass). Fix: record mwv_q4k_gemv_into too (5 LOC mirroring mwv_dp4a). Recorded kernel count 451 -> 619 (the previously-dropped ~168 MWV GEMVs). VERIFIED LIVE on gx10 sm_121: GRAPH_AB_TEST per-buffer diff 0.000000 across the whole transformer stack (hidden_buf1/2, q/k/v, attn, ffn_gate/up/act); apr parity (CUDA_GRAPH_ENABLE) 0.5336 -> 0.993437 (== eager, argmax matches 6/6 positions); default apr run (no env) now fires the graph AND matches --no-gpu token-for-token on Qwen2.5-coder-1.5B (3 prompts) and Qwen3-8B; apr bench 96.4 (eager) -> 112.1 tok/s (graph), +16%. graph_cc_default re-defaulted cc>=89 (was cc>=89 && cc<120), so PMAT-810 supersedes the Blackwell carve-out; CUDA_GRAPH_ENABLE/SKIP_CUDA_GRAPH escape hatches kept. total_obligations 10 -> 11.'
   - '1.10.0 - 2026-06-21 - added FALSIFY-CPU-GPU-010 + a Blackwell decode-throughput-floor invariant (PMAT-885). PMAT-884 found attention is <0.3% of the per-token budget, so the ~10.4 tok/s gx10 GB10 decode was elsewhere. On-device diagnosis: the deployed gx10 `apr` was the April-6 v0.4.11 binary (4b030b0c), which PREDATES PMAT-742 (Jun 13). Its validate_gpu_first_token used hard BOS-argmax-equality, so a harmless Blackwell FP near-tie flipped the first-token argmax and F2 FALSE-rejected the correct GPU path (`[GH-480] F2 validation FAILED — falling back to CPU`, no [F2-VALIDATION] reason line = pre-PMAT-742 gate). Default apr run then fell to CPU (wgpu also dead: VK_ERROR_INCOMPATIBLE_DRIVER) and decoded ~10.4 tok/s; nvidia-smi dmon SM peak ~8%. ISOLATION: SKIP_PARITY_GATE=1 on the SAME stale binary -> F2 PASSED -> 647-kernel CUDA graph -> 125.7 tok/s; apr qa (gate-free) PASSED golden_output at 97.6 tok/s. So the GPU kernels are fine on GB10; the F2 gate was the sole blocker. FIX is operational (NOT a code defect on main): current main already fixes this via PMAT-742 (near-tie) + PMAT-806/810 (Blackwell eager-decode/serial-prefill). Verified: v0.49.1 (7966da8ee) with NO env vars passes F2, runs ON GPU (SM peak 95%), coherent output, 112.9 tok/s (10.9x). Remediated: reinstalled v0.49.1 as gx10 default apr (backup ~/.cargo/bin/apr.v0.4.11.bak.pmat885). total_obligations 9 to 10.'
   - '1.9.0 - 2026-06-16 - added FALSIFY-CPU-GPU-009 + a Blackwell GPU-generation-parity invariant (PMAT-810). On-device sweep (gx10 GB10 sm_121, binary from PMAT-806 #2095 base) found the ENTIRE GPU path unusable on Blackwell via TWO stacked defects PMAT-806 did not cover: (1) PRIMARY the trueno#243 MANUAL CUDA-graph decode (graphed_capture, default-on cc>=89) corrupts the sm_121 forward (apr parity avg cosine 0.1912, generation empty/single-token) while the IDENTICAL eager path is correct (0.9929, coherent); (2) SECONDARY (the originally-flagged prefill divergence) once graph is fixed BATCHED prefill still diverges on Blackwell (NOT the activation-quant outlier: reproduces with FP8_PREFILL=0/HGEMM; 2 of 4 prompts wrong incl. one to Chinese) while SERIAL prefill is byte-exact (6 of 6). Fix: graphed_fast_path cc-default = cc>=89 && cc<120 (eager decode on Blackwell; CUDA_GRAPH_ENABLE=1 opts in); run_prefill defaults Blackwell to serial (BATCHED_PREFILL=1 opts in). LIVE: default apr run matches --no-gpu 5 of 5 and runs ON GPU; discrete sm_89 unchanged by construction. total_obligations 8 to 9.'
@@ -451,6 +452,41 @@ falsification_tests:
   - "LIVE DISCHARGE 2026-06-21 on gx10 (GB10 sm_121, cc=121): GRAPH_AB_TEST per-buffer eager-vs-replay scan reports diff=0.000000 across the ENTIRE transformer stack (hidden_buf1, hidden_buf2, q_buf, k_buf, v_buf, attn_out_buf, ffn_gate_buf, ffn_up_buf, ffn_act_buf) — pre-fix the same scan showed hidden_buf2 diff=414, k_buf 385, q_buf 38. apr parity CUDA_GRAPH_ENABLE=1: avg cosine 0.5336 -> 0.993437 (== eager SKIP_CUDA_GRAPH=1), argmax matches 6/6 decode positions (pos 0 is the pre-existing warmup-dump artifact, present in eager too). Default `apr run` (no env) emits the Manual-graph + Graph-replay logs and matches --no-gpu token-for-token on Qwen2.5-coder-1.5B (3 prompts: factorial/colors/capital) and Qwen3-8B (Paris). apr bench --fast: 96.4 tok/s (eager) -> 112.1 tok/s (graph), +16%. RTX 4090 (cc=89) unaffected by construction (already recorded via DP4A variant)."
   - "GPU-free unit falsifier (pmat810_blackwell_graph_default_tests): graph_default_on_on_blackwell (cc 120/121/130 -> true), graph_default_on_for_discrete_dp4a (89/90/119 -> true), graph_default_off_below_dp4a (75/70 -> false). RED before fix (the prior assertion was !graph_cc_default(121)); GREEN after (graph_cc_default(121)==true). Runs on non-CUDA CI."
   - "Mechanism control: a manual add_kernel_node 3-node linear-chain reproducer (mirroring end_graph_recording's u64 arg encoding + dropped-local backing) replays correctly on sm_121 (got 31.0), and the stream-capture graph test passes (101.0) — proving the CUDA graph mechanism and the arg-lifetime pattern are NOT the bug; the missing GEMV recording was."
+- id: FALSIFY-CPU-GPU-009b
+  rule: >
+    On sm_12x (cc>=120, e.g. GB10 sm_121) `apr run` with NO env vars MUST take
+    the BATCHED prefill, MUST match `BATCHED_PREFILL=0` (serial) token-for-token,
+    and MUST be >= 10x faster than serial on an ~8k-token prompt. Supersedes the
+    single-prompt half of FALSIFY-CPU-GPU-009 (#4590); the packed multi-prompt
+    prefill keeps its sm_12x refusal until it has its own receipt.
+  prediction: |
+    #4590, apr 0.70.0 (8d021f61e) on gx10 GB10 sm_121 and lambda RTX 4090:
+    batched == serial on Qwen3-1.7B (4/4), Qwen3-8B (4/4) and the PMAT-810
+    prompts on qwen2.5-coder-1.5b (4/4, 64 tokens), and both equal the 4090
+    output. compute-sanitizer synccheck 0, memcheck 0, racecheck 0 hazards on
+    the batched prefill kernels. The PMAT-810 corruption does not reproduce.
+    Needle at ~8k tokens: gx10 serial timed out at 1200 s, batched 54.7 s; at
+    n=100 serial 323.6 s vs batched 21.1 s. Receipts:
+    https://github.com/paiml/aprender/issues/4590#issuecomment-5868842556
+  test: |
+    # GPU-free (any CI):
+    cargo test -p aprender-serve --lib no_compute_capability_defaults_to_serial
+    cargo test -p aprender-serve --lib qk_norm_model_with_room_keeps_batched_prefill
+    # On-device (gx10, prebuilt binary, greedy):
+    apr run Qwen3-8B-Q4_K_M.gguf --prompt "$P" --max-tokens 64 --temperature 0   # stderr names batched
+    BATCHED_PREFILL=0 apr run ... same args   # generated text MUST be identical
+  mutation: >
+    Re-insert `None if cc >= SM12X_MIN_CC => (PrefillPath::Serial, "sm12x default")`
+    into select_prefill_path: no_compute_capability_defaults_to_serial MUST turn
+    RED. Make disable_fp8_for_qk_norm ignore fp16_cache_fits:
+    qk_norm_model_with_room_keeps_batched_prefill_without_fp8 MUST turn RED.
+  if_fails: >
+    GB10 silently takes the per-token serial prefill again: >20x slower
+    time-to-first-token on long prompts, with no correctness gain.
+  binds_to: greedy_argmax_parity
+  status: PARTIAL_ALGORITHM_LEVEL
+  issue: "https://github.com/paiml/aprender/issues/4590"
+
 - id: FALSIFY-CPU-GPU-010
   rule: >
     On Blackwell (cc>=120, e.g. GB10 sm_121) the default `apr run --gpu` decode

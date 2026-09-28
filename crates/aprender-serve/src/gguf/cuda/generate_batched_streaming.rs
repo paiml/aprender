@@ -1283,8 +1283,10 @@ mod pmat810_multi_prompt_guard_tests {
                 !p.multi_prompt_prefill_allowed(),
                 "cc={cc} must refuse the packed multi-prompt prefill by default"
             );
-            assert_eq!(p.prefill_path().path, PrefillPath::Serial);
-            assert_eq!(p.prefill_path().reason, "sm12x default");
+            // #4590: the single-prompt path is batched on sm_12x now; only the
+            // packed multi-prompt scatter keeps its refusal.
+            assert_eq!(p.prefill_path().path, PrefillPath::Batched);
+            assert_eq!(p.prefill_path().reason, "default");
         }
     }
 
