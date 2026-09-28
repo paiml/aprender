@@ -1231,6 +1231,10 @@ impl CudaTransformerTrainer {
         let stream = self.cuda_trainer.stream();
         stream.synchronize().ok()?;
 
+        // distill-batch-honesty-v1 FALSIFY-DBH-007: start from a zero
+        // embedding gradient, as `train_batch` does at the start of a window.
+        self.embed_optimizer.zero_grad_refs(&mut vec![&mut self.model.embed_tokens.weight]);
+
         // Back-prop from the uploaded gradient through the transformer.
         // accumulate_only=false → run the optimizer step at the end.
         let grad_output_is_a = self.gpu_backward(seq_len, hidden_size, vocab_size, false)?;
@@ -1238,6 +1242,12 @@ impl CudaTransformerTrainer {
         // is the buffer-flip flag from gpu_backward (per existing
         // `train_step_inner` pattern at line ~1108).
         self.embed_backward(input_ids, seq_len, hidden_size, vocab_size, grad_output_is_a);
+
+        // gpu_backward stepped the blocks, LM head and final norm; only
+        // optimizer_step() steps the CPU embedding and advances the step
+        // counter. Without it the embedding stayed at the checkpoint for a
+        // whole distill run and its gradient summed across every step.
+        self.optimizer_step();
 
         Some(())
     }
@@ -2484,6 +2494,16 @@ impl CudaTransformerTrainer {
     /// ALB-079: Phase 1 = linear warmup (0 → lr_max), Phase 2 = cosine decay
     /// (lr_max → 0) over remaining steps. Requires `max_steps` for decay;
     /// without it, falls back to constant lr after warmup.
+    /// Set the base learning rate the schedule starts from.
+    ///
+    /// distill-batch-honesty-v1 FALSIFY-DBH-006: `for_inference` builds its
+    /// own `TransformerTrainConfig` (lr 1e-3), so a caller that trains
+    /// through it must pass its configured rate here before step 0.
+    pub fn set_lr(&mut self, lr: f32) {
+        self.config.lr = lr;
+        self.embed_optimizer.set_lr(self.current_lr());
+    }
+
     pub fn current_lr(&self) -> f32 {
         let base_lr = self.config.lr;
         if self.step < self.config.warmup_steps {
