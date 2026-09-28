@@ -1,5 +1,5 @@
 {
-  "build_identity": "090942910d",
+  "build_identity": "e2d210244d",
   "fp32_activations": {
     "max_abs_err": 0.000829568921290047,
     "max_rel_err": 1.3110594897372703e-6
@@ -25,6 +25,14 @@
     "avx512vnni"
   ],
   "kernel_id": "cpu.matvec.q5_k",
+  "margin": {
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.0009954134560428306,
+    "nmse": 6.545484235835706e-13,
+    "p999_margin": 0.0009954134560428306,
+    "verdict": "pass"
+  },
   "oracle": "in_tree_dequant_f64",
   "oracle_independent": false,
   "quantized_activation_oracle": null,
@@ -36,7 +44,7 @@
   },
   "source_fn": "fused_q5k_parallel_matvec",
   "tolerance_rel": 3e-6,
-  "ts": "2026-09-28T11:18:08Z",
+  "ts": "2026-09-28T12:09:28Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,

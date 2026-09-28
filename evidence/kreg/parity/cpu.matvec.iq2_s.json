@@ -1,5 +1,5 @@
 {
-  "build_identity": "090942910d",
+  "build_identity": "e2d210244d",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
@@ -21,6 +21,10 @@
     "avx512vnni"
   ],
   "kernel_id": "cpu.matvec.iq2_s",
+  "margin": {
+    "reason": "the fixture has no |W|·|x| magnitudes and no reference on the activations the kernel quantizes (KTEST-001 §0.4); needs a fixture regen",
+    "verdict": "not_run"
+  },
   "oracle": "gguf_py_dequant_f64",
   "oracle_fixture": {
     "dir": "evidence/kreg/oracle/IQ2_S",
@@ -40,7 +44,7 @@
   },
   "source_fn": "iq_parallel_matvec_into",
   "tolerance_rel": 2e-6,
-  "ts": "2026-09-28T11:18:14Z",
+  "ts": "2026-09-28T12:09:33Z",
   "workload": {
     "in_dim": 1024,
     "out_dim": 32,
