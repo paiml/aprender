@@ -1,0 +1,68 @@
+metadata:
+  kind: pattern
+  version: 1.1.0
+  created: '2026-09-28'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The 0.72 R7 cell (merge on Qwen3.5): `apr merge` output is the model it claims to be. Spike S-R7
+    (2026-09-28, apr 0.69.3 @574583d382, Qwen3.5-0.8B .apr, CPU) measured values bit-identical on the
+    identity case for all five strategies (489/489), but every output named .apr is a metadata-free
+    SafeTensors file (magic 23 eb 00.., not APR\0), widened bf16 -> F32, that apr inspect reads as llama.
+  references:
+  - 'branch la-72/0.72-shaping: docs/specifications/aprender-train/train-what-you-serve-0.72.md §R7, Spike S-R7 (not on main until the 0.72 shaping PR lands)'
+  - crates/aprender-core/src/format/converter/ties_merge.rs (save_safetensors on the output path)
+  - crates/aprender-core/src/format/converter/merge.rs
+  - contracts/lora-merge-forward-equivalence-v1.yaml
+  - 'qwen35-format-roundtrip-v1 (branch la-72/fold-r10-qfr; QFR-003, a bare safetensors does not re-import)'
+  depends_on:
+  - lora-merge-forward-equivalence-v1
+status: PROPOSED
+equations:
+  identity_merge:
+    formula: '∀ s ∈ {average, weighted(w, Σw=1), slerp, ties(base=M), dare(base=M)}: merge_s(M, M) = M (bitwise, per tensor)'
+    domain: 'M = any .apr the serve path supports; S-R10 Qwen3.5-0.8B is the dev cell'
+    invariants:
+    - 'S-R7 measured 489/489 identical for all five strategies; slerp at angle 0 yields no NaN'
+  output_fidelity:
+    formula: 'format(merge(..., -o p)) = format_of_extension(p) ∧ arch(out) = arch(inputs[0]) ∧ dtype(out[t]) = dtype(inputs[0][t])'
+    domain: 'apr merge, every strategy, output extension .apr or .safetensors'
+    invariants:
+    - 'An .apr output carries the APR\0 magic and the first input''s metadata (architecture, hf_architecture, model_type, rope_theta, …)'
+    - 'Inputs whose architectures differ are refused by name, never merged under one of them'
+    preconditions:
+    - one apr binary, sha recorded
+proof_obligations:
+- type: equivalence
+  property: Identity merge is bit-identical
+  formal: '∀ t: merge_s(M, M)[t] = M[t] bitwise'
+  applies_to: all
+- type: invariant
+  property: Output is the container and model it is named as
+  formal: 'ext(p) = .apr ⇒ magic(out) = APR\0 ∧ metadata(out) ⊇ metadata(inputs[0])'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-MOF-001
+  rule: Identity merge is bit-identical for every strategy
+  prediction: 'apr diff --values --limit 1000: identical_count = |T(M)| for average, weighted 0.7/0.3, slerp, ties and dare with base = M'
+  test: 'NOT IN-TREE (real-model cell, no synthetic stand-in yet). CELL: CPU, S-R10 Qwen3.5-0.8B .apr and its round-trip copy (S-R7 measured 489/489 on all five)'
+  if_fails: 'a strategy drifts on a zero task vector, or slerp NaNs at angle 0'
+- id: FALSIFY-MOF-002
+  rule: An .apr output is an APR file
+  prediction: 'the first 4 bytes of `apr merge … -o out.apr` are APR\0'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/merge_output_tests.rs::falsify_mof_002_apr_output_is_an_apr_file. CELL: same cell; S-R7 measured 23 eb 00 00 (SafeTensors header length) for all five strategies'
+  if_fails: 'the merge writer ignores the output extension'
+- id: FALSIFY-MOF-003
+  rule: Merge keeps the input architecture
+  prediction: 'apr inspect of the output reports architecture qwen3_5 and hf_architecture Qwen3_5ForConditionalGeneration, as the inputs do'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/merge_output_tests.rs::falsify_mof_003_apr_output_keeps_input_architecture. CELL: same cell; S-R7 measured architecture llama (inferred), metadata {}'
+  if_fails: 'the merged model cannot be served, trained or re-imported as the model it came from'
+- id: FALSIFY-MOF-004
+  rule: Merge keeps the input dtype unless asked to widen
+  prediction: 'bf16 inputs give a bf16 output (size within 1% of the input)'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/merge_output_tests.rs::falsify_mof_004_bf16_inputs_give_bf16_output + ::falsify_mof_004_widen_writes_f32 + crates/apr-cli/src/commands/merge_tests.rs::falsify_mof_004_widen_flag_reaches_the_writer (--widen). CELL: same cell; S-R7 measured 4.51 GB F32 output from 2.77 GB bf16 inputs'
+  if_fails: 'every merge silently doubles the model size'
+- id: FALSIFY-MOF-005
+  rule: Planted falsifier — mismatched architectures are refused
+  prediction: 'merging a qwen3_5 .apr with a qwen2 .apr of any shape exits non-zero naming both architectures'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/merge_output_tests.rs::falsify_mof_005_mismatched_architectures_are_refused + ::falsify_mof_005_base_model_architecture_is_checked. CPU, two tiny synthetic .apr fixtures stamped with different architecture metadata and identical tensor names/shapes'
+  if_fails: 'the merge writes one architecture''s tensors under the other (shape match is not model match)'
