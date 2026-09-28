@@ -28,7 +28,9 @@
 # thrashed on MEMORY with IO PSI at 15%. SIGSTOP frees no memory, so memory gets three hard rules:
 #   1. MemoryMax = min(MemTotal/2, MemAvailable-at-start - reserve); below 4 GiB of room, refuse (exit 2).
 #   2. MemorySwapMax=0: a cell over its box is OOM-killed inside the box (a red cell), never swapped out
-#      onto the operator's desktop.
+#      onto the operator's desktop. OOMPolicy=continue: the kernel kills the largest process (the cell's apr),
+#      NOT the whole unit -- with the default (stop) systemd tore down the ladder too and the sweep wrote no
+#      receipt (gx10 27B cpu, 2026-09-28).
 #   3. MemAvailable (host-wide) under the floor while running: stop the unit, event mem_floor, exit 75.
 set -uo pipefail
 
@@ -66,7 +68,7 @@ else
   [ "$room" -ge 4194304 ] || { echo "ladder_box: host MemAvailable ${avail0}K leaves ${room}K after the ${MEM_RESERVE_KB}K reserve (< 4 GiB) — refusing to start" >&2; exit 2; }
   mem_max="${room}K"
 fi
-props=(-p IOWeight=10 -p "CPUQuota=${LADDER_CPU_QUOTA:-800%}" -p "MemoryMax=$mem_max" -p MemorySwapMax=0)
+props=(-p IOWeight=10 -p "CPUQuota=${LADDER_CPU_QUOTA:-800%}" -p "MemoryMax=$mem_max" -p MemorySwapMax=0 -p OOMPolicy=continue)
 declare -A seen=()
 for p in "${IO_PATHS[@]}"; do
   [ -e "$p" ] || continue

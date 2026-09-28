@@ -61,6 +61,16 @@ memfloor() {
 }
 if memfloor "$BOX" mf-real; then ok "MemAvailable under the floor mid-run → unit stopped, mem_floor, exit 75"; else bad "memory floor"; cat "$T/mf-real.jsonl" 2>/dev/null; fi
 grep -q -- '-p MemorySwapMax=0' "$BOX" && ok "the box sets MemorySwapMax=0" || bad "MemorySwapMax=0 missing"
+grep -q -- '-p OOMPolicy=continue' "$BOX" && ok "the box sets OOMPolicy=continue (an OOM kills the cell, not the ladder)" || bad "OOMPolicy=continue missing: a cell OOM loses the whole receipt"
+# ...and prove the property does what the comment says: a child over a 64M box is OOM-killed while its
+# parent (the ladder's stand-in) lives on and exits with its OWN status. Control: OOMPolicy=stop loses it.
+oom_rc() { timeout 60 systemd-run --user --wait --collect -q -p MemoryMax=64M -p MemorySwapMax=0 -p "OOMPolicy=$1" \
+  bash -c 'python3 -c "b=bytearray(256<<20); b[::4096]=b\"x\"*len(b[::4096])" 2>/dev/null; exit 7' >/dev/null 2>&1; echo $?; }
+if systemctl --user show-environment >/dev/null 2>&1; then
+  c=$(oom_rc continue); s=$(oom_rc stop)
+  [ "$c" = 7 ] && [ "$s" != 7 ] && ok "OOMPolicy=continue: the over-box child died, the parent exited 7 (stop control: $s)" \
+    || bad "OOMPolicy proof: continue rc=$c (want 7), stop rc=$s (want not 7)"
+else echo "  note: no user systemd -- OOMPolicy behaviour not proven here (the property grep still ran)"; fi
 
 # the ladder re-execs itself boxed: an unboxed non-dry call goes through ladder_box.sh
 if grep -q 'exec bash scripts/lib/ladder_box.sh' scripts/model_ladder.sh && grep -q '"host_box": host_box' scripts/model_ladder.sh
