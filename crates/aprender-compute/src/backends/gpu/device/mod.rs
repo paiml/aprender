@@ -498,7 +498,15 @@ mod tests {
     use super::*;
 
     fn info(backend: wgpu::Backend, name: &str) -> wgpu::AdapterInfo {
-        wgpu::AdapterInfo { name: name.to_string(), backend, ..Default::default() }
+        wgpu::AdapterInfo {
+            name: name.to_string(),
+            vendor: 0,
+            device: 0,
+            device_type: wgpu::DeviceType::Other,
+            driver: String::new(),
+            driver_info: String::new(),
+            backend,
+        }
     }
 
     /// #4575 F3: the line names the backend the adapter reports. RED on the old
