@@ -37,7 +37,7 @@ proof_obligations:
   applies_to: all
 - type: equivalence
   property: Accumulation matches the mean
-  formal: 'update(B=2, rows a,b) ≈ update from the mean of the per-row gradients (tol 1e-4 relative, f32)'
+  formal: '∀ a, b: W(kd_step_batch({a, b})) = W(step((g_a + g_b) / 2)) (tol 1e-4 relative, f32)'
   tolerance: 1.0e-04
   applies_to: all
 falsification_tests:
