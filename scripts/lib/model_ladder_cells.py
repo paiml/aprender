@@ -338,9 +338,10 @@ def declaim_still_claimed(L, dec, out):
     rc = 0
     for r in L.get("rungs") or []:
         for h in sorted(set(r.get("hosts") or req)):
-            d = dec.get((h, r.get("arch")))
+            d = declaim_of(dec, h, r)  # D2: a rung carries its artifact's sha256, so a file de-claim reaches it too
             if d:  # a claim the de-claim withdraws
-                out(f"FAIL  rung {r.get('id')} still claims arch {r.get('arch')} on {h}, which cells.declaimed withdraws (#{d['issue']}) -- narrow its hosts: or drop the de-claim")
+                what = f"file {r.get('gguf')} (sha256 {str(r.get('sha256'))[:12]})" if d.get("sha256") else f"arch {r.get('arch')}"
+                out(f"FAIL  rung {r.get('id')} still claims {what} on {h}, which cells.declaimed withdraws (#{d['issue']}) -- narrow its hosts: or drop the de-claim")
                 rc = 1
     reps = ((L.get("cells") or {}).get("long_rungs_for") or {}).get("representatives") or {}
     for arch in sorted(reps):

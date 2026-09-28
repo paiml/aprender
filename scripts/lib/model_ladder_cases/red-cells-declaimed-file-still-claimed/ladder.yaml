@@ -4,9 +4,9 @@ ladder:
     - sha256: '0000000000000000000000000000000000000000000000000000000000000000'
       file: c.gguf
       host: gx10
-      issue: 3715
+      issue: 4590
       until: 0.70.1
-      why: 'fixture: this one artifact times out on this host'
+      why: 'fixture: correct but slow on this host'
     long_rungs_for:
       families:
       - qwen35
@@ -39,8 +39,6 @@ ladder:
     - cpu
     - cuda
     gguf: c.gguf
-    hosts:
-    - lambda
     id: ctrl-q4km
     required: true
     sha256: '0000000000000000000000000000000000000000000000000000000000000000'

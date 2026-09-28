@@ -900,6 +900,7 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant declaim-stale   red-cells-declaimed-file-stale  's/        if stale:  # the entry/        if False:  # the entry/'
     cmutant declaim-sha-hex red-cells-declaimed-file-bare   's/if by_file and d.get("sha256") and not re.fullmatch/if False and not re.fullmatch/'
     cmutant declaim-claimed red-cells-declaimed-still-claimed 's/            if d:  # a claim the de-claim withdraws/            if False:  # a claim the de-claim withdraws/'
+    cmutant declaim-claimed-file red-cells-declaimed-file-still-claimed 's/            d = declaim_of(dec, h, r)  # D2/            d = dec.get((h, r.get("arch")))  # D2/'
     mutant declaim-host     declaimed-host-on-rung          's/                gone = {g for g in gone if dkey(g, r) not in dcl}/                gone = set(gone)/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
