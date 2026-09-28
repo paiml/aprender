@@ -777,3 +777,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "kernel_registry_parity.rs"]
+mod parity;
