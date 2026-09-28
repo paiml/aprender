@@ -1,0 +1,16 @@
+- id: PMAT-4581
+  github_issue: 4581
+  item_type: task
+  title: 'rule-3 CI fixes carried on #4554: sha2 opt3 for the apr-cli mutation baseline, cbtop M-tests run CARGO_BIN_EXE_apr, verify-ml book oracles skip without python3, dead ALLOWED_GAPS pruned'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-49
+  created: 2026-09-27 21:10:00+00:00
+  updated: '2026-09-27T21:10:00Z'
+  spec: null
+  acceptance_criteria:
+  - '[profile.dev.package.sha2] opt-level = 3: the apr-cli lib test baseline finishes inside the 300 s cargo-mutants timeout'
+  - 'the cbtop M001-M003/M007/M008/M010 tests run the prebuilt apr (CARGO_BIN_EXE_apr) and no test invokes cargo'
+  - 'verify-ml book oracle tests pass on a host without python3 (SKIP line printed) and still assert on hosts with it'
+  - 'no ALLOWED_GAPS entry in crates/aprender-core/build.rs names a binding whose status is implemented'
+  phases: []

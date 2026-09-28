@@ -16,7 +16,7 @@ impl OwnedQuantizedModelCached {
     ///
     /// This reduces dispatch overhead for large batch sizes.
     #[allow(clippy::many_single_char_names)] // Standard BLAS parameter naming convention
-    #[contract("gemm-v1", equation = "flattened_batched_gemm")]
+    #[contract("matmul-kernel-v1", equation = "matmul")]
     pub fn flattened_batched_gemm(
         &self,
         a: &[f32],

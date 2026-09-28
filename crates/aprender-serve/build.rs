@@ -125,7 +125,7 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
         "// Per-architecture required weight roles.\n\
          //\n\
          // AUTO-GENERATED from architecture-requirements-v1.yaml by build.rs — DO NOT EDIT.\n\
-         // See: provable-contracts/contracts/architecture-requirements-v1.yaml\n\
+         // See: contracts/architecture-requirements-v1.yaml\n\
          //\n\
          // UCBD §4 / GH-279: Compile-time enforcement that every loader\n\
          // provides all tensors required by the target architecture.\n\
@@ -201,6 +201,7 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
          /// four arms, but the contract test FALSIFY-ARCH-001 will catch mismatches.\n\
          #[must_use]\n\
          pub fn required_roles(arch: &ArchConstraints) -> &'static [WeightRole] {\n\
+         \x20   contract_pre_constraint_matrix_exhaustiveness!();\n\
          \x20   match (arch.has_qk_norm, arch.has_bias) {\n",
     );
     for (cell_name, cell) in &cells {
@@ -270,17 +271,25 @@ fn main() {
 /// Phase 2: Read binding.yaml and emit CONTRACT_* env vars for the proc macro.
 fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("realizar")
-        .join("binding.yaml");
+    let binding_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/realizar/binding.yaml");
 
     // Always tell Cargo to re-run if the file appears or changes
     println!("cargo:rerun-if-changed={}", binding_path.display());
+
+    // #4369: in the monorepo the registry is in-tree, so a missing one is a
+    // defect, never a crates.io build. Only a packaged crate (no workspace
+    // `contracts/` beside it) may fall back to CONTRACT_BINDING_SOURCE=none.
+    if !binding_path.exists()
+        && Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts")
+            .is_dir()
+    {
+        panic!(
+            "contract binding registry missing: {} -- restore it or fix the path (#4369)",
+            binding_path.display()
+        );
+    }
 
     if !binding_path.exists() {
         // Graceful fallback: CI/crates.io builds won't have the sibling repo.
@@ -492,15 +501,23 @@ fn find_binding_note<'a>(bindings: &'a BindingFile, var_name: &str) -> &'a str {
 
 /// PMAT-228: Read architecture-requirements-v1.yaml and generate `arch_requirements.rs`.
 fn generate_arch_requirements_file() {
+    // #4380: in-tree since APR-MONO. This read ../../../provable-contracts/…,
+    // a sibling checkout that no longer exists, so every monorepo build used
+    // the hand-written fallback and the YAML never reached the generated table.
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("architecture-requirements-v1.yaml");
+        .join("../../contracts/architecture-requirements-v1.yaml");
 
     println!("cargo:rerun-if-changed={}", yaml_path.display());
+
+    let in_monorepo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts")
+        .is_dir();
+    if !yaml_path.exists() && in_monorepo {
+        panic!(
+            "architecture-requirements-v1.yaml missing: {} -- restore it or fix the path (#4380)",
+            yaml_path.display()
+        );
+    }
 
     if !yaml_path.exists() {
         // Graceful fallback for CI/crates.io — write a stub generated file
@@ -518,6 +535,10 @@ fn generate_arch_requirements_file() {
     let yaml_content = match std::fs::read_to_string(&yaml_path) {
         Ok(s) => s,
         Err(e) => {
+            assert!(
+                !in_monorepo,
+                "[PMAT-228] Failed to read architecture-requirements-v1.yaml: {e} (#4380)"
+            );
             println!(
                 "cargo:warning=[PMAT-228] Failed to read architecture-requirements-v1.yaml: {e}"
             );
@@ -528,6 +549,10 @@ fn generate_arch_requirements_file() {
     let req: ArchRequirements = match serde_yaml_ng::from_str(&yaml_content) {
         Ok(r) => r,
         Err(e) => {
+            assert!(
+                !in_monorepo,
+                "[PMAT-228] Failed to parse architecture-requirements-v1.yaml: {e} (#4380)"
+            );
             println!(
                 "cargo:warning=[PMAT-228] Failed to parse architecture-requirements-v1.yaml: {e}"
             );
@@ -750,7 +775,7 @@ fn generate_arch_constraints(contract: &ArchConstraintsContract) -> String {
         "// Per-architecture inference constraints.\n\
          //\n\
          // AUTO-GENERATED from arch-constraints-v1.yaml by build.rs — DO NOT EDIT.\n\
-         // See: provable-contracts/contracts/arch-constraints-v1.yaml\n\
+         // See: contracts/arch-constraints-v1.yaml\n\
          //\n\
          // GH-323: Compile-time enforcement of architecture constraints.\n\
          \n",
@@ -803,13 +828,10 @@ fn generate_tensor_names_file() {
 
     // For now, always use the fallback file.
     // YAML-to-codegen pipeline from tensor-names-v1.yaml is planned (GH-311).
-    let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("tensor-names-v1.yaml");
+    // #4380: in-tree since APR-MONO. The old sibling path never existed, and a
+    // rerun-if-changed on a missing file re-runs this build script every build.
+    let yaml_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/tensor-names-v1.yaml");
 
     println!("cargo:rerun-if-changed={}", yaml_path.display());
 

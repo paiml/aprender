@@ -3,11 +3,27 @@
 use verificar::oracle::{Executor, IoOracle, PythonExecutor};
 use verificar::Language;
 
+/// The book examples run a real `python3`. The sovereign-ci test image has none, so
+/// there `execute` fails at spawn and the example asserted on it (#4554). Skip with
+/// the reason on stderr, the same guard the executor's own unit tests use, so the
+/// examples still run wherever an interpreter exists.
+fn python_or_skip(test: &str) -> Option<PythonExecutor> {
+    let executor = PythonExecutor::new();
+    if executor.is_available() {
+        Some(executor)
+    } else {
+        eprintln!("SKIP {test}: python3 is not available on this host");
+        None
+    }
+}
+
 #[test]
 fn test_io_oracle_example() {
     // Example: Using I/O oracle for verification
     let oracle = IoOracle::new();
-    let _executor = PythonExecutor::new();
+    let Some(_executor) = python_or_skip("test_io_oracle_example") else {
+        return;
+    };
 
     let source_code = "print(2 + 2)";
     let target_code = "println!(\"{}\", 2 + 2);";
@@ -21,20 +37,21 @@ fn test_io_oracle_example() {
         Language::Rust,
     );
 
-    assert!(verdict.is_ok());
+    verdict.expect("I/O oracle verdict");
 }
 
 #[test]
 fn test_python_executor_example() {
     // Example: Executing Python code
-    let executor = PythonExecutor::new();
+    let Some(executor) = python_or_skip("test_python_executor_example") else {
+        return;
+    };
     let code = "print('Hello, World!')";
     let input = "";
 
-    let result = executor.execute(code, input, 5000);
-
-    assert!(result.is_ok());
-    let output = result.unwrap();
+    let output = executor
+        .execute(code, input, 5000)
+        .expect("python3 runs the example");
     assert!(output.stdout.contains("Hello, World!"));
     assert_eq!(output.exit_code, 0);
 }
@@ -42,15 +59,17 @@ fn test_python_executor_example() {
 #[test]
 fn test_verification_with_input_example() {
     // Example: Verification with stdin input
-    let executor = PythonExecutor::new();
+    let Some(executor) = python_or_skip("test_verification_with_input_example") else {
+        return;
+    };
 
     let code = "name = input()\nprint(f'Hello, {name}!')";
     let input = "Alice";
 
-    let result = executor.execute(code, input, 5000);
-
-    assert!(result.is_ok());
-    assert!(result.unwrap().stdout.contains("Alice"));
+    let output = executor
+        .execute(code, input, 5000)
+        .expect("python3 runs the example");
+    assert!(output.stdout.contains("Alice"));
 }
 
 #[test]

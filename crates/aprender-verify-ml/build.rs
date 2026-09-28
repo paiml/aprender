@@ -1,19 +1,4 @@
 fn main() {
-    // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
+    // #4219: stamp APR_GIT_SHA for `--version`.
     build_sha::emit();
-
-    // Provable-contracts enforcement (CB-1208)
-    let contracts_dir = std::path::Path::new("../../provable-contracts/contracts");
-    let pkg = env!("CARGO_PKG_NAME");
-    let binding = contracts_dir.join(pkg).join("binding.yaml");
-    if binding.exists() {
-        println!("cargo:rerun-if-changed={}", binding.display());
-        // Read binding and set CONTRACT_* env vars for #[contract] macro
-        let content = std::fs::read_to_string(&binding).unwrap_or_default();
-        let count = content
-            .lines()
-            .filter(|l| l.trim().starts_with("status:") && l.contains("implemented"))
-            .count();
-        println!("cargo:warning=[contract] AllImplemented: {count} implemented bindings");
-    }
 }

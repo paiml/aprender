@@ -87,6 +87,8 @@ probar-export/
 .pmat/workspace.idx/
 .pmat/deps-cache.json
 src/generated_contracts.rs
+# #4369: aprender-db's build.rs writes this stub once its registry loads
+/crates/aprender-db/src/generated_contracts.rs
 crates/apr-cli/trace-*.json
 .pv/cache/
 **/.pv/cache/
