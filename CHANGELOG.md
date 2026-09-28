@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-load refusal is gone in 0.70.0, so these models now load and run, but too slowly to be claimed. The
   release gate does not owe the qwen3moe x GB10 cells (`cells.declaimed` in
   `contracts/model-capability-ladder-v1.yaml`), and the ladder gate is RED if any rung or long-rung
-  representative still claims them. No other host holds qwen3moe.
+  representative still claims them. Withdrawn, not waived: lambda holds both files and still owes every
+  qwen3moe cell.
 - **GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590).** Widens the Qwen3 entry below to every dense model on GB10 (operator ruling 2026-09-28
   16:15Z): the serial prefill is the sm_12x default for every non-hybrid arch, so dense Qwen2.5 on GB10
   is de-claimed too (`cells.declaimed`: qwen2 and qwen3 on gx10). Output is correct; only prefill speed
