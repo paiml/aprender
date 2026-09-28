@@ -28,7 +28,7 @@
     {
       "tool": {
         "driver": {
-          "name": "manual-guard-mutation",
+          "name": "cargo-mutants",
           "version": "1.0.0",
           "informationUri": "n/a",
           "rules": []
@@ -47,7 +47,7 @@
     {
       "tool": {
         "driver": {
-          "name": "agy",
+          "name": "antigravity",
           "version": "1.2.12",
           "informationUri": "n/a",
           "rules": [
@@ -100,7 +100,8 @@
           "properties": {
             "precision_class": "advisory",
             "grounding": "asserted",
-            "consultation": "antigravity"
+            "consultation": "antigravity",
+            "failure_scenario": "If FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (truncated) ships instead of _B64, the receipt signer reads an empty key and every PR-review receipt goes unsigned/unverifiable fleet-wide."
           }
         },
         {
@@ -124,7 +125,8 @@
           "properties": {
             "precision_class": "advisory",
             "grounding": "measured",
-            "consultation": "antigravity"
+            "consultation": "antigravity",
+            "failure_scenario": "If this guard were absent or wrong, a future truncated/renamed FAT_SECRET_ plumbing line would again silently expand to empty on both GitHub's and fat_driver's sides with no CI signal."
           }
         },
         {
@@ -148,7 +150,8 @@
           "properties": {
             "precision_class": "advisory",
             "grounding": "measured",
-            "consultation": "antigravity"
+            "consultation": "antigravity",
+            "failure_scenario": "If the guard's own detection logic regressed, it could report PASS on a workflow that reintroduces the #4441 truncation, defeating the guard's purpose."
           }
         },
         {
@@ -172,7 +175,8 @@
           "properties": {
             "precision_class": "advisory",
             "grounding": "measured",
-            "consultation": "antigravity"
+            "consultation": "antigravity",
+            "failure_scenario": "If the quorum verdict file were not excluded from the patch-id diff, committing docs/audits/quorum-*.json after the receipt would change the fingerprint and invalidate an already-signed receipt."
           }
         }
       ],
