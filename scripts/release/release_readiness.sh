@@ -8,11 +8,12 @@
 # missing edge `minCount 1` rejects). Both call sites must ask it the same question with the same subject,
 # the same receipts-commit rule and the same exit mapping — two hand-copied `pv lint` lines would drift.
 #
-# MODE. `report` (the committed default below) or `enforce`.
+# MODE. `enforce` (the committed default below, flipped 2026-09-28 for 0.70, #3715 B1) or `report`.
 #   Measured 2026-09-25 with pv 0.69.3 on 0.69.1 @d8a6df53a: rc 1, 1101 violations, 1008 of them cells with
-#   no `ont:release/row` — the #3712 cells[] producer does not exist yet, so under `enforce` NO release can
-#   pass. Until #3712 lands, a Fail verdict is PRINTED IN FULL as a WARN row and the train continues; the
-#   flip to `enforce` is a one-line reviewed commit to DEFAULT_MODE, never an environment variable.
+#   no `ont:release/row`, because models_t1 measured rungs only. models_t1 now passes --cells on both hosts,
+#   and the operator's de-claim of Qwen3 on gx10 (#4590) is DATA the released pv reads (rung hosts + the
+#   receipt's inventory), so a Fail STOPs the train before the tag. Going back to `report` is a reviewed
+#   commit to DEFAULT_MODE, never an environment variable.
 #   RELEASE_READINESS_MODE may only STRENGTHEN the committed mode (`enforce`); asking for `report` over an
 #   `enforce` default, or any other value, is a caller error (3). A gate an env var can weaken is theater.
 #   Could-not-judge under `report` (cop ruling 2026-09-25 09:15Z: "record the rc and receipt, don't
@@ -41,7 +42,7 @@ set -uo pipefail
 
 PROG=${0##*/}
 SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"
-DEFAULT_MODE=report   # flip to `enforce` when #3712's cells[] producer lands (aprender#3715 done_when 5b)
+DEFAULT_MODE=enforce  # flipped for 0.70 (#3715 B1, operator 2026-09-28): models_t1 now measures --cells on both hosts
 SHAPE=release-readiness-v1
 
 caller_error() { printf 'FAIL  R8 %s: caller error: %s\n' "$PROG" "$*"; exit 3; }
@@ -243,20 +244,19 @@ STUB
     row pass_is_ok                               0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow pass_asks_the_shape                   "--gate shapes --shape release-readiness-v1 --release-version 1.2.3 --release-commit $c"
     argrow receipts_commit_earned_is_passed      "--receipts-commit $x"
-    row fail_under_report_warns                  0 "WARN  R8 REPORT-ONLY" "$d" FX_PV_RC=1
-    row fail_under_report_names_the_count        0 "3 violation(s): cell=3" "$d" FX_PV_RC=1
+    row bare_fail_refuses                        1 "FAIL  R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=1
+    row bare_fail_names_the_count                1 "3 violation(s): cell=3" "$d" FX_PV_RC=1
     row fail_under_enforce_refuses               1 "FAIL  R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=1 RELEASE_READINESS_MODE=enforce
-    row decline_under_report_is_recorded         0 "REPORT-ONLY could not judge (rc 2)" "$d" FX_PV_RC=2 FX_PV_BODY=junk
-    row decline_under_report_names_the_decline   0 "pv DECLINED" "$d" FX_PV_RC=2 FX_PV_BODY=junk
+    row bare_decline_refuses                     2 "pv DECLINED" "$d" FX_PV_RC=2 FX_PV_BODY=junk
     row decline_under_enforce_refuses            2 "pv DECLINED" "$d" FX_PV_RC=2 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
     row caller_error_is_never_downgraded         3 "caller error" "$d" FX_PV_RC=3 FX_PV_BODY=junk
     row exit1_without_a_fail_verdict_declines    2 "no Fail verdict" "$d" FX_PV_RC=1 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
     row exit_outside_contract_declines           2 "outside its 0/1/2/3 contract" "$d" FX_PV_RC=101 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
     row missing_pv_declines                      2 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope" RELEASE_READINESS_MODE=enforce
-    row missing_pv_under_report_is_recorded      0 "REPORT-ONLY could not judge (rc 2)" "$d" RELEASE_READINESS_PV="$tmp/nope"
-    row missing_pv_under_report_names_the_cause  0 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope"
-    row no_verdict_under_report_is_recorded      0 "REPORT-ONLY could not judge (rc 2)" "$d" FX_PV_RC=1 FX_PV_BODY=junk
-    row outside_contract_under_report_recorded   0 "REPORT-ONLY could not judge (rc 2)" "$d" FX_PV_RC=101 FX_PV_BODY=junk
+    row bare_missing_pv_refuses                  2 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope"
+    row bare_no_verdict_refuses                  2 "no Fail verdict" "$d" FX_PV_RC=1 FX_PV_BODY=junk
+    row bare_outside_contract_refuses            2 "outside its 0/1/2/3 contract" "$d" FX_PV_RC=101 FX_PV_BODY=junk
+    row env_may_not_weaken_to_report             3 "may only strengthen" "$d" RELEASE_READINESS_MODE=report FX_PV_RC=1
     row env_may_not_weaken_to_bogus              3 "may only strengthen" "$d" RELEASE_READINESS_MODE=off
     # a source change between the receipts' commit and the release commit: the flag is WITHHELD
     d="$tmp/s"; mk "$d"; printf 'b\n' > "$d/src/f"; g "$d" commit -qam src
@@ -267,6 +267,11 @@ STUB
     row split_apr_sha_withholds                  0 "different apr_sha values" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow split_apr_sha_not_passed              "!--receipts-commit"
     # the committed default is what a bare run uses; flipping it is a reviewed commit
+    if [ "$DEFAULT_MODE" = enforce ]; then
+        printf '  ok    %-44s DEFAULT_MODE=enforce\n' committed_default_is_enforce; pass=$((pass + 1))
+    else
+        printf '  BROKE %-44s DEFAULT_MODE=%s\n' committed_default_is_enforce "$DEFAULT_MODE"; fail=$((fail + 1))
+    fi
     if [ "$(resolve_mode report '')" = report ] && [ "$(resolve_mode enforce '')" = enforce ] \
         && ! resolve_mode enforce report >/dev/null && [ "$(resolve_mode report enforce)" = enforce ]; then
         printf '  ok    %-44s report over enforce refused, enforce over report taken\n' mode_env_only_strengthens; pass=$((pass + 1))

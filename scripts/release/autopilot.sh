@@ -156,8 +156,8 @@ if run_step models; then
 fi
 # 2c. readiness (#3715 done_when 4): the same receipts, graded by pv's release-readiness-v1 SHACL shape,
 #     with the dogfood receipt R5 just judged. The T-4 preflight (R8) asks the same wrapper about the
-#     committed receipts. Its committed mode is `report` until #3712's cells[] producer lands: a Fail
-#     verdict is a WARN row in STATUS, not a stop; a decline, caller error or missing pv stops here.
+#     committed receipts. Its committed mode is `enforce` (#3715 B1): a Fail verdict, a decline, a caller
+#     error or a missing pv each stops here, before any tag exists.
 #     Its own step, so a models-only rerun never re-grades.
 if run_step readiness; then
   DR=$(find .dogfood -maxdepth 1 -name 'receipt-*.json' -type f 2>/dev/null | LC_ALL=C sort | tail -n 1)

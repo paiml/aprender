@@ -79,6 +79,8 @@ A_RDIE='  [ $rc -eq 0 ] || die "T-1 release-readiness-v1'
 A_RNODR='  [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt'
 A_CHOOM_R='choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST'
 A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"'
+A_CELLS_R='bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out'
+A_CELLS_L='bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out'
 R_VER='    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?'
 R_RED='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \'
 # The FAIL-lines line also appears on the emergency-scope path (#4046 merge-back), so the
@@ -91,7 +93,7 @@ R_NOJUDGE='    if [ ! -f "$judge" ]; then'
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$AUTOPILOT" "$MODELS" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
 for t in git python3; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
-for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L"; do
+for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L" "$A_CELLS_R" "$A_CELLS_L"; do
     grep -qF -- "$a" "$MODELS" || env_die "models_t1.sh has no '$a' line -- the subject moved"
 done
 for a in "$A_DIE" "$A_RDIE" "$A_RNODR"; do
@@ -202,7 +204,8 @@ fixture() {
     # model_ladder.sh stub: measures by the apr in the target dir; FX_NO_RECEIPT_HOST / FX_RED_HOST
     cat > "$r/scripts/model_ladder.sh" <<'STUB'
 #!/usr/bin/env bash
-while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --out) o=$2; shift 2 ;; *) shift ;; esac; done
+while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --out) o=$2; shift 2 ;; --cells) c=1; shift ;; *) shift ;; esac; done
+[ "${c:-0}" = 1 ] || { echo "fixture: no --cells on $h, so the receipt would carry no cells[] (#3715 B1)"; exit 2; }
 printf 'ladder host=%s oom=%s flock=%s\n' "$h" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
 [ "${FX_NO_RECEIPT_HOST:-}" = "$h" ] && { echo "fixture: measured nothing on $h"; exit 2; }
 apr="${CARGO_TARGET_DIR:-$PWD/target}/release/apr"
@@ -431,6 +434,8 @@ mutant readiness-no-die  "$AUTOPILOT" "$A_RDIE" '  [ $rc -eq $rc ] || die "T-1 r
 mutant readiness-no-dr   "$AUTOPILOT" "$A_RNODR" '  true || die "T-1 readiness: no dogfood receipt' r_no_dr autopilot
 mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST' oom_victim
 mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' oom_victim
+mutant no-cells-remote   "$MODELS" "$A_CELLS_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST --out' green_pair
+mutant no-cells-local    "$MODELS" "$A_CELLS_L" 'bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out' green_pair
 mutant r7-no-version    "$PREFLIGHT" "$R_VER" '    out="$(cd "$root" && bash "$judge" 2>&1)"; rc=$?' r7_green preflight
 mutant r7-red-is-go     "$PREFLIGHT" "$R_RED" '        *) return 0; printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \' r7_red preflight
 mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" "$R_LINES_HEAD"$'\n''               "" ;;' r7_missing preflight
@@ -438,6 +443,6 @@ mutant r7-decline-is-go "$PREFLIGHT" "$R_DECLINE" '        2) return 0; echo "FA
 mutant r7-no-judge-ok   "$PREFLIGHT" "$R_NOJUDGE" '    if false; then' r7_nojudge preflight
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 37 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 37 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 39 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 39 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"
