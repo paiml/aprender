@@ -1,4 +1,4 @@
-//! merge-output-fidelity-v1: FALSIFY-MOF-002 / 003 / 004 / 005.
+//! merge-output-fidelity-v1: FALSIFY-MOF-001 / 002 / 003 / 004 / 005.
 
 use super::*;
 use crate::format::v2::MAGIC_V2;
@@ -248,4 +248,91 @@ fn bf16_rounds_to_nearest_even() {
     // 1 + 3*2^-8 is halfway above an odd mantissa: rounds up.
     assert_eq!(f32_to_bf16_bits(1.0 + 3.0 / 256.0), 0x3F82);
     assert!(f32::from_bits(u32::from(f32_to_bf16_bits(f32::NAN)) << 16).is_nan());
+}
+
+/// An F32 fixture with values spread over many binades and both signs, so
+/// that a strategy which rounds (0.7x + 0.3x, a slerp through cos/sin) shows
+/// up bitwise instead of hiding under bf16 storage.
+fn write_identity_fixture(path: &Path) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    let mut t = tensors(1.0);
+    let spread: Vec<f32> = (0..64u16)
+        .map(|i| {
+            let mag = 2f32.powi(i32::from(i % 16) - 8) * (1.0 + f32::from(i) / 97.0);
+            if i % 3 == 0 { -mag } else { mag }
+        })
+        .collect();
+    t.insert("model.layers.0.self_attn.q_proj.weight".to_string(), (spread, vec![8, 8]));
+    let metadata = AprV2Metadata {
+        architecture: Some(QWEN35.0.to_string()),
+        hf_architecture: Some(QWEN35.1.to_string()),
+        ..AprV2Metadata::default()
+    };
+    let mut writer = AprV2Writer::new(metadata);
+    for (name, (data, shape)) in &t {
+        writer.add_f32_tensor(name.clone(), shape.clone(), data);
+    }
+    fs::write(path, writer.write().expect("encode fixture")).expect("write fixture");
+    t
+}
+
+/// FALSIFY-MOF-001: merging a model with itself gives the model back, bit for
+/// bit, for all five strategies S-R7 measured; slerp at angle 0 gives no NaN.
+#[test]
+fn falsify_mof_001_identity_merge_is_bit_identical() {
+    let dir = tempdir().expect("tempdir");
+    let (m, m2) = (dir.path().join("m.apr"), dir.path().join("m2.apr"));
+    let want = write_identity_fixture(&m);
+    fs::copy(&m, &m2).expect("copy");
+    let cases = [
+        ("average", MergeOptions { strategy: MergeStrategy::Average, ..MergeOptions::default() }),
+        (
+            "weighted 0.7/0.3",
+            MergeOptions {
+                strategy: MergeStrategy::Weighted,
+                weights: Some(vec![0.7, 0.3]),
+                ..MergeOptions::default()
+            },
+        ),
+        ("slerp", MergeOptions { strategy: MergeStrategy::Slerp, ..MergeOptions::default() }),
+        (
+            "ties, base = M",
+            MergeOptions {
+                strategy: MergeStrategy::Ties,
+                base_model: Some(m.clone()),
+                ..MergeOptions::default()
+            },
+        ),
+        (
+            "dare, base = M",
+            MergeOptions {
+                strategy: MergeStrategy::Dare,
+                base_model: Some(m.clone()),
+                ..MergeOptions::default()
+            },
+        ),
+    ];
+    for (label, options) in cases {
+        let out = dir.path().join("out.apr");
+        apr_merge(&[m.clone(), m2.clone()], out.clone(), options)
+            .unwrap_or_else(|e| panic!("{label}: merge failed: {e}"));
+        let got = load_model_tensors(&out).unwrap_or_else(|e| panic!("{label}: load: {e}"));
+        assert_eq!(got.keys().collect::<Vec<_>>(), want.keys().collect::<Vec<_>>(), "{label}");
+        for (name, (data, shape)) in &want {
+            let (g, gs) = &got[name];
+            assert_eq!(gs, shape, "{label}: {name} shape");
+            assert!(g.iter().all(|v| !v.is_nan()), "{label}: {name} has NaN");
+            let diff: Vec<usize> = (0..data.len())
+                .filter(|&i| g[i].to_bits() != data[i].to_bits())
+                .collect();
+            assert!(
+                diff.is_empty(),
+                "{label}: {name} differs bitwise at {} of {} elements, first {:?}: got {:e} want {:e}",
+                diff.len(),
+                data.len(),
+                diff.first(),
+                g[diff[0]],
+                data[diff[0]]
+            );
+        }
+    }
 }
