@@ -406,7 +406,7 @@ fn launch_code_driver(
         };
         match crate::agent::driver::apr_serve::AprServeDriver::launch_with(
             model_path.clone(),
-            Some(code_context_window(manifest.model.context_window, &model_path)),
+            Some(code_driver_window(manifest, &model_path)),
             &launch,
         ) {
             Ok(d) => Arc::new(d),
@@ -751,7 +751,7 @@ fn build_fallback_driver(manifest: &AgentManifest) -> anyhow::Result<Box<dyn Llm
     #[cfg(feature = "inference")]
     {
         if let Some(model_path) = manifest.model.resolve_model_path() {
-            let window = code_context_window(manifest.model.context_window, &model_path);
+            let window = code_driver_window(manifest, &model_path);
             let driver =
                 crate::agent::driver::realizar::RealizarDriver::new(model_path, Some(window))?;
             return Ok(Box::new(driver));
@@ -902,6 +902,12 @@ fn load_project_instructions(max_bytes: usize) -> Option<String> {
 
 /// #4599: the window when neither the manifest nor the model names one (Qwen3-class, PMAT-197).
 const CODE_DEFAULT_CONTEXT_WINDOW: usize = 32_768;
+
+/// The window both `apr code` drivers are launched with (#4599): the one place the serve and the
+/// embedded fallback resolve it, so neither can drift back to a hard-coded size.
+fn code_driver_window(manifest: &AgentManifest, model_path: &Path) -> usize {
+    code_context_window(manifest.model.context_window, model_path)
+}
 
 /// #4599: the context window `apr code` sizes the conversation to. An explicit manifest or
 /// settings value wins; then the model's own declared context length; then 32K. A prompt that

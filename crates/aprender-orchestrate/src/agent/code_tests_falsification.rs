@@ -171,6 +171,13 @@ fn falsify_4599_005_code_window_is_the_models_context_length() {
     #[cfg(feature = "inference")]
     assert_eq!(code_context_window(None, &qwen35), 262_144, "the model's own context length");
     assert_eq!(code_context_window(Some(8192), &qwen35), 8192, "an explicit manifest wins");
+    // The drivers launch with `code_driver_window`: the default manifest resolves to the model's
+    // window, and a settings/manifest window still wins.
+    let mut m = build_default_manifest();
+    #[cfg(feature = "inference")]
+    assert_eq!(code_driver_window(&m, &qwen35), 262_144, "the drivers' window is the model's");
+    m.model.context_window = Some(8192);
+    assert_eq!(code_driver_window(&m, &qwen35), 8192);
     assert_eq!(code_context_window(None, &no_key), CODE_DEFAULT_CONTEXT_WINDOW);
     assert_eq!(code_context_window(None, &not_gguf), CODE_DEFAULT_CONTEXT_WINDOW);
     assert_eq!(code_context_window(None, &dir.path().join("absent.gguf")), 32_768);

@@ -177,3 +177,55 @@ async fn falsify_4599_004_refusal_is_named_and_nonzero() {
     assert_eq!(outcome.kind, "context_overflow");
     assert_eq!(outcome.exit_code, code);
 }
+
+fn tool_turn(prompt: &str, result_bytes: usize) -> Vec<Message> {
+    vec![
+        Message::User(prompt.to_string()),
+        Message::AssistantToolUse(crate::agent::driver::ToolCall {
+            id: "t1".into(),
+            name: "file_read".into(),
+            input: serde_json::json!({"path": "big.rs"}),
+        }),
+        Message::ToolResult(crate::agent::driver::ToolResultMsg {
+            tool_use_id: "t1".into(),
+            content: "x".repeat(result_bytes),
+            is_error: false,
+        }),
+    ]
+}
+
+fn ctx_32k() -> crate::serve::context::ContextManager {
+    use crate::serve::context::{ContextConfig, ContextManager, ContextWindow, TruncationStrategy};
+    ContextManager::new(ContextConfig {
+        window: ContextWindow::new(OLD_CODE_WINDOW, 4096),
+        strategy: TruncationStrategy::SlidingWindow,
+        preserve_system: false,
+        min_messages: 2,
+    })
+}
+
+/// FALSIFY-4599-006: the drop by another path (quorum, PR #4601). A 20K-token prompt whose own
+/// 10K-token tool result arrives in a 28,672-token budget: the sliding window keeps the newest
+/// (the tool result) and would evict the prompt. That is refused, never sent without the prompt.
+#[test]
+fn falsify_4599_006_tool_result_never_evicts_the_turns_prompt() {
+    let msgs = tool_turn(&needle_prompt(80_000), 40_000);
+    let r = truncate_messages(&msgs, &ctx_32k());
+    assert!(matches!(r, Err(AgentError::ContextOverflow { .. })), "got {:?}", r.map(|m| m.len()));
+
+    // Anti-vacuity: the same turn that fits is kept whole, prompt first.
+    let msgs = tool_turn(&needle_prompt(40_000), 20_000);
+    let kept = truncate_messages(&msgs, &ctx_32k()).expect("fits");
+    assert_eq!(kept.len(), 3);
+    assert!(matches!(&kept[0], Message::User(p) if p.len() == 40_000));
+}
+
+/// FALSIFY-4599-007: an older turn may still be evicted; only the CURRENT turn's prompt is pinned.
+#[test]
+fn falsify_4599_007_older_turns_may_still_be_evicted() {
+    let mut msgs =
+        vec![Message::User("x".repeat(100_000)), Message::Assistant("old answer".into())];
+    msgs.extend(tool_turn("what is in big.rs?", 20_000));
+    let kept = truncate_messages(&msgs, &ctx_32k()).expect("the current turn fits");
+    assert!(matches!(&kept[0], Message::User(p) if p == "what is in big.rs?"), "{kept:?}");
+}
