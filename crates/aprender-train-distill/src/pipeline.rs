@@ -2041,6 +2041,9 @@ mod dbh_tests {
         inner: FixtureStudent,
         max_batch: Option<usize>,
         last_row_only: bool,
+        /// Per-position forward on the trait default: one trailing
+        /// position per row, as `CudaStudentProvider` exposes today.
+        trailing_only: bool,
         forwards: Arc<Mutex<usize>>,
         applied_rows: Arc<Mutex<Vec<usize>>>,
     }
@@ -2052,6 +2055,14 @@ mod dbh_tests {
         fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
             *self.forwards.lock().expect("lock") += input_ids.len();
             self.inner.logits_for_batch(input_ids)
+        }
+        fn logits_per_position(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<Vec<f32>>>> {
+            if self.trailing_only {
+                let rows = self.logits_for_batch(input_ids)?;
+                return Ok(rows.into_iter().map(|row| vec![row]).collect());
+            }
+            *self.forwards.lock().expect("lock") += input_ids.len();
+            self.inner.logits_per_position(input_ids)
         }
         fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()> {
             let used = if self.last_row_only {
@@ -2073,9 +2084,9 @@ mod dbh_tests {
         applied_rows: Vec<usize>,
     }
 
-    fn run(batch_size: u32, max_batch: Option<usize>, last_row_only: bool) -> Run {
+    /// Two tiny safetensors checkpoints and a one-epoch config at `batch_size`.
+    fn tiny_config(tmp: &tempfile::TempDir, batch_size: u32) -> DistillConfig {
         use safetensors::tensor::{Dtype, TensorView};
-        let tmp = tempfile::TempDir::new().expect("tempdir");
         let dummy: Vec<f32> = (0..32).map(|i| i as f32 * 0.01).collect();
         let bytes: Vec<u8> = bytemuck::cast_slice(&dummy).to_vec();
         for name in ["teacher", "student"] {
@@ -2102,7 +2113,12 @@ mod dbh_tests {
         config.output.dir = tmp.path().join("out");
         config.training.epochs = 1;
         config.training.batch_size = batch_size;
+        config
+    }
 
+    fn run(batch_size: u32, max_batch: Option<usize>, last_row_only: bool) -> Run {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let config = tiny_config(&tmp, batch_size);
         let forwards = Arc::new(Mutex::new(0));
         let applied_rows = Arc::new(Mutex::new(Vec::new()));
         let pipeline = Pipeline::new(&config);
@@ -2111,6 +2127,7 @@ mod dbh_tests {
             inner: FixtureStudent::new(vocab, 0.0, 0.1),
             max_batch,
             last_row_only,
+            trailing_only: false,
             forwards: Arc::clone(&forwards),
             applied_rows: Arc::clone(&applied_rows),
         };
@@ -2173,6 +2190,217 @@ mod dbh_tests {
         assert!(
             planted.forwards >= 4,
             "the planted run still paid B forwards per step"
+        );
+    }
+
+    /// Serves the same rows every step: row i is `[3i+1, 3i+2, 3i+3]`,
+    /// per-row label `3i+4`, per-position labels the causal shift.
+    struct FixedSource;
+
+    impl FixedSource {
+        fn row(i: usize) -> Vec<u32> {
+            #[allow(clippy::cast_possible_truncation)]
+            let base = 3 * i as u32;
+            vec![base + 1, base + 2, base + 3]
+        }
+    }
+
+    impl crate::batch_source::BatchSource for FixedSource {
+        fn next_batch(
+            &mut self,
+            batch_size: usize,
+            _seq_len: usize,
+        ) -> Result<(Vec<Vec<u32>>, Vec<usize>)> {
+            let rows: Vec<Vec<u32>> = (0..batch_size).map(Self::row).collect();
+            let labels = (0..batch_size).map(|i| 3 * i + 4).collect();
+            Ok((rows, labels))
+        }
+        fn next_batch_per_position(
+            &mut self,
+            batch_size: usize,
+            _seq_len: usize,
+        ) -> Result<(Vec<Vec<u32>>, Vec<Vec<usize>>)> {
+            let rows: Vec<Vec<u32>> = (0..batch_size).map(Self::row).collect();
+            let labels = (0..batch_size)
+                .map(|i| vec![3 * i + 2, 3 * i + 3, 3 * i + 4])
+                .collect();
+            Ok((rows, labels))
+        }
+    }
+
+    /// Teacher whose row logits scale with the row's first token, so each
+    /// row has its own KD loss against a flat student (DBH-005 needs
+    /// distinct per-row losses to tell a mean of 4 from the last row).
+    struct ScaledTeacher(usize);
+
+    impl crate::teacher_provider::TeacherLogitsProvider for ScaledTeacher {
+        fn vocab_size(&self) -> usize {
+            self.0
+        }
+        fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+            Ok(input_ids
+                .iter()
+                .map(|ids| {
+                    let mut v = vec![0.0_f32; self.0];
+                    #[allow(clippy::cast_precision_loss)]
+                    let scale = ids.first().copied().unwrap_or(0) as f32 * 0.5;
+                    v[0] = scale;
+                    v
+                })
+                .collect())
+        }
+    }
+
+    const VOCAB: usize = 16;
+
+    fn recording(
+        learning_rate: f32,
+        last_row_only: bool,
+        trailing_only: bool,
+        applied_rows: &Arc<Mutex<Vec<usize>>>,
+    ) -> RecordingStudent {
+        RecordingStudent {
+            inner: FixtureStudent::new(VOCAB, 0.0, learning_rate),
+            max_batch: None,
+            last_row_only,
+            trailing_only,
+            forwards: Arc::new(Mutex::new(0)),
+            applied_rows: Arc::clone(applied_rows),
+        }
+    }
+
+    /// FALSIFY-DBH-004: per-position KD at B=2, P=3 applies 6 rows every
+    /// step, or refuses before any update. The planted student exposes one
+    /// trailing position (the CUDA trait default); before the fix it
+    /// trained 2 of 6 against the wrong targets and the run "succeeded".
+    #[test]
+    fn falsify_dbh_004_per_position_trains_every_position_or_refuses() {
+        let per_position_run = |trailing_only: bool| {
+            let tmp = tempfile::TempDir::new().expect("tempdir");
+            let config = tiny_config(&tmp, 2);
+            let applied = Arc::new(Mutex::new(Vec::new()));
+            let result = Pipeline::new(&config)
+                .with_per_position(true)
+                .with_max_steps(Some(3))
+                .with_batch_source(Box::new(FixedSource))
+                .with_teacher(Box::new(crate::teacher_provider::FixtureTeacher::new(
+                    VOCAB,
+                )))
+                .with_student(Box::new(recording(0.1, false, trailing_only, &applied)))
+                .execute();
+            let applied = applied.lock().expect("lock").clone();
+            (result, applied)
+        };
+
+        let (result, applied) = per_position_run(false);
+        result.as_ref().expect("all-positions student runs");
+        assert!(
+            !applied.is_empty() && applied.iter().all(|&n| n == 6),
+            "B=2 x P=3 must apply 6 rows per step, applied {applied:?}"
+        );
+
+        let (result, applied) = per_position_run(true);
+        let trained_every_position = !applied.is_empty() && applied.iter().all(|&n| n == 6);
+        match result {
+            Err(err) => {
+                let msg = format!("{err:?}");
+                assert!(
+                    msg.contains("APR_DISTILL_PER_POSITION") && msg.contains("student 1"),
+                    "refusal must name the flag and the counts: {msg}"
+                );
+                assert!(applied.is_empty(), "refused after an update: {applied:?}");
+            }
+            Ok(_) => assert!(
+                trained_every_position,
+                "planted trailing-position student trained {applied:?} of 6 rows and succeeded"
+            ),
+        }
+    }
+
+    /// Records the loss of every `on_step_end`.
+    struct LossLog(Arc<Mutex<Vec<f32>>>);
+
+    impl entrenar::train::TrainerCallback for LossLog {
+        fn on_step_end(
+            &mut self,
+            ctx: &entrenar::train::CallbackContext,
+        ) -> entrenar::train::CallbackAction {
+            self.0.lock().expect("lock").push(ctx.loss);
+            entrenar::train::CallbackAction::Continue
+        }
+    }
+
+    /// FALSIFY-DBH-005: the per-step loss the pipeline logs is the mean over
+    /// exactly the rows the update used. Student frozen (lr 0), so each
+    /// row's loss is recomputed here from the teacher and the label. The
+    /// planted last-row-only student logs a mean of 4 while training on 1.
+    #[test]
+    fn falsify_dbh_005_logged_loss_is_the_mean_of_applied_rows() {
+        let loss_run = |last_row_only: bool| {
+            let tmp = tempfile::TempDir::new().expect("tempdir");
+            let config = tiny_config(&tmp, 4);
+            let (t, a) = (config.distillation.temperature, config.distillation.alpha);
+            let applied = Arc::new(Mutex::new(Vec::new()));
+            let logged = Arc::new(Mutex::new(Vec::new()));
+            Pipeline::new(&config)
+                .with_per_position(false)
+                .with_max_steps(Some(3))
+                .with_batch_source(Box::new(FixedSource))
+                .with_teacher(Box::new(ScaledTeacher(VOCAB)))
+                .with_student(Box::new(recording(0.0, last_row_only, false, &applied)))
+                .with_callback(Box::new(LossLog(Arc::clone(&logged))))
+                .execute()
+                .expect("run completes");
+
+            let mut source = FixedSource;
+            let (rows, labels) =
+                crate::batch_source::BatchSource::next_batch(&mut source, 4, 0).expect("rows");
+            let teacher_logits = crate::teacher_provider::TeacherLogitsProvider::logits_for_batch(
+                &mut ScaledTeacher(VOCAB),
+                &rows,
+            )
+            .expect("teacher");
+            let flat = vec![0.0_f32; VOCAB];
+            let per_row: Vec<f32> = teacher_logits
+                .iter()
+                .zip(&labels)
+                .map(|(tl, &l)| crate::kd_step::kd_loss(&flat, tl, l, t, a))
+                .collect();
+            let applied = applied.lock().expect("lock").clone();
+            let logged = logged.lock().expect("lock").clone();
+            (per_row, applied, logged)
+        };
+
+        // The rows a step applied are its last `n`: all 4 for the honest
+        // student, the final row for the planted one.
+        let honest_mean = |per_row: &[f32], n: usize| -> f32 {
+            let used = &per_row[per_row.len() - n..];
+            #[allow(clippy::cast_precision_loss)]
+            let mean = used.iter().sum::<f32>() / used.len() as f32;
+            mean
+        };
+        let describes_applied = |per_row: &[f32], applied: &[usize], logged: &[f32]| {
+            !logged.is_empty()
+                && logged.len() == applied.len()
+                && logged
+                    .iter()
+                    .zip(applied)
+                    .all(|(&l, &n)| (l - honest_mean(per_row, n)).abs() < 1e-5)
+        };
+
+        let (per_row, applied, logged) = loss_run(false);
+        let spread = per_row.iter().copied().fold(f32::MIN, f32::max)
+            - per_row.iter().copied().fold(f32::MAX, f32::min);
+        assert!(spread > 1e-3, "per-row losses must differ: {per_row:?}");
+        assert!(
+            describes_applied(&per_row, &applied, &logged),
+            "honest: logged {logged:?}, applied {applied:?}, per-row {per_row:?}"
+        );
+
+        let (per_row, applied, logged) = loss_run(true);
+        assert!(
+            !describes_applied(&per_row, &applied, &logged),
+            "planted last-row student: logged {logged:?} must not describe applied {applied:?}"
         );
     }
 }

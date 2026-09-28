@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-06-10'
   author: PAIML Engineering
   description: |
@@ -42,10 +42,11 @@ equations:
     domain: B >= 0, L >= 0; labels[row][p] in [0, vocab)
     codomain: scalar avg_loss; grads shape [B][L][vocab]
     invariants:
-    - 'per-position prediction count = sum over rows of min(teacher_pos, student_pos, label_pos)'
+    - 'per-position prediction count = sum over rows of min(teacher_pos, student_pos, label_pos), over rows the step accepts'
+    - 'v1.1 (distill-batch-honesty-v1 FALSIFY-DBH-004): a row with labels is accepted only when teacher_pos == student_pos and label_pos <= teacher_pos; otherwise the step returns ConfigValue(APR_DISTILL_PER_POSITION) before any gradient exists'
     - 'grads[row] has one [vocab] vector per trained position of that row'
     - 'when student logits == teacher logits at every position and alpha=0, loss and all grads are ~0'
-    - 'ragged rows (unequal teacher/student/label position counts) train on the min-prefix without panic'
+    - 'ragged labels (label_pos < teacher_pos == student_pos) train on the label prefix without panic. v1.0 also accepted teacher_pos != student_pos; with the one-trailing-position trait default below, that paired the student''s last-position logits with teacher position 0 and label[0], a wrong target trained silently'
     lean_theorem: Theorems.Per_Position_Signal
 
   additive_safety:
@@ -78,8 +79,10 @@ proof_obligations:
   type: invariant
   property: ragged rows are safe
   formal: |
-    For any (teacher_pos, student_pos, label_pos), the trained position count
-    per row is exactly min of the three; no panic, no out-of-bounds.
+    For any (teacher_pos, student_pos, label_pos), the step never panics or
+    indexes out of bounds. It trains exactly label_pos positions when
+    teacher_pos == student_pos >= label_pos, and refuses the row by name
+    otherwise (v1.1, FALSIFY-DBH-004).
 - id: DPPK-CLS-004
   type: classification
   property: opt-in additive — per-row path unchanged
@@ -117,9 +120,12 @@ falsification_tests:
     Verify the primitives are applied per (row, position) unchanged.
   evidence: cargo test -p aprender-train-distill --lib kd_step::tests::pmat_perpos_003_zero_loss_when_student_equals_teacher
 - id: FT-PERPOS-004
-  rule: ragged rows train on the min-prefix without panic
+  rule: ragged labels train on the label prefix without panic
   prediction: |
-    teacher 4 positions, student 3, labels 2 → grads[0].len()==2; no panic.
+    teacher 4 positions, student 4, labels 2 → grads[0].len()==2; no panic.
+    (v1.0 used student 3; v1.1 refuses a teacher/student mismatch, see
+    distill-batch-honesty-v1 FALSIFY-DBH-004,
+    kd_step::tests::falsify_dbh_004_position_mismatch_is_refused.)
   if_fails: |
     n_pos uses max/teacher-only instead of min → index out of bounds. Check
     `t_rows.len().min(s_rows.len()).min(row_labels.len())`.
