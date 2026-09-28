@@ -68,6 +68,7 @@ pub enum Commands {
         path: PathBuf,
     },
     /// Mix multiple datasets with weighted sampling
+    #[cfg(feature = "shuffle")]
     Mix {
         /// Input files with optional weights (file:weight, e.g.,
         /// "data.parquet:0.8")
@@ -230,6 +231,7 @@ pub fn dispatch(command: Commands) -> ExitCode {
         Commands::Info { path } => basic::cmd_info(&path),
         Commands::Head { path, rows } => basic::cmd_head(&path, rows),
         Commands::Schema { path } => basic::cmd_schema(&path),
+        #[cfg(feature = "shuffle")]
         Commands::Mix {
             inputs,
             output,
