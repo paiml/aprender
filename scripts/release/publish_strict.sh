@@ -47,6 +47,19 @@ git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 [ -n "$PLAN" ] || [ -s "$AP/cleanroom-run-id" ] || die "no green clean-room run id recorded for $TAG (rule 7, #3335)"
 [ -n "$PLAN" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $TAG (rule 14)"
 [ -n "$PLAN" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
+# The recorded id is not the evidence; the run is (#4587 B2a). Fail closed unless the infra run's
+# `clean-room (aprender)` job is green AND its result artifact names the tag's own commit.
+if [ -z "$PLAN" ]; then
+  crun=""; IFS= read -r crun < "$AP/cleanroom-run-id"
+  tsha=$(git rev-parse "refs/tags/$TAG^{commit}")
+  jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' 2>/dev/null | head -1)
+  [ "$jc" = success ] || die "clean-room run $crun: job clean-room (aprender) is '${jc:-absent}', not success"
+  rm -rf "${AP:?}/cleanroom-artifact"
+  gh run download "$crun" --repo "$INFRA" -n result-aprender -D "$AP/cleanroom-artifact" > /dev/null 2>&1 \
+    || die "clean-room run $crun: no result-aprender artifact to prove which commit it tested"
+  grep -rqF "$tsha" "$AP/cleanroom-artifact" || die "clean-room run $crun did not test $TAG ($tsha)"
+  say "CLEANROOM VERIFIED run $crun tested $TAG ($tsha)"
+fi
 
 # order: NOT the tag's TIERS — measured 2026-09-17, TIERS is not topological (47 non-dev
 # violations; it only ever worked through the drain's retries). publish-order.txt is derived from
