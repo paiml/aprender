@@ -238,9 +238,11 @@ impl<F: ArchForward> Session<F> {
         let Self {
             forward: _,
             processed,
+            checkpoint,
             id: _,
         } = self;
         processed.clear();
+        *checkpoint = None;
     }
 
     /// `tokens` strictly extends what the state holds.
