@@ -409,6 +409,21 @@ impl Registry {
         &self.rows
     }
 
+    /// S-REG (KTEST-001 §5.2, falsifier F-7): the dispatched kernel keys of a trace that name no
+    /// row, sorted and deduplicated. Empty means every dispatch was registered. The match is exact:
+    /// a label that is not a `kernel_id` (e.g. a trace's `q4k-f32/neon`) is unregistered, since
+    /// nothing ties it to a row, a receipt or a tolerance.
+    pub fn unregistered_dispatches<'a>(&self, trace: &[&'a str]) -> Vec<&'a str> {
+        let mut out: Vec<&'a str> = trace
+            .iter()
+            .copied()
+            .filter(|id| !self.rows.iter().any(|r| r.kernel_id == *id))
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// The row for `(backend, type id, layout)` on the backend's default target: the host CPU
     /// for [`Backend::Cpu`], [`Target::generic`] otherwise.
     pub fn admit(&self, backend: Backend, ggml_type: u32, layout: Layout) -> Result<&KernelRow> {
@@ -623,6 +638,29 @@ mod tests {
 
     fn doc(rows: &[String]) -> String {
         format!(r#"{{"kernels":[{}]}}"#, rows.join(","))
+    }
+
+    /// F-7 case table: a trace with only registered ids has no S-REG violation; every other key
+    /// is named once, whatever its spelling.
+    #[test]
+    fn f7_an_unregistered_dispatch_is_named() {
+        let r = registry().expect("registry");
+        let reg = r.rows()[0].kernel_id.clone();
+        let upper = reg.to_uppercase();
+        let cases: [(&[&str], &[&str]); 6] = [
+            (&[], &[]),
+            (&[reg.as_str(), reg.as_str()], &[]),
+            (&[reg.as_str(), "cpu.attention.f32"], &["cpu.attention.f32"]),
+            (
+                &["q4k-f32/neon", reg.as_str(), "q4k-f32/neon"],
+                &["q4k-f32/neon"],
+            ),
+            (&[upper.as_str()], &[upper.as_str()]),
+            (&["b", "a", reg.as_str()], &["a", "b"]),
+        ];
+        for (trace, want) in cases {
+            assert_eq!(r.unregistered_dispatches(trace), want, "trace {trace:?}");
+        }
     }
 
     #[test]

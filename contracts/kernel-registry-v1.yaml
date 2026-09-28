@@ -136,6 +136,10 @@ invariants:
     property: every row declares exactly one error model and a determinism (KTEST-001 S-EM)
     formal: '|error_model(r)| ≠ 1 ∨ error_model(r) ∉ EM ∨ determinism(r) ∉ {bitwise, bounded} ∨ (error_model(r) = EM-NONDET ∧ determinism(r) = bitwise) ⇒ Fail(kernel-registry-v1, r)'
     prose: false
+  - id: KREG-INV-005
+    property: every kernel key a dispatch trace records is a registered kernel_id (KTEST-001 S-REG)
+    formal: 'k ∈ trace ∧ ¬∃ r ∈ Reg: kernel_id(r) = k ⇒ k ∈ Registry::unregistered_dispatches(trace)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-KREG-001
@@ -168,6 +172,11 @@ falsification_tests:
     prediction: removing error_model, setting it to EM-GUESS, or setting determinism to mostly is a shape violation naming the row and the property; EM-NONDET with bitwise is refused by Registry::parse
     test: cargo test -p aprender-contracts --lib kernel_registry_v1 && cargo test -p aprender-serve --lib kernel_registry
     if_fails: a kernel's parity bound has no stated derivation, so a tolerance cannot be checked against its error model
+  - id: FALSIFY-KREG-011
+    rule: a kernel dispatched without being registered is named (KTEST-001 F-7, S-REG)
+    prediction: a trace holding an id no row has, or a non-registry label such as q4k-f32/neon, returns that key once; a trace of registered ids returns nothing. The trace itself comes from OBS-09/OBS-15 (#4496, #4574); until they merge this check has no production input
+    test: cargo test -p aprender-serve --lib kernel_registry::tests::f7_an_unregistered_dispatch_is_named
+    if_fails: a kernel with no row, receipt or tolerance can serve a release and nothing reports it
   - id: FALSIFY-KREG-009
     rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
     prediction: >
