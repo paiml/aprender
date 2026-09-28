@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pr-review-mutation",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pr-review-reviewer",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": [
+            {
+              "id": "duplicate-guard-logic",
+              "name": "DuplicateGuardLogic",
+              "shortDescription": { "text": "New guard logic duplicates existing, already-CI-gated guard logic under a different name." }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "duplicate-guard-logic",
+          "level": "note",
+          "message": {
+            "text": "secret_wiring_gaps() in scripts/ci/fat_driver.py re-implements the check already performed, and already wired into CI (.github/workflows/ci.yml, 'FAT_SECRET plumbing guard case table' / 'every section secret is plumbed under its full name'), by the pre-existing scripts/check_ci_fat_secrets_plumbed.sh (added at the merge-base commit ef72c05809 / #4512, for the #4441 truncated-secret-name defect). Both check the same two directions -- every secrets.<NAME> a section reads reaches FAT_SECRET_<NAME>, and every FAT_SECRET_<KEY> names the secret it actually reads -- against the same two files (ci/sections.yml, .github/workflows/ci.yml), with independent regexes and a separate self-test/case table. Not ticketed under PMAT-4594 (whose acceptance criteria cover only check_silicon_coverage.sh); this addition is out-of-scope scope-creep that arrived via the 'merge origin/main' commit d68eff31eb, not this branch's own ticketed work. Grounding is asserted (reasoning-based), not measured: scripts/pr_review_duplication_scan.sh is exact-name-match only and returns 0 hits for this exact case by design (documented blind spot for a reimplementation under a different name) -- its 0-hits result does not contradict this finding.",
+            "markdown": "`secret_wiring_gaps()` in `scripts/ci/fat_driver.py` re-implements the check already performed -- and already wired into CI (`.github/workflows/ci.yml`, steps *FAT_SECRET plumbing guard case table* / *every section secret is plumbed under its full name*) -- by the pre-existing `scripts/check_ci_fat_secrets_plumbed.sh` (added at the merge-base commit `ef72c05809` / #4512, for the #4441 truncated-secret-name defect). Both check the same two directions against the same two files, with independent regexes and a separate self-test/case table. Not ticketed under `PMAT-4594` (acceptance criteria cover only `check_silicon_coverage.sh`); arrived via the `merge origin/main` commit `d68eff31eb`, not this branch's own ticketed work. **Grounding: asserted** -- `scripts/pr_review_duplication_scan.sh` is exact-name-match only and returns 0 hits for this exact case by design; that does not contradict this finding."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/ci/fat_driver.py" },
+                "region": { "startLine": 376 }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/check_ci_fat_secrets_plumbed.sh" },
+                "region": { "startLine": 1 }
+              },
+              "message": { "text": "Pre-existing guard already performing this check, CI-gated since #4512." }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
