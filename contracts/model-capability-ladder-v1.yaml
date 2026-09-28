@@ -269,6 +269,19 @@ ladder:
           apr 0.70.0 8d021f61e, 3715-run/h4/gx10). Withdrawn by data, not waived: every other gx10 Qwen3.5 file
           still owes every cell, lambda still owes this file's cells, and a re-quantised file under the same
           name is a different artifact and owes them too.
+      # STAGED, NOT APPLIED (cop 21:16Z): the cop decides at 04:00Z whether ec's lambda fix covers the IQ path.
+      # Gate-graph depcheck (0d): not gate-named -- no rungs[].sha256, no long-rung representative, no
+      # release-readiness ref; its only mention is the retired-deferral comment above (#3850). Transitively none.
+      - sha256: b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7
+        file: Qwen3.5-4B-UD-Q4_K_XL.gguf
+        host: lambda
+        issue: 3715
+        until: "0.70.1"
+        why: >-
+          all 4 verbs time out at 600 s on lambda (run/chat/serve/code at 20k think-on, wall 2408 s; H4 run,
+          3715-run/h4/lambda). Carries IQ4_XS tensors (10 of 426) beside Q4_K/Q5_K/Q6_K/Q8_0. Withdrawn by data,
+          not waived: every other lambda Qwen3.5 file still owes every cell, gx10 still owes this file's cells,
+          and a re-quantised file under the same name is a different artifact and owes them too.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds
