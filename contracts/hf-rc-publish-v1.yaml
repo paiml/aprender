@@ -15,8 +15,8 @@ metadata:
   - contracts/qwen35-format-roundtrip-v1.yaml (QFR-003, the export writes no config)
   - contracts/train-run-receipt-v1.yaml (the receipt the card must carry)
   - contracts/apr-provenance-v1.yaml (license / data_source in APR metadata)
+  - 'qwen35-format-roundtrip-v1 (branch la-72/fold-r10-qfr; move back into depends_on once it lands on main)'
   depends_on:
-  - qwen35-format-roundtrip-v1
   - train-run-receipt-v1
 status: PROPOSED
 equations:
