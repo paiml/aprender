@@ -7,12 +7,31 @@
 #   never --allow-dirty; a crates.io transient (429/5xx/timeout) is retried <=3 times with backoff,
 #   same inputs; anything else stops. Runs only from a detached checkout whose HEAD == the tag.
 #   publish_strict.sh <version> --plan   prints the ordered plan and uploads nothing
+#   --only a,b   publish ONLY these crates (#4587 B2a, pv 0.69.2 on its own). The universe and order
+#                checks still run on the whole cascade; the selection is then refused unless every
+#                universe crate it depends on and does not publish is already LIVE at its version.
+#   --tag NAME   the tag HEAD must equal, when it is not v<version>: a scoped tag (pv-v0.69.2) that
+#                no v* workflow trigger matches. It must end in -v<version>; its state dir is its own.
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the repo root from $0" >&2; exit 2; }
 # shellcheck source=scripts/release/lib_release_params.sh
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
-release_params "${1:-}" "$REPO_ROOT" || { echo "usage: publish_strict.sh <version> [--plan]" >&2; exit 2; }
+USAGE="usage: publish_strict.sh <version> [--plan] [--only crate,crate] [--tag NAME]"
+release_params "${1:-}" "$REPO_ROOT" || { echo "$USAGE" >&2; exit 2; }
 shift
+PLAN=""; ONLY=""; TAG=$T
+while [ $# -gt 0 ]; do
+  case $1 in
+    --plan) PLAN=1; shift ;;
+    --only) [ -n "${2:-}" ] || { echo "$USAGE" >&2; exit 2; }; ONLY=$2; shift 2 ;;
+    --tag) [ -n "${2:-}" ] || { echo "$USAGE" >&2; exit 2; }; TAG=$2; shift 2 ;;
+    *) echo "$USAGE" >&2; exit 2 ;;
+  esac
+done
+if [ "$TAG" != "$T" ]; then
+  [[ $TAG =~ ^[a-z][a-z0-9-]*-v${V//./\\.}$ ]] || { echo "--tag $TAG does not end in -$T: a scoped tag names the version it cuts" >&2; exit 2; }
+  AP="${AP%/*}/$TAG"; mkdir -p "$AP" || { echo "cannot create $AP" >&2; exit 2; }
+fi
 WT="$AP/wt"
 TSV="$AP/publish-timestamps.tsv"; LOGD="$AP/publish-logs"; STATUS="$AP/STATUS"
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS"; }  # bashrs disable-line=DET002
@@ -20,14 +39,14 @@ die() { say "STOP publish: $*"; exit 1; }
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 unset CARGO_REGISTRY_TOKEN
 cd "$WT" || die "no $WT"
-[ "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$T^{commit}")" ] || die "HEAD is not $T"
+[ "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$TAG^{commit}")" ] || die "HEAD is not $TAG"
 git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 [ -z "$(git status --porcelain)" ] || die "tree dirty: $(git status --porcelain | head -3 | tr '\n' ' ')"
 [ -e .cargo/config.toml ] && die ".cargo/config.toml present in the publish tree"
 [ -s "$HOME/.cargo/credentials.toml" ] || die "no publish token on this host (precondition 5)"
-[ "${1:-}" = "--plan" ] || [ -s "$AP/cleanroom-run-id" ] || die "no green clean-room run id recorded for $T (rule 7, #3335)"
-[ "${1:-}" = "--plan" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $T (rule 14)"
-[ "${1:-}" = "--plan" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
+[ -n "$PLAN" ] || [ -s "$AP/cleanroom-run-id" ] || die "no green clean-room run id recorded for $TAG (rule 7, #3335)"
+[ -n "$PLAN" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $TAG (rule 14)"
+[ -n "$PLAN" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
 
 # order: NOT the tag's TIERS — measured 2026-09-17, TIERS is not topological (47 non-dev
 # violations; it only ever worked through the drain's retries). publish-order.txt is derived from
@@ -70,12 +89,30 @@ live() { # live <crate> <version>: 0 when exactly that version is on the sparse 
   curl -sf --retry 3 --retry-delay 2 -H 'User-Agent: aprender-release-train' "https://index.crates.io/$p" \
     | python3 -c 'import json,sys; v=sys.argv[1]; sys.exit(0 if any(json.loads(l).get("vers")==v for l in sys.stdin if l.strip()) else 1)' "$v"
 }
-if [ "${1:-}" = "--plan" ]; then
+if [ -n "$ONLY" ]; then
+  mapfile -t SEL < <(tr ',' '\n' <<< "$ONLY" | sed '/^$/d')
+  declare -A INSEL; for c in "${SEL[@]}"; do [ -n "${EXPECT[$c]:-}" ] || die "--only $c: not in the universe"; INSEL[$c]=1; done
+  # a crate we do not publish must already be live at the version the selection requires of it
+  mapfile -t NEED < <(cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c '
+import json,sys
+sel=set(sys.argv[1:])
+for p in json.load(sys.stdin)["packages"]:
+    if p["name"] not in sel: continue
+    for d in p["dependencies"]:
+        if d["name"] not in sel and (d.get("kind")!="dev" or d["req"]!="*"): print(d["name"])' "${SEL[@]}" | sort -u)
+  for d in "${NEED[@]}"; do
+    [ -n "${EXPECT[$d]:-}" ] || continue
+    live "$d" "${EXPECT[$d]}" || die "--only leaves out $d, which it needs at ${EXPECT[$d]}, and that is not live"
+  done
+  KEPT=(); for c in "${ORDER[@]}"; do [ -n "${INSEL[$c]:-}" ] && KEPT+=("$c"); done
+  ORDER=("${KEPT[@]}"); N=${#ORDER[@]}
+fi
+if [ -n "$PLAN" ]; then
   i=0; for c in "${ORDER[@]}"; do i=$((i+1)); if live "$c" "${EXPECT[$c]}"; then s=LIVE; else s=TODO; fi; printf '%2d %s %s %s\n' $i "$c" "${EXPECT[$c]}" $s; done; exit 0
 fi
 
 mkdir -p "$LOGD"; [ -f "$TSV" ] || printf 'crate\tversion\tstart_utc\tend_utc\tresult\tattempts\n' > "$TSV"
-say "CASCADE START $V strict ($N crates, dependency order derived at the tag)"
+say "CASCADE START $V ($TAG) strict (${ONLY:+only $ONLY: }$N crates, dependency order derived at the tag)"
 i=0
 for c in "${ORDER[@]}"; do
   i=$((i+1)); v=${EXPECT[$c]}
