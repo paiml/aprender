@@ -120,7 +120,7 @@ PY
 
 judge() { # judge mode root version commit receipts dogfood out
     local mode="$1" root="$2" version="$3" commit="$4" receipts="$5" dogfood="$6" out="$7" surface="${8:-}"
-    local pv pvv rc rx sum label
+    local pv pvv rc rx sum label crux cf e
     local -a args
     pv="${RELEASE_READINESS_PV:-}"
     if [ -z "$pv" ]; then
@@ -137,6 +137,17 @@ judge() { # judge mode root version commit receipts dogfood out
     [ -n "$receipts" ] && args+=(--receipts "$receipts")
     [ -n "$dogfood" ] && args+=(--dogfood-receipt "$dogfood")
     [ -n "$surface" ] && args+=(--surface "$surface")
+    # pv reads every entry of evidence/crux/<V>/ as a crux-inference-receipt/v1 and refuses the whole grade
+    # (rc 3) on the prompt certification and its inventory, which are committed beside the receipts and
+    # judged by their own gate. model_ladder_cells.py skips the same names. pv is graded on the rest, via symlinks.
+    crux="$root/evidence/crux/$version"
+    if compgen -G "$crux/prompt-certification*" > /dev/null; then
+        cf="$(mktemp -d "${TMPDIR:-/tmp}/release-readiness-crux.XXXXXX")" || { echo "FAIL  R8 mktemp failed: the crux receipts cannot be graded"; return 2; }
+        for e in "$crux"/*; do
+            case "${e##*/}" in prompt-certification*) ;; *) ln -s "$e" "$cf/${e##*/}" ;; esac
+        done
+        args+=(--crux-receipts "$cf")
+    fi
     if rx="$(receipts_commit "$root" "${receipts:-$root/evidence/dogfood/models/$version}" "$commit" 3>"$out")"; then
         args+=(--receipts-commit "$rx")
     fi
@@ -265,6 +276,16 @@ STUB
     d="$tmp/v"; mk "$d"; mkdir -p "$d/evidence/release/surface"; printf '{}\n' > "$d/evidence/release/surface/1.2.3.json"
     row committed_surface_runs                   0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow committed_surface_is_passed           "--surface $d/evidence/release/surface/1.2.3.json"
+    argrow no_certification_keeps_pv_crux_default "!--crux-receipts"
+    d="$tmp/c"; mk "$d"; mkdir -p "$d/evidence/crux/1.2.3"
+    printf '{}\n' > "$d/evidence/crux/1.2.3/r.json"; printf '[]\n' > "$d/evidence/crux/1.2.3/prompt-certification-inventory.json"
+    row certification_beside_crux_runs           0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    cx="$(sed -n 's/.*--crux-receipts \([^ ]*\).*/\1/p' "$tmp/args")"
+    if [ -n "$cx" ] && [ -e "$cx/r.json" ] && ! compgen -G "$cx/prompt-certification*" > /dev/null; then
+        printf '  ok    %-44s pv graded r.json without the certification\n' certification_is_not_a_crux_receipt; pass=$((pass + 1))
+    else
+        printf '  BROKE %-44s crux dir %s: %s\n' certification_is_not_a_crux_receipt "${cx:-<not passed>}" "$(ls "${cx:-/nonexistent}" 2>&1 | tr '\n' ' ')"; fail=$((fail + 1))
+    fi
     d="$tmp/r"
     row bare_fail_refuses                        1 "FAIL  R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=1
     row bare_fail_names_the_count                1 "3 violation(s): cell=3" "$d" FX_PV_RC=1
