@@ -511,14 +511,22 @@ mod rr2 {
         let mut h = cell_host(Some(&[8]), None);
         h.sanitized.remove("cuda.gemv.q8_0");
         assert_eq!(built_red(&h), [kc("cuda.gemv.q8_0")].into_iter().collect());
+        // The same host on cpu, with a cpu row serving q8_0, a parity receipt, and no sanitizer run.
+        let rows = super::registry(&[row("cpu.matvec.q8_0", "cpu", 8, ROW_MAJOR, ANY_ARCH)]);
         h.backend = "cpu".to_string();
+        h.models.retain(|m, _| m == "C");
+        h.kernels = [("cpu.matvec.q8_0".to_string(), PASS)]
+            .into_iter()
+            .collect();
+        h.sanitized.clear();
         let mut g = Graph::new();
-        build_cells(&mut g, &registry(), std::slice::from_ref(&h));
+        build_cells(&mut g, &rows, std::slice::from_ref(&h));
+        let report = validate(&g, &shapes());
         assert!(
-            g.iter()
-                .all(|t| t.object != Term::iri(rel("SanitizedKernelCell"))),
-            "a cpu host got a sanitizer cell"
+            g.iter().any(|t| t.subject == kc("cpu.matvec.q8_0")),
+            "the cpu kernel cell was built: not vacuous"
         );
+        assert!(report.conforms(), "{:#?}", report.results);
     }
 
     /// A model whose tensor types no receipt recorded is RED, never skipped; the others stay green.
@@ -777,8 +785,11 @@ fn the_sanitizer_judge_case_table() {
         ("the gx10 receipt", SAN_RC.to_string(), now, ok),
         ("a tool missing, clean:true kept", no_sync, now, dirty),
         (
-            "memcheck twice",
-            SAN_RC.replace("synccheck", "memcheck"),
+            "all four, plus a second memcheck that is RED",
+            SAN_RC.replace(
+                r#"{"tool":"memcheck","verdict":"CLEAN"}"#,
+                r#"{"tool":"memcheck","verdict":"CLEAN"},{"tool":"memcheck","verdict":"RED"}"#,
+            ),
             now,
             dirty,
         ),
