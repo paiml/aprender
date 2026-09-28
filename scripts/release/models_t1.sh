@@ -96,13 +96,17 @@ mkdir -p "$out" || exit 2
 rm -f -- "$out/$LOCAL_HOST.json" "$out/$REMOTE_HOST.json" "$out/$REMOTE_HOST.json.part"
 
 local_leg() {
-    local tdir got
+    local tdir got apr sum
     cargo build --release -p apr-cli --bin apr --features cuda --locked \
         || { echo "MODELS-LEG $LOCAL_HOST BUILD-FAILED"; return 3; }
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)}
-    got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
+    apr="$tdir/release/apr"; case "$apr" in /*) ;; *) apr="$PWD/$apr" ;; esac
+    got=$("$apr" --version 2>/dev/null | head -n 1)
     [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
-    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out "$out"
+    # A3: the ladder runs THIS file, by absolute path, re-proven by sha256 + --version commit (its step 0).
+    sum=$(sha256sum -- "$apr") || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: sha256sum failed"; return 3; }
+    APR="$apr" APR_RELEASE_SHA256="${sum%% *}" APR_RELEASE_COMMIT="$sha" \
+        choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out "$out"
 }
 
 remote_leg() {
@@ -130,10 +134,13 @@ cd "\$dir/wt" || exit 3
 export CARGO_TARGET_DIR="\$dir/target"
 cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/build.log" 2>&1 \
   || { tail -n 20 "\$dir/build.log"; echo "MODELS-LEG $REMOTE_HOST BUILD-FAILED"; exit 3; }
-got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
+apr="\$CARGO_TARGET_DIR/release/apr"
+got=\$("\$apr" --version 2>/dev/null | head -n 1)
 [ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
+sum=\$(sha256sum -- "\$apr") || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: sha256sum failed"; exit 3; }
 rm -rf -- "\$dir/out"
-choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out"; lrc=\$?
+APR="\$apr" APR_RELEASE_SHA256="\${sum%% *}" APR_RELEASE_COMMIT="$sha" \\
+  choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out"; lrc=\$?
 if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then
   echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$REMOTE_HOST.json"; echo "---END RECEIPT---"
 fi

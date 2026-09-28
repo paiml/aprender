@@ -39,6 +39,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -167,22 +168,81 @@ def refusal(stderr):
     return tuple(int(float(x) * MIB) for x in m.groups())
 
 
+# H1 (operator 2026-09-28 17:50Z): default 10 min per cell; after sampling, per class 4 x measured p95, floor 5 min.
+DEFAULT_CELL_TIMEOUT_S = 600
+TIMEOUT_FLOOR_S = 300
+COMPLETED = [0]  # cells finished (any verdict), read by the H5 takt watch
+
+
+class Takt:
+    """H5 (operator 2026-09-28 17:50Z): takt tripwires after rc.1 -- at +2 h, +4 h, +6 h the completed cells must be
+    >= 90% of plan, or ANDON immediately. A clock-driven thread, not a per-model check: a model that runs long is
+    exactly when the checkpoint passes unseen. Plan: {"start_epoch": s, "checkpoints": [{"at_s": 7200,
+    "planned_cells": n}, ...]}. Every checkpoint (met or not) is one JSON line in the takt log; a miss also prints
+    `ANDON H5 ...` to stderr and to the andon file next to the log. It signals; it never skips or stops a cell."""
+    RATIO = 0.9
+
+    def __init__(self, plan_path, log_path, clock=time.time):
+        plan = json.load(open(plan_path))
+        self.start, self.clock, self.log = float(plan["start_epoch"]), clock, log_path
+        self.checks = sorted((int(c["at_s"]), int(c["planned_cells"])) for c in plan["checkpoints"])
+        if not self.checks:
+            raise ValueError("takt plan has no checkpoints -- a tripwire with nothing to trip is not H5")
+        self.fired = 0
+
+    def tick(self):
+        """Judge every checkpoint whose time has passed; returns the lines written this tick."""
+        out, now = [], self.clock()
+        while self.fired < len(self.checks) and now >= self.start + self.checks[self.fired][0]:
+            at, plan = self.checks[self.fired]
+            done = COMPLETED[0]
+            ok = done >= self.RATIO * plan
+            rec = {"at_s": at, "planned_cells": plan, "completed_cells": done, "ratio": round(done / plan, 3) if plan else None,
+                   "threshold": self.RATIO, "andon": not ok, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))}
+            with open(self.log, "a") as f:
+                f.write(json.dumps(rec) + "\n")
+            if not ok:
+                line = f"ANDON H5 takt +{at / 3600:g}h: {done} cells completed < {self.RATIO:.0%} of plan {plan}"
+                print(line, file=sys.stderr, flush=True)
+                with open(self.log + ".andon", "a") as f:
+                    f.write(line + "\n")
+            out.append(rec)
+            self.fired += 1
+        return out
+
+    def watch(self, poll_s=30):
+        def loop():
+            while self.fired < len(self.checks):
+                self.tick()
+                time.sleep(poll_s)
+        threading.Thread(target=loop, daemon=True).start()
+
+
 class Runner:
     """Runs apr under the fleet GPU lock: `flock -E 75 -w WAIT LOCK choom -n 1000 -- apr ...`."""
 
     def __init__(self, apr, lock, wait, timeout):
         self.apr, self.lock, self.wait, self.timeout = apr, lock, wait, timeout
+        self.timed_out = False
 
     def argv(self, args):
         pre = ["flock", "-E", "75", "-w", str(self.wait), self.lock, "choom", "-n", "1000", "--"] if self.lock else []
         return pre + [self.apr] + args
 
     def call(self, args, stdin=None):
+        # H1 (operator 2026-09-28 17:50Z): a hard per-cell timeout, and a timeout is a FAIL -- never a skip. The whole
+        # process GROUP is killed: subprocess.run's timeout killed only `flock`, and the apr grandchild it had
+        # forked kept running and kept the GPU (and the fleet lock's fd) after the cell was already recorded.
+        p = subprocess.Popen(self.argv(args), stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         try:
-            p = subprocess.run(self.argv(args), input=stdin, capture_output=True, text=True, timeout=self.timeout)
-            return p.returncode, p.stdout, p.stderr
+            out, err = p.communicate(stdin, timeout=self.timeout)
+            return p.returncode, out, err
         except subprocess.TimeoutExpired:
-            return 124, "", f"timed out after {self.timeout} s"
+            os.killpg(p.pid, signal.SIGKILL)
+            p.communicate()
+            self.timed_out = True
+            return 124, "", f"TIMEOUT after {self.timeout} s -- a FAIL, never a skip (H1)"
 
 
 def base_row(item, verb, mode, rid, max_tokens):
@@ -269,6 +329,7 @@ class Serve:
         self.proc = subprocess.Popen(R.argv(["serve", "run", path, "--port", str(self.port), "--gpu"]),
                                      stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
         self.up = self._wait(ceiling_s)
+        self.timed_out = False
 
     def _wait(self, ceiling_s):
         end = time.time() + ceiling_s
@@ -290,6 +351,9 @@ class Serve:
         except urllib.error.HTTPError as e:
             return e.code, {}, e.read().decode(errors="replace")
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            if isinstance(e, TimeoutError) or "timed out" in str(e):
+                self.timed_out = True
+                return 124, {}, f"TIMEOUT after {timeout} s -- a FAIL, never a skip (H1)"
             return 1, {}, str(e)
 
     def close(self):
@@ -337,9 +401,35 @@ def cells_for(item, L, rungs_doc):
     return out
 
 
+def cell_timeout(a, item, verb):
+    """H1: the class timeout (file|verb) when sampled, else the default; never under the 5-minute floor."""
+    t = (a.class_timeouts or {}).get(f"{item['file']}|{verb}", a.timeout)
+    return max(int(t), TIMEOUT_FLOOR_S) if f"{item['file']}|{verb}" in (a.class_timeouts or {}) else int(t)
+
+
+def stamp(row, t0, timeout, timed_out):
+    """Every row records its wall time and the timeout it ran under (H1: the value is in every receipt)."""
+    row["wall_s"], row["timeout_s"], row["timed_out"] = round(time.monotonic() - t0, 1), timeout, bool(timed_out)
+    COMPLETED[0] += 1
+    if timed_out:
+        row["verdict"] = "fail"
+        if not row["reason"].startswith("TIMEOUT"):
+            row["reason"] = f"TIMEOUT after {timeout} s -- a FAIL, never a skip (H1); " + row["reason"]
+    return row
+
+
 def measure_item(R, item, path, L, rungs_doc, a):
     rows, density = [], a.chars_per_token
     owed = cells_for(item, L, rungs_doc)
+    for verb in sorted({o[3] for o in owed}):
+        print(f"cells: owed {item['file']} {verb} {sum(o[3] == verb for o in owed)}", file=sys.stderr)
+    if a.select:
+        # H4 sampling: one (rung, thinking) per model, all verbs -- a class sample, never a release verdict.
+        # `<rung>:max` takes the heavier mode the model owes at that rung (on, when it thinks at all).
+        rid, _, mode = a.select.partition(":")
+        if mode == "max":
+            mode = "on" if any(o[0] == rid and o[2] == "on" for o in owed) else "off"
+        owed = [o for o in owed if o[0] == rid and o[2] == mode]
     by_rung = {}
     for rid, tok, mode, verb in owed:
         by_rung.setdefault((rid, tok), []).append((mode, verb))
@@ -370,6 +460,7 @@ def measure_item(R, item, path, L, rungs_doc, a):
                 verbs = sorted((v for m, v in jobs if m == mode), key=lambda v: v != "run")  # run first: it counts
                 for verb in verbs:
                     row = base_row(item, verb, mode, rid, budget)
+                    R.timeout, R.timed_out, t0 = cell_timeout(a, item, verb), False, time.monotonic()
                     if verb == "run":
                         for _attempt in range(3):  # the first rung's density is a guess; apr's count corrects it
                             row = measure_run(R, path, pf, mode, budget, base_row(item, verb, mode, rid, budget))
@@ -388,13 +479,16 @@ def measure_item(R, item, path, L, rungs_doc, a):
                         continue
                     else:
                         row = (measure_chat if verb == "chat" else measure_code)(R, path, prompt, mode, budget, row)
+                    stamp(row, t0, R.timeout, R.timed_out)
                     if row["prompt_tokens"] is None and measured:
                         row["prompt_tokens"] = measured
                         row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
                     rows.append(row)
         for i, prompt, mode, budget, measured in deferred:
+            t0, tmo = time.monotonic(), cell_timeout(a, item, "serve")
             serve = serve or Serve(R, path, a.serve_ceiling)
-            row = measure_serve(serve, prompt, mode, budget, rows[i], R.timeout)
+            serve.timed_out = False
+            row = stamp(measure_serve(serve, prompt, mode, budget, rows[i], tmo), t0, tmo, serve.timed_out)
             if row["prompt_tokens"] is None and measured:
                 row["prompt_tokens"] = measured
                 row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
@@ -429,7 +523,11 @@ def cmd_measure(a):
     rungs_doc = json.load(open(a.rungs))
     paths = dict(l.rstrip("\n").split("|", 1) for l in open(a.models) if "|" in l)
     R = Runner(a.apr, a.lock, a.lock_wait, a.timeout)
+    a.class_timeouts = json.load(open(a.timeout_classes)) if a.timeout_classes else {}
     rows, matched = [], 0
+    takt = Takt(a.takt_plan, a.takt_log or a.out + ".takt.jsonl") if a.takt_plan else None
+    if takt:
+        takt.watch()
     dec, drc = J.declaimed(L.get("cells") or {}, {h.get("id") for h in L.get("hosts") or []}, lambda w: print("cells: refused -- " + w, file=sys.stderr))
     if drc:
         return 1
@@ -449,6 +547,8 @@ def cmd_measure(a):
         # selects none. Zero rows at rc 0 would read as "this host owes no cells" (quorum 2, #3715).
         print(f"cells: refused -- --only {a.only!r} names no inventory model; cells are measured per model", file=sys.stderr)
         return 2
+    if takt:
+        takt.tick()
     json.dump(rows, open(a.out, "w"), indent=1)
     print(f"cells: {len(rows)} row(s), {sum(r['verdict'] == 'pass' for r in rows)} pass, "
           f"{sum(r['verdict'] == 'refused' for r in rows)} refused")
@@ -472,7 +572,12 @@ def main(argv=None):
     m.add_argument("--lock", default="")
     m.add_argument("--host", default="", help="this host's ladder id: a cells.declaimed arch on it is not measured")
     m.add_argument("--lock-wait", type=int, default=1800)
-    m.add_argument("--timeout", type=int, default=3600, help="per apr call, seconds")
+    m.add_argument("--timeout", type=int, default=DEFAULT_CELL_TIMEOUT_S,
+                   help="H1 hard per-cell timeout, seconds; a timeout is a FAIL (default 600)")
+    m.add_argument("--timeout-classes", default="", help='H1 JSON {"<file>|<verb>": seconds} (4 x measured p95); floor 300')
+    m.add_argument("--takt-plan", default="", help='H5 JSON {"start_epoch": s, "checkpoints": [{"at_s", "planned_cells"}]}')
+    m.add_argument("--takt-log", default="", help="H5 checkpoint JSON lines (default <out>.takt.jsonl; misses also in <log>.andon)")
+    m.add_argument("--select", default="", help="H4 sampling: only the cells of this <rung>:<thinking>, e.g. 20k:off")
     m.add_argument("--serve-ceiling", type=int, default=600)
     m.add_argument("--max-tokens", type=int, default=64)
     m.add_argument("--max-tokens-thinking", type=int, default=1024, help="a think block must have room to CLOSE")
