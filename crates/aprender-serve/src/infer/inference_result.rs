@@ -1158,6 +1158,19 @@ fn f2_report_forward_failure(msg: &str, via: F2ProbePath) {
     eprintln!("{msg} [{}]", via.as_str());
 }
 
+/// Turn FP8 prefill and decode off for this model, for the rest of the process.
+/// Shared by the #3807 re-measure and the #3602 receipt that records its outcome,
+/// so a cached run lands on exactly the precision the validating run ended on.
+#[cfg(feature = "cuda")]
+fn f2_force_fp16_prefill(cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda) {
+    cuda_model.executor.gpu_profile.fp8_prefill = false;
+    cuda_model.executor.gpu_profile.fp8_decode = false;
+    // #3807: FP8 stays off for this model from here on, so its weight cache is dead
+    // weight. Free it first: the FP16 path caches its own weights (2 B/elem) and on a
+    // 7B model the two together exceed a 24 GB card.
+    cuda_model.executor.clear_fp8_weight_cache();
+}
+
 /// #3413 C: re-measure the probe on the FP16 HGEMM prefill with FP8 turned OFF.
 /// A precision fallback, not a backend fallback — printed, never silent. `None`
 /// when the FP16 forward itself failed, in which case the FP8 report stands.
@@ -1171,12 +1184,7 @@ fn f2_remeasure_without_fp8(
     cpu_logits_per_pos: &[Vec<f32>],
     via: F2ProbePath,
 ) -> Option<F2PositionReport> {
-    cuda_model.executor.gpu_profile.fp8_prefill = false;
-    cuda_model.executor.gpu_profile.fp8_decode = false;
-    // #3807: FP8 stays off for this model from here on, so its weight cache is dead
-    // weight. Free it first: the FP16 path caches its own weights (2 B/elem) and on a
-    // 7B model the two together exceed a 24 GB card.
-    cuda_model.executor.clear_fp8_weight_cache();
+    f2_force_fp16_prefill(cuda_model);
     cuda_model.executor.reset_kv_cache_gpu();
     let out = match f2_gpu_batched_logits(cuda_model, probe, decode_token, kv_dim, num_layers) {
         Ok(v) => {
