@@ -1,0 +1,41 @@
+{
+  "build_identity": "08f1b37d465850e89813a20ddf6129a71855dbf9",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.matvec.q5_1",
+  "oracle": "gguf_py_dequant_f64",
+  "oracle_fixture": {
+    "dir": "evidence/kreg/oracle/Q5_1",
+    "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
+    "sha256": {
+      "ref.bin": "5be13116d0a81eeef11c4e7f0bb5763389322d72ff298d3fb146d33b2578a050",
+      "weights.bin": "5c876069b18bdf65ece0d6f5f06bff0ff58c6d753c1f9811f30e90cf7ddf9ca3",
+      "x.bin": "40a2e68540af4d9ba9b88bb45b3a62dd4bed07c089ea58856ab9f944da640f84"
+    }
+  },
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 5.261209510720732e-6,
+    "max_rel_err": 5.810047719016863e-7
+  },
+  "source_fn": "dequantize_q5_1",
+  "tolerance_rel": 2e-6,
+  "ts": "2026-09-28T07:47:33Z",
+  "workload": {
+    "in_dim": 1024,
+    "out_dim": 32,
+    "seed": 4546,
+    "trials": 1
+  }
+}
