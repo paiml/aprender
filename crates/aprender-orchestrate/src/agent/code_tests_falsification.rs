@@ -164,6 +164,8 @@ fn falsify_4599_005_code_window_is_the_models_context_length() {
     std::fs::write(&qwen35, gguf_header("qwen35", Some(262_144))).expect("write");
     let no_key = dir.path().join("no-context.gguf");
     std::fs::write(&no_key, gguf_header("qwen35", None)).expect("write");
+    let zero = dir.path().join("zero-context.gguf");
+    std::fs::write(&zero, gguf_header("qwen35", Some(0))).expect("write");
     let not_gguf = dir.path().join("model.apr");
     std::fs::write(&not_gguf, b"APR\0not a gguf").expect("write");
 
@@ -179,6 +181,7 @@ fn falsify_4599_005_code_window_is_the_models_context_length() {
     m.model.context_window = Some(8192);
     assert_eq!(code_driver_window(&m, &qwen35), 8192);
     assert_eq!(code_context_window(None, &no_key), CODE_DEFAULT_CONTEXT_WINDOW);
+    assert_eq!(code_context_window(None, &zero), CODE_DEFAULT_CONTEXT_WINDOW, "0 is no window");
     assert_eq!(code_context_window(None, &not_gguf), CODE_DEFAULT_CONTEXT_WINDOW);
     assert_eq!(code_context_window(None, &dir.path().join("absent.gguf")), 32_768);
 }

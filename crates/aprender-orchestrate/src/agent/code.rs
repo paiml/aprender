@@ -911,7 +911,9 @@ fn code_driver_window(manifest: &AgentManifest, model_path: &Path) -> usize {
 
 /// #4599: the context window `apr code` sizes the conversation to. An explicit manifest or
 /// settings value wins; then the model's own declared context length; then 32K. A prompt that
-/// still does not fit is refused loudly (`context_overflow`), never dropped.
+/// still does not fit is refused loudly (`context_overflow`), never dropped. The default
+/// manifest leaves `context_window` unset for this: the hard-coded 32K it had (PMAT-197)
+/// refused a >~105 KB prompt on a 262K-context model.
 fn code_context_window(manifest_window: Option<usize>, model_path: &Path) -> usize {
     manifest_window
         .or_else(|| model_context_length(model_path))
@@ -921,18 +923,21 @@ fn code_context_window(manifest_window: Option<usize>, model_path: &Path) -> usi
 /// The GGUF header's `<arch>.context_length`. Reads a bounded prefix (header, metadata and
 /// tensor infos precede the weights) so a multi-GB model is never mapped just to read one key.
 /// `None` for a non-GGUF file, a header larger than the prefix, or a missing key.
-#[cfg(feature = "inference")]
+/// Without `inference` there is no GGUF reader, so the window falls through to the default.
 fn model_context_length(path: &Path) -> Option<usize> {
-    use std::io::Read;
-    const HEADER_PREFIX: u64 = 64 << 20;
-    let mut buf = Vec::new();
-    std::fs::File::open(path).ok()?.take(HEADER_PREFIX).read_to_end(&mut buf).ok()?;
-    realizar::gguf::GGUFModel::from_bytes(&buf).ok()?.context_length().filter(|&n| n > 0)
-}
-
-#[cfg(not(feature = "inference"))]
-fn model_context_length(_path: &Path) -> Option<usize> {
-    None
+    #[cfg(feature = "inference")]
+    {
+        use std::io::Read;
+        const HEADER_PREFIX: u64 = 64 << 20;
+        let mut buf = Vec::new();
+        std::fs::File::open(path).ok()?.take(HEADER_PREFIX).read_to_end(&mut buf).ok()?;
+        realizar::gguf::GGUFModel::from_bytes(&buf).ok()?.context_length().filter(|&n| n > 0)
+    }
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = path;
+        None
+    }
 }
 
 /// Compute instruction budget based on model context window.
@@ -1107,10 +1112,6 @@ fn build_default_manifest() -> AgentManifest {
             system_prompt,
             max_tokens: 4096,
             temperature: 0.0,
-            // #4599: None = the model's own context length, resolved at driver
-            // launch (`code_context_window`). The hard-coded 32K it replaces
-            // (PMAT-197) refused a >~105 KB prompt on a 262K-context model.
-            context_window: None,
             ..ModelConfig::default()
         },
         resources: ResourceQuota {

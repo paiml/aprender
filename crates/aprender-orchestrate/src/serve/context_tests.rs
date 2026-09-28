@@ -964,4 +964,12 @@ fn falsify_4599_sliding_window_never_drops_the_newest_message() {
     let kept = manager.truncate(&oldest_huge).expect("the newest fits");
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].content, "latest");
+
+    // Boundary: a newest message that exactly fills the window (96 tokens + 4 overhead = 100)
+    // fits. It is kept, not refused.
+    let exact = "y".repeat(384);
+    let exact_fit = vec![ChatMessage::user("older"), ChatMessage::user(&exact)];
+    let kept = manager.truncate(&exact_fit).expect("an exact fit is not an overflow");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].content, exact);
 }
