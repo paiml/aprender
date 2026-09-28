@@ -1,0 +1,121 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "pmat",
+        "status": "consulted-found-nothing",
+        "index_commit": "5ea016f543e1a2a28af9da889bc1f43cd8222e47",
+        "index_is_ancestor": true,
+        "index_worktree_dirty": false,
+        "complexity_delta": [],
+        "tdg_delta": [],
+        "satd_introduced": [],
+        "duplication_hits": 2,
+        "duplication_note": "Fresh pmat index (92330 functions, 51.9s) and fresh duplication scan (scripts/pr_review_duplication_scan.sh --rust-semantic) at the new head: same 2 coincidental lexical name-collision hits on the shell function name 'check_pair' against evidence/parity/l0-1/intel/qwen35-apr-vs-reference/compare_raw_logits.py, unchanged from the prior receipt (2989217f66). horizon_branches_total grew 1077->1098 (organic fleet activity), merge_base_to_main_files grew 0->1 (a filename match in the merge_base..origin/main region unrelated to this PR's own content -- origin/main advanced since the prior review). No complexity/TDG/SATD analyzer exists for .sh/.yaml/.json, and this delta (docs/audits/quorum-PMAT-4510.json + evidence/pr-review/4512/2989217f66.../*) is JSON/evidence only -- re-verified empty via `git diff 2989217f66eabee4d86324b847e7ffe3ed2d32c9 5ea016f543e1a2a28af9da889bc1f43cd8222e47 --stat`, which shows exactly those 3 files and nothing under crates/, scripts/, or .github/."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "1.0.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "mutation",
+        "status": "consulted-found-nothing",
+        "scope": "guard-touching",
+        "attempted": 2,
+        "killed": 2,
+        "survivors": [],
+        "carried_forward_from_head": "2989217f66eabee4d86324b847e7ffe3ed2d32c9",
+        "note": "Not re-run this pass. Re-verified instead that the guard-touching change it covers (.github/workflows/ci.yml lines 104/106, the two `setsid --wait ` prefixes) is byte-identical between the reviewed head and this head: `git diff 2989217f66eabee4d86324b847e7ffe3ed2d32c9 5ea016f543e1a2a28af9da889bc1f43cd8222e47 --stat -- .github/workflows/ci.yml scripts/check_ci_fat_secrets_plumbed.sh scripts/lib/pr_review_patch_id.sh scripts/check_pr_review_arm4.sh` produced empty output (rc=0, sha256(stdout)=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855, the empty-string digest). Both mutants (line 104, line 106) were killed by scripts/check_guard_steps_isolated.sh in the prior review; nothing in that file changed since, so the kill result still holds at this head."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted-found-nothing",
+        "model_id": "gemini-3.1-pro-high",
+        "reviewed_by_primary": false,
+        "precision_class": "advisory",
+        "carried_forward_from_head": "2989217f66eabee4d86324b847e7ffe3ed2d32c9",
+        "note": "Not re-invoked this pass (no fresh agy run against this head). Carried forward from the prior receipt on the strength of a stronger check than a stat diff: diff_patch_id (merge-base..HEAD, evidence/pr-review/4512 and docs/audits/quorum-*.json excluded) is BYTE-IDENTICAL between the reviewed head and this head -- 5f5446468070a13601be77e63286249b64a35deb both times, recomputed fresh with scripts/lib/pr_review_patch_id.sh's prpid_compute (reimpl mode, git 2.34.1 lacks native --verbatim). The diff agy reviewed at 2989217f66 is therefore the exact diff being reviewed here; nothing new entered the reviewable surface. See the review-integrity run below for a related but separate finding about this patch-id."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pr-review-primary",
+          "version": "2.1.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "quorum-artifact-coherence",
+        "status": "consulted-found-nothing",
+        "note": "Adversarial coherence check of the delta's sole substantive content, docs/audits/quorum-PMAT-4510.json, a committed round-5 quorum verdict for head 2989217f66eabee4d86324b847e7ffe3ed2d32c9 (round-4's artifact, for cb7c708e, is what round-5 replaced). Checked and confirmed (python3 json parse, measured): head field = 2989217f66eabee4d86324b847e7ffe3ed2d32c9 (the head this PR's most recent pr-review receipt actually reviewed, not a stale or mismatched head); agreed = true; width = 3; three lanes all status SUCCESS verdict PASS -- claude-sonnet-5/claude, gemini-3.1-pro-high/gemini, claude-haiku-4-5/claude; author.model = claude-opus-5-5 and no lane's model equals it (any_lane_is_author_model = False); dissent = []; partial = false; auto_merge.was_armed = false; lint.ok = true with lint.output 'receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2'. The fallback.chain field independently documents claude-opus-5-5 as disposition 'excluded-self-review' with the R-15a identity-bar rationale, and the lane shape (1 Claude Code seat + 1 agy/gemini + 1 Claude Code cheap seat) matches the operator's standing quorum-shape ruling. The commit message '5ea016f543 evidence(PMAT-4510): pr-review receipt for 2989217f66 + quorum r5 verdict (AGREED 3/3)' matches the artifact's own agreed=true / 3-PASS content -- no mismatch between the claimed verdict and the recorded one. No incoherence found."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pr-review-primary",
+          "version": "2.1.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "diff-patch-id-crosscheck-mismatch",
+          "level": "warning",
+          "message": {
+            "text": "The task's stated CI-computed diff_patch_id for this diff (7a401d6b4484bb61d7bf67a5afe6b77140411d21) does not match the value this run computed with scripts/lib/pr_review_patch_id.sh's prpid_compute over merge-base c115c5ed024f441a394052355a590bc1be223110..HEAD for any of the three heads on record for this PR: cb7c708e -> 59a0a9e3c23e0115c81ca9c625184b5a2b8b68ce (matches that head's own committed receipt), 2989217f66 -> 5f5446468070a13601be77e63286249b64a35deb (matches that head's own committed receipt), 5ea016f543 (this head) -> 5f5446468070a13601be77e63286249b64a35deb (identical to 2989217f66's, as expected: the only delta is inside the two excluded path classes). The string 7a401d6b4484bb61d7bf67a5afe6b77140411d21 does not appear anywhere in this worktree (grep -r over evidence/pr-review/4512/ and the tree)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If a CI job or another automation genuinely computed 7a401d6b4484bb61d7bf67a5afe6b77140411d21 for PR #4512's diff and that value were written into this receipt as predicate.diff_patch_id, Arm 4's A2 selection step (which recomputes the patch-id locally with the same pinned prpid_compute and requires byte-equality to select a receipt for the merge) would find NO receipt whose diff_patch_id matches its own recomputation, and the PR would show a missing/unbound receipt at merge time despite this review having run -- or, if written honestly as computed here, would simply disagree with whatever CI reports, which needs reconciling rather than silently trusting one side. This run recomputed 3 independent times (three heads, git 2.34.1 reimpl, golden-fixture self-test 6/6 passing) and could not reproduce the stated CI value; on THIS box the native git comparison that would fully corroborate the reimpl (git 2.40+ patch-id --verbatim) is unavailable (git 2.34.1, and every alternate git binary found on the box -- toolbin copies under /tmp -- is also 2.34.1), so a genuine reimpl/native divergence on this specific diff cannot be ruled out from here and should be checked on a box with native git 2.40+.",
+            "command": [
+              "bash",
+              "-c",
+              "source scripts/lib/pr_review_patch_id.sh; prpid_compute . c115c5ed024f441a394052355a590bc1be223110 5ea016f543e1a2a28af9da889bc1f43cd8222e47 4512"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "2ceb6fc43b913f8e15c1f11cdd82a60701113408e6e34693d0adc1ff820006b9"
+          }
+        }
+      ],
+      "properties": {
+        "consultation": "review-integrity",
+        "status": "consulted-found-something"
+      }
+    }
+  ]
+}

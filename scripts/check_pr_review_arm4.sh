@@ -111,7 +111,8 @@ safe_rm_scratch() {
 }
 
 ST_ROOT=''
-cleanup_self_test() { safe_rm_scratch "$ST_ROOT" 'arm4-selftest.'; }
+SIG_ROOT=''
+cleanup_self_test() { safe_rm_scratch "$ST_ROOT" 'arm4-selftest.'; safe_rm_scratch "$SIG_ROOT" 'arm4-checksig.'; }
 trap cleanup_self_test EXIT
 
 die_env() { echo "$PROG: ENV - $*" >&2; exit 2; }
@@ -139,6 +140,77 @@ corrupt_signature_line() {
 receipt_head() {
     [ -f "$1/receipt.intoto.jsonl" ] || return 0
     jq -r '.predicate.head_sha // empty' "$1/receipt.intoto.jsonl" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# B1 (#4512, operator 2026-09-28 14:52Z): the CI signer no longer commits a
+# .minisig - a signer commit made the PR head a bot commit, which the approval
+# policy holds at action_required. It posts the signature as a check run named
+# `pr-review-signature` ON THE PR HEAD SHA, output.text = {"<receipt dir>":
+# "<minisig file>"}. The trusted comment (signed) carries `head=<sha> pid=<id>`.
+#
+# check_runs_json <sha> - the check-runs listing for <sha>. ARM4_CHECK_RUNS_FILE
+# replaces the API with a file of the same shape: the case table's injection,
+# and it is said out loud when used.
+# ---------------------------------------------------------------------------
+check_runs_json() {
+    if [ -n "${ARM4_CHECK_RUNS_FILE:-}" ]; then
+        echo "      signature source: FILE $ARM4_CHECK_RUNS_FILE (injected, not the API)" >&2
+        cat -- "$ARM4_CHECK_RUNS_FILE"
+        return
+    fi
+    gh api "repos/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY unset}/commits/$1/check-runs?check_name=pr-review-signature&per_page=100"
+}
+
+# pr_head_sha <pr> <subject> <kind> - the sha the signature must name. On a
+# branch event that is the subject itself; in the queue the subject is the
+# squash, so it is the PR's head (ARM4_PR_HEAD_SHA, else the API).
+pr_head_sha() {
+    if [ "$3" = branch ]; then printf '%s\n' "$2"; return 0; fi
+    if [ -n "${ARM4_PR_HEAD_SHA:-}" ]; then printf '%s\n' "$ARM4_PR_HEAD_SHA"; return 0; fi
+    gh api "repos/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY unset}/pulls/$1" --jq .head.sha
+}
+
+# check_signature <receipt dir> <pr> <sig head> <pid> <out dir> - write the
+# check-run signature for <receipt dir> into <out dir> beside a copy of the
+# receipt, after proving it verifies under the repository key AND that its
+# trusted comment names exactly <sig head> and <pid>. rc 1 on every failure,
+# named; never a silent pass.
+check_signature() {
+    local src=$1 pr=$2 sh=$3 pid=$4 out=$5 name runs sig tc
+    name=$(basename "$src")
+    runs=$(check_runs_json "$sh") || { echo "  A2b could not list check runs on $sh." >&2; return 1; }
+    sig=$(printf '%s' "$runs" | jq -r --arg h "$sh" --arg k "$name" '
+        [.check_runs[]? | select(.name == "pr-review-signature" and .head_sha == $h
+                                 and .app.slug == "github-actions" and .conclusion == "success")]
+        | sort_by(.completed_at // "") | last | (.output.text // "{}") | fromjson | .[$k] // empty' 2>/dev/null)
+    if [ -z "$sig" ]; then
+        echo "  A2b $src is UNSIGNED: no committed .minisig and no pr-review-signature" >&2
+        echo "      check run on $sh carries a signature for $name." >&2
+        return 1
+    fi
+    mkdir -p "$out" || die_env "mkdir $out"
+    cp "$src"/* "$out/" 2>/dev/null || true
+    printf '%s\n' "$sig" > "$out/receipt.intoto.jsonl.minisig"
+    if ! minisign -V -q -m "$out/receipt.intoto.jsonl" -p "$REPO_ROOT/$PUBKEY_REL" \
+            -x "$out/receipt.intoto.jsonl.minisig" >/dev/null 2>&1; then
+        echo "  A2b the check-run signature for $name does NOT verify under $PUBKEY_REL." >&2
+        return 1
+    fi
+    tc=$(sed -n 's/^trusted comment: //p' "$out/receipt.intoto.jsonl.minisig")
+    case " $tc " in
+      *" pr=$pr "*) ;;
+      *) echo "  A2b the signature's trusted comment does not name pr=$pr: '$tc'" >&2; return 1 ;;
+    esac
+    case " $tc " in
+      *" head=$sh "*) ;;
+      *) echo "  A2b the signature is bound to another head, not $sh: '$tc'" >&2; return 1 ;;
+    esac
+    case " $tc " in
+      *" pid=$pid "*) ;;
+      *) echo "  A2b the signature is bound to another diff, not patch-id $pid: '$tc'" >&2; return 1 ;;
+    esac
+    echo "  A2b check-run signature on $sh verifies; trusted comment binds pr=$pr head=$sh pid=$pid"
 }
 
 # ---------------------------------------------------------------------------
@@ -264,6 +336,17 @@ arm4() {
         echo "      reviewed head is not an ancestor of the subject (a queue squash or a rebase): the diff binds, not the commit"
     fi
 
+    # -- A2b: a signature that is not committed comes from the check run (B1) --
+    if [ ! -f "$best_dir/receipt.intoto.jsonl.minisig" ]; then
+        local sig_head
+        sig_head=$(pr_head_sha "$pr" "$head" "$kind") && [ -n "$sig_head" ] \
+            || { echo "  A2b could not resolve PR $pr's head sha." >&2; return 1; }
+        SIG_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/arm4-checksig.XXXXXX") || die_env "mktemp failed"
+        check_signature "$best_dir" "$pr" "$sig_head" "$pid" \
+            "$SIG_ROOT/$root/$pr/$(basename "$best_dir")" || return 1
+        best_dir="$SIG_ROOT/$root/$pr/$(basename "$best_dir")"
+    fi
+
     # -- A3 ----------------------------------------------------------------
     local scratch rc
     scratch=$(mktemp -d "${TMPDIR:-/tmp}/arm4-positive-control.XXXXXX") || die_env "mktemp failed"
@@ -385,6 +468,44 @@ self_test() {
     tip=$(git -C "$repo" commit-tree -p "$head" -m "R1 record the receipt" "$tree" \
           2>/dev/null) || die_env "could not create a descendant of $head"
 
+    # #4510 FINGERPRINT IDEMPOTENCE. A PR also commits its QUORUM verdict after review.
+    # tip_q adds docs/audits/quorum-PMAT-999.json on top of tip; its fingerprint must
+    # equal tip's and head's, and re-stamping the same diff must give the same id.
+    # tip_x adds docs/audits/other.json instead: the CONTROL - the exclusion is the
+    # receipt paths only, so any other file must still move the id.
+    local tip_q tip_x add_file
+    add_file() { # <parent> <path> <msg> -> sha of <parent> plus one new file at <path>
+        local b t
+        b=$(printf '{"agreed":true}\n' | git -C "$repo" hash-object -w --stdin) || return 1
+        rm -f -- "${idx:?}"
+        GIT_INDEX_FILE=$idx git -C "$repo" read-tree "$1" || return 1
+        GIT_INDEX_FILE=$idx git -C "$repo" update-index --add --cacheinfo "100644,$b,$2" || return 1
+        t=$(GIT_INDEX_FILE=$idx git -C "$repo" write-tree) || return 1
+        git -C "$repo" commit-tree -p "$1" -m "$3" "$t"
+    }
+    tip_q=$(add_file "$tip" docs/audits/quorum-PMAT-999.json "R2 record the quorum") \
+        || die_env "could not build the quorum-artifact descendant"
+    tip_x=$(add_file "$tip" docs/audits/other.json "R2 an ordinary file") \
+        || die_env "could not build the control descendant"
+    local id_h id_t id_q id_q2 id_x
+    id_h=$(prpid_compute "$repo" "$rbase" "$head" 999)  || die_env "no patch-id for head"
+    id_t=$(prpid_compute "$repo" "$rbase" "$tip" 999)   || die_env "no patch-id for tip"
+    id_q=$(prpid_compute "$repo" "$rbase" "$tip_q" 999) || die_env "no patch-id for tip_q"
+    id_q2=$(prpid_compute "$repo" "$rbase" "$tip_q" 999) || die_env "no patch-id for tip_q (again)"
+    id_x=$(prpid_compute "$repo" "$rbase" "$tip_x" 999) || die_env "no patch-id for tip_x"
+    if [ "$id_h" = "$id_t" ] && [ "$id_t" = "$id_q" ] && [ "$id_q" = "$id_q2" ]; then
+        echo "PASS  fingerprint-idempotent         head = +receipt = +quorum = re-stamp ($id_q)"
+    else
+        echo "FAIL  fingerprint-idempotent         head $id_h, +receipt $id_t, +quorum $id_q, re-stamp $id_q2"
+        st_fail=$((st_fail + 1))
+    fi
+    if [ "$id_x" != "$id_t" ]; then
+        echo "PASS  fingerprint-control-moves      an ordinary file still changes the id"
+    else
+        echo "FAIL  fingerprint-control-moves      docs/audits/other.json did not change the id: the exclusion is too wide"
+        st_fail=$((st_fail + 1))
+    fi
+
     # THE MERGE-QUEUE SHAPE: a SQUASH of the PR onto a main that MOVED, one parent.
     # The reviewed head is not its ancestor - the ancestor rule's 0-of-6 case.
     local main squash
@@ -466,6 +587,38 @@ self_test() {
     corrupt_signature_line "$badsig/evidence/pr-review/999/$head/receipt.intoto.jsonl.minisig" \
         || die_env "could not corrupt the fixture signature"
 
+    # B1 (#4512): the SAME receipt with NO committed .minisig; its signature arrives
+    # as a pr-review-signature check run instead. check_runs <file> <check sha> <sig>
+    # writes the API listing shape Arm 4 reads (ARM4_CHECK_RUNS_FILE injects it).
+    local csig="$ST_ROOT/check-sig" cev cs
+    cp -a "$repo" "$csig"
+    cev="$csig/evidence/pr-review/999/$head"
+    rm -f -- "${cev:?}/receipt.intoto.jsonl.minisig"
+    csign() { # <trusted comment> <out minisig>
+        minisign -S -s "$fix/keys/pr-review-test-TEST-ONLY.key" -m "$cev/receipt.intoto.jsonl" \
+            -x "$2" -t "$1" </dev/null >/dev/null 2>&1
+    }
+    check_runs() { # <out json> <check head sha> <minisig file>
+        jq -n --arg h "$2" --arg k "$head" --rawfile v "$3" '{check_runs: [{
+            name: "pr-review-signature", head_sha: $h, conclusion: "success",
+            completed_at: "2026-09-28T15:00:00Z", app: {slug: "github-actions"},
+            output: {text: ({($k): $v} | tojson)}}]}' > "$1"
+    }
+    cs="$ST_ROOT/cs"; mkdir -p "$cs"
+    csign "arm4 self-test pr=999 head=$tip pid=$pid"      "$cs/good.minisig"  || die_env "could not sign (good)"
+    csign "arm4 self-test pr=999 head=$head pid=$pid"     "$cs/wsha.minisig"  || die_env "could not sign (wrong sha)"
+    csign "arm4 self-test pr=999 head=$tip pid=$id_x"     "$cs/wpid.minisig"  || die_env "could not sign (wrong pid)"
+    csign "arm4 self-test pr=998 head=$tip pid=$pid"      "$cs/wpr.minisig"   || die_env "could not sign (wrong pr)"
+    cp "$cs/good.minisig" "$cs/forged.minisig"
+    corrupt_signature_line "$cs/forged.minisig" || die_env "could not corrupt the check-run signature"
+    check_runs "$cs/good.json"   "$tip"  "$cs/good.minisig"
+    check_runs "$cs/wsha.json"   "$tip"  "$cs/wsha.minisig"
+    check_runs "$cs/wpid.json"   "$tip"  "$cs/wpid.minisig"
+    check_runs "$cs/wpr.json"    "$tip"  "$cs/wpr.minisig"
+    check_runs "$cs/forged.json" "$tip"  "$cs/forged.minisig"
+    check_runs "$cs/other.json"  "$head" "$cs/good.minisig"
+    printf '{"check_runs":[]}\n' > "$cs/none.json"
+
     printf '#!/usr/bin/env bash\nexit 0\n' > "$ST_ROOT/accept-everything.sh"
     printf '#!/usr/bin/env bash\nexit 1\n' > "$ST_ROOT/refuse-everything.sh"
     chmod +x "$ST_ROOT/accept-everything.sh" "$ST_ROOT/refuse-everything.sh"
@@ -498,6 +651,10 @@ self_test() {
         "$repo"   999 "$head"
     row receipt-reviews-ancestor  0 "receipt reviews an ANCESTOR of the subject (depth 1) — the only shape a PR can have" \
         "$repo"   999 "$tip"
+    row receipt-then-quorum       0 "#4510: the quorum verdict committed AFTER the receipt still binds" \
+        "$repo"   999 "$tip_q"
+    row receipt-then-other-file   1 "#4510 control: any other file committed after the receipt does not" \
+        "$repo"   999 "$tip_x"
     row no-receipt-for-this-pr    1 "no receipt at all (§6.3: RED, not skipped)" \
         "$repo"  1000 "$tip"
     row receipt-not-an-ancestor   1 "subject is origin/main itself: an EMPTY diff binds nothing" \
@@ -548,11 +705,29 @@ self_test() {
     row public-key-absent         1 "no .github/pr-review.pub — the branch that used to exit 0 forever" \
         "$nokey"  999 "$tip"
 
+    # B1 (#4512): the signature as a check run on the head sha - both polarities.
+    row check-sig-valid           0 "B1: no committed .minisig; a check run on the head carries a signature bound to head+pid" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/good.json"
+    row check-sig-unsigned        1 "B1: no committed .minisig and no check-run signature: UNSIGNED is RED" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/none.json"
+    row check-sig-forged          1 "B1: the check run's signature does not verify (forged)" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/forged.json"
+    row check-sig-wrong-head      1 "B1: a valid signature whose trusted comment names ANOTHER head sha" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/wsha.json"
+    row check-sig-wrong-pid       1 "B1: a valid signature bound to ANOTHER diff's patch-id" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/wpid.json"
+    row check-sig-wrong-pr        1 "B1: a valid signature bound to ANOTHER PR" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/wpr.json"
+    row check-sig-on-other-sha    1 "B1: the only check run is on another commit, not the head judged" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/other.json"
+    row check-sig-queue           0 "B1: merge_group squash; the signature is looked up on the PR head" \
+        "$csig"   999 "$squash"  ARM4_CHECK_RUNS_FILE="$cs/good.json" ARM4_PR_HEAD_SHA="$tip" GITHUB_EVENT_NAME=merge_group
+
     if [ "$st_fail" -ne 0 ]; then
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 23/23 rows, both polarities ---"
+    echo "--- 33/33 rows + 2 fingerprint checks, both polarities ---"
     return 0
 }
 
