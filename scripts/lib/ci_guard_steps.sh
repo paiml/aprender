@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ci_guard_steps.sh -- read CI's guard jobs from ci.yml; check them, list them,
+# ci_guard_steps.sh -- read CI's guard jobs from ci/sections.yml; check them, list them,
 # and run them ALL (#4415, #4416). bash + awk + jq: no interpreter, no PyYAML, no yq
 # (the clean-room fleet pins jq and carries no yq -- infra readme-lock-check.sh).
 #
@@ -46,15 +46,21 @@ yaml_json() {
 }
 
 # ── shared reads ────────────────────────────────────────────────────────────
-WORKFLOW=".github/workflows/ci.yml"
+# The guard jobs' bodies live in ci/sections.yml since #4441 (ci.yml's fat jobs run
+# them as sections). Only its `jobs:` mapping is read: the header above it
+# (`sovereign-ci:`, `matrix-pins:`) carries flow maps this reader refuses, and no
+# guard job lives there.
+WORKFLOW="ci/sections.yml"
 JOBS=""   # a file holding the jobs map as JSON
 
 load_jobs() {
-    local tmp err
-    tmp="$(mktemp)" && err="$(mktemp)" || die "mktemp failed"
-    CLEAN+=("$tmp" "$err")
+    local tmp err body
+    tmp="$(mktemp)" && err="$(mktemp)" && body="$(mktemp)" || die "mktemp failed"
+    CLEAN+=("$tmp" "$err" "$body")
     [ -r "$WORKFLOW" ] || die "cannot read $WORKFLOW: no such file"
-    if ! yaml_json "$WORKFLOW" 2> "$err" | jq -c '.jobs // {} | if type == "object" then . else error("jobs: is not a mapping") end' > "$tmp" 2>> "$err"; then
+    awk '/^jobs:/ { p = 1 } p' "$WORKFLOW" > "$body" || die "cannot read $WORKFLOW"
+    [ -s "$body" ] || die "cannot read $WORKFLOW: no top-level jobs:"
+    if ! yaml_json "$body" 2> "$err" | jq -c '.jobs // {} | if type == "object" then . else error("jobs: is not a mapping") end' > "$tmp" 2>> "$err"; then
         die "cannot read $WORKFLOW: $(tr '\n' ' ' < "$err")"
     fi
     JOBS="$tmp"
@@ -62,12 +68,20 @@ load_jobs() {
 
 jqj() { jq "$@" "$JOBS"; }
 
-# guard_jobs -- the guard-* jobs the gate needs, in ci.yml order. Never empty.
+# guard_jobs -- the guard jobs, in file order. Never empty. A file with a `gate` job
+# (ci.yml-shaped) names them in the gate's needs. ci/sections.yml has no gate: the
+# gate is in ci.yml and requires each guard section by name, which
+# scripts/tests/guard_tree_job_test.sh proves. So there, every guard-* job that is
+# not itself a `-steps` manifest is one.
 guard_jobs() {
     local out
-    out="$(jqj -r '((.gate // {}).needs // []) as $n | ($n | if type == "string" then [.] else . end) as $n
-        | keys_unsorted[] | select(startswith("guard-") and (. as $j | $n | index([$j]) != null))')"
-    [ -n "$out" ] || die "no guard-* job in the gate's needs in $WORKFLOW"
+    out="$(jqj -r --arg sfx "$MANIFEST_SUFFIX" 'if has("gate") then
+          ((.gate.needs // []) | if type == "string" then [.] else . end) as $n
+          | keys_unsorted[] | select(startswith("guard-") and (. as $j | $n | index([$j]) != null))
+        else
+          keys_unsorted[] | select(startswith("guard-") and (endswith($sfx) | not))
+        end')"
+    [ -n "$out" ] || die "no guard-* job in $WORKFLOW"
     printf '%s\n' "$out"
 }
 

@@ -44,6 +44,9 @@ safetensors = "0.7"
 bytemuck = { version = "1.19", features = ["derive"] }
 half = "2.4"
 
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
 [dev-dependencies]
 proptest = "1.4"
 tempfile = "3.8"

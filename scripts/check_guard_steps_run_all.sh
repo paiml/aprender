@@ -107,8 +107,8 @@ self_test() {
 
     # The runner half (#4416) must RUN PAST a failure and report every one.
     local repo="$d/repo"
-    mkdir -p "$repo" && git -C "$repo" init -q && mkdir -p "$repo/.github/workflows"
-    fixture "$repo/.github/workflows/ci.yml" pass fail pass fail
+    mkdir -p "$repo" && git -C "$repo" init -q && mkdir -p "$repo/ci"
+    fixture "$repo/ci/sections.yml" pass fail pass fail
     local got
     ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
     got=$?
@@ -120,7 +120,7 @@ self_test() {
         sed 's/^/     | /' "$d/out"
         fail=1
     fi
-    fixture "$repo/.github/workflows/ci.yml" event
+    fixture "$repo/ci/sections.yml" event
     ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
     got=$?
     n=$((n + 1))
@@ -199,20 +199,20 @@ manifest_rows() {
             bad=1
         fi
     }
-    mkdir -p "$repo/.github/workflows" && git -C "$repo" init -q
-    mfixture "$repo/.github/workflows/ci.yml" good "exit 3" "true" "exit 4"
+    mkdir -p "$repo/ci" && git -C "$repo" init -q
+    mfixture "$repo/ci/sections.yml" good "exit 3" "true" "exit 4"
     mrun "CI: all run past red, both failures reported" 1 '^SUMMARY: 2 failed / 4 ran / 0 skipped$'
     n=$((n + 1))
     if [ "$(grep -c '^::error title=guard-x' "$d/out")" = 2 ] && grep -q '| FAIL |' "$d/msummary"; then
         printf 'ok   %-58s\n' "CI: one ::error per failure + a step-summary table"
     else printf 'FAIL %-58s\n' "CI: one ::error per failure + a step-summary table"; bad=1; fi
     # shellcheck disable=SC2016 # expanded by the step's bash, not here
-    mfixture "$repo/.github/workflows/ci.yml" good \
+    mfixture "$repo/ci/sections.yml" good \
         'b="$RUNNER_TEMP/b"; mkdir -p "$b"; printf "exit 0\n" > "$b/probe_tool"; chmod +x "$b/probe_tool"; echo "$b" >> "$GITHUB_PATH"; echo FOO=bar >> "$GITHUB_ENV"' \
         'probe_tool' 'test "$FOO" = bar'
     RUNNER_TEMP="$d/rt" mrun "CI: GITHUB_PATH / GITHUB_ENV reach later steps" 0 '^SUMMARY: 0 failed / 4 ran'
     # shellcheck disable=SC2016
-    mfixture "$repo/.github/workflows/ci.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
+    mfixture "$repo/ci/sections.yml" good 'sleep 30 & echo $! > "$RUNNER_TEMP/child.pid"; sleep 30'
     t0=$SECONDS
     mkdir -p "$d/rt"
     RUNNER_TEMP="$d/rt" mrun "CI: a hung step TIMES OUT and goes red" 1 'TIMEOUT' --step-timeout 1
@@ -242,7 +242,7 @@ manifest_rows() {
         && cp "$(dirname "$LIB")/../ci_guards.sh" "$d/mutlib/"
     sed 's/^def step_record:$/def step_record: if (.idx == "m1" or .idx == "1") then error("injected jq death") else . end |/' \
         "$(dirname "$LIB")/ci_guard_steps.jq" > "$d/mutlib/lib/ci_guard_steps.jq"
-    mfixture "$repo/.github/workflows/ci.yml" good "true" "true" "true"
+    mfixture "$repo/ci/sections.yml" good "true" "true" "true"
     if grep -q 'injected jq death' "$d/mutlib/lib/ci_guard_steps.jq"; then
         LIB="$d/mutlib/lib/$(basename "$LIB")" mrun "CI: a jq that dies mid-stream stops the run (rc 2)" 2 'cannot read the steps of guard-x'
     else n=$((n + 1)); printf 'FAIL %-58s\n' "jq-death mutant: the sed did not apply"; bad=1; fi
@@ -313,6 +313,15 @@ reader_rows() {
     n=$((n + 1))
     if printf '%s\n' "$got" | grep -q '^ok   guard-x: 2 fail-fast'; then printf 'ok   %-58s\n' "reader: gate needs: [a, guard-x] -> guard-x is checked"
     else printf 'FAIL %-58s\n' "reader: gate needs: [a, guard-x] -> guard-x is checked"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
+
+    # ci/sections.yml has no gate (it is in ci.yml): every guard-* job is found, and a
+    # header before `jobs:` that the reader would refuse is not read.
+    fixture "$d/r_sect0.yml" plain plain
+    { printf 'matrix-pins:\n  x:\n    - {a: 1}\n\n'; cat "$d/r_sect0.yml"; } > "$d/r_sect.yml"
+    got="$(bash "$LIB" --workflow "$d/r_sect.yml" check-run-all --baseline "$d/base2" 2>&1)"
+    n=$((n + 1))
+    if printf '%s\n' "$got" | grep -q '^ok   guard-x: 2 fail-fast'; then printf 'ok   %-58s\n' "reader: no gate job -> every guard-* job is checked"
+    else printf 'FAIL %-58s\n' "reader: no gate job -> every guard-* job is checked"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
 
     # The port's point: no python anywhere on the path.
     n=$((n + 1))
