@@ -15,7 +15,6 @@ metadata:
   - contracts/lora-merge-forward-equivalence-v1.yaml
   - 'aprender-train transformer::Qwen35Lora (CPU reference adapter gradient, FALSIFY-QTG-009)'
   depends_on:
-  - qwen35-train-gdn-v1
   - train-arch-honesty-v1
 status: PROPOSED
 equations:
