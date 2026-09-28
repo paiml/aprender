@@ -300,7 +300,6 @@ for pkg in provable-contracts provable-contracts-macros; do
     fi
 done
 
-WS_VER="$(awk -F'\"' '/^version *=/{print $2; exit}' Cargo.toml)"
 
 # --------------------------------------------------------------------------
 # WHAT REPLACED THE CURRENCY CHECK, AND WHY IT IS NOT A DELETION
@@ -397,11 +396,15 @@ fi
 
 # CURRENCY did not disappear -- it moved to the crate that now owns the name.
 printf -- '\n--- CURRENCY: the tool the facade points AT is the current one -------\n'
+# "Current" is the version THIS tree publishes for the pv pair: aprender-contracts, the lib the
+# CLI ships with. Unscoped that is the workspace version; a scoped pv release (#4604) pins both
+# crates off it together, and comparing the CLI to the workspace would call that release stale.
 WANT="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts-cli )"
-if [ "$WANT" = "$WS_VER" ]; then
-    printf 'ok    aprender-contracts-cli is at %s, the workspace version\n' "$WANT"
+PAIR="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts )"
+if [ -n "$WANT" ] && [ "$WANT" = "$PAIR" ]; then
+    printf 'ok    aprender-contracts-cli is at %s, the version this tree publishes for the pv pair\n' "$WANT"
 else
-    printf 'FAIL  aprender-contracts-cli is at %s but the workspace is at %s -- the\n' "$WANT" "$WS_VER"
+    printf 'FAIL  aprender-contracts-cli is at %s but aprender-contracts is at %s -- the\n' "${WANT:-<unread>}" "${PAIR:-<unread>}"
     printf '      redirect would install a version this tree never published\n'; rc=1
 fi
 
@@ -425,10 +428,13 @@ for pkg in provable-contracts provable-contracts-macros provable-contracts-cli; 
     up_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
         "crates/facades/$pkg/Cargo.toml" 2>/dev/null)
     [ -n "$up_ver" ] || { printf 'ok    %s: no pinned upstream version\n' "$pkg"; continue; }
-    if [ "$up_ver" = "$WS_VER" ]; then
-        printf 'ok    %s: upstream pinned to the workspace version (%s)\n' "$pkg" "$up_ver"
+    # The version THIS tree publishes for the fronted crate: its own, which is the workspace
+    # version unless a scoped release (#4604) pinned it off. Unreadable -> FAIL, never a pass.
+    up_pub=$( python3 "$FACTS" --version-of "$ROOT_MD" "aprender-${pkg#provable-}" ) || up_pub=""
+    if [ -n "$up_pub" ] && [ "$up_ver" = "$up_pub" ]; then
+        printf 'ok    %s: upstream pinned to the version this tree publishes (%s)\n' "$pkg" "$up_ver"
     else
-        printf 'FAIL  %s: upstream pinned to %s but workspace is %s -- a facade must\n' "$pkg" "$up_ver" "$WS_VER"
+        printf 'FAIL  %s: upstream pinned to %s but this tree publishes %s -- a facade must\n' "$pkg" "$up_ver" "${up_pub:-<unread>}"
         printf '      track the version published from THIS tree, or it resolves an older\n'
         printf '      registry copy that lacks the symbols it calls.\n'
         rc=1
