@@ -869,6 +869,54 @@ pub fn validate_emc_yaml(yaml_content: &str) -> Result<(), SchemaValidationError
 
 #[cfg(test)]
 mod tests {
+    /// Free fns in this file's non-test part as (name, gated `not(schema-validation)`, body).
+    fn free_fns(src: &str) -> Vec<(String, bool, String)> {
+        let head = src.split("\n#[cfg(test)]\nmod tests").next().unwrap_or(src);
+        let lines: Vec<&str> = head.lines().collect();
+        let starts: Vec<usize> = (0..lines.len())
+            .filter(|&i| lines[i].starts_with("fn ") || lines[i].starts_with("pub fn "))
+            .collect();
+        let mut out = Vec::new();
+        for (k, &i) in starts.iter().enumerate() {
+            let sig = lines[i]
+                .trim_start_matches("pub ")
+                .trim_start_matches("fn ");
+            let name: String = sig
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let gated = i > 0 && lines[i - 1] == "#[cfg(not(feature = \"schema-validation\"))]";
+            let end = starts.get(k + 1).copied().unwrap_or(lines.len());
+            out.push((name, gated, lines[i..end].join("\n")));
+        }
+        out
+    }
+
+    /// FALSIFY: an ungated free fn that calls a `not(schema-validation)` fn does not compile
+    /// under `--features schema-validation` (check_structure lost its gate in the CB-200 split).
+    #[test]
+    fn falsify_every_caller_of_a_non_schema_validation_fn_is_gated_too() {
+        let fns = free_fns(include_str!("v2.rs"));
+        let gated: Vec<&str> = fns.iter().filter(|f| f.1).map(|f| f.0.as_str()).collect();
+        assert!(
+            gated.contains(&"check_ref"),
+            "scan found no gated fns: {gated:?}"
+        );
+        let bad: Vec<String> = fns
+            .iter()
+            .filter(|f| !f.1)
+            .flat_map(|f| {
+                gated
+                    .iter()
+                    .filter(|g| f.2.contains(&format!("{g}(")))
+                    .map(move |g| format!("{} calls {g}", f.0))
+            })
+            .collect();
+        assert!(
+            bad.is_empty(),
+            "ungated fn calls a not(schema-validation) fn: {bad:?}"
+        );
+    }
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
