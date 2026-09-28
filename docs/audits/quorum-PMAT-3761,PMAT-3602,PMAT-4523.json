@@ -1,0 +1,323 @@
+{
+  "ticket": "PMAT-3761,PMAT-3602,PMAT-4523",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "25fdbc4a12d0c2b62b517ad628aa089b95723c11",
+  "diff_sha256": "f26722164cb1c16d5360fe16f715c001ac0e130d97947bc0b79a10318041cfc2",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 222967,
+  "prompt_sha256": "5accc33be4cebe6f9c2266d23fe69ec97a7a5a8122648ac661ca765711334ce9",
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Read the full 4224-line brief (doctrine, all three ticket/receipt blocks, the complete diff, prior quorum records, findings JSONL, roadmap entries) end to end. Applying the refutation doctrine to PMAT-3761 (bounded-prefix reads), PMAT-3602 (F2 dense receipt precision-keying), and PMAT-4523 (aarch64 logits budget): no test asserts the opposite of its ticket, no gate is weakened, and the two receipt claims I independently re-derived from the current tree (not just cited from the diff) held up. I traced crates/aprender-serve/src/gguf/inference/forward/f2_dense_receipt.rs::decide_dense against its own doc-comment table for all four (fp8_prefill_on × receipt-tag) cases and it matches exactly, including the DeviceMismatch-short-circuit retry the prior agy-lane round disputed — decide()'s field-check order in f2_receipt.rs confirms DeviceMismatch is the last and only reason that can mean 'this is the Fp16Fp8Rejected receipt', so the retry-only-on-DeviceMismatch guard is sound, not an equivalent mutant. I also verified `metadata` in apr-cli/src/commands/eval/mod.rs::verify_single_file is a real std::fs::metadata(path) binding at line 915 (not a dangling reference introduced by the PMAT-3761 bounded-read refactor), so the header_valid size check is well-formed. PMAT-4523's aarch64 LOGITS_BUDGET widening (7e-2→8e-2) is the ticket's explicit ask, backed by a stated cross-host measurement, and ships a fail-closed CI step plus a QWEN35_E2E_DUMP mode engineered to always fail its own assertion so a measurement run can't be misread as a pass. One process caveat: the required PMAT-065 tree_witness file does not exist in this lane's git-dir, so tree_witness below is empty — the harness should treat that as the witness condition, not fabricate one.",
+      "findings": [
+        {
+          "file": "PROCESS",
+          "claim": "PMAT-065 tree_witness file is absent: neither /mnt/nvme-raid0/worktrees/apr59-gpu-perf/.git/paiml-lane-witness nor the real gitdir /home/noah/src/aprender/.git/worktrees/apr59-gpu-perf/paiml-lane-witness exists, and a glob for paiml-lane-witness* in that worktree gitdir found nothing.",
+          "grounding": "measured",
+          "fix": "agy-lane.sh should mint the witness file into the worktree's git-dir before invoking the lane, or the lane output should be treated as void per PMAT-065 rather than assigned a fabricated token."
+        },
+        {
+          "file": "crates/aprender-serve/src/gguf/inference/forward/f2_dense_receipt.rs",
+          "claim": "decide_dense's table (skip/force_fp16 per fp8_prefill_on × receipt precision tag) matches its own doc comment exactly, including the DeviceMismatch-only retry against the Fp16Fp8Rejected key; this independently confirms the PMAT-3602 receipt's rebuttal of the prior lane's DeviceMismatch-short-circuit concern.",
+          "grounding": "measured",
+          "line": 101
+        },
+        {
+          "file": "crates/apr-cli/src/commands/eval/mod.rs",
+          "claim": "the `metadata` variable used in the new safetensors header_valid check (post-PMAT-3761 bounded-read refactor) is a genuine std::fs::metadata(path) binding at line 915 inside verify_single_file, not a stray/undefined reference.",
+          "grounding": "measured",
+          "line": 915
+        }
+      ],
+      "raw_bytes": 7166,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "5accc33be4cebe6f9c2266d23fe69ec97a7a5a8122648ac661ca765711334ce9",
+      "trace": {
+        "input_sha256": "a925dabc5d09571096ae7801284b33921c8cf264568ca33d6def15f171639e4b",
+        "output_sha256": "33ded09be85e11bd4bbe8df6ab9efb4d47b988467d6b93126e58a9f6411a8c2a",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all three tickets (PMAT-3761, PMAT-3602, PMAT-4523) without introducing forbidden functionality. PMAT-3761 implements bounded-prefix model reads across 17 sites to avoid reading whole files into memory, well-tested with sparse multi-GB files and correctly integrated. PMAT-3602 properly uses a receipt cache for the CPU reference forward on dense GGUF GPU executions, correctly keying on prefill precision and validating appropriately. PMAT-4523 sets the LOGITS_BUDGET per host CPU arch (7e-2 x86_64, 8e-2 aarch64), adds cross-host measurements, updates cuda-nightly, and adds a QWEN35_E2E_DUMP fail mode. The claims in the receipt match the code and tests. No extraneous changes or weakened gates were identified.",
+      "findings": [],
+      "raw_bytes": 2782,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "5accc33be4cebe6f9c2266d23fe69ec97a7a5a8122648ac661ca765711334ce9",
+      "trace": {
+        "input_sha256": "f8482d322bd5505123b15a4c98182fae8123151afc53c821ac40944d2c56d5b8",
+        "output_sha256": "856e522aab4d9696c65897ff313810770b0eec4e74686ef323b53248bf171656",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3761, PMAT-3602, PMAT-4523 all implement their acceptance criteria without refuting evidence. PMAT-3761 centralizes bounded-prefix policy (16 MiB first, 256 MiB cap, refuse over cap) and converts 17 production whole-file model reads to header-only via four new modules; eight case rows measure peak RSS under bound with sparse 2 GiB fixtures. PMAT-3602 adds receipt system for dense GGUF path keyed on (model sha256, apr build, device, precision); 11 test rows verify precision tag semantics with 22+ mutants all turning RED on removal. PMAT-4523 architecture-keys LOGITS_BUDGET (7e-2 x86_64 / 8e-2 aarch64) and adds cuda-nightly CI step with fail-closed gates on sm_121; QWEN35_E2E_DUMP measurement mode correctly fails by design. All gates pass; no weakened safety checks detected.",
+      "findings": [],
+      "raw_bytes": 2487,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "5accc33be4cebe6f9c2266d23fe69ec97a7a5a8122648ac661ca765711334ce9",
+      "trace": {
+        "input_sha256": "3529bca1e05162defc8bdfa25661243fd6cf4b7a28f36ccc135bd539a4433a42",
+        "output_sha256": "43c96886428846045bedcf579bce613f4f9ecb67ff1099e4cc24efb9e06cc78c",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "PROCESS",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "PMAT-065 tree_witness file is absent: neither /mnt/nvme-raid0/worktrees/apr59-gpu-perf/.git/paiml-lane-witness nor the real gitdir /home/noah/src/aprender/.git/worktrees/apr59-gpu-perf/paiml-lane-witness exists, and a glob for paiml-lane-witness* in that worktree gitdir found nothing."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/eval/mod.rs",
+      "line": 915,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "the `metadata` variable used in the new safetensors header_valid check (post-PMAT-3761 bounded-read refactor) is a genuine std::fs::metadata(path) binding at line 915 inside verify_single_file, not a stray/undefined reference."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/forward/f2_dense_receipt.rs",
+      "line": 101,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "decide_dense's table (skip/force_fp16 per fp8_prefill_on × receipt precision tag) matches its own doc comment exactly, including the DeviceMismatch-only retry against the Fp16Fp8Rejected key; this independently confirms the PMAT-3602 receipt's rebuttal of the prior lane's DeviceMismatch-short-circuit concern."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/cuda-nightly.yml",
+        "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_tests.rs",
+        "crates/aprender-serve/src/infer/f2_dense_gate.rs"
+      ],
+      "paths": 50,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790617608,
+          "window_calls": 2,
+          "window_429": 0,
+          "hour_calls": 0,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 222967 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 222967 bytes, over quorum.advisory_lane.max_brief_bytes=196608; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 86 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 222967,
+      "sent_bytes": 0,
+      "max_bytes": 196608
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude same_family=2/2"
+  }
+}
