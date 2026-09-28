@@ -737,7 +737,7 @@ impl<'a> Resolver<'a> {
     /// type of the same name is tried first.
     ///
     /// The file may also be included by a CHILD module's file in the same directory: `metaheuristics::
-    /// cmaes_include_01::optimize`, where `metaheuristics/cmaes.rs` (`mod cmaes;`) does `include!("cmaes_include_01.rs")`.
+    /// cmaes_include_01::optimize`, where `metaheuristics/cmaes.rs` (`mod cmaes;`) `include!`s `cmaes_include_01.rs`.
     fn step_into_include(
         &mut self,
         module: &Module,
@@ -1447,7 +1447,7 @@ mod tests {
     }
 
     /// #4502: a binding row names the file an `include!()`d item is written in (`ops::activation::matmul`, with
-    /// `ops/mod.rs` doing `include!("activation.rs")`; `cmaes::cmaes_include_01::optimize` for a method in a file
+    /// `ops/mod.rs` `include!`-ing `activation.rs`; `cmaes::cmaes_include_01::optimize` for a method in a file
     /// the sibling `cmaes.rs` includes). The item exists, so the row resolves; an item of a DIFFERENT included file,
     /// or a stem nothing includes, is still refused.
     #[test]
