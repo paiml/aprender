@@ -296,6 +296,27 @@ def declaimed(C, hosts, out):
     return got, rc
 
 
+def declaim_still_claimed(L, dec, out):
+    """-> rc. A (host, arch) that cells.declaimed withdraws and the ladder still claims is a contradiction (#3715,
+    cop 2026-09-28 20:00Z). Released pv reads rung hosts and not declaimed, so a rung whose host set still names
+    the de-claimed host keeps the claim alive where the release decision is made; a long-rung representative for
+    an arch de-claimed on every required host claims long rungs nobody owes. Either one is RED, never a note."""
+    req = {h.get("id") for h in L.get("hosts") or [] if h.get("required")}
+    rc = 0
+    for r in L.get("rungs") or []:
+        for h in sorted(set(r.get("hosts") or req)):
+            d = dec.get((h, r.get("arch")))
+            if d:  # a claim the de-claim withdraws
+                out(f"FAIL  rung {r.get('id')} still claims arch {r.get('arch')} on {h}, which cells.declaimed withdraws (#{d['issue']}) -- narrow its hosts: or drop the de-claim")
+                rc = 1
+    reps = ((L.get("cells") or {}).get("long_rungs_for") or {}).get("representatives") or {}
+    for arch in sorted(reps):
+        if req and all((h, arch) in dec for h in req):  # every required host de-claims it
+            out(f"FAIL  long_rungs_for.representatives.{arch} still claims long rungs for arch {arch}, de-claimed on every required host")
+            rc = 1
+    return rc
+
+
 def judge(L, receipts, rungs_doc, out, rungs_main=None):
     C = L.get("cells")
     if not C:
@@ -339,6 +360,8 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
     rungs, consumer_max, rc = load_rungs(rungs_doc, out)
     dec, drc = declaimed(C, {h.get("id") for h in L.get("hosts") or []}, out)
     rc = rc or drc
+    if declaim_still_claimed(L, dec, out):
+        rc = 1
     if rungs_main is not None and _rungs_floor(rungs_main, rungs_doc, out):
         rc = 1
     if not verbs:
