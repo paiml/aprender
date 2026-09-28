@@ -254,8 +254,9 @@ pub const PARITY_SCHEMA: &str = "kernel-parity-receipt/v1";
 /// - `pass`: `oracle_independent` is true (a self-oracle proves nothing) and `served.max_rel_err` is finite;
 /// - `within_bound`: `served.max_rel_err ≤ tolerance_rel`;
 /// - `arch_match`: the receipt's `sm` (cuda) or `host_arch` (otherwise) equals `host_arch`;
-/// - `fresh`: the receipt's `input_key` equals `input_key` (design §5). Today's receipts carry none, so
-///   they judge stale: a receipt with no key cannot be proven to describe this tree.
+/// - `fresh`: the receipt's `input_set_hash` (KTEST-001 §5.1, written by KREG's parity emitter) equals
+///   `input_set_hash`, the hash the gate recomputes from the release tree (design §5). A receipt with no
+///   hash judges stale: it cannot be proven to describe this tree.
 ///
 /// # Errors
 /// Not JSON, another schema, or no `kernel_id`: the file is not a parity receipt and is refused.
@@ -264,7 +265,7 @@ pub fn judge_parity_receipt(
     bytes: &[u8],
     backend: &str,
     host_arch: &str,
-    input_key: &str,
+    input_set_hash: &str,
 ) -> Result<(String, KernelEvidence), ExtractError> {
     let doc: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| refuse(file, format!("not JSON: {e}")))?;
@@ -293,13 +294,15 @@ pub fn judge_parity_receipt(
     let independent = doc.get("oracle_independent") == Some(&serde_json::Value::Bool(true));
     let arch_key = if backend == "cuda" { "sm" } else { "host_arch" };
     let measured_on = doc.get(arch_key).and_then(serde_json::Value::as_str);
-    let key = doc.get("input_key").and_then(serde_json::Value::as_str);
+    let key = doc
+        .get("input_set_hash")
+        .and_then(serde_json::Value::as_str);
     Ok((
         kernel_id,
         KernelEvidence {
             pass: independent && rel_err.is_some(),
             within_bound: matches!((rel_err, tolerance), (Some(e), Some(t)) if e <= t),
-            fresh: !input_key.is_empty() && key == Some(input_key),
+            fresh: !input_set_hash.is_empty() && key == Some(input_set_hash),
             arch_match: measured_on == Some(host_arch),
         },
     ))

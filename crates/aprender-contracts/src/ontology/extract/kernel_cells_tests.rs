@@ -485,7 +485,10 @@ fn judge(json: &str, backend: &str, arch: &str, key: &str) -> KernelEvidence {
 /// Case table for `judge_parity_receipt`: each field judges to the failing value when absent or wrong.
 #[test]
 fn the_parity_judge_case_table() {
-    let keyed = Q2K.replace(r#""tolerance_rel""#, r#""input_key":"k1","tolerance_rel""#);
+    let keyed = Q2K.replace(
+        r#""tolerance_rel""#,
+        r#""input_set_hash":"k1","tolerance_rel""#,
+    );
     let all = KernelEvidence {
         pass: true,
         within_bound: true,
@@ -494,7 +497,7 @@ fn the_parity_judge_case_table() {
     };
     let cases: Vec<(String, &str, &str, &str, KernelEvidence)> = vec![
         (keyed.clone(), "cpu", "x86_64", "k1", all),
-        // Today's receipts carry no input_key: stale.
+        // A receipt with no input_set_hash: stale.
         (
             Q2K.to_string(),
             "cpu",

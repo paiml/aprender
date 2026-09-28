@@ -82,8 +82,9 @@ unvalidated cells" target stated honestly. Registering the remaining dispatch op
 
 ## 5. Freshness and reuse (from kaizen (1), 08:13Z)
 
-A kernel receipt is fresh when its **input key** matches: the sha256 of the kernel's `source_file`
-set, plus its registry row, plus the toolchain. `apr_sha` is not part of the key. A release whose diff
+A kernel receipt is fresh when its **`input_set_hash`** (KTEST-001 §5.1) matches the one the gate
+recomputes from the release tree: a sha256 over the kernel's `source_file`, its registry row (every
+field but `tolerance`), the pinned toolchain, the driver, the device and the oracle. `apr_sha` is not part of the key. A release whose diff
 does not touch a kernel reuses its receipt, and the gate reports the reuse percentage. A model cell is
 fresh when every KernelCell it uses is fresh and its smoke ran at the release commit.
 
