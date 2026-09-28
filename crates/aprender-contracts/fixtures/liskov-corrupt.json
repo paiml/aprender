@@ -1,0 +1,35 @@
+{
+  "pairs": [
+    {
+      "a": "a",
+      "b": "b",
+      "a_clauses": {
+        "requires": [
+          { "id": "PRE-2", "statement": "input has two elements", "formal": "len(x) > 1", "formal_status": "parsed" }
+        ]
+      },
+      "b_clauses": {
+        "requires": [
+          { "id": "PRE-1", "statement": "input is non-empty", "formal": "len(x) > 0", "formal_status": "parsed" }
+        ]
+      }
+    }
+  ],
+  "witness": {
+    "liskov_sha256": "corrupt-fixture",
+    "pairs_checked": 1,
+    "reasoner_git_sha": null,
+    "pc_reasoner": "fired",
+    "pairs": [
+      {
+        "a": "a",
+        "b": "b",
+        "obligations": [
+          { "kind": "pre", "chain": [ { "clause": "PRE-2", "from": "PRE-1" } ] },
+          { "kind": "post", "chain": [] },
+          { "kind": "inv", "chain": [] }
+        ]
+      }
+    ]
+  }
+}

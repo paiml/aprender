@@ -13,6 +13,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::binding::{BindingRegistry, ImplStatus};
+use crate::discharge::summary::{self, Discharged, L4Source};
 use crate::schema::Contract;
 
 // ── Proof level hierarchy ─────────────────────────────────────────
@@ -117,6 +118,13 @@ pub struct ProofStatusReport {
     pub kernel_classes: Vec<KernelClassSummary>,
     /// ONT-2a andon: a self-declared L4 is excluded from the L4 total in this build
     pub l4_self_declared_excluded: bool,
+    /// EV-8b: `discharge` when L4 credit came from `discharge-summary.json`, `self-declared` when no summary was found
+    /// and the tree's own `.lean` text was scanned instead
+    #[serde(default)]
+    pub l4_source: L4Source,
+    /// Why the summary granted nothing (`stale discharge: …`, `red discharge: …`); `None` when it granted or was absent
+    #[serde(default)]
+    pub l4_withheld: Option<String>,
     /// Aggregate totals across all contracts
     pub totals: ProofStatusTotals,
 }
@@ -255,9 +263,9 @@ pub fn is_lean_proved_with_grounding(contract: &Contract, grounded: u32) -> bool
     if total == 0 {
         return false;
     }
-    // ONT-001 ONT-2a (andon): a `verification_summary` is the contract talking about ITSELF, and until a
-    // discharge summary exists to check it against (PVL EV-8b) the only grounding in this tree is a
-    // sorry-free Lean theorem an equation names and `lean_theorem_names()` resolves. L4 is therefore
+    // ONT-001 ONT-2a (andon): a `verification_summary` is the contract talking about ITSELF. PVL EV-8b: the
+    // grounding is a theorem an equation names that a green, fresh, challenge-closed `discharge-summary.json`
+    // lists; with no summary beside the Lean base, a sorry-free theorem `lean_theorem_names()` resolves. L4 is therefore
     // granted on the GROUNDED count alone; a claim with nothing under it is reported `self-declared` by
     // `is_l4_self_declared`, excluded from the L4 total, and never counted quietly. The `not_applicable`
     // credit still comes from the summary: it is a claim about APPLICABILITY, not about a proof, and it
@@ -441,10 +449,164 @@ fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<Strin
     }
 }
 
+/// Lean identifier continuation: `sorry_free` and `x.sorry'` are not the `sorry` token.
+fn is_lean_ident_byte(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_' || c == b'\''
+}
+
+/// Whether Lean source admits a proof hole: the token `sorry` outside `--` line comments and
+/// (nested) `/- -/` block comments (#4351).
+///
+/// A doc comment that SAYS "compiles sorry-free" admits nothing, and a byte-level `contains("sorry")`
+/// denied such files every theorem they prove. The scan still fails CLOSED everywhere else:
+/// - a `sorry` inside a string literal counts — a string is code, not commentary;
+/// - string and char literals are skipped only so a `"--"` or `'"'` cannot open a fake comment
+///   that would hide a real `sorry` after it;
+/// - a file that ends inside a comment or string counts — it does not compile, so it proves nothing.
+pub(crate) fn lean_has_sorry(content: &str) -> bool {
+    let b = content.as_bytes();
+    let mut i = 0;
+    let mut depth = 0usize;
+    while i < b.len() {
+        if depth > 0 {
+            (i, depth) = step_block_comment(b, i, depth);
+            continue;
+        }
+        match scan_code_at(b, i) {
+            LeanScan::Next(j) => i = j,
+            LeanScan::OpenBlock(j) => {
+                depth = 1;
+                i = j;
+            }
+            LeanScan::Sorry => return true,
+            LeanScan::EndsInLineComment => return false,
+        }
+    }
+    depth > 0
+}
+
+/// One step of [`lean_has_sorry`] outside a block comment.
+enum LeanScan {
+    /// Resume scanning at this byte.
+    Next(usize),
+    /// A `/-` opened a block comment; resume at this byte, inside it.
+    OpenBlock(usize),
+    /// A `sorry` token was found (or a literal ran off the end of the file).
+    Sorry,
+    /// A `--` comment runs to EOF: nothing after it can admit a hole.
+    EndsInLineComment,
+}
+
+/// `sorry` as a whole Lean token at byte `i`.
+fn sorry_token_at(b: &[u8], i: usize) -> bool {
+    b[i..].starts_with(b"sorry")
+        && (i == 0 || !is_lean_ident_byte(b[i - 1]))
+        && b.get(i + 5).is_none_or(|&c| !is_lean_ident_byte(c))
+}
+
+/// Inside `depth` nested `/- -/` comments: returns the next byte and the new depth.
+fn step_block_comment(b: &[u8], i: usize, depth: usize) -> (usize, usize) {
+    if b[i..].starts_with(b"/-") {
+        (i + 2, depth + 1)
+    } else if b[i..].starts_with(b"-/") {
+        (i + 2, depth - 1)
+    } else {
+        (i + 1, depth)
+    }
+}
+
+/// Classify the lexeme starting at byte `i` of code (not inside any comment).
+fn scan_code_at(b: &[u8], i: usize) -> LeanScan {
+    let prev_ident = i > 0 && is_lean_ident_byte(b[i - 1]);
+    if b[i..].starts_with(b"--") {
+        return match b[i..].iter().position(|&c| c == b'\n') {
+            Some(p) => LeanScan::Next(i + p + 1),
+            None => LeanScan::EndsInLineComment,
+        };
+    }
+    if b[i..].starts_with(b"/-") {
+        return LeanScan::OpenBlock(i + 2);
+    }
+    if b[i] == b'r' && !prev_ident && matches!(b.get(i + 1), Some(b'"' | b'#')) {
+        return scan_raw_string(b, i);
+    }
+    if b[i] == b'"' {
+        return scan_string(b, i);
+    }
+    if b[i] == b'\'' && !prev_ident {
+        return LeanScan::Next(skip_char_literal(b, i));
+    }
+    if sorry_token_at(b, i) {
+        LeanScan::Sorry
+    } else {
+        LeanScan::Next(i + 1)
+    }
+}
+
+/// A literal's body `[from, to)` counts a `sorry` in it; else resume at `resume`.
+fn scan_literal_body(b: &[u8], from: usize, to: usize, resume: usize) -> LeanScan {
+    if (from..to).any(|k| sorry_token_at(b, k)) {
+        LeanScan::Sorry
+    } else {
+        LeanScan::Next(resume)
+    }
+}
+
+/// r"…" / r#"…"#: no escapes, closed by `"` plus the same number of `#`.
+fn scan_raw_string(b: &[u8], i: usize) -> LeanScan {
+    let hashes = b[i + 1..].iter().take_while(|&&c| c == b'#').count();
+    let open = i + 1 + hashes;
+    if b.get(open) != Some(&b'"') {
+        return LeanScan::Next(i + 1);
+    }
+    let mut close = vec![b'"'];
+    close.extend(std::iter::repeat_n(b'#', hashes));
+    let Some(p) = b[open + 1..]
+        .windows(close.len())
+        .position(|w| w == close.as_slice())
+    else {
+        return LeanScan::Sorry;
+    };
+    let end = open + 1 + p;
+    scan_literal_body(b, open + 1, end, end + close.len())
+}
+
+/// "…" with `\` escapes; an unterminated string does not compile, so it counts.
+fn scan_string(b: &[u8], i: usize) -> LeanScan {
+    let mut j = i + 1;
+    loop {
+        match b.get(j) {
+            None => return LeanScan::Sorry,
+            Some(b'\\') => j += 2,
+            Some(b'"') => break,
+            Some(_) => j += 1,
+        }
+    }
+    scan_literal_body(b, i + 1, j, j + 1)
+}
+
+/// A char literal is at most an escape plus one UTF-8 scalar; anything else is not one.
+fn skip_char_literal(b: &[u8], i: usize) -> usize {
+    let from = if b.get(i + 1) == Some(&b'\\') {
+        i + 3
+    } else {
+        i + 2
+    };
+    match b
+        .get(from..b.len().min(i + 7))
+        .and_then(|s| s.iter().position(|&c| c == b'\''))
+    {
+        Some(p) => from + p + 1,
+        None => i + 1,
+    }
+}
+
 /// Register the names contributed by one domain directory's sorry-free `.lean` files.
 ///
-/// A file containing `sorry` contributes NOTHING: an admitted proof grounds no claim, which is the whole
-/// reason this scan is the grounding ONT-2a trusts over a contract's own summary.
+/// A file that admits a `sorry` ([`lean_has_sorry`]) contributes NOTHING: an admitted proof grounds no
+/// claim, which is the whole reason this scan is the grounding ONT-2a trusts over a contract's own
+/// summary. Each file also registers `Theorems.<Domain>.<Stem>`, the `domain.file` form a contract's
+/// `lean_theorem:` cites (e.g. `Theorems.GgufExportSymmetry.Roundtrip`, #4351).
 fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain: &std::path::Path) {
     let domain_name = domain
         .file_name()
@@ -462,7 +624,7 @@ fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain:
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
-        if content.contains("sorry") {
+        if lean_has_sorry(&content) {
             continue;
         }
         let stem = path
@@ -470,6 +632,7 @@ fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain:
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
+        names.insert(format!("Theorems.{domain_name}.{stem}"));
         insert_name_forms(names, &domain_name);
         insert_name_forms(names, &stem);
         insert_theorem_names_from_content(names, &content);
@@ -511,9 +674,122 @@ fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
     })
 }
 
+/// The L4 grounding this process reads once: the discharge summary beside the first Lean base that has one, or the
+/// ONT-2a scan when none does.
+struct Grounding {
+    source: L4Source,
+    discharged: Discharged,
+}
+
+fn grounding() -> &'static Grounding {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Grounding> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let bases: Vec<&std::path::Path> = LEAN_THEOREM_BASES
+            .iter()
+            .map(std::path::Path::new)
+            .collect();
+        grounding_from(&bases, summary::current_tree_sha)
+    })
+}
+
+/// `grounding()` without the cache, over explicit bases and a tree-sha source, so a test can drive the whole
+/// discharge → refinement path. The first base with a summary wins.
+fn grounding_from(
+    bases: &[&std::path::Path],
+    tree_sha: impl Fn(&std::path::Path) -> Option<String>,
+) -> Grounding {
+    for &dir in bases {
+        let path = summary::summary_path(dir);
+        if !dir.is_dir() || !path.is_file() {
+            continue;
+        }
+        let mut discharged = match summary::load(&path) {
+            Ok(s) => summary::discharged(&s, tree_sha(dir).as_deref()),
+            Err(why) => Discharged {
+                withheld: Some(why),
+                ..Discharged::default()
+            },
+        };
+        refine(dir, &mut discharged);
+        return Grounding {
+            source: L4Source::Discharge,
+            discharged,
+        };
+    }
+    Grounding {
+        source: L4Source::SelfDeclared,
+        discharged: Discharged::default(),
+    }
+}
+
+/// ONT-3b (#4073): a discharged theorem stays L4 only when an `extraction`/`simulation` model whose `model_of`
+/// resolves covers its module. The workspace walk runs only when the discharge grants something.
+fn refine(lean_dir: &std::path::Path, discharged: &mut Discharged) {
+    use crate::discharge::refinement;
+    if discharged.theorems.is_empty() {
+        return;
+    }
+    let l4 = match refinement::load(lean_dir) {
+        Ok(rec) => {
+            let modules = discharged.module_of.values().cloned().collect();
+            let root = workspace_root(lean_dir);
+            refinement::l4_modules(&refinement::judge(
+                &rec.models,
+                &modules,
+                refinement::workspace_resolver(&root),
+            ))
+        }
+        Err(_) => std::collections::BTreeSet::new(),
+    };
+    discharged.require_refinement(&l4);
+}
+
+/// The nearest ancestor of `dir` whose Cargo.toml has a `[workspace]` table, else `.`.
+fn workspace_root(dir: &std::path::Path) -> std::path::PathBuf {
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    abs.ancestors()
+        .find(|a| {
+            std::fs::read_to_string(a.join("Cargo.toml"))
+                .is_ok_and(|t| t.lines().any(|l| l.trim() == "[workspace]"))
+        })
+        .map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        )
+}
+
+/// The discharge summary's grant as this process read it: empty when there is no summary, or it is withheld.
+#[must_use]
+pub fn discharge_grounding() -> &'static Discharged {
+    &grounding().discharged
+}
+
+/// EV-8b: the equations whose `lean_theorem` the discharge summary grants. A theorem the YAML names and the summary
+/// does not list earns nothing, however the YAML describes it.
+#[must_use]
+pub fn count_discharged_for_contract(contract: &Contract, discharged: &Discharged) -> u32 {
+    let n = contract
+        .equations
+        .values()
+        .filter_map(|eq| eq.lean_theorem.as_deref())
+        .filter(|t| discharged.grants(t))
+        .count();
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// The grounding count for a contract: from the discharge summary when one exists, else the ONT-2a scan.
+fn count_lean_theorems_for_contract(contract: &Contract) -> u32 {
+    let g = grounding();
+    match g.source {
+        L4Source::Discharge => count_discharged_for_contract(contract, &g.discharged),
+        L4Source::SelfDeclared => count_scanned_theorems_for_contract(contract),
+    }
+}
+
 /// Count Lean theorems for a contract by matching `lean_theorem` refs against
 /// sorry-free `.lean` files in the Theorems/ directory.
-fn count_lean_theorems_for_contract(contract: &Contract) -> u32 {
+fn count_scanned_theorems_for_contract(contract: &Contract) -> u32 {
     let theorems = lean_theorem_names();
     let mut count = 0u32;
     for eq in contract.equations.values() {
@@ -630,6 +906,8 @@ pub fn proof_status_report(
     ProofStatusReport {
         schema_version: "1.0.0".to_string(),
         l4_self_declared_excluded: true,
+        l4_source: grounding().source,
+        l4_withheld: grounding().discharged.withheld.clone(),
         timestamp,
         contracts: statuses,
         kernel_classes,
@@ -694,7 +972,8 @@ pub fn format_text(report: &ProofStatusReport) -> String {
     out.push_str(&format!(
         "\nTotals: {} obligations ({} N/A, never counted as proved), {} tests, {} kani, {} lean claimed ({} grounded), {}/{} bound\n\
          L4 evidence: {} contract(s) self-declared and excluded from L4 (ONT-2a andon); grounded means a \
-         sorry-free in-tree Lean theorem the equation names\n",
+         theorem the equation names that a green, fresh discharge-summary.json lists (EV-8b), or with no summary \
+         a sorry-free in-tree Lean theorem\n",
         report.totals.obligations,
         report.totals.not_applicable,
         report.totals.falsification_tests,
@@ -705,6 +984,14 @@ pub fn format_text(report: &ProofStatusReport) -> String {
         report.totals.bindings_total,
         report.totals.l4_self_declared,
     ));
+    let source = match report.l4_source {
+        L4Source::Discharge => "discharge (discharge-summary.json)",
+        L4Source::SelfDeclared => "self-declared (no discharge-summary.json; in-tree .lean scan)",
+    };
+    out.push_str(&format!("L4 source: {source}\n"));
+    if let Some(why) = &report.l4_withheld {
+        out.push_str(&format!("L4 withheld: {why}\n"));
+    }
 
     out
 }

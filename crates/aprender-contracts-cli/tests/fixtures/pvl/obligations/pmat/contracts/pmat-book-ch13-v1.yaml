@@ -1,0 +1,39 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  references:
+    - "../pmat-book/src/ch13-00-multi-language.md (the chapter this contract gates)"
+    - "CLAUDE.md (Chapter 13 is CRITICAL - must always pass)"
+  registry: true
+  description: >
+    PMAT-BOOK file:ch13 — Multi-Language Project Examples (CRITICAL)
+  contract: pmat-book-ch13
+  status: enforced
+  title: "Multi-Language Project Examples"
+  part: IV
+  chapter_file: ch13-00-language-examples.md
+  critical: true
+
+preconditions:
+  - "pmat binary installed with core-languages feature"
+  - "pmat context --help exits 0"
+  - "Test fixtures for Rust, Python, TypeScript, Go, C exist"
+
+postconditions:
+  - "All documented languages produce valid AST output"
+  - "pmat context on multi-language project succeeds"
+
+falsification:
+  - condition: "pmat context fails on multi-language test fixture"
+    severity: P0
+    action: reject_chapter
+  - condition: "Chapter claims language support that is not in --features list"
+    severity: P0
+    action: reject_chapter
+  - condition: "Language listed in chapter but tree-sitter parser not in Cargo.toml"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example AST output for any language doesn't match current parser"
+    severity: P1
+    action: update_examples

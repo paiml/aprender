@@ -1,6 +1,8 @@
-//! ONT-001 §5 ONT-4b / ONT-4c1 — the `shapes` gate: every shape in the corpus, applied to the graph the
-//! extractors produce (`extract:pv-contract`, `extract:gguf`, `extract:apr-model`, and `resolves: receipt` over
-//! the tracked ladder receipts), with a positive control planted every run and arming per shape.
+//! ONT-001 §5 ONT-4b / ONT-4c1 / ONT-4c — the `shapes` gate: every shape in the corpus, applied to the graph
+//! the extractors produce (`extract:pv-contract`, `extract:gguf`, `extract:apr-model`, `extract:readme`,
+//! `extract:llm-context`, `extract:csv`, and `resolves: receipt` over the tracked ladder receipts), with a positive
+//! control planted every run and arming per shape. ONT-4c adds the measured claim sets (`readme`, `claude_md`)
+//! and F-33 (PV-ONT-013, here); F-34 (PV-ONT-014) needs git and is the CLI's (`lint_arming::measured_ratchet`).
 //!
 //! The answers, in ONT-6's lattice:
 //!
@@ -25,7 +27,7 @@
 //! violate at least one armed shape. `pc_extract` — one planted defect per extractor Σ marks implemented (R-3):
 //! `pv-contract`, a contract stripped of `metadata` carries no `ont:kind`; `json`, a nested key the vocabulary does
 //! not map is refused naming it; `gguf`, a corrupt magic is refused; `apr-model`, a header whose tensor count
-//! disagrees with its index is refused; `code` and `lean`, as their modules state; `parity-receipt`, a record
+//! disagrees with its index is refused; `code`, `lean` and `example`, as their modules state; `parity-receipt`, a record
 //! stripped of `comparator` loses its comparator edge. All of them every run, in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,17 +35,20 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
+use crate::ontology::capability_cells;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
-    ExtractFailure,
+    self, apr_model, binary, cli_surface, code, csv, example, gguf, json, kernel, lean,
+    llm_context, parity_receipt, pv_contract, readme, release_evidence, ExtractFailure,
 };
+use crate::ontology::measured_sets;
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
 use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
 use crate::ontology::verdict::Reason;
 use crate::ontology::w3c;
 
+use super::capability_cells_gate as cells_gate;
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
 use super::{GateDetail, GateExtra, GateResult, Verdict};
@@ -76,6 +81,9 @@ pub enum ShapesOutcome {
         found: usize,
         refused: Vec<String>,
     },
+    /// ONT-4c5: a contract declares `capability-cells` and its required-cell domain D is empty — R-2's decline
+    /// (exit 2 with a `decline:` line), never Pass and never RED.
+    EmptyDomain { shapes_n: usize },
     /// A positive control did not fire.
     PositiveControlFailed {
         shapes_n: usize,
@@ -91,11 +99,35 @@ pub enum ShapesOutcome {
         n: usize,
         failed: Vec<String>,
     },
+    /// #3739: the CRUX harness measured itself, not apr — a model's positive-control prompt came back ALL_WRONG,
+    /// or a model owing CRUX cells has no measured control. Declined (exit 2), each model and cause named.
+    HarnessBroken { causes: Vec<String> },
     /// Shapes ran over the corpus, and the controls fired.
     Ran {
         result: Box<GateResult>,
         findings: Vec<LintFinding>,
     },
+}
+
+/// v4.16 D-T1 (qd4c4): Σ `entity_type_target_class` from `<contract_dir>/ontology.yaml` — the map a shape without
+/// an explicit `targetClass` takes its target from. No Σ, or no map in it, is the EMPTY map: a shape that relies on
+/// a mapping Σ does not carry is malformed, named, exit 3 — never silently retargeted.
+#[must_use]
+pub fn target_class_map(contract_dir: &Path) -> shapes::TargetMap {
+    let Ok(text) = std::fs::read_to_string(contract_dir.join("ontology.yaml")) else {
+        return shapes::TargetMap::new();
+    };
+    let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) else {
+        return shapes::TargetMap::new();
+    };
+    doc.get("entity_type_target_class")
+        .and_then(serde_yaml::Value::as_mapping)
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.as_str()?.to_string(), v.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Every shape under `contract_dir`, parsed, with the contract file (repo-relative) that declares it. The
@@ -105,9 +137,10 @@ pub fn collect_shapes(
 ) -> Result<(Vec<(NodeShape, String)>, usize), ShapeError> {
     let mut shapes: Vec<(NodeShape, String)> = Vec::new();
     let mut checked = 0usize;
+    let targets = target_class_map(contract_dir);
     for (stem, rel, doc) in pv_contract::documents(contract_dir) {
         checked += 1;
-        for shape in shapes::parse_shapes(&stem, &doc)? {
+        for shape in shapes::parse_shapes_with(&stem, &doc, &targets)? {
             if let Some((_, other)) = shapes.iter().find(|(s, _)| s.id == shape.id) {
                 return Err(ShapeError::Malformed {
                     shape: shape.id.clone(),
@@ -243,60 +276,82 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
 /// [`run_shapes_gate`] with `--shape` / `--release-*` (aprender#3715).
 #[must_use]
 pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> ShapesOutcome {
-    let start = Instant::now();
-    let (shapes, arming, checked) = match prepare(contract_dir, opts) {
-        Ok(x) => x,
-        Err(answer) => return answer,
-    };
-
-    // ONE walk (R-18): every extractor, the json documents, the ladder receipts joined to the rungs — the same
-    // graph `pv extract` writes — plus, when a release subject is given, the release evidence (#3715).
-    let extraction = match extract::all_with(contract_dir, opts.release.as_ref()) {
-        Ok(x) => x,
-        Err(e) => return ShapesOutcome::ExtractFailed(e),
-    };
-    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
-    if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
-        return refusal;
+    match run_or_answer(contract_dir, opts) {
+        Ok(ran) | Err(ran) => ran,
     }
-    let graph = &extraction.graph;
+}
 
+/// The gate's body: `Err` is an early answer (a refusal or a decline), `Ok` the outcome it ran to.
+fn run_or_answer(
+    contract_dir: &Path,
+    opts: &ShapesOptions,
+) -> Result<ShapesOutcome, ShapesOutcome> {
+    let start = Instant::now();
+    let (shapes, arming, checked) = prepare(contract_dir, opts)?;
+
+    let extraction = extract_gradeable(contract_dir, opts, shapes.len())?;
+    // ONT-4c5: the validator's half runs on the gate's own copy — `pv extract` keeps writing what was found
+    let mut owned = extraction.graph.clone();
+    let cells = cells_corpus(&mut owned, &shapes, &extraction)?;
+    let graph = &owned;
+
+    // #3610: the per-shape reach, computed BEFORE any verdict — did this shape grade anything at all?
+    let focus_of = focus_of(graph, &shapes);
+    let (vacuous_any, armed_vacuity) = vacuities(&focus_of, &shapes, &arming);
     let (mut report, plant_violations) = validate_with_plant(graph, &shapes, &arming);
     if opts.only.is_some() {
         order_by_family(&mut report, &shapes);
     }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
+    let pc_shapes = cells_controls(
+        &shapes,
+        &arming,
+        &report,
+        &extraction.gguf.rungs,
+        cells.as_ref(),
+    )?;
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
+    // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
+    let all_allow_empty = shapes.iter().all(|s| s.allow_empty.is_some());
     if let Some(d) = decline(
         shapes.len(),
         &report,
+        all_allow_empty,
         unmeasured,
         plant_violations,
         &pc_extract,
     ) {
-        return d;
+        return Err(d);
     }
-    let w3c_run = match w3c_checked(shapes.len(), report.focus_nodes_n) {
-        Ok(run) => run,
-        Err(differential) => return differential,
-    };
+    let w3c_run = w3c_checked(shapes.len(), report.focus_nodes_n)?;
 
-    let counted = findings_of(
-        &report,
-        &arming,
-        graph,
-        &extraction.gguf,
-        &extraction.apr_model,
+    let mut counted = findings_of(&report, &arming, graph, &extraction);
+    count_freshness(&mut counted, contract_dir, &extraction);
+    let (inherited_shapes_applied, inherited_by_shape) =
+        subsumption_of(contract_dir, graph, &shapes, &mut counted);
+    // PV-ONT-013 NAMES the NotRun cells; it deliberately does not add to `counted.violations`. The verdict comes
+    // from the armed shape's own `maxCount 0` violation on the same edges, and `cells_controls` declines when the
+    // two disagree (wiring_holds), so the named list and the verdict cannot drift apart silently.
+    counted.findings.extend(
+        cells
+            .iter()
+            .flat_map(|cc| cells_gate::findings(cc, &arming)),
     );
+    refuse_vacuous_kernels(&mut counted, &shapes, &arming, extraction.kernel.kernels);
     let passed = counted.violations == 0;
-    let verdict = verdict_of(&counted);
-    let by_shape = by_shape(graph, &shapes);
+    let verdict = verdict_of(&counted, armed_vacuity);
+    let by_shape = by_shape(&focus_of);
+    // A shape that graded nothing appears in NEITHER list: `armed_shapes` is the tool's claim about
+    // what it MEASURED, and `not_armed_shapes` means "not armed by policy". Filing a vacuity as a
+    // policy choice is how this defect hid, so it is named in `declines` only.
     let (armed_names, not_armed): (Vec<String>, Vec<String>) = shapes
         .iter()
         .map(|s| s.id.clone())
+        .filter(|id| !vacuous_any.contains(id))
         .partition(|id| arming.is_armed(id));
-    let by_entity_type = by_entity_type(&extraction);
+    let by_entity_type = by_entity_type(&extraction, &sigma_implemented(contract_dir))
+        .map_err(ShapesOutcome::Unsupported)?;
     let duration = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let result = GateResult {
         name: "shapes".into(),
@@ -326,26 +381,121 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             triples: graph.len(),
             armed_shapes: armed_names,
             not_armed_shapes: not_armed,
+            // Every shape that graded NOTHING, armed or not — this is the ONLY list a
+            // vacuity appears in. An armed vacuity also drove the verdict to
+            // `Unknown(NoFocus)` above (nothing returns early there; the verdict is set
+            // and the run continues, so both armed and unarmed vacuities reach here).
+            // A field that can only ever be empty is decoration, which is the defect one
+            // layer up from this one.
+            declines: vacuous_any.clone(),
             unarmed_violations: counted.unarmed_violations,
             by_entity_type,
-            pc_extract,
+            controls: Box::new(super::ShapesControls {
+                pc_extract,
+                pc_shapes,
+                capability_cells: cells.as_ref().map(cells_gate::CapabilityCellsReport::from),
+            }),
             receipts: extraction.resolve.receipts,
             witnesses: extraction.resolve.witnesses,
             hex_mismatches: extraction.resolve.hex_mismatches,
             unmeasured_rows: extraction.resolve.unmeasured_rows,
             w3c_cases_passed: w3c_run.passed(),
             w3c_cases_n: w3c_run.results.len(),
-            symbols_resolved: extraction.code.resolved,
-            symbols_unresolved: extraction.code.unresolved,
-            lean_statements: extraction.lean.statements,
-            lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+            counters: Box::new(super::ShapesCounters {
+                symbols_resolved: extraction.code.resolved,
+                symbols_unresolved: extraction.code.unresolved,
+                lean_statements: extraction.lean.statements,
+                lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+                inherited_shapes_applied,
+                inherited_by_shape,
+            }),
             release: extraction.release.clone().map(Box::new),
+            readme: measured(&extraction.readme),
+            claude_md: measured(&extraction.llm_context),
+            ratchets: super::Ratchets::default(),
         }),
     };
-    ShapesOutcome::Ran {
+    Ok(ShapesOutcome::Ran {
         result: Box::new(result),
         findings: counted.findings,
+    })
+}
+
+/// The ONE walk (R-18) and the refusals that must answer before anything is graded: every extractor, the json
+/// documents, the ladder receipts joined to the rungs — the same graph `pv extract` writes — plus, when a release
+/// subject is given, the release evidence (#3715).
+fn extract_gradeable(
+    contract_dir: &Path,
+    opts: &ShapesOptions,
+    shapes_n: usize,
+) -> Result<extract::Extraction, ShapesOutcome> {
+    let extraction = extract::all_with(contract_dir, opts.release.as_ref())
+        .map_err(ShapesOutcome::ExtractFailed)?;
+    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
+    if let Some(refusal) = parity_refusal(&extraction.parity, shapes_n) {
+        return Err(refusal);
     }
+    // #3739 / cop: a broken CRUX harness is not a verdict about the release — decline, naming the model
+    match harness_broken(&extraction) {
+        Some(broken) => Err(broken),
+        None => Ok(extraction),
+    }
+}
+
+/// ONT-4c5, before validation: `apply` on the gate's own graph when a contract declares `capability-cells`. A
+/// non-numeral receipt version is the declaration's fault (exit 3); |D| = 0 is R-2's decline, never Pass.
+fn cells_corpus(
+    owned: &mut Graph,
+    shapes: &[NodeShape],
+    extraction: &extract::Extraction,
+) -> Result<Option<capability_cells::CapabilityCells>, ShapesOutcome> {
+    let cells = cells_gate::corpus(owned, shapes, &extraction.gguf.rungs, &extraction.receipts)
+        .map_err(|e| {
+            ShapesOutcome::ExtractFailed(ExtractFailure::Receipt(receipts::ReceiptError {
+                file: e.file(),
+                what: e.to_string(),
+            }))
+        })?;
+    if cells.as_ref().is_some_and(|c| c.domain.is_empty()) {
+        return Err(ShapesOutcome::EmptyDomain {
+            shapes_n: shapes.len(),
+        });
+    }
+    Ok(cells)
+}
+
+/// ONT-4c5, after validation: every per-shape positive control fired, and the corpus went through `apply` (the
+/// rungs the shape flagged are the rungs owning a NotRun cell). Either miss is a decline, never a verdict.
+fn cells_controls(
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+    report: &Report,
+    rungs: &[extract::gguf::Rung],
+    cells: Option<&capability_cells::CapabilityCells>,
+) -> Result<BTreeMap<String, String>, ShapesOutcome> {
+    let pc_shapes = cells_gate::pc_shapes(shapes, arming);
+    if let Some((which, _)) = pc_shapes.iter().find(|(_, v)| v.as_str() != "fired") {
+        return Err(ShapesOutcome::PositiveControlFailed {
+            shapes_n: shapes.len(),
+            focus_nodes_n: report.focus_nodes_n,
+            which: format!("pc_shapes.{which}"),
+        });
+    }
+    if let Some(cc) = cells {
+        if !cells_gate::wiring_holds(report, rungs, cc) {
+            return Err(ShapesOutcome::Differential {
+                shapes_n: shapes.len(),
+                focus_nodes_n: report.focus_nodes_n,
+                passed: 0,
+                n: 1,
+                failed: vec![format!(
+                    "capability-cells wiring: the rungs the shape flagged differ from the rungs owning the {} NotRun cell(s)",
+                    cc.not_run.len()
+                )],
+            });
+        }
+    }
+    Ok(pc_shapes)
 }
 
 /// The shape set this run grades and its arming, or the answer that stands in for a verdict (unsupported or
@@ -389,10 +539,59 @@ fn needs_receipts(shapes: &[NodeShape]) -> bool {
     })
 }
 
-/// Violations fail; warnings alone are `Unknown{Warn}`, never a pass; nothing is `Pass`.
-fn verdict_of(counted: &Counted) -> Verdict {
+/// #3610: each shape's focus-node count, in declaration order.
+fn focus_of(graph: &Graph, shapes: &[NodeShape]) -> Vec<(String, usize)> {
+    shapes
+        .iter()
+        .map(|s| {
+            (
+                s.id.clone(),
+                shapes::instances_closed(graph, &s.target_class).len(),
+            )
+        })
+        .collect()
+}
+
+/// #3610: every shape that graded ZERO focus nodes, and whether any of them is ARMED.
+///
+/// TWO answers, because they are two questions and conflating them was the defect a quorum lane
+/// caught (#3610 round 1, two lanes independently). The list decides where a vacuity is REPORTED —
+/// `declines` only, never `not_armed_shapes`, or an unarmed vacuity is filed as a policy choice,
+/// which is how the original defect hid. The flag decides the VERDICT: only an armed shape fed it, and a
+/// shape that declares `allowEmpty: "<why>"` (a target class empty by design) is named but does not refuse.
+fn vacuities(
+    focus_of: &[(String, usize)],
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+) -> (Vec<String>, bool) {
+    let vacuous: Vec<String> = focus_of
+        .iter()
+        .filter(|(_, n)| *n == 0)
+        .map(|(id, _)| id.clone())
+        .collect();
+    let may_be_empty = |id: &str| shapes.iter().any(|s| s.id == id && s.allow_empty.is_some());
+    let armed = vacuous
+        .iter()
+        .any(|id| arming.is_armed(id) && !may_be_empty(id));
+    (vacuous, armed)
+}
+
+/// Violations fail; an ARMED shape that graded nothing is `Unknown{NoFocus}` (#3610); warnings alone are
+/// `Unknown{Warn}`, never a pass; nothing is `Pass`.
+///
+/// THE REFUSAL IS THE EXIT CODE; THE REPORT IS THE EVIDENCE. A vacuity declines through the ordinary
+/// result path rather than short-circuiting, so stdout still carries the full JSON (`by_shape` naming the
+/// zero-focus shape, `declines`) and `meet_exit` turns Unknown into exit 2 — downstream consumers (infra's
+/// SLK gate) parse stdout regardless of the exit code.
+///
+/// A MEASURED violation outranks a vacuity (#3622 re-review, all three lanes): violations and vacuities
+/// range over DISJOINT shapes, so checking vacuity first would turn a real Fail from one shape into exit 2
+/// because a DIFFERENT shape graded nothing.
+fn verdict_of(counted: &Counted, armed_vacuity: bool) -> Verdict {
     if counted.violations > 0 {
         Verdict::Fail
+    } else if armed_vacuity {
+        Verdict::Unknown(Reason::NoFocus)
     } else if counted.warnings > 0 {
         Verdict::Unknown(Reason::Warn)
     } else {
@@ -401,56 +600,155 @@ fn verdict_of(counted: &Counted) -> Verdict {
 }
 
 /// `shape=focus-count` per shape, sorted.
-fn by_shape(graph: &Graph, shapes: &[NodeShape]) -> Vec<String> {
-    let mut out: Vec<String> = shapes
-        .iter()
-        .map(|s| {
-            let n = shapes::instances_closed(graph, &s.target_class).len();
-            format!("{}={}", s.id, n)
-        })
-        .collect();
+fn by_shape(focus_of: &[(String, usize)]) -> Vec<String> {
+    let mut out: Vec<String> = focus_of.iter().map(|(id, n)| format!("{id}={n}")).collect();
     out.sort();
     out
 }
 
-/// Focus nodes each extractor produced.
-fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
-    [
-        (
-            "pv-contract",
-            extraction
-                .graph
-                .instances_of(&crate::ontology::rdf::ont("Contract"))
-                .len(),
-        ),
-        (
-            "gguf",
-            extraction.gguf.rungs.len() + extraction.gguf.files_read,
-        ),
-        ("apr-model", extraction.apr_model.files_read),
-        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
-        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
-        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
-        // calls it a pass. The same shape as #3610, one map over.
-        ("parity-receipt", extraction.parity.records),
-        ("code", extraction.code.symbols),
-        ("lean", extraction.lean.statements),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v))
-    .collect()
+/// The entity types this build counts. Every name here has an arm in [`entity_count`]
+/// ([`tests::every_counted_entity_type_has_a_counting_arm`]); every name Σ marks `implemented: true` must too, or
+/// the gate refuses ([`by_entity_type`]).
+const COUNTED_ENTITY_TYPES: &[&str] = &[
+    "pv-contract",
+    "json",
+    "gguf",
+    "apr-model",
+    "parity-receipt",
+    "code",
+    "lean",
+    "example",
+    "binary",
+    "release-evidence",
+    "cli-surface",
+    "readme",
+    "llm-context",
+    "csv",
+    "kernel",
+];
+
+/// Focus nodes each extractor produced, for one Σ entity type. `None` is "this build has no counting arm for the
+/// name" — never zero (#3624: an absent key is not zero).
+fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
+    Some(match name {
+        "pv-contract" => extraction
+            .graph
+            .instances_of(&crate::ontology::rdf::ont("Contract"))
+            .len(),
+        // One per `entity: {type: json}` contract extracted.
+        "json" => extraction.entities_extracted.len(),
+        "gguf" => extraction.gguf.rungs.len() + extraction.gguf.files_read,
+        "apr-model" => extraction.apr_model.files_read,
+        // ONT-4c3: without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT — and an
+        // absent key is not zero, so a consumer that treats it as one measures nothing and calls it a pass.
+        "parity-receipt" => extraction.parity.records,
+        "code" => extraction.code.symbols,
+        "lean" => extraction.lean.statements,
+        "example" => extraction.example.examples,
+        // ONT-4g: one per bin target, keyed binary/<package>/<target> — 29 targets, not 28 names
+        "binary" => extraction.binary.targets,
+        // By rule 0 when no release subject was given (an ordinary PR has none): the extractor did not run.
+        "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
+        // #3777 registered cli-surface in Σ after #3624 derived these keys from it: the leaf commands the
+        // release's `apr surface --json` declares. By rule 0 without `--surface` (the extractor did not run).
+        "cli-surface" => extraction
+            .release
+            .as_ref()
+            .and_then(|r| r.surface.as_ref())
+            .map_or(0, |s| s.leaves),
+        // ONT-4c: `README.md` / `CLAUDE.md` / CSV datasets — files read, per [`extract::claims::DocStats`].
+        "readme" => extraction.readme.files_read,
+        "llm-context" => extraction.llm_context.files_read,
+        "csv" => extraction.csv.files_read,
+        // ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`
+        "kernel" => extraction.kernel.kernels,
+        // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone). The extractor seeds every
+        // declared type at 0, so a declared type is never absent here.
+        _ => return extraction.github.by_type.get(name).copied(),
+    })
+}
+
+/// The entity types `<contract_dir>/ontology.yaml` (Σ) marks `implemented: true`. Empty when the tree has no Σ or
+/// Σ does not parse — Σ's well-formedness is the `sigma` gate's verdict, not this one's.
+fn sigma_implemented(contract_dir: &Path) -> BTreeMap<String, String> {
+    std::fs::read_to_string(contract_dir.join("ontology.yaml"))
+        .ok()
+        .and_then(|text| crate::ontology::sigma::Sigma::from_yaml(&text).ok())
+        .map(|sigma| {
+            sigma
+                .entity_types
+                .into_iter()
+                .filter(|e| e.implemented)
+                .map(|e| (e.name, e.extractor))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Focus nodes each extractor produced, keyed by entity type: every type this build counts, every GitHub snapshot
+/// type, and every type Σ implements. #3624 — the keys were a hand-written array beside Σ, so `json` and
+/// `release-evidence` shipped implemented and uncounted, and every `by_entity_type["<name>"]` probe on them read
+/// ABSENT. A Σ-implemented type with no counting arm is now the gate's refusal, named, never a missing key.
+/// `implemented: false` types are omitted by rule unless this build counts them. A Σ type read by the
+/// `pv_contract` extractor (an `entity.type` declared in a contract, #4160) is counted by its entity class: the
+/// contracts typed `entity/<name>`.
+fn by_entity_type(
+    extraction: &extract::Extraction,
+    implemented: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, usize>, ShapeError> {
+    COUNTED_ENTITY_TYPES
+        .iter()
+        .map(|s| (*s).to_string())
+        .chain(extraction.github.by_type.keys().cloned())
+        .chain(implemented.keys().cloned())
+        .map(|name| {
+            let count = entity_count(&name, extraction).or_else(|| {
+                (implemented.get(&name).map(String::as_str) == Some("pv_contract")).then(|| {
+                    extraction
+                        .graph
+                        .instances_of(&extract::pv_contract::entity_class(&name))
+                        .len()
+                })
+            });
+            (name, count)
+        })
+        .map(|(name, count)| match count {
+            Some(n) => Ok((name, n)),
+            None => Err(ShapeError::Malformed {
+                shape: "by_entity_type".into(),
+                what: format!(
+                    "entity type {name} is registered in Σ as implemented and is not counted in by_entity_type"
+                ),
+            }),
+        })
+        .collect()
+}
+
+fn harness_broken(extraction: &extract::Extraction) -> Option<ShapesOutcome> {
+    let causes = extraction
+        .release
+        .as_ref()?
+        .crux
+        .as_ref()?
+        .harness_broken
+        .clone();
+    (!causes.is_empty()).then_some(ShapesOutcome::HarnessBroken { causes })
 }
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
 /// none tracked, the plant silent, an extractor control silent. `None` when the corpus gets a verdict.
+///
+/// No focus node at all is `NoFocus` unless EVERY shape in scope declares `allowEmpty` (#3610): then the run
+/// reaches the per-shape path, which names each one in `declines` and does not refuse for them.
 fn decline(
     shapes_n: usize,
     report: &Report,
+    all_allow_empty: bool,
     unmeasured: bool,
     plant_violations: usize,
     pc_extract: &BTreeMap<String, String>,
 ) -> Option<ShapesOutcome> {
-    if report.focus_nodes_n == 0 {
+    if report.focus_nodes_n == 0 && !all_allow_empty {
         return Some(ShapesOutcome::NoFocus { shapes_n });
     }
     if unmeasured {
@@ -486,12 +784,30 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("apr-model", apr_model::positive_control(&apr_sample)),
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
+        ("example", example::positive_control()),
+        ("binary", binary::positive_control()),
+        ("kernel", kernel::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // ONT-4f: the GitHub snapshot types — a version mismatch (repo, milestone), a merge with no time
+        // (pull-request), a milestone reference to nothing tracked (issue)
+        ("repo", json::github::positive_control("repo")),
+        ("issue", json::github::positive_control("issue")),
+        (
+            "pull-request",
+            json::github::positive_control("pull-request"),
+        ),
+        ("milestone", json::github::positive_control("milestone")),
+        // ONT-4c: an unrun claim, a missing referenced path, a ragged row — each refused by name
+        ("readme", readme::positive_control()),
+        ("llm-context", llm_context::positive_control()),
+        ("csv", csv::positive_control()),
+        // aprender#3745 S2: a model arg read from its ROLE, never its name — drawn every run
+        ("cli-surface", cli_surface::positive_control()),
     ]
     .into_iter()
     .map(|(k, fired)| {
@@ -501,6 +817,44 @@ fn extract_controls() -> BTreeMap<String, String> {
         )
     })
     .collect()
+}
+
+/// ONT-4c: one extractor's measured claim set, sorted, for the report.
+fn measured(stats: &extract::claims::DocStats) -> super::MeasuredSet {
+    super::MeasuredSet {
+        verified_commands: stats.verified_commands.iter().cloned().collect(),
+    }
+}
+
+/// ONT-4c F-33: the committed `verified_commands[]` in `<contract_dir>/lint-baseline.json` must EQUAL the live
+/// extraction, per key. A difference — or a key that cannot be read — is an Error (PV-ONT-013) in the meet.
+fn count_freshness(c: &mut Counted, contract_dir: &Path, extraction: &extract::Extraction) {
+    let path = contract_dir.join("lint-baseline.json");
+    let text = std::fs::read_to_string(&path).ok();
+    let live = [
+        (measured_sets::KEYS[0], &extraction.readme.verified_commands),
+        (
+            measured_sets::KEYS[1],
+            &extraction.llm_context.verified_commands,
+        ),
+    ];
+    for (key, live) in live {
+        let messages = match measured_sets::read(text.as_deref(), key) {
+            Ok(committed) => measured_sets::freshness(key, &committed, live),
+            Err(e) => vec![format!("F-33: {e}")],
+        };
+        for m in messages {
+            c.violations += 1;
+            let mut f = LintFinding::new(
+                "PV-ONT-013",
+                RuleSeverity::Error,
+                m,
+                path.display().to_string(),
+            );
+            f.contract_stem = None;
+            c.findings.push(f);
+        }
+    }
 }
 
 /// The findings of one run, and the counts the verdict is made of.
@@ -513,12 +867,57 @@ struct Counted {
     unarmed_violations: usize,
 }
 
+/// A kernel shape over zero `#[kernel]` symbols is not a pass: every one of its constraints held over nothing
+/// (#3522 ruling). The count of `ont:KernelSymbol` focus nodes is the measurement, so zero is a violation —
+/// from an ARMED shape. An unarmed kernel shape's vacuity is named as a warning and counted with the other
+/// unarmed results: ont-kernel-receipts-v1 "an unarmed shape never feeds the meet" (ONT-4c4, #4502).
+fn refuse_vacuous_kernels(
+    c: &mut Counted,
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+    kernels: usize,
+) {
+    let kernel_class = crate::ontology::rdf::ont("KernelSymbol");
+    let (armed, unarmed): (Vec<&str>, Vec<&str>) = shapes
+        .iter()
+        .filter(|s| s.target_class == kernel_class)
+        .map(|s| s.id.as_str())
+        .partition(|id| arming.is_armed(id));
+    if kernels > 0 {
+        return;
+    }
+    if !armed.is_empty() {
+        c.violations += 1;
+        c.findings
+            .push(vacuous_kernel_finding(&armed, RuleSeverity::Error, ""));
+    }
+    if !unarmed.is_empty() {
+        c.unarmed_violations += 1;
+        c.findings.push(vacuous_kernel_finding(
+            &unarmed,
+            RuleSeverity::Warning,
+            " [not armed]",
+        ));
+    }
+}
+
+fn vacuous_kernel_finding(ids: &[&str], severity: RuleSeverity, note: &str) -> LintFinding {
+    LintFinding::new(
+        "PV-ONT-012",
+        severity,
+        format!(
+            "0 #[kernel] symbols extracted: kernel shape(s) {}{note} graded nothing — vacuous, not a pass",
+            ids.join(", ")
+        ),
+        "contracts/ont-kernel-receipts-v1.yaml".to_string(),
+    )
+}
+
 fn findings_of(
     report: &Report,
     arming: &ArmedShapes,
     graph: &Graph,
-    gguf_stats: &gguf::GgufStats,
-    apr_stats: &apr_model::AprStats,
+    extraction: &extract::Extraction,
 ) -> Counted {
     let mut c = Counted {
         findings: Vec::new(),
@@ -566,7 +965,30 @@ fn findings_of(
         f.contract_stem = Some(r.shape.clone());
         c.findings.push(f);
     }
-    for e in gguf_stats.errors.iter().chain(apr_stats.errors.iter()) {
+    let refusals = extraction
+        .gguf
+        .errors
+        .iter()
+        .chain(&extraction.apr_model.errors)
+        .chain(&extraction.example.errors)
+        .chain(&extraction.readme.errors)
+        .chain(&extraction.llm_context.errors)
+        .chain(&extraction.csv.errors)
+        .chain(&extraction.binary.errors);
+    for e in refusals {
+        c.violations += 1;
+        let mut f = LintFinding::new(
+            "PV-ONT-012",
+            RuleSeverity::Error,
+            format!("extractor refused {}: {}", e.file, e.what),
+            e.file.clone(),
+        );
+        f.contract_stem = None;
+        c.findings.push(f);
+    }
+    // ONT-4f: a refused GitHub snapshot is the corpus being wrong (a version that disagrees, a merge with no time),
+    // so it is a Fail naming the file, exactly like a lying model header.
+    for e in &extraction.github.errors {
         c.violations += 1;
         let mut f = LintFinding::new(
             "PV-ONT-012",
@@ -578,6 +1000,32 @@ fn findings_of(
         c.findings.push(f);
     }
     c
+}
+
+/// ONT-4d (R-19): what Σ's subsumption did in this run. Returns `(inherited_shapes_applied, inherited_by_shape)`
+/// and adds one violation per weakened component (PV-ONT-013, exit 1). No Σ is no hierarchy, so zero and none.
+fn subsumption_of(
+    contract_dir: &Path,
+    graph: &Graph,
+    shapes: &[NodeShape],
+    counted: &mut Counted,
+) -> (usize, Vec<String>) {
+    let Some(sigma) = extract::sigma_of(contract_dir) else {
+        return (0, Vec::new());
+    };
+    for w in super::subsumption::weakenings(shapes, &sigma) {
+        counted.violations += 1;
+        let stem: String = w.split(' ').next().unwrap_or_default().to_string();
+        let mut f = LintFinding::new(
+            "PV-ONT-013",
+            RuleSeverity::Error,
+            format!("reject: {w} (R-19: a sub-concept may add constraints and may not remove any)"),
+            format!("contracts/{stem}.yaml"),
+        );
+        f.contract_stem = Some(stem);
+        counted.findings.push(f);
+    }
+    super::subsumption::inherited(graph, shapes, &sigma)
 }
 
 /// Validate the corpus graph plus the plant. Returns the corpus report (the plant's results removed) and how
@@ -639,6 +1087,63 @@ mod tests {
             ),
             other => panic!("{other:?}"),
         }
+    }
+
+    fn kernel_shape(id: &str) -> NodeShape {
+        NodeShape {
+            id: id.to_string(),
+            target_class: crate::ontology::rdf::ont("KernelSymbol"),
+            closed: false,
+            ignored_properties: Vec::new(),
+            properties: Vec::new(),
+            allow_empty: None,
+        }
+    }
+
+    fn empty_counted() -> Counted {
+        Counted {
+            findings: Vec::new(),
+            violations: 0,
+            warnings: 0,
+            unarmed_violations: 0,
+        }
+    }
+
+    /// ONT-4c4 (#4502): an UNARMED kernel shape over zero `#[kernel]` symbols is named, never in the meet;
+    /// an ARMED one is still RED; any kernel symbol clears both.
+    #[test]
+    fn falsify_ont4c4_unarmed_kernel_vacuity_never_feeds_the_meet() {
+        let shapes = [kernel_shape("kernel-parity"), kernel_shape("kernel-timing")];
+        let none = ArmedShapes::Listed(Vec::new());
+        let mut c = empty_counted();
+        refuse_vacuous_kernels(&mut c, &shapes, &none, 0);
+        assert_eq!(c.violations, 0, "{:?}", c.findings);
+        assert_eq!(c.unarmed_violations, 1);
+        assert_eq!(c.findings.len(), 1);
+        assert_eq!(c.findings[0].severity, RuleSeverity::Warning);
+        assert!(c.findings[0].message.contains("[not armed]"));
+        assert_eq!(verdict_of(&c, false), Verdict::Pass);
+
+        let one = ArmedShapes::Listed(vec!["kernel-parity".to_string()]);
+        let mut c = empty_counted();
+        refuse_vacuous_kernels(&mut c, &shapes, &one, 0);
+        assert_eq!(c.violations, 1);
+        assert_eq!(c.unarmed_violations, 1);
+        let err = c
+            .findings
+            .iter()
+            .find(|f| f.severity == RuleSeverity::Error)
+            .expect("armed vacuity is an Error");
+        assert!(err.message.contains("kernel-parity"), "{}", err.message);
+        assert!(!err.message.contains("kernel-timing"), "{}", err.message);
+        assert_eq!(verdict_of(&c, false), Verdict::Fail);
+
+        let mut c = empty_counted();
+        refuse_vacuous_kernels(&mut c, &shapes, &ArmedShapes::All, 3);
+        assert_eq!(
+            (c.violations, c.unarmed_violations, c.findings.len()),
+            (0, 0, 0)
+        );
     }
 
     #[test]
@@ -748,12 +1253,13 @@ mod tests {
                 match &result.extra {
                     Some(GateExtra::Shapes {
                         by_entity_type,
-                        pc_extract,
+                        controls,
                         witnesses,
                         unarmed_violations,
                         ..
                     }) => {
                         assert_eq!(by_entity_type.get("gguf"), Some(&2));
+                        let pc_extract = &controls.pc_extract;
                         assert_eq!(pc_extract.get("gguf").map(String::as_str), Some("fired"));
                         assert_eq!(
                             pc_extract.get("apr-model").map(String::as_str),
@@ -936,5 +1442,91 @@ mod tests {
         for (k, v) in &controls {
             assert_eq!(v, "fired", "pc_extract.{k}");
         }
+    }
+
+    #[test]
+    fn every_counted_entity_type_has_a_counting_arm() {
+        let x = extract::Extraction::default();
+        for name in COUNTED_ENTITY_TYPES {
+            assert!(
+                entity_count(name, &x).is_some(),
+                "{name} is listed as counted and has no arm"
+            );
+        }
+    }
+
+    #[test]
+    fn every_implemented_entity_type_in_sigma_is_a_by_entity_type_key() {
+        // aprender#3624 — `json` and `release-evidence` were implemented in Σ and absent from the map, so a
+        // `jq -e '.by_entity_type["json"] == N'` probe read null. Read the REAL Σ the way the gate does.
+        let contracts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+        let implemented = sigma_implemented(&contracts);
+        assert!(
+            implemented.contains_key("json") && implemented.contains_key("release-evidence"),
+            "Σ no longer implements the two #3624 types — the test would be vacuous: {implemented:?}"
+        );
+        // The GitHub extractor seeds every Σ snapshot type at 0 before it reads a file; do the same here.
+        let mut x = extract::Extraction::default();
+        let sigma = extract::sigma_of(&contracts).expect("Σ parses");
+        for e in sigma.entity_types.iter().filter(|e| e.vocabulary.is_some()) {
+            x.github.by_type.insert(e.name.clone(), 0);
+        }
+        let map = by_entity_type(&x, &implemented).expect("every implemented type has an arm");
+        for name in implemented.keys() {
+            assert!(
+                map.contains_key(name),
+                "by_entity_type lacks Σ-implemented {name}"
+            );
+        }
+        assert_eq!(
+            map.get("release-evidence"),
+            Some(&0),
+            "no subject: 0 by rule"
+        );
+    }
+
+    #[test]
+    fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
+        // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
+        // The plant was `readme` until ONT-4c gave readme an arm and the test went vacuous; a planted name
+        // cannot gain one, and the precondition below fails loudly if it ever does.
+        const PLANT: &str = "planted-no-arm";
+        assert!(
+            entity_count(PLANT, &extract::Extraction::default()).is_none(),
+            "{PLANT} has a counting arm — the plant is vacuous"
+        );
+        let flipped: BTreeMap<String, String> = [("gguf", "gguf"), (PLANT, PLANT)]
+            .iter()
+            .map(|(n, x)| (n.to_string(), x.to_string()))
+            .collect();
+        match by_entity_type(&extract::Extraction::default(), &flipped) {
+            Err(ShapeError::Malformed { what, .. }) => assert!(
+                what.contains(&format!(
+                    "entity type {PLANT} is registered in Σ as implemented"
+                )),
+                "{what}"
+            ),
+            other => panic!("expected a named refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_pv_contract_entity_type_is_counted_by_its_entity_class() {
+        // #4160 × #3624: `study`/`claim` are Σ types read by `pv_contract` (a contract's `entity.type`); they have
+        // no fixed arm, and before this row the gate refused every fixture that registered them. They count the
+        // contracts typed `entity/<name>`. The refusal above still binds any other extractor.
+        let mut x = extract::Extraction::default();
+        let study = crate::ontology::rdf::Term::Iri(extract::pv_contract::entity_class("study"));
+        for id in ["a", "b"] {
+            x.graph
+                .insert(format!("urn:t:{id}"), RDF_TYPE, study.clone());
+        }
+        let implemented: BTreeMap<String, String> =
+            [("study", "pv_contract"), ("claim", "pv_contract")]
+                .iter()
+                .map(|(n, e)| (n.to_string(), e.to_string()))
+                .collect();
+        let map = by_entity_type(&x, &implemented).expect("pv_contract types are counted");
+        assert_eq!((map.get("study"), map.get("claim")), (Some(&2), Some(&0)));
     }
 }

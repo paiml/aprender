@@ -88,11 +88,14 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     );
     assert_eq!(v["extra"]["pc_shape"], "fired", "{}", show(&r));
     // ONT-4b: exactly one, from ont:id minCount. ONT-4c1 plants a bare model:Model too, which draws
-    // ladder-measured's two minCounts: three on this corpus, and never zero.
+    // ladder-measured's two minCounts: three on this corpus, and never zero. ONT-4f (#4330) arms the four GitHub
+    // shapes, and the plant draws every minCount they declare: github-repo 4 + github-issue 6 +
+    // github-pull-request 7 + github-milestone 6 = 23 more, so 26. ONT-4c (#3847) arms readme-root, claude-md,
+    // model-setfit-slice and csv-train, whose plants add sixteen: 42.
     assert_eq!(
         v["extra"]["plant_violations"],
-        3,
-        "ont:id minCount + ladder-measured's two (ONT-4c1)\n{}",
+        42,
+        "ont:id minCount + ladder-measured's two (ONT-4c1) + the four GitHub shapes' 23 (ONT-4f) + the ONT-4c plants against readme-root, claude-md, model-setfit-slice, csv-train (16)\n{}",
         show(&r)
     );
 }
@@ -230,11 +233,20 @@ fn the_tracked_repo_graph_is_fresh() {
     // that is the ratchet working, not a conflict to route around. It did: the
     // 0.69 batch folded #3600 in and the count went 6 -> 9 with its three shapes. #3715 added the nine-shape
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
-    // node to a PR's graph — the release evidence is extracted only under `--release-*`.
+    // node to a PR's graph — the release evidence is extracted only under `--release-*`. ONT-4f (#4330) adds
+    // `github-entities-v1`'s four armed shapes: 22. #3560 R1 adds `examples-well-formed` (reported, not armed): 23. R4 adds `examples-model-current` (reported): 24.
+    // ONT-4c (#3847) adds the four armed non-code shapes readme-root, claude-md, model-setfit-slice, csv-train: 28.
+    // ONT-4g/ONT-10 (#4502) add binary-target, surface-audit-ledger, binary-apr-http-mcp and fifteen
+    // binary-<bin>-surface shapes (apr-cli-apr, apr-corpus-ingest, aprender-cbtop, aprender-compute-xtask, aprender-db,
+    // aprender-explain, aprender-orchestrate-aprender-orchestrate, aprender-profile, aprender-ptx-debug, aprender-test-cli, aprender-zram-generator,
+    // apr-qa-readme-sync, pv, score, trueno-rag): 46. Each new ONT-10 slice raises this — name it here.
+    // The 0.70.0 car (#4429) added, disjoint from these: #3745 S2 (#3777) six DERIVED cell-class shapes (effect,
+    // probe, model-cell, effect-cell, crux-verb, crux) and a8's `sampling`, ONT-4c5 (PMAT-3972) `capability-cells`,
+    // and ONT-4c4 (#4069) kernel-parity, kernel-timing and kernel-safety: 46 + 8 + 3 = 57.
     assert_eq!(
         v["shapes_n"],
-        18,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715)\n{}",
+        57,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 15 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4)\n{}",
         show(&r)
     );
 }

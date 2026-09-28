@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub use super::clause::Clause;
 pub use super::composition::{ShapeContract, ShapeExpr};
 pub use super::kaizen::{KaizenRecord, KAIZEN_STATUSES};
 pub use super::kind::ContractKind;
@@ -42,6 +43,12 @@ pub struct Contract {
     /// Type-level invariants (Meyer's class invariants).
     #[serde(default)]
     pub type_invariants: Vec<TypeInvariant>,
+    /// ONT-4e: preconditions, `{id, statement, formal, formal_status}` (see [`Clause`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<Clause>,
+    /// ONT-4e: postconditions, the same shape as `requires`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ensures: Vec<Clause>,
     /// Coq verification specification.
     #[serde(default)]
     pub coq_spec: Option<CoqSpec>,
@@ -180,7 +187,7 @@ pub struct CruxStory {
 /// pinned to the struct by `contract_fields_match_struct` in `types_tests.rs`:
 /// adding a field to `Contract` without adding it here turns the new block into
 /// a "near-miss of itself" and fails that test.
-pub const CONTRACT_TOP_LEVEL_FIELDS: [&str; 16] = [
+pub const CONTRACT_TOP_LEVEL_FIELDS: [&str; 18] = [
     "metadata",
     "equations",
     "proof_obligations",
@@ -192,6 +199,8 @@ pub const CONTRACT_TOP_LEVEL_FIELDS: [&str; 16] = [
     "qa_gate",
     "verification_summary",
     "type_invariants",
+    "requires",
+    "ensures",
     "coq_spec",
     "beat",
     "stories",
@@ -880,6 +889,11 @@ pub enum KaniStrategy {
     StubFloat,
     Compositional,
     BoundedInt,
+    /// Symbolic IEEE-754 `f32` over a bounded window, each element assumed
+    /// `is_finite()` and within a magnitude bound. Transcendentals are NOT
+    /// stubbed: the proof discharges the real float arithmetic. Contrast
+    /// `stub_float`, which axiomatizes exp/log/sin/cos (#2530).
+    BoundedFloat,
 }
 
 impl std::fmt::Display for KaniStrategy {
@@ -889,6 +903,7 @@ impl std::fmt::Display for KaniStrategy {
             Self::StubFloat => "stub_float",
             Self::Compositional => "compositional",
             Self::BoundedInt => "bounded_int",
+            Self::BoundedFloat => "bounded_float",
         };
         write!(f, "{s}")
     }
