@@ -44,7 +44,7 @@ falsification_tests:
 - id: FALSIFY-MOF-001
   rule: Identity merge is bit-identical for every strategy
   prediction: 'apr diff --values --limit 1000: identical_count = |T(M)| for average, weighted 0.7/0.3, slerp, ties and dare with base = M'
-  test: 'NOT IN-TREE (real-model cell, no synthetic stand-in yet). CELL: CPU, S-R10 Qwen3.5-0.8B .apr and its round-trip copy (S-R7 measured 489/489 on all five)'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/merge_output_tests.rs::falsify_mof_001_identity_merge_is_bit_identical (synthetic F32 fixture spread over 16 binades, both signs). CELL: CPU, S-R10 Qwen3.5-0.8B .apr and its round-trip copy (S-R7 measured 489/489 on all five)'
   if_fails: 'a strategy drifts on a zero task vector, or slerp NaNs at angle 0'
 - id: FALSIFY-MOF-002
   rule: An .apr output is an APR file
