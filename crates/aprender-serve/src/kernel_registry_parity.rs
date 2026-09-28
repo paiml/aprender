@@ -840,6 +840,67 @@ fn committed_parity_receipts_hold_on_this_host() {
 
 /// The gguf-py half of FALSIFY-KREG-009: the fixture is the one the receipt measured, the kernel
 /// still lands within `tolerance_rel` of gguf-py, and `precision=f32` means f32-exact against it.
+/// The oracle part the tree says a committed receipt must have been measured against.
+fn oracle_now(rc: &serde_json::Value, row: &KernelRow) -> String {
+    if rc["oracle"] == GGUF_PY_ORACLE {
+        let ggml_type = fixture_kernel(&row.kernel_id).ggml_type;
+        let meta = std::fs::read(
+            repo_root()
+                .join(ORACLE_DIR)
+                .join(ggml_type)
+                .join("meta.json"),
+        )
+        .unwrap_or_else(|e| panic!("{ggml_type}/meta.json: {e}"));
+        let meta: serde_json::Value = serde_json::from_slice(&meta).expect("fixture meta.json");
+        fixture_oracle(ggml_type, &meta)
+    } else {
+        ORACLE.to_string()
+    }
+}
+
+/// FALSIFY-KREG-012 (KTEST-07 F-8): every committed receipt's input set, recomputed from this
+/// tree on the device the receipt names, is the one it recorded, so the gate may reuse it without
+/// re-measuring. A kernel source, row, toolchain or fixture edit makes that receipt stale, and
+/// the test names the receipt and the parts. The reuse count is printed for the gate's report.
+#[test]
+fn committed_parity_receipts_are_fresh_against_this_tree() {
+    let r = registry().expect("registry");
+    let all = committed();
+    let mut stale = Vec::new();
+    for (entry, rc) in &all {
+        let path = entry["receipt"].as_str().expect("receipt path");
+        let id = rc["kernel_id"].as_str().expect("kernel_id");
+        let row = r
+            .rows()
+            .iter()
+            .find(|row| row.kernel_id == id)
+            .unwrap_or_else(|| panic!("{path}: {id} is not a row"));
+        let was = InputSet::from_receipt(rc).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let now = InputSet::from_tree(
+            &repo_root(),
+            row,
+            &was.driver,
+            &was.device,
+            &oracle_now(rc, row),
+        )
+        .unwrap_or_else(|e| panic!("{path}: {e}"));
+        let hash = rc["input_set_hash"].as_str().unwrap_or("");
+        if let Freshness::Stale(parts) = was.freshness(hash, &now) {
+            stale.push(format!("{path}: stale {}", parts.join(",")));
+        }
+    }
+    eprintln!(
+        "kreg receipt reuse: {}/{} fresh",
+        all.len() - stale.len(),
+        all.len()
+    );
+    assert!(
+        stale.is_empty(),
+        "F-8: re-measure these receipts\n{}",
+        stale.join("\n")
+    );
+}
+
 fn check_fixture_receipt(id: &str, path: &str, rc: &serde_json::Value, row: &KernelRow) {
     assert_eq!(
         rc["oracle_independent"], true,

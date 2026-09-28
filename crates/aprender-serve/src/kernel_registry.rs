@@ -298,6 +298,64 @@ impl InputSet {
     }
 }
 
+/// F-8 / KTEST-07: whether a committed receipt may be reused by the tree it is judged against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Freshness {
+    /// Every part recomputes to what the receipt recorded, and so does the digest.
+    Fresh,
+    /// The parts that differ, in [`InputSet`] order. `input_set_hash` alone means the receipt's
+    /// digest does not match its own recorded parts.
+    Stale(Vec<&'static str>),
+}
+
+impl InputSet {
+    /// The `input_set` object a parity receipt records.
+    pub fn from_receipt(rc: &serde_json::Value) -> std::result::Result<Self, String> {
+        let set = &rc["input_set"];
+        let part = |k: &str| {
+            set[k]
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("receipt input_set: no {k}"))
+        };
+        Ok(Self {
+            source_sha256: part("source_sha256")?,
+            row_sha256: part("row_sha256")?,
+            toolchain: part("toolchain")?,
+            driver: part("driver")?,
+            device: part("device")?,
+            oracle: part("oracle")?,
+        })
+    }
+
+    /// Judge a receipt that recorded `self` and `recorded_hash` against `now`, the set recomputed
+    /// from the tree. The digest is checked against the recorded parts first, so a receipt cannot
+    /// be kept fresh by editing its parts and leaving an old digest.
+    pub fn freshness(&self, recorded_hash: &str, now: &InputSet) -> Freshness {
+        if recorded_hash != self.hash() {
+            return Freshness::Stale(vec!["input_set_hash"]);
+        }
+        let parts: [(&'static str, &String, &String); 6] = [
+            ("source_sha256", &self.source_sha256, &now.source_sha256),
+            ("row_sha256", &self.row_sha256, &now.row_sha256),
+            ("toolchain", &self.toolchain, &now.toolchain),
+            ("driver", &self.driver, &now.driver),
+            ("device", &self.device, &now.device),
+            ("oracle", &self.oracle, &now.oracle),
+        ];
+        let stale: Vec<&'static str> = parts
+            .iter()
+            .filter(|(_, was, is)| was != is)
+            .map(|(k, _, _)| *k)
+            .collect();
+        if stale.is_empty() {
+            Freshness::Fresh
+        } else {
+            Freshness::Stale(stale)
+        }
+    }
+}
+
 /// A row's identity for [`InputSet`]: every field but `tolerance`, `name=value` lines in the
 /// struct's declared order. Changing the order is a new input-set version.
 pub fn row_key(row: &KernelRow) -> String {
@@ -596,6 +654,62 @@ mod tests {
             edit(&mut s);
             assert_ne!(s.hash(), base.hash(), "part {i} did not move the hash");
         }
+    }
+
+    /// F-8 case table: an unchanged set is fresh; each changed part is named, alone; a digest
+    /// that does not match the recorded parts is stale whatever the parts say.
+    #[test]
+    #[allow(clippy::disallowed_methods)] // serde_json::json! unwraps internally
+    fn f8_a_stale_input_set_is_named() {
+        let base = InputSet {
+            source_sha256: "a".into(),
+            row_sha256: "b".into(),
+            toolchain: "1.93.0".into(),
+            driver: "none".into(),
+            device: "x86_64+avx2".into(),
+            oracle: "in_tree".into(),
+        };
+        let h = base.hash();
+        assert_eq!(base.freshness(&h, &base.clone()), Freshness::Fresh);
+        let edits: [(&str, fn(&mut InputSet)); 6] = [
+            ("source_sha256", |s| s.source_sha256.push('x')),
+            ("row_sha256", |s| s.row_sha256.push('x')),
+            ("toolchain", |s| s.toolchain = "1.94.0".into()),
+            ("driver", |s| s.driver = "590.48".into()),
+            ("device", |s| s.device = "x86_64+avx2+avx512f".into()),
+            ("oracle", |s| s.oracle = "gguf_py".into()),
+        ];
+        for (name, edit) in edits {
+            let mut now = base.clone();
+            edit(&mut now);
+            assert_eq!(
+                base.freshness(&h, &now),
+                Freshness::Stale(vec![name]),
+                "{name}"
+            );
+        }
+        let mut now = base.clone();
+        now.toolchain = "1.94.0".into();
+        now.oracle = "gguf_py".into();
+        assert_eq!(
+            base.freshness(&h, &now),
+            Freshness::Stale(vec!["toolchain", "oracle"])
+        );
+        // A receipt edited to claim the new source, digest left alone.
+        let mut forged = base.clone();
+        forged.source_sha256.push('x');
+        assert_eq!(
+            forged.freshness(&h, &forged.clone()),
+            Freshness::Stale(vec!["input_set_hash"])
+        );
+        let rc = serde_json::json!({"input_set": {
+            "source_sha256": "a", "row_sha256": "b", "toolchain": "1.93.0",
+            "driver": "none", "device": "x86_64+avx2", "oracle": "in_tree"}});
+        assert_eq!(InputSet::from_receipt(&rc), Ok(base));
+        let err = InputSet::from_receipt(&serde_json::json!({"input_set": {}}))
+            .err()
+            .expect("refused");
+        assert!(err.contains("source_sha256"), "{err}");
     }
 
     #[test]
