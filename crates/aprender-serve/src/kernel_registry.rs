@@ -184,12 +184,19 @@ pub struct KernelRow {
     pub arch: String,
     /// `+`-joined ISA features the row requires; `none` for baseline.
     pub isa_features: String,
+    /// `+`-joined device features the row needs beyond its backend (`SHADER_F16`, `SUBGROUP`,
+    /// `sm_XX`, …); `none` when any device of the backend can run it (KTEST-001 §5.1).
+    pub requires: String,
     /// Elements per quant block.
     pub block_elems: u32,
     /// Accumulator precision.
     pub accumulate: String,
     /// Activation precision inside the kernel (AC-4).
     pub precision: String,
+    /// The error model its parity bound is derived from (KTEST-001 §3.1): `EM-DOT`, `EM-DEQ`, …
+    pub error_model: String,
+    /// `bitwise` (same bits on every run) or `bounded` (within the error model only).
+    pub determinism: String,
     /// The M the kernel serves: `m1` or `m_any` (AC-4).
     pub shape_class: String,
     /// `unmeasured` or the path of a tolerance receipt.
@@ -207,6 +214,32 @@ pub struct KernelRow {
 #[derive(Deserialize)]
 struct Document {
     kernels: Vec<KernelRow>,
+}
+
+/// The error models of KTEST-001 §3.1. The contract's shape holds the same closed set.
+pub const ERROR_MODELS: [&str; 8] = [
+    "EM-DOT",
+    "EM-DEQ",
+    "EM-ELEM",
+    "EM-RED",
+    "EM-SMX",
+    "EM-ATT",
+    "EM-ROPE",
+    "EM-NONDET",
+];
+
+/// A cross-field rule SHACL Core cannot state: an atomics-based kernel (`EM-NONDET`) is never
+/// `bitwise`, and a row outside the closed sets is refused here too, not only by the shape.
+fn check_determinism(row: &KernelRow) -> std::result::Result<(), String> {
+    let refuse = |why: &str| Err(format!("kernel registry: row `{}` {why}", row.kernel_id));
+    if !ERROR_MODELS.contains(&row.error_model.as_str()) {
+        return refuse(&format!("has error_model `{}`", row.error_model));
+    }
+    match (row.error_model.as_str(), row.determinism.as_str()) {
+        ("EM-NONDET", "bitwise") => refuse("claims bitwise determinism under EM-NONDET"),
+        (_, "bitwise" | "bounded") => Ok(()),
+        (_, other) => refuse(&format!("has determinism `{other}`")),
+    }
 }
 
 /// The parsed registry and its `(backend, type id) -> rows` table.
@@ -247,6 +280,7 @@ impl Registry {
         }
         let mut table = vec![Vec::new(); Backend::ALL.len() * MAX_TYPE_ID];
         for (i, row) in doc.kernels.iter().enumerate() {
+            check_determinism(row)?;
             let cell = &mut table[cell_index(index_slot(row)?)];
             if let Some(&other) = cell
                 .iter()
@@ -382,11 +416,52 @@ mod tests {
     ) -> String {
         format!(
             r#"{{"kernel_id":"{id}","op":"matvec","qtype":"Q4_K","ggml_type":{ggml_type},"layout":"{layout}",
-            "backend":"{backend}","arch":"{arch}","isa_features":"{isa}","block_elems":256,
-            "accumulate":"f32","precision":"f32","shape_class":"m_any",
+            "backend":"{backend}","arch":"{arch}","isa_features":"{isa}","requires":"none","block_elems":256,
+            "accumulate":"f32","precision":"f32","error_model":"EM-DOT","determinism":"bounded","shape_class":"m_any",
             "tolerance":"unmeasured","source_file":"crates/x/src/a.rs","source_fn":"f",
             "selector":"selector::fn","contract":"contracts/tensor-layout-v1.yaml"}}"#
         )
+    }
+
+    /// KTEST-01: the error model and determinism are closed sets, and EM-NONDET is never bitwise.
+    #[test]
+    fn the_determinism_case_table() {
+        let base = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major");
+        let cases: [(&str, &str, bool); 6] = [
+            ("EM-DOT", "bounded", true),
+            ("EM-DOT", "bitwise", true),
+            ("EM-NONDET", "bounded", true),
+            ("EM-NONDET", "bitwise", false),
+            ("EM-GUESS", "bounded", false),
+            ("EM-DOT", "mostly", false),
+        ];
+        for (em, det, ok) in cases {
+            let row = base
+                .replace(
+                    r#""error_model":"EM-DOT""#,
+                    &format!(r#""error_model":"{em}""#),
+                )
+                .replace(
+                    r#""determinism":"bounded""#,
+                    &format!(r#""determinism":"{det}""#),
+                );
+            let got = Registry::parse(&doc(&[row]));
+            assert_eq!(got.is_ok(), ok, "({em}, {det}): {:?}", got.err());
+            if let Err(e) = got {
+                assert!(
+                    e.contains("cpu.matvec.q4_k"),
+                    "({em}, {det}) names no row: {e}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_row_without_an_error_model_is_refused() {
+        let row = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major")
+            .replace(r#""error_model":"EM-DOT","#, "");
+        let err = Registry::parse(&doc(&[row])).err().expect("refused");
+        assert!(err.contains("error_model"), "{err}");
     }
 
     fn doc(rows: &[String]) -> String {
