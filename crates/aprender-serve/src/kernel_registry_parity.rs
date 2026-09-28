@@ -125,7 +125,12 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
         let deq = (k.dequant)(&weights).expect("dequantize the random weights");
         let reference: Vec<f64> = deq
             .chunks_exact(w.in_dim)
-            .map(|row| row.iter().zip(&x).map(|(a, b)| f64::from(*a) * f64::from(*b)).sum())
+            .map(|row| {
+                row.iter()
+                    .zip(&x)
+                    .map(|(a, b)| f64::from(*a) * f64::from(*b))
+                    .sum()
+            })
             .collect();
         let run = || (k.matvec)(&weights, &x, w.in_dim, w.out_dim);
         let got = if fp32_activations {
@@ -136,7 +141,11 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
         .expect("run the kernel");
         assert_eq!(got.len(), w.out_dim, "{}: output length", k.id);
         let scale = reference.iter().fold(0.0f64, |a, r| a.max(r.abs()));
-        assert!(scale > 0.0, "{}: an all-zero reference measures nothing", k.id);
+        assert!(
+            scale > 0.0,
+            "{}: an all-zero reference measures nothing",
+            k.id
+        );
         for (g, r) in got.iter().zip(&reference) {
             let abs = (f64::from(*g) - r).abs();
             assert!(abs.is_finite(), "{}: non-finite output", k.id);
@@ -183,7 +192,10 @@ fn isa_detected() -> Vec<&'static str> {
     {
         for (name, on) in [
             ("neon", std::arch::is_aarch64_feature_detected!("neon")),
-            ("dotprod", std::arch::is_aarch64_feature_detected!("dotprod")),
+            (
+                "dotprod",
+                std::arch::is_aarch64_feature_detected!("dotprod"),
+            ),
             ("i8mm", std::arch::is_aarch64_feature_detected!("i8mm")),
         ] {
             if on {
@@ -246,7 +258,11 @@ fn emit_parity_receipts() {
             .iter()
             .find(|row| row.kernel_id == k.id)
             .unwrap_or_else(|| panic!("{} is not a registry row", k.id));
-        assert_eq!(row.source_fn, k.source_fn, "{}: harness and row name different fns", k.id);
+        assert_eq!(
+            row.source_fn, k.source_fn,
+            "{}: harness and row name different fns",
+            k.id
+        );
         let doc = receipt(k, row);
         let path = out.join(format!("{}.json", k.id));
         let text = serde_json::to_string_pretty(&doc).expect("receipt json");
@@ -282,15 +298,28 @@ fn committed_parity_receipts_hold_on_this_host() {
         let id = rc["kernel_id"].as_str().expect("kernel_id");
         let path = entry["receipt"].as_str().expect("receipt path");
         assert_eq!(rc["schema"], SCHEMA, "{path}: schema");
-        assert_eq!(entry["kernel_id"], id, "{path}: ratchet entry names another kernel");
-        assert_eq!(entry["host_arch"], rc["host_arch"], "{path}: ratchet entry arch");
+        assert_eq!(
+            entry["kernel_id"], id,
+            "{path}: ratchet entry names another kernel"
+        );
+        assert_eq!(
+            entry["host_arch"], rc["host_arch"],
+            "{path}: ratchet entry arch"
+        );
         let row = r
             .rows()
             .iter()
             .find(|row| row.kernel_id == id)
             .unwrap_or_else(|| panic!("{path}: {id} is not a row"));
-        assert_eq!(row.tolerance, path, "{id}: tolerance must point at its receipt");
-        assert_eq!(rc["registry_precision"], row.precision.as_str(), "{id}: precision drifted");
+        assert_eq!(
+            row.tolerance, path,
+            "{id}: tolerance must point at its receipt"
+        );
+        assert_eq!(
+            rc["registry_precision"],
+            row.precision.as_str(),
+            "{id}: precision drifted"
+        );
         let wl = &rc["workload"];
         let dim = |k: &str| wl[k].as_u64().expect("workload field") as usize;
         let w = Workload {

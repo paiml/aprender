@@ -39,7 +39,7 @@ metadata:
   version: "1.0.0"
   kind: pattern
   created: '2026-09-27'
-  last_modified: '2026-09-27'
+  last_modified: '2026-09-28'
   author: PAIML Engineering
   description: >
     A kernel is loadable only if a shaped row declares its (backend, arch, isa_features, op, qtype, layout). Layout is closed to
@@ -51,6 +51,8 @@ metadata:
     - 'crates/aprender-serve/kernel-registry.json — the rows'
     - 'crates/aprender-serve/src/kernel_registry.rs — the runtime gate'
     - 'crates/aprender-contracts/src/lint/kernel_registry_v1_tests.rs — the case table, both arms, on the REAL contract and registry'
+    - 'crates/aprender-serve/src/kernel_registry_parity.rs — the parity receipts a tolerance path points at (FALSIFY-KREG-009)'
+    - 'evidence/kreg/parity/ — the receipts; oracle in_tree_dequant_f64 (not independent: an llama.cpp oracle is the follow-up)'
 
 entity:
   type: json
@@ -150,3 +152,12 @@ falsification_tests:
     prediction: each (source_file, source_fn) pair resolves to a `fn` in the tree
     test: cargo test -p aprender-serve --lib kernel_registry
     if_fails: a registry row points at a deleted or renamed kernel and still admits it
+  - id: FALSIFY-KREG-009
+    rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
+    prediction: >
+      every committed receipt, re-measured with its own seed and workload, stays within its tolerance_rel;
+      the row's tolerance is that receipt's path; a precision=f32 row serves exactly what the FP32 scope
+      computes, and a quantized-precision row serves something measurably coarser. Mutants: a q5_k row
+      re-declared q8_k, a q6_k bound below the measurement, and a q4_k row reset to unmeasured are each RED
+    test: cargo test -p aprender-serve --lib kernel_registry::parity
+    if_fails: a receipt is a file that was once true, and a row can declare an activation precision it does not serve
