@@ -28,6 +28,7 @@ fn run_qwen35_session_benchmark(
 
     bench_log(config, &"Running warmup...".yellow().to_string());
     for i in 0..config.warmup {
+        session.forget_prefix();
         let _ = session.generate(prompt_tokens, gen_config, &mut |_| true);
         bench_log_iter(config, i, Duration::ZERO, None);
     }
@@ -64,6 +65,9 @@ fn session_timed_turn(
     tracer: &TracerImpl,
     budget_us: u64,
 ) -> Result<(realizar::session::Turn, Duration, Duration)> {
+    // #4445: every timed turn repeats the same prompt, which the session would
+    // otherwise resume from its checkpoint; forget it so the turn prefills whole.
+    session.forget_prefix();
     let t0 = Instant::now();
     let mut first: Option<Duration> = None;
     let traced = tracer.trace("bench_qwen35_session_iter", budget_us, || {
