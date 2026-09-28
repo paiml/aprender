@@ -30,7 +30,8 @@ use trueno_gpu::kernels::gdn::{
     FLASH_HEAD_DIM,
 };
 use trueno_gpu::kernels::{
-    Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel, Q8_0DequantKernel,
+    F16DequantKernel, Iq4XsDequantKernel, Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel,
+    Q8_0DequantKernel,
 };
 
 impl CudaExecutor {
@@ -125,6 +126,20 @@ impl CudaExecutor {
                 let key = format!("qp_q8_0_dequant_{k}_{n}");
                 self.qp_prepare(&key, &kern)?;
                 (key, "q8_0_dequant_to_f32", (n, k.div_ceil(32)))
+            },
+            // #3715: `Qwen3.5-4B-UD-Q4_K_XL` (F16 ssm_alpha/beta, IQ4_XS FFN) and
+            // `Qwen3.5-0.8B-IQ4_XS` refused the CUDA prefill here and ran on the CPU.
+            WeightQuantType::F16 => {
+                let kern = F16DequantKernel::new(k, n);
+                let key = format!("qp_f16_dequant_{k}_{n}");
+                self.qp_prepare(&key, &kern)?;
+                (key, "f16_dequant_to_f32", (n, k.div_ceil(32)))
+            },
+            WeightQuantType::IQ4XS => {
+                let kern = Iq4XsDequantKernel::new(k, n);
+                let key = format!("qp_iq4xs_dequant_{k}_{n}");
+                self.qp_prepare(&key, &kern)?;
+                (key, "iq4_xs_dequant_to_f32", (n, k.div_ceil(256)))
             },
             other => {
                 return Err(GpuError::InvalidParameter(format!(
