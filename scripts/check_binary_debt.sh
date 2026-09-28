@@ -207,11 +207,16 @@ self_test() {
     BD_TD=$td
     trap _rm_td EXIT
     py_fleet_state check_binary_debt yaml tomllib || { rc=$?; [ "$rc" -eq 3 ] && return 0; return "$rc"; }
-    # row <want 0|1> <must-print-or-empty> <label> <mutation...>
+    # Mutations are commands run in the fixture as "$@", never eval'd (bashrs SEC001).
+    # Multi-step or redirecting mutations are the m_* functions below.
+    m_newbin() { mkdir -p crates/alpha/src/bin; printf 'fn main(){}\n' > crates/alpha/src/bin/newbin.rs; }
+    m_armed_at() { sed -i 's/armed: false/armed: true/' ledger.yaml; sed -i 's/version = "0.69.3"/version = "0.70.0"/' Cargo.toml; }
+    m_dup() { printf '  - {crate: alpha, bin: alpha, class: KEEP}\n' >> ledger.yaml; }
+    # row <want 0|1> <must-print-or-empty> <label> <mutation command...>
     row() {
         local want=$1 needle=$2 label=$3; shift 3
         rows=$((rows + 1)); ws="$td/ws$rows"; fixture "$ws"
-        (cd "$ws" && eval "$*") || { printf 'BROKE  %s: the mutation itself failed\n' "$label"; fails=$((fails + 1)); return; }
+        (cd "$ws" && "$@") || { printf 'BROKE  %s: the mutation itself failed\n' "$label"; fails=$((fails + 1)); return; }
         rc=0; out=$(judge "$ws" "$ws/ledger.yaml" 2>&1) || rc=$?
         if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || [[ "$out" == *"$needle"* ]]; }; then
             printf 'ok     %s\n' "$label"
@@ -221,20 +226,20 @@ self_test() {
         fi
     }
     row 0 "5 binaries in the universe" "the clean fixture passes (root src/bin, [[bin]] override, src/bin/*/main.rs, excluded crate; fuzz and a package-less shell left out)" true
-    row 1 "NEW      alpha/newbin" "an unledgered new binary is NEW" "mkdir -p crates/alpha/src/bin; printf 'fn main(){}\n' > crates/alpha/src/bin/newbin.rs"
-    row 1 "NEW      extra/extra" "an EXCLUDED crate's binary is in the universe" "sed -i '/crate: extra/d' ledger.yaml"
-    row 1 "NEW      gamma/gamma" "a crate added under crates/ is seen" "mkcrate . crates/gamma gamma"
-    row 1 "STALE    alpha/alpha" "a row whose binary is gone is STALE" "rm crates/alpha/src/main.rs"
-    row 1 "STALE    extra/extra" "dropping a crate from exclude hides it: STALE, never a quiet pass" "sed -i 's/\"tools\\/extra\", //' Cargo.toml"
-    row 1 "CLASS    alpha/alpha" "a class outside the contract's set" "sed -i 's/class: DECIDE/class: MAYBE/' ledger.yaml"
-    row 1 "CEILING  BINARY_DEBT 3 > 2" "BINARY_DEBT above its ceiling" "sed -i 's/bin: tool, class: KEEP/bin: tool, class: DECIDE/' ledger.yaml"
+    row 1 "NEW      alpha/newbin" "an unledgered new binary is NEW" m_newbin
+    row 1 "NEW      extra/extra" "an EXCLUDED crate's binary is in the universe" sed -i '/crate: extra/d' ledger.yaml
+    row 1 "NEW      gamma/gamma" "a crate added under crates/ is seen" mkcrate . crates/gamma gamma
+    row 1 "STALE    alpha/alpha" "a row whose binary is gone is STALE" rm crates/alpha/src/main.rs
+    row 1 "STALE    extra/extra" "dropping a crate from exclude hides it: STALE, never a quiet pass" sed -i 's/"tools\/extra", //' Cargo.toml
+    row 1 "CLASS    alpha/alpha" "a class outside the contract's set" sed -i 's/class: DECIDE/class: MAYBE/' ledger.yaml
+    row 1 "CEILING  BINARY_DEBT 3 > 2" "BINARY_DEBT above its ceiling" sed -i 's/bin: tool, class: KEEP/bin: tool, class: DECIDE/' ledger.yaml
     row 0 "BINARY_DEBT 2/2" "BINARY_DEBT AT its ceiling is not over it (near miss)" true
-    row 1 "CEILING  LEGACY_NAMES 2 > 1" "LEGACY_NAMES above its ceiling" "sed -i 's/sunset: 0.69.0/sunset: null/' ledger.yaml"
+    row 1 "CEILING  LEGACY_NAMES 2 > 1" "LEGACY_NAMES above its ceiling" sed -i 's/sunset: 0.69.0/sunset: null/' ledger.yaml
     row 0 "" "an UNARMED release ceiling does not bind" true
-    row 1 "CEILING  BINARY_DEBT 2 > 1 (ceiling: 0.70.0)" "an ARMED release ceiling binds once the version reaches it" "sed -i 's/armed: false/armed: true/' ledger.yaml; sed -i 's/version = \"0.69.3\"/version = \"0.70.0\"/' Cargo.toml"
-    row 0 "" "an ARMED release ceiling does not bind BEFORE its version" "sed -i 's/armed: false/armed: true/' ledger.yaml"
-    row 1 "NEW      fuzzer/fuzzer" "only the cargo-fuzz MARKER keeps a harness out" "sed -i '/cargo-fuzz/d' fuzz/Cargo.toml"
-    row 1 "DUP      alpha/alpha" "a binary with two rows" "printf '  - {crate: alpha, bin: alpha, class: KEEP}\n' >> ledger.yaml"
+    row 1 "CEILING  BINARY_DEBT 2 > 1 (ceiling: 0.70.0)" "an ARMED release ceiling binds once the version reaches it" m_armed_at
+    row 0 "" "an ARMED release ceiling does not bind BEFORE its version" sed -i 's/armed: false/armed: true/' ledger.yaml
+    row 1 "NEW      fuzzer/fuzzer" "only the cargo-fuzz MARKER keeps a harness out" sed -i '/cargo-fuzz/d' fuzz/Cargo.toml
+    row 1 "DUP      alpha/alpha" "a binary with two rows" m_dup
     printf '%s  check_binary_debt self-test: %d rows, %d broke\n' "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL)" "$rows" "$fails"
     [ "$fails" -eq 0 ]
 }
