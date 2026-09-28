@@ -32,7 +32,7 @@ fn test_version_flag() {
         .assert()
         .success()
         .stdout(predicate::str::contains(format!(
-            "probador {}",
+            "aprender-test-cli {}",
             env!("CARGO_PKG_VERSION")
         )));
 }
@@ -419,4 +419,23 @@ fn test_invalid_subcommand() {
 #[test]
 fn test_invalid_flag() {
     probador().arg("--notaflag").assert().failure();
+}
+
+/// ONT-10 S2: the ledger names `llm experiment` as a command, so the bare group
+/// must parse (it runs `status`), not exit 2 demanding a subcommand. Exit 1 is
+/// fine: a default build has no `llm` feature, and a feature build has no
+/// experiment.json in an empty directory.
+#[test]
+fn test_bare_llm_experiment_is_a_command() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for args in [
+        &["llm", "experiment"][..],
+        &["llm", "experiment", "-f", "x.json"][..],
+    ] {
+        probador()
+            .current_dir(dir.path())
+            .args(args)
+            .assert()
+            .code(predicate::ne(2));
+    }
 }

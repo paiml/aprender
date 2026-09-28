@@ -104,13 +104,13 @@ let emb3 = embedder.embed("The stock market crashed today.")?;
 
 ```bash
 # Index with semantic embeddings
-trueno-rag index ./docs --embedder semantic --model mini-lm-l6
+aprender-rag index ./docs --embedder semantic --model mini-lm-l6
 
 # Available models via CLI
-trueno-rag info
+aprender-rag info
 
 # Query (auto-detects embedder type from index)
-trueno-rag query "How does RAG work?"
+aprender-rag query "How does RAG work?"
 ```
 
 ## Batch Embedding

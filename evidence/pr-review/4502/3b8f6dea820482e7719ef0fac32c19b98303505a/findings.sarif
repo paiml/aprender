@@ -1,0 +1,143 @@
+{
+    "version": "2.1.0",
+    "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "pmat",
+                    "informationUri": "https://github.com/paiml/pmat",
+                    "version": "3.41.1",
+                    "rules": []
+                }
+            },
+            "invocations": [
+                {
+                    "executionSuccessful": true,
+                    "commandLine": "pmat query \"theorem dedup restatement BTreeSet seen\" --limit 5 --format json"
+                }
+            ],
+            "results": [
+                {
+                    "ruleId": "PRREV-DELTA-001",
+                    "level": "note",
+                    "message": {
+                        "text": "This receipt reviews the incremental delta since the prior accepted receipt (4dce8a54, 3 commits, 29 files: ad4a0b0c pv challenge gen dedup PMAT-4200, 29104f31 a receipt-line re-measure, 3b8f6dea the roadmap fragment adopt). base_sha is unchanged (aca6f2d7) and still describes the full 1793-file merge-base diff the prior receipt already sampled; this run does not re-sweep that full diff and reuses the prior receipt's pmat/crux/cuda base findings where the incremental delta does not touch them."
+                    },
+                    "properties": {
+                        "grounding": "measured",
+                        "command": ["git", "diff", "--name-only", "4dce8a54f1f591cc484d1b43a6fa948c0f952448", "3b8f6dea820482e7719ef0fac32c19b98303505a"],
+                        "exit_code": 0,
+                        "stdout_sha256": "see-scratch-log",
+                        "failure_scenario": "A reviewer reading only the verdict could assume this run independently re-verified the full 1793-file base diff; it did not, and a regression already covered by the prior receipt's own sampled (non-exhaustive) coverage would still pass unreviewed by either run.",
+                        "precision_class": "advisory"
+                    }
+                },
+                {
+                    "ruleId": "PRREV-FIX-VERIFIED-001",
+                    "level": "note",
+                    "message": {
+                        "text": "commit ad4a0b0ccf hoists `let mut seen = BTreeSet::new();` in crates/aprender-contracts/src/discharge/challenge.rs::render() from inside the per-contract-file loop to before it, so theorem-restatement dedup is scoped to the whole Challenge/ directory instead of resetting per file. Independently reconfirmed this session (not merely trusting the commit message): `theorem _root_` occurrences in crates/aprender-contracts-staging/lean/Challenge/ go from 381 at the prior receipt's head (4dce8a54) to 249 at this head, a reduction of exactly 132 -- matching the commit message's claimed '132 duplicate comparator rows' and matching discharge-summary.json's independent field change (challenges_closed: null -> \"249/249\", lake_exit/leanchecker_exit: null -> 0). cargo test -p aprender-contracts --lib discharge::challenge: 11/11 passed including the new regression test a_theorem_bound_by_two_contracts_is_restated_once_across_files. pmat analyze complexity on render(): cyclomatic 6, cognitive 11 (gate max_complexity=10, cyclomatic clean); pmat analyze satd on discharge/: 0 violations. A pmat query for the dedup pattern found no pre-existing clone (clone_count: 0, duplication_score: 0.0) -- this is not a re-implementation of existing code."
+                    },
+                    "properties": {
+                        "grounding": "measured",
+                        "command": ["bash", "-c", "git ls-tree -r --name-only <4dce>:crates/.../Challenge/ | xargs -I{} git show <4dce>:{} | grep -c 'theorem _root_'; grep -rc 'theorem _root_' crates/.../Challenge/ | awk -F: '{s+=$2} END{print s}'"],
+                        "exit_code": 0,
+                        "stdout_sha256": "295138c167aa2690e503d360663ebfff7b94d41214a240b7048f5d5e7d189b20",
+                        "failure_scenario": "If the dedup fix had over-merged (collapsed two genuinely distinct theorems under one name because their restatements happened to be textually identical), the Lean build would still show challenges_closed as a clean fraction and the count would still drop -- so this finding is corroborating, not exhaustive; it does not itself rule out an over-merge, only a build failure.",
+                        "precision_class": "advisory"
+                    }
+                },
+                {
+                    "ruleId": "PRREV-ORDER-ONLY-VERIFIED-001",
+                    "level": "note",
+                    "message": {
+                        "text": "commit 3b8f6dea82 claims its 500-line docs/roadmaps/roadmap.yaml diff (vs 29104f315b) is order-only. Independently reconfirmed this session via a structural YAML diff rather than trusting the claim: count_a=1170 count_b=1170, ids_equal=True, changed_content_count=0 (zero entries with any field-level difference), top_keys_equal=True. This is consistent with the stated mechanism (roadmap_fragments.py adopt PMAT-4502 + aggregate --write) reordering rows without altering any row's content."
+                    },
+                    "properties": {
+                        "grounding": "measured",
+                        "command": ["python3", "-c", "yaml.safe_load(git show <sha>:docs/roadmaps/roadmap.yaml) diff by id"],
+                        "exit_code": 0,
+                        "stdout_sha256": "ab11221fbc9e1f1d49d6f255c05bb8f129245382145148e320ddbb6051abd5ca",
+                        "failure_scenario": "A silent content mutation disguised as a reorder (e.g. a status or owner field flipped while resorting) would ship undetected by anyone who trusted the commit message's own claim instead of re-parsing both versions; this check closes that gap for this specific file.",
+                        "precision_class": "advisory"
+                    }
+                }
+            ]
+        },
+        {
+            "tool": {
+                "driver": {
+                    "name": "nvidia-cuda-docs",
+                    "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+                }
+            },
+            "invocations": [
+                {
+                    "executionSuccessful": false,
+                    "toolExecutionNotifications": [
+                        {
+                            "level": "error",
+                            "message": {
+                                "text": "The nvidia-cuda-docs MCP server's search_cuda_docs tool is not present in this session's tool set; ToolSearch for it returned only mcp__nvidia-cuda-docs__authenticate / complete_authentication, indicating the server requires an interactive OAuth flow that was not completed for this session."
+                            },
+                            "properties": {
+                                "grounding": "measured",
+                                "command": ["ToolSearch", "select:mcp__nvidia-cuda-docs__search_cuda_docs"],
+                                "exit_code": 0
+                            }
+                        }
+                    ]
+                }
+            ],
+            "results": [
+                {
+                    "ruleId": "PRREV-CUDA-001",
+                    "level": "note",
+                    "message": {
+                        "text": "S3.B triggers on this incremental delta: crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean matches the *fp8* path predicate (confirmed via the guard's own --match-path predicate, not by eye). Unlike the base diff's CUDA trigger (a real sm_121 JIT device-behaviour claim, already recorded unreachable in the prior receipt), this file's diff in the incremental delta is pure theorem-declaration relocation: decode_abs_le, roundtrip_e4m3, roundtrip_e5m2 and roundtrip_ulp are removed from this file as part of the cross-file dedup and now live in encoder-roundtrip-v1.lean / bpe-tokenization-v1.lean, confirmed by grep. No new device-behaviour claim is introduced by this delta. The nvidia-cuda-docs consultation still could not run (server unauthenticated), so this is recorded unreachable per S3.0 rather than narrated as 'no CUDA concerns'."
+                    },
+                    "properties": {
+                        "grounding": "measured",
+                        "command": ["bash", "scripts/check_pr_review_receipt.sh", "--match-path", "crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean"],
+                        "exit_code": 0,
+                        "stdout_sha256": "see-scratch-log",
+                        "failure_scenario": "If a future delta to this same file DID add a new device-behaviour claim under cover of what looks like another mechanical dedup regeneration, an unreachable CUDA consultation with no per-file note could let it pass reviewed-in-name-only; this finding exists so the distinction (relocation vs new claim) is on the record for this specific delta rather than assumed.",
+                        "precision_class": "advisory"
+                    }
+                }
+            ]
+        },
+        {
+            "tool": {
+                "driver": {
+                    "name": "crux",
+                    "informationUri": "internal:crux"
+                }
+            },
+            "invocations": [
+                {
+                    "executionSuccessful": true,
+                    "commandLine": "for f in <29 changed files>; do check_pr_review_receipt.sh --match-crux-surface \"$f\"; done"
+                }
+            ],
+            "results": [
+                {
+                    "ruleId": "PRREV-CRUX-002",
+                    "level": "note",
+                    "message": {
+                        "text": "S3.C surface trigger checked against every one of the 29 files in this incremental delta via the guard's own --match-crux-surface predicate (not evaluated by eye): zero matches. The delta touches Lean-generated theorem files, a Rust dedup fix + its test, discharge-summary.json, docs/roadmaps/roadmap.yaml, a new roadmap fragment, and one docs/audits correction -- no CLI subcommand, HTTP route, MCP tool, config key or output format is added or changed in this delta. The base diff's own CRUX surfaces (apr CLI registry, aprender-ptx-debug) are unchanged by this delta and remain as already recorded in the prior receipt (gap_effect: none)."
+                    },
+                    "properties": {
+                        "grounding": "measured",
+                        "command": ["bash", "-c", "git diff --name-only 4dce8a54 3b8f6dea82 | xargs -I{} scripts/check_pr_review_receipt.sh --match-crux-surface {}"],
+                        "exit_code": 1,
+                        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                        "failure_scenario": "A user-facing surface change disguised inside what looks like generated output (e.g. a new apr subcommand hidden in the same commit as a Lean regen) would go unreviewed by CRUX if this predicate check were skipped or eyeballed instead of run against every changed path.",
+                        "precision_class": "advisory"
+                    }
+                }
+            ]
+        }
+    ]
+}

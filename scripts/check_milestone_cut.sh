@@ -26,6 +26,15 @@
 # immediately before `git tag`, after the bump PR has merged. Never while the
 # bump PR is open: it sits in the milestone and reads RED.
 #
+# TWO MODES (#3459 part 2, cop ruling 2026-09-24):
+#   --must-carry  the BLOCKING set: open ISSUES labelled `must-carry`. Pull requests and
+#                 unlabelled issues do not block; each is listed as TO CARRY, because the
+#                 release autopilot MOVES it (scripts/release/carry_milestone_items.sh) before
+#                 the tag. Nothing is silently left behind: see strict.
+#   (default)     STRICT: the milestone holds nothing open but its release epic. cut_tag() runs
+#                 it AFTER the carry, so an item the carry missed, or an item nobody carried,
+#                 is RED at the tag. A tagged milestone with an open item is never clean.
+#
 # Exit 0 = zero open items in the milestone.
 # Exit 1 = at least one open item; each is named with its remedy.
 # Exit 2 = cannot judge, never a silent pass: gh or python3 missing, gh
@@ -42,11 +51,11 @@ set -euo pipefail
 SELF_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
 usage() {
-    printf 'usage: %s <milestone-title> [--repo O/R] [--json OUT] | --self-test\n' "$(basename "$0")" >&2
+    printf 'usage: %s <milestone-title> [--repo O/R] [--json OUT] [--must-carry] | --self-test\n' "$(basename "$0")" >&2
     exit 2
 }
 
-# judge_from_dir DIR TITLE [JSON_OUT]
+# judge_from_dir DIR TITLE [JSON_OUT] [MODE]   MODE = strict (default) | must-carry
 # DIR holds milestones.jsonl and items.jsonl, one JSON object per line: the
 # shape `gh api --paginate --jq '.[]'` writes, so a read of more than one page
 # is never a concatenation of arrays. Prints the verdict and returns 0, 1 or 2.
@@ -55,6 +64,10 @@ judge_from_dir() {
 import json, sys
 
 d, title, json_out = sys.argv[1], sys.argv[2], sys.argv[3]
+mode = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else "strict"
+if mode not in ("strict", "must-carry"):
+    print("ENV: unknown mode %s" % mode, file=sys.stderr)
+    sys.exit(2)
 
 def env(msg):
     print("ENV: " + msg, file=sys.stderr)
@@ -124,18 +137,34 @@ if len(admitted) > 1:
     env("%d open items claim to be the release epic of %s: %s" % (len(admitted), title, " ".join("#%s" % r["number"] for r in admitted)))
 rows = [r for r in all_rows if not is_release_epic(r)]
 
+# --must-carry: only open ISSUES labelled must-carry block the cut. Everything else is
+# listed TO CARRY: the autopilot moves it before the tag, and the STRICT run after the
+# move is what proves nothing was left behind (#3459 part 2).
+to_carry = []
+if mode == "must-carry":
+    to_carry = [r for r in rows if not (r["kind"] == "issue" and "must-carry" in r["labels"])]
+    rows = [r for r in rows if r["kind"] == "issue" and "must-carry" in r["labels"]]
+
 verdict = "RED" if rows else "PASS"
 if json_out:
     with open(json_out, "w", encoding="utf-8") as f:
-        json.dump({"milestone": title, "number": number, "open": open_n, "closed": closed_n,
-                   "admitted": admitted, "items": rows, "verdict": verdict}, f, indent=2, sort_keys=True)
+        json.dump({"milestone": title, "number": number, "open": open_n, "closed": closed_n, "mode": mode,
+                   "admitted": admitted, "items": rows, "to_carry": to_carry, "verdict": verdict},
+                  f, indent=2, sort_keys=True)
         f.write("\n")
 
 for r in admitted:
     print("ADMITTED #%s %s [%s] %s -- the release epic of this train, closed at 06x section 4 step 8"
           % (r["number"], r["kind"], ",".join(r["labels"]), r["title"]))
+for r in to_carry:
+    print("TO CARRY #%s %s [%s] %s -- not must-carry: the autopilot moves it before the tag"
+          % (r["number"], r["kind"], ",".join(r["labels"]), r["title"]))
 if not rows:
-    print("PASS  milestone %s (#%s): 0 open besides its release epic, %d closed -- the cut may proceed" % (title, number, closed_n))
+    if mode == "must-carry":
+        print("PASS  milestone %s (#%s): 0 open must-carry issue(s); %d item(s) to carry before the tag"
+              % (title, number, len(to_carry)))
+    else:
+        print("PASS  milestone %s (#%s): 0 open besides its release epic, %d closed -- the cut may proceed" % (title, number, closed_n))
     sys.exit(0)
 
 for r in rows:
@@ -143,9 +172,13 @@ for r in rows:
 for r in rows:
     print("  remedy #%s: close it, or carry it: gh %s edit %s --milestone <next> && gh %s comment %s --body \"slipped_from: %s\""
           % (r["number"], r["kind"], r["number"], r["kind"], r["number"], title))
-print("RED   milestone %s (#%s): %d open item(s) -- no tag until each is closed or carried" % (title, number, len(rows)))
+if mode == "must-carry":
+    print("RED   milestone %s (#%s): %d open must-carry issue(s) -- they BLOCK the cut and are never carried"
+          % (title, number, len(rows)))
+else:
+    print("RED   milestone %s (#%s): %d open item(s) -- no tag until each is closed or carried" % (title, number, len(rows)))
 sys.exit(1)
-' "$1" "$2" "${3:-}"
+' "$1" "$2" "${3:-}" "${4:-}"
 }
 
 # fetch_live REPO TITLE DIR -- writes DIR/milestones.jsonl and DIR/items.jsonl.
@@ -212,7 +245,7 @@ st_judge() {
     t="$4"
     shift 4
     rc=0
-    judge_from_dir "$fx" "$t" "" > "${fx}/out" 2>&1 || rc=$?
+    judge_from_dir "$fx" "$t" "" "${ST_MODE:-}" > "${fx}/out" 2>&1 || rc=$?
     st_check "$c" "$want" "$rc" "${fx}/out" "$@"
 }
 
@@ -330,6 +363,28 @@ self_test() {
     { st_item 20 7 issue open epic "EPIC: release train M — a"; st_item 10 7 issue open P1; } > "${fx}/items.jsonl"
     st_judge "$fx" S23 1 M "ADMITTED #20" "#10 issue [P1] item 10" "1 open item(s)"
 
+    # --must-carry (#3459 part 2): only open ISSUES labelled must-carry block. The STRICT rows above
+    # still hold unchanged: cut_tag() runs strict AFTER the carry, so nothing is left behind.
+    # S24 = S3 inverted in the new scope: one open PR is NOT a blocker, it is listed TO CARRY
+    st_ms M 7 1 5 > "${fx}/milestones.jsonl"
+    st_item 11 7 pr open release > "${fx}/items.jsonl"
+    ST_MODE=must-carry st_judge "$fx" S24 0 M "TO CARRY #11 pr [release] item 11" "0 open must-carry issue(s); 1 item(s) to carry"
+    # S25 = its twin: one open must-carry ISSUE blocks, named with its label, and is never carried
+    st_item 30 7 issue open must-carry > "${fx}/items.jsonl"
+    ST_MODE=must-carry st_judge "$fx" S25 1 M "#30 issue [must-carry] item 30" "1 open must-carry issue(s) -- they BLOCK the cut"
+    # S26 an unlabelled open issue does not block the must-carry run: it is carried
+    st_item 10 7 issue open P1 > "${fx}/items.jsonl"
+    ST_MODE=must-carry st_judge "$fx" S26 0 M "TO CARRY #10 issue [P1] item 10"
+    # S27 (cop ruling) the SAME unlabelled issue left in the milestone at the TAG is RED: strict is the
+    #     post-carry verification, and a tagged milestone with an open item is never clean
+    st_judge "$fx" S27 1 M "#10 issue [P1] item 10" "1 open item(s)"
+    # S28 a PULL REQUEST labelled must-carry does not block: the universe is ISSUES
+    st_item 31 7 pr open must-carry > "${fx}/items.jsonl"
+    ST_MODE=must-carry st_judge "$fx" S28 0 M "TO CARRY #31 pr [must-carry]"
+    # S29 the release epic stays ADMITTED in must-carry mode, whatever its labels
+    st_item 20 7 issue open epic "EPIC: release train M — schedule" > "${fx}/items.jsonl"
+    ST_MODE=must-carry st_judge "$fx" S29 0 M "ADMITTED #20 issue [epic]" "0 open must-carry issue(s); 0 item(s) to carry"
+
     # S16 --json records the verdict and the items
     st_ms M 7 1 5 > "${fx}/milestones.jsonl"
     st_item 10 7 issue open bug > "${fx}/items.jsonl"
@@ -416,7 +471,11 @@ main() {
     shift
     repo="paiml/aprender"
     json_out=""
+    mode="strict"
     while [ $# -gt 0 ]; do
+        case "$1" in
+            --must-carry) mode="must-carry"; shift; continue ;;
+        esac
         [ $# -ge 2 ] || usage
         case "$1" in
             --repo) repo="$2" ;;
@@ -446,7 +505,7 @@ main() {
         exit 2
     fi
     rc=0
-    judge_from_dir "$input_dir" "$title" "$json_out" || rc=$?
+    judge_from_dir "$input_dir" "$title" "$json_out" "$mode" || rc=$?
     exit "$rc"
 }
 

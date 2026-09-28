@@ -212,3 +212,8 @@ file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
 
+# ONT-10 surface gate (#4079): the bin it runs exists only with `server`.
+[[test]]
+name = "cli_surface_gate"
+path = "tests/cli_surface_gate.rs"
+required-features = ["server"]

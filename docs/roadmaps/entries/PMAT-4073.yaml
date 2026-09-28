@@ -1,0 +1,19 @@
+- id: PMAT-4073
+  github_issue: 4073
+  item_type: task
+  title: 'ONT-3b: formalization.yaml gains model_of; no model earns no L4'
+  status: in_progress
+  priority: medium
+  assigned_to: pvl-b
+  created: 2026-09-24T17:12:12Z
+  updated: 2026-09-25T02:40:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - pv lint contracts/ --gate refinement --format json reports verdict Pass, models 3 resolved 3, unrefined_baseline 76
+  - proof-status L4 from the discharge requires a resolving extraction/simulation model_of for the theorem's module
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Ported from feat/4082-4073-ev8b-ont3b@202d5c51d onto B3 (#4317); EV-8b half superseded by B3's 69ed3ac0e.

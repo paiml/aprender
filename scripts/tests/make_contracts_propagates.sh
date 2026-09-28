@@ -11,21 +11,27 @@
 # overrode an exported PV_BIN -- the one override scripts/pv_bin.sh honours --
 # and handed pv_bin.sh the string "cargo run ...".
 #
+# Since #4475 the recipe delegates its steps to scripts/contracts_gate.sh, which
+# runs EVERY step and has its own case table (`contracts_gate.sh --self-test`).
+# What remains to prove HERE is the recipe: the gate's verdict ends it, and the
+# engine tests' rc is make's rc.
+#
 # HOW THIS TESTS IT, CARGO-FREE. The `contracts`, `contract-test` and
 # `contract-audit` recipes and the three shell-setting lines are EXTRACTED from
 # the real Makefile -- never retyped -- into a throwaway git repo, next to the
-# REAL scripts/pv_bin.sh and stubs for everything else. One env var, FAIL_AT,
-# makes exactly one step fail with a distinctive rc (7; cargo's 101). Each row
-# asserts the VERDICT, not just "non-zero": make's own `] Error <rc>` line
-# naming the step's rc (a missing Makefile is non-zero too), and that the NEXT
-# step's header never printed (the recipe stopped where it failed).
+# REAL scripts/pv_bin.sh and a STUB contracts_gate.sh that resolves pv the same
+# way the real one does. One env var, FAIL_AT, makes exactly one step fail with
+# a distinctive rc (7; cargo's 101). Each row asserts the VERDICT, not just
+# "non-zero": make's own `] Error <rc>` line, and that the NEXT step's header
+# never printed (the recipe stopped where it failed).
 #
 # Every mechanism of the fix is then removed, one at a time, and the row that
 # mechanism exists for must go RED -- a table never shown capable of failing
 # is evidence of nothing.
 #
-# One row runs the REAL Makefile in the REAL tree: an exported PV_BIN must reach
-# pv_bin.sh (it stops at the first step, so it writes nothing to the tree).
+# One row runs the REAL Makefile (from the fixture dir, so the gate it runs is
+# the stub and nothing is written to the tree): an exported PV_BIN must reach
+# pv_bin.sh.
 #
 # Usage: bash scripts/tests/make_contracts_propagates.sh    (exit 0 = all rows green)
 
@@ -97,11 +103,18 @@ mkdir -p "$FX/scripts" "$FX/contracts" "$TMP/bin" || exit 2
 cp "$REPO_ROOT/scripts/pv_bin.sh" "$FX/scripts/pv_bin.sh" || exit 2
 printf '[workspace.package]\nversion = "%s"\n' "$DECLARED" > "$FX/Cargo.toml"
 printf '{"n_files": 3}\n' > "$FX/contracts/census.json"
-cp "$FX/contracts/census.json" "$TMP/census.golden"
-for s in readme_sync:readme lint-provenance:provenance; do
+for s in lint-provenance:provenance; do
     printf '#!/usr/bin/env bash\n[ "${FAIL_AT:-}" = %s ] && { echo "STUB %s fails" >&2; exit 7; }\nexit 0\n' \
         "${s#*:}" "${s%%:*}" > "$FX/scripts/${s%%:*}.sh"
 done
+cat > "$FX/scripts/contracts_gate.sh" <<'EOF'
+#!/usr/bin/env bash
+# STUB of scripts/contracts_gate.sh: resolves pv exactly as the real gate does, then two steps.
+echo "== gate (stub)"
+. scripts/pv_bin.sh || { echo "contracts gate: pv_bin.sh could not resolve pv"; exit 3; }
+"$PV" lint contracts/ || exit $?
+bash scripts/lint-provenance.sh || exit $?
+EOF
 chmod +x "$FX/scripts/"*.sh || exit 2
 ( cd "$FX" && git init -q . && git add -A \
     && git -c user.name=t -c user.email=t@t commit -qm fixture ) || exit 2
@@ -116,7 +129,6 @@ esac
 if [ "\${FAIL_AT:-}" = "\$1" ]; then echo "FAKE pv \$1 fails"; exit 7; fi
 if [ "\${FAIL_AT:-}" = audit-first ] && [ "\$1" = audit ] && [ "\$2" = c1 ]; then echo "FAKE pv audit c1 fails"; exit 7; fi
 case "\$1" in
-  census) cat "$TMP/census.golden" ;;
   audit)  echo "AUDIT \$2" ;;
   *)      echo "FAKE pv \$1 ok" ;;
 esac
@@ -134,8 +146,7 @@ chmod +x "$TMP/bin/pv" "$TMP/bin/stale-pv" "$TMP/bin/cargo"
 
 # run <makefile> <target> <FAIL_AT> [PV_BIN] -> sets OUT and RC
 run() {
-    OUT=$(cd "$FX" && git checkout -q -- contracts/census.json \
-        && PATH="$TMP/bin:$PATH" FAIL_AT="$3" PV_BIN="${4:-$TMP/bin/pv}" \
+    OUT=$(cd "$FX" && PATH="$TMP/bin:$PATH" FAIL_AT="$3" PV_BIN="${4:-$TMP/bin/pv}" \
            make -s -f "$1" "$2" PV_CARGO_RUN="$TMP/bin/pv" CONTRACTS="c1 c2 c3" BINDING=b 2>&1)
     RC=$?
 }
@@ -156,29 +167,21 @@ M="$TMP/Makefile.shipped"
 # ---------------------------------------------------------------------------
 run "$M" contracts none
 { [ "$RC" -eq 0 ] && grep -qF 'test result: ok' <<<"$OUT"; }
-row "contracts: every step passes -> rc 0, and the last step ran" $?
+row "contracts: gate and engine tests pass -> rc 0, and the last step ran" $?
 
-expect_stop "$M" contracts lint 7 '== census'
-row "contracts: pv lint fails (rc 7, through | tail) -> Error 7, census never starts" $?
+expect_stop "$M" contracts lint 1 '== contract engine tests'
+{ [ $? -eq 0 ] && grep -qF 'FAKE pv lint fails' <<<"$OUT"; }
+row "contracts: the gate fails (pv lint) -> Error 1, engine tests never start" $?
 
-expect_stop "$M" contracts census 7 '== graph'
-row "contracts: pv census fails -> Error 7, graph never starts" $?
+expect_stop "$M" contracts provenance 1 '== contract engine tests'
+row "contracts: the gate fails (a non-pv step) -> Error 1, engine tests never start" $?
 
-expect_stop "$M" contracts extract 7 '== README'
-row "contracts: pv extract --check fails -> Error 7, README never starts" $?
-
-expect_stop "$M" contracts readme 7 '== provenance'
-row "contracts: readme_sync fails -> Error 7, provenance never starts" $?
-
-expect_stop "$M" contracts provenance 7 '== contract engine tests'
-row "contracts: lint-provenance fails -> Error 7, engine tests never start" $?
+expect_stop "$M" contracts none 1 '== contract engine tests' "$TMP/bin/stale-pv"
+{ [ $? -eq 0 ] && grep -qF 'STALE pv BINARY' <<<"$OUT"; }
+row "contracts: pv_bin.sh refuses a stale PV_BIN -> Error 1 naming it, engine tests never start" $?
 
 expect_stop "$M" contracts cargo 101 '@@unreachable@@'
 row "contracts: engine tests fail (rc 101, through grep | tail) -> Error 101" $?
-
-expect_stop "$M" contracts none 1 '== census' "$TMP/bin/stale-pv"
-{ [ $? -eq 0 ] && grep -qF 'STALE pv BINARY' <<<"$OUT"; }
-row "contracts: pv_bin.sh refuses a stale PV_BIN -> Error 1 naming it, census never starts" $?
 
 expect_stop "$M" contract-test cargo 101 'Contract tests passed'
 row "contract-test: cargo test fails -> Error 101, no 'passed' line" $?
@@ -201,40 +204,35 @@ mutant() {
     printf '%s\n' "$TMP/Makefile.$1"
 }
 
-m=$(mutant no-errexit '/^contracts:/,/^$/{/^\t@set -e$/d}') || exit 2
-expect_stop "$m" contracts readme 7 '== provenance'
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: contracts without set -e -> the readme_sync row goes RED" $?
+m=$(mutant no-exit-on-gate 's/contracts_gate\.sh \|\| exit 1$/contracts_gate.sh/') || exit 2
+expect_stop "$m" contracts lint 1 '== contract engine tests'
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the gate line without || exit 1 -> the gate-fails row goes RED" $?
 
-m=$(mutant no-exit-on-lint '/lint contracts\//s/ \|\| exit$//') || exit 2
-expect_stop "$m" contracts none 1 '== census' "$TMP/bin/stale-pv"
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the lint line without || exit -> the stale-PV_BIN row goes RED" $?
-
-m=$(mutant lint-exits-always '/lint contracts\//s/\[ \$\$rc -eq 0 \] \|\| exit \$\$rc;/exit $$rc;/') || exit 2
-run "$m" contracts none
-{ [ "$RC" -eq 0 ] && grep -qF 'test result: ok' <<<"$OUT"; }
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the lint line exits unconditionally (.ONESHELL) -> the every-step-passes row goes RED" $?
-
-m=$(mutant no-pipefail 's/-o pipefail //') || exit 2
+m=$(mutant no-exit-rc-engine '/cargo test -p aprender-contracts/s/; exit \$\$rc \) \|\| exit$/ ) || exit/') || exit 2
 expect_stop "$m" contracts cargo 101 '@@unreachable@@'
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: .SHELLFLAGS without pipefail -> the engine-tests (grep | tail) row goes RED" $?
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the engine-tests subshell without exit \$rc (status becomes rm's) -> the engine-tests row goes RED" $?
+
+m=$(mutant no-errexit-contract-test '/^contract-test:/,/^$/{/^\t@set -e$/d}') || exit 2
+expect_stop "$m" contract-test cargo 101 'Contract tests passed'
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: contract-test without set -e -> the contract-test row goes RED" $?
 
 m=$(mutant no-accumulator 's/ \|\| rc=\$\$\?;/;/') || exit 2
 expect_stop "$m" contract-audit audit-first 7 'Binding audit complete'
 went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: contract-audit without its rc accumulator -> the audit row goes RED" $?
 
 # ---------------------------------------------------------------------------
-# The REAL Makefile in the REAL tree: an exported PV_BIN reaches pv_bin.sh. The
-# fake fails `lint`, the first step, so nothing in the tree is written.
+# The REAL Makefile, run from the fixture dir: an exported PV_BIN reaches pv_bin.sh.
+# The gate it runs is the stub, so nothing in the real tree is written.
 # Mutant: the pre-fix variable name, which shadows the exported PV_BIN.
 # ---------------------------------------------------------------------------
-real_row() { # real_row <makefile> -> 0 iff Error 7 from the fake's lint
-    OUT=$(cd "$REPO_ROOT" && FAIL_AT=lint PV_BIN="$TMP/bin/pv" make -s -f "$1" contracts 2>&1)
+real_row() { # real_row <makefile> -> 0 iff Error 1 from the gate, and the fake's lint ran
+    OUT=$(cd "$FX" && PATH="$TMP/bin:$PATH" FAIL_AT=lint PV_BIN="$TMP/bin/pv" make -s -f "$1" contracts 2>&1)
     RC=$?
-    [ "$RC" -eq 2 ] && grep -qE '\] Error 7$' <<<"$OUT" \
+    [ "$RC" -eq 2 ] && grep -qE '\] Error 1$' <<<"$OUT" \
         && grep -qF 'FAKE pv lint fails' <<<"$OUT"
 }
 real_row "$MAKEFILE"
-row "real tree: exported PV_BIN reaches pv_bin.sh -> the fake's lint rc 7 is make's Error 7" $?
+row "real Makefile: exported PV_BIN reaches pv_bin.sh -> the fake's lint fails the gate, Error 1" $?
 
 sed -E 's/^PV_CARGO_RUN :=/PV_BIN :=/' "$MAKEFILE" > "$TMP/Makefile.shadow"
 if cmp -s "$MAKEFILE" "$TMP/Makefile.shadow"; then
@@ -242,7 +240,7 @@ if cmp -s "$MAKEFILE" "$TMP/Makefile.shadow"; then
     exit 2
 fi
 real_row "$TMP/Makefile.shadow"
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: a makefile PV_BIN := assignment -> the real-tree row goes RED" $?
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: a makefile PV_BIN := assignment -> the real-Makefile row goes RED" $?
 
 echo "make_contracts_propagates: $total rows, $failed failed"
 [ "$failed" -eq 0 ]

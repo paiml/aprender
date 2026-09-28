@@ -1,0 +1,15 @@
+# ONT-2c: the fixture Σ's axiom set, written BY HAND from tests/fixtures/ont/owl/ontology.yaml (not generated).
+# The oracle re-parses the writer's output with horned-owl and requires exactly this set.
+Class Contract
+Class Code
+Class Test
+ObjectProperty binds
+ObjectProperty refines
+ObjectProperty pairs_with
+Domain binds Contract
+Range binds Code
+Domain refines Contract
+Range refines Contract
+Domain pairs_with Test
+Range pairs_with Test
+Symmetric pairs_with

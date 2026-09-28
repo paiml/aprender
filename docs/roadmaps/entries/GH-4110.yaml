@@ -1,0 +1,20 @@
+- id: GH-4110
+  github_issue: 4110
+  item_type: task
+  title: 'apr --version prints +no-git on BOTH published surfaces (crates.io install, release binaries)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T23:59:54.621480081+00:00
+  updated: 2026-09-23T23:59:54.621480081+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a packaged apr-cli (.cargo_vcs_info.json, no .git) emits APR_GIT_SHA = the 9-hex vcs sha, never +no-git (must-RED: the vcs rung removed)'
+  - 'an unpacked crate inside an UNRELATED repository still names its own vcs sha, not that repo HEAD (must-RED: vcs rung behind git rev-parse)'
+  - 'a checkout owned by another user (the root build container of binary-release.yml) still yields git rev-parse HEAD (must-RED: the safe.directory retry removed)'
+  - 'dev checkouts, the override, the malformed-sha and no-vcs fallbacks are unchanged'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop rows (aprender-cf, 2026-09-23/24): (1) build.rs reads the sha1 from .cargo_vcs_info.json with a must-RED fixture; scope widened after aprender-70 found the release binaries print +no-git too: cover both surfaces, each with its own must-RED, and keep any binary-release.yml edit a separate commit. ROOT CAUSE (b), measured: git inside rust:1.93.0-bookworm running as root refuses the runner-owned checkout (fatal: detected dubious ownership); main build.rs printed v0.69.1+no-git there, this one prints the HEAD. The retry marks ONLY the enclosing checkout safe.directory through a private GIT_CONFIG_GLOBAL under OUT_DIR (-c safe.directory is ignored before git 2.39, measured on 2.34.1), so NO workflow edit is needed. Tests: crates/aprender-build-sha/src/emit_tests.rs (8 rows, 3 plants; moved from apr-cli when the resolution became shared, 4219), run by workspace-test. Also Cargo.lock chacha20 0.10.0 (yanked) -> 0.10.2, lock-only.'

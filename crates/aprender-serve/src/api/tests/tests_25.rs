@@ -49,6 +49,7 @@ mod chaotic_citizens {
             max_tokens: 10,
             temperature: 0.5,
             top_k: 20,
+            stop_tokens: Vec::new(),
             response_tx: tx,
             submitted_at: start,
         };

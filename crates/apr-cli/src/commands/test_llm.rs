@@ -22,6 +22,9 @@
 //! `decode_tok_per_sec` = 1000 / `itl_p50_ms`, the inter-token rate, which
 //! excludes time-to-first-token by construction and so cannot absorb a model
 //! load. Reading a field beats deriving a number.
+// #4041: a `--no-default-features` build has no tokio, so `dispatch` cannot run a benchmark and the benchmark
+// code is unreachable there. Dead in that build only; every build with `inference` still lints it.
+#![cfg_attr(not(feature = "inference"), allow(dead_code))]
 use crate::error::{CliError, Result};
 use apr_test::llm::{
     benchmark::{Benchmark, BenchmarkConfig, BenchmarkReport},
@@ -411,6 +414,7 @@ use crate::LlmSubcommand;
 ///
 /// # Errors
 /// Propagates whichever mode ran.
+#[cfg(feature = "inference")]
 pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
@@ -418,6 +422,18 @@ pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
         LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
         LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
     }
+}
+
+/// #4041: the benchmark drives its server through tokio, which only the `inference` feature brings. A minimal
+/// build (`--no-default-features`) names the missing feature instead of failing to compile.
+///
+/// # Errors
+/// Always: this build cannot run the benchmark.
+#[cfg(not(feature = "inference"))]
+pub fn dispatch(_command: &LlmSubcommand) -> Result<()> {
+    Err(CliError::InferenceFailed(
+        "`apr test llm` needs the `inference` feature (this apr was built without it)".to_string(),
+    ))
 }
 
 /// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.
@@ -479,7 +495,7 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         accelerator,
         quantization,
         compute_class,
-        server_features,
+        server_features: &batuta_common::cli_roles::strings(server_features),
         tokenization,
         tokenizer_sha256: tokenizer_sha256.as_deref(),
         counts_special_tokens: *counts_special_tokens,

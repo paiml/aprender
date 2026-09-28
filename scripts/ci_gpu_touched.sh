@@ -21,6 +21,12 @@
 #   gpu_crates=<space list>  — only when gpu_touched=1; may be EMPTY when the
 #                             trigger was a workflow rather than a crate
 #   reason=<one line>     — always, so the verdict is auditable in the log
+#   cuda_lint=1 | 0       — always: run the `clippy --features cuda` step (#3636)?
+#                           1 when gpu_touched=1 OR the diff touches a crate in
+#                           CUDA_LINT_CRATES. Those crates carry
+#                           #[cfg(feature = "cuda")] code but are NOT in the GPU
+#                           set, so they claim yoga for the lint step only, never
+#                           for the cuda test steps (#4336)
 #
 # EXIT
 #   0  a decision was reached (either polarity)
@@ -41,6 +47,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # for this script is deleting `aprender-serve ` from this line, and
 # scripts/tests/ci_gpu_touched_test.sh replays exactly that edit.
 GPU_CRATES="aprender-gpu aprender-cuda-edge aprender-serve aprender-train aprender-compute"
+
+# #4336: crates with cuda-gated code OUTSIDE the GPU set. apr-cli has 30 files
+# with #[cfg(feature = "cuda")]; a diff that touches only them must still be
+# linted with --features cuda. They are not added to GPU_CRATES because that
+# would send every apr-cli PR through gpu-quick and the 18-minute cuda test steps.
+# The registered mutation is deleting `apr-cli` from this line.
+CUDA_LINT_CRATES="apr-cli"
 
 # Workflows that drive the GPU hosts. cuda-nightly.yml and silicon-nightly.yml
 # ARE the gx10/yoga lanes; ci.yml is where `gpu-quick` and `cuda-unit` are
@@ -104,9 +117,16 @@ decide() {
             hit_wf="${hit_wf}${f} "
         fi
     done
+    local hit_lint=""
+    for crate in $CUDA_LINT_CRATES; do
+        if grep -q "^crates/${crate}/" <<< "$diff"; then
+            hit_lint="${hit_lint}${crate} "
+        fi
+    done
 
     if [ -n "$hit_crates" ] || [ -n "$hit_wf" ]; then
         printf 'gpu_touched=1\n'
+        printf 'cuda_lint=1\n'
         printf 'gpu_crates=%s\n' "${hit_crates% }"
         if [ -n "$hit_crates" ] && [ -n "$hit_wf" ]; then
             printf 'reason=GPU crate(s) %s and GPU-host workflow(s) %s touched\n' "${hit_crates% }" "${hit_wf% }"
@@ -118,6 +138,12 @@ decide() {
         return 0
     fi
     printf 'gpu_touched=0\n'
+    if [ -n "$hit_lint" ]; then
+        printf 'cuda_lint=1\n'
+        printf 'reason=no GPU-set path, but cuda-gated crate(s) %s touched — the clippy --features cuda step only (#4336)\n' "${hit_lint% }"
+        return 0
+    fi
+    printf 'cuda_lint=0\n'
     printf 'reason=no path under crates/{%s} and no GPU-host workflow in the diff\n' "$(printf '%s' "$GPU_CRATES" | tr ' ' ',')"
     return 0
 }
@@ -157,6 +183,30 @@ self_test() {
         '^gpu_touched=1$' bash "$T" --diff-from "$td/wf.txt"
     row 0 "  ...with an empty crate list and a reason that names the workflow" \
         'GPU-host workflow' bash "$T" --diff-from "$td/wf.txt"
+
+    row 0 "  ...and a GPU-set diff always runs the cuda lint too" \
+        '^cuda_lint=1$' bash "$T" --diff-from "$td/serve.txt"
+    row 0 "a core-only diff runs no cuda lint either" \
+        '^cuda_lint=0$' bash "$T" --diff-from "$td/core.txt"
+
+    # #4336: apr-cli is cuda-gated but outside the GPU set -> lint only.
+    printf 'crates/apr-cli/src/commands/serve/handlers.rs\n' > "$td/cli.txt"
+    row 0 "an apr-cli-only diff -> gpu_touched=0 (no cuda test steps)" \
+        '^gpu_touched=0$' bash "$T" --diff-from "$td/cli.txt"
+    row 0 "  ...but cuda_lint=1: its cuda-gated code is still linted (#4336)" \
+        '^cuda_lint=1$' bash "$T" --diff-from "$td/cli.txt"
+    printf 'crates/apr-cli-docs-that-do-not-exist/x.rs\n' > "$td/cliprefix.txt"
+    row 0 "crates/apr-cli-<something-else>/ is NOT crates/apr-cli/ (prefix, not membership)" \
+        '^cuda_lint=0$' bash "$T" --diff-from "$td/cliprefix.txt"
+    sed 's/^CUDA_LINT_CRATES="apr-cli"$/CUDA_LINT_CRATES=""/' "$T" > "$td/mutant3.sh"
+    row 0 "MUTANT without apr-cli in CUDA_LINT_CRATES answers 0 on the apr-cli diff — the cuda_lint row discriminates" \
+        '^MUTANT-BLIND$' bash -c "
+            if ! grep -q '^CUDA_LINT_CRATES=\"\"$' '$td/mutant3.sh'; then echo MUTANT-NOT-PLANTED
+            elif grep -q '^cuda_lint=1' <<< \"\$(bash '$td/mutant3.sh' --diff-from '$td/cli.txt' 2>/dev/null)\"; then
+                echo MUTANT-STILL-SEES-IT
+            else
+                echo MUTANT-BLIND
+            fi"
 
     printf 'scripts/ci_test_tier.sh\nscripts/tests/guard_tree_test.sh\n' > "$td/scripts.txt"
     row 0 "a scripts-only diff -> gpu_touched=0" \

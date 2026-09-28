@@ -1,0 +1,20 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-23'
+  last_modified: '2026-09-23'
+  author: fixture
+  description: fixture ladder-measured shape — the armed minCount shape the gate's generic pc_shape plant needs
+name: ont-ladder
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: gguf
+shapes:
+  - id: ladder-measured
+    targetClass: model:Model
+    properties:
+      - {path: model:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: model:parityReceipt, minCount: 1, nodeKind: IRI, class: model:Receipt, resolves: receipt}
+      - {path: model:receiptHexMismatch, maxCount: 0}

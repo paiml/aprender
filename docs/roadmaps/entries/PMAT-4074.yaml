@@ -1,0 +1,21 @@
+- id: PMAT-4074
+  github_issue: 4074
+  item_type: task
+  title: 'ONT-5: pv-sat offline behind a bin boundary; witness checked in the gate; two positive controls'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T12:00:00Z
+  updated: 2026-09-24T12:00:00Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'witness.rs: typed relations as propositional Horn (live ids are units, depends_on/refines imply, contradicts conflicts, supersedes withdraws a unit); census_id_set_sha256 + relations_sha256 name the witness; check() refuses any core that is not a derivation in the current graph and any model that falsifies a clause; pc_checker refuses fixtures/unsat-core-corrupt.json every run'
+  - 'pv lint --gate ont-consistency: PV-ONT-022 names the core, PV-ONT-023 a witness that does not check; exit 2 NoCheckable / WitnessStale (prints make contracts) / PositiveControlFailed; a malformed Σ exits 3; computed and NOT armed'
+  - 'pv-sat bin, private to its target (F-7: no mod sat in lib.rs): plant pc_reasoner draws [A, B, C] before it writes; every answer over a 500-seed sweep checks; the witness is byte-stable on rerun'
+  - 'make contracts runs pv-sat then pv lint --gate ont-consistency and fails if contracts/witness/ differs; contracts/ont-consistency-v1.yaml names 7 falsification tests that exist; ci/explicit-test-commands.d 460 (ont5_consistency_gate) and 470 (--bin pv-sat) run what workspace-test --lib cannot'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ONT-001 §5 row ONT-5. Handed off by rmedia-82 at e4577f7bd. Receipt: docs/audits/impl-PMAT-4074-receipt.md'

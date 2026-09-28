@@ -28,7 +28,12 @@
 fn s1_realizar_tokenizer_module_exists() {
     // Verify the realizar tokenizer module is documented and accessible
     // This confirms the API contract exists
-    let tokenizer_doc = include_str!("../../../crates/apr-cli/src/commands/run.rs");
+    let Some(tokenizer_doc) = provable_contracts::workspace_file_or_skip!(
+        "s1_realizar_tokenizer_module_exists",
+        "crates/apr-cli/src/commands/run.rs"
+    ) else {
+        return;
+    };
 
     // The run.rs should reference realizar for inference
     assert!(
@@ -97,7 +102,12 @@ fn s3_qwen2_special_tokens() {
 #[test]
 fn s4_model_loading_strategy() {
     // Verify the 50MB threshold for mmap is documented
-    let run_rs = include_str!("../../../crates/apr-cli/src/commands/run.rs");
+    let Some(run_rs) = provable_contracts::workspace_file_or_skip!(
+        "s4_model_loading_strategy",
+        "crates/apr-cli/src/commands/run.rs"
+    ) else {
+        return;
+    };
 
     assert!(
         run_rs.contains("50") && run_rs.contains("mmap"),

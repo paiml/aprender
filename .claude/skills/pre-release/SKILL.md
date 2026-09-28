@@ -326,6 +326,11 @@ regression this repo has on record, and its power *falls* as data accumulates
 Richer fields (surface counts, findings, notable, verdict) are encouraged — the receipts
 already under `evidence/dogfood/` are the worked examples.
 
+**The tracked implementation of this step** is `scripts/release/host_receipt.sh`, which
+`scripts/release/autopilot.sh` ships to each host after publish (#3731). Never hand-roll
+the sweep; `scripts/check_dogfood_shim.sh` row 1b allows those two scripts only while
+this paragraph names them.
+
 **The sweep must `cargo install` the PUBLISHED crate**, not build the local tree.
 Building the tree tests what you have; installing tests what a user gets. On a box with a
 pre-existing `apr` the install correctly fails closed (rc=101) *before* compiling — use

@@ -1,0 +1,19 @@
+# ONT-4d fixture Σ: the row's own hierarchy, Kernel ⊑ Code ⊑ Contract. The `code-shape` contract declares a shape
+# on ont:Code; the only ont:Code instance is a KERNEL contract, reachable ONLY through the materialized closure.
+schema: ont-sigma-v1
+concepts:
+  Contract: {doc: "a pv contract file"}
+  Code: {doc: "a code item (the row's example hierarchy)"}
+  Kernel: {doc: "a contract whose kind is kernel"}
+subsumes:
+  - {sub: Kernel, sup: Code}
+  - {sub: Code, sup: Contract}
+entity_types:
+  - {name: pv-contract, extractor: pv_contract, implemented: true}
+extractors:
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
+readers:
+  concepts: ontology/sigma.rs
+  subsumes: ontology/sigma.rs, ontology/extract/mod.rs, lint/subsumption.rs
+  entity_types: lint/sigma_gate.rs
+  extractors: ontology/sigma.rs

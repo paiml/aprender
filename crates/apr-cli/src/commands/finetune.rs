@@ -650,6 +650,8 @@ fn execute_training_wgpu(
     let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
         gpu.device, gpu.queue, hidden, heads, kv_heads, head_dim, inter,
     );
+    // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
+    fwd.set_rms_norm_eps(model_config.rms_norm_eps as f32);
 
     // 3. Streaming dequant + upload weights to GPU
     let lm_head_f32 = dequant_and_upload_weights(&mut fwd, &q_model)?;

@@ -240,23 +240,29 @@ rule1_scan() {
   : > "$findings"
   cands=$(mktemp) || return 2
   trap 'rm -f "$cands"' RETURN
+  # The eligible files are collected first and scanned by ONE awk (FNR, not NR; FILENAME is the
+  # repo-relative path): an awk per file was ~5,200 forks and ~75 s of CI's guard-tree (#4429).
+  local eligible; eligible=$(mktemp) || return 2
   while IFS= read -r rel; do
     f="$ROOT/$rel"
     [ -r "$f" ] || continue
     is_test_path "$rel" && continue
     files=$((files + 1))
-    awk -v rx="$DOC_ASSERT" -v rel="$rel" \
-        '/^[[:space:]]*\/\/\//   { doc = doc " " $0; next }
+    printf '%s\n' "$rel" >> "$eligible"
+  done < <(cd "$ROOT" && git ls-files 'crates/*.rs' 2>/dev/null)
+  (cd "$ROOT" && xargs -r -d '\n' awk -v rx="$DOC_ASSERT" \
+        'FNR == 1                { doc = "" }
+         /^[[:space:]]*\/\/\//   { doc = doc " " $0; next }
          /^[[:space:]]*#\[/      { next }
          /^[[:space:]]*$/        { next }
          {
            if (doc != "" && $0 ~ /^[[:space:]]*pub([[:space:]]*\([^)]*\))?[[:space:]]+([a-z]+[[:space:]]+)*fn[[:space:]]+/) {
              low = tolower(doc)
-             if (low ~ rx) { n = $0; sub(/.*fn[[:space:]]+/, "", n); sub(/[^A-Za-z0-9_].*/, "", n); print rel "|" NR "|" n }
+             if (low ~ rx) { n = $0; sub(/.*fn[[:space:]]+/, "", n); sub(/[^A-Za-z0-9_].*/, "", n); print FILENAME "|" FNR "|" n }
            }
            doc = ""
-         }' "$f" >> "$cands"
-  done < <(cd "$ROOT" && git ls-files 'crates/*.rs' 2>/dev/null)
+         }' < "$eligible") >> "$cands"
+  rm -f "${eligible:?}"
 
   if [ "$files" -lt 100 ]; then
     echo "VACUOUS: rule 1 reached $files source files; this tree has thousands" >&2

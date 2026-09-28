@@ -68,13 +68,13 @@ let test_cases = generator.generate(strategy, 100);
 
 ```bash
 # Generate Python test programs
-verificar generate --language python --count 1000 --output corpus.json
+aprender-verify generate --language python --count 1000 --output corpus.json
 
 # Generate with specific sampling strategy
-verificar generate --language bash --strategy swarm --count 500
+aprender-verify generate --language bash --strategy swarm --count 500
 
 # Generate depyler-specific patterns
-verificar depyler --category file_io --count 100 --output depyler_tests/
+aprender-verify depyler --category file_io --count 100 --output depyler_tests/
 ```
 
 ## Supported Languages

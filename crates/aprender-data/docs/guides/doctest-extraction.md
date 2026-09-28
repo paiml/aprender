@@ -246,10 +246,10 @@ fn main() -> alimentar::Result<()> {
 
 ```bash
 # Basic extraction
-alimentar doctest extract /path/to/python/src -o doctests.parquet
+aprender-data doctest extract /path/to/python/src -o doctests.parquet
 
 # With metadata
-alimentar doctest extract /path/to/cpython/Lib \
+aprender-data doctest extract /path/to/cpython/Lib \
     --output stdlib.parquet \
     --source cpython \
     --version v3.12.0
@@ -259,7 +259,7 @@ alimentar doctest extract /path/to/cpython/Lib \
 
 ```bash
 # Merge multiple parquet files
-alimentar doctest merge stdlib.parquet numpy.parquet pandas.parquet \
+aprender-data doctest merge stdlib.parquet numpy.parquet pandas.parquet \
     -o unified.parquet
 ```
 
@@ -267,13 +267,13 @@ alimentar doctest merge stdlib.parquet numpy.parquet pandas.parquet \
 
 ```bash
 # View schema
-alimentar schema doctests.parquet
+aprender-data schema doctests.parquet
 
 # Preview data
-alimentar head doctests.parquet -n 20
+aprender-data head doctests.parquet -n 20
 
 # Dataset info
-alimentar info doctests.parquet
+aprender-data info doctests.parquet
 ```
 
 ### Full Pipeline Example
@@ -293,21 +293,21 @@ NUMPY_SHA=$(git -C numpy rev-parse --short HEAD)
 PANDAS_SHA=$(git -C pandas rev-parse --short HEAD)
 
 # Extract doctests
-alimentar doctest extract cpython/Lib -o stdlib.parquet \
+aprender-data doctest extract cpython/Lib -o stdlib.parquet \
     --source cpython --version $CPYTHON_SHA
 
-alimentar doctest extract numpy/numpy -o numpy.parquet \
+aprender-data doctest extract numpy/numpy -o numpy.parquet \
     --source numpy --version $NUMPY_SHA
 
-alimentar doctest extract pandas/pandas -o pandas.parquet \
+aprender-data doctest extract pandas/pandas -o pandas.parquet \
     --source pandas --version $PANDAS_SHA
 
 # Merge
-alimentar doctest merge stdlib.parquet numpy.parquet pandas.parquet \
+aprender-data doctest merge stdlib.parquet numpy.parquet pandas.parquet \
     -o py-doctest-corpus.parquet
 
 # Verify
-alimentar info py-doctest-corpus.parquet
+aprender-data info py-doctest-corpus.parquet
 ```
 
 ---
@@ -336,7 +336,7 @@ For reproducible datasets:
 # Example: reproducible extraction
 CPYTHON_SHA="a1b2c3d4e5f6"
 git -C cpython checkout $CPYTHON_SHA
-alimentar doctest extract cpython/Lib -o "stdlib-${CPYTHON_SHA}.parquet" \
+aprender-data doctest extract cpython/Lib -o "stdlib-${CPYTHON_SHA}.parquet" \
     --source cpython --version $CPYTHON_SHA
 ```
 
@@ -410,8 +410,8 @@ Ensure training data isn't dominated by one library:
 
 ```bash
 # Check distribution
-alimentar head unified.parquet -n 1000 | grep -c "cpython"
-alimentar head unified.parquet -n 1000 | grep -c "numpy"
+aprender-data head unified.parquet -n 1000 | grep -c "cpython"
+aprender-data head unified.parquet -n 1000 | grep -c "numpy"
 ```
 
 ---

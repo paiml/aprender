@@ -1,0 +1,158 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.41.1",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"obligations golden ci fragment\" --limit 5 --format json"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-DELTA-002",
+          "level": "note",
+          "message": {
+            "text": "This receipt reviews the incremental delta since the prior accepted receipt (3b8f6dea82, 1 substantive commit 12282780c8, 3 files: docs/audits/impl-PMAT-3847-receipt.md, docs/roadmaps/entries/GH-4198.yaml, docs/roadmaps/roadmap.yaml; the other two commits in range, cf31b0fc70 and 668d985131, touch only evidence/pr-review/4502/3b8f6dea.../, which is excluded from the reviewed patch). base_sha is unchanged (aca6f2d7) and still describes the full 1788-file merge-base diff the prior receipt already sampled; this run does not re-sweep that full diff and carries forward the prior receipt's cuda/mutation/antigravity unreachable status, which the new delta does not change (verified: none of the 3 delta files match scripts/check_pr_review_receipt.sh --match-path, and scripts/check_pr_review_receipt.sh itself is still in the base diff, so mutation stays guard-scoped and unreachable)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "--name-only", "3b8f6dea820482e7719ef0fac32c19b98303505a", "12282780c83fa5a3b0ccfd1467d691393281a4dd"],
+            "exit_code": 0,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "A reviewer reading only the verdict could assume this run independently re-verified the full 1788-file base diff; it did not, and a regression already covered by the prior receipt's own sampled coverage would still pass unreviewed by either run.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CI-FRAGMENT-001",
+          "level": "note",
+          "message": {
+            "text": "commit 12282780c8 changes GH-4198.yaml's title (and the roadmap.yaml regen mirror of it) from 'ci fragment 460' to 'ci fragment 462'. Independently reconfirmed this session rather than trusting the commit message: ci/explicit-test-commands.d/462-aprender-contracts-cli-pvl-obligations-golden.cmd exists and its sole line is `cargo test -p aprender-contracts-cli --test pvl_obligations_golden` -- the obligations golden test the GH-4198 title describes. ci/explicit-test-commands.d/460-apr-cli-thinking-budgets-mirror.cmd exists and is a DIFFERENT fragment (apr-cli thinking-budgets), confirming 460 was the wrong number and 462 is correct. grep across tracked .yaml/.md files for 'ci fragment 460' after this commit finds zero remaining tracked occurrences (the only survivors are in untracked docs/audits/quorum-PMAT-4502*.prompt.md files, which are not part of this diff)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["ls", "ci/explicit-test-commands.d/462-*", "ci/explicit-test-commands.d/460-*"],
+            "exit_code": 0,
+            "stdout_sha256": "6a169a7cba60f5a766f557a5132954f47fc89167ee2f02e4447da51c976d7c08",
+            "failure_scenario": "If 462 were NOT the obligations golden fragment (e.g. a stale or renumbered fragment), the corrected title would point auditors at the wrong CI job, which is a worse error than the original -- this check closes that gap for this specific rename.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CAR-BASE-001",
+          "level": "note",
+          "message": {
+            "text": "docs/audits/impl-PMAT-3847-receipt.md's new 'Batch scope' addendum claims commit 2dcf2eef80 (on origin/car/0.70.0) added the 530 cmd fragment, the receipt file itself, and the CLAUDE.md frontmatter, making those absent from #4502's diff vs car by construction. Independently reconfirmed via `git show --name-status 2dcf2eef80` (not trusting the addendum's prose): that commit's file list includes `A ci/explicit-test-commands.d/530-aprender-contracts-cli-ont4c-doc-contracts.cmd`, `A docs/audits/impl-PMAT-3847-receipt.md`, and `M CLAUDE.md` (64 lines changed, matching the 'CLAUDE.md frontmatter' claim). This part of the addendum is accurate."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "show", "--name-status", "2dcf2eef80a8c51f86ad1d43ea44a7f1c16e207c"],
+            "exit_code": 0,
+            "stdout_sha256": "859c52013f16727007adb8a0329b974d2f9127e0f2c5f0b651b39338b9f90450",
+            "failure_scenario": "If 2dcf2eef80 did not actually carry these three artifacts, the addendum's claim that #4502 need not re-add them would be false, and a reader trusting it would ship car/0.70.0 missing the ont4c golden fixtures.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-README-DIFF-CORRECTED-001",
+          "level": "note",
+          "message": {
+            "text": "SELF-CORRECTION of an earlier pass's finding (PRREV-README-DIFF-INACCURATE-001, now withdrawn). That pass diffed README.md against fbf106b2c06e395967996fc1217aefebc2672155 as 'origin/car/0.70.0's tip', which was the wrong ref: `git rev-parse origin/car/0.70.0` is actually 48b8708350bf12487c166c9b1d2dc374ad0f77d6, a different, later commit. Re-measured against the correct ref, using the SKILL's own merge-base convention (`git diff origin/car/0.70.0...HEAD -- README.md`, merge-base = 76502d36b692aa94de8e795b42a50d42793d5ff5): '5 insertions(+), 5 deletions(-)' across 5 line-pairs -- matching the addendum's '5 lines' exactly. Content: `contract_count: 1844` -> `1890` in the frontmatter (matching the addendum's 1844 -> 1890 exactly -- my earlier reading of 1837 came from the same wrong-ref diff), plus 4 fence-language relabels ` ```bash ` -> ` ```text ` (two install/build snippets get relabelled; the addendum's 'two claim fences' phrasing matches the two DISTINCT snippets, each contributing an open+close-adjacent bash->text pair). The addendum in docs/audits/impl-PMAT-3847-receipt.md is therefore ACCURATE against origin/car/0.70.0, and also against origin/main (fence relabels confirmed present there too via the same grep). PRREV-README-DIFF-INACCURATE-001 is withdrawn as a base-ref error in the prior pass, not a defect in the PR."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "--stat", "origin/car/0.70.0...HEAD", "--", "README.md"],
+            "exit_code": 0,
+            "stdout_sha256": "4b7855fd705449f0ad57ffb13a67bab715af844756a82d53c7202e30077c337c",
+            "failure_scenario": "Trusting the earlier pass's wrong-ref diff instead of re-deriving the ref via git rev-parse would leave a false 'addendum is inaccurate' finding standing in the receipt, itself an instance of the drift-by-unverified-number problem the addendum's own subject (README's contract_count) exists to prevent.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://developer.nvidia.com/cuda-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The nvidia-cuda-docs MCP server requires an interactive OAuth dynamic-client-registration flow not completed in this session; only mcp__nvidia-cuda-docs__authenticate / complete_authentication are present, not search_cuda_docs. Carried forward from the prior accepted receipt (3b8f6dea82), which recorded the same unreachable state for the same reason."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["ToolSearch", "select:mcp__nvidia-cuda-docs__search_cuda_docs"],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-002",
+          "level": "note",
+          "message": {
+            "text": "S3.B trigger re-evaluated against this delta's 3 changed files (docs/audits/impl-PMAT-3847-receipt.md, docs/roadmaps/entries/GH-4198.yaml, docs/roadmaps/roadmap.yaml) via the guard's own --match-path predicate, not by eye: zero matches -- this delta introduces no new device-behaviour claim. The base diff's own CUDA trigger (the fp8/sm_121 surface already recorded unreachable in the prior receipt) is unchanged by this delta. The nvidia-cuda-docs consultation still could not run (server unauthenticated), so this remains recorded unreachable per S3.0 rather than narrated as 'no CUDA concerns'."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "scripts/check_pr_review_receipt.sh", "--match-path", "<each of the 3 delta files>"],
+            "exit_code": 1,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "If this delta had silently reintroduced a device-behaviour claim inside what looks like a pure doc-string fix, an unreachable CUDA consultation with no per-delta note could let it pass reviewed-in-name-only.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "for f in <3 delta files>; do scripts/check_pr_review_receipt.sh --match-crux-surface \"$f\"; done"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX-003",
+          "level": "note",
+          "message": {
+            "text": "S3.C surface trigger checked against every one of the 3 files in this incremental delta via the guard's own --match-crux-surface predicate: zero matches. The delta touches only a roadmap entry title string, its aggregate mirror, and a markdown audit addendum -- no CLI subcommand, HTTP route, MCP tool, config key or output format is added or changed. The base diff's own CRUX surfaces (apr CLI subcommand registry; new binary aprender-ptx-debug) are unchanged by this delta and remain as already recorded in the prior receipt (gap_effect: none)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "-c", "git diff --name-only 3b8f6dea82 12282780c8 | xargs -I{} scripts/check_pr_review_receipt.sh --match-crux-surface {}"],
+            "exit_code": 1,
+            "stdout_sha256": "see-scratch-log",
+            "failure_scenario": "A user-facing surface change disguised inside what looks like a roadmap/doc-only commit would go unreviewed by CRUX if this predicate check were skipped or eyeballed instead of run against every changed path.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

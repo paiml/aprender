@@ -113,7 +113,10 @@ fn quantized_config(
         temperature,
         top_k: sampling.top_k,
         top_p: sampling.top_p,
-        stop_tokens: vec![eos_id(tokenizer, state.model_eos_token_id())],
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            tokenizer,
+            Some(eos_id(tokenizer, state.model_eos_token_id())),
+        ), // aprender#4345
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()
@@ -124,6 +127,24 @@ fn quantized_config(
         config.seed = seed;
     }
     config
+}
+
+/// Decode a native route's `text` — the completion only (#3991) — cut at the
+/// first special-token marker it spells out (aprender#4344). Before this, a
+/// model that wrote `<|im_end|>` as ordinary tokens returned
+/// `"<answer>7</answer><|im_end|>"` on `/generate` and `/batch/generate`.
+fn decode_generated(
+    tokenizer: &BPETokenizer,
+    token_ids: &[u32],
+    prompt_tokens: usize,
+) -> Result<String, ApiErr> {
+    let text = tokenizer
+        .decode(completion(token_ids, prompt_tokens))
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    // No prompt echo to skip: `text` is already the completion alone.
+    Ok(crate::api::realize_handlers::cut_completion_at_marker(
+        text, "",
+    ))
 }
 
 fn try_quantized_generate(
@@ -162,9 +183,7 @@ fn try_quantized_generate(
     let generated = quantized_model
         .generate_with_cache(&prompt_ids, &q_config)
         .map_err(|e| generation_err(&e))?;
-    let text = tokenizer
-        .decode(completion(&generated, prompt_tokens))
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
 
     Ok(Some(GenerateResponse {
         num_generated: generated.len().saturating_sub(prompt_tokens),
@@ -234,9 +253,7 @@ async fn try_apr_q4k_generate(
     // Build full token sequence (prompt + generated) and decode
     let mut all_tokens = prompt_ids_copy;
     all_tokens.extend_from_slice(&resp.output_tokens);
-    let text = tokenizer
-        .decode(&resp.output_tokens)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &resp.output_tokens, 0)?;
 
     Ok(Some(GenerateResponse {
         num_generated: resp.tokens_generated,
@@ -275,9 +292,7 @@ fn try_apr_generate(
                 format!("APR generation failed: {e}"),
             )
         })?;
-    let text = tokenizer
-        .decode(completion(&generated, prompt_tokens))
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
 
     Ok(Some(GenerateResponse {
         num_generated: generated.len().saturating_sub(prompt_tokens),
@@ -334,9 +349,7 @@ fn registry_generate(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let text = tokenizer
-        .decode(completion(&token_ids, prompt.len()))
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &token_ids, prompt.len())?;
 
     Ok(GenerateResponse {
         num_generated: generated.len() - prompt.len(),
@@ -488,7 +501,10 @@ fn try_cuda_batch_generate(
         } else {
             request.top_k
         },
-        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            Some(eos_id(&tokenizer, state.model_eos_token_id())),
+        ), // aprender#4345
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()
@@ -519,9 +535,7 @@ fn try_cuda_batch_generate(
                     format!("CUDA generation failed: {e}"),
                 )
             })?;
-        let text = tokenizer
-            .decode(completion(&generated, prompt_tokens))
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
             token_ids: generated,
@@ -574,9 +588,7 @@ fn try_quantized_batch_generate(
         let generated = quantized_model
             .generate_with_cache(&prompt_ids, &q_config)
             .map_err(|e| generation_err(&e))?;
-        let text = tokenizer
-            .decode(completion(&generated, prompt_tokens))
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
             token_ids: generated,
@@ -626,9 +638,7 @@ fn try_apr_batch_generate(
                     format!("APR generation failed: {e}"),
                 )
             })?;
-        let text = tokenizer
-            .decode(completion(&generated, prompt_tokens))
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
             token_ids: generated,
@@ -694,9 +704,7 @@ fn registry_batch_generate(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let text = tokenizer
-            .decode(completion(&token_ids, prompt.len()))
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &token_ids, prompt.len())?;
         results.push(GenerateResponse {
             num_generated: generated.len() - prompt.len(),
             token_ids,

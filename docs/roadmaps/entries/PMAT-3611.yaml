@@ -1,0 +1,17 @@
+- id: PMAT-3611
+  github_issue: 3611
+  item_type: task
+  kind: code
+  title: 'pv: implement sh:lessThan / sh:lessThanOrEquals (SHACL Core property pairs)'
+  status: inprogress
+  priority: medium
+  assigned_to: pvl-b
+  created: 2026-09-24T18:24:24Z
+  updated: 2026-09-24T18:24:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

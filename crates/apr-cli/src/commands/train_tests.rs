@@ -320,7 +320,7 @@ mod tests {
             })
             .expect("spawn parse thread")
             .join()
-            .expect("parse thread must not panic")
+            .expect("parse thread must not panic").into()
     }
 
     #[test]

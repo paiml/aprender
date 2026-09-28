@@ -12,12 +12,12 @@ cargo install --path crates/presentar-cli
 
 ## Commands
 
-### `presentar serve`
+### `aprender-present serve`
 
 Start a development server with hot reload.
 
 ```bash
-presentar serve [OPTIONS]
+aprender-present serve [OPTIONS]
 
 Options:
   -p, --port <PORT>    Port to serve on [default: 8080]
@@ -27,7 +27,7 @@ Options:
 
 **Example:**
 ```bash
-presentar serve --port 3000 --watch
+aprender-present serve --port 3000 --watch
 ```
 
 When `--watch` is enabled:
@@ -36,12 +36,12 @@ When `--watch` is enabled:
 - HTML/CSS/JS changes trigger instant reload
 - WebSocket server runs on port 35729
 
-### `presentar bundle`
+### `aprender-present bundle`
 
 Build an optimized WASM bundle for production.
 
 ```bash
-presentar bundle [OPTIONS]
+aprender-present bundle [OPTIONS]
 
 Options:
   -o, --output <DIR>   Output directory [default: dist]
@@ -50,7 +50,7 @@ Options:
 
 **Example:**
 ```bash
-presentar bundle --output ./release
+aprender-present bundle --output ./release
 ```
 
 Output includes:
@@ -58,31 +58,31 @@ Output includes:
 - `pkg/presentar.js` - JavaScript bindings
 - `index.html` - Copied from www/
 
-### `presentar new`
+### `aprender-present new`
 
 Create a new Presentar project.
 
 ```bash
-presentar new <NAME>
+aprender-present new <NAME>
 ```
 
 **Example:**
 ```bash
-presentar new my-dashboard
+aprender-present new my-dashboard
 cd my-dashboard
-presentar serve
+aprender-present serve
 ```
 
 Creates:
 - `app.yaml` - Starter manifest
 - `www/index.html` - HTML template
 
-### `presentar check`
+### `aprender-present check`
 
 Validate a YAML manifest.
 
 ```bash
-presentar check [MANIFEST]
+aprender-present check [MANIFEST]
 
 Arguments:
   [MANIFEST]  Path to manifest file [default: app.yaml]
@@ -90,7 +90,7 @@ Arguments:
 
 **Example:**
 ```bash
-presentar check app.yaml
+aprender-present check app.yaml
 # Output: Manifest valid!
 #   Name: my-dashboard
 #   Version: 1.0.0
@@ -98,12 +98,12 @@ presentar check app.yaml
 #   Sections: 3
 ```
 
-### `presentar score`
+### `aprender-present score`
 
 Compute quality score for a manifest.
 
 ```bash
-presentar score [OPTIONS] [MANIFEST]
+aprender-present score [OPTIONS] [MANIFEST]
 
 Arguments:
   [MANIFEST]  Path to manifest file [default: app.yaml]
@@ -115,10 +115,10 @@ Options:
 
 **Example:**
 ```bash
-presentar score --format json
+aprender-present score --format json
 # {"score": 85.0, "grade": "A", ...}
 
-presentar score --badge quality.svg
+aprender-present score --badge quality.svg
 ```
 
 Score breakdown:
@@ -131,12 +131,12 @@ Score breakdown:
 | Documentation | 10 |
 | Consistency | 10 |
 
-### `presentar gate`
+### `aprender-present gate`
 
 Run quality gates validation.
 
 ```bash
-presentar gate [OPTIONS] [MANIFEST]
+aprender-present gate [OPTIONS] [MANIFEST]
 
 Arguments:
   [MANIFEST]  Path to manifest file [default: app.yaml]
@@ -150,16 +150,16 @@ Options:
 **Example:**
 ```bash
 # CI pipeline check
-presentar gate --min-grade B --strict app.yaml
+aprender-present gate --min-grade B --strict app.yaml
 # Exit code 0 = pass, 1 = fail
 ```
 
-### `presentar deploy`
+### `aprender-present deploy`
 
 Deploy to cloud hosting.
 
 ```bash
-presentar deploy [OPTIONS]
+aprender-present deploy [OPTIONS]
 
 Options:
   -s, --source <DIR>        Source directory [default: dist]
@@ -174,23 +174,23 @@ Options:
 **Examples:**
 ```bash
 # Deploy to S3 with CloudFront
-presentar deploy \
+aprender-present deploy \
   --target s3 \
   --bucket my-app.example.com \
   --distribution EXXXXXXXXXXXXX \
   --region us-west-2
 
 # Dry run to see what would happen
-presentar deploy --target s3 --bucket my-bucket --dry-run
+aprender-present deploy --target s3 --bucket my-bucket --dry-run
 
 # Deploy to Cloudflare Pages
-presentar deploy --target cloudflare
+aprender-present deploy --target cloudflare
 
 # Deploy to Vercel
-presentar deploy --target vercel
+aprender-present deploy --target vercel
 
 # Deploy to Netlify
-presentar deploy --target netlify
+aprender-present deploy --target netlify
 ```
 
 ## Environment Variables
@@ -209,13 +209,13 @@ The Makefile wraps CLI commands:
 
 ```makefile
 dev:
-    presentar serve --watch
+    aprender-present serve --watch
 
 build:
-    presentar bundle
+    aprender-present bundle
 
 deploy:
-    presentar deploy --target s3 --bucket $(BUCKET)
+    aprender-present deploy --target s3 --bucket $(BUCKET)
 ```
 
 ## Exit Codes

@@ -60,9 +60,14 @@ permissions:
   pages: write
   id-token: write
 
+# #3676: one group per PR, and a newer push cancels the superseded run. The old
+# workflow-level group "pages" (cancel false) held EVERY run -- all PRs, main and
+# the nightly -- in one global queue, so each PR's mdBook check waited behind
+# every other PR's. Only the Pages deploy needs that serialisation, so the
+# "pages" group now sits on the deploy job alone. Non-PR events never cancel.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: book-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -203,6 +208,10 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # GitHub Pages deploys never overlap and are never cancelled (was workflow-level).
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write

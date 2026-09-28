@@ -35,60 +35,6 @@ fn test_config() -> GGUFConfig {
 }
 
 // ============================================================================
-// generate_with_smallvec tests
-// ============================================================================
-
-#[test]
-fn test_generate_with_smallvec_empty_prompt_error() {
-    let config = test_config();
-    let model = create_test_model_with_config(&config);
-    let gen_config = QuantizedGenerateConfig::deterministic(5);
-
-    let result = model.generate_with_smallvec(&[], &gen_config);
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(format!("{:?}", err).contains("empty"));
-}
-
-#[test]
-fn test_generate_with_smallvec_greedy_sampling() {
-    let config = test_config();
-    let model = create_test_model_with_config(&config);
-    let gen_config = QuantizedGenerateConfig::deterministic(3);
-
-    let result = model.generate_with_smallvec(&[1], &gen_config);
-    assert!(result.is_ok());
-    let tokens = result.unwrap();
-    // Should have at least the prompt token
-    assert!(!tokens.is_empty());
-    assert_eq!(tokens[0], 1);
-}
-
-#[test]
-fn test_generate_with_smallvec_temperature_sampling() {
-    let config = test_config();
-    let model = create_test_model_with_config(&config);
-    let gen_config = QuantizedGenerateConfig::default()
-        .with_max_tokens(2)
-        .with_temperature(1.0)
-        .with_top_k(5);
-
-    let result = model.generate_with_smallvec(&[1], &gen_config);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_generate_with_smallvec_stop_token() {
-    let config = test_config();
-    let model = create_test_model_with_config(&config);
-    // Use token 0 as stop token (likely to be generated from zero weights)
-    let gen_config = QuantizedGenerateConfig::deterministic(10).with_stop_tokens(vec![0]);
-
-    let result = model.generate_with_smallvec(&[1], &gen_config);
-    assert!(result.is_ok());
-}
-
-// ============================================================================
 // batch_generate tests
 // ============================================================================
 

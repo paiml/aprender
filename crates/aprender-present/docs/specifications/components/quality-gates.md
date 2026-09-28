@@ -126,7 +126,7 @@ jobs:
   quality-score:
     steps:
       - name: PMAT Score (90+ REQUIRED)
-        run: score --ci --threshold 90 --output json > quality-report.json
+        run: aprender-score --ci --threshold 90 --output json > quality-report.json
 ```
 
 ## Regression Prevention
