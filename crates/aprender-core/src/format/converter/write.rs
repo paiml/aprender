@@ -348,12 +348,16 @@ pub(crate) fn write_apr_file(
         })
         .sum();
 
-    let custom = build_f32_custom_metadata(
+    let mut custom = build_f32_custom_metadata(
         &tensors_with_lm_head,
         user_metadata,
         has_tied_embeddings,
         tokenizer,
     );
+    // QFR-003: keep the source config.json verbatim so an export writes it back.
+    if let Some(cfg) = model_config.and_then(|c| c.hf_config.clone()) {
+        custom.insert(super::HF_CONFIG_KEY.to_string(), cfg);
+    }
 
     // Extract transformer config from model_config (CRITICAL for inference)
     let metadata = AprV2Metadata {

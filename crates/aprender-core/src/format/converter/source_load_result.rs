@@ -362,6 +362,7 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
         num_experts,
         num_experts_per_tok,
         moe_intermediate_size,
+        hf_config: Some(json),
     })
 }
 

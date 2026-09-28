@@ -523,7 +523,7 @@ fn export_mlx(
     }
 
     // Write config.json
-    let config = infer_model_config(tensors);
+    let config = export_config_json(tensors, input_path);
     let config_path = output_path.join("config.json");
     fs::write(&config_path, config).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to write MLX config.json: {e}"),

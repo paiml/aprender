@@ -29,3 +29,5 @@ mod coverage_gap_quantized_save;
 /// #2392 — falsifiers for the convert/quantize/export defects found by
 /// dogfooding the crates.io 0.63.0 binary.
 mod dogfood_2392;
+/// qwen35-format-roundtrip-v1 QFR-003: export writes the source config.json.
+mod qfr_003_config_roundtrip;
