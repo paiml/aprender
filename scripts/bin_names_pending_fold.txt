@@ -8,3 +8,4 @@
 apr-qa               aprender-qa-cli      # -> `apr qa`, 0.71 binary-debt #5
 aprender-explain     aprender-explain     # -> `apr explain`, 0.71 binary-debt #5
 aprender-ptx-debug   aprender-ptx-debug   # -> `apr` (ptx-debug), 0.71 binary-debt #5
+pv-sat               aprender-contracts-cli  # -> `pv sat` (or aprender-pv-sat if F-7 keeps it a private target); ONT-5 la-73; cop 77 ruling (c), Refs #4502, fold ticket to mint
