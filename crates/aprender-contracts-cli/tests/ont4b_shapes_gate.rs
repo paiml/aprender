@@ -246,10 +246,15 @@ fn the_tracked_repo_graph_is_fresh() {
     // The later ONT-10 slices of #4502 add nine more binary shapes: binary-aprender-apr-http-mcp and eight surfaces (apr, apr-qa,
     // aprender-data, aprender-present, aprender-ptop, aprender-simulate, aprender-train-lora,
     // aprender-train-shell): 66, measured with `pv extract contracts --check` at 036beee3c5.
+    // The #4502 split (PR-1, 1e1f109d32) moves 29 contracts whose tests or bins live in PR-2 out of PR-1, and
+    // eighteen shapes go with them: binary-apr-http-mcp, binary-aprender-apr-http-mcp and sixteen surfaces
+    // (apr-corpus-ingest, aprender-db, aprender-explain, aprender-profile, aprender-ptx-debug, aprender-zram-generator,
+    // apr-qa-readme-sync, score, trueno-rag, apr-qa, aprender-data, aprender-present, aprender-ptop, aprender-simulate,
+    // aprender-train-lora, aprender-train-shell): 48, measured from shapes.ttl at 5150871bf4. PR-2 raises it back.
     assert_eq!(
         v["shapes_n"],
-        66,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + binary-aprender-apr-http-mcp + 23 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4)\n{}",
+        48,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + 7 binary-*-surface (ONT-10, #4502 PR-1: apr-cli-apr, apr, aprender-cbtop, aprender-compute-xtask, aprender-orchestrate-aprender-orchestrate, aprender-test-cli, pv) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4)\n{}",
         show(&r)
     );
 }
