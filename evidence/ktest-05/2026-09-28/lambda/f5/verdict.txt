@@ -1,0 +1,2 @@
+sm_89 barrier=0 nobarrier=7 sum=256 
+PASS

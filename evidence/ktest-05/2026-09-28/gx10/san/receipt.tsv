@@ -1,0 +1,5 @@
+tool	count	kind	rc	verdict	filter	top_kernel
+memcheck	0	errors	0	CLEAN	none	-
+racecheck	0	hazards	0	CLEAN	regex=(scatter|rope|attn|attention|prefill|batch|rmsnorm|kv)	-
+initcheck	0	errors	0	CLEAN	none	-
+synccheck	0	errors	0	CLEAN	none	-

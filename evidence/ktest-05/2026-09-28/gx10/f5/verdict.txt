@@ -1,0 +1,2 @@
+sm_121 barrier=0 nobarrier=6 sum=256 
+PASS

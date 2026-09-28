@@ -1,0 +1,48 @@
+{
+ "schema": "ktest-05-sanitizer-receipt-v1",
+ "utc": "2026-09-28T12:53:20Z",
+ "apr_version": "apr 0.70.0 (8d021f61e)",
+ "apr_sha256_16": "979b5972e30d124d",
+ "sanitizer": "Version 2026.2.1.0 (build 38334959) (public-release)",
+ "device": "NVIDIA GB10, 12.1, 590.48.01",
+ "tools": [
+  {
+   "tool": "memcheck",
+   "count": "0",
+   "kind": "errors",
+   "rc": "0",
+   "verdict": "CLEAN",
+   "filter": "none",
+   "top_kernel": "-"
+  },
+  {
+   "tool": "racecheck",
+   "count": "0",
+   "kind": "hazards",
+   "rc": "0",
+   "verdict": "CLEAN",
+   "filter": "regex=(scatter|rope|attn|attention|prefill|batch|rmsnorm|kv)",
+   "top_kernel": "-"
+  },
+  {
+   "tool": "initcheck",
+   "count": "0",
+   "kind": "errors",
+   "rc": "0",
+   "verdict": "CLEAN",
+   "filter": "none",
+   "top_kernel": "-"
+  },
+  {
+   "tool": "synccheck",
+   "count": "0",
+   "kind": "errors",
+   "rc": "0",
+   "verdict": "CLEAN",
+   "filter": "none",
+   "top_kernel": "-"
+  }
+ ],
+ "clean": true,
+ "advisory": []
+}

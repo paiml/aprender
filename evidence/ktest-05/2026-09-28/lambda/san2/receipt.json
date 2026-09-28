@@ -1,0 +1,27 @@
+{
+ "schema": "ktest-05-sanitizer-receipt-v1",
+ "utc": "2026-09-28T12:19:10Z",
+ "apr_version": "apr 0.70.0 (8d021f61e)",
+ "apr_sha256_16": "9cd8d824c66cb937",
+ "sanitizer": "Version 2026.2.1.0 (build 38334959) (public-release)",
+ "device": "NVIDIA GeForce RTX 4090, 8.9, 580.119.02",
+ "tools": [
+  {
+   "tool": "memcheck",
+   "count": "0",
+   "kind": "errors",
+   "rc": "0",
+   "verdict": "CLEAN",
+   "filter": "none"
+  },
+  {
+   "tool": "initcheck",
+   "count": "1498606",
+   "kind": "errors",
+   "rc": "0",
+   "verdict": "RED",
+   "filter": "none"
+  }
+ ],
+ "clean": false
+}

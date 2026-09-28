@@ -1,0 +1,2 @@
+device=sm_121 expected=sm_121 apr=apr 0.70.0 (8d021f61e)
+PASS n=39 arch=sm_121

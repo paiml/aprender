@@ -1,0 +1,2 @@
+device=sm_89 expected=sm_121 apr=apr 0.70.0 (8d021f61e)
+RED_MISMATCH n=42 expected=sm_121 other= 42 sm_89;

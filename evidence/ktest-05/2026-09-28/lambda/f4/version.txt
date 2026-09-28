@@ -1,0 +1,3 @@
+apr 0.70.0 (8d021f61e)
+9cd8d824c66cb937
+NVIDIA GeForce RTX 4090, 8.9, 580.119.02

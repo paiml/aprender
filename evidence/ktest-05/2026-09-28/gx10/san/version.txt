@@ -1,0 +1,4 @@
+apr 0.70.0 (8d021f61e)
+979b5972e30d124d
+Version 2026.2.1.0 (build 38334959) (public-release)
+NVIDIA GB10, 12.1, 590.48.01

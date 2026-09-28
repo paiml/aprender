@@ -1,0 +1,2 @@
+device=sm_89 expected=sm_89 apr=apr 0.70.0 (8d021f61e)
+PASS n=42 arch=sm_89

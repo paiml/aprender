@@ -1,0 +1,3 @@
+tool	count	kind	rc	verdict	filter
+memcheck	0	errors	0	CLEAN	none
+initcheck	1498606	errors	0	RED	none

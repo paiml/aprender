@@ -1,0 +1,5 @@
+tool	count	kind	rc	verdict
+memcheck	0	errors	0	CLEAN
+racecheck	0	hazards	0	CLEAN
+initcheck	NA	NA	124	RED_NO_SUMMARY
+synccheck	0	errors	0	CLEAN

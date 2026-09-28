@@ -1,0 +1,4 @@
+f5 rc=0
+f4 rc=0
+f4-planted rc=1
+san rc=0
