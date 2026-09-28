@@ -385,6 +385,44 @@ self_test() {
     tip=$(git -C "$repo" commit-tree -p "$head" -m "R1 record the receipt" "$tree" \
           2>/dev/null) || die_env "could not create a descendant of $head"
 
+    # #4510 FINGERPRINT IDEMPOTENCE. A PR also commits its QUORUM verdict after review.
+    # tip_q adds docs/audits/quorum-PMAT-999.json on top of tip; its fingerprint must
+    # equal tip's and head's, and re-stamping the same diff must give the same id.
+    # tip_x adds docs/audits/other.json instead: the CONTROL - the exclusion is the
+    # receipt paths only, so any other file must still move the id.
+    local tip_q tip_x add_file
+    add_file() { # <parent> <path> <msg> -> sha of <parent> plus one new file at <path>
+        local b t
+        b=$(printf '{"agreed":true}\n' | git -C "$repo" hash-object -w --stdin) || return 1
+        rm -f -- "${idx:?}"
+        GIT_INDEX_FILE=$idx git -C "$repo" read-tree "$1" || return 1
+        GIT_INDEX_FILE=$idx git -C "$repo" update-index --add --cacheinfo "100644,$b,$2" || return 1
+        t=$(GIT_INDEX_FILE=$idx git -C "$repo" write-tree) || return 1
+        git -C "$repo" commit-tree -p "$1" -m "$3" "$t"
+    }
+    tip_q=$(add_file "$tip" docs/audits/quorum-PMAT-999.json "R2 record the quorum") \
+        || die_env "could not build the quorum-artifact descendant"
+    tip_x=$(add_file "$tip" docs/audits/other.json "R2 an ordinary file") \
+        || die_env "could not build the control descendant"
+    local id_h id_t id_q id_q2 id_x
+    id_h=$(prpid_compute "$repo" "$rbase" "$head" 999)  || die_env "no patch-id for head"
+    id_t=$(prpid_compute "$repo" "$rbase" "$tip" 999)   || die_env "no patch-id for tip"
+    id_q=$(prpid_compute "$repo" "$rbase" "$tip_q" 999) || die_env "no patch-id for tip_q"
+    id_q2=$(prpid_compute "$repo" "$rbase" "$tip_q" 999) || die_env "no patch-id for tip_q (again)"
+    id_x=$(prpid_compute "$repo" "$rbase" "$tip_x" 999) || die_env "no patch-id for tip_x"
+    if [ "$id_h" = "$id_t" ] && [ "$id_t" = "$id_q" ] && [ "$id_q" = "$id_q2" ]; then
+        echo "PASS  fingerprint-idempotent         head = +receipt = +quorum = re-stamp ($id_q)"
+    else
+        echo "FAIL  fingerprint-idempotent         head $id_h, +receipt $id_t, +quorum $id_q, re-stamp $id_q2"
+        st_fail=$((st_fail + 1))
+    fi
+    if [ "$id_x" != "$id_t" ]; then
+        echo "PASS  fingerprint-control-moves      an ordinary file still changes the id"
+    else
+        echo "FAIL  fingerprint-control-moves      docs/audits/other.json did not change the id: the exclusion is too wide"
+        st_fail=$((st_fail + 1))
+    fi
+
     # THE MERGE-QUEUE SHAPE: a SQUASH of the PR onto a main that MOVED, one parent.
     # The reviewed head is not its ancestor - the ancestor rule's 0-of-6 case.
     local main squash
@@ -498,6 +536,10 @@ self_test() {
         "$repo"   999 "$head"
     row receipt-reviews-ancestor  0 "receipt reviews an ANCESTOR of the subject (depth 1) — the only shape a PR can have" \
         "$repo"   999 "$tip"
+    row receipt-then-quorum       0 "#4510: the quorum verdict committed AFTER the receipt still binds" \
+        "$repo"   999 "$tip_q"
+    row receipt-then-other-file   1 "#4510 control: any other file committed after the receipt does not" \
+        "$repo"   999 "$tip_x"
     row no-receipt-for-this-pr    1 "no receipt at all (§6.3: RED, not skipped)" \
         "$repo"  1000 "$tip"
     row receipt-not-an-ancestor   1 "subject is origin/main itself: an EMPTY diff binds nothing" \
@@ -552,7 +594,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 23/23 rows, both polarities ---"
+    echo "--- 25/25 rows + 2 fingerprint checks, both polarities ---"
     return 0
 }
 
