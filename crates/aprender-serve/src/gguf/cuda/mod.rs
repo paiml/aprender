@@ -729,13 +729,31 @@ impl OwnedQuantizedModelCuda {
         // `GpuProfile::disable_fp8_for_qk_norm` for the measurements. Decided here,
         // BEFORE `preload_and_verify` warms either weight cache, so the FP16 cache
         // is the one that gets warmed.
+        // #4590: serial only when the FP16 prefill cache has no room — FP16
+        // batched is correct, the old unconditional serial cost GB10 >20×.
+        let fp16_cache_fits = crate::cuda::gpu_profile::fp16_prefill_cache_fits(
+            executor.memory_info().ok().map(|(free, _)| free),
+            crate::cuda::gpu_profile::prefill_cache_params(
+                model.config.num_layers,
+                model.config.hidden_dim,
+                model.config.q_dim(),
+                model.config.kv_dim(),
+                model.config.intermediate_dim,
+            ),
+        );
         if executor.gpu_profile.disable_fp8_for_qk_norm(
             model.config.constraints.has_qk_norm,
             std::env::var("FP8_PREFILL").ok().as_deref(),
             std::env::var("BATCHED_PREFILL").ok().as_deref(),
+            fp16_cache_fits,
         ) {
+            let path = if fp16_cache_fits {
+                "batched FP16 prefill kept (cache fits free VRAM)"
+            } else {
+                "serial prefill in use (FP16 prefill cache exceeds free VRAM, #4590)"
+            };
             eprintln!(
-                "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off and serial prefill in use — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 / BATCHED_PREFILL=1 override)",
+                "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off, {path} — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 / BATCHED_PREFILL=1 override)",
                 model.config.architecture
             );
         }
