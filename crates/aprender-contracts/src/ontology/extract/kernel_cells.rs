@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ontology::extract::gguf::ExtractError;
 use crate::ontology::extract::release_evidence::rel;
-use crate::ontology::rdf::{iri, Graph, Term};
+use crate::ontology::rdf::{iri_path, Graph, Term, RDF_TYPE};
 
 /// The only layout a GGUF/APR tensor is served in (LAYOUT-001/002).
 pub const ROW_MAJOR: &str = "row_major";
@@ -137,29 +137,111 @@ pub fn static_kernel_map(
     map
 }
 
-/// The kernel cell a `release:usesKernel` edge points at.
+/// The kernel cell a `release:usesKernel` edge points at: one per (host, kernel), because a receipt measured
+/// on one arch says nothing about another (RR2-F6).
 #[must_use]
-pub fn kernel_cell(kernel_id: &str) -> String {
-    iri("kernel-cell", kernel_id)
+pub fn kernel_cell(host: &str, kernel_id: &str) -> String {
+    iri_path("kernel-cell", &[host, kernel_id])
 }
 
-/// `cell --release:usesKernel--> kernel cell` per kernel, and one `release:unregisteredQtype` integer per
-/// type no row serves. Edges only: no verdict (module note).
-pub fn emit_model_cell(g: &mut Graph, cell: &str, map: &KernelMap) {
+/// The derived cell for one model on one host.
+#[must_use]
+pub fn model_cell(host: &str, model_sha256: &str) -> String {
+    iri_path("model-cell", &[host, model_sha256])
+}
+
+/// The e2e smoke cell for one model on one host.
+#[must_use]
+pub fn smoke_cell(host: &str, model_sha256: &str) -> String {
+    iri_path("smoke-cell", &[host, model_sha256])
+}
+
+/// A `release:ModelCell` with one `release:usesKernel` edge per kernel and one `release:unregisteredQtype`
+/// integer per type no row serves. Edges only: no verdict (module note).
+pub fn emit_model_cell(g: &mut Graph, host: &str, model_sha256: &str, map: &KernelMap) {
+    let cell = model_cell(host, model_sha256);
+    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("ModelCell")));
     for k in &map.uses {
         g.insert(
-            cell.to_string(),
+            cell.clone(),
             rel("usesKernel"),
-            Term::iri(kernel_cell(k)),
+            Term::iri(kernel_cell(host, k)),
         );
     }
     for t in &map.unregistered {
         g.insert(
-            cell.to_string(),
+            cell.clone(),
             rel("unregisteredQtype"),
             Term::integer(u64::from(*t)),
         );
     }
+}
+
+/// What one kernel-parity receipt says about its cell, as the extractor judged it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KernelEvidence {
+    /// The receipt's verdict was `pass`.
+    pub pass: bool,
+    /// The measured error is within the registry row's tolerance.
+    pub within_bound: bool,
+    /// The receipt's input key (source files, registry row, toolchain) matches the tree (RR2-F4).
+    pub fresh: bool,
+    /// The receipt was measured on this host's arch / sm (RR2-F6).
+    pub arch_match: bool,
+}
+
+/// A `release:KernelCell`, with its receipt's fields on the cell itself so a ModelCell's one-level
+/// `sh:node` reaches them. `None` writes the cell with no fields: `minCount 1` rejects it (RR2-F1).
+pub fn emit_kernel_cell(
+    g: &mut Graph,
+    host: &str,
+    kernel_id: &str,
+    evidence: Option<KernelEvidence>,
+) {
+    let cell = kernel_cell(host, kernel_id);
+    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("KernelCell")));
+    g.insert(cell.clone(), rel("kernelId"), Term::string(kernel_id));
+    let Some(e) = evidence else { return };
+    g.insert(
+        cell.clone(),
+        rel("verdict"),
+        Term::string(if e.pass { "pass" } else { "fail" }),
+    );
+    g.insert(
+        cell.clone(),
+        rel("withinBound"),
+        Term::boolean(e.within_bound),
+    );
+    g.insert(cell.clone(), rel("fresh"), Term::boolean(e.fresh));
+    g.insert(cell, rel("archMatch"), Term::boolean(e.arch_match));
+}
+
+/// What one e2e smoke receipt says, as the extractor judged it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmokeEvidence {
+    pub pass: bool,
+    /// Ran at the release commit.
+    pub fresh: bool,
+    /// The kernel ids the run dispatched (`kernel_path`, OBS-15) that the static map did not predict (RR2-F3).
+    pub unpredicted: BTreeSet<String>,
+}
+
+/// The smoke edge of a model cell. `None` writes no edge: `minCount 1` rejects the model cell (RR2-F5).
+pub fn emit_smoke(g: &mut Graph, host: &str, model_sha256: &str, evidence: Option<&SmokeEvidence>) {
+    let Some(e) = evidence else { return };
+    let cell = model_cell(host, model_sha256);
+    let smoke = smoke_cell(host, model_sha256);
+    g.insert(cell.clone(), rel("smoke"), Term::iri(smoke.clone()));
+    for k in &e.unpredicted {
+        g.insert(cell.clone(), rel("unpredictedKernel"), Term::string(k));
+    }
+    g.insert(smoke.clone(), RDF_TYPE, Term::iri(rel("SmokeCell")));
+    g.insert(
+        smoke.clone(),
+        rel("verdict"),
+        Term::string(if e.pass { "pass" } else { "fail" }),
+    );
+    g.insert(smoke, rel("fresh"), Term::boolean(e.fresh));
 }
 
 #[cfg(test)]

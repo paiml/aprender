@@ -177,32 +177,233 @@ fn a_malformed_registry_is_refused_whole() {
     }
 }
 
-/// Edges and literals only; no verdict predicate is written.
+/// Edges and literals only; no verdict predicate is written on the model cell.
 #[test]
 fn emit_writes_edges_and_unregistered_literals_only() {
     let mut g = Graph::new();
-    let cell = iri("model-cell", "lambda/qwen");
     let m = static_kernel_map(&excerpt(), "cuda", "x86_64", &types(&[11, 12, 14]));
-    emit_model_cell(&mut g, &cell, &m);
+    emit_model_cell(&mut g, "lambda", "aa", &m);
+    let cell = model_cell("lambda", "aa");
     let used: BTreeSet<&str> = g
         .objects(&cell, &rel("usesKernel"))
         .into_iter()
         .filter_map(Term::as_iri)
         .collect();
+    let want = [
+        kernel_cell("lambda", "cuda.gemv.q4_k"),
+        kernel_cell("lambda", "cuda.gemv.q6_k"),
+    ];
+    assert_eq!(used, want.iter().map(String::as_str).collect());
     assert_eq!(
-        used,
-        [kernel_cell("cuda.gemv.q4_k"), kernel_cell("cuda.gemv.q6_k")]
-            .iter()
-            .map(String::as_str)
-            .collect()
+        g.objects(&cell, &rel("unregisteredQtype")),
+        vec![&Term::integer(11)]
     );
-    let unreg = g.objects(&cell, &rel("unregisteredQtype"));
-    assert_eq!(unreg, vec![&Term::integer(11)]);
-    assert_eq!(
-        g.predicates_of(&cell),
-        [rel("usesKernel"), rel("unregisteredQtype")]
-            .iter()
-            .map(String::as_str)
-            .collect()
+    let preds: BTreeSet<String> = g
+        .predicates_of(&cell)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let allowed: BTreeSet<String> = [
+        RDF_TYPE.to_string(),
+        rel("usesKernel"),
+        rel("unregisteredQtype"),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(preds, allowed);
+}
+
+/// A kernel cell is per host: the same kernel on two hosts is two cells (RR2-F6).
+#[test]
+fn a_kernel_cell_is_per_host() {
+    assert_ne!(
+        kernel_cell("lambda", "cuda.gemv.q4_k"),
+        kernel_cell("gx10", "cuda.gemv.q4_k")
     );
+    // A `/` inside a segment cannot fake the host boundary.
+    assert_ne!(kernel_cell("a/b", "c"), kernel_cell("a", "b/c"));
+}
+
+// ── RR2 case table: the committed release-readiness-v2 shapes over graphs built by these emitters ──
+
+mod rr2 {
+    use super::*;
+    use crate::ontology::shapes::{parse_shapes, validate, Severity};
+
+    const HOST: &str = "lambda";
+    const PASS: KernelEvidence = KernelEvidence {
+        pass: true,
+        within_bound: true,
+        fresh: true,
+        arch_match: true,
+    };
+
+    fn shapes() -> Vec<crate::ontology::shapes::NodeShape> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/release-readiness-v2.yaml");
+        let text = std::fs::read_to_string(&path).expect("release-readiness-v2.yaml is committed");
+        let doc: serde_yaml::Value = serde_yaml::from_str(&text).expect("the contract is YAML");
+        let s =
+            parse_shapes("release-readiness-v2", &doc).expect("shapes inside the engine's subset");
+        assert_eq!(s.len(), 2, "the kernel and model shapes");
+        s
+    }
+
+    fn registry() -> Vec<RegistryRow> {
+        super::registry(&[
+            row("cuda.gemv.q4_k", "cuda", 12, ROW_MAJOR, ANY_ARCH),
+            row("cuda.gemv.q6_k", "cuda", 14, ROW_MAJOR, ANY_ARCH),
+            row("cuda.gemv.q8_0", "cuda", 8, ROW_MAJOR, ANY_ARCH),
+        ])
+    }
+
+    /// Three models on one host: A = q4_k + q6_k (a Q4_K_M), B = q4_k only, C = q8_0 only.
+    const MODELS: [(&str, &[u32]); 3] = [("A", &[12, 14]), ("B", &[12]), ("C", &[8])];
+
+    /// One plant per case; `None` is the all-green graph.
+    #[derive(Clone, Copy)]
+    enum Plant {
+        /// RR2-F1: the kernel cell exists (some model uses it) but has no receipt.
+        NoReceipt(&'static str),
+        /// RR2-F2: model C gains a tensor type (q3_k, 11) no row serves.
+        Unregistered,
+        /// RR2-F3: model B's smoke dispatched a kernel the static map did not predict.
+        Unpredicted,
+        /// RR2-F4: the kernel's receipt input key is stale.
+        Stale(&'static str),
+        /// RR2-F5: model A has no smoke receipt.
+        NoSmoke,
+        /// RR2-F6: the kernel's receipt was measured on another arch.
+        ForeignArch(&'static str),
+    }
+
+    fn graph(plant: Option<Plant>) -> Graph {
+        let rows = registry();
+        let mut g = Graph::new();
+        let mut used = BTreeSet::new();
+        for (m, ts) in MODELS {
+            let mut ts = types(ts);
+            if m == "C" && matches!(plant, Some(Plant::Unregistered)) {
+                ts.insert(11);
+            }
+            let map = static_kernel_map(&rows, "cuda", "x86_64", &ts);
+            used.extend(map.uses.iter().cloned());
+            emit_model_cell(&mut g, HOST, m, &map);
+            let smoke = SmokeEvidence {
+                pass: true,
+                fresh: true,
+                unpredicted: if m == "B" && matches!(plant, Some(Plant::Unpredicted)) {
+                    ids(&["cuda.gemv.q6_k"])
+                } else {
+                    BTreeSet::new()
+                },
+            };
+            let no_smoke = m == "A" && matches!(plant, Some(Plant::NoSmoke));
+            emit_smoke(&mut g, HOST, m, (!no_smoke).then_some(&smoke));
+        }
+        for k in &used {
+            let e = match plant {
+                Some(Plant::NoReceipt(x)) if x == k => None,
+                Some(Plant::Stale(x)) if x == k => Some(KernelEvidence {
+                    fresh: false,
+                    ..PASS
+                }),
+                Some(Plant::ForeignArch(x)) if x == k => Some(KernelEvidence {
+                    arch_match: false,
+                    ..PASS
+                }),
+                _ => Some(PASS),
+            };
+            emit_kernel_cell(&mut g, HOST, k, e);
+        }
+        g
+    }
+
+    /// The focus nodes with a violation.
+    fn red(plant: Option<Plant>) -> BTreeSet<String> {
+        let report = validate(&graph(plant), &shapes());
+        assert!(
+            report.focus_nodes_n > 0,
+            "the shapes found no focus node: vacuous"
+        );
+        report
+            .results
+            .iter()
+            .filter(|r| r.severity == Severity::Violation)
+            .map(|r| r.focus.clone())
+            .collect()
+    }
+
+    fn mc(m: &str) -> String {
+        model_cell(HOST, m)
+    }
+
+    fn kc(k: &str) -> String {
+        kernel_cell(HOST, k)
+    }
+
+    fn set(xs: &[String]) -> BTreeSet<String> {
+        xs.iter().cloned().collect()
+    }
+
+    #[test]
+    fn rr2_all_green_conforms() {
+        let report = validate(&graph(None), &shapes());
+        assert!(report.conforms(), "{:#?}", report.results);
+        // 3 model cells + 3 kernel cells were graded.
+        assert!(report.focus_nodes_n >= 6, "{}", report.focus_nodes_n);
+    }
+
+    /// RR2-F1, for each kernel: exactly the model cells whose map uses it, plus the kernel cell itself.
+    #[test]
+    fn rr2_f1_removing_one_kernel_receipt_reds_exactly_its_models() {
+        let cases: &[(&'static str, &[&str])] = &[
+            ("cuda.gemv.q4_k", &["A", "B"]),
+            ("cuda.gemv.q6_k", &["A"]),
+            ("cuda.gemv.q8_0", &["C"]),
+        ];
+        for (k, models) in cases {
+            let mut want: Vec<String> = models.iter().map(|m| mc(m)).collect();
+            want.push(kc(k));
+            assert_eq!(red(Some(Plant::NoReceipt(k))), set(&want), "{k}");
+        }
+    }
+
+    #[test]
+    fn rr2_f2_to_f6_each_red_names_its_cells() {
+        let cases: Vec<(&str, Plant, Vec<String>)> = vec![
+            ("F2 unregistered qtype", Plant::Unregistered, vec![mc("C")]),
+            ("F3 unpredicted kernel", Plant::Unpredicted, vec![mc("B")]),
+            (
+                "F4 stale receipt",
+                Plant::Stale("cuda.gemv.q6_k"),
+                vec![mc("A"), kc("cuda.gemv.q6_k")],
+            ),
+            ("F5 no smoke", Plant::NoSmoke, vec![mc("A")]),
+            (
+                "F6 foreign arch",
+                Plant::ForeignArch("cuda.gemv.q8_0"),
+                vec![mc("C"), kc("cuda.gemv.q8_0")],
+            ),
+        ];
+        for (name, plant, want) in cases {
+            assert_eq!(red(Some(plant)), set(&want), "{name}");
+        }
+    }
+
+    /// A model cell with no kernel edge at all (no tensor types read) is RED, never vacuously green.
+    #[test]
+    fn rr2_a_model_cell_with_no_kernels_is_red() {
+        let mut g = graph(None);
+        emit_model_cell(&mut g, HOST, "D", &KernelMap::default());
+        let smoke = SmokeEvidence {
+            pass: true,
+            fresh: true,
+            unpredicted: BTreeSet::new(),
+        };
+        emit_smoke(&mut g, HOST, "D", Some(&smoke));
+        let report = validate(&g, &shapes());
+        let red: BTreeSet<&str> = report.results.iter().map(|r| r.focus.as_str()).collect();
+        assert_eq!(red, [mc("D")].iter().map(String::as_str).collect());
+    }
 }
