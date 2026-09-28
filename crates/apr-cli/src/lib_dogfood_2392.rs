@@ -109,6 +109,7 @@
             true,
             false,
             false, // force
+            false, // widen
         )
         .expect_err("#2392 finding 4: merge must refuse to clobber");
         assert!(

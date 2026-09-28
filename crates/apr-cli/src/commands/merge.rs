@@ -236,6 +236,7 @@ pub(crate) fn run(
     json_output: bool,
     plan: bool,
     force: bool,
+    widen: bool,
 ) -> Result<()> {
     contract_pre_merge_tensor_shape!();
     contract_pre_merge_weight_conservation!(files);
@@ -302,6 +303,7 @@ pub(crate) fn run(
         scales: None,
         outlier_k: 3.0,
         layer_ranges: None,
+        widen,
     };
 
     // Run merge

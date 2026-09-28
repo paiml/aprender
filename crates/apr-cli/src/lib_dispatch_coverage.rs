@@ -88,6 +88,7 @@
             seed: 42,
             plan: false,
                 force: true,
+                widen: false,
             });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Merge should be handled by dispatch_model_commands");
@@ -111,6 +112,7 @@
             seed: 42,
             plan: true,
                 force: true,
+                widen: false,
             });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Merge plan should be handled by dispatch_model_commands");

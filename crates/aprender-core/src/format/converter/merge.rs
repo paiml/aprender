@@ -114,6 +114,9 @@ pub struct MergeOptions {
     pub outlier_k: f32,
     /// Passthrough layer ranges: (model_index, start_layer, end_layer) for frankenmerge (GH-443)
     pub layer_ranges: Option<Vec<(usize, usize, usize)>>,
+    /// Write every tensor of an APR output as F32, even when all inputs store
+    /// it as BF16/F16 (merge-output-fidelity-v1 MOF-004 "unless asked to widen")
+    pub widen: bool,
 }
 
 impl Default for MergeOptions {
@@ -128,6 +131,7 @@ impl Default for MergeOptions {
             scales: None,
             outlier_k: 3.0,
             layer_ranges: None,
+            widen: false,
         }
     }
 }
