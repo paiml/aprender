@@ -143,7 +143,7 @@ falsification_tests:
 
   - id: FALSIFY-RR2-003
     rule: S-SAN, the sanitizer judge and shape
-    prediction: "a receipt missing, repeating or failing any of the four tools judges not clean whatever its own `clean` says; age > 7 d or dated after the gate judges stale; each of no run, dirty, stale fails exactly that kernel cell; a cpu host is asked for none"
+    prediction: "a receipt missing, repeating or failing any of the four tools judges not clean whatever its own `clean` says; age > 7 d, dated after the gate, or no --gate-utc judges stale; a v2 run checks the kernels its kreg kernel_path dispatched, and a --kernel-name-filtered tool only the ids in its covers (none without it), so a kernel is clean only when every tool checked it and no check was dirty; a v1, trace or null-path run is refused; each of no run, dirty, stale fails exactly that kernel cell; a cpu host is asked for none"
     test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
     if_fails: a cuda kernel ships with no race/memory check, or on a sanitizer run from an older tree
   - id: FALSIFY-RR2-004

@@ -322,7 +322,27 @@ pub fn judge_smoke_receipt(
         .ok_or_else(|| refuse(file, "model_sha256 is not 64 lowercase hex"))?;
     let apr_sha = text("apr_sha").ok_or_else(|| refuse(file, "apr_sha absent"))?;
     let verdict = text("verdict").ok_or_else(|| refuse(file, "verdict absent"))?;
-    let dispatched = match doc.get("kernel_path") {
+    let dispatched = kernel_path_ids(file, doc.get("kernel_path"))?;
+    Ok((
+        sha.to_string(),
+        SmokeReceipt {
+            pass: verdict == "pass",
+            fresh: apr_sha == release_sha,
+            dispatched,
+        },
+    ))
+}
+
+/// The registry ids an `apr-kernel-path-v1` object (OBS-15) names: `Some` for a `kreg` path, `None` for an
+/// absent, `null` or `trace` path (trace labels are not registry ids).
+///
+/// # Errors
+/// Neither null nor an object; an unknown source; no entries; an entry without a `kernel_id`.
+fn kernel_path_ids(
+    file: &str,
+    path: Option<&serde_json::Value>,
+) -> Result<Option<BTreeSet<String>>, ExtractError> {
+    Ok(match path {
         None | Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::Object(p)) => {
             let source = p.get("source").and_then(serde_json::Value::as_str);
@@ -348,15 +368,7 @@ pub fn judge_smoke_receipt(
             }
         }
         Some(_) => return Err(refuse(file, "kernel_path is neither null nor an object")),
-    };
-    Ok((
-        sha.to_string(),
-        SmokeReceipt {
-            pass: verdict == "pass",
-            fresh: apr_sha == release_sha,
-            dispatched,
-        },
-    ))
+    })
 }
 
 /// Read every top-level `*.json` in `dir` (name order) as `host`'s smoke receipts. A missing directory is no
@@ -557,10 +569,12 @@ pub struct V2Evidence {
     pub kernels: BTreeMap<String, BTreeMap<String, KernelEvidence>>,
     /// Host id → model sha256 → judged smoke receipt (`<dir>/<host>/smoke/*.json`).
     pub smokes: BTreeMap<String, BTreeMap<String, SmokeReceipt>>,
+    /// Host id → kernel id → S-SAN evidence from `<dir>/<host>/sanitizer/*.json`.
+    pub sanitized: BTreeMap<String, BTreeMap<String, SanitizerEvidence>>,
 }
 
-/// Read v2 evidence for `hosts` (id, cuda arch) at `release_sha`. No `input-sets.json` → every kernel
-/// judges stale (RED); a host with no `parity/` directory has no evidence (RED).
+/// Read v2 evidence for `hosts` (id, cuda arch) at `release_sha`, judging sanitizer age at `now_utc`. No
+/// `input-sets.json` → every kernel judges stale (RED); a host with no `parity/` directory has no evidence (RED).
 ///
 /// # Errors
 /// The registry unreadable or malformed, an `input-sets.json` computed at another commit, or a refused
@@ -570,7 +584,14 @@ pub fn read_v2(
     dir: &std::path::Path,
     hosts: &[(&str, &str)],
     release_sha: &str,
+    now_utc: Option<&str>,
 ) -> Result<V2Evidence, ExtractError> {
+    if let Some(t) = now_utc.filter(|t| utc_seconds(t).is_none()) {
+        return Err(refuse(
+            "--gate-utc",
+            format!("{t:?} is not YYYY-MM-DDTHH:MM:SSZ"),
+        ));
+    }
     let reg = root.join(REGISTRY_PATH);
     let bytes =
         std::fs::read(&reg).map_err(|e| refuse(REGISTRY_PATH, format!("unreadable: {e}")))?;
@@ -594,10 +615,18 @@ pub fn read_v2(
             Ok(((*id).to_string(), s))
         })
         .collect::<Result<_, ExtractError>>()?;
+    let sanitized = hosts
+        .iter()
+        .map(|(id, _)| {
+            let s = read_host_sanitizers(&dir.join(id).join("sanitizer"), id, now_utc)?;
+            Ok(((*id).to_string(), s))
+        })
+        .collect::<Result<_, ExtractError>>()?;
     Ok(V2Evidence {
         rows,
         kernels,
         smokes,
+        sanitized,
     })
 }
 
@@ -692,12 +721,18 @@ pub fn judge_sanitizer_receipt(
                 Some("CLEAN" | "ADVISORY_RED")
             )
     });
-    let fresh = doc
-        .get("utc")
+    Ok(SanitizerEvidence {
+        clean,
+        fresh: run_is_fresh(&doc, now),
+    })
+}
+
+/// A sanitizer run's `utc` is at most [`SANITIZER_MAX_AGE_S`] before `now`, and not after it.
+fn run_is_fresh(doc: &serde_json::Value, now: i64) -> bool {
+    doc.get("utc")
         .and_then(serde_json::Value::as_str)
         .and_then(utc_seconds)
-        .is_some_and(|at| (0..=SANITIZER_MAX_AGE_S).contains(&(now - at)));
-    Ok(SanitizerEvidence { clean, fresh })
+        .is_some_and(|at| (0..=SANITIZER_MAX_AGE_S).contains(&(now - at)))
 }
 
 /// The S-SAN fields of a cuda kernel cell: it becomes a `release:SanitizedKernelCell` as well, which
@@ -718,6 +753,154 @@ pub fn emit_sanitizer(
     let Some(e) = evidence else { return };
     g.insert(cell.clone(), rel("sanitizerClean"), Term::boolean(e.clean));
     g.insert(cell, rel("sanitizerFresh"), Term::boolean(e.fresh));
+}
+
+/// The attributable KTEST-05 sanitizer receipt: v1 plus `host`, the run's `kernel_path`
+/// (`apr-kernel-path-v1`, OBS-15), and on each tool row run with `--kernel-name`, `covers`: the kernel ids
+/// that filter kept. v1 names no kernel, so a v1 run can be attributed to none.
+pub const SANITIZER_SCHEMA_V2: &str = "ktest-05-sanitizer-receipt-v2";
+
+/// One judged, attributable sanitizer run: for each tool it ran, whether that tool was clean
+/// (`CLEAN`, or the recorded `ADVISORY_RED` policy) and the kernel ids it checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SanitizerRun {
+    pub fresh: bool,
+    pub tools: BTreeMap<String, (bool, BTreeSet<String>)>,
+}
+
+/// Judge one `ktest-05-sanitizer-receipt-v2` in `host`'s sanitizer directory at gate time `now_utc`
+/// (`None`: no gate time was given, so the run is not fresh).
+///
+/// A tool row with `filter` `none` checked every kernel the run dispatched. A filtered row checked the ids in
+/// its `covers`; with no `covers` its reach is unknown and it checked none, so a racecheck filtered to
+/// attention kernels never clears a gemv kernel.
+///
+/// # Errors
+/// Not JSON; another schema; `host` not the directory's; a `kernel_path` that is not a `kreg` path
+/// ([`kernel_path_ids`]); `tools` not a list; a row with no `tool`, `verdict` or `filter`; one tool twice;
+/// `covers` not a list of ids, or naming a kernel the run did not dispatch.
+pub fn judge_sanitizer_run(
+    file: &str,
+    bytes: &[u8],
+    host: &str,
+    now_utc: Option<&str>,
+) -> Result<SanitizerRun, ExtractError> {
+    let doc: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| refuse(file, format!("not JSON: {e}")))?;
+    let text = |v: &serde_json::Value, k: &str| {
+        v.get(k)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+    if text(&doc, "schema").as_deref() != Some(SANITIZER_SCHEMA_V2) {
+        return Err(refuse(file, format!("schema is not {SANITIZER_SCHEMA_V2}")));
+    }
+    if text(&doc, "host").as_deref() != Some(host) {
+        return Err(refuse(
+            file,
+            format!("host is not {host}, the directory it sits in"),
+        ));
+    }
+    let dispatched = kernel_path_ids(file, doc.get("kernel_path"))?
+        .ok_or_else(|| refuse(file, "kernel_path names no registry ids (not a kreg path)"))?;
+    let rows = doc
+        .get("tools")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| refuse(file, "`tools` missing or not a list"))?;
+    let mut tools = BTreeMap::new();
+    for r in rows {
+        let (Some(tool), Some(verdict), Some(filter)) =
+            (text(r, "tool"), text(r, "verdict"), text(r, "filter"))
+        else {
+            return Err(refuse(file, "a tool row lacks tool, verdict or filter"));
+        };
+        let checked = if filter == "none" {
+            dispatched.clone()
+        } else {
+            match r.get("covers") {
+                None => BTreeSet::new(),
+                Some(c) => {
+                    let ids = c
+                        .as_array()
+                        .and_then(|a| {
+                            a.iter()
+                                .map(|x| x.as_str().map(str::to_string))
+                                .collect::<Option<BTreeSet<_>>>()
+                        })
+                        .ok_or_else(|| {
+                            refuse(file, format!("{tool}: covers is not a list of ids"))
+                        })?;
+                    if let Some(k) = ids.difference(&dispatched).next() {
+                        return Err(refuse(
+                            file,
+                            format!("{tool}: covers {k}, which the run did not dispatch"),
+                        ));
+                    }
+                    ids
+                }
+            }
+        };
+        let ok = matches!(verdict.as_str(), "CLEAN" | "ADVISORY_RED");
+        if tools.insert(tool.clone(), (ok, checked)).is_some() {
+            return Err(refuse(file, format!("{tool} appears twice")));
+        }
+    }
+    let fresh = now_utc
+        .and_then(utc_seconds)
+        .is_some_and(|now| run_is_fresh(&doc, now));
+    Ok(SanitizerRun { fresh, tools })
+}
+
+/// Kernel id → its S-SAN evidence over all of a host's runs. A kernel is `clean` when every tool of
+/// [`SANITIZER_TOOLS`] checked it in some run and no run's check of it was dirty; `fresh` when every tool
+/// checked it in some fresh run. A kernel no run checked is absent, and its cell is RED.
+#[must_use]
+pub fn attribute_sanitizer_runs(runs: &[SanitizerRun]) -> BTreeMap<String, SanitizerEvidence> {
+    let kernels: BTreeSet<&String> = runs
+        .iter()
+        .flat_map(|r| r.tools.values().flat_map(|(_, ks)| ks))
+        .collect();
+    kernels
+        .into_iter()
+        .map(|k| {
+            // Per tool, (clean, fresh) of each run's check of k.
+            let checks: Vec<Vec<(bool, bool)>> = SANITIZER_TOOLS
+                .iter()
+                .map(|tool| {
+                    runs.iter()
+                        .filter_map(|r| {
+                            r.tools
+                                .get(*tool)
+                                .filter(|(_, ks)| ks.contains(k))
+                                .map(|(ok, _)| (*ok, r.fresh))
+                        })
+                        .collect()
+                })
+                .collect();
+            let clean = checks
+                .iter()
+                .all(|c| !c.is_empty() && c.iter().all(|(ok, _)| *ok));
+            let fresh = checks.iter().all(|c| c.iter().any(|(_, f)| *f));
+            (k.clone(), SanitizerEvidence { clean, fresh })
+        })
+        .collect()
+}
+
+/// Read every top-level `*.json` in `dir` as `host`'s sanitizer runs and attribute them
+/// ([`attribute_sanitizer_runs`]). A missing directory is no runs: every cuda kernel cell is RED on S-SAN.
+///
+/// # Errors
+/// An unreadable directory or file, or a refused run ([`judge_sanitizer_run`]).
+pub fn read_host_sanitizers(
+    dir: &std::path::Path,
+    host: &str,
+    now_utc: Option<&str>,
+) -> Result<BTreeMap<String, SanitizerEvidence>, ExtractError> {
+    let runs = json_files(dir)?
+        .into_iter()
+        .map(|(name, bytes)| judge_sanitizer_run(&name, &bytes, host, now_utc))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(attribute_sanitizer_runs(&runs))
 }
 
 /// One required host of the v2 gate.

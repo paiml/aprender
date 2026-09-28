@@ -115,10 +115,16 @@ fresh when every KernelParityCell it uses is fresh and its smoke ran at the rele
 | RR2-F6 | receipt measured on another arch/sm than the host's backend | that KernelParityCell |
 | S-SAN | a cuda kernel with no, a dirty (any of memcheck/racecheck/initcheck/synccheck not CLEAN), or a > 7 d compute-sanitizer run (KTEST-05 `receipt.json`) | that KernelParityCell only (`release-readiness-v2.sanitizer`); cpu kernels are not asked |
 
-S-SAN attributes a sanitizer run to the kernels it dispatched, so it needs the smoke's `kernel_path`
-(OBS-15), just as RR2-F3 does. Until that emitter exists, every cuda kernel cell is RED on S-SAN. A
-racecheck run with a `--kernel-name` filter covers only the kernels the filter matches. The gx10 run
-of 2026-09-28 filters out the gemv kernels, so attribution must take the filter into account.
+S-SAN attributes a sanitizer run to the kernels it dispatched, so it needs the run's `kernel_path`
+(OBS-15), just as RR2-F3 does. The run is `ktest-05-sanitizer-receipt-v2` (`<v2-dir>/<host>/sanitizer/*.json`):
+KTEST-05's v1 receipt plus `host`, a `source: kreg` `kernel_path`, and on each tool row run with
+`--kernel-name`, `covers`, the registry ids that filter kept. An unfiltered tool checked every dispatched
+kernel. A filtered tool with no `covers` checked none, because its reach is unknown: registry rows carry no
+CUDA symbol name to match the regex against. A kernel is clean only when every one of the four tools checked
+it in some run and no check of it was dirty, and fresh only when every tool checked it in a run at most 7 d
+older than `--gate-utc`. The extractor reads no clock, so with no `--gate-utc` every run is stale. The gx10
+run of 2026-09-28 filters racecheck to attention/rope/norm kernels, so the gemv kernels stay RED on S-SAN until
+a racecheck run covers them. Until KTEST-05 writes v2 receipts, every cuda kernel cell is RED on S-SAN.
 
 ## 7. Budget: ≤ 30 min
 

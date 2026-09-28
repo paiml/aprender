@@ -846,4 +846,21 @@ fn v2_cells_in_the_graph_leave_the_v1_gate_green() {
     let r = gate(t.path(), &["--v2-evidence", &v2s]);
     assert_eq!(r.code, 0, "{}", show(&r));
     assert_eq!(json_of(&r)["verdict"], "Pass");
+
+    // --gate-utc reaches the extractor: a malformed one is refused by name, a stamp is accepted.
+    let r = gate(
+        t.path(),
+        &["--v2-evidence", &v2s, "--gate-utc", "yesterday"],
+    );
+    assert_ne!(r.code, 0, "{}", show(&r));
+    assert!(
+        format!("{}{}", r.stdout, r.stderr).contains("--gate-utc"),
+        "{}",
+        show(&r)
+    );
+    let r = gate(
+        t.path(),
+        &["--v2-evidence", &v2s, "--gate-utc", "2026-09-28T16:00:00Z"],
+    );
+    assert_eq!(r.code, 0, "{}", show(&r));
 }

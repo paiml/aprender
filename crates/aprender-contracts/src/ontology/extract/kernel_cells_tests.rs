@@ -1079,3 +1079,260 @@ fn read_host_smokes_keys_by_model_and_refuses_a_second_receipt() {
         .expect("absent")
         .is_empty());
 }
+
+/// A v2 sanitizer run on lambda: `path` is its `kernel_path`, `rows` its tool rows.
+fn san_run(host: &str, utc: &str, path: &str, rows: &[String]) -> String {
+    format!(
+        r#"{{"schema":"{SANITIZER_SCHEMA_V2}","host":"{host}","utc":"{utc}","kernel_path":{path},"tools":[{}]}}"#,
+        rows.join(",")
+    )
+}
+
+fn san_row(tool: &str, verdict: &str, filter: &str, covers: Option<&[&str]>) -> String {
+    let covers = covers.map_or_else(String::new, |ks| {
+        let q: Vec<String> = ks.iter().map(|k| format!("\"{k}\"")).collect();
+        format!(r#","covers":[{}]"#, q.join(","))
+    });
+    format!(r#"{{"tool":"{tool}","verdict":"{verdict}","filter":"{filter}"{covers}}}"#)
+}
+
+/// The four tools, unfiltered, with `racecheck` given as `race`.
+fn san_rows(race: String) -> Vec<String> {
+    vec![
+        san_row("memcheck", "CLEAN", "none", None),
+        race,
+        san_row("initcheck", "ADVISORY_RED", "none", None),
+        san_row("synccheck", "CLEAN", "none", None),
+    ]
+}
+
+/// S-SAN attribution: a run checks the kernels its `kreg` path dispatched, and a `--kernel-name`-filtered
+/// tool checks only the ids in its `covers`.
+#[test]
+fn the_sanitizer_run_judge_case_table() {
+    const Q4: &str = "cuda.gemv.q4_k";
+    const ROPE: &str = "cuda.rope.f32";
+    let path = kpath("kreg", &[Q4, ROPE]);
+    let now = Some("2026-09-28T16:00:00Z");
+    let judge = |json: &str| judge_sanitizer_run("r.json", json.as_bytes(), "lambda", now);
+
+    let run = judge(&san_run(
+        "lambda",
+        "2026-09-28T12:00:00Z",
+        &path,
+        &san_rows(san_row("racecheck", "CLEAN", "regex=rope", Some(&[ROPE]))),
+    ))
+    .expect("judged");
+    assert!(run.fresh);
+    assert_eq!(
+        run.tools["memcheck"],
+        (true, ids(&[Q4, ROPE])),
+        "unfiltered: every dispatched kernel"
+    );
+    assert_eq!(
+        run.tools["racecheck"],
+        (true, ids(&[ROPE])),
+        "filtered: only covers"
+    );
+    assert!(
+        run.tools["initcheck"].0,
+        "ADVISORY_RED is the recorded advisory policy"
+    );
+
+    let no_covers = judge(&san_run(
+        "lambda",
+        "2026-09-28T12:00:00Z",
+        &path,
+        &san_rows(san_row("racecheck", "CLEAN", "regex=rope", None)),
+    ))
+    .expect("judged");
+    assert!(
+        no_covers.tools["racecheck"].1.is_empty(),
+        "a filter of unknown reach checked nothing"
+    );
+
+    let dirty = judge(&san_run(
+        "lambda",
+        "2026-09-28T12:00:00Z",
+        &path,
+        &san_rows(san_row("racecheck", "RED", "none", None)),
+    ))
+    .expect("judged");
+    assert!(!dirty.tools["racecheck"].0);
+
+    let old = san_run(
+        "lambda",
+        "2026-09-20T12:00:00Z",
+        &path,
+        &san_rows(san_row("racecheck", "CLEAN", "none", None)),
+    );
+    assert!(!judge(&old).expect("judged").fresh, "8 days old");
+    assert!(
+        !judge_sanitizer_run("r.json", old.as_bytes(), "lambda", None)
+            .expect("judged")
+            .fresh,
+        "no gate time: never fresh"
+    );
+
+    let clean = san_rows(san_row("racecheck", "CLEAN", "none", None));
+    for (name, json) in [
+        (
+            "another host",
+            san_run("gx10", "2026-09-28T12:00:00Z", &path, &clean),
+        ),
+        ("v1 schema", SAN_RC.to_string()),
+        (
+            "trace path",
+            san_run(
+                "lambda",
+                "2026-09-28T12:00:00Z",
+                &kpath("trace", &["q4k_gemv@q4_k"]),
+                &clean,
+            ),
+        ),
+        (
+            "null path",
+            san_run("lambda", "2026-09-28T12:00:00Z", "null", &clean),
+        ),
+        (
+            "covers a kernel not dispatched",
+            san_run(
+                "lambda",
+                "2026-09-28T12:00:00Z",
+                &path,
+                &san_rows(san_row(
+                    "racecheck",
+                    "CLEAN",
+                    "regex=x",
+                    Some(&["cuda.gemv.q6_k"]),
+                )),
+            ),
+        ),
+        (
+            "a tool twice",
+            san_run(
+                "lambda",
+                "2026-09-28T12:00:00Z",
+                &path,
+                &[
+                    clean.clone(),
+                    vec![san_row("memcheck", "CLEAN", "none", None)],
+                ]
+                .concat(),
+            ),
+        ),
+        (
+            "a row with no filter",
+            san_run(
+                "lambda",
+                "2026-09-28T12:00:00Z",
+                &path,
+                &[r#"{"tool":"memcheck","verdict":"CLEAN"}"#.to_string()],
+            ),
+        ),
+    ] {
+        assert!(judge(&json).is_err(), "{name} must be refused");
+    }
+}
+
+/// A kernel is clean only when every tool checked it somewhere and no check of it was dirty; fresh only
+/// when every tool checked it in a fresh run. A kernel no run checked has no evidence.
+#[test]
+fn attribution_needs_every_tool_to_check_the_kernel() {
+    let run = |fresh: bool, tools: &[(&str, bool, &[&str])]| SanitizerRun {
+        fresh,
+        tools: tools
+            .iter()
+            .map(|(t, ok, ks)| ((*t).to_string(), (*ok, ids(ks))))
+            .collect(),
+    };
+    let all = |ok: bool, ks: &'static [&'static str]| {
+        SANITIZER_TOOLS
+            .iter()
+            .map(move |t| (*t, ok, ks))
+            .collect::<Vec<_>>()
+    };
+    let ev = |clean, fresh| SanitizerEvidence { clean, fresh };
+
+    // racecheck filtered to rope: gemv is not clean, rope is.
+    let got = attribute_sanitizer_runs(&[run(
+        true,
+        &[
+            ("memcheck", true, &["gemv", "rope"][..]),
+            ("racecheck", true, &["rope"][..]),
+            ("initcheck", true, &["gemv", "rope"][..]),
+            ("synccheck", true, &["gemv", "rope"][..]),
+        ],
+    )]);
+    assert_eq!(got["rope"], ev(true, true));
+    assert_eq!(
+        got["gemv"],
+        ev(false, false),
+        "no racecheck ever checked it"
+    );
+
+    // A second, gemv-only racecheck run clears it; a stale one clears clean but not fresh.
+    let base = [
+        ("memcheck", true, &["gemv"][..]),
+        ("racecheck", true, &[][..]),
+        ("initcheck", true, &["gemv"][..]),
+        ("synccheck", true, &["gemv"][..]),
+    ];
+    let race = |fresh| run(fresh, &[("racecheck", true, &["gemv"][..])]);
+    assert_eq!(
+        attribute_sanitizer_runs(&[run(true, &base), race(true)])["gemv"],
+        ev(true, true)
+    );
+    assert_eq!(
+        attribute_sanitizer_runs(&[run(true, &base), race(false)])["gemv"],
+        ev(true, false)
+    );
+
+    // One dirty check anywhere is not clean, whatever the other runs say.
+    let got = attribute_sanitizer_runs(&[
+        run(true, &all(true, &["gemv"])),
+        run(true, &[("memcheck", false, &["gemv"][..])]),
+    ]);
+    assert_eq!(got["gemv"], ev(false, true));
+
+    assert!(
+        !attribute_sanitizer_runs(&[run(true, &all(true, &["gemv"]))]).contains_key("rope"),
+        "a kernel no run checked has no evidence"
+    );
+    assert!(attribute_sanitizer_runs(&[]).is_empty());
+}
+
+#[test]
+fn read_host_sanitizers_attributes_the_directory() {
+    let t = tempfile::tempdir().expect("tmp");
+    let dir = t.path().join("sanitizer");
+    let now = Some("2026-09-28T16:00:00Z");
+    assert!(read_host_sanitizers(&dir, "lambda", now)
+        .expect("absent dir")
+        .is_empty());
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let path = kpath("kreg", &["cuda.gemv.q4_k"]);
+    std::fs::write(
+        dir.join("a.json"),
+        san_run(
+            "lambda",
+            "2026-09-28T12:00:00Z",
+            &path,
+            &san_rows(san_row("racecheck", "CLEAN", "none", None)),
+        ),
+    )
+    .expect("write");
+    let got = read_host_sanitizers(&dir, "lambda", now).expect("read");
+    assert_eq!(
+        got["cuda.gemv.q4_k"],
+        SanitizerEvidence {
+            clean: true,
+            fresh: true
+        }
+    );
+    std::fs::write(dir.join("b.json"), SAN_RC).expect("write v1");
+    assert!(
+        read_host_sanitizers(&dir, "lambda", now).is_err(),
+        "a v1 run names no kernel: refused"
+    );
+}

@@ -509,6 +509,25 @@ fn v2_cells_join_the_release_graph_only_when_asked() {
         ),
     )
     .expect("smoke receipt");
+    std::fs::create_dir_all(v2.join("lambda/sanitizer")).expect("sanitizer dir");
+    let row = |tool: &str, filter: &str| {
+        format!(
+            r#"{{"tool":"{tool}","verdict":"CLEAN","filter":"{filter}","covers":["cuda.gemv.q4_k"]}}"#
+        )
+    };
+    std::fs::write(
+        v2.join("lambda/sanitizer/r.json"),
+        format!(
+            r#"{{"schema":"{}","host":"lambda","utc":"2026-09-28T12:00:00Z",
+               "kernel_path":{{"source":"kreg","entries":[{{"kernel_id":"cuda.gemv.q4_k"}}]}},"tools":[{},{},{},{}]}}"#,
+            kernel_cells::SANITIZER_SCHEMA_V2,
+            row("memcheck", "none"),
+            row("racecheck", "regex=gemv"),
+            row("initcheck", "none"),
+            row("synccheck", "none"),
+        ),
+    )
+    .expect("sanitizer run");
 
     let mut off = Graph::new();
     extract(&mut off, &c, &subject()).expect("extracts");
@@ -553,6 +572,30 @@ fn v2_cells_join_the_release_graph_only_when_asked() {
         )
         .is_empty(),
         "it dispatched only the predicted kernel"
+    );
+    assert_eq!(
+        g.objects(&lambda_kc, &rel("sanitizerClean")),
+        vec![&Term::boolean(true)],
+        "the run read from <dir>/lambda/sanitizer, attributed by its kernel_path"
+    );
+    assert_eq!(
+        g.objects(&lambda_kc, &rel("sanitizerFresh")),
+        vec![&Term::boolean(false)],
+        "no --gate-utc: the extractor reads no clock, so the run is stale"
+    );
+    let mut dated = s.clone();
+    dated.v2_gate_utc = Some("2026-09-29T00:00:00Z".to_string());
+    let mut gd = Graph::new();
+    extract(&mut gd, &c, &dated).expect("extracts with a gate time");
+    assert_eq!(
+        gd.objects(&lambda_kc, &rel("sanitizerFresh")),
+        vec![&Term::boolean(true)]
+    );
+    dated.v2_gate_utc = Some("yesterday".to_string());
+    let err = extract(&mut Graph::new(), &c, &dated).expect_err("a malformed gate time");
+    assert!(
+        matches!(&err, ReleaseError::Input { file, .. } if file == "--gate-utc"),
+        "{err:?}"
     );
     let gx10_kc = kernel_cells::kernel_cell("gx10", "cuda.gemv.q4_k");
     assert!(

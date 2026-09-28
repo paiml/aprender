@@ -298,7 +298,15 @@ pub fn extract(
     let v2 = subject
         .v2_dir
         .as_deref()
-        .map(|d| super::kernel_cells::read_v2(&root, d, &host_arch, subject.measured_commit()))
+        .map(|d| {
+            super::kernel_cells::read_v2(
+                &root,
+                d,
+                &host_arch,
+                subject.measured_commit(),
+                subject.v2_gate_utc.as_deref(),
+            )
+        })
         .transpose()
         .map_err(|e| ReleaseError::Input {
             file: e.file,
@@ -370,8 +378,8 @@ pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
 
 /// aprender#3715 v2: one `CellHost` per required host, over the same universe v1 grades. A model's tensor
 /// types come from any of the host's inventory rows with its hash; a ladder-only model has none and is RED.
-/// No sanitizer receipts are read yet (attribution needs the smoke's `kernel_path`), so every cuda kernel
-/// cell is RED on S-SAN: absent evidence, stated.
+/// Sanitizer runs are attributed through their own `kernel_path` (`read_host_sanitizers`); a cuda kernel
+/// no run checked with every tool is RED on S-SAN.
 fn emit_v2(g: &mut Graph, views: &[HostView<'_>], v2: &super::kernel_cells::V2Evidence) {
     let hosts: Vec<super::kernel_cells::CellHost> = views
         .iter()
@@ -393,7 +401,7 @@ fn emit_v2(g: &mut Graph, views: &[HostView<'_>], v2: &super::kernel_cells::V2Ev
                     .collect(),
                 kernels: v2.kernels.get(&v.decl.id).cloned().unwrap_or_default(),
                 smokes: v2.smokes.get(&v.decl.id).cloned().unwrap_or_default(),
-                sanitized: BTreeMap::new(),
+                sanitized: v2.sanitized.get(&v.decl.id).cloned().unwrap_or_default(),
             }
         })
         .collect();
