@@ -1,6 +1,6 @@
 metadata:
   kind: pattern
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-09-28'
   author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
   description: >-
@@ -44,7 +44,7 @@ falsification_tests:
 - id: FALSIFY-DBH-001
   rule: batch = 2 with two distinct rows updates from both
   prediction: 'after one step at B=2 (rows a != b), the student weights differ from the weights after one step on b alone'
-  test: 'CUDA provider: two distinct rows, one step, compare against a B=1 step on the last row; equal weights = RED'
+  test: 'CPU IN-TREE: crates/aprender-train-distill/src/pipeline.rs::falsify_dbh_001_student_gets_every_row_with_its_gradient. GPU IN-TREE (#[ignore], train-idle, NOT YET RUN): crates/aprender-train/src/train/transformer_trainer/cuda_trainer_gpu_falsify.rs::falsify_dbh_001_opposite_rows_cancel + crates/aprender-train/src/train/transformer_trainer/cuda_trainer_gpu_falsify.rs::falsify_dbh_001_steps_with_a_gpu_accumulator_present. CELL: CUDA provider, two distinct rows, one step vs a B=1 step on the last row; equal weights = RED'
   if_fails: 'the provider trains on the last row only (the S-R6 behaviour at aca6f2d7f6)'
 - id: FALSIFY-DBH-002
   rule: A provider that cannot batch refuses batch > 1 by name
@@ -69,15 +69,15 @@ falsification_tests:
 - id: FALSIFY-DBH-006
   rule: The configured learning rate reaches the CUDA student
   prediction: 'CudaStudentProvider built from a DistillConfig with learning_rate 2e-4 has a trainer whose current_lr() at step 0 is 2e-4 (no warmup) and whose AdamW update size scales with it'
-  test: 'CPU half IN-TREE: crates/aprender-train-distill/src/pipeline.rs::falsify_dbh_006_student_trains_at_the_configured_rate (Pipeline sets the configured rate on the provider before step 0; mutant dropping the call KILLED); GPU half (train-idle): one step at lr a vs 2a, block weight delta ratio ~2'
+  test: 'CPU half IN-TREE: crates/aprender-train-distill/src/pipeline.rs::falsify_dbh_006_student_trains_at_the_configured_rate (Pipeline sets the configured rate on the provider before step 0; mutant dropping the call KILLED); GPU half IN-TREE (#[ignore], train-idle, NOT YET RUN): crates/aprender-train/src/train/transformer_trainer/cuda_trainer_gpu_falsify.rs::falsify_dbh_006_set_lr_reaches_the_schedule'
   if_fails: 'every CUDA distill run trains at TransformerTrainConfig::new lr 0.001 whatever the receipt says (desk 2026-09-28, for_inference builds its own config)'
 - id: FALSIFY-DBH-007
   rule: A distill step steps the embedding table and resets its gradient
   prediction: 'after one CUDA distill step at lr > 0 the embedding-table checksum differs from the checkpoint, the trainer step counter is 1, and the CPU embedding grad is zero or absent at the start of step 2'
-  test: 'GPU (train-idle): one apply step on a tiny checkpoint, compare embed_tokens checksum and step(); planted variant = forward_backward_with_grad as at 5135ca473c (no optimizer_step) stays RED'
+  test: 'GPU IN-TREE (#[ignore], train-idle, NOT YET RUN): crates/aprender-train/src/train/transformer_trainer/cuda_trainer_gpu_falsify.rs::falsify_dbh_007_one_row_step_moves_the_embedding. CELL: one apply step on a tiny checkpoint, compare embed_tokens checksum and step(); planted variant = forward_backward_with_grad as at 5135ca473c (no optimizer_step) stays RED'
   if_fails: 'embedding frozen for the whole run and its gradient summed unbounded across steps (forward_backward_with_grad never calls optimizer_step)'
 - id: FALSIFY-DBH-008
   rule: Accumulated B-row update equals the mean-gradient update
   prediction: 'kd_step_batch on rows a,b yields the same weights (tol 1e-4 rel) as one step with gradient (g_a+g_b)/2 applied through the same accumulator; B micro-steps (one optimizer step per row) differ'
-  test: 'GPU (train-idle), same seed and checkpoint; the micro-step variant is the planted RED'
+  test: 'GPU IN-TREE (#[ignore], train-idle, NOT YET RUN): crates/aprender-train/src/train/transformer_trainer/cuda_trainer_gpu_falsify.rs::falsify_dbh_008_batch_of_a_repeated_row_equals_that_row. CELL: same seed and checkpoint; the micro-step variant is the planted RED'
   if_fails: 'rows are summed (B x lr) or stepped per row (B steps logged as one)'
