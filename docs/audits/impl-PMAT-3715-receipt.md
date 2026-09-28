@@ -114,3 +114,34 @@ batch against main a9502d992:
 | `pv lint contracts --gate shapes` | Pass, 8/8 `pc_extract` fired (release-evidence included) |
 | `cargo test -p aprender-contracts-cli --test ont_release_readiness --test ont4b_shapes_gate --test ont4c1_model_receipts --test ont4c3_parity_receipts` | 34 + 11 + 12 + 10 passed |
 | `cargo clippy -p aprender-contracts --lib --tests -- -D warnings` | clean |
+
+## 7. This branch, `0d/3715-cells-at-t1` (base `ont/0.70-c2`): T-1 measures `cells[]`
+
+Sections 4 and 6 measure the pv `release-readiness-v1` shape at their own bases. They are **not** evidence for
+this diff, which touches no Rust and no contract. This diff:
+
+- cherry-picks the #3712 row-B `cells[]` producer (72079ddc7d, `-x`), which was on no open PR;
+- wires `model_ladder.sh --cells` into `scripts/release/models_t1.sh` on both hosts. Without it, release receipts
+  carry no cells and every one of the 1008 missing-cell violations e6 measured is guaranteed.
+
+Quorum 2 findings, and what this branch does about each:
+
+| # | finding | resolution | proof |
+|---|---------|------------|-------|
+| 1 | the receipt cited Rust evidence for a scripts-only diff | this section | — |
+| 2 | `cells_for` dropped `load_rungs` failures, so a malformed rungs file measured 0 rows at rc 0 | refuses by name (`cells: refused -- …`), rc 1 | case `rungs-empty`, mutant `rungs-silent` killed |
+| 3 | an off-mode prompt was sized by the thinking budget, so it fell below a rung the model could hold | the prompt is built per mode, sized by that mode's budget | case `offmode`, mutant `offmode-budget` killed |
+| 4 | `model_ladder.sh --cells --only <rung-id>` wrote 0 cells at rc 0 | the producer refuses an `--only` that names no inventory model, rc 2, and model_ladder counts it RED | cases `only-rung` and `only-model`, mutant `only-vacuity` killed |
+
+Measured on this branch's head:
+
+| command | result |
+|---------|--------|
+| `bash scripts/check_ladder_cells_producer.sh` | 12 cases ok, 9/9 mutants killed |
+| `bash scripts/check_release_models_t1.sh` | PASS 40 rows. `cells-measured` is new, and the `no-cells-remote` and `no-cells-local` mutants are killed |
+| `bashrs lint`, head vs base, on both check scripts | errors and warnings equal |
+| `bash scripts/check_guards_are_wired.sh` | PASS |
+
+Known and not fixed here, because it is apr's gap and not the producer's: `apr code --output-format json` carries
+no backend field (`crates/aprender-orchestrate/src/agent/code_envelope.rs` `envelope()`). So every `code` cell
+is red and T-1 STOPs until that field lands. This is why the branch is on the FINAL path, not rc.1 (cop, 2026-09-28).
