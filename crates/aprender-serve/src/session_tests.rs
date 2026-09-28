@@ -433,12 +433,19 @@ fn a_device_argmax_from_below_the_checkpoint_drops_it() {
 // prompt. forget_prefix must drop the checkpoint too, or the repeat restores it
 // and the bench times a partial prefill.
 #[test]
-fn forget_prefix_drops_the_checkpoint_so_a_repeat_prefills_whole() {
+fn forget_prefix_makes_the_same_prompt_prefill_whole_again() {
     let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
     let prompt = [7871, 7872, MARK, 7873];
     s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
-    s.forget_prefix();
-    let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
-    assert_eq!(t2.reused, 0, "restored a checkpoint after forget_prefix");
+    for turn in 2..=3 {
+        s.forget_prefix();
+        let t = s
+            .generate(&prompt, &greedy(1), &mut |_| true)
+            .expect("turn");
+        assert_eq!(
+            t.reused, 0,
+            "turn {turn}: restored a checkpoint after forget_prefix"
+        );
+    }
     assert_eq!(s.engine().restores, 0);
 }
