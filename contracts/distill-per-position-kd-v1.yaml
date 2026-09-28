@@ -82,7 +82,8 @@ proof_obligations:
     For any (teacher_pos, student_pos, label_pos), the step never panics or
     indexes out of bounds. It trains exactly label_pos positions when
     teacher_pos == student_pos >= label_pos, and refuses the row by name
-    otherwise (v1.1, FALSIFY-DBH-004).
+    otherwise (v1.1, FALSIFY-DBH-004):
+    teacher_pos = student_pos ≥ label_pos ⇒ trained(r) = label_pos; otherwise refused(r).
 - id: DPPK-CLS-004
   type: classification
   property: opt-in additive — per-row path unchanged
