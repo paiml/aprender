@@ -182,6 +182,50 @@ struct Measured {
     max_rel_err: f64,
     /// The same error against an oracle fed the kernel's own quantized activations.
     quantized_act_rel_err: Option<f64>,
+    /// KTEST-02 per-element margin under the row's EM-DOT model, worst over the trials.
+    margin: Option<Margin>,
+}
+
+/// The worst KTEST-02 report over a measurement's trials (KTEST-001 §3.2).
+#[derive(Debug, Clone, Copy, Default)]
+struct Margin {
+    max: f64,
+    p999: f64,
+    nmse: f64,
+    pass: bool,
+}
+
+/// EM-DOT for these kernels: f32 accumulation over one row, stored as f32, no flush-to-zero.
+fn em_dot(k: usize) -> aprender_kernel_oracle::ErrorModel {
+    use aprender_kernel_oracle::Dtype;
+    aprender_kernel_oracle::ErrorModel::Dot {
+        k,
+        acc: Dtype::F32,
+        out: Dtype::F32,
+        ftz: false,
+    }
+}
+
+/// Judge one trial by margin. The oracle is fed the activations the kernel consumed (§0.4), so
+/// quantization error is not charged to the kernel; the magnitudes are Σ|w|·|x| per output.
+fn margin_of(got: &[f32], deq: &[f32], x_used: &[f32], oracle: &[f64], in_dim: usize) -> Margin {
+    let mags: Vec<f64> = deq
+        .chunks_exact(in_dim)
+        .map(|row| {
+            row.iter()
+                .zip(x_used)
+                .map(|(a, b)| f64::from(a.abs()) * f64::from(b.abs()))
+                .sum()
+        })
+        .collect();
+    let r = aprender_kernel_oracle::margin::judge_model(got, oracle, &mags, &em_dot(in_dim))
+        .unwrap_or_else(|e| panic!("EM-DOT K={in_dim} refused: {e:?}"));
+    Margin {
+        max: r.max_margin,
+        p999: r.p999_margin,
+        nmse: r.nmse,
+        pass: r.passed(),
+    }
 }
 
 fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
@@ -206,7 +250,8 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
                 .collect()
         };
         let reference = oracle(&x);
-        let quantized_reference = k.act_quant.map(|q| oracle(&q(&x)));
+        let quantized_x = k.act_quant.map(|q| q(&x));
+        let quantized_reference = quantized_x.as_ref().map(|qx| oracle(qx));
         let run = || (k.matvec)(&weights, &x, w.in_dim, w.out_dim);
         let got = if fp32_activations {
             with_fp32_activations(run)
@@ -227,6 +272,27 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
             m.max_abs_err = m.max_abs_err.max(abs);
             m.max_rel_err = m.max_rel_err.max(abs / scale);
         }
+        let x_used = if fp32_activations {
+            &x
+        } else {
+            quantized_x.as_ref().unwrap_or(&x)
+        };
+        let trial_oracle = if fp32_activations {
+            &reference
+        } else {
+            quantized_reference.as_ref().unwrap_or(&reference)
+        };
+        let t = margin_of(&got, &deq, x_used, trial_oracle, w.in_dim);
+        let prev = m.margin.unwrap_or(Margin {
+            pass: true,
+            ..Margin::default()
+        });
+        m.margin = Some(Margin {
+            max: prev.max.max(t.max),
+            p999: prev.p999.max(t.p999),
+            nmse: prev.nmse.max(t.nmse),
+            pass: prev.pass && t.pass,
+        });
         if let Some(qr) = &quantized_reference {
             let worst = got
                 .iter()
@@ -357,7 +423,22 @@ fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
         .map(|e| serde_json::json!({"max_rel_err": e}))
         .into();
     doc["tolerance_rel"] = tolerance_from(served.max_rel_err).into();
+    doc["margin"] = margin_json(served.margin);
     doc
+}
+
+/// The receipt's KTEST-02 block: the verdict is `max_margin ≤ 1` under the row's error model;
+/// NMSE is recorded for comparison with llama.cpp and never decides.
+fn margin_json(m: Option<Margin>) -> serde_json::Value {
+    let m = m.expect("a measured receipt has a margin");
+    serde_json::json!({
+        "error_model": "EM-DOT",
+        "acc": "f32",
+        "max_margin": m.max,
+        "p999_margin": m.p999,
+        "nmse": m.nmse,
+        "verdict": if m.pass { "pass" } else { "fail" },
+    })
 }
 
 /// A row measured against the gguf-py fixtures: the kernel is run on the fixture's bytes.
@@ -526,6 +607,7 @@ fn measure_fixture(k: &FixtureKernel, f: &Fixture) -> Measured {
         max_abs_err,
         max_rel_err: max_abs_err / scale,
         quantized_act_rel_err: None,
+        margin: None,
     }
 }
 
@@ -549,6 +631,10 @@ fn fixture_receipt(k: &FixtureKernel, row: &KernelRow) -> serde_json::Value {
     doc["served"] =
         serde_json::json!({"max_abs_err": served.max_abs_err, "max_rel_err": served.max_rel_err});
     doc["tolerance_rel"] = tolerance_from(served.max_rel_err).into();
+    doc["margin"] = serde_json::json!({
+        "verdict": "not_run",
+        "reason": "the fixture has no |W|·|x| magnitudes and no reference on the activations the kernel quantizes (KTEST-001 §0.4); needs a fixture regen",
+    });
     doc
 }
 
@@ -650,6 +736,10 @@ fn committed_parity_receipts_hold_on_this_host() {
             "{path}: no input_set_hash, so the release gate cannot judge it fresh"
         );
         if rc["oracle"] == GGUF_PY_ORACLE {
+            assert_eq!(
+                rc["margin"]["verdict"], "not_run",
+                "{path}: a fixture receipt cannot claim a margin its fixture cannot support"
+            );
             check_fixture_receipt(id, path, &rc, row);
             continue;
         }
@@ -664,6 +754,16 @@ fn committed_parity_receipts_hold_on_this_host() {
         };
         let bound = rc["tolerance_rel"].as_f64().expect("tolerance_rel");
         let now = measure(kernel(id), w, false);
+        assert_eq!(
+            rc["margin"]["verdict"], "pass",
+            "{path}: KTEST-02 margin verdict (max ≤ 1 under EM-DOT)"
+        );
+        let now_margin = now.margin.expect("measured margin");
+        assert!(
+            now_margin.pass,
+            "{id}: max margin {} > 1 under EM-DOT on this host ({path})",
+            now_margin.max
+        );
         assert!(
             now.max_rel_err <= bound,
             "{id}: max_rel_err {} > receipt tolerance {bound} ({path})",
