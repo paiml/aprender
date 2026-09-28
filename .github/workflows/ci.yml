@@ -143,7 +143,7 @@ jobs:
           files: ${{ runner.temp }}/fat/sov.coverage/ws/${{ github.event.repository.name }}/lcov.info
       - name: Generate SLSA provenance
         if: always() && contains(steps.wait.outputs.deferred, 'attest')
-        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v2
         continue-on-error: true
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
