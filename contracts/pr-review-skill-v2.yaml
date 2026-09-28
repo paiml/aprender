@@ -458,8 +458,15 @@ equations:
       -- S3.E. The FIFTH consultation. S3.A..S3.D ask SOURCES; this one asks a
       -- different REVIEWING AGENT, in its own process, from another vendor.
       owed(receipt)     <=> skill_version(receipt) >= 2.1.0
-      status(antigravity) in { consulted, unreachable }   -- never not-triggered
+      status(antigravity) in { consulted, unreachable }   -- not-triggered ONLY via the docs tier
       owed and absent(antigravity)          => REJECT(receipt)        [B1]
+      -- docs tier (#4472): the light quorum for a diff that can reach no build, test
+      -- or workflow. Every clause is required; any one false => REJECT [B1].
+      status = not-triggered =>
+            diff_class(base, head) = docs                 -- scripts/ci/diff_class.sh
+        and docs/BEATS.md not in changed_files            -- the scoreboard is a claim
+        and no added line matches COMPARATIVE_RE          -- a ratio is a claim
+        and trigger_reason names "docs tier"              -- the exemption is on record
       status = unreachable and verdict=PASS => REJECT(receipt)        [B1]
       status = consulted and attempted = 0  => REJECT(receipt)        [B1]
       status = consulted =>
@@ -894,8 +901,10 @@ falsification_tests:
     REJECTED [B1] (row 28); the SAME receipt at 2.0.0 is ACCEPTED (row 27), because a
     receipt is a record of a review that happened and back-filling the block would
     fabricate a consultation nobody performed. antigravity.status=not-triggered is
-    REJECTED even on a DOCS-ONLY diff (row 34) — S3.E's trigger is stricter than S3.A's,
-    which needs a code file. status=unreachable with verdict=PASS is REJECTED (row 29)
+    REJECTED on a code diff (row 34); on a docs-tier diff (#4472: scripts/ci/diff_class.sh
+    class=docs, BEATS untouched, no comparative ratio added, trigger_reason naming the docs
+    tier) it is ACCEPTED (row 44), and REJECTED when the docs diff adds a ratio (row 45) or
+    the reason does not name the tier (row 46), and REJECTED when the diff edits docs/BEATS.md (row 47). status=unreachable with verdict=PASS is REJECTED (row 29)
     and the SAME receipt with verdict=DEGRADED is ACCEPTED (row 30). status=consulted
     with attempted=0 is REJECTED (row 31). AND: a receipt whose
     antigravity.model_id is `claude-opus-4-6-thinking` is REJECTED (row 35) though it is

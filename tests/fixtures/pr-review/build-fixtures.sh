@@ -34,7 +34,8 @@ G1=$(sha_of G1)   # the claim head: PUBLISHES 2.93x Ollama in book/
 S1=$(sha_of S1)   # the code head: adds a plain .rs file, so S3.D triggers
 P1=$(sha_of P1)   # the printed head: the same ratio in a comment AND in a format!
 E1=$(sha_of E1)   # the examples head: the SAME ratio, under book/src/examples/ (F6)
-for v in C1 C3 F1 D1 G1 S1 P1 E1; do
+SB1=$(sha_of SB1) # the scoreboard head: edits docs/BEATS.md only (#4472)
+for v in C1 C3 F1 D1 G1 S1 P1 E1 SB1; do
   [ -n "${!v}" ] || { echo "expected-shas.txt has no $v" >&2; exit 1; }
 done
 
@@ -162,6 +163,8 @@ AG_UNREACHABLE='{"status":"unreachable","trigger_reason":"agy exceeded --print-t
 
 # Illegal, and row 34 exists to be rejected for carrying it: S3.E is unconditional.
 AG_NT_ILLEGAL='{"status":"not-triggered","trigger_reason":"docs-only diff, nothing worth a second opinion"}'
+# #4472's docs tier: the one legal not-triggered, and its reason NAMES the tier.
+AG_NT_DOCS='{"status":"not-triggered","trigger_reason":"docs tier (#4472): scripts/ci/diff_class.sh class=docs, no comparative claim added, docs/BEATS.md untouched"}'
 
 # The vacuous shape S8 fixes at zero, in the fifth arm: recorded as performed, having
 # invoked nothing. Same defect as mutation.attempted=0 and cuda.queries=[].
@@ -508,6 +511,7 @@ JSON
 )
 RCPT=$(receipt "$F1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_OK" "$CRUX_OK_FULL" "$MUT_OK")
 emit row-14-complete-gpu-review "$SARIF" "$RCPT"
+SARIF_ROW14=$SARIF   # row 34 re-uses this complete review with only the agy arm changed
 
 # ===========================================================================
 # ROW 15 - a result carrying NO properties.grounding at all          -> RED B1
@@ -562,6 +566,7 @@ sarif_one crux '{
 )
 RCPT=$(receipt "$G1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_CLAIM_RECORDED" "$MUT_NT")
 emit row-17-comparative-claim-recorded "$SARIF" "$RCPT"
+SARIF_ROW17=$SARIF   # row 45 re-uses this honest claim review with only the agy arm changed
 
 # ===========================================================================
 # ROW 18 - cuda consulted, queries: []                                -> RED B1
@@ -896,25 +901,80 @@ RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
 emit row-33-arm-e-finding-advisory "$SARIF" "$RCPT"
 
 # ===========================================================================
-# ROW 34 - agy declared not-triggered                                -> RED B1
+# ROW 34 - agy declared not-triggered on a CODE diff                -> RED B1
 #
-# S3.E's trigger is unconditional, for the same reason S3.A's is and not for a cost
-# reason: a shape trigger exempts exactly the diffs where an independent reader is worth
-# most - the small ones that look obvious, which is what every PR in S9's spine looked
-# like to its author, all four of them carrying reviews=0 and comments=0.
+# S3.E's trigger is unconditional on every PR but a docs-tier one (#4472), for the same
+# reason S3.A's is and not for a cost reason: a shape trigger exempts exactly the diffs
+# where an independent reader is worth most - the small ones that look obvious, which is
+# what every PR in S9's spine looked like to its author, all four of them carrying
+# reviews=0 and comments=0.
 #
-# This is row 19's rule (pmat: not-triggered on a code diff) for the fifth arm, and it
-# is stricter: pmat's illegality needed a code file in the diff, and S3.E's does not,
-# because there is no diff shape a second opinion is not owed on. The head here is D1,
-# the DOCS-ONLY one, which is the hardest case for that claim and therefore the right
-# one to pin it with.
+# Until #4472 this row sat on D1, the docs-only head, as the hardest case for "no diff
+# shape is exempt". The operator ruled that case the other way (row 44 now pins it
+# GREEN), so the row moves to F1 and keeps everything else of row 14's complete GPU
+# review: the ONLY defect left in the receipt is the agy arm, so the RED is that rule's.
+# ===========================================================================
+SARIF=$SARIF_ROW14
+RCPT=$(receipt "$F1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_OK" "$CRUX_OK_FULL" "$MUT_OK" \
+      "$AUTHOR" "$REVIEWER" "$AG_NT_DOCS")
+emit row-34-arm-e-not-triggered "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 44 - agy not-triggered on a DOCS-TIER diff, reason names it    -> GREEN
+#
+# #4472 (operator P0, 2026-09-26): "the quorum gets a light tier for docs-only diffs".
+# D1 adds docs/note.md and nothing else: diff_class.sh says class=docs, no added line
+# states a ratio, docs/BEATS.md is untouched. pmat is still consulted (S3.A stays
+# unconditional) and the signature still verifies. The DISCRIMINATION pair is row 45
+# (same arm, a docs diff that carries a claim) and row 46 (same diff, unnamed reason).
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_NT_DOCS")
+emit row-44-arm-e-docs-tier "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 45 - docs tier claimed on a docs diff that PUBLISHES a ratio  -> RED B1
+#
+# G1 touches only book/**.md, so diff_class.sh says class=docs -- and it adds "2.93x
+# Ollama". Row 17's honest crux review is kept whole, so the only defect is the agy arm:
+# a comparative claim is precisely what a second vendor is owed, and "it is a .md file"
+# must not buy it off.
+# ===========================================================================
+SARIF=$SARIF_ROW17
+RCPT=$(receipt "$G1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_CLAIM_RECORDED" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_NT_DOCS")
+emit row-45-arm-e-docs-tier-refused-on-a-claim "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 46 - docs-tier diff, but the reason does not name the tier    -> RED B1
+#
+# Row 44's diff with the pre-#4472 reason text. The exemption is real; a record that
+# does not say it TOOK the exemption reads the same as one that skipped the arm.
 # ===========================================================================
 SARIF=$(
 sarif_empty
 )
 RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
       "$AUTHOR" "$REVIEWER" "$AG_NT_ILLEGAL")
-emit row-34-arm-e-not-triggered "$SARIF" "$RCPT"
+emit row-46-arm-e-docs-tier-reason-unnamed "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 47 - docs tier claimed on a diff that edits docs/BEATS.md     -> RED B1
+#
+# SB1 rewrites docs/BEATS.md and nothing else: class=docs, no ratio on the added line,
+# reason names the tier -- row 44 in every respect but the path. The scoreboard IS the
+# published claim, so it stays owed a second vendor. Added when mutate-guard.sh's
+# reject-53-drop SURVIVED: rows 44-46 never touched BEATS, so the rule was untested.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$SB1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_NT_DOCS")
+emit row-47-arm-e-docs-tier-refused-on-beats "$SARIF" "$RCPT"
 
 # ===========================================================================
 # ROW 35 - agy routed to the PRIMARY REVIEWER'S OWN MODEL FAMILY      -> RED B1

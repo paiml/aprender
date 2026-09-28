@@ -48,8 +48,12 @@ because a rejection with no named class is how a guard grows a rule nothing gove
 | 31 | `row-31-arm-e-consulted-attempted-zero` | RED | B1 | `antigravity.status: consulted` with `attempted: 0` |
 | 32 | `row-32-arm-e-finding-claims-a-blocking-class` | RED | B1 | an `antigravity` finding at `precision_class: blocking` while the arm is advisory |
 | 33 | `row-33-arm-e-finding-advisory` | **GREEN** | — | the same finding at `advisory` — one token differs |
-| 34 | `row-34-arm-e-not-triggered` | RED | B1 | `antigravity.status: not-triggered` on a **docs-only** diff |
+| 34 | `row-34-arm-e-not-triggered` | RED | B1 | `antigravity.status: not-triggered` on a **code** diff (row 14's GPU review, agy arm only changed) |
 | 35 | `row-35-arm-e-routed-to-the-same-model-family` | RED | B1 | row 7 with **one token changed**: `model_id: claude-opus-4-6-thinking` |
+| 44 | `row-44-arm-e-docs-tier` | GREEN | — | #4472 docs tier: `antigravity: not-triggered` on a docs-only diff, reason names the tier |
+| 45 | `row-45-arm-e-docs-tier-refused-on-a-claim` | RED | B1 | docs tier claimed on a book page that adds `2.93× Ollama` |
+| 46 | `row-46-arm-e-docs-tier-reason-unnamed` | RED | B1 | row 44's diff, but `trigger_reason` does not name the docs tier |
+| 47 | `row-47-arm-e-docs-tier-refused-on-beats` | RED | B1 | docs tier claimed on a diff that edits `docs/BEATS.md` (no ratio added) |
 
 **Rows 25 and 26 were absent from this table until PRREV-015 added rows 27–35**, though the
 fixtures shipped with PRREV-012. Recorded rather than quietly backfilled: a README that
