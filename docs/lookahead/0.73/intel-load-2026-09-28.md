@@ -14,8 +14,14 @@ Samples are `/proc/loadavg` 1-min on intel (mac-server, `nproc` = 32), taken at 
 | 17:18 | 78 | 2.4 |
 | 17:48 | 96 | 3.0 |
 | 18:18 | 115 | 3.6 |
+| 18:48 | 14 | 0.4 |
+| 19:18 | 139 | 4.3 |
+| 19:48 | 79 | 2.5 |
+| 20:19 | 150 | 4.7 |
+| 20:48 | 94 | 2.9 |
+| 21:18 | 136 | 4.2 |
 
-At 14:48Z the top processes were root `clippy-driver` and `ld.mold` (CI runners) plus two noah test binaries. Only 1 of 10 samples was under 1 load per core.
+At 14:48Z the top processes were root `clippy-driver` and `ld.mold` (CI runners) plus two noah test binaries. Only 2 of 16 samples (14:18, 18:48) were under 1 load per core, and each of those windows closed within 30 min: a serve re-run started at 18:48 was stopped by PID at 19:18 at load 139 (partial 7498 ok / 0 fail).
 
 ## What follows
 - **F3:** the aprender-serve lib suite cannot finish on intel while the cut runs. A partial run was stopped at 16143 ok / 0 fail; see `F3-pr-draft.md`.
