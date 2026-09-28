@@ -255,7 +255,8 @@ ladder:
         why: >-
           Qwen3-30B-A3B (and Coder-30B-A3B) on GB10 sm_121: every verb hits the 600 s cell timeout at the
           20k rung (0d H4 19:51Z, 12+12 cells). The 0.69.1 pre-load refusal is gone in 0.70.0-dev, so the
-          cells run and time out. lambda does not hold qwen3moe.
+          cells run and time out. Withdrawn, not waived: lambda holds both files and still owes every
+          qwen3moe cell; gx10 still owes every Qwen3.5 (hybrid) cell. Operator D1 APPROVED 2026-09-28 20:10Z.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds
