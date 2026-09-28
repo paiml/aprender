@@ -242,6 +242,106 @@ fn check_determinism(row: &KernelRow) -> std::result::Result<(), String> {
     }
 }
 
+/// KTEST-001 §5.1 `input_set_hash`: what a parity receipt was measured FROM. A receipt whose
+/// input set still hashes the same may be reused by a later release; any change to one of these
+/// parts makes it stale (F-8). Every part is recomputable from the tree plus the device, so the
+/// gate can judge freshness without re-running the kernel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputSet {
+    /// sha256 of the row's `source_file` bytes.
+    pub source_sha256: String,
+    /// sha256 of [`row_key`]: every row field except `tolerance`, which points at the receipt.
+    pub row_sha256: String,
+    /// The pinned toolchain channel (`rust-toolchain.toml`).
+    pub toolchain: String,
+    /// The device driver; `none` for a CPU row.
+    pub driver: String,
+    /// `host_arch` plus the detected ISA features, `+`-joined.
+    pub device: String,
+    /// The oracle and its inputs: `in_tree`, or the fixture dir plus its sha256s.
+    pub oracle: String,
+}
+
+impl InputSet {
+    /// Collect the parts for `row` from the tree under `root`.
+    pub fn from_tree(
+        root: &std::path::Path,
+        row: &KernelRow,
+        driver: &str,
+        device: &str,
+        oracle: &str,
+    ) -> std::result::Result<Self, String> {
+        let source = std::fs::read(root.join(&row.source_file))
+            .map_err(|e| format!("input set: {}: {e}", row.source_file))?;
+        Ok(Self {
+            source_sha256: sha256_hex(&source),
+            row_sha256: sha256_hex(row_key(row).as_bytes()),
+            toolchain: pinned_toolchain(root)?,
+            driver: driver.to_string(),
+            device: device.to_string(),
+            oracle: oracle.to_string(),
+        })
+    }
+
+    /// The digest: sha256 over a versioned header and every part as `name=value\n`, in this order.
+    pub fn hash(&self) -> String {
+        let text = format!(
+            "kreg-input-set/v1\nsource={}\nrow={}\ntoolchain={}\ndriver={}\ndevice={}\noracle={}\n",
+            self.source_sha256,
+            self.row_sha256,
+            self.toolchain,
+            self.driver,
+            self.device,
+            self.oracle
+        );
+        sha256_hex(text.as_bytes())
+    }
+}
+
+/// A row's identity for [`InputSet`]: every field but `tolerance`, `name=value` lines in the
+/// struct's declared order. Changing the order is a new input-set version.
+pub fn row_key(row: &KernelRow) -> String {
+    let f: [(&str, String); 19] = [
+        ("kernel_id", row.kernel_id.clone()),
+        ("op", row.op.clone()),
+        ("qtype", row.qtype.clone()),
+        ("ggml_type", row.ggml_type.to_string()),
+        ("layout", row.layout.clone()),
+        ("backend", row.backend.clone()),
+        ("arch", row.arch.clone()),
+        ("isa_features", row.isa_features.clone()),
+        ("requires", row.requires.clone()),
+        ("block_elems", row.block_elems.to_string()),
+        ("accumulate", row.accumulate.clone()),
+        ("precision", row.precision.clone()),
+        ("error_model", row.error_model.clone()),
+        ("determinism", row.determinism.clone()),
+        ("shape_class", row.shape_class.clone()),
+        ("source_file", row.source_file.clone()),
+        ("source_fn", row.source_fn.clone()),
+        ("selector", row.selector.clone()),
+        ("contract", row.contract.clone()),
+    ];
+    f.iter().map(|(k, v)| format!("{k}={v}\n")).collect()
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// The `channel` of `rust-toolchain.toml`, the toolchain every gate we own builds with.
+fn pinned_toolchain(root: &std::path::Path) -> std::result::Result<String, String> {
+    let text = std::fs::read_to_string(root.join("rust-toolchain.toml"))
+        .map_err(|e| format!("input set: rust-toolchain.toml: {e}"))?;
+    text.lines()
+        .filter_map(|l| l.trim().strip_prefix("channel"))
+        .filter_map(|rest| rest.trim().strip_prefix('='))
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .find(|v| !v.is_empty())
+        .ok_or_else(|| "input set: rust-toolchain.toml has no channel".to_string())
+}
+
 /// The parsed registry and its `(backend, type id) -> rows` table.
 pub struct Registry {
     rows: Vec<KernelRow>,
@@ -454,6 +554,63 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// F-8 at the unit: each part of the input set moves the hash; the same parts never do.
+    #[test]
+    fn every_input_set_part_moves_the_hash() {
+        let base = InputSet {
+            source_sha256: "a".into(),
+            row_sha256: "b".into(),
+            toolchain: "1.93.0".into(),
+            driver: "none".into(),
+            device: "x86_64+avx2".into(),
+            oracle: "in_tree".into(),
+        };
+        assert_eq!(base.hash(), base.clone().hash());
+        let edits: [fn(&mut InputSet); 6] = [
+            |s| s.source_sha256.push('x'),
+            |s| s.row_sha256.push('x'),
+            |s| s.toolchain = "1.94.0".into(),
+            |s| s.driver = "590.48".into(),
+            |s| s.device = "x86_64+avx2+avx512f".into(),
+            |s| s.oracle = "gguf_py".into(),
+        ];
+        for (i, edit) in edits.iter().enumerate() {
+            let mut s = base.clone();
+            edit(&mut s);
+            assert_ne!(s.hash(), base.hash(), "part {i} did not move the hash");
+        }
+    }
+
+    #[test]
+    fn the_row_key_ignores_tolerance_and_nothing_else() {
+        let row = |tol: &str, det: &str| {
+            let j = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major")
+                .replace(
+                    r#""tolerance":"unmeasured""#,
+                    &format!(r#""tolerance":"{tol}""#),
+                )
+                .replace(
+                    r#""determinism":"bounded""#,
+                    &format!(r#""determinism":"{det}""#),
+                );
+            Registry::parse(&doc(&[j])).expect("parses").rows()[0].clone()
+        };
+        let a = row("unmeasured", "bounded");
+        assert_eq!(
+            row_key(&a),
+            row_key(&row("evidence/kreg/parity/x.json", "bounded"))
+        );
+        assert_ne!(row_key(&a), row_key(&row("unmeasured", "bitwise")));
+        assert_eq!(row_key(&a).lines().count(), 19);
+    }
+
+    #[test]
+    fn the_pinned_toolchain_is_read_from_the_tree() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let t = pinned_toolchain(&root).expect("rust-toolchain.toml has a channel");
+        assert!(t.chars().next().is_some_and(|c| c.is_ascii_digit()), "{t}");
     }
 
     #[test]
