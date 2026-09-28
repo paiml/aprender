@@ -211,9 +211,53 @@ pub struct KernelRow {
     pub contract: String,
 }
 
+/// One per-forward op row (`ops[]`, shape `kernel-registry-v1.op`, #3715 v2 §4): a norm, RoPE,
+/// attention or activation kernel. It runs on f32 activations whatever the tensor types, so it has
+/// no qtype, type id, layout or block size, and [`Registry::admit`] never selects one. Unknown
+/// fields are refused, as the closed shape refuses them: a `ggml_type` here is an error.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpRow {
+    /// Stable id, `<backend>.<op>.<precision>[.<arch>[.<isa>]]`; unique across kernels and ops.
+    pub kernel_id: String,
+    /// `rmsnorm`, `rope`, `attention`, `swiglu`, … (the shape's closed set).
+    pub op: String,
+    /// `cpu`, `cuda`, `wgpu` or `metal`.
+    pub backend: String,
+    /// Host architecture; `any` until the row is arch-specific.
+    pub arch: String,
+    /// The model architectures (`general.architecture`) it serves; absent means every one.
+    pub archs: Option<Vec<String>>,
+    /// `+`-joined ISA features the row requires; `none` for baseline.
+    pub isa_features: String,
+    /// `+`-joined device features beyond the backend; `none` for any device.
+    pub requires: String,
+    /// Accumulator precision.
+    pub accumulate: String,
+    /// Activation precision inside the kernel.
+    pub precision: String,
+    /// The error model its parity bound is derived from (KTEST-001 §3.1).
+    pub error_model: String,
+    /// `bitwise` or `bounded`.
+    pub determinism: String,
+    /// The M the kernel serves: `m1` or `m_any`.
+    pub shape_class: String,
+    /// `unmeasured` or the path of a tolerance receipt.
+    pub tolerance: String,
+    /// Repo-relative file holding the kernel.
+    pub source_file: String,
+    /// The kernel's function name in `source_file`.
+    pub source_fn: String,
+    /// The selector that dispatches to it.
+    pub selector: String,
+    /// The contract that governs it.
+    pub contract: String,
+}
+
 #[derive(Deserialize)]
 struct Document {
     kernels: Vec<KernelRow>,
+    ops: Vec<OpRow>,
 }
 
 /// The error models of KTEST-001 §3.1. The contract's shape holds the same closed set.
@@ -231,11 +275,19 @@ pub const ERROR_MODELS: [&str; 8] = [
 /// A cross-field rule SHACL Core cannot state: an atomics-based kernel (`EM-NONDET`) is never
 /// `bitwise`, and a row outside the closed sets is refused here too, not only by the shape.
 fn check_determinism(row: &KernelRow) -> std::result::Result<(), String> {
-    let refuse = |why: &str| Err(format!("kernel registry: row `{}` {why}", row.kernel_id));
-    if !ERROR_MODELS.contains(&row.error_model.as_str()) {
-        return refuse(&format!("has error_model `{}`", row.error_model));
+    check_error_model(&row.kernel_id, &row.error_model, &row.determinism)
+}
+
+fn check_error_model(
+    kernel_id: &str,
+    error_model: &str,
+    determinism: &str,
+) -> std::result::Result<(), String> {
+    let refuse = |why: &str| Err(format!("kernel registry: row `{kernel_id}` {why}"));
+    if !ERROR_MODELS.contains(&error_model) {
+        return refuse(&format!("has error_model `{error_model}`"));
     }
-    match (row.error_model.as_str(), row.determinism.as_str()) {
+    match (error_model, determinism) {
         ("EM-NONDET", "bitwise") => refuse("claims bitwise determinism under EM-NONDET"),
         (_, "bitwise" | "bounded") => Ok(()),
         (_, other) => refuse(&format!("has determinism `{other}`")),
@@ -403,7 +455,42 @@ fn pinned_toolchain(root: &std::path::Path) -> std::result::Result<String, Strin
 /// The parsed registry and its `(backend, type id) -> rows` table.
 pub struct Registry {
     rows: Vec<KernelRow>,
+    ops: Vec<OpRow>,
     table: Vec<Vec<u16>>,
+}
+
+/// An op row this registry could not answer for: an unknown backend, a bad error model, or an
+/// `archs` list that is empty or repeats a name (the shape cannot see either).
+fn check_op(op: &OpRow) -> std::result::Result<(), String> {
+    let refuse = |why: &str| Err(format!("kernel registry: op `{}` {why}", op.kernel_id));
+    if Backend::parse(&op.backend).is_none() {
+        return refuse(&format!("has unknown backend `{}`", op.backend));
+    }
+    check_error_model(&op.kernel_id, &op.error_model, &op.determinism)?;
+    if let Some(archs) = &op.archs {
+        let mut seen = std::collections::BTreeSet::new();
+        if archs.is_empty() {
+            return refuse("has an empty `archs` list");
+        }
+        if let Some(a) = archs
+            .iter()
+            .find(|a| a.is_empty() || !seen.insert(a.as_str()))
+        {
+            return refuse(&format!("has an empty or repeated arch `{a}` in `archs`"));
+        }
+    }
+    Ok(())
+}
+
+/// The first `kernel_id` two rows share, across `kernels[]` and `ops[]` (OBS-15 records one id per
+/// dispatch, so an id must name one row).
+fn repeated_id<'a>(kernels: &'a [KernelRow], ops: &'a [OpRow]) -> Option<&'a str> {
+    let mut seen = std::collections::BTreeSet::new();
+    kernels
+        .iter()
+        .map(|r| r.kernel_id.as_str())
+        .chain(ops.iter().map(|o| o.kernel_id.as_str()))
+        .find(|id| !seen.insert(*id))
 }
 
 /// The table cell for `(backend slot, type id)`.
@@ -456,8 +543,15 @@ impl Registry {
             }
             cell.push(u16::try_from(i).map_err(|e| format!("kernel registry: {e}"))?);
         }
+        for op in &doc.ops {
+            check_op(op)?;
+        }
+        if let Some(id) = repeated_id(&doc.kernels, &doc.ops) {
+            return Err(format!("kernel registry: kernel_id `{id}` names two rows"));
+        }
         Ok(Self {
             rows: doc.kernels,
+            ops: doc.ops,
             table,
         })
     }
@@ -467,15 +561,23 @@ impl Registry {
         &self.rows
     }
 
+    /// Every per-forward op row, in document order. None of them is ever admitted.
+    pub fn ops(&self) -> &[OpRow] {
+        &self.ops
+    }
+
     /// S-REG (KTEST-001 §5.2, falsifier F-7): the dispatched kernel keys of a trace that name no
-    /// row, sorted and deduplicated. Empty means every dispatch was registered. The match is exact:
+    /// row — kernel or op — sorted and deduplicated. Empty means every dispatch was registered. The match is exact:
     /// a label that is not a `kernel_id` (e.g. a trace's `q4k-f32/neon`) is unregistered, since
     /// nothing ties it to a row, a receipt or a tolerance.
     pub fn unregistered_dispatches<'a>(&self, trace: &[&'a str]) -> Vec<&'a str> {
         let mut out: Vec<&'a str> = trace
             .iter()
             .copied()
-            .filter(|id| !self.rows.iter().any(|r| r.kernel_id == *id))
+            .filter(|id| {
+                !self.rows.iter().any(|r| r.kernel_id == *id)
+                    && !self.ops.iter().any(|o| o.kernel_id == *id)
+            })
             .collect();
         out.sort_unstable();
         out.dedup();
@@ -751,7 +853,7 @@ mod tests {
     }
 
     fn doc(rows: &[String]) -> String {
-        format!(r#"{{"kernels":[{}]}}"#, rows.join(","))
+        format!(r#"{{"kernels":[{}],"ops":[]}}"#, rows.join(","))
     }
 
     /// F-7 case table: a trace with only registered ids has no S-REG violation; every other key
@@ -764,7 +866,10 @@ mod tests {
         let cases: [(&[&str], &[&str]); 6] = [
             (&[], &[]),
             (&[reg.as_str(), reg.as_str()], &[]),
-            (&[reg.as_str(), "cpu.attention.f32"], &["cpu.attention.f32"]),
+            (
+                &[reg.as_str(), "cuda.attention.f64"],
+                &["cuda.attention.f64"],
+            ),
             (
                 &["q4k-f32/neon", reg.as_str(), "q4k-f32/neon"],
                 &["q4k-f32/neon"],
@@ -1146,17 +1251,152 @@ mod tests {
     #[test]
     fn falsify_kreg_005_every_row_names_a_real_fn() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for row in registry().expect("registry").rows() {
-            let src = std::fs::read_to_string(root.join(&row.source_file))
-                .unwrap_or_else(|e| panic!("{}: {}: {e}", row.kernel_id, row.source_file));
-            let needle = format!("fn {}", row.source_fn);
+        let r = registry().expect("registry");
+        let kernels = r
+            .rows()
+            .iter()
+            .map(|k| (&k.kernel_id, &k.source_file, &k.source_fn));
+        let ops = r
+            .ops()
+            .iter()
+            .map(|o| (&o.kernel_id, &o.source_file, &o.source_fn));
+        for (id, file, func) in kernels.chain(ops) {
+            let src = std::fs::read_to_string(root.join(file))
+                .unwrap_or_else(|e| panic!("{id}: {file}: {e}"));
+            let needle = format!("fn {func}");
             let found = src
                 .match_indices(&needle)
                 .any(|(i, _)| src[i + needle.len()..].starts_with(['(', '<']));
+            assert!(found, "{id}: `{needle}` not in {file}");
+        }
+    }
+
+    fn op_json(id: &str, extra: &str) -> String {
+        format!(
+            r#"{{"kernel_id":"{id}","op":"rmsnorm","backend":"cpu","arch":"any",{extra}"isa_features":"none",
+            "requires":"none","accumulate":"f32","precision":"f32","error_model":"EM-RED","determinism":"bounded",
+            "shape_class":"m1","tolerance":"unmeasured","source_file":"crates/x/src/a.rs","source_fn":"f",
+            "selector":"selector::fn","contract":"contracts/rmsnorm-kernel-v1.yaml"}}"#
+        )
+    }
+
+    fn op_doc(kernels: &[String], ops: &[String]) -> String {
+        format!(
+            r#"{{"kernels":[{}],"ops":[{}]}}"#,
+            kernels.join(","),
+            ops.join(",")
+        )
+    }
+
+    /// FALSIFY-KREG-013: an op row parses into `ops()`, never into the admit table, and the
+    /// checks the closed shape cannot make are made here.
+    #[test]
+    fn falsify_kreg_013_the_op_row_case_table() {
+        let k = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major");
+        let good = Registry::parse(&op_doc(
+            std::slice::from_ref(&k),
+            &[op_json("cpu.rmsnorm.f32", "")],
+        ))
+        .expect("a well-formed op row parses");
+        assert_eq!(good.ops().len(), 1);
+        assert_eq!(good.rows().len(), 1);
+        let narrowed = op_json("cpu.rmsnorm.f32", r#""archs":["llama","qwen2"],"#);
+        let with_archs = Registry::parse(&op_doc(&[], &[narrowed])).expect("archs parse");
+        assert_eq!(
+            with_archs.ops()[0].archs.as_deref(),
+            Some(&["llama".to_string(), "qwen2".to_string()][..])
+        );
+        let refused: [(&str, String, &str); 8] = [
+            (
+                "a type id on an op",
+                op_doc(&[], &[op_json("cpu.rmsnorm.f32", r#""ggml_type":0,"#)]),
+                "ggml_type",
+            ),
+            (
+                "a qtype on an op",
+                op_doc(&[], &[op_json("cpu.rmsnorm.f32", r#""qtype":"F32","#)]),
+                "qtype",
+            ),
+            (
+                "an op id a kernel holds",
+                op_doc(&[k], &[op_json("cpu.matvec.q4_k", "")]),
+                "names two rows",
+            ),
+            (
+                "two ops with one id",
+                op_doc(
+                    &[],
+                    &[op_json("cpu.rope.f32", ""), op_json("cpu.rope.f32", "")],
+                ),
+                "names two rows",
+            ),
+            (
+                "an empty archs list",
+                op_doc(&[], &[op_json("cpu.rmsnorm.f32", r#""archs":[],"#)]),
+                "empty `archs`",
+            ),
+            (
+                "a repeated arch",
+                op_doc(
+                    &[],
+                    &[op_json("cpu.rmsnorm.f32", r#""archs":["llama","llama"],"#)],
+                ),
+                "repeated arch",
+            ),
+            (
+                "an unknown backend",
+                op_doc(
+                    &[],
+                    &[op_json("tpu.rmsnorm.f32", "")
+                        .replace(r#""backend":"cpu""#, r#""backend":"tpu""#)],
+                ),
+                "unknown backend",
+            ),
+            (
+                "EM-NONDET claiming bitwise",
+                op_doc(
+                    &[],
+                    &[op_json("cpu.rmsnorm.f32", "")
+                        .replace("EM-RED", "EM-NONDET")
+                        .replace("bounded", "bitwise")],
+                ),
+                "bitwise",
+            ),
+        ];
+        for (case, json, want) in refused {
+            let e = Registry::parse(&json)
+                .err()
+                .unwrap_or_else(|| panic!("{case}: parsed"));
+            assert!(e.contains(want), "{case}: {e}");
+        }
+        let e = Registry::parse(r#"{"kernels":[]}"#)
+            .err()
+            .expect("a document with no ops[] parsed");
+        assert!(e.contains("ops"), "{e}");
+    }
+
+    /// The committed registry registers every per-forward op of the CPU decode path, and a trace
+    /// of their ids is fully registered (S-REG covers ops, not only kernels).
+    #[test]
+    fn the_committed_op_rows_are_registered_dispatches() {
+        let r = registry().expect("registry");
+        let ids: Vec<&str> = r.ops().iter().map(|o| o.kernel_id.as_str()).collect();
+        for want in [
+            "cpu.rmsnorm.f32",
+            "cpu.layernorm.f32",
+            "cpu.rope.f32",
+            "cpu.attention.f32",
+            "cpu.swiglu.f32",
+            "cpu.gelu.f32",
+        ] {
+            assert!(ids.contains(&want), "{want} not in {ids:?}");
+        }
+        assert!(r.unregistered_dispatches(&ids).is_empty());
+        for o in r.ops() {
             assert!(
-                found,
-                "{}: `{needle}` not in {}",
-                row.kernel_id, row.source_file
+                o.kernel_id.starts_with(&format!("{}.", o.backend)),
+                "{}",
+                o.kernel_id
             );
         }
     }
