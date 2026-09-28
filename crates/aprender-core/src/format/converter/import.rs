@@ -63,6 +63,12 @@ pub fn apr_import<P: AsRef<Path>>(
 
     // Non-GGUF path: Load tensors as f32, apply quantization during write
     let mut load_result = load_source_tensors(&local_path, &options)?;
+    refuse_unmodelled_gguf_arch(
+        load_result
+            .model_config
+            .as_ref()
+            .and_then(|c| c.architecture.as_deref()),
+    )?;
 
     // PMAT-SAFETENSORS-TOK-001: For HuggingFace SafeTensors imports, try to find
     // tokenizer.json from the same repo if not found as sibling file.
@@ -250,6 +256,7 @@ pub(crate) fn apr_import_gguf_raw(
     options: &ImportOptions,
 ) -> Result<ValidationReport> {
     let raw_result = load_gguf_raw(gguf_path)?;
+    refuse_unmodelled_gguf_arch(raw_result.model_config.architecture.as_deref())?;
 
     // model-metadata-bounds-v1.yaml: warn on out-of-bounds config values at import time
     raw_result.model_config.warn_out_of_bounds();
@@ -295,6 +302,29 @@ pub(crate) fn apr_import_gguf_raw(
     )?;
 
     Ok(validation_result)
+}
+
+/// GGUF `general.architecture` values with no import path: hybrid Gated
+/// DeltaNet models, whose `qwen35.*` keys #3733 keeps off the config accessors.
+const UNMODELLED_GGUF_ARCHS: &[&str] = &["qwen35", "qwen35moe", "qwen3next"];
+
+/// FALSIFY-QFR-005: refuse an unmodelled GGUF architecture BY NAME, before the
+/// tensor-evidence override. Without this a Qwen3.5 GGUF was relabelled Qwen3
+/// (it has QK norm) and then failed as "may be malformed" on the missing
+/// hidden size; a partial fix there would import a hybrid model under the
+/// Qwen3 name map. Refused even with `--arch`, which would do the same.
+fn refuse_unmodelled_gguf_arch(gguf_arch: Option<&str>) -> Result<()> {
+    match gguf_arch {
+        Some(arch) if UNMODELLED_GGUF_ARCHS.contains(&arch) => Err(AprenderError::FormatError {
+            message: format!(
+                "GGUF architecture '{arch}' is unsupported for import: it is a hybrid \
+                 (Gated DeltaNet + attention) model with no '{arch}' tensor-name map, and \
+                 importing it under another map would write a wrong .apr. Import the \
+                 HuggingFace safetensors checkpoint instead."
+            ),
+        }),
+        _ => Ok(()),
+    }
 }
 
 /// Resolve architecture from options/GGUF config, log detection, and warn if unverified.
