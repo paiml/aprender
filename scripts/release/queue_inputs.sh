@@ -710,6 +710,19 @@ J
 {"id":5,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-1-x","conclusion":"success","created_at":"2026-01-02T00:40:00Z","updated_at":"2026-01-02T00:55:00Z"}
 {"id":6,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-2-x","conclusion":"failure","created_at":"2026-01-02T22:00:00Z","updated_at":"2026-01-02T23:30:00Z"}
 {"id":7,"event":"merge_group","head_branch":"gh-readonly-queue/main/pr-2-y","conclusion":"success","created_at":"2026-01-02T23:30:00Z","updated_at":"2026-01-02T23:55:00Z"}
+{"id":8,"event":"pull_request","head_sha":"s9a","head_branch":"b9","conclusion":"failure","created_at":"2026-01-03T00:00:00Z","updated_at":"2026-01-03T01:00:00Z"}
+{"id":9,"event":"pull_request","head_sha":"s9b","head_branch":"b9","conclusion":"failure","created_at":"2026-01-03T02:00:00Z","updated_at":"2026-01-03T03:00:00Z"}
+{"id":10,"event":"pull_request","head_sha":"s9c","head_branch":"b9","conclusion":"failure","created_at":"2026-01-03T04:00:00Z","updated_at":"2026-01-03T05:00:00Z"}
+{"id":11,"event":"pull_request","head_sha":"s9d","head_branch":"b9","conclusion":"failure","created_at":"2026-01-03T06:00:00Z","updated_at":"2026-01-03T07:00:00Z"}
+J
+    # Escape case table: one failed run per class; run 8 is infra only (a timeout kill + the aggregator), not an escape.
+    cat > "$dd/fail_jobs.jsonl" <<'J'
+{"run":3,"job":31,"name":"x86-main","completed_at":"2026-01-02T00:08:00Z","failed_steps":["gate"],"annotations":["section guard-tree: failure","Process completed with exit code 1."]}
+{"run":3,"job":32,"name":"ci / gate","completed_at":"2026-01-02T00:19:00Z","failed_steps":[],"annotations":["section a: failure"]}
+{"run":8,"job":81,"name":"workspace-test-shard (3)","completed_at":"2026-01-03T00:50:00Z","failed_steps":[],"annotations":["The job has exceeded its timeout of 40 minutes","Process completed with exit code 143."]}
+{"run":9,"job":91,"name":"x86-main","completed_at":"2026-01-03T02:04:00Z","failed_steps":["cargo fmt --all -- --check"],"annotations":["Process completed with exit code 1."]}
+{"run":10,"job":101,"name":"x86-main","completed_at":"2026-01-03T04:30:00Z","failed_steps":[],"annotations":["Σ nextest: 12 tests owed but NOT executed"]}
+{"run":11,"job":111,"name":"x86-main","completed_at":"2026-01-03T06:12:00Z","failed_steps":[],"annotations":["dogfood baselines are stale: re-derive with make dogfood-baselines"]}
 J
     : > "$dd/main_commits.jsonl"
     for i in $(seq 1 19); do printf '{"sha":"s%s","date":"2026-01-02T00:00:00Z","subject":"feat %s","parents":1}\n' "$i" "$i" >> "$dd/main_commits.jsonl"; done
@@ -728,6 +741,9 @@ J
     check "dora: verdict names the misses" '.verdict | startswith("MISSED") and test("change_fail_rate")' "$uo"
     check "dora 0.71: open->green = createdAt -> first green; open #4 never green at 24 h is a censored miss" '.metrics.open_to_green_p90_h.n == 3 and .metrics.open_to_green_p90_h.value == 0.17 and ([.detail.open_to_green[] | select(.censored) | .pr] == [4])' "$uo"
     check "dora 0.71: pushes/PR = distinct head_sha per merged PR (2,1,1 -> 1.33 <= 2)" '.metrics.pushes_per_pr_avg.value == 1.33 and .metrics.pushes_per_pr_avg.n == 3 and .metrics.pushes_per_pr_avg.ok == true' "$uo"
+    check "escape: 4 non-infra failures / 7 completed PR runs = 0.57 misses <= 5%; infra-only run 8 not counted" '.metrics.escape_rate.value == 0.57 and .metrics.escape_rate.n == 7 and .metrics.escape_rate.ok == false and ([.detail.escapes[].run] | index(8)) == null' "$uo"
+    check "escape case table: guard-tree=rules, fmt step=fmt, Σ owed=proof_count, stale baselines=freshness" '.detail.escapes_by_class == {"fmt":1,"freshness":1,"proof_count":1,"rules":1} and .metrics.escapes_fmt.ok == false and .metrics.escapes_rules.ok == false' "$uo"
+    check "first-fail signal = run created -> earliest failed job; [8,50,4,30,12] p50 12 misses <= 10" '.metrics.first_fail_signal_p50_min.value == 12 and .metrics.first_fail_signal_p50_min.n == 5 and .metrics.first_fail_signal_p50_min.ok == false' "$uo"
     check "dora 0.71: no release PR open > 24 h -> 0, MET" '.metrics.release_prs_over_24h.value == 0 and .metrics.release_prs_over_24h.ok == true' "$uo"
     # Mutants: 3 more pushes on b1 (5,1,1 -> 2.33) and PR 4 on a car/ branch opened 48 h before the end -> both RED.
     cp -r -- "$dd" "$t/dora71"
@@ -736,7 +752,14 @@ J
     uo=$(dora_compute "$t/dora71")
     check "dora 0.71 mutant: 7 pushes over 3 PRs = 2.33 misses <= 2" '.metrics.pushes_per_pr_avg.value == 2.33 and .metrics.pushes_per_pr_avg.ok == false' "$uo"
     check "dora 0.71 mutant: car/ PR open 48 h -> release_prs_over_24h RED, named; rc/ PR at 20 h not counted" '.metrics.release_prs_over_24h.value == 1 and .metrics.release_prs_over_24h.ok == false and .detail.release_prs_over_24h == [4] and (.verdict | test("release_prs_over_24h"))' "$uo"
+    # Mutants: drop the infra class (run 8 becomes an escape) and drop the fmt class (run 9's fmt step reads as other).
+    cp -r -- "$dd" "$t/esc-mut"
+    sed -i 's/exceeded its timeout/exceeded its budget/' "$t/esc-mut/fail_jobs.jsonl"
+    uo=$(dora_compute "$t/esc-mut")
+    check "escape mutant: an unclassified kill line makes run 8 an escape (5/7)" '.metrics.escape_rate.value == 0.71 and .detail.escapes_by_class.other == 1' "$uo"
     uo=$(dora_compute "$dd")
+    printf '%s' "$uo" | dora_line | grep -q 'escape 0.57 (n7; fmt 1 rules 1 fresh 1 proof 1) | first-fail p50 12m' \
+        && printf '  ok    dora line carries escape + first-fail\n' || { printf '  FAIL  dora line carries escape + first-fail\n'; fails=$((fails + 1)); }
     printf '%s' "$uo" | dora_line | grep -q 'open->green p90 0.17h (n3) | pushes/PR 1.33 | release PRs>24h 0' \
         && printf '  ok    dora line carries the 3 0.71 targets\n' || { printf '  FAIL  dora line carries the 3 0.71 targets\n'; fails=$((fails + 1)); }
 
@@ -785,7 +808,7 @@ J
         printf '  FAIL  andon: an unreadable q source must refuse\n'; fails=$((fails + 1))
     else printf '  ok    andon: an unreadable q source refuses (rc != 0)\n'; fi
 
-    for f in ci_runs.jsonl pr_dora.jsonl main_commits.jsonl; do : > "$dd/$f"; done
+    for f in ci_runs.jsonl pr_dora.jsonl main_commits.jsonl fail_jobs.jsonl; do : > "$dd/$f"; done
     printf '[]\n' > "$dd/merged.json"; printf '[]\n' > "$dd/open.json"
     uo=$(dora_compute "$dd")
     check "dora: empty window is NO-DATA on every metric, never MET" '(.verdict | startswith("NO-DATA")) and ([.metrics[] | select(.ok == true)] | length) == 0' "$uo"
@@ -945,20 +968,42 @@ dora_fetch() {
         jq -c . "$d/pr_dora.part" > "$d/pr_dora.jsonl"
         rm -f -- "${d:?}/pr_dora.part"
     fi
+    dora_fetch_fail_jobs "$d"
+}
+
+# dora_fetch_fail_jobs <raw-dir>: per failed pull_request ci.yml run, its failed jobs with their failed steps and
+# failure-level annotations (the "section X: failure" / guard lines that say WHAT failed). One line per failed job.
+dora_fetch_fail_jobs() {
+    local d="$1" id j
+    [ ! -s "$d/fail_jobs.jsonl" ] || return 0
+    : > "$d/fail_jobs.part"
+    while read -r id; do
+        gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" -q '.jobs[] | select(.conclusion == "failure")
+            | {run: .run_id, job: .id, name, completed_at, failed_steps: [.steps[] | select(.conclusion == "failure") | .name]}' \
+            > "$d/jobs.tmp" || return 1
+        while read -r j; do
+            gh api "repos/$REPO/check-runs/$(jq -r .job <<<"$j")/annotations?per_page=100" \
+                -q '[.[] | select(.annotation_level == "failure") | .message[0:300]]' > "$d/ann.tmp" || return 1
+            jq -c --slurpfile a "$d/ann.tmp" '. + {annotations: $a[0]}' <<<"$j" >> "$d/fail_jobs.part"
+        done < "$d/jobs.tmp"
+    done < <(jq -r 'select(.event == "pull_request" and .conclusion == "failure") | .id' "$d/ci_runs.jsonl")
+    mv -- "$d/fail_jobs.part" "$d/fail_jobs.jsonl"
+    rm -f -- "${d:?}/jobs.tmp" "${d:?}/ann.tmp"
 }
 
 # dora_compute <raw-dir>: the weekly DORA table as JSON. Every metric carries {value, n, target, ok};
 # a metric with n = 0 is ok = null (NO-DATA), never a pass. rc 1 when any metric misses or has no data.
 dora_compute() {
     local d="$1" f
-    for f in window.txt ci_runs.jsonl merged.json open.json main_commits.jsonl pr_dora.jsonl; do
+    for f in window.txt ci_runs.jsonl merged.json open.json main_commits.jsonl pr_dora.jsonl fail_jobs.jsonl; do
         [ -f "$d/$f" ] || die "missing $d/$f"
     done
     local start end
     read -r start end < "$d/window.txt"
     jq -n --arg start "$start" --arg end "$end" --arg relre "$RELEASE_BRANCH_RE" \
         --slurpfile ci <(cat "$d/ci_runs.jsonl") --slurpfile merged "$d/merged.json" --slurpfile open "$d/open.json" \
-        --slurpfile main <(cat "$d/main_commits.jsonl") --slurpfile pd <(cat "$d/pr_dora.jsonl") -f /dev/stdin <<'JQ'
+        --slurpfile main <(cat "$d/main_commits.jsonl") --slurpfile pd <(cat "$d/pr_dora.jsonl") \
+        --slurpfile fj <(cat "$d/fail_jobs.jsonl") -f /dev/stdin <<'JQ'
 def mins($a; $b): (($b | fromdate) - ($a | fromdate)) / 60;
 def pct($p): sort | if length == 0 then null else .[((length - 1) * $p) | floor] end;
 def r2: if . == null then null else (. * 100 | round) / 100 end;
@@ -1019,6 +1064,30 @@ $merged[0] as $mg | $open[0] as $op
 # Pushes per PR: distinct head_sha among pull_request ci.yml runs on the branch (every push triggers one), merged PRs.
 | [$pw[] | select(.mergedAt != null) | . as $p | ($runs_of[$p.headRefName].shas // [] | unique | length)
    | select(. > 0)] as $pushes
+# Escapes (operator via the cop, 2026-09-28): a failed pull_request ci.yml run is an escape of the local gate unless
+# every failure line it carries is infrastructure (a wait, a timeout kill, a cancel, the aggregator). Classes from the
+# failure annotations + failed step names (an unrecognised line is "other", kept only when nothing names the cause);
+# fmt, rules, freshness and proof_count are the locally checkable ones.
+| def fclass: if test("Σ|owed but NOT executed|universe is EMPTY|executed but not in the universe") then "proof_count"
+    else ascii_downcase
+    | if test("\\bfmt\\b|rustfmt") then "fmt"
+      elif test("fresh|stale|drift|re-derive|out of date") then "freshness"
+      elif test("process completed with exit code|section a: |not completed within|exceeded its timeout|cancelled|shard matrix result|section result is|runner|registry|eacces|no space") then "infra"
+      elif test("workspace-test|mutants|determinism|nextest|test failed|tests? fail") then "test"
+      elif test("guard|lint|bashrs|clippy|complexity|claim literal|rule|sov\\.gate|contract|shrink-only") then "rules"
+      else "other" end end;
+  (reduce $fj[] as $j ({}; .[$j.run | tostring] += [$j])) as $fj_of
+| [$ci[] | select(.event == "pull_request" and (.conclusion == "success" or .conclusion == "failure"))] as $prr
+| [$prr[] | select(.conclusion == "failure") | . as $r | $fj_of[$r.id | tostring] as $jobs | select($jobs != null)
+   | {run: $r.id, branch: $r.head_branch,
+      first_fail_min: ([$jobs[] | mins($r.created_at; .completed_at)] | min),
+      classes: ([$jobs[] | (.annotations[], .failed_steps[]) | fclass] | unique | map(select(. != "infra"))
+                | if length > 1 then map(select(. != "other")) else . end)}] as $fr
+| ([$prr[] | select(.conclusion == "failure") | select($fj_of[.id | tostring] == null)] | length) as $fr_nodata
+| ([$prr[] | select(.conclusion == "success")] | length + ($fr | length)) as $esc_n
+| [$fr[] | select((.classes | length) > 0)] as $escapes
+| def esc($c): [$escapes[] | select(.classes | index($c))] | length;
+  [$fr[] | .first_fail_min] as $ffs
 # Release PRs open > 24 h at window end.
 | [$op[] | select((.headRefName | test($relre)) and (mins(.createdAt; $end) / 60) > 24) | .number] as $rel_old
 | {window: "\($start)/\($end)",
@@ -1060,10 +1129,22 @@ $merged[0] as $mg | $open[0] as $op
      pushes_per_pr_avg: m(if ($pushes | length) > 0 then ($pushes | add) / ($pushes | length) else null end;
                           ($pushes | length); "<= 2"; (($pushes | length) > 0 and (($pushes | add) / ($pushes | length)) <= 2);
                           "distinct head_sha of pull_request ci.yml runs, merged PRs created in the window (0.71 target)"),
+     escape_rate: m(if $esc_n > 0 then ($escapes | length) / $esc_n else null end; $esc_n; "<= 0.05";
+                    ($esc_n > 0 and (($escapes | length) / $esc_n) <= 0.05);
+                    "failed pull_request ci.yml runs with a non-infra failure / completed runs with data (\($fr_nodata) failed runs had no job data)"),
+     escapes_fmt: m(esc("fmt"); $esc_n; "0"; (esc("fmt") == 0); "escapes carrying a fmt failure"),
+     escapes_rules: m(esc("rules"); $esc_n; "0"; (esc("rules") == 0); "escapes carrying a guard/lint/rule failure"),
+     escapes_freshness: m(esc("freshness"); $esc_n; "0"; (esc("freshness") == 0); "escapes carrying a stale/drift/re-derive failure"),
+     escapes_proof_count: m(esc("proof_count"); $esc_n; "0"; (esc("proof_count") == 0); "escapes carrying a Σ-executed (owed/executed test count) failure"),
+     first_fail_signal_p50_min: m($ffs | pct(0.5); ($ffs | length); "<= 10"; (($ffs | pct(0.5)) <= 10);
+                                  "failed pull_request ci.yml runs: created -> first failed job completed"),
+     first_fail_signal_p90_min: m($ffs | pct(0.9); ($ffs | length); "report"; true; "same, p90"),
      release_prs_over_24h: m($rel_old | length; ($op | length); "0"; (($rel_old | length) == 0);
                              "open PRs on release branches (\($relre)) created > 24 h before window end (0.71 target)")},
    detail: {conflicted_prs: $conflicted, reverts: [$reverts[] | .subject], merge_commits: $mc, merge_resolutions_by_pr: ($mc | group_by(.pr) | map({pr: .[0].pr, n: length}) | sort_by(-.n)),
             open_to_green: $o2g, release_prs_over_24h: $rel_old,
+            escapes_by_class: ([$escapes[] | .classes[]] | group_by(.) | map({(.[0]): length}) | add // {}),
+            escapes: [$escapes[] | {run, branch, classes, first_fail_min: (.first_fail_min | r2)}],
             unarmed_merged_into_main: ($unarmed | length), ci_runs: {code: ($ci_code | length), docs: ($ci_docs | length)}}}
 | .missed = [.metrics | to_entries[] | select(.value.ok == false) | .key]
 | .no_data = [.metrics | to_entries[] | select(.value.ok == null) | .key]
@@ -1073,7 +1154,7 @@ JQ
 }
 
 dora_line() {  # one inbox-sized line from dora_compute JSON on stdin
-    jq -r '.metrics as $m | "DORA 7d: lead p50 \($m.lead_time_p50_min.value)m (n\($m.lead_time_p50_min.n)) | CI p50 code \($m.ci_p50_code_min.value)m docs \($m.ci_p50_docs_min.value)m | MQ wait p50 \($m.mq_wait_p50_min.value)m p90 \($m.mq_wait_p90_min.value)m (n\($m.mq_wait_p50_min.n)) | MQ entry p50 \($m.mq_entry_p50_min.value)m p90 \($m.mq_entry_p90_min.value)m (n\($m.mq_entry_p50_min.n)) | PR age p90 merged \($m.pr_age_p90_h_merged.value)h open \($m.pr_age_p90_h_open.value)h | open PRs \($m.open_prs.value) | conflicted>4h \($m.conflicted_over_4h.value) | change-fail \($m.change_fail_rate.value) | release p50 \($m.release_cycle_p50_min.value)m | main-merges \($m.merge_commit_resolutions.value) (+\($m.fold_merges.value) fold) | open->green p90 \($m.open_to_green_p90_h.value)h (n\($m.open_to_green_p90_h.n)) | pushes/PR \($m.pushes_per_pr_avg.value) | release PRs>24h \($m.release_prs_over_24h.value) -> \(.verdict)"'
+    jq -r '.metrics as $m | "DORA 7d: lead p50 \($m.lead_time_p50_min.value)m (n\($m.lead_time_p50_min.n)) | CI p50 code \($m.ci_p50_code_min.value)m docs \($m.ci_p50_docs_min.value)m | MQ wait p50 \($m.mq_wait_p50_min.value)m p90 \($m.mq_wait_p90_min.value)m (n\($m.mq_wait_p50_min.n)) | MQ entry p50 \($m.mq_entry_p50_min.value)m p90 \($m.mq_entry_p90_min.value)m (n\($m.mq_entry_p50_min.n)) | PR age p90 merged \($m.pr_age_p90_h_merged.value)h open \($m.pr_age_p90_h_open.value)h | open PRs \($m.open_prs.value) | conflicted>4h \($m.conflicted_over_4h.value) | change-fail \($m.change_fail_rate.value) | release p50 \($m.release_cycle_p50_min.value)m | main-merges \($m.merge_commit_resolutions.value) (+\($m.fold_merges.value) fold) | open->green p90 \($m.open_to_green_p90_h.value)h (n\($m.open_to_green_p90_h.n)) | pushes/PR \($m.pushes_per_pr_avg.value) | release PRs>24h \($m.release_prs_over_24h.value) | escape \($m.escape_rate.value) (n\($m.escape_rate.n); fmt \($m.escapes_fmt.value) rules \($m.escapes_rules.value) fresh \($m.escapes_freshness.value) proof \($m.escapes_proof_count.value)) | first-fail p50 \($m.first_fail_signal_p50_min.value)m p90 \($m.first_fail_signal_p90_min.value)m -> \(.verdict)"'
 }
 
 # ---- 0.71 flow andon (operator via the cop, 2026-09-28; #4513 FLOW-003) --------------------------------

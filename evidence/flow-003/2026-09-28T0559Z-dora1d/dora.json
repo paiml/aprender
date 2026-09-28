@@ -1,0 +1,618 @@
+{
+  "window": "2026-09-27T05:58:02Z/2026-09-28T05:58:02Z",
+  "metrics": {
+    "lead_time_p50_min": {
+      "value": 203.72,
+      "n": 4,
+      "target": "< 60",
+      "ok": false,
+      "method": "first auto-merge arm (else first queue add) -> mergedAt, PRs into main"
+    },
+    "lead_time_p90_min": {
+      "value": 868.77,
+      "n": 4,
+      "target": "report",
+      "ok": true,
+      "method": "same, p90"
+    },
+    "ci_p50_code_min": {
+      "value": 77.32,
+      "n": 13,
+      "target": "<= 10",
+      "ok": false,
+      "method": "completed pull_request ci.yml runs of non-docs PRs, created -> updated"
+    },
+    "ci_p50_docs_min": {
+      "value": 143.02,
+      "n": 1,
+      "target": "<= 2",
+      "ok": false,
+      "method": "same, PRs whose every file is .md"
+    },
+    "pr_age_p90_h_merged": {
+      "value": 21.19,
+      "n": 5,
+      "target": "< 24",
+      "ok": true,
+      "method": "merged PRs, createdAt -> mergedAt"
+    },
+    "pr_age_p90_h_open": {
+      "value": 59.76,
+      "n": 22,
+      "target": "< 24",
+      "ok": false,
+      "method": "open non-draft PRs at window end"
+    },
+    "mq_wait_p50_min": {
+      "value": 33.8,
+      "n": 4,
+      "target": "report",
+      "ok": true,
+      "method": "first AddedToMergeQueue -> mergedAt, merged PRs into main"
+    },
+    "mq_wait_p90_min": {
+      "value": 57.37,
+      "n": 4,
+      "target": "<= 120",
+      "ok": true,
+      "method": "same, p90 (operator stop rule: p90 > 120 m)"
+    },
+    "mq_entry_p50_min": {
+      "value": 33.08,
+      "n": 5,
+      "target": "report",
+      "ok": true,
+      "method": "successful merge_group ci.yml runs, created -> updated"
+    },
+    "mq_entry_p90_min": {
+      "value": 34.47,
+      "n": 5,
+      "target": "report",
+      "ok": true,
+      "method": "same, p90"
+    },
+    "open_prs": {
+      "value": 23,
+      "n": 23,
+      "target": "<= 10",
+      "ok": false,
+      "method": "open PRs at fetch time, drafts included (operator cap 10); 1 draft"
+    },
+    "conflicted_over_4h": {
+      "value": 5,
+      "n": 23,
+      "target": "0",
+      "ok": false,
+      "method": "open PRs mergeable=CONFLICTING with last push > 4 h ago (GitHub: 0 UNKNOWN)"
+    },
+    "change_fail_rate": {
+      "value": 0,
+      "n": 4,
+      "target": "< 0.05",
+      "ok": true,
+      "method": "Revert commits / commits on main"
+    },
+    "release_cycle_p50_min": {
+      "value": 70.7,
+      "n": 3,
+      "target": "<= 30",
+      "ok": false,
+      "method": "ci.yml pull_request runs on release branches, created -> updated"
+    },
+    "merge_commit_resolutions": {
+      "value": 27,
+      "n": 28,
+      "target": "<= 2 (-> 0)",
+      "ok": false,
+      "method": "two-parent commits on PR branches, committed in the window, whose headline pulls in main"
+    },
+    "fold_merges": {
+      "value": 11,
+      "n": 28,
+      "target": "report",
+      "ok": true,
+      "method": "other two-parent commits on PR branches (folds of PR branches into a batch)"
+    },
+    "open_to_green_p50_h": {
+      "value": 19.11,
+      "n": 11,
+      "target": "report",
+      "ok": true,
+      "method": "createdAt -> first successful pull_request ci.yml run, PRs created in the window"
+    },
+    "open_to_green_p90_h": {
+      "value": 22.9,
+      "n": 11,
+      "target": "<= 12",
+      "ok": false,
+      "method": "same, p90; an open PR never green and > 12 h old counts at its age (0.71 target)"
+    },
+    "pushes_per_pr_avg": {
+      "value": 2.5,
+      "n": 2,
+      "target": "<= 2",
+      "ok": false,
+      "method": "distinct head_sha of pull_request ci.yml runs, merged PRs created in the window (0.71 target)"
+    },
+    "escape_rate": {
+      "value": 0.82,
+      "n": 17,
+      "target": "<= 0.05",
+      "ok": false,
+      "method": "failed pull_request ci.yml runs with a non-infra failure / completed runs with data (0 failed runs had no job data)"
+    },
+    "escapes_fmt": {
+      "value": 0,
+      "n": 17,
+      "target": "0",
+      "ok": true,
+      "method": "escapes carrying a fmt failure"
+    },
+    "escapes_rules": {
+      "value": 13,
+      "n": 17,
+      "target": "0",
+      "ok": false,
+      "method": "escapes carrying a guard/lint/rule failure"
+    },
+    "escapes_freshness": {
+      "value": 1,
+      "n": 17,
+      "target": "0",
+      "ok": false,
+      "method": "escapes carrying a stale/drift/re-derive failure"
+    },
+    "escapes_proof_count": {
+      "value": 1,
+      "n": 17,
+      "target": "0",
+      "ok": false,
+      "method": "escapes carrying a Σ-executed (owed/executed test count) failure"
+    },
+    "first_fail_signal_p50_min": {
+      "value": 51.92,
+      "n": 14,
+      "target": "<= 10",
+      "ok": false,
+      "method": "failed pull_request ci.yml runs: created -> first failed job completed"
+    },
+    "first_fail_signal_p90_min": {
+      "value": 98.98,
+      "n": 14,
+      "target": "report",
+      "ok": true,
+      "method": "same, p90"
+    },
+    "release_prs_over_24h": {
+      "value": 3,
+      "n": 23,
+      "target": "0",
+      "ok": false,
+      "method": "open PRs on release branches (^(car/|rc/|release[/-]|batch/|fold/|replace/b[0-9])) created > 24 h before window end (0.71 target)"
+    }
+  },
+  "detail": {
+    "conflicted_prs": [
+      4502,
+      4459,
+      4457,
+      4428,
+      4414
+    ],
+    "reverts": [],
+    "merge_commits": [
+      {
+        "date": "2026-09-27T06:30:28Z",
+        "headline": "Merge remote-tracking branch 'origin/fold/b3-onto-main' into apr59/44…",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-27T12:05:58Z",
+        "headline": "merge origin/main aca6f2d7f6 into fold/b3-onto-main (untangle, #4431)",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-28T00:54:49Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into 57/b3",
+        "pr": 4431
+      },
+      {
+        "date": "2026-09-27T09:52:57Z",
+        "headline": "Merge branch 'main' into readme-tweak",
+        "pr": 4448
+      },
+      {
+        "date": "2026-09-28T05:43:57Z",
+        "headline": "Merge branch 'main' into readme-tweak",
+        "pr": 4448
+      },
+      {
+        "date": "2026-09-27T13:14:36Z",
+        "headline": "merge origin/main into 1c/4497-loop-admission (#4501 DIRTY 18h)",
+        "pr": 4501
+      },
+      {
+        "date": "2026-09-28T05:51:44Z",
+        "headline": "Merge branch 'main' into 1c/4497-loop-admission",
+        "pr": 4501
+      },
+      {
+        "date": "2026-09-27T09:15:58Z",
+        "headline": "merge origin/main (#4467, #4427) into car/0.70.0 — car wins, main's i…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T09:39:25Z",
+        "headline": "merge origin/main into batch/ont-10 — WIP handoff, NOT pushed (census…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T10:46:33Z",
+        "headline": "merge origin/main (aca6f2d7f6) into batch/ont-10 — 1 conflict, roadma…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T10:48:15Z",
+        "headline": "merge origin/main (aca6f2d7f6 FLOW-003 v1.1) into car — roadmap regen…",
+        "pr": 4502
+      },
+      {
+        "date": "2026-09-27T13:56:24Z",
+        "headline": "merge origin/main into #4503 — roadmap resolved as the union",
+        "pr": 4503
+      },
+      {
+        "date": "2026-09-28T05:51:41Z",
+        "headline": "Merge branch 'main' into 49/docs-only-tier-4472",
+        "pr": 4503
+      },
+      {
+        "date": "2026-09-28T05:35:29Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into 57/4512-sync",
+        "pr": 4512
+      },
+      {
+        "date": "2026-09-27T07:47:32Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into cb/4462-fork-attest",
+        "pr": 4517
+      },
+      {
+        "date": "2026-09-27T13:12:57Z",
+        "headline": "Merge branch 'main' into cb/4462-fork-attest",
+        "pr": 4517
+      },
+      {
+        "date": "2026-09-28T05:51:38Z",
+        "headline": "Merge branch 'main' into cb/4462-fork-attest",
+        "pr": 4517
+      },
+      {
+        "date": "2026-09-27T08:09:27Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into docs/flow-003-v1.1",
+        "pr": 4518
+      },
+      {
+        "date": "2026-09-27T13:28:30Z",
+        "headline": "Merge branch 'main' into fix/4523-sm121-logits-budget",
+        "pr": 4532
+      },
+      {
+        "date": "2026-09-28T05:51:36Z",
+        "headline": "Merge branch 'main' into docs/flow-003-v2.1",
+        "pr": 4533
+      },
+      {
+        "date": "2026-09-27T09:34:57Z",
+        "headline": "merge origin/main into the #3719 orphan branch — code_tests.rs is the…",
+        "pr": 4534
+      },
+      {
+        "date": "2026-09-27T13:13:37Z",
+        "headline": "Merge branch 'main' into c1/3719-pr",
+        "pr": 4534
+      },
+      {
+        "date": "2026-09-28T05:51:32Z",
+        "headline": "Merge branch 'main' into c1/3719-pr",
+        "pr": 4534
+      },
+      {
+        "date": "2026-09-28T01:17:59Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into 91/4351-on-main",
+        "pr": 4535
+      },
+      {
+        "date": "2026-09-28T05:51:30Z",
+        "headline": "Merge branch 'main' into 49/3718-prompt-overlength",
+        "pr": 4550
+      },
+      {
+        "date": "2026-09-28T05:51:27Z",
+        "headline": "Merge branch 'main' into 49/4369-4380-build-contracts",
+        "pr": 4554
+      },
+      {
+        "date": "2026-09-28T01:00:22Z",
+        "headline": "Merge remote-tracking branch 'origin/main' into 91/3761-on-main",
+        "pr": 4576
+      }
+    ],
+    "merge_resolutions_by_pr": [
+      {
+        "pr": 4502,
+        "n": 4
+      },
+      {
+        "pr": 4431,
+        "n": 3
+      },
+      {
+        "pr": 4517,
+        "n": 3
+      },
+      {
+        "pr": 4534,
+        "n": 3
+      },
+      {
+        "pr": 4448,
+        "n": 2
+      },
+      {
+        "pr": 4501,
+        "n": 2
+      },
+      {
+        "pr": 4503,
+        "n": 2
+      },
+      {
+        "pr": 4512,
+        "n": 1
+      },
+      {
+        "pr": 4518,
+        "n": 1
+      },
+      {
+        "pr": 4532,
+        "n": 1
+      },
+      {
+        "pr": 4533,
+        "n": 1
+      },
+      {
+        "pr": 4535,
+        "n": 1
+      },
+      {
+        "pr": 4550,
+        "n": 1
+      },
+      {
+        "pr": 4554,
+        "n": 1
+      },
+      {
+        "pr": 4576,
+        "n": 1
+      }
+    ],
+    "open_to_green": [
+      {
+        "pr": 4518,
+        "h": 2.980277777777778,
+        "censored": false
+      },
+      {
+        "pr": 4584,
+        "h": 0.46888888888888886,
+        "censored": false
+      },
+      {
+        "pr": 4576,
+        "h": 16.638055555555557,
+        "censored": true
+      },
+      {
+        "pr": 4554,
+        "h": 17.78083333333333,
+        "censored": true
+      },
+      {
+        "pr": 4550,
+        "h": 18.3875,
+        "censored": true
+      },
+      {
+        "pr": 4535,
+        "h": 19.105555555555554,
+        "censored": true
+      },
+      {
+        "pr": 4534,
+        "h": 19.245833333333334,
+        "censored": true
+      },
+      {
+        "pr": 4533,
+        "h": 19.316944444444445,
+        "censored": true
+      },
+      {
+        "pr": 4532,
+        "h": 19.441111111111113,
+        "censored": true
+      },
+      {
+        "pr": 4517,
+        "h": 22.89638888888889,
+        "censored": true
+      },
+      {
+        "pr": 4512,
+        "h": 23.179444444444446,
+        "censored": true
+      }
+    ],
+    "release_prs_over_24h": [
+      4502,
+      4431,
+      4428
+    ],
+    "escapes_by_class": {
+      "freshness": 1,
+      "proof_count": 1,
+      "rules": 13,
+      "test": 7
+    },
+    "escapes": [
+      {
+        "run": 36302045588,
+        "branch": "docs/flow-003-v1.1",
+        "classes": [
+          "proof_count",
+          "rules"
+        ],
+        "first_fail_min": 61.73
+      },
+      {
+        "run": 36304197755,
+        "branch": "cb/4462-fork-attest",
+        "classes": [
+          "rules"
+        ],
+        "first_fail_min": 51.47
+      },
+      {
+        "run": 36304565524,
+        "branch": "fix/4510-signing-secret-name",
+        "classes": [
+          "rules"
+        ],
+        "first_fail_min": 51.92
+      },
+      {
+        "run": 36305359485,
+        "branch": "docs/flow-003-v1.1",
+        "classes": [
+          "rules"
+        ],
+        "first_fail_min": 58.75
+      },
+      {
+        "run": 36310778051,
+        "branch": "readme-tweak",
+        "classes": [
+          "rules"
+        ],
+        "first_fail_min": 45.48
+      },
+      {
+        "run": 36313889975,
+        "branch": "91/4351-on-main",
+        "classes": [
+          "rules",
+          "test"
+        ],
+        "first_fail_min": 90.1
+      },
+      {
+        "run": 36314251688,
+        "branch": "docs/flow-003-v2.1",
+        "classes": [
+          "rules"
+        ],
+        "first_fail_min": 135.05
+      },
+      {
+        "run": 36315039764,
+        "branch": "batch/ont-10",
+        "classes": [
+          "rules",
+          "test"
+        ],
+        "first_fail_min": 58.37
+      },
+      {
+        "run": 36316185548,
+        "branch": "49/3718-prompt-overlength",
+        "classes": [
+          "test"
+        ],
+        "first_fail_min": 37.85
+      },
+      {
+        "run": 36321627159,
+        "branch": "cb/4462-fork-attest",
+        "classes": [
+          "rules"
+        ],
+        "first_fail_min": 182.72
+      },
+      {
+        "run": 36322012587,
+        "branch": "91/3761-on-main",
+        "classes": [
+          "rules",
+          "test"
+        ],
+        "first_fail_min": 7.85
+      },
+      {
+        "run": 36353187094,
+        "branch": "batch/ont-10",
+        "classes": [
+          "freshness",
+          "rules",
+          "test"
+        ],
+        "first_fail_min": 32.72
+      },
+      {
+        "run": 36353737508,
+        "branch": "49/3718-prompt-overlength",
+        "classes": [
+          "rules",
+          "test"
+        ],
+        "first_fail_min": 39.2
+      },
+      {
+        "run": 36366484374,
+        "branch": "dependabot/github_actions/actions/attest-build-provenance-4.2.2",
+        "classes": [
+          "rules",
+          "test"
+        ],
+        "first_fail_min": 98.98
+      }
+    ],
+    "unarmed_merged_into_main": 0,
+    "ci_runs": {
+      "code": 13,
+      "docs": 1
+    }
+  },
+  "missed": [
+    "lead_time_p50_min",
+    "ci_p50_code_min",
+    "ci_p50_docs_min",
+    "pr_age_p90_h_open",
+    "open_prs",
+    "conflicted_over_4h",
+    "release_cycle_p50_min",
+    "merge_commit_resolutions",
+    "open_to_green_p90_h",
+    "pushes_per_pr_avg",
+    "escape_rate",
+    "escapes_rules",
+    "escapes_freshness",
+    "escapes_proof_count",
+    "first_fail_signal_p50_min",
+    "release_prs_over_24h"
+  ],
+  "no_data": [],
+  "verdict": "MISSED lead_time_p50_min,ci_p50_code_min,ci_p50_docs_min,pr_age_p90_h_open,open_prs,conflicted_over_4h,release_cycle_p50_min,merge_commit_resolutions,open_to_green_p90_h,pushes_per_pr_avg,escape_rate,escapes_rules,escapes_freshness,escapes_proof_count,first_fail_signal_p50_min,release_prs_over_24h"
+}
