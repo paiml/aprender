@@ -66,6 +66,7 @@ PY
 
 # expect <lib> <label> <mode> <python-bool over `out` (the case's printed lines, one string)>
 bad=0
+SEQ=0
 expect() {
   local lib=$1 label=$2 mode=$3 pred=$4 out
   out=$(run_case "$lib" "$mode")
@@ -73,6 +74,44 @@ expect() {
     printf 'ok    %s\n' "$label"; return 0
   fi
   printf 'FAIL  %s\n%s\n' "$label" "$(sed 's/^/        /' <<< "$out" | head -12)"; return 1
+}
+
+# measure_rc <lib> <label> <want-rc> <extra measure args...> -> the quorum-2 guards (#3715): a --only that names
+# no inventory model, and a rungs file the judge FAILs, must each refuse -- never write "0 row(s)" at rc 0.
+measure_rc() {
+  local lib=$1 label=$2 want=$3 d rc; shift 3
+  SEQ=$((SEQ + 1)); d="$WORK/rc.$SEQ"; mkdir -p "$d" || return 1
+  FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" enrich --apr "$FAKE" \
+      --inventory "$WORK/inventory.jsonl" --models "$WORK/models.txt" --out "$d/inv.jsonl" > /dev/null 2>&1
+  FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" measure --apr "$FAKE" \
+      --inventory "$d/inv.jsonl" --models "$WORK/models.txt" --ladder "$WORK/ladder.yaml" \
+      --work "$d" --timeout 60 --serve-ceiling 30 --out "$d/cells.json" "$@" > "$d/log" 2>&1
+  rc=$?
+  if [ "$rc" = "$want" ] && { [ "$want" = 0 ] || grep -q 'cells: refused' "$d/log"; }; then
+    printf 'ok    %s\n' "$label"; return 0
+  fi
+  printf 'FAIL  %s (rc %s, want %s)\n%s\n' "$label" "$rc" "$want" "$(sed -n '$p' < "$d/log" | sed 's/^/        /')"; return 1
+}
+
+# offmode <lib> -> an off-mode prompt is sized by the OFF budget: with a thinking budget that leaves the on-mode
+# prompt below the 4k rung, every off-mode row still reaches its rung's count (quorum 2 finding 3, #3715).
+offmode() {
+  local lib=$1 d
+  SEQ=$((SEQ + 1)); d="$WORK/off.$SEQ"; mkdir -p "$d" || return 1
+  FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" enrich --apr "$FAKE" \
+      --inventory "$WORK/inventory.jsonl" --models "$WORK/models.txt" --out "$d/inv.jsonl" > /dev/null 2>&1
+  FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" measure --apr "$FAKE" \
+      --inventory "$d/inv.jsonl" --models "$WORK/models.txt" --ladder "$WORK/ladder.yaml" \
+      --rungs "$WORK/rungs.json" --work "$d" --timeout 60 --serve-ceiling 30 --max-tokens-thinking 30000 \
+      --out "$d/cells.json" > /dev/null 2>&1
+  if python3 - "$d/cells.json" <<'PY2'
+import json, sys
+rows = [c for c in json.load(open(sys.argv[1])) if c["thinking"] == "off" and c["verb"] == "run"]
+need = {"4k": 4096, "8k": 8192}
+sys.exit(0 if rows and all((c["prompt_tokens"] or 0) >= need[c["context"]] for c in rows) else 1)
+PY2
+  then printf 'ok    %s\n' "offmode: an off-mode prompt leaves room for the off budget only, and reaches its rung"; return 0; fi
+  printf 'FAIL  %s\n' "offmode: an off-mode prompt was sized by the thinking budget and fell below its rung"; return 1
 }
 
 cases() { # cases <lib> -> 0 all as expected
@@ -89,6 +128,12 @@ cases() { # cases <lib> -> 0 all as expected
   expect "$lib" "refuse: a pre-load capacity refusal is a refused row with apr's arithmetic" refuse '"REFUSED 8" in out and "REFUSED without" not in out' || r=1
   expect "$lib" "undercount: a denser tokenizer than guessed still reaches every rung's count" undercount \
     'int(out.split("MINPT ")[1].split()[0]) >= 0' || r=1
+  local rj="$WORK/rungs.json"
+  measure_rc "$lib" "only-rung: --only naming a rung id (no inventory model) refuses, rc 2" 2 --rungs "$rj" --only 4k || r=1
+  measure_rc "$lib" "only-model: --only naming the inventory model measures it, rc 0" 0 --rungs "$rj" --only inv:m.gguf || r=1
+  printf '{"schema": "apr-release-context-rungs/v1", "rungs": []}\n' > "$WORK/rungs-empty.json"
+  measure_rc "$lib" "rungs-empty: a rungs file the judge FAILs refuses by name, never 0 rows" 1 --rungs "$WORK/rungs-empty.json" || r=1
+  offmode "$lib" || r=1
   return $r
 }
 
@@ -116,6 +161,9 @@ mutant retry      's/for _attempt in range(3):/for _attempt in range(1):/'
 mutant owed-set   's/for rid, tok in J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max):/for rid, tok in list(J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max))[:1]:/'
 mutant refusal    's/if rc != 0 and ref is not None:/if False:/'
 mutant think      's/if "<\/think>" in text:/if False:/'
+mutant only-vacuity 's/if a.only and not matched:/if False:/'
+mutant rungs-silent 's/^    if rc:$/    if False:/'
+mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(tok, int(ctx) - a.max_tokens_thinking - 1)/'
 
 [ "$bad" = 0 ] && { echo "check_ladder_cells_producer: all cases and mutants as expected"; exit 0; }
 exit 1

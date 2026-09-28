@@ -321,7 +321,12 @@ def measure_serve(S, prompt, mode, max_tokens, row, timeout):
 def cells_for(item, L, rungs_doc):
     """[(rid, tokens, mode, verb)] this item owes -- the judge's own enumeration."""
     C = L.get("cells") or {}
-    rungs, consumer_max, _ = J.load_rungs(rungs_doc, lambda _m: None)
+    why = []
+    rungs, consumer_max, rc = J.load_rungs(rungs_doc, why.append)
+    if rc:
+        # The judge FAILs this rungs file by name; measuring an empty or partial owed set against it would
+        # print "0 row(s)" as if nothing were owed (quorum 2, #3715).
+        raise SystemExit("cells: refused -- " + "; ".join(why))
     modes = J.expected_modes(item.get("thinking_markers"), bool(item.get("generation_opens_think")))
     modes = sorted(modes or {"on", "off"})
     out = []
@@ -346,39 +351,42 @@ def measure_item(R, item, path, L, rungs_doc, a):
                     r = base_row(item, verb, mode, rid, a.max_tokens); r["reason"] = "rung has no token count"; rows.append(r)
                 continue
             ctx = item.get("context_length")
-            # A prompt must leave room to answer: at the `declared` rung (tok == context_length) the
-            # prompt is context_length - budget - 1, which the judge's `prompt_tokens >= tok` refuses.
-            # That conflict is the judge's to rule on (reported on #3712), not this file's to hide.
-            target = min(tok, int(ctx) - a.max_tokens_thinking - 1) if ctx else tok
-            prompt = build_prompt(target, density)
-            pf = os.path.join(a.work, f"prompt-{rid}.txt")
-            open(pf, "w").write(prompt)
-            measured = {}
-            for mode, verb in sorted(jobs, key=lambda j: j[1] != "run"):  # run first: it measures the count
+            for mode in sorted({m for m, _ in jobs}):
+                # Each mode's prompt leaves room for THAT mode's answer budget, no more: sizing an off-mode
+                # prompt by the thinking budget built it below a rung the model could hold (quorum 2, #3715).
+                # At the `declared` rung (tok == context_length) the prompt is context_length - budget - 1,
+                # which the judge's `prompt_tokens >= tok` refuses: that conflict is the judge's to rule on
+                # (reported on #3712), not this file's to hide.
                 budget = a.max_tokens_thinking if mode == "on" else a.max_tokens
-                row = base_row(item, verb, mode, rid, budget)
-                if verb == "run":
-                    for _attempt in range(3):  # the first rung's density is a guess; apr's count corrects it
-                        row = measure_run(R, path, pf, mode, budget, base_row(item, verb, mode, rid, budget))
-                        pt = row["prompt_tokens"]
-                        if not pt:
-                            break
-                        density = max(1.0, len(prompt) / pt)
-                        if pt >= target:
-                            break
-                        prompt = build_prompt(target, density)
-                        open(pf, "w").write(prompt)
-                    if row["prompt_tokens"]:
-                        measured[mode] = row["prompt_tokens"]
-                elif verb == "serve":
-                    serve = serve or Serve(R, path, a.serve_ceiling)
-                    row = measure_serve(serve, prompt, mode, budget, row, R.timeout)
-                else:
-                    row = (measure_chat if verb == "chat" else measure_code)(R, path, prompt, mode, budget, row)
-                if row["prompt_tokens"] is None and measured:
-                    row["prompt_tokens"] = measured.get(mode) or max(measured.values())
-                    row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
-                rows.append(row)
+                target = min(tok, int(ctx) - budget - 1) if ctx else tok
+                prompt = build_prompt(target, density)
+                pf = os.path.join(a.work, f"prompt-{rid}-{mode}.txt")
+                open(pf, "w").write(prompt)
+                measured = None
+                verbs = sorted((v for m, v in jobs if m == mode), key=lambda v: v != "run")  # run first: it counts
+                for verb in verbs:
+                    row = base_row(item, verb, mode, rid, budget)
+                    if verb == "run":
+                        for _attempt in range(3):  # the first rung's density is a guess; apr's count corrects it
+                            row = measure_run(R, path, pf, mode, budget, base_row(item, verb, mode, rid, budget))
+                            pt = row["prompt_tokens"]
+                            if not pt:
+                                break
+                            density = max(1.0, len(prompt) / pt)
+                            if pt >= target:
+                                break
+                            prompt = build_prompt(target, density)
+                            open(pf, "w").write(prompt)
+                        measured = row["prompt_tokens"] or None
+                    elif verb == "serve":
+                        serve = serve or Serve(R, path, a.serve_ceiling)
+                        row = measure_serve(serve, prompt, mode, budget, row, R.timeout)
+                    else:
+                        row = (measure_chat if verb == "chat" else measure_code)(R, path, prompt, mode, budget, row)
+                    if row["prompt_tokens"] is None and measured:
+                        row["prompt_tokens"] = measured
+                        row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
+                    rows.append(row)
     finally:
         if serve:
             serve.close()
@@ -409,13 +417,19 @@ def cmd_measure(a):
     rungs_doc = json.load(open(a.rungs))
     paths = dict(l.rstrip("\n").split("|", 1) for l in open(a.models) if "|" in l)
     R = Runner(a.apr, a.lock, a.lock_wait, a.timeout)
-    rows = []
+    rows, matched = [], 0
     for l in open(a.inventory):
         if l.strip():
             it = json.loads(l)
             if a.only and a.only not in (it["file"], "inv:" + it["file"]):
                 continue
+            matched += 1
             rows += measure_item(R, it, paths[it["file"]], L, rungs_doc, a)
+    if a.only and not matched:
+        # model_ladder.sh accepts a rung id for --only; cells are owed per INVENTORY model, so a rung id
+        # selects none. Zero rows at rc 0 would read as "this host owes no cells" (quorum 2, #3715).
+        print(f"cells: refused -- --only {a.only!r} names no inventory model; cells are measured per model", file=sys.stderr)
+        return 2
     json.dump(rows, open(a.out, "w"), indent=1)
     print(f"cells: {len(rows)} row(s), {sum(r['verdict'] == 'pass' for r in rows)} pass, "
           f"{sum(r['verdict'] == 'refused' for r in rows)} refused")
