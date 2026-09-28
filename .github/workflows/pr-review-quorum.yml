@@ -139,11 +139,43 @@ jobs:
         shell: bash
         run: setsid --wait bash scripts/check_pr_review_arm4.sh --self-test
 
+      - name: "Fork attest case table: 29 rows (self-label, triage, stale patch-id, non-base branch go RED)"
+        shell: bash
+        run: bash scripts/pr_review_fork_attest.sh --self-test
+
+      # A FORK PR's receipt is a maintainer attest (#4462): pr-review-fork-attest.yml
+      # signs it with the base secret and commits it to the BASE-owned branch
+      # pr-review-fork-receipts. Arm 4 counts an L2-maintainer-attest receipt only
+      # from this directory, never from the PR head's tree. Data only: git archive.
+      - name: Materialise this PR's maintainer attests from pr-review-fork-receipts (data, never code)
+        id: attest
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/attest-root"
+          rm -rf -- "${root:?}"; mkdir -p "$root"
+          rc=0; git ls-remote --exit-code origin refs/heads/pr-review-fork-receipts >/dev/null || rc=$?
+          case "$rc" in
+            0) git fetch --no-tags origin "refs/heads/pr-review-fork-receipts:refs/remotes/origin/pr-review-fork-receipts"
+               if git cat-file -e "refs/remotes/origin/pr-review-fork-receipts:evidence/pr-review/${PR_NUMBER}" 2>/dev/null; then
+                 git archive refs/remotes/origin/pr-review-fork-receipts "evidence/pr-review/${PR_NUMBER}" | tar -x -C "$root"
+                 find "$root" -type f | sort
+               else
+                 echo "no maintainer attest for PR #$PR_NUMBER"
+               fi ;;
+            2) echo "pr-review-fork-receipts does not exist yet: no maintainer attests" ;;
+            *) echo "git ls-remote failed (rc $rc); cannot tell whether an attest exists" >&2; exit 2 ;;
+          esac
+          printf 'root=%s\n' "$root/evidence/pr-review" >> "$GITHUB_OUTPUT"
+
       - name: This PR's own receipt, judged by the base's Arm 4 under the base's public key
         shell: bash
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr }}
           PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
+          PR_REVIEW_ATTEST_ROOT: ${{ steps.attest.outputs.root }}
           # B1: an unsigned-on-disk receipt is judged by the pr-review-signature
           # check run on the PR head. The head is resolved above, so Arm 4 needs
           # no pulls API read; the check-runs read uses this token (checks: read).

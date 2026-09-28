@@ -352,6 +352,14 @@ if [ -z "$REPO" ]; then
   }
 fi
 
+# #4472: the ONE diff classifier CI and this guard share. It comes from the tree this
+# guard runs from, never from $REPO (the fixtures point $REPO at a synthesized repo).
+# Looked up LAZILY: only a not-triggered antigravity arm runs it, and there an absent
+# classifier makes the call fail, which rejects [B1] ("the docs tier fails closed").
+# Not an up-front exit: harnesses that copy this guard alone (mutate_quorum_arm.sh,
+# check_pr_review_arm4.sh) never reach the docs tier and must not break on its input.
+DIFF_CLASS=${PR_REVIEW_DIFF_CLASS:-$(dirname "$(readlink -f "$0")")/ci/diff_class.sh}
+
 VERDICTS='PASS FINDINGS DEGRADED BLOCK'
 PREDICATE_TYPE='https://paiml.dev/attestations/pr-review/v2'
 
@@ -374,6 +382,39 @@ PREDICATE_TYPE='https://paiml.dev/attestations/pr-review/v2'
 # with zero samples. An advisory arm with a stated bypass is worth more than a blocking
 # one with an unstated closure.
 ARM_E_MIN_VERSION=2.1.0
+
+# #4462: the fork path. A fork's pull_request_target run holds no signing secret the
+# fork can reach, and the full review cannot run server-side without executing fork code
+# (mutation) or holding reviewer credentials in CI. So a maintainer with write permission
+# ATTESTS instead: the pr-review:attest label runs .github/workflows/pr-review-fork-attest.yml,
+# which checks the labeler's permission server-side, reads the diff (never runs it), and
+# signs THIS level. It is weaker than L1-self and says so: verdict DEGRADED, no
+# consultation claimed, and it binds exactly one diff (the signed diff_patch_id), so a
+# new push voids it. Arm 4 accepts it only from the base-owned receipts branch.
+L2_LEVEL=L2-maintainer-attest
+L2_LABEL=pr-review:attest
+
+# validate_l2_attest <rcpt> <verdict> <reviewer> - the checks only an attest carries;
+# the common ones (schema, signature, B2, merge base, cost, findings digest) have run.
+validate_l2_attest() {
+  local rcpt=$1 verdict=$2 reviewer=$3 a
+  [ "$verdict" = DEGRADED ] \
+    || reject B1 "an $L2_LEVEL receipt has verdict '$verdict'; a maintainer attest is not a review, so it is DEGRADED and never PASS/FINDINGS/BLOCK (#4462)" || return 1
+  jq -e '(.predicate.consultations // {}) == {}' "$rcpt" >/dev/null 2>&1 \
+    || reject B1 "an $L2_LEVEL receipt carries consultations; nobody consulted anything, and a claim nobody made cannot be checked (#4462)" || return 1
+  a=$(jq -r --arg r "$reviewer" --arg l "$L2_LABEL" '.predicate.attestation as $a
+        | if ($a | type) != "object" then "predicate.attestation is absent"
+          elif ($a.attester // "") != $r then "attestation.attester is not reviewer_actor.id"
+          elif ((($a.permission // "") | tostring) | IN("admin","maintain","write") | not) then "attestation.permission \(($a.permission // "") | tojson) is not admin, maintain or write"
+          elif ($a.label // "") != $l then "attestation.label is not \($l)"
+          elif ($a.head_repo // "") == "" or ($a.base_repo // "") == "" then "attestation.head_repo/base_repo is absent"
+          elif $a.head_repo == $a.base_repo then "attestation.head_repo = base_repo; the attest path is for forks only"
+          elif (($a.run_id // "") | tostring | test("^[0-9]+$") | not) then "attestation.run_id is not a workflow run id"
+          else "" end' "$rcpt" 2>/dev/null) \
+    || a="predicate.attestation is unreadable"
+  [ -z "$a" ] || reject B1 "$a (#4462)" || return 1
+  return 0
+}
 
 # version_ge A B - 0 when A >= B under version ordering.
 #
@@ -485,7 +526,10 @@ validate_receipt() {
   [ "$ptype" = "$PREDICATE_TYPE" ] || reject B1 "predicateType is '$ptype', expected '$PREDICATE_TYPE'" || return 1
 
   alevel=$(jq -r '.predicate.attestation_level // ""' "$rcpt")
-  [ "$alevel" = "L1-self" ] || reject B1 "attestation_level is '$alevel'; a skill invoked by the authoring agent is self-attestation, and R1 requires it to say so" || return 1
+  case "$alevel" in
+    L1-self|"$L2_LEVEL") ;;
+    *) reject B1 "attestation_level is '$alevel'; a skill invoked by the authoring agent is self-attestation, and R1 requires it to say so (the one other level is $L2_LEVEL, #4462)" || return 1 ;;
+  esac
 
   # skill_version decides which rules this receipt is judged by (ARM_E_MIN_VERSION
   # above), so an absent one is not a cosmetic omission: it is a receipt that does not
@@ -537,6 +581,12 @@ validate_receipt() {
     || reject B1 "cannot compute merge-base(origin/main, $head) in $REPO" || return 1
   [ "$base" = "$computed_base" ] \
     || reject B1 "base_sha $base is not git merge-base origin/main $head (= $computed_base); the diff scope of this review is not the merge base (S2)" || return 1
+
+  # --- #4462: a maintainer attest stops here; it claims no consultation. -----
+  if [ "$alevel" = "$L2_LEVEL" ]; then
+    validate_l2_attest "$rcpt" "$verdict" "$reviewer" || return 1
+    return 0
+  fi
 
   # --- consultation statuses -----------------------------------------------
   local pmat_st cuda_st crux_st mut_st ag_st
@@ -869,8 +919,44 @@ validate_receipt() {
     # on this epic". Cost is instrumented instead (`usage`, below), so a threshold can be
     # DERIVED from 30 samples later rather than guessed now - S10 row 8.4's argument,
     # reused because it is the same argument.
-    [ "$ag_st" != "not-triggered" ] \
-      || reject B1 "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR exactly as S3.A's is; a shape trigger would exempt the small diffs that look obvious, which is every PR in S9's spine" || return 1
+    #
+    # THE DOCS TIER (#4472, operator P0 2026-09-26: "the quorum gets a light tier for
+    # docs-only diffs"). ONE exemption, and it is narrower than "looks like docs":
+    #   (1) scripts/ci/diff_class.sh says class=docs -- every path is root *.md,
+    #       book/**/*.md or docs/**, and present at head (the classifier CI uses);
+    #   (2) docs/BEATS.md is untouched -- the scoreboard IS a claim, whatever its suffix;
+    #   (3) no ADDED line anywhere in the diff matches COMPARATIVE_RE. B4 deliberately
+    #       measured docs/ prose OUT of its scope (2/5 precision); this is the reverse
+    #       trade, and it is the right one here: a false positive costs one agy run, a
+    #       false negative lets a ratio into a README unread by a second vendor;
+    #   (4) trigger_reason names the tier ("docs tier"), so the record says WHICH rule
+    #       exempted the arm -- S3.0's "not-triggered is a distinct, visible state".
+    # pmat stays unconditional (S3.A), and the signature, patch binding and the
+    # cuda/crux/mutation recomputations above all still ran on this receipt.
+    if [ "$ag_st" = "not-triggered" ]; then
+      local dc dc_out ag_why ag_claim='' ag_added acf acl
+      dc_out=$(bash "$DIFF_CLASS" --repo "$REPO" --base "$base" --head "$head" 2>&1) \
+        || reject B1 "consultations.antigravity is not-triggered and the diff classifier could not classify $base..$head ($(printf '%s' "$dc_out" | tr '\n' ' ' | cut -c1-160)); the docs tier fails closed" || return 1
+      dc=$(printf '%s\n' "$dc_out" | sed -n 's/^class=//p')
+      [ "$dc" = "docs" ] \
+        || reject B1 "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR except a docs-tier diff, and this one is class=$dc ($(printf '%s\n' "$dc_out" | sed -n 's/^reason=//p' | cut -c1-160))" || return 1
+      ! grep -qx 'docs/BEATS.md' <<<"$changed_files" \
+        || reject B1 "consultations.antigravity is not-triggered, but the diff touches docs/BEATS.md; the beat scoreboard is a published claim, so the docs tier does not cover it" || return 1
+      # Read the added lines FIRST, with their status: inside `< <(...)` a failed
+      # changed_lines would yield zero lines and the claim scan would pass (fail-open,
+      # quorum finding on #4503).
+      ag_added=$(changed_lines "$base" "$head" '+') \
+        || reject B1 "consultations.antigravity is not-triggered and the added lines of $base..$head could not be read; the docs tier fails closed" || return 1
+      while IFS=$'\t' read -r acf acl; do
+        [ -n "$acf" ] || continue
+        if match_comparative "$acl"; then ag_claim="$acf"; break; fi
+      done < <(printf '%s\n' "$ag_added" | grep -Ei -- "$COMPARATIVE_RE" || true)
+      [ -z "$ag_claim" ] \
+        || reject B1 "consultations.antigravity is not-triggered, but an added line in $ag_claim states a comparative ratio; the docs tier does not cover a claim, which is exactly what a second vendor is owed" || return 1
+      ag_why=$(jq -r '.predicate.consultations.antigravity.trigger_reason // ""' "$rcpt")
+      grep -qi 'docs tier' <<<"$ag_why" \
+        || reject B1 "consultations.antigravity is not-triggered on a docs-tier diff, but its trigger_reason ('$ag_why') does not name the docs tier; the record must say which rule exempted the arm (S3.0)" || return 1
+    fi
 
     if [ "$ag_st" = "consulted" ]; then
       local ag_attempted ag_out ag_ident ag_usage ag_div ag_nfind ag_sum

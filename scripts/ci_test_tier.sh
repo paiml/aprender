@@ -172,14 +172,11 @@ filterset_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--tes
 # the queue and main must not answer a different question about the same diff
 # than the PR did, and one code path is how that stays true.
 docs_only() { # $1 = diff file -> 0 iff every non-empty path is docs/roadmaps/** or docs/audits/** AND exists at HEAD of $ROOT
-    local p any=0
-    while IFS= read -r p; do
-        [ -n "$p" ] || continue
-        any=1
-        case "$p" in docs/roadmaps/*|docs/audits/*) ;; *) return 1 ;; esac
-        git -C "$ROOT" cat-file -e "HEAD:$p" 2>/dev/null || return 1
-    done < "$1"
-    [ "$any" = 1 ]
+    # #4472: the path rules live in ONE place, scripts/ci/diff_class.sh, which the
+    # pr-review receipt guard reads too. `subclass=ledger` is exactly the #3658 set
+    # this function used to spell out: docs/roadmaps/ + docs/audits/, present at HEAD.
+    # Any other answer -- prose docs, code, empty, or exit 2 -- is "not docs-only" here.
+    bash "$TREE/scripts/ci/diff_class.sh" --diff-from "$1" --repo "$ROOT" 2>/dev/null | grep -qx 'subclass=ledger'
 }
 
 selection() { # $1 = reason prefix (names the event and how the diff was derived), $2 = diff file ("" -> gate_touched_crates' own git diff)
@@ -516,7 +513,7 @@ self_test() {
     row 0 "  ...and the crate it left is in the selection" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
     row 0 "mutant without --no-renames reads the rename as docs-only (tier=none) -- the rows discriminate" 'MUTANT-NONE' bash -c "o=\$(bash '$td/mutant-renames.sh' --event merge_group --repo-root '$td/s-rename' --pr-head '$(qh "$td/s-rename")' --pr-head-conclusion success 2>&1); case \"\$o\" in *tier=none*) echo MUTANT-NONE ;; *) echo MUTANT-NOT-NONE ;; esac"
-    row 0 "ci.yml builds the pull_request touched list with --no-renames (the list docs_only judges)" '^ALL-PRESENT$' contains_all "$TREE/.github/workflows/ci.yml" 'git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
+    row 0 "workspace-test builds the pull_request touched list with --no-renames (the list docs_only judges)" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     # MUTANT: a copy whose queue branch ignores the re-derived diff and always
     # says full is exactly today's behaviour — the rows above must lose the crates.
     sed 's|^\( *\)selection "merge_group|\1printf "tier=full\\nreason=MUTANT\\n"; return 0; selection "merge_group|' "$T" > "$td/mutant-queue.sh"

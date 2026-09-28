@@ -1,0 +1,7 @@
+# tool_version=none (counted by scripts/lib/ci_guard_steps.sh over ci.yml; not a versioned analyser)
+# Fail-fast guard steps per ci.yml guard job (#4415, lever 0). SHRINK-ONLY:
+# a guard step that is skipped when an earlier guard goes red hides a failure.
+# The workflow half (steps get `if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}`)
+# takes both rows to 0. Counted by: bash scripts/lib/ci_guard_steps.sh check-run-all
+guard-cargo 0
+guard-tree 0
