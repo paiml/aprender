@@ -372,7 +372,7 @@
             directory: PathBuf::from("/tmp/nonexistent_publish_dir_test"),
             repo_id: "test/test".to_string(),
             model_name: None,
-            license: "mit".to_string(),
+            license: Some("mit".to_string()),
             pipeline_tag: "text-generation".to_string(),
             library_name: None,
             tags: None,
