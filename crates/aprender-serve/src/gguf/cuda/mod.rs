@@ -68,6 +68,18 @@ use super::utils::verbose;
 // IMP-800: CUDA-Accelerated Model Wrapper
 // =============================================================================
 
+/// #3715: device bytes load makes resident, from [`OwnedQuantizedModelCuda::resident_estimate`].
+struct ResidentEstimate {
+    /// f32 K+V bytes of one position over every layer.
+    kv_per_pos: usize,
+    /// Quantized weights.
+    weights: usize,
+    /// FP16/FP8 prefill weight cache (0 when this profile warms none).
+    cache: usize,
+    /// GH-178 workspace reserve plus the chunked-prefill score budget.
+    reserve: usize,
+}
+
 /// How `build` sizes the device KV cache.
 #[derive(Debug, Clone, Copy)]
 enum KvLen {
@@ -794,6 +806,25 @@ impl OwnedQuantizedModelCuda {
             KvLen::FitContext => Self::session_kv_len(&executor, &model, memory_info.0),
         };
 
+        // #3715: the FP16 batched prefill a QK-norm model now takes must fit beside
+        // its cache; when it does not (Qwen3-8B on 24 GB) the model keeps serial.
+        {
+            let r = Self::resident_estimate(&executor, &model);
+            let need = r.weights + r.cache + r.reserve + r.kv_per_pos * max_seq_len;
+            if executor.gpu_profile.serial_when_fp16_prefill_does_not_fit(
+                model.config.constraints.has_qk_norm,
+                std::env::var("BATCHED_PREFILL").ok().as_deref(),
+                need,
+                memory_info.0,
+            ) {
+                eprintln!(
+                    "[#3715] serial prefill: the FP16 batched prefill needs {:.1} GB and {:.1} GB is free (BATCHED_PREFILL=1 overrides)",
+                    need as f64 / 1e9,
+                    memory_info.0 as f64 / 1e9,
+                );
+            }
+        }
+
         if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
             return Err(CudaInitError {
                 error,
@@ -830,14 +861,38 @@ impl OwnedQuantizedModelCuda {
     }
 
     /// #3715: the device KV length for [`Self::for_session`], from the VRAM free
-    /// before load minus what load will make resident: the quantized weights, the
-    /// FP16 (or FP8) prefill weight cache when this profile warms one, the GH-178
-    /// reserve and the chunked-prefill score budget.
+    /// before load minus what load will make resident (see [`Self::resident_estimate`]).
     fn session_kv_len(
         executor: &crate::cuda::CudaExecutor,
         model: &OwnedQuantizedModel,
         free_vram: usize,
     ) -> usize {
+        let r = Self::resident_estimate(executor, model);
+        let len = session_kv::session_kv_len(
+            model.config.context_length,
+            r.kv_per_pos,
+            free_vram,
+            r.weights + r.cache,
+            r.reserve,
+        );
+        eprintln!(
+            "[#3715] session device KV: {len} positions (context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
+            model.config.context_length,
+            free_vram as f64 / 1e9,
+            r.weights as f64 / 1e9,
+            r.cache as f64 / 1e9,
+        );
+        len
+    }
+
+    /// #3715: what load makes resident on the device: the quantized weights, the
+    /// FP16 (or FP8) prefill weight cache when this profile warms one, and the
+    /// GH-178 reserve plus the chunked-prefill score budget. Also the f32 K+V bytes
+    /// of one position over every layer.
+    fn resident_estimate(
+        executor: &crate::cuda::CudaExecutor,
+        model: &OwnedQuantizedModel,
+    ) -> ResidentEstimate {
         let c = &model.config;
         let head_dim = c.hidden_dim / c.num_heads.max(1);
         let kv_per_pos =
@@ -875,21 +930,12 @@ impl OwnedQuantizedModelCuda {
             );
         let reserve =
             3_500_000_000 + crate::gguf::cuda::forward_qwen35_cuda::PREFILL_SCORES_BUDGET_BYTES;
-        let len = session_kv::session_kv_len(
-            c.context_length,
+        ResidentEstimate {
             kv_per_pos,
-            free_vram,
-            weights + cache,
+            weights,
+            cache,
             reserve,
-        );
-        eprintln!(
-            "[#3715] session device KV: {len} positions (context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
-            c.context_length,
-            free_vram as f64 / 1e9,
-            weights as f64 / 1e9,
-            cache as f64 / 1e9,
-        );
-        len
+        }
     }
 
     /// GH-129: Free CPU projection weight copies after GPU preload.

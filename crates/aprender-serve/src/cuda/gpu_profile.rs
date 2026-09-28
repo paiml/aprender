@@ -1144,6 +1144,40 @@ impl GpuProfile {
         self.fp8_decode = false;
         true
     }
+
+    /// #3715: a QK-norm model whose FP16 batched prefill does not fit on the device
+    /// keeps the serial prefill, as it did before.
+    ///
+    /// With FP8 off, the FP16 weight cache is warmed on either path, but only the
+    /// batched prefill also needs its workspace and score buffers. Qwen3-8B on the
+    /// 24 GB 4090 takes 4.7 GB of weights plus a 15.1 GB FP16 cache, which leaves
+    /// 0.1 GB. The batched workspace then fails to allocate and the dense session
+    /// falls back to the CPU (a 2k chat turn: 382 s). Serial prefills on the device
+    /// in the room that is left. `need_bytes` is weights + cache + KV + the prefill
+    /// reserve. An explicit `BATCHED_PREFILL` keeps its own answer. Returns `true`
+    /// when it moved the path.
+    pub fn serial_when_fp16_prefill_does_not_fit(
+        &mut self,
+        has_qk_norm: bool,
+        forced_batched: Option<&str>,
+        need_bytes: usize,
+        free_bytes: usize,
+    ) -> bool {
+        if !has_qk_norm
+            || self.fp8_prefill
+            || forced_batched.is_some()
+            || self.prefill_path.path != PrefillPath::Batched
+            || need_bytes <= free_bytes
+        {
+            return false;
+        }
+        self.prefill_path = PrefillPathChoice {
+            path: PrefillPath::Serial,
+            reason: "qk-norm model, FP16 prefill does not fit (#3715)",
+            cc: self.cc,
+        };
+        true
+    }
 }
 
 #[cfg(test)]
@@ -1214,5 +1248,38 @@ mod pmat3477_fp8_qk_norm_tests {
         p.prefill_path = select_prefill_path(121, None);
         assert!(!p.disable_fp8_for_qk_norm(true, None));
         assert_eq!(p.prefill_path.path, PrefillPath::Serial);
+    }
+
+    // #3715: Qwen3-8B on the 4090 (4.7 GB weights + 15.1 GB FP16 cache + 4.6 GB
+    // reserve > 23.4 GB free) keeps serial; Qwen3-1.7B (1.1 + 3.4 + 4.6) keeps batched.
+    #[test]
+    fn fp16_prefill_that_does_not_fit_keeps_serial() {
+        const GB: usize = 1_000_000_000;
+        let mut p = profile(false);
+        assert!(p.serial_when_fp16_prefill_does_not_fit(
+            true,
+            None,
+            24_400_000_000,
+            23_400_000_000
+        ));
+        assert_eq!(p.prefill_path().path, PrefillPath::Serial);
+
+        let mut p = profile(false);
+        assert!(!p.serial_when_fp16_prefill_does_not_fit(true, None, 9_100_000_000, 23 * GB));
+        assert_eq!(p.prefill_path().path, PrefillPath::Batched);
+    }
+
+    #[test]
+    fn fit_check_leaves_non_qk_norm_fp8_and_forced_paths_alone() {
+        let (need, free) = (30_000_000_000, 1_000_000_000);
+        let mut p = profile(false);
+        assert!(!p.serial_when_fp16_prefill_does_not_fit(false, None, need, free));
+        let mut p = profile(true);
+        assert!(!p.serial_when_fp16_prefill_does_not_fit(true, None, need, free));
+        let mut p = profile(false);
+        assert!(!p.serial_when_fp16_prefill_does_not_fit(true, Some("1"), need, free));
+        for p in [profile(false), profile(true)] {
+            assert_eq!(p.prefill_path().path, PrefillPath::Batched);
+        }
     }
 }
