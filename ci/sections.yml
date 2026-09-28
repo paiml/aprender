@@ -391,6 +391,44 @@ jobs:
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
           grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+      # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
+      # refinement gate to RUN whenever CI is set, and that gate compares HEAD with
+      # merge-base(HEAD, origin/main), else the origin/main tip. This section clones at
+      # depth 1 and only the tier step's pull_request arm fetched a main, so a
+      # workflow_dispatch / merge_group / push shard had no base and the test panicked
+      # "the refinement gate declined". Operator ruling (2026-09-28 09:41): compare HEAD
+      # with the EVENT's base commit -- pull_request.base.sha, merge_group.base_sha,
+      # push's `before` -- and fall back to the origin/main tip only for
+      # workflow_dispatch. That commit is pinned as refs/remotes/origin/main, so at
+      # depth 1 (no merge-base) the gate's tip fallback compares against exactly it.
+      # AFTER the tier step: its pull_request arm fetches main's CURRENT tip into
+      # origin/main, which would replace the base. A missing base fails the step here,
+      # loudly, instead of reaching the test as a skipped gate.
+      - name: Pin the event's base commit as origin/main (refinement gate comparand, aprender-4502)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request) base="${PR_BASE_SHA:-}" ;;
+            merge_group) base="${MG_BASE_SHA:-}" ;;
+            push) base="${PUSH_BEFORE:-}" ;;
+            workflow_dispatch)
+              git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+              printf 'refinement base: origin/main tip %s (workflow_dispatch has no event base)\n' "$(git rev-parse origin/main)"
+              exit 0
+              ;;
+            *) printf '::error::refinement base: event %s has no base rule\n' "${GITHUB_EVENT_NAME}"; exit 1 ;;
+          esac
+          if ! printf '%s' "$base" | grep -Eq '^[0-9a-f]{40}$' || [ "$base" = 0000000000000000000000000000000000000000 ]; then
+            printf '::error::refinement base: %s event carries no base sha (got "%s")\n' "${GITHUB_EVENT_NAME}" "$base"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$base"
+          git update-ref refs/remotes/origin/main "$base"
+          printf 'refinement base: %s base %s pinned as origin/main\n' "${GITHUB_EVENT_NAME}" "$(git rev-parse 'origin/main^{commit}')"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
