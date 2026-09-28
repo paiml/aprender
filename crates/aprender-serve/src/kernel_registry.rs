@@ -658,8 +658,9 @@ mod tests {
 
     /// F-8 case table: an unchanged set is fresh; each changed part is named, alone; a digest
     /// that does not match the recorded parts is stale whatever the parts say.
+    // serde_json::json! unwraps internally.
     #[test]
-    #[allow(clippy::disallowed_methods)] // serde_json::json! unwraps internally
+    #[allow(clippy::disallowed_methods)]
     fn f8_a_stale_input_set_is_named() {
         let base = InputSet {
             source_sha256: "a".into(),

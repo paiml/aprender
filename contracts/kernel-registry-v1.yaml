@@ -143,7 +143,7 @@ invariants:
 
   - id: KREG-INV-006
     property: a committed parity receipt is reused only while its input set recomputes unchanged from the tree (KTEST-001 §5.1, F-8)
-    formal: 'reuse(rc) ⇔ rc.input_set_hash = H(rc.input_set) ∧ rc.input_set = InputSet(tree, row, rc.driver, rc.device, oracle(tree))'
+    formal: 'reuse(rc) ↔ rc.input_set_hash = H(rc.input_set) ∧ rc.input_set = InputSet(tree, row, rc.driver, rc.device, oracle(tree))'
     prose: false
 falsification_tests:
   - id: FALSIFY-KREG-001
