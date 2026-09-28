@@ -101,6 +101,12 @@ fresh when every KernelCell it uses is fresh and its smoke ran at the release co
 | RR2-F4 | kernel source changed, receipt input key stale | that KernelCell and its dependants |
 | RR2-F5 | no smoke receipt for model × host | that ModelCell |
 | RR2-F6 | receipt measured on another arch/sm than the host's backend | that KernelCell |
+| S-SAN | a cuda kernel with no, a dirty (any of memcheck/racecheck/initcheck/synccheck not CLEAN), or a > 7 d compute-sanitizer run (KTEST-05 `receipt.json`) | that KernelCell only (`release-readiness-v2.sanitizer`); cpu kernels are not asked |
+
+S-SAN attributes a sanitizer run to the kernels it dispatched, so it needs the smoke's `kernel_path`
+(OBS-15), just as RR2-F3 does. Until that emitter exists, every cuda kernel cell is RED on S-SAN. A
+racecheck run with a `--kernel-name` filter covers only the kernels the filter matches. The gx10 run
+of 2026-09-28 filters out the gemv kernels, so attribution must take the filter into account.
 
 ## 7. Budget: ≤ 30 min
 
