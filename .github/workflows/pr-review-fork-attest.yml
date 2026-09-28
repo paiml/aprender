@@ -1,0 +1,140 @@
+# pr-review-fork-attest.yml — the pr-review:attest label path for FORK PRs (#4462).
+#
+# WHY. Arm 4 (pr-review-quorum.yml `present`) requires a receipt signed with the
+# base secret PR_REVIEW_SIGNING_KEY_B64. A fork PR's own runs get no secrets, so a
+# fork PR could never be signed and was unmergeable by construction.
+#
+# WHAT. A maintainer labels the fork PR `pr-review:attest`. This job:
+#   1. authorize — asks the API, SERVER-SIDE, what the labeler may do
+#      (admin/maintain/write only; triage reads as `read` and is refused), and
+#      refuses a self-label and a same-repo head;
+#   2. build     — writes an L2-maintainer-attest receipt, verdict DEGRADED, for
+#      merge-base(origin/main, head)..head;
+#   3. signs it with the base secret; the signer stamps the diff's patch-id, so a
+#      later push voids the attest (Arm 4's A2 binding) and the label must be
+#      applied again;
+#   4. publish   — commits it to the BASE-owned branch pr-review-fork-receipts,
+#      fast-forward only. Arm 4 reads L2 receipts from that branch and nowhere else;
+#   5. reruns this head's pr-review-quorum run, whose `present` now prints
+#      "DEGRADED: maintainer-attest by <login>".
+#
+# SECURITY. pull_request_target runs the BASE definition with the BASE secret. No
+# step checks out, builds, sources or executes anything from the head: the head is
+# fetched as a ref and read as git objects only (merge-base, and the signer's pinned
+# `git diff --no-ext-diff --no-textconv | git patch-id`). Every script is the base's.
+# Event data reaches `run:` blocks only through `env:`, never by interpolation.
+# Top-level permissions are empty; the job holds contents: write (the receipts
+# branch), actions: write (the rerun), pull-requests: read.
+name: pr-review-fork-attest
+
+on:
+  pull_request_target:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  # one attest per PR at a time; a second label click queues, it does not race
+  group: pr-review-fork-attest-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    if: >-
+      github.event.label.name == 'pr-review:attest' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: write
+      pull-requests: read
+    env:
+      ATTEST_REPO: ${{ github.repository }}
+      ATTEST_PR: ${{ github.event.pull_request.number }}
+      ATTEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      ATTEST_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      ATTEST_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      ATTEST_SENDER: ${{ github.event.sender.login }}
+      ATTEST_LABEL: ${{ github.event.label.name }}
+      ATTEST_RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Checkout the BASE (never the head)
+        uses: actions/checkout@v7
+        with:
+          # merge-base(origin/main, head) needs history
+          fetch-depth: 0
+
+      - name: Authorize the labeler server-side (write+, not the author, a fork head)
+        id: authz
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=$(bash scripts/pr_review_fork_attest.sh authorize)
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep '^permission=' >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the PR head as git objects (data, never code)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/pull/${ATTEST_PR}/head:refs/remotes/pr/${ATTEST_PR}"
+          got=$(git rev-parse "refs/remotes/pr/${ATTEST_PR}")
+          [ "$got" = "$ATTEST_HEAD_SHA" ] \
+            || { echo "refs/pull/$ATTEST_PR/head is $got, the labelled head was $ATTEST_HEAD_SHA: pushed meanwhile, label again" >&2; exit 1; }
+
+      - name: Install the tools the signer and guard refuse to run without
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Build the L2-maintainer-attest receipt
+        shell: bash
+        env:
+          ATTEST_PERMISSION: ${{ steps.authz.outputs.permission }}
+          ATTEST_DIR: ${{ runner.temp }}/attest
+        run: bash scripts/pr_review_fork_attest.sh build "$ATTEST_DIR"
+
+      - name: Sign it with the base secret
+        shell: bash
+        env:
+          ATTEST_DIR: ${{ runner.temp }}/attest
+          PR_REVIEW_ALLOW_ATTEST: "1"
+          PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+        run: bash scripts/pr_review_sign_receipt.sh "$ATTEST_DIR"
+
+      - name: The base's guard accepts it before it is published
+        shell: bash
+        env:
+          ATTEST_DIR: ${{ runner.temp }}/attest
+        run: setsid --wait bash scripts/check_pr_review_receipt.sh "$ATTEST_DIR"
+
+      - name: Publish to the base-owned pr-review-fork-receipts branch (fast-forward only)
+        shell: bash
+        env:
+          ATTEST_DIR: ${{ runner.temp }}/attest
+        run: bash scripts/pr_review_fork_attest.sh publish "$ATTEST_DIR"
+
+      - name: Rerun this head's pr-review-quorum so `present` reads the attest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          id=$(gh api "repos/$ATTEST_REPO/actions/workflows/pr-review-quorum.yml/runs?event=pull_request_target&head_sha=$ATTEST_HEAD_SHA&per_page=1" \
+                 --jq '.workflow_runs[0].id // empty')
+          if [ -z "$id" ]; then
+            echo "no pr-review-quorum run for $ATTEST_HEAD_SHA yet; its first run will read the attest"
+            exit 0
+          fi
+          # a run still in flight cannot be rerun; wait for it (its verdict is irrelevant)
+          gh run watch "$id" -R "$ATTEST_REPO" --interval 30 >/dev/null 2>&1 || true
+          gh run rerun "$id" -R "$ATTEST_REPO"
+          echo "reran pr-review-quorum run $id for $ATTEST_HEAD_SHA"

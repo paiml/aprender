@@ -383,6 +383,39 @@ PREDICATE_TYPE='https://paiml.dev/attestations/pr-review/v2'
 # one with an unstated closure.
 ARM_E_MIN_VERSION=2.1.0
 
+# #4462: the fork path. A fork's pull_request_target run holds no signing secret the
+# fork can reach, and the full review cannot run server-side without executing fork code
+# (mutation) or holding reviewer credentials in CI. So a maintainer with write permission
+# ATTESTS instead: the pr-review:attest label runs .github/workflows/pr-review-fork-attest.yml,
+# which checks the labeler's permission server-side, reads the diff (never runs it), and
+# signs THIS level. It is weaker than L1-self and says so: verdict DEGRADED, no
+# consultation claimed, and it binds exactly one diff (the signed diff_patch_id), so a
+# new push voids it. Arm 4 accepts it only from the base-owned receipts branch.
+L2_LEVEL=L2-maintainer-attest
+L2_LABEL=pr-review:attest
+
+# validate_l2_attest <rcpt> <verdict> <reviewer> - the checks only an attest carries;
+# the common ones (schema, signature, B2, merge base, cost, findings digest) have run.
+validate_l2_attest() {
+  local rcpt=$1 verdict=$2 reviewer=$3 a
+  [ "$verdict" = DEGRADED ] \
+    || reject B1 "an $L2_LEVEL receipt has verdict '$verdict'; a maintainer attest is not a review, so it is DEGRADED and never PASS/FINDINGS/BLOCK (#4462)" || return 1
+  jq -e '(.predicate.consultations // {}) == {}' "$rcpt" >/dev/null 2>&1 \
+    || reject B1 "an $L2_LEVEL receipt carries consultations; nobody consulted anything, and a claim nobody made cannot be checked (#4462)" || return 1
+  a=$(jq -r --arg r "$reviewer" --arg l "$L2_LABEL" '.predicate.attestation as $a
+        | if ($a | type) != "object" then "predicate.attestation is absent"
+          elif ($a.attester // "") != $r then "attestation.attester is not reviewer_actor.id"
+          elif ((($a.permission // "") | tostring) | IN("admin","maintain","write") | not) then "attestation.permission \(($a.permission // "") | tojson) is not admin, maintain or write"
+          elif ($a.label // "") != $l then "attestation.label is not \($l)"
+          elif ($a.head_repo // "") == "" or ($a.base_repo // "") == "" then "attestation.head_repo/base_repo is absent"
+          elif $a.head_repo == $a.base_repo then "attestation.head_repo = base_repo; the attest path is for forks only"
+          elif (($a.run_id // "") | tostring | test("^[0-9]+$") | not) then "attestation.run_id is not a workflow run id"
+          else "" end' "$rcpt" 2>/dev/null) \
+    || a="predicate.attestation is unreadable"
+  [ -z "$a" ] || reject B1 "$a (#4462)" || return 1
+  return 0
+}
+
 # version_ge A B - 0 when A >= B under version ordering.
 #
 # `sed -n 1p`, NOT `head -1`: head exits after the first line, hands sort SIGPIPE, and
@@ -493,7 +526,10 @@ validate_receipt() {
   [ "$ptype" = "$PREDICATE_TYPE" ] || reject B1 "predicateType is '$ptype', expected '$PREDICATE_TYPE'" || return 1
 
   alevel=$(jq -r '.predicate.attestation_level // ""' "$rcpt")
-  [ "$alevel" = "L1-self" ] || reject B1 "attestation_level is '$alevel'; a skill invoked by the authoring agent is self-attestation, and R1 requires it to say so" || return 1
+  case "$alevel" in
+    L1-self|"$L2_LEVEL") ;;
+    *) reject B1 "attestation_level is '$alevel'; a skill invoked by the authoring agent is self-attestation, and R1 requires it to say so (the one other level is $L2_LEVEL, #4462)" || return 1 ;;
+  esac
 
   # skill_version decides which rules this receipt is judged by (ARM_E_MIN_VERSION
   # above), so an absent one is not a cosmetic omission: it is a receipt that does not
@@ -545,6 +581,12 @@ validate_receipt() {
     || reject B1 "cannot compute merge-base(origin/main, $head) in $REPO" || return 1
   [ "$base" = "$computed_base" ] \
     || reject B1 "base_sha $base is not git merge-base origin/main $head (= $computed_base); the diff scope of this review is not the merge base (S2)" || return 1
+
+  # --- #4462: a maintainer attest stops here; it claims no consultation. -----
+  if [ "$alevel" = "$L2_LEVEL" ]; then
+    validate_l2_attest "$rcpt" "$verdict" "$reviewer" || return 1
+    return 0
+  fi
 
   # --- consultation statuses -----------------------------------------------
   local pmat_st cuda_st crux_st mut_st ag_st

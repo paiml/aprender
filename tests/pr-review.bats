@@ -2103,3 +2103,84 @@ land_prior_art_on_main() {
   [ "$output" = "PASS" ] || { echo "row 7 verdict is $output, expected PASS"; return 1; }
   assert_row row-07-honest-docs-only-pmat-consulted GREEN
 }
+
+# --- L2-maintainer-attest: the fork PR path (#4462) --------------------------
+#
+# A fork PR cannot be signed by pr-review-sign (a fork's runs get no secrets), so a
+# maintainer attests it through .github/workflows/pr-review-fork-attest.yml. The guard
+# accepts that receipt ONLY in its honest shape: DEGRADED, nothing consulted, and an
+# attestation block naming a write+ labeler who is the reviewer and not the author, on
+# a fork head. Every probe is ROW 7 turned into an attest by L2_JQ, then broken in ONE
+# way; the GREEN probe is their discrimination partner, so a rule that refused every
+# attest could not pass this block.
+L2_JQ='.predicate.attestation_level = "L2-maintainer-attest"
+  | .predicate.verdict = "DEGRADED"
+  | del(.predicate.consultations)
+  | .predicate.author_actor = {"kind":"human","id":"github:someone"}
+  | .predicate.reviewer_actor = {"kind":"human","id":"github:maint"}
+  | .predicate.attestation = {"attester":"github:maint","permission":"write","label":"pr-review:attest",
+                              "head_repo":"someone/aprender","base_repo":"paiml/aprender","run_id":"12345"}'
+
+@test "L2 attest in its honest shape is ACCEPTED                   [discrimination]" {
+  local d
+  d=$(make_probe l2-attest row-07-honest-docs-only-pmat-consulted "$L2_JQ") || { echo "probe could not be built"; return 1; }
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "expected GREEN, got exit $status:"; echo "$output"; return 1; }
+  [[ "$output" == *"ACCEPT"* ]] || { echo "no ACCEPT line:"; echo "$output"; return 1; }
+}
+
+@test "probe L2 attest with verdict PASS                             RED  B1" {
+  assert_probe l2-pass row-07-honest-docs-only-pmat-consulted B1 "is DEGRADED and never" \
+    "$L2_JQ | .predicate.verdict = \"PASS\""
+}
+
+@test "probe L2 attest that claims a consultation                    RED  B1" {
+  assert_probe l2-consulted row-07-honest-docs-only-pmat-consulted B1 "carries consultations" \
+    "$L2_JQ | .predicate.consultations = {\"pmat\":{\"status\":\"consulted\"}}"
+}
+
+@test "probe L2 attest labelled by the PR author (self-label)        RED  B2" {
+  assert_probe l2-self row-07-honest-docs-only-pmat-consulted B2 "a self-review is not a review" \
+    "$L2_JQ | .predicate.reviewer_actor.id = .predicate.author_actor.id | .predicate.attestation.attester = .predicate.author_actor.id"
+}
+
+@test "probe L2 attester is not the reviewer                         RED  B1" {
+  assert_probe l2-attester row-07-honest-docs-only-pmat-consulted B1 "attester is not reviewer_actor.id" \
+    "$L2_JQ | .predicate.attestation.attester = \"github:boss\""
+}
+
+@test "probe L2 attest by a TRIAGE-only labeler                      RED  B1" {
+  assert_probe l2-triage row-07-honest-docs-only-pmat-consulted B1 'attestation.permission "triage"' \
+    "$L2_JQ | .predicate.attestation.permission = \"triage\""
+}
+
+@test "probe L2 permission empty, and a substring of write           RED  B1" {
+  # jq's inside() on strings is SUBSTRING containment: ["" ] and ["rite"] were both
+  # "inside" ["admin","maintain","write"] in the first draft. Caught by these rows.
+  assert_probe l2-perm-empty row-07-honest-docs-only-pmat-consulted B1 'attestation.permission ""' \
+    "$L2_JQ | .predicate.attestation.permission = \"\""
+  assert_probe l2-perm-rite row-07-honest-docs-only-pmat-consulted B1 'attestation.permission "rite"' \
+    "$L2_JQ | .predicate.attestation.permission = \"rite\""
+}
+
+@test "probe L2 attest under another label                           RED  B1" {
+  assert_probe l2-label row-07-honest-docs-only-pmat-consulted B1 "attestation.label is not pr-review:attest" \
+    "$L2_JQ | .predicate.attestation.label = \"lgtm\""
+}
+
+@test "probe L2 attest with head/base repo absent, or equal          RED  B1" {
+  assert_probe l2-norepo row-07-honest-docs-only-pmat-consulted B1 "head_repo/base_repo is absent" \
+    "$L2_JQ | .predicate.attestation.head_repo = \"\""
+  assert_probe l2-samerepo row-07-honest-docs-only-pmat-consulted B1 "the attest path is for forks only" \
+    "$L2_JQ | .predicate.attestation.head_repo = .predicate.attestation.base_repo"
+}
+
+@test "probe L2 attest with a run_id that is not a run id             RED  B1" {
+  assert_probe l2-runid row-07-honest-docs-only-pmat-consulted B1 "run_id is not a workflow run id" \
+    "$L2_JQ | .predicate.attestation.run_id = \"abc\""
+}
+
+@test "probe L2 attest with no attestation block                     RED  B1" {
+  assert_probe l2-noblock row-07-honest-docs-only-pmat-consulted B1 "predicate.attestation is absent" \
+    "$L2_JQ | del(.predicate.attestation)"
+}

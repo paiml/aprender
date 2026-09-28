@@ -1039,6 +1039,35 @@ falsification_tests:
     the init event for a model field; the day one appears, this entry is dischargeable
     and the residual can be closed rather than stated.
 
+- id: F-PRREV-020
+  rule: >-
+    a fork PR's receipt is a maintainer attest, it says so, and it binds one diff
+  prediction: >-
+    attestation_level has exactly two values: L1-self, and L2-maintainer-attest for a
+    FORK PR, whose own runs get no secrets and so cannot reach pr-review-sign (#4462). An
+    L2 receipt is ACCEPTED only when it is DEGRADED, consults nothing, and carries an
+    attestation block whose attester is the reviewer, holds admin, maintain or write,
+    labelled pr-review:attest, and names a head repository different from the base.
+    The signer refuses an L2 receipt outside the attest job (PR_REVIEW_ALLOW_ATTEST).
+    Arm 4 counts an L2 receipt only from the base-owned pr-review-fork-receipts branch,
+    never from the PR head's tree, binds it through the signed diff_patch_id so a later
+    push voids it, and prints "DEGRADED: maintainer-attest by <login>". The labeler's
+    permission is read server-side from the collaborators API, never from the event.
+  test: >-
+    bats tests/pr-review.bats -f L2 (the GREEN attest and ten RED probes, each naming
+    its reason), and bash scripts/pr_review_fork_attest.sh --self-test (authorize,
+    build, the real signer, the guard, Arm 4 end to end, and publish), which
+    pr-review-quorum.yml's present job runs on every PR.
+  if_fails: >-
+    Either every fork PR is unmergeable by construction, or a fork PR merges on an
+    attest nobody with write access made, on a diff other than the one attested.
+  mutation: >-
+    Measured on this commit: removing the self-label check, admitting permission read,
+    reverting the permission test to jq inside() (substring containment: "" and "rite"
+    passed), letting Arm 4 read L2 receipts from the head tree, and removing the
+    signer's L2 gate each turned a named row RED; a push after the attest is RED
+    through the existing A2 patch-id binding.
+
 proof_obligations:
 - id: PRS-INV-001
   type: invariant
@@ -1297,7 +1326,7 @@ qa_gate:
   - a_pr_editing_the_merge_mechanism_cannot_merge_itself
   - every_refusal_path_is_exercised_by_a_committed_fixture
   pass_criteria: >-
-    All 19 falsification tests turn RED against a fixture that violates them and GREEN
+    All 20 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
     positive control (S6.1) must fire first.
 
