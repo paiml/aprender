@@ -104,6 +104,18 @@ fn norm(r: &mut Lcg, name: &str, n: usize) -> GgufTensor {
 }
 
 fn write_tiny_qwen35(path: &Path, seed: u64) {
+    write_tiny_qwen35_layout(path, seed, LAYERS, 4, 4);
+}
+
+/// A tiny Qwen3.5 with `layers` blocks whose tensors put full attention on every
+/// `tensor_interval`-th layer, and whose metadata claims `meta_interval`.
+fn write_tiny_qwen35_layout(
+    path: &Path,
+    seed: u64,
+    layers: usize,
+    tensor_interval: usize,
+    meta_interval: usize,
+) {
     let mut r = Lcg(seed);
     let (kd, vd) = (K_HEADS * STATE, V_HEADS * STATE);
     let conv_dim = 2 * kd + vd;
@@ -111,14 +123,14 @@ fn write_tiny_qwen35(path: &Path, seed: u64) {
         tensor("token_embd.weight", &r.vec(VOCAB * HIDDEN, 1.0), &[HIDDEN, VOCAB]),
         norm(&mut r, "output_norm.weight", HIDDEN),
     ];
-    for i in 0..LAYERS {
+    for i in 0..layers {
         let b = |s: &str| format!("blk.{i}.{s}");
         t.push(norm(&mut r, &b("attn_norm.weight"), HIDDEN));
         t.push(norm(&mut r, &b("post_attention_norm.weight"), HIDDEN));
         t.push(weight(&mut r, &b("ffn_gate.weight"), HIDDEN, INTER));
         t.push(weight(&mut r, &b("ffn_up.weight"), HIDDEN, INTER));
         t.push(weight(&mut r, &b("ffn_down.weight"), INTER, HIDDEN));
-        if (i + 1) % 4 == 0 {
+        if (i + 1) % tensor_interval == 0 {
             t.push(weight(&mut r, &b("attn_q.weight"), HIDDEN, 2 * HEADS * HEAD_DIM));
             t.push(weight(&mut r, &b("attn_k.weight"), HIDDEN, KV_HEADS * HEAD_DIM));
             t.push(weight(&mut r, &b("attn_v.weight"), HIDDEN, KV_HEADS * HEAD_DIM));
@@ -146,7 +158,7 @@ fn write_tiny_qwen35(path: &Path, seed: u64) {
     let metadata = vec![
         ("general.architecture".to_string(), GgufValue::String("qwen35".to_string())),
         u("embedding_length", HIDDEN),
-        u("block_count", LAYERS),
+        u("block_count", layers),
         u("feed_forward_length", INTER),
         u("context_length", 64),
         u("attention.head_count", HEADS),
@@ -158,7 +170,7 @@ fn write_tiny_qwen35(path: &Path, seed: u64) {
         u("ssm.time_step_rank", V_HEADS),
         u("ssm.conv_kernel", KERNEL),
         u("ssm.inner_size", vd),
-        u("full_attention_interval", 4),
+        u("full_attention_interval", meta_interval),
         ("qwen35.rope.freq_base".to_string(), GgufValue::Float32(10_000.0)),
         ("qwen35.attention.layer_norm_rms_epsilon".to_string(), GgufValue::Float32(1e-6)),
         // n_rot = 2 · Σ = 4 of each 8-wide head: a partial rope, as on the real model.
@@ -380,3 +392,68 @@ fn real_model_descends_on_one_sentence() {
 
 #[path = "qwen35_lora_tests.rs"]
 mod lora;
+
+/// Serve's layer kinds for `path` (`true` = full attention), or its load error.
+fn serve_schedule(path: &Path) -> Result<Vec<bool>, String> {
+    let mapped = MappedGGUFModel::from_path(path).map_err(|e| e.to_string())?;
+    let layers = realizar::gguf::qwen35_load::load_qwen35_layers(&mapped.model, mapped.data())
+        .map_err(|e| e.to_string())?;
+    Ok(layers
+        .iter()
+        .map(|l| matches!(l, realizar::gguf::qwen35_load::Qwen35Layer::Attention(_)))
+        .collect())
+}
+
+/// `full_attention_interval` and every `num_layers` in the model-family contract.
+fn family_schedule_facts() -> (usize, Vec<usize>) {
+    let yaml = include_str!("../../../../contracts/model-families/qwen3_5.yaml");
+    let value = |line: &str, key: &str| -> Option<usize> {
+        line.trim().strip_prefix(key)?.trim().parse().ok()
+    };
+    let interval = yaml
+        .lines()
+        .find_map(|l| value(l, "full_attention_interval:"))
+        .expect("qwen3_5.yaml declares full_attention_interval");
+    let layers: Vec<usize> = yaml.lines().filter_map(|l| value(l, "num_layers:")).collect();
+    assert!(!layers.is_empty(), "qwen3_5.yaml declares no num_layers");
+    (interval, layers)
+}
+
+/// FALSIFY-QTG-005: the training model, serve and the model-family contract agree on
+/// which layers are full attention, at every published depth (0.8B 24, 4B 32, and the
+/// `num_layers` of each size in `contracts/model-families/qwen3_5.yaml`).
+#[test]
+fn falsify_qtg_005_layer_schedule_is_identical_across_crates() {
+    let (interval, family_layers) = family_schedule_facts();
+    assert_eq!(interval, 4, "qwen3_5.yaml full_attention_interval");
+    let mut depths = vec![24, 32];
+    depths.extend(family_layers);
+    depths.sort_unstable();
+    depths.dedup();
+    let dir = tempfile::tempdir().expect("tempdir");
+    for n in depths {
+        let path = dir.path().join(format!("sched-{n}.gguf"));
+        write_tiny_qwen35_layout(&path, 7, n, interval, interval);
+        let want: Vec<bool> = (0..n).map(|i| (i + 1) % interval == 0).collect();
+        let ours = Qwen35Model::from_gguf(&path).expect("train loads").attention_schedule();
+        let theirs = serve_schedule(&path).expect("serve loads");
+        assert_eq!(ours, want, "{n} layers: train schedule vs the family contract");
+        assert_eq!(theirs, want, "{n} layers: serve schedule vs the family contract");
+    }
+}
+
+/// FALSIFY-QTG-005 (disagreement): when the metadata interval does not match the
+/// tensors, the two crates must not silently build different networks. Train reads
+/// the kind from the tensors; serve from the metadata, so serve has to refuse.
+#[test]
+fn falsify_qtg_005_interval_metadata_mismatch_is_refused_not_diverged() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("mismatch.gguf");
+    write_tiny_qwen35_layout(&path, 7, 8, 4, 3);
+    let ours = Qwen35Model::from_gguf(&path).map(|m| m.attention_schedule());
+    let theirs = serve_schedule(&path);
+    match (ours, theirs) {
+        (Ok(a), Ok(b)) => assert_eq!(a, b, "both crates loaded, with different layer kinds"),
+        (_, Err(_)) | (Err(_), _) => {}
+    }
+}
