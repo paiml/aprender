@@ -236,11 +236,21 @@ ladder:
           correct but 27-34x slower than Qwen3.5 on GB10 sm_121 (8k think-on: Qwen3-1.7B 967 s, Qwen3-8B
           2163 s vs Qwen3.5-9B 63-80 s; serial prefill, the sm12x default). 0.70.1 P0 ships native sm_121
           SASS and re-tests batched prefill on GB10. lambda still owes every Qwen3 cell.
+      # G2 (operator ruling 2026-09-28 16:15Z): R1 was Qwen3 only; this widens it to EVERY dense arch gx10 holds.
+      # Serial prefill is the default for every arch at cc>=120 (select_prefill_path), not only Qwen3.
+      - arch: qwen2
+        host: gx10
+        issue: 4590
+        until: "0.70.1"
+        why: >-
+          GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output,
+          prefill speed only: sm_12x prefills every dense arch one token at a time (select_prefill_path). Withdrawn,
+          not waived: lambda still owes every Qwen2 cell, and gx10 still owes every Qwen3.5 (hybrid) cell.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds
-        qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda + gx10
-        qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda + gx10
+        qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda (gx10 de-claimed, #4590)
+        qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda (gx10 de-claimed, #4590)
         # qwen3moe: REMOVED for 0.69.1 (#3817). Not a fit question — this build has no CUDA
         # forward for the architecture at all (#3714, lands 0.70.0), so `apr run --gpu` refuses
         # pre-load by name and there is no GPU cell to owe. The CPU path is unchanged and works.
@@ -251,6 +261,7 @@ ladder:
       arch: qwen2
       gguf: qwen2.5-1.5b-instruct-q4_k_m.gguf
       sha256: 6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
+      hosts: [lambda]   # gx10 DE-CLAIMED for 0.70 (#4590, cells.declaimed, G2); restore to every host in 0.70.1
       backends: [cpu, cuda]
       required: true
       note: "control rung — the architecture every other gate already exercises; if this is red the host is broken, not the model"
