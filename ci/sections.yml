@@ -2717,8 +2717,11 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 15
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # B1: the signature is posted as a check run, so the one write this section needs
+    # is checks. It no longer pushes, so contents is read-only.
     permissions:
-      contents: write
+      contents: read
+      checks: write
     steps:
       - name: Checkout the PR head
         uses: actions/checkout@v7
@@ -2744,48 +2747,68 @@ jobs:
         shell: bash
         run: bash scripts/pr_review_sign_receipt.sh --self-test
 
-      - name: Sign this PR's receipt, if it has an unsigned one
+      # B1 (operator 2026-09-28 14:52Z): the signature is a CHECK RUN on the head sha,
+      # never a commit. A commit by the signer made the PR head a bot commit, and under
+      # the approval policy a bot-actor head is action_required with 0 jobs and never
+      # fires pull_request_target (Arm 4) at all. The trusted comment binds
+      # `pr= head= pid=` under the signature; Arm 4 requires head= to be the PR head it
+      # judges and pid= the diff it computes, so a signature cannot be replayed onto
+      # another head or another diff.
+      - name: Sign this PR's unsigned receipt(s), bound to the head sha
         shell: bash
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
         run: |
           set -euo pipefail
+          # Sign exactly the head the event names, not whatever the branch moved to.
+          git checkout -q --detach "$PR_HEAD_SHA"
           root="evidence/pr-review/$PR_NUMBER"
+          sigs="$RUNNER_TEMP/pr-review-signatures.json"
+          printf '{}' > "$sigs"
           if [ ! -d "$root" ]; then
             echo "no receipt directory $root — nothing to sign."
             echo "The review is still owed; the S13.11 shadow lane records its absence."
             exit 0
           fi
           signed_any=0
-          # A receipt with a document and no signature is the only thing this touches.
+          # A receipt with a document and no COMMITTED signature is the only thing this touches.
           while IFS= read -r rcpt; do
             d=$(dirname "$rcpt")
-            [ -f "$rcpt.minisig" ] && { echo "already signed: $d"; continue; }
+            [ -f "$rcpt.minisig" ] && { echo "already signed (committed .minisig): $d"; continue; }
             if [ -z "${PR_REVIEW_SIGNING_KEY_B64:-}" ]; then
               echo "::error::$d carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty."
               echo "::error::A receipt that cannot be signed cannot be verified by Arm 4."
               exit 1
             fi
-            bash scripts/pr_review_sign_receipt.sh "$d"
+            pid=$(jq -r '.predicate.diff_patch_id // "none"' "$rcpt")
+            PR_REVIEW_SIGN_BIND="pr=$PR_NUMBER head=$PR_HEAD_SHA pid=$pid" \
+              bash scripts/pr_review_sign_receipt.sh "$d"
+            jq --arg k "$(basename "$d")" --rawfile v "$rcpt.minisig" '.[$k] = $v' "$sigs" > "$sigs.new"
+            mv "$sigs.new" "$sigs"
+            # The signature leaves as a check run; it is never staged, committed or pushed.
+            rm -f "${rcpt:?}.minisig"
             signed_any=1
           done < <(find "$root" -name receipt.intoto.jsonl -type f)
           echo "signed_any=$signed_any" >> "$GITHUB_ENV"
 
-      - name: Commit the signature back to the PR branch
+      - name: Post the signature as a check run on the head sha (never a commit)
         if: env.signed_any == '1'
         shell: bash
         env:
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name  "aprender-pr-review-signer"
-          git config user.email "noreply@anthropic.com"
-          git add evidence/pr-review
-          git commit -m "chore(pr-review): sign this PR's receipt (PR-REVIEW-SKILL-002 v2 §4.3 CI signer)"
-          # Never --force. A race with the author's own push fails this step and the
-          # next run signs it; a force-push would silently discard their commit.
-          git push origin "HEAD:$PR_HEAD_REF"
+          sigs="$RUNNER_TEMP/pr-review-signatures.json"
+          jq -n --arg h "$PR_HEAD_SHA" --rawfile t "$sigs" '{
+              name: "pr-review-signature", head_sha: $h,
+              status: "completed", conclusion: "success",
+              output: { title: "PR-REVIEW-SKILL-002 v2 §4.3 receipt signature(s)",
+                        summary: "minisign signatures keyed by receipt directory; the trusted comment binds pr= head= pid=. Verified by Arm 4 in the pr-review-quorum check.",
+                        text: $t } }' \
+            | gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" --input - --jq '"posted check run \(.id) on \(.head_sha)"'
 
   # ---------------------------------------------------------------------------
   # RECEIPT PRESENCE, AS A FAST REQUIRED CHECK.
