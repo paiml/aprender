@@ -1,0 +1,172 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-28'
+  author: PAIML Engineering
+  description: >-
+    KTEST-06 (KTEST-001 §2 L1, §6.1): the index maps a kernel reads and writes, as pure Rust
+    const fns in aprender-kernel-oracle::index_map, shared by the kernel and the verifier. K3
+    (race freedom and bounds of a stride-slice store) and K2 (shape-class coverage) are proved in
+    Lean; the tiled-loop and SIMD remainder maps are proved in Kani for bounded sizes, and Kani
+    catches the planted F-1 tile-tail over-read.
+  references:
+  - docs/specifications/KTEST-001-kernel-testing-gpu-cpu-hardware.md
+  - 'Betts et al. (OOPSLA 2012) GPUVerify: a Verifier for GPU Kernels'
+equations:
+  store_index:
+    formula: store_index(t, s, j) = t·s + j
+    domain: t < n, j < s (n threads, stride s)
+    codomain: 0 ≤ i < n·s
+    invariants:
+    - injective over (t, j) (K3, race-free)
+    - in bounds, i < n·s (K3)
+    preconditions:
+    - j < s
+    - t < n
+    lean_theorem: KernelTesting.store_index_injective
+    postconditions:
+    - result < n * s
+  tiled_loop:
+    formula: 'reads = [k·T + l | k < ⌊d/T⌋, l < T] ++ [⌊d/T⌋·T, d)'
+    domain: d ∈ ℕ, T ≥ 1
+    codomain: indices in [0, d)
+    invariants:
+    - every read is < d
+    - every element of [0, d) is read exactly once, in order
+    preconditions:
+    - tile > 0
+    postconditions:
+    - reads == 0..d
+  vector_mask:
+    formula: 'mask(d, V, c) bit l = 1 ⇔ c·V + l < d, l < V'
+    domain: d ∈ ℕ, 1 ≤ V ≤ 64, c ∈ ℕ
+    codomain: u64 with bits only below V
+    invariants:
+    - active lanes are in bounds
+    - the chunks cover [0, d) exactly once
+    preconditions:
+    - 0 < vec <= 64
+    postconditions:
+    - result >> vec == 0
+  cls4:
+    formula: cls4(T, d) = (min(⌊d/T⌋, 2), d mod T = 0)
+    domain: T ≥ 2, d ∈ ℕ
+    codomain: '{0, 1, 2} × Bool (six classes)'
+    invariants:
+    - '{0, T−1, T, T+1, 2T, 2T+1} reaches all six classes'
+    - '{0, T−1, T, T+1, 2T} misses (2, false)'
+    preconditions:
+    - tile >= 2
+    lean_theorem: KernelTesting.classes6_covered
+proof_obligations:
+- type: invariant
+  property: Stride-slice stores are race-free
+  formal: 't₁·s + j₁ = t₂·s + j₂ ∧ j₁ < s ∧ j₂ < s ⇒ t₁ = t₂ ∧ j₁ = j₂'
+  applies_to: all
+  lean:
+    theorem: KernelTesting.store_index_injective
+    module: ProvableContracts.Theorems.KernelTesting.Core
+    status: proved
+    notes: Lean 4 core, no Mathlib. Axioms propext, Quot.sound.
+- type: bound
+  property: Stride-slice stores stay in bounds
+  formal: 't < n ∧ j < s ⇒ t·s + j < n·s'
+  applies_to: all
+  lean:
+    theorem: KernelTesting.store_index_in_bounds
+    module: ProvableContracts.Theorems.KernelTesting.Core
+    status: proved
+    notes: Lean 4 core, no Mathlib. Axioms propext, Quot.sound.
+- type: invariant
+  property: A tiled loop reads every element of [0, d) exactly once and nothing else
+  formal: 'reads(d, T) = [0, d) as a sequence'
+  applies_to: all
+- type: invariant
+  property: SIMD remainder masks select exactly the in-bounds lanes
+  formal: 'bit_l(mask(d, V, c)) = 1 ⇔ c·V + l < d'
+  applies_to: all
+- type: invariant
+  property: The shape-class generator reaches every cls4 class
+  formal: '∀ d, cls4(T, d) ∈ cls4(T, {0, T−1, T, T+1, 2T, 2T+1})'
+  applies_to: all
+  lean:
+    theorem: KernelTesting.classes6_covered
+    module: ProvableContracts.Theorems.KernelTesting.Core
+    status: proved
+    depends_on:
+    - KernelTesting.classes6_distinct
+    - KernelTesting.classes4_distinct
+    notes: Supersedes the v1.1 set {T−1, T, T+1, 2T}, which spec5_misses_multi_tile_tail shows
+      never reaches (2, false). Axioms propext, Quot.sound.
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 4
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+falsification_tests:
+- id: FALSIFY-KIM-001
+  rule: F-1 tile-tail over-read is out of bounds at L1
+  prediction: a tail loop reading [⌊d/T⌋·T, d+1) reads index d iff d mod T ≠ 0
+  test: index_map::tests::f1_tail_overread_reads_out_of_bounds_iff_a_tail_exists
+  if_fails: the index map or the tail range is wrong
+- id: FALSIFY-KIM-002
+  rule: F-1 tile-tail over-read is RED at L2/L3
+  prediction: the over-reading tiled sum fails the margin on exactly the tail classes, T+1 and 2T+1 included
+  test: falsifiers::f1_tile_tail_overread_is_red_on_every_tail_class
+  if_fails: the shape set lacks a tail class, or the margin harness is blind
+- id: FALSIFY-KIM-003
+  rule: Stride-slice stores are race-free and in bounds
+  prediction: over n, s ≤ 8, every (t, j) maps to a distinct index below n·s and none is skipped
+  test: index_map::tests::store_index_is_injective_and_in_bounds
+  if_fails: store_index is not t·s + j
+- id: FALSIFY-KIM-004
+  rule: The shape generator reaches every class
+  prediction: dims(T, V) reaches every cls4 class of the tile loop and of the vector loop
+  test: shapes::tests::dims_cover_every_reachable_class
+  if_fails: 2T+1 or 2V+1 was dropped from the generator
+- id: FALSIFY-KIM-005
+  rule: A tiled loop reads each element once
+  prediction: for T ≤ 16 and d ≤ 5T the correct tiled loop reads exactly 0..d, in order
+  test: index_map::tests::tiled_loop_reads_each_element_once
+  if_fails: full_tiles, tile_index or tail_range skips or repeats an element
+- id: FALSIFY-KIM-006
+  rule: SIMD remainder masks are exact
+  prediction: for V in {1..4, 7, 8, 16, 63, 64} the masks cover 0..d once, with d mod V lanes in the remainder
+  test: index_map::tests::vector_masks_cover_each_element_once
+  if_fails: vector_mask sets a lane past d or past V, or drops one
+kani_harnesses:
+- id: KANI-KIM-001
+  obligation: Stride-slice stores are race-free
+  property: store_index is injective and in bounds for n, s ≤ 8
+  bound: 8
+  strategy: exhaustive
+  harness: store_index_injective_and_in_bounds
+- id: KANI-KIM-002
+  obligation: A tiled loop reads every element of [0, d) exactly once and nothing else
+  property: every tiled-loop read is < d and the reads are 0..d in order, for T ≤ 8, d ≤ 3T+1
+  bound: 8
+  strategy: exhaustive
+  harness: tiled_loop_reads_each_element_once
+- id: KANI-KIM-003
+  obligation: A tiled loop reads every element of [0, d) exactly once and nothing else
+  property: F-1 planted (tail reads d+1) must violate the bound (kani::should_panic)
+  bound: 8
+  strategy: exhaustive
+  harness: f1_tail_overread_is_caught
+- id: KANI-KIM-004
+  obligation: SIMD remainder masks select exactly the in-bounds lanes
+  property: bit l of mask(d, V, c) is set iff c·V + l < d, for V ≤ 8, d ≤ 3V+1
+  bound: 8
+  strategy: exhaustive
+  harness: vector_masks_cover_each_element_once
+qa_gate:
+  id: F-KIM-001
+  name: Kernel index-map contract
+  checks:
+  - store_race_free
+  - tiled_loop_in_bounds
+  - remainder_mask_exact
+  - shape_classes_complete
+  pass_criteria: All 6 falsification tests pass and all 4 Kani harnesses verify
+  falsification: Make the tail loop read one element past d (F-1)

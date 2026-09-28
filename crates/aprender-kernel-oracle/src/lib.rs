@@ -8,7 +8,8 @@
 //!
 //! What a kernel is run on comes from [`shapes`] (§4: dimension classes derived from the
 //! registered tile and vector width) and [`inputs`] (§3.3: typical and adversarial values, each
-//! reproducible from its seed). F-1 and F-6 are planted in `falsifiers`.
+//! reproducible from its seed). F-1 and F-6 are planted in `falsifiers`. The addresses a kernel
+//! touches are the L1 [`index_map`] `const fn`s, proved in bounds and race-free by Kani and Lean.
 //!
 //! The oracle is independent by construction. This crate has no dependencies, so it cannot call
 //! the optimized backend it judges (§0.3 "the producer is never the gate");
@@ -20,6 +21,7 @@
 pub mod error_model;
 #[cfg(test)]
 mod falsifiers;
+pub mod index_map;
 pub mod inputs;
 pub mod margin;
 pub mod oracle;

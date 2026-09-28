@@ -105,6 +105,47 @@ theorem classes4_distinct (T : Nat) (hT : 2 ≤ T) :
     have h2 : (2 * T) % T = 0 := Nat.mul_mod_left 2 T
     unfold cls4; rw [h1, h2]; rfl
 
+/-- KTEST-06: `cls4` has SIX classes, and {0, T−1, T, T+1, 2T, 2T+1} lands one value in each.
+    (≥ 2 tiles, with a tail) is reached only by a value like 2T+1. -/
+theorem classes6_distinct (T : Nat) (hT : 2 ≤ T) :
+    cls4 T 0 = (0, true) ∧
+    cls4 T (T - 1) = (0, false) ∧
+    cls4 T T = (1, true) ∧
+    cls4 T (T + 1) = (1, false) ∧
+    cls4 T (2 * T) = (2, true) ∧
+    cls4 T (2 * T + 1) = (2, false) := by
+  have hT0 : 0 < T := by omega
+  obtain ⟨h1, h2, h3, h4⟩ := classes4_distinct T hT
+  refine ⟨?_, h1, h2, h3, h4, ?_⟩
+  · unfold cls4; rw [Nat.zero_div, Nat.zero_mod]; rfl
+  · have d : (2 * T + 1) / T = 2 := by
+      rw [Nat.add_comm (2 * T) 1, Nat.mul_comm 2 T, Nat.add_mul_div_left 1 2 hT0,
+        Nat.div_eq_of_lt (by omega)]
+    have m : (2 * T + 1) % T = 1 := by
+      rw [Nat.add_comm (2 * T) 1, Nat.mul_comm 2 T, Nat.add_mul_mod_self_left,
+        Nat.mod_eq_of_lt (by omega)]
+    unfold cls4; rw [d, m]; rfl
+
+/-- KTEST-06: every d falls in a class one of the six representatives reaches (K2 coverage for
+    the 4-tile-count model: the shape generator's set is complete). -/
+theorem classes6_covered (T d : Nat) (hT : 2 ≤ T) :
+    cls4 T d ∈ [cls4 T 0, cls4 T (T - 1), cls4 T T, cls4 T (T + 1), cls4 T (2 * T),
+      cls4 T (2 * T + 1)] := by
+  obtain ⟨h0, h1, h2, h3, h4, h5⟩ := classes6_distinct T hT
+  rw [h0, h1, h2, h3, h4, h5]
+  unfold cls4
+  generalize d / T = q
+  generalize (d % T == 0) = b
+  have hq : min q 2 = 0 ∨ min q 2 = 1 ∨ min q 2 = 2 := by omega
+  rcases hq with h | h | h <;> rw [h] <;> cases b <;> simp
+
+/-- KTEST-06: the v1.1 set {0, T−1, T, T+1, 2T} never reaches (≥ 2 tiles, with a tail). -/
+theorem spec5_misses_multi_tile_tail (T : Nat) (hT : 2 ≤ T) :
+    (2, false) ∉ [cls4 T 0, cls4 T (T - 1), cls4 T T, cls4 T (T + 1), cls4 T (2 * T)] := by
+  obtain ⟨h0, h1, h2, h3, h4, -⟩ := classes6_distinct T hT
+  rw [h0, h1, h2, h3, h4]
+  decide
+
 /-- FTZ drift for f16 accumulation at K = 4096: 4096 · 2^-14 = 1/4 (review 2B), i.e. 4096 = 2^14 / 4. -/
 theorem f16_ftz_drift_quarter : 4096 * 4 = 2 ^ 14 := by decide
 

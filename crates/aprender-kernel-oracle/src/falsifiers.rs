@@ -2,6 +2,7 @@
 //! show the correct kernel stays GREEN on the same classes (the anti-vacuity arm).
 
 use crate::error_model::{Dtype, ErrorModel};
+use crate::index_map::{full_tiles, tail_range, tile_index};
 use crate::inputs::{generate, InputClass};
 use crate::margin::{judge_model, screen, Failure, Verdict};
 use crate::oracle;
@@ -16,15 +17,18 @@ const SEED: u64 = 0x4B54_4553_5403;
 
 /// A tiled f32 sum over `buf[..d]`. `tail_overread = 1` plants F-1: the tail loop reads one
 /// element past d. `buf` is the row plus guard elements, so the over-read returns [`GUARD`]
-/// instead of panicking, as device memory would.
+/// instead of panicking, as device memory would. The loop uses the L1 index maps
+/// ([`crate::index_map`]), so this is the loop Kani proves (and catches F-1 in).
 fn tiled_sum(buf: &[f32], d: usize, tail_overread: usize) -> f32 {
-    let full = d / T * T;
     let mut acc = 0.0_f32;
-    for tile in buf[..full].chunks_exact(T) {
-        acc += tile.iter().sum::<f32>();
+    for k in 0..full_tiles(d, T) {
+        acc += buf[tile_index(k, T, 0)..tile_index(k + 1, T, 0)]
+            .iter()
+            .sum::<f32>();
     }
-    if d % T != 0 {
-        for &v in &buf[full..d + tail_overread] {
+    let (start, end) = tail_range(d, T);
+    if start != end {
+        for &v in &buf[start..end + tail_overread] {
             acc += v;
         }
     }
