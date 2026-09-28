@@ -3535,7 +3535,12 @@ jobs:
           key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
           cache=$LEAN_CACHE_ROOT/$key
           mkdir -p "$cache"
-          flock "$cache.lock" elan toolchain install "$(cat "$LEAN/lean-toolchain")"
+          # elan >= 4 exits 1 on `toolchain install` of a toolchain that is already installed
+          # ("error: '...' is already installed"), so a warm runner failed this step every time
+          # after the first (#4502 row 13). Install only when it is missing, and decide that
+          # inside the lock so two jobs cannot both see "missing" and race the install.
+          tc=$(cat "$LEAN/lean-toolchain")
+          flock "$cache.lock" bash -c 'elan toolchain list | awk "{print \$1}" | grep -qxF -- "$1" || elan toolchain install "$1"' _ "$tc"
           # A real .lake dir would make `ln` write the link INSIDE it instead of replacing it.
           [ ! -e "$LEAN/.lake" ] || [ -L "$LEAN/.lake" ] || decline "$LEAN/.lake is a real directory, not the cache link"
           ln -sfn "$cache" "$LEAN/.lake"
