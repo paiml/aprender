@@ -50,8 +50,17 @@ while todo:
         continue
     seen.add(m)
     todo += imports(mods[m])
-bad = [f"orphan {m}" for m in sorted(set(mods) - seen)] + [f"dangling {m}" for m in sorted(dangling)]
-print("\n".join(bad) if bad else f"reachable {len(seen)}/{len(mods)}")
+# orphan-allowlist.yaml (the file check-orphans.sh reads): an orphan named there is excused, never a
+# dangling import. A listed module that is back in the cone is STALE, so the list can only shrink to [].
+allow = set()
+ap = os.path.join(d, "orphan-allowlist.yaml")
+if os.path.exists(ap):
+    with open(ap, encoding="utf-8") as fh:
+        allow = {m.group(1) for m in (re.match(r'^\s*-?\s*module:\s*(\S+)', l) for l in fh) if m}
+orphans = set(mods) - seen
+bad = [f"orphan {m}" for m in sorted(orphans - allow)] + [f"dangling {m}" for m in sorted(dangling)]
+bad += [f"stale-allowlist {m}" for m in sorted(allow - orphans)]
+print("\n".join(bad) if bad else f"reachable {len(seen)}/{len(mods)}, {len(orphans)} allowlisted")
 sys.exit(1 if bad else 0)
 EOF
 }
@@ -59,7 +68,7 @@ EOF
 judge() {
     local out rc
     out=$(reach "$LEAN"); rc=$?
-    if [ "$rc" -eq 0 ]; then echo "PASS  every Lean module is imported by ProvableContracts.lean ($out) (#4244)"; return 0; fi
+    if [ "$rc" -eq 0 ]; then echo "PASS  every Lean module is imported by ProvableContracts.lean or allowlisted in orphan-allowlist.yaml ($out) (#4244)"; return 0; fi
     echo "FAIL  modules lake build never compiles (import them from ProvableContracts.lean):"
     sed 's/^/        /' <<< "$out"
     return "$rc"
@@ -69,19 +78,24 @@ self_test() {
     local d fail=0 row want name rc
     d=$(mktemp -d) || return 2
     # copies of the real tree: a mutation proves the guard sees THIS tree's shape
-    cp -r -- "$LEAN/ProvableContracts" "$LEAN/ProvableContracts.lean" "$d/" 2>/dev/null || { rmdir -- "$d"; return 2; }
-    mk() { rm -rf -- "${d:?}/$1"; mkdir -p -- "$d/$1"; cp -r -- "$d/ProvableContracts" "$d/ProvableContracts.lean" "$d/$1/"; }
-    # unimported: Image.Canny is a leaf (only the root imports it); Defs.GPU would stay reachable
+    cp -r -- "$LEAN/ProvableContracts" "$LEAN/ProvableContracts.lean" "$LEAN/orphan-allowlist.yaml" "$d/" 2>/dev/null || { rmdir -- "$d"; return 2; }
+    mk() { rm -rf -- "${d:?}/$1"; mkdir -p -- "$d/$1"; cp -r -- "$d/ProvableContracts" "$d/ProvableContracts.lean" "$d/orphan-allowlist.yaml" "$d/$1/"; }
+    # unimported: AdamW.WeightDecay is a leaf (only the root imports it); Defs.GPU would stay reachable
     # through Theorems.GPU.DimensionIndependence, which is the `transitive` row.
     mk real
-    mk unimported; grep -v '^import ProvableContracts.Theorems.Image.Canny$' "$d/ProvableContracts.lean" > "$d/unimported/ProvableContracts.lean"
+    mk unimported; grep -v '^import ProvableContracts.Theorems.AdamW.WeightDecay$' "$d/ProvableContracts.lean" > "$d/unimported/ProvableContracts.lean"
+    # unlisted: an allowlisted orphan whose entry is dropped is RED again (the list is closed)
+    mk unlisted;   grep -v '^- module: ' "$d/orphan-allowlist.yaml" > "$d/unlisted/orphan-allowlist.yaml"
+    grep -m1 '^- module: ' "$d/orphan-allowlist.yaml" > /dev/null && grep '^- module: ' "$d/orphan-allowlist.yaml" | tail -n +2 >> "$d/unlisted/orphan-allowlist.yaml"
+    # stale: an allowlist entry for a module that IS in the cone is RED
+    mk stale;      printf -- '- module: ProvableContracts.Defs.GPU\n  ticket: "#0"\n  reason: "x"\n' >> "$d/stale/orphan-allowlist.yaml"
     mk newfile;    printf 'theorem t : True := trivial\n' > "$d/newfile/ProvableContracts/Orphan.lean"
     mk dangling;   printf 'import ProvableContracts.NoSuchModule\n' >> "$d/dangling/ProvableContracts.lean"
     mk transitive; printf 'import ProvableContracts.Defs.GPU\n' > "$d/transitive/ProvableContracts/Hub.lean"
     grep -v '^import ProvableContracts.Defs.GPU$' "$d/ProvableContracts.lean" > "$d/transitive/ProvableContracts.lean"
     printf 'import ProvableContracts.Hub\n' >> "$d/transitive/ProvableContracts.lean"
     mk noroot;     rm -f -- "$d/noroot/ProvableContracts.lean"
-    for row in "0 real" "1 unimported" "1 newfile" "1 dangling" "0 transitive" "2 noroot"; do
+    for row in "0 real" "1 unimported" "1 newfile" "1 dangling" "0 transitive" "2 noroot" "1 unlisted" "1 stale"; do
         want=${row%% *}; name=${row#* }
         reach "$d/$name" > /dev/null; rc=$?
         if [ "$rc" = "$want" ]; then echo "  ok   $name -> rc $rc"; else echo "  FAIL $name: wanted rc $want, got $rc"; fail=1; fi
