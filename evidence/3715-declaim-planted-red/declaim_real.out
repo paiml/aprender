@@ -1,0 +1,6 @@
+real contract                      rc=0 declaimed=[('gx10', 'qwen2'), ('gx10', 'qwen3'), ('gx10', 'qwen3moe')]
+PLANTED qwen3moe rung (all hosts)  rc=1 declaimed=[('gx10', 'qwen2'), ('gx10', 'qwen3'), ('gx10', 'qwen3moe')]
+    FAIL  rung qwen3moe-30b-a3b-q4km still claims arch qwen3moe on gx10, which cells.declaimed withdraws (#3715) -- narrow its hosts: or drop the de-claim
+planted rung narrowed to lambda    rc=0 declaimed=[('gx10', 'qwen2'), ('gx10', 'qwen3'), ('gx10', 'qwen3moe')]
+PLANTED rep, de-claimed on all hosts rc=1 declaimed=[('gx10', 'qwen2'), ('gx10', 'qwen3'), ('gx10', 'qwen3moe'), ('lambda', 'qwen3moe')]
+    FAIL  long_rungs_for.representatives.qwen3moe still claims long rungs for arch qwen3moe, de-claimed on every required host
