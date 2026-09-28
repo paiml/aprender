@@ -22,7 +22,7 @@ CLI:  ladder_budget.py <contract.yaml> <meter.jsonl>   -> prints violations as J
 import json
 import sys
 
-KEYS_NUM = ("header_bytes_read_max", "peak_rss_max_factor", "peak_rss_slack_bytes",
+KEYS_NUM = ("header_bytes_read_max", "peak_rss_max_factor", "peak_rss_slack_bytes", "peak_rss_kill_factor",
             "wall_s_max", "cell_bytes_read_max_factor")
 
 

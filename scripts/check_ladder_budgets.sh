@@ -130,16 +130,32 @@ python3 -c 'import sys,time; b=bytearray(int(sys.argv[1])<<20); b[::4096]=b"x"*l
 SH
 chmod +x "$T/hog"
 : > "$LADDER_METER"
-export LADDER_METER_RSS_FACTOR=1.5 LADDER_METER_RSS_SLACK=$((64 << 20)) LADDER_METER_FILE_BYTES=$((1 << 20))   # cap ~65.5 MiB
+# budget 1.5 x 1 MiB + 64 MiB = 65.5 MiB; the kill cap is 1.5 x that = ~98 MiB
+export LADDER_METER_RSS_FACTOR=1.5 LADDER_METER_RSS_SLACK=$((64 << 20)) LADDER_METER_FILE_BYTES=$((1 << 20)) LADDER_METER_RSS_KILL=1.5
 APR="$T/hog"; s=$SECONDS; HOG_MB=256 apr_locked run x 2>/dev/null; rc=$?; dt=$((SECONDS - s))
 capped=$(python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).readline()); print(r.get("rss_capped", 0))' "$LADDER_METER" 2>/dev/null)
-if [ "$rc" = 137 ] && [ "${capped:-0}" -gt $((65 << 20)) ] && [ "$dt" -lt 10 ]; then ok "rss cap: a 256 MiB call over a ~65 MiB budget was killed in ${dt}s (rc 137, rss_capped=$capped)"
-else bad "rss cap: a 256 MiB call over a ~65 MiB budget was not stopped (rc=$rc, rss_capped=${capped:-none}, ${dt}s)"; fi
+if [ "$rc" = 137 ] && [ "${capped:-0}" -gt $((65 << 20)) ] && [ "$dt" -lt 10 ]; then ok "rss cap: a 256 MiB call over a ~98 MiB kill cap was killed in ${dt}s (rc 137, rss_capped=$capped)"
+else bad "rss cap: a 256 MiB call over a ~98 MiB kill cap was not stopped (rc=$rc, rss_capped=${capped:-none}, ${dt}s)"; fi
 : > "$LADDER_METER"
 HOG_MB=8 HOG_S=1 apr_locked run x 2>/dev/null; rc=$?
 if [ "$rc" = 0 ] && [ -s "$LADDER_METER" ] && ! grep -q rss_capped "$LADDER_METER"; then ok "rss cap: an 8 MiB call under the budget is left alone (rc 0)"
 else bad "rss cap: an 8 MiB call under the budget was disturbed (rc=$rc)"; fi
-unset LADDER_METER_RSS_FACTOR LADDER_METER_RSS_SLACK
+# over the budget but under the kill cap (gx10 cpu 8B: 15.8G vs a 15.0G budget): the call FINISHES, so its
+# functional verdict survives, and the judge still calls it RED on peak_rss -- the kill is not the judge
+: > "$LADDER_METER"
+HOG_MB=80 HOG_S=1 apr_locked run x 2>/dev/null; rc=$?
+judged=$(python3 - "$T" "$LADDER_METER" <<'PY2'
+import json, sys
+sys.path.insert(0, sys.argv[1]); import ladder_budget as L
+r = json.loads(open(sys.argv[2]).readline()); r.setdefault("cell", "hog")
+b = {"header_verbs": [], "header_bytes_read_max": 1, "peak_rss_max_factor": 1.5, "peak_rss_slack_bytes": 64 << 20,
+     "wall_s_max": 1e9, "cell_bytes_read_max_factor": 1e9}
+print(",".join(v["budget"] for v in L.judge([r], b)) or "none")
+PY2
+)
+if [ "$rc" = 0 ] && ! grep -q rss_capped "$LADDER_METER" && [ "$judged" = peak_rss ]; then ok "rss cap: an 80 MiB call over the 65.5 MiB budget but under the kill cap finishes (rc 0) and is judged RED on peak_rss"
+else bad "rss cap: an 80 MiB over-budget call: rc=$rc judged=${judged:-crash} (want rc 0, not capped, judged peak_rss)"; fi
+unset LADDER_METER_RSS_FACTOR LADDER_METER_RSS_SLACK LADDER_METER_RSS_KILL
 
 if [ "$SELF_TEST" = 1 ]; then
   [ "$fails" -gt 0 ] && { echo "self-test: the planted blind judge turned this RED ($fails case(s)) -- good"; exit 0; }

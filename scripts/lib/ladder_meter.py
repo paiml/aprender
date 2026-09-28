@@ -13,8 +13,9 @@ what the ladder pulled off the disk, which is what took lambda down. A read serv
 cache costs the host nothing and is not counted -- by design, not by accident.
 peak_rss_bytes is the largest RSS of any one process in the tree (getrusage semantics).
 
-RSS CAP. With $LADDER_METER_RSS_FACTOR, $LADDER_METER_RSS_SLACK and a file size, the budget
-(factor x file_bytes + slack, the judge's own limit) is ENFORCED while the call runs: the tree is
+RSS CAP. With $LADDER_METER_RSS_FACTOR, $LADDER_METER_RSS_SLACK, $LADDER_METER_RSS_KILL and a file
+size, the cap is kill x (factor x file_bytes + slack) -- a multiple of the judge's own limit, so a
+call a little over budget finishes (and is judged RED), while a runaway is stopped. The tree is
 polled every POLL_S and, the first time any one process's RSS passes the cap, the whole tree gets
 SIGKILL and the record carries "rss_capped": <bytes seen>. Overshoot is bounded by one poll of
 growth; the box's MemoryMax (ladder_box.sh) is the backstop for what a poll can miss. Without the
@@ -39,7 +40,8 @@ POLL_S = 0.25
 def rss_cap():
     try:
         fb = int(os.environ["LADDER_METER_FILE_BYTES"])
-        return int(float(os.environ["LADDER_METER_RSS_FACTOR"]) * fb + int(os.environ["LADDER_METER_RSS_SLACK"]))
+        budget = float(os.environ["LADDER_METER_RSS_FACTOR"]) * fb + int(os.environ["LADDER_METER_RSS_SLACK"])
+        return int(float(os.environ["LADDER_METER_RSS_KILL"]) * budget)
     except (KeyError, ValueError):
         return None
 

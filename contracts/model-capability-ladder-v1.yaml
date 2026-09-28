@@ -79,6 +79,11 @@ ladder:
     cell_bytes_read_max_factor: 2.0                    # sum over the cell's calls <= 2 x the model file
     peak_rss_max_factor: 1.5                           # per call <= 1.5 x file + slack
     peak_rss_slack_bytes: 8589934592                   # 8 GiB
+    # KILL, not judge: the meter SIGKILLs a call at kill_factor x (its RSS budget) while it runs, so a
+    # runaway (gx10 cpu 27B: 58.6G vs 33.1G, ~57 min into the box OOM) stops early. It is a multiple
+    # of the budget, not the budget: apr's cpu path overshoots it by ~5% on most models (8B 15.8G vs
+    # 15.0G, 2026-09-28 gx10 sweep-cpu3) -- those stay budget-RED but keep their functional verdict.
+    peak_rss_kill_factor: 1.5
     wall_s_max: 1800                                   # per non-serve call; serve is bounded by serve_health
   # #3710 ruling 3 / #4022 (operator 2026-09-23, relayed by aprender-cf; "recommended for all questions"):
   # the release commit X = 4f81bdea7 + #4022, a scoped hotfix. A receipt measured at `receipts_at`

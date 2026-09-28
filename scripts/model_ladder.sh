@@ -548,12 +548,12 @@ PY
 read -r SERVE_STALL_S SERVE_CEILING_S <<< "$SERVE_WAIT"   # the files the rungs name; section 2 skips re-measuring them
 # #4520 step 4: the budgets are read BEFORE anything is measured -- a ladder with no budgets declines,
 # it never measures and then reads "no limit" as a pass.
-_rss=$(python3 -c 'import sys, yaml; sys.path.insert(0, "scripts/lib"); import ladder_budget; b = ladder_budget.load_budgets(yaml.safe_load(open(sys.argv[1]))); print(b["peak_rss_max_factor"], int(b["peak_rss_slack_bytes"]))' "$LADDER") \
+_rss=$(python3 -c 'import sys, yaml; sys.path.insert(0, "scripts/lib"); import ladder_budget; b = ladder_budget.load_budgets(yaml.safe_load(open(sys.argv[1]))); print(b["peak_rss_max_factor"], int(b["peak_rss_slack_bytes"]), b["peak_rss_kill_factor"])' "$LADDER") \
   || { echo "decline: the ladder declares no valid ladder.budgets (#4520) -- a cell's cost to the host would be unjudged" >&2; exit 2; }
 # The RSS budget is also ENFORCED while a call runs, not only judged after it: ladder_meter.py kills a
-# call whose tree passes factor x file + slack (gx10 cpu 27B, 2026-09-28: 58.6G against a 33.1G budget,
+# call whose tree passes kill_factor x (factor x file + slack) (gx10 cpu 27B, 2026-09-28: 58.6G against a 33.1G budget,
 # ~57 min to an OOM at the box cap, and the ladder lost its receipt).
-read -r LADDER_METER_RSS_FACTOR LADDER_METER_RSS_SLACK <<< "$_rss"; export LADDER_METER_RSS_FACTOR LADDER_METER_RSS_SLACK
+read -r LADDER_METER_RSS_FACTOR LADDER_METER_RSS_SLACK LADDER_METER_RSS_KILL <<< "$_rss"; export LADDER_METER_RSS_FACTOR LADDER_METER_RSS_SLACK LADDER_METER_RSS_KILL
 
 # The inventory spec (#3712). MODEL_LADDER_INVENTORY_DIRS (colon-separated) is a test seam only.
 INV_SPEC=$(python3 - "$LADDER" <<'PY'
