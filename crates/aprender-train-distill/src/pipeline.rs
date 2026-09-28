@@ -323,6 +323,12 @@ impl<'a> Pipeline<'a> {
             }
         }
 
+        // distill-batch-honesty-v1 FALSIFY-DBH-006: the student trains at the
+        // configured rate. Before this call the value below was computed and
+        // discarded, and the CUDA student ran at its trainer default (1e-3).
+        self.student
+            .set_learning_rate(self.config.training.learning_rate as f32)?;
+
         // Load weights from both models. The teacher_weights byte buffer
         // is no longer used for logits computation (Phase 1 wired it to
         // the teacher provider instead) but we still load + drop it to
@@ -2046,6 +2052,8 @@ mod dbh_tests {
         trailing_only: bool,
         forwards: Arc<Mutex<usize>>,
         applied_rows: Arc<Mutex<Vec<usize>>>,
+        /// Every rate the pipeline handed over (FALSIFY-DBH-006).
+        lr_set: Arc<Mutex<Vec<f32>>>,
     }
 
     impl StudentLogitsProvider for RecordingStudent {
@@ -2075,6 +2083,10 @@ mod dbh_tests {
         }
         fn max_batch(&self) -> Option<usize> {
             self.max_batch
+        }
+        fn set_learning_rate(&mut self, lr: f32) -> Result<()> {
+            self.lr_set.lock().expect("lock").push(lr);
+            self.inner.set_learning_rate(lr)
         }
     }
 
@@ -2130,6 +2142,7 @@ mod dbh_tests {
             trailing_only: false,
             forwards: Arc::clone(&forwards),
             applied_rows: Arc::clone(&applied_rows),
+            lr_set: Arc::new(Mutex::new(Vec::new())),
         };
         let mut pipeline = pipeline.with_student(Box::new(student));
         let result = pipeline.execute();
@@ -2253,19 +2266,21 @@ mod dbh_tests {
 
     const VOCAB: usize = 16;
 
+    /// The rate is the pipeline's to set (FALSIFY-DBH-006): the fixture
+    /// starts at a sentinel the config always overwrites.
     fn recording(
-        learning_rate: f32,
         last_row_only: bool,
         trailing_only: bool,
         applied_rows: &Arc<Mutex<Vec<usize>>>,
     ) -> RecordingStudent {
         RecordingStudent {
-            inner: FixtureStudent::new(VOCAB, 0.0, learning_rate),
+            inner: FixtureStudent::new(VOCAB, 0.0, f32::NAN),
             max_batch: None,
             last_row_only,
             trailing_only,
             forwards: Arc::new(Mutex::new(0)),
             applied_rows: Arc::clone(applied_rows),
+            lr_set: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -2286,7 +2301,7 @@ mod dbh_tests {
                 .with_teacher(Box::new(crate::teacher_provider::FixtureTeacher::new(
                     VOCAB,
                 )))
-                .with_student(Box::new(recording(0.1, false, trailing_only, &applied)))
+                .with_student(Box::new(recording(false, trailing_only, &applied)))
                 .execute();
             let applied = applied.lock().expect("lock").clone();
             (result, applied)
@@ -2338,7 +2353,10 @@ mod dbh_tests {
     fn falsify_dbh_005_logged_loss_is_the_mean_of_applied_rows() {
         let loss_run = |last_row_only: bool| {
             let tmp = tempfile::TempDir::new().expect("tempdir");
-            let config = tiny_config(&tmp, 4);
+            let mut config = tiny_config(&tmp, 4);
+            // lr 0 keeps the flat student flat, so each step's rows have the
+            // losses recomputed below.
+            config.training.learning_rate = 0.0;
             let (t, a) = (config.distillation.temperature, config.distillation.alpha);
             let applied = Arc::new(Mutex::new(Vec::new()));
             let logged = Arc::new(Mutex::new(Vec::new()));
@@ -2347,7 +2365,7 @@ mod dbh_tests {
                 .with_max_steps(Some(3))
                 .with_batch_source(Box::new(FixedSource))
                 .with_teacher(Box::new(ScaledTeacher(VOCAB)))
-                .with_student(Box::new(recording(0.0, last_row_only, false, &applied)))
+                .with_student(Box::new(recording(last_row_only, false, &applied)))
                 .with_callback(Box::new(LossLog(Arc::clone(&logged))))
                 .execute()
                 .expect("run completes");
@@ -2402,5 +2420,34 @@ mod dbh_tests {
             !describes_applied(&per_row, &applied, &logged),
             "planted last-row student: logged {logged:?} must not describe applied {applied:?}"
         );
+    }
+
+    /// FALSIFY-DBH-006: the pipeline hands the student `training.learning_rate`
+    /// once, before step 0, and the student trains at it. The planted
+    /// variant is the pre-fix pipeline, which computed the rate and dropped
+    /// it: `lr_set` stays empty and the fixture keeps its NaN sentinel.
+    #[test]
+    fn falsify_dbh_006_student_trains_at_the_configured_rate() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let mut config = tiny_config(&tmp, 2);
+        config.training.learning_rate = 2e-4;
+        let applied = Arc::new(Mutex::new(Vec::new()));
+        let student = recording(false, false, &applied);
+        let lr_set = Arc::clone(&student.lr_set);
+        Pipeline::new(&config)
+            .with_per_position(false)
+            .with_max_steps(Some(2))
+            .with_batch_source(Box::new(FixedSource))
+            .with_teacher(Box::new(ScaledTeacher(VOCAB)))
+            .with_student(Box::new(student))
+            .execute()
+            .expect("run completes");
+        let lr_set = lr_set.lock().expect("lock").clone();
+        assert_eq!(
+            lr_set,
+            vec![2e-4_f32],
+            "rate handed over once, before step 0"
+        );
+        assert_eq!(applied.lock().expect("lock").len(), 2, "both steps trained");
     }
 }
