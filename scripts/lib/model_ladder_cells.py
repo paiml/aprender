@@ -287,7 +287,7 @@ SHA_KEY, FILE_KEY = "sha256:", "file:"
 def declaim_of(dec, host, item):
     """-> the cells.declaimed entry that withdraws `item` (an inventory row) on `host`, or None. A file entry
     matches the exact artifact, by sha256 and never by name; an arch entry matches every file of that arch."""
-    return dec.get((host, SHA_KEY + str(item.get("sha256") or ""))) or dec.get((host, item.get("arch")))
+    return dec.get((host, SHA_KEY + str(item.get("sha256") or "").lower())) or dec.get((host, item.get("arch")))
 
 
 def declaimed(C, hosts, out):
@@ -311,7 +311,8 @@ def declaimed(C, hosts, out):
         bad = [k for k in need if not str(d.get(k) or "").strip()]
         if by_file and "arch" in d:
             bad.append("one key (arch OR sha256+file, not both)")
-        if by_file and d.get("sha256") and not re.fullmatch(r"[0-9a-f]{64}", str(d["sha256"])):
+        # A str, not just 64 hex digits: an unquoted all-digit hash is a YAML int (and loses its leading zeros).
+        if by_file and d.get("sha256") and not (isinstance(d["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", d["sha256"])):
             bad.append("sha256 (64 lowercase hex)")
         if not isinstance(d.get("issue"), int) or d.get("issue") <= 0:
             bad.append("issue")

@@ -1449,7 +1449,7 @@ import yaml
 dcl = [d for d in ((yaml.safe_load(open(sys.argv[18]))["ladder"].get("cells") or {}).get("declaimed") or [])
        if d.get("host") == sys.argv[3]]
 def gone(i):
-    return any(d.get("sha256") == i.get("sha256") if d.get("sha256") else d.get("arch") == i.get("arch") for d in dcl)
+    return any(str(d.get("sha256")) == str(i.get("sha256") or "").lower() if d.get("sha256") else d.get("arch") == i.get("arch") for d in dcl)
 held = [i for i in inv if gone(i)]
 inv = [i for i in inv if not gone(i)]
 out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
