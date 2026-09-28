@@ -116,8 +116,9 @@ impl DistributedCudaTrainer {
         comm: DistributedComm,
         dist_config: DistributedTrainConfig,
     ) -> Self {
-        // DDP always needs grad accum buffers for CPU-side AllReduce
-        trainer.ensure_grad_accum();
+        // DDP AllReduces the CPU grad accum, so every accumulate-only
+        // backward must land there, through a sized D2H staging buffer.
+        trainer.use_cpu_grad_accum();
 
         Self { trainer, comm, dist_config, step: 0 }
     }
