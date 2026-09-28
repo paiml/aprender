@@ -414,7 +414,7 @@
                 assert_eq!(directory, PathBuf::from("/tmp/models"));
                 assert_eq!(repo_id, "paiml/whisper-apr-tiny");
                 assert_eq!(model_name, Some("Whisper Tiny".to_string()).map(Into::into));
-                assert_eq!(license, "apache-2.0");
+                assert_eq!(license.as_deref(), Some("apache-2.0"));
                 assert_eq!(pipeline_tag, "automatic-speech-recognition");
                 assert_eq!(library_name, Some("whisper-apr".to_string()).map(Into::into));
                 assert_eq!(
@@ -448,7 +448,7 @@
                 message,
                 ..
             })) => {
-                assert_eq!(license, "mit");
+                assert!(license.is_none(), "no --license means inherit the base licence");
                 assert_eq!(pipeline_tag, "text-generation");
                 assert!(!dry_run);
                 assert!(model_name.is_none());

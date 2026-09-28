@@ -53,9 +53,12 @@ pub enum ToolCommands {
         /// Model display name
         #[arg(long)]
         model_name: Option<FreeText>,
-        /// License (SPDX identifier, default: mit)
-        #[arg(long, default_value = "mit")]
-        license: FreeText,
+        /// License (SPDX identifier). Default: the base model's licence, read from
+        /// the .apr metadata, the README front matter or the LICENSE file in
+        /// DIRECTORY. With none of those, publish refuses (HRP-003): a derivative
+        /// never silently ships under a licence its base does not grant.
+        #[arg(long)]
+        license: Option<FreeText>,
         /// Pipeline tag (e.g., automatic-speech-recognition, text-generation)
         #[arg(long, default_value = "text-generation")]
         pipeline_tag: FreeText,

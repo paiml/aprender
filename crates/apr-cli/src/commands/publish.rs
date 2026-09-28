@@ -16,6 +16,10 @@ use aprender::format::model_card::ModelCard;
 use aprender::hf_hub::{HfHubClient, PushOptions, UploadProgress};
 use std::fs;
 use std::path::Path;
+
+#[path = "publish_license.rs"]
+mod publish_license;
+use publish_license::resolve_license;
 #[cfg(feature = "hf-hub")]
 use std::sync::Arc;
 
@@ -436,6 +440,97 @@ fn upload_to_hub(
     Ok(())
 }
 
+/// The artifacts a publish sends: the one a manifest declares, or every model
+/// file in `directory`.
+fn publish_files(
+    directory: &Path,
+    repo_id: &str,
+    manifest: Option<&Path>,
+) -> Result<Vec<std::path::PathBuf>, CliError> {
+    // When --manifest is provided, the manifest declares the single artifact
+    // being shipped for this invocation. We restrict `files` to just that
+    // artifact (F-PUBLISH-EXTRA-001::manifest_upload_roundtrip step 4) so
+    // that a per-format manifest does not accidentally re-upload sibling
+    // formats sitting next to it in the staging directory.
+    let files = if let Some(manifest_path) = manifest {
+        let artifact = preflight_manifest_guard(manifest_path, directory)?;
+        vec![artifact]
+    } else {
+        validate_publish_inputs(directory, repo_id)?
+    };
+
+    // With a manifest, validate_publish_inputs above doesn't run; repo_id
+    // still needs validation and directory existence must be checked.
+    if manifest.is_some() {
+        if !repo_id.contains('/') || repo_id.split('/').count() != 2 {
+            return Err(CliError::ValidationFailed(format!(
+                "Invalid repo ID '{}'. Expected format: org/repo-name",
+                repo_id
+            )));
+        }
+        if !directory.exists() {
+            return Err(CliError::FileNotFound(directory.to_path_buf()));
+        }
+    }
+    Ok(files)
+}
+
+/// `--verbose`: the files a publish will send, listed before any is read.
+fn print_upload_list(
+    files: &[std::path::PathBuf],
+    companion_files: &[std::path::PathBuf],
+    user_readme: Option<&Path>,
+) {
+    println!("Uploading {} primary artifact(s):", files.len());
+    for f in files {
+        println!("  - {}", f.display());
+    }
+    if !companion_files.is_empty() {
+        println!("Plus {} companion file(s):", companion_files.len());
+        for f in companion_files {
+            println!("  - {}", f.display());
+        }
+    }
+    if let Some(p) = user_readme {
+        println!(
+            "User-provided README.md detected at {} — will replace auto-generated card",
+            p.display()
+        );
+    }
+}
+
+/// Every `--extra-file` must exist before anything is uploaded.
+fn require_extra_files(extra_files: &[std::path::PathBuf]) -> Result<(), CliError> {
+    for ef in extra_files {
+        if !ef.exists() {
+            return Err(CliError::FileNotFound(ef.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// HRP-003: the card licence is --license or the base model's, never a
+/// default. A manifest publish sends no generated card, so it needs neither.
+fn card_license(
+    license: Option<&str>,
+    manifest: Option<&Path>,
+    files: &[std::path::PathBuf],
+    companion_files: &[std::path::PathBuf],
+    verbose: bool,
+) -> Result<String, CliError> {
+    if manifest.is_some() {
+        return Ok(license.unwrap_or("custom").to_string());
+    }
+    let resolved = resolve_license(license, files, companion_files)?;
+    if verbose || resolved.source != "--license" {
+        eprintln!(
+            "apr publish: license {} (from {})",
+            resolved.spdx, resolved.source
+        );
+    }
+    Ok(resolved.spdx)
+}
+
 /// Execute the publish command
 ///
 /// F-PUBLISH-EXTRA-001 (contracts/apr-cli-publish-extra-v1.yaml):
@@ -452,7 +547,7 @@ pub fn execute(
     directory: &Path,
     repo_id: &str,
     model_name: Option<&str>,
-    license: &str,
+    license: Option<&str>,
     pipeline_tag: &str,
     library_name: Option<&str>,
     tags: &[String],
@@ -467,35 +562,11 @@ pub fn execute(
     // matter, where the Hub ignores an unrecognised value — and it is the same
     // field `apr validate-manifest` FALSIFY-PM-004 fails closed on. Reject it
     // here rather than after the upload (issue #2391).
-    if let Some(why) = crate::commands::spdx::reject_reason("--license", license) {
+    if let Some(why) = license.and_then(|l| crate::commands::spdx::reject_reason("--license", l)) {
         return Err(CliError::ValidationFailed(format!("apr publish: {why}")));
     }
 
-    // When --manifest is provided, the manifest declares the single artifact
-    // being shipped for this invocation. We restrict `files` to just that
-    // artifact (F-PUBLISH-EXTRA-001::manifest_upload_roundtrip step 4) so
-    // that a per-format manifest does not accidentally re-upload sibling
-    // formats sitting next to it in the staging directory.
-    let files = if let Some(manifest_path) = manifest {
-        let artifact = preflight_manifest_guard(manifest_path, directory)?;
-        vec![artifact]
-    } else {
-        validate_publish_inputs(directory, repo_id)?
-    };
-
-    // When a manifest is absent the guard above doesn't run; repo_id still
-    // needs validation and directory existence must be checked.
-    if manifest.is_some() {
-        if !repo_id.contains('/') || repo_id.split('/').count() != 2 {
-            return Err(CliError::ValidationFailed(format!(
-                "Invalid repo ID '{}'. Expected format: org/repo-name",
-                repo_id
-            )));
-        }
-        if !directory.exists() {
-            return Err(CliError::FileNotFound(directory.to_path_buf()));
-        }
-    }
+    let files = publish_files(directory, repo_id, manifest)?;
 
     // PMAT-690 P3-C-prep defect 6 (2026-05-18): discover companion files
     // (config.json, vocab.json, merges.txt, tokenizer*.json, generation_config.json,
@@ -517,34 +588,16 @@ pub fn execute(
         .cloned();
 
     if verbose {
-        println!("Uploading {} primary artifact(s):", files.len());
-        for f in &files {
-            println!("  - {}", f.display());
-        }
-        if !companion_files.is_empty() {
-            println!("Plus {} companion file(s):", companion_files.len());
-            for f in &companion_files {
-                println!("  - {}", f.display());
-            }
-        }
-        if let Some(p) = &user_readme {
-            println!(
-                "User-provided README.md detected at {} — will replace auto-generated card",
-                p.display()
-            );
-        }
+        print_upload_list(&files, &companion_files, user_readme.as_deref());
     }
 
-    for ef in extra_files {
-        if !ef.exists() {
-            return Err(CliError::FileNotFound(ef.clone()));
-        }
-    }
+    require_extra_files(extra_files)?;
 
+    let license = card_license(license, manifest, &files, &companion_files, verbose)?;
     let (model_card, file_names) = generate_model_card(
         repo_id,
         model_name,
-        license,
+        &license,
         pipeline_tag,
         library_name,
         tags,
