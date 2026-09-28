@@ -394,17 +394,37 @@ else
     printf '      but the facade names `apr pv` as a replacement\n'; rc=1
 fi
 
+WS_VER="$(awk -F'\"' '/^version *=/{print $2; exit}' Cargo.toml)"
+# SCOPED RELEASES (#4604): the ONLY crates allowed off the workspace version, each at ONE exact
+# version. A crate listed here but back on the workspace version passes as before; a crate off the
+# workspace version that is not listed, or at any other version, is RED. Edit with the scoped bump.
+scoped_ver() {
+    case $1 in
+        aprender-build-sha|aprender-update|aprender-contracts-macros|aprender-common|aprender-contracts|aprender-contracts-cli) echo 0.69.4 ;;
+        *) return 1 ;;
+    esac
+}
+pub_ver() { # pub_ver <crate> -> the version this tree publishes for it, or rc 1 (unreadable, or off-workspace undeclared)
+    local v sv
+    v=$( python3 "$FACTS" --version-of "$ROOT_MD" "$1" ) || return 1
+    [ -n "$v" ] && [ -n "$WS_VER" ] || return 1
+    [ "$v" = "$WS_VER" ] && { printf '%s\n' "$v"; return 0; }
+    sv=$(scoped_ver "$1") || return 1
+    [ "$v" = "$sv" ] || return 1
+    printf '%s\n' "$v"
+}
+
 # CURRENCY did not disappear -- it moved to the crate that now owns the name.
 printf -- '\n--- CURRENCY: the tool the facade points AT is the current one -------\n'
-# "Current" is the version THIS tree publishes for the pv pair: aprender-contracts, the lib the
-# CLI ships with. Unscoped that is the workspace version; a scoped pv release (#4604) pins both
-# crates off it together, and comparing the CLI to the workspace would call that release stale.
+# "Current" = the workspace version, or EXACTLY the version a declared scoped release pins
+# (scoped_ver below). A crate off the workspace version at any other version is RED, so the only
+# input this admits that the old workspace-only check refused is the declared set itself.
 WANT="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts-cli )"
-PAIR="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts )"
-if [ -n "$WANT" ] && [ "$WANT" = "$PAIR" ]; then
-    printf 'ok    aprender-contracts-cli is at %s, the version this tree publishes for the pv pair\n' "$WANT"
+if WANT_PUB=$(pub_ver aprender-contracts-cli); then
+    printf 'ok    aprender-contracts-cli is at %s, the version this tree publishes for it\n' "$WANT_PUB"
 else
-    printf 'FAIL  aprender-contracts-cli is at %s but aprender-contracts is at %s -- the\n' "${WANT:-<unread>}" "${PAIR:-<unread>}"
+    printf 'FAIL  aprender-contracts-cli is at %s: neither the workspace version (%s) nor its declared\n' "${WANT:-<unread>}" "$WS_VER"
+    printf '      scoped version (%s) -- the\n' "$(scoped_ver aprender-contracts-cli || echo none)"
     printf '      redirect would install a version this tree never published\n'; rc=1
 fi
 
@@ -428,9 +448,9 @@ for pkg in provable-contracts provable-contracts-macros provable-contracts-cli; 
     up_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
         "crates/facades/$pkg/Cargo.toml" 2>/dev/null)
     [ -n "$up_ver" ] || { printf 'ok    %s: no pinned upstream version\n' "$pkg"; continue; }
-    # The version THIS tree publishes for the fronted crate: its own, which is the workspace
-    # version unless a scoped release (#4604) pinned it off. Unreadable -> FAIL, never a pass.
-    up_pub=$( python3 "$FACTS" --version-of "$ROOT_MD" "aprender-${pkg#provable-}" ) || up_pub=""
+    # The version THIS tree publishes for the fronted crate (pub_ver: workspace, or its exact
+    # declared scoped version). Unreadable or undeclared -> FAIL, never a pass.
+    up_pub=$(pub_ver "aprender-${pkg#provable-}") || up_pub=""
     if [ -n "$up_pub" ] && [ "$up_ver" = "$up_pub" ]; then
         printf 'ok    %s: upstream pinned to the version this tree publishes (%s)\n' "$pkg" "$up_ver"
     else
