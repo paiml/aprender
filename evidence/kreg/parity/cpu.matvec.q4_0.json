@@ -1,11 +1,20 @@
 {
-  "build_identity": "50bfa9b6f9a884e041f8947f9ed20c0e77f9f645",
+  "build_identity": "090942910d",
   "fp32_activations": {
     "max_abs_err": 0.019267305385255895,
     "max_rel_err": 0.0038595298148700868
   },
   "host": "mac-server",
   "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "in_tree_dequant_f64",
+    "row_sha256": "fcab416388fb12b2cef347e7b25a7943a8f29fa2ac92e9cd41c13696c4a7da9b",
+    "source_sha256": "0431b012ef1c84b913f9dafc2aedf79ad65c5f147cd927a55d9f7b6ccdcd108f",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "9aac7dca82c78fb955e3acb575eaf72e49c08763d3cc603a04e30b188472d072",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -29,7 +38,7 @@
   },
   "source_fn": "fused_q4_0_q8_0_parallel_matvec",
   "tolerance_rel": 0.008,
-  "ts": "2026-09-28T07:29:55Z",
+  "ts": "2026-09-28T11:18:11Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 1024,
