@@ -307,8 +307,38 @@ where
     let mut prediction_count = 0usize;
     let mut grads: Vec<Vec<Vec<f32>>> = Vec::with_capacity(input_ids.len());
 
-    for ((ids, t_rows), row_labels) in input_ids.iter().zip(teacher_pp.iter()).zip(labels.iter()) {
+    for (row, ((ids, t_rows), row_labels)) in input_ids
+        .iter()
+        .zip(teacher_pp.iter())
+        .zip(labels.iter())
+        .enumerate()
+    {
         let s_rows = compute_student_logits_per_position(ids);
+        // distill-batch-honesty-v1 FALSIFY-DBH-004: positions pair by index
+        // from 0. A provider on the trait default exposes ONE trailing
+        // position, so a teacher/student count mismatch paired the student's
+        // last-position logits with the teacher's position 0 and label[0],
+        // a wrong target trained silently; labels past the positions were
+        // dropped. Refuse both before any gradient exists.
+        if !row_labels.is_empty()
+            && (t_rows.len() != s_rows.len() || row_labels.len() > t_rows.len())
+        {
+            return Err(entrenar_common::EntrenarError::ConfigValue {
+                field: "APR_DISTILL_PER_POSITION".to_string(),
+                message: format!(
+                    "row {row}: teacher gives {} positions, student {}, labels {}; \
+                     per-position KD pairs positions by index, so this would train \
+                     the wrong target or drop positions",
+                    t_rows.len(),
+                    s_rows.len(),
+                    row_labels.len()
+                ),
+                suggestion: "unset APR_DISTILL_PER_POSITION for this backend, or give \
+                             teacher and student an all-positions forward \
+                             (distill-batch-honesty-v1)"
+                    .to_string(),
+            });
+        }
         let n_pos = t_rows.len().min(s_rows.len()).min(row_labels.len());
         let mut row_grads = Vec::with_capacity(n_pos);
         for p in 0..n_pos {
@@ -633,18 +663,67 @@ mod tests {
         }
     }
 
-    /// FT-PERPOS-004: ragged rows (fewer student/label positions) train on the
-    /// common prefix without panicking — robustness on uneven batches.
+    /// FT-PERPOS-004 (v1.1): fewer labels than positions train on the label
+    /// prefix without panicking. Teacher and student must agree on the
+    /// position count (FALSIFY-DBH-004 below).
     #[test]
     fn pmat_perpos_004_ragged_rows_use_min_positions() {
         let vocab = 16;
         let mut teacher = FixtureTeacher::new(vocab);
         let inputs = vec![vec![1u32, 2, 3, 4]]; // teacher gives 4 positions
         let labels = vec![vec![2usize, 3]]; // only 2 labels
-        let student = |_ids: &[u32]| vec![vec![0.0_f32; vocab]; 3]; // only 3 positions
+        let student = |_ids: &[u32]| vec![vec![0.0_f32; vocab]; 4];
         let (_loss, grads) =
             kd_step_per_position(&mut teacher, &inputs, &labels, 4.0, 0.5, student)
-                .expect("ragged step must not panic");
-        assert_eq!(grads[0].len(), 2, "min(4 teacher, 3 student, 2 labels) = 2");
+                .expect("short labels must not panic");
+        assert_eq!(grads[0].len(), 2, "min(4 teacher, 4 student, 2 labels) = 2");
+    }
+
+    /// Teacher on the trait default: one trailing position per row, as the
+    /// CUDA teacher exposes today.
+    struct TrailingTeacher(FixtureTeacher);
+
+    impl TeacherLogitsProvider for TrailingTeacher {
+        fn vocab_size(&self) -> usize {
+            self.0.vocab_size()
+        }
+        fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+            self.0.logits_for_batch(input_ids)
+        }
+    }
+
+    /// FALSIFY-DBH-004 (distill-batch-honesty-v1): a position-count mismatch
+    /// is refused by name. Before the fix, a one-trailing-position student
+    /// (CUDA default) against a 4-position teacher trained 1 of 4 positions,
+    /// pairing its last-position logits with teacher position 0 and label[0].
+    #[test]
+    fn falsify_dbh_004_position_mismatch_is_refused() {
+        let vocab = 16;
+        let inputs = vec![vec![1u32, 2, 3, 4]];
+        let labels = vec![vec![2usize, 3, 4, 4]];
+        let trailing = |_ids: &[u32]| vec![vec![0.0_f32; vocab]; 1];
+
+        // A: all-positions teacher, trailing student.
+        let mut teacher = FixtureTeacher::new(vocab);
+        let err = kd_step_per_position(&mut teacher, &inputs, &labels, 4.0, 0.5, trailing)
+            .expect_err("teacher 4 vs student 1 positions must be refused");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("teacher gives 4 positions, student 1, labels 4"),
+            "refusal must name the counts: {msg}"
+        );
+
+        // B: both on the trait default (CUDA today) with shard labels.
+        let mut teacher = TrailingTeacher(FixtureTeacher::new(vocab));
+        let err = kd_step_per_position(&mut teacher, &inputs, &labels, 4.0, 0.5, trailing)
+            .expect_err("4 labels on 1 position must be refused");
+        assert!(format!("{err:?}").contains("labels 4"));
+
+        // Control: one position with one label is the per-row step, and runs.
+        let mut teacher = TrailingTeacher(FixtureTeacher::new(vocab));
+        let (_loss, grads) =
+            kd_step_per_position(&mut teacher, &inputs, &[vec![4usize]], 4.0, 0.5, trailing)
+                .expect("1 position, 1 label runs");
+        assert_eq!(grads[0].len(), 1);
     }
 }
