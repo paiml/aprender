@@ -1,9 +1,9 @@
-# measured 2026-09-28T01:40:52Z
+# measured 2026-09-28T01:55:54Z
 lambda-labs	apr	GREEN	ok (installed v0.70.0-dev.8d021f61e@8d021f6, target v0.70.0-dev.8d021f61e@8d021f6)
 lambda-labs	pv	GREEN	ok (installed v0.70.0-dev.8d021f61e@8d021f6, target v0.70.0-dev.8d021f61e@8d021f6)
 lambda-labs	forjar	RED	behind (installed v1.32.0@b12a839, target nightly@f281f5a)
 lambda-labs	bashrs	GREEN	no-sha (installed nightly@1241570, target nightly@1241570)
-lambda-labs	pmat	RED	behind (installed nightly@46d04bc, target v3.42.0@3f3d269)
+lambda-labs	pmat	GREEN	ok (installed v3.42.0@3f3d269, target v3.42.0@3f3d269)
 lambda-labs	pzsh	GREEN	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 lambda-labs	copia	GREEN	no-sha (installed nightly@ce1909f, target nightly@ce1909f)
 lambda-labs	rmedia	RED	WAIVED dev (installed -, target -)
@@ -24,7 +24,7 @@ yoga	apr	GREEN	ok (installed v0.70.0-dev.8d021f61e@8d021f6, target v0.70.0-dev.8
 yoga	pv	GREEN	ok (installed v0.70.0-dev.8d021f61e@8d021f6, target v0.70.0-dev.8d021f61e@8d021f6)
 yoga	forjar	GREEN	no-sha (installed nightly@f281f5a, target nightly@f281f5a)
 yoga	bashrs	GREEN	no-sha (installed nightly@1241570, target nightly@1241570)
-yoga	pmat	RED	behind (installed nightly@46d04bc, target v3.42.0@3f3d269)
+yoga	pmat	GREEN	ok (installed v3.42.0@3f3d269, target v3.42.0@3f3d269)
 yoga	pzsh	GREEN	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 yoga	copia	GREEN	no-sha (installed nightly@ce1909f, target nightly@ce1909f)
 yoga	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
