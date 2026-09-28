@@ -26,6 +26,11 @@ Modes:
   run --sections a,b --results FILE [--background-until SECTION]
   wait --results FILE       (join a run started with --background-until)
   list                      (print the section/step inventory; the parity input)
+  run --job NAME [--only GLOB,..] [--results FILE]
+                            (run the sections ci.yml's job NAME runs, read from
+                            ci.yml itself: `make ci-local`, #4416 Lever 2)
+  jobs                      (each ci.yml job that calls this driver, its sections,
+                            and the steps a local --job run does NOT reproduce)
 """
 from __future__ import annotations
 
@@ -36,6 +41,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -410,6 +416,59 @@ def section_catalogue() -> dict:
                              wf_env={}, matrix={}, needs=nmap)
     del ci
     return cat
+
+
+def driver_steps(job: dict) -> list:
+    return [s for s in job.get("steps") or [] if "fat_driver.py run" in (s.get("run") or "")]
+
+
+def job_run_args(ci: dict, job: str) -> dict:
+    """The `fat_driver.py run` arguments ci.yml gives JOB, parsed out of ci.yml (#4416 Lever 2).
+
+    There is no second list: `make ci-local JOB=x86-main` runs exactly the
+    sections CI's x86-main runs, so renaming a section in ci.yml changes both.
+    --results and --background-until are CI plumbing and are dropped.
+    """
+    jobs = ci.get("jobs") or {}
+    if job not in jobs:
+        have = ", ".join(n for n, j in jobs.items() if driver_steps(j)) or "none"
+        raise SystemExit(f"fat_driver: ci.yml has no job {job!r} (jobs that call this driver: {have})")
+    steps = driver_steps(jobs[job])
+    if len(steps) != 1:
+        raise SystemExit(f"fat_driver: ci.yml job {job!r} has {len(steps)} `fat_driver.py run` steps; "
+                         "--job reads exactly one")
+    ap = argparse.ArgumentParser(prog=f"ci.yml {job}", add_help=False, exit_on_error=False)
+    ap.add_argument("--sections")
+    ap.add_argument("--external-job", action="append", default=[])
+    ap.add_argument("--results")
+    ap.add_argument("--background-until")
+    line = steps[0]["run"].split("fat_driver.py run", 1)[1]
+    # A matrix job's line names its section through `${{ matrix.K }}`: a local
+    # run covers every combination, so the sections are the union over them.
+    matrix = (jobs[job].get("strategy") or {}).get("matrix") or {}
+    if any(not isinstance(v, list) for v in matrix.values()):
+        raise SystemExit(f"fat_driver: ci.yml job {job!r}: --job reads only a plain list matrix, not {matrix}")
+    combos = [{}]
+    for k, vs in matrix.items():
+        combos = [dict(c, **{k: v}) for c in combos for v in vs]
+    sections, external = [], []
+    for combo in combos:
+        text = re.sub(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}",
+                      lambda m, c=combo: str(c[m.group(1)]) if m.group(1) in c else m.group(0), line)
+        if "${{" in text:
+            raise SystemExit(f"fat_driver: ci.yml job {job!r}: its `fat_driver.py run` step has a "
+                             f"`${{{{ }}}}` --job cannot resolve locally: {text.strip()}")
+        try:
+            got, extra = ap.parse_known_args(shlex.split(text))
+        except argparse.ArgumentError as e:
+            raise SystemExit(f"fat_driver: ci.yml job {job!r}: {e}") from None
+        if extra:
+            raise SystemExit(f"fat_driver: ci.yml job {job!r}: unknown `fat_driver.py run` arguments {extra}")
+        if not got.sections:
+            raise SystemExit(f"fat_driver: ci.yml job {job!r}: its `fat_driver.py run` step has no --sections")
+        sections += [x for x in got.sections.split(",") if x not in sections]
+        external += [x for x in got.external_job if x not in external]
+    return {"sections": ",".join(sections), "external_job": external}
 
 
 def expand_matrix(matrix: dict, pin) -> list:
@@ -1125,6 +1184,13 @@ class RunCtx:
             page += 1
 
     def external_result(self, need: str):
+        # Off-CI (`make ci-local`) there is no run to ask: the need is skipped,
+        # said once, so a section gated on it skips rather than hangs to the deadline.
+        if self.run_id == "local":
+            if not self.external.get(need):
+                self.external[need] = "noted"
+                say(f"::notice::external job {need!r}: not part of a local run; treated as skipped")
+            return "skipped"
         # A job that never completes (or never appears) fails the need at the
         # deadline, pointing at the need -- not at x86-main's own job timeout.
         if time.time() >= self.external_deadline:
@@ -1306,9 +1372,27 @@ def on_signal(signum, frame):
             pass
 
 
+def narrow(names: list, only) -> list:
+    """--only GLOB[,GLOB]: a subset of the job's own sections, never one outside it."""
+    if not only:
+        return names
+    pats = [p.strip() for p in only.split(",") if p.strip()]
+    for pat in pats:
+        if not any(fnmatch.fnmatch(n, pat) for n in names):
+            raise SystemExit(f"fat_driver: --only {pat!r} matches none of this run's sections: {','.join(names)}")
+    return [n for n in names if any(fnmatch.fnmatch(n, pat) for pat in pats)]
+
+
 def cmd_run(a):
+    if bool(a.job) == bool(a.sections):
+        raise SystemExit("fat_driver: run takes exactly one of --sections or --job")
+    if a.job:
+        got = job_run_args(load_yaml(CI_FILE), a.job)
+        a.sections, a.external_job = got["sections"], (a.external_job or []) + got["external_job"]
+        say(f"fat_driver: ci.yml job {a.job}: --sections '{a.sections}'"
+            + "".join(f" --external-job {j}" for j in got["external_job"]))
     cat = section_catalogue()
-    names = resolve_section_names(cat, a.sections)
+    names = narrow(resolve_section_names(cat, a.sections), a.only)
     base = Path(a.base or Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "fat")
     base.mkdir(parents=True, exist_ok=True)
     ctx = RunCtx(base)
@@ -1317,7 +1401,7 @@ def cmd_run(a):
         ctx.sections[n] = Section(n, cat[n], ctx)
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
-    results = Path(a.results)
+    results = Path(a.results or base / "results.json")
     early_done = threading.Event()
     if a.background_until:
         # Fork: the child runs every section; the parent returns once the named
@@ -1389,6 +1473,90 @@ def cmd_list(a):
         for i, st in enumerate(spec["job"].get("steps") or []):
             label = st.get("name") or st.get("uses") or (st.get("run") or "").split("\n")[0]
             print(f"{n}\t{i}\t{label}")
+
+
+def cmd_jobs(a):
+    """Every ci.yml job that calls this driver: its sections (resolved against the
+    catalogue, so a stale name is RED here and not first in CI) and the steps a
+    local `run --job` does not reproduce."""
+    ci, cat, bad = load_yaml(CI_FILE), section_catalogue(), 0
+    for name, job in (ci.get("jobs") or {}).items():
+        if not driver_steps(job):
+            continue
+        try:
+            got = job_run_args(ci, name)
+            secs = resolve_section_names(cat, got["sections"])
+        except SystemExit as e:
+            print(f"{name}\tBAD\t{e}")
+            bad += 1
+            continue
+        print(f"{name}\tsections\t{','.join(secs)}")
+        for j in got["external_job"]:
+            print(f"{name}\texternal (skipped locally)\t{j}")
+        for st in job.get("steps") or []:
+            if st in driver_steps(job) or "fat_driver.py wait" in (st.get("run") or ""):
+                continue
+            label = st.get("name") or st.get("uses") or (st.get("run") or "").split("\n")[0]
+            print(f"{name}\tnot run by --job\t{label}")
+    return 1 if bad else 0
+
+
+def _st_job(row):
+    def args(run):
+        ci = {"jobs": {"x": {"steps": [{"run": "true"}] + ([{"run": run}] if run else [])}}}
+        try:
+            return job_run_args(ci, "x")
+        except SystemExit:
+            return "refused"
+    row("--job: folded run line -> its sections and external jobs",
+        args("python3 scripts/ci/fat_driver.py run --sections 'a,b[X64]' --external-job w "
+             "--results \"$RUNNER_TEMP/r.json\" --background-until 'b[X64]'"),
+        {"sections": "a,b[X64]", "external_job": ["w"]})
+    row("--job: MUTANT job with no driver step is refused", args(None), "refused")
+    mx = {"jobs": {"x": {"strategy": {"matrix": {"shard": [1, 2]}},
+                         "steps": [{"run": "fat_driver.py run --sections 's?${{ matrix.shard }}?2?'"}]}}}
+    row("--job: a list matrix runs the union of its combinations", job_run_args(mx, "x")["sections"], "s?1?2?,s?2?2?")
+    mx["jobs"]["x"]["steps"][0]["run"] += " --results '${{ runner.temp }}/r'"
+    try:
+        job_run_args(mx, "x")
+        got = "accepted"
+    except SystemExit:
+        got = "refused"
+    row("--job: MUTANT an expression other than matrix.K is refused, not guessed", got, "refused")
+    row("--job: MUTANT driver step without --sections is refused",
+        args("python3 scripts/ci/fat_driver.py run --results r.json"), "refused")
+    row("--job: MUTANT unknown driver argument is refused",
+        args("python3 scripts/ci/fat_driver.py run --sections a --shard 3"), "refused")
+    two = {"jobs": {"x": {"steps": [{"run": "fat_driver.py run --sections a"}, {"run": "fat_driver.py run --sections b"}]}}}
+    try:
+        job_run_args(two, "x")
+        got = "accepted"
+    except SystemExit:
+        got = "refused"
+    row("--job: MUTANT two driver steps in one job is refused", got, "refused")
+    try:
+        job_run_args({"jobs": {}}, "x86-main")
+        got = "accepted"
+    except SystemExit:
+        got = "refused"
+    row("--job: MUTANT unknown job is refused", got, "refused")
+    row("--only: narrows to the job's own sections", narrow(["changes", "guard-tree", "guard-cargo"], "guard-*"),
+        ["guard-tree", "guard-cargo"])
+    try:
+        narrow(["changes", "guard-tree"], "guard-tree,cuda-unit")
+        got = "accepted"
+    except SystemExit:
+        got = "refused"
+    row("--only: MUTANT a glob outside the job's sections is refused", got, "refused")
+    ci, cat = load_yaml(CI_FILE), section_catalogue()
+    stale = []
+    for n, j in (ci.get("jobs") or {}).items():
+        if driver_steps(j):
+            try:
+                resolve_section_names(cat, job_run_args(ci, n)["sections"])
+            except SystemExit as e:
+                stale.append(f"{n}: {e}")
+    row("--job: every ci.yml driver job's sections resolve in the catalogue", stale, [])
 
 
 def _st_vendored(row):
@@ -1632,6 +1800,7 @@ def _st_external(row):
     # job completes, then carries its conclusion; without the flag it is absent.
     x = RunCtx.__new__(RunCtx)
     x.sections, x.external, x._jobs_at, x._jobs = {}, {"workspace-test": None}, 0.0, []
+    x.run_id = "12345"
     x.external_deadline = time.time() + 3600
     for label, jobs, want in (
         ("external need: job not listed yet -> pending", [], None),
@@ -1649,6 +1818,9 @@ def _st_external(row):
     row("external need: past the deadline and still absent -> failure", x.need_result("workspace-test"), "failure")
     x.external = {}
     row("no --external-job: the need is absent (schedule refuses)", x.members("workspace-test"), [])
+    x.external, x.run_id = {"workspace-test": None}, "local"
+    x.fetch_jobs = lambda: (_ for _ in ()).throw(AssertionError("a local run asked the Actions API"))
+    row("external need off-CI (run_id local): skipped, no API call", x.need_result("workspace-test"), "skipped")
 
 
 def cmd_self_test(a):
@@ -1661,7 +1833,7 @@ def cmd_self_test(a):
         rows.append((label, got == want, got, want))
 
     for section in (_st_vendored, _st_expressions, _st_timeouts, _st_artifact, _st_checkout, _st_aside,
-                    _st_external):
+                    _st_external, _st_job):
         section(row)
     bad = 0
     for label, good, got, want in rows:
@@ -1675,8 +1847,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
-    r.add_argument("--sections", required=True)
-    r.add_argument("--results", required=True)
+    r.add_argument("--sections")
+    r.add_argument("--job")
+    r.add_argument("--only")
+    r.add_argument("--results")
     r.add_argument("--base")
     r.add_argument("--background-until")
     r.add_argument("--external-job", action="append")
@@ -1685,8 +1859,10 @@ def main(argv=None):
     w.add_argument("--base")
     sub.add_parser("list")
     sub.add_parser("self-test")
+    sub.add_parser("jobs")
     a = ap.parse_args(argv)
-    return {"run": cmd_run, "wait": cmd_wait, "list": cmd_list, "self-test": cmd_self_test}[a.cmd](a)
+    return {"run": cmd_run, "wait": cmd_wait, "list": cmd_list, "self-test": cmd_self_test,
+            "jobs": cmd_jobs}[a.cmd](a)
 
 
 if __name__ == "__main__":

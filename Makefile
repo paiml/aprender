@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build guards-local test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
+.PHONY: all build guards-local ci-local test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -867,7 +867,15 @@ guards-local: ## Run every guard-cargo/guard-tree step CI runs, all of them, str
 	@bash scripts/ci_guards.sh --check-coverage
 	@bash scripts/ci_guards.sh
 
-# CI/CD checks
+# Run one CI fat job's sections locally, the list read from ci.yml itself (#4416 Lever 2).
+# `fat_driver.py jobs` prints each job's sections and the steps this does NOT reproduce
+# (checkout, uploads, the job's inline pre-steps); mac-check and the aggregators are not sections.
+JOB ?= x86-main
+ci-local: ## Run the sections CI's JOB (default x86-main) runs, read from ci.yml; ONLY=glob narrows
+	@python3 scripts/ci/fat_driver.py jobs | awk -F'\t' -v j="$(JOB)" '$$1 == j'
+	@python3 scripts/ci/fat_driver.py run --job "$(JOB)" $(if $(ONLY),--only "$(ONLY)") --base "$${TMPDIR:-/tmp}/fat-ci-local-$(JOB)"
+
+# CI/CD checks. NOT what CI runs (tier4 = tier3 + release tests + pmat); for that, `make ci-local`.
 ci: tier4
 
 # Fail-closed, comparand-pinned composite gate (BSE-16, docs/specifications/
