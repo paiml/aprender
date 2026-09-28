@@ -259,6 +259,7 @@ ladder:
       arch: qwen3
       gguf: Qwen3-1.7B-Q4_K_M.gguf
       sha256: b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897
+      hosts: [lambda]   # gx10 DE-CLAIMED for 0.70 (#4590, cells.declaimed); restore to every host in 0.70.1
       backends: [cpu, cuda]
       required: true
       note: "dense Qwen3 (per-head QK RMSNorm) — RED on cuda at 4a538ddef on both hosts (#3413)"
@@ -267,6 +268,7 @@ ladder:
       arch: qwen3
       gguf: Qwen3-8B-Q4_K_M.gguf
       sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
+      hosts: [lambda]   # gx10 DE-CLAIMED for 0.70 (#4590, cells.declaimed); restore to every host in 0.70.1
       backends: [cpu, cuda]
       required: true    # flipped 2026-09-22 (#3724): the empty-output defect this key was hiding is FIXED
                         # and MEASURED green 8/8 on BOTH lambda (where it failed) and gx10 at 3ebb1c61e.

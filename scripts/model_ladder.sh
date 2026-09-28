@@ -1438,10 +1438,17 @@ if [ "$CELLS" = 1 ]; then
   [ "$cells_rc" = 0 ] || { echo "model_ladder: cells producer rc=$cells_rc: $(tail -1 "$WORK/cells.log")" >&2; CELLS_JSON=""; RED=$((RED + 1)); }
 fi
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
-python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_RECEIPT" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$GPU_MEM" "$CELLS_JSON" <<'PY'
+python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_RECEIPT" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$GPU_MEM" "$CELLS_JSON" "$LADDER" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
+# #4590: a (host, arch) the release DE-CLAIMS leaves inventory[] -- the universe released pv owes cells on --
+# and is kept, whole, in declaimed_inventory[], so the receipt still says the file was held and measured.
+import yaml
+dcl = {d.get("arch") for d in ((yaml.safe_load(open(sys.argv[18]))["ladder"].get("cells") or {}).get("declaimed") or [])
+       if d.get("host") == sys.argv[3]}
+held = [i for i in inv if i.get("arch") in dcl]
+inv = [i for i in inv if i.get("arch") not in dcl]
 out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
@@ -1449,6 +1456,8 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
        "rungs": rows}
+if held:
+    out["declaimed_inventory"] = held
 try:
     out.update({k: v for k, v in json.loads(sys.argv[16]).items() if k in ("gpu_mem_total_bytes", "gpu_mem_free_bytes")})
 except ValueError:
@@ -1464,7 +1473,8 @@ if [ "$receipt_rc" != 0 ] || ! python3 - "$RECEIPT_TMP" "$LADDER_APPENDS_ROWS" "
 import json, sys
 d = json.load(open(sys.argv[1]))
 assert len(d["rungs"]) == int(sys.argv[2]), f'rungs {len(d["rungs"])} != appended {sys.argv[2]}'
-assert len(d["inventory"]) == int(sys.argv[3]), f'inventory {len(d["inventory"])} != appended {sys.argv[3]}'
+n = len(d["inventory"]) + len(d.get("declaimed_inventory") or [])
+assert n == int(sys.argv[3]), f'inventory {n} != appended {sys.argv[3]}'
 PY
 then
     rm -f "$RECEIPT_TMP" 2>/dev/null
