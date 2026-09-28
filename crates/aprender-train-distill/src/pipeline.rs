@@ -298,6 +298,31 @@ impl<'a> Pipeline<'a> {
             });
         }
 
+        // distill-batch-honesty-v1 FALSIFY-DBH-002: a student that trains
+        // fewer rows per step than the batch holds is refused here, before
+        // any model I/O or teacher forward. Otherwise every step pays B
+        // teacher + student forwards, logs a loss averaged over B rows, and
+        // updates from fewer (S-R6: CudaStudentProvider applied the last row
+        // of 32).
+        let configured_batch = self.config.training.batch_size as usize;
+        if let Some(max_batch) = self.student.max_batch() {
+            if configured_batch > max_batch {
+                return Err(EntrenarError::ConfigValue {
+                    field: "training.batch_size".to_string(),
+                    message: format!(
+                        "batch_size {configured_batch} exceeds the student backend's \
+                         max_batch {max_batch}: it would train {max_batch} of \
+                         {configured_batch} rows per step while the loss averages all \
+                         {configured_batch}"
+                    ),
+                    suggestion: format!(
+                        "set training.batch_size to {max_batch} or less for this backend \
+                         (distill-batch-honesty-v1)"
+                    ),
+                });
+            }
+        }
+
         // Load weights from both models. The teacher_weights byte buffer
         // is no longer used for logits computation (Phase 1 wired it to
         // the teacher provider instead) but we still load + drop it to
@@ -1998,5 +2023,156 @@ mod tests {
         assert_eq!(parse_max_steps_value(Some("0")), Some(0));
         assert_eq!(parse_max_steps_value(Some("10")), Some(10));
         assert_eq!(parse_max_steps_value(Some("  7 ")), Some(7));
+    }
+}
+
+/// distill-batch-honesty-v1: every row a step pays a forward for is trained
+/// on, or the run is refused before step 0.
+#[cfg(test)]
+mod dbh_tests {
+    use super::*;
+    use crate::student_provider::{FixtureStudent, StudentLogitsProvider};
+    use std::sync::{Arc, Mutex};
+
+    /// Wraps `FixtureStudent`; records forwards and the row count of every
+    /// `apply_kd_gradient` call. `last_row_only` is the planted S-R6
+    /// behaviour: it keeps `gradient.last()` and declares no batch limit.
+    struct RecordingStudent {
+        inner: FixtureStudent,
+        max_batch: Option<usize>,
+        last_row_only: bool,
+        forwards: Arc<Mutex<usize>>,
+        applied_rows: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl StudentLogitsProvider for RecordingStudent {
+        fn vocab_size(&self) -> usize {
+            self.inner.vocab_size()
+        }
+        fn logits_for_batch(&mut self, input_ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+            *self.forwards.lock().expect("lock") += input_ids.len();
+            self.inner.logits_for_batch(input_ids)
+        }
+        fn apply_kd_gradient(&mut self, gradient: &[Vec<f32>]) -> Result<()> {
+            let used = if self.last_row_only {
+                &gradient[gradient.len().saturating_sub(1)..]
+            } else {
+                gradient
+            };
+            self.applied_rows.lock().expect("lock").push(used.len());
+            self.inner.apply_kd_gradient(used)
+        }
+        fn max_batch(&self) -> Option<usize> {
+            self.max_batch
+        }
+    }
+
+    struct Run {
+        result: Result<PipelineResult>,
+        forwards: usize,
+        applied_rows: Vec<usize>,
+    }
+
+    fn run(batch_size: u32, max_batch: Option<usize>, last_row_only: bool) -> Run {
+        use safetensors::tensor::{Dtype, TensorView};
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let dummy: Vec<f32> = (0..32).map(|i| i as f32 * 0.01).collect();
+        let bytes: Vec<u8> = bytemuck::cast_slice(&dummy).to_vec();
+        for name in ["teacher", "student"] {
+            let views = vec![(
+                "layer.weight",
+                TensorView::new(Dtype::F32, vec![8, 4], &bytes).expect("view"),
+            )];
+            std::fs::write(
+                tmp.path().join(format!("{name}.safetensors")),
+                safetensors::serialize(views, None).expect("serialize"),
+            )
+            .expect("write");
+        }
+        let mut config = DistillConfig::minimal(
+            tmp.path()
+                .join("teacher.safetensors")
+                .to_str()
+                .expect("utf8"),
+            tmp.path()
+                .join("student.safetensors")
+                .to_str()
+                .expect("utf8"),
+        );
+        config.output.dir = tmp.path().join("out");
+        config.training.epochs = 1;
+        config.training.batch_size = batch_size;
+
+        let forwards = Arc::new(Mutex::new(0));
+        let applied_rows = Arc::new(Mutex::new(Vec::new()));
+        let pipeline = Pipeline::new(&config);
+        let vocab = pipeline.teacher.vocab_size();
+        let student = RecordingStudent {
+            inner: FixtureStudent::new(vocab, 0.0, 0.1),
+            max_batch,
+            last_row_only,
+            forwards: Arc::clone(&forwards),
+            applied_rows: Arc::clone(&applied_rows),
+        };
+        let mut pipeline = pipeline.with_student(Box::new(student));
+        let result = pipeline.execute();
+        let forwards = *forwards.lock().expect("lock");
+        let applied_rows = applied_rows.lock().expect("lock").clone();
+        Run {
+            result,
+            forwards,
+            applied_rows,
+        }
+    }
+
+    /// The DBH-001/003 predicate: every step applied as many rows as the batch.
+    fn every_step_trains_every_row(r: &Run, batch: usize) -> bool {
+        !r.applied_rows.is_empty() && r.applied_rows.iter().all(|&n| n == batch)
+    }
+
+    /// FALSIFY-DBH-002: max_batch 1 with batch 4 is refused by name before
+    /// any student forward; batch 1 runs.
+    #[test]
+    fn falsify_dbh_002_refuses_batch_over_max_before_step_0() {
+        let r = run(4, Some(1), false);
+        let err = r.result.expect_err("batch 4 > max_batch 1 must be refused");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("training.batch_size") && msg.contains("max_batch 1"),
+            "refusal must name the field and the limit: {msg}"
+        );
+        assert_eq!(r.forwards, 0, "refusal must come before step 0");
+        assert!(r.applied_rows.is_empty());
+
+        let ok = run(1, Some(1), false);
+        ok.result
+            .as_ref()
+            .expect("batch 1 within max_batch 1 must run");
+        assert!(every_step_trains_every_row(&ok, 1));
+    }
+
+    /// FALSIFY-DBH-003: through Pipeline at B=4, an honest provider applies
+    /// 4 rows every step; the planted last-row-only provider (the S-R6
+    /// CudaStudentProvider logic, no declared limit) turns the predicate RED.
+    #[test]
+    fn falsify_dbh_003_pipeline_detects_last_row_provider() {
+        let honest = run(4, None, false);
+        honest.result.as_ref().expect("honest run");
+        assert!(
+            every_step_trains_every_row(&honest, 4),
+            "honest provider applied {:?}",
+            &honest.applied_rows[..honest.applied_rows.len().min(5)]
+        );
+
+        let planted = run(4, None, true);
+        planted.result.as_ref().expect("planted run completes");
+        assert!(
+            !every_step_trains_every_row(&planted, 4),
+            "planted last-row provider must turn DBH-003 RED"
+        );
+        assert!(
+            planted.forwards >= 4,
+            "the planted run still paid B forwards per step"
+        );
     }
 }
