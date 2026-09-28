@@ -1261,7 +1261,19 @@ impl CudaTransformerTrainer {
     /// blocks, LM head and final norm once; the embedding gradient (summed by
     /// the scatter-add) is scaled by `1/rows` before `optimizer_step`. A
     /// micro-step per row would be a different update (B steps, not one).
+    ///
+    /// The step reads the CPU accumulator, so the GPU-resident one (ALB-091,
+    /// present when `accumulation_steps > 1`) is set aside for the call:
+    /// otherwise the rows' gradients land on the GPU and the step averages
+    /// zeros.
     pub fn kd_step_batch(&mut self, rows: &[(&[u32], &[f32])]) -> Option<()> {
+        let gpu_accum = self.gpu_grad_accum.take();
+        let stepped = self.kd_step_batch_cpu_accum(rows);
+        self.gpu_grad_accum = gpu_accum;
+        stepped
+    }
+
+    fn kd_step_batch_cpu_accum(&mut self, rows: &[(&[u32], &[f32])]) -> Option<()> {
         let hidden_size = self.config.model_config.hidden_size;
         let vocab_size = self.config.model_config.vocab_size;
         if rows.is_empty() {
@@ -1307,12 +1319,12 @@ impl CudaTransformerTrainer {
         Some(())
     }
 
-    /// The CPU accumulate path slices `d2h_staging`; it is only pre-sized when
-    /// `accumulation_steps > 1`. `kd_step_batch` accumulates at any setting.
-    fn ensure_d2h_staging(&mut self) {
-        if self.gpu_grad_accum.is_some() {
-            return;
-        }
+    /// The CPU accumulate path slices `d2h_staging`; the constructor only
+    /// sizes it when `accumulation_steps > 1` and the GPU accumulator failed
+    /// to allocate. At any other setting the first block download indexes an
+    /// empty buffer and panics. `kd_step_batch` and DDP accumulate on the CPU
+    /// at every setting, so they size it here.
+    pub(crate) fn ensure_d2h_staging(&mut self) {
         let mc = &self.config.model_config;
         let need = (mc.hidden_size * mc.intermediate_size).max(mc.vocab_size * mc.hidden_size);
         if self.d2h_staging.len() < need {
