@@ -2303,6 +2303,9 @@ fn print_generate_header(config: &TextDistillConfig, config_path: &Path) {
 /// Read prompts from a JSONL file, skipping blank lines.
 fn read_prompts_jsonl(path: &Path) -> Result<Vec<serde_json::Value>> {
     use std::io::{BufRead, BufReader};
+    // The prompts path comes from the config file, not the command line, so
+    // the sealed check runs here (train-ingress-sealed-refusal-v1 TIS-003).
+    super::sealed_ingress::check_ingress(path)?;
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
     let mut prompts = Vec::new();
