@@ -23,7 +23,14 @@
 //!    `CONTRACT_<NAME>_<EQ>=bound` env vars for each implemented binding.
 //!
 //! 2. `#[contract("name", equation = "eq")]` expands to a `const` that reads
-//!    the corresponding env var via `env!()`. Missing env var = compile error.
+//!    the corresponding env var via `option_env!()`. A missing env var is a
+//!    compile error ONLY when the producer says its registry ran
+//!    (`CONTRACT_BINDING_SOURCE=binding.yaml`, #4368). Without that sentinel
+//!    (a crates.io build, or a producer that found no binding.yaml) the
+//!    attribute enforces nothing (#2699). Assertions
+//!    are injected only for the `_PRE_*` / `_POST_*` vars a producer emitted.
+//!    Producers derive the key with `provable_contracts::build_helper::env_key`,
+//!    which is tested equal to [`contract_env_key!`], the key this macro reads.
 //!
 //! 3. A static string in a dedicated link section registers the binding for
 //!    runtime audit (when `contract-audit` feature is enabled).
@@ -96,8 +103,12 @@ impl Parse for ContractArgs {
 /// Annotates a function with a provable-contracts YAML contract reference.
 /// The macro generates:
 ///
-/// 1. A `const` assertion that reads a `CONTRACT_<NAME>_<EQ>` env var
-///    (set by build.rs). If the env var is missing, compilation fails.
+/// 1. A `const` that reads a `CONTRACT_<NAME>_<EQ>` env var (set by
+///    build.rs) via `option_env!`. If the env var is missing and the
+///    producer set `CONTRACT_BINDING_SOURCE=binding.yaml`, that is a
+///    `compile_error!` naming the site (#4368). With no such sentinel,
+///    NOTHING fails: the binding is unverified and no assertion is injected
+///    (#2699).
 ///
 /// 2. `debug_assert!()` calls for EVERY precondition and postcondition
 ///    from the YAML contract (read via `CONTRACT_<KEY>_PRE_N` env vars).
@@ -119,7 +130,9 @@ impl Parse for ContractArgs {
 ///
 /// This macro reads those env vars at compile time and injects the
 /// assertions. Change the YAML → assertions change automatically.
-/// Remove the YAML → compile error.
+/// Remove the YAML → the assertions silently disappear (#2699). A condition
+/// the producer DID emit but that does not parse as a Rust expression, or a
+/// `_COUNT` whose numbered vars are missing, is a compile error.
 ///
 /// # Example
 ///
@@ -153,6 +166,9 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
         args.contract_name.to_uppercase().replace(['-', '.'], "_"),
         args.equation_name.to_uppercase().replace(['-', '.'], "_")
     );
+
+    // A registry that ran and has no entry for this site (#4368).
+    let registry_miss = registry_miss(&env_key, contract_name, equation_name);
 
     // Read preconditions from env vars set by build.rs
     let precondition_asserts = read_contract_assertions(&env_key, "PRE", equation_name);
@@ -217,6 +233,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
+        #registry_miss
         #(#fn_attrs)*
         #fn_vis #fn_sig {
             #body
@@ -226,42 +243,113 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+/// The env var a producer build.rs sets to `binding.yaml` once it has read
+/// its binding registry and emitted a `CONTRACT_<C>_<E>` var for every row.
+const REGISTRY_SENTINEL: &str = "CONTRACT_BINDING_SOURCE";
+
+/// `compile_error!` when the producer's registry ran (the sentinel reads
+/// `binding.yaml`) but has nothing for this site: no binding var, no pre
+/// count, no post count. That is a misspelt or unregistered contract, which
+/// used to expand to nothing, exactly like a crates.io build with no
+/// producer. With no sentinel (or `none`) this stays silent (#4368).
+fn registry_miss(
+    env_key: &str,
+    contract: &str,
+    equation: &str,
+) -> Option<proc_macro2::TokenStream> {
+    if std::env::var(REGISTRY_SENTINEL).ok().as_deref() != Some("binding.yaml") {
+        return None;
+    }
+    let known = ["", "_PRE_COUNT", "_POST_COUNT"]
+        .iter()
+        .any(|suffix| std::env::var(format!("{env_key}{suffix}")).is_ok());
+    (!known).then(|| {
+        compile_error(&format!(
+            "#[contract({contract}, equation = \"{equation}\")]: this crate's binding registry has no \
+             row for it ({env_key} is unset while {REGISTRY_SENTINEL}=binding.yaml) -- add the binding or fix the name (#4368)"
+        ))
+    })
+}
+
 /// Read CONTRACT_<key>_{PRE,POST}_0..N env vars and generate `debug_assert`! tokens.
 ///
 /// build.rs sets these from YAML contract preconditions/postconditions.
-/// If no env vars are found (e.g., crates.io build), returns empty vec (graceful).
+/// No `_COUNT` var (e.g. a crates.io build, where no build.rs ran) yields no
+/// assertions. Once a producer HAS emitted a count, every inconsistency in
+/// what it emitted is a `compile_error!` rather than a silently dropped
+/// assertion (#2699): an unparseable count, a missing numbered var, or a
+/// condition that is not a Rust expression.
 fn read_contract_assertions(
     env_key: &str,
     kind: &str, // "PRE" or "POST"
     equation_name: &str,
 ) -> Vec<proc_macro2::TokenStream> {
-    let mut asserts = Vec::new();
-
     let count_key = format!("{env_key}_{kind}_COUNT");
-    let count: usize = std::env::var(&count_key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    let Ok(raw_count) = std::env::var(&count_key) else {
+        return Vec::new();
+    };
+    let Ok(count) = raw_count.parse::<usize>() else {
+        return vec![compile_error(&format!(
+            "{count_key}={raw_count:?} is not a count (#2699)"
+        ))];
+    };
+    (0..count)
+        .map(|i| condition_assert(&format!("{env_key}_{kind}_{i}"), kind, equation_name))
+        .collect()
+}
 
+/// One `debug_assert!` for the condition in env var `var_key`, or a
+/// `compile_error!` naming why the producer's condition cannot be enforced.
+fn condition_assert(var_key: &str, kind: &str, equation_name: &str) -> proc_macro2::TokenStream {
+    let Ok(expr_str) = std::env::var(var_key) else {
+        return compile_error(&format!(
+            "{var_key} is missing although its _COUNT covers it (#2699)"
+        ));
+    };
+    let Ok(expr) = syn::parse_str::<Expr>(&expr_str) else {
+        return compile_error(&format!(
+            "{var_key}={expr_str:?} is not a Rust expression; the contract condition \
+             would be dropped (#2699)"
+        ));
+    };
     let kind_label = if kind == "PRE" { "Pre" } else { "Post" };
-
-    for i in 0..count {
-        let var_key = format!("{env_key}_{kind}_{i}");
-        if let Ok(expr_str) = std::env::var(&var_key) {
-            // Parse the YAML precondition/postcondition as a Rust expression
-            if let Ok(expr) = expr_str.parse::<proc_macro2::TokenStream>() {
-                let msg = format!(
-                    "Contract [{equation_name}] {kind_label}-condition violated: {expr_str}"
-                );
-                asserts.push(quote! {
-                    debug_assert!(#expr, #msg);
-                });
-            }
-            // If parsing fails, skip silently (the expression may not be valid Rust)
-        }
+    let msg = format!("Contract [{equation_name}] {kind_label}-condition violated: {expr_str}");
+    quote! {
+        debug_assert!(#expr, #msg);
     }
+}
 
-    asserts
+fn compile_error(msg: &str) -> proc_macro2::TokenStream {
+    quote! { ::core::compile_error!(#msg); }
+}
+
+/// The env var key `#[contract(contract, equation = equation)]` reads, as a
+/// string literal: `contract_env_key!("rmsnorm-kernel-v1", "rmsnorm")` is
+/// `"CONTRACT_RMSNORM_KERNEL_V1_RMSNORM"`. The conditions live under that key
+/// plus `_PRE_COUNT`, `_PRE_<i>`, `_POST_COUNT` and `_POST_<i>`.
+///
+/// It exists so a producer's key derivation can be TESTED against the one
+/// this crate reads, instead of re-derived by hand and trusted (#2699 §4).
+#[proc_macro]
+pub fn contract_env_key(input: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(input as KeyArgs);
+    let key = make_env_key(&args.contract.value(), &args.equation.value());
+    TokenStream::from(quote! { #key })
+}
+
+/// Arguments to `contract_env_key!("contract-name", "equation-name")`.
+struct KeyArgs {
+    contract: syn::LitStr,
+    equation: syn::LitStr,
+}
+
+impl Parse for KeyArgs {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let contract = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let equation = input.parse()?;
+        Ok(KeyArgs { contract, equation })
+    }
 }
 
 /// Precondition: checked via `debug_assert!()` at function entry.
@@ -428,5 +516,90 @@ mod tests {
     #[test]
     fn test_make_env_key_with_dots() {
         assert_eq!(make_env_key("v1.0", "eq.1"), "CONTRACT_V1_0_EQ_1");
+    }
+
+    /// (env vars under the case's key, expected (asserts, compile_errors)).
+    /// A producer that emitted nothing is the crates.io case and stays
+    /// silent; everything a producer DID emit is enforced or refused (#2699).
+    #[test]
+    fn read_contract_assertions_fails_closed_on_what_a_producer_emitted() {
+        let cases: [(&str, &[(&str, &str)], (usize, usize)); 6] = [
+            ("NONE", &[], (0, 0)),
+            (
+                "OK",
+                &[
+                    ("PRE_COUNT", "2"),
+                    ("PRE_0", "x > 0"),
+                    ("PRE_1", "!v.is_empty()"),
+                ],
+                (2, 0),
+            ),
+            ("BADCOUNT", &[("PRE_COUNT", "two")], (0, 1)),
+            ("GAP", &[("PRE_COUNT", "2"), ("PRE_0", "x > 0")], (1, 1)),
+            (
+                "UNPARSEABLE",
+                &[("PRE_COUNT", "1"), ("PRE_0", "x >")],
+                (0, 1),
+            ),
+            (
+                "NOT_AN_EXPR",
+                &[("PRE_COUNT", "1"), ("PRE_0", "x > 0, \"msg\"")],
+                (0, 1),
+            ),
+        ];
+        for (name, vars, (want_asserts, want_errors)) in cases {
+            let key = format!("CONTRACT_TEST_2699_{name}");
+            for (suffix, value) in vars {
+                std::env::set_var(format!("{key}_{suffix}"), value);
+            }
+            let out: Vec<String> = read_contract_assertions(&key, "PRE", "eq")
+                .iter()
+                .map(ToString::to_string)
+                .collect();
+            let errors = out.iter().filter(|t| t.contains("compile_error")).count();
+            let asserts = out.iter().filter(|t| t.contains("debug_assert")).count();
+            assert_eq!(
+                (asserts, errors),
+                (want_asserts, want_errors),
+                "{name}: {out:?}"
+            );
+        }
+    }
+    /// #4368: with the sentinel at `binding.yaml`, a site the registry has no
+    /// row for is a compile error; any one of the three vars makes it known.
+    /// Without the sentinel (a crates.io build), or at `none`, it is silent.
+    /// The only test that touches the sentinel, so it owns it for its run.
+    #[test]
+    fn registry_miss_is_an_error_only_when_the_registry_ran() {
+        let cases: [(&str, Option<&str>, &[&str], bool); 7] = [
+            ("NO_SENTINEL", None, &[], false),
+            ("SENTINEL_NONE", Some("none"), &[], false),
+            ("MISS", Some("binding.yaml"), &[], true),
+            ("BOUND", Some("binding.yaml"), &[""], false),
+            ("PRE_ONLY", Some("binding.yaml"), &["_PRE_COUNT"], false),
+            ("POST_ONLY", Some("binding.yaml"), &["_POST_COUNT"], false),
+            ("OTHER_KEY", Some("binding.yaml"), &[], true),
+        ];
+        for (name, sentinel, suffixes, want_error) in cases {
+            match sentinel {
+                Some(v) => std::env::set_var(REGISTRY_SENTINEL, v),
+                None => std::env::remove_var(REGISTRY_SENTINEL),
+            }
+            let key = format!("CONTRACT_TEST_4368_{name}");
+            for suffix in suffixes {
+                std::env::set_var(format!("{key}{suffix}"), "1");
+            }
+            if name == "OTHER_KEY" {
+                // A neighbouring row with a shared prefix does not make this one known.
+                std::env::set_var(format!("{key}X"), "implemented");
+            }
+            let out = registry_miss(&key, "c", "e").map(|t| t.to_string());
+            assert_eq!(
+                out.as_deref().is_some_and(|t| t.contains("compile_error")),
+                want_error,
+                "{name}: {out:?}"
+            );
+        }
+        std::env::remove_var(REGISTRY_SENTINEL);
     }
 }
