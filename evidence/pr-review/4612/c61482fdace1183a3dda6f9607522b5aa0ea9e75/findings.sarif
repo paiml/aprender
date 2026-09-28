@@ -96,7 +96,7 @@
     {
       "tool": {
         "driver": {
-          "name": "crux-consultation",
+          "name": "crux",
           "informationUri": "internal:contracts/crux-*.yaml",
           "rules": [
             {
