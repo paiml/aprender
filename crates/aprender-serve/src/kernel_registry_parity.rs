@@ -16,22 +16,30 @@
 
 use super::*;
 use crate::quantize::{
-    dequantize_q4_k, dequantize_q5_k, dequantize_q6_k, fused_q4k_parallel_matvec,
-    fused_q5k_parallel_matvec, fused_q6k_parallel_matvec, with_fp32_activations, QK_K,
+    dequantize_q4_0, dequantize_q4_k, dequantize_q5_k, dequantize_q6_k, dequantize_q8_0,
+    fused_q4_0_q8_0_parallel_matvec, fused_q4k_parallel_matvec, fused_q5k_parallel_matvec,
+    fused_q6k_parallel_matvec, fused_q8_0_q8_0_parallel_matvec, quantize_activations_q8_0,
+    with_fp32_activations, QK_K,
 };
 use rand::{Rng, SeedableRng};
 
 pub(super) const SCHEMA: &str = "kernel-parity-receipt/v1";
 const ORACLE: &str = "in_tree_dequant_f64";
 
-/// The kernels this harness can measure, with their super-block size and the entry point the
-/// registry names. A kernel absent here has no receipt path yet.
+/// The kernels this harness can measure, with their block size and the entry point the registry
+/// names. A kernel absent here has no receipt path yet.
 struct Kernel {
     id: &'static str,
     source_fn: &'static str,
+    block_elems: usize,
     block_bytes: usize,
-    /// Fill one super-block with random quants and a finite, positive scale.
+    workload: Workload,
+    /// Fill one block with random quants and a finite, positive scale.
     fill: fn(&mut rand::rngs::StdRng, &mut [u8]),
+    /// The activation quantization the kernel declares, as a round trip: the second oracle a
+    /// quantized-precision row is checked against. `None` for f32 activations and for Q8_K, whose
+    /// exact reference is the FP32 scope.
+    act_quant: Option<fn(&[f32]) -> Vec<f32>>,
     dequant: fn(&[u8]) -> Result<Vec<f32>>,
     matvec: fn(&[u8], &[f32], usize, usize) -> Result<Vec<f32>>,
 }
@@ -47,6 +55,23 @@ fn fill_dmin_first(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
     b[2..4].copy_from_slice(&f16_bytes(rng.random_range(0.0..0.01)));
 }
 
+/// Random quants; `d` at `[0..2]`, the layout Q4_0 and Q8_0 share.
+fn fill_d_first(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
+    rng.fill(&mut b[2..]);
+    b[0..2].copy_from_slice(&f16_bytes(rng.random_range(0.002..0.02)));
+}
+
+/// Activations through the crate's Q8_0 quantizer and back: 32-element blocks, one scale each.
+fn q8_0_round_trip(x: &[f32]) -> Vec<f32> {
+    let (scales, quants) = quantize_activations_q8_0(x);
+    quants
+        .iter()
+        .enumerate()
+        .take(x.len())
+        .map(|(i, q)| f32::from(*q) * scales[i / 32])
+        .collect()
+}
+
 /// Random quants and signed scales; `d` is the trailing f16 at `[208..210]`.
 fn fill_q6_k(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
     rng.fill(&mut b[..208]);
@@ -56,6 +81,9 @@ fn fill_q6_k(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
 const KERNELS: &[Kernel] = &[
     Kernel {
         id: "cpu.matvec.q4_k",
+        block_elems: QK_K,
+        workload: WORKLOAD,
+        act_quant: None,
         source_fn: "fused_q4k_parallel_matvec",
         block_bytes: 144,
         fill: fill_dmin_first,
@@ -64,6 +92,9 @@ const KERNELS: &[Kernel] = &[
     },
     Kernel {
         id: "cpu.matvec.q5_k",
+        block_elems: QK_K,
+        workload: WORKLOAD,
+        act_quant: None,
         source_fn: "fused_q5k_parallel_matvec",
         block_bytes: 176,
         fill: fill_dmin_first,
@@ -72,11 +103,36 @@ const KERNELS: &[Kernel] = &[
     },
     Kernel {
         id: "cpu.matvec.q6_k",
+        block_elems: QK_K,
+        workload: WORKLOAD,
+        act_quant: None,
         source_fn: "fused_q6k_parallel_matvec",
         block_bytes: 210,
         fill: fill_q6_k,
         dequant: dequantize_q6_k,
         matvec: fused_q6k_parallel_matvec,
+    },
+    Kernel {
+        id: "cpu.matvec.q4_0",
+        source_fn: "fused_q4_0_q8_0_parallel_matvec",
+        block_elems: 32,
+        block_bytes: 18,
+        workload: WORKLOAD_Q8_0,
+        fill: fill_d_first,
+        act_quant: Some(q8_0_round_trip),
+        dequant: dequantize_q4_0,
+        matvec: fused_q4_0_q8_0_parallel_matvec,
+    },
+    Kernel {
+        id: "cpu.matvec.q8_0",
+        source_fn: "fused_q8_0_q8_0_parallel_matvec",
+        block_elems: 32,
+        block_bytes: 34,
+        workload: WORKLOAD_Q8_0,
+        fill: fill_d_first,
+        act_quant: Some(q8_0_round_trip),
+        dequant: dequantize_q8_0,
+        matvec: fused_q8_0_q8_0_parallel_matvec,
     },
 ];
 
@@ -95,11 +151,20 @@ struct Workload {
     trials: usize,
 }
 
-/// K spans several super-blocks, so a per-block scale or offset bug shows; `out_dim` is past the
-/// sequential/parallel split, so the rayon fan-out is the path measured.
+/// K spans several super-blocks, so a per-block scale or offset bug shows; `out_dim` is at
+/// `generic_parallel_matvec`'s split (256), so Q5_K and Q6_K take the rayon fan-out.
 const WORKLOAD: Workload = Workload {
     in_dim: 8 * QK_K,
     out_dim: 256,
+    seed: 4539,
+    trials: 4,
+};
+
+/// The Q4_0/Q8_0 matvecs go parallel from 1024 rows (`PARALLEL_THRESHOLD`), the size real layers
+/// run at, so that is the path measured.
+const WORKLOAD_Q8_0: Workload = Workload {
+    in_dim: 8 * QK_K,
+    out_dim: 1024,
     seed: 4539,
     trials: 4,
 };
@@ -110,11 +175,13 @@ const WORKLOAD: Workload = Workload {
 struct Measured {
     max_abs_err: f64,
     max_rel_err: f64,
+    /// The same error against an oracle fed the kernel's own quantized activations.
+    quantized_act_rel_err: Option<f64>,
 }
 
 fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
     let mut rng = rand::rngs::StdRng::seed_from_u64(w.seed);
-    let blocks_per_row = w.in_dim / QK_K;
+    let blocks_per_row = w.in_dim / k.block_elems;
     let mut m = Measured::default();
     for _ in 0..w.trials {
         let mut weights = vec![0u8; w.out_dim * blocks_per_row * k.block_bytes];
@@ -123,15 +190,18 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
         }
         let x: Vec<f32> = (0..w.in_dim).map(|_| rng.random_range(-1.0..1.0)).collect();
         let deq = (k.dequant)(&weights).expect("dequantize the random weights");
-        let reference: Vec<f64> = deq
-            .chunks_exact(w.in_dim)
-            .map(|row| {
-                row.iter()
-                    .zip(&x)
-                    .map(|(a, b)| f64::from(*a) * f64::from(*b))
-                    .sum()
-            })
-            .collect();
+        let oracle = |x: &[f32]| -> Vec<f64> {
+            deq.chunks_exact(w.in_dim)
+                .map(|row| {
+                    row.iter()
+                        .zip(x)
+                        .map(|(a, b)| f64::from(*a) * f64::from(*b))
+                        .sum()
+                })
+                .collect()
+        };
+        let reference = oracle(&x);
+        let quantized_reference = k.act_quant.map(|q| oracle(&q(&x)));
         let run = || (k.matvec)(&weights, &x, w.in_dim, w.out_dim);
         let got = if fp32_activations {
             with_fp32_activations(run)
@@ -151,6 +221,13 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
             assert!(abs.is_finite(), "{}: non-finite output", k.id);
             m.max_abs_err = m.max_abs_err.max(abs);
             m.max_rel_err = m.max_rel_err.max(abs / scale);
+        }
+        if let Some(qr) = &quantized_reference {
+            let worst = got
+                .iter()
+                .zip(qr)
+                .fold(0.0f64, |a, (g, r)| a.max((f64::from(*g) - r).abs() / scale));
+            m.quantized_act_rel_err = Some(m.quantized_act_rel_err.unwrap_or(0.0).max(worst));
         }
     }
     m
@@ -213,8 +290,8 @@ fn repo_root() -> std::path::PathBuf {
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
 fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
-    let served = measure(k, WORKLOAD, false);
-    let fp32 = measure(k, WORKLOAD, true);
+    let served = measure(k, k.workload, false);
+    let fp32 = measure(k, k.workload, true);
     let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
         .ok()
         .or_else(|| std::env::var("HOSTNAME").ok())
@@ -235,13 +312,14 @@ fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
         "oracle": ORACLE,
         "oracle_independent": false,
         "workload": {
-            "in_dim": WORKLOAD.in_dim,
-            "out_dim": WORKLOAD.out_dim,
-            "seed": WORKLOAD.seed,
-            "trials": WORKLOAD.trials,
+            "in_dim": k.workload.in_dim,
+            "out_dim": k.workload.out_dim,
+            "seed": k.workload.seed,
+            "trials": k.workload.trials,
         },
         "served": {"max_abs_err": served.max_abs_err, "max_rel_err": served.max_rel_err},
         "fp32_activations": {"max_abs_err": fp32.max_abs_err, "max_rel_err": fp32.max_rel_err},
+        "quantized_activation_oracle": served.quantized_act_rel_err.map(|e| serde_json::json!({"max_rel_err": e})),
         "tolerance_rel": tolerance_from(served.max_rel_err),
     })
 }
@@ -252,7 +330,12 @@ fn emit_parity_receipts() {
     let out = repo_root().join(std::env::var("KREG_RECEIPT_OUT").expect("KREG_RECEIPT_OUT"));
     std::fs::create_dir_all(&out).expect("receipt dir");
     let r = registry().expect("registry");
-    for k in KERNELS {
+    // KREG_EMIT=<id,id>: re-measure only these, so a new row does not re-stamp the others.
+    let only = std::env::var("KREG_EMIT").ok();
+    for k in KERNELS.iter().filter(|k| {
+        only.as_deref()
+            .is_none_or(|o| o.split(',').any(|id| id == k.id))
+    }) {
         let row = r
             .rows()
             .iter()
@@ -339,21 +422,33 @@ fn committed_parity_receipts_hold_on_this_host() {
         // it: f32 activations serve exactly what the FP32 scope computes; a quantized precision
         // serves something measurably coarser. (#4539: q4_k declared f32 and served Q8_K.)
         let fp32 = measure(kernel(id), w, true);
-        if row.precision == "f32" {
-            assert!(
+        match row.precision.as_str() {
+            "f32" => assert!(
                 now.max_rel_err <= fp32.max_rel_err,
                 "{id}: precision=f32, yet the served path ({}) is coarser than FP32 ({})",
                 now.max_rel_err,
                 fp32.max_rel_err
-            );
-        } else {
-            assert!(
+            ),
+            "q8_k" => assert!(
                 now.max_rel_err > 10.0 * fp32.max_rel_err,
-                "{id}: precision={}, yet the served path ({}) is as exact as FP32 ({})",
-                row.precision,
+                "{id}: precision=q8_k, yet the served path ({}) is as exact as FP32 ({})",
                 now.max_rel_err,
                 fp32.max_rel_err
-            );
+            ),
+            // Q8_0 has no FP32 scope to compare with, so the second oracle decides: the kernel
+            // must track the quantized-activation oracle far closer than the f32 one.
+            "q8_0" => {
+                let q = now
+                    .quantized_act_rel_err
+                    .unwrap_or_else(|| panic!("{id}: precision=q8_0 and no act_quant oracle"));
+                assert!(
+                    q * 10.0 < now.max_rel_err,
+                    "{id}: precision=q8_0, yet the served path is no closer to Q8_0 \
+                     activations ({q}) than to f32 ones ({})",
+                    now.max_rel_err
+                );
+            },
+            p => panic!("{id}: no precision check for {p}"),
         }
     }
 }
