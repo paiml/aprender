@@ -508,6 +508,10 @@ pub struct ReleaseArgs {
     /// The tokenizer-parity receipts, apr vs the pinned llama.cpp (default: evidence/dogfood/tokenizer/<version>/)
     #[arg(long)]
     pub tokenizer_receipts: Option<PathBuf>,
+    /// aprender#3715 v2: the kernel-cell evidence dir (`input-sets.json`, `<host>/parity/*.json`). Adds the v2
+    /// kernel and model cells to the release graph; absent → none. Needs the kernel registry in the repo.
+    #[arg(long)]
+    pub v2_evidence: Option<PathBuf>,
 }
 
 impl ReleaseArgs {
@@ -521,6 +525,7 @@ impl ReleaseArgs {
             || self.kernel_receipts.is_some()
             || self.dogfood_receipt.is_some()
             || self.tokenizer_receipts.is_some()
+            || self.v2_evidence.is_some()
     }
 
     /// The subject, or `None` when no flag was passed. A partial set is refused, never completed by a default.
@@ -548,6 +553,7 @@ impl ReleaseArgs {
         s.dogfood_receipt.clone_from(&self.dogfood_receipt);
         s.tokenizer_receipts_dir
             .clone_from(&self.tokenizer_receipts);
+        s.v2_dir.clone_from(&self.v2_evidence);
         Ok(Some(s))
     }
 }

@@ -230,11 +230,13 @@ fn the_tracked_repo_graph_is_fresh() {
     // that is the ratchet working, not a conflict to route around. It did: the
     // 0.69 batch folded #3600 in and the count went 6 -> 9 with its three shapes. #3715 added the nine-shape
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
-    // node to a PR's graph — the release evidence is extracted only under `--release-*`.
+    // node to a PR's graph — the release evidence is extracted only under `--release-*`. #3715 v2 added
+    // `release-readiness-v2{.kernel,.model,.sanitizer}` (shapes_n=21, triples=16164, measured on
+    // la-71/3715-kernel-cells); like v1 they see a focus node only under `--v2-evidence`.
     assert_eq!(
         v["shapes_n"],
-        18,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715)\n{}",
+        21,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + release-readiness-v2{{.kernel,.model,.sanitizer}} (#3715 v2)\n{}",
         show(&r)
     );
 }
