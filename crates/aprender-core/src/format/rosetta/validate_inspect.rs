@@ -417,28 +417,31 @@ impl RosettaStone {
     // ------------------------------------------------------------------------
 
     fn inspect_gguf(&self, path: &Path, file_size: usize) -> Result<InspectionReport> {
-        use crate::format::gguf::{load_gguf_raw, GgufRawTensor};
+        use crate::format::gguf::{gguf_raw_metadata, GgufReader};
 
-        let result = load_gguf_raw(path)?;
+        // #4520 step 2 / #3761: header only. `load_gguf_raw` read the whole file and
+        // copied every tensor (16.7 GB read, 32.8 GB peak RSS on a 27B Q4_K_M) to report
+        // sizes and metadata the header holds. Same sizing and refusals, no tensor bytes.
+        let (reader, file_len) = GgufReader::header_from_file(path)?;
+        let extents = reader.tensor_extents(file_len)?;
 
         // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
         // Surface ALL on-disk GGUF KV pairs using their authentic keys (e.g., qwen2.embedding_length,
         // general.architecture, tokenizer.ggml.model). Previously this was a 4-key hand-written stub
         // that fabricated ML-shorthand names (n_embd, n_heads, n_layers) — see Five Whys in the
         // contract YAML for full root-cause analysis.
-        let meta_map: BTreeMap<String, String> = result.raw_metadata.clone();
+        let meta_map: BTreeMap<String, String> = gguf_raw_metadata(&reader);
 
         // Contract: apr-inspect-dtype-naming-v1 F-INSPECT-DTYPE-001 (paiml/aprender#619).
         // Render GGML dtype as a human-readable name (F32, Q4_K, Q6_K, …), not the raw u32
         // discriminant. Delegates to the same lookup used by `apr tensors` for cross-cmd parity.
-        let tensors: Vec<TensorInfo> = result
-            .tensors
-            .iter()
-            .map(|(name, t): (&String, &GgufRawTensor)| TensorInfo {
-                name: name.clone(),
-                dtype: crate::format::tensors::ggml_dtype_name(t.dtype).to_string(),
-                shape: t.shape.clone(),
-                size_bytes: t.data.len(),
+        let tensors: Vec<TensorInfo> = extents
+            .into_iter()
+            .map(|(name, (shape, dtype, size_bytes))| TensorInfo {
+                name,
+                dtype: crate::format::tensors::ggml_dtype_name(dtype).to_string(),
+                shape,
+                size_bytes,
                 stats: None,
             })
             .collect();
@@ -448,7 +451,7 @@ impl RosettaStone {
             .map(|t| t.shape.iter().product::<usize>())
             .sum();
 
-        let architecture = result.model_config.architecture.clone();
+        let architecture = reader.architecture();
 
         // Contract: apr-inspect-quantization-v1 F-INSPECT-QUANT-001 (paiml/aprender#603).
         // The model's "quantization" is the dominant dtype by parameter count among its WEIGHT
@@ -548,8 +551,9 @@ impl RosettaStone {
     fn inspect_apr(&self, path: &Path, file_size: usize) -> Result<InspectionReport> {
         use crate::format::v2::AprV2Reader;
 
-        // Read file into bytes
-        let data = std::fs::read(path).map_err(|e| AprenderError::FormatError {
+        // Read the header + metadata + tensor index (#3761: inspect reports metadata and index
+        // entries with no stats, so the tensor data is never read)
+        let data = crate::format::prefix::apr_v2_header_prefix(path).map_err(|e| AprenderError::FormatError {
             message: format!("Cannot read APR file: {e}"),
         })?;
 

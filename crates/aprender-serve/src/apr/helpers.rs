@@ -304,9 +304,21 @@ pub(crate) fn apply_rope_norm(
     }
 }
 
+/// At most the first 4 bytes of `path`: a magic check never reads the whole model (#3761).
+fn read_magic(path: &Path) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut buf = Vec::with_capacity(4);
+    fs::File::open(path)
+        .ok()?
+        .take(4)
+        .read_to_end(&mut buf)
+        .ok()?;
+    Some(buf)
+}
+
 /// Check if a file is a valid .apr v2 file
 pub fn is_apr_file<P: AsRef<Path>>(path: P) -> bool {
-    fs::read(path.as_ref()).is_ok_and(|data| data.len() >= 4 && data[0..4] == MAGIC)
+    read_magic(path.as_ref()).is_some_and(|data| data.len() >= 4 && data[0..4] == MAGIC)
 }
 
 /// Detect model format from file extension
@@ -322,7 +334,7 @@ fn format_from_extension(path: &Path) -> Option<&'static str> {
 
 /// Detect model format from file magic bytes
 fn format_from_magic(path: &Path) -> &'static str {
-    let Ok(data) = fs::read(path) else {
+    let Some(data) = read_magic(path) else {
         return "unknown";
     };
     if data.len() < 4 {
@@ -347,3 +359,7 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> &'static str {
 }
 
 include!("helpers_tests.rs");
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "helpers_rss_tests.rs"]
+mod rss_tests;

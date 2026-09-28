@@ -595,3 +595,42 @@ fn pca_needs_at_least_two_rows() {
     let err = run(&a).expect_err("PCA on one sample has no variance to decompose");
     assert!(err.to_string().contains("at least 2 rows"), "got: {err}");
 }
+
+/// #3761 case row: `gguf_vocab` reads a 2 GiB GGUF's header (where the vocabulary lives) and
+/// never its tensor data. Measured (x86-64 debug, 2026-09-21): 39.8-42.3 MiB over three runs; with `gguf_vocab` reading the
+/// whole file again, 2,116,644 KiB, and with `gguf_header_bytes` doing so, 2,117,924 KiB.
+#[cfg(target_os = "linux")]
+#[test]
+fn gguf_vocab_of_a_2_gib_gguf_keeps_peak_rss_small() {
+    use crate::commands::model_header::rss_probe;
+    let f = rss_probe::sparse(
+        &rss_probe::gguf_with_vocab(),
+        rss_probe::FIXTURE_LEN,
+        ".gguf",
+    );
+    let hwm = rss_probe::child_peak_kb(
+        "commands::embed_viz::tests::gguf_vocab_peak_rss_probe",
+        &[(VOCAB_PROBE, f.path())],
+    );
+    assert!(
+        hwm < rss_probe::PEAK_RSS_BOUND_KB,
+        "peak RSS {hwm} KiB reading the vocabulary of a 2 GiB GGUF (bound {} KiB): a whole-file read is back",
+        rss_probe::PEAK_RSS_BOUND_KB
+    );
+}
+
+#[cfg(target_os = "linux")]
+const VOCAB_PROBE: &str = "APR_3761_VOCAB_PROBE";
+
+/// Not a test on its own: with the probe variable unset it does nothing.
+#[cfg(target_os = "linux")]
+#[test]
+fn gguf_vocab_peak_rss_probe() {
+    let Some(path) = std::env::var_os(VOCAB_PROBE) else {
+        return;
+    };
+    let tokenizer =
+        gguf_vocab(std::path::Path::new(&path)).expect("the vocabulary, from the header");
+    assert_eq!(tokenizer.vocab_size(), 4);
+    crate::commands::model_header::rss_probe::report_peak();
+}

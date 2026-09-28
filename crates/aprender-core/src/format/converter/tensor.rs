@@ -198,17 +198,29 @@ fn infer_tokenizer_json(input_path: &Path) -> String {
 }
 
 /// Try to extract tokenizer hint from APR metadata section.
+///
+/// #3761: never the tensor data. An APR v2 file's metadata ends before its `data_offset`, so
+/// its header prefix bounds the scan. (The v2 writer zero-pads the metadata, so the terminator
+/// this scan looks for is not there, and the answer is `None`, as it was when the scan read
+/// the whole model.) Any other layout is scanned over a growing prefix under the shared cap,
+/// the prefix growing only until the terminator is found.
 fn extract_apr_tokenizer_hint(input_path: &Path) -> Option<String> {
-    let data = fs::read(input_path).ok()?;
-    if data.len() <= 44 {
-        return None;
-    }
-    let metadata_start = 44;
-    let metadata_end = data[metadata_start..]
-        .windows(4)
-        .position(|w| w == b"}\n\n\n" || w == b"}\r\n\r")
-        .map(|p| metadata_start + p + 1)?;
-    let metadata_str = std::str::from_utf8(&data[metadata_start..metadata_end]).ok()?;
+    const METADATA_START: usize = 44;
+    let scan = |data: Vec<u8>| -> std::result::Result<String, &'static str> {
+        let end = data
+            .get(METADATA_START..)
+            .and_then(|tail| {
+                tail.windows(4)
+                    .position(|w| w == b"}\n\n\n" || w == b"}\r\n\r")
+            })
+            .map(|p| METADATA_START + p + 1)
+            .ok_or("no metadata terminator in this prefix")?;
+        String::from_utf8(data[METADATA_START..end].to_vec()).map_err(|_| "metadata is not UTF-8")
+    };
+    let metadata_str = match crate::format::prefix::apr_v2_header_prefix(input_path) {
+        Ok(v2_head) => scan(v2_head).ok()?,
+        Err(_) => crate::format::prefix::parse_growing_prefix(input_path, scan).ok()?,
+    };
     if metadata_str.contains("\"tokenizer\"") || metadata_str.contains("\"vocabulary\"") {
         Some(r#"{"version": "1.0", "model": {"type": "BPE"}}"#.to_string())
     } else {
@@ -223,7 +235,8 @@ fn read_apr_metadata(apr_path: &Path) -> Option<crate::format::v2::AprV2Metadata
     if apr_path.extension().and_then(|e| e.to_str()) != Some("apr") {
         return None;
     }
-    let data = fs::read(apr_path).ok()?;
+    // #3761: the header + metadata + tensor index, never the tensor data
+    let data = crate::format::prefix::apr_v2_header_prefix(apr_path).ok()?;
     let reader = crate::format::v2::AprV2Reader::from_bytes(&data).ok()?;
     Some(reader.metadata().clone())
 }
@@ -379,35 +392,8 @@ fn remove_tied_lm_head(
 /// Reads the APR metadata JSON and looks for the `"source_metadata"` key
 /// that was preserved during import from SafeTensors.
 fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
-    let data = match fs::read(apr_path) {
-        Ok(d) => d,
-        Err(_) => return UserMetadata::new(),
-    };
-
-    // Real APR v2 header (header_impl.rs::to_bytes, 64 bytes): magic[0..4], version[4..6],
-    // flags[6..8], tensor_count u32 [8..12], metadata_offset u64 [12..20], metadata_size u32
-    // [20..24]; the metadata JSON begins at `metadata_offset` (= HEADER_SIZE_V2 = 64). The prior
-    // code read an 8-byte "metadata_len" at byte 8 (= tensor_count | metadata_offset<<32 ≈ 2.7e11)
-    // and the JSON at byte 16, so the bounds guard ALWAYS failed and this returned empty — silently
-    // dropping the user's SafeTensors __metadata__ on every `apr export`.
-    if data.len() < 24 {
+    let Some(parsed) = read_apr_metadata_json(apr_path) else {
         return UserMetadata::new();
-    }
-    let metadata_offset = u64::from_le_bytes(data[12..20].try_into().unwrap_or([0u8; 8])) as usize;
-    let metadata_size = u32::from_le_bytes(data[20..24].try_into().unwrap_or([0u8; 4])) as usize;
-    let end = match metadata_offset.checked_add(metadata_size) {
-        Some(e) if e <= data.len() => e,
-        _ => return UserMetadata::new(),
-    };
-
-    let metadata_json = match std::str::from_utf8(&data[metadata_offset..end]) {
-        Ok(s) => s,
-        Err(_) => return UserMetadata::new(),
-    };
-
-    let parsed: serde_json::Value = match serde_json::from_str(metadata_json) {
-        Ok(v) => v,
-        Err(_) => return UserMetadata::new(),
     };
 
     // `custom` is #[serde(flatten)] in AprV2Metadata, so "source_metadata" is at the TOP level
@@ -428,6 +414,26 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
     UserMetadata::new()
 }
 
+/// The APR v2 metadata section, parsed (#3761): the 24-byte header, then only up to the end of
+/// the metadata section it names, under the shared cap. Never the tensor data. `None` for a file
+/// too short, a section past the cap, or text that is not UTF-8 JSON.
+///
+/// Real APR v2 header (header_impl.rs::to_bytes, 64 bytes): magic[0..4], version[4..6],
+/// flags[6..8], tensor_count u32 [8..12], metadata_offset u64 [12..20], metadata_size u32
+/// [20..24]; the metadata JSON begins at `metadata_offset` (= HEADER_SIZE_V2 = 64). The prior
+/// code read an 8-byte "metadata_len" at byte 8 (= tensor_count | metadata_offset<<32 ≈ 2.7e11)
+/// and the JSON at byte 16, so the bounds guard ALWAYS failed and this returned empty — silently
+/// dropping the user's SafeTensors __metadata__ on every `apr export`.
+fn read_apr_metadata_json(apr_path: &Path) -> Option<serde_json::Value> {
+    use crate::format::prefix::{read_prefix, HEADER_READ_CAP};
+    let head = read_prefix(apr_path, 24).ok()?;
+    let offset = usize::try_from(u64::from_le_bytes(head.get(12..20)?.try_into().ok()?)).ok()?;
+    let size = u32::from_le_bytes(head.get(20..24)?.try_into().ok()?) as usize;
+    let end = offset.checked_add(size).filter(|&e| e <= HEADER_READ_CAP)?;
+    let data = read_prefix(apr_path, end).ok().filter(|d| d.len() >= end)?;
+    serde_json::from_str(std::str::from_utf8(data.get(offset..end)?).ok()?).ok()
+}
+
 /// Detect predominant quantization type from an APR file (PMAT-252).
 ///
 /// Reads the tensor index and checks the dtype of 2D weight tensors.
@@ -436,7 +442,8 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
 pub(crate) fn detect_apr_quantization(apr_path: &Path) -> Option<QuantizationType> {
     use crate::format::v2::{AprV2Reader, TensorDType};
 
-    let data = fs::read(apr_path).ok()?;
+    // #3761: dtypes live in the tensor index; the header prefix, never the tensor data
+    let data = crate::format::prefix::apr_v2_header_prefix(apr_path).ok()?;
     let reader = AprV2Reader::from_bytes(&data).ok()?;
 
     // Count dtypes across 2D weight tensors (skip 1D biases/norms)
