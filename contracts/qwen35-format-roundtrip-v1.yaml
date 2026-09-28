@@ -1,0 +1,76 @@
+metadata:
+  kind: pattern
+  version: 1.1.0
+  created: '2026-09-28'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The 0.72 T5 cell (R10): a trained Qwen3.5 model round-trips between the three formats
+    we serve (.apr, HF safetensors, GGUF) with its values intact. model-format-conversion-v1
+    checks counts and metadata only; this contract checks VALUES, per tensor, on the hybrid
+    (GDN) architecture. Spike S-R10 (2026-09-28, apr 0.69.3 @574583d382, Qwen3.5-0.8B)
+    measured each leg: safetensors <-> apr is bit-identical (489/489, max diff 0) but only
+    with a config.json supplied by hand; apr -> GGUF exits 0 with 488/489 tensors unmapped;
+    GGUF -> apr refuses every real Qwen3.5 GGUF (4 files, rc 5).
+  references:
+  - 'branch la-72/0.72-shaping: docs/specifications/aprender-train/train-what-you-serve-0.72.md §R10, Spike S-R10 (not on main until the 0.72 shaping PR lands)'
+  - contracts/model-format-conversion-v1.yaml
+  - 'aprender#4418 (qwen35 GGUF name map, export direction; 738/739 unmapped at 4B)'
+  - crates/aprender-core/src/format/gguf/api_tests_all_keys_3733.rs (qwen35.* keys kept off the config accessors on purpose)
+  depends_on:
+  - model-format-conversion-v1
+status: PROPOSED
+equations:
+  value_roundtrip:
+    formula: '∀ t ∈ T(M): cos(M[t], RT(M)[t]) ≥ 0.98 ∧ shape(M[t]) = shape(RT(M)[t]) ∧ |T(RT(M))| = |T(M)|'
+    domain: 'RT ∈ {apr→safetensors→apr, apr→gguf→apr}; M = Qwen3.5-0.8B imported from HF safetensors (the canonical dev cell), then the trained 4B once R4 lands'
+    invariants:
+    - Lossless legs (no quantize flag) must be bit-identical, not merely cos ≥ 0.98. S-R10 measured identical_count = 489/489 on safetensors <-> apr
+    - 'Every tensor of M is either mapped to a named tensor of the target format or the export FAILS. An export that exits 0 while passing tensors through unmapped is a FAIL (S-R10 apr→gguf: rc 0, 488/489 unmapped)'
+    - 'The tensor set is the language model plus whatever the source carries (S-R10: 318 language layers, 144 visual, 11 mtp); dropping a group must be a named, receipted choice, never silent'
+    preconditions:
+    - one apr binary, sha recorded, runs every leg
+  self_describing_export:
+    formula: 'import(export_safetensors(M)) succeeds with no file the export did not write'
+    domain: apr export --format safetensors, then apr import of that output alone
+    invariants:
+    - S-R10 measured a bare exported .safetensors re-imports as Qwen2→Qwen3 and fails the GH-279 completeness gate; the same file beside the source config.json imports and is bit-identical. The export must carry the config it needs
+proof_obligations:
+- type: equivalence
+  property: Lossless round-trip is bit-identical
+  formal: '∀ t: RT(M)[t] = M[t] (bitwise) for legs with no quantize flag'
+  applies_to: all
+- type: bound
+  property: Quantized round-trip stays close
+  formal: '∀ t: cos(M[t], RT(M)[t]) ≥ 0.98'
+  tolerance: 2.0e-02
+  applies_to: all
+- type: invariant
+  property: No silent pass-through
+  formal: 'unmapped(export(M, fmt)) ≠ ∅ ⇒ exit ≠ 0'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QFR-001
+  rule: safetensors <-> apr round-trip is bit-identical
+  prediction: 'apr diff --values over all tensors: identical_count = |T(M)|, critical = large = medium = 0'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/tests/qfr_001_002_value_roundtrip.rs::falsify_qfr_001_safetensors_roundtrip_is_bit_identical (synthetic qwen3_5 pygmy, every tensor compared, >10 tensors so a --limit 10 sampler cannot pass). CELL: CPU, Qwen3.5-0.8B from HF (Qwen/Qwen3.5-0.8B, single-shard index): import dir → export safetensors → import → apr diff --values --limit 1000 (S-R10 measured 489/489 identical, needs a hand-copied config.json)'
+  if_fails: 'a leg changes values; or the tensor set changed size'
+- id: FALSIFY-QFR-002
+  rule: Planted falsifier — one transposed tensor
+  prediction: 'transposing one 2-D tensor (e.g. a linear_attn.in_proj_qkv weight) in the round-tripped file turns the gate RED on exactly that tensor'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/tests/qfr_001_002_value_roundtrip.rs::falsify_qfr_002_one_transposed_tensor_turns_the_gate_red (plants a transpose in every 2-D F32 tensor in turn, at least one at index >= 10; the gate must name exactly that tensor). Mutant .take(10) on the gate: KILLED. CELL: same cell, mutate one tensor of the round-tripped .apr before the diff'
+  if_fails: 'the comparison is shape-blind or samples too few tensors (apr diff --values defaults to --limit 10)'
+- id: FALSIFY-QFR-003
+  rule: A bare exported safetensors re-imports
+  prediction: 'apr import of the export output alone exits 0 and detects the source architecture'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/tests/qfr_003_config_roundtrip.rs::falsify_qfr_003_export_writes_source_config_back + ::falsify_qfr_003_mlx_export_writes_source_config_back. CELL: no config.json copied; S-R10 measured rc 5 (Qwen2→Qwen3 override, GH-279 gate)'
+  if_fails: 'the export is not self-describing'
+- id: FALSIFY-QFR-004
+  rule: GGUF export never passes tensors through unmapped
+  prediction: 'apr export --format gguf of a qwen35 .apr maps every tensor to a llama.cpp qwen35 name, or exits non-zero naming the unmapped ones'
+  test: 'S-R10 measured rc 0 with 488/489 "No GGUF mapping … passing through" warnings (HF names carry the model.language_model. prefix); aprender#4418 is the fix'
+  if_fails: 'rc 0 on an unmapped export; the file llama.cpp cannot load ships as a success'
+- id: FALSIFY-QFR-005
+  rule: GGUF -> apr for qwen35 is a named refusal until a qwen35 GGUF import path exists
+  prediction: 'apr import of a real Qwen3.5 GGUF exits non-zero with an error naming qwen35 as unsupported, never "may be malformed", and never imports under the Qwen3 name map'
+  test: 'IN-TREE: crates/aprender-core/src/format/converter/tests/qfr_005_named_refusal.rs::falsify_qfr_005_qwen35_gguf_is_refused_by_name (qwen35, qwen35moe, qwen3next; no .apr written) + ::falsify_qfr_005_explicit_arch_does_not_bypass_the_refusal; qwen3 control imports. Guard-off mutant: KILLED (exactly the 2 refusal tests). CELL: S-R10 measured rc 5 on 0.8B Q4_K_M, 0.8B IQ4_XS, 2B and 4B Q4_K_M, all "Missing … hidden_dim (0) … may be malformed" after "[ARCH-EVIDENCE] Override … → Qwen3". The refusal is deliberate (api_tests_all_keys_3733.rs keeps qwen35.* off the config accessors); the message is not'
+  if_fails: 'widening the reader allowlist to qwen35. without a qwen35 import path imports a hybrid model under the Qwen3 name map (silent wrong .apr)'
