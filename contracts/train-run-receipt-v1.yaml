@@ -37,7 +37,7 @@ proof_obligations:
   applies_to: all
 - type: equivalence
   property: Receipt identifies the binary
-  formal: 'R.apr_git_sha = sha printed by `apr --version` of the binary that ran'
+  formal: '∀ run: R.apr_git_sha ≡ sha printed by `apr --version` of the binary that ran'
   applies_to: all
 - type: invariant
   property: Hashes move with their inputs
