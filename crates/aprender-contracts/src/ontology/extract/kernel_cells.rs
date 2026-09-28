@@ -322,6 +322,19 @@ pub struct CellHost {
     pub smokes: BTreeMap<String, SmokeEvidence>,
 }
 
+/// A host's models for [`CellHost::models`], from its measured inventory: sha256 → `tensor_types`. A row with
+/// no hash is left out (release-evidence already reports it as unmeasured); a row with no readable
+/// `tensor_types` maps to `None`, which [`build_cells`] turns RED.
+#[must_use]
+pub fn models_from_inventory(
+    items: &[crate::ontology::receipts::InventoryItem],
+) -> BTreeMap<String, Option<BTreeSet<u32>>> {
+    items
+        .iter()
+        .filter_map(|i| Some((i.sha256.clone()?, i.tensor_types.clone())))
+        .collect()
+}
+
 /// Every v2 cell for every host: each model cell with its static map and smoke, and one kernel cell per
 /// kernel any model on that host uses, carrying its receipt if there is one. Pure: the graph is the only
 /// output, and it holds edges and judged receipt fields, never a model verdict.

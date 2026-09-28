@@ -611,3 +611,27 @@ fn a_non_parity_file_is_refused() {
         .expect("a parity receipt");
     assert_eq!(id, "cpu.matvec.q2_k");
 }
+
+/// Inventory rows → models: a hashed row keeps its types, a partial or absent set is `None` (RED), and an
+/// unhashed row is left to release-evidence.
+#[test]
+fn models_from_inventory_reads_types_whole_or_not_at_all() {
+    let r = crate::ontology::receipts::parse(
+        "gx10.json",
+        r#"{"schema":"apr-model-ladder-receipt/v2","host":"gx10","inventory":[
+          {"file":"a.gguf","sha256":"AA","tensor_types":[12,14,0]},
+          {"file":"b.gguf","sha256":"bb","tensor_types":[12,"q6_k"]},
+          {"file":"c.gguf","sha256":"cc"},
+          {"file":"d.gguf","tensor_types":[8]}]}"#,
+    )
+    .expect("a v2 receipt");
+    let m = models_from_inventory(&r.inventory);
+    let want: BTreeMap<String, Option<BTreeSet<u32>>> = [
+        ("aa".to_string(), Some(types(&[0, 12, 14]))),
+        ("bb".to_string(), None),
+        ("cc".to_string(), None),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(m, want);
+}
