@@ -63,6 +63,39 @@
           ]
         }
       ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "pr-review-crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": [
+            {
+              "id": "crux-surface-scan-false-positive",
+              "name": "CruxSurfaceScanFalsePositive",
+              "shortDescription": { "text": "S3.C CRUX_SURFACE_RE fired on prose inside a committed evidence/receipt file, not on an actual product surface." }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "crux-surface-scan-false-positive",
+          "level": "note",
+          "message": {
+            "text": "Mechanical predicate: `changed_lines base head +- | grep -E CRUX_SURFACE_RE` fires on this diff. The single match is the literal string \"ToolDefinition\" inside the ADDED file evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl, at the crux.trigger_reason prose field of that PRIOR (already-committed, do-not-modify) receipt in this same PR's diff -- it is that receipt's own English explanation of why CRUX did not trigger for it (\"no #[arg]/#[command]/route/CLI-parser/ToolDefinition surface added or changed\"), quoting the rule name as text, not declaring a ToolDefinition. check_pr_review_receipt.sh's crux surface scan excludes tests/*, benches/*, examples/* and fixtures/* paths but not evidence/pr-review/**, so a prior receipt's own prose is swept in as if it were source. No #[arg](, #[command](, .route(, Router::new(, derive(Parser, derive(Subcommand, long=\"...\" or short=. token appears anywhere in this diff; no CLI subcommand, HTTP route, MCP tool, config key or output format was added or changed by scripts/check_silicon_coverage.sh, scripts/ci/fat_driver.py, or the docs/roadmap/quorum files. crux_coverage is recorded as 'none' per S3.C ('no contract covers this surface' is itself a finding, not a blank) because no crux-*.yaml contract exists for 'evidence prose matching CRUX_SURFACE_RE' -- there being no such contract is expected, since there is no real surface to cover.",
+            "markdown": "Mechanical predicate fires on this diff, but the single match is the literal string `ToolDefinition` inside the **added** file `evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl` -- that prior receipt's own prose explaining why *its* CRUX did not trigger, not a declared `ToolDefinition`. The guard's surface scan excludes `tests/*`, `benches/*`, `examples/*`, `fixtures/*` but not `evidence/pr-review/**`, so a prior receipt's prose is swept in as source. No real CLI/HTTP/MCP/config/output-format surface was added or changed anywhere in this diff. `crux_coverage: none` recorded per S3.C (absence of a covering contract is itself a finding) -- there is no real surface for a contract to cover."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl" },
+                "region": { "startLine": 1 }
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
