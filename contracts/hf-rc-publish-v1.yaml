@@ -36,7 +36,7 @@ equations:
 proof_obligations:
 - type: equivalence
   property: The plan is the upload
-  formal: 'files(dry_run_plan) = files(upload_to_hub_extended arguments)'
+  formal: '∀ M: files(dry_run_plan(M)) ≡ files(upload_to_hub_extended arguments(M))'
   applies_to: all
 - type: invariant
   property: No default licence for a derivative
