@@ -1421,7 +1421,7 @@ mod tests {
         assert_eq!(set, OPS, "OPS and the kernel-registry-v1.op shape disagree");
     }
 
-    /// The committed registry registers every per-forward op of the CPU decode path, and a trace
+    /// The committed registry registers every per-forward op of the CPU and CUDA decode paths, and a trace
     /// of their ids is fully registered (S-REG covers ops, not only kernels).
     #[test]
     fn the_committed_op_rows_are_registered_dispatches() {
@@ -1438,6 +1438,16 @@ mod tests {
             "cpu.kv_write.f32",
             "cpu.residual_add.f32",
             "cpu.argmax.f32",
+            "cuda.embed.f32",
+            "cuda.rmsnorm.f32",
+            "cuda.rmsnorm.per_head.f32",
+            "cuda.rope.f32",
+            "cuda.rope.neox.f32",
+            "cuda.kv_write.f32",
+            "cuda.attention.f32",
+            "cuda.swiglu.f32",
+            "cuda.residual_add.f32",
+            "cuda.argmax.f32",
         ] {
             assert!(ids.contains(&want), "{want} not in {ids:?}");
         }
