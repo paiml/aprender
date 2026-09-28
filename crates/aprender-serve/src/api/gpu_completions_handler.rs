@@ -383,6 +383,13 @@ async fn try_cuda_gguf_completions(
         return Err(rerr(state, StatusCode::BAD_REQUEST, "Prompt cannot be empty"));
     }
     let prompt_tokens = prompt_ids.len();
+    // D5: a 400 before the batch scheduler sees it (its errors come back as strings).
+    if let Some(msg) = state
+        .serving_context()
+        .and_then(|ctx| super::serve_context_refusal(prompt_tokens, ctx))
+    {
+        return Err(rerr(state, StatusCode::BAD_REQUEST, msg));
+    }
 
     let eos = state.cached_eos_token_id.unwrap_or(151643);
     let q_config = QuantizedGenerateConfig {
@@ -610,7 +617,7 @@ async fn completions_inner(
             model.generate_gpu_resident_logprobs(
                 &prompt_ids.iter().map(|&id| id as u32).collect::<Vec<_>>(),
                 &config,
-            ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+            ).map_err(|e| rerr(&state, super::generation_error_status(&e), e))?
         };
         let prompt_len = prompt_ids.len();
         let gen_tokens: Vec<u32> = result.tokens[prompt_len..].to_vec();

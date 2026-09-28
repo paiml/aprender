@@ -127,6 +127,14 @@ async fn try_cuda_backend(
         eprintln!("[TTFT] {:>20}: {:>7.2}ms ({}tok)", "tokenize", t.elapsed().as_secs_f64() * 1000.0, prompt_ids.len());
     }
     let prompt_tokens = prompt_ids.len();
+    // D5: refused before any path (streaming, batch scheduler, direct) takes the
+    // model, so the client gets a 400 rather than a 500 or a mid-stream error.
+    if let Some(msg) = state
+        .serving_context()
+        .and_then(|ctx| super::serve_context_refusal(prompt_tokens, ctx))
+    {
+        return Some(fail_response(state, StatusCode::BAD_REQUEST, msg));
+    }
     // PMAT-821: build the config via chat_quantized_config so ALL request sampling
     // params (top_p/repeat_penalty/repeat_last_n/seed) reach the sampler — the prior
     // inline builder dropped them, leaving the chat endpoint on neutral defaults.
@@ -246,7 +254,7 @@ async fn try_cuda_backend(
         let generate_start = std::time::Instant::now();
         let generated = match dense_cuda_turn(&mut cuda_model, &prompt_ids, &q_config, |_| true) {
             Ok(g) => g,
-            Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+            Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
         };
         let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
         let tokens: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
