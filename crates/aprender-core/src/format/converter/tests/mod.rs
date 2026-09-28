@@ -17,6 +17,7 @@ mod core;
 mod coverage_falsification;
 mod coverage_functions;
 mod coverage_types;
+mod qfr_005_named_refusal;
 mod errors;
 mod gh202_layout;
 mod infer_config;
