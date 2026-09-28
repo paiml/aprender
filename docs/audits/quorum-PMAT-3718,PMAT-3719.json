@@ -1,0 +1,338 @@
+{
+  "ticket": "PMAT-3718,PMAT-3719",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "3c07f85b5191ca3088bf439acd36c00cc003a4d2",
+  "diff_sha256": "1b0f8a395f2d50a3070156a08f5f612cf6818378d537a4cd93ac6c91cf5c5575",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 259181,
+  "prompt_sha256": "68002576548f921db1108967558a26146eb93103dd6447f39e28431a1073c8b9",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff implements both tickets as scoped. PMAT-3718 (serve half): finish_reason_for(generated, max_tokens) replaces every hardcoded \"stop\" across SafeTensors chat/simple, wgpu streaming/non-streaming, and CUDA non-streaming/CPU-fallback handlers, and is judged consistently against the same clamped budget actually used for generation (verified max_tokens_clamped threading in handler_gpu_completion.rs:286-333). A new context_token_budget/context_length_exceeded_body pair (context_budget_3718.rs) refuses a prompt that fills the context window with 400 context_length_exceeded before prefill, wired into wgpu_chat_completion and the new st_context_budget (chat.rs, simple.rs), matching done_when 3. Verified code.rs:566-568 confirms the default manifest (used for ≥2B models, so Qwen3.5-4B/9B) still carries the full CODE_SYSTEM_PROMPT with the tool table — the receipt's central claim for PMAT-3719 (run_single_prompt no longer force-overwrites it with COMPACT_SYSTEM_PROMPT). The corrected tool-table field names (old_string/new_string, content) and the conservative bracket-repair for a delimited but truncated <tool_call> are each backed by a falsifier test asserted RED on the pre-fix code, with restrictive negative-case coverage (repair_refuses_every_other_malformation) so it doesn't become a general JSON fixer. Tests, evidence artifacts and the two new/updated quorum JSON receipts are internally consistent with the narrative. No test asserts the opposite of the ticket and no gate is weakened.",
+      "findings": [
+        {
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "line": 236,
+          "claim": "build_gpu_sse_stream's terminal [DONE] SSE event for the CUDA streaming chat path carries no finish_reason field at all (content chunks send finish_reason: null), so a CUDA streaming client never learns length vs stop — this function is untouched by the diff, so it's a pre-existing gap, not a regression, but it means #3718's guarantee is not uniform across every streaming transport the way it is for wgpu streaming.",
+          "grounding": "cited",
+          "fix": "Out of scope for this diff; worth a follow-up ticket if the CUDA streaming path should carry the same guarantee as wgpu streaming."
+        },
+        {
+          "file": "crates/aprender-orchestrate/src/agent/code_prompts.rs",
+          "line": 154,
+          "claim": "scale_prompt_for_model's documented MID tier (2-7B) is dead code: the only call site (code.rs:566-568) gates the call itself on params_b < 2.0, so the MID and FULL branches of scale_prompt_for_model are never reached through cmd_code — the new comment describing the runtime behavior doesn't flag that the function it cites is partly unreachable.",
+          "grounding": "cited",
+          "fix": "Not a blocker for #3719 (the 4B/9B cells tested use the default full-prompt path, which is what the falsifiers check and the evidence shows worked); worth a follow-up to wire the MID branch into the call site or delete it."
+        }
+      ],
+      "raw_bytes": 6693,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "68002576548f921db1108967558a26146eb93103dd6447f39e28431a1073c8b9",
+      "trace": {
+        "input_sha256": "38cd717eb2b4870cd12f65894df527f4b6e4d1c64691345dd47c764745c16ec8",
+        "output_sha256": "4f476d7b40533a5e5f88373fcf647725c9ec591b68f225f8e58380f289312d04",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the \"serve\" half of PMAT-3718 (finish_reason_for(generated, max_tokens) replacing every hardcoded \"stop\" across SafeTensors chat/simple, wgpu streaming/non-streaming, and CUDA/CPU-fallback handlers; a new context_token_budget/st_context_budget clamps generation and refuses over-long prompts with 400 context_length_exceeded before generation, wired before prefill in every touched path) and the tool-visibility/parsing fixes for PMAT-3719 in apr code -p mode (stops force-overwriting the manifest's tool-bearing system prompt with COMPACT_SYSTEM_PROMPT for ≥2B models, corrects the CODE_SYSTEM_PROMPT tool-call examples to match the tools' actual required fields, and adds a conservative bracket-repair for a <tool_call> missing only its closing brace). I verified against the actual worktree source (not just the diff) that build_default_manifest only applies COMPACT_SYSTEM_PROMPT below 2B params (code.rs:563-569) and that the clamped max_tokens correctly threads through both wgpu streaming and blocking completion paths (handlers.rs:381-406). New tests are meaningful falsifiers (asserted RED on pre-fix code per the receipt, e.g. falsify_3719_single_prompt_run_tells_the_model_about_its_tools, falsify_3719_delimited_tool_call_missing_outer_brace_is_executed, falsify_3719_prompt_tool_examples_supply_every_required_field, a_reply_cut_at_max_tokens_is_length_not_stop), none assert the opposite of the ticket, and the repair function is proven conservative by a negative case table (repair_refuses_every_other_malformation). No PMAT-3718 receipt file exists in this diff, but the receipt claims for this increment are only carried in the updated quorum-PMAT-3718.json narrative and are consistent with the actual code change; the ticket is explicitly 50% InProgress and this diff is only the serve-side half (the apr run --json half is noted, in the diff's own carried-forward audit data, as already landed in a prior commit on this branch). One pre-existing gap is honestly out of scope: the CUDA streaming terminal [DONE] SSE chunk (build_gpu_sse_stream, untouched by this diff) still carries no finish_reason at all, so a CUDA streaming client gets no length/stop signal — this is a real limitation but not introduced or misrepresented by this diff, and it was flagged in the diff's own carried-forward review data. Evidence/roadmap/script files for the #3719 harness were spot-checked (apr_code_edit_verify.sh) and are consistent with the receipt's described mechanism (independent test re-run, PATH shims, wrapper-captured serve-child output, GPU lock/choom/timeout bounds).",
+      "findings": [
+        {
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "claim": "The CUDA streaming path's terminal SSE [DONE] chunk still reports no finish_reason at all (pre-existing, untouched by this diff), so a CUDA streaming client cannot distinguish a length-cut reply from a natural stop, unlike the wgpu streaming path which this diff does fix.",
+          "grounding": "cited",
+          "fix": "Follow-up ticket to extend the same finish_reason_for rule to the CUDA streaming terminal chunk, matching what this diff already did for wgpu streaming.",
+          "line": 236
+        }
+      ],
+      "raw_bytes": 7272,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "68002576548f921db1108967558a26146eb93103dd6447f39e28431a1073c8b9",
+      "trace": {
+        "input_sha256": "5ebd2e9ea9d088b446ffc2ec0d17bbb4f09cd076736dc31c630c494a5f1438ce",
+        "output_sha256": "95e3ea8e5b83e3b8a240e661a10ceaaeac6fa2dd4e3025a457125101ba2e63b1",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+          }
+        ]
+      },
+      "repeat_of": 1
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements both PMAT-3718 (finish_reason and context budgeting for serve endpoints) and PMAT-3719 (system prompt, tool call bracket repair, and prompt field names for apr code on Qwen3.5). All finish_reason determinations use clamped budgets, context overflows return 400 before generation, system prompt is no longer forced to COMPACT for all -p runs, tool examples use required field names, and bracket repair is strictly constrained to delimited calls. Receipt claims (gap, CUDA proof, fixes with falsifiers) are backed by diff. No gate weakening, no test asserting opposite of tickets, no scope creep.",
+      "findings": [],
+      "raw_bytes": 2344,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "68002576548f921db1108967558a26146eb93103dd6447f39e28431a1073c8b9",
+      "trace": {
+        "input_sha256": "eeb71ab27d3ac084170b5b2e821d55af9b01812e009d652727111ee01b38855a",
+        "output_sha256": "8ae085634f5d0de8dc91ddf1bb332951e1e7eba5f4a3436da2878d2d7df6a8aa",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+      "line": 236,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The CUDA streaming path's terminal SSE [DONE] chunk still reports no finish_reason at all (pre-existing, untouched by this diff), so a CUDA streaming client cannot distinguish a length-cut reply from a natural stop, unlike the wgpu streaming path which this diff does fix.",
+        "build_gpu_sse_stream's terminal [DONE] SSE event for the CUDA streaming chat path carries no finish_reason field at all (content chunks send finish_reason: null), so a CUDA streaming client never learns length vs stop — this function is untouched by the diff, so it's a pre-existing gap, not a regression, but it means #3718's guarantee is not uniform across every streaming transport the way it is for wgpu streaming."
+      ]
+    },
+    {
+      "file": "crates/aprender-orchestrate/src/agent/code_prompts.rs",
+      "line": 154,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "scale_prompt_for_model's documented MID tier (2-7B) is dead code: the only call site (code.rs:566-568) gates the call itself on params_b < 2.0, so the MID and FULL branches of scale_prompt_for_model are never reached through cmd_code — the new comment describing the runtime behavior doesn't flag that the function it cites is partly unreachable."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, claude-sonnet-5) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by claude-sonnet-5 after falling through gemini-3.1-pro-high (skipped: family gemini withheld by policy: the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 0,
+        "outcome": "policy",
+        "reason": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "degraded": {
+      "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+      "lanes": [
+        2
+      ],
+      "families": [
+        {
+          "family": "gemini",
+          "state": "policy",
+          "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+        }
+      ],
+      "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+    },
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": false,
+      "matched": [],
+      "paths": 170,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {},
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "degraded": {
+    "reason": "same-family (policy: agy reserved for tier-1 diffs)",
+    "lanes": [
+      2
+    ],
+    "families": [
+      {
+        "family": "gemini",
+        "state": "policy",
+        "evidence": "the diff is not tier-1 (quorum.agy_tier1_only: none of its paths matches quorum.tier1_paths or the built-in policy paths), and agy is reserved for tier-1 diffs — cop ruling of 2026-09-24"
+      }
+    ],
+    "rule": "operator standing rule: if agy quota is ever gone, simply use claude code itself (PMAT-360)"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 259181 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "not-run",
+    "counts": false,
+    "row": {
+      "NotRun": "ContextOverflow"
+    },
+    "verdict": "unavailable",
+    "why": "the brief is 259181 bytes, over quorum.advisory_lane.max_brief_bytes=196608; a cut brief is a different question, so the lane was not launched",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 0,
+    "wall_s": 0,
+    "collected_s": 0,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 86 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 259181,
+      "sent_bytes": 0,
+      "max_bytes": 196608
+    },
+    "trace": null,
+    "attempts": [],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=3/2 degraded=same-family (policy: agy reserved for tier-1 diffs)"
+  }
+}
