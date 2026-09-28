@@ -67,6 +67,10 @@ pub(crate) use std::path::PathBuf;
 // ============================================================================
 
 /// APR Converter with builder pattern
+/// APR `custom` metadata key holding the source `config.json`, verbatim
+/// (qwen35-format-roundtrip-v1 QFR-003). Import writes it; export reads it back.
+pub(crate) const HF_CONFIG_KEY: &str = "hf_config";
+
 #[derive(Debug)]
 pub struct AprConverter {
     source: Option<Source>,

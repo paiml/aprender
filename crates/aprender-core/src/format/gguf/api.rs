@@ -116,6 +116,11 @@ pub struct GgufModelConfig {
     pub num_experts_per_tok: Option<usize>,
     /// MoE expert intermediate/FFN dimension
     pub moe_intermediate_size: Option<usize>,
+    /// The source `config.json`, verbatim, when the model came from an HF
+    /// directory. Stored in the APR metadata (`custom.hf_config`) so an
+    /// export can write the real config back instead of one inferred from
+    /// tensor shapes (qwen35-format-roundtrip-v1 QFR-003).
+    pub hf_config: Option<serde_json::Value>,
 }
 
 impl GgufModelConfig {
@@ -241,6 +246,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         num_experts: None,
         num_experts_per_tok: None,
         moe_intermediate_size: None,
+        hf_config: None,
     };
 
     Ok(GgufLoadResult {
@@ -334,6 +340,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         num_experts: None,
         num_experts_per_tok: None,
         moe_intermediate_size: None,
+        hf_config: None,
     };
 
     // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
