@@ -120,7 +120,7 @@ PY
 
 judge() { # judge mode root version commit receipts dogfood out
     local mode="$1" root="$2" version="$3" commit="$4" receipts="$5" dogfood="$6" out="$7"
-    local pv rc rx sum label
+    local pv pvv rc rx sum label
     local -a args
     pv="${RELEASE_READINESS_PV:-}"
     if [ -z "$pv" ]; then
@@ -140,10 +140,18 @@ judge() { # judge mode root version commit receipts dogfood out
         args+=(--receipts-commit "$rx")
     fi
     cat -- "$out"
+    pvv="$("$pv" --version 2>/dev/null | head -n 1 | tr -s ' \t' '_')"
     ( cd "$root" && "$pv" "${args[@]}" ) > "$out" 2>&1; rc=$?
     label="$SHAPE for $version at ${commit:0:12}"
     case "$rc" in
-        0) echo "ok    R8 $label: Pass"; return 0 ;;
+        0) echo "ok    R8 $label: Pass"
+           # #3715 B1 (operator 2026-09-28): the ONE line autopilot cut_tag() requires before `git tag`.
+           # Printed only for an enforced Pass, so a report-mode run, a skipped step or an absent log
+           # all leave the tag refused. out_sha256 is pv's verdict output, for the receipt.
+           if [ "$mode" = enforce ]; then
+               echo "ok    R8 #3715 ENFORCE PASS version=$version commit=$commit pv=${pvv:-unknown} out_sha256=$(sha256sum < "$out" | cut -c1-64)"
+           fi
+           return 0 ;;
         1)
             if ! sum="$(summarize "$out")"; then
                 echo "FAIL  R8 $label: pv exited 1 with no Fail verdict in its output, so it did not judge"; tail -n 3 "$out" | sed 's/^/        /'; return 2
@@ -205,6 +213,7 @@ selftest() {
     # the stub pv: records its argv, answers FX_PV_RC with FX_PV_BODY
     cat > "$tmp/pv" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" = --version ] && { echo "pv 9.9.9-stub"; exit 0; }
 printf '%s\n' "$*" > "${FX_ARGS:?}"
 case "${FX_PV_BODY:-fail}" in
     fail) printf '{"gate":"shapes","verdict":"Fail","extra":{"violations":3,"by_shape":["release-readiness-v1.kernel=0","release-readiness-v1=3"]}}\nreject: lint failed\n' ;;
@@ -242,6 +251,7 @@ STUB
 
     d="$tmp/r"; mk "$d"; x="$(git -C "$d" rev-parse HEAD~1)"; c="$(git -C "$d" rev-parse HEAD)"
     row pass_is_ok                               0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row pass_prints_the_enforce_line             0 "ok    R8 #3715 ENFORCE PASS version=1.2.3 commit=$(git -C "$d" rev-parse HEAD) pv=pv_9.9.9-stub out_sha256=" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow pass_asks_the_shape                   "--gate shapes --shape release-readiness-v1 --release-version 1.2.3 --release-commit $c"
     argrow receipts_commit_earned_is_passed      "--receipts-commit $x"
     row bare_fail_refuses                        1 "FAIL  R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=1
