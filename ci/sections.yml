@@ -466,8 +466,12 @@ jobs:
         # comes from root Cargo.toml [profile.test]; the CARGO_PROFILE_*_DEBUG
         # env vars are kept as belt-and-suspenders.
         timeout-minutes: 110
+        # safe.directory: the container runs as root over a host-owned /workspace, so
+        # git refuses it ("dubious ownership") and the pinned origin/main above never
+        # resolves -- the refinement gate then skips and its CI assert fails (aprender-4502).
         run: |
           docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
