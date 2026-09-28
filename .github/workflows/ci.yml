@@ -101,9 +101,9 @@ jobs:
       # FAT_SECRET_<NAME> under its full name; #4441 cut one short and the
       # receipt signer ran with an empty key on every PR. Text-only, no build.
       - name: FAT_SECRET plumbing guard case table
-        run: bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
       - name: every section secret is plumbed under its full name
-        run: bash scripts/check_ci_fat_secrets_plumbed.sh
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
