@@ -1,0 +1,363 @@
+{
+  "ticket": "PMAT-4551",
+  "base": "aca6f2d7f6c436426ab3d78721474853f82a8448",
+  "base_resolved": "aca6f2d7f6c436426ab3d78721474853f82a8448",
+  "base_note": "no origin/aca6f2d7f6c436426ab3d78721474853f82a8448 exists; judged against the local ref",
+  "head": "936714eeeb897c1631bc83523e9cba3a3fda0484",
+  "diff_sha256": "8a7e2a1fdcaede5c21f679d102550765622814982457a79429d74dda9736dd6d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 73849,
+  "prompt_sha256": "5dfb5d63e2ab50a486cd2586dcc15a0f3af38a257ffce1fe77a9cf1405f3994e",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff matches PMAT-4551 scope: adds apr-raw-samples-v1 pv contract and apr bench --emit raw-samples-v1 emitter wired only through the qwen35 bench path, refusing when samples are absent or mismatched. Contract, fixture, and tests are mutually consistent; the bundled shapes.rs nested-node-IRI fix is a necessary correctness fix for a pre-existing collision bug, not scope creep. No gate weakened, no forbidden behavior added.",
+      "findings": [],
+      "raw_bytes": 1765,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "5dfb5d63e2ab50a486cd2586dcc15a0f3af38a257ffce1fe77a9cf1405f3994e",
+      "trace": {
+        "input_sha256": "41f33812a202f4adf4d7ece6d8f8b3b1f906c25087e2e3eab154573f75920fba",
+        "output_sha256": "386ed2dcc556ad6175fef9b86f6a2e4856f6c493ce434c5604a0ca1af46c5075",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the `raw-samples-v1` emitter and contract as requested in PMAT-4551. It captures per-iteration samples (wall time, completion tokens, TTFT) without computing any derived statistics, refusing to invent data for unsupported paths. The contract and falsification tests are fully implemented according to the acceptance criteria. It also includes a necessary fix to the ontology shapes parser to support multiple nested nodes within a single contract, which was required for the `raw-samples-v1` shape definition.",
+      "findings": [
+        {
+          "claim": "`apr bench --emit raw-samples-v1` writes raw per-iteration samples plus the identity the subject can know, and no derived statistics.",
+          "file": "crates/apr-cli/src/commands/bench_raw_samples.rs",
+          "grounding": "cited",
+          "line": 73
+        },
+        {
+          "claim": "`contracts/apr-raw-samples-v1.yaml` validates a real committed emit and refuses negative cases like a derived key, null identity field, short digest, empty sample list, undeclared backend, and foreign schema (FALSIFY-RAWS-001).",
+          "file": "crates/aprender-contracts/src/lint/raw_samples_v1_tests.rs",
+          "grounding": "cited",
+          "line": 55
+        },
+        {
+          "claim": "The emitter refuses a bench path without per-iteration samples, or samples that do not match the timed iterations (FALSIFY-RAWS-002).",
+          "file": "crates/apr-cli/src/commands/bench_raw_samples.rs",
+          "grounding": "cited",
+          "line": 250
+        },
+        {
+          "claim": "To support multiple nested `node` definitions in `apr-raw-samples-v1.yaml`, the ontology parser assigns distinct nested shape IDs.",
+          "file": "crates/aprender-contracts/src/ontology/shapes.rs",
+          "grounding": "cited",
+          "line": 449
+        }
+      ],
+      "raw_bytes": 4477,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "5dfb5d63e2ab50a486cd2586dcc15a0f3af38a257ffce1fe77a9cf1405f3994e",
+      "trace": {
+        "input_sha256": "f671df3b297dfe43ab35af188e30423ecc4e0e7f0a7fd7204e37488498f1ea19",
+        "output_sha256": "343cbec1c4a61760c9cea679390e2f68d9836f2a950fa9adbe26657081c86cc6",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff implements PMAT-4551 correctly. Contract validates real emit and rejects all planted defects (AC-1): closed shape prevents unknown keys; minCount: 1 rejects null identity fields; pattern ^[0-9a-f]{64}$ rejects short digests; minCount: 1 rejects empty samples; backend enum rejects undeclared values; schema enum rejects foreign versions. Emitter refuses unrecorded samples (AC-2): returns Err when result.raw.is_none() or sample count ≠ iteration count. Qwen35 path populates per-iteration RawSample {wall, completion_tokens, ttft}. Compute_class() in scope. Out-of-scope items (ledger row, recorder, backfill) correctly omitted. Bonus: nested node shape IRI collision fixed.",
+      "findings": [],
+      "raw_bytes": 2283,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "5dfb5d63e2ab50a486cd2586dcc15a0f3af38a257ffce1fe77a9cf1405f3994e",
+      "trace": {
+        "input_sha256": "00f2d33f6138e25d781c9395b679f467e11c4d9afbc0a053c307a3ed38d7bf7e",
+        "output_sha256": "2f8bc53d4db7d75162b374c0b9ac7e71883fdaed0b8aeeb8b53b6722a15a8ffe",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/bench_raw_samples.rs",
+      "line": 73,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`apr bench --emit raw-samples-v1` writes raw per-iteration samples plus the identity the subject can know, and no derived statistics."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/bench_raw_samples.rs",
+      "line": 250,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The emitter refuses a bench path without per-iteration samples, or samples that do not match the timed iterations (FALSIFY-RAWS-002)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/raw_samples_v1_tests.rs",
+      "line": 55,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`contracts/apr-raw-samples-v1.yaml` validates a real committed emit and refuses negative cases like a derived key, null identity field, short digest, empty sample list, undeclared backend, and foreign schema (FALSIFY-RAWS-001)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/shapes.rs",
+      "line": 449,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "To support multiple nested `node` definitions in `apr-raw-samples-v1.yaml`, the ontology parser assigns distinct nested shape IDs."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "crates/aprender-contracts/src/lint/shapes_gate.rs"
+      ],
+      "paths": 22,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790541151,
+          "window_calls": 28,
+          "window_429": 0,
+          "hour_calls": 4,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 73849 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "3340528, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 29,
+    "collected_s": 345,
+    "budget_s": 172,
+    "budget_basis": "ledger: 2 x p95 86 s over 39 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 73849,
+      "sent_bytes": 74018,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "940c240f950d7e92c65ec1cf37220e3232cd035e5cbbaa4f5a42e50d9dd16130",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 29,
+        "used_gpu": true,
+        "ts": "2026-09-28T00:37:46.360Z",
+        "wall_ms": 29040,
+        "request_id": "01a0e572-44d2-710b-8563-fc8a6cba77ed",
+        "load1": 18.28,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
