@@ -1,0 +1,17 @@
+# ONT-4d fixture Σ: Kernel ⊑ Contract. `contract-shape` requires ont:name (minCount 1); `kernel-shape`, on the
+# sub-concept, declares the SAME path with minCount 0 — a sub-concept removing a super-concept constraint (R-19).
+schema: ont-sigma-v1
+concepts:
+  Contract: {doc: "a pv contract file"}
+  Kernel: {doc: "a contract whose kind is kernel"}
+subsumes:
+  - {sub: Kernel, sup: Contract}
+entity_types:
+  - {name: pv-contract, extractor: pv_contract, implemented: true}
+extractors:
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
+readers:
+  concepts: ontology/sigma.rs
+  subsumes: ontology/sigma.rs, ontology/extract/mod.rs, lint/subsumption.rs
+  entity_types: lint/sigma_gate.rs
+  extractors: ontology/sigma.rs
