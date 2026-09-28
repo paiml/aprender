@@ -111,9 +111,15 @@ fn has_ext(p: &Path, ext: &str) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case(ext))
 }
 
-/// The `license` of an APR v2 file, read from the header and metadata block
-/// only (a model can be tens of GB). Not an APR v2 file: `None`.
 fn apr_metadata_license(path: &Path) -> Result<Option<String>, CliError> {
+    Ok(apr_metadata(path)?.and_then(|m| m.license.filter(|l| !l.trim().is_empty())))
+}
+
+/// The metadata of an APR v2 file, read from the header and metadata block
+/// only (a model can be tens of GB). Not an APR v2 file: `None`.
+pub(crate) fn apr_metadata(
+    path: &Path,
+) -> Result<Option<aprender::format::v2::AprV2Metadata>, CliError> {
     use aprender::format::v2::{
         AprV2Header, AprV2Metadata, HEADER_SIZE_V2, MAGIC_V2, MAX_METADATA_SIZE,
     };
@@ -138,7 +144,7 @@ fn apr_metadata_license(path: &Path) -> Result<Option<String>, CliError> {
         .map_err(|e| fail(&format!("cannot read APR v2 metadata: {e}")))?;
     let meta =
         AprV2Metadata::from_json(&buf).map_err(|e| fail(&format!("bad APR v2 metadata: {e}")))?;
-    Ok(meta.license.filter(|l| !l.trim().is_empty()))
+    Ok(Some(meta))
 }
 
 /// `license:` from a YAML front matter block (`---` … `---`) at the top of a
