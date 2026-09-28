@@ -507,7 +507,9 @@ exit "${FX_LADDER_RC:-0}"
 FXJUDGE
         # R8's wrapper: it must be asked about THIS root, version 1.2.3, HEAD and the newest dogfood
         # receipt, and it answers FX_READINESS_RC (default 0; FX_READINESS_WARN=1 prints the
-        # report-mode WARN row a Fail verdict yields under DEFAULT_MODE=report).
+        # report-mode WARN row a Fail verdict yields under DEFAULT_MODE=report; the committed mode is
+        # enforce since #3715 B1, so that row is only reachable by a hand-edited wrapper, and R8 still
+        # refuses on any non-zero exit whatever the mode).
         mkdir -p "$1/scripts/release"
         cat > "$1/scripts/release/release_readiness.sh" <<'FXREADY'
 #!/usr/bin/env bash
