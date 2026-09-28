@@ -78,7 +78,13 @@ PY
 while IFS= read -r l; do case "$l" in ok*) ok "${l#ok    }" ;; *) bad "${l#FAIL  }" ;; esac; done < "$T/l1.out"
 
 # ── layer 2: the shipped apr_locked + meter on real storage reads ─────────────
-eval "$(sed -n '/^apr_locked() {/p' scripts/model_ladder.sh)"
+cp scripts/lib/ladder_meter.py "$T/ladder_meter.py"
+if [ "$SELF_TEST" = 1 ]; then   # second mutant: the meter never enforces the RSS cap
+  sed -i 's/            if seen > cap:/            if False:/' "$T/ladder_meter.py"
+  grep -q 'if False:' "$T/ladder_meter.py" || { echo "  cannot check: self-test meter mutation did not apply" >&2; exit 2; }
+fi
+line=$(sed -n '/^apr_locked() {/p' scripts/model_ladder.sh)
+eval "${line//scripts\/lib\/ladder_meter.py/$T\/ladder_meter.py}"
 declare -F apr_locked >/dev/null || { echo "  cannot check: apr_locked not found in model_ladder.sh" >&2; exit 2; }
 GPU_LOCK="$T/gpu.lock"; LOCK_WAIT=5; LOCK_BUSY=75
 MODEL="$T/model.gguf"
@@ -114,6 +120,26 @@ else bad "meter: planted inspect reading 4 KiB was judged over budget (rc=$rc: $
 # the meter passes the child's status through: a verb's rc is still the verb's
 FAKE_READ=4096 apr_locked inspect /nonexistent-4520 2>/dev/null; rc=$?
 [ $rc = 1 ] && ok "meter: the child's exit status passes through (rc=1)" || bad "meter: child rc 1 came back as $rc"
+
+# THE RSS CAP IS ENFORCED, not only judged: a call that grows past factor x file + slack is killed
+# while it runs (gx10 cpu 27B: 58.6G against a 33.1G budget ran ~57 min into the box OOM).
+cat > "$T/hog" <<'SH'
+#!/usr/bin/env bash
+# fake apr: holds $HOG_MB of touched memory for $HOG_S seconds
+python3 -c 'import sys,time; b=bytearray(int(sys.argv[1])<<20); b[::4096]=b"x"*len(b[::4096]); time.sleep(float(sys.argv[2]))' "$HOG_MB" "${HOG_S:-20}"
+SH
+chmod +x "$T/hog"
+: > "$LADDER_METER"
+export LADDER_METER_RSS_FACTOR=1.5 LADDER_METER_RSS_SLACK=$((64 << 20)) LADDER_METER_FILE_BYTES=$((1 << 20))   # cap ~65.5 MiB
+APR="$T/hog"; s=$SECONDS; HOG_MB=256 apr_locked run x 2>/dev/null; rc=$?; dt=$((SECONDS - s))
+capped=$(python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).readline()); print(r.get("rss_capped", 0))' "$LADDER_METER" 2>/dev/null)
+if [ "$rc" = 137 ] && [ "${capped:-0}" -gt $((65 << 20)) ] && [ "$dt" -lt 10 ]; then ok "rss cap: a 256 MiB call over a ~65 MiB budget was killed in ${dt}s (rc 137, rss_capped=$capped)"
+else bad "rss cap: a 256 MiB call over a ~65 MiB budget was not stopped (rc=$rc, rss_capped=${capped:-none}, ${dt}s)"; fi
+: > "$LADDER_METER"
+HOG_MB=8 HOG_S=1 apr_locked run x 2>/dev/null; rc=$?
+if [ "$rc" = 0 ] && [ -s "$LADDER_METER" ] && ! grep -q rss_capped "$LADDER_METER"; then ok "rss cap: an 8 MiB call under the budget is left alone (rc 0)"
+else bad "rss cap: an 8 MiB call under the budget was disturbed (rc=$rc)"; fi
+unset LADDER_METER_RSS_FACTOR LADDER_METER_RSS_SLACK
 
 if [ "$SELF_TEST" = 1 ]; then
   [ "$fails" -gt 0 ] && { echo "self-test: the planted blind judge turned this RED ($fails case(s)) -- good"; exit 0; }
