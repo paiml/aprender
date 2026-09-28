@@ -47,7 +47,7 @@ fn export_safetensors_with_companions(
     let output_dir = output_path.parent().unwrap_or(Path::new("."));
 
     if options.include_config {
-        let config = infer_model_config(tensors);
+        let config = export_config_json(tensors, input_path);
         let config_path = output_dir.join("config.json");
         if let Err(e) = fs::write(&config_path, config) {
             eprintln!("[GH-182] Warning: Failed to write config.json: {e}");

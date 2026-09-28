@@ -374,58 +374,77 @@ fn remove_tied_lm_head(
     tensors
 }
 
+/// The metadata JSON of an APR v2 file, read from the header and the metadata
+/// block only — a model can be tens of GB and none of the tensor data is needed.
+///
+/// Real APR v2 header (header_impl.rs::to_bytes, 64 bytes): magic[0..4], version[4..6],
+/// flags[6..8], tensor_count u32 [8..12], metadata_offset u64 [12..20], metadata_size u32
+/// [20..24]; the metadata JSON begins at `metadata_offset` (= HEADER_SIZE_V2 = 64). An older
+/// reader took an 8-byte "metadata_len" at byte 8 and the JSON at byte 16, so its bounds guard
+/// ALWAYS failed and every `apr export` silently dropped the SafeTensors __metadata__.
+fn read_apr_metadata_json(apr_path: &Path) -> Option<serde_json::Value> {
+    use crate::format::v2::{HEADER_SIZE_V2, MAX_METADATA_SIZE};
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = fs::File::open(apr_path).ok()?;
+    let mut head = [0u8; HEADER_SIZE_V2];
+    file.read_exact(&mut head).ok()?;
+    let metadata_offset = u64::from_le_bytes(head[12..20].try_into().ok()?);
+    let metadata_size = u32::from_le_bytes(head[20..24].try_into().ok()?) as usize;
+    if metadata_size > MAX_METADATA_SIZE {
+        return None;
+    }
+    let mut buf = vec![0u8; metadata_size];
+    file.seek(SeekFrom::Start(metadata_offset)).ok()?;
+    file.read_exact(&mut buf).ok()?;
+    serde_json::from_slice(&buf).ok()
+}
+
+/// A key of the APR `custom` metadata. `custom` is #[serde(flatten)] in
+/// AprV2Metadata, so it sits at the TOP level of the metadata JSON (not nested
+/// under a "custom" object). Accept both for robustness.
+fn custom_metadata_value(parsed: &serde_json::Value, key: &str) -> Option<serde_json::Value> {
+    parsed
+        .get(key)
+        .or_else(|| parsed.get("custom").and_then(|c| c.get(key)))
+        .cloned()
+}
+
 /// PMAT-223: Extract user metadata from APR file's custom field.
 ///
 /// Reads the APR metadata JSON and looks for the `"source_metadata"` key
 /// that was preserved during import from SafeTensors.
 fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
-    let data = match fs::read(apr_path) {
-        Ok(d) => d,
-        Err(_) => return UserMetadata::new(),
-    };
-
-    // Real APR v2 header (header_impl.rs::to_bytes, 64 bytes): magic[0..4], version[4..6],
-    // flags[6..8], tensor_count u32 [8..12], metadata_offset u64 [12..20], metadata_size u32
-    // [20..24]; the metadata JSON begins at `metadata_offset` (= HEADER_SIZE_V2 = 64). The prior
-    // code read an 8-byte "metadata_len" at byte 8 (= tensor_count | metadata_offset<<32 ≈ 2.7e11)
-    // and the JSON at byte 16, so the bounds guard ALWAYS failed and this returned empty — silently
-    // dropping the user's SafeTensors __metadata__ on every `apr export`.
-    if data.len() < 24 {
-        return UserMetadata::new();
-    }
-    let metadata_offset = u64::from_le_bytes(data[12..20].try_into().unwrap_or([0u8; 8])) as usize;
-    let metadata_size = u32::from_le_bytes(data[20..24].try_into().unwrap_or([0u8; 4])) as usize;
-    let end = match metadata_offset.checked_add(metadata_size) {
-        Some(e) if e <= data.len() => e,
-        _ => return UserMetadata::new(),
-    };
-
-    let metadata_json = match std::str::from_utf8(&data[metadata_offset..end]) {
-        Ok(s) => s,
-        Err(_) => return UserMetadata::new(),
-    };
-
-    let parsed: serde_json::Value = match serde_json::from_str(metadata_json) {
-        Ok(v) => v,
-        Err(_) => return UserMetadata::new(),
-    };
-
-    // `custom` is #[serde(flatten)] in AprV2Metadata, so "source_metadata" is at the TOP level
-    // of the metadata JSON (not nested under a "custom" object). Accept both for robustness.
-    let source = parsed
-        .get("source_metadata")
-        .or_else(|| parsed.get("custom").and_then(|c| c.get("source_metadata")));
+    let mut result = UserMetadata::new();
+    let source = read_apr_metadata_json(apr_path)
+        .and_then(|parsed| custom_metadata_value(&parsed, "source_metadata"));
     if let Some(serde_json::Value::Object(map)) = source {
-        let mut result = UserMetadata::new();
         for (k, v) in map {
             if let serde_json::Value::String(s) = v {
-                result.insert(k.clone(), s.clone());
+                result.insert(k, s);
             }
         }
-        return result;
     }
+    result
+}
 
-    UserMetadata::new()
+/// QFR-003: the `config.json` an export writes. The source config stored at
+/// import (`custom.hf_config`) is written back verbatim; only a model with no
+/// stored config gets one inferred from tensor shapes. An inferred config
+/// cannot tell Qwen3.5 from Qwen2, so re-importing it changed the model's
+/// architecture (qwen35-format-roundtrip-v1).
+fn export_config_json(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    apr_path: &Path,
+) -> String {
+    let stored = read_apr_metadata_json(apr_path)
+        .and_then(|parsed| custom_metadata_value(&parsed, super::HF_CONFIG_KEY))
+        .filter(serde_json::Value::is_object)
+        .and_then(|cfg| serde_json::to_string_pretty(&cfg).ok());
+    match stored {
+        Some(cfg) => cfg,
+        None => infer_model_config(tensors),
+    }
 }
 
 /// Detect predominant quantization type from an APR file (PMAT-252).
