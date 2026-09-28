@@ -1,5 +1,5 @@
 {
-  "build_identity": "e2d210244d",
+  "build_identity": "fd27cc465e",
   "fp32_activations": {
     "max_abs_err": 0.31130200636971495,
     "max_rel_err": 0.00373872448350238
@@ -46,7 +46,7 @@
   },
   "source_fn": "fused_q8_0_q8_0_parallel_matvec",
   "tolerance_rel": 0.008,
-  "ts": "2026-09-28T12:09:33Z",
+  "ts": "2026-09-28T12:28:31Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 1024,
