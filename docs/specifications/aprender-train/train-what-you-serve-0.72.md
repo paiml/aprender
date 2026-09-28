@@ -346,12 +346,50 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - Sequencing: TIS needs TSG and TDD merged, or at least their normaliser. Until then, TIS-005 (refuse when no
     manifest is supplied for an rc-bound run) is the only part that can be met.
 
-## §3 Remaining ranked rows (R6–R20)
-See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
-R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
-R11 B2 wiring (#4367) · R12 training receipts on APR-OBS identity · R13 HF rc · R14 throughput work · R15 LoRA on CUDA ·
-R16 dangling `qlora-training-loop-v1` · R17 4B memory plan · R18 teacher/student vocab alignment · R19 ROADMAP PMAT-711 stale ·
-R20 declarative recipe (only if pulled from E8 0.75).
+## §3 Ranking v2, after the spikes (2026-09-28)
+This replaces the pre-spike order. Rows move for three reasons:
+- **Evidence voids:** a row whose absence makes other rows' receipts worthless moves up. That is R12, and the
+  honesty refusals (DBH-001, MOF-002, HRP-001).
+- **Sizing:** S-R15 made R15 new kernel-side work, not a flag change.
+- **Ownership:** rows already held on a branch drop out of L2's queue.
+
+K̂ is minutes of worker time; `[A]` is an assumption, the rest are carried from §2.
+
+| # | Row | Changed by | Cell to build first | K̂ | State |
+|---|---|---|---|---|---|
+| 1 | R1 honesty gate | S-R6 (distill takes the dense config for qwen3_5) | TAH-001..003 | 30 | branches `la-72/4552-train-arch-honesty`, `tah-003-head-dim` |
+| 2 | R12 training receipts | S-R12: 0/4 verbs record sha, recipe, model hash or seed | one shared `train_receipt.json` writer, TRR-001..006 | 45 `[A]` | contract only |
+| 3 | R2 GDN forward | — | QTG-001 parity vs serve | 90 | branches `r2-gdn-forward`, `r2-gated-attn`, `r2-qwen35-model` |
+| 4 | R3 GDN backward | — | QTG-003/006 gradcheck | 120 | branch `r3-backward` (dev-dep `features=["cuda"]` note) |
+| 5 | R15 CUDA LoRA | S-R15: NF4-only backward, Q+V adapters only | LoRA grad workspace for non-NF4, all projections | 120 `[A]`, re-size before R4 | contract only |
+| 6 | R4 QLoRA 4B end to end | S-R17 (fits 24 GB only without `dW'`), S-R4c | QQE-001..006 | 90 | blocked on R2, R3, R15 |
+| 7 | R5 Unsloth harness | S-R5 | Unsloth side runs now | 60 | parallel to R2–R4 |
+| 8 | R10 round-trip | S-R10: st↔apr bit-identical, but the export has no config (QFR-003); GGUF legs wait on #4418 | QFR-003 self-describing export | 40 `[A]` | contract only |
+| 9 | R13 HF rc publish | S-R13: plan ≠ upload, weights only, license mit | HRP-001 (small), then the publish directory builder (= the QFR-003 fix) | 45 `[A]` | needs R10, R12 |
+| 10 | R11 sealed ingress | S-R11b: no loader checks; TSG/TDD unmerged | TIS-001/002 at the three loaders | 40 `[A]` + the TDD normaliser (aprender-cb) | verb half: aprender-ont #3597 |
+| 11 | R6 distill batch | S-R6: batch B > 1 silently trains the last row | DBH refusal first (15 `[A]`), then real batching (90 `[A]`) | 15 + 90 | contract only |
+| 12 | R7 merge | S-R7: `-o *.apr` writes metadata-free F32 safetensors | MOF-002/003 APR writer | 30 `[A]` | contract only |
+| 13 | R9 #4418 GGUF name map | still OPEN in 0.71 at 2026-09-28 | — | owned by 0.71 | if it slips, R10's GGUF legs and T4/T5 slip with it |
+| 14 | R8 GDN quantize policy | — | — | — | branch `79/r8-gdn-quant-policy` |
+| 15 | R17 memory, measured | S-R17 desk plan | peak-memory run on the 4090 | 30 `[A]` | needs GPU; after train-active clears |
+| 16 | R18 vocab alignment | — | — | — | branch `76/0.72-r18-vocab-cell` |
+| 17 | R16 dangling `qlora-training-loop-v1` | — | — | — | branch `la/r16-qlora-loop-contract` |
+| 18 | R19 ROADMAP PMAT-711 stale | done | — | — | shaping @378ec8e920 |
+| 19 | R14 throughput work | — | sized from the R5 baseline | — | after R5 |
+| 20 | R20 declarative recipe | — | — | — | only if pulled from E8 0.75 (RQ-3) |
+
+**Critical path v2:**
+```
+R1 ─► R2 ─► R3 ─┐
+R15 ────────────┼─► R4 ─┬─► R5 baseline ─► R14
+R12 receipts ───┘       ├─► R6 (DBH refusal lands with R1), R7 (MOF)
+                        └─► R13 HF rc ◄── R10 QFR-003 export ◄── #4418 (GGUF legs only)
+R11 TIS ◄── TDD normaliser (PRM C7–C9) ─────► gates every R4/R6 run counted for 0.72
+```
+
+**Cheap refusals first:** DBH-001 (distill B > 1), MOF-002 (merge writes APR), HRP-001 (plan = upload) and TIS-005 (no
+manifest, no rc run) are each ≤ 15 `[A]`. Each turns a silent wrong answer into a named refusal, and none depends on
+GDN work. They are the best 0.72 value per minute before R2 lands.
 
 ## §4 Rulings requested (S-4)
 RQ-1 epic #4000 body is still "Agent Ready" · RQ-2 T1 scope = GDN training · RQ-3 T2 vs E8 0.75 (#4002) overlap ·
