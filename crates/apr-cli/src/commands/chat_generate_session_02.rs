@@ -41,6 +41,9 @@ impl ChatSession {
 
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
             let start = Instant::now();
+            // #4609: `generated_on_gpu` is THIS turn's backend. Only a branch that ran on
+            // the accelerator sets it, so a CPU turn after a GPU turn must not inherit it.
+            self.generated_on_gpu = false;
 
             let formatted_prompt = match self.build_formatted_prompt(user_input, config) {
                 Ok(prompt) => prompt,
