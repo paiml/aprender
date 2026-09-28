@@ -102,7 +102,7 @@ kani_harnesses:
   bound: 4
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 1
   proven: 0
   tested: 0
   status: pending

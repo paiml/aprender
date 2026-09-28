@@ -1,0 +1,156 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-capability-cells-v1 — a required cell of the model-capability ladder is oracle-proven or RED
+# (ONT-001 v4.12 §5 ONT-4c5, paiml/infra 948ae923; aprender #3972 + #4047, PMAT-3972)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::capability_cells  — D, the cells measured at the current release V*, and
+#                                                      not_run = D \ {Pass | Fail}; one `apply` for corpus and plant.
+#   provable_contracts::lint::capability_cells_gate — the validator's half inside `pv lint --gate shapes`: the
+#                                                      positive control through the ARMED shape, the run-time
+#                                                      wiring check, a finding naming every NotRun cell, and
+#                                                      |D| = 0 as a decline.
+#
+# THE RULE. The domain D is the set of cells ONT-4c1's `ladder-green` quantifies over (receipts::expected_hosts,
+# one definition), restricted to `required: true` rungs; a cell id is `<rung>@<host>`. A cell is MEASURED only by
+# a witness row (sha256 = the rung's) in a receipt of the current release V* (the greatest dotted-numeral
+# `version` read) for that host. Its verdict is Pass (ladder-green's row predicate), Fail (its negation), or
+# NotRun: a row label that `Verdict::from_label` maps to Unknown(_) — DEFER, MANUAL, NO-VERDICT, … — beats the
+# measurement, and a label nobody knows is refused by name. Every D member that is not Pass or Fail is a
+# `model:notRunCell`, and the ARMED shape says maxCount 0 on it: Fail, exit 1 — the arming rule. An absent cell is
+# NEVER folded into Fail: this row admits Fail (ladder-green refuses it), so a folded absence would pass.
+#
+# WHY V*, NOT ladder-green's cross-version "∃ witness". Every required rung carries one sha across 0.68.1,
+# 0.68.2 and 0.69.1; unioning versions would let a 0.68.2 green row hide a 0.69.1 DEFER or a missing 0.69.1 row
+# (plan grill round 1, measured on this tree). ladder-green itself is unchanged.
+#
+# THE PLANT. A required rung with no receipt (tests/fixtures/ont/capability-cells-plant.yaml, embedded
+# byte-identically in the crate) runs every gate run through the same `apply`, then through the ARMED shape; both
+# must refuse exactly `capability-cells-plant@plant-host`, or pc_shapes["capability-cells"] is not-fired and the
+# gate declines. The corpus wiring is checked at run time too: the rungs the shape flags must be the rungs owning
+# a NotRun cell, else the gate declines (Differential).
+#
+# RESIDUAL, NAMED (the row's own). D takes ONT-4c1's host axis unchanged: `hosts:` absent = every host with a
+# receipt read. A host that has never had a receipt is not in D; the probe's literal baseline set B guards the
+# 14 named cells.
+#
+# KIND: pattern. Shapes over a graph; the proof is the gate's own case table.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-capability-cells
+version: "1.0.0"
+scope: >
+  Which cells of the model-capability ladder a release owes a verdict on (D), how a cell is measured at the
+  current release, and the armed shape that turns a required cell without a verdict into RED. Out of scope:
+  whether a Fail cell may ship (ladder-green, ONT-4c1), per-verb/thinking cells (the v2 cells[] axis, #3712),
+  the oracle differential (ONT-4b2).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-23'
+  last_modified: '2026-09-23'
+  author: PAIML Engineering
+  description: >
+    A required ladder cell is Pass or Fail at the current release V*; NotRun (missing, DEFER, MANUAL,
+    NO-VERDICT, an unknown label) is a violation of the armed capability-cells shape, exit 1; |D| = 0 declines.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.12 §5 ONT-4c5 (948ae923, infra#950); docs/audits/ont-4c5-plan.md there'
+    - 'aprender #3972 (extractor + arming rule), #4047 (pv lint capability-cells shape); docs/audits/impl-PMAT-3972-plan.md'
+    - 'crates/aprender-contracts/src/ontology/{capability_cells.rs, receipts.rs, verdict.rs}, lint/{capability_cells_gate.rs, shapes_gate.rs}'
+
+entity:
+  type: gguf
+
+relations:
+  depends_on: [ont-shapes-v1, ont-model-receipts-v1, model-capability-ladder-v1]
+
+shapes:
+  - id: capability-cells
+    targetClass: model:RequiredModel
+    properties:
+      - {path: model:notRunCell, maxCount: 0}
+      - {path: model:refusedLabel, maxCount: 0}
+
+equations:
+  domain:
+    formula: "D = { rung@host : rung.required ∧ host ∈ expected_hosts(rung, receipt_hosts(R)) }"
+    domain: "every rung of the ladder contract; R = every receipt read under evidence/dogfood/models/"
+    codomain: "a set of cell ids <rung>@<host>"
+    invariants:
+      - "expected_hosts is ONT-4c1's function, called, not copied: D and ladder-green quantify over one host axis"
+      - "a rung with required: false contributes no cell"
+    preconditions:
+      - "every receipt version is dotted numerals, else the gate refuses by name (exit 3)"
+    postconditions:
+      - "|D| = 0 ⇒ the gate declines (exit 2), never Pass"
+    lean_theorem: none — L4 not declared
+  not_run:
+    formula: "not_run = D \\ { c ∈ D : cell(c, V*) ∈ {Pass, Fail} },  V* = max(version(R))"
+    domain: "D and the witness rows of the V* receipts"
+    codomain: "a model:notRunCell literal per member, on the rung's model:Model node"
+    invariants:
+      - "a row label mapping to Unknown(_) beats the measurement; an unknown label is refused by name and NotRun"
+      - "several V* rows for one cell combine NotRun > Fail > Pass — not the lattice meet"
+      - "a row of an older version never measures a cell"
+    preconditions:
+      - "a witness row is one whose sha256 equals the rung's; no sha256 or another hex is no measurement"
+    postconditions:
+      - "|not_run| > 0 ⇒ the armed capability-cells shape fails ⇒ exit 1"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: CAP-INV-001
+    property: a required cell without a verdict fails the armed shape
+    formal: 'c ∈ D ∧ cell(c, V*) ∉ {Pass, Fail} ⇒ Fail(capability-cells)'
+    prose: false
+  - id: CAP-INV-002
+    property: an absent cell is never folded into Fail
+    formal: 'c ∈ D ∧ witness(c, V*) = ∅ ⇒ c ∈ not_run'
+    prose: false
+  - id: CAP-INV-003
+    property: an older version never masks the current release
+    formal: 'version(r) < V* ⇒ r ∉ witnesses(c) for every c ∈ D'
+    prose: false
+  - id: CAP-INV-004
+    property: an empty domain declines
+    formal: '|D| = 0 ⇒ verdict = Unknown'
+    prose: false
+  - id: CAP-INV-005
+    property: the plant fires through the armed shape or the gate declines
+    formal: 'pc_shapes(capability-cells) ≠ fired ⇒ verdict = Unknown'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-CAP-001
+    rule: cells at V*, label precedence, duplicate rows
+    prediction: "a missing cell and a DEFER/MANUAL/NO-VERDICT row are not_run; an older green row does not mask either; a stray higher version only adds NotRun; a non-numeral version is refused by name; a green duplicate does not hide a DEFER or a Fail; a Fail cell is admitted"
+    test: cargo test -p aprender-contracts --lib ontology::capability_cells
+    if_fails: a required cell without a verdict arms, or a Fail is refused by the wrong shape
+  - id: FALSIFY-CAP-002
+    rule: the plant is the tracked fixture and fires through the shape
+    prediction: the embedded plant equals tests/fixtures/ont/capability-cells-plant.yaml byte for byte, and refuses exactly capability-cells-plant@plant-host through the armed shape
+    test: cargo test -p aprender-contracts --lib lint::capability_cells_gate
+    if_fails: the positive control drifts from the tracked one, or stays fired with the shape gone
+  - id: FALSIFY-CAP-003
+    rule: the gate's answers on the CLI
+    prediction: "Pass on the real corpus with capability-cells armed, pc_shapes fired, not_run empty and B ⊆ domain; exit 1 naming the cell on a missing, DEFER, MANUAL or NO-VERDICT required cell; exit 2 decline when D is empty or capability-cells is disarmed; a Fail cell exits 0 under this shape"
+    test: cargo test -p aprender-contracts-cli --test ont4c5_capability_cells
+    if_fails: a decline, a reject and a pass become indistinguishable to the probe
+  - id: FALSIFY-CAP-004
+    rule: the spec row's mutations
+    prediction: "fold a missing cell into Fail → the plant passes → decline; drop capability-cells from armed_shapes → decline; flip one required rung to required: false → B ⊄ D → the probe is RED; label a required cell DEFER → exit 1 naming it"
+    test: cargo test -p aprender-contracts-cli --test ont4c5_capability_cells
+    if_fails: the row's own probe cannot go RED on the mutations it names
+
+qa_gate:
+  id: F-CAP-001
+  name: capability-cells
+  description: 'A required cell of the model-capability ladder is Pass or Fail at the current release; NotRun is RED (ONT-4c5)'
+  checks:
+    - domain_is_ladder_greens
+    - cells_measured_at_v_star
+    - not_run_never_admitted
+    - empty_domain_declines
+    - plant_fires_through_armed_shape
+  pass_criteria: All 4 falsification tests pass; `pv lint contracts/ --gate shapes --format json` is Pass on the real corpus with capability-cells in armed_shapes, pc_shapes["capability-cells"] fired, capability_cells.not_run empty and the 14 ids of B in capability_cells.domain
+  falsification: 'label one required 0.69.1 row DEFER → exit 1 naming <rung>@<host>; delete one required row from a 0.69.1 receipt → exit 1 naming it'
