@@ -23,6 +23,9 @@ use publish_license::resolve_license;
 #[path = "publish_provenance.rs"]
 mod publish_provenance;
 use publish_provenance::card_provenance;
+#[path = "publish_loadable.rs"]
+mod publish_loadable;
+use publish_loadable::stage_loadable;
 #[cfg(feature = "hf-hub")]
 use std::sync::Arc;
 
@@ -576,11 +579,7 @@ pub fn execute(
     // LICENSE, special_tokens_map.json, chat_template.jinja) so the publish includes
     // them automatically per SPEC-HF-PUBLISH-001. Manifest mode is unchanged
     // — manifest-driven publishes restrict to the declared artifact only.
-    let companion_files: Vec<std::path::PathBuf> = if manifest.is_some() {
-        Vec::new()
-    } else {
-        find_companion_files(directory)?
-    };
+    let (files, companion_files) = upload_set(directory, files, manifest)?;
 
     // If the user provided a README.md, use that instead of the auto-generated one
     // — empirical: the auto-generated stub is consistently weaker than what model
@@ -701,6 +700,22 @@ pub fn execute(
         println!("\n✓ Published to https://huggingface.co/{}", repo_id);
         Ok(())
     }
+}
+
+/// The artifacts and companion files a publish sends. A manifest publish
+/// sends its one artifact; otherwise the HF companion files come along, and
+/// an `.apr`-only directory is exported so the repo loads (HRP-002).
+pub(crate) fn upload_set(
+    directory: &Path,
+    mut files: Vec<std::path::PathBuf>,
+    manifest: Option<&Path>,
+) -> Result<(Vec<std::path::PathBuf>, Vec<std::path::PathBuf>), CliError> {
+    if manifest.is_some() {
+        return Ok((files, Vec::new()));
+    }
+    let mut companion_files = find_companion_files(directory)?;
+    stage_loadable(directory, &mut files, &mut companion_files)?;
+    Ok((files, companion_files))
 }
 
 /// Pre-flight manifest guard (F-PUBLISH-EXTRA-001::manifest_upload_roundtrip).
