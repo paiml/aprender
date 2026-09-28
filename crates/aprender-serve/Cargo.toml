@@ -34,9 +34,9 @@ unsafe_code = "allow"
 [lints.clippy]
 # Every `unsafe { ... }` block must carry a `// SAFETY:` comment (PMAT-134).
 # Fully cleared at the `full` feature set (server+cli+gpu+cuda+registry) — enforced
-# as a hard error. NOTE: the broken `visualization` feature (pre-existing trueno-viz
-# `WithDimensions` breakage, unrelated to safety docs) is excluded from CI's feature
-# matrix; `--all-features` does not compile here for that reason.
+# as a hard error. The `visualization` feature is not in CI's feature matrix; its
+# `WithDimensions` E0599 (viz.rs never imported the trait) is fixed, so `--all-features`
+# compiles again (checked on gx10, 2026-09-28).
 undocumented_unsafe_blocks = "deny"
 
 [lib]
