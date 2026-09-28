@@ -1,0 +1,7 @@
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+F2 guard: validating on this run (receipt written by apr 0.70.0 exe:c61f63c16803814d, this is 0.69.3) [source=fresh]
+F2 guard: passed in 15464 ms on 65 positions; receipt written to /home/noah/.cache/apr/f2-receipts/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8.json — the next run of this (model, apr, device) skips it.
+[qwen35] batched prefill: 980 tokens in 501 ms (1957 tok/s, chunk 512 rows, attention cuBLAS f32, from position 0)
+[qwen35] batched prefill: 1325 tokens in 671 ms (1976 tok/s, chunk 512 rows, attention cuBLAS f32, from position 0)
+[qwen35] batched prefill: 1456 tokens in 723 ms (2015 tok/s, chunk 512 rows, attention cuBLAS f32, from position 0)
+[qwen35] batched prefill: 1545 tokens in 888 ms (1741 tok/s, chunk 512 rows, attention cuBLAS f32, from position 0)

@@ -1,0 +1,63 @@
+=== APR Serve ===
+
+Model: /home/noah/models/Qwen3.5-4B-Q4_K_M.gguf
+Binding: 127.0.0.1:19978
+
+Model loading: mmap
+
+Press Ctrl+C to stop
+
+Detected format: GGUF
+Starting GGUF inference server...
+Loading GGUF model (mmap)...
+GGUF loaded: 426 tensors, 46 metadata entries
+Model ready: Qwen3.5 hybrid, 32 layers resident on the GPU, declared context 262144 tokens
+chat template: Qwen3NoThink (thinking off)
+gpu-layers: requested=all resolved=32 total=32 (backend=cuda)
+
+Inference server listening on http://127.0.0.1:19978
+
+Endpoints:
+  GET /
+  GET /health
+  GET /health/live
+  GET /health/ready
+  GET /ready
+  GET /models
+  POST /tokenize
+  POST /generate
+  POST /batch/tokenize
+  POST /batch/generate
+  POST /stream/generate
+  POST /realize/generate
+  POST /realize/batch
+  POST /realize/embed
+  GET /realize/model
+  POST /realize/reload
+  GET /metrics
+  GET /metrics/dispatch
+  POST /metrics/dispatch/reset
+  GET /v1/models
+  POST /v1/completions
+  POST /v1/chat/completions
+  POST /v1/chat/completions/stream
+  POST /v1/embeddings
+  POST /v1/predict
+  POST /v1/explain
+  GET /v1/audit/:request_id
+  POST /v1/gpu/warmup
+  GET /v1/gpu/status
+  POST /v1/batch/completions
+  GET /v1/metrics
+  GET /v1/effective-config
+  POST /api/chat
+  POST /api/generate
+  GET /api/tags
+  POST /api/show
+  GET /api/version
+  POST /api/embeddings
+  POST /v1/logprobs
+  POST /v1/perplexity
+
+Performance targets: 100+ tok/s CPU, 500+ tok/s GPU
+Press Ctrl+C to stop

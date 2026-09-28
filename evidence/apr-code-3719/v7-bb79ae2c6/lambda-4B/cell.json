@@ -1,0 +1,36 @@
+{
+ "verb": "code",
+ "host": "lambda",
+ "file": "Qwen3.5-4B-Q4_K_M.gguf",
+ "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+ "apr_version": "apr 0.69.3 (bb79ae2c66)",
+ "hostname": "noah-Lambda-Vector",
+ "started": "2026-09-27T09:58:09Z",
+ "finished": "2026-09-27T09:58:33Z",
+ "rc": 0,
+ "test_rc": 0,
+ "task": "tests/fixtures/apr-code-edit-verify",
+ "backend": "cuda",
+ "fallback": false,
+ "evidence": "Model ready: Qwen3.5 hybrid, 32 layers resident on the GPU, declared context 262144 tokens",
+ "model_layers": 32,
+ "answer_chars": 332,
+ "thinking": "off",
+ "thinking_raw": "off",
+ "prompt_tokens": null,
+ "context": "task",
+ "max_tokens": 1024,
+ "agent_python_calls": [
+  "/mnt/nvme-raid0/aprender-wt/c1-3719/evidence/apr-code-3719/v7-bb79ae2c6/lambda-4B/project\t-m unittest test_stats -v"
+ ],
+ "files_added": [],
+ "files_removed": [],
+ "edit": [
+  "-    return sum(values) / (len(values) - 1)",
+  "+    return sum(values) / len(values)"
+ ],
+ "test_call": "/mnt/nvme-raid0/aprender-wt/c1-3719/evidence/apr-code-3719/v7-bb79ae2c6/lambda-4B/project\t-m unittest test_stats -v",
+ "verdict": "pass",
+ "mechanism": "",
+ "reason": ""
+}

@@ -1,0 +1,2 @@
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0, NVIDIA GeForce RTX 4090) — validated 24780s ago on 16 positions; CPU reference forward skipped [source=receipt, sha256 1185 ms]. `apr run --revalidate` forces a fresh run.

@@ -1,0 +1,33 @@
+=== APR Serve ===
+
+Model: /home/noah/models/Qwen3.5-9B-Q4_K_M.gguf
+Binding: 127.0.0.1:19465
+
+Model loading: mmap
+
+Press Ctrl+C to stop
+
+Detected format: GGUF
+Starting GGUF inference server...
+Loading GGUF model (mmap)...
+GGUF loaded: 427 tensors, 46 metadata entries
+Building quantized inference model...
+Model ready: 0 layers, vocab_size=248320, hidden_dim=4096
+gpu-layers: requested=all resolved=0 total=0 (backend=cuda)
+Enabling optimized CUDA acceleration (PAR-111)...
+  Max sequence length: 4096
+  Initializing GPU on device 0...
+  Pre-uploaded 795 MB weights to GPU
+CUDA optimized model ready
+  CONTINUOUS BATCHING: max_batch=32, window=0ms (PMAT-044)
+
+CUDA-optimized server listening on http://127.0.0.1:19465
+
+Endpoints:
+  GET  /health              - Health check
+  GET  /metrics             - Prometheus metrics
+  POST /generate            - Text generation
+  POST /v1/completions      - OpenAI-compatible
+  POST /v1/chat/completions - Chat completions
+
+Press Ctrl+C to stop
