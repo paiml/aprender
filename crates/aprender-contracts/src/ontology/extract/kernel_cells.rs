@@ -356,6 +356,46 @@ pub fn parse_input_sets(
         .collect()
 }
 
+/// Every parity receipt in one host's directory (`*.json`, top level, in name order), judged against
+/// `input_sets` (from [`parse_input_sets`]), as [`CellHost::kernels`]. A kernel `input_sets` does not list
+/// judges stale. An absent directory yields no evidence, so every kernel cell on the host is RED.
+///
+/// # Errors
+/// A file that cannot be read or is not a parity receipt, or two receipts for one kernel: the gate cannot
+/// tell which one describes the release, so the directory is refused whole.
+pub fn read_host_kernels(
+    dir: &std::path::Path,
+    backend: &str,
+    host_arch: &str,
+    input_sets: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, KernelEvidence>, ExtractError> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Ok(BTreeMap::new());
+    };
+    let mut files: Vec<std::path::PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some("json"))
+        .collect();
+    files.sort();
+    let mut out = BTreeMap::new();
+    for f in &files {
+        let name = f.to_string_lossy();
+        let bytes = std::fs::read(f).map_err(|e| refuse(&name, format!("unreadable: {e}")))?;
+        let want_of = |id: &str| input_sets.get(id).map_or("", String::as_str);
+        // The receipt names its own kernel; judge once to learn it, then against that kernel's key.
+        let (id, _) = judge_parity_receipt(&name, &bytes, backend, host_arch, "")?;
+        let (_, e) = judge_parity_receipt(&name, &bytes, backend, host_arch, want_of(&id))?;
+        if out.insert(id.clone(), e).is_some() {
+            return Err(refuse(
+                &name,
+                format!("a second receipt for `{id}` in this directory"),
+            ));
+        }
+    }
+    Ok(out)
+}
+
 /// The KTEST-05 sanitizer receipt schema (`scripts/ktest/cuda_sanitizer_receipt.sh`, `receipt.json`).
 pub const SANITIZER_SCHEMA: &str = "ktest-05-sanitizer-receipt-v1";
 

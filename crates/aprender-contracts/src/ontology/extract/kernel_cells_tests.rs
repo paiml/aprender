@@ -871,3 +871,41 @@ fn the_sanitizer_judge_case_table() {
     assert_eq!(utc_seconds("1970-01-01T00:00:00Z"), Some(0));
     assert_eq!(utc_seconds("2000-03-01T00:00:00Z"), Some(951_868_800));
 }
+
+/// `read_host_kernels`: each receipt judged against its own kernel's input set; unlisted → stale; a second
+/// receipt for one kernel, or a non-receipt, refuses the directory; an absent directory is empty.
+#[test]
+fn read_host_kernels_judges_each_receipt_against_its_own_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let q2k = Q2K.replace(
+        r#""tolerance_rel""#,
+        r#""input_set_hash":"h2","tolerance_rel""#,
+    );
+    let q3k = q2k
+        .replace("cpu.matvec.q2_k", "cpu.matvec.q3_k")
+        .replace("h2", "h3");
+    std::fs::write(dir.path().join("a.json"), &q2k).expect("write");
+    std::fs::write(dir.path().join("b.json"), &q3k).expect("write");
+    std::fs::write(dir.path().join("notes.txt"), "not read").expect("write");
+    let sets: BTreeMap<String, String> = [("cpu.matvec.q2_k".to_string(), "h2".to_string())]
+        .into_iter()
+        .collect();
+    let got = read_host_kernels(dir.path(), "cpu", "x86_64", &sets).expect("a receipt dir");
+    assert_eq!(got.len(), 2);
+    assert!(got["cpu.matvec.q2_k"].fresh, "listed with the same key");
+    assert!(
+        !got["cpu.matvec.q3_k"].fresh,
+        "unlisted in the input sets: stale"
+    );
+    assert!(got["cpu.matvec.q2_k"].pass && got["cpu.matvec.q2_k"].arch_match);
+    // Same kernel twice.
+    std::fs::write(dir.path().join("c.json"), &q2k).expect("write");
+    assert!(read_host_kernels(dir.path(), "cpu", "x86_64", &sets).is_err());
+    std::fs::remove_file(dir.path().join("c.json")).expect("rm");
+    // A json file that is not a parity receipt.
+    std::fs::write(dir.path().join("d.json"), "{}").expect("write");
+    assert!(read_host_kernels(dir.path(), "cpu", "x86_64", &sets).is_err());
+    let none =
+        read_host_kernels(&dir.path().join("absent"), "cpu", "x86_64", &sets).expect("absent");
+    assert!(none.is_empty());
+}
