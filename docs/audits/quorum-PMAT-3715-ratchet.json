@@ -1,0 +1,578 @@
+{
+  "ticket": "PMAT-3715",
+  "base": "origin/ont/0.70-c2",
+  "base_resolved": "origin/ont/0.70-c2",
+  "base_note": "no origin/origin/ont/0.70-c2 exists; judged against the local ref",
+  "head": "e50e8ae1346c1328fd79450f4493f22fa77e619f",
+  "diff_sha256": "8481534692fbf939db3ac9d19f2f8f3db0b33c66de75220bd2984d06790ba9ae",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 20856,
+  "prompt_sha256": "4e198f6450686644bc6c2b44d9f01eb4374b12e640c429ea9de10bd4b34dac27",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The proposed ratchet mechanism tolerates missing cells if they were already missing in BASE, which directly violates the ticket's explicit requirement that a missing cell is a violation and never a skip.",
+      "findings": [
+        {
+          "claim": "The proposed mechanism 'Pass iff keys(HEAD) ⊆ keys(BASE)' allows missing cells to pass as long as they were also missing in BASE. This directly violates the ticket title: 'a missing cell is a violation, never a skip' and the requirement that every required cell must have a Pass receipt.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "fix": "Reject the ratchet proposal and implement the 'fix it for real' alternative, which enforces that every required cell has a Pass receipt.",
+          "grounding": "cited",
+          "line": 37
+        }
+      ],
+      "raw_bytes": 2798,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "4e198f6450686644bc6c2b44d9f01eb4374b12e640c429ea9de10bd4b34dac27",
+      "trace": {
+        "input_sha256": "5c23662e67f646f7c2db4f95fc3cbec9ad5f53e99cb175231b04fc2799777c8e",
+        "output_sha256": "97bedda749ac161c573788416b34b0a6c69cbd9ef1fe11746049e289d98860c8",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff contains a single markdown file (`docs/audits/PMAT-3715-ratchet-proposal.md`) proposing a head-vs-base ratchet that tolerates 1101 existing violations. This contradicts PMAT-3715's own requirements on three independent grounds, all of which the proposal's own author acknowledges in his disclosure (lines 99–101).\n\n**1. The ticket title says \"REFUSED unless every … cell has a Pass receipt — a missing cell is a violation, never a skip.\"** A ratchet that tolerates 1101 missing/failing cells as long as they existed in BASE does not REFUSE the tag — it passes the tag with 1101 violations. Missing cells are effectively skipped (tolerated), directly contradicting \"never a skip.\"\n\n**2. done_when item 4 requires \"a violation STOPs before the tag.\"** The ratchet's verdict is Pass whenever `keys(HEAD) ⊆ keys(BASE)` (proposal line 45). Since BASE currently has 1101 violation keys, any HEAD with ≤1101 of the same violations passes. Those violations do not STOP the tag. The proposal itself (line 55) defers real enforcement to \"when `keys(HEAD) = ∅`\" — which is an indefinite future date, not this diff.\n\n**3. done_when item 5 requires \"On 0.69.1 it passes with N/N cells named.\"** The proposal's own measured data (lines 16–25) shows 1101 violations on the current receipts. A ratchet that grades this as \"Pass because it equals BASE\" rewrites what \"passes\" means, but the ticket requires genuine Pass with zero violations.\n\nAdditionally, the receipt (§§1–4) describes extensive code implementation — evidence graph nodes, SHACL shapes, falsifier fixtures, kernel differential, tokenizer parity, memory rules, positive controls, complexity refactor — none of which appear in this diff. The diff is one 101-line markdown file. The receipt claims are not backed by the diff.\n\nThe proposal document (line 9) tries to redefine the lane semantics (\"PASS means the ratchet meets the wording, so land it\"), but the lane's mandate is to judge whether the diff does what the ticket says. It does not. The proposal is, by its own admission (line 100), insufficient against items 4 and 5. Section 4 (\"fix it for real\") is the path.",
+      "findings": [
+        {
+          "claim": "The ratchet verdict 'Pass iff keys(HEAD) ⊆ keys(BASE)' tolerates all 1101 existing violations. The ticket title requires 'REFUSED unless every cell has a Pass receipt — a missing cell is a violation, never a skip'. Tolerating 1101 missing cells is the definition of skipping them.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "fix": "Section 4's alternative: wire the cell producer, produce receipts, enforce all violations STOP.",
+          "grounding": "cited",
+          "line": 45
+        },
+        {
+          "claim": "done_when item 4 is quoted verbatim as 'a violation STOPs before the tag and refus[es]'. The ratchet passes the tag when HEAD violations ≤ BASE violations (line 45). The existing 1101 violations do not STOP the tag.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 74
+        },
+        {
+          "claim": "done_when item 5 is quoted verbatim as 'On 0.69.1 it passes with N/N cells named.' The measured state is 1101 violations (lines 16–25). A ratchet grades this as Pass-because-it-equals-BASE, redefining 'passes' rather than achieving it.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 75
+        },
+        {
+          "claim": "The proposal's own question 3 asks whether the ratchet is 'an un-armed shape under another name'. It is: it tolerates the full violation set just as an unarmed shape would. The spec already has `armed_shapes[]` for this (lines 69–71); the ratchet duplicates that mechanism under a different name.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 93
+        },
+        {
+          "claim": "The author's own disclosure says 'I read items 4 and 5 as requiring a STOP on any violation and N/N on 0.69.1. A ratchet meets neither.' The lane concurs with the author's reading.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 99
+        },
+        {
+          "claim": "The receipt (§§1–4) claims extensive code: evidence graph, SHACL shapes, falsifier fixtures, kernel differential, tokenizer parity, memory rules, positive controls, and a complexity refactor. The diff is a single 101-line markdown proposal document with zero code changes. Receipt claims are not backed by the diff.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "measured",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 10719,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-opus-4-6-thinking",
+      "model_measured": "claude-opus-4-6-thinking",
+      "model_source": "measured",
+      "family": "claude",
+      "executor": "agy",
+      "brief_sha256": "4e198f6450686644bc6c2b44d9f01eb4374b12e640c429ea9de10bd4b34dac27",
+      "trace": {
+        "input_sha256": "dff4916a0eb9a1a6b9f6fa8ac1e627aa9bbd3d3cca9e87a32fd9c98b952d8fc1",
+        "output_sha256": "83bc6eef1e128ece1f3ce32b634556cdfef1759f58c71d7703ad826630eba3fc",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-4-6-thinking",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "This diff is a proposal document asking for quorum judgment on an alternate enforcement strategy, not an implementation of PMAT-3715. It does not wire the shape into autopilot or check_publish_preflight.sh (done_when 4), does not provide proof on 0.69.1 (done_when 5), and proposes a head-vs-base ratchet that tolerates 1101 existing violations — contradicting the ticket's core requirement (\"REFUSED unless every cell has a Pass receipt, never a skip\"). The author's own disclosure states the proposal \"meets neither\" item 4 nor 5.",
+      "findings": [
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 13,
+          "claim": "Diff is a proposal document with no code changes to autopilot.sh or check_publish_preflight.sh, but receipt claims it 'provides the exact invocation and exit contract they call'",
+          "grounding": "cited"
+        },
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 28,
+          "claim": "Proposal tolerates 1101 existing violations (section 1 table), contradicting ticket title 'REFUSED unless every cell has a Pass receipt' and done_when 4 'a violation STOPs before the tag'",
+          "grounding": "cited"
+        },
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 84,
+          "claim": "Done_when 5 (proof on 0.69.1 passes with N/N cells named) is explicitly out of scope; receipt acknowledges 'It needs the producer (#3712 cells[], memory arithmetic, and kernel receipts)'",
+          "grounding": "cited"
+        },
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 101,
+          "claim": "Author discloses at line 101 'A ratchet meets neither' done_when items 4 nor 5, contradicting receipt's implementation claim",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4157,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "4e198f6450686644bc6c2b44d9f01eb4374b12e640c429ea9de10bd4b34dac27",
+      "trace": {
+        "input_sha256": "4829bdca7ea1ca48bf75ee9d85adc2fc2ae68cbee47f1cc8d6679ee4a38f887d",
+        "output_sha256": "407a5d8bfba9681c9ca08671dc9c509d6d225374fbdbc49f8d1349f57a8ba455",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The proposed ratchet mechanism tolerates missing cells if they were already missing in BASE, which directly violates the ticket's explicit requirement that a missing cell is a violation and never a skip.",
+      "findings": [
+        {
+          "claim": "The proposed mechanism 'Pass iff keys(HEAD) ⊆ keys(BASE)' allows missing cells to pass as long as they were also missing in BASE. This directly violates the ticket title: 'a missing cell is a violation, never a skip' and the requirement that every required cell must have a Pass receipt.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "fix": "Reject the ratchet proposal and implement the 'fix it for real' alternative, which enforces that every required cell has a Pass receipt.",
+          "grounding": "cited",
+          "line": 37
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "The diff contains a single markdown file (`docs/audits/PMAT-3715-ratchet-proposal.md`) proposing a head-vs-base ratchet that tolerates 1101 existing violations. This contradicts PMAT-3715's own requirements on three independent grounds, all of which the proposal's own author acknowledges in his disclosure (lines 99–101).\n\n**1. The ticket title says \"REFUSED unless every … cell has a Pass receipt — a missing cell is a violation, never a skip.\"** A ratchet that tolerates 1101 missing/failing cells as long as they existed in BASE does not REFUSE the tag — it passes the tag with 1101 violations. Missing cells are effectively skipped (tolerated), directly contradicting \"never a skip.\"\n\n**2. done_when item 4 requires \"a violation STOPs before the tag.\"** The ratchet's verdict is Pass whenever `keys(HEAD) ⊆ keys(BASE)` (proposal line 45). Since BASE currently has 1101 violation keys, any HEAD with ≤1101 of the same violations passes. Those violations do not STOP the tag. The proposal itself (line 55) defers real enforcement to \"when `keys(HEAD) = ∅`\" — which is an indefinite future date, not this diff.\n\n**3. done_when item 5 requires \"On 0.69.1 it passes with N/N cells named.\"** The proposal's own measured data (lines 16–25) shows 1101 violations on the current receipts. A ratchet that grades this as \"Pass because it equals BASE\" rewrites what \"passes\" means, but the ticket requires genuine Pass with zero violations.\n\nAdditionally, the receipt (§§1–4) describes extensive code implementation — evidence graph nodes, SHACL shapes, falsifier fixtures, kernel differential, tokenizer parity, memory rules, positive controls, complexity refactor — none of which appear in this diff. The diff is one 101-line markdown file. The receipt claims are not backed by the diff.\n\nThe proposal document (line 9) tries to redefine the lane semantics (\"PASS means the ratchet meets the wording, so land it\"), but the lane's mandate is to judge whether the diff does what the ticket says. It does not. The proposal is, by its own admission (line 100), insufficient against items 4 and 5. Section 4 (\"fix it for real\") is the path.",
+      "findings": [
+        {
+          "claim": "The ratchet verdict 'Pass iff keys(HEAD) ⊆ keys(BASE)' tolerates all 1101 existing violations. The ticket title requires 'REFUSED unless every cell has a Pass receipt — a missing cell is a violation, never a skip'. Tolerating 1101 missing cells is the definition of skipping them.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "fix": "Section 4's alternative: wire the cell producer, produce receipts, enforce all violations STOP.",
+          "grounding": "cited",
+          "line": 45
+        },
+        {
+          "claim": "done_when item 4 is quoted verbatim as 'a violation STOPs before the tag and refus[es]'. The ratchet passes the tag when HEAD violations ≤ BASE violations (line 45). The existing 1101 violations do not STOP the tag.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 74
+        },
+        {
+          "claim": "done_when item 5 is quoted verbatim as 'On 0.69.1 it passes with N/N cells named.' The measured state is 1101 violations (lines 16–25). A ratchet grades this as Pass-because-it-equals-BASE, redefining 'passes' rather than achieving it.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 75
+        },
+        {
+          "claim": "The proposal's own question 3 asks whether the ratchet is 'an un-armed shape under another name'. It is: it tolerates the full violation set just as an unarmed shape would. The spec already has `armed_shapes[]` for this (lines 69–71); the ratchet duplicates that mechanism under a different name.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 93
+        },
+        {
+          "claim": "The author's own disclosure says 'I read items 4 and 5 as requiring a STOP on any violation and N/N on 0.69.1. A ratchet meets neither.' The lane concurs with the author's reading.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "cited",
+          "line": 99
+        },
+        {
+          "claim": "The receipt (§§1–4) claims extensive code: evidence graph, SHACL shapes, falsifier fixtures, kernel differential, tokenizer parity, memory rules, positive controls, and a complexity refactor. The diff is a single 101-line markdown proposal document with zero code changes. Receipt claims are not backed by the diff.",
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "grounding": "measured",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "lane": 3,
+      "verdict": "FAIL",
+      "summary": "This diff is a proposal document asking for quorum judgment on an alternate enforcement strategy, not an implementation of PMAT-3715. It does not wire the shape into autopilot or check_publish_preflight.sh (done_when 4), does not provide proof on 0.69.1 (done_when 5), and proposes a head-vs-base ratchet that tolerates 1101 existing violations — contradicting the ticket's core requirement (\"REFUSED unless every cell has a Pass receipt, never a skip\"). The author's own disclosure states the proposal \"meets neither\" item 4 nor 5.",
+      "findings": [
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 13,
+          "claim": "Diff is a proposal document with no code changes to autopilot.sh or check_publish_preflight.sh, but receipt claims it 'provides the exact invocation and exit contract they call'",
+          "grounding": "cited"
+        },
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 28,
+          "claim": "Proposal tolerates 1101 existing violations (section 1 table), contradicting ticket title 'REFUSED unless every cell has a Pass receipt' and done_when 4 'a violation STOPs before the tag'",
+          "grounding": "cited"
+        },
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 84,
+          "claim": "Done_when 5 (proof on 0.69.1 passes with N/N cells named) is explicitly out of scope; receipt acknowledges 'It needs the producer (#3712 cells[], memory arithmetic, and kernel receipts)'",
+          "grounding": "cited"
+        },
+        {
+          "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+          "line": 101,
+          "claim": "Author discloses at line 101 'A ratchet meets neither' done_when items 4 nor 5, contradicting receipt's implementation claim",
+          "grounding": "cited"
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The receipt (§§1–4) claims extensive code: evidence graph, SHACL shapes, falsifier fixtures, kernel differential, tokenizer parity, memory rules, positive controls, and a complexity refactor. The diff is a single 101-line markdown proposal document with zero code changes. Receipt claims are not backed by the diff."
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 13,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Diff is a proposal document with no code changes to autopilot.sh or check_publish_preflight.sh, but receipt claims it 'provides the exact invocation and exit contract they call'"
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 28,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Proposal tolerates 1101 existing violations (section 1 table), contradicting ticket title 'REFUSED unless every cell has a Pass receipt' and done_when 4 'a violation STOPs before the tag'"
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 37,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The proposed mechanism 'Pass iff keys(HEAD) ⊆ keys(BASE)' allows missing cells to pass as long as they were also missing in BASE. This directly violates the ticket title: 'a missing cell is a violation, never a skip' and the requirement that every required cell must have a Pass receipt."
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 45,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The ratchet verdict 'Pass iff keys(HEAD) ⊆ keys(BASE)' tolerates all 1101 existing violations. The ticket title requires 'REFUSED unless every cell has a Pass receipt — a missing cell is a violation, never a skip'. Tolerating 1101 missing cells is the definition of skipping them."
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 74,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "done_when item 4 is quoted verbatim as 'a violation STOPs before the tag and refus[es]'. The ratchet passes the tag when HEAD violations ≤ BASE violations (line 45). The existing 1101 violations do not STOP the tag."
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 75,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "done_when item 5 is quoted verbatim as 'On 0.69.1 it passes with N/N cells named.' The measured state is 1101 violations (lines 16–25). A ratchet grades this as Pass-because-it-equals-BASE, redefining 'passes' rather than achieving it."
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 84,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Done_when 5 (proof on 0.69.1 passes with N/N cells named) is explicitly out of scope; receipt acknowledges 'It needs the producer (#3712 cells[], memory arithmetic, and kernel receipts)'"
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 93,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The proposal's own question 3 asks whether the ratchet is 'an un-armed shape under another name'. It is: it tolerates the full violation set just as an unarmed shape would. The spec already has `armed_shapes[]` for this (lines 69–71); the ratchet duplicates that mechanism under a different name."
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 99,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The author's own disclosure says 'I read items 4 and 5 as requiring a STOP on any violation and N/N on 0.69.1. A ratchet meets neither.' The lane concurs with the author's reading."
+      ]
+    },
+    {
+      "file": "docs/audits/PMAT-3715-ratchet-proposal.md",
+      "line": 101,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Author discloses at line 101 'A ratchet meets neither' done_when items 4 nor 5, contradicting receipt's implementation claim"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": null,
+          "window_calls": 0,
+          "window_429": 0,
+          "hour_calls": 0,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790573368,
+          "window_calls": 4,
+          "window_429": 0,
+          "hour_calls": 4,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 20856
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "FAIL",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "FAIL",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "1463624, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 9,
+    "collected_s": 499,
+    "budget_s": 158,
+    "budget_basis": "ledger: 2 x p95 79 s over 48 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 20856,
+      "sent_bytes": 21025,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "b87437d91061e2862dc39e905dfe4a392302983bcc0dfe526210d5508214a3a7",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 9,
+        "used_gpu": true,
+        "ts": "2026-09-28T05:52:35.426Z",
+        "wall_ms": 9205,
+        "request_id": "01a0e692-7e5f-768e-8084-e520826cf4f8",
+        "load1": 2.57,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "NOT-AGREED"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
