@@ -822,10 +822,12 @@ fn dry_run_plan_fixture(slug: &str, manifest: Option<&Path>) -> DryRunPlan {
     let _ = fs::create_dir_all(&dir);
     let artifact = dir.join("model.safetensors");
     let _ = fs::write(&artifact, b"not-a-real-model");
+    let files = [artifact];
+    let targets = upload_targets(&files, &[], &[], manifest).expect("targets");
     build_dry_run_plan(
         "paiml/test-model",
-        std::slice::from_ref(&artifact),
-        &[],
+        &targets,
+        None,
         manifest,
         "---\nlicense: mit\n---\n\n# test-model\n",
     )
@@ -946,4 +948,108 @@ fn execute_accepts_valid_spdx_identifiers() {
             );
         }
     }
+}
+
+// =========================================================================
+// hf-rc-publish-v1 FALSIFY-HRP-001 / 005
+// =========================================================================
+
+/// An HF source dir as S-R13 measured it: weights plus the companions the
+/// upload sends, plus a user README (sent as the card, not as a companion).
+fn hrp_source_dir(slug: &str, weights: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("apr_hrp_{slug}_{}", std::process::id()));
+    let _ = fs::create_dir_all(&dir);
+    for f in [
+        weights,
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "README.md",
+    ] {
+        let _ = fs::write(dir.join(f), b"{}");
+    }
+    dir
+}
+
+#[test]
+fn falsify_hrp_001_dry_run_plan_lists_every_uploaded_file() {
+    let dir = hrp_source_dir("plan", "model.safetensors");
+    let files = find_model_files(&dir).expect("model files");
+    let companions = find_companion_files(&dir).expect("companions");
+    let targets = upload_targets(&files, &companions, &[], None).expect("targets");
+    let plan = build_dry_run_plan("paiml/hrp", &targets, None, None, "card");
+    let parsed: serde_json::Value = serde_json::from_str(&plan.stdout(true)).expect("json");
+
+    let planned: Vec<String> = parsed["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .map(|f| {
+            let p = f["path"].as_str().expect("path");
+            Path::new(p)
+                .file_name()
+                .expect("name")
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect();
+    for want in [
+        "model.safetensors",
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+    ] {
+        assert!(
+            planned.iter().any(|p| p == want),
+            "plan omits uploaded {want}: {planned:?}"
+        );
+    }
+    // The upload sends README.md from the card, never as a companion file.
+    assert!(!planned.iter().any(|p| p == "README.md"), "{planned:?}");
+    // Plan rows ARE the upload set, one for one.
+    assert_eq!(planned.len(), targets.len());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn falsify_hrp_001_plan_shows_the_safetensors_alias() {
+    let dir = hrp_source_dir("alias", "qwen-export.safetensors");
+    let files = find_model_files(&dir).expect("model files");
+    let targets = upload_targets(&files, &[], &[], None).expect("targets");
+    let alias = safetensors_needing_alias(&files);
+    let plan = build_dry_run_plan("paiml/hrp", &targets, alias.as_deref(), None, "card");
+    assert!(
+        plan.files
+            .iter()
+            .any(|f| f.kind == "alias" && f.path.starts_with("model.safetensors")),
+        "the model.safetensors alias commit is part of the upload: {:?}",
+        plan.files
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn falsify_hrp_005_safetensors_only_card_does_not_load_model_apr() {
+    let card = ModelCard::new("paiml/hrp", "1.0.0");
+    let names = vec!["model.safetensors".to_string()];
+    let output = card.to_huggingface_extended("text-generation", None, &[], &names);
+    let usage = output.split("## Usage").nth(1).expect("usage section");
+    assert!(
+        !usage.contains("model.apr"),
+        "safetensors-only card names model.apr:\n{usage}"
+    );
+    assert!(usage.contains("from_pretrained(\"paiml/hrp\")"), "{usage}");
+}
+
+#[test]
+fn falsify_hrp_005_apr_card_loads_the_published_name() {
+    let card = ModelCard::new("paiml/hrp", "1.0.0");
+    let names = vec!["qwen35-0.8b.apr".to_string()];
+    let output = card.to_huggingface_extended("text-generation", None, &[], &names);
+    let usage = output.split("## Usage").nth(1).expect("usage section");
+    assert!(
+        usage.contains("Model::load(\"qwen35-0.8b.apr\")"),
+        "{usage}"
+    );
+    assert!(!usage.contains("from_pretrained"), "{usage}");
 }

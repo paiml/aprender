@@ -79,7 +79,7 @@ fn format_upload_route(_size_bytes: u64) -> &'static str {
 pub(crate) struct PlannedFile {
     pub(crate) path: String,
     pub(crate) size_bytes: u64,
-    /// `artifact`, `extra-file`, or `manifest`.
+    /// `artifact`, `companion`, `extra-file`, `manifest`, or `alias`.
     pub(crate) kind: &'static str,
     pub(crate) route: &'static str,
 }
@@ -178,31 +178,96 @@ impl DryRunPlan {
     }
 }
 
+/// One file `apr publish` sends: local source, name in the repo, plan kind.
+pub(crate) struct UploadTarget<'a> {
+    pub(crate) src: &'a Path,
+    pub(crate) path_in_repo: String,
+    pub(crate) kind: &'static str,
+}
+
+/// The files `apr publish` uploads, in upload order. The dry-run plan and the
+/// real upload both iterate THIS list, so the plan a reviewer approves is the
+/// upload (hf-rc-publish-v1 FALSIFY-HRP-001: the plan used to list the
+/// artifacts only while the upload also sent every companion file).
+///
+/// README.md is not here: it is sent from the generated or user card, which the
+/// plan carries in its `readme` field. The `model.safetensors` LFS alias is not
+/// here either: it is a pointer commit, not a file read from disk; the plan adds
+/// it as an `alias` row via [`safetensors_needing_alias`].
+pub(crate) fn upload_targets<'a>(
+    files: &'a [std::path::PathBuf],
+    companion_files: &'a [std::path::PathBuf],
+    extra_files: &'a [std::path::PathBuf],
+    manifest: Option<&'a Path>,
+) -> Result<Vec<UploadTarget<'a>>, CliError> {
+    let name = |p: &Path, what: &str| -> Result<String, CliError> {
+        p.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .ok_or_else(|| CliError::ValidationFailed(format!("Invalid {what} path")))
+    };
+    let mut targets = Vec::new();
+    for f in files {
+        let path_in_repo = name(f, "file")?;
+        targets.push(UploadTarget {
+            src: f,
+            path_in_repo,
+            kind: "artifact",
+        });
+    }
+    for cf in companion_files {
+        let path_in_repo = name(cf, "companion-file")?;
+        if path_in_repo != "README.md" {
+            targets.push(UploadTarget {
+                src: cf,
+                path_in_repo,
+                kind: "companion",
+            });
+        }
+    }
+    for ef in extra_files {
+        let path_in_repo = name(ef, "extra-file")?;
+        targets.push(UploadTarget {
+            src: ef,
+            path_in_repo,
+            kind: "extra-file",
+        });
+    }
+    if let Some(m) = manifest {
+        targets.push(UploadTarget {
+            src: m,
+            path_in_repo: "manifest.yaml".to_string(),
+            kind: "manifest",
+        });
+    }
+    Ok(targets)
+}
+
 pub(crate) fn build_dry_run_plan(
     repo_id: &str,
-    files: &[std::path::PathBuf],
-    extra_files: &[std::path::PathBuf],
+    targets: &[UploadTarget<'_>],
+    alias_source: Option<&Path>,
     manifest: Option<&Path>,
     readme_content: &str,
 ) -> DryRunPlan {
-    let mut planned = Vec::new();
-    let mut push = |path: &Path, kind: &'static str| {
-        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let mut planned: Vec<PlannedFile> = targets
+        .iter()
+        .map(|t| {
+            let size = fs::metadata(t.src).map(|m| m.len()).unwrap_or(0);
+            PlannedFile {
+                path: t.src.display().to_string(),
+                size_bytes: size,
+                kind: t.kind,
+                route: format_upload_route(size),
+            }
+        })
+        .collect();
+    if let Some(src) = alias_source {
         planned.push(PlannedFile {
-            path: path.display().to_string(),
-            size_bytes: size,
-            kind,
-            route: format_upload_route(size),
+            path: format!("model.safetensors -> {}", src.display()),
+            size_bytes: 0,
+            kind: "alias",
+            route: "(LFS pointer commit, no upload)",
         });
-    };
-    for f in files {
-        push(f, "artifact");
-    }
-    for ef in extra_files {
-        push(ef, "extra-file");
-    }
-    if let Some(m) = manifest {
-        push(m, "manifest");
     }
     DryRunPlan {
         repo_id: repo_id.to_string(),
@@ -264,43 +329,14 @@ fn upload_to_hub_extended(
         Ok(())
     };
 
-    for file in files {
-        let filename = file
-            .file_name()
-            .ok_or_else(|| CliError::ValidationFailed("Invalid file path".into()))?
-            .to_string_lossy()
-            .to_string();
-        upload_one(file, &filename)?;
+    // Artifacts, companion files (PMAT-690 defect 6: config.json, tokenizer.json,
+    // LICENSE, …; README.md excluded, it is sent from `readme_content` below),
+    // extra files and the manifest: the same list the dry-run plan prints.
+    for target in upload_targets(files, companion_files, extra_files, manifest)? {
+        upload_one(target.src, &target.path_in_repo)?;
     }
 
-    // PMAT-690 defect 6 (2026-05-18): upload companion files (config.json,
-    // tokenizer.json, LICENSE, etc.). Skip README.md — it's uploaded
-    // separately below from `readme_content` which the caller may have
-    // already populated with user-authored content.
-    for cf in companion_files {
-        let filename = cf
-            .file_name()
-            .ok_or_else(|| CliError::ValidationFailed("Invalid companion-file path".into()))?
-            .to_string_lossy()
-            .to_string();
-        if filename == "README.md" {
-            continue;
-        }
-        upload_one(cf, &filename)?;
-    }
-
-    for ef in extra_files {
-        let filename = ef
-            .file_name()
-            .ok_or_else(|| CliError::ValidationFailed("Invalid extra-file path".into()))?
-            .to_string_lossy()
-            .to_string();
-        upload_one(ef, &filename)?;
-    }
-
-    if let Some(manifest_path) = manifest {
-        upload_one(manifest_path, "manifest.yaml")?;
-    } else {
+    if manifest.is_none() {
         if verbose {
             println!("Uploading README.md...");
         }
@@ -526,7 +562,15 @@ pub fn execute(
     };
 
     if dry_run {
-        let plan = build_dry_run_plan(repo_id, &files, extra_files, manifest, &readme_content);
+        let targets = upload_targets(&files, &companion_files, extra_files, manifest)?;
+        let alias = safetensors_needing_alias(&files);
+        let plan = build_dry_run_plan(
+            repo_id,
+            &targets,
+            alias.as_deref(),
+            manifest,
+            &readme_content,
+        );
         println!("{}", plan.stdout(json));
         return Ok(());
     }
@@ -814,6 +858,42 @@ fn emit_safetensors_alias(
     )
 }
 
+/// The card's usage section, for the formats actually published
+/// (hf-rc-publish-v1 FALSIFY-HRP-005: a safetensors-only repo used to tell
+/// users to `Model::load("model.apr")`, a file it does not contain).
+fn usage_snippet(repo_id: &str, file_names: &[String]) -> String {
+    // Same fallback as the formats table above: no file list means model.apr.
+    let fallback = ["model.apr".to_string()];
+    let file_names = if file_names.is_empty() {
+        &fallback[..]
+    } else {
+        file_names
+    };
+    let with_ext = |ext: &str| {
+        file_names
+            .iter()
+            .find(|n| Path::new(n).extension().and_then(|e| e.to_str()) == Some(ext))
+    };
+    let mut out = String::new();
+    if let Some(apr) = with_ext("apr") {
+        out.push_str(&format!(
+            "```rust\nuse aprender::Model;\n\nlet model = Model::load(\"{apr}\")?;\nlet result = model.run(&input)?;\n```\n\n"
+        ));
+    }
+    if with_ext("safetensors").is_some() {
+        out.push_str(&format!(
+            "```python\nfrom transformers import AutoModelForCausalLM\n\nmodel = AutoModelForCausalLM.from_pretrained(\"{repo_id}\")\n```\n\n"
+        ));
+    }
+    if let Some(gguf) = with_ext("gguf") {
+        out.push_str(&format!("```sh\nllama-cli -m {gguf} -p \"Hello\"\n```\n\n"));
+    }
+    if out.is_empty() {
+        out.push_str("Download the files listed under Available Formats.\n\n");
+    }
+    out
+}
+
 /// Generate model card from parameters
 fn generate_model_card(
     repo_id: &str,
@@ -976,12 +1056,7 @@ impl ModelCardExt for ModelCard {
 
         // Usage section
         output.push_str("## Usage\n\n");
-        output.push_str("```rust\n");
-        output.push_str("use aprender::Model;\n");
-        output.push('\n');
-        output.push_str("let model = Model::load(\"model.apr\")?;\n");
-        output.push_str("let result = model.run(&input)?;\n");
-        output.push_str("```\n\n");
+        output.push_str(&usage_snippet(&self.model_id, file_names));
 
         // Framework
         output.push_str("## Framework\n\n");
