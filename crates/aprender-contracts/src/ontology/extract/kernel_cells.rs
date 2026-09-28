@@ -244,6 +244,104 @@ pub fn emit_smoke(g: &mut Graph, host: &str, model_sha256: &str, evidence: Optio
     g.insert(smoke, rel("fresh"), Term::boolean(e.fresh));
 }
 
+/// The parity receipt schema this module judges (KREG-001 AC-3).
+pub const PARITY_SCHEMA: &str = "kernel-parity-receipt/v1";
+
+/// Judge one `kernel-parity-receipt/v1` for a host whose arch for this backend is `host_arch` (`x86_64` /
+/// `aarch64` on cpu, `sm_89` on cuda). Returns the receipt's `kernel_id` and its evidence.
+///
+/// Every field that is absent judges to the failing value, never the passing one:
+/// - `pass`: `oracle_independent` is true (a self-oracle proves nothing) and `served.max_rel_err` is finite;
+/// - `within_bound`: `served.max_rel_err ≤ tolerance_rel`;
+/// - `arch_match`: the receipt's `sm` (cuda) or `host_arch` (otherwise) equals `host_arch`;
+/// - `fresh`: the receipt's `input_key` equals `input_key` (design §5). Today's receipts carry none, so
+///   they judge stale: a receipt with no key cannot be proven to describe this tree.
+///
+/// # Errors
+/// Not JSON, another schema, or no `kernel_id`: the file is not a parity receipt and is refused.
+pub fn judge_parity_receipt(
+    file: &str,
+    bytes: &[u8],
+    backend: &str,
+    host_arch: &str,
+    input_key: &str,
+) -> Result<(String, KernelEvidence), ExtractError> {
+    let doc: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| refuse(file, format!("not JSON: {e}")))?;
+    let schema = doc.get("schema").and_then(serde_json::Value::as_str);
+    if schema != Some(PARITY_SCHEMA) {
+        return Err(refuse(
+            file,
+            format!("schema {schema:?}, expected `{PARITY_SCHEMA}`"),
+        ));
+    }
+    let kernel_id = doc
+        .get("kernel_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| refuse(file, "`kernel_id` missing or not a non-empty string"))?
+        .to_string();
+    let rel_err = doc
+        .get("served")
+        .and_then(|s| s.get("max_rel_err"))
+        .and_then(serde_json::Value::as_f64)
+        .filter(|e| e.is_finite());
+    let tolerance = doc
+        .get("tolerance_rel")
+        .and_then(serde_json::Value::as_f64)
+        .filter(|t| t.is_finite() && *t > 0.0);
+    let independent = doc.get("oracle_independent") == Some(&serde_json::Value::Bool(true));
+    let arch_key = if backend == "cuda" { "sm" } else { "host_arch" };
+    let measured_on = doc.get(arch_key).and_then(serde_json::Value::as_str);
+    let key = doc.get("input_key").and_then(serde_json::Value::as_str);
+    Ok((
+        kernel_id,
+        KernelEvidence {
+            pass: independent && rel_err.is_some(),
+            within_bound: matches!((rel_err, tolerance), (Some(e), Some(t)) if e <= t),
+            fresh: !input_key.is_empty() && key == Some(input_key),
+            arch_match: measured_on == Some(host_arch),
+        },
+    ))
+}
+
+/// One required host of the v2 gate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CellHost {
+    pub id: String,
+    /// The registry backend this host serves (`cpu`, `cuda`, `wgpu`).
+    pub backend: String,
+    /// The arch the registry rows and receipts are matched on (see [`judge_parity_receipt`]).
+    pub arch: String,
+    /// Model sha256 → its per-tensor ggml types, or `None` when no receipt recorded them. A `None` model
+    /// gets a ModelCell with no `usesKernel` edge, which `minCount 1` rejects: unknown is RED, never skipped.
+    pub models: BTreeMap<String, Option<BTreeSet<u32>>>,
+    /// Kernel id → the judged receipt measured for this host.
+    pub kernels: BTreeMap<String, KernelEvidence>,
+    /// Model sha256 → its judged smoke.
+    pub smokes: BTreeMap<String, SmokeEvidence>,
+}
+
+/// Every v2 cell for every host: each model cell with its static map and smoke, and one kernel cell per
+/// kernel any model on that host uses, carrying its receipt if there is one. Pure: the graph is the only
+/// output, and it holds edges and judged receipt fields, never a model verdict.
+pub fn build_cells(g: &mut Graph, rows: &[RegistryRow], hosts: &[CellHost]) {
+    for h in hosts {
+        let mut used = BTreeSet::new();
+        for (sha, types) in &h.models {
+            let map = types.as_ref().map_or_else(KernelMap::default, |ts| {
+                static_kernel_map(rows, &h.backend, &h.arch, ts)
+            });
+            used.extend(map.uses.iter().cloned());
+            emit_model_cell(g, &h.id, sha, &map);
+            emit_smoke(g, &h.id, sha, h.smokes.get(sha));
+        }
+        for k in &used {
+            emit_kernel_cell(g, &h.id, k, h.kernels.get(k).copied());
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "kernel_cells_tests.rs"]
 mod tests;

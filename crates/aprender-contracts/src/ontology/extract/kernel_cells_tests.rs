@@ -35,11 +35,19 @@ fn ids(ks: &[&str]) -> BTreeSet<String> {
     ks.iter().map(|k| (*k).to_string()).collect()
 }
 
+/// (backend, model types, kernels used, unregistered types).
+type MapCase = (
+    &'static str,
+    &'static [u32],
+    &'static [&'static str],
+    &'static [u32],
+);
+
 /// Case table: (backend, host arch, model types) → (kernels used, unregistered types).
 #[test]
 fn the_static_map_case_table() {
     let rows = excerpt();
-    let cases: &[(&str, &[u32], &[&str], &[u32])] = &[
+    let cases: &[MapCase] = &[
         // Q4_K_M: q4_k + q6_k tensors, both served on cpu and on cuda.
         (
             "cpu",
@@ -406,4 +414,200 @@ mod rr2 {
         let red: BTreeSet<&str> = report.results.iter().map(|r| r.focus.as_str()).collect();
         assert_eq!(red, [mc("D")].iter().map(String::as_str).collect());
     }
+
+    /// The RR2 inputs as one `CellHost`, for [`build_cells`].
+    fn cell_host(types_of_c: Option<&[u32]>, drop_kernel: Option<&str>) -> CellHost {
+        let rows = registry();
+        let mut models: BTreeMap<String, Option<BTreeSet<u32>>> = BTreeMap::new();
+        for (m, ts) in MODELS {
+            let ts = if m == "C" { types_of_c } else { Some(ts) };
+            models.insert(m.to_string(), ts.map(types));
+        }
+        CellHost {
+            id: HOST.to_string(),
+            backend: "cuda".to_string(),
+            arch: "sm_89".to_string(),
+            models,
+            kernels: rows
+                .iter()
+                .filter(|r| Some(r.kernel_id.as_str()) != drop_kernel)
+                .map(|r| (r.kernel_id.clone(), PASS))
+                .collect(),
+            smokes: MODELS
+                .iter()
+                .map(|(m, _)| {
+                    let s = SmokeEvidence {
+                        pass: true,
+                        fresh: true,
+                        unpredicted: BTreeSet::new(),
+                    };
+                    ((*m).to_string(), s)
+                })
+                .collect(),
+        }
+    }
+
+    fn built_red(h: &CellHost) -> BTreeSet<String> {
+        let mut g = Graph::new();
+        build_cells(&mut g, &registry(), std::slice::from_ref(h));
+        let report = validate(&g, &shapes());
+        assert!(report.focus_nodes_n > 0, "vacuous");
+        report.results.iter().map(|r| r.focus.clone()).collect()
+    }
+
+    /// `build_cells` over the RR2 inputs: all green conforms, and RR2-F1 holds through the builder too.
+    #[test]
+    fn build_cells_green_and_f1() {
+        assert_eq!(built_red(&cell_host(Some(&[8]), None)), BTreeSet::new());
+        let red = built_red(&cell_host(Some(&[8]), Some("cuda.gemv.q6_k")));
+        let want: BTreeSet<String> = [mc("A"), kc("cuda.gemv.q6_k")].into_iter().collect();
+        assert_eq!(red, want);
+    }
+
+    /// A model whose tensor types no receipt recorded is RED, never skipped; the others stay green.
+    #[test]
+    fn build_cells_unknown_types_is_red() {
+        let red = built_red(&cell_host(None, None));
+        assert_eq!(red, [mc("C")].into_iter().collect());
+    }
+}
+
+/// A real AC-3 receipt (evidence/kreg/parity/cpu.matvec.q2_k.json on la-71/4539-parity-receipts), trimmed.
+const Q2K: &str = r#"{"schema":"kernel-parity-receipt/v1","kernel_id":"cpu.matvec.q2_k","host_arch":"x86_64",
+  "oracle_independent":true,"served":{"max_abs_err":2.7e-6,"max_rel_err":3.247e-7},"tolerance_rel":7e-7}"#;
+
+fn judge(json: &str, backend: &str, arch: &str, key: &str) -> KernelEvidence {
+    judge_parity_receipt("r.json", json.as_bytes(), backend, arch, key)
+        .expect("a parity receipt")
+        .1
+}
+
+/// Case table for `judge_parity_receipt`: each field judges to the failing value when absent or wrong.
+#[test]
+fn the_parity_judge_case_table() {
+    let keyed = Q2K.replace(r#""tolerance_rel""#, r#""input_key":"k1","tolerance_rel""#);
+    let all = KernelEvidence {
+        pass: true,
+        within_bound: true,
+        fresh: true,
+        arch_match: true,
+    };
+    let cases: Vec<(String, &str, &str, &str, KernelEvidence)> = vec![
+        (keyed.clone(), "cpu", "x86_64", "k1", all),
+        // Today's receipts carry no input_key: stale.
+        (
+            Q2K.to_string(),
+            "cpu",
+            "x86_64",
+            "k1",
+            KernelEvidence {
+                fresh: false,
+                ..all
+            },
+        ),
+        // An empty expected key never matches.
+        (
+            keyed.replace("k1", ""),
+            "cpu",
+            "x86_64",
+            "",
+            KernelEvidence {
+                fresh: false,
+                ..all
+            },
+        ),
+        (
+            keyed.clone(),
+            "cpu",
+            "x86_64",
+            "k2",
+            KernelEvidence {
+                fresh: false,
+                ..all
+            },
+        ),
+        (
+            keyed.clone(),
+            "cpu",
+            "aarch64",
+            "k1",
+            KernelEvidence {
+                arch_match: false,
+                ..all
+            },
+        ),
+        // cuda matches on `sm`, and this cpu receipt has none.
+        (
+            keyed.clone(),
+            "cuda",
+            "x86_64",
+            "k1",
+            KernelEvidence {
+                arch_match: false,
+                ..all
+            },
+        ),
+        (
+            keyed.replace("7e-7", "1e-7"),
+            "cpu",
+            "x86_64",
+            "k1",
+            KernelEvidence {
+                within_bound: false,
+                ..all
+            },
+        ),
+        (
+            keyed.replace(r#","tolerance_rel":7e-7"#, ""),
+            "cpu",
+            "x86_64",
+            "k1",
+            KernelEvidence {
+                within_bound: false,
+                ..all
+            },
+        ),
+        (
+            keyed.replace(
+                "\"oracle_independent\":true",
+                "\"oracle_independent\":false",
+            ),
+            "cpu",
+            "x86_64",
+            "k1",
+            KernelEvidence { pass: false, ..all },
+        ),
+        (
+            keyed.replace("\"max_rel_err\":3.247e-7", "\"max_rel_err\":null"),
+            "cpu",
+            "x86_64",
+            "k1",
+            KernelEvidence {
+                pass: false,
+                within_bound: false,
+                ..all
+            },
+        ),
+    ];
+    for (i, (json, backend, arch, key, want)) in cases.into_iter().enumerate() {
+        assert_eq!(judge(&json, backend, arch, key), want, "case {i}");
+    }
+}
+
+#[test]
+fn a_non_parity_file_is_refused() {
+    for bad in [
+        "not json",
+        r#"{"schema":"apr-model-ladder-receipt/v2","kernel_id":"x"}"#,
+        r#"{"schema":"kernel-parity-receipt/v1"}"#,
+        r#"{"schema":"kernel-parity-receipt/v1","kernel_id":""}"#,
+    ] {
+        assert!(
+            judge_parity_receipt("r.json", bad.as_bytes(), "cpu", "x86_64", "k").is_err(),
+            "{bad}"
+        );
+    }
+    let (id, _) = judge_parity_receipt("r.json", Q2K.as_bytes(), "cpu", "x86_64", "k")
+        .expect("a parity receipt");
+    assert_eq!(id, "cpu.matvec.q2_k");
 }
