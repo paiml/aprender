@@ -21,7 +21,9 @@
 # scripts/check_receipt_gate_base_owned.sh records rather than hides.
 #
 # SECURITY (pull_request_target has a write-capable token by default):
-#   - permissions are pinned to contents: read; nothing here writes.
+#   - permissions are pinned to contents: read; nothing here writes. The one
+#     job adds checks: read, job-scoped (B1, #4512): the receipt signature is a
+#     check run on the head sha, never a commit, and Arm 4 reads it back.
 #   - no step checks out or executes head code; the head's tree is read with
 #     `git archive <sha> evidence/pr-review/<pr>` only.
 #   - the fork guard on the signer (ci.yml pr-review-sign) is unchanged.
@@ -61,6 +63,10 @@ jobs:
     # pin was inherited, not derived.
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 20
+    # B1 (#4512): read the pr-review-signature check run. Job-scoped, read-only.
+    permissions:
+      contents: read
+      checks: read
     if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'
     env:
       # pull_request_target carries the PR; merge_group carries the queue ref
@@ -129,7 +135,7 @@ jobs:
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
           echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
 
-      - name: "Arm 4 case table: 23 rows, both polarities of the cutoff and the patch-id binding"
+      - name: "Arm 4 case table: 33 rows, both polarities of the cutoff, the patch-id binding and the check-run signature"
         shell: bash
         run: setsid --wait bash scripts/check_pr_review_arm4.sh --self-test
 
@@ -138,4 +144,9 @@ jobs:
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr }}
           PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
+          # B1: an unsigned-on-disk receipt is judged by the pr-review-signature
+          # check run on the PR head. The head is resolved above, so Arm 4 needs
+          # no pulls API read; the check-runs read uses this token (checks: read).
+          ARM4_PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
+          GH_TOKEN: ${{ github.token }}
         run: setsid --wait bash scripts/check_pr_review_arm4.sh

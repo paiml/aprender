@@ -15,9 +15,17 @@
 # literal's spaces) would keep the reviewed id. --verbatim hashes every byte of
 # every line; a 1-byte change to the patch is a different id.
 #
-# WHAT IS EXCLUDED. evidence/pr-review/<pr>/ only: the receipt and its signature are
-# committed INTO the PR, after the review, so they cannot be part of the diff they
-# attest. Nothing else is excluded.
+# WHAT IS EXCLUDED. The two receipts a PR commits INTO itself after it is reviewed,
+# and nothing else:
+#   evidence/pr-review/<pr>/       this receipt and its signature
+#   docs/audits/quorum-*.json      the quorum verdict (one level, glob: no '/' in *)
+# A receipt cannot be part of the diff it attests. Before #4510 the quorum artifact
+# was not excluded, so the fingerprint could never settle: committing the quorum
+# verdict moved the patch-id the pr-review receipt had signed, and committing the
+# receipt moved the diff the quorum had judged. With both excluded, re-stamping an
+# unchanged diff after either receipt lands gives the same id (the arm4 self-test's
+# fingerprint-idempotent rows prove it, with docs/audits/other.json as the control
+# that must still move the id).
 #
 # THE DIFF IS PINNED. A patch-id is a hash of `git diff` output, and that output
 # depends on config: diff.algorithm, diff.renames, diff.orderFile, color.diff,
@@ -58,7 +66,8 @@ prpid_diff() {
         diff --no-color --no-ext-diff --no-textconv --no-renames --full-index \
         --diff-algorithm=myers --indent-heuristic --inter-hunk-context=0 -U3 \
         --src-prefix=a/ --dst-prefix=b/ -O/dev/null \
-        "$base" "$head" -- . ":(exclude)evidence/pr-review/$pr"
+        "$base" "$head" -- . ":(exclude)evidence/pr-review/$pr" \
+        ":(exclude,glob)docs/audits/quorum-*.json"
 }
 
 # prpid_of_stdin - patch-id of the diff on stdin, verbatim, as 40 hex.
