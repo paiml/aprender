@@ -40,6 +40,9 @@ pub struct Subject {
     pub dogfood_receipt: Option<PathBuf>,
     /// `--tokenizer-receipts`: `None` → `evidence/dogfood/tokenizer/<version>/`.
     pub tokenizer_receipts_dir: Option<PathBuf>,
+    /// aprender#3715 v2: the kernel-cell evidence directory (`kernel_cells::read_v2`). `None` → no v2 cells in
+    /// the graph. Opt-in until P3, when v2 becomes the gate.
+    pub v2_dir: Option<PathBuf>,
 }
 
 impl Subject {
@@ -57,6 +60,7 @@ impl Subject {
             kernel_receipts_dir: None,
             dogfood_receipt: None,
             tokenizer_receipts_dir: None,
+            v2_dir: None,
         })
     }
 

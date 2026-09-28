@@ -3,6 +3,7 @@
 //! (`crates/aprender-contracts-cli/tests/ont_release_readiness.rs`).
 
 use super::*;
+use crate::ontology::extract::kernel_cells;
 use crate::ontology::extract::release_inputs::{derive_rungs, Consumer};
 
 const MC: &str = "1111111111111111111111111111111111111111";
@@ -455,4 +456,90 @@ fn the_positive_control_fires_without_any_release_subject_or_file() {
     // PMAT-3704 R-3: drawn on every gate run — a sample cell with one fresh row, and a planted cell with none
     // that must still be a node (the mutant that emits only measured cells turns this false; measured)
     assert!(positive_control());
+}
+
+/// KTEST-08: `--v2-evidence` adds the #3715 v2 kernel cells to the same graph, over the same hosts and
+/// models; without it the graph has none.
+#[test]
+fn v2_cells_join_the_release_graph_only_when_asked() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], required: true}}\n"
+    ));
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}","tensor_types":[12]}}"#);
+    write_receipt(
+        t.path(),
+        "lambda",
+        &receipt("lambda", MC, &inv, &cell(SHA_A, "run", "golden")),
+    );
+    let reg = t.path().join(kernel_cells::REGISTRY_PATH);
+    std::fs::create_dir_all(reg.parent().expect("registry dir")).expect("mkdir");
+    std::fs::write(
+        &reg,
+        r#"{"kernels":[{"kernel_id":"cuda.gemv.q4_k","backend":"cuda","ggml_type":12,"layout":"row_major","arch":"any"}]}"#,
+    )
+    .expect("registry");
+    let h = "e".repeat(64);
+    let v2 = t.path().join("evidence/release-v2");
+    std::fs::create_dir_all(v2.join("lambda/parity")).expect("parity dir");
+    std::fs::write(
+        v2.join("input-sets.json"),
+        format!(
+            r#"{{"schema":"{}","build_identity":"{MC}","reuse":{{"fresh":1,"total":1}},
+               "input_sets":{{"cuda.gemv.q4_k":{{"receipt":"k.json","input_set_hash":"{h}","stale":[]}}}}}}"#,
+            kernel_cells::INPUT_SETS_SCHEMA
+        ),
+    )
+    .expect("input sets");
+    std::fs::write(
+        v2.join("lambda/parity/k.json"),
+        format!(
+            r#"{{"schema":"kernel-parity-receipt/v1","kernel_id":"cuda.gemv.q4_k","sm":"sm_89","input_set_hash":"{h}",
+               "oracle_independent":true,"served":{{"max_abs_err":2.7e-6,"max_rel_err":3.2e-7}},"tolerance_rel":7e-7}}"#
+        ),
+    )
+    .expect("parity receipt");
+
+    let mut off = Graph::new();
+    extract(&mut off, &c, &subject()).expect("extracts");
+    assert!(
+        !off.to_ntriples().contains(&rel("ModelCell")),
+        "v2 is opt-in: no dir, no v2 cells"
+    );
+
+    let mut s = subject();
+    s.v2_dir = Some(v2.clone());
+    let mut g = Graph::new();
+    extract(&mut g, &c, &s).expect("extracts with v2");
+    let lambda_kc = kernel_cells::kernel_cell("lambda", "cuda.gemv.q4_k");
+    let uses = g.objects(
+        &kernel_cells::model_cell("lambda", SHA_A),
+        &rel("usesKernel"),
+    );
+    assert_eq!(
+        uses,
+        vec![&Term::iri(lambda_kc.clone())],
+        "types from the inventory"
+    );
+    assert_eq!(
+        g.objects(&lambda_kc, &rel("fresh")),
+        vec![&Term::boolean(true)],
+        "judged against input-sets.json at the release commit"
+    );
+    assert_eq!(
+        g.objects(&lambda_kc, &rel("archMatch")),
+        vec![&Term::boolean(true)]
+    );
+    let gx10_kc = kernel_cells::kernel_cell("gx10", "cuda.gemv.q4_k");
+    assert!(
+        g.objects(&gx10_kc, &rel("verdict")).is_empty(),
+        "gx10 has no parity dir: its kernel cell has no evidence"
+    );
+
+    // The registry is required once v2 is asked for.
+    std::fs::remove_file(&reg).expect("rm registry");
+    let err = extract(&mut Graph::new(), &c, &s).expect_err("no registry");
+    assert!(
+        matches!(&err, ReleaseError::Input { file, .. } if file == kernel_cells::REGISTRY_PATH),
+        "{err:?}"
+    );
 }

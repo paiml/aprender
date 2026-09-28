@@ -190,7 +190,7 @@ pub struct KernelEvidence {
     pub arch_match: bool,
 }
 
-/// A `release:KernelCell`, with its receipt's fields on the cell itself so a ModelCell's one-level
+/// A `release:KernelParityCell`, with its receipt's fields on the cell itself so a ModelCell's one-level
 /// `sh:node` reaches them. `None` writes the cell with no fields: `minCount 1` rejects it (RR2-F1).
 pub fn emit_kernel_cell(
     g: &mut Graph,
@@ -199,7 +199,7 @@ pub fn emit_kernel_cell(
     evidence: Option<KernelEvidence>,
 ) {
     let cell = kernel_cell(host, kernel_id);
-    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("KernelCell")));
+    g.insert(cell.clone(), RDF_TYPE, Term::iri(rel("KernelParityCell")));
     g.insert(cell.clone(), rel("kernelId"), Term::string(kernel_id));
     let Some(e) = evidence else { return };
     g.insert(
@@ -394,6 +394,50 @@ pub fn read_host_kernels(
         }
     }
     Ok(out)
+}
+
+/// The kernel registry, relative to the repo root.
+pub const REGISTRY_PATH: &str = "crates/aprender-serve/kernel-registry.json";
+
+/// What `extract:release-evidence` reads for v2 from one evidence directory: the registry, and each
+/// required host's judged parity receipts (`<dir>/<host>/parity/*.json`, against
+/// `<dir>/input-sets.json`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct V2Evidence {
+    pub rows: Vec<RegistryRow>,
+    /// Host id → kernel id → judged receipt.
+    pub kernels: BTreeMap<String, BTreeMap<String, KernelEvidence>>,
+}
+
+/// Read v2 evidence for `hosts` (id, cuda arch) at `release_sha`. No `input-sets.json` → every kernel
+/// judges stale (RED); a host with no `parity/` directory has no evidence (RED).
+///
+/// # Errors
+/// The registry unreadable or malformed, an `input-sets.json` computed at another commit, or a refused
+/// parity directory ([`read_host_kernels`]).
+pub fn read_v2(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    hosts: &[(&str, &str)],
+    release_sha: &str,
+) -> Result<V2Evidence, ExtractError> {
+    let reg = root.join(REGISTRY_PATH);
+    let bytes =
+        std::fs::read(&reg).map_err(|e| refuse(REGISTRY_PATH, format!("unreadable: {e}")))?;
+    let rows = parse_registry(REGISTRY_PATH, &bytes)?;
+    let sets_path = dir.join("input-sets.json");
+    let sets = match std::fs::read(&sets_path) {
+        Ok(b) => parse_input_sets(&sets_path.to_string_lossy(), &b, release_sha)?,
+        Err(_) => BTreeMap::new(),
+    };
+    let kernels = hosts
+        .iter()
+        .map(|(id, arch)| {
+            let k = read_host_kernels(&dir.join(id).join("parity"), "cuda", arch, &sets)?;
+            Ok(((*id).to_string(), k))
+        })
+        .collect::<Result<_, ExtractError>>()?;
+    Ok(V2Evidence { rows, kernels })
 }
 
 /// The KTEST-05 sanitizer receipt schema (`scripts/ktest/cuda_sanitizer_receipt.sh`, `receipt.json`).

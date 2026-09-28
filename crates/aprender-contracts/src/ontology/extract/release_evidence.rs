@@ -290,6 +290,20 @@ pub fn extract(
         receipts::read_dir(&subject.model_dir(&root), &root).map_err(ReleaseError::Receipt)?;
     let kernel_receipts = inputs::read_kernel_receipts(&subject.kernel_dir(&root), &root)?;
     let tok_receipts = inputs::read_tokenizer_receipts(&subject.tokenizer_dir(&root), &root)?;
+    let host_arch: Vec<(&str, &str)> = ladder
+        .hosts
+        .iter()
+        .map(|h| (h.id.as_str(), h.cc.as_str()))
+        .collect();
+    let v2 = subject
+        .v2_dir
+        .as_deref()
+        .map(|d| super::kernel_cells::read_v2(&root, d, &host_arch, subject.measured_commit()))
+        .transpose()
+        .map_err(|e| ReleaseError::Input {
+            file: e.file,
+            what: e.what,
+        })?;
     let dogfood = subject
         .dogfood_receipt
         .as_deref()
@@ -306,6 +320,7 @@ pub fn extract(
             kernel_receipts: &kernel_receipts,
             tok_receipts: &tok_receipts,
             dogfood: dogfood.as_ref(),
+            v2: v2.as_ref(),
         },
     ))
 }
@@ -319,6 +334,8 @@ pub struct Inputs<'a> {
     pub kernel_receipts: &'a [KernelReceipt],
     pub tok_receipts: &'a [TokReceipt],
     pub dogfood: Option<&'a Dogfood>,
+    /// aprender#3715 v2 kernel-cell evidence; `None` → no v2 cells.
+    pub v2: Option<&'a super::kernel_cells::V2Evidence>,
 }
 
 /// The release graph from parsed inputs: pure, no filesystem (R-15).
@@ -345,7 +362,42 @@ pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
     emit_coverage(g, subject, &coverage, &mut stats);
     emit_kernels(g, subject, &views, &mut stats);
     emit_tokenizer(g, subject, &views, i.tok_receipts, &mut stats);
+    if let Some(v2) = i.v2 {
+        emit_v2(g, &views, v2);
+    }
     stats
+}
+
+/// aprender#3715 v2: one `CellHost` per required host, over the same universe v1 grades. A model's tensor
+/// types come from any of the host's inventory rows with its hash; a ladder-only model has none and is RED.
+/// No smoke or sanitizer receipts are read yet (OBS-15 `kernel_path`), so every model cell is RED on its
+/// smoke and every kernel cell on S-SAN: absent evidence, stated.
+fn emit_v2(g: &mut Graph, views: &[HostView<'_>], v2: &super::kernel_cells::V2Evidence) {
+    let hosts: Vec<super::kernel_cells::CellHost> = views
+        .iter()
+        .map(|v| {
+            let types = super::kernel_cells::models_from_inventory(
+                &v.receipts
+                    .iter()
+                    .flat_map(|r| r.inventory.iter().cloned())
+                    .collect::<Vec<_>>(),
+            );
+            super::kernel_cells::CellHost {
+                id: v.decl.id.clone(),
+                backend: "cuda".to_string(),
+                arch: v.decl.cc.clone(),
+                models: v
+                    .models
+                    .keys()
+                    .map(|sha| (sha.clone(), types.get(sha).cloned().flatten()))
+                    .collect(),
+                kernels: v2.kernels.get(&v.decl.id).cloned().unwrap_or_default(),
+                smokes: BTreeMap::new(),
+                sanitized: BTreeMap::new(),
+            }
+        })
+        .collect();
+    super::kernel_cells::build_cells(g, &v2.rows, &hosts);
 }
 
 /// The positive control (R-3, PMAT-3704): drawn on EVERY gate run, with or without a release subject. One
@@ -396,6 +448,7 @@ pub fn positive_control() -> bool {
                 kernel_receipts: &[],
                 tok_receipts: &[],
                 dogfood: None,
+                v2: None,
             },
         );
         let is_cell = g

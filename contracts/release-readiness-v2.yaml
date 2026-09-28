@@ -10,7 +10,7 @@
 # DESIGN: docs/specifications/release-readiness-v2-kernel-cells.md. v1 stays the release gate until P3.
 #
 # THE CELLS
-#   release:KernelCell  (host, kernel_id): kernel_id fixes backend and shape_class (KREG-001 registry row), the
+#   release:KernelParityCell  (host, kernel_id): kernel_id fixes backend and shape_class (KREG-001 registry row), the
 #       host fixes arch/sm. Its parity receipt's judged fields sit ON the cell (verdict, withinBound, fresh,
 #       archMatch), so a ModelCell reaches them through ONE level of sh:node (the engine's limit).
 #   release:ModelCell   (host, model sha256): DERIVED. The extractor writes only release:usesKernel edges (the
@@ -55,7 +55,7 @@ relations:
 
 shapes:
   - id: release-readiness-v2.kernel
-    targetClass: release:KernelCell
+    targetClass: release:KernelParityCell
     properties:
       - {path: release:kernelId, minCount: 1, maxCount: 1}
       - {path: release:verdict, minCount: 1, maxCount: 1, in: [pass]}
@@ -65,7 +65,7 @@ shapes:
   - id: release-readiness-v2.model
     targetClass: release:ModelCell
     properties:
-      - {path: release:usesKernel, minCount: 1, nodeKind: IRI, class: release:KernelCell,
+      - {path: release:usesKernel, minCount: 1, nodeKind: IRI, class: release:KernelParityCell,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
                              {path: release:withinBound, minCount: 1, maxCount: 1, in: [true]},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},

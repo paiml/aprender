@@ -25,9 +25,14 @@ measured and which are derived.
 
 | Cell | Key | Evidence | Cost |
 |------|-----|----------|------|
-| `release:KernelCell` | kernel_id × backend × shape_class | a `kernel-parity-receipt/v1` (KREG AC-3) whose `host_arch`/`sm` is the host's, `verdict` pass, fresh | seconds each (CPU receipts today: 0.1 s for 11 rows) |
+| `release:KernelParityCell` | kernel_id × backend × shape_class | a `kernel-parity-receipt/v1` (KREG AC-3) whose `host_arch`/`sm` is the host's, `verdict` pass, fresh | seconds each (CPU receipts today: 0.1 s for 11 rows) |
 | `release:ModelCell` | model × host | **derived**: one `release:usesKernel` edge per kernel on the model's dispatch path on that host's backend | 0: no run |
 | `release:SmokeCell` | model × host | one e2e `apr run` (short prompt, 1 context rung) receipt, verdict pass, fresh | ~1–2 min each |
+
+The class is `release:KernelParityCell`, not `release:KernelCell`. v1's extractor already emits
+`release:KernelCell` for its per-(host, kernel, quant) diff cells, and `release-readiness-v1.kernel`
+targets that class. The v2 cells go into the same release graph, so with a shared name each
+version's shape would grade the other's cells (found wiring KTEST-08, 2026-09-28).
 
 The axes come from existing data, not from a new list:
 - `kernel_id`, `backend`, `shape_class` (`m1`/`m_any`) are fields of `crates/aprender-serve/kernel-registry.json`.
@@ -43,18 +48,18 @@ The in-tree engine is SHACL **Core** only (`crates/aprender-contracts/src/ontolo
 semantics from Core:
 
 1. The extractor (`ontology/extract/release_evidence.rs`, which already derives v1 cells) emits
-   `ModelCell --release:usesKernel--> KernelCell` for every kernel on the model's dispatch path on
+   `ModelCell --release:usesKernel--> KernelParityCell` for every kernel on the model's dispatch path on
    that host's backend. It emits **edges only, never a verdict**. A verdict computed in Rust and then
    checked by a shape would be the check checking itself.
 2. The shape does the derivation:
    ```yaml
    release:ModelCell:
-     - {path: release:usesKernel, minCount: 1, node: release:KernelCellPass}   # sh:node, one level: supported
+     - {path: release:usesKernel, minCount: 1, node: release:KernelParityCellPass}   # sh:node, one level: supported
      - {path: release:unregisteredQtype, maxCount: 0}
      - {path: release:smoke, minCount: 1, node: release:SmokeCellPass}
-   release:KernelCellPass:   # verdict pass, withinBound, fresh, receipt minCount 1
+   release:KernelParityCellPass:   # verdict pass, withinBound, fresh, receipt minCount 1
    ```
-   A KernelCell with no receipt fails `KernelCellPass`, so every ModelCell that points at it fails
+   A KernelParityCell with no receipt fails `KernelParityCellPass`, so every ModelCell that points at it fails
    through `sh:node`. That is the first falsifier, enforced by the shape and not by the extractor.
 
 ## 4. The model → kernel map (the load-bearing part)
@@ -89,7 +94,7 @@ does not touch a kernel reuses its receipt, and the gate reports the reuse perce
 test writes `kreg-input-sets/v1` (`KREG_INPUT_SETS_OUT`, at `KREG_GIT_SHA`), and
 `kernel_cells::parse_input_sets` reads it, refusing a file computed at any other commit. A kernel absent
 from that file judges stale. A model cell is
-fresh when every KernelCell it uses is fresh and its smoke ran at the release commit.
+fresh when every KernelParityCell it uses is fresh and its smoke ran at the release commit.
 
 ## 6. Falsifiers (each a committed RED case in the shapes-gate case table)
 
@@ -98,10 +103,10 @@ fresh when every KernelCell it uses is fresh and its smoke ran at the release co
 | RR2-F1 | delete one kernel receipt | exactly the ModelCells whose static set contains that kernel, and no others (the test asserts the set) |
 | RR2-F2 | a model tensor with a qtype no row admits | that ModelCell, via `unregisteredQtype` |
 | RR2-F3 | the smoke's `kernel_path` contains a kernel outside the static set | that ModelCell |
-| RR2-F4 | kernel source changed, receipt input key stale | that KernelCell and its dependants |
+| RR2-F4 | kernel source changed, receipt input key stale | that KernelParityCell and its dependants |
 | RR2-F5 | no smoke receipt for model × host | that ModelCell |
-| RR2-F6 | receipt measured on another arch/sm than the host's backend | that KernelCell |
-| S-SAN | a cuda kernel with no, a dirty (any of memcheck/racecheck/initcheck/synccheck not CLEAN), or a > 7 d compute-sanitizer run (KTEST-05 `receipt.json`) | that KernelCell only (`release-readiness-v2.sanitizer`); cpu kernels are not asked |
+| RR2-F6 | receipt measured on another arch/sm than the host's backend | that KernelParityCell |
+| S-SAN | a cuda kernel with no, a dirty (any of memcheck/racecheck/initcheck/synccheck not CLEAN), or a > 7 d compute-sanitizer run (KTEST-05 `receipt.json`) | that KernelParityCell only (`release-readiness-v2.sanitizer`); cpu kernels are not asked |
 
 S-SAN attributes a sanitizer run to the kernels it dispatched, so it needs the smoke's `kernel_path`
 (OBS-15), just as RR2-F3 does. Until that emitter exists, every cuda kernel cell is RED on S-SAN. A
@@ -128,7 +133,7 @@ Long-context risk moves to the attention kernels' shape classes, and that needs 
 
 ## 9. Open questions (for the cop and operator)
 
-1. Does the long-context rung stay a release cell, or does it become a KernelCell shape class
+1. Does the long-context rung stay a release cell, or does it become a KernelParityCell shape class
    (`seq_len` bucket) on attention kernels?
 2. Is CPU a required backend for release, or does it stay nightly? v1 releases on cuda only; the
    ladder rungs also list cpu.
