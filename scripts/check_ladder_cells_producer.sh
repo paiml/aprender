@@ -138,10 +138,12 @@ PY3
 
 # declaim <lib> -> a cells.declaimed arch x host is not measured on that host, and IS on every other (#4590):
 # hours of cells must not be spent on a claim the release does not make, nor may the entry leak to other hosts.
-declaim() {
-  local lib=$1 d n_t n_u
+# D2 (#3715): the entry may name ONE artifact by sha256 instead -- then only those bytes skip, and a
+# same-named file with other bytes is measured (want_t 16), never withdrawn by its name.
+declaim() { # declaim <lib> [entry key] [rows owed on t] [label]
+  local lib=$1 key=${2:-"arch: qwen2"} want_t=${3:-0} what=${4:-"a de-claimed arch"} d n_t n_u
   SEQ=$((SEQ + 1)); d="$WORK/dec.$SEQ"; mkdir -p "$d" || return 1
-  sed -e 's/^    verbs:/    declaimed: [{arch: qwen2, host: t, issue: 4590, until: "0.70.1", why: fixture}]\n    verbs:/' \
+  sed -e "s/^    verbs:/    declaimed: [{$key, host: t, issue: 4590, until: \"0.70.1\", why: fixture}]\\n    verbs:/" \
       -e 's/hosts: \[{id: t, required: true}\]/hosts: [{id: t, required: true}, {id: u, required: true}]/' \
     "$WORK/ladder.yaml" > "$d/ladder.yaml"
   FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" enrich --apr "$FAKE" \
@@ -154,10 +156,10 @@ declaim() {
   done
   n_t=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$d/cells-t.json")
   n_u=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$d/cells-u.json")
-  if [ "$n_t" = 0 ] && [ "$n_u" = 16 ] && grep -q 'DECLAIMED on t' "$d/log-t"; then
-    printf 'ok    %s\n' "declaim: a de-claimed arch is not measured on its host (0 rows) and is on another (16 rows)"; return 0
+  if [ "$n_t" = "$want_t" ] && [ "$n_u" = 16 ] && { [ "$want_t" != 0 ] || grep -q 'DECLAIMED on t' "$d/log-t"; }; then
+    printf 'ok    %s\n' "declaim: $what gives $want_t cell rows on its host and 16 on another"; return 0
   fi
-  printf 'FAIL  %s (t=%s rows, u=%s rows)\n' "declaim: the de-claim was ignored on its host or leaked to another" "$n_t" "$n_u"; return 1
+  printf 'FAIL  %s (t=%s rows, want %s; u=%s rows)\n' "declaim: $what -- the de-claim was ignored, too wide, or leaked to another host" "$n_t" "$want_t" "$n_u"; return 1
 }
 
 cases() { # cases <lib> -> 0 all as expected
@@ -182,6 +184,8 @@ cases() { # cases <lib> -> 0 all as expected
   offmode "$lib" || r=1
   selflock "$lib" || r=1
   declaim "$lib" || r=1
+  declaim "$lib" "sha256: \"$(printf '%064d' 0)\", file: m.gguf" 0 "a de-claimed artifact (sha256)" || r=1
+  declaim "$lib" "sha256: \"$(printf '%064d' 1)\", file: m.gguf" 16 "a same-named file with other bytes" || r=1
   return $r
 }
 
@@ -213,6 +217,7 @@ mutant only-vacuity 's/if a.only and not matched:/if False:/'
 mutant rungs-silent 's/^    if rc:$/    if False:/'
 mutant serve-inline 's/deferred.append((len(rows) - 1, prompt, mode, budget, measured))/serve = serve or Serve(R, path, a.serve_ceiling); rows[-1] = measure_serve(serve, prompt, mode, budget, rows[-1], R.timeout)/'
 mutant declaim      's/            if d:  # the judge owes nothing here/            if False:  # the judge owes nothing here/'
+mutant declaim-name 's/            d = J.declaim_of(dec, a.host, it)/            d = dec.get((a.host, J.FILE_KEY + it["file"])) or dec.get((a.host, it.get("arch")))/'
 mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(tok, int(ctx) - a.max_tokens_thinking - 1)/'
 
 [ "$bad" = 0 ] && { echo "check_ladder_cells_producer: all cases and mutants as expected"; exit 0; }

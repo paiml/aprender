@@ -1,0 +1,1 @@
+cells\.declaimed entry .* lacks one key \(arch OR sha256\+file, not both\), sha256 \(64 lowercase hex\)

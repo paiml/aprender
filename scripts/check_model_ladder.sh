@@ -303,14 +303,17 @@ if main_p and os.path.exists(main_p):
         mrh = {r["id"]: hostset(r, allh) for r in M.get("rungs", []) if r.get("required")}
         # #4590: the one exception is a (host, arch) the release DE-CLAIMS in cells.declaimed. It is how the
         # de-claim reaches released pv, which reads rung hosts and not declaimed; printed on every run.
-        dcl = {(d.get("host"), d.get("arch")): d for d in (L.get("cells") or {}).get("declaimed") or []}
+        # D2 (#3715): a file entry is keyed by the rung's exact artifact, (host, "sha256:<hex>"), never its name.
+        dcl = {(d.get("host"), "sha256:" + d["sha256"] if d.get("sha256") else d.get("arch")): d
+               for d in (L.get("cells") or {}).get("declaimed") or []}
+        def dkey(h, r): return (h, "sha256:" + str(r.get("sha256"))) if (h, "sha256:" + str(r.get("sha256"))) in dcl else (h, r.get("arch"))
         for r in rungs:
             if r.get("required") and r["id"] in mrh and not mrh[r["id"]] <= hostset(r, allh):
                 gone = mrh[r["id"]] - hostset(r, allh)
-                for h in sorted(g for g in gone if (g, r.get("arch")) in dcl):  # a de-claimed host, not a drop
-                    d = dcl[(h, r.get("arch"))]
+                for h in sorted(g for g in gone if dkey(g, r) in dcl):  # a de-claimed host, not a drop
+                    d = dcl[dkey(h, r)]
                     print(f"DECLAIMED rung {r['id']} not claimed on {h} -- #{d.get('issue')}, restored in {d.get('until')}")
-                gone = {g for g in gone if (g, r.get("arch")) not in dcl}
+                gone = {g for g in gone if dkey(g, r) not in dcl}
                 if gone:
                     print(f"FAIL  hosts DROPPED on {r['id']} vs origin/main: {sorted(gone)} — a rung may gain hosts, never lose one"); rc = 1
         mc, hc = M.get("cells") or {}, L.get("cells") or {}
@@ -890,7 +893,13 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/        if gone:/        if False:/'
     cmutant declaim-skip    green-cells-declaimed           's/        if d:  # printed on every run/        if False:  # printed on every run/'
     cmutant declaim-bare    red-cells-declaimed-bare        's/        if bad:  # a bare de-claim/        if False:  # a bare de-claim/'
-    mutant declaim-host     declaimed-host-on-rung          's/                gone = {g for g in gone if (g, r.get("arch")) not in dcl}/                gone = set(gone)/'
+    # D2 (#3715): a file de-claim is keyed by the artifact's sha256 -- never its name, never wider than the file.
+    cmutant declaim-file    green-cells-declaimed-file      's/            got\[(d\["host"\], SHA_KEY + d\["sha256"\])\] = d/            pass/'
+    cmutant declaim-by-name red-cells-declaimed-file-stale  's/return dec.get((host, SHA_KEY + str(item.get("sha256") or "")))/return dec.get((host, FILE_KEY + str(item.get("file"))))/'
+    cmutant declaim-widen   red-cells-declaimed-file-narrow 's/return dec.get((host, SHA_KEY + str(item.get("sha256") or "")))/return next((d for (h, k), d in dec.items() if h == host and k.startswith(SHA_KEY)), None)/'
+    cmutant declaim-stale   red-cells-declaimed-file-stale  's/        if stale:  # the entry/        if False:  # the entry/'
+    cmutant declaim-sha-hex red-cells-declaimed-file-bare   's/if by_file and d.get("sha256") and not re.fullmatch/if False and not re.fullmatch/'
+    mutant declaim-host     declaimed-host-on-rung          's/                gone = {g for g in gone if dkey(g, r) not in dcl}/                gone = set(gone)/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
     xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>
