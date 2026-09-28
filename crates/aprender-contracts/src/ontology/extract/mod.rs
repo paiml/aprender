@@ -18,6 +18,7 @@ pub mod apr_model;
 pub mod code;
 pub mod gguf;
 pub mod json;
+pub mod kernel_cells;
 pub mod lean;
 pub mod parity_receipt;
 pub mod pv_contract;
