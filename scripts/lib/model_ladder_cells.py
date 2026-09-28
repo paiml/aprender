@@ -226,7 +226,9 @@ def _judge_host(hid, R, S, rc, out):
         rc = 1
     tally = {"owed": 0, "passed": 0, "refused": 0}
     host_rc = rc  # an unsized rung set is red for every host, never an 'ok 0 owed'
-    for item in R.get("inventory") or []:
+    # declaimed_inventory[] (#4590) is judged like inventory[]: an item there whose (host, arch) is NOT de-claimed
+    # in the contract owes every cell, so moving a file out of inventory[] exempts nothing by itself.
+    for item in (R.get("inventory") or []) + (R.get("declaimed_inventory") or []):
         f = item.get("file")
         d = S["declaimed"].get((hid, item.get("arch")))
         if d:  # printed on every run, so a de-claim cannot decay into an absence nobody re-reads
