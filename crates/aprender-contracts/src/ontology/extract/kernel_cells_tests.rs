@@ -638,3 +638,62 @@ fn models_from_inventory_reads_types_whole_or_not_at_all() {
     .collect();
     assert_eq!(m, want);
 }
+
+/// `kreg-input-sets/v1` → kernel id → hash: a file for this commit is read whole; another schema, another
+/// commit, a missing `input_sets` or one bad hash refuses it all. Fed to the judge, a listed kernel whose
+/// receipt carries that hash is fresh and an unlisted one is stale (RR2-F4 via the real input).
+#[test]
+fn input_sets_are_read_whole_for_the_release_commit_only() {
+    let h = "a".repeat(64);
+    let doc = |schema: &str, at: &str, hash: &str| {
+        format!(
+            r#"{{"schema":"{schema}","build_identity":"{at}","reuse":{{"fresh":1,"total":1}},
+               "input_sets":{{"cpu.matvec.q2_k":{{"receipt":"r.json","input_set_hash":"{hash}","stale":[]}}}}}}"#
+        )
+    };
+    let sets = parse_input_sets(
+        "s.json",
+        doc(INPUT_SETS_SCHEMA, "abc", &h).as_bytes(),
+        "abc",
+    )
+    .expect("a sets file for this commit");
+    assert_eq!(sets.get("cpu.matvec.q2_k"), Some(&h));
+    for (bad, why) in [
+        (doc("kreg-input-sets/v0", "abc", &h), "schema"),
+        (doc(INPUT_SETS_SCHEMA, "def", &h), "release commit"),
+        (doc(INPUT_SETS_SCHEMA, "abc", "abc"), "64 hex"),
+        (
+            r#"{"schema":"kreg-input-sets/v1","build_identity":"abc"}"#.to_string(),
+            "input_sets",
+        ),
+        ("not json".to_string(), "JSON"),
+    ] {
+        let err = parse_input_sets("s.json", bad.as_bytes(), "abc").expect_err(why);
+        assert!(err.to_string().contains(why), "{why}: {err}");
+    }
+    assert!(parse_input_sets("s.json", doc(INPUT_SETS_SCHEMA, "", &h).as_bytes(), "").is_err());
+
+    let receipt = Q2K.replace(
+        r#""schema""#,
+        &format!(r#""input_set_hash":"{h}","schema""#),
+    );
+    let now = |id: &str| sets.get(id).map_or("", String::as_str);
+    let (_, fresh) = judge_parity_receipt(
+        "r.json",
+        receipt.as_bytes(),
+        "cpu",
+        "x86_64",
+        now("cpu.matvec.q2_k"),
+    )
+    .expect("judged");
+    assert!(fresh.fresh);
+    let (_, stale) = judge_parity_receipt(
+        "r.json",
+        receipt.as_bytes(),
+        "cpu",
+        "x86_64",
+        now("cpu.matvec.q4_k"),
+    )
+    .expect("judged");
+    assert!(!stale.fresh);
+}

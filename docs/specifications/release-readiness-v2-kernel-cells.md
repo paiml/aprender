@@ -85,7 +85,10 @@ unvalidated cells" target stated honestly. Registering the remaining dispatch op
 A kernel receipt is fresh when its **`input_set_hash`** (KTEST-001 §5.1) matches the one the gate
 recomputes from the release tree: a sha256 over the kernel's `source_file`, its registry row (every
 field but `tolerance`), the pinned toolchain, the driver, the device and the oracle. `apr_sha` is not part of the key. A release whose diff
-does not touch a kernel reuses its receipt, and the gate reports the reuse percentage. A model cell is
+does not touch a kernel reuses its receipt, and the gate reports the reuse percentage. The gate does not recompute the hash itself: aprender-serve's freshness
+test writes `kreg-input-sets/v1` (`KREG_INPUT_SETS_OUT`, at `KREG_GIT_SHA`), and
+`kernel_cells::parse_input_sets` reads it, refusing a file computed at any other commit. A kernel absent
+from that file judges stale. A model cell is
 fresh when every KernelCell it uses is fresh and its smoke ran at the release commit.
 
 ## 6. Falsifiers (each a committed RED case in the shapes-gate case table)

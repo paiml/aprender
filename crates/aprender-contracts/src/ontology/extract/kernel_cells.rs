@@ -308,6 +308,54 @@ pub fn judge_parity_receipt(
     ))
 }
 
+/// The schema KREG's freshness test writes under `KREG_INPUT_SETS_OUT` (aprender-serve
+/// `kernel_registry_parity.rs`): the input-set hash of every receipted kernel, recomputed from the tree.
+pub const INPUT_SETS_SCHEMA: &str = "kreg-input-sets/v1";
+
+/// Read a `kreg-input-sets/v1` file into kernel id → the `input_set_hash` the tree gives now, the value
+/// [`judge_parity_receipt`] compares a receipt against. A kernel absent from the map judges stale.
+///
+/// # Errors
+/// The whole file is refused when it is not JSON, has another schema, was computed at a commit other
+/// than `release_sha` (it would judge a different tree), or holds a hash that is not 64 hex digits.
+pub fn parse_input_sets(
+    file: &str,
+    bytes: &[u8],
+    release_sha: &str,
+) -> Result<BTreeMap<String, String>, ExtractError> {
+    let doc: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| refuse(file, format!("not JSON: {e}")))?;
+    let schema = doc.get("schema").and_then(serde_json::Value::as_str);
+    if schema != Some(INPUT_SETS_SCHEMA) {
+        return Err(refuse(
+            file,
+            format!("schema {schema:?}, expected `{INPUT_SETS_SCHEMA}`"),
+        ));
+    }
+    let at = doc
+        .get("build_identity")
+        .and_then(serde_json::Value::as_str);
+    if release_sha.is_empty() || at != Some(release_sha) {
+        return Err(refuse(
+            file,
+            format!("computed at {at:?}, not the release commit `{release_sha}`"),
+        ));
+    }
+    let sets = doc
+        .get("input_sets")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| refuse(file, "`input_sets` missing or not an object"))?;
+    sets.iter()
+        .map(|(id, v)| {
+            v.get("input_set_hash")
+                .and_then(serde_json::Value::as_str)
+                .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+                .map(|h| (id.clone(), h.to_string()))
+                .ok_or_else(|| refuse(file, format!("{id}: `input_set_hash` is not 64 hex digits")))
+        })
+        .collect()
+}
+
 /// One required host of the v2 gate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellHost {
