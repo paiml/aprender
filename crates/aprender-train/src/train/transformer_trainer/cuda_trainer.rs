@@ -1252,6 +1252,73 @@ impl CudaTransformerTrainer {
         Some(())
     }
 
+    /// distill-batch-honesty-v1 DBH-001 / FALSIFY-DBH-008: one optimizer step
+    /// from the MEAN of `rows.len()` per-row KD gradients.
+    ///
+    /// Each row runs forward, has its last-position logit gradient uploaded,
+    /// and back-props with `accumulate_only=true` into the R-038 CPU
+    /// accumulator. `gpu_optimizer_from_accum` then averages and steps the
+    /// blocks, LM head and final norm once; the embedding gradient (summed by
+    /// the scatter-add) is scaled by `1/rows` before `optimizer_step`. A
+    /// micro-step per row would be a different update (B steps, not one).
+    pub fn kd_step_batch(&mut self, rows: &[(&[u32], &[f32])]) -> Option<()> {
+        let hidden_size = self.config.model_config.hidden_size;
+        let vocab_size = self.config.model_config.vocab_size;
+        if rows.is_empty() {
+            return None;
+        }
+        for (ids, grad) in rows {
+            if ids.is_empty() || ids.len() > self.config.max_seq_len || grad.len() != vocab_size {
+                return None;
+            }
+        }
+
+        self.ensure_grad_accum();
+        self.ensure_d2h_staging();
+        if let Some(accum) = &mut self.grad_accum {
+            accum.zero_all();
+        }
+        self.embed_optimizer.zero_grad_refs(&mut vec![&mut self.model.embed_tokens.weight]);
+
+        for (ids, grad) in rows {
+            let seq_len = ids.len();
+            self.gpu_forward(ids, seq_len, hidden_size, vocab_size)?;
+            let offset = (seq_len - 1) * vocab_size;
+            self.gpu_training.logits_buf.copy_from_host_at(grad, offset).ok()?;
+            self.cuda_trainer.stream().synchronize().ok()?;
+            let grad_output_is_a = self.gpu_backward(seq_len, hidden_size, vocab_size, true)?;
+            self.embed_backward(ids, seq_len, hidden_size, vocab_size, grad_output_is_a);
+            if let Some(accum) = &mut self.grad_accum {
+                accum.accumulated_count += 1;
+            }
+        }
+
+        if rows.len() > 1 {
+            if let Some(mut g) = self.embed_grad_vec() {
+                let inv = 1.0 / rows.len() as f32;
+                for x in &mut g {
+                    *x *= inv;
+                }
+                self.set_embed_grad(g);
+            }
+        }
+        self.gpu_optimizer_from_accum()?;
+        self.optimizer_step();
+        Some(())
+    }
+
+    /// The CPU accumulate path slices `d2h_staging`; it is only pre-sized when
+    /// `accumulation_steps > 1`. `kd_step_batch` accumulates at any setting.
+    fn ensure_d2h_staging(&mut self) {
+        if self.gpu_grad_accum.is_some() {
+            return;
+        }
+        let mc = &self.config.model_config;
+        let need = (mc.hidden_size * mc.intermediate_size).max(mc.vocab_size * mc.hidden_size);
+        if self.d2h_staging.len() < need {
+            self.d2h_staging = vec![0.0f32; need];
+        }
+    }
     /// position's logits (vocab_size floats) for token sampling. No backward
     /// pass, no loss computation.
     ///
