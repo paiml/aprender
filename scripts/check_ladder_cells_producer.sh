@@ -169,6 +169,8 @@ cases() { # cases <lib> -> 0 all as expected
   expect "$lib" "good: apr code reports no backend, and the judge names it (apr's gap, visible)" good \
     '"code/on/4k '"'"'pass'"'"' is not a pass: backend None" in out or "backend None" in out' || r=1
   expect "$lib" "fellback: a cpu run after asking for gpu is not a pass" fellback '"fell back" in out and "FELLBACK 12" in out' || r=1
+  expect "$lib" "fellback: the producer itself grades a --gpu cell that ran on cpu RED, never pass (#4609)" fellback \
+    '"FELLBACK 12" in out and "ROWS 16 PASS 4 REFUSED 0 RUNPASS 0 FELLBACK 12" in out and "ran on cpu (fell_back=True)" in out' || r=1
   expect "$lib" "noneedle: an answer without the token-0 needle is not a pass" noneedle '"RUNPASS 0" in out' || r=1
   expect "$lib" "noclose: a think block that never closes is not a pass" noclose '"thinking never closed" in out' || r=1
   expect "$lib" "refuse: a pre-load capacity refusal is a refused row with apr's arithmetic" refuse '"REFUSED 8" in out and "REFUSED without" not in out' || r=1
@@ -205,6 +207,7 @@ mutant() { # mutant <name> <sed-expr>
 }
 mutant needle     's/elif NEEDLE_WORD not in answer:/elif False:/'
 mutant fallback   's/row\["fallback"\] = be.get("fell_back")/row["fallback"] = False/'
+mutant fell-back-verdict 's/    elif row\["fallback"\] is True or row\["backend"\] == "cpu":/    elif False:/'
 mutant retry      's/for _attempt in range(3):/for _attempt in range(1):/'
 mutant owed-set   's/for rid, tok in J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max):/for (rid, tok), _one in zip(J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max), range(1)):/'
 mutant refusal    's/if rc != 0 and ref is not None:/if False:/'

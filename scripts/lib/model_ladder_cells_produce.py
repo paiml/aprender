@@ -204,6 +204,10 @@ def finish(row, rc, text, stderr):
     row["answer_chars"], row["think_closed"] = len(answer), closed
     if rc != 0:
         row["reason"] = f"rc {rc}: " + (stderr.strip().splitlines()[-1] if stderr.strip() else "no stderr")
+    elif row["fallback"] is True or row["backend"] == "cpu":
+        # Every verb asks for --gpu. A cell apr itself reports as run on the CPU proves nothing about the GPU,
+        # whatever the answer says (#4609; CLAUDE.md verification discipline #2).
+        row["reason"] = f"asked for --gpu, apr reports it ran on {row['backend'] or 'cpu'} (fell_back={row['fallback']})"
     elif closed is False:
         row["reason"] = f"thinking never closed within max_tokens {row['max_tokens']}: no </think> in the output"
     elif NEEDLE_WORD not in answer:
