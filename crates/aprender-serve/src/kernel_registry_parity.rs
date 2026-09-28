@@ -77,6 +77,19 @@ fn q8_0_round_trip(x: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+/// The activations a `precision=q8_k` row consumes: the served path's own Q8_K quantizer
+/// (one scale per 256), round-tripped, so the margin oracle sees what the kernel saw (§0.4).
+fn q8_k_round_trip(x: &[f32]) -> Vec<f32> {
+    let (scales, quants, _) = crate::quantize::parallel_k::quantize_for_q4k_matvec(x, x.len())
+        .expect("quantize the activations to Q8_K");
+    quants
+        .iter()
+        .enumerate()
+        .take(x.len())
+        .map(|(i, q)| f32::from(*q) * scales[i / QK_K])
+        .collect()
+}
+
 /// Random quants and signed scales; `d` is the trailing f16 at `[208..210]`.
 fn fill_q6_k(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
     rng.fill(&mut b[..208]);
@@ -88,7 +101,7 @@ const KERNELS: &[Kernel] = &[
         id: "cpu.matvec.q4_k",
         block_elems: QK_K,
         workload: WORKLOAD,
-        act_quant: None,
+        act_quant: Some(q8_k_round_trip),
         source_fn: "fused_q4k_parallel_matvec",
         block_bytes: 144,
         fill: fill_dmin_first,
