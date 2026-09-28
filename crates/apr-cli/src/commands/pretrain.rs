@@ -31,7 +31,7 @@ use entrenar::train::pretrain_real::{
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
 use entrenar::transformer::TransformerConfig;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Number of LMBatches pulled off the head of the shard stream and
 /// reserved as the held-out validation set.
@@ -207,6 +207,7 @@ pub(crate) fn run(
     // with real compute) but the stub error surface is identical.
     let resolved_device =
         resolve_device(device).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+    let started_at = super::train_receipt::now_utc();
 
     // Contract apr-pretrain-from-init-v1 §init_load_semantics + §50.4 step 5f.4:
     // when --init is present, (1) validate magic bytes, (2) extract
@@ -394,10 +395,57 @@ pub(crate) fn run(
 
     // Contract: non-OK terminal statuses map to non-zero exit codes so
     // operators can recognize divergence / NaN from shell `$?`.
-    match status {
-        RunStatus::Aborted(abort) => Err(abort_to_err(&abort)),
-        RunStatus::Ok { .. } | RunStatus::EarlyStop { .. } => Ok(()),
+    let (final_loss, epochs) = match status {
+        RunStatus::Aborted(abort) => return Err(abort_to_err(&abort)),
+        RunStatus::Ok {
+            final_val_loss,
+            epochs_completed,
+        } => (final_val_loss, epochs_completed),
+        RunStatus::EarlyStop {
+            best_val_loss,
+            epochs_completed,
+        } => (best_val_loss, epochs_completed),
+    };
+
+    // Contract train-run-receipt-v1: success path only. Real runs read the
+    // dataset's `.bin` shards in sorted order (ShardIterator::new); the
+    // synthetic drive reads no data.
+    let data_files = if synthetic {
+        Vec::new()
+    } else {
+        pretrain_shards(dataset)?
+    };
+    let base_models: Vec<PathBuf> = init.map(Path::to_path_buf).into_iter().collect();
+    let effective = serde_json::to_value(&config)
+        .map_err(|e| CliError::ValidationFailed(format!("train receipt: {e}")))?;
+    let receipt = super::train_receipt::write(&super::train_receipt::RunFacts {
+        verb: "pretrain",
+        effective_config: &effective,
+        data_files: &data_files,
+        seed,
+        base_models: &base_models,
+        backend: if synthetic { "synthetic" } else { "entrenar" },
+        device: &resolved_device.to_string(),
+        started_at,
+        steps: (epochs * steps_per_epoch).min(num_steps) as u64,
+        final_loss: Some(f64::from(final_loss)),
+        output: run_dir,
+    })?;
+    if !json_output {
+        output::kv("  Receipt", receipt.display().to_string());
     }
+    Ok(())
+}
+
+/// The `.bin` shards a real pretrain run reads, in the order it reads them.
+fn pretrain_shards(dataset: &Path) -> Result<Vec<PathBuf>> {
+    let mut shards: Vec<PathBuf> = std::fs::read_dir(dataset)
+        .map_err(|e| CliError::ValidationFailed(format!("cannot list {}: {e}", dataset.display())))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "bin"))
+        .collect();
+    shards.sort();
+    Ok(shards)
 }
 
 /// Synthetic drive: deterministic linear-decay `StepFn` and a scripted

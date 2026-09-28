@@ -142,6 +142,7 @@ pub(crate) mod png_encode;
 pub(crate) mod ppl;
 #[cfg(feature = "training")]
 pub(crate) mod pretrain;
+pub(crate) mod train_receipt;
 pub(crate) mod probar;
 // GH-876 Milestone 2: `apr test llm`, a surface over the in-tree llm module.
 pub(crate) mod profile;
