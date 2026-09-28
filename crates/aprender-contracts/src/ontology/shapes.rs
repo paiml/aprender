@@ -122,7 +122,7 @@ pub struct PropertyShape {
 /// A node shape: a target class, an open/closed switch, and its property shapes.
 #[derive(Debug, Clone)]
 pub struct NodeShape {
-    /// The contract that declares it (its stem); nested `node` shapes are `<stem>/node`.
+    /// The contract that declares it (its stem); a nested `node` shape is `<stem>/node/<local name of its path>`.
     pub id: String,
     pub target_class: String,
     pub closed: bool,
@@ -171,6 +171,11 @@ impl Report {
 
 /// Expand a prefixed name to an IRI (see the module doc for the rule).
 #[must_use]
+/// The local name of a property path — what follows its last `:`, `/` or `#`.
+fn local_name(path: &str) -> &str {
+    path.rsplit([':', '/', '#']).next().unwrap_or(path)
+}
+
 pub fn expand(name: &str) -> String {
     if name.starts_with("http://") || name.starts_with("https://") {
         return name.to_string();
@@ -438,8 +443,10 @@ fn parse_property(
             let nm = v
                 .as_mapping()
                 .ok_or_else(|| malformed("`node` is not a mapping".into()))?;
+            // One IRI per nested shape: `<stem>/node` for every one of them made two nested shapes in
+            // one contract the same subject in shapes.ttl, where their triples merge into one shape.
             Some(Box::new(parse_node_shape(
-                &format!("{shape}/node"),
+                &format!("{shape}/node/{}", local_name(path)),
                 nm,
                 None,
                 depth + 1,
@@ -1049,6 +1056,17 @@ mod tests {
     }
 
     const BASE: &str = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, minCount: 1, maxCount: 1, pattern: '^[a-z0-9-]+$'}\n    - {path: ont:kind, maxCount: 1, in: [kernel, pattern]}\n";
+
+    #[test]
+    fn each_nested_node_shape_has_its_own_id() {
+        let s = shape("entity: {type: json}\nshape:\n  targetClass: ex:T\n  properties:\n    - {path: ex:a, node: {properties: [{path: ex:x}]}}\n    - {path: ex:b, node: {properties: [{path: ex:y}]}}\n");
+        let ids: Vec<&str> = s
+            .properties
+            .iter()
+            .filter_map(|p| p.node.as_deref().map(|n| n.id.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["t/node/a", "t/node/b"]);
+    }
 
     #[test]
     fn a_conforming_focus_node_yields_no_result() {

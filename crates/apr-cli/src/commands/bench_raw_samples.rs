@@ -14,6 +14,7 @@ pub(crate) const RAW_SAMPLES_V1: &str = "raw-samples-v1";
 struct EmitEnv {
     ts: String,
     host: Option<String>,
+    build_identity: Option<String>,
     binary_sha256: Option<String>,
     model_sha256: Option<String>,
 }
@@ -24,6 +25,7 @@ impl EmitEnv {
         Self {
             ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             host: host_name(),
+            build_identity: git_sha(env!("APR_GIT_SHA")),
             binary_sha256: exe.as_deref().and_then(file_sha256),
             model_sha256: file_sha256(model),
         }
@@ -45,6 +47,15 @@ fn host_name() -> Option<String> {
         .or_else(from_cmd)
         .map(|h| h.trim().to_string())
         .filter(|h| !h.is_empty())
+}
+
+/// The commit the binary was built from, or `None` when the build stamped a
+/// non-commit fallback (`v{version}+no-git`, see `aprender-build-sha`). The
+/// contract wants a commit, so a fallback is dropped rather than passed on.
+fn git_sha(stamp: &str) -> Option<String> {
+    let s = stamp.trim();
+    ((7..=40).contains(&s.len()) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+        .then(|| s.to_string())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -111,7 +122,7 @@ fn raw_samples_v1(
         "ts": env.ts,
         "host": env.host,
         "apr_version": env!("CARGO_PKG_VERSION"),
-        "build_identity": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
+        "build_identity": env.build_identity,
         "binary_sha256": env.binary_sha256,
         "model_id": model_id,
         "model_sha256": env.model_sha256,
@@ -136,6 +147,7 @@ mod raw_samples_v1_tests {
         EmitEnv {
             ts: "2026-09-27T15:00:00.000Z".to_string(),
             host: Some("lambda-vector".to_string()),
+            build_identity: Some("2138b1c79a".to_string()),
             binary_sha256: Some("b".repeat(64)),
             model_sha256: Some("m".repeat(64)),
         }
@@ -192,6 +204,7 @@ mod raw_samples_v1_tests {
         .expect("a measured run emits");
         assert_eq!(doc["schema"], RAW_SAMPLES_V1);
         assert_eq!(doc["model_id"], "Qwen3.5-4B-Q4_K_M.gguf");
+        assert_eq!(doc["build_identity"], "2138b1c79a");
         assert_eq!(doc["gpu_proof"]["on_gpu"], true);
         assert_eq!(doc["workload"]["max_tokens"], 128);
         let s = doc["samples"].as_array().expect("samples array");
@@ -214,6 +227,16 @@ mod raw_samples_v1_tests {
             .expect("emits");
         for key in ["tokens_per_second", "mean_time_ms", "median_time_ms", "passed"] {
             assert!(doc.get(key).is_none(), "{key} is recorder-derived");
+        }
+    }
+
+    /// A build stamped without a commit emits `null`, which the contract refuses,
+    /// never the fallback string.
+    #[test]
+    fn a_non_commit_build_stamp_is_not_passed_on() {
+        assert_eq!(git_sha("2138b1c79a").as_deref(), Some("2138b1c79a"));
+        for stamp in ["v0.71.0+no-git", "unknown", "", "abc", "2138B1C79A"] {
+            assert_eq!(git_sha(stamp), None, "{stamp}");
         }
     }
 
