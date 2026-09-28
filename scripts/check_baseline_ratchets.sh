@@ -77,12 +77,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassified
     case "$1" in
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
+        bin_cli_unwired_baseline.txt)            printf 'set\n' ;;   # spawning test targets no lane runs (scripts/check_bin_cli_tests_wired.sh, #4059): may only shrink
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
         hand_rolled_parsers_baseline.txt)        printf 'set\n' ;;
+        include_fmt_baseline.txt)                printf 'set\n' ;;   # include!d .rs files rustfmt would change (scripts/include_fmt_ratchet.sh, #4151); instrument pinned in its own header
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
         perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
@@ -171,6 +173,16 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
             printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
+        # #4023. coverage-solo.txt EXCLUDES NOTHING: its tests still run and are still
+        # measured, each in its own process, so growth cannot hide a line of coverage.
+        coverage-solo.txt)
+            printf 'none\tprocess-isolation list for make coverage; every entry still runs and is measured\n' ;;
+        # coverage-skips.txt DOES remove tests from coverage. Its own header requires a
+        # MEASURED reason written next to each entry, and entries are exact test paths, so
+        # each line is a reviewed claim. A shrink-only ratchet would be stricter; it can
+        # only be armed once the file exists on origin/main (#4023 adds it there).
+        coverage-skips.txt)
+            printf 'none\tintent model: exact test paths, each with a measured reason in the file (reviewed per entry)\n' ;;
         *) return 1 ;;
     esac
 }

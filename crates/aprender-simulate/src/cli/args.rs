@@ -27,7 +27,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Parser)]
 #[command(
     name = "simular",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     about = "Unified Simulation Engine for the Sovereign AI Stack",
     // `help` and `version` are real subcommands below, so that `simular help`
     // keeps printing simular's own help text (see `output::print_help`) rather

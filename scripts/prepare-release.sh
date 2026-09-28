@@ -56,7 +56,7 @@ echo "✅ All tests passed"
 
 # 6. Check test coverage
 echo "📊 Checking test coverage..."
-COVERAGE=$(cargo llvm-cov report | grep TOTAL | awk '{print $10}' | sed 's/%//')
+COVERAGE=$(cargo llvm-cov report $(python3 scripts/coverage_report_scope.py) | grep TOTAL | awk '{print $10}' | sed 's/%//')
 if (( $(echo "$COVERAGE < 95.0" | bc -l) )); then
     echo "❌ Test coverage ${COVERAGE}% is below 95%"
     exit 1
