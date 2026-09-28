@@ -76,17 +76,17 @@ metadata:
       note: >
         All 142 covered features are in `apr`. 27 of 28 binaries have no gate at
         all, including aprender-orchestrate (184 features), aprender-test-cli (39)
-        and pv (38).
+        and pv (49).
 
     per_binary:
       command: "python3 scripts/dogfood_baseline.py  # section: per_binary"
       note: >
         covered may never DECREASE for any binary; total may never decrease
         without a reconciliation finding recording which direction moved.
-      apr: {total: 375, covered: 144}
+      apr: {total: 386, covered: 144}
       aprender-orchestrate: {total: 185, covered: 0}
       aprender-test-cli: {total: 40, covered: 0}
-      pv: {total: 38, covered: 0}
+      pv: {total: 49, covered: 0}
       alimentar: {total: 36, covered: 0}
       aprender-cgp: {total: 26, covered: 0}
       aprender-profile: {total: 17, covered: 0}
@@ -150,7 +150,7 @@ metadata:
       apr-core-commands: {total: 111, covered: 39}          # 35.1% of cluster, 27.1% of gate effort
       entrypoint-and-mcp: {total: 115, covered: 9}           # 7.8% of cluster,  6.3% of gate effort
       http-orchestrate-banco: {total: 96, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
-      contracts-pv: {total: 76, covered: 0}                 #  ZERO -- one contract-CLI harness, 76 pv subcommands
+      contracts-pv: {total: 98, covered: 0}                 #  ZERO -- one contract-CLI harness, 98 pv subcommands
       data-pipeline: {total: 77, covered: 0}                #  ZERO
       apr-lint-diag: {total: 71, covered: 55}               # 77.5% of cluster, 38.5% of gate effort
       orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
@@ -169,10 +169,10 @@ metadata:
         they find defects: the 1-2 band is 72.5% covered. Where they do not look,
         the surface scores 6 by DEFAULT -- 672 rows scored exactly 6, and 644 of
         those carry no gate. A 6 does not mean "fine", it means UNLOOKED-AT, and
-        the 4.3% coverage of that band is why.
+        the 4.2% coverage of that band is why.
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
-      q5_6: {total: 676, covered: 29}    # 4.3%
+      q5_6: {total: 698, covered: 29}    # 4.2%
       q7_8: {total: 38, covered: 10}      # 26.3%
       q9_10: {total: 21, covered: 20}    # 95.2%
 
