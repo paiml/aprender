@@ -1,0 +1,18 @@
+- id: PMAT-4617
+  github_issue: 4617
+  item_type: task
+  title: 'clippy-feature-matrix red on main: borrow_deref_ref in cuda residual_add (residual.rs:314,343)'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-2e-serve
+  created: 2026-09-28T21:18:09Z
+  updated: 2026-09-28T21:18:09Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/check_clippy_feature_matrix.sh: the cuda and full axes report 0 findings (they reported borrow_deref_ref at residual.rs:314,343 in run 36376409136)'
+  - 'the diff changes only residual.rs (behaviour-neutral: &*cache_key and cache_key are the same &str)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'No required or release gate lints --features cuda (handoff/070-captain-e6.md:30), so this is branch-only for 0.70.1 (cop 21:16Z).'
