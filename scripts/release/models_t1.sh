@@ -23,6 +23,8 @@
 #      this wrapper takes NO flock -- a second flock on the same file here would deadlock the
 #      ladder's inner one (cop ruling, one owner). The build runs under neither.
 #      The receipt's apr_version must be the line proved in step 2.
+#   Both legs pass --cells (#3715 B1): the receipts carry cells[], the unit release-readiness-v1 grades at
+#   the readiness step. A leg without it measures rungs only and every owed cell is a violation there.
 # THEN scripts/check_model_ladder.sh --version <v> --receipts <out> judges both receipts.
 #
 # An unreachable host, a failed build, a binary that is not the release, a missing receipt, a red
@@ -100,7 +102,7 @@ local_leg() {
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
     [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
-    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out "$out"
+    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out "$out"
 }
 
 remote_leg() {
@@ -131,7 +133,7 @@ cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/bui
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
 [ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
-choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --out "\$dir/out"; lrc=\$?
+choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out"; lrc=\$?
 if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then
   echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$REMOTE_HOST.json"; echo "---END RECEIPT---"
 fi
