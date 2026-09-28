@@ -886,7 +886,9 @@ mod tests {
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
             let gated = i > 0 && lines[i - 1] == "#[cfg(not(feature = \"schema-validation\"))]";
-            let end = starts.get(k + 1).copied().unwrap_or(lines.len());
+            // the body ends at its own closing brace in column 0, never in a later impl block
+            let stop = starts.get(k + 1).copied().unwrap_or(lines.len());
+            let end = (i..stop).find(|&j| lines[j] == "}").map_or(stop, |j| j + 1);
             out.push((name, gated, lines[i..end].join("\n")));
         }
         out
