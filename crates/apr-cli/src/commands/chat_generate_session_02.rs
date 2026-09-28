@@ -300,6 +300,9 @@ impl ChatSession {
                 let turn = session
                     .generate(&prompt_tokens, &gen_config, &mut |_| true)
                     .map_err(|e| format!("Qwen3.5 generate failed: {e}"))?;
+                // #4609: record the backend that answered, as the moe and dense branches do.
+                // Without it every CUDA Qwen3.5 turn reported `ran: cpu, fell_back: true`.
+                self.generated_on_gpu = turn.used_gpu;
                 if config.trace {
                     eprintln!(
                         "[APR-TRACE] qwen35 session: {} prompt tokens reused, {} prefilled, {} generated on the {}",
