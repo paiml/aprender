@@ -269,6 +269,7 @@ tier3:
 	@bash scripts/check_hermetic_stdin_tests.sh
 	@echo "Checking fleet hosts accept only the manifest nightly apr/pv (aprender#4186)..."
 	@bash scripts/check_nightly_pin.sh --self-test
+	@bash scripts/check_released_pin.sh --self-test
 	@echo "Checking no declared-unsupported capability is already implemented (aprender#3686)..."
 	@bash scripts/check_unwired_capabilities.sh --self-test
 	@bash scripts/check_unwired_capabilities.sh

@@ -52,10 +52,11 @@ sourced_basenames() {
 }
 
 # Sourced through a VARIABLE, which the literal-name discovery above cannot see:
-# apr_bin.sh and pv_bin.sh load `. "$APR_NP_LIB"` (#4186), on every source. Named
+# apr_bin.sh and pv_bin.sh load `. "$APR_NP_LIB"` (#4186), on every source, and
+# pv_bin.sh loads `. "$PV_RP_LIB"` in released mode. Named
 # here so the check covers them; a named file that is missing fails below, so
 # the list cannot go stale silently.
-VAR_SOURCED="nightly_pin.sh"
+VAR_SOURCED="nightly_pin.sh released_pin.sh"
 
 scan_file() {
     local f="$1"

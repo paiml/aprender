@@ -744,6 +744,32 @@ case "$PV_NP_SELF" in
     pv_bin.sh) PV_NP_LIB="./nightly_pin.sh" ;;  # ./ : a bare `.` searches PATH first
     *) PV_NP_LIB=$(git rev-parse --show-toplevel 2>/dev/null) && PV_NP_LIB="$PV_NP_LIB/scripts/nightly_pin.sh" || PV_NP_LIB="" ;;
 esac
+# RELEASED MODE (N-1, operator 2026-09-28 17:15Z). PV_BIN_REQUIRE=released runs
+# ONLY the released pv the fleet pin names, never a HEAD build: HEAD mode below
+# refuses every released pv as STALE, since a release is always older than the
+# tree it gates. Opt-in only; no marker selects it. The rule and its refusals
+# are in scripts/released_pin.sh, loaded from beside this file like the nightly
+# rule; its case table is scripts/check_released_pin.sh --self-test.
+if [ "${PV_BIN_REQUIRE:-}" = "released" ]; then
+    case "$PV_NP_LIB" in
+        */nightly_pin.sh) PV_RP_LIB="${PV_NP_LIB%nightly_pin.sh}released_pin.sh" ;;
+        *) PV_RP_LIB="" ;;
+    esac
+    unset RELEASED_PIN_API
+    if [ -z "$PV_RP_LIB" ] || [ ! -f "$PV_RP_LIB" ] || ! . "$PV_RP_LIB" || [ "${RELEASED_PIN_API:-}" != "1" ]; then
+        printf 'RELEASED PIN REFUSED: released_pin.sh is not beside this resolver (%s)\n' "${PV_RP_LIB:-?}" >&2
+        return 1 2>/dev/null || exit 1
+    fi
+    PV_BIN_DECLARED=""
+    PV_RP_DECLARED=$(pv_bin_declared_version) || PV_RP_DECLARED=""
+    PV=$(released_pin_resolve "$PV_RP_DECLARED" "$PV_BIN_IDENTITY") || { return 1 2>/dev/null || exit 1; }
+    PV_SAT="$(dirname "$PV")/pv-sat"
+    export PV PV_SAT
+    if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
+        printf '%s\n' "$PV"
+    fi
+    return 0 2>/dev/null || exit 0
+fi
 if [ -n "$PV_NP_LIB" ] && [ -f "$PV_NP_LIB" ]; then
     unset NIGHTLY_PIN_API
     . "$PV_NP_LIB" || { printf 'NIGHTLY PIN REFUSED: cannot load %s\n' "$PV_NP_LIB" >&2; return 1 2>/dev/null || exit 1; }
