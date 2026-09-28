@@ -1,16 +1,16 @@
 {
-  "build_identity": "e2d210244d",
+  "build_identity": "fd27cc465e",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
     "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
     "driver": "none",
-    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/IQ4_XS@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@ref.bin:25c3f6f5e9e8358e6be339264cfb4e34235792fbf8b8f56224962645c5d87f5f,weights.bin:da6950a47eebbd344c5c862fa042ab11fd3d09d1de7d98e6053edc99d1d737a8,x.bin:c760379f9a6be7968e0937abf9f681e3322230d3e81cb77776f5342a2a0da3d0",
+    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/IQ4_XS@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@mag.bin:c2180a54f115da20e40f175639fd8b08e7058f8ef18fca3230c433b9d55e19ae,ref.bin:25c3f6f5e9e8358e6be339264cfb4e34235792fbf8b8f56224962645c5d87f5f,weights.bin:da6950a47eebbd344c5c862fa042ab11fd3d09d1de7d98e6053edc99d1d737a8,x.bin:c760379f9a6be7968e0937abf9f681e3322230d3e81cb77776f5342a2a0da3d0",
     "row_sha256": "130658801e0285e6e191ca7659c18f9d1bdf1e094bfa7a1029b21d727184cf9a",
     "source_sha256": "1c8596607fd1e31e1494539680d3912c45f7f490069f61082ce4e4d5aa594555",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "cb466015cb87d61fadac066bc60278b528c37517b49f64df3cd3a5e7469c9890",
+  "input_set_hash": "d47504504ddb4c5081d41caa2843c1fd4b5c06d92ddefdaf9e25e7ad0f5ad3e9",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -22,14 +22,19 @@
   ],
   "kernel_id": "cpu.matvec.iq4_xs",
   "margin": {
-    "reason": "the fixture has no |W|·|x| magnitudes and no reference on the activations the kernel quantizes (KTEST-001 §0.4); needs a fixture regen",
-    "verdict": "not_run"
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.0009290895923464377,
+    "nmse": 3.269638603960641e-13,
+    "p999_margin": 0.0009290895923464377,
+    "verdict": "pass"
   },
   "oracle": "gguf_py_dequant_f64",
   "oracle_fixture": {
     "dir": "evidence/kreg/oracle/IQ4_XS",
     "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
     "sha256": {
+      "mag.bin": "c2180a54f115da20e40f175639fd8b08e7058f8ef18fca3230c433b9d55e19ae",
       "ref.bin": "25c3f6f5e9e8358e6be339264cfb4e34235792fbf8b8f56224962645c5d87f5f",
       "weights.bin": "da6950a47eebbd344c5c862fa042ab11fd3d09d1de7d98e6053edc99d1d737a8",
       "x.bin": "c760379f9a6be7968e0937abf9f681e3322230d3e81cb77776f5342a2a0da3d0"
@@ -44,7 +49,7 @@
   },
   "source_fn": "iq_parallel_matvec_into",
   "tolerance_rel": 2e-6,
-  "ts": "2026-09-28T12:09:33Z",
+  "ts": "2026-09-28T12:28:31Z",
   "workload": {
     "in_dim": 1024,
     "out_dim": 32,

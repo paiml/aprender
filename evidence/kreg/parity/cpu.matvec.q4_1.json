@@ -1,16 +1,16 @@
 {
-  "build_identity": "e2d210244d",
+  "build_identity": "fd27cc465e",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
     "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
     "driver": "none",
-    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/Q4_1@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@ref.bin:2411b81233e545f436c9a19d3a09f070404f6eda09eedfd2276e78511387178a,weights.bin:09f3f20d538783c50b8637dcfcc4d8c815a4e8e6806ae7b9a83754422372ba2a,x.bin:6c733f41240fb4ab136167059d67f67aafd8e7cccfea0a5c45b3d3fa61a41cd3",
+    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/Q4_1@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@mag.bin:9e730a65ff4c703e3bfa166059b0ede8a39c6716e2ff12ece4eb011a3ec7b80c,ref.bin:2411b81233e545f436c9a19d3a09f070404f6eda09eedfd2276e78511387178a,weights.bin:09f3f20d538783c50b8637dcfcc4d8c815a4e8e6806ae7b9a83754422372ba2a,x.bin:6c733f41240fb4ab136167059d67f67aafd8e7cccfea0a5c45b3d3fa61a41cd3",
     "row_sha256": "b1a981b94ffb2f850a7c8f5e897c0cf0bfea54a8e04bb1c8493a1c599841a53c",
     "source_sha256": "9e7efef9651a00e4eb492679c1010d8a86c525fd7b3790f81e8eec6ca410f750",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "4c9960e6490dd49d9720b375a8921c5bf0760870266be3b3fe60b2d3eca5fa2b",
+  "input_set_hash": "8af4f30844930e63bfae45adbe2cbcfd08ba3c7be5c8c59e5fd1e5aca62d40a2",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -22,14 +22,19 @@
   ],
   "kernel_id": "cpu.matvec.q4_1",
   "margin": {
-    "reason": "the fixture has no |W|·|x| magnitudes and no reference on the activations the kernel quantizes (KTEST-001 §0.4); needs a fixture regen",
-    "verdict": "not_run"
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.001032782644474132,
+    "nmse": 2.731504221375422e-13,
+    "p999_margin": 0.001032782644474132,
+    "verdict": "pass"
   },
   "oracle": "gguf_py_dequant_f64",
   "oracle_fixture": {
     "dir": "evidence/kreg/oracle/Q4_1",
     "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
     "sha256": {
+      "mag.bin": "9e730a65ff4c703e3bfa166059b0ede8a39c6716e2ff12ece4eb011a3ec7b80c",
       "ref.bin": "2411b81233e545f436c9a19d3a09f070404f6eda09eedfd2276e78511387178a",
       "weights.bin": "09f3f20d538783c50b8637dcfcc4d8c815a4e8e6806ae7b9a83754422372ba2a",
       "x.bin": "6c733f41240fb4ab136167059d67f67aafd8e7cccfea0a5c45b3d3fa61a41cd3"
@@ -44,7 +49,7 @@
   },
   "source_fn": "dequantize_q4_1",
   "tolerance_rel": 2e-6,
-  "ts": "2026-09-28T12:09:33Z",
+  "ts": "2026-09-28T12:28:31Z",
   "workload": {
     "in_dim": 1024,
     "out_dim": 32,

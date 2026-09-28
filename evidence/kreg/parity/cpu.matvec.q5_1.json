@@ -1,16 +1,16 @@
 {
-  "build_identity": "e2d210244d",
+  "build_identity": "fd27cc465e",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
     "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
     "driver": "none",
-    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/Q5_1@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@ref.bin:5be13116d0a81eeef11c4e7f0bb5763389322d72ff298d3fb146d33b2578a050,weights.bin:5c876069b18bdf65ece0d6f5f06bff0ff58c6d753c1f9811f30e90cf7ddf9ca3,x.bin:40a2e68540af4d9ba9b88bb45b3a62dd4bed07c089ea58856ab9f944da640f84",
+    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/Q5_1@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@mag.bin:ab40f72d6c022ced917432dbc6b8699b2d783897a544a9b1b97b16548d022ef1,ref.bin:5be13116d0a81eeef11c4e7f0bb5763389322d72ff298d3fb146d33b2578a050,weights.bin:5c876069b18bdf65ece0d6f5f06bff0ff58c6d753c1f9811f30e90cf7ddf9ca3,x.bin:40a2e68540af4d9ba9b88bb45b3a62dd4bed07c089ea58856ab9f944da640f84",
     "row_sha256": "2dc272828f66c057737827ee44e789f8718dee6a144cafc54f3f7800e8276b64",
     "source_sha256": "9e7efef9651a00e4eb492679c1010d8a86c525fd7b3790f81e8eec6ca410f750",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "e9c30486f061d6777d351a9c50be36e34064fb75bd8b42c695f6928a31cfcd9b",
+  "input_set_hash": "2c6a4bdf1de6ca13f00ccf3306d1a4b568c70f1cdd8f3c2879bccb659ab69f39",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -22,14 +22,19 @@
   ],
   "kernel_id": "cpu.matvec.q5_1",
   "margin": {
-    "reason": "the fixture has no |W|·|x| magnitudes and no reference on the activations the kernel quantizes (KTEST-001 §0.4); needs a fixture regen",
-    "verdict": "not_run"
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.0014474184218141776,
+    "nmse": 1.5328824474425107e-13,
+    "p999_margin": 0.0014474184218141776,
+    "verdict": "pass"
   },
   "oracle": "gguf_py_dequant_f64",
   "oracle_fixture": {
     "dir": "evidence/kreg/oracle/Q5_1",
     "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
     "sha256": {
+      "mag.bin": "ab40f72d6c022ced917432dbc6b8699b2d783897a544a9b1b97b16548d022ef1",
       "ref.bin": "5be13116d0a81eeef11c4e7f0bb5763389322d72ff298d3fb146d33b2578a050",
       "weights.bin": "5c876069b18bdf65ece0d6f5f06bff0ff58c6d753c1f9811f30e90cf7ddf9ca3",
       "x.bin": "40a2e68540af4d9ba9b88bb45b3a62dd4bed07c089ea58856ab9f944da640f84"
@@ -44,7 +49,7 @@
   },
   "source_fn": "dequantize_q5_1",
   "tolerance_rel": 2e-6,
-  "ts": "2026-09-28T12:09:33Z",
+  "ts": "2026-09-28T12:28:31Z",
   "workload": {
     "in_dim": 1024,
     "out_dim": 32,
