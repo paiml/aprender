@@ -11,6 +11,7 @@
   "sha256": {
     "weights.bin": "870e75f4ef603fb70533d2b87405e3db98a07bed08eabc0ae569b31dbbf13319",
     "x.bin": "b76e71b93e834a3e3a4017fa95db746c7551e0161d03a7e9a2f87379f2768b5c",
-    "ref.bin": "e93c954f1746dd93ddd1ac560b04bf246dda4260d7aba3c9a33383b01a3ed414"
+    "ref.bin": "e93c954f1746dd93ddd1ac560b04bf246dda4260d7aba3c9a33383b01a3ed414",
+    "mag.bin": "e2ec47cfc899547da1a1b441165a63d8385fbc30e02e25ecc468e5c815dbc084"
   }
 }
