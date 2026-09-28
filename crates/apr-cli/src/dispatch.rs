@@ -1103,7 +1103,12 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             sealed_manifest,
         }) => {
             if let Err(e) =
-                crate::commands::sealed_ingress::gate("finetune", *rc_bound, sealed_manifest.as_deref())
+                crate::commands::sealed_ingress::enforce(
+                "finetune",
+                *rc_bound,
+                sealed_manifest.as_deref(),
+                &[data.as_deref()],
+            )
             {
                 return Some(Err(e));
             }
@@ -1183,7 +1188,12 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             dataset,
             rc_bound,
             sealed_manifest,
-        }) => crate::commands::sealed_ingress::gate("distill", *rc_bound, sealed_manifest.as_deref())
+        }) => crate::commands::sealed_ingress::enforce(
+            "distill",
+            *rc_bound,
+            sealed_manifest.as_deref(),
+            &[data.as_deref(), dataset.as_deref()],
+        )
             .and_then(|_| distill::run(
             teacher.as_deref(),
             student.as_deref(),
