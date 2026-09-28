@@ -195,12 +195,20 @@ fn the_degeneracy_check_catches_the_defect_it_is_named_for() {
     // #3571's exact output. If this line ever goes green, the test below has been
     // replaced by one that cannot see the defect it is named for -- which is worse
     // than the 503 it used to assert, because it would look like coverage.
-    assert!(is_degenerate_completion(&"\n".repeat(1024)), "1024 newlines");
+    assert!(
+        is_degenerate_completion(&"\n".repeat(1024)),
+        "1024 newlines"
+    );
     assert!(is_degenerate_completion(""), "empty");
     assert!(is_degenerate_completion("   \t  "), "whitespace only");
-    assert!(is_degenerate_completion("aaaaaaaa"), "one character repeated");
+    assert!(
+        is_degenerate_completion("aaaaaaaa"),
+        "one character repeated"
+    );
     // And it must NOT fire on a real answer, or it would fail every green run.
-    assert!(!is_degenerate_completion(" Lima, and the capital of Haiti is"));
+    assert!(!is_degenerate_completion(
+        " Lima, and the capital of Haiti is"
+    ));
     assert!(!is_degenerate_completion(" Paris"));
 }
 
@@ -643,8 +651,12 @@ async fn every_raw_route_answers_from_the_hybrid() {
         assert_eq!(status, StatusCode::OK, "{route}: {text}");
         let answer = if route.contains("batch") {
             let v: serde_json::Value = serde_json::from_str(&text).expect("json");
-            v["results"][0]["text"].as_str().expect("results[0].text").to_string()
-        } else if text.starts_with("event:") || text.contains("\nevent:") || text.contains("data:") {
+            v["results"][0]["text"]
+                .as_str()
+                .expect("results[0].text")
+                .to_string()
+        } else if text.starts_with("event:") || text.contains("\nevent:") || text.contains("data:")
+        {
             text.lines()
                 .filter_map(|l| l.strip_prefix("data: "))
                 .filter_map(|d| serde_json::from_str::<serde_json::Value>(d).ok())
@@ -654,7 +666,10 @@ async fn every_raw_route_answers_from_the_hybrid() {
             let v: serde_json::Value = serde_json::from_str(&text).expect("json");
             v["text"].as_str().expect("text").to_string()
         };
-        assert!(!answer.contains(QUESTION), "{route} echoed the prompt: {answer:?}");
+        assert!(
+            !answer.contains(QUESTION),
+            "{route} echoed the prompt: {answer:?}"
+        );
         assert_eq!(
             clean_chat_output(&answer),
             expected,
@@ -675,11 +690,15 @@ async fn a_thinking_on_request_is_served_the_official_on_prompt_3723() {
     };
     let msgs = [crate::chat_template::ChatMessage::new("user", QUESTION)];
     let render = |t: Option<bool>| {
-        let p = crate::chat_template::render_official_for_model(&mapped.model, &msgs, t).expect("renders");
+        let p = crate::chat_template::render_official_for_model(&mapped.model, &msgs, t)
+            .expect("renders");
         mapped.model.encode(&p).expect("encodes").len()
     };
     let (on_len, off_len) = (render(Some(true)), render(Some(false)));
-    assert_ne!(on_len, off_len, "the probe must distinguish the ON and OFF prompts");
+    assert_ne!(
+        on_len, off_len,
+        "the probe must distinguish the ON and OFF prompts"
+    );
     let app = create_router(state);
 
     let openai = |extra: serde_json::Value| {
@@ -690,15 +709,27 @@ async fn a_thinking_on_request_is_served_the_official_on_prompt_3723() {
         b
     };
     for (label, extra, want) in [
-        ("chat_template_kwargs ON", serde_json::json!({"chat_template_kwargs": {"enable_thinking": true}}), on_len),
+        (
+            "chat_template_kwargs ON",
+            serde_json::json!({"chat_template_kwargs": {"enable_thinking": true}}),
+            on_len,
+        ),
         ("think ON", serde_json::json!({"think": true}), on_len),
-        ("chat_template_kwargs OFF", serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}), off_len),
+        (
+            "chat_template_kwargs OFF",
+            serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}),
+            off_len,
+        ),
         ("absent = OFF", serde_json::json!({}), off_len),
     ] {
         let (status, body) = post(app.clone(), "/v1/chat/completions", openai(extra)).await;
         assert_eq!(status, StatusCode::OK, "{label}: {body}");
         let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
-        assert_eq!(json["usage"]["prompt_tokens"].as_u64(), Some(want as u64), "{label}: {body}");
+        assert_eq!(
+            json["usage"]["prompt_tokens"].as_u64(),
+            Some(want as u64),
+            "{label}: {body}"
+        );
     }
 
     let (status, body) = post(
@@ -715,13 +746,19 @@ async fn a_thinking_on_request_is_served_the_official_on_prompt_3723() {
     .await;
     assert_eq!(status, StatusCode::OK, "/api/chat think: {body}");
     let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
-    assert_eq!(json["prompt_eval_count"].as_u64(), Some(on_len as u64), "/api/chat think: {body}");
+    assert_eq!(
+        json["prompt_eval_count"].as_u64(),
+        Some(on_len as u64),
+        "/api/chat think: {body}"
+    );
 
     // Two spellings that disagree are refused, not picked between.
     let (status, body) = post(
         app,
         "/v1/chat/completions",
-        openai(serde_json::json!({"think": false, "chat_template_kwargs": {"enable_thinking": true}})),
+        openai(
+            serde_json::json!({"think": false, "chat_template_kwargs": {"enable_thinking": true}}),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -740,9 +777,29 @@ fn chat_template_kwargs_parse_and_refuse_unknown_keys_3723() {
         b
     };
     assert_eq!(parse(base.clone()).expect("parses").thinking(), None);
-    assert_eq!(parse(with("chat_template_kwargs", serde_json::json!({"enable_thinking": true}))).expect("parses").thinking(), Some(true));
-    assert_eq!(parse(with("think", serde_json::json!(false))).expect("parses").thinking(), Some(false));
-    assert!(parse(with("chat_template_kwargs", serde_json::json!({"reasoning_effort": "high"}))).is_err(), "an unknown kwarg is refused");
+    assert_eq!(
+        parse(with(
+            "chat_template_kwargs",
+            serde_json::json!({"enable_thinking": true})
+        ))
+        .expect("parses")
+        .thinking(),
+        Some(true)
+    );
+    assert_eq!(
+        parse(with("think", serde_json::json!(false)))
+            .expect("parses")
+            .thinking(),
+        Some(false)
+    );
+    assert!(
+        parse(with(
+            "chat_template_kwargs",
+            serde_json::json!({"reasoning_effort": "high"})
+        ))
+        .is_err(),
+        "an unknown kwarg is refused"
+    );
 }
 
 /// #4272: the stream's release rule. Nothing is sent while the decode ends in
@@ -752,13 +809,23 @@ fn a_stream_delta_holds_back_half_characters_and_possible_stops() {
     use crate::api::realize_handlers::qwen35_stream_delta;
     assert_eq!(qwen35_stream_delta("Lima", 0, &[]).as_deref(), Some("Lima"));
     assert_eq!(qwen35_stream_delta("Lima", 4, &[]), None, "nothing new");
-    assert_eq!(qwen35_stream_delta("Lim\u{FFFD}", 0, &[]), None, "half a char");
+    assert_eq!(
+        qwen35_stream_delta("Lim\u{FFFD}", 0, &[]),
+        None,
+        "half a char"
+    );
     let stops = ["END".to_string()];
     // "EN" could still become "END": two bytes are held.
-    assert_eq!(qwen35_stream_delta("LimaEN", 0, &stops).as_deref(), Some("Lima"));
+    assert_eq!(
+        qwen35_stream_delta("LimaEN", 0, &stops).as_deref(),
+        Some("Lima")
+    );
     assert_eq!(qwen35_stream_delta("LimaEN", 4, &stops), None);
     // The hold never splits a character.
-    assert_eq!(qwen35_stream_delta("aé", 0, &["xy".to_string()]).as_deref(), Some("a"));
+    assert_eq!(
+        qwen35_stream_delta("aé", 0, &["xy".to_string()]).as_deref(),
+        Some("a")
+    );
 }
 
 /// #4272: `stream: true` on `/v1/completions` was BUFFERED — the whole completion
@@ -780,7 +847,10 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     let (status, plain) = post(create_router(state.clone()), "/v1/completions", body(false)).await;
     assert_eq!(status, StatusCode::OK, "{plain}");
     let plain: serde_json::Value = serde_json::from_str(&plain).expect("JSON");
-    let plain_text = plain["choices"][0]["text"].as_str().expect("text").to_string();
+    let plain_text = plain["choices"][0]["text"]
+        .as_str()
+        .expect("text")
+        .to_string();
 
     let t0 = std::time::Instant::now();
     let response = create_router(state)

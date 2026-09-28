@@ -24,7 +24,7 @@ pub const CGP_BACKEND_VALUES: [&str; 7] =
 /// Profiles scalar, SIMD (SSE2/AVX2/AVX-512/NEON/WASM SIMD128),
 /// wgpu (Vulkan/Metal/DX12/WebGPU), and CUDA workloads.
 #[derive(Parser, Clone, Debug)]
-#[command(name = "cgp", version, about, long_about = None)]
+#[command(name = "cgp", version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
 pub struct Cli {
     /// Output JSON instead of human-readable text
     #[arg(long, global = true)]

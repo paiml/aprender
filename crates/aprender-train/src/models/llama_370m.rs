@@ -984,11 +984,28 @@ mod tests {
     // C-LLAMA-370M-SOVEREIGN / AC-SHIP2-001 / FALSIFY-SHIP-011
     // ========================================================================
 
-    /// The sovereign contract YAML embedded at compile time so the test
-    /// binary has a byte-frozen copy — any edit to the file is caught
-    /// by the next test run, not discovered post-publish.
-    const SOVEREIGN_CONTRACT_YAML: &str =
-        include_str!("../../../../contracts/model-families/llama-370m-sovereign-v1.yaml");
+    /// The sovereign contract YAML, read from the workspace at RUN time (#4129). It was an
+    /// `include_str!("../../../../contracts/…")`, a path OUTSIDE the crate, so `cargo test` from
+    /// the published aprender-train tarball could not even compile this module. An edit to the
+    /// file is still caught by the next test run. In tree, a missing or renamed file FAILS; only
+    /// a build with no `contracts/` directory beside the crate (the crates.io tarball) skips, and
+    /// names the test it skipped.
+    fn sovereign_contract_or_skip(test: &str) -> Option<String> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        if !root.join("contracts").is_dir() {
+            eprintln!(
+                "SKIP {test}: out of tree (no {} beside this crate) - the sovereign contract lives \
+                 in the workspace, which a published crate does not carry (#4129)",
+                root.join("contracts").display()
+            );
+            return None;
+        }
+        let path = root.join("contracts/model-families/llama-370m-sovereign-v1.yaml");
+        Some(
+            std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())),
+        )
+    }
 
     /// GATE-ARCH-370M-001 / INV-ARCH-370M-002..008: every architectural
     /// constant declared in `contracts/model-families/llama-370m-sovereign-v1.yaml`
@@ -1004,14 +1021,19 @@ mod tests {
     /// of pretraining compute runs.
     #[test]
     fn falsify_ship_011_rust_scaffold_matches_yaml_contract() {
-        let doc: serde_yaml::Value = serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML)
+        let Some(sovereign_yaml) =
+            sovereign_contract_or_skip("falsify_ship_011_rust_scaffold_matches_yaml_contract")
+        else {
+            return;
+        };
+        let doc: serde_yaml::Value = serde_yaml::from_str(&sovereign_yaml)
             .expect("llama-370m-sovereign-v1.yaml must parse as YAML");
 
         // Contract identity — must be the right contract.
         assert_eq!(
             doc["contract_id"].as_str(),
             Some("C-LLAMA-370M-SOVEREIGN"),
-            "wrong contract loaded — check include_str! path",
+            "wrong contract loaded — check the contract path",
         );
         assert_eq!(doc["family"].as_str(), Some("llama"));
         assert_eq!(doc["size_variant"].as_str(), Some("370m"));
@@ -1074,8 +1096,13 @@ mod tests {
     /// a PROPOSED gate cannot be a ship-blocker.
     #[test]
     fn falsify_ship_011_sovereign_contract_is_active() {
+        let Some(sovereign_yaml) =
+            sovereign_contract_or_skip("falsify_ship_011_sovereign_contract_is_active")
+        else {
+            return;
+        };
         let doc: serde_yaml::Value =
-            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+            serde_yaml::from_str(&sovereign_yaml).expect("parse sovereign contract");
         assert_eq!(
             doc["status"].as_str(),
             Some("ACTIVE"),
@@ -1258,8 +1285,13 @@ mod tests {
     /// test before the artifact ships.
     #[test]
     fn falsify_ship_019_gate_arch_370m_004_has_partial_discharge_marker() {
+        let Some(sovereign_yaml) = sovereign_contract_or_skip(
+            "falsify_ship_019_gate_arch_370m_004_has_partial_discharge_marker",
+        ) else {
+            return;
+        };
         let doc: serde_yaml::Value =
-            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+            serde_yaml::from_str(&sovereign_yaml).expect("parse sovereign contract");
         let gates =
             doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
         let gate = gates
@@ -1406,8 +1438,13 @@ mod tests {
     /// test before the artifact ships.
     #[test]
     fn falsify_ship_017_gate_arch_370m_005_has_partial_discharge_marker() {
+        let Some(sovereign_yaml) = sovereign_contract_or_skip(
+            "falsify_ship_017_gate_arch_370m_005_has_partial_discharge_marker",
+        ) else {
+            return;
+        };
         let doc: serde_yaml::Value =
-            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+            serde_yaml::from_str(&sovereign_yaml).expect("parse sovereign contract");
         let gates =
             doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
         let gate = gates
@@ -1455,14 +1492,14 @@ mod tests {
 
     /// FALSIFY-SHIP-020 / AC-SHIP2-010 — pure decode-throughput threshold
     /// proof. `apr bench --median` on a real trained 370M .apr is the
-    /// compute-heavy harness; the decision rule itself (≥100 tok/s
-    /// passes, <100 tok/s fails) is separable and proven here.
+    /// compute-heavy harness; the decision rule itself (at or above
+    /// `AC_SHIP2_010_MIN_DECODE_TPS_RTX4090` passes, below it fails) is separable and proven here.
     ///
     /// Invariants covered:
-    ///   1. Pass boundary: exactly 100.0 tok/s → Pass (contract floor).
-    ///   2. Fail boundary: 99.999 tok/s → Fail (one ULP below floor).
-    ///   3. Generous green: 120.0 and 500.0 tok/s → Pass.
-    ///   4. Hard red: 0.0 and 50.0 tok/s → Fail.
+    ///   1. Pass boundary: exactly the floor → Pass (contract floor).
+    ///   2. Fail boundary: one f32 ULP below the floor → Fail.
+    ///   3. Generous green: well above the floor → Pass.
+    ///   4. Hard red: zero and half the floor → Fail.
     ///   5. Monotonicity: once Fail, all strictly lower tps stay Fail.
     ///   6. Degenerate inputs: NaN and ±∞ → Fail (no well-defined
     ///      median → no proof).
@@ -1560,8 +1597,13 @@ mod tests {
     /// fields fails this test before the artifact ships.
     #[test]
     fn falsify_ship_020_gate_arch_370m_006_has_partial_discharge_marker() {
+        let Some(sovereign_yaml) = sovereign_contract_or_skip(
+            "falsify_ship_020_gate_arch_370m_006_has_partial_discharge_marker",
+        ) else {
+            return;
+        };
         let doc: serde_yaml::Value =
-            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+            serde_yaml::from_str(&sovereign_yaml).expect("parse sovereign contract");
         let gates =
             doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
         let gate = gates
@@ -1793,8 +1835,13 @@ mod tests {
     /// at `cargo test` time.
     #[test]
     fn falsify_ship_018_gate_arch_370m_007_has_partial_discharge_marker() {
+        let Some(sovereign_yaml) = sovereign_contract_or_skip(
+            "falsify_ship_018_gate_arch_370m_007_has_partial_discharge_marker",
+        ) else {
+            return;
+        };
         let doc: serde_yaml::Value =
-            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+            serde_yaml::from_str(&sovereign_yaml).expect("parse sovereign contract");
 
         let gates = doc["gates"].as_sequence().expect("contract must have `gates:` sequence");
 
@@ -1975,8 +2022,13 @@ mod tests {
     /// test before the artifact ships.
     #[test]
     fn falsify_ship_016_gate_arch_370m_008_has_partial_discharge_marker() {
+        let Some(sovereign_yaml) = sovereign_contract_or_skip(
+            "falsify_ship_016_gate_arch_370m_008_has_partial_discharge_marker",
+        ) else {
+            return;
+        };
         let doc: serde_yaml::Value =
-            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+            serde_yaml::from_str(&sovereign_yaml).expect("parse sovereign contract");
         let gates =
             doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
         let gate = gates

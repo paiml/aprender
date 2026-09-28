@@ -24,6 +24,11 @@
 //! development host has the GGUF mmapped at
 //! `/home/noah/.cache/pacha/models/2b88b180a790988f.gguf`.
 //!
+//! A SKIP measured nothing, so the lane that owns this falsifier
+//! (cuda-nightly `falsifiers`, gx10, #4179) sets
+//! `APR_QW3_MOE_REQUIRE_MODEL=1`: there a missing model FAILS instead of
+//! skipping. `APR_QW3_MOE_GGUF` names the model ahead of the canonical paths.
+//!
 //! ## Why this is heavy
 //!
 //! `apr run --max-tokens 1` on the 17.3 GB Q4_K_M GGUF performs:
@@ -50,18 +55,56 @@ const CANONICAL_QWEN3_CODER_GGUF_PATHS: &[&str] = &[
 /// short-circuit the forward. Updated when this test is touched.
 const FRESH_PROMPT: &str = "M32c.2.2.2.1.4 live falsifier 2026-04-29: write the letter q.";
 
+/// The model to run: the override first, then the canonical paths. `Ok(None)`
+/// is a SKIP, allowed only when the lane does not require the model (#4179).
+fn resolve_model(
+    override_path: Option<String>,
+    candidates: &[&str],
+    require: bool,
+) -> Result<Option<String>, String> {
+    let found = override_path
+        .into_iter()
+        .chain(candidates.iter().map(|p| (*p).to_string()))
+        .find(|p| Path::new(p).exists());
+    match found {
+        Some(p) => Ok(Some(p)),
+        None if require => Err(format!(
+            "APR_QW3_MOE_REQUIRE_MODEL=1 and no Qwen3-Coder GGUF at any of {candidates:?} \
+             (or APR_QW3_MOE_GGUF): a SKIP here would report a pass that measured nothing"
+        )),
+        None => Ok(None),
+    }
+}
+
+#[test]
+fn f_qw3_moe_c22214_000_require_model_fails_closed() {
+    let missing = &["/nonexistent/qw3-moe-4179.gguf"];
+    assert_eq!(resolve_model(None, missing, false), Ok(None));
+    assert!(resolve_model(None, missing, true).is_err());
+    assert!(resolve_model(Some("/nonexistent/o.gguf".into()), missing, true).is_err());
+    let exe = std::env::current_exe().unwrap().display().to_string();
+    assert_eq!(
+        resolve_model(Some(exe.clone()), missing, true),
+        Ok(Some(exe))
+    );
+}
+
 #[test]
 fn f_qw3_moe_c22214_001_apr_run_emits_at_least_one_non_whitespace_char() {
-    let Some(gguf_path) = CANONICAL_QWEN3_CODER_GGUF_PATHS
-        .iter()
-        .find(|p| Path::new(p).exists())
-    else {
+    let require = std::env::var("APR_QW3_MOE_REQUIRE_MODEL").as_deref() == Ok("1");
+    let resolved = resolve_model(
+        std::env::var("APR_QW3_MOE_GGUF").ok(),
+        CANONICAL_QWEN3_CODER_GGUF_PATHS,
+        require,
+    );
+    let Some(gguf_path) = resolved.unwrap_or_else(|e| panic!("F-QW3-MOE-C22214-001: {e}")) else {
         eprintln!(
             "F-QW3-MOE-C22214-001: SKIP — no cached Qwen3-Coder GGUF at any of {:?}",
             CANONICAL_QWEN3_CODER_GGUF_PATHS
         );
         return;
     };
+    let gguf_path = gguf_path.as_str();
 
     eprintln!("F-QW3-MOE-C22214-001: live `apr run` against {gguf_path}");
     let start = std::time::Instant::now();

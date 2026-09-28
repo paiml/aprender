@@ -166,6 +166,14 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
     # independently of the rc, because a row can be rc=0 and still not add up.
     if x.get("gates_account_for_rc") is False:
         why.append("`gates_account_for_rc` is FALSE — the recorded gates do not explain `qa_rc`, so more failed than this row accounts for (#3898)")
+    # #4016: a GPU cell counts only with llama.cpp's fit verdict "fits" recorded (full GPU, ctx >= 4096,
+    # pinned llama-fit-params). No verdict is refused, never read as a pass.
+    if claims_gpu:
+        fit = x.get("fit")
+        if not isinstance(fit, dict) or not fit.get("verdict"):
+            why.append("fit (#4016): NO llama.cpp fit verdict recorded -- a cell without one is refused")
+        elif fit.get("verdict") != "fits":
+            why.append(f"fit (#4016): {fit.get('verdict')}: {_disp(fit.get('reason', ''))}")
     be = x.get("backends") or {}
     for b in backends:
         v = be.get(b)
@@ -542,6 +550,78 @@ PY
 #   lock_probe  (behavioural, self-test): a fake apr, called through --lock-probe, must see the lock
 #               held and its own oom_score_adj at 1000; with the lock held elsewhere the call must
 #               decline (exit 2) within the bounded wait, naming the holder's pid.
+# ---------------------------------------------------------------- the fit gate (#4016)
+# Operator rule 2026-09-23: llama.cpp's fit (the pinned llama-fit-params) is the placement authority for
+# every model certification and test until apr has a parity tool. Two halves, as for the lock:
+#   fit_audit  (static, also in the REAL run): measure() takes the fit verdict BEFORE its first apr call,
+#              refuses on anything but "fits", and the model probe runs only through fit_locked.
+#   fit_probe  (behavioural, self-test): the producer's --fit-probe against stub tools lands every case
+#              of the table on the right verdict and exit code.
+# fit_audit <producer> -> prints FAIL lines, exit 1 on any violation
+fit_audit() {
+  python3 - "$1" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read(); bad = 0
+m = re.search(r"^measure\(\) \{\n(.*?)^\}", src, re.S | re.M)
+body = m.group(1) if m else ""
+gate, first_apr = body.find('fit_json=$(fit_verdict "$path")'), body.find("apr_locked ")
+if gate < 0 or first_apr < 0 or gate > first_apr:
+    print("FAIL  fit: measure() does not take the fit verdict before its first apr call (#4016)"); bad = 1
+# the refusal block itself (the `if` up to its own `fi`) must `return`; a `return` elsewhere is not the refusal
+blk = re.search(r'if ! grep -q \'"verdict": "fits"\' <<< "\$fit_json"; then\n(.*?)\n\s*fi\b', body, re.S)
+if not blk or not re.search(r"^\s*return\s*$", blk.group(1), re.M):
+    print("FAIL  fit: measure() does not refuse (return) a cell whose verdict is not \"fits\" (#4016)"); bad = 1
+raw = [l.strip() for l in src.splitlines() if '"$LLAMA_FIT"' in l and "--model" in l and not l.lstrip().startswith("#")]
+if raw: print(f"FAIL  fit: a raw llama-fit-params model probe outside fit_locked: {raw[0]}"); bad = 1
+if not re.search(r'^fit_locked\(\) \{ flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom -n 1000 -- "\$LLAMA_FIT"', src, re.M):
+    print("FAIL  fit: fit_locked does not run the probe under the bounded fleet lock + choom"); bad = 1
+sys.exit(bad)
+PY
+}
+# fit_probe <producer> <work dir> -> prints ok/FAIL lines, exit 1 on any case landing wrong
+fit_probe() {
+  local prod=$1 w=$2 bad=0 t pin=d1d3c3396 out rc want v
+  mkdir -p "$w" || return 1
+  : > "$w/model.gguf"   # no readable header: trained length unknown, the 4096 floor holds
+  # gguf <file> <context_length>: a minimal GGUF v3 header whose only KV is llama.context_length
+  gguf() { python3 -c 'import struct,sys; k=b"llama.context_length"; open(sys.argv[1],"wb").write(b"GGUF"+struct.pack("<IQQ",3,0,1)+struct.pack("<Q",len(k))+k+struct.pack("<II",4,int(sys.argv[2])))' "$1" "$2"; }
+  gguf "$w/trained-2k.gguf" 2048
+  gguf "$w/trained-4k.gguf" 4096
+  gguf "$w/trained-32k.gguf" 32768
+  mk() { printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "version: 0.4.1-dev (build 1, commit %s)";; *) %s;; esac\n' "$2" "$3" > "$w/$1"; chmod +x "$w/$1"; }
+  mk fits      "$pin"    'echo "-c 262144 -ngl -1"'
+  mk nofit     "$pin"    'echo "failed to fit" >&2; exit 1'
+  mk noverdict "$pin"    'echo "no parameters printed"'
+  mk partial   "$pin"    'echo "-c 8192 -ngl -1 -ot \"blk.1.ffn=CPU\""'
+  mk partialngl "$pin"   'echo "-c 32768 -ngl 20"'
+  mk smallctx  "$pin"    'echo "-c 2048 -ngl -1"'
+  mk ctx8k     "$pin"    'echo "-c 8192 -ngl -1"'
+  mk otherpin  41fc758   'echo "-c 32768 -ngl -1"'
+  # case | tool | model | expected verdict | expected exit
+  # The ctx floor is min(4096, trained ctx) (cop ruling on #4016): tinyllama, trained at 2K, must be
+  # ADMITTED at 2048; a 4K-trained model fitted at 2048 must be REFUSED; a 32K-trained model at 8192 fits.
+  while IFS='|' read -r t tool model want_v want; do
+    out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_FREE_MIB=23332 MODEL_LADDER_FIT="$w/$tool" \
+          MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true timeout 60 bash "$prod" --fit-probe "$w/$model" 2> /dev/null); rc=$?
+    v=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("verdict",""))' "$out" 2> /dev/null)
+    if [ "$v" = "$want_v" ] && [ "$rc" = "$want" ]; then printf 'ok    fit case %-12s verdict=%s exit=%s\n' "$t" "$v" "$rc"
+    else printf 'FAIL  fit case %-12s verdict=%s exit=%s, want %s exit %s\n' "$t" "${v:-<none>}" "$rc" "$want_v" "$want"; bad=1; fi
+  done <<'CASES'
+fits|fits|model.gguf|fits|0
+does-not-fit|nofit|model.gguf|does-not-fit|1
+verdict-missing|noverdict|model.gguf|missing|1
+partial-ot|partial|model.gguf|partial-offload|1
+partial-ngl|partialngl|model.gguf|partial-offload|1
+ctx-2k-trained-unknown|smallctx|model.gguf|does-not-fit|1
+tinyllama-2k-at-2048|smallctx|trained-2k.gguf|fits|0
+4k-trained-at-2048|smallctx|trained-4k.gguf|does-not-fit|1
+32k-trained-at-8192|ctx8k|trained-32k.gguf|fits|0
+unpinned|otherpin|model.gguf|unpinned|1
+tool-absent|absent|model.gguf|tool-absent|1
+CASES
+  return "$bad"
+}
+
 # lock_audit <producer> -> prints FAIL lines, exit 1 on any raw call
 lock_audit() {
   python3 - "$1" <<'LOCKPY'
@@ -712,6 +792,40 @@ if [ "$SELF_TEST" = 1 ]; then
     pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
+    # The fit gate (#4016): the real producer passes the audit and the probe table; each producer mutant
+    # must fail one of them, and each judge rule deleted in a copy must turn its case RED.
+    if fit_audit "$prod" > "$mdir/fit-audit.out"; then echo "ok    fit: $prod gates every GPU cell on llama.cpp's fit verdict before any apr call"
+    else cat "$mdir/fit-audit.out"; bad=$((bad+1)); fi
+    fit_probe "$prod" "$mdir/fit" || bad=$((bad+1))
+    fmutant() { # fmutant <label> <sed expression breaking the fit gate in a copy of the producer>
+      local m="$mdir/f-$1.sh"
+      sed "$2" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  fit mutant $1 did not apply -- the fit checks prove nothing"; bad=$((bad+1)); return; fi
+      if fit_audit "$m" > /dev/null && fit_probe "$m" "$mdir/fit-$1" > /dev/null; then echo "FAIL  fit mutant $1 SURVIVED the fit checks"; bad=$((bad+1))
+      else printf 'ok    fit mutant %-19s killed by the fit checks\n' "$1"; fi
+    }
+    fmutant no-gate       's/      fit_json=\$(fit_verdict "\$path")/      fit_json=\x27{"verdict": "fits"}\x27/'
+    fmutant no-refusal    's/        return$/        :/'
+    fmutant raw-probe     's/    fit_locked --model "\$1"/    "$LLAMA_FIT" --model "$1"/'
+    vmutant() { # vmutant <label> <sed expression deleting a rule in a copy of scripts/lib/llama_fit_verdict.py>
+      local md="$mdir/v-$1"; mkdir -p "$md"
+      sed "$2" scripts/lib/llama_fit_verdict.py > "$md/llama_fit_verdict.py"
+      if cmp -s scripts/lib/llama_fit_verdict.py "$md/llama_fit_verdict.py"; then echo "FAIL  verdict mutant $1 did not apply -- the fit table proves nothing"; bad=$((bad+1)); return; fi
+      if MODEL_LADDER_FIT_LIB="$md" fit_probe "$prod" "$mdir/fitv-$1" > /dev/null; then echo "FAIL  verdict mutant $1 SURVIVED the fit case table"; bad=$((bad+1))
+      else printf 'ok    verdict mutant %-15s killed by the fit case table\n' "$1"; fi
+    }
+    vmutant tool-absent  's/    if not tool_found:/    if False:/'
+    vmutant pin          's/    if not built or k < 7 or built\[:k\] != pin\[:k\]:/    if False:/'
+    vmutant rc           's/    if rc != 0:/    if False:/'
+    vmutant no-verdict   's/    if not (c and n):/    if False:/'
+    vmutant partial-ngl  's/    if rec\["ngl"\] != -1 or/    if False or/'
+    vmutant partial-ot   's/ or " -ot " in f" {line} "//'
+    vmutant min-ctx      's/    if rec\["ctx"\] < floor:/    if False:/'
+    vmutant floor-4096   's/    floor = min(min_ctx, trained) if trained else min_ctx/    floor = min_ctx/'
+    vmutant floor-trained 's/    floor = min(min_ctx, trained) if trained else min_ctx/    floor = trained or min_ctx/'
+    vmutant no-reader    's/                    return struct.unpack(fmt, /                    return None and struct.unpack(fmt, /'
+    mutant fit-missing    red-fit-missing      's/        if not isinstance(fit, dict) or not fit.get("verdict"):/        if False:/'
+    mutant fit-not-fits   red-fit-does-not-fit 's/        elif fit.get("verdict") != "fits":/        elif False:/'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
     cmutant() { # cmutant <label> <case that must kill it> <sed expression deleting the rule>
@@ -1080,6 +1194,8 @@ rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 # #3957 F1: exit 2 now also means DEFER, so a raw GPU call must not hide behind it -- always RED.
 if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
+# ... nor measure a GPU cell without llama.cpp's fit verdict (#4016).
+if ! fit_audit scripts/model_ladder.sh; then rc=1; fi
 case $rc in
   0) if [ "$named_red" = 1 ]; then
        echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep, or a KNOWN-RED shipping with its ticket (counted RED above, never green)"
