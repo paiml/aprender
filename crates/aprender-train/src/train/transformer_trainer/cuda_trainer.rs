@@ -2441,6 +2441,18 @@ impl CudaTransformerTrainer {
     ///
     /// For DDP, we always need accumulation buffers (even with accumulation_steps=1)
     /// because gradients must be downloaded to CPU for AllReduce before optimizer step.
+    /// Route every accumulate-only backward into the CPU `grad_accum`, with
+    /// its D2H staging buffer sized. DDP AllReduces `grad_accum`, so it must
+    /// be the accumulator `gpu_backward` writes: with `accumulation_steps > 1`
+    /// the GPU-resident one (ALB-091) took the gradients and DDP averaged a
+    /// zero buffer; with 1 the staging buffer was empty and the first block
+    /// download panicked.
+    pub(crate) fn use_cpu_grad_accum(&mut self) {
+        self.gpu_grad_accum = None;
+        self.ensure_grad_accum();
+        self.ensure_d2h_staging();
+    }
+
     pub(crate) fn ensure_grad_accum(&mut self) {
         if self.grad_accum.is_some() {
             return;
