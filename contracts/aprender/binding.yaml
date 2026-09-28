@@ -1118,6 +1118,23 @@ bindings:
   function: load_setfit_apr
   status: implemented
   notes: 'Lands with plan 04-03. Eight ordered rungs; VerifiedSetFitModel has a private constructor reachable only from here, proven non-constructible from outside by a trybuild compile-fail test (APR-04).'
+# --- setfit-encoder-conformance-v1: the two #[contract] sites in aprender::setfit (#4581) ----
+# Both annotations landed with #2618 while the registry was the gone provable-contracts sibling,
+# so their CONTRACT_* keys were never set and the macro fell through silently. #4369 made a
+# registry-less site a compile error; `--features setfit` builds of aprender-core failed on
+# exactly these two until the rows existed.
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: setfit_encoder_forward
+  module_path: aprender::setfit::encoder
+  function: BertSentenceEncoder::forward_tokens
+  status: implemented
+  notes: 'The annotated forward; contract_pre_setfit_encoder_forward! checks the batch ids on entry.'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: pair_cosine_mse
+  module_path: aprender::setfit::loss
+  function: pair_cosine_mse
+  status: implemented
+  notes: 'The annotated contrastive loss over (za, zb, labels).'
 # --- setfit-benchmark-claims-v1: the Phase 5 claims schema (plan 05-05 task 1) -------------
 #
 # STATUS AS OF PLAN 05-10 (wave 5): TEN of ten are `implemented`, and `make
