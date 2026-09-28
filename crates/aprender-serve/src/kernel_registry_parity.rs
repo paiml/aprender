@@ -306,6 +306,26 @@ fn committed_parity_receipts_hold_on_this_host() {
             "{id}: max_rel_err {} > receipt tolerance {bound} ({path})",
             now.max_rel_err
         );
+        // The row's `precision` is a claim about the served path, and the two measurements test
+        // it: f32 activations serve exactly what the FP32 scope computes; a quantized precision
+        // serves something measurably coarser. (#4539: q4_k declared f32 and served Q8_K.)
+        let fp32 = measure(kernel(id), w, true);
+        if row.precision == "f32" {
+            assert!(
+                now.max_rel_err <= fp32.max_rel_err,
+                "{id}: precision=f32, yet the served path ({}) is coarser than FP32 ({})",
+                now.max_rel_err,
+                fp32.max_rel_err
+            );
+        } else {
+            assert!(
+                now.max_rel_err > 10.0 * fp32.max_rel_err,
+                "{id}: precision={}, yet the served path ({}) is as exact as FP32 ({})",
+                row.precision,
+                now.max_rel_err,
+                fp32.max_rel_err
+            );
+        }
     }
 }
 
