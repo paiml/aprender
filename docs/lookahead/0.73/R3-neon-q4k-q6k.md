@@ -82,3 +82,22 @@ The NEON kernels go into three aprender-serve dispatchers. Each has the same sha
 - pv validate: rc 0. The first try failed PROVABILITY-001 because a kernel contract must have kani_harnesses.
 - pv score: **0.57 (D)**. By dimension: D1 0.70, D2 1.00, D3 0.60, D4 Lean 0.00, D5 Binding 0.00. There is no binding registry for a draft outside the tree; the binding lands with the code.
 - K9 recheck: `pv lint --min-score 0.6` is RED on the real draft **and** on the copy with its falsifiers stripped (0.32, F). At 0.6 the lint therefore does not separate them for kernel contracts; the score does (0.57 vs 0.32). The lint floor is not the gate for this draft.
+
+## 11. Lineage and K10 claim inventory (2026-09-28, read at origin/main c115c5ed02)
+
+**Lineage — R3 is not a duplicate; it is the open successor of two closed rows.**
+- #2567 "Q4_K GEMV has no aarch64 SIMD and its 'parallel' variant calls the scalar path" (milestone 0.73.0) is CLOSED as *completed*, but the closing comment is "folded into epic #3999 (triage evidence/triage-1717.md)". Nothing was fixed. R3 carries it.
+- #2942 / roadmap PMAT-1027 "W-G GB10: NEON Q4_K GEMV; batched prefill default on sm_121…; pre-compiled kernels" is CLOSED (backlog). The roadmap row is still `status: planned, assigned_to: null`, and it bundles two unrelated GPU items. When R3 is minted, it should name PMAT-1027 as superseded for its NEON part only. Owning the roadmap row is the cop's call; L3 edits no roadmap.
+- K10 still holds at c115c5ed02. The three dispatchers (`fused_k.rs`, `fused_q5k_q6k.rs`, `fused_q4k.rs`) have no `target_arch = "aarch64"` arm. The only aarch64 cfg in `aprender-serve/src/quantize/` is `simd_backend.rs:41`.
+
+**Label sources that say NEON while the Q4K/Q6K dot runs scalar:**
+
+| Source | What it says | Consumed by | Verdict |
+|---|---|---|---|
+| `aprender-serve/src/quantize/simd_backend.rs:41` `detect_simd_backend()` | `SimdBackend::Neon` on every aarch64 host, from arch alone | serve: tests only (`simd_backend.rs:319`, `tests_coverage_detect_simd.rs`); `aprender-zram/bins/trueno-ublk/src/device/mod.rs:351` | Arch label, not kernel path. Harmless today (no serve prod consumer). A trap if a receipt ever reads it: that is why E-R3-2 asks for `kernel_path()` per dispatcher, never this |
+| `docs/audits/impl-PMAT-989-receipt.md:52,60` | gx10 / mini `backend: cpu … class=neon` | receipt prose | Host-class label. It must not be read as "Q4K/Q6K ran NEON". Emitter not located in a 10-min timebox; open item for R3 impl |
+| `contracts/trueno/neon-dequant-v1.yaml` (+ generated `contract_*_neon_q4k_dequant!` macros in `aprender-compute/src/generated_contracts.rs`) | NEON Q4K/Q6K/Q8_0 **dequant** equations with Lean theorems | aprender-compute | Dequant, not the fused dot. It is a separate kernel family, but R3's oracle tests can reuse its fixtures (block builders, ε). Check before R3 writes a new block generator |
+| `docs/build-ledger/2026-09-13/e45eaab47-reconcile.json:85` | "remaining: NEON path for Q4_K and Q6_K GEMV, and an ARM speed gate" | ledger | Correct (it names the gap) |
+| `docs/specifications/0.66-performance-parity-report.md:175` | G5 "GB10 decode 0.66× … Q4_K GEMV scalar on aarch64 (#2567)" | spec | Correct: attributes the GB10 gap to scalar |
+
+**Consequence for R3's exit (adds to E-R3-2):** a NEON number is admissible only with `kernel_path()` in the receipt. The `detect_simd_backend()` value and `class=neon` are never proof, which is the same rule as OBS-18's gpu_proof.
