@@ -13,7 +13,7 @@
 use trueno_viz::{
     output::{TerminalEncoder, TerminalMode},
     plots::{BinStrategy, Histogram},
-    prelude::Rgba,
+    prelude::{Rgba, WithDimensions},
 };
 
 #[cfg(feature = "visualization")]
