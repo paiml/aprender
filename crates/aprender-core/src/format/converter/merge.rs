@@ -9,7 +9,7 @@
 //! - DARE: Drop And Rescale (requires base model)
 
 use crate::error::{AprenderError, Result};
-use crate::format::v2::{AprV2Metadata, AprV2Writer};
+use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 use crate::serialization::safetensors::save_safetensors;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
