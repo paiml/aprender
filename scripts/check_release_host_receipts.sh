@@ -937,10 +937,21 @@ lock_state() { if "$REAL_FLOCK" -n "$PQ_LOCK" true; then echo free; else echo he
 # mktemp, not a counter: rows run inside $( ), where a counter's increment never reaches the next row
 band_dir() { BD=$(mktemp -d "$TMP/band-XXXXXX") || return 2; export PQ_LOCK="$BD/gpu.lock"; : > "$PQ_LOCK"; }
 band_reap() { local f p; for f in "$1"/gpu-held-*; do [ -f "$f" ] || continue; p=""; read -r p < "$f"; [ -z "$p" ] || kill "$p" 2> /dev/null; done; return 0; }
+# P1's sleep dies 0.3 s after TERM, as a loaded runner's does: a release that does not wait for the
+# holder's sleep (which inherits the queue's lock fd) then sees the lock held every time, not by luck
+# of the scheduler (diag run 36384418038 hit it only under load)
+PQS="$TMP/pq-slow-sleep"; mkdir -p "$PQS"
+cat > "$PQS/sleep" <<STUB
+#!/usr/bin/env bash
+trap 'kill "\$c" 2> /dev/null; /bin/sleep 0.3; exit 143' TERM
+/bin/sleep "\$@" & c=\$!
+wait "\$c"
+STUB
+chmod +x "$PQS/sleep"
 # band_env LIB -> a subshell prologue: the scratch PATH and the library under test
 p1_hold_release() {
     band_dir
-    ( trap 'band_reap "$BD"' EXIT; export PATH="$PQ:/usr/bin:/bin"; . "$1"; GPU_BAND_Q="gpu-q --prio 8 --"
+    ( trap 'band_reap "$BD"' EXIT; export PATH="$PQ:$PQS:/usr/bin:/bin"; . "$1"; GPU_BAND_Q="gpu-q --prio 8 --"
       gpu_band_acquire accel-c1 "$BD" || { echo "acquire failed"; exit 1; }
       [ "$(lock_state)" = held ] || { echo "the lock was not held after acquire"; exit 1; }
       h=$GPU_BAND_HOLDER; gpu_band_release
