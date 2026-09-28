@@ -9,7 +9,9 @@ hide behind agreement, which the in-tree oracle cannot rule out.
 
 Writes ``<outdir>/<TYPE>/weights.bin`` (the quantized bytes, row-major ``[out_dim]``
 rows), ``x.bin`` (little-endian float32 ``[in_dim]``), ``ref.bin`` (little-endian
-float64 ``[out_dim]``) and ``meta.json`` (shape, seed, gguf-py origin, sha256 of each
+float64 ``[out_dim]``), ``mag.bin`` (little-endian float64 ``[out_dim]``: |W|·|x| from
+the same gguf-py dequantization, the magnitude KTEST-02's EM-DOT bound is scaled by) and
+``meta.json`` (shape, seed, gguf-py origin, sha256 of each
 file). ``kernel_registry::parity`` measures the Rust kernels against these files.
 
 Refuses rather than writing a vacuous oracle: an unknown type, a non-finite or
@@ -79,11 +81,12 @@ def emit(outdir: str, name: str) -> None:
     if deq.shape != (OUT_DIM, IN_DIM):
         sys.exit(f"{name}: gguf-py returned shape {deq.shape}")
     ref = deq.astype(np.float64) @ x.astype(np.float64)
+    mag = np.abs(deq.astype(np.float64)) @ np.abs(x.astype(np.float64))
     if not np.all(np.isfinite(ref)) or not np.any(ref):
         sys.exit(f"{name}: a non-finite or all-zero reference measures nothing")
     d = os.path.join(outdir, name)
     os.makedirs(d, exist_ok=True)
-    files = {"weights.bin": w.tobytes(), "x.bin": x.astype("<f4").tobytes(), "ref.bin": ref.astype("<f8").tobytes()}
+    files = {"weights.bin": w.tobytes(), "x.bin": x.astype("<f4").tobytes(), "ref.bin": ref.astype("<f8").tobytes(), "mag.bin": mag.astype("<f8").tobytes()}
     for f, b in files.items():
         with open(os.path.join(d, f), "wb") as fh:
             fh.write(b)

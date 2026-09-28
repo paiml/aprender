@@ -555,6 +555,8 @@ struct Fixture {
     weights: Vec<u8>,
     x: Vec<f32>,
     reference: Vec<f64>,
+    /// |W|·|x| per output from gguf-py's dequantization: the EM-DOT bound's magnitude.
+    magnitudes: Vec<f64>,
 }
 
 /// Load a fixture and refuse one whose files are not the ones its `meta.json` hashed.
@@ -584,15 +586,19 @@ fn fixture(ggml_type: &str) -> Fixture {
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
-    let reference = load("ref.bin")
-        .chunks_exact(8)
-        .map(|c| f64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
-        .collect();
+    let f64s = |b: Vec<u8>| -> Vec<f64> {
+        b.chunks_exact(8)
+            .map(|c| f64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
+            .collect()
+    };
+    let reference = f64s(load("ref.bin"));
+    let magnitudes = f64s(load("mag.bin"));
     Fixture {
         meta,
         weights,
         x,
         reference,
+        magnitudes,
     }
 }
 
@@ -616,11 +622,26 @@ fn measure_fixture(k: &FixtureKernel, f: &Fixture) -> Measured {
         .zip(&f.reference)
         .map(|(a, r)| (f64::from(*a) - r).abs())
         .fold(0f64, f64::max);
+    assert_eq!(f.magnitudes.len(), out_dim, "{}: mag length", k.id);
+    // Every fixture row is precision=f32: the kernel consumes x as given, so ref.bin is already
+    // the oracle on the activations it saw (KTEST-001 §0.4).
+    let r = aprender_kernel_oracle::margin::judge_model(
+        &y,
+        &f.reference,
+        &f.magnitudes,
+        &em_dot(in_dim),
+    )
+    .unwrap_or_else(|e| panic!("{}: EM-DOT K={in_dim} refused: {e:?}", k.id));
     Measured {
         max_abs_err,
         max_rel_err: max_abs_err / scale,
         quantized_act_rel_err: None,
-        margin: None,
+        margin: Some(Margin {
+            max: r.max_margin,
+            p999: r.p999_margin,
+            nmse: r.nmse,
+            pass: r.passed(),
+        }),
     }
 }
 
@@ -644,10 +665,7 @@ fn fixture_receipt(k: &FixtureKernel, row: &KernelRow) -> serde_json::Value {
     doc["served"] =
         serde_json::json!({"max_abs_err": served.max_abs_err, "max_rel_err": served.max_rel_err});
     doc["tolerance_rel"] = tolerance_from(served.max_rel_err).into();
-    doc["margin"] = serde_json::json!({
-        "verdict": "not_run",
-        "reason": "the fixture has no |W|·|x| magnitudes and no reference on the activations the kernel quantizes (KTEST-001 §0.4); needs a fixture regen",
-    });
+    doc["margin"] = margin_json(served.margin);
     doc
 }
 
@@ -750,8 +768,8 @@ fn committed_parity_receipts_hold_on_this_host() {
         );
         if rc["oracle"] == GGUF_PY_ORACLE {
             assert_eq!(
-                rc["margin"]["verdict"], "not_run",
-                "{path}: a fixture receipt cannot claim a margin its fixture cannot support"
+                rc["margin"]["verdict"], "pass",
+                "{path}: KTEST-02 margin verdict (max ≤ 1 under EM-DOT)"
             );
             check_fixture_receipt(id, path, &rc, row);
             continue;
@@ -836,6 +854,12 @@ fn check_fixture_receipt(id: &str, path: &str, rc: &serde_json::Value, row: &Ker
     );
     let bound = rc["tolerance_rel"].as_f64().expect("tolerance_rel");
     let now = measure_fixture(k, &f);
+    let now_margin = now.margin.expect("measured margin");
+    assert!(
+        now_margin.pass,
+        "{id}: max margin {} > 1 under EM-DOT against gguf-py ({path})",
+        now_margin.max
+    );
     assert!(
         now.max_rel_err <= bound,
         "{id}: max_rel_err {} > receipt tolerance {bound} against gguf-py ({path})",
