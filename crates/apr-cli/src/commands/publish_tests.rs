@@ -134,9 +134,10 @@ fn test_execute_dry_run_success() {
     let temp_dir = std::env::temp_dir().join("apr_pub_dry_run");
     let _ = fs::create_dir_all(&temp_dir);
 
-    // Create a model file
-    let model_file = temp_dir.join("model.apr");
-    let _ = fs::write(&model_file, "APR2test");
+    // Create a model file. Not an .apr: an .apr-only directory is exported
+    // to SafeTensors first (HRP-002), and "APR2test" is no model.
+    let model_file = temp_dir.join("model.gguf");
+    let _ = fs::write(&model_file, "GGUFtest");
 
     let result = execute(
         &temp_dir,
