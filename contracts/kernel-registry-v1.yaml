@@ -86,11 +86,17 @@ shape:
     - {path: kreg:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu, metal]}
     - {path: kreg:arch, minCount: 1, maxCount: 1, pattern: "^(any|[a-z][a-z0-9_]*)$"}
     - {path: kreg:isa_features, minCount: 1, maxCount: 1, pattern: "^(none|[a-z0-9_.]+(\\+[a-z0-9_.]+)*)$"}
+    # KTEST-001 §5.1 (KTEST-01): device features beyond the backend; `none` = any device of it.
+    - {path: kreg:requires, minCount: 1, maxCount: 1, pattern: "^(none|[A-Za-z0-9_]+(\\+[A-Za-z0-9_]+)*)$"}
     - {path: kreg:block_elems, minCount: 1, maxCount: 1, datatype: xsd:integer}
     - {path: kreg:accumulate, minCount: 1, maxCount: 1, in: [f32, i32_f32, profile_selected]}
     # AC-4: what the nightly reports. precision = the activation precision inside the kernel;
     # shape_class = the M it serves (m1 = one token, m_any = any batch).
     - {path: kreg:precision, minCount: 1, maxCount: 1, in: [f32, f16, bf16, q8_0, q8_k, profile_selected]}
+    # KTEST-001 S-EM: exactly one error model (§3.1), and a declared determinism. The cross-field
+    # rule "EM-NONDET is never bitwise" is beyond SHACL Core; Registry::parse refuses it.
+    - {path: kreg:error_model, minCount: 1, maxCount: 1, in: [EM-DOT, EM-DEQ, EM-ELEM, EM-RED, EM-SMX, EM-ATT, EM-ROPE, EM-NONDET]}
+    - {path: kreg:determinism, minCount: 1, maxCount: 1, in: [bitwise, bounded]}
     - {path: kreg:shape_class, minCount: 1, maxCount: 1, in: [m1, m_any]}
     - {path: kreg:tolerance, minCount: 1, maxCount: 1, pattern: "^(unmeasured|evidence/.+\\.json)$"}
     - {path: kreg:source_file, minCount: 1, maxCount: 1, pattern: "^crates/[a-z0-9_-]+/src/.+\\.rs$"}
@@ -126,6 +132,10 @@ invariants:
     property: tolerance is a measurement or the word unmeasured
     formal: 'tolerance(r) ∉ {unmeasured} ∪ evidence/*.json ⇒ Fail(kernel-registry-v1, r)'
     prose: false
+  - id: KREG-INV-004
+    property: every row declares exactly one error model and a determinism (KTEST-001 S-EM)
+    formal: '|error_model(r)| ≠ 1 ∨ error_model(r) ∉ EM ∨ determinism(r) ∉ {bitwise, bounded} ∨ (error_model(r) = EM-NONDET ∧ determinism(r) = bitwise) ⇒ Fail(kernel-registry-v1, r)'
+    prose: false
 
 falsification_tests:
   - id: FALSIFY-KREG-001
@@ -153,6 +163,11 @@ falsification_tests:
     prediction: each (source_file, source_fn) pair resolves to a `fn` in the tree
     test: cargo test -p aprender-serve --lib kernel_registry
     if_fails: a registry row points at a deleted or renamed kernel and still admits it
+  - id: FALSIFY-KREG-010
+    rule: a row with no error model, an unknown one, or an undeclared determinism is refused (KTEST-01, S-EM)
+    prediction: removing error_model, setting it to EM-GUESS, or setting determinism to mostly is a shape violation naming the row and the property; EM-NONDET with bitwise is refused by Registry::parse
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1 && cargo test -p aprender-serve --lib kernel_registry
+    if_fails: a kernel's parity bound has no stated derivation, so a tolerance cannot be checked against its error model
   - id: FALSIFY-KREG-009
     rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
     prediction: >

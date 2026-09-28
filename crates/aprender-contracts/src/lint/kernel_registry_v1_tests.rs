@@ -107,3 +107,36 @@ fn falsify_kreg_003_a_tolerance_with_no_receipt_is_refused() {
     let d = with_row0("tolerance", Some(serde_json::json!("1e-3")));
     assert_refused("typed tolerance", &d, "tolerance");
 }
+
+#[test]
+fn falsify_kreg_010_a_row_with_no_error_model_is_refused() {
+    assert_refused(
+        "no error_model",
+        &with_row0("error_model", None),
+        "error_model",
+    );
+}
+
+#[test]
+fn falsify_kreg_010_an_unknown_error_model_is_refused() {
+    let d = with_row0("error_model", Some(serde_json::json!("EM-GUESS")));
+    assert_refused("unknown error_model", &d, "error_model");
+}
+
+#[test]
+fn falsify_kreg_010_an_undeclared_determinism_is_refused() {
+    let d = with_row0("determinism", Some(serde_json::json!("mostly")));
+    assert_refused("bad determinism", &d, "determinism");
+    assert_refused(
+        "no determinism",
+        &with_row0("determinism", None),
+        "determinism",
+    );
+}
+
+#[test]
+fn kernel_registry_v1_a_lowercase_or_spaced_requires_is_refused() {
+    let d = with_row0("requires", Some(serde_json::json!("SHADER_F16 + SUBGROUP")));
+    assert_refused("spaced requires", &d, "requires");
+    assert_refused("no requires", &with_row0("requires", None), "requires");
+}
