@@ -40,6 +40,7 @@ mod forward_qwen35_cuda;
 /// #3714: the Qwen3-MoE decoder resident on the GPU.
 mod forward_qwen3_moe_resident;
 mod generation;
+mod session_kv;
 mod speculative;
 mod weights;
 
@@ -66,6 +67,15 @@ use super::utils::verbose;
 // =============================================================================
 // IMP-800: CUDA-Accelerated Model Wrapper
 // =============================================================================
+
+/// How `build` sizes the device KV cache.
+#[derive(Debug, Clone, Copy)]
+enum KvLen {
+    /// Exactly this many positions (`new`, `with_max_seq_len`).
+    Fixed(usize),
+    /// The model's context, capped by free VRAM (#3715, `for_session`).
+    FitContext,
+}
 
 /// Error from CUDA model initialization that preserves the unconsumed model.
 ///
@@ -624,7 +634,22 @@ impl OwnedQuantizedModelCuda {
         max_seq_len: usize,
     ) -> std::result::Result<Self, CudaInitError> {
         let model = Self::check_not_moe(model)?;
-        Self::build(model, device_ordinal, max_seq_len)
+        Self::build(model, device_ordinal, KvLen::Fixed(max_seq_len))
+    }
+
+    /// #3715: a chat/session model. Its turn length is unknown at load, so the device KV
+    /// takes the model's whole context when the card has room for it after the weights
+    /// and the prefill cache, else the old 2048 (see `session_kv::session_kv_len`).
+    ///
+    /// # Errors
+    ///
+    /// The same CUDA / capability / quant / MoE errors as [`Self::with_max_seq_len`].
+    pub fn for_session(
+        model: OwnedQuantizedModel,
+        device_ordinal: i32,
+    ) -> std::result::Result<Self, CudaInitError> {
+        let model = Self::check_not_moe(model)?;
+        Self::build(model, device_ordinal, KvLen::FitContext)
     }
 
     /// Build the CUDA wrapper for a MoE model whose caller runs the MoE forward
@@ -636,7 +661,7 @@ impl OwnedQuantizedModelCuda {
     ///
     /// The same CUDA / capability / quant errors as [`Self::new`].
     pub fn new_for_moe_forward(model: OwnedQuantizedModel, device_ordinal: i32) -> Result<Self> {
-        Self::build(model, device_ordinal, 2048).map_err(|e| e.error)
+        Self::build(model, device_ordinal, KvLen::Fixed(2048)).map_err(|e| e.error)
     }
 
     /// #3992: the dense CUDA forward cannot run a Mixture-of-Experts model: its
@@ -678,7 +703,7 @@ impl OwnedQuantizedModelCuda {
     fn build(
         model: OwnedQuantizedModel,
         device_ordinal: i32,
-        max_seq_len: usize,
+        kv_len: KvLen,
     ) -> std::result::Result<Self, CudaInitError> {
         use crate::cuda::CudaExecutor;
 
@@ -764,6 +789,10 @@ impl OwnedQuantizedModelCuda {
         let num_layers = model.layers.len();
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
         let head_dim = model.config.hidden_dim / model.config.num_heads;
+        let max_seq_len = match kv_len {
+            KvLen::Fixed(n) => n,
+            KvLen::FitContext => Self::session_kv_len(&executor, &model, memory_info.0),
+        };
 
         if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
             return Err(CudaInitError {
@@ -798,6 +827,69 @@ impl OwnedQuantizedModelCuda {
         cuda_model.apply_max_batch_sizing(num_layers, num_kv_heads, head_dim, max_seq_len);
 
         Ok(cuda_model)
+    }
+
+    /// #3715: the device KV length for [`Self::for_session`], from the VRAM free
+    /// before load minus what load will make resident: the quantized weights, the
+    /// FP16 (or FP8) prefill weight cache when this profile warms one, the GH-178
+    /// reserve and the chunked-prefill score budget.
+    fn session_kv_len(
+        executor: &crate::cuda::CudaExecutor,
+        model: &OwnedQuantizedModel,
+        free_vram: usize,
+    ) -> usize {
+        let c = &model.config;
+        let head_dim = c.hidden_dim / c.num_heads.max(1);
+        let kv_per_pos =
+            2 * c.num_kv_heads * head_dim * std::mem::size_of::<f32>() * model.layers.len();
+        let weights: usize = model
+            .layers
+            .iter()
+            .map(|l| {
+                l.qkv_weight.data_bytes()
+                    + l.attn_output_weight.data.len()
+                    + l.ffn_up_weight.data.len()
+                    + l.ffn_down_weight.data.len()
+                    + l.ffn_gate_weight.as_ref().map_or(0, |g| g.data.len())
+            })
+            .sum::<usize>()
+            + model.lm_head_weight.data.len();
+        let profile = &executor.gpu_profile;
+        let cache_bytes_per_elem = if profile.fp8_prefill {
+            1
+        } else if std::env::var("HGEMM_PREFILL").as_deref() == Ok("0")
+            || (profile.cc >= 120 && std::env::var("FORCE_FP16_CACHE").as_deref() != Ok("1"))
+        {
+            0
+        } else {
+            2
+        };
+        let cache = cache_bytes_per_elem
+            * session_kv::prefill_cache_elements(
+                model.layers.len(),
+                c.hidden_dim,
+                c.num_heads * head_dim,
+                c.num_kv_heads * head_dim,
+                c.intermediate_dim,
+                c.vocab_size,
+            );
+        let reserve =
+            3_500_000_000 + crate::gguf::cuda::forward_qwen35_cuda::PREFILL_SCORES_BUDGET_BYTES;
+        let len = session_kv::session_kv_len(
+            c.context_length,
+            kv_per_pos,
+            free_vram,
+            weights + cache,
+            reserve,
+        );
+        eprintln!(
+            "[#3715] session device KV: {len} positions (context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
+            c.context_length,
+            free_vram as f64 / 1e9,
+            weights as f64 / 1e9,
+            cache as f64 / 1e9,
+        );
+        len
     }
 
     /// GH-129: Free CPU projection weight copies after GPU preload.
