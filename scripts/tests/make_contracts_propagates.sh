@@ -91,8 +91,11 @@ recipe() { # recipe <target> -> the target line and its tab-indented body
     recipe contract-audit
 } > "$TMP/Makefile.shipped" || exit 2
 
-DECLARED=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$REPO_ROOT/Cargo.toml")
-[ -n "$DECLARED" ] || { echo "BROKE: no workspace version in Cargo.toml" >&2; exit 2; }
+# The same read as pv_bin_declared_version: the crate's own `version =` first (a scoped
+# pv release pins it off the workspace, #4604), then the workspace manifest.
+DECLARED=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$REPO_ROOT/crates/aprender-contracts-cli/Cargo.toml")
+[ -n "$DECLARED" ] || DECLARED=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$REPO_ROOT/Cargo.toml")
+[ -n "$DECLARED" ] || { echo "BROKE: no pv version in crates/aprender-contracts-cli/Cargo.toml or Cargo.toml" >&2; exit 2; }
 
 # ---------------------------------------------------------------------------
 # The fixture: a git repo holding the extracted Makefile, the REAL pv_bin.sh,

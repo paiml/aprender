@@ -15,3 +15,8 @@ readers:
   subsumes: ontology/sigma.rs, ontology/extract/mod.rs, lint/subsumption.rs
   entity_types: lint/sigma_gate.rs
   extractors: ontology/sigma.rs
+  entity_type_target_class: ontology/shapes.rs
+
+# The class a shape with no `targetClass` targets, by entity type (sigma.rs integrity rule; same values as contracts/ontology.yaml).
+entity_type_target_class:
+  pv-contract: ont:Contract

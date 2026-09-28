@@ -355,16 +355,17 @@ fn archive_fails_when_tar_cannot_write() {
     let d = repo();
     let commit = git(d.path(), &["rev-parse", "HEAD"]).expect("head");
     let out = tempfile::tempdir().expect("tmp");
-    // A read-only target: tar fails, git archive does not (one small file fits the pipe).
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(out.path(), std::fs::Permissions::from_mode(0o555)).expect("chmod");
+    // A target under a regular file: `tar -C` fails with ENOTDIR, git archive does not (one
+    // small file fits the pipe). Not chmod 0o555: CI runs as root, and root writes through it.
+    let file = out.path().join("not-a-dir");
+    std::fs::write(&file, "").expect("file");
+    let dir = file.join("base");
     let b = BaseTree {
-        dir: out.path().to_path_buf(),
-        lean: out.path().join(LEAN_DIR),
-        contracts: out.path().join("contracts"),
+        lean: dir.join(LEAN_DIR),
+        contracts: dir.join("contracts"),
+        dir,
         label: "t".into(),
     };
     let r = b.archive(d.path(), &commit, &[LEAN_DIR]);
-    std::fs::set_permissions(out.path(), std::fs::Permissions::from_mode(0o755)).expect("chmod");
     assert!(r.is_err(), "{r:?}");
 }
