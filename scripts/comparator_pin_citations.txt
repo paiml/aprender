@@ -80,3 +80,5 @@ tests/fixtures/ont/release-green/evidence/dogfood/tokenizer/0.69.1/parity.json	f
 tests/fixtures/perf-gate/parity-host-work/README.md	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:807385628c10
 tests/fixtures/perf-gate/parity-host-work/llama-cpu-c1.props.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:3e85278108f3
 tests/fixtures/perf-gate/parity-host-work/llama-cpu-c4.props.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:3e85278108f3
+docs/specifications/EPIC-0.73-llamacpp-parity-plan.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:9d3455c76a99
+docs/specifications/EPIC-0.74-any-model-plan.md	historical	a dated observation of a local llama.cpp checkout, stated as not compared with the pin [60b06ab9a]	1:0eb21837781e
