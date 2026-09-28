@@ -1430,7 +1430,7 @@ if [ "$CELLS" = 1 ]; then
   CELLS_JSON="$WORK/cells.json"
   python3 "$PRODUCE" measure --apr "$APR" --inventory "$INV_RECEIPT" --models "$WORK/models.txt" \
       --ladder "$LADDER" --rungs evidence/release/context-rungs.json --work "$WORK" \
-      --lock "$GPU_LOCK" --lock-wait "$LOCK_WAIT" --only "$ONLY" --out "$CELLS_JSON" > "$WORK/cells.log" 2>&1
+      --lock "$GPU_LOCK" --lock-wait "$LOCK_WAIT" --only "$ONLY" --host "$HOST" --out "$CELLS_JSON" > "$WORK/cells.log" 2>&1
   cells_rc=$?
   tail -1 "$WORK/cells.log"
   # A crashed producer writes NO cells key and says why: a partial cells block would read as

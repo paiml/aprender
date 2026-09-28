@@ -136,6 +136,30 @@ PY3
   printf 'FAIL  %s\n' "selflock: the producer waited on its own serve's GPU lock and refused its own cells"; return 1
 }
 
+# declaim <lib> -> a cells.declaimed arch x host is not measured on that host, and IS on every other (#4590):
+# hours of cells must not be spent on a claim the release does not make, nor may the entry leak to other hosts.
+declaim() {
+  local lib=$1 d n_t n_u
+  SEQ=$((SEQ + 1)); d="$WORK/dec.$SEQ"; mkdir -p "$d" || return 1
+  sed -e 's/^    verbs:/    declaimed: [{arch: qwen2, host: t, issue: 4590, until: "0.70.1", why: fixture}]\n    verbs:/' \
+      -e 's/hosts: \[{id: t, required: true}\]/hosts: [{id: t, required: true}, {id: u, required: true}]/' \
+    "$WORK/ladder.yaml" > "$d/ladder.yaml"
+  FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" enrich --apr "$FAKE" \
+      --inventory "$WORK/inventory.jsonl" --models "$WORK/models.txt" --out "$d/inv.jsonl" > /dev/null 2>&1
+  for h in t u; do
+    FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" measure --apr "$FAKE" \
+        --inventory "$d/inv.jsonl" --models "$WORK/models.txt" --ladder "$d/ladder.yaml" \
+        --rungs "$WORK/rungs.json" --work "$d" --timeout 60 --serve-ceiling 30 --host "$h" \
+        --out "$d/cells-$h.json" > "$d/log-$h" 2>&1 || { printf 'FAIL  declaim: measure --host %s crashed\n' "$h"; return 1; }
+  done
+  n_t=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$d/cells-t.json")
+  n_u=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$d/cells-u.json")
+  if [ "$n_t" = 0 ] && [ "$n_u" = 16 ] && grep -q 'DECLAIMED on t' "$d/log-t"; then
+    printf 'ok    %s\n' "declaim: a de-claimed arch is not measured on its host (0 rows) and is on another (16 rows)"; return 0
+  fi
+  printf 'FAIL  %s (t=%s rows, u=%s rows)\n' "declaim: the de-claim was ignored on its host or leaked to another" "$n_t" "$n_u"; return 1
+}
+
 cases() { # cases <lib> -> 0 all as expected
   local lib=$1 r=0
   expect "$lib" "enrich derives the owed-set terms from the header (arch, context, both thinking modes, KV)" good \
@@ -157,6 +181,7 @@ cases() { # cases <lib> -> 0 all as expected
   measure_rc "$lib" "rungs-empty: a rungs file the judge FAILs refuses by name, never 0 rows" 1 --rungs "$WORK/rungs-empty.json" || r=1
   offmode "$lib" || r=1
   selflock "$lib" || r=1
+  declaim "$lib" || r=1
   return $r
 }
 
@@ -187,6 +212,7 @@ mutant think      's/if "<\/think>" in text:/if False:/'
 mutant only-vacuity 's/if a.only and not matched:/if False:/'
 mutant rungs-silent 's/^    if rc:$/    if False:/'
 mutant serve-inline 's/deferred.append((len(rows) - 1, prompt, mode, budget, measured))/serve = serve or Serve(R, path, a.serve_ceiling); rows[-1] = measure_serve(serve, prompt, mode, budget, rows[-1], R.timeout)/'
+mutant declaim      's/            if d:  # the judge owes nothing here/            if False:  # the judge owes nothing here/'
 mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(tok, int(ctx) - a.max_tokens_thinking - 1)/'
 
 [ "$bad" = 0 ] && { echo "check_ladder_cells_producer: all cases and mutants as expected"; exit 0; }

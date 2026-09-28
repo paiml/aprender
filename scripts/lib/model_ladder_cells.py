@@ -228,6 +228,10 @@ def _judge_host(hid, R, S, rc, out):
     host_rc = rc  # an unsized rung set is red for every host, never an 'ok 0 owed'
     for item in R.get("inventory") or []:
         f = item.get("file")
+        d = S["declaimed"].get((hid, item.get("arch")))
+        if d:  # printed on every run, so a de-claim cannot decay into an absence nobody re-reads
+            out(f"DECLAIMED {hid:7} {f}: arch {d['arch']} is not claimed on {hid} -- #{d['issue']}, restored in {d['until']}: {_loud(d['why'], 100)}")
+            continue
         fails = _judge_item(item, rows, total, S, tally)
         for i, w in enumerate(fails):
             if i == MAX_LINES_PER_MODEL:
@@ -265,6 +269,29 @@ def _passes_nowhere(passed_anywhere, failed_somewhere, out):
             out(f"FAIL  cell {verb}/{mode}/{rid} of model {str(sha)[:12]} PASSES on no required host -- every declared rung must pass somewhere (#3710 'a')")
             rc = 1
     return rc
+
+
+def declaimed(C, hosts, out):
+    """-> ({(host, arch): entry}, rc). `cells.declaimed` names an arch the release does NOT claim on one host.
+
+    Operator ruling 2026-09-28 (#3715 -> #4590): Qwen3 on GB10 is correct but 27-34x slow (serial prefill on
+    sm_121), so it is DE-CLAIMED for 0.70 -- apr warns, a known-issue note ships -- and only those cells leave
+    the owed set. Every other host still owes them. An entry must carry the issue, the release that restores
+    it, and why, and name a declared host; a bare one is a FAIL, never a quiet exemption."""
+    got, rc = {}, 0
+    for d in C.get("declaimed") or []:
+        d = d or {}
+        bad = [k for k in ("arch", "host", "until", "why") if not str(d.get(k) or "").strip()]
+        if not isinstance(d.get("issue"), int) or d.get("issue") <= 0:
+            bad.append("issue")
+        if d.get("host") and d.get("host") not in hosts:
+            bad.append(f"host {d.get('host')!r} (not a declared host)")
+        if bad:  # a bare de-claim is a FAIL, never a quiet exemption
+            out(f"FAIL  cells.declaimed entry {d!r} lacks {', '.join(bad)} -- a de-claim names its arch, host, issue, restoring release and reason")
+            rc = 1
+            continue
+        got[(d["host"], d["arch"])] = d
+    return got, rc
 
 
 def judge(L, receipts, rungs_doc, out, rungs_main=None):
@@ -308,6 +335,8 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
     verbs = list(C.get("verbs") or [])
     long_for = C.get("long_rungs_for") or {}
     rungs, consumer_max, rc = load_rungs(rungs_doc, out)
+    dec, drc = declaimed(C, {h.get("id") for h in L.get("hosts") or []}, out)
+    rc = rc or drc
     if rungs_main is not None and _rungs_floor(rungs_main, rungs_doc, out):
         rc = 1
     if not verbs:
@@ -318,6 +347,7 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
         "long_ids": {r["id"] for r in rungs if r.get("long")},
         "passed_anywhere": {},  # (sha, verb, mode, rung) -> bool
         "failed_somewhere": set(),  # keys already reported by a per-host FAIL
+        "declaimed": dec,  # (host, arch) -> the cells.declaimed entry (#4590)
     }
     for hid, R in receipts.items():
         rc = _judge_host(hid, R, S, rc, out)
