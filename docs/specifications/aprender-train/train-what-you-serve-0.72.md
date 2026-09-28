@@ -318,6 +318,34 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   - The license must come from the base model and must never default for a derivative (HRP-003). Publishing an
     Apache-2.0 derivative under MIT is a licence error, not a style issue.
 
+### Spike S-R11b — can a sealed test item reach an apr training run today? · `[V]` (2026-09-28, desk, origin/main aca6f2d7f6 + origin/rex/001-prm-s1-v2 e1bfade985)
+- **Question:** R11 says "0 sealed-test hashes in train data". Does any `apr` training path refuse sealed eval items?
+  The verb-refusal half of R11 is aprender-ont's (#3597); this spike covers only data ingress.
+  Contract `train-ingress-sealed-refusal-v1` (TIS-001..005).
+- **Answer: no, and there is nothing yet for a trainer to consult.**
+  - **Trainers:** none of the loaders checks a sealed set. Loaders read: `finetune.rs:504` and
+    `instruct_corpus.rs:92` `load_instruct_corpus`, `distill.rs:2304` `read_prompts_jsonl`, `corpus.rs:91` `load_jsonl`,
+    `classification.rs:337/393`, `shard_reader.rs:25` (pretrain). Any JSONL given on the command line is trained on.
+  - **The sealed set:** `trace-split-guard-v1` defines one (FALSIFY-TSG-004: "a renamed, re-indented sealed diff puts its
+    whole component in `sealed`"), and `trace-dedup-v1` defines the near-duplicate clusters it relies on. Both exist
+    only as contracts on the unmerged `rex/001*` branches. No crate on either branch implements the `sealed` split.
+    The PRM ledger lists C7–C9 as todo (owner aprender-cb).
+  - **Existing tools only report:** `apr data decontaminate` (`data.rs:880`, calls `check_contamination` at `:916`)
+    returns PASS/FAIL/VACUOUS and rewrites nothing. `apr eval` contamination (`eval/mod.rs:469`, 10-gram overlap at
+    `:516`) reports only. Neither is run by a trainer.
+  - **Nearby contracts cover other questions:** `crux-B-07` FALSIFY-004 is calibration vs eval (it has Rust tests).
+    `apr-data-pipeline-v1` ADP-DET-002, named "No cross-contamination", formally states split determinism, not
+    disjointness, and its Lean proof is `sorry`.
+- **Consequences:**
+  - A TSG split, even once implemented, only helps if the run cannot bypass it. The guard has to sit at trainer
+    ingress (finetune, distill prompts, pretrain shards): hash plus near-duplicate against a sealed manifest, refuse and
+    name the item, and record the manifest sha in the R12 receipt (TRR). Otherwise "0 sealed hashes in train data" is
+    a claim nobody can check.
+  - The ingress check should reuse TDD normalisation (re-path, re-indent, rename), not the exact sha. S-R11b
+    inference: an exact-sha check misses the perturbations TSG-004 names.
+  - Sequencing: TIS needs TSG and TDD merged, or at least their normaliser. Until then, TIS-005 (refuse when no
+    manifest is supplied for an rc-bound run) is the only part that can be met.
+
 ## §3 Remaining ranked rows (R6–R20)
 See the L2 handoff (`docs/lookahead/0.72.md` once LA-00 lands). In brief: R6 distill 27B→4B at batch > 1 · R7 merge cells ·
 R8 quantize policy for GDN tensors · R9 #4418 (0.71 dependency) · R10 T5 round-trip gate (none exists `[V]`) ·
