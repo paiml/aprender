@@ -394,3 +394,38 @@ GDN work. They are the best 0.72 value per minute before R2 lands.
 ## §4 Rulings requested (S-4)
 RQ-1 epic #4000 body is still "Agent Ready" · RQ-2 T1 scope = GDN training · RQ-3 T2 vs E8 0.75 (#4002) overlap ·
 RQ-4 #4418 stays in 0.71. Full text is in the handoff file.
+
+## §5 Fold plan: one APR v2 metadata reader `[C]`
+
+Three places read an APR v2 file's metadata by hand:
+
+- `publish_license.rs::apr_metadata` (HRP fold)
+- `merge_output.rs::read_apr_metadata` (MOF fold)
+- `tensor.rs::read_apr_metadata` / `read_apr_metadata_json` (on main)
+
+Each does the same steps: open, read the 64-byte header, seek to `metadata_offset`, read `metadata_size` bytes up to `MAX_METADATA_SIZE`. They already differ on the error path. The publish copy errors on a corrupt v2 file and returns nothing if the file is not v2. The tensor copy returns `Option` and hides the error.
+
+The open PR for whole-file model reads adds `apr_format::prefix::apr_v2_header_prefix`, a bounded prefix read of header + metadata + tensor index, and moves `tensor.rs` onto it. This fold puts one function beside it:
+
+```rust
+/// Header + metadata block only (no tensor index). Not APR v2 → Ok(None);
+/// corrupt v2, or metadata past MAX_METADATA_SIZE → Err.
+pub fn apr_v2_metadata(path: &Path) -> Result<Option<AprV2Metadata>, String>
+```
+
+Callers:
+- publish maps the `Err` to `CliError`.
+- merge maps the `Err` to `AprenderError`.
+- `tensor.rs` keeps its `Option` via `.ok().flatten()`, so its behaviour does not change.
+
+The publish and merge copies are **moved** into this one function. None stays as a fourth copy.
+
+Contract `apr-v2-metadata-reader-v1` (written with the code, not before):
+
+| ID | Falsifier | Planted mutant that must turn it RED |
+|---|---|---|
+| AMR-001 | Every call site returns the same metadata on a fixture table: valid v2, not v2, truncated header, `metadata_size` past the cap, `metadata_offset` past EOF | Swap `Ok(None)` and `Err` |
+| AMR-002 | Bounded read: at most 64 + `metadata_size` bytes read on a sparse 4 GiB file | Drop the size cap |
+| AMR-003 | Structure: no `AprV2Header::from_bytes` outside `apr-format` and the v2 internals | Read the metadata at offset 64 and ignore `metadata_offset` |
+
+Order: after the whole-file-reads PR, the HRP fold and the MOF fold are all on main.
