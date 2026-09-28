@@ -5,7 +5,7 @@
 # Runs publish_strict.sh from THIS tree against a scratch clone of HEAD, tagged with a scoped tag.
 # Nothing reaches the network or crates.io: curl, gh and `cargo publish` are shims.
 #   curl         only aprender-contracts-macros is "live" (at its own version, as on crates.io)
-#   gh           GH_MODE=green|red|noart|wrongsha decides the clean-room run it reports
+#   gh           GH_MODE=green|red|noart|noart_nolog|noart_wronglog|wrongsha decides the clean-room run it reports
 #   cargo        `publish` exits 1 (reaching it proves every gate before it passed); the rest is real
 # Exit 0 when every row matches, 1 otherwise.
 set -euo pipefail
@@ -22,7 +22,7 @@ MACROS_VER=$(ver_of aprender-contracts-macros)   # the one crate the pv pair nee
 SCOPED="pv-v$VER"
 TMP=$(mktemp -d); trap 'rm -rf "${TMP:?}"' EXIT
 WT="$TMP/ap/$SCOPED/wt"
-git clone -q --no-checkout "$ROOT" "$WT"
+git clone -q --no-tags --no-checkout "$ROOT" "$WT"
 git -C "$WT" -c core.hooksPath=/dev/null checkout -q --detach "$(git -C "$ROOT" rev-parse HEAD)"
 git -C "$WT" tag "$SCOPED"
 TSHA=$(git -C "$WT" rev-parse HEAD)
@@ -40,13 +40,19 @@ EOF
 cat > "$TMP/cargohome/bin/gh" <<EOF
 #!/usr/bin/env bash
 case "\$1 \$2" in
-  "run view") case \$GH_MODE in red) echo failure;; *) echo success;; esac ;;
+  "run view") case \$GH_MODE in red) echo "7 failure";; *) echo "7 success";; esac ;;
   "run download")
-    [ "\$GH_MODE" = noart ] && exit 1
+    case \$GH_MODE in noart*) exit 1;; esac
     while [ \$# -gt 0 ]; do [ "\$1" = -D ] && d=\$2; shift; done
     mkdir -p "\$d"
     if [ "\$GH_MODE" = wrongsha ]; then echo "aprender,pass,0000000000000000000000000000000000000000" > "\$d/aprender.csv"
     else echo "aprender,pass,$TSHA" > "\$d/aprender.csv"; fi ;;
+  "api repos/paiml/infra/actions/jobs/7/logs")
+    case \$GH_MODE in
+      noart) printf '%s\\n' "2026-09-28T12:35:02Z     ref-resolves-to: $TSHA" "2026-09-28T12:35:02Z     tested-sha: $TSHA" ;;
+      noart_wronglog) printf '%s\\n' "2026-09-28T12:35:02Z     tested-sha: 0000000000000000000000000000000000000000" ;;
+      *) exit 1 ;;
+    esac ;;
   *) exit 1 ;;
 esac
 EOF
@@ -75,9 +81,13 @@ row 1 "crate 1/2 aprender-contracts rc=1" "green clean-room on the tag sha -> re
     --only aprender-contracts,aprender-contracts-cli --tag "$SCOPED"
 row 1 "not success" "clean-room job red -> STOP before any publish" red \
     --only aprender-contracts,aprender-contracts-cli --tag "$SCOPED"
-row 1 "no result-aprender artifact" "clean-room with no artifact -> STOP" noart \
+row 1 "crate 1/2 aprender-contracts rc=1" "no artifact, job log says tested-sha of the tag -> reaches cargo publish" noart \
     --only aprender-contracts,aprender-contracts-cli --tag "$SCOPED"
-row 1 "did not test $SCOPED" "clean-room that tested another commit -> STOP" wrongsha \
+row 1 "no result-aprender artifact and no job log" "no artifact and no job log -> STOP" noart_nolog \
+    --only aprender-contracts,aprender-contracts-cli --tag "$SCOPED"
+row 1 "its job log has no tested-sha line" "no artifact, job log names another commit -> STOP" noart_wronglog \
+    --only aprender-contracts,aprender-contracts-cli --tag "$SCOPED"
+row 1 "its artifact names another commit" "artifact that names another commit -> STOP (no log fallback)" wrongsha \
     --only aprender-contracts,aprender-contracts-cli --tag "$SCOPED"
 set -e
 [ "$fails" -eq 0 ] && { echo PASS; exit 0; }

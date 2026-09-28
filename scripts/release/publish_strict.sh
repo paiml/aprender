@@ -48,17 +48,29 @@ git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 [ -n "$PLAN" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $TAG (rule 14)"
 [ -n "$PLAN" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
 # The recorded id is not the evidence; the run is (#4587 B2a). Fail closed unless the infra run's
-# `clean-room (aprender)` job is green AND its result artifact names the tag's own commit.
+# `clean-room (aprender)` job is green AND it names the tag's own commit. The proof is the result
+# artifact when the job uploaded one; otherwise the job's own log line from assert-tested-ref.sh, read
+# through the API. Run 36422691130 tested the tag green and uploaded nothing: the container wrote no
+# result csv, and the upload step ignores a missing file. That assert step fails the job on any other
+# commit, so a green job whose log says `tested-sha: <tag sha>` tested the tag.
 if [ -z "$PLAN" ]; then
   crun=""; IFS= read -r crun < "$AP/cleanroom-run-id"
   tsha=$(git rev-parse "refs/tags/$TAG^{commit}")
-  jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' 2>/dev/null | head -1)
+  job=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | "\(.databaseId) \(.conclusion)"' 2>/dev/null | head -1)
+  jid=${job%% *}; jc=${job#* }
   [ "$jc" = success ] || die "clean-room run $crun: job clean-room (aprender) is '${jc:-absent}', not success"
   rm -rf "${AP:?}/cleanroom-artifact"
-  gh run download "$crun" --repo "$INFRA" -n result-aprender -D "$AP/cleanroom-artifact" > /dev/null 2>&1 \
-    || die "clean-room run $crun: no result-aprender artifact to prove which commit it tested"
-  grep -rqF "$tsha" "$AP/cleanroom-artifact" || die "clean-room run $crun did not test $TAG ($tsha)"
-  say "CLEANROOM VERIFIED run $crun tested $TAG ($tsha)"
+  if gh run download "$crun" --repo "$INFRA" -n result-aprender -D "$AP/cleanroom-artifact" > /dev/null 2>&1; then
+    grep -rqF "$tsha" "$AP/cleanroom-artifact" || die "clean-room run $crun did not test $TAG ($tsha): its artifact names another commit"
+    proof="artifact result-aprender"
+  else
+    gh api "repos/$INFRA/actions/jobs/$jid/logs" > "$AP/cleanroom-job.log" 2> /dev/null \
+      || die "clean-room run $crun: no result-aprender artifact and no job log to prove which commit it tested"
+    grep -qE "Z +tested-sha: $tsha\$" "$AP/cleanroom-job.log" \
+      || die "clean-room run $crun did not test $TAG ($tsha): no artifact, and its job log has no tested-sha line for it"
+    proof="job $jid log (no artifact uploaded)"
+  fi
+  say "CLEANROOM VERIFIED run $crun tested $TAG ($tsha): $proof"
 fi
 
 # order: NOT the tag's TIERS — measured 2026-09-17, TIERS is not topological (47 non-dev
