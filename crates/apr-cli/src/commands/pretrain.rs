@@ -416,6 +416,11 @@ pub(crate) fn run(
         pretrain_shards(dataset)?
     };
     let base_models: Vec<PathBuf> = init.map(Path::to_path_buf).into_iter().collect();
+    // The synthetic drive writes no checkpoint, so run_dir may not exist yet;
+    // the receipt lives in it either way.
+    std::fs::create_dir_all(run_dir).map_err(|e| {
+        CliError::ValidationFailed(format!("cannot create {}: {e}", run_dir.display()))
+    })?;
     let effective = serde_json::to_value(&config)
         .map_err(|e| CliError::ValidationFailed(format!("train receipt: {e}")))?;
     let receipt = super::train_receipt::write(&super::train_receipt::RunFacts {
