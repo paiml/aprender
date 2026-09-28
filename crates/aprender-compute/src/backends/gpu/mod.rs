@@ -59,7 +59,7 @@ pub use batch::{BufferId, GpuCommandBatch, PipelineCache};
 
 // Export GpuDevice for both native and WASM GPU features
 #[cfg(any(feature = "gpu", feature = "gpu-wasm"))]
-pub use device::GpuDevice;
+pub use device::{backend_line, GpuDevice};
 
 // PMAT-778: process-global shared wgpu instance, reused by every crate-internal
 // adapter/device enumeration so the broken freedreno ICD (GB10) is touched once.

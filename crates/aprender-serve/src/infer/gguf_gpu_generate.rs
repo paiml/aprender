@@ -175,7 +175,7 @@ fn try_wgpu_generate(
     // FALSIFY-CPU-GPU-005: wgpu lifecycle visible without --verbose so users
     // see which backend actually serves their tokens after CUDA fallback.
     let _ = verbose;
-    eprintln!("Backend: wgpu (Vulkan)");
+    eprintln!("{}", gpu.backend_line());
 
     let config = model.config();
     let hidden_dim = config.hidden_dim;
@@ -650,7 +650,7 @@ fn try_apr_wgpu_inference(
     // FALSIFY-CPU-GPU-005: wgpu lifecycle visible without --verbose. Symmetric to
     // FALSIFY-CPU-GPU-003's CUDA-fallback log so users always know which backend
     // actually serves their tokens.
-    eprintln!("Backend: wgpu (Vulkan)");
+    eprintln!("{}", gpu.backend_line());
 
     // Load model
     let mapped = match MappedAprModel::from_path(&config.model_path) {

@@ -84,7 +84,7 @@ impl GpuDevicePool {
                 .await
                 .map_err(|e| format!("Failed to create device at index {}: {}", idx, e))?;
 
-            devices.push(GpuDevice { device, queue });
+            devices.push(GpuDevice { device, queue, adapter_info: adapter.get_info() });
             indices.push(idx as u32);
         }
 

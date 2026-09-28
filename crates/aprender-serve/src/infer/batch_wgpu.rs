@@ -141,7 +141,7 @@ fn try_init_wgpu_batch(
     let gpu = GpuDevice::new().ok()?;
 
     if config.verbose {
-        eprintln!("[batch] Backend: wgpu (Vulkan)");
+        eprintln!("[batch] {}", gpu.backend_line());
     }
 
     let cfg = model.config();

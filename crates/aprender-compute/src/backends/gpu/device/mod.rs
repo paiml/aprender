@@ -103,9 +103,29 @@ pub(crate) fn shared_instance() -> wgpu::Instance {
 pub struct GpuDevice {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    /// The adapter this device was created from (#4575): the only source of
+    /// which backend actually runs. A feature flag or `gpu_backends()` names
+    /// what was *allowed* (Vulkan, Metal, DX12, WebGPU), never what was used.
+    pub adapter_info: wgpu::AdapterInfo,
+}
+
+/// The user-visible backend line (#4575), built from what the adapter reports.
+///
+/// `Backend: wgpu (<AdapterInfo.backend>) adapter=<name>`. On Vulkan it starts
+/// with the historical `Backend: wgpu (Vulkan)` (FALSIFY-CPU-GPU-005); on a Mac
+/// it says Metal, where the old hardcoded string said Vulkan.
+#[must_use]
+pub fn backend_line(info: &wgpu::AdapterInfo) -> String {
+    format!("Backend: wgpu ({:?}) adapter={}", info.backend, info.name)
 }
 
 impl GpuDevice {
+    /// [`backend_line`] for the adapter this device runs on.
+    #[must_use]
+    pub fn backend_line(&self) -> String {
+        backend_line(&self.adapter_info)
+    }
+
     /// Initialize GPU device (sync, native only)
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     pub fn new() -> Result<Self, String> {
@@ -149,7 +169,7 @@ impl GpuDevice {
             .await
             .map_err(|e| format!("Failed to create device: {}", e))?;
 
-        Ok(Self { device, queue })
+        Ok(Self { device, queue, adapter_info: adapter.get_info() })
     }
 
     /// Initialize GPU device with a specific adapter index (sync, native only)
@@ -197,7 +217,7 @@ impl GpuDevice {
             .await
             .map_err(|e| format!("Failed to create device at index {}: {}", index, e))?;
 
-        Ok(Self { device, queue })
+        Ok(Self { device, queue, adapter_info: adapter.get_info() })
     }
 
     /// List all available GPU adapters (sync, native only)
@@ -476,6 +496,24 @@ impl GpuDevice {
 #[cfg(all(test, feature = "gpu", not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    fn info(backend: wgpu::Backend, name: &str) -> wgpu::AdapterInfo {
+        wgpu::AdapterInfo { name: name.to_string(), backend, ..Default::default() }
+    }
+
+    /// #4575 F3: the line names the backend the adapter reports. RED on the old
+    /// hardcoded `"Backend: wgpu (Vulkan)"` (the Metal row). CPU-only: a
+    /// synthetic AdapterInfo, no device.
+    #[test]
+    fn backend_line_names_the_reported_backend() {
+        let metal = backend_line(&info(wgpu::Backend::Metal, "Apple M2"));
+        assert_eq!(metal, "Backend: wgpu (Metal) adapter=Apple M2");
+        assert!(!metal.contains("Vulkan"), "{metal}");
+        let vk = backend_line(&info(wgpu::Backend::Vulkan, "AMD Radeon"));
+        assert!(vk.starts_with("Backend: wgpu (Vulkan)"), "{vk}");
+        let dx = backend_line(&info(wgpu::Backend::Dx12, "x"));
+        assert!(dx.starts_with("Backend: wgpu (Dx12)"), "{dx}");
+    }
 
     /// PMAT-925 FALSIFIER: the adapter-enumeration backend mask MUST NOT contain
     /// GLES (`wgpu::Backends::GL`), and MUST contain the platform's real backend.
