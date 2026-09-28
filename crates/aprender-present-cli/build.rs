@@ -1,6 +1,5 @@
 // build.rs — provable-contracts binding enforcement (L1)
 use serde::Deserialize;
-use std::path::Path;
 
 #[derive(Deserialize)]
 struct BindingFile {
