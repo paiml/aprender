@@ -908,6 +908,24 @@ fn run_cuda_backend(
     config.distillation.temperature = temperature as f32;
     config.distillation.alpha = alpha as f32;
     config.training.epochs = epochs;
+    // distill-batch-honesty-v1: DistillConfig::minimal defaults to batch 32,
+    // and CudaStudentProvider trains one row per step. Before this pin every
+    // CUDA step ran 32 teacher + student forwards and updated from the last
+    // row only (S-R6). The pipeline now refuses batch > max_batch, so size
+    // the batch to what the student actually trains.
+    if let Some(max_batch) =
+        entrenar_distill::student_provider::StudentLogitsProvider::max_batch(&student_provider)
+    {
+        let pinned = u32::try_from(max_batch).unwrap_or(u32::MAX);
+        if config.training.batch_size > pinned {
+            eprintln!(
+                "[DBH-002] batch_size {} -> {pinned}: CudaStudentProvider trains {max_batch} \
+                 row(s) per step (distill-batch-honesty-v1)",
+                config.training.batch_size
+            );
+            config.training.batch_size = pinned;
+        }
+    }
 
     // Wire the providers into the pipeline and execute.
     let mut pipeline = Pipeline::new(&config)
