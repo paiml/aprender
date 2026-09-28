@@ -938,3 +938,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "kernel_registry_v1_tests.rs"]
+mod kernel_registry_v1_tests;

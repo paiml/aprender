@@ -254,8 +254,33 @@ impl WeightQuantType {
         }
     }
 
-    /// Create from GGML type ID
+    /// Create from GGML type ID.
+    ///
+    /// KREG-001 (aprender#4539): a declared type is returned only if the kernel registry has a
+    /// `cuda` row for it, so `gemv_dispatch`'s exhaustive match can never be reached with a
+    /// combination nobody registered — the registry, not this match, is the authority.
     pub fn from_ggml_type(type_id: u32) -> Option<Self> {
+        Self::admitted_by(crate::kernel_registry::registry().ok()?, type_id)
+    }
+
+    /// [`Self::from_ggml_type`] against a given registry: the declared variant, if `registry`
+    /// carries a row-major `cuda` row for `type_id`.
+    pub(crate) fn admitted_by(
+        registry: &crate::kernel_registry::Registry,
+        type_id: u32,
+    ) -> Option<Self> {
+        use crate::kernel_registry::{Backend, Layout};
+        Self::declared(type_id).filter(|_| {
+            registry
+                .admit(Backend::Cuda, type_id, Layout::RowMajor)
+                .is_ok()
+        })
+    }
+
+    /// The GGML type ids this enum has a variant (and so a `gemv_dispatch` arm) for, before the
+    /// registry is consulted. `kernel_registry`'s coverage test holds it equal to the registry's
+    /// `cuda` rows in both directions.
+    pub(crate) fn declared(type_id: u32) -> Option<Self> {
         match type_id {
             0 => Some(Self::F32),     // GH-374: F32 LM head in APR checkpoints
             1 => Some(Self::F16),     // #3477: F16 ssm_alpha/ssm_beta in UD dynamic quants

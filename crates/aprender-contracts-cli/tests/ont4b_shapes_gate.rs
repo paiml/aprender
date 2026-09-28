@@ -232,11 +232,12 @@ fn the_tracked_repo_graph_is_fresh() {
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
     // node to a PR's graph — the release evidence is extracted only under `--release-*`. #3715 v2 added
     // `release-readiness-v2{.kernel,.model,.sanitizer}` (shapes_n=21, triples=16164, measured on
-    // la-71/3715-kernel-cells); like v1 they see a focus node only under `--v2-evidence`.
+    // la-71/3715-kernel-cells); like v1 they see a focus node only under `--v2-evidence`. KREG-001 (#4539) adds
+    // `kernel-registry-v1` and #3715 v2 its per-forward `kernel-registry-v1.op`: 23.
     assert_eq!(
         v["shapes_n"],
-        21,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + release-readiness-v2{{.kernel,.model,.sanitizer}} (#3715 v2)\n{}",
+        23,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + release-readiness-v2{{.kernel,.model,.sanitizer}} (#3715 v2) + kernel-registry-v1{{,.op}} (#4539, #3715 v2)\n{}",
         show(&r)
     );
 }

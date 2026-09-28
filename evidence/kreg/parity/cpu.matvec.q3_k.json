@@ -1,0 +1,59 @@
+{
+  "build_identity": "fd27cc465e",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/Q3_K@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@mag.bin:defed7b19cf9ebe49c604779070b66b0ed13fd4970ae61e6d7d26c369c9fb3a5,ref.bin:b1d884cc16af5f390b1124c2a6d62e5aea07148b3102e9d7eaa2a2b06058ce60,weights.bin:b3ba87bdbb4b1c6f51f1b0a2b7f5b9cca994aa66c341884fb4c62457f27c75cc,x.bin:8f512591a7f20764589caff6875fc94d8f9c444e6b3e1e68d5af0811df7187c4",
+    "row_sha256": "7f26841cc82152e7e10b4079b595d5cc7c03c9fa8a39a5410b667d6d84573771",
+    "source_sha256": "5ee9e074fbac29de6cdbccc38021302057f94477d541a42f8976af231b87ea58",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "e8ec4e959da609ec2a10941711b495df01cce1f1a5cee8b4535c1ccad324fa07",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.matvec.q3_k",
+  "margin": {
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.00115272962585248,
+    "nmse": 2.3745673766625645e-13,
+    "p999_margin": 0.00115272962585248,
+    "verdict": "pass"
+  },
+  "oracle": "gguf_py_dequant_f64",
+  "oracle_fixture": {
+    "dir": "evidence/kreg/oracle/Q3_K",
+    "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
+    "sha256": {
+      "mag.bin": "defed7b19cf9ebe49c604779070b66b0ed13fd4970ae61e6d7d26c369c9fb3a5",
+      "ref.bin": "b1d884cc16af5f390b1124c2a6d62e5aea07148b3102e9d7eaa2a2b06058ce60",
+      "weights.bin": "b3ba87bdbb4b1c6f51f1b0a2b7f5b9cca994aa66c341884fb4c62457f27c75cc",
+      "x.bin": "8f512591a7f20764589caff6875fc94d8f9c444e6b3e1e68d5af0811df7187c4"
+    }
+  },
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.000015227571235953974,
+    "max_rel_err": 7.053529758403237e-7
+  },
+  "source_fn": "dequantize_q3_k",
+  "tolerance_rel": 2e-6,
+  "ts": "2026-09-28T12:28:31Z",
+  "workload": {
+    "in_dim": 1024,
+    "out_dim": 32,
+    "seed": 4550,
+    "trials": 1
+  }
+}

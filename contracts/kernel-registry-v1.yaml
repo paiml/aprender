@@ -1,0 +1,258 @@
+# ──────────────────────────────────────────────
+# kernel-registry-v1 — every dispatchable kernel as a shaped row (KREG-001, aprender#4539)
+#
+# WHY. Recurring kernel-dispatch defects are DATA defects, not speed defects: a col-major Q4K/Q6K kernel on
+# row-major GGUF data (LAYOUT-001/002, 100+ occurrences), and the wgpu `raw_q4k_weights` path uploading
+# `gate_proj` with no qtype check. Both are a selector reaching a (backend, op, qtype, layout) combination
+# nobody declared. This contract makes the declaration a row, shapes the row, and the runtime gate
+# (`realizar::kernel_registry::admit`) refuses any combination with no row — the wrong kernel is unloadable.
+#
+# NO NEW FORMAT. The registry is ONE JSON document read by the existing ONT-001 `json` extractor (Σ entity type
+# `json`, implemented), exactly as refusal-receipt-v1 reads evidence/verbs/refusals.json. The same file is
+# `include_str!`d by realizar, so what `pv lint --gate shapes` grades and what the selector admits are one source.
+#
+# LAYOUT IS A CLOSED SET OF ONE. `row_major` is the only admissible value: APR and realizar are exclusively
+# row-major, GGUF col-major data is transposed at the import boundary (contracts/tensor-layout-v1.yaml). A row
+# declaring `col_major` is a shape violation — that is FALSIFY-KREG-001.
+#
+# TOLERANCE IS NEVER TYPED FROM MEMORY. It is `unmeasured` until a parity receipt measures it, then the path of
+# that receipt. A number written here without a receipt would be a claim wearing a measurement's clothes.
+#
+# WHAT THE SHAPE CANNOT SEE. `resolves:` is checked by extractors, and the generic json extractor does not
+# resolve paths. So `source_file`/`source_fn` existence is proven by realizar's own test
+# (`kernel_registry::tests::every_row_names_a_real_fn`), and "every dispatchable kernel has a row" by the
+# selector-coverage test. Both are named in falsification_tests below.
+#
+# KIND: pattern. Vocabulary + shape over a graph; the proof is the gate's own case table.
+# ──────────────────────────────────────────────
+name: kernel-registry
+version: "1.0.0"
+scope: >
+  The fields every dispatchable kernel row must carry — op, qtype and its GGML id, layout, backend, arch, block
+  size (the shape limit on K), accumulate precision, tolerance, source file and fn, the selector that reaches it,
+  and its contract — for the realizar CPU selector (fused_matmul), the CUDA selector (gemv_dispatch) and the
+  wgpu GEMV paths. Out of scope: kernel generation (phase 2, a separate issue), the reference rows from
+  llama.cpp/vLLM (a separate document), and CUDA variant selection inside one qtype (gpu_profile).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-27'
+  last_modified: '2026-09-28'
+  author: PAIML Engineering
+  description: >
+    A kernel is loadable only if a shaped row declares its (backend, arch, isa_features, op, qtype, layout). Layout is closed to
+    row_major, qtype is a closed set, tolerance is a measurement or the word unmeasured.
+  references:
+    - 'aprender#4539 (this row, KREG-001)'
+    - 'contracts/tensor-layout-v1.yaml — LAYOUT-001/002, quant_dispatch (the no-`_ =>` rule this generalises)'
+    - 'contracts/refusal-receipt-v1.yaml — the json-entity + shape pattern this reuses unchanged'
+    - 'crates/aprender-serve/kernel-registry.json — the rows'
+    - 'crates/aprender-serve/src/kernel_registry.rs — the runtime gate'
+    - 'crates/aprender-contracts/src/lint/kernel_registry_v1_tests.rs — the case table, both arms, on the REAL contract and registry'
+    - 'crates/aprender-serve/src/kernel_registry_parity.rs — the parity receipts a tolerance path points at (FALSIFY-KREG-009)'
+    - 'evidence/kreg/parity/ — the receipts; oracle in_tree_dequant_f64 for the fused kernels (not independent), gguf_py_dequant_f64 for the dequant-only and IQ rows (independent)'
+    - 'evidence/kreg/oracle/ — gguf-py fixtures written by scripts/kreg_ggufpy_oracle.py (llama.cpp gguf-py decoders; meta.json pins the commit and file sha256)'
+
+entity:
+  type: json
+  ref: crates/aprender-serve/kernel-registry.json
+
+vocabulary:
+  prefix: kreg
+  root_class: kreg:Registry
+  nested:
+    kernels: kreg:Kernel
+    ops: kreg:Op
+
+shape:
+  targetClass: kreg:Kernel
+  closed: true
+  properties:
+    # AC-4 (OBS-15, #4574): the stable id OBS-15 records as kernel_path.entries[].kernel_id.
+    # <backend>.<op>.<qtype>, then .<arch>[.<isa>] once a row is arch-specific.
+    - {path: kreg:kernel_id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^(cpu|cuda|wgpu|metal)\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_+]+){0,2}$"}
+    - {path: kreg:op, minCount: 1, maxCount: 1, in: [matvec, gemv]}
+    - {path: kreg:qtype, minCount: 1, maxCount: 1,
+       in: [F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K,
+            IQ2_XXS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS, IQ4_NL, APR_Q4, APR_Q8]}
+    - {path: kreg:ggml_type, minCount: 1, maxCount: 1, datatype: xsd:integer}
+    # THE LAYOUT FALSIFIER. One admissible value; col_major is not in the set.
+    - {path: kreg:layout, minCount: 1, maxCount: 1, in: [row_major]}
+    # The key's device dimensions (la-73 0.73 E5; APR-OBS-001 section 2.10 AC-1/AC-2): backend names
+    # the runtime, arch the machine (x86_64, aarch64, sm_89, apple_m2, ... or `any`), isa_features
+    # the `+`-joined features a row requires (`none` = baseline). Nothing here is x86- or CUDA-only:
+    # an aarch64 NEON/SVE row, a Metal row and a wgpu row validate with no shape change.
+    - {path: kreg:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu, metal]}
+    - {path: kreg:arch, minCount: 1, maxCount: 1, pattern: "^(any|[a-z][a-z0-9_]*)$"}
+    - {path: kreg:isa_features, minCount: 1, maxCount: 1, pattern: "^(none|[a-z0-9_.]+(\\+[a-z0-9_.]+)*)$"}
+    # KTEST-001 §5.1 (KTEST-01): device features beyond the backend; `none` = any device of it.
+    - {path: kreg:requires, minCount: 1, maxCount: 1, pattern: "^(none|[A-Za-z0-9_]+(\\+[A-Za-z0-9_]+)*)$"}
+    - {path: kreg:block_elems, minCount: 1, maxCount: 1, datatype: xsd:integer}
+    - {path: kreg:accumulate, minCount: 1, maxCount: 1, in: [f32, i32_f32, profile_selected]}
+    # AC-4: what the nightly reports. precision = the activation precision inside the kernel;
+    # shape_class = the M it serves (m1 = one token, m_any = any batch).
+    - {path: kreg:precision, minCount: 1, maxCount: 1, in: [f32, f16, bf16, q8_0, q8_k, profile_selected]}
+    # KTEST-001 S-EM: exactly one error model (§3.1), and a declared determinism. The cross-field
+    # rule "EM-NONDET is never bitwise" is beyond SHACL Core; Registry::parse refuses it.
+    - {path: kreg:error_model, minCount: 1, maxCount: 1, in: [EM-DOT, EM-DEQ, EM-ELEM, EM-RED, EM-SMX, EM-ATT, EM-ROPE, EM-NONDET]}
+    - {path: kreg:determinism, minCount: 1, maxCount: 1, in: [bitwise, bounded]}
+    - {path: kreg:shape_class, minCount: 1, maxCount: 1, in: [m1, m_any]}
+    - {path: kreg:tolerance, minCount: 1, maxCount: 1, pattern: "^(unmeasured|evidence/.+\\.json)$"}
+    - {path: kreg:source_file, minCount: 1, maxCount: 1, pattern: "^crates/[a-z0-9_-]+/src/.+\\.rs$"}
+    - {path: kreg:source_fn, minCount: 1, maxCount: 1, pattern: "^[a-z_][a-z0-9_]*$"}
+    - {path: kreg:selector, minCount: 1, maxCount: 1, minLength: 8}
+    - {path: kreg:contract, minCount: 1, maxCount: 1, pattern: "^contracts/.+\\.yaml$"}
+
+# PER-FORWARD OPS (#3715 v2 §4). Norms, RoPE, attention, the gated activations and the rest run on f32
+# activations whatever the file's tensor types, so no ggml type id reaches them and `admit` never selects
+# one. They are rows of `ops[]`, not `kernels[]`: a `kernels[]` row with no type would need `ggml_type`
+# minCount 0, and SHACL Core cannot then say "a typed op has a type". This shape is closed too, so a type
+# field on an op row is refused. `archs` (optional, model architectures) narrows the models an op serves.
+shapes:
+  - id: kernel-registry-v1.op
+    targetClass: kreg:Op
+    closed: true
+    properties:
+      - {path: kreg:kernel_id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^(cpu|cuda|wgpu|metal)\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_+]+){0,2}$"}
+      - {path: kreg:op, minCount: 1, maxCount: 1, in: [embed, rmsnorm, layernorm, rope, attention, kv_write, swiglu, gelu, residual_add, argmax]}
+      - {path: kreg:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu, metal]}
+      - {path: kreg:arch, minCount: 1, maxCount: 1, pattern: "^(any|[a-z][a-z0-9_]*)$"}
+      - {path: kreg:archs, pattern: "^[a-z][a-z0-9_]*$"}
+      - {path: kreg:isa_features, minCount: 1, maxCount: 1, pattern: "^(none|[a-z0-9_.]+(\\+[a-z0-9_.]+)*)$"}
+      - {path: kreg:requires, minCount: 1, maxCount: 1, pattern: "^(none|[A-Za-z0-9_]+(\\+[A-Za-z0-9_]+)*)$"}
+      - {path: kreg:accumulate, minCount: 1, maxCount: 1, in: [f32]}
+      - {path: kreg:precision, minCount: 1, maxCount: 1, in: [f32, f16, bf16]}
+      - {path: kreg:error_model, minCount: 1, maxCount: 1, in: [EM-ELEM, EM-RED, EM-SMX, EM-ATT, EM-ROPE, EM-NONDET]}
+      - {path: kreg:determinism, minCount: 1, maxCount: 1, in: [bitwise, bounded]}
+      - {path: kreg:shape_class, minCount: 1, maxCount: 1, in: [m1, m_any]}
+      - {path: kreg:tolerance, minCount: 1, maxCount: 1, pattern: "^(unmeasured|evidence/.+\\.json)$"}
+      - {path: kreg:source_file, minCount: 1, maxCount: 1, pattern: "^crates/[a-z0-9_-]+/src/.+\\.rs$"}
+      - {path: kreg:source_fn, minCount: 1, maxCount: 1, pattern: "^[a-z_][a-z0-9_]*$"}
+      - {path: kreg:selector, minCount: 1, maxCount: 1, minLength: 8}
+      - {path: kreg:contract, minCount: 1, maxCount: 1, pattern: "^contracts/.+\\.yaml$"}
+
+equations:
+  admissible:
+    formula: "admit(b, t, q, l) = Ok(r) ⟺ ∃ r ∈ Kernel: (backend, ggml_type, layout)(r) = (b, q, l) ∧ arch(r) ∈ {any, arch(t)} ∧ isa_features(r) ⊆ isa(t)"
+    domain: "every (backend, target arch + isa, qtype, layout) a realizar kernel selector can reach"
+    codomain: "the registry row, or Err naming the combination — never a silent fallback"
+    invariants:
+      - "layout(r) = row_major for every row"
+      - "an unregistered combination is an Err at the selector, never a default arm"
+      - "of several matching rows the most specific (arch named, most isa features) is chosen"
+    preconditions:
+      - "the registry document parses and every row conforms to the shape"
+    postconditions:
+      - "no kernel runs on a (backend, arch, isa_features, qtype, layout) nobody declared"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: KREG-INV-001
+    property: every row is row-major
+    formal: 'layout(r) ≠ row_major ⇒ Fail(kernel-registry-v1, r)'
+    prose: false
+  - id: KREG-INV-002
+    property: every row names its qtype from the closed set
+    formal: 'qtype(r) ∉ QTYPES ∨ |qtype(r)| = 0 ⇒ Fail(kernel-registry-v1, r)'
+    prose: false
+  - id: KREG-INV-003
+    property: tolerance is a measurement or the word unmeasured
+    formal: 'tolerance(r) ∉ {unmeasured} ∪ evidence/*.json ⇒ Fail(kernel-registry-v1, r)'
+    prose: false
+  - id: KREG-INV-004
+    property: every row declares exactly one error model and a determinism (KTEST-001 S-EM)
+    formal: '|error_model(r)| ≠ 1 ∨ error_model(r) ∉ EM ∨ determinism(r) ∉ {bitwise, bounded} ∨ (error_model(r) = EM-NONDET ∧ determinism(r) = bitwise) ⇒ Fail(kernel-registry-v1, r)'
+    prose: false
+  - id: KREG-INV-005
+    property: every kernel key a dispatch trace records is a registered kernel_id (KTEST-001 S-REG)
+    formal: 'k ∈ trace ∧ ¬∃ r ∈ Reg: kernel_id(r) = k ⇒ k ∈ Registry::unregistered_dispatches(trace)'
+    prose: false
+
+  - id: KREG-INV-006
+    property: a committed parity receipt is reused only while its input set recomputes unchanged from the tree (KTEST-001 §5.1, F-8)
+    formal: 'reuse(rc) ↔ rc.input_set_hash = H(rc.input_set) ∧ rc.input_set = InputSet(tree, row, rc.driver, rc.device, oracle(tree))'
+    prose: false
+  - id: KREG-INV-007
+    property: a per-forward op is an ops[] row with no type key, and its kernel_id is unique across kernels and ops
+    formal: 'r ∈ Op ∧ (ggml_type(r) ≠ ⊥ ∨ op(r) ∉ OPS) ⇒ Fail(kernel-registry-v1.op, r); kernel_id(r) = kernel_id(r′) ∧ r ≠ r′ ⇒ Registry::parse = Err'
+    prose: false
+falsification_tests:
+  - id: FALSIFY-KREG-001
+    rule: a col-major kernel row is refused
+    prediction: a registry row declaring layout col_major for Q4_K on GGUF data is a shape violation naming the row
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1
+    if_fails: the layout set is decoration and LAYOUT-001 can be registered back in
+  - id: FALSIFY-KREG-002
+    rule: a row with no qtype is refused
+    prediction: a row missing qtype (the raw_q4k class — bytes with no declared type) is a shape violation
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1
+    if_fails: an untagged kernel can be registered and admitted for any qtype
+  - id: FALSIFY-KREG-003
+    rule: a tolerance typed from memory is refused
+    prediction: a row with tolerance 1e-3 and no receipt path is a shape violation
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1
+    if_fails: unmeasured numbers read as measured
+  - id: FALSIFY-KREG-004
+    rule: the runtime gate refuses an unregistered combination
+    prediction: admit(cpu, matvec, Q4_K, col_major) and admit(cpu, matvec, <unknown ggml id>, row_major) are Err
+    test: cargo test -p aprender-serve --lib kernel_registry
+    if_fails: the selector falls through to a default arm and runs an undeclared kernel
+  - id: FALSIFY-KREG-005
+    rule: every row names a real fn
+    prediction: each (source_file, source_fn) pair resolves to a `fn` in the tree
+    test: cargo test -p aprender-serve --lib kernel_registry
+    if_fails: a registry row points at a deleted or renamed kernel and still admits it
+  - id: FALSIFY-KREG-006
+    rule: the wgpu raw-Q4_K upload admits only what a registry row admits (df-2378-8b)
+    prediction: a gate_proj of any qtype but Q4_K is dequantized, never uploaded as raw Q4_K bytes; with no wgpu row nothing is uploaded raw; every raw tensor is admitted by the registry
+    test: cargo test -p aprender-serve --lib kreg_wgpu_raw_q4k_gate
+    if_fails: a Q6_K gate is read as Q4_K blocks on wgpu and decodes to garbage
+  - id: FALSIFY-KREG-007
+    rule: every row's (qtype, ggml_type, block_elems) matches the upstream facts
+    prediction: each row agrees with llama.cpp and vLLM at the commits pinned in docs/kernel-registry/upstream-reference-v1.json; APR-native ids (>= 128) have no upstream row
+    test: cargo test -p aprender-serve --lib every_row_agrees_with_the_upstream_reference
+    if_fails: a wrong type id or block size admits a kernel for bytes it cannot decode
+  - id: FALSIFY-KREG-008
+    rule: receipt-gated admission is a ratchet (AC-3)
+    prediction: a parity receipt names a real row and was taken on a host of that row's arch; the rows without one number exactly unreceipted_max, which only falls, and is 0 from hard_red_at on
+    test: cargo test -p aprender-serve --lib unreceipted_rows_only_fall_and_reach_zero_at_the_hard_red_version
+    if_fails: a row ships with no parity receipt and nothing ever forces one
+  - id: FALSIFY-KREG-009
+    rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
+    prediction: >
+      every committed receipt, re-measured with its own seed and workload, stays within its tolerance_rel;
+      the row's tolerance is that receipt's path; a precision=f32 row serves exactly what the FP32 scope
+      computes, and a quantized-precision row serves something measurably coarser. Mutants: a q5_k row
+      re-declared q8_k, a q8_0 row re-declared f32, a q6_k bound below the measurement, and a q4_k row reset to
+      unmeasured are each RED. A gguf-py receipt re-measures against its pinned fixture: one flipped fixture
+      byte, a q4_1 min added with the wrong sign, and one IQ2_XXS grid entry changed (a table the decoder and
+      kernel share, invisible to the in-tree oracle) are each RED
+    test: cargo test -p aprender-serve --lib kernel_registry::parity
+    if_fails: a receipt is a file that was once true, and a row can declare an activation precision it does not serve
+  - id: FALSIFY-KREG-010
+    rule: a row with no error model, an unknown one, or an undeclared determinism is refused (KTEST-01, S-EM)
+    prediction: removing error_model, setting it to EM-GUESS, or setting determinism to mostly is a shape violation naming the row and the property; EM-NONDET with bitwise is refused by Registry::parse
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1 && cargo test -p aprender-serve --lib kernel_registry
+    if_fails: a kernel's parity bound has no stated derivation, so a tolerance cannot be checked against its error model
+  - id: FALSIFY-KREG-011
+    rule: a kernel dispatched without being registered is named (KTEST-001 F-7, S-REG)
+    prediction: a trace holding an id no row has, or a non-registry label such as q4k-f32/neon, returns that key once; a trace of registered ids returns nothing. The trace itself comes from OBS-09/OBS-15 (#4496, #4574); until they merge this check has no production input
+    test: cargo test -p aprender-serve --lib kernel_registry::tests::f7_an_unregistered_dispatch_is_named
+    if_fails: a kernel with no row, receipt or tolerance can serve a release and nothing reports it
+  - id: FALSIFY-KREG-012
+    rule: a receipt whose input set no longer recomputes from the tree is stale, and the stale parts are named (KTEST-001 F-8, receipt reuse)
+    prediction: an unchanged set is fresh; editing any one of source, row, toolchain, driver, device or oracle names exactly that part; a digest that does not match the recorded parts is stale whatever the parts say; every committed receipt is fresh against its own tree and the reuse count is printed
+    test: 'cargo test -p aprender-serve --lib kernel_registry:: -- f8_a_stale_input_set_is_named committed_parity_receipts_are_fresh_against_this_tree'
+    if_fails: a receipt measured against an older kernel source passes a release, or every release re-measures every kernel
+  - id: FALSIFY-KREG-013
+    rule: a per-forward op row carries no tensor type and names a real fn (#3715 v2 §4)
+    prediction: >
+      the committed ops[] rows conform and each is a focus node of kernel-registry-v1.op; an op row given a
+      ggml_type or qtype, an op outside the closed set, or a non-f32 accumulate is a shape violation naming the
+      row and the property; Registry::parse refuses a type field on an op row, a kernel_id shared by two rows
+      (kernels or ops), an empty or repeated archs list, and an absent ops[]; a trace of op ids is registered;
+      each op row's (source_file, source_fn) resolves to a fn in the tree
+    test: cargo test -p aprender-contracts --lib kernel_registry_v1 && cargo test -p aprender-serve --lib kernel_registry
+    if_fails: a norm, RoPE or attention kernel runs in every forward with no row, so no receipt can ever be asked of it

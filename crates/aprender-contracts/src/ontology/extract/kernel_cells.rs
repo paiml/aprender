@@ -30,10 +30,11 @@ pub const ANY_ARCH: &str = "any";
 pub struct RegistryRow {
     pub kernel_id: String,
     pub backend: String,
-    /// The tensor type the row serves, or `None` (`"ggml_type": null`) for a per-forward op such as RMSNorm,
-    /// RoPE or attention: it runs on f32 activations whatever the file's types, so every model on the row's
-    /// backend uses it ([`op_kernels`]).
+    /// The tensor type a `kernels[]` row serves, or `None` for an `ops[]` row, a per-forward op such as
+    /// RMSNorm, RoPE or attention: it runs on f32 activations whatever the file's types, so every model on
+    /// the row's backend uses it ([`op_kernels`]).
     pub ggml_type: Option<u32>,
+    /// A `kernels[]` row's layout; empty for an `ops[]` row, which has none.
     pub layout: String,
     pub arch: String,
     /// An op row's model architectures (`general.architecture`), e.g. LayerNorm for `phi2` only; `None`
@@ -64,7 +65,7 @@ fn refuse(file: &str, what: impl Into<String>) -> ExtractError {
 
 fn field<'a>(
     file: &str,
-    i: usize,
+    at: &str,
     row: &'a serde_json::Value,
     key: &str,
 ) -> Result<&'a str, ExtractError> {
@@ -74,8 +75,25 @@ fn field<'a>(
         .ok_or_else(|| {
             refuse(
                 file,
-                format!("kernels[{i}]: `{key}` missing or not a non-empty string"),
+                format!("{at}: `{key}` missing or not a non-empty string"),
             )
+        })
+}
+
+/// The array under `key`: required, and non-empty when `non_empty`.
+fn rows_of<'a>(
+    file: &str,
+    doc: &'a serde_json::Value,
+    key: &str,
+    non_empty: bool,
+) -> Result<&'a [serde_json::Value], ExtractError> {
+    doc.get(key)
+        .and_then(serde_json::Value::as_array)
+        .filter(|a| !(non_empty && a.is_empty()))
+        .map(Vec::as_slice)
+        .ok_or_else(|| {
+            let what = if non_empty { "non-empty " } else { "" };
+            refuse(file, format!("no {what}`{key}` array"))
         })
 }
 
@@ -85,76 +103,75 @@ fn field<'a>(
 pub fn parse_registry(file: &str, bytes: &[u8]) -> Result<Vec<RegistryRow>, ExtractError> {
     let doc: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| refuse(file, format!("not JSON: {e}")))?;
-    let kernels = doc
-        .get("kernels")
-        .and_then(serde_json::Value::as_array)
-        .filter(|k| !k.is_empty())
-        .ok_or_else(|| refuse(file, "no non-empty `kernels` array"))?;
+    let kernels = rows_of(file, &doc, "kernels", true)?;
+    // `ops[]` is required, so a registry from before the per-forward ops is refused rather than read as
+    // having none: that would pass every model on its matvec receipts alone.
+    let ops = rows_of(file, &doc, "ops", false)?;
+    let mut out = Vec::with_capacity(kernels.len() + ops.len());
+    for (i, row) in kernels.iter().enumerate() {
+        let at = format!("kernels[{i}]");
+        let ggml_type = row
+            .get("ggml_type")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|t| u32::try_from(t).ok())
+            .ok_or_else(|| refuse(file, format!("{at}: `ggml_type` missing or not a u32")))?;
+        if row.get("archs").is_some() {
+            return Err(refuse(
+                file,
+                format!("{at}: `archs` on a typed row (only an `ops[]` row has one)"),
+            ));
+        }
+        out.push(RegistryRow {
+            kernel_id: field(file, &at, row, "kernel_id")?.to_string(),
+            backend: field(file, &at, row, "backend")?.to_string(),
+            ggml_type: Some(ggml_type),
+            layout: field(file, &at, row, "layout")?.to_string(),
+            arch: field(file, &at, row, "arch")?.to_string(),
+            archs: None,
+        });
+    }
+    for (i, row) in ops.iter().enumerate() {
+        let at = format!("ops[{i}]");
+        // A type key on an op is refused, not ignored: the row would read as serving no tensor while its
+        // author meant one.
+        if let Some(k) = ["ggml_type", "qtype", "layout"]
+            .into_iter()
+            .find(|k| row.get(*k).is_some())
+        {
+            return Err(refuse(file, format!("{at}: `{k}` on an op row")));
+        }
+        out.push(RegistryRow {
+            kernel_id: field(file, &at, row, "kernel_id")?.to_string(),
+            backend: field(file, &at, row, "backend")?.to_string(),
+            ggml_type: None,
+            layout: String::new(),
+            arch: field(file, &at, row, "arch")?.to_string(),
+            archs: parse_archs(file, &at, row)?,
+        });
+    }
     let mut seen = BTreeSet::new();
-    kernels
-        .iter()
-        .enumerate()
-        .map(|(i, row)| {
-            let kernel_id = field(file, i, row, "kernel_id")?.to_string();
-            if !seen.insert(kernel_id.clone()) {
-                return Err(refuse(
-                    file,
-                    format!("kernels[{i}]: duplicate kernel_id `{kernel_id}`"),
-                ));
-            }
-            // An absent key is refused, not read as an op row: a typo would otherwise put a matvec row on
-            // every model's path.
-            let ggml_type = match row.get("ggml_type") {
-                Some(serde_json::Value::Null) => None,
-                t => Some(
-                    t.and_then(serde_json::Value::as_u64)
-                        .and_then(|t| u32::try_from(t).ok())
-                        .ok_or_else(|| {
-                            refuse(
-                                file,
-                                format!(
-                                    "kernels[{i}]: `ggml_type` missing, or neither a u32 nor null"
-                                ),
-                            )
-                        })?,
-                ),
-            };
-            let archs = parse_archs(file, i, row, ggml_type.is_none())?;
-            Ok(RegistryRow {
-                kernel_id,
-                backend: field(file, i, row, "backend")?.to_string(),
-                ggml_type,
-                layout: field(file, i, row, "layout")?.to_string(),
-                arch: field(file, i, row, "arch")?.to_string(),
-                archs,
-            })
-        })
-        .collect()
+    if let Some(r) = out.iter().find(|r| !seen.insert(r.kernel_id.as_str())) {
+        return Err(refuse(
+            file,
+            format!("duplicate kernel_id `{}`", r.kernel_id),
+        ));
+    }
+    Ok(out)
 }
 
-/// An op row's `archs`: absent, or a non-empty list of non-empty strings, each once. A typed row with one is
-/// refused: it would read as narrowing a tensor type to some models, which the map does not do.
+/// An op row's `archs`: absent, or a non-empty list of non-empty strings, each once.
 fn parse_archs(
     file: &str,
-    i: usize,
+    at: &str,
     row: &serde_json::Value,
-    op_row: bool,
 ) -> Result<Option<BTreeSet<String>>, ExtractError> {
     let Some(v) = row.get("archs") else {
         return Ok(None);
     };
-    if !op_row {
-        return Err(refuse(
-            file,
-            format!(
-                "kernels[{i}]: `archs` on a typed row (only a `ggml_type: null` op row has one)"
-            ),
-        ));
-    }
     let bad = || {
         refuse(
             file,
-            format!("kernels[{i}]: `archs` not a non-empty list of distinct names"),
+            format!("{at}: `archs` not a non-empty list of distinct names"),
         )
     };
     let list = v.as_array().filter(|a| !a.is_empty()).ok_or_else(bad)?;
@@ -182,7 +199,6 @@ pub fn op_kernels(
         .filter(|r| {
             r.ggml_type.is_none()
                 && r.backend == backend
-                && r.layout == ROW_MAJOR
                 && (r.arch == ANY_ARCH || r.arch == host_arch)
                 && match (&r.archs, model_arch) {
                     (Some(archs), Some(m)) => archs.contains(m),

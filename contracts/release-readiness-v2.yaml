@@ -88,8 +88,8 @@ shapes:
 
 equations:
   static_map:
-    formula: "uses(m, h) = { r.kernel_id : r ∈ Reg(h), r.ggml_type ∈ types(m) } ∪ { r.kernel_id : r ∈ Reg(h), r.ggml_type = null, types(m) ≠ ∅, archs(r) = ⊥ ∨ arch(m) = ⊥ ∨ arch(m) ∈ archs(r) }"
-    domain: "types(m) = the distinct per-tensor ggml types of the model file (model:tensorType); arch(m) = its general.architecture; Reg(h) = the kernel-registry.json rows with backend = backend(h), layout = row_major, arch ∈ {any, arch(h)}; a null ggml_type is a per-forward op (norm, rope, attention, …)"
+    formula: "uses(m, h) = { r.kernel_id : r ∈ Reg(h), r.ggml_type ∈ types(m) } ∪ { r.kernel_id : r ∈ Reg(h), r ∈ Ops(h), types(m) ≠ ∅, archs(r) = ⊥ ∨ arch(m) = ⊥ ∨ arch(m) ∈ archs(r) }"
+    domain: "types(m) = the distinct per-tensor ggml types of the model file (model:tensorType); arch(m) = its general.architecture; Reg(h) = the kernel-registry.json rows with backend = backend(h), layout = row_major, arch ∈ {any, arch(h)}; Ops(h) = its ops[] rows (per-forward ops: norm, rope, attention, …) with that backend and arch, which carry no type"
     codomain: "release:usesKernel edges, and release:unregisteredQtype for each t ∈ types(m) no such row serves"
     invariants:
       - "a superset of admit(): every row a host of that arch could be served needs a receipt"
@@ -133,7 +133,7 @@ invariants:
 falsification_tests:
   - id: FALSIFY-RR2-001
     rule: the static map
-    prediction: "per-tensor types map to exactly the rows of the host's backend and arch; a type no row serves is unregistered; a removed row unregisters its type and nothing else; a null-ggml_type op row joins every typed model's map of its backend, narrowed by archs (unknown arch takes all), and removing its receipt fails every such model; a malformed registry (absent ggml_type, archs on a typed row, a bad archs list) is refused whole"
+    prediction: "per-tensor types map to exactly the rows of the host's backend and arch; a type no row serves is unregistered; a removed row unregisters its type and nothing else; an ops[] row joins every typed model's map of its backend, narrowed by archs (unknown arch takes all), and removing its receipt fails every such model; a malformed registry (no ops[], a kernels[] row with an absent or null ggml_type, a type key on an op row, archs on a typed row, a bad archs list, an id shared across kernels and ops) is refused whole"
     test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
     if_fails: a model's kernel set silently drops a kernel, so a missing receipt cannot turn it RED
   - id: FALSIFY-RR2-002

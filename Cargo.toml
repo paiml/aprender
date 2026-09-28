@@ -98,6 +98,8 @@ members = [
     "crates/aprender-test-derive",
     "crates/aprender-test-js-gen",
     "crates/aprender-test-showcase",
+    # --- KTEST-02: f64 scalar kernel oracle + per-element margin harness (std-only) ---
+    "crates/aprender-kernel-oracle",
     # --- APR-MONO Phase 2g: QA playbook crates ---
     "crates/aprender-qa-gen",
     "crates/aprender-qa-runner",

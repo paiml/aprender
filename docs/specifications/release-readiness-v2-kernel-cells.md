@@ -88,14 +88,18 @@ path, but under labels such as `q4k_gemv@q4_k` rather than registry `kernel_id`s
 labels to registry ids once, in the registry itself, as a `labels` field, so no second list exists.
 
 **Per-forward ops** (embedding, RMSNorm/LayerNorm, RoPE, attention, KV write, SwiGLU/GELU, residual add,
-argmax) run on f32 activations whatever the file's types, so no `ggml_type` key reaches them. They are
-registry rows with `"ggml_type": null`, on every map of their backend and host arch for a model with
-tensor types, narrowed by an optional `archs` list against `general.architecture` (LayerNorm for `phi2`,
-say). An unknown architecture takes every op row, so not knowing it can only add RED cells.
-`kernel_cells::op_kernels` reads them; an absent `ggml_type`, or `archs` on a typed row, refuses the registry.
+argmax) run on f32 activations whatever the file's types, so no `ggml_type` key reaches them. They are the
+registry's `ops[]` rows (closed shape `kernel-registry-v1.op`, which refuses a type field on them), on every
+map of their backend and host arch for a model with tensor types, narrowed by an optional `archs` list
+against `general.architecture` (LayerNorm for `phi2`, say). An unknown architecture takes every op row, so
+not knowing it can only add RED cells. They are not `ggml_type: null` rows of `kernels[]`: that would need
+`ggml_type` at minCount 0, and SHACL Core cannot then require a type on a typed row. `kernel_cells::op_kernels`
+reads them; a registry with no `ops[]`, a type key on an op, `archs` on a typed row, or an id shared across
+the two arrays refuses the registry.
 
-**Coverage gap, and the first finding for 0.71:** the registry holds 41 rows, all `matvec` or
-`gemv`. Attention, RMSNorm, RoPE, SwiGLU, embedding and sampling are not registered. Under the
+**Coverage gap, and the first finding for 0.71:** the registry holds 41 `kernels[]` rows, all
+`matvec` or `gemv`, and six CPU `ops[]` rows (RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU), none with a
+receipt. Embedding, KV write, residual add, sampling and every CUDA op are not registered. Under the
 unregistered-kernel falsifier, **every model is RED today**. That is correct: it is the "0
 unvalidated cells" target stated honestly. Registering the remaining dispatch ops is phase P1.
 
@@ -144,8 +148,8 @@ Long-context risk moves to the attention kernels' shape classes, and that needs 
 
 ## 8. Phases
 
-- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ggml_type:
-  null` op rows, the serve-side rows and `admit` skipping them are open); per-tensor qtype in the
+- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ops[]`; six CPU op
+  rows are registered, CUDA's are open); per-tensor qtype in the
   GGUF extractor; `release-readiness-v2.yaml` shapes; extractor edges; the RR2-F1…F6 case table.
 - **P2:** CUDA kernel receipts on lambda (sm_89) and gx10 (sm_121); the `kernel_path` emitter in the
   smoke.

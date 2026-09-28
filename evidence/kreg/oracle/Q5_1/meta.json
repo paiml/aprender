@@ -1,0 +1,17 @@
+{
+  "schema": "kreg-ggufpy-oracle/v1",
+  "ggml_type": "Q5_1",
+  "ggml_type_id": 7,
+  "in_dim": 1024,
+  "out_dim": 32,
+  "seed": 4546,
+  "oracle": "gguf_py_dequant_f64",
+  "gguf_py": "/home/noah/src/llama.cpp/gguf-py/gguf/__init__.py",
+  "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
+  "sha256": {
+    "weights.bin": "5c876069b18bdf65ece0d6f5f06bff0ff58c6d753c1f9811f30e90cf7ddf9ca3",
+    "x.bin": "40a2e68540af4d9ba9b88bb45b3a62dd4bed07c089ea58856ab9f944da640f84",
+    "ref.bin": "5be13116d0a81eeef11c4e7f0bb5763389322d72ff298d3fb146d33b2578a050",
+    "mag.bin": "ab40f72d6c022ced917432dbc6b8699b2d783897a544a9b1b97b16548d022ef1"
+  }
+}

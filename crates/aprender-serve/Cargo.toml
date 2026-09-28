@@ -177,6 +177,8 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
+# KTEST-02 per-element margin: the parity receipts are judged by the dependency-free f64 oracle.
+aprender-kernel-oracle = { path = "../aprender-kernel-oracle" }
 # Contract trait enforcement (Section 23)
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }
 # Reading contracts/apr-model-capability-v1.yaml in `capability_contract` tests, so

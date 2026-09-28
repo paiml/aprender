@@ -475,7 +475,7 @@ fn v2_cells_join_the_release_graph_only_when_asked() {
     std::fs::create_dir_all(reg.parent().expect("registry dir")).expect("mkdir");
     std::fs::write(
         &reg,
-        r#"{"kernels":[{"kernel_id":"cuda.gemv.q4_k","backend":"cuda","ggml_type":12,"layout":"row_major","arch":"any"}]}"#,
+        r#"{"kernels":[{"kernel_id":"cuda.gemv.q4_k","backend":"cuda","ggml_type":12,"layout":"row_major","arch":"any"}],"ops":[]}"#,
     )
     .expect("registry");
     let h = "e".repeat(64);

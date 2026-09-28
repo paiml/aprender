@@ -1,0 +1,59 @@
+{
+  "build_identity": "fd27cc465e",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "gguf_py_dequant_f64@evidence/kreg/oracle/IQ3_S@60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f@mag.bin:f3864810dffaf5c7e06758832ca72708d255400828771a0913e3fcd2d9b39d5c,ref.bin:3c3f9372baea188ede7f6529770a56428ae2486d9fbec960548d4c08dc703d8a,weights.bin:bb3142b7c469f2ef423eaee37cf620a304c978d808a76483468e846962a761ff,x.bin:8ca78d0e27bf700c822c6e3cc9ab37674b60f7a90b8e79581b716b3b3e01c981",
+    "row_sha256": "f61cdc7d354f9614e5a91a7cd9be7959b3c77013bab42b97d10ca02f7a2d5f4b",
+    "source_sha256": "1c8596607fd1e31e1494539680d3912c45f7f490069f61082ce4e4d5aa594555",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "7b8a1c9f2fec542d51d212a93632b34e45eb4511959e03aa6e23b538a2f6817c",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.matvec.iq3_s",
+  "margin": {
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.001121230868616893,
+    "nmse": 1.4754130694910334e-13,
+    "p999_margin": 0.001121230868616893,
+    "verdict": "pass"
+  },
+  "oracle": "gguf_py_dequant_f64",
+  "oracle_fixture": {
+    "dir": "evidence/kreg/oracle/IQ3_S",
+    "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
+    "sha256": {
+      "mag.bin": "f3864810dffaf5c7e06758832ca72708d255400828771a0913e3fcd2d9b39d5c",
+      "ref.bin": "3c3f9372baea188ede7f6529770a56428ae2486d9fbec960548d4c08dc703d8a",
+      "weights.bin": "bb3142b7c469f2ef423eaee37cf620a304c978d808a76483468e846962a761ff",
+      "x.bin": "8ca78d0e27bf700c822c6e3cc9ab37674b60f7a90b8e79581b716b3b3e01c981"
+    }
+  },
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.00004026749664376439,
+    "max_rel_err": 4.014162228885452e-7
+  },
+  "source_fn": "iq_parallel_matvec_into",
+  "tolerance_rel": 9e-7,
+  "ts": "2026-09-28T12:28:31Z",
+  "workload": {
+    "in_dim": 1024,
+    "out_dim": 32,
+    "seed": 4560,
+    "trials": 1
+  }
+}

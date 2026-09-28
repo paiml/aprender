@@ -8,12 +8,16 @@ fn row(id: &str, backend: &str, t: u32, layout: &str, arch: &str) -> String {
     )
 }
 
+/// A registry document: typed rows go to `kernels[]`, op rows (no `ggml_type`) to `ops[]`.
+fn doc(rows: &[String]) -> String {
+    let (kernels, ops): (Vec<&String>, Vec<&String>) =
+        rows.iter().partition(|r| r.contains("\"ggml_type\""));
+    let join = |v: Vec<&String>| v.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(",");
+    format!(r#"{{"kernels":[{}],"ops":[{}]}}"#, join(kernels), join(ops))
+}
+
 fn registry(rows: &[String]) -> Vec<RegistryRow> {
-    parse_registry(
-        F,
-        format!(r#"{{"kernels":[{}]}}"#, rows.join(",")).as_bytes(),
-    )
-    .expect("fixture registry parses")
+    parse_registry(F, doc(rows).as_bytes()).expect("fixture registry parses")
 }
 
 /// A registry excerpt shaped like KREG-001's: q4_k/q6_k on cpu and cuda, q3_k on cpu only.
@@ -141,9 +145,7 @@ fn arch_rows_serve_their_arch_and_the_map_is_the_superset() {
 
 fn op_row(id: &str, backend: &str, arch: &str, archs: Option<&str>) -> String {
     let archs = archs.map_or_else(String::new, |a| format!(r#","archs":{a}"#));
-    format!(
-        r#"{{"kernel_id":"{id}","backend":"{backend}","ggml_type":null,"layout":"{ROW_MAJOR}","arch":"{arch}"{archs}}}"#
-    )
+    format!(r#"{{"kernel_id":"{id}","backend":"{backend}","arch":"{arch}"{archs}}}"#)
 }
 
 fn shape(ts: &[u32], arch: Option<&str>) -> ModelShape {
@@ -153,7 +155,7 @@ fn shape(ts: &[u32], arch: Option<&str>) -> ModelShape {
     }
 }
 
-/// #3715 P1: per-forward ops (`ggml_type: null`) are on every model's path of their backend and host arch,
+/// #3715 P1: per-forward ops (`ops[]` rows) are on every model's path of their backend and host arch,
 /// narrowed by `archs` when the model's architecture is known; unknown takes them all. They never serve a
 /// tensor type, and a model with no types gets none, so it stays RED.
 #[test]
@@ -207,39 +209,68 @@ fn op_rows_join_every_model_map_of_their_backend() {
 /// The op-row fields are read whole or the registry is refused.
 #[test]
 fn op_row_fields_are_refused_when_malformed() {
-    let refused = |rows: &[String], want: &str| {
-        let e = parse_registry(
-            F,
-            format!(r#"{{"kernels":[{}]}}"#, rows.join(",")).as_bytes(),
-        )
-        .expect_err(want);
+    let refused = |json: String, want: &str| {
+        let e = parse_registry(F, json.as_bytes()).expect_err(want);
         assert!(e.what.contains(want), "{} !~ {want}", e.what);
     };
-    // An absent ggml_type is not an op row.
+    let typed = row("t", "cpu", 12, ROW_MAJOR, ANY_ARCH);
+    let with_ops = |op: String| format!(r#"{{"kernels":[{typed}],"ops":[{op}]}}"#);
+    // A registry from before ops[] is refused, not read as having no ops.
+    refused(format!(r#"{{"kernels":[{typed}]}}"#), "no `ops` array");
     refused(
-        &[format!(
-            r#"{{"kernel_id":"k","backend":"cpu","layout":"{ROW_MAJOR}","arch":"any"}}"#
-        )],
+        format!(r#"{{"kernels":[{typed}],"ops":{{}}}}"#),
+        "no `ops` array",
+    );
+    // A type key on an op row is refused, not ignored.
+    for (k, v) in [
+        ("ggml_type", "null"),
+        ("ggml_type", "0"),
+        ("qtype", r#""F32""#),
+        ("layout", r#""row_major""#),
+    ] {
+        let op = op_row("k", "cpu", ANY_ARCH, None).replace('}', &format!(r#","{k}":{v}}}"#));
+        refused(with_ops(op), &format!("`{k}` on an op row"));
+    }
+    refused(
+        with_ops(r#"{"kernel_id":"k","arch":"any"}"#.to_string()),
+        "ops[0]: `backend` missing",
+    );
+    // A typed row with no, or a non-u32, type is refused, never read as an op.
+    refused(
+        format!(
+            r#"{{"kernels":[{{"kernel_id":"k","backend":"cpu","layout":"{ROW_MAJOR}","arch":"any"}}],"ops":[]}}"#
+        ),
         "`ggml_type` missing",
     );
     refused(
-        &[format!(
-            r#"{{"kernel_id":"k","backend":"cpu","ggml_type":"f32","layout":"{ROW_MAJOR}","arch":"any"}}"#
-        )],
-        "neither a u32 nor null",
+        format!(
+            r#"{{"kernels":[{{"kernel_id":"k","backend":"cpu","ggml_type":null,"layout":"{ROW_MAJOR}","arch":"any"}}],"ops":[]}}"#
+        ),
+        "`ggml_type` missing",
     );
-    let typed_with_archs =
-        row("k", "cpu", 12, ROW_MAJOR, ANY_ARCH).replace('}', r#","archs":["qwen2"]}"#);
-    refused(&[typed_with_archs], "`archs` on a typed row");
+    let typed_with_archs = typed.replace('}', r#","archs":["qwen2"]}"#);
+    refused(
+        format!(r#"{{"kernels":[{typed_with_archs}],"ops":[]}}"#),
+        "`archs` on a typed row",
+    );
     for archs in [r#"[]"#, r#""qwen2""#, r#"[""]"#, r#"[1]"#, r#"["a","a"]"#] {
         refused(
-            &[op_row("k", "cpu", ANY_ARCH, Some(archs))],
+            with_ops(op_row("k", "cpu", ANY_ARCH, Some(archs))),
             "`archs` not a non-empty list",
         );
     }
-    let rows = registry(&[op_row("k", "cpu", ANY_ARCH, Some(r#"["a","b"]"#))]);
-    assert_eq!(rows[0].ggml_type, None);
-    assert_eq!(rows[0].archs, Some(ids(&["a", "b"])));
+    // An id is one row across kernels[] and ops[].
+    refused(
+        with_ops(op_row("t", "cpu", ANY_ARCH, None)),
+        "duplicate kernel_id `t`",
+    );
+    let rows = registry(&[typed, op_row("k", "cpu", ANY_ARCH, Some(r#"["a","b"]"#))]);
+    let k = rows
+        .iter()
+        .find(|r| r.kernel_id == "k")
+        .expect("the op row is read");
+    assert_eq!(k.ggml_type, None);
+    assert_eq!(k.archs, Some(ids(&["a", "b"])));
 }
 
 /// A non-row-major row never serves a GGUF/APR tensor (LAYOUT-001/002).
@@ -259,25 +290,25 @@ fn a_malformed_registry_is_refused_whole() {
         ("not JSON", "{".to_string()),
         ("no non-empty `kernels`", r#"{"schema":"x"}"#.to_string()),
         ("no non-empty `kernels`", r#"{"kernels":[]}"#.to_string()),
-        ("duplicate kernel_id `a`", format!(r#"{{"kernels":[{good},{good}]}}"#)),
+        ("duplicate kernel_id `a`", format!(r#"{{"kernels":[{good},{good}],"ops":[]}}"#)),
         (
             "`ggml_type` missing",
-            r#"{"kernels":[{"kernel_id":"a","backend":"cpu","layout":"row_major","arch":"any"}]}"#
+            r#"{"kernels":[{"kernel_id":"a","backend":"cpu","layout":"row_major","arch":"any"}],"ops":[]}"#
                 .to_string(),
         ),
         (
             "`ggml_type` missing",
-            r#"{"kernels":[{"kernel_id":"a","backend":"cpu","ggml_type":4294967296,"layout":"row_major","arch":"any"}]}"#
+            r#"{"kernels":[{"kernel_id":"a","backend":"cpu","ggml_type":4294967296,"layout":"row_major","arch":"any"}],"ops":[]}"#
                 .to_string(),
         ),
         (
             "`backend` missing",
-            r#"{"kernels":[{"kernel_id":"a","backend":"","ggml_type":12,"layout":"row_major","arch":"any"}]}"#
+            r#"{"kernels":[{"kernel_id":"a","backend":"","ggml_type":12,"layout":"row_major","arch":"any"}],"ops":[]}"#
                 .to_string(),
         ),
         (
             "`arch` missing",
-            r#"{"kernels":[{"kernel_id":"a","backend":"cpu","ggml_type":12,"layout":"row_major"}]}"#
+            r#"{"kernels":[{"kernel_id":"a","backend":"cpu","ggml_type":12,"layout":"row_major"}],"ops":[]}"#
                 .to_string(),
         ),
     ];
@@ -628,7 +659,12 @@ mod rr2 {
     fn build_cells_f1_for_an_op_row_reds_every_typed_model() {
         const OP: &str = "cuda.rmsnorm.f32";
         let mut rows = registry();
-        rows.extend(super::registry(&[op_row(OP, "cuda", ANY_ARCH, None)]));
+        // A registry needs a typed row; only the op row joins the fixture.
+        let one = super::registry(&[
+            row("x.typed", "cpu", 12, ROW_MAJOR, ANY_ARCH),
+            op_row(OP, "cuda", ANY_ARCH, None),
+        ]);
+        rows.extend(one.into_iter().filter(|r| r.kernel_id == OP));
         let mut h = cell_host(Some(&[8]), None);
         h.kernels.insert(OP.to_string(), PASS);
         h.sanitized.insert(OP.to_string(), SAN);

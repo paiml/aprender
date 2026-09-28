@@ -840,7 +840,7 @@ fn v2_cells_in_the_graph_leave_the_v1_gate_green() {
     std::fs::create_dir_all(reg.parent().expect("parent")).expect("mkdir");
     std::fs::write(
         &reg,
-        r#"{"kernels":[{"kernel_id":"cuda.gemv.q4_k","backend":"cuda","ggml_type":12,"layout":"row_major","arch":"any"}]}"#,
+        r#"{"kernels":[{"kernel_id":"cuda.gemv.q4_k","backend":"cuda","ggml_type":12,"layout":"row_major","arch":"any"}],"ops":[]}"#,
     )
     .expect("registry");
     let r = gate(t.path(), &["--v2-evidence", &v2s]);
