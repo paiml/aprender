@@ -116,6 +116,10 @@ async fn falsify_4599_001_failing_cells_fit_the_models_window() {
         assert_eq!(sent.len(), 1, "{host} {rung} think {think}: one user message");
         assert_eq!(sent[0].len(), bytes, "{host} {rung} think {think}: the prompt was cut");
         assert!(sent[0].starts_with("The passphrase is TANGERINE-4417"), "{host} {rung}: needle");
+        assert!(
+            sent[0] == prompt,
+            "{host} {rung} think {think}: the tail of the prompt is missing"
+        );
     }
 }
 
