@@ -171,6 +171,33 @@ falsification_tests:
     prediction: each (source_file, source_fn) pair resolves to a `fn` in the tree
     test: cargo test -p aprender-serve --lib kernel_registry
     if_fails: a registry row points at a deleted or renamed kernel and still admits it
+  - id: FALSIFY-KREG-006
+    rule: the wgpu raw-Q4_K upload admits only what a registry row admits (df-2378-8b)
+    prediction: a gate_proj of any qtype but Q4_K is dequantized, never uploaded as raw Q4_K bytes; with no wgpu row nothing is uploaded raw; every raw tensor is admitted by the registry
+    test: cargo test -p aprender-serve --lib kreg_wgpu_raw_q4k_gate
+    if_fails: a Q6_K gate is read as Q4_K blocks on wgpu and decodes to garbage
+  - id: FALSIFY-KREG-007
+    rule: every row's (qtype, ggml_type, block_elems) matches the upstream facts
+    prediction: each row agrees with llama.cpp and vLLM at the commits pinned in docs/kernel-registry/upstream-reference-v1.json; APR-native ids (>= 128) have no upstream row
+    test: cargo test -p aprender-serve --lib every_row_agrees_with_the_upstream_reference
+    if_fails: a wrong type id or block size admits a kernel for bytes it cannot decode
+  - id: FALSIFY-KREG-008
+    rule: receipt-gated admission is a ratchet (AC-3)
+    prediction: a parity receipt names a real row and was taken on a host of that row's arch; the rows without one number exactly unreceipted_max, which only falls, and is 0 from hard_red_at on
+    test: cargo test -p aprender-serve --lib unreceipted_rows_only_fall_and_reach_zero_at_the_hard_red_version
+    if_fails: a row ships with no parity receipt and nothing ever forces one
+  - id: FALSIFY-KREG-009
+    rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
+    prediction: >
+      every committed receipt, re-measured with its own seed and workload, stays within its tolerance_rel;
+      the row's tolerance is that receipt's path; a precision=f32 row serves exactly what the FP32 scope
+      computes, and a quantized-precision row serves something measurably coarser. Mutants: a q5_k row
+      re-declared q8_k, a q8_0 row re-declared f32, a q6_k bound below the measurement, and a q4_k row reset to
+      unmeasured are each RED. A gguf-py receipt re-measures against its pinned fixture: one flipped fixture
+      byte, a q4_1 min added with the wrong sign, and one IQ2_XXS grid entry changed (a table the decoder and
+      kernel share, invisible to the in-tree oracle) are each RED
+    test: cargo test -p aprender-serve --lib kernel_registry::parity
+    if_fails: a receipt is a file that was once true, and a row can declare an activation precision it does not serve
   - id: FALSIFY-KREG-010
     rule: a row with no error model, an unknown one, or an undeclared determinism is refused (KTEST-01, S-EM)
     prediction: removing error_model, setting it to EM-GUESS, or setting determinism to mostly is a shape violation naming the row and the property; EM-NONDET with bitwise is refused by Registry::parse
@@ -186,15 +213,3 @@ falsification_tests:
     prediction: an unchanged set is fresh; editing any one of source, row, toolchain, driver, device or oracle names exactly that part; a digest that does not match the recorded parts is stale whatever the parts say; every committed receipt is fresh against its own tree and the reuse count is printed
     test: 'cargo test -p aprender-serve --lib kernel_registry:: -- f8_a_stale_input_set_is_named committed_parity_receipts_are_fresh_against_this_tree'
     if_fails: a receipt measured against an older kernel source passes a release, or every release re-measures every kernel
-  - id: FALSIFY-KREG-009
-    rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
-    prediction: >
-      every committed receipt, re-measured with its own seed and workload, stays within its tolerance_rel;
-      the row's tolerance is that receipt's path; a precision=f32 row serves exactly what the FP32 scope
-      computes, and a quantized-precision row serves something measurably coarser. Mutants: a q5_k row
-      re-declared q8_k, a q8_0 row re-declared f32, a q6_k bound below the measurement, and a q4_k row reset to
-      unmeasured are each RED. A gguf-py receipt re-measures against its pinned fixture: one flipped fixture
-      byte, a q4_1 min added with the wrong sign, and one IQ2_XXS grid entry changed (a table the decoder and
-      kernel share, invisible to the in-tree oracle) are each RED
-    test: cargo test -p aprender-serve --lib kernel_registry::parity
-    if_fails: a receipt is a file that was once true, and a row can declare an activation precision it does not serve
