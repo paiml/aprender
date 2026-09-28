@@ -92,9 +92,9 @@ falsification_tests:
   test: 'IN-TREE: crates/aprender-train/src/transformer/gdn_tests.rs::falsify_qtg_001_sequence_mixer_equals_serve_per_token, crates/aprender-train/src/transformer/qwen35_layer_tests.rs::falsify_qtg_001_gated_attention_equals_serve_per_token, crates/aprender-train/src/transformer/qwen35_model_tests.rs::falsify_qtg_001_tiny_model_logits_equal_serve; ignored (needs QWEN35_GGUF) falsify_qtg_001_real_model_logits_equal_serve'
   if_fails: 'the training model is not the served model — the class this whole train exists to remove'
 - id: FALSIFY-QTG-002
-  rule: Planted falsifier — the sigmoid-gate mutant
-  prediction: 'replacing sigmoid(·) with identity in α_t in the TRAINING GDN turns QTG-001 RED (the same mutant scores 0.7656 on the serving side, qwen35-hybrid-forward-v1)'
-  test: 'MUTATION RUN, not an in-tree test. A sibling mutant (β without sigmoid) went RED at b370fb40ea. The α-without-sigmoid mutant this row names is NOT YET RUN'
+  rule: Planted falsifier — the decay-gate mutant
+  prediction: 'in the TRAINING GDN the decay is α_t = exp(g_t) with g_t = softplus(x_t + dt_bias)·a (gdn.rs; the older wording "α = sigmoid(·)" does not match the code). Dropping the softplus from g_t turns QTG-001 RED (the serving-side decay mutant scores 0.7656, qwen35-hybrid-forward-v1)'
+  test: 'MUTATION RUN, not an in-tree test. On la-72/fold-r2r3 @5eb4ab88f4 (intel, 2026-09-28): softplus dropped in gdn.rs → falsify_qtg_001_sequence_mixer_equals_serve_per_token and falsify_qtg_001_tiny_model_logits_equal_serve FAILED (rc=101); the attention-only QTG-001 test stayed ok, as it should. Sibling mutant β without sigmoid went RED at b370fb40ea'
   if_fails: 'QTG-001 is vacuous (compares serve to serve, or tolerance too loose)'
 - id: FALSIFY-QTG-003
   rule: GDN gradcheck
@@ -109,7 +109,7 @@ falsification_tests:
 - id: FALSIFY-QTG-005
   rule: Layer schedule identity
   prediction: 'the training model reports the same attention/GDN layer indices as contracts/model-families/qwen3_5.yaml and aprender-serve'
-  test: 'NOT YET IMPLEMENTED (no layer-schedule table test in-tree yet)'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/qwen35_model_tests.rs::{falsify_qtg_005_layer_schedule_is_identical_across_crates, falsify_qtg_005_interval_metadata_mismatch_is_refused_not_diverged}. The table covers depths 24, 32 and every num_layers in model-families/qwen3_5.yaml (read at test time). Mutants RED at @5eb4ab88f4: train schedule negated; serve schedule off by one (i % interval)'
   if_fails: 'layer interleaving drifted between crates'
 - id: FALSIFY-QTG-006
   rule: Whole-model gradcheck (attention, block, language model)
