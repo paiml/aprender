@@ -1,0 +1,142 @@
+metadata:
+  version: 0.1.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/lookahead/0.73.md R2 — wgpu forward scope (draft: la-73 drafts/R2-wgpu-forward-scope.md)'
+  - 'epic aprender#3999 — 0.73 "Runs Everywhere", exit criterion E1 on C1-C3'
+  - 'drafts/backend-parity-matrix-v1.yaml — the E1 composed-leg gate this forward must pass'
+  - 'crates/aprender-serve wgsl_forward.rs:943 — rope_theta hardcoded 1e6 [V]'
+  - 'crates/aprender-serve wgpu_adapter.rs:339 — non-Q4_K/F32 qtype refusal [V]'
+  description: >
+    What the wgpu (WGSL) decoder forward must do before a C1-C3 receipt can pass E1:
+    read rope_theta and head_dim from model metadata, apply Qwen3 q/k norm, own a
+    device GEMV for every qtype it serves, and place the whole decode step on the
+    device or say it did not. Every item is a behaviour delta against the CPU
+    forward, which is the oracle (leg A of backend-parity-matrix-v1).
+
+equations:
+  rope_theta_from_metadata:
+    formula: |
+      theta_used := gguf[<arch>.rope.freq_base]  (default only when the key is absent, and then logged)
+      PASS  <=>  theta_used = theta_cpu for every model in the ledger
+    domain: 'model metadata of one GGUF'
+    codomain: bool
+    invariants:
+    - 'A hardcoded 1e6 matches only models whose freq_base happens to be 1e6; that is a coincidence, not a pass.'
+
+  head_dim_from_metadata:
+    formula: |
+      head_dim := gguf[<arch>.attention.key_length]  if present  else hidden / n_heads
+      PASS  <=>  head_dim_wgpu = head_dim_cpu
+    domain: 'model metadata of one GGUF'
+    codomain: bool
+    invariants:
+    - 'hidden / n_heads is the fallback, never the first choice.'
+
+  qk_norm_applied:
+    formula: |
+      arch has q_norm/k_norm tensors  =>  wgpu applies RMSNorm to q and k per head before RoPE
+      layer_cos(l) = cos(attn_out_wgpu(l), attn_out_cpu(l))
+      PASS  <=>  min over layers of layer_cos >= 0.9999 on the fixture
+    domain: 'per-layer attention output, one prompt'
+    codomain: bool
+    invariants:
+    - 'Attribution of the 0.955 end-to-end cosine to q/k norm is UNMEASURED (K14) until the layer-diff trace runs.'
+
+  qtype_coverage:
+    formula: |
+      served(q) on wgpu  =>  device_gemv(q) exists  OR  the load is refused with a named error
+      silent CPU widen or fallback for q  =>  FAIL
+    domain: 'q in {Q4_K, Q6_K, Q8_0, Q4_0, F32}'
+    codomain: bool
+    invariants:
+    - 'A refusal is honest; a silent fallback is not (R1 F6).'
+
+  device_placement_honesty:
+    formula: |
+      host_ops := {op : op_placement[op] = host}
+      receipt.hybrid = (host_ops != {})
+      PASS  <=>  receipt.hybrid is computed from op_placement, never set by hand
+    domain: 'the R1 receipt op_placement map'
+    codomain: bool
+    invariants:
+    - 'Until attention, RoPE, LM head and argmax run on the device, every wgpu receipt is hybrid: true (RQ-4 pending).'
+
+falsification_tests:
+- id: FALSIFY-WGF-001
+  rule: rope_theta comes from metadata
+  prediction: 'A synthetic 1-layer fixture with freq_base = 1e4 gives a RoPE output that differs from the 1e6 output and matches the CPU forward.'
+  test: 'NOT YET WRITTEN — lands with R2 item 1'
+  if_fails: 'every non-1e6 model decodes with the wrong rotation on wgpu'
+  mutation: 'restore the hardcoded 1e6; the fixture must turn RED'
+- id: FALSIFY-WGF-002
+  rule: head_dim comes from metadata
+  prediction: 'A synthetic config with key_length != hidden / n_heads matches the CPU forward (cosine >= 0.9999).'
+  test: 'NOT YET WRITTEN — lands with R2 item 2'
+  if_fails: 'shape mismatch or silent mis-stride on models with decoupled head_dim'
+  mutation: 'compute head_dim as hidden / n_heads; the fixture must turn RED'
+- id: FALSIFY-WGF-003
+  rule: Qwen3 q/k norm is applied on wgpu
+  prediction: 'On a Qwen3 fixture the per-layer attention cosine vs CPU is >= 0.9999 at every layer.'
+  test: 'NOT YET WRITTEN — gated on the K14 layer-diff trace (Next#1, deferred while train-active)'
+  if_fails: 'the wgpu Qwen3 path stays near 0.955 end to end and fails E1'
+  mutation: 'skip the q/k norm dispatch; layer 0 cosine must drop below the floor'
+- id: FALSIFY-WGF-004
+  rule: no silent CPU fallback for an unsupported qtype
+  prediction: 'Loading a Q5_K-only model on wgpu is refused with a named error, and a Q6_K/Q8_0/Q4_0 model runs a device GEMV (op_placement shows device).'
+  test: 'NOT YET WRITTEN — lands with R2 item 4'
+  if_fails: 'a receipt labelled wgpu measures CPU work'
+  mutation: 'route the refused qtype to the CPU dequant path; the receipt check must turn RED'
+- id: FALSIFY-WGF-005
+  rule: hybrid is derived, not declared
+  prediction: 'A receipt with any op_placement = host and hybrid: false is rejected by the receipt checker.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness receipt checker'
+  if_fails: 'a hybrid run is scored as a full-device run'
+  mutation: 'let the harness write hybrid from a flag; the planted receipt must be refused'
+- id: FALSIFY-WGF-006
+  rule: the metadata fixes do not regress other models (K13)
+  prediction: 'After items 1-2, every ledger model keeps or improves leg A; none drops below its prior min cosine.'
+  test: 'NOT YET WRITTEN — ledger sweep on C1 once train-inactive'
+  if_fails: 'a model that matched 1e6 by coincidence regresses unnoticed'
+  mutation: 'run the sweep on one model only; the check must refuse a single-model sweep as incomplete'
+
+proof_obligations:
+- type: invariant
+  property: 'theta used on wgpu equals theta used on CPU (FALSIFY-WGF-001)'
+  formal: 'forall m: theta_wgpu(m) = theta_cpu(m)'
+- type: invariant
+  property: 'head_dim used on wgpu equals head_dim on CPU (FALSIFY-WGF-002)'
+  formal: 'forall m: head_dim_wgpu(m) = head_dim_cpu(m)'
+- type: invariant
+  property: 'q/k norm parity per layer (FALSIFY-WGF-003)'
+  formal: 'has_qk_norm(m) => forall l: layer_cos(l) >= 0.9999'
+- type: invariant
+  property: 'every served qtype has a device GEMV or is refused (FALSIFY-WGF-004)'
+  formal: 'served_wgpu(q) => device_gemv(q) or refused(q)'
+- type: invariant
+  property: 'hybrid flag is a function of op_placement (FALSIFY-WGF-005)'
+  formal: 'r.hybrid = exists op: r.op_placement[op] = host'
+- type: invariant
+  property: 'no ledger model regresses (FALSIFY-WGF-006)'
+  formal: 'forall m in ledger: leg_a_after(m) >= leg_a_before(m) - 1e-4'
+
+qa_gate:
+  id: F-WGF-GATE-001
+  name: 'the wgpu forward is complete enough for a C1-C3 E1 receipt'
+  description: '0.73 exit (R2): items 1-5 land; E1 >= 0.995 per leg on C1-C3 for the ledger models. Item 6 (gated-delta) may slip to 0.74.'
+  checks:
+  - rope_theta_from_metadata
+  - head_dim_from_metadata
+  - qk_norm_applied
+  - qtype_coverage
+  - device_placement_honesty
+  pass_criteria: 'All falsifiers GREEN on C1. Report-only until first-green plus 7 nights (R-7).'
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: 'Draft by la-73 (L3). No ticket yet. WGF-003 waits on the K14 trace; WGF-006 waits on a train-inactive C1 sweep.'

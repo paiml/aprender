@@ -1,0 +1,163 @@
+metadata:
+  version: 0.1.0
+  kind: schema
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/lookahead/0.73.md R1 — backend parity matrix (draft: la-73 drafts/R1-backend-parity-matrix.md)'
+  - 'epic aprender#3999 — 0.73 "Runs Everywhere", exit criteria E1 E2 E3 E6'
+  - 'llama.cpp d1d3c3396 — comparator pin (cop ruling RQ-2, 2026-09-27)'
+  - 'contracts/apr-obs-row-identity-v1.yaml — identity block every receipt carries'
+  - 'contracts/apr-parity-per-op-v1.yaml — diagnostic for a failing leg A'
+  description: >
+    One receipt per (cell, model, quant) that says whether apr on that backend is
+    correct (E1), fast enough (E2) and runs MoE (E3) against llama.cpp at the ruled
+    pin. Cells: C0 lambda CUDA sm_89 + x86 CPU (control), C1/C2 intel wgpu/Vulkan
+    on each AMD GPU, C3 mini wgpu/Metal, C4 gx10 aarch64 CPU, C5 gx10 CUDA sm_121.
+    Correctness is gated on a composed two-leg cosine, never on a cross-engine
+    same-backend cosine, which mixes two engines' backend errors.
+
+equations:
+  composed_leg_bound:
+    formula: |
+      ref   = the ONE apr CPU run of this receipt, with cpu_ref_path in {fp32_act, q8k_act}
+      leg_a = min over prompts of cos(logits_apr_backend, logits_apr_cpu[ref])
+      leg_b = min over prompts of cos(logits_apr_cpu[ref], logits_llamacpp_cpu)
+      angle(x) = acos(x)
+      end_to_end >= cos(angle(leg_a) + angle(leg_b))
+      PASS_E1  <=>  leg_a >= 0.995 AND leg_b >= 0.995 AND n_prompts >= 16
+    domain: 'final-position logits of one (cell, model, quant) over n prompts'
+    codomain: bool
+    invariants:
+    - 'acos(0.995) = 5.732 deg; 2 x 5.732 = 11.464 < acos(0.98) = 11.478 deg, so
+       two legs at 0.995 guarantee >= 0.98 end to end.'
+    - 'The bound needs BOTH legs to share one apr CPU vector (triangle inequality on angles). Leg A on fp32_act and leg B on q8k_act composes nothing, and the receipt is REFUSED (FALSIFY-BPM-008).'
+    - 'cpu_ref_path is recorded in the receipt, never inferred. On main (aca6f2d7f6), apr parity-moe runs the CPU under with_fp32_activations (parity_moe.rs:110), while dense apr parity has no such scope and runs Q8_K unless DIRECT_FP32_GEMV=1 (parallel_k.rs:304). Today the two commands disagree on the reference.'
+    - 'Two legs at 0.99 only guarantee cos(16.21 deg) = 0.960: 0.99 per leg is NOT the gate.'
+    - 'The gate reads the MIN over prompts; median and max are reported, never gated.'
+
+  speed_ratio_ci:
+    formula: |
+      r = tok_s_apr / tok_s_llamacpp   (decode and prefill, same client, prompts, clock)
+      ci = paired bootstrap 95% over n >= 5 runs per engine
+      PASS_E2  <=>  ci.lo >= 0.5   (decode AND prefill)
+    domain: 'paired timing runs on one cell'
+    codomain: bool
+    invariants:
+    - 'A point estimate >= 0.5 with ci.lo < 0.5 is FAIL.'
+    - 'The 0.5 floor is [A]; the first three measured cells recalibrate it by amendment only.'
+
+  backend_is_self_reported:
+    formula: |
+      cell.backend := what the serving process printed about itself
+                      (wgpu adapter name, CUDA device banner)
+      adapter in {llvmpipe, lavapipe, SwiftShader, "Microsoft Basic Render"} OR no banner
+        => FALLBACK => FAIL (not "slow")
+    domain: 'the receipt backend fields'
+    codomain: bool
+    invariants:
+    - 'A launch flag is intent, never evidence (verification rule 2).'
+
+  receipt_shape:
+    formula: |
+      receipt = identity (apr-obs-row-identity-v1)
+              + { cell, adapter_name, llamacpp_sha, model, quant,
+                  leg_a {min,median,max,n}, leg_b {min,median,max,n}, composed_bound,
+                  e2 {decode {r,ci_lo,ci_hi,n}, prefill {r,ci_lo,ci_hi,n}},
+                  forward_trace_line }
+      REQUIRE: llamacpp_sha = d1d3c3396 (the ruled pin)
+      REQUIRE: forward_trace_line names the forward that ran (E3: the MoE forward)
+      E6 admissible(cell) <=> PASS_E1 AND PASS_E2 receipts on main   (pending PRM-001, RQ-3)
+    domain: 'one receipt'
+    codomain: bool
+    invariants:
+    - 'A receipt missing any identity field is refused (FALSIFY-OBS-ID-001, shared lint).'
+
+falsification_tests:
+- id: FALSIFY-BPM-001
+  rule: the gate reads the minimum prompt, not the median
+  prediction: 'A perturbed-logits fixture with leg_a median 0.999 and min 0.990 FAILS E1.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'one bad prompt class (long context, rare token) hides behind a good median'
+  mutation: 'gate on median instead of min; the fixture must turn the check GREEN, proving the case bites'
+- id: FALSIFY-BPM-002
+  rule: legs of 0.99 do not pass
+  prediction: 'leg_a = leg_b = 0.99 FAILS E1 (composed bound 0.960 < 0.98).'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'a "simplified" 0.99 gate admits cells that are 0.96 against llama.cpp'
+  mutation: 'lower the per-leg floor to 0.99; the case must turn RED'
+- id: FALSIFY-BPM-003
+  rule: a software-adapter fallback is FAIL, not slow
+  prediction: 'A receipt whose adapter_name is llvmpipe FAILS as FALLBACK even with leg_a = 1.0.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'a wgpu cell that ran on CPU is reported as a correct, slow GPU'
+  mutation: 'drop the adapter check; the case must turn RED'
+- id: FALSIFY-BPM-004
+  rule: the comparator is the ruled pin
+  prediction: 'A receipt with llamacpp_sha 39173bcac FAILS.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'cells are compared against different llama.cpp builds and the matrix is not one table'
+  mutation: 'accept any sha; the case must turn RED'
+- id: FALSIFY-BPM-005
+  rule: speed passes on the CI lower bound
+  prediction: 'r = 0.55 with ci_lo = 0.45 FAILS E2.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'noisy cells pass on one lucky run'
+  mutation: 'gate on r instead of ci_lo; the case must turn RED'
+
+- id: FALSIFY-BPM-006
+  rule: a cell whose trace lacks the backend forward is REFUSED, not scored
+  prediction: 'A Q8_0 wgpu receipt on a real adapter whose trace has no wgpu forward line is NotRun, never PASS or FAIL.'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'a silent CPU fallback (wgpu_adapter.rs:339) scores as a wgpu cell'
+  mutation: 'score the cell from cosine alone; the planted Q8_0 case must turn RED'
+- id: FALSIFY-BPM-007
+  rule: today's wgpu Qwen3 decode FAILS E1 (known-bad control)
+  prediction: 'The harness on current wgpu Qwen3 reports leg_a < 0.995 (measured 0.955).'
+  test: 'NOT YET WRITTEN — lands with the R1 harness'
+  if_fails: 'the harness cannot see a known 4.5% divergence; its PASSes mean nothing'
+  mutation: 'compare the backend against itself; the control must turn RED'
+- id: FALSIFY-BPM-008
+  rule: both legs share one CPU reference run (K19)
+  prediction: 'A receipt with leg_a.cpu_ref_path = fp32_act and leg_b.cpu_ref_path = q8k_act (or either missing) is REFUSED, not scored.'
+  test: 'NOT YET WRITTEN — lands with the R1 receipt checker'
+  if_fails: 'a GPU path that matches FP32 activations (cos 1.0) is scored against a Q8_K CPU (quoted 0.985, #3714) and FAILS E1 for the CPU rounding, or a mixed pair PASSES with no valid bound'
+  mutation: 'let the checker accept per-leg cpu_ref_path; the planted mixed receipt must turn it RED'
+proof_obligations:
+- type: invariant
+  property: 'Two legs >= 0.995 imply end-to-end cosine >= 0.98 (FALSIFY-BPM-002)'
+  formal: 'acos(a) + acos(b) <= acos(0.98) when a, b >= 0.995'
+- type: invariant
+  property: 'E1 is gated on the per-prompt minimum (FALSIFY-BPM-001)'
+  formal: 'PASS_E1 => forall p: cos_a(p) >= 0.995 and cos_b(p) >= 0.995'
+- type: invariant
+  property: 'No FALLBACK receipt passes (FALSIFY-BPM-003)'
+  formal: 'fallback(r) => not PASS(r)'
+- type: invariant
+  property: 'Every receipt names the ruled comparator (FALSIFY-BPM-004)'
+  formal: 'forall r: r.llamacpp_sha = d1d3c3396'
+- type: invariant
+  property: 'E2 passes only on the CI lower bound (FALSIFY-BPM-005)'
+  formal: 'PASS_E2 => ci_lo_decode >= 0.5 and ci_lo_prefill >= 0.5'
+
+- type: invariant
+  property: 'Both legs read the same apr CPU reference (FALSIFY-BPM-008)'
+  formal: 'forall r: r.leg_a.cpu_ref_path = r.leg_b.cpu_ref_path and defined'
+
+qa_gate:
+  id: F-BPM-GATE-001
+  name: 'every 0.73 cell has an E1 + E2 receipt against the ruled llama.cpp pin'
+  description: '0.73 exit: E1 and E2 PASS on C0-C5; E3 PASS on C0, C4, C5 (C1-C3 after the wgpu MoE forward exists).'
+  checks:
+  - composed_leg_bound
+  - speed_ratio_ci
+  - backend_is_self_reported
+  - receipt_shape
+  pass_criteria: 'Every cell has an admissible receipt on main. Report-only until the harness lands.'
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: 'Draft by la-73 (L3). No ticket yet; the harness and the tests land with R1.'

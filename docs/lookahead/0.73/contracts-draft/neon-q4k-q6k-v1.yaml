@@ -1,0 +1,150 @@
+metadata:
+  version: 0.1.0
+  kind: kernel
+  created: '2026-09-27'
+  author: PAIML Engineering
+  references:
+  - 'docs/lookahead/0.73.md R3: NEON Q4_K / Q6_K kernels (draft: la-73 drafts/R3-neon-q4k-q6k.md)'
+  - 'epic aprender#3999: 0.73 "Runs Everywhere", cell C4 (gx10 aarch64 CPU)'
+  - 'contracts/avx512-q4k-v1.yaml: epsilon precedent (1e-3 relative)'
+  - 'la-73 drafts/backend-parity-matrix-v1.yaml: E1 composed-leg method used by E-R3-3'
+  description: >
+    Today every quantized dot in aprender-serve is x86-gated. On aarch64 the three
+    dispatchers (quantize/fused_k.rs:193 fused_q4k_dot_simd, quantize/fused_q5k_q6k.rs:118
+    fused_q6k_dot_simd, quantize/fused_q4k.rs:338 fused_q4k_q8k_dot_simd) fall through
+    to scalar while the backend label says NEON. This contract adds a cfg(aarch64) arm
+    to each: NEON f32-widening kernels for q4k-f32 and q6k-f32, and for q4k-q8k an sdot
+    kernel behind is_aarch64_feature_detected!("dotprod") with a widening fallback.
+    The oracle for each kernel is the existing scalar function it sits in front of.
+
+equations:
+  neon_scalar_parity:
+    formula: |
+      for k in {q4k-f32, q6k-f32, q4k-q8k}, seeded super-blocks b, activations x:
+        |neon_k(b, x) - scalar_k(b, x)| < 1e-3 * max(1, |scalar_k(b, x)|)
+    domain: 'one super-block row (256 values) of Q4_K or Q6_K with f32 or Q8_K activations'
+    codomain: bool
+    invariants:
+    - 'The scalar oracle is the dispatcher fallback (fused_q4k_dot, fused_q6k_dot, fused_q4k_q8k_dot), unchanged by this work.'
+    - 'The epsilon is relative with a floor of 1, as in avx512-q4k-v1, so near-zero dots are not over-constrained.'
+  dispatch_honesty:
+    formula: |
+      on aarch64: kernel_path(k) starts with "<k>/neon"
+      q4k-q8k without dotprod: kernel_path = "q4k-q8k/neon-widen"
+      on any arch: kernel_path(k) names only a kernel the call actually reaches
+    domain: 'the three dispatchers on the running CPU'
+    codomain: bool
+    invariants:
+    - 'A label that names a kernel the call does not reach is FAIL. This is the defect class of the SimdBackend::Neon label today.'
+  c4_e1_leg:
+    formula: |
+      leg = min over E1 prompts of cos(logits_apr_c4_neon, logits_apr_c0_x86)
+      PASS  <=>  leg >= 0.995   (Qwen3-dense Q4_K_M, n_prompts >= 16)
+    domain: 'final-position logits'
+    codomain: bool
+    invariants:
+    - 'The gate reads the per-prompt minimum. It is one leg of the R1 composed bound.'
+  c4_e2_speed:
+    formula: |
+      r = tok_s_apr_c4 / tok_s_llamacpp_ggml_cpu   (llama.cpp d1d3c3396)
+      PASS  <=>  paired-bootstrap 95% ci.lo(r) >= 0.5
+    domain: 'decode tok/s, n >= 5 runs per engine'
+    codomain: bool
+    invariants:
+    - 'Report-only until first green plus 7 green nights (TRACE-001 R-6).'
+
+falsification_tests:
+- id: FALSIFY-NEON-Q4K-000
+  rule: the aarch64 build floor holds
+  prediction: 'cargo check -p aprender-serve --lib --target aarch64-unknown-linux-gnu exits 0 with 0 new aarch64 warnings (baseline rc 0 at aca6f2d7f6, 2026-09-27).'
+  test: 'NOT YET WRITTEN. Lands with R3 as a report-only CI step'
+  if_fails: 'x86 CI never compiles aarch64 cfg bodies, so a break there ships unseen'
+  mutation: 'call an x86-only intrinsic inside a cfg(aarch64) body; the check must exit non-zero'
+- id: FALSIFY-NEON-Q4K-001
+  rule: q4k-f32 NEON matches scalar within epsilon
+  prediction: '10 000 seeded Q4_K super-blocks satisfy neon_scalar_parity.'
+  test: 'NOT YET WRITTEN. Lands with R3'
+  if_fails: 'the NEON kernel decodes nibbles or scales differently from scalar'
+  mutation: 'swap the low/high nibble order in the q4k NEON kernel; the test must turn RED'
+- id: FALSIFY-NEON-Q4K-002
+  rule: dispatch is honest on aarch64
+  prediction: 'On aarch64, kernel_path of fused_q4k_dot_simd starts with q4k-f32/neon. On x86 the test is NotRun (not aarch64), never PASS.'
+  test: 'NOT YET WRITTEN. Lands with R3'
+  if_fails: 'C4 receipts claim NEON while running scalar'
+  mutation: 'delete the cfg(aarch64) arm; the path reads scalar and the test must turn RED'
+- id: FALSIFY-NEON-Q4K-003
+  rule: a cross-arch golden agrees
+  prediction: 'Dots over a fixed block set, recorded on x86 scalar, match aarch64 NEON within epsilon.'
+  test: 'NOT YET WRITTEN. Lands with R3'
+  if_fails: 'x86 and aarch64 give different answers for the same weights'
+  mutation: 'perturb one scale byte in the golden; the test must turn RED'
+- id: FALSIFY-NEON-Q4K-004
+  rule: q6k-f32 NEON matches scalar within epsilon
+  prediction: '10 000 seeded Q6_K super-blocks satisfy neon_scalar_parity.'
+  test: 'NOT YET WRITTEN. Lands with R3'
+  if_fails: 'the 6-bit ql/qh recombination is wrong'
+  mutation: 'drop qh bit 5 in the q6k NEON kernel; the test must turn RED'
+- id: FALSIFY-NEON-Q4K-005
+  rule: C4 end-to-end leg passes, and only on a trace that shows NEON
+  prediction: 'c4_e1_leg >= 0.995, and the forward trace names a neon kernel.'
+  test: 'NOT YET WRITTEN. Lands with the R1 harness on C4'
+  if_fails: 'a scalar run is scored as a NEON cell'
+  mutation: 'feed a receipt whose trace has no neon kernel line; the cell must be refused (R1 FALSIFY-BPM-006), not scored'
+
+proof_obligations:
+- type: invariant
+  property: 'NEON equals scalar within epsilon for all three kernels (FALSIFY-NEON-Q4K-001, 004)'
+  formal: 'forall k, b, x: |neon_k(b,x) - scalar_k(b,x)| < 1e-3 * max(1, |scalar_k(b,x)|)'
+- type: invariant
+  property: 'A kernel label names only a reached kernel (FALSIFY-NEON-Q4K-002)'
+  formal: 'kernel_path(k) = path_of(reached_kernel(k))'
+- type: invariant
+  property: 'The aarch64 build floor holds (FALSIFY-NEON-Q4K-000)'
+  formal: 'cargo_check(aarch64-unknown-linux-gnu, aprender-serve) = 0'
+- type: invariant
+  property: 'C4 E1 leg >= 0.995 on a NEON trace (FALSIFY-NEON-Q4K-005)'
+  formal: 'PASS_leg => min_p cos(c4, c0) >= 0.995 and trace_has(neon)'
+
+- type: invariant
+  property: 'Integer decode steps the NEON kernels must reproduce are exact and in range (KANI-NEON-Q4K-001..003)'
+  formal: 'forall q in u8: split(q) exact; forall l,h: recombine(l,h) in -32..=31; forall j < 8: unpack reads < 12'
+
+kani_harnesses:
+- id: KANI-NEON-Q4K-001
+  obligation: The Q4_K nibble split is exact and in range
+  property: 'for every byte q: (q & 0x0F) and (q >> 4) lie in 0..=15, and (hi << 4) | lo == q. The NEON vand/vshr split must equal this integer split.'
+  bound: 256
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_q4k_nibble_split_exact
+- id: KANI-NEON-Q4K-002
+  obligation: The Q6_K 6-bit recombination is in range
+  property: 'for ql nibble l in 0..=15 and qh pair h in 0..=3: ((h << 4) | l) - 32 lies in -32..=31. This is the value the NEON kernel widens to i8/f32.'
+  bound: 64
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_q6k_recombine_in_range
+- id: KANI-NEON-Q4K-003
+  obligation: The Q4_K 6-bit scale/min unpack never reads past the 12-byte scales array
+  property: 'for j in 0..8, the scale/min unpack (get_scale_min_k4) reads only indices < 12 and yields values in 0..=63'
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_q4k_scale_unpack_bounds
+
+qa_gate:
+  id: F-NEON-GATE-001
+  name: 'C4 quantized dots run NEON, match scalar and pass the E1 leg'
+  description: '0.73 exit for C4: all three dispatchers reach NEON on gx10, parity holds, and the E1 leg is >= 0.995.'
+  checks:
+  - neon_scalar_parity
+  - dispatch_honesty
+  - c4_e1_leg
+  pass_criteria: 'Every falsifier is GREEN on gx10 C4. Report-only until first green plus 7 nights.'
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: 'Draft by la-73 (L3). No ticket yet; tests land with R3.'
