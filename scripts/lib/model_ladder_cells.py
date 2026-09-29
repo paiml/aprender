@@ -342,7 +342,7 @@ def _int(v):
     return type(v) is int  # a bool is an int in Python: `red: false` is not a count
 
 
-def health_defects(doc, xid):
+def health_defects(doc, xid, version=None):
     """-> what keeps a helper's health receipt from admitting it; [] admits. The verdict is computed HERE from
     measured terms, never read from the receipt: a self-declared 'healthy' is a declaration, not a measurement."""
     if not isinstance(doc, dict):
@@ -352,6 +352,7 @@ def health_defects(doc, xid):
     bad = []
     if doc.get("schema") != HEALTH_SCHEMA: bad.append(f"schema {doc.get('schema')!r} is not {HEALTH_SCHEMA}")
     if doc.get("host") != xid: bad.append(f"it measured host {doc.get('host')!r}")
+    if doc.get("version") != version: bad.append(f"it is for {doc.get('version')!r}, the receipts for {version!r} -- a host is admitted per cut")
     w, t, lim, thr = (doc.get(k) for k in ("window_s", "max_gpu_temp_c", "gpu_temp_limit_c", "throttle_events"))
     if not (_int(w) and w >= HEALTH_MIN_WINDOW_S): bad.append(f"window_s {w!r} < {HEALTH_MIN_WINDOW_S}")
     if not (_int(thr) and thr == 0): bad.append(f"throttle_events {thr!r}")
@@ -384,7 +385,7 @@ def admitted_helpers(L, receipts, helpers, out):
         X, R = helpers.get(xid), receipts.get(lid)
         if X is None or R is None:
             continue  # the caller already FAILed the missing or unbound receipt
-        unfit = health_defects(X.get("_health"), xid)
+        unfit = health_defects(X.get("_health"), xid, X.get("version"))
         if unfit:
             out(f"FAIL  {xid:7} is not admitted by {h['admitted_by']}: {'; '.join(unfit)} -- an unhealthy host supplies no cell")
             rc = 1; continue
