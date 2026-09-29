@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-27'
   author: PAIML Engineering
   description: "The CI tier router (FLOW-003 QM-11, #4529). Given a diff D and the input set I = I_dep ∪ F ∪ C that QM-10 records, it decides which tier the diff owes: T0 (lint only), selective (build the workspace, test R'), or T3 (everything). A router that under-selects lets a regression merge green, so it FAILS CLOSED: every case it cannot prove is T3 with a reason."
@@ -68,7 +68,17 @@ proof_obligations:
   - id: CTR-INV-005
     type: invariant
     property: "The case table can turn RED"
-    formal: "each of the five planted mutants (ignore-f, drop-dev-edges, drop-autodiscovery, ignore-base, no-closure) fails at least one row"
+    formal: "each of the six planted mutants (ignore-f, drop-dev-edges, drop-autodiscovery, ignore-base, no-closure, f-as-c) fails at least one row"
+    applies_to: fail_closed
+  - id: CTR-INV-006
+    type: invariant
+    property: "Every T3 names its causes; T0 and selective name none"
+    formal: "route() returns causes ⊆ {C, F, unowned, stale-C, stale-F, stale-unowned, no-input-set}, non-empty iff tier = T3; mutant f-as-c (an F path reported as C) turns the table RED"
+    applies_to: fail_closed
+  - id: CTR-INV-007
+    type: invariant
+    property: "Until the join is ruled, the router in CI is a SHADOW: it observes and gates nothing"
+    formal: "the workspace-test-build shadow step is continue-on-error, runs after the tier is staged and before the sigma-build upload, and no workflow or section reads qm11-route.json; each of six wiring mutants turns scripts/check_qm11_shadow.sh RED"
     applies_to: fail_closed
 
 falsification_tests:
@@ -89,5 +99,11 @@ falsification_tests:
     prediction: "Routing Cargo.lock against this tree's cargo metadata with an absent input set returns T3 over every workspace package"
     test: "T=\"${TMPDIR:-/tmp}\"; cargo metadata --format-version 1 --no-deps > \"$T/ctr-m.json\" && printf 'Cargo.lock\\n' > \"$T/ctr-d.txt\" && python3 scripts/ci/tier_router.py route --input-set \"$T/ctr-absent.json\" --metadata \"$T/ctr-m.json\" --changed \"$T/ctr-d.txt\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=json.load(open(sys.argv[1])); sys.exit(0 if d[\"tier\"] == \"T3\" and len(d[\"packages\"]) == len(m[\"packages\"]) else 1)' \"$T/ctr-m.json\""
     if_fails: "The router narrowed a diff it could not decide: a missing or unreadable input set would let a change merge without its tests"
+
+  - id: FALSIFY-CI-TIER-ROUTER-004
+    rule: "The CI shadow of the router gates nothing, and its step script fails closed on its own case table"
+    prediction: "check_qm11_shadow.sh exits 0: the wiring holds S1-S4, the router table passes, and tier_route_step.sh's rows pass (a sub-7-nightly set and a missing input set are NAMED abstentions)"
+    test: "bash scripts/check_qm11_shadow.sh"
+    if_fails: "The shadow started to gate (a reader of qm11-route.json, a dropped continue-on-error, a step before the tier is staged) or stopped reporting; the output names the S-row"
 
 kani_harnesses: []

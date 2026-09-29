@@ -1124,6 +1124,22 @@ jobs:
           mkdir -p ws-lib-archive sigma-build
           printf '%s\n' "$TIER" > ws-lib-archive/tier
           printf '%s\n' "$TIER" > sigma-build/tier
+      # QM-11 (#4529) SHADOW. Telemetry only: nothing reads qm11-route.json, and the
+      # fan-in check reads sigma-build/tier and lib.list.json by name, so an extra file
+      # there changes no gate. It runs after the tier is staged so it cannot alter it,
+      # and it cannot fail the job (continue-on-error AND a fault is a warning). Until
+      # the join is ruled (docs/audits/qm11-design-note.md) it only prints the router's
+      # decision beside today's tier, or names why it abstained.
+      - name: "QM-11 shadow: the tier router beside today's tier (telemetry, gates nothing, #4529)"
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/ci/tier_route_step.sh . "$RUNNER_TEMP/tier.txt" "$RUNNER_TEMP/touched.txt" \
+            "origin/${GITHUB_BASE_REF}" sigma-build/qm11-route.json \
+            || echo "::warning::qm11-shadow: the step faulted (rc=$?); it gates nothing"
       - uses: actions/upload-artifact@v7
         with:
           name: ws-lib-archive
@@ -1581,6 +1597,13 @@ jobs:
         run: setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
       - name: The PR-review receipt guard is wired job-level, not path-filtered
         run: setsid --wait bash scripts/check_pr_review_wiring.sh
+      # QM-11 (#4529): the tier-router shadow in workspace-test-build may observe and
+      # never gate -- continue-on-error, after the tier is staged, and nothing reads its
+      # file. Text + two script case tables, no build. Self-test first.
+      - name: "QM-11 shadow guard case table (every wiring mutant RED)"
+        run: setsid --wait bash scripts/check_qm11_shadow.sh --self-test
+      - name: The QM-11 tier-router shadow observes and gates nothing
+        run: setsid --wait bash scripts/check_qm11_shadow.sh
       # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
       # defined by the base — a workflow on pull_request_target + merge_group, never
       # pull_request — and `gate` must not wait on a head-defined receipt job. Case

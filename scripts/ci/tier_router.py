@@ -155,15 +155,18 @@ def owners_of(path, ws, owners_map):
 
 def route(iset, ws, changed, owners_map, base_valid, stale):
     if iset is None:
-        return {"tier": "T3", "packages": sorted(ws.dirs), "reasons": ["no valid input set: fail closed"]}
-    reasons, t3, seeds, touches_i = [], False, set(), False
+        return {"tier": "T3", "packages": sorted(ws.dirs), "reasons": ["no valid input set: fail closed"],
+                "causes": ["no-input-set"]}
+    reasons, t3, seeds, touches_i, causes = [], False, set(), False, set()
     for p in changed:
         owners = owners_of(p, ws, owners_map)
         if iset.in_c(p):
             t3 = True
+            causes.add("C")
             reasons.append(f"T3: {p} is in C")
         elif iset.in_f(p):
             t3 = True
+            causes.add("C" if MUTATE == "f-as-c" else "F")
             reasons.append(f"T3: {p} is in F (read at run time; F is not per package)")
         elif iset.in_dep(p):
             touches_i = True
@@ -172,6 +175,7 @@ def route(iset, ws, changed, owners_map, base_valid, stale):
                 reasons.append(f"selective: {p} in I_dep, owned by {sorted(owners)}")
             else:
                 t3 = True
+                causes.add("unowned")
                 reasons.append(f"T3: {p} is in I_dep and no package owns it")
         elif owners and MUTATE != "drop-autodiscovery":
             touches_i = True
@@ -180,22 +184,24 @@ def route(iset, ws, changed, owners_map, base_valid, stale):
         else:
             reasons.append(f"T0: {p} is not in I")
     if t3:
-        return {"tier": "T3", "packages": sorted(ws.dirs), "reasons": reasons}
+        return {"tier": "T3", "packages": sorted(ws.dirs), "reasons": reasons, "causes": sorted(causes)}
     if not touches_i:
         if base_valid or MUTATE == "ignore-base":
-            return {"tier": "T0", "packages": [], "reasons": reasons}
+            return {"tier": "T0", "packages": [], "reasons": reasons, "causes": []}
         reasons.append("selective: D ∩ I = ∅ but INV-BASE did not hold; the stale paths decide R'")
     for p in stale:
         if iset.in_c(p) or iset.in_f(p):
             return {"tier": "T3", "packages": sorted(ws.dirs),
-                    "reasons": reasons + [f"T3: stale {p} (nightly..base) is in C or F"]}
+                    "reasons": reasons + [f"T3: stale {p} (nightly..base) is in C or F"],
+                    "causes": ["stale-C" if iset.in_c(p) else "stale-F"]}
         o = owners_of(p, ws, owners_map)
         if iset.in_dep(p) and not o:
             return {"tier": "T3", "packages": sorted(ws.dirs),
-                    "reasons": reasons + [f"T3: stale {p} is in I_dep and no package owns it"]}
+                    "reasons": reasons + [f"T3: stale {p} is in I_dep and no package owns it"],
+                    "causes": ["stale-unowned"]}
         seeds |= o
     packages = ws.closure(seeds) if MUTATE != "no-closure" else set(seeds)
-    return {"tier": "selective", "packages": sorted(packages), "reasons": reasons}
+    return {"tier": "selective", "packages": sorted(packages), "reasons": reasons, "causes": []}
 
 
 def owners_from_depinfo(root, target_dir, ws):
@@ -257,6 +263,18 @@ def _fixture():
     return meta, iset, owners
 
 
+# The cause each T3 row must report (rows not named here report none).
+CAUSES = {
+    "Cargo.toml change runs T3": ["C"],
+    "workflow change runs T3": ["C"],
+    "a file a test reads is T3": ["F"],
+    "a file a test probes for is T3": ["F"],
+    "a file added to an enumerated dir is T3": ["F"],
+    "stale nightly..base manifest is T3": ["stale-C"],
+    "an unowned I_dep path is T3": ["unowned"],
+}
+
+
 def self_test():
     meta, iset_doc, owners = _fixture()
     rows = [
@@ -293,10 +311,12 @@ def self_test():
         ok = got["tier"] == tier and (pkgs is None or got["packages"] == pkgs)
         if tier == "T3":
             ok = ok and got["packages"] == sorted(ws.dirs)
+        # QM-11 join/shadow reads WHY a diff is T3: C (compile inputs) is not F (run-time reads).
+        ok = ok and got["causes"] == CAUSES.get(name, [])
         failed += not ok
         print(f"{'PASS' if ok else 'FAIL'}  {name}" + ("" if ok else f"  got {got['tier']} {got['packages']}"))
     got = route(None, ws, ["docs/guide.md"], owners, True, [])
-    ok = got["tier"] == "T3"
+    ok = got["tier"] == "T3" and got["causes"] == ["no-input-set"]
     failed += not ok
     print(f"{'PASS' if ok else 'FAIL'}  no input set is T3 (fail closed)")
     try:
@@ -309,11 +329,14 @@ def self_test():
     return failed, len(rows) + 2
 
 
+MUTANTS = ("ignore-f", "drop-dev-edges", "drop-autodiscovery", "ignore-base", "no-closure", "f-as-c")
+
+
 def self_test_mutants():
     """Each planted weakening must turn at least one row RED."""
     import subprocess
     failed = 0
-    for m in ("ignore-f", "drop-dev-edges", "drop-autodiscovery", "ignore-base", "no-closure"):
+    for m in MUTANTS:
         r = subprocess.run([sys.executable, __file__, "--self-test-rows"], env={**os.environ, "ROUTER_MUTATE": m},
                            capture_output=True, text=True)
         red = r.returncode != 0
@@ -329,7 +352,7 @@ def main(argv):
     if argv[:1] == ["--self-test"]:
         failed, total = self_test()
         mf = self_test_mutants()
-        print(f"tier_router self-test: {total - failed}/{total} rows, {5 - mf}/5 mutants RED")
+        print(f"tier_router self-test: {total - failed}/{total} rows, {len(MUTANTS) - mf}/{len(MUTANTS)} mutants RED")
         return 1 if failed or mf else 0
     if argv[:1] == ["route"]:
         a = _opts(argv[1:], {"--input-set", "--metadata", "--changed", "--owners", "--stale"}, {"--base-valid"})
