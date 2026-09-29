@@ -1,0 +1,87 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pr-review-primary",
+          "informationUri": "https://github.com/paiml/aprender",
+          "version": "claude-sonnet-5",
+          "rules": [
+            {
+              "id": "PREFILL-GRAPH-CHUNK-CORRUPTION",
+              "shortDescription": { "text": "Chunked prefill loop is incompatible with the opt-in CUDA-graph replay path" }
+            },
+            {
+              "id": "DENSE-PREFILL-ROWS-DUPLICATION",
+              "shortDescription": { "text": "New chunk-sizing helper duplicates an existing helper with a divergent formula" }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "PREFILL-GRAPH-CHUNK-CORRUPTION",
+          "level": "note",
+          "kind": "pass",
+          "message": {
+            "text": "FIXED in 66c07c49dc (present at local head 31cd3f6c40). prefill.rs now gates the graph path with graph_may_run(enabled, positions) = enabled && positions.first() == Some(&0) (crates/aprender-serve/src/cuda/executor/layers/prefill.rs:164, helper at 1596-1599): only a chunk starting at absolute position 0 may take the cached-graph replay; every later chunk of a multi-chunk prompt (start>0) now always runs eager, so prefill_graphed_replay's hardcoded 0..S-1/KV-reset assumption can no longer be hit by a later chunk. Verified by reading the diff (722fd1621f..31cd3f6c40, prefill.rs is the only file touched, +29/-1) and by running the new unit test on intel: `cargo test -p aprender-serve --lib --features cuda -- graph_chunk_tests_3715 dense_prefill_chunk_tests` -> graph_chunk_tests_3715::only_the_first_chunk_may_replay_a_graph ok, plus the 3 pre-existing dense_prefill_chunk_tests ok, 4 passed 0 failed, rc=0 (host-CPU-only, no CUDA device needed for this logic test)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-serve/src/cuda/executor/layers/prefill.rs" },
+                "region": { "startLine": 164, "endLine": 164 }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-serve/src/cuda/executor/layers/prefill.rs" },
+                "region": { "startLine": 1596, "endLine": 1618 }
+              },
+              "message": { "text": "graph_may_run + graph_chunk_tests_3715::only_the_first_chunk_may_replay_a_graph, new in 31cd3f6c40." }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "excerpt_sha256": "efce526a20f9c95aad1299f1e3c7f79198cb8f88a370eca35d5d2240967ee7b0",
+            "blocking_class": "none",
+            "outcome": "fixed",
+            "note": "Originally reported as an error against head 23f058b6ba (PREFILL-GRAPH-CHUNK-CORRUPTION, latent KV/position corruption for chunk 2+ under PREFILL_GRAPH=1). Superseded: fix verified against 31cd3f6c40."
+          }
+        },
+        {
+          "ruleId": "DENSE-PREFILL-ROWS-DUPLICATION",
+          "level": "note",
+          "message": {
+            "text": "The new dense_prefill_chunk_rows(num_heads, prefill_count, budget_bytes) (generate_2.rs:1146) is a semantic near-duplicate of the pre-existing, unchanged attention_rows_for/chunk_rows_for pair in forward_qwen35_cuda_prefill.rs:212 (both size a chunk to keep an attention-score buffer within PREFILL_SCORES_BUDGET_BYTES). The new helper multiplies by raw num_heads; the existing one multiplies by heads_per_kv = num_heads/num_kv_heads (GQA-grouped, always <= num_heads). The new helper is therefore more conservative (smaller chunks than strictly necessary under GQA) but not incorrect. Found via pmat semantic duplicate search (--duplicates)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-serve/src/gguf/cuda/generate_2.rs" },
+                "region": { "startLine": 1143, "endLine": 1149 }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_prefill.rs" },
+                "region": { "startLine": 208, "endLine": 213 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "blocking_class": "none",
+            "note": "Advisory: whether reuse of the existing helper (with num_heads passed where it expects num_kv_heads-aware dims) was considered is worth a one-line author response, not a blocker."
+          }
+        }
+      ]
+    }
+  ]
+}
