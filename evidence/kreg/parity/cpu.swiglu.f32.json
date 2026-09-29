@@ -1,0 +1,46 @@
+{
+  "build_identity": "a6242f47d7",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:swiglu:g/(1+exp(-g))*u,|g|<8",
+    "row_sha256": "1be4077565f5e7beed1050fd28f233c22c83675fab47a627db262f835a8b12ee",
+    "source_sha256": "5df0d8485e9c3420c808832bfba46f52fc8e82aea8196c003121684f809a9549",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "520ef602ccc247900465fdf3844c68c11445d107a2b27f8469e3a5ed967ba790",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.swiglu.f32",
+  "margin": {
+    "error_model": "EM-ELEM",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "swiglu:g/(1+exp(-g))*u,|g|<8",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 3.1250190737353023e-6,
+    "max_rel_err": 1.0153723713722669e-7
+  },
+  "source_fn": "swiglu_gate_into",
+  "tolerance_rel": 3e-7,
+  "ts": "2026-09-29T15:50:16Z",
+  "workload": {
+    "n": 896,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}
