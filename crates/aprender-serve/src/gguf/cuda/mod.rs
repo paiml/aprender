@@ -41,6 +41,7 @@ mod forward_qwen35_cuda;
 mod forward_qwen3_moe_resident;
 mod generation;
 mod resident;
+mod session_kv;
 mod speculative;
 mod weights;
 
@@ -67,6 +68,15 @@ use super::utils::verbose;
 // =============================================================================
 // IMP-800: CUDA-Accelerated Model Wrapper
 // =============================================================================
+
+/// How `build` sizes the device KV cache.
+#[derive(Debug, Clone, Copy)]
+enum KvLen {
+    /// Exactly this many positions (`new`, `with_max_seq_len`).
+    Fixed(usize),
+    /// The model's context, capped by free VRAM (#3715, `for_session`).
+    FitContext,
+}
 
 /// #3715: device bytes load makes resident, from [`OwnedQuantizedModelCuda::resident_estimate`].
 struct ResidentEstimate {
@@ -637,7 +647,22 @@ impl OwnedQuantizedModelCuda {
         max_seq_len: usize,
     ) -> std::result::Result<Self, CudaInitError> {
         let model = Self::check_not_moe(model)?;
-        Self::build(model, device_ordinal, max_seq_len)
+        Self::build(model, device_ordinal, KvLen::Fixed(max_seq_len))
+    }
+
+    /// #3715: a chat/session model. Its turn length is unknown at load, so the device KV
+    /// takes the model's whole context when the card has room for it after the weights
+    /// and the prefill cache, else the old 2048 (see `session_kv::session_kv_len`).
+    ///
+    /// # Errors
+    ///
+    /// The same CUDA / capability / quant / MoE errors as [`Self::with_max_seq_len`].
+    pub fn for_session(
+        model: OwnedQuantizedModel,
+        device_ordinal: i32,
+    ) -> std::result::Result<Self, CudaInitError> {
+        let model = Self::check_not_moe(model)?;
+        Self::build(model, device_ordinal, KvLen::FitContext)
     }
 
     /// Build the CUDA wrapper for a MoE model whose caller runs the MoE forward
@@ -649,7 +674,7 @@ impl OwnedQuantizedModelCuda {
     ///
     /// The same CUDA / capability / quant errors as [`Self::new`].
     pub fn new_for_moe_forward(model: OwnedQuantizedModel, device_ordinal: i32) -> Result<Self> {
-        Self::build(model, device_ordinal, 2048).map_err(|e| e.error)
+        Self::build(model, device_ordinal, KvLen::Fixed(2048)).map_err(|e| e.error)
     }
 
     /// #3992: the dense CUDA forward cannot run a Mixture-of-Experts model: its
@@ -691,7 +716,7 @@ impl OwnedQuantizedModelCuda {
     fn build(
         model: OwnedQuantizedModel,
         device_ordinal: i32,
-        max_seq_len: usize,
+        kv_len: KvLen,
     ) -> std::result::Result<Self, CudaInitError> {
         use crate::cuda::CudaExecutor;
 
@@ -777,6 +802,11 @@ impl OwnedQuantizedModelCuda {
         let num_layers = model.layers.len();
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
         let head_dim = model.config.hidden_dim / model.config.num_heads;
+        let max_seq_len = match kv_len {
+            KvLen::Fixed(n) => n,
+            KvLen::FitContext => Self::session_kv_len(&executor, &model, memory_info.0),
+        };
+
         // #3715: the FP16 batched prefill a QK-norm model now takes must fit beside
         // its cache; when it does not (Qwen3-8B on 24 GB) the model keeps serial.
         {
@@ -829,6 +859,31 @@ impl OwnedQuantizedModelCuda {
         cuda_model.apply_max_batch_sizing(num_layers, num_kv_heads, head_dim, max_seq_len);
 
         Ok(cuda_model)
+    }
+
+    /// #3715: the device KV length for [`Self::for_session`], from the VRAM free
+    /// before load minus what load will make resident (see [`Self::resident_estimate`]).
+    fn session_kv_len(
+        executor: &crate::cuda::CudaExecutor,
+        model: &OwnedQuantizedModel,
+        free_vram: usize,
+    ) -> usize {
+        let r = Self::resident_estimate(executor, model);
+        let len = session_kv::session_kv_len(
+            model.config.context_length,
+            r.kv_per_pos,
+            free_vram,
+            r.weights + r.cache,
+            r.reserve,
+        );
+        eprintln!(
+            "[#3715] session device KV: {len} positions (context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
+            model.config.context_length,
+            free_vram as f64 / 1e9,
+            r.weights as f64 / 1e9,
+            r.cache as f64 / 1e9,
+        );
+        len
     }
 
     /// #3715: what load makes resident on the device: the quantized weights, the
