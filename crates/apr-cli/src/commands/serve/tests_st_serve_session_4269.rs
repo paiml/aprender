@@ -5,7 +5,7 @@ use super::{st_context_budget, st_cpu_generate};
 use realizar::apr_transformer::{AprTransformer, AprTransformerConfig, AprTransformerLayer};
 use realizar::session::{entries_for, EntryKind};
 
-fn tiny_transformer() -> AprTransformer {
+pub(super) fn tiny_transformer() -> AprTransformer {
     let (hidden_dim, intermediate_dim, vocab_size) = (8, 16, 12);
     let config = AprTransformerConfig {
         architecture: "safetensors-test".to_string(),

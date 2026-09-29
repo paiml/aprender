@@ -450,6 +450,10 @@ fn st_context_budget(
 #[path = "tests_st_serve_session_4269.rs"]
 mod tests_st_serve_session_4269;
 
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_st_overlength_router_3718.rs"]
+mod tests_st_overlength_router_3718;
+
 /// #3979: the SafeTensors HTTP surface, in ONE place. It was assembled inline twice
 /// (single-file and sharded), differing only in the `/tensors` payload. Every route is
 /// mounted AND recorded, so `GET /` and the 404 list exactly what is served; the
