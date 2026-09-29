@@ -616,7 +616,10 @@
    "source_file": "crates/aprender-serve/src/cuda/executor/q6k_gemv_indexed.rs",
    "source_fn": "q4k_gemv_into",
    "selector": "realizar::cuda::CudaExecutor::gemv_dispatch",
-   "contract": "contracts/tensor-layout-v1.yaml"
+   "contract": "contracts/tensor-layout-v1.yaml",
+   "labels": [
+    "q4k_gemv@q4_k"
+   ]
   },
   {
    "kernel_id": "cuda.gemv.q5_k",
@@ -1120,7 +1123,10 @@
    "source_file": "crates/aprender-serve/src/cuda/executor/layer_norm_gpu.rs",
    "source_fn": "rmsnorm_into",
    "selector": "realizar::cuda::CudaExecutor::workspace_qkv_rope_phase",
-   "contract": "contracts/rmsnorm-kernel-v1.yaml"
+   "contract": "contracts/rmsnorm-kernel-v1.yaml",
+   "labels": [
+    "rmsnorm@f32"
+   ]
   },
   {
    "kernel_id": "cuda.rmsnorm.per_head.f32",

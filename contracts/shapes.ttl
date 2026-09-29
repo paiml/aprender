@@ -126,6 +126,10 @@
         sh:maxCount 1 ;
         sh:pattern "^contracts/.+\\.yaml$" ;
     ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/labels> ;
+        sh:pattern "^[a-z0-9_]+(@[a-z0-9_]+)?$" ;
+    ] ;
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/kernel-registry-v1.op> a sh:NodeShape ;
@@ -231,6 +235,10 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:pattern "^contracts/.+\\.yaml$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kreg/labels> ;
+        sh:pattern "^[a-z0-9_]+(@[a-z0-9_]+)?$" ;
     ] ;
 .
 

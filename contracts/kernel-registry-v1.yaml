@@ -104,12 +104,15 @@ shape:
     - {path: kreg:source_fn, minCount: 1, maxCount: 1, pattern: "^[a-z_][a-z0-9_]*$"}
     - {path: kreg:selector, minCount: 1, maxCount: 1, minLength: 8}
     - {path: kreg:contract, minCount: 1, maxCount: 1, pattern: "^contracts/.+\\.yaml$"}
+    - {path: kreg:labels, pattern: "^[a-z0-9_]+(@[a-z0-9_]+)?$"}
 
 # PER-FORWARD OPS (#3715 v2 §4). Norms, RoPE, attention, the gated activations and the rest run on f32
 # activations whatever the file's tensor types, so no ggml type id reaches them and `admit` never selects
 # one. They are rows of `ops[]`, not `kernels[]`: a `kernels[]` row with no type would need `ggml_type`
 # minCount 0, and SHACL Core cannot then say "a typed op has a type". This shape is closed too, so a type
 # field on an op row is refused. `archs` (optional, model architectures) narrows the models an op serves.
+# `labels` (optional, both shapes) are the `kernel@quant` names kernel-diff receipts give a row; Registry::parse
+# refuses one (backend, label) on two rows, which SHACL Core cannot see.
 shapes:
   - id: kernel-registry-v1.op
     targetClass: kreg:Op
@@ -132,6 +135,7 @@ shapes:
       - {path: kreg:source_fn, minCount: 1, maxCount: 1, pattern: "^[a-z_][a-z0-9_]*$"}
       - {path: kreg:selector, minCount: 1, maxCount: 1, minLength: 8}
       - {path: kreg:contract, minCount: 1, maxCount: 1, pattern: "^contracts/.+\\.yaml$"}
+      - {path: kreg:labels, pattern: "^[a-z0-9_]+(@[a-z0-9_]+)?$"}
 
 equations:
   admissible:
@@ -256,3 +260,12 @@ falsification_tests:
       each op row's (source_file, source_fn) resolves to a fn in the tree
     test: cargo test -p aprender-contracts --lib kernel_registry_v1 && cargo test -p aprender-serve --lib kernel_registry
     if_fails: a norm, RoPE or attention kernel runs in every forward with no row, so no receipt can ever be asked of it
+  - id: FALSIFY-KREG-014
+    rule: a kernel-diff receipt label names one registry row per backend (#3715 v2 §4, the `labels` field)
+    prediction: >
+      a `kernel` or `kernel@quant` label on a kernels[] or ops[] row maps to that row's kernel_id on its backend
+      and to nothing on another; Registry::parse refuses an empty labels list, a malformed label and a
+      (backend, label) on two rows; every label a kernel-diff receipt in the tree dispatches or judges names
+      exactly one committed cuda row
+    test: 'cargo test -p aprender-serve --lib kernel_registry:: -- falsify_kreg_014_the_label_case_table every_committed_receipt_label_names_a_cuda_row'
+    if_fails: a receipt row names a kernel by a label no registry id answers to, so the kernel cell it measures is never found
