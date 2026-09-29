@@ -243,10 +243,13 @@ fn the_tracked_repo_graph_is_fresh() {
     // The 0.70.0 car (#4429) added, disjoint from these: #3745 S2 (#3777) six DERIVED cell-class shapes (effect,
     // probe, model-cell, effect-cell, crux-verb, crux) and a8's `sampling`, ONT-4c5 (PMAT-3972) `capability-cells`,
     // and ONT-4c4 (#4069) kernel-parity, kernel-timing and kernel-safety: 46 + 8 + 3 = 57.
+    // ONT-10 rest (#4588, PR-2) adds eight more binary-<bin>-surface shapes (apr, apr-qa, aprender-data,
+    // aprender-present, aprender-ptop, aprender-simulate, aprender-train-lora, aprender-train-shell) and
+    // binary-aprender-apr-http-mcp: 57 + 9 = 66.
     assert_eq!(
         v["shapes_n"],
-        57,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 15 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4)\n{}",
+        66,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 15 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4) + 8 binary-*-surface + binary-aprender-apr-http-mcp (ONT-10 rest, #4588)\n{}",
         show(&r)
     );
 }
