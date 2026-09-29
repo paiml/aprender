@@ -218,6 +218,20 @@ fn a_stray_higher_version_can_only_turn_cells_not_run() {
     assert_eq!(ids(&cc.not_run), ["a@lambda"]);
 }
 
+/// Two spellings of one version key: the FIRST receipt read keeps V*, and cells are read at that spelling
+/// (M1 shard 5 killed `>` -> `>=` in `v_star`, which hands V* to the last spelling instead).
+#[test]
+fn a_version_key_tie_keeps_the_first_spelling() {
+    let rungs = [rung("a", SHA_A, &[], true)];
+    let recs = [
+        receipt("0.69.1", "lambda", &[row("a", SHA_A, true, "")]),
+        receipt("0.069.1", "lambda", &[]),
+    ];
+    let cc = compute(&rungs, &recs).expect("computes");
+    assert_eq!(cc.v_star.as_deref(), Some("0.69.1"));
+    assert!(cc.not_run.is_empty(), "{:?}", cc.not_run);
+}
+
 #[test]
 fn v_star_orders_numerically_not_lexically() {
     let rungs = [rung("a", SHA_A, &[], true)];
@@ -233,7 +247,8 @@ fn v_star_orders_numerically_not_lexically() {
 #[test]
 fn a_version_that_is_not_dotted_numerals_is_refused_by_name() {
     let rungs = [rung("a", SHA_A, &[], true)];
-    for bad in ["0.69.1-rc1", "", "v0.69", "0..1"] {
+    // "0.+69": `u64::from_str` takes a leading `+`, so only the digit check refuses it (M1 shard 5, `||` -> `&&`)
+    for bad in ["0.69.1-rc1", "", "v0.69", "0..1", "0.+69"] {
         let recs = [receipt(bad, "lambda", &[row("a", SHA_A, true, "")])];
         let err = compute(&rungs, &recs).expect_err(bad);
         assert!(
@@ -241,6 +256,10 @@ fn a_version_that_is_not_dotted_numerals_is_refused_by_name() {
             "{err:?}"
         );
         assert!(err.to_string().contains("refused by name"), "{err}");
+        assert_eq!(
+            err.file(),
+            format!("evidence/dogfood/models/{bad}/lambda.json")
+        );
     }
 }
 
@@ -394,6 +413,8 @@ fn two_required_rungs_sharing_an_id_are_refused_by_name() {
         "{err:?}"
     );
     assert!(err.to_string().contains("refused by name"), "{err}");
+    // M1 shard 5: `file()` names both declaring contracts (killed `CellsError::file -> String::new()`)
+    assert_eq!(err.file(), "model-capability-ladder-v1, other-ladder-v1");
     // an OPTIONAL twin is outside D and is not a conflict
     let rungs = [rung("a", SHA_A, &[], true), rung("a", SHA_B, &[], false)];
     assert!(compute(&rungs, &recs).is_ok());
