@@ -10,7 +10,7 @@ use std::fmt::Display;
 use std::io::Read;
 use std::path::Path;
 
-use crate::v2::{AprV2Header, HEADER_SIZE_V2};
+use crate::v2::{AprV2Header, AprV2Metadata, HEADER_SIZE_V2, MAGIC_V2};
 
 /// The first header read. Measured on 21 local GGUFs (2026-09-21): headers are 5.7 MiB
 /// (Qwen2.5 / Qwen3) to 10.5 MiB (Qwen3.5, a 248,320-token vocabulary), on files up to
@@ -90,6 +90,51 @@ pub fn apr_v2_header_prefix(path: &Path) -> Result<Vec<u8>, String> {
         })?;
     read_prefix(path, n.max(HEADER_SIZE_V2))
         .map_err(|e| format!("cannot read {}: {e}", path.display()))
+}
+
+/// The metadata of an APR v2 file, reading only its header and metadata block (#4000 §5,
+/// contract `apr-v2-metadata-reader-v1`). A file that is not APR v2 is `Ok(None)`. An APR v2
+/// file whose header, metadata bounds or metadata JSON is bad is `Err`, never a silent `None`,
+/// and a metadata block ending past [`HEADER_READ_CAP`] is refused rather than read.
+pub fn apr_v2_metadata(path: &Path) -> Result<Option<AprV2Metadata>, String> {
+    apr_v2_metadata_within(path, HEADER_READ_CAP)
+}
+
+/// [`apr_v2_metadata`] with its cap as a parameter (the case table uses a small one).
+pub fn apr_v2_metadata_within(path: &Path, cap: usize) -> Result<Option<AprV2Metadata>, String> {
+    let head = read_prefix(path, HEADER_SIZE_V2)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    if head.get(..4) != Some(MAGIC_V2.as_slice()) {
+        return Ok(None);
+    }
+    let header =
+        AprV2Header::from_bytes(&head).map_err(|e| format!("APR header parse failed: {e}"))?;
+    let start = usize::try_from(header.metadata_offset).map_err(|_| {
+        format!(
+            "APR metadata_offset {} exceeds usize",
+            header.metadata_offset
+        )
+    })?;
+    let end = start
+        .checked_add(header.metadata_size as usize)
+        .filter(|&end| end <= cap)
+        .ok_or_else(|| {
+            format!(
+                "APR metadata ends past the {cap}-byte header cap (offset {start}, size {}); refused rather than read",
+                header.metadata_size
+            )
+        })?;
+    let prefix =
+        read_prefix(path, end).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let block = prefix.get(start..end).ok_or_else(|| {
+        format!(
+            "{} ends before its APR metadata block ({start}..{end})",
+            path.display()
+        )
+    })?;
+    AprV2Metadata::from_json(block)
+        .map(Some)
+        .map_err(|e| format!("APR metadata parse failed: {e}"))
 }
 
 #[cfg(test)]
@@ -249,5 +294,69 @@ mod tests {
         let f = file_with(&[100u8, 1, 2]);
         let e = parse_growing_prefix_within(f.path(), 16, 1024, toy_parse).expect_err("3 < 100");
         assert!(e.starts_with("header parse failed: truncated"), "{e}");
+    }
+
+    /// An APR v2 file whose metadata JSON sits at `offset`, not straight after the header.
+    fn apr_v2_with_metadata_at(offset: usize, json: &[u8]) -> Vec<u8> {
+        let mut header = AprV2Header::new();
+        header.metadata_offset = offset as u64;
+        header.metadata_size = u32::try_from(json.len()).expect("small json");
+        let mut bytes = header.to_bytes().to_vec();
+        bytes.resize(offset, 0xAB);
+        bytes.extend_from_slice(json);
+        bytes
+    }
+
+    #[test]
+    fn falsify_amr_001_an_apr_v2_file_yields_its_metadata() {
+        let f = file_with(&apr_v2_bytes());
+        let meta = apr_v2_metadata(f.path())
+            .expect("valid APR")
+            .expect("is APR v2");
+        assert_eq!(meta.model_type, "test");
+    }
+
+    #[test]
+    fn falsify_amr_001_the_metadata_is_read_at_its_offset() {
+        let json = AprV2Metadata::new("shifted").to_json().expect("json");
+        let f = file_with(&apr_v2_with_metadata_at(HEADER_SIZE_V2 + 64, &json));
+        let meta = apr_v2_metadata(f.path())
+            .expect("valid APR")
+            .expect("is APR v2");
+        assert_eq!(meta.model_type, "shifted");
+    }
+
+    #[test]
+    fn falsify_amr_002_not_apr_is_none_and_corrupt_apr_is_err() {
+        for not_apr in [
+            &b"GGUF\x03\x00\x00\x00"[..],
+            &[][..],
+            &b"AP"[..],
+            &[0u8; 128][..],
+        ] {
+            let f = file_with(not_apr);
+            assert!(matches!(apr_v2_metadata(f.path()), Ok(None)), "{not_apr:?}");
+        }
+        let bad_json = file_with(&apr_v2_with_metadata_at(HEADER_SIZE_V2, b"{not json"));
+        let e = apr_v2_metadata(bad_json.path()).expect_err("corrupt metadata");
+        assert!(e.starts_with("APR metadata parse failed"), "{e}");
+        let mut truncated = apr_v2_with_metadata_at(HEADER_SIZE_V2, b"{}");
+        truncated.truncate(HEADER_SIZE_V2 + 1);
+        let e = apr_v2_metadata(file_with(&truncated).path()).expect_err("truncated block");
+        assert!(e.contains("ends before its APR metadata block"), "{e}");
+        let e = apr_v2_metadata(file_with(&b"APR\0short"[..]).path()).expect_err("short header");
+        assert!(e.starts_with("APR header parse failed"), "{e}");
+    }
+
+    #[test]
+    fn falsify_amr_003_metadata_past_the_cap_is_refused_never_read() {
+        let json = AprV2Metadata::new("far").to_json().expect("json");
+        let bytes = apr_v2_with_metadata_at(HEADER_SIZE_V2 + 64, &json);
+        let f = file_with(&bytes);
+        let e = apr_v2_metadata_within(f.path(), bytes.len() - 1).expect_err("past cap");
+        assert!(e.contains("refused rather than read"), "{e}");
+        assert!(apr_v2_metadata_within(f.path(), bytes.len())
+            .expect("at the cap")
+            .is_some());
     }
 }

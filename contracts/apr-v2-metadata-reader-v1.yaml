@@ -1,0 +1,88 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-29'
+  author: PAIML Engineering
+  kind: kernel
+  valid_under:
+    world: committed
+  description: >
+    #4000 §5: ONE bounded reader for the metadata of an APR v2 file. It reads the
+    64-byte header and the metadata block, never the tensor index or tensor data,
+    and it separates "not an APR v2 file" (Ok(None)) from "a broken APR v2 file"
+    (Err), which the per-caller readers it replaces collapsed into one silent None.
+  references:
+  - 'crates/apr-format/src/prefix.rs — apr_v2_metadata, apr_v2_metadata_within'
+  - 'issue #4000 — 0.72 train-what-you-serve epic, shaping §5'
+  - 'issue #3761 — bounded header reads (HEADER_READ_CAP)'
+equations:
+  bounded_metadata_read:
+    formula: |
+      read(apr_v2_metadata, f) ⊆ f[0 .. metadata_offset + metadata_size]
+      and metadata_offset + metadata_size ≤ HEADER_READ_CAP, else refused
+    domain: any file path
+    codomain: Result<Option<AprV2Metadata>, String>
+    invariants:
+    - 'bytes read never exceed max(64, metadata_offset + metadata_size)'
+    - 'the metadata block is taken at metadata_offset, never assumed to follow the header'
+    preconditions:
+    - 'path names a readable file'
+  outcome_partition:
+    formula: |
+      f[0..4] ≠ MAGIC_V2 ⇒ Ok(None);
+      f[0..4] ≡ MAGIC_V2 ∧ (bad header ∨ bad bounds ∨ bad JSON) ⇒ Err
+    domain: any file path
+    codomain: Result<Option<AprV2Metadata>, String>
+    invariants:
+    - 'a corrupt APR v2 file is never reported as "not APR"'
+    preconditions:
+    - 'path names a readable file'
+proof_obligations:
+- id: AMR-001
+  type: postcondition
+  property: A valid APR v2 file yields the metadata written at its metadata_offset
+  formal: apr_v2_metadata(write(m)) ≡ Ok(Some(m))
+  applies_to: all
+- id: AMR-002
+  type: invariant
+  property: Not APR v2 is Ok(None); a broken APR v2 file is Err
+  formal: magic ≠ MAGIC_V2 ⇒ Ok(None); magic ≡ MAGIC_V2 ∧ corrupt ⇒ Err
+  applies_to: all
+- id: AMR-003
+  type: bound
+  property: A metadata block ending past the cap is refused, never read
+  formal: metadata_offset + metadata_size > cap ⇒ Err before any read past 64 bytes
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-AMR-001
+  rule: the metadata is read at its own offset
+  prediction: a file whose metadata sits 64 bytes past the header yields that metadata; mutant "read at HEADER_SIZE_V2, ignore metadata_offset" turns it RED
+  test: cargo test -p apr-format --lib falsify_amr_001
+  if_fails: the reader assumes the metadata follows the header and misreads shifted files
+- id: FALSIFY-AMR-002
+  rule: not-APR and broken-APR are distinct outcomes
+  prediction: GGUF, empty, 2-byte and zero files give Ok(None); bad JSON, a truncated block and a short header give Err; mutant "map every Err to Ok(None)" turns it RED
+  test: cargo test -p apr-format --lib falsify_amr_002
+  if_fails: a corrupt APR file is silently treated as a non-APR file
+- id: FALSIFY-AMR-003
+  rule: the size cap is enforced
+  prediction: with the cap one byte short of the metadata end the read is refused, and at the end it succeeds; mutant "drop the cap filter" turns it RED
+  test: cargo test -p apr-format --lib falsify_amr_003
+  if_fails: a hostile metadata_size makes the reader allocate and read unbounded bytes
+kani_harnesses:
+- id: KANI-AMR-001
+  obligation: AMR-003
+  property: the checked offset+size bound refuses every end past the cap, including overflow
+  bound: 8
+  strategy: exhaustive
+- id: KANI-AMR-002
+  obligation: AMR-002
+  property: every non-MAGIC_V2 4-byte prefix maps to Ok(None)
+  bound: 4
+  strategy: exhaustive
+qa_gate:
+  id: F-AMR-001
+  name: apr-v2-metadata-reader-v1 Contract
+  description: One bounded APR v2 metadata reader with a None/Err partition
+  checks:
+  - validation
+  - falsification
