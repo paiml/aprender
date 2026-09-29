@@ -1,0 +1,19 @@
+- id: PMAT-4083
+  github_issue: 4083
+  item_type: task
+  title: 'PVL-001 EV-9 — PVL-9: provable-ladder required on main'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-29T17:58:00Z
+  updated: 2026-09-29T17:58:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4588 (PR-2 of #4502), C78 cop ruling (a) 2026-09-29. The provable-ladder section runs ADVISORY (ci/sections.yml), not yet in gate.needs; a forced ladder SKIP must be RED, with a planted mutant proving the check sees it (scripts/ci/ladder_skip_is_red.sh), finding docs/findings/ev9-fat-driver-skip-is-success.jsonl.
+  - Making it required (ci.yml gate list) is a later step and an operator check-in; out of scope for #4588.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
