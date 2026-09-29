@@ -5,11 +5,13 @@
 //! the formula, not from the kernel. It shares no code with the kernel, so the receipt says
 //! `oracle_independent: true`.
 //!
-//! The error models these rows declare (EM-RED for a norm's reduction followed by a rsqrt and a
+//! Most error models these rows declare (EM-RED for a norm's reduction followed by a rsqrt and a
 //! scale, EM-ELEM for tanh) have no implemented bound in `aprender-kernel-oracle` yet, so the
-//! receipt's margin block says `not_modelled` and decides nothing. What the receipt DOES claim is
-//! checked: the committed receipt re-measures within its `tolerance_rel` on this host, and
-//! `precision=f32` holds below [`F32_CEILING`].
+//! receipt's margin block says `not_modelled` and decides nothing. EM-ROPE is modelled here
+//! ([`modelled_bound`]): RoPE forms its angle in f32 and drifts ~1e-3 by position 32k, so an
+//! f32-exact ceiling is the wrong test for it. What the receipt DOES claim is checked: the
+//! committed receipt re-measures within its `tolerance_rel` on this host, and `precision=f32`
+//! holds below [`F32_CEILING`] — or below the row's modelled bound, when it has one.
 //!
 //! `emit_op_parity_receipts` (ignored) writes them, like `emit_parity_receipts`:
 //! `KREG_RECEIPT_OUT=evidence/kreg/parity KREG_GIT_SHA=<sha> cargo test -p aprender-serve --lib
@@ -103,6 +105,94 @@ fn run_gelu(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
     (got, want)
 }
 
+/// Argmax as `[max, first index of max]`: the logits are random, then a strict maximum is planted
+/// TWICE, so the definition's tie-break (the FIRST index, as `>` keeps it) is exercised on every
+/// trial. A kernel that took the last maximum (`>=`) is off by the gap between the two indices.
+fn run_argmax(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let mut x = activations(rng, n, 8.0);
+    let first = rng.random_range(0..n / 2);
+    let second = rng.random_range(n / 2..n);
+    let top = 9.0 + rng.random_range(0.0f32..1.0);
+    x[first] = top;
+    x[second] = top;
+    let idx = crate::gguf::ops::argmax(&x) as usize;
+    let got = vec![x.get(idx).copied().unwrap_or(f32::NAN), idx as f32];
+    let max = x
+        .iter()
+        .fold(f64::NEG_INFINITY, |a, v| a.max(f64::from(*v)));
+    let want_idx = x
+        .iter()
+        .position(|v| f64::from(*v) == max)
+        .expect("a maximum exists");
+    (got, vec![max, want_idx as f64])
+}
+
+/// RoPE's workload: Qwen2-shaped heads (head_dim 128, theta 1e6), both rotation layouts, and
+/// positions across a 32k context. The kernel computes each angle `pos * theta^(-2i/d)` in f32, so
+/// its error grows with the position; the formula names the position range it was measured over.
+const ROPE_HEAD_DIM: usize = 128;
+const ROPE_THETA: f32 = 1.0e6;
+const ROPE_POS_MAX: usize = 32_768;
+
+fn rope_model(rope_type: u32) -> crate::gguf::OwnedQuantizedModel {
+    let heads = 2;
+    let config = crate::gguf::GGUFConfig {
+        architecture: "test".to_string(),
+        constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+        hidden_dim: heads * ROPE_HEAD_DIM,
+        intermediate_dim: 256,
+        num_layers: 1,
+        num_heads: heads,
+        num_kv_heads: heads,
+        vocab_size: 16,
+        context_length: ROPE_POS_MAX,
+        eps: 1e-5,
+        rope_type,
+        rope_theta: ROPE_THETA,
+        explicit_head_dim: None,
+        query_pre_attn_scalar: None,
+        bos_token_id: None,
+        eos_token_id: None,
+    };
+    crate::gguf::test_helpers::create_test_model_with_config(&config)
+}
+
+/// Both layouts on each draw: NORM (type 0) rotates adjacent pairs `(2i, 2i+1)`, NEOX (type 2)
+/// rotates `(i, i + d/2)`. The f64 oracle writes each from the definition, at a random position.
+fn run_rope(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let (d, half) = (ROPE_HEAD_DIM, ROPE_HEAD_DIM / 2);
+    let heads = n / (2 * d);
+    assert!(
+        heads > 0 && n == 2 * heads * d,
+        "rope: n must be 2 * heads * {d}"
+    );
+    let pos = rng.random_range(0..ROPE_POS_MAX);
+    let (mut got, mut want) = (Vec::with_capacity(n), Vec::with_capacity(n));
+    for rope_type in [0u32, 2] {
+        let x = activations(rng, heads * d, 2.0);
+        let mut y = x.clone();
+        rope_model(rope_type).apply_rope(&mut y, pos, heads);
+        got.extend_from_slice(&y);
+        let mut r: Vec<f64> = x.iter().map(|v| f64::from(*v)).collect();
+        for h in r.chunks_exact_mut(d) {
+            for i in 0..half {
+                let freq = f64::from(ROPE_THETA).powf(-2.0 * i as f64 / d as f64);
+                let (sin, cos) = (pos as f64 * freq).sin_cos();
+                let (a, b) = if rope_type == 2 {
+                    (i, i + half)
+                } else {
+                    (2 * i, 2 * i + 1)
+                };
+                let (x0, x1) = (h[a], h[b]);
+                h[a] = x0 * cos - x1 * sin;
+                h[b] = x0 * sin + x1 * cos;
+            }
+        }
+        want.extend(r);
+    }
+    (got, want)
+}
+
 pub(super) const OPS: &[Op] = &[
     Op {
         id: "cpu.rmsnorm.f32",
@@ -125,7 +215,42 @@ pub(super) const OPS: &[Op] = &[
         workload: OP_WORKLOAD,
         run: run_gelu,
     },
+    Op {
+        id: "cpu.argmax.f32",
+        source_fn: "argmax",
+        formula: "argmax:[max(x),min{i:x_i=max(x)}]",
+        workload: OP_WORKLOAD,
+        run: run_argmax,
+    },
+    Op {
+        id: "cpu.rope.f32",
+        source_fn: "apply_rope",
+        formula: "rope:norm+neox,d=128,theta=1e6,pos<32768,angle=pos*theta^(-2i/d)",
+        workload: OpWorkload {
+            n: 2 * 2 * ROPE_HEAD_DIM,
+            ..OP_WORKLOAD
+        },
+        run: run_rope,
+    },
 ];
+
+/// The error model's bound on `max_rel_err`, for the error models this harness implements.
+///
+/// EM-ROPE: the angle `pos * theta^(-2i/d)` is formed in f32 — `powf` within 2 ulp, the product
+/// 1 more — so it is off by at most `3u * pos` radians (`u` the f32 unit roundoff, `freq ≤ 1`).
+/// Rotating a pair by an angle off by δ moves each output by at most `|pair| * δ ≤ √2 * scale * δ`,
+/// and sin/cos plus the rotation's own multiply-add add a few `u`. Nothing about the kernel is
+/// assumed but that it forms the angle in f32; a kernel that got the angle wrong misses by O(1).
+fn modelled_bound(row: &OpRow) -> Option<(f64, &'static str)> {
+    let u = f64::from(f32::EPSILON) / 2.0;
+    match row.error_model.as_str() {
+        "EM-ROPE" => Some((
+            std::f64::consts::SQRT_2 * 3.0 * u * ROPE_POS_MAX as f64 + 4.0 * u,
+            "sqrt2*3u*pos_max+4u: f32 angle pos*theta^(-2i/d), powf 2ulp + mul 1ulp",
+        )),
+        _ => None,
+    }
+}
 
 pub(super) fn op(id: &str) -> &'static Op {
     OPS.iter()
@@ -150,7 +275,11 @@ fn measure_op(o: &Op, w: OpWorkload) -> OpMeasured {
     for _ in 0..w.trials {
         let (got, want) = (o.run)(&mut rng, w.n);
         assert_eq!(got.len(), want.len(), "{}: output length", o.id);
-        assert_eq!(got.len(), w.n, "{}: output length", o.id);
+        assert!(
+            !got.is_empty(),
+            "{}: an empty output measures nothing",
+            o.id
+        );
         let scale = want.iter().fold(0.0f64, |a, r| a.max(r.abs()));
         assert!(
             scale > 0.0,
@@ -192,11 +321,19 @@ fn op_receipt(o: &Op, row: &OpRow) -> serde_json::Value {
     doc["served"] =
         serde_json::json!({"max_abs_err": served.max_abs_err, "max_rel_err": served.max_rel_err});
     doc["tolerance_rel"] = tolerance_from(served.max_rel_err).into();
-    doc["margin"] = serde_json::json!({
-        "error_model": row.error_model,
-        "verdict": "not_modelled",
-        "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides",
-    });
+    doc["margin"] = match modelled_bound(row) {
+        Some((bound, why)) => serde_json::json!({
+            "error_model": row.error_model,
+            "verdict": if served.max_rel_err <= bound { "within" } else { "exceeds" },
+            "bound_rel": bound,
+            "why": why,
+        }),
+        None => serde_json::json!({
+            "error_model": row.error_model,
+            "verdict": "not_modelled",
+            "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides",
+        }),
+    };
     doc
 }
 
@@ -297,13 +434,35 @@ fn committed_op_parity_receipts_hold_on_this_host() {
             "{id}: max_rel_err {} > receipt tolerance {bound} ({path})",
             now.max_rel_err
         );
-        match row.precision.as_str() {
-            "f32" => assert!(
+        if row.determinism == "bitwise" {
+            assert!(
+                now.max_abs_err == 0.0,
+                "{id}: determinism=bitwise, yet it differs from its definition by {}",
+                now.max_abs_err
+            );
+        }
+        match (row.precision.as_str(), modelled_bound(row)) {
+            // An error model that bounds the f32 kernel's own drift (RoPE's f32 angle grows with
+            // the position) replaces the f32-exact ceiling; the receipt must agree it held.
+            ("f32", Some((bound, _))) => {
+                assert!(
+                    now.max_rel_err <= bound,
+                    "{id}: max_rel_err {} > the {} bound {bound}",
+                    now.max_rel_err,
+                    row.error_model
+                );
+                assert_eq!(rc["margin"]["verdict"], "within", "{path}: margin verdict");
+                assert_eq!(
+                    rc["margin"]["bound_rel"], bound,
+                    "{path}: the modelled bound changed"
+                );
+            },
+            ("f32", None) => assert!(
                 now.max_rel_err < F32_CEILING,
                 "{id}: precision=f32, yet the error against f64 is {} ≥ {F32_CEILING}",
                 now.max_rel_err
             ),
-            p => panic!("{id}: no precision check for {p}"),
+            (p, _) => panic!("{id}: no precision check for {p}"),
         }
     }
 }
