@@ -342,7 +342,7 @@ fn convert_to_format_tagged(
 
     let target_path = source_path.with_extension(format!("{tag}.{target_ext}"));
 
-    let output = Command::new(binary)
+    let output = Command::new(crate::apr_bin::guard_program(binary))
         .arg("rosetta")
         .arg("convert")
         .arg(source_path)
@@ -362,7 +362,7 @@ fn convert_to_format_tagged(
 
 /// Diff tensors between two models via `apr rosetta diff-tensors --json`
 fn run_diff_tensors(model_a: &Path, model_b: &Path, binary: &str) -> Result<String> {
-    let output = Command::new(binary)
+    let output = Command::new(crate::apr_bin::guard_program(binary))
         .arg("rosetta")
         .arg("diff-tensors")
         .arg(model_a)
@@ -389,7 +389,7 @@ fn run_inference_simple(model_path: &Path, backend: Backend, binary: &str) -> Re
         Backend::Gpu => vec!["--gpu".to_string()],
     };
 
-    let output = Command::new(binary)
+    let output = Command::new(crate::apr_bin::guard_program(binary))
         .arg("run")
         .arg(model_path)
         .arg("-p")
@@ -429,7 +429,7 @@ fn convert_to_format(
 
     // Use apr rosetta convert: apr rosetta convert <SOURCE> <TARGET>
     // Format is inferred from output file extension
-    let output = Command::new(binary)
+    let output = Command::new(crate::apr_bin::guard_program(binary))
         .arg("rosetta")
         .arg("convert")
         .arg(source_path)

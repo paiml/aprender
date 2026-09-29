@@ -172,7 +172,7 @@ fn default_epsilon() -> f64 {
 }
 
 fn default_binary() -> String {
-    "apr".to_string()
+    crate::apr_bin::default_apr_binary()
 }
 
 /// Result of a conversion test
@@ -381,7 +381,7 @@ impl ConversionTest {
             Backend::Gpu => vec!["--gpu".to_string()],
         };
 
-        let output = Command::new(&self.binary)
+        let output = Command::new(crate::apr_bin::guard_program(&self.binary))
             .arg("run")
             .arg(model_path)
             .arg("-p")
@@ -430,7 +430,7 @@ impl ConversionTest {
 
         // Use apr rosetta convert: apr rosetta convert <SOURCE> <TARGET>
         // Format is inferred from output file extension
-        let output = Command::new(&self.binary)
+        let output = Command::new(crate::apr_bin::guard_program(&self.binary))
             .arg("rosetta")
             .arg("convert")
             .arg(source_path)

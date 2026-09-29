@@ -232,7 +232,7 @@ impl RealCommandRunner {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            apr_binary: "apr".to_string(),
+            apr_binary: crate::apr_bin::default_apr_binary(),
         }
     }
 
@@ -248,7 +248,10 @@ impl RealCommandRunner {
     fn execute(&self, args: &[&str]) -> CommandOutput {
         use std::process::Command;
 
-        match Command::new(&self.apr_binary).args(args).output() {
+        match Command::new(crate::apr_bin::guard_program(&self.apr_binary))
+            .args(args)
+            .output()
+        {
             Ok(output) => CommandOutput {
                 stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                 stderr: String::from_utf8_lossy(&output.stderr).to_string(),

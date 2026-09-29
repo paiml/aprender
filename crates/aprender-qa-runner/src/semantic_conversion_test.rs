@@ -120,7 +120,7 @@ impl SemanticConversionTest {
             Backend::Gpu => vec!["--gpu".to_string()],
         };
 
-        let output = Command::new(&self.binary)
+        let output = Command::new(crate::apr_bin::guard_program(&self.binary))
             .arg("run")
             .arg(model_path)
             .arg("-p")
@@ -148,7 +148,7 @@ impl SemanticConversionTest {
 
         let target_path = source_path.with_extension(format!("semantic_test.{target_ext}"));
 
-        let output = Command::new(&self.binary)
+        let output = Command::new(crate::apr_bin::guard_program(&self.binary))
             .arg("rosetta")
             .arg("convert")
             .arg(source_path)

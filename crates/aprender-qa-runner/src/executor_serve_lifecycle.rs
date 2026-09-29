@@ -17,7 +17,7 @@ impl ToolExecutor {
         let port = 18080; // Use high port to avoid conflicts
 
         // Start server
-        let mut server_cmd = Command::new("apr");
+        let mut server_cmd = Command::new(crate::apr_bin::default_apr_binary());
         server_cmd
             .arg("serve")
             .arg(&self.model_path)

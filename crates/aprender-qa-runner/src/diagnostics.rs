@@ -173,7 +173,7 @@ impl FailFastReporter {
     pub fn new(output_dir: &Path) -> Self {
         Self {
             output_dir: output_dir.to_path_buf(),
-            binary: "apr".to_string(),
+            binary: crate::apr_bin::default_apr_binary(),
         }
     }
 
@@ -378,7 +378,7 @@ impl FailFastReporter {
         let start = Instant::now();
         let command_str = args.join(" ");
 
-        let mut child = match Command::new(args[0])
+        let mut child = match Command::new(crate::apr_bin::map_apr(args[0]).as_ref())
             .args(&args[1..])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

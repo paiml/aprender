@@ -339,7 +339,7 @@ impl CommandRunner for RealCommandRunner {
         }
         args.extend(extra_args.iter());
 
-        match Command::new(&self.apr_binary)
+        match Command::new(crate::apr_bin::guard_program(&self.apr_binary))
             .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -407,7 +407,7 @@ impl CommandRunner for RealCommandRunner {
             args.push("--no-gpu");
         }
 
-        match Command::new(&self.apr_binary)
+        match Command::new(crate::apr_bin::guard_program(&self.apr_binary))
             .args(&args)
             .stdout(Stdio::null())
             .stderr(Stdio::null())

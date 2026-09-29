@@ -15,7 +15,7 @@ pub fn save_provenance(model_dir: &Path, provenance: &Provenance) -> Result<()> 
 /// Returns "unknown" if command fails.
 #[must_use]
 pub fn get_apr_cli_version() -> String {
-    std::process::Command::new("apr")
+    std::process::Command::new(crate::apr_bin::default_apr_binary())
         .arg("--version")
         .output()
         .ok()

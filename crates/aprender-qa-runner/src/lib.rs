@@ -30,6 +30,7 @@
 #![cfg_attr(test, allow(clippy::uninlined_format_args))]
 #![cfg_attr(test, allow(clippy::cast_sign_loss))]
 
+pub mod apr_bin;
 pub mod command;
 pub mod contract;
 pub mod conversion;

@@ -91,7 +91,7 @@ fn run_convert_command(
     source_path: &Path,
     target_path: &Path,
 ) -> Result<std::process::Output> {
-    Command::new(apr_binary)
+    Command::new(crate::apr_bin::guard_program(apr_binary))
         .arg("rosetta")
         .arg("convert")
         .arg(source_path)

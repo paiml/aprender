@@ -61,7 +61,7 @@ pub fn run_inspect(model_path: &Path, apr_binary: &str) -> Result<InspectResult>
     let output = {
         let mut attempts = 0;
         loop {
-            match Command::new(apr_binary)
+            match Command::new(crate::apr_bin::guard_program(apr_binary))
                 .arg("rosetta")
                 .arg("inspect")
                 .arg(model_path)
@@ -253,7 +253,7 @@ impl Default for DiffConfig {
     /// Create a default configuration with apr binary, no filter, and 1e-5 tolerance
     fn default() -> Self {
         Self {
-            apr_binary: "apr".to_string(),
+            apr_binary: crate::apr_bin::default_apr_binary(),
             filter: None,
             mismatches_only: true,
             tolerance: 1e-5,
@@ -281,7 +281,7 @@ impl DifferentialExecutor {
     ///
     /// Returns an error if the apr command fails to execute or returns non-zero.
     pub fn diff_tensors(&self, model_a: &Path, model_b: &Path) -> Result<TensorDiffResult> {
-        let mut cmd = Command::new(&self.config.apr_binary);
+        let mut cmd = Command::new(crate::apr_bin::guard_program(&self.config.apr_binary));
         cmd.arg("rosetta")
             .arg("diff-tensors")
             .arg(model_a)
@@ -367,7 +367,7 @@ impl DifferentialExecutor {
         prompt: &str,
         max_tokens: usize,
     ) -> Result<InferenceComparisonResult> {
-        let output = Command::new(&self.config.apr_binary)
+        let output = Command::new(crate::apr_bin::guard_program(&self.config.apr_binary))
             .arg("rosetta")
             .arg("compare-inference")
             .arg(model_a)

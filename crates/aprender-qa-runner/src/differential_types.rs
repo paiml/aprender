@@ -158,7 +158,7 @@ pub fn run_profile_ci(
     warmup: usize,
     measure: usize,
 ) -> Result<CiProfileResult> {
-    let mut cmd = Command::new(apr_binary);
+    let mut cmd = Command::new(crate::apr_bin::guard_program(apr_binary));
     cmd.arg("profile").arg(model_path).arg("--ci");
 
     if let Some(throughput) = min_throughput {
@@ -220,7 +220,7 @@ pub fn run_diff_benchmark(
     let output = {
         let mut attempts = 0;
         loop {
-            match Command::new(apr_binary)
+            match Command::new(crate::apr_bin::guard_program(apr_binary))
                 .arg("profile")
                 .arg(model_a)
                 .arg(model_b)
@@ -292,7 +292,7 @@ pub fn run_bench_throughput(
     warmup: usize,
     iterations: usize,
 ) -> Result<BenchResult> {
-    let mut cmd = Command::new(apr_binary);
+    let mut cmd = Command::new(crate::apr_bin::guard_program(apr_binary));
     cmd.arg("bench")
         .arg(model_path)
         .arg("--warmup")

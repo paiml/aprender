@@ -172,7 +172,7 @@ impl ParallelExecutor {
             return (String::new(), -1, Some("Empty command".to_string()));
         }
 
-        let result = Command::new(parts[0])
+        let result = Command::new(crate::apr_bin::map_apr(parts[0]).as_ref())
             .args(&parts[1..])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

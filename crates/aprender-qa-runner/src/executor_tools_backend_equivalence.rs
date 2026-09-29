@@ -12,7 +12,7 @@ impl ToolExecutor {
         let prompt = "What is 2+2?";
 
         // Run with CPU (--no-gpu)
-        let cpu_output = Command::new("apr")
+        let cpu_output = Command::new(crate::apr_bin::default_apr_binary())
             .arg("run")
             .arg(&self.model_path)
             .arg("-p")
@@ -34,7 +34,7 @@ impl ToolExecutor {
         };
 
         // Run with GPU
-        let gpu_output = Command::new("apr")
+        let gpu_output = Command::new(crate::apr_bin::default_apr_binary())
             .arg("run")
             .arg(&self.model_path)
             .arg("-p")

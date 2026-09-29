@@ -139,7 +139,7 @@ impl FailFastReporter {
 
 /// Get the apr CLI version string by running `apr --version`
 fn get_apr_version() -> String {
-    Command::new("apr")
+    Command::new(crate::apr_bin::default_apr_binary())
         .arg("--version")
         .output()
         .ok()
