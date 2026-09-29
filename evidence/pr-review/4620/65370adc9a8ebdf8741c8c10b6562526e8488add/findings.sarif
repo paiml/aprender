@@ -1,0 +1,185 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": [
+            { "id": "pmat.tdg-delta" },
+            { "id": "pmat.complexity-delta" },
+            { "id": "pmat.duplication-hit" },
+            { "id": "pmat.satd-clean" }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "pmat.complexity-delta",
+          "level": "note",
+          "message": {
+            "text": "Re-measured fresh at head 65370adc9a8ebdf8741c8c10b6562526e8488add (this review round's only code change is a test-body rewrite in crates/aprender-serve/src/cuda/gpu_profile.rs; production code in all 9 diffed files is byte-identical to fdc165f50d8856c53013747d4048697f6b6f7d75, confirmed via `diff <(git show fdc165f50d:<file> | sed -n '1,1183p') <(git show 65370adc9a:<file> | sed -n '1,1183p')` returning empty). No complexity delta changed from the prior receipt: run_prefill (generate_2.rs) remains cognitive 17(base)->18(head); the new test function itself is cyclomatic 2 / cognitive 1 (trivial, a for-loop over 3 tuples plus 2 asserts)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["pmat", "analyze", "complexity", "--format", "json", "--files", "<9 diffed paths, comma-joined>"],
+            "exit_code": 0,
+            "stdout_sha256": "see /tmp/cx_new.json in the receipt scratch dir (this run)",
+            "failure_scenario": "N/A - informational, unchanged from the prior receipt; no new regression."
+          }
+        },
+        {
+          "ruleId": "pmat.tdg-delta",
+          "level": "note",
+          "message": {
+            "text": "Per-file TDG re-measured at new head (722fd1621f -> 65370adc9a): identical to the fdc165f50d receipt for all 9 files (gpu_profile.rs A- 88.71->88.60, the only test-touched file, unchanged because pmat's TDG scoring is insensitive to this particular test-body rewrite -- same statement/branch count class). No file crosses below the configured min_grade=B floor."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["pmat", "tdg", "<file>", "--format", "json"],
+            "exit_code": 0,
+            "stdout_sha256": "see /tmp/tdg_new.json in the receipt scratch dir (this run)",
+            "failure_scenario": "N/A - informational grade movement, not a defect; still within gate."
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-hit",
+          "level": "note",
+          "message": {
+            "text": "Re-ran the duplication scan at the new head: still 8 lexical hits, same needles/paths as the prior receipt (half_to_f32 x4 pre-existing shared helper, disable_fp8_for_qk_norm x2 historical audit docs, the two new files x2 identical to the unmerged sibling ref) -- 0 new hits introduced by the test-body rewrite."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["scripts/pr_review_duplication_scan.sh", "--base", "722fd1621ff488b47e821b2cdde7479321c8ce98", "--head", "65370adc9a8ebdf8741c8c10b6562526e8488add", "--rust-semantic", "--json", "dup.json"],
+            "exit_code": 0,
+            "stdout_sha256": "see /tmp/dup_new.json in the receipt scratch dir (hits_total=8, hits_recorded=8, this run)",
+            "failure_scenario": "If the sibling-branch files had diverged in behavior, that would be real duplicated/forked logic; verified identical via git diff, so no such risk."
+          }
+        },
+        {
+          "ruleId": "pmat.satd-clean",
+          "level": "note",
+          "message": {
+            "text": "satd_introduced is empty: 0 TODO/FIXME/HACK/XXX in any of the 9 diffed files, re-verified at the new head."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["pmat", "analyze", "satd", "--format", "json"],
+            "exit_code": 0,
+            "stdout_sha256": "see /tmp/satd_new.json in the receipt scratch dir (total_violations=0, this run)",
+            "failure_scenario": "N/A - clean result."
+          }
+        }
+      ],
+      "invocations": [ { "executionSuccessful": true } ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cuda-docs",
+          "informationUri": "internal:mcp__nvidia-cuda-docs",
+          "rules": [ { "id": "cuda.u32-index-idiom" } ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "cuda.u32-index-idiom",
+          "level": "note",
+          "message": {
+            "text": "Reused from the fdc165f50d receipt: the CUDA-gated production code this citation supports (gdn_prefill_ops.rs / generate_2.rs chunking fix) is byte-identical at this head, so the citation and its judgement (u32-class indices are the CUDA-idiomatic type; the fix's clamp arithmetic is consistent with it) still hold. Not re-queried against the docs corpus this round since nothing it supports changed."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "mcp__nvidia-cuda-docs__search_cuda_docs(\"CUDA kernel grid-stride loop index computed with u32 (uint32_t) integer overflow at 2^32 elements risk\")",
+            "excerpt": "for (unsigned int block_pos = blockIdx.x;; block_pos += gridDim.x)",
+            "excerpt_sha256": "4f0e35d6ddc19306efa8231e3ce549476ff9cc3e98bab37de2f6785a969583e0",
+            "failure_scenario": "If u32 indices were not the CUDA-idiomatic type, the fix's choice of clamp arithmetic in u32 space would itself be non-idiomatic; the corpus confirms it is idiomatic, so no additional finding here."
+          }
+        },
+        {
+          "ruleId": "cuda.u32-index-idiom",
+          "level": "warning",
+          "message": {
+            "text": "DEFECT in the diff under review (not in production code): evidence/pr-review/4620/fdc165f50d8856c53013747d4048697f6b6f7d75/findings.sarif:97 records properties.excerpt_sha256 as the placeholder string \"n/a-short-code-idiom-not-hashed\" for this same excerpt, while the RECEIPT at the same commit (evidence/pr-review/4620/fdc165f50d8856c53013747d4048697f6b6f7d75/receipt.intoto.jsonl, predicate.consultations.cuda.queries[0].excerpt_sha256) correctly records the true digest 4f0e35d6dd...9583e0. Verified: `printf '%s' \"for (unsigned int block_pos = blockIdx.x;; block_pos += gridDim.x)\" | sha256sum` produces exactly the receipt's value, not the SARIF's placeholder. I traced why the guard's own S1.1 rule (scripts/check_pr_review_receipt.sh:1285-1291, \"excerpt_sha256 = sha256(excerpt), over the bytes AS STORED\") did not already catch this at review time: running `bash scripts/check_pr_review_receipt.sh evidence/pr-review/4620/fdc165f50d8856c53013747d4048697f6b6f7d75` rejects earlier, at B1 'receipt is unsigned - no .../receipt.intoto.jsonl.minisig' (line ~1445), which short-circuits before S1.1 is ever reached; `git log --follow` on that .minisig path returns no history, confirming a .minisig was never committed for it (the same 'reviewer writes unsigned, CI signs' convention this receipt itself follows) -- so S1.1 has genuinely never been exercised against this artifact. This is real and guard-provable, but is not a defect in THIS PR's own production code, and it does not block this review: it is a latent data-quality bug in a previously-checked-in evidence file that would surface (reject) the moment that receipt is ever put through the signer."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["sha256sum", "(via printf, matched against the receipt's recorded and SARIF's recorded values)"],
+            "exit_code": 0,
+            "stdout_sha256": "4f0e35d6ddc19306efa8231e3ce549476ff9cc3e98bab37de2f6785a969583e0",
+            "failure_scenario": "If this SARIF file were ever re-submitted through the signer/guard pipeline with S1.1 actually reached (e.g. after a .minisig is attached), `bash scripts/check_pr_review_receipt.sh` would REJECT it at S1.1 (scripts/check_pr_review_receipt.sh:1291) for a cited excerpt whose digest does not match its excerpt -- exactly the failure mode S1.1 exists to catch, just not yet exercised on this file."
+          }
+        }
+      ],
+      "invocations": [ { "executionSuccessful": true } ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "mutation",
+          "informationUri": "internal:targeted-manual-mutation",
+          "rules": [ { "id": "mutation.targeted-probe" } ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "mutation.targeted-probe",
+          "level": "note",
+          "message": {
+            "text": "Targeted manual mutation probe (NOT the formal cargo-mutants --in-diff sweep, which remains unreachable for the CUDA-gated majority of this diff on both lambda [forbidden by HARD RULES] and intel [no ptxas/CUDA device] -- see predicate.consultations.mutation and degraded_reason). On host intel, in a disposable checkout (~/src/aprender-ec-3715-rev, CARGO_TARGET_DIR=$HOME/tgt-ec-3715, copy-edited, never --in-place), confirmed baseline green (cargo test -p aprender-serve --features cuda --lib gpu_profile::pmat3477_fp8_qk_norm_tests: 7/7 passed, log hashed ad5779ab...), then injected a mutant into serial_when_fp16_prefill_does_not_fit's early-return path (crates/aprender-serve/src/cuda/gpu_profile.rs:~1150, the `return false;` guard clause) that sets `self.prefill_path = PrefillPathChoice { path: PrefillPath::Serial, ... }` before returning false. Re-ran the same test set: 2/7 FAILED as expected (log hashed 6f796b7d...), including fit_check_leaves_non_qk_norm_fp8_and_forced_paths_alone (gpu_profile.rs:1255, `assertion left == right failed: left: Serial, right: Batched`) -- exactly the mutant class the OLD test structure (superseded by commit 65370adc9a) could NOT have caught, because its final loop asserted on two freshly-constructed, never-called profile instances instead of the ones the function was actually invoked on. Mutant killed. This directly confirms the new test is non-vacuous for its stated purpose."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["ssh", "intel", "cargo test -p aprender-serve --features cuda --lib gpu_profile::pmat3477_fp8_qk_norm_tests"],
+            "exit_code": 101,
+            "stdout_sha256": "6f796b7d... (mutant run, 2/7 failed; baseline ad5779ab..., 7/7 passed)",
+            "failure_scenario": "A cargo-mutants --in-diff run against this same mutant class would report it SURVIVED under the pre-fix (fdc165f50d) test body and KILLED under this fix (65370adc9a); this manual probe reproduces exactly that delta without needing the formal sweep."
+          }
+        },
+        {
+          "ruleId": "mutation.targeted-probe",
+          "level": "note",
+          "message": {
+            "text": "INDEPENDENT second probe by the cross-vendor agy reviewer (see the antigravity run below for its full consultation record), inside its own disposable git-archive tree (no .git, per S3.E's recipe), targeting the same function with two of its own mutants: (1) `self.prefill_path.path = PrefillPath::Serial` on the early-return path -- CAUGHT by `assert_eq!(p.prefill_path().path, PrefillPath::Batched)`; (2) `self.prefill_path.reason = \"corrupt\"` -- NOT caught (the test does not assert on .reason, which agy itself judged expected/correct scope, since the test's stated purpose is guarding functional `.path` corruption, not the informational `.reason` string). Two independently-run reviewers, on two different hosts, with two independently-authored mutants, converge on the same conclusion: the new test kills the path-corruption mutant class it was written to catch."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["agy", "(disposable git-archive tree, --dangerously-skip-permissions, --print-timeout 30m)"],
+            "exit_code": 0,
+            "stdout_sha256": "see evidence/pr-review/4620/65370adc9a8ebdf8741c8c10b6562526e8488add/agy.json (conversation_id c3ffd2ec-e308-4815-968f-9f0a18339315), staged in the worktree by this same review round",
+            "failure_scenario": "N/A - convergent confirmation, not a new risk. The one mutant agy tried that was NOT caught (.reason string) is out of the test's stated scope, not a gap in it."
+          }
+        }
+      ],
+      "invocations": [ { "executionSuccessful": true } ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "internal:agy",
+          "rules": [ { "id": "agy.finding" } ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "agy.finding",
+          "level": "note",
+          "message": {
+            "text": "agy (gemini-pro-default, model_enum MODEL_PLACEHOLDER_M16, used_claude=false, used_non_gemini_model=false -- confirmed via ~/.gemini/antigravity-cli/conversations/c3ffd2ec-....db gen_metadata, a cross-vendor reviewer per S3.E) reviewed the whole base..head diff fresh this round and reported an empty findings array (reviewed=true, schema_valid=true). Per its own transcript, it independently ran the same experiment this receipt's primary reviewer ran (see the mutation run above): it manually injected two mutants into serial_when_fp16_prefill_does_not_fit's early-return path and confirmed the new test's assert_eq! against p.prefill_path().path catches a Serial-path-corruption mutant that the pre-fix test structure would have missed. It also separately confirmed the FFN/dequant kernel arithmetic (dense_prefill_chunk_rows, Iq4XsDequantKernel row/chunk math) stays within usize/u32 bounds at the diff's own measured cell sizes, with no new defects. Reverified by the primary reviewer: agreed on all points, no contradictions this round (contrast with the prior fdc165f50d round, where agy raised 2 findings later refuted as hallucinated/false-positive by the primary reviewer)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "(disposable git-archive tree of 65370adc9a8ebdf8741c8c10b6562526e8488add)"],
+            "exit_code": 0,
+            "stdout_sha256": "conversation_id c3ffd2ec-e308-4815-968f-9f0a18339315, structured_output={findings:[],reviewed:true}, duration_seconds=258.14, usage={input_tokens:116578,output_tokens:19245,thinking_tokens:16368,cache_read_tokens:1344401,total_tokens:135823}",
+            "failure_scenario": "N/A - clean, convergent second-vendor result; no findings raised this round."
+          }
+        }
+      ],
+      "invocations": [ { "executionSuccessful": true } ]
+    }
+  ]
+}
