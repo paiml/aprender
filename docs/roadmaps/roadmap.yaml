@@ -22147,3 +22147,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4529
+  github_issue: 4529
+  item_type: task
+  title: 'FLOW-003 QM-11: tier router — T0-only docs / selective affected-crates / T3 full; T0 ∥ T1 ∥ T2 parallel-cancel'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-52
+  created: 2026-09-29T07:55:00Z
+  updated: 2026-09-29T07:55:00Z
+  spec: docs/specifications/FLOW-003-queue-and-release-cycle-model.md
+  acceptance_criteria:
+  - 'python3 scripts/ci/tier_router.py --self-test exits 0 with every planted mutant RED'
+  - 'a planted docs-only PR runs T0 only; a planted include_str README change runs selective; a planted Cargo.toml change runs T3; a planted change to crate X runs exactly R''(X)'
+  - 'every gate kept or tightened: the Σ-executed gate checks executed ⊇ owed(tier), T3 = the whole workspace; red/green proof in the receipt'
+  - 'before/after CI timing receipt and a 3-lane quorum on the PR'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on 60/qm10-on-qm09 (QM-09 #4527 + QM-10 #4528); router commits by aprender-a2 carried from a2/qm11-tier-router @a1e847d1a3. Branch-only; lands after 0.70.'
