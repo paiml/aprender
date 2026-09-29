@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "pmat",
+        "status": "consulted-found-nothing",
+        "index_commit": "2989217f66eabee4d86324b847e7ffe3ed2d32c9",
+        "index_is_ancestor": true,
+        "index_worktree_dirty": false,
+        "complexity_delta": [],
+        "tdg_delta": [],
+        "satd_introduced": [],
+        "duplication_hits": 2,
+        "duplication_note": "Same 2 coincidental lexical name-collision hits on the shell function name 'check_pair' against an unrelated file (evidence/parity/l0-1/intel/qwen35-apr-vs-reference/compare_raw_logits.py). Delta since cb7c708e: .github/workflows/ci.yml prefixes the two check_ci_fat_secrets_plumbed.sh invocations (lines 104, 106) with `setsid --wait ` per #4133/check_guard_steps_isolated, plus the CI signer's own committed receipt/minisig for the prior head and a new docs/audits/quorum-PMAT-4510.json quorum-verdict artifact. No complexity/TDG/SATD analyzer exists for .sh/.yaml/.json, so those deltas are legitimately empty."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "1.0.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "mutation",
+        "status": "consulted-found-nothing",
+        "scope": "guard-touching",
+        "attempted": 2,
+        "killed": 2,
+        "survivors": [],
+        "note": "This head's only substantive code change is two `setsid --wait ` prefixes added in .github/workflows/ci.yml (lines 104, 106). Verified directly by mutating each: removing `setsid --wait ` from line 104 alone, then (after byte-for-byte cksum restore) from line 106 alone. Both mutants were killed by scripts/check_guard_steps_isolated.sh (rc=1, FAIL at the exact mutated line, message 'the invocation(s) above share the runner's process group -- prefix `setsid --wait ` (#4133)'). ci.yml restored byte-for-byte (cksum 2789364577 22480) after each mutant; final `git status --short` on .github/ empty. The guard's own --self-test (28 case-table rows including a planted ci/sections.yml mutant) was also re-run and is green (0 failed)."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted-found-nothing",
+        "model_id": "gemini-3.1-pro-high",
+        "reviewed_by_primary": false,
+        "precision_class": "advisory",
+        "note": "Freshly run in a new disposable tree (filesystem copy of the checked-out worktree at this head, .git and evidence/ excluded -- git archive was blocked by the sandbox hook for this lane on this run, so a plain rsync copy was used instead). rc=0, status=SUCCESS, structured_output={\"findings\": [], \"reviewed\": true}, schema-valid. A legitimate 'consulted, found nothing' outcome."
+      }
+    }
+  ]
+}

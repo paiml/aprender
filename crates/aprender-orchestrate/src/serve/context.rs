@@ -224,18 +224,20 @@ impl ContextManager {
             TruncationStrategy::Error => {
                 Err(ContextError::ExceedsLimit { tokens: current, limit: available })
             }
-            TruncationStrategy::SlidingWindow => {
-                Ok(self.truncate_sliding_window(messages, available))
-            }
+            TruncationStrategy::SlidingWindow => self.truncate_sliding_window(messages, available),
             TruncationStrategy::MiddleOut => Ok(self.truncate_middle_out(messages, available)),
         }
     }
 
+    /// Keep the most recent messages that fit. The newest message is never dropped: when it
+    /// cannot fit on its own the window is refused, because sending the older history without
+    /// the turn being answered is a silent wrong answer (#4599: `apr code -p` dropped a >105 KB
+    /// prompt and answered an empty conversation with rc 0).
     fn truncate_sliding_window(
         &self,
         messages: &[ChatMessage],
         available: usize,
-    ) -> Vec<ChatMessage> {
+    ) -> Result<Vec<ChatMessage>, ContextError> {
         let mut result = Vec::new();
         let mut tokens_used = 0;
 
@@ -257,8 +259,14 @@ impl ContextManager {
 
         // Add messages from the end (most recent first)
         let mut recent_msgs: Vec<ChatMessage> = Vec::new();
-        for msg in other_msgs.into_iter().rev() {
+        for (age, msg) in other_msgs.into_iter().rev().enumerate() {
             let msg_tokens = self.estimator.estimate(&msg.content) + 4;
+            if age == 0 && tokens_used + msg_tokens > available {
+                return Err(ContextError::ExceedsLimit {
+                    tokens: tokens_used + msg_tokens,
+                    limit: available,
+                });
+            }
             if tokens_used + msg_tokens <= available {
                 recent_msgs.push(msg.clone());
                 tokens_used += msg_tokens;
@@ -271,7 +279,7 @@ impl ContextManager {
         recent_msgs.reverse();
         result.extend(recent_msgs);
 
-        result
+        Ok(result)
     }
 
     fn truncate_middle_out(&self, messages: &[ChatMessage], available: usize) -> Vec<ChatMessage> {
@@ -325,7 +333,8 @@ impl Default for ContextManager {
 /// Context management errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContextError {
-    /// Context window exceeded and strategy is Error
+    /// Context window exceeded: strategy is `Error`, or the newest message alone does not fit
+    /// a `SlidingWindow` (#4599)
     ExceedsLimit { tokens: usize, limit: usize },
 }
 
