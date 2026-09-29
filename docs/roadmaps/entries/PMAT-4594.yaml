@@ -1,0 +1,22 @@
+- id: PMAT-4594
+  github_issue: 4594
+  item_type: task
+  title: 'fix(guard): check_silicon_coverage.sh scores a short API run listing as STALE 9d (false RED)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-57
+  created: 2026-09-28T14:00:00Z
+  updated: 2026-09-28T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Every created>= listing is cross-checked against the unfiltered newest run; a listing missing a run inside the lookback is re-read once, and still short is NO-GO (unknown, rc 2), never STALE
+  - 'Falsifier: stale evidence (newest nightly 9d old, whole listing) stays RED (self-test row h-real-stale, rc 1)'
+  - 'Falsifier: run 36364433328''s real jobs, fresh, are GREEN (row g-real-green, rc 0)'
+  - The 11:25Z short "21 of 21" listing (run 36410817478) scores GREEN on a whole re-read and NO-GO when short on every read; main's reader scores both STALE (rows i, j)
+  - No lookback window, page cap or policy limit changes
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator ruling 2026-09-28 13:53Z (via the cop): own small PR, first in the queue, on main before the #4512 push.'

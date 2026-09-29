@@ -1359,6 +1359,13 @@ pub(super) fn execute_python_test_with_diagnostics(
 mod execute_python_test_diagnostics_tests {
     use super::execute_python_test_with_diagnostics;
 
+    /// Deadline for the programs below that TERMINATE. It is a hang guard, not
+    /// a speed claim: a program that exits returns at once, so a long deadline
+    /// costs nothing. A 5 s deadline measured `exit_code: None` (killed as a
+    /// timeout) for `assert 1 == 2` under a full `cargo test -p apr-cli --tests`
+    /// on intel, 2 of 2 runs, and passed alone (FLAKE-0).
+    const TERMINATING_DEADLINE_SECS: u64 = 120;
+
     /// Detect whether `python3` is available in the test environment.
     /// The workspace-test CI container does not install python3; these
     /// tests early-return success when python3 is missing so the lib-test
@@ -1382,8 +1389,12 @@ mod execute_python_test_diagnostics_tests {
             return;
         }
         let program = "print('hello')\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
-        assert!(r.success, "program should succeed");
+        let r = execute_python_test_with_diagnostics(program, TERMINATING_DEADLINE_SECS);
+        assert!(
+            r.success,
+            "program should succeed, timed_out={}",
+            r.timed_out
+        );
         assert_eq!(r.exit_code, Some(0));
         assert!(
             r.stderr_capture.is_empty(),
@@ -1401,9 +1412,9 @@ mod execute_python_test_diagnostics_tests {
             return;
         }
         let program = "assert 1 == 2\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
+        let r = execute_python_test_with_diagnostics(program, TERMINATING_DEADLINE_SECS);
         assert!(!r.success);
-        assert_eq!(r.exit_code, Some(1));
+        assert_eq!(r.exit_code, Some(1), "timed_out={}", r.timed_out);
         assert!(
             r.stderr_capture.contains("AssertionError"),
             "expected traceback, got: {}",
@@ -1421,7 +1432,7 @@ mod execute_python_test_diagnostics_tests {
             return;
         }
         let program = "def f(x):\n    return x + 1\n\nassert f(1) == 2\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
+        let r = execute_python_test_with_diagnostics(program, TERMINATING_DEADLINE_SECS);
         assert!(r.success, "passing program must be reported as success");
         assert_eq!(r.exit_code, Some(0));
     }
@@ -1436,7 +1447,7 @@ mod execute_python_test_diagnostics_tests {
         // Emit ~10KB to stderr, then exit 0 → must report success without timeout.
         let program =
             "import sys\nfor _ in range(200):\n    print('x' * 50, file=sys.stderr)\nsys.exit(0)\n";
-        let r = execute_python_test_with_diagnostics(program, 10);
+        let r = execute_python_test_with_diagnostics(program, TERMINATING_DEADLINE_SECS);
         assert!(
             r.success,
             "10KB-stderr passing program timed_out={} exit_code={:?}",
