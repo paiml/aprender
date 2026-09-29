@@ -21190,6 +21190,7 @@
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/format> "gguf"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/greenOn> "gx10"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/greenOn> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/host> "lambda"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/id> "qwen2-1.5b-q4km"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Flambda%2Fqwen2-1.5b-q4km> .
