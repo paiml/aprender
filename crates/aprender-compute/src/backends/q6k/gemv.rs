@@ -6,14 +6,20 @@
 
 use super::{f16_to_f32, SUPER_BLOCK_BYTES, SUPER_BLOCK_SIZE};
 
-/// Fused Q6_K matrix-vector multiply (scalar reference)
-/// Extract a single Q6K quantized value from packed ql/qh arrays.
+/// Extract the 6-bit value of element `idx` (0..256) of one Q6_K super-block, in GGML's layout
+/// (`dequantize_row_q6_K`): each 128-element half `n` owns `ql[64n..64n+64]` and `qh[32n..32n+32]`;
+/// within it, element `32k + l` (k 0..4, l 0..32) takes the low nibble of `ql[l + 32(k&1)]` for k < 2 and
+/// the high nibble for k ≥ 2, and bits `2k..2k+2` of `qh[l]`. The scale is `scales[idx / 16]`.
+///
+/// The previous linear packing (`ql[idx/2]`, `qh[idx/4]`) is not GGML's: on a real GGUF super-block it
+/// disagreed with realizar's production Q6_K kernel by up to 9× (kreg probe, 2026-09-29).
 #[inline(always)]
 fn extract_q6k_scalar(ql: &[u8], qh: &[u8], idx: usize) -> i8 {
-    let ql_byte = ql[idx / 2];
-    let low4 = if idx % 2 == 0 { ql_byte & 0x0F } else { ql_byte >> 4 };
-    let qh_byte = qh[idx / 4];
-    let high2 = (qh_byte >> ((idx % 4) * 2)) & 0x03;
+    let (n, r) = (idx / 128, idx % 128);
+    let (k, l) = (r / 32, r % 32);
+    let ql_byte = ql[64 * n + l + 32 * (k & 1)];
+    let low4 = if k < 2 { ql_byte & 0x0F } else { ql_byte >> 4 };
+    let high2 = (qh[32 * n + l] >> (2 * k)) & 0x03;
     (low4 | (high2 << 4)) as i8 - 32
 }
 
@@ -92,13 +98,7 @@ pub fn matmul_q6k_f32_scalar(
 fn extract_q6k_values(ql: &[u8], qh: &[u8], idx_base: usize) -> [i32; 8] {
     let mut q6_vals = [0i32; 8];
     for i in 0..8 {
-        let idx = idx_base + i;
-        let ql_byte = ql[idx / 2];
-        let low4 = if idx % 2 == 0 { ql_byte & 0x0F } else { ql_byte >> 4 };
-        let qh_byte = qh[idx / 4];
-        let qh_shift = (idx % 4) * 2;
-        let high2 = (qh_byte >> qh_shift) & 0x03;
-        q6_vals[i] = ((low4 | (high2 << 4)) as i32) - 32;
+        q6_vals[i] = i32::from(extract_q6k_scalar(ql, qh, idx_base + i));
     }
     q6_vals
 }

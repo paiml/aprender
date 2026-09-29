@@ -5,13 +5,15 @@
 
 use super::{f16_to_f32, SUPER_BLOCK_BYTES, SUPER_BLOCK_SIZE};
 
-/// Extract a single Q6K quantized value from packed ql/qh arrays.
+/// Extract the 6-bit value of element `idx` of one Q6_K super-block in GGML's layout; the same
+/// mapping as the row-major kernel (`gemv.rs::extract_q6k_scalar`), which documents it.
 #[inline(always)]
 fn extract_q6k_value(ql: &[u8], qh: &[u8], idx: usize) -> i8 {
-    let ql_byte = ql[idx / 2];
-    let low4 = if idx % 2 == 0 { ql_byte & 0x0F } else { ql_byte >> 4 };
-    let qh_byte = qh[idx / 4];
-    let high2 = (qh_byte >> ((idx % 4) * 2)) & 0x03;
+    let (n, r) = (idx / 128, idx % 128);
+    let (k, l) = (r / 32, r % 32);
+    let ql_byte = ql[64 * n + l + 32 * (k & 1)];
+    let low4 = if k < 2 { ql_byte & 0x0F } else { ql_byte >> 4 };
+    let high2 = (qh[32 * n + l] >> (2 * k)) & 0x03;
     (low4 | (high2 << 4)) as i8 - 32
 }
 
