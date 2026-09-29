@@ -146,7 +146,7 @@ pub(crate) fn dequantize_q4_k_superblock(sb_data: &[u8]) -> Vec<f32> {
 pub fn dequantize_q4_k_simd(data: &[u8]) -> Result<Vec<f32>> {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: AVX2 verified at runtime
             return unsafe { dequantize_q4_k_avx2_parallel(data) };
         }
@@ -389,7 +389,7 @@ pub(crate) fn dequantize_q8_0_block(block_data: &[u8]) -> Vec<f32> {
 pub fn dequantize_q8_0_simd(data: &[u8]) -> Result<Vec<f32>> {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: AVX2 verified at runtime
             return unsafe { dequantize_q8_0_avx2_parallel(data) };
         }

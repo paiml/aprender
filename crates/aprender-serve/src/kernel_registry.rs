@@ -102,7 +102,8 @@ impl Target {
     }
 }
 
-/// The ISA features a CPU row may require, as detected on this host.
+/// The ISA features a CPU row may require, as detected on this host and permitted by
+/// `APR_FORCE_ISA` (KTEST-04): a forced-scalar process admits only `isa_features: none` rows.
 fn host_isa_features() -> Vec<&'static str> {
     let mut found = Vec::new();
     #[cfg(target_arch = "x86_64")]
@@ -118,7 +119,12 @@ fn host_isa_features() -> Vec<&'static str> {
                 std::arch::is_x86_feature_detected!("avx512vnni"),
             ),
         ];
-        found.extend(probes.iter().filter(|p| p.1).map(|p| p.0));
+        found.extend(
+            probes
+                .iter()
+                .filter(|p| p.1 && crate::isa::permits(p.0))
+                .map(|p| p.0),
+        );
     }
     #[cfg(target_arch = "aarch64")]
     {
@@ -131,7 +137,12 @@ fn host_isa_features() -> Vec<&'static str> {
             ("i8mm", std::arch::is_aarch64_feature_detected!("i8mm")),
             ("sve", std::arch::is_aarch64_feature_detected!("sve")),
         ];
-        found.extend(probes.iter().filter(|p| p.1).map(|p| p.0));
+        found.extend(
+            probes
+                .iter()
+                .filter(|p| p.1 && crate::isa::permits(p.0))
+                .map(|p| p.0),
+        );
     }
     found
 }

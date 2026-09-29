@@ -26,7 +26,7 @@ use crate::error::{RealizarError, Result};
 pub fn quantize_rmsnorm_q8_0(input: &[f32], norm_weight: &[f32], eps: f32) -> (Vec<f32>, Vec<i8>) {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: Memory safety ensured by bounds checking and alignment
             return unsafe { quantize_rmsnorm_q8_0_avx2(input, norm_weight, eps) };
         }

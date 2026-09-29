@@ -207,7 +207,7 @@ fn fused_q8_0_q8_0_dot_simd(
 ) -> f32 {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             // SAFETY: AVX2 and FMA features checked above
             unsafe {
                 return fused_q8_0_q8_0_dot_avx2(

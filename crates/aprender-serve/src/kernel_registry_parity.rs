@@ -563,7 +563,7 @@ fn isa_detected() -> Vec<&'static str> {
             ("avx512bw", is_x86_feature_detected!("avx512bw")),
             ("avx512vnni", is_x86_feature_detected!("avx512vnni")),
         ] {
-            if on {
+            if on && crate::isa::permits(name) {
                 v.push(name);
             }
         }
@@ -578,7 +578,7 @@ fn isa_detected() -> Vec<&'static str> {
             ),
             ("i8mm", std::arch::is_aarch64_feature_detected!("i8mm")),
         ] {
-            if on {
+            if on && crate::isa::permits(name) {
                 v.push(name);
             }
         }
@@ -629,6 +629,7 @@ fn receipt_header_for(
         "host": host,
         "host_arch": host_arch(),
         "isa_detected": isa_detected(),
+        "isa_forced": crate::isa::ceiling().name(),
         "build_identity": sha,
         "input_set": {
             "source_sha256": set.source_sha256,
