@@ -1221,13 +1221,16 @@ PY
         # red with no code change. Judge head vs BASE, one pmat, one run, baseline neutralised in
         # both trees (scripts/check_cb200_head_vs_base.sh). BASE = $DOGFOOD_CB200_BASE, else the
         # newest FINAL release tag (vX.Y.Z, no -rc/-dev; not the merge-base, which compares a tree to itself). Unmeasurable (rc 3) stays FAIL, never a pass.
-        CB200_BASE=${DOGFOOD_CB200_BASE:-$(bash scripts/check_cb200_head_vs_base.sh --default-base)}
+        CB200_BASE=${DOGFOOD_CB200_BASE:-$(bash "$SKILL_DIR/check_cb200_head_vs_base.sh" --default-base)}
         if [ -z "$CB200_BASE" ]; then
           mark pmat-comply FAIL "CB-200 = Fail against the stored baseline and no BASE ref to compare to (set DOGFOOD_CB200_BASE) — NOT MEASURED"
         else
-          bash scripts/check_cb200_head_vs_base.sh --base "$CB200_BASE" --head HEAD > "$WORKLOG/cb200.txt" 2>&1; CB200_RC=$?
+          bash "$SKILL_DIR/check_cb200_head_vs_base.sh" --base "$CB200_BASE" --head HEAD > "$WORKLOG/cb200.txt" 2>&1; CB200_RC=$?
           CB200_MSG=$(tail -n 1 "$WORKLOG/cb200.txt")
-          if [ "$CB200_RC" -eq 0 ]; then
+          # The helper measures the committed HEAD; a dirty tree would be judged as if clean.
+          if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+            mark pmat-comply FAIL "CB-200 head-vs-base measures committed HEAD but the tree is dirty — NOT MEASURED"
+          elif [ "$CB200_RC" -eq 0 ]; then
             mark pmat-comply PASS "CB-200 stored baseline exceeded but head <= base ($CB200_MSG) — debt did not grow"
           else
             mark pmat-comply FAIL "CB-200 head vs base rc=$CB200_RC: $CB200_MSG"

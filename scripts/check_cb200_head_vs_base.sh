@@ -72,6 +72,8 @@ except Exception as e:
 if c.get("status") == "Skip":
     print("NOT-MEASURED: CB-200 is Skip (no .pmat/context.db?)", file=sys.stderr); sys.exit(3)
 m = re.search(r"(\d+) definition\(s\) below minimum grade", c.get("message", ""))
+if not m and c.get("status") == "Pass":
+    print(0); sys.exit(0)  # baseline neutralised to 0: a clean Pass means zero definitions below grade
 if not m:
     print("NOT-MEASURED: CB-200 %s carries no count: %r" % (c.get("status"), c.get("message", "")[:80]), file=sys.stderr); sys.exit(3)
 print(m.group(1))' || { printf 'NOT-MEASURED %s (%s)\n' "$label" "$ref" >&2; return 3; }
@@ -119,7 +121,8 @@ case "$1" in
         case "$m" in
             ok)   printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Fail","message":"%s definition(s) below minimum grade B - baseline"}]}' "$n" ;;
             skip) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Skip","message":"Not measured"}]}' ;;
-            nocount) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Pass","message":"fine"}]}' ;;
+            nocount) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Fail","message":"fine"}]}' ;;
+            clean) printf '{"summary":{},"checks":[{"name":"CB-200: TDG Grade Gate","status":"Pass","message":"fine"}]}' ;;
             garbage) printf 'not json' ;;
         esac ;;
 esac
@@ -137,6 +140,7 @@ FAKE
         commit 3  skip skipped
         commit 3  nocount nocount
         commit 3  garbage garbage
+        commit 0  clean clean
         git tag v1.0.0 base; git tag v1.1.0 lower; git tag v1.2.0-rc.1 higher; git tag v9.9.9 garbage
     ) || { rm -rf "${d:?}"; return 3; }
     check() { # <name> <base> <head> <want-rc> [<rc-source-dir override>]
@@ -151,13 +155,14 @@ FAKE
     check "head Skip is not measured"   base skipped  3
     check "no count is not measured"    base nocount  3
     check "garbage is not measured"     base garbage  3
+    check "clean Pass counts as zero"   base clean    0
     check "base Skip is not measured"   skipped equal 3
     check "unresolvable base"           no-such-ref equal 3
     ( cd "$d/r" && PMAT_BIN="$pm" bash "$SELF" --head equal >"$d/out" 2>&1 ); [ $? = 2 ] \
         && printf '  ok    %-28s rc=2\n' "no --base is a usage error" \
         || { printf '  FAIL  no --base must be rc 2\n'; bad=$((bad + 1)); }
     check "same commit is vacuous"      equal equal   3
-    ( cd "$d/r" && [ "$(bash "$SELF" --default-base)" = v1.1.0 ] ) \
+    ( cd "$d/r" && git checkout -q garbage && [ "$(bash "$SELF" --default-base)" = v1.1.0 ] ) \
         && printf '  ok    %-28s v1.1.0\n' "default-base skips rc + tag at HEAD" \
         || { printf '  FAIL  default-base want v1.1.0\n'; bad=$((bad + 1)); }
     ( cd "$d/r" && git checkout -q lower && [ "$(bash "$SELF" --default-base)" = v1.0.0 ] ) \

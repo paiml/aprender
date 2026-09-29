@@ -13,7 +13,7 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 
 1. `scripts/check_cb200_head_vs_base.sh` (new): measures HEAD and BASE with one pinned `$PMAT_BIN` in one run, `[tdg] baseline`
    set to 0 in both scratch trees (the stored value cannot decide anything). Exit 0 head ≤ base, 1 head > base, 2 usage,
-   3 NOT MEASURED (Skip, no count, unparsable, unresolvable ref, `PMAT_BIN` unset). Never a pass on 3. `--selftest`: 9 rows.
+   3 NOT MEASURED (Skip, no count, unparsable, unresolvable ref, `PMAT_BIN` unset). Never a pass on 3. `--selftest`: 13 rows.
 2. `scripts/dogfood.sh`: on CB-200 `Fail` (stored baseline exceeded) compares head to `$DOGFOOD_CB200_BASE`, default the newest
    final `vX.Y.Z` tag (v0.69.3 today). Pass/Warn unchanged; Skip/absent still FAIL; anything unmeasurable still FAIL.
    It only turns a stored-limit FAIL into a head-vs-base verdict, so it cannot loosen anything that was RED because of new debt.
@@ -29,7 +29,7 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 | Base v0.69.3 = 618, main = 622 (+4, not +2) | real pmat 3.42.0, baseline zeroed, DB diff by (file, fn): the 4 above |
 | GREEN | `check_cb200_head_vs_base.sh --base v0.69.3 --head HEAD` → `head 618 <= base 618`, rc 0 (pmat 3.42.0) |
 | RED | same script `--head origin/main` (00052c0128) → `head 622 > base 618`, rc 1 (see PR comment for the run) |
-| Selftest polarities | 9/9: equal/lower green; higher red with stored 999; Skip/no-count/garbage/unresolvable = rc 3; no --base = rc 2 |
+| Selftest polarities | 13/13: clean Pass = 0; equal/lower green; higher red with stored 999; Skip/no-count/garbage/unresolvable = rc 3; no --base = rc 2 |
 | valid_under refactor | `cargo test -p aprender-contracts --lib valid_under` 17 passed |
 | shards refactor | golden diff old vs new, ALONE/PACK/DEEP shrunk so every branch runs: shard dirs byte-identical, solo and error paths identical |
 | git_patch_id refactor | old vs new on 60 `git log -p` commits + 5 `--binary` commits, `--stable/--verbatim/--unstable`: output byte-identical |
@@ -55,3 +55,9 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 - No dogfood-level fixture: the `Fail)` arm only maps the script's rc (0 PASS, else FAIL); the decision logic and the base choice live in the
   script and are what the selftest drives.
 - Refactors in scope: the cop ruled the 4 added findings are fixed in this PR (main is +4 over v0.69.3, not +2).
+
+## Round-4 dispositions
+- Pass/Warn arms are NOT re-judged head-vs-base: they already pass on the scanner's own verdict, so the change only ever turns a stored-baseline Fail into a measured comparison (never weakens a pass; cost of two extra full scans on every green run not warranted by the ruling).
+- Helper is called via `$SKILL_DIR` (cwd-independent); guards check_verifier_pinning/check_dogfood_shim/check_dogfood_coverage rc 0.
+- Clean Pass with baseline neutralised (no count in message) = 0, selftest row added (13/13).
+- Dirty tree in the release arm = FAIL NOT MEASURED (helper measures committed HEAD).
