@@ -53,7 +53,11 @@ while IFS='|' read -r g_pkg g_feat g_file g_args; do
   case "$g_feat" in *cuda*) echo "RED   feature group $g_pkg asks for cuda: no runner has a GPU"; exit 1 ;; esac
   gx+=(--exclude "$g_file"); rows+=("$g_pkg|$g_feat|$g_file|$g_args")
 done < "$groups"
-"$cargo" mutants --workspace "${ex[@]}" "${gx[@]}" --in-diff "$diff" --shard "$((k - 1))/$n" \
+# --copy-vcs true: the scratch copy keeps .git, so a test that compares HEAD with origin/main (the contracts lint
+# refinement gate) runs as it does in workspace-test. Without it that test fails the unmutated baseline and the
+# shard tests nothing (run 36538406766: every default-run baseline FAILED -> 3527 MISSING).
+vcs=(--copy-vcs true)
+"$cargo" mutants --workspace "${ex[@]}" "${gx[@]}" --in-diff "$diff" --shard "$((k - 1))/$n" "${vcs[@]}" \
   --no-times --timeout 900 -j "$jobs" --output "$out/run" -- --lib; rc=$?
 oc="$out/run/mutants.out/outcomes.json"
 [ -f "$oc" ] || { echo "RED   cargo mutants exited $rc and wrote no outcomes.json: the shard died"; exit 1; }
@@ -67,7 +71,7 @@ for row in "${rows[@]}"; do
     || { echo "RED   feature group $g_pkg ($g_feat) --list failed -- $(tail -1 "$out/group-$i.err")"; exit 1; }
   gn=$(grep -c . "$out/group-$i.list")
   [ "$gn" -gt 0 ] || { echo "group $i $g_pkg ($g_feat): 0 mutants in this shard"; continue; }
-  "$cargo" mutants "${gsel[@]}" --no-times --timeout 900 -j "$jobs" --output "$out/group-$i" -- "${targs[@]}"; grc=$?
+  "$cargo" mutants "${gsel[@]}" "${vcs[@]}" --no-times --timeout 900 -j "$jobs" --output "$out/group-$i" -- "${targs[@]}"; grc=$?
   goc="$out/group-$i/mutants.out/outcomes.json"
   [ -f "$goc" ] || { echo "RED   feature group $g_pkg ($g_feat) exited $grc and wrote no outcomes.json for $gn mutant(s)"; exit 1; }
   echo "group $i $g_pkg --features $g_feat: $gn mutant(s), cargo mutants rc $grc"

@@ -12,6 +12,7 @@
 #   red     no group rows at all: gated mutants run default, MISSED  -> checker RED (the old false-red stays RED)
 #   red     a group run that writes no outcomes.json                 -> the shard is dead (rc 1)
 #   red     a cuda row                                               -> the shard refuses it (rc 1)
+# The fake cargo also dies on any run without --copy-vcs, so dropping it from either call turns all-caught DEAD.
 # It also checks the real groups file parses and names only files that exist.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
@@ -33,6 +34,8 @@ sel = [m for m in U if (m.startswith(opt("--file")) if grp else not any(m.starts
 if opt("--shard"):
     k, n = map(int, opt("--shard").split("/"))
     sel = [m for m in sel if U.index(m) % n == k]
+if "--list" not in a and "--copy-vcs" not in a:
+    sys.exit(4)   # a run without .git in its scratch copy: the real baseline fails (run 36538406766)
 if "--list" in a:
     print("\n".join(U if not grp and not opt("--shard") else sel)); sys.exit(0)
 mode = os.environ.get("FAKE_MODE", "")
