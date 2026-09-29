@@ -208,7 +208,7 @@ jobs:
               esac
               ldd --version | head -1 > /workspace/target/BUILDER_GLIBC
               rustc --version > /workspace/target/BUILDER_RUSTC
-              cargo build --release --locked --bin pv -p aprender-contracts-cli --target "$T"
+              cargo build --release --locked --bin pv -p aprender-contracts-cli --features update-check,build-sha --target "$T"
               strip "/workspace/target/$T/release/pv"'
           mkdir -p "target/$T/release"
           cp "$CACHE/target/$T/release/pv" "target/$T/release/pv"

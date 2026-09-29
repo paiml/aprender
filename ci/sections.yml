@@ -401,6 +401,44 @@ jobs:
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
           grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+      # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
+      # refinement gate to RUN whenever CI is set, and that gate compares HEAD with
+      # merge-base(HEAD, origin/main), else the origin/main tip. This section clones at
+      # depth 1 and only the tier step's pull_request arm fetched a main, so a
+      # workflow_dispatch / merge_group / push shard had no base and the test panicked
+      # "the refinement gate declined". Operator ruling (2026-09-28 09:41): compare HEAD
+      # with the EVENT's base commit -- pull_request.base.sha, merge_group.base_sha,
+      # push's `before` -- and fall back to the origin/main tip only for
+      # workflow_dispatch. That commit is pinned as refs/remotes/origin/main, so at
+      # depth 1 (no merge-base) the gate's tip fallback compares against exactly it.
+      # AFTER the tier step: its pull_request arm fetches main's CURRENT tip into
+      # origin/main, which would replace the base. A missing base fails the step here,
+      # loudly, instead of reaching the test as a skipped gate.
+      - name: Pin the event's base commit as origin/main (refinement gate comparand, aprender-4502)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request) base="${PR_BASE_SHA:-}" ;;
+            merge_group) base="${MG_BASE_SHA:-}" ;;
+            push) base="${PUSH_BEFORE:-}" ;;
+            workflow_dispatch)
+              git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+              printf 'refinement base: origin/main tip %s (workflow_dispatch has no event base)\n' "$(git rev-parse origin/main)"
+              exit 0
+              ;;
+            *) printf '::error::refinement base: event %s has no base rule\n' "${GITHUB_EVENT_NAME}"; exit 1 ;;
+          esac
+          if ! printf '%s' "$base" | grep -Eq '^[0-9a-f]{40}$' || [ "$base" = 0000000000000000000000000000000000000000 ]; then
+            printf '::error::refinement base: %s event carries no base sha (got "%s")\n' "${GITHUB_EVENT_NAME}" "$base"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$base"
+          git update-ref refs/remotes/origin/main "$base"
+          printf 'refinement base: %s base %s pinned as origin/main\n' "${GITHUB_EVENT_NAME}" "$(git rev-parse 'origin/main^{commit}')"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
@@ -438,8 +476,12 @@ jobs:
         # comes from root Cargo.toml [profile.test]; the CARGO_PROFILE_*_DEBUG
         # env vars are kept as belt-and-suspenders.
         timeout-minutes: 110
+        # safe.directory: the container runs as root over a host-owned /workspace, so
+        # git refuses it ("dubious ownership") and the pinned origin/main above never
+        # resolves -- the refinement gate then skips and its CI assert fails (aprender-4502).
         run: |
           docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -1663,7 +1705,7 @@ jobs:
         run: setsid --wait bash scripts/check_pr_review_wiring.sh
       # #4441 passed FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (no "64"), so pr-review-sign
       # read an empty key and Arm 4 went RED on every new PR. A section's
-      # secrets.NAME reaches it only through ci.yml's FAT_SECRET_NAME. Case table first.
+      # a secrets.<NAME> read reaches it only through ci.yml's FAT_SECRET_<NAME>. Case table first.
       - name: "Fat-job secret pass-through case table (6 rows)"
         run: setsid --wait bash scripts/check_fat_secrets_passed.sh --self-test
       - name: Every secret a section reads is passed to the fat job under its own name
@@ -2221,6 +2263,21 @@ jobs:
       # (text-only, no build) runs first, per the convention above.
       - name: Renamed-crate facades case table
         run: setsid --wait bash scripts/check_facade_compat.sh --self-test
+      # #4587 review B3 (PR-REVIEW-SKILL-002 v2 S3.D): a guard with only its own
+      # self-test is a guard nobody has shown can turn RED. Each mutation set applies
+      # every drop/flip to a COPY and fails on any survivor or any patch that did not
+      # apply. The two lean guards were added with no CI caller at all; they run here.
+      - name: scoped facade allowlist can still turn RED (17 mutants)
+        run: setsid --wait bash scripts/mutate_facade_compat_guard.sh
+      - name: lean guards (leanchecker scoped, modules reachable) + their mutation sets
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_leanchecker_scoped.sh --self-test
+          setsid --wait bash scripts/check_leanchecker_scoped.sh
+          setsid --wait bash scripts/check_lean_modules_reachable.sh --self-test
+          setsid --wait bash scripts/check_lean_modules_reachable.sh
+          setsid --wait bash scripts/mutate_leanchecker_scoped_guard.sh
+          setsid --wait bash scripts/mutate_lean_modules_reachable_guard.sh
       - name: provable-contracts 0.3.1 code still compiles against the facades
         run: setsid --wait bash scripts/check_facade_compat.sh
       # aprender#2628: check_facade_compat.sh proves the facades COMPILE and are
@@ -2892,8 +2949,11 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 15
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # B1: the signature is posted as a check run, so the one write this section needs
+    # is checks. It no longer pushes, so contents is read-only.
     permissions:
-      contents: write
+      contents: read
+      checks: write
     steps:
       - name: Checkout the PR head
         uses: actions/checkout@v7
@@ -2919,48 +2979,68 @@ jobs:
         shell: bash
         run: bash scripts/pr_review_sign_receipt.sh --self-test
 
-      - name: Sign this PR's receipt, if it has an unsigned one
+      # B1 (operator 2026-09-28 14:52Z): the signature is a CHECK RUN on the head sha,
+      # never a commit. A commit by the signer made the PR head a bot commit, and under
+      # the approval policy a bot-actor head is action_required with 0 jobs and never
+      # fires pull_request_target (Arm 4) at all. The trusted comment binds
+      # `pr= head= pid=` under the signature; Arm 4 requires head= to be the PR head it
+      # judges and pid= the diff it computes, so a signature cannot be replayed onto
+      # another head or another diff.
+      - name: Sign this PR's unsigned receipt(s), bound to the head sha
         shell: bash
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
         run: |
           set -euo pipefail
+          # Sign exactly the head the event names, not whatever the branch moved to.
+          git checkout -q --detach "$PR_HEAD_SHA"
           root="evidence/pr-review/$PR_NUMBER"
+          sigs="$RUNNER_TEMP/pr-review-signatures.json"
+          printf '{}' > "$sigs"
           if [ ! -d "$root" ]; then
             echo "no receipt directory $root — nothing to sign."
             echo "The review is still owed; the S13.11 shadow lane records its absence."
             exit 0
           fi
           signed_any=0
-          # A receipt with a document and no signature is the only thing this touches.
+          # A receipt with a document and no COMMITTED signature is the only thing this touches.
           while IFS= read -r rcpt; do
             d=$(dirname "$rcpt")
-            [ -f "$rcpt.minisig" ] && { echo "already signed: $d"; continue; }
+            [ -f "$rcpt.minisig" ] && { echo "already signed (committed .minisig): $d"; continue; }
             if [ -z "${PR_REVIEW_SIGNING_KEY_B64:-}" ]; then
               echo "::error::$d carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty."
               echo "::error::A receipt that cannot be signed cannot be verified by Arm 4."
               exit 1
             fi
-            bash scripts/pr_review_sign_receipt.sh "$d"
+            pid=$(jq -r '.predicate.diff_patch_id // "none"' "$rcpt")
+            PR_REVIEW_SIGN_BIND="pr=$PR_NUMBER head=$PR_HEAD_SHA pid=$pid" \
+              bash scripts/pr_review_sign_receipt.sh "$d"
+            jq --arg k "$(basename "$d")" --rawfile v "$rcpt.minisig" '.[$k] = $v' "$sigs" > "$sigs.new"
+            mv "$sigs.new" "$sigs"
+            # The signature leaves as a check run; it is never staged, committed or pushed.
+            rm -f "${rcpt:?}.minisig"
             signed_any=1
           done < <(find "$root" -name receipt.intoto.jsonl -type f)
           echo "signed_any=$signed_any" >> "$GITHUB_ENV"
 
-      - name: Commit the signature back to the PR branch
+      - name: Post the signature as a check run on the head sha (never a commit)
         if: env.signed_any == '1'
         shell: bash
         env:
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name  "aprender-pr-review-signer"
-          git config user.email "noreply@anthropic.com"
-          git add evidence/pr-review
-          git commit -m "chore(pr-review): sign this PR's receipt (PR-REVIEW-SKILL-002 v2 §4.3 CI signer)"
-          # Never --force. A race with the author's own push fails this step and the
-          # next run signs it; a force-push would silently discard their commit.
-          git push origin "HEAD:$PR_HEAD_REF"
+          sigs="$RUNNER_TEMP/pr-review-signatures.json"
+          jq -n --arg h "$PR_HEAD_SHA" --rawfile t "$sigs" '{
+              name: "pr-review-signature", head_sha: $h,
+              status: "completed", conclusion: "success",
+              output: { title: "PR-REVIEW-SKILL-002 v2 §4.3 receipt signature(s)",
+                        summary: "minisign signatures keyed by receipt directory; the trusted comment binds pr= head= pid=. Verified by Arm 4 in the pr-review-quorum check.",
+                        text: $t } }' \
+            | gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" --input - --jq '"posted check run \(.id) on \(.head_sha)"'
 
   # ---------------------------------------------------------------------------
   # RECEIPT PRESENCE, AS A FAST REQUIRED CHECK.
@@ -3717,6 +3797,14 @@ jobs:
           else
             echo "has_rs=false" >> "$GITHUB_OUTPUT"
             echo "No .rs path in the diff ($(grep -c . pr.files || true) path(s)) -- nothing to mutate; the mutation steps skip and the job passes"
+          fi
+          # #4587 A' (operator 2026-09-29 06:36Z): a head ref in ci/mutants-table-refs.txt (PR-1 and PR-2 of 0.70
+          # only) is judged by the CI survivor table -- the mutants-shard matrix over the WHOLE diff, cap 0, verified
+          # by mutants-table -- and `gate` requires mutants-table to succeed for exactly these refs, read from the
+          # same file at the same commit. So this section hands over; it does not pass anything unjudged.
+          if grep -v '^#' ci/mutants-table-refs.txt | grep -qxF -- "$HEAD_REF"; then
+            echo "has_rs=false" >> "$GITHUB_OUTPUT"
+            echo "head ref $HEAD_REF is in ci/mutants-table-refs.txt: judged by the mutants-shard matrix + mutants-table (gate requires it)"
           fi
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
         if: steps.prdiff.outputs.has_rs == 'true'

@@ -1264,7 +1264,7 @@ test-audio-full: ## Run all audio tests including ALSA (if available)
 # run ...` handed scripts/pv_bin.sh the string "cargo run ..." whenever a caller
 # exported PV_BIN=/path/to/pv -- the one override pv_bin.sh honours -- and every
 # `. scripts/pv_bin.sh` step refused with `not executable: cargo run ...`.
-PV_CARGO_RUN := cargo run --release -p aprender-contracts-cli --bin pv --
+PV_CARGO_RUN := cargo run --release -p aprender-contracts-cli --bin pv --features update-check,build-sha --
 BINDING := contracts/aprender/binding.yaml
 CONTRACTS := contracts/softmax-kernel-v1.yaml \
              contracts/rmsnorm-kernel-v1.yaml \

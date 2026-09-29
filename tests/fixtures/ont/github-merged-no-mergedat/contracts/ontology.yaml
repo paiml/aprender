@@ -215,17 +215,20 @@ readers:
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs
 
-# fold #4431: ONT-4c's Σ class 7 — every implemented entity type names its shape-targeting default
+# The class a shape with no `targetClass` targets, by entity type (sigma.rs integrity rule; same values as contracts/ontology.yaml).
 entity_type_target_class:
   pv-contract: ont:Contract
+  readme: readme:Readme
+  llm-context: llm:LlmContext
+  csv: csv:Dataset
+  apr-model: model:AprModel
+  gguf: model:Model
   json: ~
   code: ~
   lean: ~
-  apr-model: model:AprModel
-  gguf: model:Model
   parity-receipt: ~
   release-evidence: ~
-  repo: ~
-  issue: ~
-  pull-request: ~
-  milestone: ~
+  repo: ont:Repo
+  issue: ont:Issue
+  pull-request: ont:PullRequest
+  milestone: ont:Milestone

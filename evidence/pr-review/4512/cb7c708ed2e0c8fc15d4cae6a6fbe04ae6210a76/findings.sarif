@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "pmat",
+        "status": "consulted-found-nothing",
+        "index_commit": "cb7c708ed2e0c8fc15d4cae6a6fbe04ae6210a76",
+        "index_is_ancestor": true,
+        "index_worktree_dirty": false,
+        "complexity_delta": [],
+        "tdg_delta": [],
+        "satd_introduced": [],
+        "duplication_hits": 2,
+        "duplication_note": "2 coincidental lexical name-collision hits on the common shell function name 'check_pair' against an unrelated file (evidence/parity/l0-1/intel/qwen35-apr-vs-reference/compare_raw_logits.py); not a clone of the PR's new logic. No complexity/TDG/SATD analyzer exists for .sh/.yaml, so complexity_delta/tdg_delta/satd_introduced are legitimately empty for all 5 changed files (ci.yml, pr-review-quorum.yml, check_ci_fat_secrets_plumbed.sh, pr_review_patch_id.sh, check_pr_review_arm4.sh; plus the two roadmap yaml files) -- confirmed via pmat's own not-analyzed listing, not assumed. Delta since a28e4534: pr-review-quorum.yml step name '23 rows' -> '25 rows' only; grep for permissions:/on:/secrets\\. over the changed lines returns 0 matches."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "1.0.0",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "mutation",
+        "status": "consulted-found-nothing",
+        "scope": "guard-touching",
+        "attempted": 5,
+        "killed": 5,
+        "survivors": [],
+        "note": "Freshly re-executed for this head (not reused from a28e4534): 5 manual mutants across scripts/check_ci_fat_secrets_plumbed.sh and scripts/lib/pr_review_patch_id.sh, each killed by the target script's own --self-test / check_pr_review_arm4.sh --self-test, each restored byte-for-byte (cksum-verified)."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted-found-nothing",
+        "model_id": "gemini-3.1-pro-high",
+        "reviewed_by_primary": false,
+        "precision_class": "advisory",
+        "note": "agy ran successfully (rc=0, status=SUCCESS, structured_output.reviewed=true, schema-valid) against the full base(c115c5ed)->head(cb7c708e) diff in a disposable tree and returned zero findings for this head -- a valid 'consulted, found nothing' outcome per SKILL.md Sec 3.0, distinct from the 4 advisory findings returned on the prior head a28e4534."
+      }
+    }
+  ]
+}

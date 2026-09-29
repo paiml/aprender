@@ -503,6 +503,16 @@ const CASES: &[Case] = &[
             f.metadata = format!("{METADATA_OK}  competitor: \"THIS-COMPETITOR-DOES-NOT-EXIST\"\n");
         },
     },
+    // VS-COUNT-001 (#2648): kind-independent except for `kind: schema` (a Warning).
+    // The fixture carries ONE obligation, so a stated total of 2 is the single
+    // disagreement; the appended block is the only change.
+    Case {
+        rule: "VS-COUNT-001",
+        sev: Sev::Error,
+        build: |f| {
+            f.extra = "verification_summary:\n  total_obligations: 2\n".to_string();
+        },
+    },
 ];
 
 // ---------------------------------------------------------------------------

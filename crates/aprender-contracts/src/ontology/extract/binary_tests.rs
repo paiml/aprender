@@ -203,6 +203,27 @@ fn a_workspace_root_with_no_snapshot_is_red_not_vacuous() {
     assert!(s.errors.is_empty() && !s.at_workspace_root);
 }
 
+/// A workspace that declares no bin target (the ont fixtures' `[workspace]` roots) has nothing to snapshot: zero
+/// census, zero lines, no refusal. The census still being read is what keeps the three-target case above red.
+#[test]
+fn a_workspace_root_with_no_bin_target_needs_no_snapshot() {
+    let d = tempfile::tempdir().unwrap();
+    write(
+        d.path(),
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"crates/kern\"]\n",
+    );
+    write(
+        d.path(),
+        "crates/kern/Cargo.toml",
+        "[package]\nname = \"kern\"\n",
+    );
+    write(d.path(), "crates/kern/src/lib.rs", "");
+    let s = extract_at(d.path(), &mut Graph::default());
+    assert_eq!((s.targets, s.census), (0, Some(0)));
+    assert!(s.errors.is_empty(), "{:?}", s.errors);
+}
+
 #[test]
 fn the_ledger_join_finds_unledgered_and_orphans_both_ways() {
     let snap = mutate("apr-cli", |v| {

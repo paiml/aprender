@@ -95,7 +95,11 @@ self_test() {
     grep -v '^import ProvableContracts.Defs.GPU$' "$d/ProvableContracts.lean" > "$d/transitive/ProvableContracts.lean"
     printf 'import ProvableContracts.Hub\n' >> "$d/transitive/ProvableContracts.lean"
     mk noroot;     rm -f -- "$d/noroot/ProvableContracts.lean"
-    for row in "0 real" "1 unimported" "1 newfile" "1 dangling" "0 transitive" "2 noroot" "1 unlisted" "1 stale"; do
+    # nodir: a root file with no ProvableContracts/ tree is rc 2, not a dangling-import rc 1
+    mk nodir;      rm -rf -- "${d:?}/nodir/ProvableContracts"
+    # notlean: only *.lean files are modules; a non-Lean file beside them is not an orphan
+    mk notlean;    printf 'not a module\n' > "$d/notlean/ProvableContracts/NOTES.md"
+    for row in "0 real" "1 unimported" "1 newfile" "1 dangling" "0 transitive" "2 noroot" "1 unlisted" "1 stale" "2 nodir" "0 notlean"; do
         want=${row%% *}; name=${row#* }
         reach "$d/$name" > /dev/null; rc=$?
         if [ "$rc" = "$want" ]; then echo "  ok   $name -> rc $rc"; else echo "  FAIL $name: wanted rc $want, got $rc"; fail=1; fi

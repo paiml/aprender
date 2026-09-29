@@ -268,6 +268,7 @@ pub fn parse_shapes_with(
         out.push(s);
     }
     let Some(list) = doc.get("shapes") else {
+        apply_allow_empty(stem, doc, &mut out)?;
         return Ok(out);
     };
     let seq = list.as_sequence().ok_or_else(|| ShapeError::Malformed {
@@ -301,7 +302,52 @@ pub fn parse_shapes_with(
             0,
         )?);
     }
+    apply_allow_empty(stem, doc, &mut out)?;
     Ok(out)
+}
+
+/// The contract-level `allow_empty: {<shape id>: "<why>"}` map — the same exemption as a shape's own
+/// `allowEmpty`, declared OUTSIDE the shape so a released pv that predates the key still parses the shape
+/// (0.69.1 refuses an unknown shape key; the fleet-pinned shapes gate runs it, #4587). An id the contract
+/// does not declare, a blank reason, or a shape that also says `allowEmpty` is malformed.
+fn apply_allow_empty(
+    stem: &str,
+    doc: &serde_yaml::Value,
+    shapes: &mut [NodeShape],
+) -> Result<(), ShapeError> {
+    let Some(v) = doc.get("allow_empty") else {
+        return Ok(());
+    };
+    let malformed = |what: String| ShapeError::Malformed {
+        shape: stem.to_string(),
+        what,
+    };
+    let map = v
+        .as_mapping()
+        .ok_or_else(|| malformed("`allow_empty:` is not a mapping".into()))?;
+    for (k, reason) in map {
+        let id = k
+            .as_str()
+            .ok_or_else(|| malformed("an `allow_empty:` key is not a shape id".into()))?;
+        let reason = match reason.as_str().map(str::trim) {
+            Some(r) if !r.is_empty() => r.to_string(),
+            _ => {
+                return Err(malformed(format!(
+                    "`allow_empty.{id}` must be a non-empty reason string"
+                )))
+            }
+        };
+        let shape = shapes.iter_mut().find(|s| s.id == id).ok_or_else(|| {
+            malformed(format!(
+                "`allow_empty.{id}` names no shape in this contract"
+            ))
+        })?;
+        if shape.allow_empty.is_some() {
+            return Err(malformed(format!("`{id}` declares allowEmpty twice")));
+        }
+        shape.allow_empty = Some(reason);
+    }
+    Ok(())
 }
 
 /// Σ `entity_type_target_class[entity.type]`, expanded. No entity type is special-cased (v4.16 D-T1 replaced
@@ -1361,6 +1407,31 @@ mod tests {
             parse_shape("t", &doc),
             Err(ShapeError::Malformed { .. })
         ));
+    }
+
+    #[test]
+    fn a_contract_level_allow_empty_map_exempts_by_id_and_refuses_a_stray_or_double_one() {
+        let list = |extra: &str, own: &str| {
+            format!("entity: {{type: pv-contract}}\n{extra}shapes:\n  - {{id: a, {own}properties: []}}\n  - {{id: b, properties: []}}\n")
+        };
+        let parse = |yaml: &str| {
+            let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            parse_shapes_with("t", &doc, &pv_map())
+        };
+        let got = parse(&list("allow_empty: {a: \"none fit\"}\n", "")).unwrap();
+        assert_eq!(got[0].allow_empty.as_deref(), Some("none fit"));
+        assert_eq!(got[1].allow_empty, None, "only the named shape is exempt");
+        for bad in [
+            list("allow_empty: {z: why}\n", ""),
+            list("allow_empty: {a: \"  \"}\n", ""),
+            list("allow_empty: [a]\n", ""),
+            list("allow_empty: {a: why}\n", "allowEmpty: why, "),
+        ] {
+            assert!(
+                matches!(parse(&bad), Err(ShapeError::Malformed { .. })),
+                "must be refused:\n{bad}"
+            );
+        }
     }
 
     #[test]
