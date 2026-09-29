@@ -197,7 +197,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "resolves through $PATH")]
     fn planted_bare_apr_spawn_is_red() {
-        let _ = crate::tools::subprocess::run_program("apr", &["--version"]);
+        let _ = crate::tools::subprocess::run_program("apr", &["--version"]); // L25-PLANTED
     }
 
     #[test]

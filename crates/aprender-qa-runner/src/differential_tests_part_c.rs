@@ -94,7 +94,7 @@ fn test_parse_inference_output_failure_fallback() {
 #[test]
 fn test_diff_config_filter_none() {
     let config = DiffConfig {
-        apr_binary: "apr".to_string(),
+        apr_binary: crate::apr_bin::default_apr_binary(),
         filter: None,
         mismatches_only: true,
         tolerance: 1e-5,
@@ -287,7 +287,7 @@ fn test_differential_executor_compare_inference_error() {
 #[test]
 fn test_diff_config_embedding_filter() {
     let config = DiffConfig {
-        apr_binary: "apr".to_string(),
+        apr_binary: crate::apr_bin::default_apr_binary(),
         filter: Some("embedding".to_string()),
         mismatches_only: true,
         tolerance: 1e-6,
@@ -446,7 +446,7 @@ fn test_parse_inference_output_with_valid_json() {
 #[test]
 fn test_diff_config_relaxed_tolerance() {
     let config = DiffConfig {
-        apr_binary: "apr".to_string(),
+        apr_binary: crate::apr_bin::default_apr_binary(),
         filter: None,
         mismatches_only: false,
         tolerance: 1e-3,

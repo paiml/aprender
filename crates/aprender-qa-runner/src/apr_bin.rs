@@ -161,7 +161,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "resolves through $PATH")]
     fn guard_panics_on_bare_apr() {
-        let _ = guard_program("apr");
+        let _ = guard_program("apr"); // L25-PLANTED
     }
 
     /// The planted bad call: a test that hands a runner the bare name must
@@ -170,7 +170,8 @@ mod tests {
     #[should_panic(expected = "resolves through $PATH")]
     fn planted_bare_apr_runner_is_red() {
         use crate::command::{CommandRunner, RealCommandRunner};
-        let _ = RealCommandRunner::with_binary("apr").inspect_model(std::path::Path::new("m.gguf"));
+        let runner = RealCommandRunner::with_binary("apr"); // L25-PLANTED
+        let _ = runner.inspect_model(std::path::Path::new("m.gguf"));
     }
 
     /// The default runner reaches the pinned binary or the stub, never `$PATH`.
