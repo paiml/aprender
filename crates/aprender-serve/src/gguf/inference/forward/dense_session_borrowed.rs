@@ -37,7 +37,9 @@ impl<'a> BorrowedCudaForward<'a> {
     pub fn new(model: &'a mut OwnedQuantizedModelCuda) -> Self {
         let config = &model.model().config;
         let arch = crate::tensor_names::normalize_architecture(&config.architecture);
-        let context_length = config.context_length.max(1);
+        // D5: the device KV cache is the real window; serve has no CPU copy to move to.
+        let context_length =
+            super::dense_session::cap_context(config.context_length, model.executor().max_kv_len());
         let line = format!(
             "Backend: GPU ({}, {} MB VRAM)",
             model.device_name(),

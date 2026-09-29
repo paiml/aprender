@@ -1,0 +1,356 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.30.0",
+          "rules": [
+            {
+              "id": "PRREV-PRIMARY-001",
+              "name": "serve_context_refusal pre-flight missing on batch CUDA endpoints"
+            },
+            {
+              "id": "PRREV-PRIMARY-002",
+              "name": "hardcoded 500 remains for batch_generate_gpu error"
+            },
+            {
+              "id": "PRREV-PRIMARY-003",
+              "name": "context-limit boundary mismatch between serve_context_refusal (>=) and effective_max_tokens (>)"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "grep -rn serve_context_refusal|serving_context crates/aprender-serve/src/api/{batch.rs,batch_processing.rs}; grep -n StatusCode::INTERNAL_SERVER_ERROR crates/aprender-serve/src/api/batch_processing.rs; sed -n 20,26p crates/aprender-serve/src/gguf/inference/generate_quantized.rs; grep -n effective_max_tokens crates/aprender-serve/src/api/cuda_chat_backend.rs; pmat analyze complexity/tdg/satd (per changed file); scripts/pr_review_duplication_scan.sh --rust-semantic"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-PRIMARY-001",
+          "level": "warning",
+          "message": {
+            "text": "try_cuda_generate (batch_processing.rs:492) and try_cuda_batch_generate (batch.rs:515) call generate_gpu_resident() directly with no pre-flight serve_context_refusal()/serving_context() check, unlike cuda_chat_backend.rs, gpu_completions_handler.rs's try_cuda_gguf_completions, and stream_generate.rs's try_cuda_stream_tokens, which this PR did wire with the pre-flight. Both functions do already route their post-hoc error through generation_error_status(&e) (the previous review's finding is fixed), so a boundary-exceeding prompt still ends up mapped to 400 IF the downstream error is ContextLimitExceeded -- but generate_2.rs's generate_gpu_resident (unmodified by this diff) computes its own cap independently and raises ContextLimitExceeded only when prompt.len() > effective_max (strict >), so a prompt that exactly fills the device-KV-capped window (prompt_tokens == serving_context, the PR's own new boundary test's target case) is not pre-emptively refused on these two endpoints and may fall through to a different, non-ContextLimitExceeded error shape on some code paths, reproducing a 500 at exactly the boundary this PR was written to close.",
+            "markdown": "`try_cuda_generate` (`batch_processing.rs:492`) and `try_cuda_batch_generate` (`batch.rs:515`) call `generate_gpu_resident()` directly with **no** pre-flight `serve_context_refusal()`/`serving_context()` check, unlike `cuda_chat_backend.rs`, `gpu_completions_handler.rs`'s `try_cuda_gguf_completions`, and `stream_generate.rs`'s `try_cuda_stream_tokens`, which this PR did wire with the pre-flight."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/batch_processing.rs"
+                },
+                "region": {
+                  "startLine": 491,
+                  "endLine": 498
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/batch.rs"
+                },
+                "region": {
+                  "startLine": 514,
+                  "endLine": 521
+                }
+              },
+              "message": {
+                "text": "identical missing-pre-flight pattern on /batch/generate"
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A client sends a prompt whose token count exactly equals (or exceeds) the device-KV-capped serving context to POST /generate or POST /batch/generate on a CUDA-served model. Neither try_cuda_generate nor try_cuda_batch_generate calls serve_context_refusal() first (grep for it returns zero matches in both files), so the request proceeds straight into generate_gpu_resident(), whose own independent cap check in generate_2.rs uses prompt.len() > effective_max (strictly greater-than) rather than >=; at the exact-fill boundary the request is not refused pre-emptively and, depending on which downstream error shape actually fires, can still surface as a 500.",
+            "command": "grep -n \"serve_context_refusal\\|serving_context\" crates/aprender-serve/src/api/batch.rs crates/aprender-serve/src/api/batch_processing.rs",
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY-002",
+          "level": "warning",
+          "message": {
+            "text": "gpu_batch_completions_handler's GPU-batch branch (POST /v1/batch/completions) still hardcodes StatusCode::INTERNAL_SERVER_ERROR for any error from cached_model.batch_generate_gpu(), untouched by this diff (the diff's two fixed sites in this same file are the CPU-sequential branch and try_cuda_generate; this third site is a different function/branch this PR's own scope should plausibly have covered but did not).",
+            "markdown": "`gpu_batch_completions_handler`'s GPU-batch branch (`POST /v1/batch/completions`) still hardcodes `StatusCode::INTERNAL_SERVER_ERROR` for any error from `cached_model.batch_generate_gpu()`."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/batch_processing.rs"
+                },
+                "region": {
+                  "startLine": 334,
+                  "endLine": 343
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "A request to POST /v1/batch/completions with batch_size >= the GPU threshold (32) and a warm GPU cache routes through cached_model.batch_generate_gpu(). Any Err from that call, including one that is conceptually a context-limit error, is mapped unconditionally to 500 via a literal StatusCode::INTERNAL_SERVER_ERROR rather than crate::api::generation_error_status(&e), so a client cannot distinguish its own oversized request from a genuine server fault on this route.",
+            "command": "grep -n \"StatusCode::INTERNAL_SERVER_ERROR\" crates/aprender-serve/src/api/batch_processing.rs",
+            "exit_code": 0,
+            "stdout_sha256": "35b2a54a9840fa13f293a261c944221ebc54c7645a1faac5e76f1459d22f83dc",
+            "source": "crates/aprender-serve/src/api/batch_processing.rs:343",
+            "excerpt": "                    StatusCode::INTERNAL_SERVER_ERROR,",
+            "excerpt_sha256": "b846bf41614077081b9e78e37f41872d9ce19e41197e140713c351a845c7640a"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY-003",
+          "level": "note",
+          "message": {
+            "text": "OwnedQuantizedModel::effective_max_tokens (generate_quantized.rs:22-23), which try_cuda_backend's own dense-CPU fallback loop in cuda_chat_backend.rs (line 377) still calls in the SAME function this PR added the new pre-flight to, raises ContextLimitExceeded only when prompt_len > self.config.context_length (strict greater-than, and against the raw model context_length, not the device-KV-capped serving_context()). serve_context_refusal (the new check) refuses at prompt_tokens >= serving_context against the capped value. The two checks inside try_cuda_backend can therefore disagree at the exact-fill boundary and whenever a device KV cap is active and smaller than the model's own context_length.",
+            "markdown": "`OwnedQuantizedModel::effective_max_tokens` (`generate_quantized.rs:22-23`) uses a *different* boundary (`>`, raw `context_length`) than the new `serve_context_refusal` (`>=`, capped `serving_context()`), and both are reachable from the same `try_cuda_backend` function."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/inference/generate_quantized.rs"
+                },
+                "region": {
+                  "startLine": 22,
+                  "endLine": 27
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/cuda_chat_backend.rs"
+                },
+                "region": {
+                  "startLine": 372,
+                  "endLine": 380
+                }
+              },
+              "message": {
+                "text": "try_cuda_backend's dense-CPU-fallback loop calls effective_max_tokens; the same function's CUDA path now also calls fit_serving_context/serve_context_refusal with a different boundary and base value"
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "Within try_cuda_backend, a prompt whose length is between the device-KV-capped serving_context and the model's raw context_length is refused with 400 on the CUDA-resident path (serve_context_refusal fires, capped value) but would NOT be refused by effective_max_tokens on the dense-CPU fallback path for the same request shape (raw context_length is larger, strict > only). This is an internal inconsistency in what 'over-length' means depending on which branch of the same handler a request takes; first surfaced independently by the antigravity consultation (agy) below and reverified here by direct reading of both call sites.",
+            "command": "grep -n effective_max_tokens crates/aprender-serve/src/api/cuda_chat_backend.rs; sed -n 20,26p crates/aprender-serve/src/gguf/inference/generate_quantized.rs",
+            "exit_code": 0,
+            "stdout_sha256": "1efa4b68355f1655b3b32dadbbcd263c321f6fbe35bdf078046525594b4a5193",
+            "source": "crates/aprender-serve/src/gguf/inference/generate_quantized.rs:23",
+            "excerpt": "        if prompt_len > self.config.context_length {",
+            "excerpt_sha256": "47a7bc74805692d9dd6c00cd1fd4a10f2a0d426229dbe3d7b90fe7b1000a4eb1"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "version": "mcp",
+          "rules": [
+            {
+              "id": "PRREV-CUDA",
+              "name": "device-behaviour claim vs NVIDIA docs"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "nvidia-cuda-docs MCP unreachable: ToolSearch for mcp__nvidia-cuda-docs__search_cuda_docs returned no matching deferred tool in this session; only mcp__nvidia-cuda-docs__authenticate/complete_authentication resolved, indicating the server requires an interactive OAuth flow this headless review session cannot complete. authenticate() was deliberately not invoked."
+              },
+              "properties": {
+                "grounding": "measured"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "pv 0.49.0",
+          "rules": [
+            {
+              "id": "PRREV-CRUX",
+              "name": "user-facing surface / competitive coverage"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pv query \"context limit exceeded status code\" --limit 5"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CRUX",
+          "level": "note",
+          "message": {
+            "text": "crux_coverage: none. This PR's actual surface change (existing HTTP routes returning 400 instead of 500 for an over-length prompt) has no covering contracts/crux-*.yaml entry: the closest candidates (cli-interface-v1's output_format_fidelity, tokenizer-v1's context-window equations) cover CLI exit codes and tokenizer accuracy, not serve HTTP status-code semantics against a named competitor. No comparative claim is made anywhere in this diff, so S3.C.1/B4 does not apply."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": "pv query \"context limit exceeded status code\" --limit 5",
+            "exit_code": 0,
+            "failure_scenario": "No contract in contracts/crux-*.yaml covers serve HTTP error-status semantics (400 vs 500 on an over-length request) against a named competitor. If a future PR published a comparative claim on this surface (e.g. an 'Nx faster error path than X') with no contract to check it against, that claim would ship unverified; recording crux_coverage:none here is the finding that closes that gap for this review, per S3.C."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "27.0.0",
+          "rules": [
+            {
+              "id": "PRREV-MUTATION",
+              "name": "mutation coverage of the diff"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo-mutants unreachable in this review: lambda host forbids cargo test/build (task instruction + repo memory feedback_tests_on_intel_never_lambda.md). cargo-mutants --in-diff drives repeated cargo build+test cycles per mutant, so it was not attempted; recorded as unreachable rather than a clean zero-mutant run."
+              },
+              "properties": {
+                "grounding": "measured"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "rules": [
+            {
+              "id": "PRREV-ARM-E",
+              "name": "cross-vendor second-opinion review (advisory)"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt> --output-format json --json-schema agy_schema.json --model gemini-3.1-pro-high --print-timeout 25m --dangerously-skip-permissions --add-dir <disposable-tree>"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "AGY-1",
+          "level": "warning",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): try_cuda_generate (batch_processing.rs) and try_cuda_batch_generate (batch.rs) are missing the new pre-flight serve_context_refusal check present on the other CUDA handlers. Agreed with and reverified by the primary reviewer as PRREV-PRIMARY-001 above."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/batch_processing.rs"
+                },
+                "region": {
+                  "startLine": 469
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Same as PRREV-PRIMARY-001."
+          }
+        },
+        {
+          "ruleId": "AGY-2",
+          "level": "warning",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): gpu_batch_completions_handler still hardcodes StatusCode::INTERNAL_SERVER_ERROR for batch_generate_gpu errors. Agreed with and reverified by the primary reviewer as PRREV-PRIMARY-002 above."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/batch_processing.rs"
+                },
+                "region": {
+                  "startLine": 343
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Same as PRREV-PRIMARY-002."
+          }
+        },
+        {
+          "ruleId": "AGY-3",
+          "level": "note",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): boundary mismatch between the new serve_context_refusal (>=) and effective_max_tokens' underlying check (>) in generate_quantized.rs. agy_only at first report; reverified by the primary reviewer by direct code reading and promoted into PRREV-PRIMARY-003 above."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/inference/generate_quantized.rs"
+                },
+                "region": {
+                  "startLine": 23
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "Same as PRREV-PRIMARY-003.",
+            "source": "crates/aprender-serve/src/gguf/inference/generate_quantized.rs:23",
+            "excerpt": "        if prompt_len > self.config.context_length {",
+            "excerpt_sha256": "47a7bc74805692d9dd6c00cd1fd4a10f2a0d426229dbe3d7b90fe7b1000a4eb1"
+          }
+        }
+      ]
+    }
+  ]
+}
