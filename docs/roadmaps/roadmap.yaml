@@ -22225,7 +22225,7 @@ roadmap:
   - The workspace wasmtime pin is 48.0.3 and Cargo.lock resolves wasmtime 48.0.3 (cargo metadata --locked rc=0)
   - cargo audit on the branch Cargo.lock reports no RUSTSEC-2026-0315/0316 (rc=0); on origin/main it reports both
   - cargo deny check rc=0 (advisories, bans, licenses, sources)
-  - No audit or deny ignore is added and no gate is relaxed; the diff is Cargo.toml, Cargo.lock and this roadmap entry only
+  - No audit or deny ignore is added and no gate is relaxed; the diff is Cargo.toml, Cargo.lock, this roadmap entry (with its roadmap.yaml copy) and docs/audits/security-PMAT-4633-wasmtime-48.md, the C45 review input that stands in for the raw Cargo.lock, only
   - wasmtime stays optional behind aprender-test-lib's runtime feature (cargo tree -i wasmtime --workspace finds no active path), so the 1.95 MSRV of the 48 line does not reach the 1.93 pin
   phases: []
   subtasks: []

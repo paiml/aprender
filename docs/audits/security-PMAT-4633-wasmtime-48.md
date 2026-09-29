@@ -2,8 +2,8 @@
 
 Review input for #4632. Reviewers get the `Cargo.toml` diff, the generated lock-delta
 table below, the advisory text, and the before/after checks. They do not get the raw
-`Cargo.lock`. The lockfile is checked by machine: `cargo audit`, `cargo deny check advisories`
-and `cargo metadata --locked`, each run on the base and on this head.
+`Cargo.lock`. The lockfile is checked by machine: `cargo audit`, `cargo deny check`
+(all four checks, and advisories again on its own) and `cargo metadata --locked`, each run on the base and on this head.
 
 - base: `2817c6d97b` (origin/main)
 - head: `1a68b112ba` (the only commit that touches `Cargo.toml` / `Cargo.lock`)
@@ -14,6 +14,7 @@ and `cargo metadata --locked`, each run on the base and on this head.
 | check | base 2817c6d97b | head |
 |---|---|---|
 | `cargo audit` | rc=1: RUSTSEC-2026-0315 and RUSTSEC-2026-0316 on wasmtime 47.0.4 | rc=0, 0 vulnerabilities |
+| `cargo deny check` (all four: advisories, bans, licenses, sources; cargo-deny 0.19.0) | rc=0: `advisories ok, bans ok, licenses ok, sources ok` | rc=0: `advisories ok, bans ok, licenses ok, sources ok` |
 | `cargo deny check advisories` | rc=0 | rc=0 |
 | `cargo deny --all-features check advisories` | rc=0 | rc=0 |
 | `cargo metadata --locked` | n/a | rc=0 (the lock resolves unchanged) |
