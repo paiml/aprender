@@ -66,12 +66,16 @@ const Q8_BLOCK_BYTES: u32 = 36;
 // Shared-memory map, bytes.
 const A_ROW: u32 = 272;
 const A_QS: u32 = 0;
-const A_D8: u32 = A_QS + MMA_Q4K_TILE_M * A_ROW; // [j][row] f32
-const A_DSA: u32 = A_D8 + 8 * MMA_Q4K_TILE_M * 4; // [j][row] f32, d8·Σa
-const W_RAW: u32 = A_DSA + 8 * MMA_Q4K_TILE_M * 4; // [col] 144 B
-const W_DSC: u32 = W_RAW + MMA_Q4K_TILE_N * Q4K_SUPER_BLOCK_BYTES; // [j][col] f32
-const W_NDM: u32 = W_DSC + 8 * MMA_Q4K_TILE_N * 4; // [j][col] f32, −dmin·m
-const SMEM_BYTES: u32 = W_NDM + 8 * MMA_Q4K_TILE_N * 4;
+/// `[j][row/16][row%8][(row/8)%2]{d8, d8·Σa}` f32: one v4 load gives a thread both
+/// of its rows (gid, gid+8) of an m-tile.
+const A_SC: u32 = A_QS + MMA_Q4K_TILE_M * A_ROW;
+/// `[j][col/2]{d·sc even, d·sc odd, −dmin·m even, −dmin·m odd}` f32: one v4 load
+/// gives a thread both of its columns of an n-tile.
+const W_RAW: u32 = A_SC + 8 * MMA_Q4K_TILE_M * 8; // [col] 144 B
+const W_SC: u32 = W_RAW + MMA_Q4K_TILE_N * Q4K_SUPER_BLOCK_BYTES;
+const SMEM_BYTES: u32 = W_SC + 8 * MMA_Q4K_TILE_N * 8;
+/// 16-byte chunks per Q4K super-block (144 / 16).
+const W_CHUNKS: u32 = Q4K_SUPER_BLOCK_BYTES / 16;
 
 /// Tensor-core Q4K×Q8_1 GEMM (#4376). Requires sm_80+ and Q8_1 activations from
 /// `Q8QuantizeKernel`; K must be a multiple of 256.
@@ -161,61 +165,102 @@ impl Kernel for MmaQ4KGemmKernel {
                     let s_qs = ctx.mul_u32(row, A_ROW);
                     let jq = ctx.shl_u32_imm(jb, 5);
                     let s_qs = ctx.add_u32_reg(s_qs, jq);
-                    let s_d = ctx.shl_u32_imm(jb, 6); // j·64 rows
-                    let s_d = ctx.add_u32_reg(s_d, row);
-                    let s_d = ctx.shl_u32_imm(s_d, 2);
+                    // A_SC slot of `row`: (row/16)·128 + (row%8)·16 + ((row/8)%2)·8.
+                    let r16 = ctx.shr_u32_imm(row, 4);
+                    let r16 = ctx.shl_u32_imm(r16, 7);
+                    let r8 = ctx.and_u32_imm(row, 7);
+                    let r8 = ctx.shl_u32_imm(r8, 4);
+                    let h8 = ctx.shr_u32_imm(row, 3);
+                    let h8 = ctx.and_u32_imm(h8, 1);
+                    let h8 = ctx.shl_u32_imm(h8, 3);
+                    let s_d = ctx.mul_u32(jb, MMA_Q4K_TILE_M * 8);
+                    let s_d = ctx.add_u32_reg(s_d, r16);
+                    let s_d = ctx.add_u32_reg(s_d, r8);
+                    let s_d = ctx.add_u32_reg(s_d, h8);
                     a_ld.push((g, s_qs, s_d));
                 }
-                // W raw: col tid/2 copies words (tid%2)·18 .. +18 of its super-block.
-                let half = ctx.and_u32_imm(tid, 1);
-                let wcol = ctx.shr_u32_imm(tid, 1);
-                let w_g = {
-                    let c = ctx.add_u32_reg(bn, wcol);
+                // W raw: 16-byte chunks q = tid + 256·i of the tile's 128 × 9, col q/9,
+                // chunk q%9, copied global→shared by cp.async. The last round is partial.
+                let mut w_ld = Vec::new();
+                for i in 0..(MMA_Q4K_TILE_N * W_CHUNKS).div_ceil(MMA_Q4K_THREADS) {
+                    let q = ctx.add_u32(tid, i * MMA_Q4K_THREADS);
+                    let col = ctx.div_u32(q, W_CHUNKS);
+                    let cq = ctx.mul_u32(col, W_CHUNKS);
+                    let ch = ctx.sub_u32(q, cq);
+                    let c = ctx.add_u32_reg(bn, col);
                     let c = ctx.min_u32(c, n_last);
                     let o = ctx.mul_wide_u32_reg(c, w_row_bytes);
                     let g = ctx.add_u64(w_ptr, o);
-                    let h = ctx.mul_wide_u32(half, 72);
-                    ctx.add_u64(g, h)
-                };
-                let w_s = {
-                    let s = ctx.mul_u32(wcol, Q4K_SUPER_BLOCK_BYTES);
-                    let h = ctx.mul_u32(half, 72);
-                    let s = ctx.add_u32_reg(s, h);
-                    ctx.add_u32(s, W_RAW)
-                };
+                    let co = ctx.mul_wide_u32(ch, 16);
+                    let g = ctx.add_u64(g, co);
+                    let s = ctx.shl_u32_imm(q, 4);
+                    let s = ctx.add_u32(s, W_RAW);
+                    let partial = (i + 1) * MMA_Q4K_THREADS > MMA_Q4K_TILE_N * W_CHUNKS;
+                    w_ld.push((g, s, partial));
+                }
+                let w_last = ctx.setp_lt_u32_imm(
+                    tid,
+                    MMA_Q4K_TILE_N * W_CHUNKS % MMA_Q4K_THREADS,
+                );
                 // Scale unpack: threads < 128 own column tid, reading its header from smem.
                 let own_scales = ctx.setp_lt_u32_imm(tid, MMA_Q4K_TILE_N);
                 let hdr_s = {
                     let s = ctx.mul_u32(tid, Q4K_SUPER_BLOCK_BYTES);
                     ctx.add_u32(s, W_RAW)
                 };
-                let sc_s = ctx.shl_u32_imm(tid, 2);
+                // W_SC slot of column tid: (tid/2)·16 + (tid%2)·4.
+                let sc_s = {
+                    let p = ctx.shr_u32_imm(tid, 1);
+                    let p = ctx.shl_u32_imm(p, 4);
+                    let o = ctx.and_u32_imm(tid, 1);
+                    let o = ctx.shl_u32_imm(o, 2);
+                    ctx.add_u32_reg(p, o)
+                };
 
-                // ---- Fragment bases in smem ----
-                let tig4 = ctx.shl_u32_imm(tig, 2);
-                let mut a_fr = Vec::new(); // qs address of row gid, word tig
-                let mut d_fr = Vec::new(); // [j=0][row gid] offset
+                // ---- Fragment bases in smem (ldmatrix: lane l addresses row l%8 of
+                // 8×8 matrix l/8) ----
+                let l8 = ctx.and_u32_imm(lane, 7);
+                let lm1 = ctx.shr_u32_imm(lane, 3);
+                let lm1 = ctx.and_u32_imm(lm1, 1);
+                let lm2 = ctx.shr_u32_imm(lane, 4);
+                // A: matrices (rows 0-7, k 0-15), (8-15, 0-15), (0-7, 16-31), (8-15, 16-31)
+                // are a0..a3 of m16n8k32.
+                let mut a_fr = Vec::new();
+                let mut d_fr = Vec::new(); // [j=0] v4 slot of rows (gid, gid+8)
                 for mt in 0..M_TILES {
                     let r = ctx.mul_u32(wm, 16 * M_TILES);
                     let r = ctx.add_u32(r, mt * 16);
-                    let r = ctx.add_u32_reg(r, gid);
-                    let q = ctx.mul_u32(r, A_ROW);
-                    a_fr.push(ctx.add_u32_reg(q, tig4));
-                    d_fr.push(ctx.shl_u32_imm(r, 2));
+                    let o = ctx.shl_u32_imm(lm1, 3);
+                    let rr = ctx.add_u32_reg(r, o);
+                    let rr = ctx.add_u32_reg(rr, l8);
+                    let q = ctx.mul_u32(rr, A_ROW);
+                    let k = ctx.shl_u32_imm(lm2, 4);
+                    a_fr.push(ctx.add_u32_reg(q, k));
+                    let b = ctx.shl_u32_imm(r, 3); // (r/16)·128
+                    let g = ctx.shl_u32_imm(gid, 4);
+                    let d = ctx.add_u32_reg(b, g);
+                    d_fr.push(ctx.add_u32(d, A_SC));
                 }
-                let mut b_fr = Vec::new(); // qs address of col gid, word tig
+                // B: per tile pair, matrices (tile 2p, k 0-15), (2p, 16-31), (2p+1, 0-15),
+                // (2p+1, 16-31) are b0, b1 of each tile.
+                let mut b_fr = Vec::new();
                 let cw = ctx.mul_u32(wn, 8 * N_TILES);
-                for t in 0..N_TILES {
-                    let c = ctx.add_u32(cw, t * 8);
-                    let c = ctx.add_u32_reg(c, gid);
+                for p in 0..N_TILES / 2 {
+                    let t = ctx.shl_u32_imm(lm2, 3);
+                    let c = ctx.add_u32(cw, p * 16);
+                    let c = ctx.add_u32_reg(c, t);
+                    let c = ctx.add_u32_reg(c, l8);
                     let o = ctx.mul_u32(c, Q4K_SUPER_BLOCK_BYTES);
-                    let o = ctx.add_u32_reg(o, tig4);
+                    let k = ctx.shl_u32_imm(lm1, 4);
+                    let o = ctx.add_u32_reg(o, k);
                     b_fr.push(ctx.add_u32(o, W_RAW + 16));
                 }
+                // [j=0] v4 slot of this thread's column pair in n-tile 0.
                 let s_col = {
-                    let t2 = ctx.shl_u32_imm(tig, 1);
-                    let c = ctx.add_u32_reg(cw, t2);
-                    ctx.shl_u32_imm(c, 2)
+                    let c = ctx.shr_u32_imm(cw, 1);
+                    let c = ctx.add_u32_reg(c, tig);
+                    let c = ctx.shl_u32_imm(c, 4);
+                    ctx.add_u32(c, W_SC)
                 };
 
                 let mut acc = Vec::new();
@@ -225,11 +270,25 @@ impl Kernel for MmaQ4KGemmKernel {
                 let ones = ctx.mov_u32_imm(0x0101_0101);
                 let nib = ctx.mov_u32_imm(0x0F0F_0F0F);
                 let magic_f = ctx.mov_f32_imm(12_582_912.0);
+                // Loop-invariant accumulator seed: a read-only C for every mma.
+                let seed = [0; 4].map(|_| ctx.mov_s32_imm(0x4B40_0000));
 
                 let sb = ctx.mov_u32_imm(0);
                 ctx.label("mma_sb_loop");
                 let sb_done = ctx.setp_ge_u32(sb, num_sb);
                 ctx.branch_if(sb_done, "mma_sb_end");
+
+                // ---- Stage W raw (async; lands while A is staged) ----
+                let w_sb = ctx.mul_wide_u32(sb, Q4K_SUPER_BLOCK_BYTES);
+                for (g, s, partial) in &w_ld {
+                    if *partial {
+                        ctx.branch_if_not(w_last, "mma_w_ld_done");
+                    }
+                    let g = ctx.add_u64(*g, w_sb);
+                    ctx.cp_async_global_to_shared(*s, g, 16);
+                }
+                ctx.label("mma_w_ld_done");
+                ctx.cp_async_commit_group();
 
                 // ---- Stage A ----
                 let q8_sb = ctx.mul_wide_u32(sb, 8 * Q8_BLOCK_BYTES);
@@ -250,21 +309,12 @@ impl Kernel for MmaQ4KGemmKernel {
                     let d8 = ctx.cvt_f32_f16(d8);
                     let saf = ctx.cvt_f32_s32(sa);
                     let dsa = ctx.mul_f32(d8, saf);
-                    let s = ctx.add_u32(*s_d, A_D8);
+                    let s = ctx.add_u32(*s_d, A_SC);
                     ctx.st_shared_f32(s, d8);
-                    let s = ctx.add_u32(*s_d, A_DSA);
+                    let s = ctx.add_u32(*s_d, A_SC + 4);
                     ctx.st_shared_f32(s, dsa);
                 }
-                // ---- Stage W raw ----
-                let w_sb = ctx.mul_wide_u32(sb, Q4K_SUPER_BLOCK_BYTES);
-                let wg = ctx.add_u64(w_g, w_sb);
-                for i in 0..18u32 {
-                    let o = ctx.mov_u64_imm(u64::from(4 * i));
-                    let a = ctx.add_u64(wg, o);
-                    let v = ctx.ld_global_u32(a);
-                    let s = ctx.add_u32(w_s, 4 * i);
-                    ctx.st_shared_u32(s, v);
-                }
+                ctx.cp_async_wait_group(0);
                 ctx.bar_sync(0);
 
                 // ---- Unpack W scales: d·sc and −dmin·m per (sub-block, col) ----
@@ -298,9 +348,9 @@ impl Kernel for MmaQ4KGemmKernel {
                         let mn = ctx.cvt_f32_u32(mn);
                         let dsc = ctx.mul_f32(d, sc);
                         let ndm = ctx.mul_f32(ndmin, mn);
-                        let s = ctx.add_u32(sc_s, W_DSC + j * MMA_Q4K_TILE_N * 4);
+                        let s = ctx.add_u32(sc_s, W_SC + j * MMA_Q4K_TILE_N * 8);
                         ctx.st_shared_f32(s, dsc);
-                        let s = ctx.add_u32(sc_s, W_NDM + j * MMA_Q4K_TILE_N * 4);
+                        let s = ctx.add_u32(sc_s, W_SC + j * MMA_Q4K_TILE_N * 8 + 8);
                         ctx.st_shared_f32(s, ndm);
                     }
                 }
@@ -313,45 +363,34 @@ impl Kernel for MmaQ4KGemmKernel {
                     let mut d8 = Vec::new();
                     let mut dsa = Vec::new();
                     for mt in 0..M_TILES as usize {
-                        let lo = ctx.add_u32(a_fr[mt], j * 32);
-                        let a0 = ctx.ld_shared_u32(lo);
-                        let p = ctx.add_u32(lo, 8 * A_ROW);
-                        let a1 = ctx.ld_shared_u32(p);
-                        let p = ctx.add_u32(lo, 16);
-                        let a2 = ctx.ld_shared_u32(p);
-                        let p = ctx.add_u32(lo, 8 * A_ROW + 16);
-                        let a3 = ctx.ld_shared_u32(p);
-                        a_frag.push([a0, a1, a2, a3]);
-                        for h in 0..2u32 {
-                            let base = j * MMA_Q4K_TILE_M * 4 + h * 32;
-                            let p = ctx.add_u32(d_fr[mt], A_D8 + base);
-                            d8.push(ctx.ld_shared_f32(p));
-                            let p = ctx.add_u32(d_fr[mt], A_DSA + base);
-                            dsa.push(ctx.ld_shared_f32(p));
-                        }
+                        let p = ctx.add_u32(a_fr[mt], j * 32);
+                        a_frag.push(ctx.ldmatrix_x4(p));
+                        let p = ctx.add_u32(d_fr[mt], j * MMA_Q4K_TILE_M * 8);
+                        let v = ctx.ld_shared_f32_v4(p);
+                        // v = {d8(gid), dsa(gid), d8(gid+8), dsa(gid+8)}
+                        d8.extend([v[0], v[2]]);
+                        dsa.extend([v[1], v[3]]);
                     }
-                    for t in 0..N_TILES as usize {
-                        let bl = ctx.add_u32(b_fr[t], 32 * (j / 2));
-                        let bh = ctx.add_u32(bl, 16);
-                        let mut b = [ctx.ld_shared_u32(bl), ctx.ld_shared_u32(bh)];
-                        for v in &mut b {
+                    let mut b_frag = Vec::new();
+                    for bp in &b_fr {
+                        let p = ctx.add_u32(*bp, 32 * (j / 2));
+                        let m = ctx.ldmatrix_x4(p);
+                        b_frag.push([m[0], m[1]]);
+                        b_frag.push([m[2], m[3]]);
+                    }
+                    for (t, b) in b_frag.iter_mut().enumerate() {
+                        for v in b.iter_mut() {
                             if j % 2 == 1 {
                                 *v = ctx.shr_u32_imm(*v, 4);
                             }
                             *v = ctx.and_u32(*v, nib);
                         }
-                        let mut dsc = Vec::new();
-                        let mut ndm = Vec::new();
-                        for col in 0..2u32 {
-                            let o = j * MMA_Q4K_TILE_N * 4 + t as u32 * 32 + col * 4;
-                            let p = ctx.add_u32(s_col, W_DSC + o);
-                            dsc.push(ctx.ld_shared_f32(p));
-                            let p = ctx.add_u32(s_col, W_NDM + o);
-                            ndm.push(ctx.ld_shared_f32(p));
-                        }
+                        let b = *b;
+                        let p = ctx.add_u32(s_col, j * MMA_Q4K_TILE_N * 8 + t as u32 * 64);
+                        let v = ctx.ld_shared_f32_v4(p);
+                        let (dsc, ndm) = ([v[0], v[1]], [v[2], v[3]]);
                         for mt in 0..M_TILES as usize {
-                            let c = [0; 4].map(|_| ctx.mov_s32_imm(0x4B40_0000));
-                            ctx.mma_sync_m16n8k32_s8_inplace(&a_frag[mt], &b, &c);
+                            let c = ctx.mma_sync_m16n8k32_s8(&a_frag[mt], &b, &seed);
                             for h in 0..2usize {
                                 for col in 0..2usize {
                                     // c[2h + col] is (row gid + 8h, col tig*2 + col).

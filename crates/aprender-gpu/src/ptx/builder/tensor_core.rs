@@ -417,6 +417,29 @@ impl<'a> KernelBuilder<'a> {
         self.instructions.push(instr);
     }
 
+    /// int8 mma.sync with a read-only C: `D = A·B + C` into 4 fresh S32 registers.
+    ///
+    /// For a constant accumulator seed (#4376 MMQ v3 seeds every mma with the same
+    /// `0x4B40_0000`), C is set up once outside the loop instead of 4 `mov`s per mma.
+    pub fn mma_sync_m16n8k32_s8(
+        &mut self,
+        a_regs: &[VirtualReg; 4],
+        b_regs: &[VirtualReg; 2],
+        c_regs: &[VirtualReg; 4],
+    ) -> [VirtualReg; 4] {
+        let d = [0; 4].map(|_| self.registers.allocate_virtual(PtxType::S32));
+        let mut instr = PtxInstruction::new(PtxOp::MmaSync, PtxType::S32);
+        instr = instr.dst(Operand::Reg(d[0]));
+        for &r in &d[1..] {
+            instr.dsts.push(Operand::Reg(r));
+        }
+        for &r in a_regs.iter().chain(b_regs).chain(c_regs) {
+            instr = instr.src(Operand::Reg(r));
+        }
+        self.instructions.push(instr);
+        d
+    }
+
     /// ldmatrix.sync.aligned.m8n8.x4.shared.b16
     ///
     /// Loads 4 8×8 FP16 matrices from shared memory in one instruction.

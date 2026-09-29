@@ -70,6 +70,23 @@ impl<'a> KernelBuilder<'a> {
         [r0, r1, r2, r3]
     }
 
+    /// Load 4 consecutive f32 values from shared memory (16-byte aligned).
+    ///
+    /// PTX: ld.shared.v4.f32 {%f1, %f2, %f3, %f4}, [addr];
+    pub fn ld_shared_f32_v4(&mut self, addr: VirtualReg) -> [VirtualReg; 4] {
+        let r = [0; 4].map(|_| self.registers.allocate_virtual(PtxType::F32));
+        self.instructions.push(
+            PtxInstruction::new(PtxOp::Ld, PtxType::V4F32)
+                .space(PtxStateSpace::Shared)
+                .dst(Operand::Reg(r[0]))
+                .dst(Operand::Reg(r[1]))
+                .dst(Operand::Reg(r[2]))
+                .dst(Operand::Reg(r[3]))
+                .src(Operand::Reg(addr)),
+        );
+        r
+    }
+
     /// Load u32 from global memory
     pub fn ld_global_u32(&mut self, addr: VirtualReg) -> VirtualReg {
         let dst = self.registers.allocate_virtual(PtxType::U32);
