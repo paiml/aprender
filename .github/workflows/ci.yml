@@ -422,6 +422,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+      # minisign for the equivalents-signature rows (pinned + digest-checked, per-run private bin dir).
+      - name: Install minisign (the checker refuses an unverifiable equivalent)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
       # Every PR re-proves the gate's survivor-table rule and the checker's case table (planted defects RED).
       - name: The survivor-table gate rule and checker still turn RED
         run: |
@@ -529,6 +537,14 @@ jobs:
         with:
           pattern: mutants-shard-*
           path: ${{ runner.temp }}/mt
+      # minisign for the equivalents-signature rows (pinned + digest-checked, per-run private bin dir).
+      - name: Install minisign (the checker refuses an unverifiable equivalent)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
       - name: The checker's case table must still turn RED
         run: python3 scripts/ci/mutants_survivor_table.py --self-test
       - name: "Survivor table: every listed mutant judged once, on the PR head + diff (#4587 A')"
@@ -539,9 +555,12 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/mutants_table_diff.sh "${{ github.event.pull_request.base.ref }}" pr.diff
+          # The key an equivalent's receipt must verify against comes from the BASE branch: the PR's own copy
+          # of .github/pr-review.pub is editable by the PR, so trusting it would let a PR sign its own proof.
+          git show "origin/${{ github.event.pull_request.base.ref }}:.github/pr-review.pub" > "$RUNNER_TEMP/base-pr-review.pub"
           python3 scripts/ci/mutants_survivor_table.py check --dir "$RUNNER_TEMP/mt" --shards 16 \
             --head-sha "$HEAD_SHA" --diff pr.diff --equiv "evidence/mutants-equiv/$PR.tsv" \
-            --max-missed "$MUTANTS_MAX_MISSED" --repo . --table "$RUNNER_TEMP/mt/survivor-table.tsv"
+            --max-missed "$MUTANTS_MAX_MISSED" --repo . --pubkey "$RUNNER_TEMP/base-pr-review.pub" --table "$RUNNER_TEMP/mt/survivor-table.tsv"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

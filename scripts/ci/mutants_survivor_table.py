@@ -16,8 +16,12 @@ script verifies the table BEFORE trusting it, and any gap is RED:
      equivalent (MissedMutant/Timeout with a row in the equivalents file), or survived;
   6. an equivalents row carries a one-line proof and names a quorum receipt in the repo --
      evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl, an in-toto pr-review statement --
-     that itself contains the mutant id (any other file naming the id is RED); a row for an
-     id outside the universe is RED;
+     that itself contains the mutant id (any other file naming the id is RED), whose
+     reviewer_actor is not its author_actor, and whose <receipt>.minisig verifies with
+     minisign against --pubkey. CI passes the BASE branch's .github/pr-review.pub, so a
+     PR cannot sign its own proof: only the CI signer holds the secret half. No --pubkey,
+     or no minisign, with an equivalents row is RED, never a skip; a row for an id outside
+     the universe is RED;
   7. survived <= --max-missed (the existing limit, MUTANTS_MAX_MISSED, default 0).
 
   mutants_survivor_table.py check --dir D --shards N --head-sha SHA --diff pr.diff
@@ -31,6 +35,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -53,7 +59,7 @@ def read_list(path):
 RECEIPT_PATH = re.compile(r"evidence/pr-review/[0-9]+/[0-9a-f]{40}/receipt\.intoto\.jsonl")
 
 
-def load_equiv(path, repo):
+def load_equiv(path, repo, pubkey=None):
     """-> ({id: proof}, [errors]). TSV: id <TAB> one-line proof <TAB> receipt path (repo-relative)."""
     eq, errs = {}, []
     if not path:
@@ -94,11 +100,32 @@ def load_equiv(path, repo):
             if mid not in text:
                 errs.append(f"equivalents line {n}: quorum receipt {receipt} does not name {mid}")
                 continue
+            pred = st.get("predicate") if isinstance(st.get("predicate"), dict) else {}
+            author = str((pred.get("author_actor") or {}).get("id", ""))
+            reviewer = str((pred.get("reviewer_actor") or {}).get("id", ""))
+            if not author or not reviewer or author == reviewer:
+                errs.append(f"equivalents line {n}: {receipt} is a self-review or names no actors "
+                            f"(author '{author}', reviewer '{reviewer}')")
+                continue
+            if not pubkey or not os.path.isfile(pubkey):
+                errs.append(f"equivalents line {n}: no --pubkey to verify {receipt}: an unverified proof is not one")
+                continue
+            if not shutil.which("minisign"):
+                errs.append(f"equivalents line {n}: minisign is not on PATH: {receipt} cannot be verified")
+                continue
+            if not os.path.isfile(rp + ".minisig"):
+                errs.append(f"equivalents line {n}: {receipt}.minisig is missing: the receipt is unsigned")
+                continue
+            v = subprocess.run(["minisign", "-V", "-q", "-m", rp, "-x", rp + ".minisig", "-p", pubkey],
+                               capture_output=True, text=True)
+            if v.returncode != 0:
+                errs.append(f"equivalents line {n}: {receipt} signature does not verify against {pubkey}")
+                continue
             eq[mid] = proof
     return eq, errs
 
 
-def check(d, shards, head_sha, diff, equiv, max_missed, repo, table_out=None):
+def check(d, shards, head_sha, diff, equiv, max_missed, repo, table_out=None, pubkey=None):
     errs = []
     if not os.path.isfile(diff):
         return [f"PR diff {diff} does not exist"], None
@@ -152,7 +179,7 @@ def check(d, shards, head_sha, diff, equiv, max_missed, repo, table_out=None):
     for mid in sorted((tested - want).keys()):
         extra = tested[mid] - want.get(mid, 0)
         errs.append(f"EXTRA    {mid} (tested {extra} more time(s) than listed)")
-    eq, eerrs = load_equiv(equiv, repo)
+    eq, eerrs = load_equiv(equiv, repo, pubkey)
     errs += eerrs
     for mid in sorted(set(eq) - set(want)):
         errs.append(f"equivalent row for {mid}, which is not in the listed universe (stale proof)")
@@ -217,23 +244,48 @@ def self_test():
 
     RP = "evidence/pr-review/1/" + "c" * 40 + "/receipt.intoto.jsonl"
 
+    here = os.path.dirname(os.path.abspath(__file__))
+    keys = os.path.join(here, "..", "..", "tests", "fixtures", "pr-review", "keys")
+    key, pub = os.path.join(keys, "pr-review-test-TEST-ONLY.key"), os.path.join(keys, "pr-review-test.pub")
+    if not shutil.which("minisign") or not os.path.isfile(key):
+        print(f"ENV   minisign or the test key {key} is missing: the signature rows cannot be measured")
+        return 2
+    kt = tempfile.mkdtemp()
+    import atexit
+    atexit.register(shutil.rmtree, kt, True)
+    okey, opub = os.path.join(kt, "o.key"), os.path.join(kt, "o.pub")
+    if subprocess.run(["minisign", "-G", "-W", "-f", "-p", opub, "-s", okey], capture_output=True).returncode:
+        print("ENV   minisign -G failed: cannot mint the other-key fixture")
+        return 2
+
     def receipt(root, text):
-        # a real-shaped receipt that names `text`; text "STRAY:<x>" writes a stray non-receipt file instead
-        if text.startswith("STRAY:"):
-            open(os.path.join(root, "receipt.txt"), "w").write(text[6:])
+        # a CI-shaped receipt naming `text`, signed with the test key. Prefixes plant one defect each:
+        # STRAY: a non-receipt file . RAW: right path, not a statement . SELF: reviewer = author
+        # UNSIGNED: no .minisig . OTHERKEY: signed with a key that is not --pubkey
+        mode, _, body = text.partition(":") if text.split(":")[0] in ("STRAY", "RAW", "SELF", "UNSIGNED", "OTHERKEY") else ("", "", text)
+        if mode == "STRAY":
+            open(os.path.join(root, "receipt.txt"), "w").write(body)
             return
-        os.makedirs(os.path.dirname(os.path.join(root, RP)), exist_ok=True)
-        if text.startswith("RAW:"):  # the right path, but plain text, not an in-toto statement
-            open(os.path.join(root, RP), "w").write(text[4:] + "\n")
+        rp = os.path.join(root, RP)
+        os.makedirs(os.path.dirname(rp), exist_ok=True)
+        if mode == "RAW":
+            open(rp, "w").write(body + "\n")
             return
-        open(os.path.join(root, RP), "w").write(json.dumps({"_type": "https://in-toto.io/Statement/v1",
-            "predicateType": "https://paiml.dev/attestations/pr-review/v2", "predicate": {"note": text}}) + "\n")
+        rv = "agent:claude-opus-5-5/a" if mode == "SELF" else "agent:claude-sonnet-5/b"
+        open(rp, "w").write(json.dumps({"_type": "https://in-toto.io/Statement/v1",
+            "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+            "predicate": {"author_actor": {"id": "agent:claude-opus-5-5/a"}, "reviewer_actor": {"id": rv},
+                          "note": body}}) + "\n")
+        if mode != "UNSIGNED":
+            subprocess.run(["minisign", "-S", "-s", okey if mode == "OTHERKEY" else key, "-m", rp,
+                            "-x", rp + ".minisig"], capture_output=True, input=b"\n", check=True)
 
     cases = []
 
-    def case(name, want_green, mutate=None, summaries=None, equiv_rows=None, max_missed=0, receipt_text=None, why=""):
+    def case(name, want_green, mutate=None, summaries=None, equiv_rows=None, max_missed=0, receipt_text=None, why="",
+             nokey=False):
         # why: the RED must be for THIS reason, not another check that happens to fire too
-        cases.append((name, want_green, mutate, summaries, equiv_rows, max_missed, receipt_text, why))
+        cases.append((name, want_green, mutate, summaries, equiv_rows, max_missed, receipt_text, why, nokey))
 
     def drop_one(s):
         s["parts"][0] = s["parts"][0][1:]
@@ -275,13 +327,21 @@ def self_test():
          equiv_rows=[f"{ids[3]}\tproof\treceipt.txt"], receipt_text="STRAY:" + ids[3], why="not a pr-review receipt path")
     case("equivalent citing a receipt path that is not an in-toto statement -> RED", False, summaries=miss,
          equiv_rows=[f"{ids[3]}\tproof\t" + RP], receipt_text="RAW:" + ids[3], why="not an in-toto")
+    case("equivalent whose receipt is a self-review -> RED", False, summaries=miss,
+         equiv_rows=[f"{ids[3]}\tproof\t" + RP], receipt_text="SELF:" + ids[3], why="self-review")
+    case("equivalent whose receipt is unsigned -> RED", False, summaries=miss,
+         equiv_rows=[f"{ids[3]}\tproof\t" + RP], receipt_text="UNSIGNED:" + ids[3], why="unsigned")
+    case("equivalent signed by a key that is not --pubkey -> RED", False, summaries=miss,
+         equiv_rows=[f"{ids[3]}\tproof\t" + RP], receipt_text="OTHERKEY:" + ids[3], why="does not verify")
+    case("equivalent row checked with no --pubkey -> RED", False, summaries=miss,
+         equiv_rows=[f"{ids[3]}\tproof\t" + RP], receipt_text=ids[3], why="no --pubkey", nokey=True)
     case("equivalent with no proof column -> RED", False, summaries=miss,
          equiv_rows=[f"{ids[3]}\t\t" + RP], receipt_text=ids[3], why="3 non-empty")
     case("equivalent row for an id outside the universe -> RED", False,
          equiv_rows=["crates/x/src/a.rs:99:1: gone\tproof\t" + RP], receipt_text="crates/x/src/a.rs:99:1: gone", why="stale proof")
 
     bad = 0
-    for name, want_green, mutate, summ, eq_rows, maxm, rtext, why in cases:
+    for name, want_green, mutate, summ, eq_rows, maxm, rtext, why, nokey in cases:
         with tempfile.TemporaryDirectory() as t:
             root = os.path.join(t, "r")
             diff = build(root, mutate, summ)
@@ -292,7 +352,8 @@ def self_test():
                 open(equiv, "w").write("\n".join(eq_rows) + "\n")
             import contextlib, io
             with contextlib.redirect_stdout(io.StringIO()):
-                errs, _ = check(os.path.join(root, "art"), 2, head, diff, equiv, maxm, root)
+                errs, _ = check(os.path.join(root, "art"), 2, head, diff, equiv, maxm, root,
+                                pubkey=None if nokey else pub)
             green = not errs
             ok = green == want_green and (green or why in "\n".join(errs))
             bad += not ok
@@ -312,6 +373,7 @@ def main():
     c.add_argument("--head-sha", required=True)
     c.add_argument("--diff", required=True)
     c.add_argument("--equiv")
+    c.add_argument("--pubkey", help="minisign public key the equivalents receipts must verify against (the BASE branch copy)")
     c.add_argument("--max-missed", type=int, default=0)
     c.add_argument("--repo", default=".")
     c.add_argument("--table")
@@ -319,7 +381,7 @@ def main():
     if a.shards < 1 or len(a.head_sha) != 40:
         print("usage: --shards >= 1 and a 40-hex --head-sha", file=sys.stderr)
         return 2
-    errs, _ = check(a.dir, a.shards, a.head_sha, a.diff, a.equiv, a.max_missed, a.repo, a.table)
+    errs, _ = check(a.dir, a.shards, a.head_sha, a.diff, a.equiv, a.max_missed, a.repo, a.table, a.pubkey)
     for e in errs:
         print(f"RED   {e}")
     if errs:
