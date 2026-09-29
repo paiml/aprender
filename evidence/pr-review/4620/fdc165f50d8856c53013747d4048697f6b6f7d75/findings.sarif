@@ -1,0 +1,173 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": [
+            {"id": "pmat.tdg-delta"},
+            {"id": "pmat.complexity-delta"},
+            {"id": "pmat.duplication-hit"},
+            {"id": "pmat.satd-clean"}
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "pmat.complexity-delta",
+          "level": "note",
+          "message": {
+            "text": "run_prefill (crates/aprender-serve/src/gguf/cuda/generate_2.rs) cognitive complexity 17 (base) -> 18 (head), from the new chunking while-loop. Already above the 15 threshold pre-diff (existing debt); the diff adds 1 point. No other function in the 9 diffed files changed complexity; the two new files (session_kv.rs, f16_iq4xs_dequant.rs) contribute 0 threshold violations. Not a blocking regression: no file changed TDG letter grade (see tdg-delta) and .pmat-gates.toml's min_grade=B floor is untouched."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["pmat", "analyze", "complexity", "--format", "json", "--files", "<9 diffed paths, comma-joined>"],
+            "exit_code": 0,
+            "stdout_sha256": "see complexity_diff.json/complexity_base.json in the receipt scratch dir",
+            "failure_scenario": "N/A - informational complexity movement within an already-flagged function, not a new defect."
+          }
+        },
+        {
+          "ruleId": "pmat.tdg-delta",
+          "level": "note",
+          "message": {
+            "text": "Per-file TDG (base 722fd1621f -> head fdc165f50d): chat_load_tokenizers.rs B+ 80.40->80.40 (flat); kernels/mod.rs A+ 98.0->98.0 (flat, re-export only); kernels/quantize/mod.rs A+ 95.45->95.45 (flat, re-export only); gdn_prefill_ops.rs A 92.09->92.10 (flat); gpu_profile.rs A- 88.71->88.60 (small real change, still A-); generate_2.rs B- 73.70->74.00 (small improvement); gguf/cuda/mod.rs A 94.76->90.89 (real degrade from added resident_estimate/session_kv_len methods, still grade A, above the B floor); session_kv.rs (new) A+ 97.73; f16_iq4xs_dequant.rs (new) A 93.48. No file crosses below the configured min_grade=B floor."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["pmat", "tdg", "<file>", "--format", "json"],
+            "exit_code": 0,
+            "stdout_sha256": "see tdg_head_clean.json/tdg_base_all.json in the receipt scratch dir",
+            "failure_scenario": "N/A - informational grade movement, not a defect; still within gate."
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-hit",
+          "level": "note",
+          "message": {
+            "text": "8 lexical hits, all reviewed and judged non-defects: (1-4) 'half_to_f32' matches in q5k/dequant.rs and q8_0_dequant.rs are calls to a pre-existing shared helper, not this diff's code, and not re-implementations; (5-6) 'disable_fp8_for_qk_norm' matches in docs/audits/*PMAT-3477* are historical audit docs referencing the old (pre-diff) function name/signature, not code; (7-8) the two new files (f16_iq4xs_dequant.rs, session_kv.rs) also exist byte-identically on the unmerged sibling ref origin/ec/3715-chunked-prefill -- confirmed via `git diff HEAD origin/ec/3715-chunked-prefill -- <path>` returning empty for both, i.e. that ref is an earlier/parallel push of this same author's same commits (3 commits: 9554873458, ad83ccd8f8, a5dc47a0bb, all tagged '#3715'), not independent duplicated work."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["scripts/pr_review_duplication_scan.sh", "--base", "722fd1621ff488b47e821b2cdde7479321c8ce98", "--head", "fdc165f50d8856c53013747d4048697f6b6f7d75", "--rust-semantic", "--json", "dup.json"],
+            "exit_code": 0,
+            "stdout_sha256": "wrote 33 needles, 8 hits, 1124/1124 sibling branches, 45s (see dup.json)",
+            "failure_scenario": "If the sibling-branch files had diverged in behavior, that would be real duplicated/forked logic; verified identical via git diff, so no such risk."
+          }
+        },
+        {
+          "ruleId": "pmat.satd-clean",
+          "level": "note",
+          "message": {
+            "text": "satd_introduced is empty: no TODO/FIXME/HACK/XXX marker in any of the 9 diffed files (grep -niE across each file's current content, 0 matches)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["grep", "-niE", "TODO|FIXME|HACK|XXX", "<each of the 9 diffed files>"],
+            "exit_code": 1,
+            "stdout_sha256": "empty output for all 9 files (grep exit 1 = no match)",
+            "failure_scenario": "N/A - clean result."
+          }
+        }
+      ],
+      "invocations": [{"executionSuccessful": true}]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cuda-docs",
+          "informationUri": "internal:mcp__nvidia-cuda-docs",
+          "rules": [{"id": "cuda.u32-index-idiom"}]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "cuda.u32-index-idiom",
+          "level": "note",
+          "message": {
+            "text": "The diff's own root-cause note (gdn_prefill_ops.rs / generate_2.rs comments) says a 26k-token prefill's per-position score-matrix row offset (num_heads * rows * total, u32) previously risked wrapping past 2^32 before this diff's chunking fix. NVIDIA CUDA sample idioms confirm unsigned (u32-class) indices are the standard type for block/grid-scale indexing (grid-stride-loop idiom: 'for (unsigned int block_pos = blockIdx.x;; block_pos += gridDim.x)'), consistent with this code's existing use of u32 row/position indices; the docs corpus does not itself state a 2^32 bound warning (that is dtype-specific application logic, not a CUDA Toolkit API contract), so this is supporting context, not a direct citation of the bound. The new dense_prefill_chunk_rows() unit test asserts the post-fix product stays under 1<<32 for the three measured cell head-counts (14/16/32) at 26131 tokens -- verified by reading the test."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "mcp__nvidia-cuda-docs__search_cuda_docs(\"CUDA kernel grid-stride loop index computed with u32 (uint32_t) integer overflow at 2^32 elements risk\")",
+            "excerpt": "for (unsigned int block_pos = blockIdx.x;; block_pos += gridDim.x)",
+            "excerpt_sha256": "n/a-short-code-idiom-not-hashed",
+            "failure_scenario": "If u32 indices were not the CUDA-idiomatic type, the fix's choice of clamp arithmetic in u32 space would itself be non-idiomatic; the corpus confirms it is idiomatic, so no additional finding here."
+          }
+        }
+      ],
+      "invocations": [{"executionSuccessful": true}]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "internal:agy",
+          "rules": [{"id": "agy.finding"}]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "agy.finding",
+          "level": "warning",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high) flagged: 'let last_row = (prefill_count - 1) % rows;' in generate_2.rs underflows usize when prefill_count == 0, panicking before a guard can bypass it. REFUTED by the primary reviewer: run_prefill() (crates/aprender-serve/src/gguf/cuda/generate_2.rs) has an unconditional 'if prefill_count == 0 { ...; return Ok(None); }' at its own top (existing code, unchanged by this diff, confirmed by reading the file at lines ~247-256), which returns before reaching the GH-94 batched-prefill section (~line 320) where 'rows'/'last_row' are computed. prefill_count cannot be 0 at the point last_row is computed. This is a false positive: agy's context window did not include the function's own early-return guard, only the diff hunk."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["sed", "-n", "230,301p", "crates/aprender-serve/src/gguf/cuda/generate_2.rs"],
+            "exit_code": 0,
+            "stdout_sha256": "n/a-cited-inline-above; guard text: 'if prefill_count == 0 { ... return Ok(None); }' precedes the batched-prefill block by ~70 lines, unchanged in this diff",
+            "failure_scenario": "Would be real if the prefill_count==0 guard were absent or reachable after the chunking section; it is neither."
+          }
+        },
+        {
+          "ruleId": "agy.finding",
+          "level": "note",
+          "message": {
+            "text": "agy flagged: gpu_profile.rs tests fp16_prefill_that_does_not_fit_keeps_serial / fit_check_leaves_non_qk_norm_fp8_and_forced_paths_alone call 'p.prefill_path().path', a compile error since prefill_path is a struct field, not a method. REFUTED, hallucinated: grep of both test bodies (crates/aprender-serve/src/cuda/gpu_profile.rs:1256-1281) shows neither test calls prefill_path() at all -- both call serial_when_fp16_prefill_does_not_fit (defined line 1159). Separately the premise is also wrong in general: the struct has a field prefill_path (line 68) AND an inherent method fn prefill_path(&self) (line 528) returning PrefillPathChoice, which coexist validly in Rust (field access vs. call-with-parens disambiguate)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["grep", "-n", "prefill_path|fp16_prefill_that_does_not_fit_keeps_serial|fit_check_leaves_non_qk_norm_fp8_and_forced_paths_alone", "crates/aprender-serve/src/cuda/gpu_profile.rs"],
+            "exit_code": 0,
+            "stdout_sha256": "n/a-cited-inline-above",
+            "failure_scenario": "Would be real if either test actually invoked prefill_path() as a call; neither does."
+          }
+        },
+        {
+          "ruleId": "agy.finding",
+          "level": "note",
+          "message": {
+            "text": "agy flagged: in f16_iq4xs_dequant.rs, the row*k_dim linear index is computed in u32 (mul_u32_reg) before widening to u64 for the byte offset, so N*K > 2^32 elements would silently wrap. AGREED as a real theoretical property, but NOT a regression: the identical idiom (row_k = mul_u32_reg(row_id, k_dim)) is the pre-existing pattern in every sibling dequant kernel already in the tree -- q4k/dequant.rs:258, q6k/dequant.rs:125, q8_0_dequant.rs:91 -- so this diff's new file is consistent with, not worse than, the rest of the file family. Pre-existing debt, not introduced here."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["grep", "-n", "mul_u32_reg", "crates/aprender-gpu/src/kernels/quantize/q4k/dequant.rs", "crates/aprender-gpu/src/kernels/quantize/q6k/dequant.rs", "crates/aprender-gpu/src/kernels/quantize/q8_0_dequant.rs"],
+            "exit_code": 0,
+            "stdout_sha256": "n/a-cited-inline-above",
+            "failure_scenario": "A weight tensor with N*K > 4.29B elements (e.g. an implausibly large LM head) would wrap; no shipped GGUF model's largest 2D tensor reaches this today, and the risk is identical to the untouched sibling kernels."
+          }
+        },
+        {
+          "ruleId": "agy.finding",
+          "level": "note",
+          "message": {
+            "text": "agy flagged: the device test harness packs k/n as u64 into a launch-args array for a PTX kernel whose k_dim/n_dim params are U32, working only because little-endian layout truncates correctly. AGREED as a real observation, but NOT a regression: byte-identical to the pre-existing q8_0_dequant.rs:174 ('let mut args = [out.as_ptr(), w.as_ptr(), k as u64, n as u64]'). Test-only harness code, not the production kernel-dispatch path."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": ["grep", "-n", "as u64\\]", "crates/aprender-gpu/src/kernels/quantize/q8_0_dequant.rs"],
+            "exit_code": 0,
+            "stdout_sha256": "n/a-cited-inline-above",
+            "failure_scenario": "Would matter on a big-endian target or if the driver ever read more than 4 bytes for a U32 param; neither applies, and the pattern is unchanged from existing sibling test code."
+          }
+        }
+      ],
+      "invocations": [{"executionSuccessful": true}]
+    }
+  ]
+}
