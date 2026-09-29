@@ -22688,6 +22688,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4083
+  github_issue: 4083
+  item_type: task
+  title: 'PVL-001 EV-9 — PVL-9: provable-ladder required on main'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-29T17:58:00Z
+  updated: 2026-09-29T17:58:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4588 (PR-2 of #4502), C78 cop ruling (a) 2026-09-29. The provable-ladder section runs ADVISORY (ci/sections.yml), not yet in gate.needs; a forced ladder SKIP must be RED, with a planted mutant proving the check sees it (scripts/ci/ladder_skip_is_red.sh), finding docs/findings/ev9-fat-driver-skip-is-success.jsonl.
+  - Making it required (ci.yml gate list) is a later step and an operator check-in; out of scope for #4588.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4101
   github_issue: 4101
   item_type: task
@@ -22986,6 +23005,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels:
   - P0
+  - kind:code
+  notes: null
+- id: PMAT-4189
+  github_issue: 4189
+  item_type: task
+  title: 'P0: nightly publishes every [[bin]] at main head with a SHA manifest (G5)'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-09-29T17:58:00Z
+  updated: 2026-09-29T17:58:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4588 (PR-2 of #4502), C78 cop ruling (a) 2026-09-29. nightly.yml derives the bin list from workspace metadata and builds every [[bin]] at the main head with a SHA manifest; binary-release.yml plus scripts/release/asset_version_check.sh refuse a version-mismatched asset; scripts/check_bin_names_aprender.sh (#4430) keeps shipped names aprender-*. Receipt docs/audits/impl-GH-4189-receipt.md.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
   - kind:code
   notes: null
 - id: PMAT-4199
@@ -23581,6 +23618,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'
+- id: PMAT-4369
+  github_issue: 4369
+  item_type: task
+  title: 'Migrate the 12 hand-rolled producer build.rs key builders onto build_helper::env_key (#2699 remainder)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-25T09:13:07Z
+  updated: 2026-09-29T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4587 (PR-1 of #4502), C78. Every binding build.rs keys through build_helper::env_key with its build-dep, and Cargo.lock carries the edges (CI builds --locked).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4415
   github_issue: 4415
   item_type: task
@@ -23786,7 +23841,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   priority: critical
   assigned_to: aprender-88
   created: 2026-09-27T10:17:06Z
-  updated: 2026-09-27T10:17:06Z
+  updated: 2026-09-29T17:40:00Z
   spec: null
   acceptance_criteria:
   - 'every ONT-10 row on the batch lands in this one PR (no per-row PRs); origin/main merged in without rebase or force'
@@ -23794,6 +23849,8 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - 'scripts/surface_audit_bins_gate.sh is GREEN (every [[bin]] has a docs/audits/surface_audit.csv row) and RED on an empty ledger'
   - 'pv validate passes on contracts/binary-surface-v1.yaml and every contracts/bin-*.yaml; the aprender-contracts lib is green'
   - 'a gate still RED stays in its contract with the observed value in if_fails, never dropped'
+  - '#4587 A-prime (operator ruling 2026-09-29 06:36Z via the cop, commit a79535bd51): CI generates the mutants survivor table itself (mutants-table-scope, mutants-shard matrix, verifier scripts/ci/mutants_survivor_table.py); any gap is RED; scope PR-1 and PR-2 of 0.70 only (ci/mutants-table-refs.txt)'
+  - 'folded tickets carried with their own entries: PMAT-4199, PMAT-4200, PMAT-4347, PMAT-4166 (lint ratchet), PMAT-4139 (Lean label ratchet), PMAT-4604 (pv 0.69.4 set), PMAT-4369 (build_helper::env_key); the quorum --ticket names every one'
   - '(process, not diff content) one quorum on the combined head; pmat-merge arms with --match-head-commit'
 - id: PMAT-4507
   github_issue: 4507
@@ -23815,22 +23872,6 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Blocked #4479 (ONT-10 chain head) twice on framework16-2. 0.70.0 path; branch 49/4507-fat-ws-aside off car/0.70.0.'
-- id: PMAT-4514
-  github_issue: 4514
-  item_type: task
-  title: 'FLOW-003 v1.1: queue/release-cycle model spec with review fixes'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-27T06:56:07Z
-  updated: 2026-09-27T06:56:11.885936345+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-4510
   github_issue: 4510
   item_type: task
@@ -23847,7 +23888,28 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - 'the pr-review-sign step on a PR with an unsigned receipt signs it instead of reporting an empty key'
   - 'the x86-main job of .github/workflows/ci.yml runs scripts/check_ci_fat_secrets_plumbed.sh --self-test and then the guard on the tree, before the sections run, so a future truncation fails ci / gate'
   - 'Operator, verbatim (2026-09-28, via the cop): "Fix inside #4512 (same scope: guard/plumbing): exclude the receipt path(s) from the fingerprint input set ... add a test: re-running the stamp on an unchanged diff gives the same fingerprint (idempotent)." scripts/lib/pr_review_patch_id.sh excludes evidence/pr-review/<pr> and docs/audits/quorum-*.json; scripts/check_pr_review_arm4.sh --self-test proves head = +receipt = +quorum = re-stamp, and that a control file (docs/audits/other.json) still moves the fingerprint'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: 'Found on #4431 run 36297914139 (x86-main pr-review-sign). Regressed in #4441 (a016cee94).'
+- id: PMAT-4514
+  github_issue: 4514
+  item_type: task
+  title: 'FLOW-003 v1.1: queue/release-cycle model spec with review fixes'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-27T06:56:07Z
+  updated: 2026-09-27T06:56:11.885936345+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4594
   github_issue: 4594
   item_type: task
@@ -23870,6 +23932,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-28 13:53Z (via the cop): own small PR, first in the queue, on main before the #4512 push.'
+- id: PMAT-4604
+  github_issue: 4604
+  item_type: task
+  title: 'C2: publish pv (aprender-contracts-cli) 0.69.4 + deps for B1 gate tool (L20)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-28T14:17:01Z
+  updated: 2026-09-29T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4587 (PR-1 of #4502), C78. The 6-crate pv set is at 0.69.4, the facade guard allows exactly that set, and binary-release builds pv with --features update-check,build-sha.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4633
   github_issue: 4633
   item_type: task

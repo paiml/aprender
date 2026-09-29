@@ -1,0 +1,80 @@
+{
+ "version": "2.1.0",
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "informationUri": "https://github.com/paiml/pmat",
+     "version": "3.30.0",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "git diff 15d393dbec 05c9e6f2d9 -- . ':!evidence/pr-review'"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-SCOPE-001",
+     "level": "note",
+     "message": {
+      "text": "This run reads IN FULL the 2-commit delta 15d393dbec..05c9e6f2d9 (5 files changed, 224 insertions(+), 4 deletions(-)): 8a5161131b (kill tests, crates/aprender-common/src/cli_roles.rs, cherry-picked from aprender-3d) and 05c9e6f2d9 (feature-group shard/merge mechanism: ci/mutants-feature-groups.txt, scripts/mutants_table_shard.sh, scripts/check_mutants_feature_groups.sh, .github/workflows/ci.yml +1 line)."
+     }
+    },
+    {
+     "ruleId": "PR1-MUTANTS",
+     "level": "error",
+     "message": {
+      "text": "Carried unchanged from the b132bf3c34 receipt: under the operator A-prime ruling the diff's mutants are judged only by the CI survivor table (gate GATE-MUTANTS-TABLE-RULE) on this exact head sha + diff hash. This review did not observe that job GREEN on 05c9e6f2d960233a57d04d365e357f398feb7e31 (no gh polling performed, per the fleet's GH-1 rate-limit rule and the 12-minute lane budget); the BLOCK stands until it is."
+     }
+    },
+    {
+     "ruleId": "REV-KILLTEST-001",
+     "level": "note",
+     "message": {
+      "text": "8a5161131b's four new tests in cli_roles.rs are real assertions against literal expected values (role/kind spellings, SamplingKind::id() format string, SamplingArg::groups() ids vs SamplingKind::ALL, kind_of() against a real clap::Command built from SamplingArg::groups(), and order-preserving strings()/path_bufs()), not tautologies (nothing asserts a value against itself or a freshly-recomputed copy of the same expression)."
+     }
+    },
+    {
+     "ruleId": "REV-SHARD-001",
+     "level": "note",
+     "message": {
+      "text": "mutants_table_shard.sh: the initial universe capture (`--list` into list.txt) runs BEFORE the per-row `--exclude` set is built, so gated files' mutants stay in the Rule A' universe; only the default TEST run excludes them. A groups.txt with zero rows (or a row whose file path is a typo) does not silently pass -- the gated mutants then run compileless under the default run and read MISSED, which the unchanged checker (mutants_survivor_table.py) reports RED via its KILLED/UNKILLED classification. Verified by reading scripts/ci/mutants_survivor_table.py:162-178 (Mutant-scenario filter, MISSING/EXTRA counters) against the new script; not independently re-run here (cargo is banned on this lambda host)."
+     }
+    },
+    {
+     "ruleId": "REV-SHARD-002",
+     "level": "note",
+     "message": {
+      "text": "Double-count guard: each feature-group row's own outcomes.json is merged (perl JSON::PP) alongside the default run's; the checker counts occurrences of each mutant id across the merged outcomes and flags EXTRA if a mutant is tested more than once (mutants_survivor_table.py:172-178). Since the default run excludes each group's file via --exclude and the group run is scoped with --file, the same mutant id cannot land in both, so no double-test path was found in this delta."
+     }
+    },
+    {
+     "ruleId": "REV-SHARD-003",
+     "level": "note",
+     "message": {
+      "text": "Low-severity, non-blocking: `rows=()` / `gx=()` followed later by `for row in \"${rows[@]}\"` under `set -uo pipefail` relies on bash >= 4.4's empty-array-expansion fix; on bash < 4.4 (e.g. macOS system /bin/bash 3.2) this would raise 'unbound variable' when a groups file has zero eligible rows. Not exploitable on the Linux CI runners this gate targets (bash 5.x), so accepted as informational rather than a finding to fix."
+     }
+    },
+    {
+     "ruleId": "REV-SHARD-004",
+     "level": "note",
+     "message": {
+      "text": "check_mutants_feature_groups.sh's fake-cargo proof exercises the REAL mutants_table_shard.sh and the REAL mutants_survivor_table.py checker (only `cargo` is faked, via the existing MUTANTS_GATE_CARGO seam plus the new MUTANTS_FEATURE_GROUPS seam), and its case table (all-caught GREEN; gated-survivor/default-survivor/group-tests-nothing/no-group-rows RED; group-no-outcomes/cuda-row DEAD) plausibly covers the claimed weakenings by inspection. The commit message's claim that mutating the merge line to drop group outcomes turns the GREEN case RED was not independently re-executed this session (cargo and destructive edits are both out of scope for a read-only review lane on this host); accepted on the code-reading trace (dropping `parts` would leave gated mutant ids absent from merged outcomes.json, which the checker's MISSING counter reports RED) rather than a live rerun."
+     }
+    },
+    {
+     "ruleId": "REV-CI-001",
+     "level": "note",
+     "message": {
+      "text": "The .github/workflows/ci.yml change is a single added line invoking the new self-test next to the existing gate-rule self-test, unconditionally, in the same job step; it does not loosen any existing check and adds a required (non-continue-on-error) command."
+     }
+    }
+   ]
+  }
+ ]
+}

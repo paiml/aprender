@@ -729,4 +729,85 @@ mod tests {
         assert_eq!(t.prompt.as_deref(), Some("hi"));
         assert_eq!(t.inputs.len(), 1);
     }
+
+    /// The spellings are the `apr-cli-surface` JSON contract: a renamed or
+    /// blank spelling silently changes what `apr surface` reports.
+    #[test]
+    fn role_and_sampling_spellings_are_the_json_contract() {
+        let roles = [
+            (Role::Model, "model"),
+            (Role::Prompt, "prompt"),
+            (Role::InputFile, "input-file"),
+            (Role::Backend, "backend"),
+            (Role::Sampling, "sampling"),
+            (Role::Mode, "mode"),
+            (Role::Other, "other"),
+            (Role::Unknown, "unknown"),
+        ];
+        for (role, s) in roles {
+            assert_eq!(role.as_str(), s);
+        }
+        let kinds = [
+            "seed",
+            "temperature",
+            "top_k",
+            "top_p",
+            "min_p",
+            "repeat_penalty",
+            "repeat_last_n",
+        ];
+        for (k, s) in SamplingKind::ALL.iter().zip(kinds) {
+            assert_eq!(k.as_str(), s);
+            assert_eq!(
+                k.id(),
+                format!("batuta_common::cli_roles::SamplingArg::{s}")
+            );
+        }
+    }
+
+    /// One `multiple(true)` group per kind, each named by that kind's id.
+    #[test]
+    fn sampling_groups_are_one_per_kind() {
+        let groups = SamplingArg::groups();
+        let ids: Vec<&str> = groups.iter().map(|g| g.get_id().as_str()).collect();
+        let want: Vec<&str> = SamplingKind::ALL.iter().map(|k| k.id()).collect();
+        assert_eq!(ids, want);
+        assert!(groups.into_iter().all(|mut g| g.is_multiple()));
+    }
+
+    /// `kind_of` finds each argument's own kind, and none for an argument
+    /// outside every sampling group, even when the groups are declared.
+    #[test]
+    fn kind_of_reads_the_group_an_argument_joined() {
+        let mut cmd = Command::new("t").groups(SamplingArg::groups());
+        for k in SamplingKind::ALL {
+            cmd = cmd.arg(Arg::new(k.as_str()).long(k.as_str()).group(k.id()));
+        }
+        cmd = cmd.arg(Arg::new("port").long("port"));
+        cmd.build();
+        for k in SamplingKind::ALL {
+            let arg = cmd
+                .get_arguments()
+                .find(|a| a.get_id() == k.as_str())
+                .expect("arg exists");
+            assert_eq!(SamplingArg::kind_of(&cmd, arg), Some(k), "{k:?}");
+        }
+        let port = cmd
+            .get_arguments()
+            .find(|a| a.get_id() == "port")
+            .expect("arg exists");
+        assert_eq!(SamplingArg::kind_of(&cmd, port), None);
+    }
+
+    #[test]
+    fn strings_and_path_bufs_keep_every_value_in_order() {
+        let texts = [FreeText::from("a"), FreeText::from("b")];
+        assert_eq!(strings(&texts), vec!["a".to_string(), "b".to_string()]);
+        assert!(strings::<FreeText>(&[]).is_empty());
+        let paths = [InputFile::from("x.wav"), InputFile::from("y.wav")];
+        assert_eq!(
+            path_bufs(&paths),
+            vec![PathBuf::from("x.wav"), PathBuf::from("y.wav")]
+        );
+    }
 }
