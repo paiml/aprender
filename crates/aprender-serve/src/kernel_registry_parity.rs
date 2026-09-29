@@ -34,6 +34,9 @@ use crate::quantize::{
 };
 use rand::{Rng, SeedableRng};
 
+#[path = "kernel_registry_op_parity.rs"]
+mod ops;
+
 pub(super) const SCHEMA: &str = "kernel-parity-receipt/v1";
 const ORACLE: &str = "in_tree_dequant_f64";
 const DECODE_ORACLE: &str = "le_decode_half_f64";
@@ -590,6 +593,27 @@ fn repo_root() -> std::path::PathBuf {
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
 fn receipt_header(id: &str, source_fn: &str, row: &KernelRow, oracle: &str) -> serde_json::Value {
+    let set = InputSet::from_tree(&repo_root(), row, "none", &device(), oracle)
+        .unwrap_or_else(|e| panic!("{id}: {e}"));
+    receipt_header_for(id, source_fn, &row.precision, &set)
+}
+
+/// The device part of a CPU receipt's input set: the arch and the detected ISA features.
+fn device() -> String {
+    std::iter::once(host_arch())
+        .chain(isa_detected())
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn receipt_header_for(
+    id: &str,
+    source_fn: &str,
+    precision: &str,
+    set: &InputSet,
+) -> serde_json::Value {
     let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
         .ok()
         .or_else(|| std::env::var("HOSTNAME").ok())
@@ -597,17 +621,11 @@ fn receipt_header(id: &str, source_fn: &str, row: &KernelRow, oracle: &str) -> s
         .filter(|h| !h.is_empty())
         .expect("a receipt names its host");
     let sha = std::env::var("KREG_GIT_SHA").expect("KREG_GIT_SHA: the commit that was measured");
-    let device = std::iter::once(host_arch())
-        .chain(isa_detected())
-        .collect::<Vec<_>>()
-        .join("+");
-    let set = InputSet::from_tree(&repo_root(), row, "none", &device, oracle)
-        .unwrap_or_else(|e| panic!("{id}: {e}"));
     serde_json::json!({
         "schema": SCHEMA,
         "kernel_id": id,
         "source_fn": source_fn,
-        "registry_precision": row.precision,
+        "registry_precision": precision,
         "host": host,
         "host_arch": host_arch(),
         "isa_detected": isa_detected(),
@@ -1139,14 +1157,42 @@ fn committed_parity_receipts_are_fresh_against_this_tree() {
             serde_json::json!({"receipt": path, "input_set_hash": now.hash(), "stale": parts}),
         );
     }
-    if let Ok(out) = std::env::var("KREG_INPUT_SETS_OUT") {
-        write_input_sets(&out, sets, all.len() - stale.len(), all.len());
+    let op_all = ops::committed_ops();
+    for (entry, rc) in &op_all {
+        let path = entry["receipt"].as_str().expect("receipt path");
+        let id = rc["kernel_id"].as_str().expect("kernel_id");
+        let row = r
+            .ops()
+            .iter()
+            .find(|row| row.kernel_id == id)
+            .unwrap_or_else(|| panic!("{path}: {id} is not an ops[] row"));
+        let was = InputSet::from_receipt(rc).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let now = InputSet::from_op_tree(
+            &repo_root(),
+            row,
+            &was.driver,
+            &was.device,
+            &ops::op_oracle(ops::op(id)),
+        )
+        .unwrap_or_else(|e| panic!("{path}: {e}"));
+        let hash = rc["input_set_hash"].as_str().unwrap_or("");
+        let parts = match was.freshness(hash, &now) {
+            Freshness::Fresh => Vec::new(),
+            Freshness::Stale(parts) => parts,
+        };
+        if !parts.is_empty() {
+            stale.push(format!("{path}: stale {}", parts.join(",")));
+        }
+        sets.insert(
+            id.to_string(),
+            serde_json::json!({"receipt": path, "input_set_hash": now.hash(), "stale": parts}),
+        );
     }
-    eprintln!(
-        "kreg receipt reuse: {}/{} fresh",
-        all.len() - stale.len(),
-        all.len()
-    );
+    let total = all.len() + op_all.len();
+    if let Ok(out) = std::env::var("KREG_INPUT_SETS_OUT") {
+        write_input_sets(&out, sets, total - stale.len(), total);
+    }
+    eprintln!("kreg receipt reuse: {}/{total} fresh", total - stale.len());
     assert!(
         stale.is_empty(),
         "F-8: re-measure these receipts\n{}",
