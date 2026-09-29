@@ -1,0 +1,46 @@
+{
+  "build_identity": "d64d8a7118",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:repeat_penalty:once per distinct t<n in last_n,x<=0?fl32(x*p):fl32(x/p),p=1.3,last_n=32",
+    "row_sha256": "4100adcadd80cda0ee8ba2285d863e06e2ee7bf71ce129ce16dc4b10957086b3",
+    "source_sha256": "04e9c6b2c8d6fba236532200b23feeedd6388f8067761aa7971fe93f4200901e",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "1986d17cd4d4115ade3a13bacf9140105a651b938d57826ee4dc65a1e3ec3390",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.repeat_penalty.f32",
+  "margin": {
+    "error_model": "EM-ELEM",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "repeat_penalty:once per distinct t<n in last_n,x<=0?fl32(x*p):fl32(x/p),p=1.3,last_n=32",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.0,
+    "max_rel_err": 0.0
+  },
+  "source_fn": "apply_repeat_penalty",
+  "tolerance_rel": 2.9999999999999997e-308,
+  "ts": "2026-09-29T17:37:59Z",
+  "workload": {
+    "n": 896,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}
