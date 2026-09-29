@@ -1,5 +1,5 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-09-27'
   author: PAIML Engineering
   description: "The CI tier router (FLOW-003 QM-11, #4529). Given a diff D and the input set I = I_dep ∪ F ∪ C that QM-10 records, it decides which tier the diff owes: T0 (lint only), selective (build the workspace, test R'), or T3 (everything). A router that under-selects lets a regression merge green, so it FAILS CLOSED: every case it cannot prove is T3 with a reason."
@@ -77,8 +77,14 @@ proof_obligations:
     applies_to: fail_closed
   - id: CTR-INV-007
     type: invariant
-    property: "Until the join is ruled, the router in CI is a SHADOW: the workspace-test-build step is continue-on-error with timeout-minutes ≤ 10, runs after the tier is staged and before the sigma-build upload, no workflow or section reads qm11-route.json, and the base ref never reaches a shell as code; each of fourteen wiring and step-script mutants turns scripts/check_qm11_shadow.sh --self-test RED"
-    formal: "∀ s ∈ steps(workflows) \\ {shadow}: reads(s) ∩ {qm11-route.json} = ∅"
+    property: "The router's CI step stays a SHADOW that cannot fail the job: continue-on-error with timeout-minutes ≤ 10, after the tier is staged and before the sigma-build upload, the base ref never reaching a shell as code; its file has exactly ONE reader, the join-C decide step (CTR-INV-008), and any other reader in any workflow or section is RED"
+    formal: "∀ s ∈ steps(workflows) \\ {shadow, join_decide}: reads(s) ∩ {qm11-route.json} = ∅"
+    applies_to: fail_closed
+
+  - id: CTR-INV-008
+    type: invariant
+    property: "Join C (ruled aprender-1b 08:32Z: B's selective plus today's quick set, keep-or-tighten; T0 narrowing out of scope) can only ADD tests. The build job decides once and ships the decision to all 8 shards; join = none on every tier but quick and on a T0 route, an abstention or a missing or unreadable route, so none is today exactly; otherwise the shards run today's quick steps unchanged and then their partition of the workspace lib tests of package(R') (a T3 route, an unknown tier or a name that is not a crate name: all of them) from a compile-once archive; the fan-in requires every shard's decision to equal the build job's and the union of their executed ids to equal the build job's list. No step is conditioned on the join but the join's own compile"
+    formal: "quick(D) ⊆ run(D) ∧ run(D) = quick(D) ∪ lib(join(D)) ∧ (today(D) ≠ quick ⇒ join(D) = ∅) ∧ ∀ n ≤ 8: join_n(D) = join_build(D)"
     applies_to: fail_closed
 
 falsification_tests:
@@ -102,8 +108,14 @@ falsification_tests:
 
   - id: FALSIFY-CI-TIER-ROUTER-004
     rule: "The CI shadow of the router gates nothing, and its step script fails closed on its own case table"
-    prediction: "check_qm11_shadow.sh exits 0: the wiring holds S1-S4, the router table passes, and tier_route_step.sh's rows pass (a sub-7-nightly set and a missing input set are NAMED abstentions)"
+    prediction: "check_qm11_shadow.sh exits 0: the wiring holds S1-S4 and J1-J4, the router table passes, tier_route_step.sh's rows pass (a sub-7-nightly set and a missing input set are NAMED abstentions), and qm11_join.sh's decision table passes"
     test: "bash scripts/check_qm11_shadow.sh"
-    if_fails: "The shadow started to gate (a reader of qm11-route.json, a dropped continue-on-error, a step before the tier is staged) or stopped reporting; the output names the S-row"
+    if_fails: "The shadow started to gate (a reader of qm11-route.json other than the join, a dropped continue-on-error, a step before the tier is staged), or the join could narrow (a step conditioned on it, a shard that may skip or fail softly, a fan-in that no longer compares); the output names the S- or J-row"
+
+  - id: FALSIFY-CI-TIER-ROUTER-005
+    rule: "Every way the shadow could gate or the join could narrow is a mutant the guard turns RED"
+    prediction: "check_qm11_shadow.sh --self-test exits 0 with 30/30 mutants RED, each printing the S-, J- or table row that caught it"
+    test: "bash scripts/check_qm11_shadow.sh --self-test"
+    if_fails: "A mutant survived: that way of loosening today's tier is no longer caught. The output names it"
 
 kani_harnesses: []

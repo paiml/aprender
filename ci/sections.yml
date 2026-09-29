@@ -907,6 +907,56 @@ jobs:
           # never a stale copy. The fan-in union is still compared to the whole list.
           j="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml"
           if [ -f "$j" ]; then cp "$j" "$RUNNER_TEMP/sigma/quick-tree.junit.xml"; else echo "shard ${SHARD}: empty quick-tree partition"; fi
+      # QM-11 (#4529) join C, the shard half: the build job decided ONCE (join, join.filter
+      # in ws-lib-archive). `none` runs nothing more; otherwise this shard runs its hash
+      # partition of the selected workspace lib tests from the archive, AFTER every quick
+      # step (it adds to them, it replaces none). Sharded CI only: an unsharded run has no
+      # build job, and runs today's quick tier unchanged.
+      - name: "QM-11 join C: fetch the build job's decision and archive (#4529)"
+        if: steps.tier.outputs.tier == 'quick' && matrix.shards != 1
+        uses: actions/download-artifact@v4
+        with:
+          name: ws-lib-archive
+          path: ws-lib-archive-dl
+      - name: "QM-11 join C: the router's lib tests from the compile-once archive (#4529)"
+        if: steps.tier.outputs.tier == 'quick' && matrix.shards != 1
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          a=ws-lib-archive-dl/ws-lib-archive
+          [ -s "$a/join" ] || { echo "::error::qm11-join: the build job shipped no join decision"; exit 1; }
+          join=$(cat "$a/join")
+          mkdir -p "$RUNNER_TEMP/sigma"
+          printf '%s\n' "$join" > "$RUNNER_TEMP/sigma/join"
+          case "$join" in
+            none) echo "qm11-join: none -- today's quick tier, unchanged"; exit 0 ;;
+            selective|t3) ;;
+            *) echo "::error::qm11-join: unknown decision '$join'"; exit 1 ;;
+          esac
+          bt=$(cat "$a/tier")
+          [ "$bt" = quick ] || { echo "::error::qm11-join: the build job decided tier '$bt', this shard 'quick'"; exit 1; }
+          [ -s "$a/lib.tar.zst" ] || { echo "::error::qm11-join: '$join' shipped with no archive at $a/lib.tar.zst"; exit 1; }
+          flt=$(cat "$a/join.filter")
+          [ -n "$flt" ] || { echo "::error::qm11-join: '$join' shipped with an empty filter"; exit 1; }
+          echo "qm11-join: $join -- this shard's partition of: $flt"
+          t="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          rm -f "${t:?}/nextest/ci/junit.xml"
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e SHARD -e SHARDS -e ARCHIVE="/workspace/$a/lib.tar.zst" -e FLT="$flt" \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              mkdir -p /workspace/target/ws-extract
+              cargo nextest run --profile ci --archive-file "$ARCHIVE" --workspace-remap /workspace --extract-to /workspace/target/ws-extract --extract-overwrite -E "$FLT" --partition "hash:${SHARD}/${SHARDS}" --no-tests=pass'
+          # An absent junit is this shard's empty partition (removed above, never stale);
+          # the fan-in compares the union of the shards with the build job's list.
+          if [ -f "$t/nextest/ci/junit.xml" ]; then cp "$t/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/join.junit.xml"; else echo "shard ${SHARD}: empty join partition"; fi
       - name: "Σ-executed (quick tier): the tests this job ran are exactly the tests it owes (#4433)"
         # Unsharded only: a sharded run compares the UNION of the shards in the
         # workspace-test fan-in against the list shard 1 made before its runs.
@@ -990,6 +1040,10 @@ jobs:
               cp "$sig/quick-tree.list.json" sigma-shard/
               if [ -f "$sig/quick-sel.list.json" ]; then cp "$sig/quick-sel.list.json" sigma-shard/; fi
             fi
+            # QM-11 join C: the decision this shard applied (the fan-in requires it to equal
+            # the build job's) and, when it ran, its partition's junit.
+            cp "$sig/join" sigma-shard/join
+            if [ -f "$sig/join.junit.xml" ]; then cp "$sig/join.junit.xml" sigma-shard/; fi
           fi
       - uses: actions/upload-artifact@v7
         if: matrix.shards != 1
@@ -1144,6 +1198,55 @@ jobs:
           bash scripts/ci/tier_route_step.sh . "$RUNNER_TEMP/tier.txt" "$RUNNER_TEMP/touched.txt" \
             "origin/${GITHUB_BASE_REF}" sigma-build/qm11-route.json \
             || echo "::warning::qm11-shadow: the step faulted (rc=$?); it gates nothing"
+      # QM-11 (#4529) join C, ruled by aprender-1b 08:32Z: "take C (B's selective + today's
+      # quick set; keep-or-tighten, pre-approved). T0 narrowing goes to the operator as a
+      # separate ruling, not in this PR." The decision is made ONCE, here, from the shadow's
+      # file, and shipped inside ws-lib-archive so the 8 shards and the fan-in apply the same
+      # one. It can only ADD: `none` is today's tier exactly (full, none, reuse, a T0 route,
+      # an abstention, a missing or broken file); `selective`/`t3` run today's quick steps
+      # PLUS the workspace lib tests of package(R') (or all of them) from a compile-once
+      # archive. scripts/check_qm11_shadow.sh (J rows) holds that shape; qm11_join.sh
+      # --self-test holds the decision table.
+      - name: "QM-11 join C: decide once what the router ADDS to today's tier (#4529)"
+        id: join
+        shell: bash
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: bash scripts/ci/qm11_join.sh decide "$TIER" sigma-build/qm11-route.json ws-lib-archive sigma-build
+      - name: "QM-11 join C: compile once, list the lib tests the join adds (#4529)"
+        if: steps.join.outputs.join != 'none'
+        timeout-minutes: 50
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=16 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              cargo nextest archive --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --archive-file /workspace/ws-lib-archive/lib.tar.zst
+              cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$(cat /workspace/ws-lib-archive/join.filter)" --message-format json > /workspace/sigma-build/join.list.json'
+          # A filter that selects no lib test (a package with none) owes nothing; the fan-in
+          # refuses an empty universe, so the shipped decision says so instead of lying.
+          n=$(python3 -c 'import sys; sys.path.insert(0, "scripts/ci"); import sigma_executed as s; print(len(s.nextest_list_ids(sys.argv[1])))' sigma-build/join.list.json)
+          echo "qm11-join: the join adds $n workspace lib tests"
+          if [ "$n" -eq 0 ]; then
+            printf 'none\n' | tee ws-lib-archive/join > sigma-build/join
+            echo "qm11-join: 0 tests selected, shipped as none"
+          fi
+          ls -la ws-lib-archive sigma-build
       - uses: actions/upload-artifact@v7
         with:
           name: ws-lib-archive

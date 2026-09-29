@@ -464,6 +464,22 @@ jobs:
                 for n in $(seq 1 "$shards"); do f="$d/sigma-shard-$n/quick-sel.junit.xml"; if [ -f "$f" ]; then j+=(--junit "$f"); fi; done
                 python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates ($shards shards)" "${j[@]}" --list-json "$d/sigma-shard-1/quick-sel.list.json" || rc=1
               fi
+              # QM-11 join C (#4529): the build job decided ONCE what the router adds; every
+              # shard must have applied that decision, and when it added tests the union of
+              # the shards' partitions must be exactly the list the build job made.
+              [ -s "$d/sigma-build/join" ] || { echo "::error::Σ: the build job staged no QM-11 join decision"; exit 1; }
+              jb=$(cat "$d/sigma-build/join")
+              for n in $(seq 1 "$shards"); do
+                [ -f "$d/sigma-shard-$n/join" ] || { echo "::error::Σ: shard $n staged no QM-11 join decision"; exit 1; }
+                js=$(cat "$d/sigma-shard-$n/join")
+                [ "$js" = "$jb" ] || { echo "::error::Σ: shard $n applied join '$js', the build job decided '$jb'"; exit 1; }
+              done
+              echo "QM-11 join: $jb"
+              if [ "$jb" != none ]; then
+                j=()
+                for n in $(seq 1 "$shards"); do f="$d/sigma-shard-$n/join.junit.xml"; if [ -f "$f" ]; then j+=(--junit "$f"); fi; done
+                python3 scripts/ci/sigma_executed.py nextest --kind "QM-11 join $jb ($shards shards)" "${j[@]}" --list-json "$d/sigma-build/join.list.json" || rc=1
+              fi
               ;;
             *) echo "every shard ran tier '$tier': no Σ is owed" ;;
           esac
