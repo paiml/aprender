@@ -76,7 +76,11 @@ fn an_identical_crate_copy_is_skipped_and_the_top_level_file_kept() {
     assert!(!refused.iter().any(|r| r.stem == "same-v1"), "{refused:?}");
     // Contrast (#4538 re-quorum): the crate copy was walked and compared by bytes, not
     // missed — one changed byte in the same file and the same stem is refused.
-    write(t.path(), "crates/k/contracts/same-v1.yaml", &contract("same2"));
+    write(
+        t.path(),
+        "crates/k/contracts/same-v1.yaml",
+        &contract("same2"),
+    );
     let refused = corpus(&t.path().join("contracts")).refused;
     assert!(refused.iter().any(|r| r.stem == "same-v1"), "{refused:?}");
 }
