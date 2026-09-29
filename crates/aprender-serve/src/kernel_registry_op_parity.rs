@@ -341,6 +341,44 @@ fn run_residual_add(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f6
     (got, want)
 }
 
+/// The repeat penalty's workload: a 64-token history of which the last 32 are the window.
+const PEN_P: f32 = 1.3;
+const PEN_LAST_N: usize = 32;
+
+/// Repeat penalty against its definition: each DISTINCT in-vocabulary token of the last `last_n`
+/// gets `x * p` if `x <= 0`, else `x / p`, once. f64 holds an f32 product exactly, and its 53
+/// bits make the f32 rounding of an f64 quotient the correctly rounded f32 quotient, so the row is
+/// bitwise. Every trial plants a token repeated inside the window (compounding would hit it
+/// twice), one only before the window, and one past the vocabulary (it must be skipped).
+fn run_repeat_penalty(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let x = activations(rng, n, 8.0);
+    let mut recent: Vec<u32> = (0..2 * PEN_LAST_N)
+        .map(|_| rng.random_range(0..n as u32))
+        .collect();
+    let outside = rng.random_range(0..n as u32);
+    let twice = (outside + rng.random_range(1..n as u32)) % n as u32;
+    recent.retain(|&t| t != outside);
+    recent.insert(0, outside);
+    let w = recent.len() - PEN_LAST_N;
+    recent[w + 1] = twice;
+    recent[w + 3] = twice;
+    recent[w + 5] = n as u32 + 7;
+    let mut got = x.clone();
+    crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(&mut got, &recent, PEN_P, PEN_LAST_N);
+    let p = f64::from(PEN_P);
+    let mut want: Vec<f64> = x.iter().map(|v| f64::from(*v)).collect();
+    let mut done = vec![false; n];
+    for &t in &recent[w..] {
+        let i = t as usize;
+        if i < n && !done[i] {
+            done[i] = true;
+            let v = want[i];
+            want[i] = f64::from((if v <= 0.0 { v * p } else { v / p }) as f32);
+        }
+    }
+    (got, want)
+}
+
 /// The sampler's workload: a 256-token vocabulary, T = 0.7, top-k 40.
 const SAMPLE_T: f32 = 0.7;
 const SAMPLE_K: usize = 40;
@@ -525,6 +563,13 @@ pub(super) const OPS: &[Op] = &[
         formula: "residual_add:fl32(h+d),h+d exact in f64",
         workload: OP_WORKLOAD,
         run: run_residual_add,
+    },
+    Op {
+        id: "cpu.repeat_penalty.f32",
+        source_fn: "apply_repeat_penalty",
+        formula: "repeat_penalty:once per distinct t<n in last_n,x<=0?fl32(x*p):fl32(x/p),p=1.3,last_n=32",
+        workload: OP_WORKLOAD,
+        run: run_repeat_penalty,
     },
     Op {
         id: "cpu.sample.topk.f32",
