@@ -3408,6 +3408,8 @@ jobs:
         # cargo-mutants --in-diff takes a unified diff and mutates ONLY the
         # lines it adds/changes. We diff the PR head against the merge-base with
         # the target branch so the scope is exactly "what this PR introduces".
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           BASE_REF="${{ github.event.pull_request.base.ref }}"
@@ -3437,6 +3439,14 @@ jobs:
           else
             echo "has_rs=false" >> "$GITHUB_OUTPUT"
             echo "No .rs path in the diff ($(grep -c . pr.files || true) path(s)) -- nothing to mutate; the mutation steps skip and the job passes"
+          fi
+          # #4587 A' (operator 2026-09-29 06:36Z): a head ref in ci/mutants-table-refs.txt (PR-1 and PR-2 of 0.70
+          # only) is judged by the CI survivor table -- the mutants-shard matrix over the WHOLE diff, cap 0, verified
+          # by mutants-table -- and `gate` requires mutants-table to succeed for exactly these refs, read from the
+          # same file at the same commit. So this section hands over; it does not pass anything unjudged.
+          if grep -v '^#' ci/mutants-table-refs.txt | grep -qxF -- "$HEAD_REF"; then
+            echo "has_rs=false" >> "$GITHUB_OUTPUT"
+            echo "head ref $HEAD_REF is in ci/mutants-table-refs.txt: judged by the mutants-shard matrix + mutants-table (gate requires it)"
           fi
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
         if: steps.prdiff.outputs.has_rs == 'true'

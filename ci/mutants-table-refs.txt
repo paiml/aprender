@@ -1,0 +1,5 @@
+# Head refs whose PR is judged by the CI survivor table (mutants-shard matrix + mutants-table), not by the
+# one-job `mutants` section (#4587 A', operator 2026-09-29 06:36Z). Scope: PR-1 and PR-2 of 0.70 ONLY.
+# After 0.70 this file is emptied and the 60-mutant cap is checked at PR OPEN (L26).
+split/pvl-rows-0.70
+split/ont10-rest-0.70
