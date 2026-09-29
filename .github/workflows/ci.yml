@@ -85,7 +85,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
@@ -97,6 +97,13 @@ jobs:
       # each planted defect before it is trusted to report a section green.
       - name: fat_driver case table must still turn RED
         run: python3 scripts/ci/fat_driver.py self-test
+      # PMAT-4510: every secrets.<NAME> a section reads must be plumbed above as
+      # FAT_SECRET_<NAME> under its full name; #4441 cut one short and the
+      # receipt signer ran with an empty key on every PR. Text-only, no build.
+      - name: FAT_SECRET plumbing guard case table
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
+      - name: every section secret is plumbed under its full name
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run

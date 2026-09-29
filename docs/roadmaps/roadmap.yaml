@@ -22091,6 +22091,26 @@ roadmap:
   labels:
   - kind:code
   notes: 'Collapse the ~20 ci.yml jobs into 5 fat jobs; each runs every section (ci/sections.yml, verbatim old job bodies; vendored sovereign-ci verified against its upstream sha256) to completion on the biggest runner in its class via scripts/ci/fat_driver.py. Required contexts gate / workspace-test / ci / gate keep their names. scripts/ci/sigma_executed.py enforces the executed test-id set == the universe listed independently (by id, not count); a dropped test turns it RED. Train-active priority hook kept as a floor. Item 3 (rc.N = tag on queue-green main) and the #4434/#4436 release-rule docs are a follow-up PR. Scope of the driver: fat_driver.py collapses the MULTI-section Linux jobs (x86-main, gx10, yoga, determinism); mac-check is the ruling''s mac-refusal job, already ONE section on the one macOS runner (no docker there), so it keeps its steps and its context name, and as on main it is not in gate.needs.'
+- id: PMAT-4445
+  github_issue: 4445
+  item_type: task
+  title: 'apr bench (qwen35 --fast) refuses every run with warmup+iterations > 1: one session reuses its own prefix cache'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-bb
+  created: 2026-09-27T11:13:42+00:00
+  updated: 2026-09-27T11:13:42+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Session::forget_prefix drops every prefix the session can resume from. On main that is the held positions (Session has no checkpoint yet); it destructures Session exhaustively, so a merge that adds the #4214 checkpoint field does not compile until forget_prefix resets it too'
+  - 'bench_qwen35 calls forget_prefix before every warmup turn and every timed turn, so every timed turn prefills its whole prompt; the reused != 0 guard itself is unchanged'
+  - 'session::tests::forget_prefix_makes_an_extending_prompt_prefill_whole_again: an extending prompt, which on main would resume (reused == 2), prefills from position 0 after forget_prefix; RED when forget_prefix does not clear (mutant measured 2026-09-27, panics at session_tests.rs:248)'
+  - 'When this meets car/0.70.0 (#4429), the resolution is the car-side form already reviewed on bb/4445-bench-fresh-prefill @9c34ca648d: forget_prefix also sets checkpoint = None, plus session::tests::forget_prefix_makes_the_same_prompt_prefill_whole_again (identical prompt 3x, reused == 0, no restore; RED on a forget_prefix that keeps the checkpoint, measured)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Adopted from aprender-ea orphan fix/4445-bench-fresh-prefill @65fd973170 (09-25, never PRed). The bug exists only with the #4214 checkpoint, i.e. car/0.70.0 (#4429); main before #4429 does not reuse an identical prompt. Cop ruling 2026-09-27: not folded into the car; own PR on main the moment #4429 merges, before the rc.1 tag. Superseded 2026-09-27 ~14:00Z by operator "make it faster" (via cop): open on main NOW, in parallel with the car. Until the car lands this change is inert on main (an identical prompt already prefills whole there); it pre-lands the bench wiring and the API so the car merge needs only the checkpoint line, which the exhaustive destructure forces.'
 - id: PMAT-4453
   github_issue: 4453
   item_type: task
@@ -22131,6 +22151,28 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'
+- id: PMAT-4510
+  github_issue: 4510
+  item_type: task
+  title: 'ci.yml plumbs the receipt signing secret under a truncated name; a guard ties section secrets to their plumbing'
+  status: in_progress
+  priority: high
+  assigned_to: infra-83
+  created: 2026-09-27 07:00:00+00:00
+  updated: '2026-09-27T07:00:00Z'
+  spec: null
+  acceptance_criteria:
+  - '.github/workflows/ci.yml plumbs FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64, the name ci/sections.yml reads'
+  - 'scripts/check_ci_fat_secrets_plumbed.sh is GREEN on this tree, RED with the #4441 line restored, and its self-test carries that line byte for byte'
+  - 'the pr-review-sign step on a PR with an unsigned receipt signs it instead of reporting an empty key'
+  - 'the x86-main job of .github/workflows/ci.yml runs scripts/check_ci_fat_secrets_plumbed.sh --self-test and then the guard on the tree, before the sections run, so a future truncation fails ci / gate'
+  - 'Operator, verbatim (2026-09-28, via the cop): "Fix inside #4512 (same scope: guard/plumbing): exclude the receipt path(s) from the fingerprint input set ... add a test: re-running the stamp on an unchanged diff gives the same fingerprint (idempotent)." scripts/lib/pr_review_patch_id.sh excludes evidence/pr-review/<pr> and docs/audits/quorum-*.json; scripts/check_pr_review_arm4.sh --self-test proves head = +receipt = +quorum = re-stamp, and that a control file (docs/audits/other.json) still moves the fingerprint'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found on #4431 run 36297914139 (x86-main pr-review-sign). Regressed in #4441 (a016cee94).'
 - id: PMAT-4514
   github_issue: 4514
   item_type: task
@@ -22147,3 +22189,25 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4594
+  github_issue: 4594
+  item_type: task
+  title: 'fix(guard): check_silicon_coverage.sh scores a short API run listing as STALE 9d (false RED)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-57
+  created: 2026-09-28T14:00:00Z
+  updated: 2026-09-28T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Every created>= listing is cross-checked against the unfiltered newest run; a listing missing a run inside the lookback is re-read once, and still short is NO-GO (unknown, rc 2), never STALE
+  - 'Falsifier: stale evidence (newest nightly 9d old, whole listing) stays RED (self-test row h-real-stale, rc 1)'
+  - 'Falsifier: run 36364433328''s real jobs, fresh, are GREEN (row g-real-green, rc 0)'
+  - The 11:25Z short "21 of 21" listing (run 36410817478) scores GREEN on a whole re-read and NO-GO when short on every read; main's reader scores both STALE (rows i, j)
+  - No lookback window, page cap or policy limit changes
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator ruling 2026-09-28 13:53Z (via the cop): own small PR, first in the queue, on main before the #4512 push.'
