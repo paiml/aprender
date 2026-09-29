@@ -98,24 +98,21 @@ reads them; a registry with no `ops[]`, a type key on an op, `archs` on a typed 
 the two arrays refuses the registry.
 
 **Coverage gap, and the first finding for 0.71:** the registry holds 41 `kernels[]` rows, all
-`matvec` or `gemv`, and 23 `ops[]` rows, none with a receipt: ten CPU (embedding, RMSNorm, LayerNorm, RoPE,
-attention, KV write, SwiGLU, GELU, residual add, greedy argmax), ten on the graphed CUDA decode path (host
-embedding, RMSNorm, per-head QK-norm, RoPE, NeoX RoPE, KV scatter, attention, SwiGLU, residual add, `gpu_argmax`),
-and three from `cuda/executor/gdn_ops.rs`, narrowed by `archs`: partial NeoX RoPE and decode attention
-(`qwen35`, `qwen35moe`, `qwen3moe`) and gated RMSNorm (`qwen35`, `qwen35moe`). The Qwen3.5 and MoE CUDA paths
-reuse the dense RMSNorm, QK-norm, SwiGLU and residual-add rows.
+`matvec` or `gemv`, and 32 `ops[]` rows, none with a receipt: ten CPU (embedding, RMSNorm, LayerNorm, RoPE,
+attention, KV write, SwiGLU, GELU, residual add, greedy argmax) plus CPU top-k sampling (`sample_topk`); ten on
+the graphed CUDA decode path (host embedding, RMSNorm, per-head QK-norm, RoPE, NeoX RoPE, KV scatter, attention,
+SwiGLU, residual add, `gpu_argmax`); and eleven on the Qwen3.5/MoE CUDA paths, narrowed by `archs`. From
+`cuda/executor/gdn_ops.rs`: partial NeoX RoPE and decode attention (`qwen35`, `qwen35moe`, `qwen3moe`); and,
+for `qwen35` and `qwen35moe` only, gated RMSNorm, causal conv1d+SiLU, per-head L2 norm, the decay/beta gates,
+the delta-rule recurrence, the q/gate split and the sigmoid output gate. For `qwen3moe` and `qwen35moe`: the
+expert weight scale `elementwise_mul_into` and host sampling `sample_from_logits`. Both paths also reuse the
+dense RMSNorm, QK-norm, SwiGLU and residual-add rows. The op set grew by eight kinds to hold these (conv1d,
+l2norm, gdn_gates, delta_rule, sigmoid_gate, split, elementwise_mul, sample): the shape's `in` list and `OPS`,
+kept equal by `the_op_set_is_the_contracts`.
 
-Still open, because the closed op set has no kind for them. Each needs a new `kreg:op` value, which is a
-contract change (the shape's `in` list and `OPS`, kept equal by `the_op_set_is_the_contracts`):
-- **Qwen3.5 DeltaNet** (`gdn_ops.rs`): `gdn_causal_conv1d_silu_into` (conv1d), `gdn_per_head_l2_norm_into`
-  (l2norm), `gdn_gates_into` (decay/beta gates), `gdn_delta_rule_into` (the recurrence).
-- **Qwen3.5 attention output**: `gdn_split_interleaved_into` (q/gate split) and `gdn_sigmoid_gate_into`.
-- **MoE**: `elementwise_mul_into` (`silu.rs`, expert weight scaling; the other half of the combine is the
-  registered residual add). Router top-k (`route_top_k`) runs on the CPU after the router logits download.
-- **Sampling**: top-k/top-p never runs on a GPU. Both MoE and Qwen3.5 download the logits and sample on the
-  CPU (`sample_from_logits`). A CPU `sample` op kind is still unregistered.
-
-The legacy `forward_qwen3_moe_cuda` and `expert_swiglu_cuda` group is compiled but has no caller, so it gets no
+Still open: the MoE router top-k (`route_top_k`) runs on the CPU and has no op kind; sampling at temperature
+above 0 on the dense and Qwen3.5 CUDA paths is not traced to a fn yet. The legacy `forward_qwen3_moe_cuda` and
+`expert_swiglu_cuda` group is compiled but has no caller, so it gets no
 row: a row names a dispatched fn, not one that could be. Under the
 unregistered-kernel falsifier, **every model is RED today**. That is correct: it is the "0
 unvalidated cells" target stated honestly. Registering the remaining dispatch ops is phase P1.
@@ -165,8 +162,8 @@ Long-context risk moves to the attention kernels' shape classes, and that needs 
 
 ## 8. Phases
 
-- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ops[]`; ten CPU op
-  rows cover the CPU decode path, ten the graphed CUDA one and three the Qwen3.5/MoE GDN path; the op kinds §4 lists as open need a contract change); per-tensor qtype in the
+- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ops[]`; eleven CPU op
+  rows cover the CPU decode path, ten the graphed CUDA one and eleven the Qwen3.5/MoE paths; router top-k and non-greedy CUDA sampling are open); per-tensor qtype in the
   GGUF extractor; `release-readiness-v2.yaml` shapes; extractor edges; the RR2-F1…F6 case table.
 - **P2:** CUDA kernel receipts on lambda (sm_89) and gx10 (sm_121); the `kernel_path` emitter in the
   smoke.
