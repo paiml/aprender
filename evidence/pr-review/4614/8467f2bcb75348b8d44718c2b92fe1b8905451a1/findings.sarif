@@ -1,0 +1,140 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.30.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": [
+            {
+              "id": "PRREV-BUILD-001",
+              "name": "BuildScriptRerunIfChangedGuardedByExists",
+              "shortDescription": {
+                "text": "build.rs rerun-if-changed sites for a possibly-absent sibling path are now guarded behind Path::exists()"
+              }
+            },
+            {
+              "id": "PRREV-ADVISORY-004",
+              "name": "SameBugPatternUnfixedElsewhere",
+              "shortDescription": {
+                "text": "Other crates emit rerun-if-changed on a possibly-absent sibling binding.yaml without an exists() guard; out of this ticket's scope"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "PRREV-BUILD-001",
+          "level": "note",
+          "message": {
+            "text": "All four rerun-if-changed sites this diff targets (aprender-build-sha/src/lib.rs:.git-sha; aprender-compute/build.rs:binding.yaml; aprender-present-core/build.rs:binding.yaml; aprender-serve/build.rs: realizar binding.yaml, architecture-requirements-v1.yaml, tensor-names-v1.yaml) are now wrapped in `if <path>.exists() { println!(\"cargo:rerun-if-changed=...\") }`. Verified: the two remaining unguarded rerun-if-changed calls left in aprender-serve/build.rs (arch-constraints-v1.yaml at line ~600, and a read_dir()-enumerated contracts/*.yaml loop at line ~861) are both provably safe to leave unguarded -- the former is an in-tree monorepo path (contracts/ always present since APR-MONO), the latter's paths are yielded by fs::read_dir() and therefore already exist. No unguarded rerun-if-changed site was missed within this diff's targeted crates. cargo test -p aprender-build-sha --lib: 13/13 pass, independently re-run this round, matching the coordinator's claim."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-serve/build.rs" },
+                "region": { "startLine": 279 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "Absent this fix: a crates.io/CI build with no sibling-repo checkout (trueno/presentar/realizar binding.yaml, or a worktree with no .git-sha) makes Cargo see a `rerun-if-changed` path that does not exist, which Cargo treats as always-changed, forcing the build script (and the whole crate downstream) to rerun and rebuild on every single invocation -- this is exactly the mechanism that starved the PMAT-4616 mutants gate of its 300s-per-mutant budget (run 36520343459, 4m18s spent compiling). No remaining defect: this round confirms all four sites are guarded and the two unguarded survivors are provably safe."
+          }
+        },
+        {
+          "ruleId": "PRREV-ADVISORY-004",
+          "level": "note",
+          "message": {
+            "text": "The identical bug pattern (cargo:rerun-if-changed on a sibling-repo binding.yaml with no exists() guard, which forces a rebuild on every invocation when the sibling checkout is absent, e.g. crates.io/CI builds) is still present, unfixed, in at least aprender-db, aprender-train, aprender-mcp, aprender-orchestrate, aprender-verify, aprender-present-cli, aprender-core, aprender-contracts, aprender-graph, aprender-rag, aprender-verify-ml and aprender-simulate build.rs files (confirmed via a repo-wide grep for rerun-if-changed across every build.rs). None of these crates are in PMAT-4616's stated scope (build-sha, compute, present-core, serve) and none are touched by this diff. Advisory only, non-blocking -- not a defect in this PR, a scope note for a possible follow-up ticket."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-train/build.rs" },
+                "region": { "startLine": 90 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A future crates.io/CI build of aprender-db, aprender-train, aprender-mcp, aprender-orchestrate, aprender-verify, aprender-present-cli, aprender-core, aprender-contracts, aprender-graph, aprender-rag, aprender-verify-ml or aprender-simulate with no sibling-repo checkout still hits the identical unbounded-rebuild pattern this PR fixes elsewhere -- these crates' rerun-if-changed calls are not touched by this diff, so a mutants gate or CI job scoped to any of them can still starve on compile time the same way #4614 documents. Not a defect introduced by this PR; a scope note only."
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "nvidia-cuda-docs", "version": "unknown", "rules": [] } },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "properties": {
+            "status": "unreachable",
+            "reason": "OAuth-gated MCP; authenticate() deliberately skipped in this headless review lane, same as all four prior rounds on this PR. cuda_chat_backend.rs is in this diff (comment-only addition), matching trigger."
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "crux", "version": "unknown", "rules": [] } },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "properties": {
+            "status": "consulted",
+            "reason": "The guard's S3.C loop scans the FULL base..head diff (base=2817c6d9), which still contains evidence/pr-review/4614/167bd5e1.../* and .../7008062.../* from earlier commits on this PR branch -- same false-positive trigger as all three prior rounds. This round's own added lines (build.rs guards, cuda_chat_backend.rs comment) match no CRUX_SURFACE_RE token on their own."
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "cargo-mutants", "version": "unknown", "rules": [] } },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "properties": {
+            "status": "unreachable",
+            "reason": "cargo-mutants forbidden on this lambda host (noah-Lambda-Vector, hostname re-confirmed this round). Advisory in-diff tier, unchanged from all three prior rounds."
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "antigravity", "version": "quorum-r5", "rules": [] } },
+      "results": [
+        {
+          "ruleId": "PRREV-QUORUM-005",
+          "level": "note",
+          "message": {
+            "text": "Quorum round r5 on this exact head, read from /mnt/nvme-raid0/tmp/quorum-PMAT-4616-8467f2-r5.json (sha256 babcabaa8017664cd00770336c86158d8734906222a0b86847dff393f128afa1), independently re-read this round rather than taken on the coordinator's word alone: 3/3 PASS, agreed=true, width=3, lanes = [1: claude-sonnet-5 PASS, 2: gemini-3.1-pro-high PASS, 3: claude-haiku-4-5 PASS]. Lane 1's own text additionally re-examined the prior round's PRREV-PRIMARY-003 boundary finding against the *current* diff's cuda_chat_backend.rs and concluded it is a non-issue there specifically because effective_max_tokens is reachable only from try_quantized_backend (the separate CPU/non-CUDA path with no device-KV cap), not from try_cuda_backend -- this is a claim about a pre-existing, out-of-diff code path and is recorded here for the record, not independently re-traced by the primary reviewer this round (advisory, non-blocking either way)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-serve/src/api/cuda_chat_backend.rs" },
+                "region": { "startLine": 380 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "/mnt/nvme-raid0/tmp/quorum-PMAT-4616-8467f2-r5.json (sha256 babcabaa8017664cd00770336c86158d8734906222a0b86847dff393f128afa1), .lanes[0].findings[0].claim, lane 1 of 3, read directly this round via jq",
+            "excerpt": "Prior review evidence embedded in this diff (PRREV-PRIMARY-003) asserted effective_max_tokens (raw context_length, strict >) and serve_context_refusal (capped serving_context, >=) are both reachable from try_cuda_backend, creating a boundary inconsistency. On inspection, effective_max_tokens is only called from the separate try_quantized_backend (CPU/registry path, no device-KV cap applies), not from try_cuda_backend (which now calls fit_serving_context unconditionally before generating). No inconsistency exists in the current diff; this is a non-issue.",
+            "excerpt_sha256": "4ac2395f48c790f95af7c0c54a906c5295905b3ae5503bd2a080fb18c71da7bd",
+            "precision_class": "advisory",
+            "failure_scenario": "If the boundary claim in lane 1's summary were wrong (effective_max_tokens actually reachable from try_cuda_backend, not only try_quantized_backend), a near-full-context CUDA chat/completions request could still generate past context_length into untrained RoPE positions with a 200 response instead of a refusal -- a silent quality defect, not a 500/400 one. This round did not independently re-trace the claim (pre-existing, out-of-diff code, not touched by this diff); it is recorded as-is from the quorum lane."
+          }
+        }
+      ]
+    }
+  ]
+}
