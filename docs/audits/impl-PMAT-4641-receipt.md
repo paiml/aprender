@@ -1,6 +1,6 @@
-# Implementation receipt — PMAT-937: CB-200 as a head-vs-base release gate
+# Implementation receipt — PMAT-4641: CB-200 as a head-vs-base release gate
 
-Agent: apr-0d-b1. Cop ruling 2026-09-29 21:33Z: base = the previous RELEASE tag (last published, not rc, not merge-base).
+Agent: apr-0d-b1. Ticket PMAT-4641 (issue #4641, epic #3997). Cop ruling 2026-09-29 21:33Z: base = the previous RELEASE tag (last published, not rc, not merge-base).
 
 ## Defect
 
@@ -43,3 +43,15 @@ code change. A stored limit plus a moving scanner is not evidence (never-worse r
 - Known limit: head ≤ base tolerates debt that already existed at the last release. `[tdg] baseline` and
   `scripts/cb200_baseline.txt` (the CI ratchet, `check_complexity_ratchet.sh`) are untouched and still shrink-only.
 - Base tag must be fetched (`git fetch --tags`); a missing tag is rc 3 = FAIL, not a pass.
+
+## Q0 round 1 (opus-5-5 FAIL, haiku-4-5 PASS, gpt-oss-120b PASS) — what changed
+
+- Wrong ticket (PMAT-937 is the 609-baseline ticket): filed PMAT-4641 / #4641, receipt renamed.
+- Stale comment in the comply case block said Fail stays NO-GO: reworded to say Fail is re-judged head-vs-release.
+- Tag at HEAD made the comparison vacuous: base now comes from `--default-base` = newest final tag that does NOT contain HEAD
+  (`git tag --no-contains`), and a base that resolves to the same commit as head is rc 3 (NOT MEASURED). Selftest rows added (12 total).
+- "Fail can now be PASS": that is the cop ruling (no stored limit; base = previous release tag). It is bounded by head <= the last release
+  and by rc 3 = FAIL; the CI ratchet (`check_complexity_ratchet.sh`, `scripts/cb200_baseline.txt`) is untouched and stays shrink-only.
+- No dogfood-level fixture: the `Fail)` arm only maps the script's rc (0 PASS, else FAIL); the decision logic and the base choice live in the
+  script and are what the selftest drives.
+- Refactors in scope: the cop ruled the 4 added findings are fixed in this PR (main is +4 over v0.69.3, not +2).

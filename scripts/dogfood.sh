@@ -1206,8 +1206,10 @@ PY
       # place anyone reads it. `Warn` lands in `summary.warn`, which is tallied
       # before the list is narrowed.
       #
-      # `Fail` (the count went UP) and `Skip` (nothing was measured) remain
-      # NO-GO below, unchanged.
+      # `Skip` (nothing was measured) remains NO-GO below, unchanged. `Fail`
+      # (over the STORED baseline) is re-judged head-vs-last-release in the
+      # `Fail)` arm below — cop ruling 2026-09-29 21:33Z — and is NO-GO unless
+      # head <= that release; unmeasurable stays NO-GO.
       Warn)
         mark pmat-comply PASS "CB-200 at or under its recorded baseline — debt held flat, NOT a clean tree; ${CM_FAIL} other fail(s), ${CM_SKIP} skip(s) of which ${CM_DARK} are Error-severity (#1008). Run \`pmat comply check\` (without --failures-only) for the absolute count." ;;
       Skip)
@@ -1219,7 +1221,7 @@ PY
         # red with no code change. Judge head vs BASE, one pmat, one run, baseline neutralised in
         # both trees (scripts/check_cb200_head_vs_base.sh). BASE = $DOGFOOD_CB200_BASE, else the
         # newest FINAL release tag (vX.Y.Z, no -rc/-dev; not the merge-base, which compares a tree to itself). Unmeasurable (rc 3) stays FAIL, never a pass.
-        CB200_BASE=${DOGFOOD_CB200_BASE:-$(git tag | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)}
+        CB200_BASE=${DOGFOOD_CB200_BASE:-$(bash scripts/check_cb200_head_vs_base.sh --default-base)}
         if [ -z "$CB200_BASE" ]; then
           mark pmat-comply FAIL "CB-200 = Fail against the stored baseline and no BASE ref to compare to (set DOGFOOD_CB200_BASE) — NOT MEASURED"
         else

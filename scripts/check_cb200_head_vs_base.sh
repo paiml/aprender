@@ -10,6 +10,7 @@
 #
 # Usage:
 #   scripts/check_cb200_head_vs_base.sh --base <ref> [--head <ref>]    # head defaults to HEAD
+#   scripts/check_cb200_head_vs_base.sh --default-base   # newest final vX.Y.Z tag that does not contain HEAD
 #   scripts/check_cb200_head_vs_base.sh --selftest
 # Env: PMAT_BIN (REQUIRED: the pinned pmat, from scripts/verifier_pin.sh; unset = rc 3).
 # Exit: 0 head <= base | 1 head > base (new debt) | 2 usage | 3 NOT MEASURED (never a pass).
@@ -22,11 +23,12 @@ while [ $# -gt 0 ]; do
         --base) BASE=${2:-}; shift 2 ;;
         --head) HEAD_REF=${2:-}; shift 2 ;;
         --selftest) MODE=selftest; shift ;;
+        --default-base) MODE=defbase; shift ;;
         *) printf 'check_cb200_head_vs_base.sh: unknown argument %s\n' "$1" >&2; exit 2 ;;
     esac
 done
 
-[ "$MODE" = selftest ] || [ -n "${PMAT_BIN:-}" ] || { echo "check_cb200_head_vs_base.sh: PMAT_BIN unset — source scripts/verifier_pin.sh (a gate measured with an unknown pmat is not a gate)" >&2; exit 3; }
+[ "$MODE" = selftest ] || [ "$MODE" = defbase ] || [ -n "${PMAT_BIN:-}" ] || { echo "check_cb200_head_vs_base.sh: PMAT_BIN unset — source scripts/verifier_pin.sh (a gate measured with an unknown pmat is not a gate)" >&2; exit 3; }
 
 WT_ROOT=""
 cleanup() {
@@ -75,8 +77,17 @@ if not m:
 print(m.group(1))' || { printf 'NOT-MEASURED %s (%s)\n' "$label" "$ref" >&2; return 3; }
 }
 
+# A tag that contains HEAD (e.g. the release tag cut from this very commit) would compare HEAD with itself.
+default_base() {
+    git tag --no-contains "${1:-HEAD}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
+}
+
 run() {
     [ -n "$BASE" ] || { printf 'check_cb200_head_vs_base.sh: --base <ref> is required (no stored default)\n' >&2; return 2; }
+    if [ "$(git rev-parse --verify --quiet "$BASE^{commit}")" = "$(git rev-parse --verify --quiet "$HEAD_REF^{commit}")" ]; then
+        printf 'NOT-MEASURED: base %s and head %s are the same commit; that comparison is vacuous\n' "$BASE" "$HEAD_REF" >&2
+        return 3
+    fi
     WT_ROOT=$(mktemp -d) || return 3
     local ver head base
     ver=$("$PMAT_BIN" --version 2>/dev/null | head -1)
@@ -118,7 +129,7 @@ FAKE
         cd "$d" && git init -q r && cd r && git config user.email t@t && git config user.name t
         # stored baseline says 999: a comparison that read it would pass everything below
         printf '[tdg]\nbaseline = 999\nmin_grade = "B"\n' > .pmat-gates.toml
-        commit() { printf '%s' "$1" > count; printf '%s' "${2:-ok}" > mode; git add -A; git commit -q -m "$3"; git tag -f "$3" >/dev/null; }
+        commit() { printf "%s" "$3" > id; printf "%s" "$1" > count; printf '%s' "${2:-ok}" > mode; git add -A; git commit -q -m "$3"; git tag -f "$3" >/dev/null; }
         commit 10 ok base
         commit 10 ok equal
         commit 9  ok lower
@@ -126,6 +137,7 @@ FAKE
         commit 3  skip skipped
         commit 3  nocount nocount
         commit 3  garbage garbage
+        git tag v1.0.0 base; git tag v1.1.0 lower; git tag v1.2.0-rc.1 higher; git tag v9.9.9 garbage
     ) || { rm -rf "${d:?}"; return 3; }
     check() { # <name> <base> <head> <want-rc> [<rc-source-dir override>]
         local rc
@@ -144,6 +156,13 @@ FAKE
     ( cd "$d/r" && PMAT_BIN="$pm" bash "$SELF" --head equal >"$d/out" 2>&1 ); [ $? = 2 ] \
         && printf '  ok    %-28s rc=2\n' "no --base is a usage error" \
         || { printf '  FAIL  no --base must be rc 2\n'; bad=$((bad + 1)); }
+    check "same commit is vacuous"      equal equal   3
+    ( cd "$d/r" && [ "$(bash "$SELF" --default-base)" = v1.1.0 ] ) \
+        && printf '  ok    %-28s v1.1.0\n' "default-base skips rc + tag at HEAD" \
+        || { printf '  FAIL  default-base want v1.1.0\n'; bad=$((bad + 1)); }
+    ( cd "$d/r" && git checkout -q lower && [ "$(bash "$SELF" --default-base)" = v1.0.0 ] ) \
+        && printf '  ok    %-28s v1.0.0\n' "tag containing HEAD excluded" \
+        || { printf '  FAIL  default-base on tagged HEAD want v1.0.0\n'; bad=$((bad + 1)); }
     rm -rf "${d:?}"
     printf -- '--- %s bad\n' "$bad"
     [ "$bad" -eq 0 ]
@@ -151,5 +170,6 @@ FAKE
 
 case "$MODE" in
     selftest) selftest; exit $? ;;
+    defbase) default_base HEAD; exit 0 ;;
     run) run; exit $? ;;
 esac
