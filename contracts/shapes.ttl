@@ -142,7 +142,7 @@
         sh:path <https://ont.paiml.dev/v1alpha1/kreg/op> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:in ( "embed" "rmsnorm" "layernorm" "rope" "attention" "kv_write" "swiglu" "gelu" "residual_add" "argmax" ) ;
+        sh:in ( "embed" "rmsnorm" "layernorm" "rope" "attention" "kv_write" "swiglu" "gelu" "residual_add" "argmax" "conv1d" "l2norm" "gdn_gates" "delta_rule" "sigmoid_gate" "split" "elementwise_mul" "sample" ) ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/kreg/backend> ;
