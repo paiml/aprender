@@ -463,6 +463,59 @@ def say(msg: str):
         print(msg, flush=True)
 
 
+ASIDE_KEEP = 3  # undeletable asides per section before every setup warns
+
+
+def clear_dir(d: Path, log, rmtree=shutil.rmtree):
+    """Leave `d` absent, or raise. Returns the aside path when one was needed.
+
+    A section tree from an earlier run on this runner can hold files a docker
+    section wrote as root. `rmtree(ignore_errors=True)` then deletes what it can,
+    says nothing, and the `mkdir` that follows dies on FileExistsError: #4507, which
+    RED'd #4479 twice on framework16-2. The runner user cannot delete a root-owned
+    file, but it CAN rename the tree holding it (only the parent's write bit is
+    needed), so the leftover is moved to <parent>/.aside/<name>/<ns> and the section
+    starts clean. Every failure is written to the section log; nothing is swallowed.
+    Older asides are retried each time; the ones still undeletable stay, and past
+    ASIDE_KEEP of them every setup prints a ::warning:: naming the directory.
+    """
+    if not os.path.lexists(d):
+        return None
+    try:
+        rmtree(d)
+        return None
+    except OSError as e:
+        err = e
+    bucket = d.parent / ".aside" / d.name
+    bucket.mkdir(parents=True, exist_ok=True)
+    aside = bucket / str(time.time_ns())
+    os.rename(d, aside)  # no fallback: if even this fails the section is RED, loudly
+    log.write(f"setup: {d} could not be removed ({err!r}); moved aside to {aside}\n")
+    for old in sorted(bucket.iterdir()):
+        if old == aside:
+            continue
+        try:
+            rmtree(old)
+            log.write(f"setup: removed older aside {old}\n")
+        except OSError as e:
+            log.write(f"setup: older aside {old} still undeletable ({e!r})\n")
+    left = sorted(bucket.iterdir())
+    if len(left) > ASIDE_KEEP:
+        log.write(f"::warning::{len(left)} undeletable leftovers under {bucket} "
+                  f"(limit {ASIDE_KEEP}): root-owned files from a container section; "
+                  f"chown or remove them on the runner\n")
+    return aside
+
+
+def make_section_dirs(d: Path, log, rmtree=shutil.rmtree):
+    """A fresh section tree: <d>/_temp (RUNNER_TEMP), <d>/home, <d>/ws (RUNNER_WORKSPACE).
+    Strict mkdirs: a leftover that survived clear_dir is a RED section, not a reuse."""
+    clear_dir(d, log, rmtree=rmtree)
+    (d / "_temp").mkdir(parents=True)
+    (d / "home").mkdir()
+    (d / "ws").mkdir()
+
+
 def parse_file_command(path: Path) -> dict:
     out = {}
     if not path.exists():
@@ -628,11 +681,7 @@ class Section:
             self.result = "failure" if self.failed else "success"
 
     def setup_workspace(self):
-        if self.dir.exists():
-            shutil.rmtree(self.dir, ignore_errors=True)
-        self.temp.mkdir(parents=True)
-        (self.dir / "home").mkdir()
-        self.workspace.parent.mkdir(parents=True)
+        make_section_dirs(self.dir, self.log)
         # A local clone HARDLINKS the checkout's object files: self-contained, and
         # nearly free on one filesystem. Not --shared: its alternates point at the
         # runner checkout, which a section's own `docker run -v $GITHUB_WORKSPACE:...`
@@ -1508,6 +1557,81 @@ def cmd_self_test(a):
         row("checkout fetch-depth 0: full history", (ok, cnt), (True, "3"))
         ok, _ = uses_checkout(clone("d2"), {"fetch-depth": 2}, None)
         row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
+    # #4507: a leftover section tree the runner user cannot delete (root-owned files
+    # from a container section). `stubborn` is rmtree on such a tree, whoever runs the
+    # self-test: it deletes all but the `rootowned` dir, then raises EACCES as the real
+    # one does -- or, with ignore_errors, says nothing, which was the bug.
+    def stubborn(p, ignore_errors=False):
+        p = Path(p)
+        keep = list(p.rglob("rootowned")) + ([p] if p.name == "rootowned" else [])
+        if not keep:
+            return shutil.rmtree(p, ignore_errors=ignore_errors)
+        for c in p.iterdir():
+            if not any(k == c or c in k.parents for k in keep):
+                shutil.rmtree(c) if c.is_dir() else c.unlink()
+        if not ignore_errors:
+            raise PermissionError(13, "Permission denied", str(keep[0]))
+
+    def plant(d):
+        (d / "ws" / "rootowned").mkdir(parents=True)
+        (d / "ws" / "rootowned" / "f").write_text("x")
+        (d / "home").mkdir()
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td)
+        d = base / "workspace-test-shard_1_3_"
+        plant(d)
+        log = open(Path(td) / "log", "w", buffering=1)
+        try:  # a raise here is this row's RED, not the end of the table
+            make_section_dirs(d, log, rmtree=stubborn)
+            asides = list((base / ".aside" / d.name).iterdir())
+            got = (len(asides), (asides[0] / "ws" / "rootowned" / "f").exists(),
+                   sorted(c.name for c in d.iterdir()))
+        except OSError as e:
+            got = repr(e)
+        row("#4507 leftover undeletable ws: moved aside, fresh section tree made",
+            got, (1, True, ["_temp", "home", "ws"]))
+        if not isinstance(got, tuple):
+            shutil.rmtree(base / ".aside", ignore_errors=True)
+            stubborn(d, ignore_errors=True)
+            shutil.move(str(d), str(base / "mutant-leftover"))
+        row("#4507 the move aside is in the section log",
+            "moved aside to" in (Path(td) / "log").read_text(), True)
+        d2 = base / "fresh"
+        plant(d2)
+        try:
+            make_section_dirs(d2, log, rmtree=lambda p: stubborn(p, ignore_errors=True))
+            got = "mkdir ok"
+        except FileExistsError:
+            got = "FileExistsError"
+        row("#4507 MUTANT rmtree(ignore_errors)+mkdir on the same leftover dies", got, "FileExistsError")
+        bucket = base / ".aside" / d.name
+        bucket.mkdir(parents=True, exist_ok=True)
+        (bucket / "1").mkdir()  # an older aside that has since become deletable
+        try:
+            shutil.rmtree(d)
+            for _ in range(ASIDE_KEEP):
+                plant(d)
+                clear_dir(d, log, rmtree=stubborn)
+            got = ((bucket / "1").exists(), len(list(bucket.iterdir())),
+                   "::warning::" in (Path(td) / "log").read_text())
+        except OSError as e:
+            got = (repr(e),) * 3
+        row("#4507 an older deletable aside is removed", got[0], False)
+        row("#4507 undeletable asides past ASIDE_KEEP warn", got[1:], (ASIDE_KEEP + 1, True))
+        row("#4507 an absent dir is a no-op", clear_dir(base / "absent", log, rmtree=stubborn), None)
+        log.close()
+    if os.geteuid() != 0:
+        # The same on a real filesystem: a dir without its write bit is what a
+        # root-owned one is to the runner user.
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td) / "sec"
+            plant(d)
+            os.chmod(d / "ws" / "rootowned", 0o500)
+            with open(os.devnull, "w") as log:
+                aside = clear_dir(d, log)
+            ok = aside is not None and not d.exists()
+            os.chmod((aside or d) / "ws" / "rootowned", 0o700)  # so the tempdir can go
+            row("#4507 real EACCES tree (non-root): moved aside, dir free", ok, True)
     # --external-job: a need on another job of the run is pending until that
     # job completes, then carries its conclusion; without the flag it is absent.
     x = RunCtx.__new__(RunCtx)
