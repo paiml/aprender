@@ -22211,3 +22211,26 @@ roadmap:
   labels:
   - kind:code
   notes: 'Operator ruling 2026-09-28 13:53Z (via the cop): own small PR, first in the queue, on main before the #4512 push.'
+- id: PMAT-4621
+  github_issue: 4621
+  item_type: task
+  title: 'lambda run/chat cells time out: unchunked dense prefill OOM, qk-norm forced serial, chat KV 2048, Qwen3.5 no F16/IQ4_XS dequant'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-ec
+  created: 2026-09-29T00:55:00Z
+  updated: 2026-09-29T09:01:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Root 1: the dense batched CUDA prefill is chunked under a score-buffer budget, so a 20k-token prompt on Qwen2.5-0.5B IQ3_M/IQ4_XS runs on the GPU (no OOM, no CPU fallback) and the lambda run cell passes under the 600 s timeout (no timeout raised).'
+  - 'Root 2: a QK-norm model (Qwen3) keeps FP8 off but takes the FP16 batched prefill when it fits in free VRAM, and keeps the serial prefill when it does not (Qwen3-8B), with BATCHED_PREFILL=1 still overriding.'
+  - 'Root 3: the apr chat device KV is sized to the model context when free VRAM allows (2048 floor), so a 26k-token chat turn on Qwen3-1.7B stays on the GPU.'
+  - 'Root 5: the Qwen3.5 batched prefill dequantizes F16 and IQ4_XS tensors on the device, so Qwen3.5-4B-UD and 0.8B-IQ4_XS pass the F2 CPU-parity guard on the GPU.'
+  - 'Red/green on lambda with a pinned binary: every cell above rc=124 (or CPU fallback) on base and rc=0 on the GPU on the fix. Serve KV 4096 (D5) and IQ2_XXS/IQ3_S/IQ2_S/Q2_K dequant are out of scope.'
+  - 'Mutation gate (operator E1; cop ruling 2026-09-29 08:32Z "#4620''s CUDA mutants shard goes INSIDE #4620"): the CPU mutants section lists every cuda-gated mutant of the diff as NOT_MEASURED and defers that sorted set (scripts/mutants_diff_gate.sh --defer-unbuilt); the mutants-cuda section on the yoga GPU runner mutates the feature-gated files at the head sha (--features aprender-serve/cuda --gated-only); the gate job is RED unless both set shas match (GATE-MUTANTS-CUDA-RULE, scripts/check_ci_gate_mutants_cuda_rule.sh). 0 not_measured on changed cuda code.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Child of #3715 (the release-readiness shape whose lambda cells these roots turned red). Minted by the cop aprender-77, 2026-09-29.'
