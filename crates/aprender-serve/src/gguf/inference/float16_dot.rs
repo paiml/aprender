@@ -29,9 +29,9 @@ pub(super) fn float16_row_dot(kind: Float16Kind, row: &[u8], x: &[f32]) -> f32 {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             match kind {
-                Float16Kind::F16 if is_x86_feature_detected!("f16c") => {
+                Float16Kind::F16 if crate::isa::cpu_feature!("f16c") => {
                     // SAFETY: avx2, fma and f16c verified at runtime; `row.len() == 2 * x.len()`.
                     return unsafe { f16_row_dot_avx2(row, x) };
                 },

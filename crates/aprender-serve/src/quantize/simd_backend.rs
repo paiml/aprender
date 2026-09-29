@@ -28,11 +28,11 @@ impl std::fmt::Display for SimdBackend {
 pub fn detect_simd_backend() -> SimdBackend {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             return SimdBackend::Avx2;
         }
         // pmat-ignore: hardware-path (SSE2 fallback never reached when AVX2 available)
-        if is_x86_feature_detected!("sse2") {
+        if crate::isa::cpu_feature!("sse2") {
             return SimdBackend::Sse2;
         }
     }
