@@ -110,7 +110,7 @@
    "receipt": "evidence/kreg/parity/cpu.matvec.apr_q8.json"
   }
  ],
- "op_unreceipted_max": 27,
+ "op_unreceipted_max": 26,
  "op_receipts": [
   {
    "kernel_id": "cpu.rmsnorm.f32",
@@ -171,6 +171,11 @@
    "kernel_id": "cpu.sample.seeded.f32",
    "host_arch": "x86_64",
    "receipt": "evidence/kreg/parity/cpu.sample.seeded.f32.json"
+  },
+  {
+   "kernel_id": "cpu.repeat_penalty.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.repeat_penalty.f32.json"
   }
  ]
 }
