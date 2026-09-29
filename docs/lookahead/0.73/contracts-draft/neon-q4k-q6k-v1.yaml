@@ -24,6 +24,13 @@ equations:
         |neon_k(b, x) - scalar_k(b, x)| < 1e-3 * max(1, |scalar_k(b, x)|)
     domain: 'one super-block row (256 values) of Q4_K or Q6_K with f32 or Q8_K activations'
     codomain: bool
+    preconditions:
+    - x.len() == 256
+    - x.iter().all(|v| v.is_finite())
+    - 'b.len() == 144 for q4k and b.len() == 210 for q6k (one super-block)'
+    postconditions:
+    - neon_k(b, x).is_finite() == scalar_k(b, x).is_finite()
+    - (neon_k(b, x) - scalar_k(b, x)).abs() < 1e-3 * scalar_k(b, x).abs().max(1.0)
     invariants:
     - 'The scalar oracle is the dispatcher fallback (fused_q4k_dot, fused_q6k_dot, fused_q4k_q8k_dot), unchanged by this work.'
     - 'The epsilon is relative with a floor of 1, as in avx512-q4k-v1, so near-zero dots are not over-constrained.'
@@ -34,6 +41,12 @@ equations:
       on any arch: kernel_path(k) names only a kernel the call actually reaches
     domain: 'the three dispatchers on the running CPU'
     codomain: bool
+    preconditions:
+    - k in {q4k-f32, q6k-f32, q4k-q8k}
+    - 'kernel_path(k) is read from the same process that runs the dot, after dispatch'
+    postconditions:
+    - 'cfg!(target_arch = "aarch64") implies kernel_path(k).starts_with(k + "/neon")'
+    - 'k == q4k-q8k and !is_aarch64_feature_detected!("dotprod") implies kernel_path(k) == "q4k-q8k/neon-widen"'
     invariants:
     - 'A label that names a kernel the call does not reach is FAIL. This is the defect class of the SimdBackend::Neon label today.'
   c4_e1_leg:
@@ -42,6 +55,13 @@ equations:
       PASS  <=>  leg >= 0.995   (Qwen3-dense Q4_K_M, n_prompts >= 16)
     domain: 'final-position logits'
     codomain: bool
+    preconditions:
+    - n_prompts >= 16
+    - logits_apr_c4_neon.len() == logits_apr_c0_x86.len()
+    - 'both runs use the same GGUF sha256 and the same token ids'
+    - 'every kernel_path in the C4 run contains "/neon" (dispatch_honesty holds), otherwise the leg is not_measured'
+    postconditions:
+    - leg >= 0.995
     invariants:
     - 'The gate reads the per-prompt minimum. It is one leg of the R1 composed bound.'
   c4_e2_speed:
@@ -50,6 +70,13 @@ equations:
       PASS  <=>  paired-bootstrap 95% ci.lo(r) >= 0.5
     domain: 'decode tok/s, n >= 5 runs per engine'
     codomain: bool
+    preconditions:
+    - runs_apr.len() >= 5 && runs_llamacpp.len() >= 5
+    - llamacpp_sha == "d1d3c3396"
+    - 'both engines run on the same host, same model file and same thread count'
+    - 'host load1 / nproc < 1.0 before and after each run, otherwise the sample is not_measured'
+    postconditions:
+    - bootstrap_ci95(runs_apr, runs_llamacpp).lo >= 0.5
     invariants:
     - 'Report-only until first green plus 7 green nights (TRACE-001 R-6).'
 
