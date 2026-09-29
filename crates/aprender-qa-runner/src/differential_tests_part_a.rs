@@ -2,7 +2,7 @@
 #[test]
 fn test_diff_config_default() {
     let config = DiffConfig::default();
-    assert_eq!(config.apr_binary, "apr");
+    assert_eq!(config.apr_binary, crate::apr_bin::default_apr_binary());
     assert!(config.mismatches_only);
     assert!((config.tolerance - 1e-5).abs() < 1e-10);
 }
@@ -153,7 +153,7 @@ fn test_diff_benchmark_with_regression() {
 fn test_differential_executor_new() {
     let config = DiffConfig::default();
     let executor = DifferentialExecutor::new(config);
-    assert_eq!(executor.config.apr_binary, "apr");
+    assert_eq!(executor.config.apr_binary, crate::apr_bin::default_apr_binary());
 }
 
 /// Verify DiffConfig accepts filter option

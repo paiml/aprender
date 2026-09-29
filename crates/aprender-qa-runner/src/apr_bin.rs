@@ -164,6 +164,28 @@ mod tests {
         let _ = guard_program("apr");
     }
 
+    /// The planted bad call: a test that hands a runner the bare name must
+    /// fail loudly at the spawn, not pass on whatever `apr` `$PATH` holds.
+    #[test]
+    #[should_panic(expected = "resolves through $PATH")]
+    fn planted_bare_apr_runner_is_red() {
+        use crate::command::{CommandRunner, RealCommandRunner};
+        let _ = RealCommandRunner::with_binary("apr").inspect_model(std::path::Path::new("m.gguf"));
+    }
+
+    /// The default runner reaches the pinned binary or the stub, never `$PATH`.
+    #[test]
+    fn default_runner_reaches_the_resolved_binary() {
+        use crate::command::{CommandRunner, RealCommandRunner};
+        let out = RealCommandRunner::new().inspect_model(std::path::Path::new("m.gguf"));
+        if std::env::var_os("APR_BIN").is_none_or(|v| v.is_empty()) {
+            assert_eq!(out.exit_code, STUB_EXIT, "{out:?}");
+            assert!(out.stderr.contains("apr-l25-stub"), "{out:?}");
+        } else {
+            assert!(!out.stderr.contains("apr-l25-stub"), "{out:?}");
+        }
+    }
+
     #[test]
     fn guard_passes_an_absolute_path() {
         assert_eq!(guard_program("/nonexistent/apr"), "/nonexistent/apr");

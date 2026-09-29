@@ -297,7 +297,7 @@ pub fn spawn_and_confirm_with_env(
         Err(_) => Stdio::null(),
     };
 
-    let mut command = Command::new(program);
+    let mut command = Command::new(crate::apr_bin::guard_program(program));
     for (key, value) in envs {
         command.env(key, value);
     }

@@ -96,7 +96,10 @@ pub fn run_apr(args: &[&str]) -> ToolCallResult {
 pub fn run_program<P: AsRef<OsStr>>(program: P, args: &[&str]) -> ToolCallResult {
     let program = program.as_ref();
     let cmd_display = display_cmd(program, args);
-    let output = match Command::new(program).args(args).output() {
+    let output = match Command::new(crate::apr_bin::guard_program(program))
+        .args(args)
+        .output()
+    {
         Ok(o) => o,
         Err(e) => {
             return ToolCallResult::error(format!("Failed to spawn `{cmd_display}`: {e}"));
@@ -169,7 +172,7 @@ pub fn spawn_cancellable<P: AsRef<OsStr>>(
     let program = program.as_ref();
     let cmd_display = display_cmd(program, args);
 
-    let mut child = match Command::new(program)
+    let mut child = match Command::new(crate::apr_bin::guard_program(program))
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -337,7 +340,7 @@ where
     let program = program.as_ref();
     let cmd_display = display_cmd(program, args);
 
-    let mut child = match Command::new(program)
+    let mut child = match Command::new(crate::apr_bin::guard_program(program))
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -567,10 +570,35 @@ mod tests {
         perms.set_mode(0o755);
         std::fs::set_permissions(&shim, perms).expect("chmod");
 
-        // Edition 2021 — `set_var` is safe here.
+        // Edition 2021 — `set_var` is safe here. L25: a test-build APR_BIN
+        // is honoured only with a matching APR_BIN_SHA256. The sha goes in
+        // first and comes out last, so a concurrent reader never sees the
+        // pin without its hash; the operator's own pin is put back after.
+        use crate::apr_bin::test_bin::{sha256_hex, APR_BIN_SHA256_ENV};
+        let prior = (
+            std::env::var_os(crate::apr_bin::APR_BIN_ENV),
+            std::env::var_os(APR_BIN_SHA256_ENV),
+        );
+        let sha = sha256_hex(&std::fs::read(&shim).expect("read shim"));
+        std::env::set_var(APR_BIN_SHA256_ENV, &sha);
         std::env::set_var(crate::apr_bin::APR_BIN_ENV, &shim);
         let result = run_apr(&["validate", "/dev/null", "--json"]);
-        std::env::remove_var(crate::apr_bin::APR_BIN_ENV);
+        match prior {
+            (Some(bin), Some(want)) => {
+                std::env::set_var(crate::apr_bin::APR_BIN_ENV, bin);
+                std::env::set_var(APR_BIN_SHA256_ENV, want);
+            }
+            (bin, want) => {
+                match bin {
+                    Some(b) => std::env::set_var(crate::apr_bin::APR_BIN_ENV, b),
+                    None => std::env::remove_var(crate::apr_bin::APR_BIN_ENV),
+                }
+                match want {
+                    Some(w) => std::env::set_var(APR_BIN_SHA256_ENV, w),
+                    None => std::env::remove_var(APR_BIN_SHA256_ENV),
+                }
+            }
+        }
 
         assert!(
             result.is_error.is_none(),

@@ -80,7 +80,7 @@ fn test_generate_markdown() {
 fn test_reporter_new() {
     let reporter = FailFastReporter::new(Path::new("output"));
     assert_eq!(reporter.output_dir, PathBuf::from("output"));
-    assert_eq!(reporter.binary, "apr");
+    assert_eq!(reporter.binary, crate::apr_bin::default_apr_binary());
 }
 
 #[test]

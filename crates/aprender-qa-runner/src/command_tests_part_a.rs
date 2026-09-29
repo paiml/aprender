@@ -201,7 +201,7 @@ fn test_mock_runner_compare_inference() {
 #[test]
 fn test_real_runner_new() {
     let runner = RealCommandRunner::new();
-    assert_eq!(runner.apr_binary, "apr");
+    assert_eq!(runner.apr_binary, crate::apr_bin::default_apr_binary());
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn test_real_runner_debug() {
 #[test]
 fn test_real_runner_default() {
     let runner = RealCommandRunner::default();
-    assert_eq!(runner.apr_binary, "apr");
+    assert_eq!(runner.apr_binary, crate::apr_bin::default_apr_binary());
 }
 
 #[test]

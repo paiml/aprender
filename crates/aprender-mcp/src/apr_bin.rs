@@ -29,6 +29,16 @@
 //!    `validate model.gguf --json`.
 //! 3. The bare name `apr`, resolved by the OS through `$PATH`. Reached only
 //!    when the host process is not `apr` itself.
+//!
+//! # Unit-test builds (L25)
+//!
+//! Under `cargo test` step 3 is always reached, so every test that spawned a
+//! tool passed with whatever `apr` the runner had on `$PATH`, or with none. A
+//! test that cannot fail is not a test. So in `cfg(test)` builds
+//! [`apr_binary`] never returns the bare name: `$APR_BIN` must be absolute and
+//! match `$APR_BIN_SHA256`, and without it the program is a hermetic stub
+//! whose bytes are fixed here and re-hashed on every call. [`guard_program`]
+//! panics at the spawn sites if a test still hands them a bare `apr`.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -41,7 +51,28 @@ pub const APR_BIN_ENV: &str = "APR_BIN";
 /// See the [module docs](self) for the resolution order.
 #[must_use]
 pub fn apr_binary() -> PathBuf {
-    resolve(std::env::var_os(APR_BIN_ENV), std::env::current_exe().ok())
+    let bin = resolve(std::env::var_os(APR_BIN_ENV), std::env::current_exe().ok());
+    #[cfg(test)]
+    let bin = test_bin::harden(bin);
+    bin
+}
+
+/// Spawn-site guard. A no-op in production builds; in unit-test builds a
+/// relative program named `apr` is a `$PATH` lookup and panics. Other
+/// programs (`echo`, `sleep`, …) pass: the guard is about which `apr` ran.
+#[inline]
+pub(crate) fn guard_program<P: AsRef<std::ffi::OsStr> + ?Sized>(program: &P) -> &P {
+    #[cfg(test)]
+    {
+        let p = Path::new(program.as_ref());
+        assert!(
+            p.is_absolute() || !is_apr_binary(p),
+            "L25: a unit test spawned {p:?}, which resolves through $PATH. \
+             Use crate::apr_bin::apr_binary() (pinned real apr or the \
+             sha256-checked stub) or an explicit absolute path."
+        );
+    }
+    program
 }
 
 /// Pure core of [`apr_binary`], parameterised over the two pieces of process
@@ -71,9 +102,135 @@ fn is_apr_binary(path: &Path) -> bool {
 }
 
 #[cfg(test)]
+pub(crate) mod test_bin {
+    use sha2::{Digest, Sha256};
+    use std::path::{Path, PathBuf};
+
+    /// Env var holding the sha256 the pinned `$APR_BIN` must hash to.
+    pub(crate) const APR_BIN_SHA256_ENV: &str = "APR_BIN_SHA256";
+
+    /// The stub `apr`: echoes its argv one per line on stdout, names itself on
+    /// stderr, exits 3. Byte-identical to aprender-qa-runner's stub.
+    pub(crate) const STUB: &[u8] =
+        b"#!/bin/sh\n# apr-l25-stub\nprintf '%s\\n' \"$@\"\necho 'apr-l25-stub: not a real apr' >&2\nexit 3\n";
+
+    /// Exit code the stub returns.
+    pub(crate) const STUB_EXIT: i32 = 3;
+
+    pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// `$APR_BIN` set: the pinned binary, checked. Otherwise the stub.
+    pub(crate) fn harden(bin: PathBuf) -> PathBuf {
+        match std::env::var_os(super::APR_BIN_ENV).filter(|v| !v.is_empty()) {
+            Some(_) => pinned(&bin, std::env::var(APR_BIN_SHA256_ENV).ok()),
+            None => stub(),
+        }
+    }
+
+    /// The pinned binary: absolute, and its bytes hash to the declared
+    /// sha256. Anything else panics; there is no fallback.
+    pub(crate) fn pinned(bin: &Path, want: Option<String>) -> PathBuf {
+        assert!(
+            bin.is_absolute(),
+            "L25: APR_BIN={} is not an absolute path",
+            bin.display()
+        );
+        let want = want.unwrap_or_else(|| {
+            panic!(
+                "L25: APR_BIN={} is set without APR_BIN_SHA256",
+                bin.display()
+            )
+        });
+        let bytes = std::fs::read(bin)
+            .unwrap_or_else(|e| panic!("L25: APR_BIN={} unreadable: {e}", bin.display()));
+        assert_eq!(
+            sha256_hex(&bytes),
+            want.trim().to_ascii_lowercase(),
+            "L25: APR_BIN={} sha256 differs from APR_BIN_SHA256",
+            bin.display()
+        );
+        bin.to_path_buf()
+    }
+
+    /// The stub, materialised once per content hash under the temp dir, and
+    /// re-verified byte-for-byte before every use.
+    pub(crate) fn stub() -> PathBuf {
+        let sha = sha256_hex(STUB);
+        let dir = std::env::temp_dir().join(format!("apr-l25-stub-{}", &sha[..16]));
+        let path = dir.join("apr");
+        if std::fs::read(&path).map(|b| sha256_hex(&b)).ok().as_deref() != Some(sha.as_str()) {
+            std::fs::create_dir_all(&dir).expect("L25: create stub dir");
+            // Unique temp name + rename: parallel test processes never see a
+            // half-written stub.
+            let tmp = dir.join(format!(".apr.mcp.{}", std::process::id()));
+            std::fs::write(&tmp, STUB).expect("L25: write stub");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))
+                    .expect("L25: chmod stub");
+            }
+            std::fs::rename(&tmp, &path).expect("L25: install stub");
+        }
+        let got = sha256_hex(&std::fs::read(&path).expect("L25: read stub"));
+        assert_eq!(got, sha, "L25: stub at {} was altered", path.display());
+        path
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn test_build_default_is_absolute_never_bare() {
+        let bin = apr_binary();
+        assert!(bin.is_absolute(), "{}", bin.display());
+    }
+
+    #[test]
+    #[should_panic(expected = "resolves through $PATH")]
+    fn planted_bare_apr_spawn_is_red() {
+        let _ = crate::tools::subprocess::run_program("apr", &["--version"]);
+    }
+
+    #[test]
+    fn guard_passes_other_programs_and_absolute_apr() {
+        assert_eq!(guard_program("echo"), "echo");
+        assert_eq!(guard_program("/x/apr"), "/x/apr");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stub_runs_and_exits_3() {
+        let out = exec_marker_bin(&test_bin::stub());
+        assert_eq!(out.status.code(), Some(test_bin::STUB_EXIT));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("apr-l25-stub"));
+    }
+
+    #[test]
+    #[should_panic(expected = "not an absolute path")]
+    fn pinned_rejects_relative() {
+        let _ = test_bin::pinned(Path::new("apr"), Some(test_bin::sha256_hex(test_bin::STUB)));
+    }
+
+    #[test]
+    #[should_panic(expected = "without APR_BIN_SHA256")]
+    fn pinned_rejects_missing_sha() {
+        let _ = test_bin::pinned(&test_bin::stub(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "sha256 differs")]
+    fn pinned_rejects_wrong_sha() {
+        let _ = test_bin::pinned(&test_bin::stub(), Some("0".repeat(64)));
+    }
 
     /// Write an executable shell script at `path` that prints `marker`.
     fn write_marker_bin(path: &Path, marker: &str) {

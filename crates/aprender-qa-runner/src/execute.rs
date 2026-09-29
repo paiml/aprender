@@ -48,7 +48,10 @@ impl ToolExecutor {
     pub fn execute_inspect_verified(&self) -> ToolTestResult {
         let start = std::time::Instant::now();
 
-        match crate::differential::run_inspect(Path::new(&self.model_path), "apr") {
+        match crate::differential::run_inspect(
+            Path::new(&self.model_path),
+            &crate::apr_bin::default_apr_binary(),
+        ) {
             Ok(inspect) => {
                 let duration_ms = start.elapsed().as_millis() as u64;
                 let mut issues = Vec::new();
