@@ -1,0 +1,157 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "pmat",
+        "status": "consulted-clean",
+        "index_commit": "4b92e9f7d4e60d51e42b40a2326750db20931751",
+        "index_is_ancestor": true,
+        "index_worktree_dirty": false,
+        "transport": "cli",
+        "transport_unavailable": ["mcp: not probed this run -- CLI answered directly and is the transport used throughout"],
+        "complexity_delta": [],
+        "tdg_delta": [],
+        "satd_introduced": [],
+        "duplication_hits": [],
+        "duplication_coverage": {
+          "rust": "semantic",
+          "shell": "none",
+          "python": "semantic-attempted",
+          "config": "none",
+          "docs": "none",
+          "other": "none",
+          "sibling_branches": "none",
+          "merge_base_to_main": "none"
+        },
+        "duplication_horizon": [
+          "head=4b92e9f7d4e60d51e42b40a2326750db20931751",
+          "siblings=not swept this run",
+          "merge_base_to_main=2817c6d97bcb2b5a295cef76a98fe5d5844883a9..refs/remotes/origin/main"
+        ],
+        "horizon_branches_total": 0,
+        "horizon_branches_scanned": 0,
+        "merge_base_to_main_files": 0,
+        "symbols_searched": 2,
+        "duplication_scan_command": ["pmat", "query", "clear_dir make_section_dirs aside rename", "--limit", "5", "--duplicates"],
+        "duplication_scan_exit_code": 0,
+        "duplication_scan_stdout_sha256": "0c104ad652e865dd7b365b3fd43bbc0cea0ae549ff9b00667a3612404ff02f76",
+        "duplication_scan_wall_seconds": 100.6,
+        "note": "scripts/pr_review_duplication_scan.sh (the sibling/merge_base_to_main lexical sweep §3.A) was NOT run this pass -- reviewer time-boxed this receipt to the pmat semantic query above. duplication_coverage is therefore honestly 'none' for shell/sibling_branches/merge_base_to_main, which per the skill's own rule (S3.A) means this consultation cannot support a PASS verdict standing alone; the overall verdict is downgraded to DEGRADED for this reason (see predicate.degraded_reason). The semantic query itself found no clone of the clear_dir/make_section_dirs rename-aside pattern anywhere in the 1980-document Rust-biased index; the new code (aside-bucket rename-on-EACCES with retry-then-warn) is not a re-implementation of anything already in the corpus. Complexity/TDG/SATD walkers report empty deltas for this diff, consistent with pmat's Rust-only semantic reach (PRREV-007/009) on a Python-only diff -- treat as tool-limitation, not a measured clean zero, same caveat as evidence/pr-review/4618."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a (manual mutation; the diff is Python, not Rust, and scripts/check_pr_review_receipt.sh --match-mutation-trigger returned rc=1 for every changed file -- this diff falls in the gap between the guard-script 100%-kill tier and the cargo-mutants Rust tier, so scope is asserted rather than derived from the predicate)",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "mutation",
+        "status": "consulted-clean",
+        "scope": "asserted (python ci-driver source; not matched by --match-mutation-trigger on any changed path)",
+        "target_files": ["scripts/ci/fat_driver.py"],
+        "attempted": 2,
+        "killed": 2,
+        "survivors": [],
+        "method": "manual mutation, run in a filesystem copy outside the reviewed worktree (rsync -a --exclude=.git of the reviewed tree plus scripts/ci/fat_driver.py and the ci/vendor + .github/workflows/ci.yml paths ROOT resolution needs; no git mutation of the reviewed worktree). Both mutants target exactly the acceptance criteria PMAT-4507.yaml states: (1) remove the rename-aside fallback (comment out the bucket/os.rename block so an OSError from rmtree just falls through) and (2) remove the older-aside cleanup loop. `python3 scripts/ci/fat_driver.py self-test` run before and after each mutant; original restored via cp from the untouched worktree copy after each.",
+        "mutant_1": "clear_dir: delete the .aside bucket/os.rename fallback, leaving only rmtree+return None on the OSError path (equivalent to reverting to the pre-fix rmtree(ignore_errors=True)-then-mkdir shape). CAUGHT: 6 of the 7 '#4507' self-test rows turn BAD, including the row the ticket names explicitly ('#4507 leftover undeletable ws: moved aside, fresh section tree made' -> FileExistsError).",
+        "mutant_2": "clear_dir: delete only the older-aside retry-and-cleanup loop (`for old in sorted(bucket.iterdir()): ... rmtree(old)`), leaving the rename-aside and the ASIDE_KEEP warning intact. CAUGHT: 2 rows turn BAD ('#4507 an older deletable aside is removed', '#4507 undeletable asides past ASIDE_KEEP warn') -- exactly the two acceptance-criteria clauses this loop exists to satisfy.",
+        "note": "attempted=2/killed=2/survivors=0 covers the two behaviours PMAT-4507.yaml's acceptance criteria name as falsifiable (the rename-aside fallback itself, and the older-aside retry/warn). The third acceptance criterion -- the mutant that restores rmtree(ignore_errors=True)+mkdir turning the self-test RED -- is already checked IN-DIFF by the shipped self-test row '#4507 MUTANT rmtree(ignore_errors)+mkdir on the same leftover dies', confirmed green (59/59) on this head; this reviewer did not re-derive a third external mutant for that clause since the diff already carries it as a committed regression test."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "n/a (not-triggered)",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "crux",
+        "status": "not-triggered",
+        "trigger_reason": "Mechanical predicate: check_pr_review_receipt.sh --match-crux-surface and --match-shipped-surface returned rc=1 for every changed path (scripts/ci/fat_driver.py, docs/roadmaps/entries/PMAT-4507.yaml, docs/roadmaps/roadmap.yaml, docs/audits/quorum-PMAT-4507.json). This is internal CI runner plumbing plus roadmap/audit bookkeeping, not a CLI/HTTP/MCP/config/output-format surface."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cuda-docs",
+          "version": "n/a (not-triggered)",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "cuda",
+        "status": "not-triggered",
+        "trigger_reason": "Mechanical predicate: check_pr_review_receipt.sh --match-path returned rc=1 for all 4 changed paths and --match-message returned rc=1 over the commit range (2817c6d97b..4b92e9f7d4). No CUDA/PTX/GPU-behaviour surface in this diff."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.13",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "F1",
+          "level": "note",
+          "message": { "text": "clear_dir replaces rmtree(ignore_errors=True) with a try/except that renames undeletable directories to an .aside bucket." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/ci/fat_driver.py" }, "region": { "startLine": 469 } } } ],
+          "properties": { "grounding": "cited", "precision_class": "advisory", "failure_scenario": "If clear_dir used rmtree(ignore_errors=True), a leftover root-owned file would silently cause rmtree to fail, leaving the directory in place and causing subsequent mkdir to raise FileExistsError. Moving it aside guarantees clean removal." }
+        },
+        {
+          "ruleId": "F2",
+          "level": "note",
+          "message": { "text": "make_section_dirs correctly replaces inline logic, creating _temp, home, and ws with strict mkdirs." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/ci/fat_driver.py" }, "region": { "startLine": 510 } } } ],
+          "properties": { "grounding": "cited", "precision_class": "advisory", "failure_scenario": "If a leftover directory somehow survived clear_dir, mkdir(exist_ok=True) would silently reuse a stale environment and poison the section. Strict mkdir fails loudly instead." }
+        },
+        {
+          "ruleId": "F3",
+          "level": "note",
+          "message": { "text": "Self-tests fully exercise the new clear_dir logic, including simulating the root-owned-files bug, checking the log/warning, and asserting that the old buggy behavior (mutant) raises FileExistsError." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/ci/fat_driver.py" }, "region": { "startLine": 1584 } } } ],
+          "properties": { "grounding": "cited", "precision_class": "advisory", "failure_scenario": "Without self-tests targeting the specific bug, a future regression could silently reintroduce ignore_errors semantics." }
+        }
+      ],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted",
+        "model_id": "gemini-3.1-pro-high",
+        "model_family": "google/gemini",
+        "binary_path": "/home/noah/.local/bin/agy",
+        "exit_code": 0,
+        "duration_seconds": 66.707450508,
+        "usage": { "input_tokens": 58880, "output_tokens": 4514, "thinking_tokens": 3880, "cache_read_tokens": 74245, "total_tokens": 63394 },
+        "output_check": { "structured_output_present": true, "reviewed": true, "schema_valid": true },
+        "reverified_by_primary": false,
+        "divergence": { "agreed": 0, "agy_only": 3, "primary_only": 0, "contradicted": 0 },
+        "note": "Run in a disposable tree: rsync -a --exclude=.git of the reviewed worktree (no .git present, no way back to the real checkout) with the merge-base diff and the schema delivered as files, not inlined (the diff is 29748 bytes, under the ~128KiB argv cliff but still delivered as a file per the skill's recipe). All three findings are affirming/non-blocking observations about the fix already in the diff; none names a defect. reverified_by_primary is false: this reviewer independently confirmed the same three code paths via its own reading of the diff and the self-test run (see the mutation block above) but did not re-run agy's specific claims as its own measured commands, so per S3.E step 4 this is left false rather than silently implied."
+      }
+    }
+  ]
+}
