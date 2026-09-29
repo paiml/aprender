@@ -627,3 +627,37 @@ fn every_named_gate_routes_to_its_own_variant() {
     }
     assert_eq!(kind(&run_named_gate(&dir, "no-such-gate")), "unknown");
 }
+
+fn skip_reason(g: &GateResult) -> Option<&str> {
+    match &g.detail {
+        GateDetail::Skipped { reason } => Some(reason.as_str()),
+        _ => None,
+    }
+}
+
+/// A ratchet runs only after validation passed, and its decline is reported as its own reason.
+/// Kills `delete !` in `ratchet_result` (M1 shard 6): inverted, a failed validation would run the
+/// ratchet and a passed one would be skipped as "validation failed".
+#[test]
+fn ratchet_result_is_gated_on_validation() {
+    fn probe(_: &std::path::Path) -> ratchet_gates::RatchetOutcome {
+        ratchet_gates::RatchetOutcome::Declined("probe ran".into())
+    }
+    let dir = std::path::Path::new("/nonexistent-m1s6");
+    let (g, f) = ratchet_result(dir, false, "probe", probe);
+    assert_eq!(skip_reason(&g), Some("validation failed"), "{g:?}");
+    assert!(f.is_empty());
+    let (g, _) = ratchet_result(dir, true, "probe", probe);
+    assert_eq!(skip_reason(&g), Some("probe ran"), "{g:?}");
+}
+
+/// The evidence gate runs only after validation passed. Kills `delete !` in `evidence_result`
+/// (M1 shard 6): an empty corpus must report the gate's own "no Σ" decline, not "validation failed".
+#[test]
+fn evidence_result_is_gated_on_validation() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (g, _) = evidence_result(tmp.path(), false);
+    assert_eq!(skip_reason(&g), Some("validation failed"), "{g:?}");
+    let (g, _) = evidence_result(tmp.path(), true);
+    assert_eq!(skip_reason(&g), Some("no contracts/ontology.yaml"), "{g:?}");
+}
