@@ -22230,3 +22230,25 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'OPERATOR ruling D5 (ruling-3715). Child of #3715. The ladder part (--context-length on gate-named rungs) is 0d #4603.'
+- id: PMAT-4633
+  github_issue: 4633
+  item_type: task
+  title: 'fix(deps): wasmtime 47.0.4 -> 48.0.3 for RUSTSEC-2026-0315/0316 (security job red on main and every PR)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-00
+  created: 2026-09-29T12:17:38Z
+  updated: 2026-09-29T12:17:38Z
+  spec: null
+  acceptance_criteria:
+  - The workspace wasmtime pin is 48.0.3 and Cargo.lock resolves wasmtime 48.0.3 (cargo metadata --locked rc=0)
+  - cargo audit on the branch Cargo.lock reports no RUSTSEC-2026-0315/0316 (rc=0); on origin/main it reports both
+  - cargo deny check rc=0 (advisories, bans, licenses, sources)
+  - No audit or deny ignore is added and no gate is relaxed; the diff is Cargo.toml, Cargo.lock, this roadmap entry (with its roadmap.yaml copy) and docs/audits/security-PMAT-4633-wasmtime-48.md, the C45 review input that stands in for the raw Cargo.lock, only
+  - wasmtime stays optional behind aprender-test-lib's runtime feature (cargo tree -i wasmtime --workspace finds no active path), so the 1.95 MSRV of the 48 line does not reach the 1.93 pin
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cop ruling 2026-09-29 12:0xZ: P0 main fix, Cargo bump only, PR open by 13:00Z.'
