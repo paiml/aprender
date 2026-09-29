@@ -457,3 +457,98 @@ Contract `apr-v2-metadata-reader-v1` (written with the code, not before):
 | AMR-003 | Structure: no `AprV2Header::from_bytes` outside `apr-format` and the v2 internals | Read the metadata at offset 64 and ignore `metadata_offset` |
 
 Order: after the whole-file-reads PR, the HRP fold and the MOF fold are all on main.
+
+## §6 Measurement plan: how each exit criterion is measured `[C]`
+
+L2 deliverable 3 (APR-LOOKAHEAD-001 §4). Written 2026-09-29 from contracts at the branch tips named below. Each criterion
+names what measures it, where it runs, what counts as green, and what counts as **NOT MEASURED**. NOT MEASURED is never
+green (L25). A criterion is green only when every row under it is green on **one** pinned `apr` binary (version + sha in
+the receipt), built from the release commit.
+
+**Rules for every row:**
+- The device comes from a trace line in the log, never from a flag or `CUDA_VISIBLE_DEVICES` (CLAUDE.md verification rule 2).
+- Every training run writes `train_receipt.json` (`train-run-receipt-v1`, TRR-001..006). A run with no receipt, or a
+  receipt missing a key, is NOT MEASURED.
+- Every rc-bound training run passes the sealed-ingress check (`train-ingress-sealed-refusal-v1`, TIS-001..005). With no
+  manifest it is refused (TIS-005), and never counted as `sealed_hits = 0`.
+- Each row needs its planted falsifier RED before its green counts. A planted check that cannot turn RED makes the row NOT MEASURED.
+- Hosts: **lambda** = RTX 4090 24 GB, GPU rows only, and only when the train is idle. **intel** = CPU tests, load1 ≤ 32.
+  **gx10** = GB10 second GPU, used for the cross-host control only.
+
+### T1 — the four verbs run end to end on Qwen 3.5 with 0 refusals
+
+| Verb | Measured by | Host | Green | NOT MEASURED when |
+|---|---|---|---|---|
+| all | TAH-001..004 (`train-arch-honesty-v1`): a qwen3_5 config is never silently built as dense | intel | 4/4, planted dense map RED | branch `la-72/4552-train-arch-honesty` not on main |
+| finetune | QQE-006 CPU pre-flight first, then QQE-001/002/003 on 4B (`qwen35-qlora-e2e-v1`). QQE-005 holds CUDA adapter gradients to the CPU reference | intel (006), lambda (001–005) | exit 0; loss(last 10) ≤ 0.9 × loss(first 10); served = merged (cos ≥ 0.999, equal argmax); QQE-002 frozen-step RED | QQE-006 not green, since no GPU time is spent before it is |
+| finetune (NF4) | QQE-004: QLoRA final loss ≤ 1.05 × bf16 LoRA on the same cell | lambda | ≤ 1.05, **or** a named refusal for qwen3.5 QLoRA (K10) | only one side ran |
+| distill | `distill-batch-honesty-v1` (DBH) on the fold-dbh branches: batch B > 1 trains every row or refuses by name | intel (refusal), lambda (batched KD) | refusal green on CPU; batched KD matches B single-row steps | DBH-001/006/007/008 GPU halves not run |
+| merge | `merge-output-fidelity-v1` (MOF): `-o *.apr` writes an APR with metadata and a qwen3_5 arch | intel | MOF-002/003 green; the planted F32-safetensors writer RED | — |
+| quantize | the R8 GDN quantize policy cell, branch `79/r8-gdn-quant-policy` (another session's) | intel | owner's falsifiers green | that branch is not on main; L2 does not measure it |
+
+The count for T1 is **refusals = 0 AND silent-wrong = 0**. A named refusal (DBH-002, QFR-005, QQE-004's escape) still counts
+as a refusal. It is honest, but it is not T1-green.
+
+### T2 — fine-tune throughput ≥ 0.8× Unsloth
+
+- **Measured by:** `beat-unsloth-finetune-throughput-v1` 1.1.0. The command is `scripts/bench/unsloth_finetune_throughput.sh
+  --model Qwen3.5-4B --gpu 0 --out evidence/beat-unsloth-ft/<version>/`, which R5 writes. Until that script exists, the
+  whole of T2 is NOT MEASURED.
+- **Cell:** bf16 LoRA (not QLoRA, S-R5), Unsloth default targets on both sides, AdamW fp32, checkpointing off, packing
+  off. 200 timed steps, starting after 50 warmup steps and after compile.
+- **Statistic:** median of 3 runs per side, run interleaved on the same GPU in one session. The ratio is
+  apr tokens/s ÷ Unsloth tokens/s, counting non-pad label tokens.
+- **Host:** lambda 4090, train idle. The gx10 run is a control only, and never the T2 number.
+- **Green:** ratio ≥ 0.80, **and** all three planted falsifiers RED in the same session:
+  SAMEWORK (`--planted-half-targets`), INCUMBENT-FASTPATH (`--planted-no-fla`) and SAMEOPT (`--planted-incumbent-adamw8bit`).
+- **NOT MEASURED when:** fla is missing (INCUMBENT_SLOW_PATH), the versions are not in the receipt, or fewer than 3 runs
+  completed on either side.
+- **First:** Unsloth's side can run the moment the train is idle. It needs no apr work, and it gives R14 its target.
+
+### T3 — Prometheus B2 challenger
+
+- **Measured by:** the PRM-001 §5.4 judgement rule, owned by rex (branch `rex/001-prm-s1-v2`), not this spec. L2 measures only
+  the inputs:
+  - Teacher: Qwen3.5-27B, local.
+  - Student: 4B, trained by `apr distill`. It is distill-green under T1.
+  - The training data carries `sealed_hits = 0` against a non-empty manifest (TIS-001..005).
+  - The receipt is complete (TRR).
+- **NOT MEASURED until:** PRM cluster.rs lands on main (it blocks TIS-002), and DBH batched KD is green on lambda.
+
+### T4 — the first improved dogfood model on Hugging Face as an rc, with receipts
+
+- **Measured by:** `hf-rc-publish-v1` (branch `la-72/fold-hrp`), HRP-001..005:
+  - The plan lists every file it uploads.
+  - The published repo is loadable: `apr import` of exactly the planned files works.
+  - The license is never defaulted to MIT (planted).
+  - The card carries the TRR fields and no N/A metrics.
+- **"Improved"** means the rc's score beats its base on the T3 judgement, from the same receipt. A publish with no
+  comparison is a publish, not T4.
+- **Host:** intel for `--dry-run --offline`. The one real upload is a release-path action, done at the cut.
+- **NOT MEASURED when:** the upload happened without a dry-run receipt of the same sha, or the T5 check was not run on the
+  uploaded files.
+
+### T5 — trained weights round-trip gguf ↔ safetensors ↔ .apr at cosine ≥ 0.98
+
+- **Measured by:** `qwen35-format-roundtrip-v1` (branch `la-72/fold-r10-qfr`):
+  - QFR-001 (in tree, pygmy) and the Qwen3.5-0.8B cell: lossless legs are bit-identical.
+  - QFR-002, planted: a single transposed tensor turns the gate RED.
+  - QFR-003: a bare exported safetensors re-imports.
+  - QFR-004: GGUF export maps every tensor.
+- **Statistic:** the **minimum** per-tensor cosine over all tensors, never the mean. It uses `apr diff --values
+  --limit <|T|>`. The default `--limit 10` samples too few tensors, and QFR-002 guards against that.
+- **Model:** the trained 4B from the T1 finetune row, after the 0.8B dev cell is green.
+- **Host:** intel, CPU.
+- **NOT MEASURED when:** #4418 (qwen35 GGUF name map) is not merged. Without it the GGUF legs cannot run, and QFR-005's
+  named refusal is the only honest answer.
+
+### Order when the train goes idle (GPU queue)
+
+1. Unsloth side of T2. It needs no apr work.
+2. R17: peak memory on the 4B.
+3. QQE-005: CUDA adapter gradients against the CPU reference, on 0.8B.
+4. DBH GPU halves.
+5. QQE-001..004 on 4B.
+6. The apr side of T2.
+
+CPU rows (TAH, TRR, MOF, QFR on 0.8B, HRP dry-run, TIS-001/003/004/005) run on intel at any time, load1 ≤ 32.
