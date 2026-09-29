@@ -492,7 +492,7 @@ fn try_cuda_generate(
         .generate_gpu_resident(&prompt_ids, &q_config)
         .map_err(|e| {
             api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
+                crate::api::generation_error_status(&e),
                 format!("CUDA generation failed: {e}"),
             )
         })?;
