@@ -134,17 +134,23 @@ const ROPE_HEAD_DIM: usize = 128;
 const ROPE_THETA: f32 = 1.0e6;
 const ROPE_POS_MAX: usize = 32_768;
 
-fn rope_model(rope_type: u32) -> crate::gguf::OwnedQuantizedModel {
-    let heads = 2;
+/// A weight-free model shell whose config the per-head ops read (`head_dim`, GQA grouping, RoPE).
+fn model_shell(
+    heads: usize,
+    kv_heads: usize,
+    head_dim: usize,
+    rope_type: u32,
+    vocab: usize,
+) -> crate::gguf::OwnedQuantizedModel {
     let config = crate::gguf::GGUFConfig {
         architecture: "test".to_string(),
         constraints: crate::gguf::ArchConstraints::from_architecture("test"),
-        hidden_dim: heads * ROPE_HEAD_DIM,
+        hidden_dim: heads * head_dim,
         intermediate_dim: 256,
         num_layers: 1,
         num_heads: heads,
-        num_kv_heads: heads,
-        vocab_size: 16,
+        num_kv_heads: kv_heads,
+        vocab_size: vocab,
         context_length: ROPE_POS_MAX,
         eps: 1e-5,
         rope_type,
@@ -155,6 +161,106 @@ fn rope_model(rope_type: u32) -> crate::gguf::OwnedQuantizedModel {
         eos_token_id: None,
     };
     crate::gguf::test_helpers::create_test_model_with_config(&config)
+}
+
+fn rope_model(rope_type: u32) -> crate::gguf::OwnedQuantizedModel {
+    model_shell(2, 2, ROPE_HEAD_DIM, rope_type, 16)
+}
+
+/// Qwen2.5-0.5B's attention shape: 14 query heads over 2 KV heads (GQA 7:1), head_dim 64.
+const ATT_HEADS: usize = 14;
+const ATT_KV_HEADS: usize = 2;
+const ATT_HEAD_DIM: usize = 64;
+const ATT_CACHE_MAX: usize = 512;
+
+/// Decode-step attention over a cache of random length plus the current position, against
+/// `softmax(q·k / sqrt(d)) · v` in f64 with query head `h` reading KV head `h / (H / KV)`.
+fn run_attention(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let (d, kv_dim) = (ATT_HEAD_DIM, ATT_KV_HEADS * ATT_HEAD_DIM);
+    assert_eq!(n, ATT_HEADS * d, "attention: n is the q dim");
+    let model = model_shell(ATT_HEADS, ATT_KV_HEADS, d, 0, 16);
+    let cache_len = rng.random_range(1..ATT_CACHE_MAX);
+    let q = activations(rng, n, 1.0);
+    let (k_cache, v_cache) = (
+        activations(rng, cache_len * kv_dim, 1.0),
+        activations(rng, cache_len * kv_dim, 2.0),
+    );
+    let (k_cur, v_cur) = (activations(rng, kv_dim, 1.0), activations(rng, kv_dim, 2.0));
+    let mut got = vec![0.0f32; n];
+    model.attention_with_cache_gqa_into(&q, &k_cache, &v_cache, &k_cur, &v_cur, &mut got);
+    let row = |cache: &[f32], cur: &[f32], pos: usize, kv: usize| -> Vec<f64> {
+        let src = if pos < cache_len {
+            &cache[pos * kv_dim..(pos + 1) * kv_dim]
+        } else {
+            cur
+        };
+        src[kv * d..(kv + 1) * d]
+            .iter()
+            .map(|v| f64::from(*v))
+            .collect()
+    };
+    let scale = 1.0 / (d as f64).sqrt();
+    let mut want = Vec::with_capacity(n);
+    for h in 0..ATT_HEADS {
+        let kv = h / (ATT_HEADS / ATT_KV_HEADS);
+        let qh: Vec<f64> = q[h * d..(h + 1) * d]
+            .iter()
+            .map(|v| f64::from(*v))
+            .collect();
+        let scores: Vec<f64> = (0..=cache_len)
+            .map(|p| {
+                let k = row(&k_cache, &k_cur, p, kv);
+                qh.iter().zip(&k).map(|(a, b)| a * b).sum::<f64>() * scale
+            })
+            .collect();
+        let max = scores.iter().fold(f64::NEG_INFINITY, |a, s| a.max(*s));
+        let e: Vec<f64> = scores.iter().map(|s| (s - max).exp()).collect();
+        let z = e.iter().sum::<f64>();
+        let mut out = vec![0.0f64; d];
+        for (p, w) in e.iter().enumerate() {
+            for (o, v) in out.iter_mut().zip(row(&v_cache, &v_cur, p, kv)) {
+                *o += w / z * v;
+            }
+        }
+        want.extend(out);
+    }
+    (got, want)
+}
+
+/// Embedding lookup: row `token` of the table, for tokens across the whole vocabulary.
+fn run_embed(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let vocab = 64;
+    let mut model = model_shell(n / ATT_HEAD_DIM, n / ATT_HEAD_DIM, ATT_HEAD_DIM, 0, vocab);
+    model.token_embedding = activations(rng, vocab * n, 1.0);
+    let token = rng.random_range(0..vocab);
+    let mut got = vec![0.0f32; n];
+    model.embed_into(token as u32, &mut got);
+    let want = model.token_embedding[token * n..(token + 1) * n]
+        .iter()
+        .map(|v| f64::from(*v))
+        .collect();
+    (got, want)
+}
+
+/// KV-cache append: each position's K and V land at `cache[layer][pos * kv_dim..]`, per layer.
+fn run_kv_write(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let (layers, positions) = (2, 5);
+    let mut cache = crate::gguf::OwnedQuantizedKVCache::new(layers, n, positions);
+    let mut want: Vec<Vec<f64>> = vec![Vec::new(); 2 * layers];
+    for _ in 0..positions {
+        for l in 0..layers {
+            let (k, v) = (activations(rng, n, 1.0), activations(rng, n, 1.0));
+            cache.append(l, &k, &v);
+            want[2 * l].extend(k.iter().map(|x| f64::from(*x)));
+            want[2 * l + 1].extend(v.iter().map(|x| f64::from(*x)));
+        }
+        cache.advance();
+    }
+    let got = (0..layers)
+        .flat_map(|l| [cache.get_k(l), cache.get_v(l)])
+        .flat_map(|c| c.iter().copied())
+        .collect();
+    (got, want.concat())
 }
 
 /// Both layouts on each draw: NORM (type 0) rotates adjacent pairs `(2i, 2i+1)`, NEOX (type 2)
@@ -231,6 +337,33 @@ pub(super) const OPS: &[Op] = &[
             ..OP_WORKLOAD
         },
         run: run_rope,
+    },
+    Op {
+        id: "cpu.attention.f32",
+        source_fn: "attention_with_cache_gqa_into",
+        formula: "attention_gqa:softmax(q.k/sqrt(d))v,kv=h/(H/KV),H=14,KV=2,d=64,cache<512",
+        workload: OpWorkload {
+            n: ATT_HEADS * ATT_HEAD_DIM,
+            ..OP_WORKLOAD
+        },
+        run: run_attention,
+    },
+    Op {
+        id: "cpu.embed.f32",
+        source_fn: "embed_into",
+        formula: "embed:E[token*n..(token+1)*n]",
+        workload: OP_WORKLOAD,
+        run: run_embed,
+    },
+    Op {
+        id: "cpu.kv_write.f32",
+        source_fn: "append",
+        formula: "kv_write:cache[l][p*kv..(p+1)*kv]=k_p|v_p",
+        workload: OpWorkload {
+            n: ATT_KV_HEADS * ATT_HEAD_DIM,
+            ..OP_WORKLOAD
+        },
+        run: run_kv_write,
     },
 ];
 

@@ -110,7 +110,7 @@
    "receipt": "evidence/kreg/parity/cpu.matvec.apr_q8.json"
   }
  ],
- "op_unreceipted_max": 34,
+ "op_unreceipted_max": 31,
  "op_receipts": [
   {
    "kernel_id": "cpu.rmsnorm.f32",
@@ -136,6 +136,21 @@
    "kernel_id": "cpu.rope.f32",
    "host_arch": "x86_64",
    "receipt": "evidence/kreg/parity/cpu.rope.f32.json"
+  },
+  {
+   "kernel_id": "cpu.attention.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.attention.f32.json"
+  },
+  {
+   "kernel_id": "cpu.embed.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.embed.f32.json"
+  },
+  {
+   "kernel_id": "cpu.kv_write.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.kv_write.f32.json"
   }
  ]
 }
