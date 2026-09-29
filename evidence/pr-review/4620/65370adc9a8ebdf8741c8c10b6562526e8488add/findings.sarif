@@ -78,7 +78,7 @@
     {
       "tool": {
         "driver": {
-          "name": "cuda-docs",
+          "name": "nvidia-cuda-docs",
           "informationUri": "internal:mcp__nvidia-cuda-docs",
           "rules": [ { "id": "cuda.u32-index-idiom" } ]
         }
@@ -118,7 +118,7 @@
     {
       "tool": {
         "driver": {
-          "name": "mutation",
+          "name": "cargo-mutants",
           "informationUri": "internal:targeted-manual-mutation",
           "rules": [ { "id": "mutation.targeted-probe" } ]
         }
