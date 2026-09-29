@@ -59,24 +59,19 @@ pub(crate) fn sample_from_logits(
     }
 
     // Step 1: Repetition penalty (qwen3-moe-repetition-penalty-v1).
-    // Apply BEFORE temperature scaling. Mirrors Candle's
-    // apply_repeat_penalty semantics (PMAT-383/384; the
-    // dense `sample_advanced`, deleted with fails.rs in #4266).
+    // Apply BEFORE temperature scaling. The dense helper, so the MoE and
+    // dense paths cannot drift: once per distinct recent token, as Candle's
+    // apply_repeat_penalty and llama.cpp do (PMAT-383/384).
     // No-op when repeat_penalty == 1.0 OR repeat_last_n == 0.
     let penalized: Vec<f32> =
         if config.repeat_penalty != 1.0 && config.repeat_last_n > 0 && !recent_tokens.is_empty() {
             let mut p: Vec<f32> = logits.to_vec();
-            let start = recent_tokens.len().saturating_sub(config.repeat_last_n);
-            for &token in &recent_tokens[start..] {
-                let idx = token as usize;
-                if idx < p.len() {
-                    if p[idx] > 0.0 {
-                        p[idx] /= config.repeat_penalty;
-                    } else {
-                        p[idx] *= config.repeat_penalty;
-                    }
-                }
-            }
+            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
+                &mut p,
+                recent_tokens,
+                config.repeat_penalty,
+                config.repeat_last_n,
+            );
             p
         } else {
             logits.to_vec()
@@ -383,19 +378,45 @@ mod sample_from_logits_tests {
     /// V1_002: repeat_penalty > 1.0 down-weights repeated tokens (positive logit branch).
     #[test]
     fn rep_penalty_v1_002_down_weights_repeated() {
-        // All positive logits → penalty divides them.
-        // logits[1] = 5.0 (would be argmax). recent_tokens = [1, 1] → penalty
-        // applied to logit[1] twice: 5.0 / 2.0 / 2.0 = 1.25. New argmax = 3 (4.0).
+        // logits[1] = 5.0 (would be argmax); penalty 2 → 2.5. New argmax = 3 (4.0).
         let logits = vec![3.0, 5.0, 2.0, 4.0];
-        let recent = vec![1, 1]; // token 1 repeated twice
+        let recent = vec![1, 1]; // token 1 repeated twice: still ONE application
         let cfg = mk_config_with_penalty(0.0, 1, 2.0, 100, 42);
 
         let mut rng = StdRng::seed_from_u64(cfg.seed);
         let token = sample_from_logits(&logits, &cfg, &mut rng, &recent).unwrap();
-        // After penalty: [3.0, 1.25, 2.0, 4.0] → argmax = 3
         assert_eq!(
             token, 3,
             "V1_002: repeat_penalty must shift argmax away from repeated token 1"
+        );
+    }
+
+    /// V1_002 (contract text): recent = [2, 2, 2], penalty 2 halves logit 2 once, 10 → 5, not
+    /// 10 / 2³ = 1.25. A token repeated k times is penalised once, as llama.cpp and Candle do.
+    #[test]
+    fn rep_penalty_v1_002_repeats_penalise_once() {
+        let logits = vec![1.0, 10.0, 10.0, 4.0];
+        let cfg = mk_config_with_penalty(0.0, 1, 2.0, 100, 42);
+        // Once: [1, 10, 5, 4] → argmax 1. Compounded ×8: logit 2 → 0.039, argmax still 1, so
+        // probe the value directly through the shared helper as well.
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let token = sample_from_logits(&logits, &cfg, &mut rng, &[2; 8]).unwrap();
+        assert_eq!(token, 1);
+        let mut p = logits.clone();
+        crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(&mut p, &[2, 2, 2], 2.0, 100);
+        assert_eq!(
+            p,
+            vec![1.0, 10.0, 5.0, 4.0],
+            "a repeated token is penalised once"
+        );
+        // Where it decides the token: 6.0 / 1.5 = 4.0 > 3.0 once; 6.0 / 1.5⁴ = 1.19 < 3.0 compounded.
+        let close = vec![3.0, 6.0, 0.0, 0.0];
+        let cfg = mk_config_with_penalty(0.0, 1, 1.5, 100, 42);
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let token = sample_from_logits(&close, &cfg, &mut rng, &[1, 1, 1, 1]).unwrap();
+        assert_eq!(
+            token, 1,
+            "four repeats of token 1 must not compound to 1.5⁴"
         );
     }
 
@@ -418,42 +439,25 @@ mod sample_from_logits_tests {
     /// V1_003: repeat_last_n bounds the penalty window correctly.
     #[test]
     fn rep_penalty_v1_003_window_bounds() {
-        // recent_tokens = [1, 1, 1, 1, 1, 1, 1, 1] (token 1 eight times).
-        // With repeat_last_n=2, only last 2 are penalized (2 applications).
-        // With repeat_last_n=8, all 8 are penalized (8 applications).
-        // Use repeat_penalty=1.5; logit[1]=10.0.
-        // After 2 penalties: 10.0 / 1.5 / 1.5 = 4.44
-        // After 8 penalties: 10.0 / 1.5^8 ≈ 0.39
-        let logits = vec![1.0, 10.0, 5.0, 3.0]; // argmax = 1 initially
-        let recent = vec![1, 1, 1, 1, 1, 1, 1, 1];
+        // recent = [1, 3, 3]: the last 2 hold only token 3; the last 3 hold tokens 1 and 3.
+        // penalty 1.5, logit[1] = 10.0 vs logit[2] = 9.0.
+        let logits = vec![1.0, 10.0, 9.0, 3.0];
+        let recent = vec![1, 3, 3];
 
         let cfg_n2 = mk_config_with_penalty(0.0, 1, 1.5, 2, 42);
         let mut rng = StdRng::seed_from_u64(42);
         let token_n2 = sample_from_logits(&logits, &cfg_n2, &mut rng, &recent).unwrap();
-        // After 2 penalties: logit[1] = 10.0/1.5/1.5 ≈ 4.44. Still > 5.0? No: < 5.0.
-        // So argmax = 2 (logit 5.0).
-        assert_eq!(token_n2, 2, "V1_003 n=2: penalty insufficient, argmax = 2");
+        // Token 1 is outside the window: argmax stays 1 (10.0).
+        assert_eq!(token_n2, 1, "V1_003 n=2: token 1 is outside the window");
 
-        let cfg_n8 = mk_config_with_penalty(0.0, 1, 1.5, 8, 42);
+        let cfg_n3 = mk_config_with_penalty(0.0, 1, 1.5, 3, 42);
         let mut rng = StdRng::seed_from_u64(42);
-        let token_n8 = sample_from_logits(&logits, &cfg_n8, &mut rng, &recent).unwrap();
-        // After 8 penalties: logit[1] ≈ 0.39. argmax = 2 (logit 5.0).
-        assert_eq!(
-            token_n8, 2,
-            "V1_003 n=8: penalty stronger, still argmax = 2"
-        );
-
-        // The two are equivalent at this argmax level, but the underlying logit
-        // values differ. Pick a config where they diverge: with smaller initial
-        // gap, the deeper penalty matters more.
-        let logits_close = vec![4.5, 10.0, 5.0, 3.0];
-        let cfg_n2 = mk_config_with_penalty(0.0, 1, 1.5, 2, 42);
-        let mut rng = StdRng::seed_from_u64(42);
-        let token_close_n2 = sample_from_logits(&logits_close, &cfg_n2, &mut rng, &recent).unwrap();
-        // 2 penalties: 10/1.5/1.5 = 4.44. argmax = 2 (5.0).
-        assert_eq!(token_close_n2, 2);
+        let token_n3 = sample_from_logits(&logits, &cfg_n3, &mut rng, &recent).unwrap();
+        // 10.0 / 1.5 = 6.67 < 9.0: argmax = 2.
+        assert_eq!(token_n3, 2, "V1_003 n=3: token 1 is penalised");
 
         // n=0 means "no penalty" (per backwards-compat invariant).
+        let logits_close = logits;
         let cfg_n0 = mk_config_with_penalty(0.0, 1, 1.5, 0, 42);
         let mut rng = StdRng::seed_from_u64(42);
         let token_n0 = sample_from_logits(&logits_close, &cfg_n0, &mut rng, &recent).unwrap();
