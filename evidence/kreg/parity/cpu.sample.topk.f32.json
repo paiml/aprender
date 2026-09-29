@@ -1,0 +1,46 @@
+{
+  "build_identity": "da39d64949",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:sample:inverse_cdf(softmax(x/T) over top-k),breakpoints,T=0.7,k=40,top_p=1,gap>=1e-4",
+    "row_sha256": "d94cd31c223a2fc72e5ebcec635aca43a9d7ede75c1df6b2c66d39ed9abc0db6",
+    "source_sha256": "9542f2c6d4047bee3ac09e75589e06c2b1d4a7982bc1f63fe9b6fa6904fdbc98",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "9d8d1476dcb093daf8e2cb942b029946f73045ca3b1ea48144240fb1e6b482df",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.sample.topk.f32",
+  "margin": {
+    "error_model": "EM-SMX",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "sample:inverse_cdf(softmax(x/T) over top-k),breakpoints,T=0.7,k=40,top_p=1,gap>=1e-4",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 4.0281316604495743e-7,
+    "max_rel_err": 4.0374163253441615e-7
+  },
+  "source_fn": "draw",
+  "tolerance_rel": 9e-7,
+  "ts": "2026-09-29T16:42:50Z",
+  "workload": {
+    "n": 256,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}
