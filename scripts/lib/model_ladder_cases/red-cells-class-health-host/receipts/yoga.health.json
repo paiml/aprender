@@ -1,8 +1,8 @@
 {
  "schema": "apr-host-health/v1",
- "host": "yoga",
+ "host": "lambda",
  "window_s": 900,
- "max_gpu_temp_c": 91,
+ "max_gpu_temp_c": 78,
  "gpu_temp_limit_c": 87,
  "throttle_events": 0,
  "version": "1.2.3"

@@ -926,6 +926,8 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant class-unhealthy red-cells-class-unhealthy       's/    if not (_int(thr) and thr == 0): bad.append/    if False: bad.append/'
     cmutant class-hot       red-cells-class-too-hot         's/    if not (_int(t) and _int(lim) and t < lim): bad.append/    if False: bad.append/'
     cmutant class-window    red-cells-class-short-window    's/    if not (_int(w) and w >= HEALTH_MIN_WINDOW_S): bad.append/    if False: bad.append/'
+    cmutant class-stale-health red-cells-class-health-stale 's/    if doc.get("version") != version: bad.append/    if False: bad.append/'
+    cmutant class-health-host red-cells-class-health-host   's/    if doc.get("host") != xid: bad.append/    if False: bad.append/'
     cmutant class-no-health red-cells-class-health-missing  's/        if unfit:/        if False:/'
     cmutant class-row-nosha red-cells-class-row-without-sha 's/            row_sha = str(c.get("sha256") or "").lower()/            row_sha = str(c.get("sha256") or xheld.get(f)).lower()/'
     cmutant class-unadmitted red-cells-class-unadmitted     's/        if not str(h.get("admitted_by") or "").strip():/        if False:/'
