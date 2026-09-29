@@ -70,6 +70,7 @@ pub mod ring_buffer; // Sprint 40: Lock-free ring buffer for span export (Toyota
 pub mod rle_compression; // Sprint 41: Run-length encoding for tight loop compression (Toyota Way: Muda)
 pub mod semantic_equivalence; // Sprint 40: Semantic Equivalence (Specification Section 6.3)
 pub mod sequence; // Single-Shot Compile Tooling: N-gram sequence mining (Section 6.1.1)
+pub mod serve_witness; // TRACE-001 TR-07 / APR-OBS OBS-16: external serve witness (#4562)
 pub mod span_pool; // Sprint 36: Memory pool for span allocations
 pub mod span_record; // Sprint 40: Parquet-compatible span schema
 #[cfg(target_os = "linux")]

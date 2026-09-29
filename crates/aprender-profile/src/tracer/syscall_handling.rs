@@ -232,6 +232,7 @@ fn record_stats_for_syscall(
 
 /// Record JSON output for a syscall
 fn record_json_for_syscall(
+    child: Pid,
     syscall_entry: &Option<SyscallEntry>,
     json_output: Option<&mut crate::json_output::JsonOutput>,
     result: i64,
@@ -247,6 +248,8 @@ fn record_json_for_syscall(
             result,
             duration_us: duration,
             source: entry.source.clone(),
+            ts_us: timing_mode.then(crate::json_output::trace_clock_us),
+            tid: timing_mode.then(|| child.as_raw()),
         });
     }
 }
@@ -439,6 +442,7 @@ pub(super) fn handle_syscall_exit(
 
     // Record JSON output
     record_json_for_syscall(
+        child,
         syscall_entry,
         tracers.json_output.as_mut(),
         result,

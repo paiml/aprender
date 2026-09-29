@@ -285,6 +285,27 @@ pub enum Commands {
     /// Exit codes: 0=passed, 1=failed, 2=baseline not found, 3=invalid baseline,
     /// 4=command error, 5=config error
     Validate(ValidateArgs),
+
+    /// External serve witness (TRACE-001 TR-07, #4562)
+    ///
+    /// Rebuilds each connection's TTFT and wall time from a timed socket
+    /// trace (`renacer -f -T -e trace=accept4,recvfrom,read,sendto,write,writev
+    /// --format json -- apr serve …`) and compares them with the server's
+    /// `[request]` lines. Prints one apr-serve-witness-v1 JSON row per request.
+    /// Exit codes: 0=green, 1=red, 2=not measured
+    Witness(WitnessArgs),
+}
+
+/// Arguments for the witness subcommand
+#[derive(Args, Debug)]
+pub struct WitnessArgs {
+    /// renacer `--format json` trace of the server, taken with -T
+    #[arg(long = "trace", value_name = "FILE")]
+    pub trace: PathBuf,
+
+    /// The server's stderr, holding its `[request] {json}` lines
+    #[arg(long = "server-log", value_name = "FILE")]
+    pub server_log: PathBuf,
 }
 
 /// Arguments for the validate subcommand
@@ -502,6 +523,31 @@ fn run_validate_subcommand(args: &ValidateArgs) -> i32 {
 
 /// Main entry point - parses CLI and runs the appropriate command.
 /// Returns the exit code.
+/// TR-07: one witness row per stdout line, the run verdict on stderr.
+fn run_witness_subcommand(args: &WitnessArgs) -> Result<i32> {
+    use crate::serve_witness::{run_verdict, witness, Verdict};
+    let trace: crate::json_output::JsonOutput =
+        serde_json::from_str(&std::fs::read_to_string(&args.trace)?)?;
+    let log = std::fs::read_to_string(&args.server_log)?;
+    let rows = match witness(&trace, &log) {
+        Ok(rows) => rows,
+        Err(why) => {
+            eprintln!("witness: NOT MEASURED: {why}");
+            return Ok(2);
+        }
+    };
+    for row in &rows {
+        println!("{}", serde_json::to_string(row)?);
+    }
+    let verdict = run_verdict(&rows);
+    eprintln!("witness: {verdict:?} over {} request(s)", rows.len());
+    Ok(match verdict {
+        Verdict::Green => 0,
+        Verdict::Red => 1,
+        Verdict::NotMeasured => 2,
+    })
+}
+
 pub fn run() -> Result<i32> {
     let args = Cli::parse();
 
@@ -510,6 +556,9 @@ pub fn run() -> Result<i32> {
         match subcommand {
             Commands::Validate(validate_args) => {
                 return Ok(run_validate_subcommand(validate_args));
+            }
+            Commands::Witness(witness_args) => {
+                return run_witness_subcommand(witness_args);
             }
         }
     }
@@ -1694,6 +1743,55 @@ mod tests {
         } else {
             panic!("Expected Validate subcommand");
         }
+    }
+
+    #[test]
+    fn test_witness_args() {
+        let cli =
+            Cli::parse_from(["renacer", "witness", "--trace", "t.json", "--server-log", "s.log"]);
+        let Some(Commands::Witness(args)) = cli.subcommand else {
+            panic!("Expected Witness subcommand");
+        };
+        assert_eq!(args.trace, PathBuf::from("t.json"));
+        assert_eq!(args.server_log, PathBuf::from("s.log"));
+    }
+
+    /// The subcommand's exit code is the verdict: a skewed server exits 1,
+    /// an untimed trace exits 2 (never 0).
+    #[test]
+    fn test_witness_subcommand_exit_codes() {
+        use crate::json_output::{JsonOutput, JsonSyscall};
+        let dir = tempfile::tempdir().expect("tempdir");
+        let row = |name: &str, fd: i64, result: i64, ts: Option<u64>| JsonSyscall {
+            name: name.to_string(),
+            args: vec![format!("{fd:#x}")],
+            result,
+            duration_us: None,
+            source: None,
+            ts_us: ts,
+            tid: None,
+        };
+        let mut timed = JsonOutput::new();
+        timed.add_syscall(row("accept4", 3, 9, Some(0)));
+        timed.add_syscall(row("read", 9, 50, Some(10)));
+        timed.add_syscall(row("write", 9, 50, Some(1_000_000)));
+        let mut untimed = JsonOutput::new();
+        untimed.add_syscall(row("accept4", 3, 9, None));
+        let log = |total: f64| {
+            format!(
+                "[request] {{\"request_id\":\"a\",\"stream\":false,\"ttft_ms\":null,\"total_ms\":{total}}}\n"
+            )
+        };
+        let run = |trace: &JsonOutput, log: String| {
+            let t = dir.path().join("t.json");
+            let s = dir.path().join("s.log");
+            std::fs::write(&t, trace.to_json().expect("json")).expect("write");
+            std::fs::write(&s, log).expect("write");
+            run_witness_subcommand(&WitnessArgs { trace: t, server_log: s }).expect("run")
+        };
+        assert_eq!(run(&timed, log(990.0)), 0);
+        assert_eq!(run(&timed, log(1200.0)), 1);
+        assert_eq!(run(&untimed, log(990.0)), 2);
     }
 
     #[test]

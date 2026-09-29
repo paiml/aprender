@@ -1,0 +1,132 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-29'
+  author: PAIML Engineering
+  kind: pattern
+  # ONT-7: the parser and comparison laws are pure functions over a recorded
+  # trace and log, so the committed tree is the whole claim. The live overhead
+  # ratio and a live GREEN/RED run are separate, host-qualified measurements
+  # and are NOT claimed by this version (see qa_gate).
+  valid_under:
+    world: committed
+  description: >-
+    TRACE-001 TR-07 / APR-OBS OBS-16 (#4562). A second witness for the
+    SRV-TIM-001 timings: `renacer witness` rebuilds each request's TTFT and
+    wall time from a timed socket trace of `apr serve` (the kernel's view of
+    the connection) and compares them with the server's own `[request]` line.
+    A server whose numbers are skewed +20% goes RED from the witness alone.
+    Anything the witness cannot measure (an untimed trace, an ambiguous join,
+    a response with no write) is NOT MEASURED, never a pass.
+  references:
+  - 'docs/specifications/TRACE-001-tracing-consumers.md §2.3 (external witness), TR-07 row'
+  - 'contracts/apr-serve-timings-v1.yaml — the server-side timings this contract checks'
+  - 'crates/aprender-profile/src/serve_witness.rs — socket_events, witnessed_requests, compare, witness, run_verdict'
+  - 'crates/aprender-profile/src/cli.rs — `renacer witness --trace <json> --server-log <stderr>` (exit 0 green, 1 red, 2 not measured)'
+  - 'crates/aprender-profile/src/json_output.rs — JsonSyscall.ts_us / tid, written only under -T'
+  - 'crates/aprender-profile/src/syscalls.rs — x86_64 accept4 (288), missing before #4562, so the witness filter matched nothing on x86_64'
+equations:
+  external_times:
+    formula: >-
+      for each request r on client fd k, anchored at a = t(accept4 -> k) for
+      the connection's first request and a = t(first read of r) for a later
+      keep-alive request:
+      ttft_ext(r) = t(first write on k after request bytes of r were read) - a;
+      wall_ext(r) = t(last write on k belonging to r) - a
+    domain: >-
+      renacer -f -T -e trace=accept4,recvfrom,read,sendto,write,writev
+      --format json -- <pinned apr> serve ..., driven at concurrency 1
+    codomain: "milliseconds, or null with a reason (non-streaming | no-write-after-read)"
+    invariants:
+    - >-
+      TIMED OR NOTHING. A socket syscall without ts_us makes the whole trace
+      NOT MEASURED (NotMeasured::Untimed). No verdict is drawn from row order.
+    - >-
+      NON-STREAMING TTFT IS NULL. One write carries a whole non-streamed body,
+      so its first write is not a first token; ttft_ext is null with
+      ttft_reason "non-streaming" and only wall time is compared.
+    - >-
+      TRACED ROWS ARE NOT PERF ROWS. Every row carries traced: true and is
+      excluded from every performance series (ptrace stops slow the server).
+  tolerance:
+    formula: "|server_ms - external_ms| <= max(0.05 * external_ms, 50 ms)"
+    domain: "one metric (ttft or wall) of one joined request"
+    codomain: "green | red | not_measured (either side null or non-finite)"
+    invariants:
+    - "not_measured is never green: run_verdict is GREEN only if at least one metric compared and none is RED"
+  join:
+    formula: "row n = (n-th witnessed request, n-th server [request] line), both in time order"
+    domain: "a c=1 run"
+    codomain: "apr-serve-witness-v1 rows, or NotMeasured::JoinCount when the counts differ"
+    invariants:
+    - "the join key is position under c=1; request_id and client_request_id are carried from the server line so OBS-01/OBS-03 rows can be joined"
+proof_obligations:
+- type: invariant
+  property: first-token time never exceeds wall time
+  formal: "∀ r: ttft_ext(r) ≠ null ∧ wall_ext(r) ≠ null ⟹ ttft_ext(r) ≤ wall_ext(r); ttft_ext(r) = null ⟺ wall_ext(r) = null (before the non-streaming rule)"
+  applies_to: all
+- type: invariant
+  property: TTFT is null when no write follows a completed read
+  formal: "¬∃ w ∈ writes(k): t(w) ≥ t(first read of r with bytes > 0) ⟹ ttft_ext(r) = null"
+  applies_to: all
+- type: invariant
+  property: a +20% skew of the server's own numbers is RED from the witness alone
+  formal: "external_ms ≥ 250 ⟹ compare(1.2 · external_ms, external_ms) = red ∧ compare(0.8 · external_ms, external_ms) = red"
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-WITNESS-001
+  rule: an honest server is GREEN
+  prediction: "server ttft/total within max(5%, 50 ms) of the socket times gives ttft_verdict = wall_verdict = green"
+  test: "cargo test -p aprender-profile --lib serve_witness::tests::honest_streamed_request_is_green"
+  if_fails: the witness raises false alarms and will be switched off
+- id: FALSIFY-WITNESS-002
+  rule: a planted +20% (and -20%) server skew is RED from the witness alone
+  prediction: "server numbers × 1.2 (or × 0.8) against the same trace give run_verdict = red"
+  test: "cargo test -p aprender-profile --lib serve_witness::tests::planted_plus_20_percent_skew_is_red_from_the_witness_alone; cli::tests::test_witness_subcommand_exit_codes (exit 1)"
+  if_fails: a server that lies about its own latency passes its only check
+- id: FALSIFY-WITNESS-003
+  rule: non-streaming TTFT is null with a reason
+  prediction: "stream = false gives ttft_ext_ms = null, ttft_reason = non-streaming, ttft_verdict = not_measured, wall still compared"
+  test: "cargo test -p aprender-profile --lib serve_witness::tests::non_streaming_ttft_is_null_with_reason"
+  if_fails: a whole-body write is read as a first token and every non-streamed TTFT is inflated to wall time
+- id: FALSIFY-WITNESS-004
+  rule: nothing unmeasured passes
+  prediction: "an untimed trace, a join count mismatch, a trace with no accepted connection, or a request with no response write is not_measured (CLI exit 2), never green"
+  test: "cargo test -p aprender-profile --lib serve_witness::tests::untimed_trace_is_not_measured join_count_mismatch_is_not_measured no_connection_is_not_measured no_write_after_read_is_null_and_not_measured"
+  if_fails: a broken trace reads as a clean bill of health (L25)
+- id: FALSIFY-WITNESS-005
+  rule: the tolerance is max(5%, 50 ms) at both edges
+  prediction: "150.0 vs 100 green, 150.1 vs 100 red; 2100.0 vs 2000 green, 2100.5 vs 2000 red"
+  test: "cargo test -p aprender-profile --lib serve_witness::tests::tolerance_is_max_of_five_percent_and_fifty_ms"
+  if_fails: the witness is too loose to see a 20% skew or too tight for scheduler noise
+- id: FALSIFY-WITNESS-006
+  rule: TTFT ≤ wall and TTFT null exactly when no write followed a read (bounded, ≤ 8 syscalls)
+  prediction: "for every sequence of ≤ 8 reads/writes on one fd plus noise on another fd, with monotone timestamps, the invariant holds"
+  test: "cargo test -p aprender-profile --lib serve_witness::tests::ttft_never_exceeds_wall"
+  if_fails: the parser assigns a write to the wrong request or reads a pre-request write as a first token
+- id: FALSIFY-WITNESS-007
+  rule: accept4 resolves on x86_64
+  prediction: "syscall_name(288) = accept4 on x86_64, so -e trace=accept4 matches"
+  test: "cargo test -p aprender-profile --lib syscalls::abi_numbers::x86_64_numbers_match_the_kernel_abi"
+  if_fails: the witness filter matches no connection on x86_64 and every run is NOT MEASURED
+kani_harnesses:
+# DECLARED AND NOT YET WRITTEN, stated plainly (#2644). The property is bounded
+# (≤ 8 syscalls) and is exercised today by the proptest FALSIFY-WITNESS-006;
+# the harness would make the bound exhaustive instead of sampled.
+- id: KANI-TRACE-WITNESS
+  obligation: first-token time never exceeds wall time
+  property: >-
+    for all sequences of at most 8 socket syscalls on one fd with monotone
+    timestamps, witnessed_requests yields requests with ttft_ext <= wall_ext,
+    and ttft_ext is null when no write follows a read of request bytes
+  bound: 8
+  status: declared-not-written
+  cheaper_alternative: "the proptest FALSIFY-WITNESS-006 over the same bound"
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality gate is claimed. NOT MEASURED in this version: the
+      live overhead ratio (traced vs untraced wall time at c=1), the filter
+      efficiency (stops / total syscalls), and a live GREEN run against a
+      pinned apr serve. They need an idle GPU host and are recorded as [V]
+      rows when measured, never estimated here.

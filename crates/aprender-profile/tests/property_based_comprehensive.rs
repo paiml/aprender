@@ -153,6 +153,8 @@ proptest! {
                 result: results[i],
                 duration_us: None,
                 source: None,
+                ts_us: None,
+                tid: None,
             };
             output.add_syscall(syscall);
         }
@@ -348,6 +350,8 @@ proptest! {
                 result: 0,
                 duration_us: None,
                 source: None,
+                ts_us: None,
+                tid: None,
             };
             json_out.add_syscall(syscall);
         }
@@ -446,6 +450,8 @@ mod deterministic_core_feature_tests {
                 result,
                 duration_us: Some(time),
                 source: None,
+                ts_us: None,
+                tid: None,
             };
             json_out.add_syscall(syscall);
         }

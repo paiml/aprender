@@ -146,6 +146,9 @@ static SYSCALL_TABLE_X86_64: &[(i64, &str)] = &[
     (257, "openat"),
     (262, "newfstatat"),
     (273, "set_robust_list"),
+    // 288 was missing, so `-e trace=accept4` matched nothing on x86_64 and the
+    // TRACE-001 §2.3 serve witness could never see a connection open (#4562).
+    (288, "accept4"),
     (302, "prlimit64"),
     (318, "getrandom"),
     (329, "pkey_mprotect"),
@@ -454,6 +457,9 @@ mod abi_numbers {
     const X86_64: &[(i64, &str)] = &[
         (0, "read"),
         (12, "brk"),
+        (20, "writev"),
+        (44, "sendto"),
+        (45, "recvfrom"),
         (106, "setgid"),
         (107, "geteuid"),
         (108, "getegid"),
@@ -461,6 +467,7 @@ mod abi_numbers {
         (110, "getppid"),
         (111, "getpgrp"),
         (112, "setsid"),
+        (288, "accept4"),
         (302, "prlimit64"),
         (329, "pkey_mprotect"),
         (435, "clone3"),

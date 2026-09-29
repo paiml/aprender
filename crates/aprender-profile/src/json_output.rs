@@ -28,6 +28,23 @@ pub struct JsonSyscall {
     /// Source location (if --source enabled and available)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<JsonSourceLocation>,
+    /// Monotonic microseconds from the trace epoch to syscall exit (only with
+    /// -T). TRACE-001 §2.3 needs an ordering clock, not just durations: the
+    /// external serve witness subtracts two of these (#4562).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ts_us: Option<u64>,
+    /// Thread that made the call (only with -T). Under -f the fd table is per
+    /// process, but a tokio server answers one connection from several threads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tid: Option<i32>,
+}
+
+static TRACE_EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// Microseconds since the first call in this process (the trace epoch).
+pub fn trace_clock_us() -> u64 {
+    let epoch = TRACE_EPOCH.get_or_init(std::time::Instant::now);
+    u64::try_from(epoch.elapsed().as_micros()).unwrap_or(u64::MAX)
 }
 
 /// ML Anomaly Analysis result (Sprint 23)
@@ -333,6 +350,8 @@ mod tests {
             result: 5,
             duration_us: Some(100),
             source: None,
+            ts_us: None,
+            tid: None,
         };
 
         output.add_syscall(syscall);
@@ -350,6 +369,8 @@ mod tests {
             result: 10,
             duration_us: Some(50),
             source: None,
+            ts_us: None,
+            tid: None,
         });
 
         output.add_syscall(JsonSyscall {
@@ -358,6 +379,8 @@ mod tests {
             result: 10,
             duration_us: Some(75),
             source: None,
+            ts_us: None,
+            tid: None,
         });
 
         assert_eq!(output.summary.total_syscalls, 2);
@@ -374,6 +397,8 @@ mod tests {
             result: 10,
             duration_us: None,
             source: None,
+            ts_us: None,
+            tid: None,
         });
 
         assert_eq!(output.summary.total_syscalls, 1);
@@ -549,6 +574,8 @@ mod tests {
                 line: 42,
                 function: Some("main".to_string()),
             }),
+            ts_us: None,
+            tid: None,
         });
         output.set_exit_code(0);
 
@@ -567,6 +594,8 @@ mod tests {
             result: 10,
             duration_us: None,
             source: None,
+            ts_us: None,
+            tid: None,
         };
 
         let json = serde_json::to_string(&syscall).expect("test");
