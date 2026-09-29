@@ -77,11 +77,67 @@ judge() { # judge <outcomes.json> <listed> <max-missed> <out>
   fi
   echo "judged $total mutant(s): missed=$missed timeout=$timeout (max allowed $max)"
   if [ $((missed + timeout)) -gt "$max" ]; then
-    echo "RED   $((missed + timeout)) mutant(s) survived or timed out on the diff (> $max): add tests that kill them"
-    cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'
-    return 1
+    unbuilt_split "$out" || return 1
+    if [ "$((missed + timeout - UNBUILT_N))" -gt "$max" ] || [ "$UNBUILT_N" -eq 0 ]; then
+      echo "RED   $((missed + timeout)) mutant(s) survived or timed out on the diff (> $max): add tests that kill them"
+      cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'
+      return 1
+    fi
+    not_measured "$out" || return 1
   fi
   echo "ok    every mutant in the diff was caught (or within --max-missed)"
+}
+
+# #4621 (cop ruling 2026-09-29 06:19Z). cargo-mutants tests a mutant with `cargo test -p <pkg> --lib` at the
+# package's DEFAULT features, so a mutant inside `#[cfg(feature = "cuda")]` code is never compiled: its run is the
+# baseline, and it comes back MISSED or, on a slow suite, TIMEOUT (PR #4620: all 7 mutants were in cfg(cuda) code,
+# 0 `cuda::` tests ran of 16149, 1 missed at 292 s and 6 timed out at 300.1 s). Such a mutant was never measured, so it
+# is neither a survivor nor a pass. The compiled set is MEASURED, not guessed from cfg attributes: `cargo check -p
+# <pkg> --lib` in a private target dir writes dep-info (*.d) naming every source file the compiler read.
+unbuilt_split() { # unbuilt_split <out> -> UNBUILT (lines) and UNBUILT_N; RED (1) when it cannot measure
+  local out=$1 cargo=${MUTANTS_GATE_CARGO:-cargo} f d pkg line
+  local -A pkgs=() built=()
+  UNBUILT=""; UNBUILT_N=0
+  while IFS= read -r line; do
+    f=${line%%:*}
+    case "$f" in crates/*/*) d=${f#crates/}; d=crates/${d%%/*} ;; *) d=. ;; esac
+    pkg=$(sed -n 's/^name *= *"\(.*\)"/\1/p' "$d/Cargo.toml" 2> /dev/null | head -1)
+    [ -n "$pkg" ] || { echo "RED   cannot name the package that owns $f: the gate cannot tell whether it was compiled"; return 1; }
+    pkgs[$pkg]=1
+  done < <(cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null)
+  [ "${#pkgs[@]}" -gt 0 ] || return 0   # counts without named survivors: judged as survivors, never as unbuilt
+  for pkg in "${!pkgs[@]}"; do
+    "$cargo" check -p "$pkg" --lib --target-dir "$out/depinfo" > "$out/depinfo.log" 2>&1 \
+      || { echo "RED   cargo check -p $pkg --lib failed: the gate cannot measure which files its build compiled -- $(tail -1 "$out/depinfo.log")"; return 1; }
+  done
+  while IFS= read -r f; do built[$f]=1; done < <(cat "$out"/depinfo/debug/deps/*.d 2> /dev/null \
+    | tr ' ' '\n' | sed -n 's/:$//; s|^'"$PWD"'/||; /\.rs$/p' | sort -u)
+  [ "${#built[@]}" -gt 0 ] || { echo "RED   the dep-info under $out/depinfo names no source file: nothing measured is not nothing compiled"; return 1; }
+  while IFS= read -r line; do
+    [ -n "${built[${line%%:*}]:-}" ] && continue
+    UNBUILT+="$line"$'\n'; UNBUILT_N=$((UNBUILT_N + 1))
+  done < <(cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null)
+  return 0
+}
+
+# A never-compiled mutant is NOT_MEASURED here (L25). It turns green only on a LOCAL receipt from a build that does
+# compile it: a line `CAUGHT <the mutant line, verbatim>` in evidence/mutants-local/*.txt. Anything else stays RED.
+not_measured() { # not_measured <out>
+  local line open=0
+  echo "NOT_MEASURED $UNBUILT_N mutant(s) sit in code this build never compiles (a cfg feature off by default):"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if cat evidence/mutants-local/*.txt 2> /dev/null | grep -qxF -- "CAUGHT $line"; then
+      echo "  receipt  $line"
+    else
+      echo "  OPEN     $line"; open=$((open + 1))
+    fi
+  done <<< "$UNBUILT"
+  if [ "$open" -gt 0 ]; then
+    echo "RED   $open NOT_MEASURED mutant(s) carry no local receipt: run cargo mutants with the feature that compiles them and commit 'CAUGHT <line>' to evidence/mutants-local/"
+    return 1
+  fi
+  echo "ok    every NOT_MEASURED mutant is CAUGHT in a local receipt (evidence/mutants-local/)"
 }
 
 self_test() {
@@ -96,6 +152,8 @@ self_test() {
 echo "$*" >> "$STUB_ARGS"
 case " $* " in
   *" --list "*) printf '%b' "${STUB_LIST:-}"; exit "${STUB_LIST_RC:-0}" ;;
+  " check "*) td=""; prev=""; for a in "$@"; do [ "$prev" = "--target-dir" ] && td=$a; prev=$a; done
+    mkdir -p "$td/debug/deps"; printf '%b' "${STUB_DEPINFO:-}" > "$td/debug/deps/x.d"; exit "${STUB_CHECK_RC:-0}" ;;
 esac
 out=""; prev=""
 for a in "$@"; do [ "$prev" = "--output" ] && out=$a; prev=$a; done
@@ -103,14 +161,21 @@ for a in "$@"; do [ "$prev" = "--output" ] && out=$a; prev=$a; done
 mkdir -p "$out/mutants.out"
 printf '%s' "$STUB_OUTCOMES" > "$out/mutants.out/outcomes.json"
 printf '%b' "${STUB_MISSED:-}" > "$out/mutants.out/missed.txt"
+printf '%b' "${STUB_TIMEOUT:-}" > "$out/mutants.out/timeout.txt"
 exit "${STUB_RUN_RC:-0}"
 STUB
   chmod +x "$T/cargo"
   printf 'diff --git a/x.rs b/x.rs\n+fn f() {}\n' > "$T/pr.diff"
+  # a two-package tree: `root` owns src/, `foo` owns crates/foo/; foo's gated.rs is never in the dep-info
+  mkdir -p "$T/tree/crates/foo/src" "$T/tree/evidence/mutants-local"
+  printf '[package]\nname = "root"\n' > "$T/tree/Cargo.toml"
+  printf '[package]\nname = "foo"\n' > "$T/tree/crates/foo/Cargo.toml"
+  printf 'CAUGHT crates/foo/src/gated.rs:7:5: replace g -> bool with true\n' > "$T/tree/evidence/mutants-local/r.txt"
   row() { # row <name> <want rc> <needle> [ENV=VAL...] -- runs THIS script's gate against the stub
     local name=$1 want=$2 needle=$3 out rc; shift 3
     : > "$T/args-$name"   # a fresh log per row: a stale one would answer for a mutant that never ran
-    out=$(env MUTANTS_GATE_CARGO="$T/cargo" STUB_ARGS="$T/args-$name" "$@" \
+    out=$(cd "$T/tree" && env MUTANTS_GATE_CARGO="$T/cargo" STUB_ARGS="$T/args-$name" \
+          STUB_DEPINFO="$T/tree/target/x: $T/tree/src/x.rs $T/tree/crates/foo/src/built.rs\n" "$@" \
           bash "$GATE_SCRIPT" "${GATE_DIFF:-$T/pr.diff}" --cap 3 --jobs 2 --max-missed "${MAXM:-0}" --out "$T/out-$name" ${EXCL:-} 2>&1); rc=$?
     if [ "$rc" = "$want" ] && grep -qF -- "$needle" <<< "$out"; then echo "ok    $name"
     else echo "FAIL  $name -- rc $rc (want $want): $(tr '\n' ' ' <<< "$out" | cut -c1-220)"; fi
@@ -144,6 +209,18 @@ STUB
     # phase results, the summary keys AFTER it. The pre-#4142 inline parser read nothing out of this file.
     row real-outcomes-shape-is-parsed 1 "judged 2 mutant(s): missed=1 timeout=0" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES="$(cat "$(dirname "$SELF")/mutants_diff_gate.real-outcomes.json")"
+    # #4621: a survivor in a file the build never compiled is NOT_MEASURED, never MISSED and never a pass
+    row unbuilt-with-receipt-passes 0 "receipt  crates/foo/src/gated.rs:7:5" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
+    row unbuilt-without-receipt-is-red 1 "OPEN     crates/foo/src/gated.rs:9:1" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":0,"caught":1,"timeout":1}' STUB_TIMEOUT='crates/foo/src/gated.rs:9:1: replace h with ()\n'
+    row built-survivor-beside-unbuilt-is-red 1 "  crates/foo/src/built.rs:3:1: replace k with ()" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":2,"caught":0,"timeout":0}' \
+        STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\ncrates/foo/src/built.rs:3:1: replace k with ()\n'
+    row depinfo-empty-is-red 1 "names no source file" STUB_LIST='a\nb\n' STUB_DEPINFO="" \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
+    row check-failure-is-red 1 "cargo check -p foo --lib failed" STUB_LIST='a\nb\n' STUB_CHECK_RC=101 \
+        STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
     : > "$T/empty.diff"
     GATE_DIFF="$T/empty.diff" row empty-diff-passes 0 "empty diff" STUB_LIST='a\n'
   }
@@ -172,6 +249,11 @@ count-mismatch-ok~tested-count-mismatch-is-red~  if [ "$total" -ne "$n" ]; then~
 timeout-not-counted~timeout-counts-as-uncaught~  if [ $((missed + timeout)) -gt "$max" ]; then~  if [ "$missed" -gt "$max" ]; then
 exclusion-dropped-on-run~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --no-times~  "$cargo" mutants --workspace --no-times
 exclusion-dropped-on-list~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --in-diff "$diff" --list~  "$cargo" mutants --workspace --in-diff "$diff" --list
+unbuilt-is-a-pass~unbuilt-without-receipt-is-red~    echo "RED   $open NOT_MEASURED mutant(s) carry no local receipt~    return 0; echo "RED   $open NOT_MEASURED mutant(s) carry no local receipt
+receipt-ignored~unbuilt-with-receipt-passes~    if cat evidence/mutants-local/*.txt 2> /dev/null | grep -qxF -- "CAUGHT $line"; then~    if false; then
+built-survivor-hidden~built-survivor-beside-unbuilt-is-red~    if [ "$((missed + timeout - UNBUILT_N))" -gt "$max" ] || [ "$UNBUILT_N" -eq 0 ]; then~    if [ "$UNBUILT_N" -eq 0 ]; then
+empty-depinfo-means-all-unbuilt~depinfo-empty-is-red~  [ "${#built[@]}" -gt 0 ] || {~  true || {
+check-rc-ignored~check-failure-is-red~    "$cargo" check -p "$pkg" --lib --target-dir "$out/depinfo" > "$out/depinfo.log" 2>&1 \~    true \
 survivors-unnamed~missed-is-red-and-named~    cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'~    :
 MUT
   echo "mutants_diff_gate self-test: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
