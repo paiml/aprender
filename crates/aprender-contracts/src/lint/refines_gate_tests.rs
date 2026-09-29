@@ -87,7 +87,10 @@ fn a_liskov_pair_with_an_honest_witness_passes() {
     assert!(findings.is_empty(), "{findings:?}");
     assert_eq!(r.verdict, Verdict::Pass);
     assert_eq!(c.liskov_pairs_checked, 1);
-    assert_eq!(c.refines_pairs, 1, "the one refines edge of the fixture is counted");
+    assert_eq!(
+        c.refines_pairs, 1,
+        "the one refines edge of the fixture is counted"
+    );
     assert_eq!(c.pc_checker, FIRED);
     assert_eq!((c.requires_n, c.ensures_n, c.invariants_n), (2, 3, 2));
 }

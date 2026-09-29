@@ -371,7 +371,10 @@ fn count_allowlisted_counts_each_class_exactly() {
     count_allowlisted(&mut c, "another unclassified reason");
     assert_eq!((c.allowlisted, c.allowlisted_other), (2, 2));
     count_allowlisted(&mut c, "crate x is not a workspace member");
-    assert_eq!((c.allowlisted, c.allowlisted_not_member, c.allowlisted_other), (3, 1, 2));
+    assert_eq!(
+        (c.allowlisted, c.allowlisted_not_member, c.allowlisted_other),
+        (3, 1, 2)
+    );
 }
 
 /// Kills `+=` -> `*=` on `stale_allowlist`, and the deleted `registries`/`files_parsed` counter fields.

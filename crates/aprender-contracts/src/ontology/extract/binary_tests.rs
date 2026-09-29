@@ -278,7 +278,41 @@ fn a_quoted_ledger_field_keeps_its_comma() {
 
 #[test]
 fn the_positive_control_fires() {
-    assert!(positive_control());
+    assert!(positive_control(&control_sample()));
+}
+
+/// The control is a check, not a constant: a third `apr` package makes three nodes where it wants two, and every
+/// other conjunct still holds, so only the node count can say no.
+#[test]
+fn the_positive_control_refuses_a_third_apr() {
+    let mut targets = control_sample();
+    let extra = Target {
+        package: "apr-extra".into(),
+        ..targets[1].clone()
+    };
+    targets.push(extra);
+    assert!(!positive_control(&targets));
+    // …and with the snapshot's commands gone, "apr run" is a second orphan
+    let mut bare = control_sample();
+    for t in &mut bare {
+        t.commands.clear();
+    }
+    assert!(!positive_control(&bare));
+}
+
+/// The planted pair looks like a `snapshot` row: 64-hex help and version digests, and the command the ledger has.
+#[test]
+fn the_control_sample_looks_like_a_snapshot_row() {
+    for t in control_sample() {
+        for d in [&t.help_sha256, &t.version_sha256] {
+            assert!(
+                d.len() == 64 && d.bytes().all(|c| c.is_ascii_hexdigit()),
+                "{}: {d:?}",
+                t.package
+            );
+        }
+        assert!(t.commands.contains("run"), "{}", t.package);
+    }
 }
 
 /// The repo's own census reads the bin targets `cargo metadata --no-deps` lists (29 on 2026-09-26, 28 names):
@@ -360,12 +394,7 @@ fn emit_all_counts_are_exact() {
         },
     );
     let mut stats = BinaryStats::default();
-    emit_all(
-        &mut Graph::default(),
-        &[t1, t2, t3],
-        &ledger,
-        &mut stats,
-    );
+    emit_all(&mut Graph::default(), &[t1, t2, t3], &ledger, &mut stats);
     assert_eq!(stats.version_lacks_sha, 1);
     assert_eq!(stats.name_pair_mismatch, 2);
     assert_eq!(stats.help_failed, 2);

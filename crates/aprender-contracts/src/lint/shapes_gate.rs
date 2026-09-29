@@ -785,7 +785,10 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
         ("example", example::positive_control()),
-        ("binary", binary::positive_control()),
+        (
+            "binary",
+            binary::positive_control(&binary::control_sample()),
+        ),
         ("kernel", kernel::positive_control()),
         (
             "parity-receipt",
@@ -1590,7 +1593,10 @@ mod tests {
         assert_eq!((v, armed), (names, false));
         // No zero-focus shape at all, even with everything armed.
         let live = vec![("b".to_string(), 3)];
-        assert_eq!(vacuities(&live, &shapes, &ArmedShapes::All), (vec![], false));
+        assert_eq!(
+            vacuities(&live, &shapes, &ArmedShapes::All),
+            (vec![], false)
+        );
     }
 
     #[test]

@@ -380,7 +380,10 @@ fn a_shallow_repository_leaves_an_absent_sha_unresolved() {
         .output()
         .expect("git runs");
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(git(&clone, &["rev-parse", "--is-shallow-repository"]), "true");
+    assert_eq!(
+        git(&clone, &["rev-parse", "--is-shallow-repository"]),
+        "true"
+    );
     let pending = vec![PendingSha {
         sha: "a".repeat(40),
         stem: "case".into(),
