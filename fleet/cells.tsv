@@ -1,5 +1,5 @@
-# measured 2026-09-28T23:57:10Z
-lambda-labs	apr	RED	behind (installed v0.70.0-dev.8d021f61e@8d021f6, target nightly@15f1b2a)
+# measured 2026-09-29T00:27:11Z
+lambda-labs	apr	GREEN	ok (installed v0.70.0-dev.8d021f61e@8d021f6, target v0.70.0-dev.8d021f61e@8d021f6)
 lambda-labs	pv	GREEN	ok (installed v0.70.0-dev.8d021f61e@8d021f6, target v0.70.0-dev.8d021f61e@8d021f6)
 lambda-labs	forjar	GREEN	no-sha (installed v1.33.0@49b33fb, target v1.33.0@49b33fb)
 lambda-labs	bashrs	GREEN	no-sha (installed nightly@1241570, target nightly@1241570)
