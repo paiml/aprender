@@ -93,9 +93,10 @@ fn generation_err(e: &crate::error::RealizarError) -> ApiErr {
 }
 
 /// D5: refuse a prompt that fills the serving context (model context capped by
-/// the device KV cache) with a 400 before a CUDA path takes the model lock, the
-/// same pre-flight chat and completions run through `fit_serving_context`.
-#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+/// the device KV cache) with a 400 before a CUDA path takes the model lock or
+/// `/v1/batch/completions` generates, the same pre-flight chat and completions run
+/// through `fit_serving_context`.
+#[cfg_attr(not(any(feature = "cuda", feature = "gpu")), allow(dead_code))]
 pub(crate) fn preflight_serving_context(state: &AppState, prompt_tokens: usize) -> Result<(), ApiErr> {
     match state
         .serving_context()
