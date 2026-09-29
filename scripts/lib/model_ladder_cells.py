@@ -29,8 +29,10 @@ CLASS-KEYED CELLS (M3, operator 2026-09-29 "shorten the cells with capacity, nev
 `helpers` maps its id -> its receipt (already bound to the cut by the caller). What is OWED never moves: it is
 still derived from the required (lead) host's own inventory and total. A helper's measured rows only SUPPLY
 owed cells, and only when (1) its measured cc equals the lead's measured cc (a foreign class credits nothing),
-(2) its own receipt declares red == 0 (a sick host credits nothing), (3) the contract names what admitted it,
-and (4) it ran the same artifact, by sha256, the lead holds. A helper's pass is judged against the helper's
+(2) its own receipt declares red == 0 (a sick host credits nothing), (3) the contract's `admitted_by` names a
+health receipt beside the host receipts whose MEASURED terms this module judges (HEALTH_SCHEMA: a window of at
+least HEALTH_MIN_WINDOW_S, zero throttle events, peak GPU temperature under its limit), and (4) every row it
+supplies names, by sha256, the artifact the lead holds. A helper's pass is judged against the helper's
 OWN total; its honest refusal supplies nothing (the lead still owes the cell); its failure is a FAIL.
 """
 import re
@@ -247,7 +249,7 @@ def _helper_rows(hid, R, helpers, rows, out):
             f = c.get("file")
             if f not in held:
                 continue  # the lead does not hold it, so it is owed by nobody here: supplies nothing
-            row_sha = str(c.get("sha256") or xheld.get(f)).lower()
+            row_sha = str(c.get("sha256") or "").lower()  # a helper row must name its artifact: no fallback
             if xheld.get(f) != held[f] or row_sha != held[f]:
                 if f not in foreign:  # once per file: every row of it is the same finding
                     out(f"FAIL  {xid:7} holds {f} as sha256 {str(xheld.get(f))[:12]} (its row names {row_sha[:12]}), "
@@ -333,6 +335,28 @@ def _passes_nowhere(passed_anywhere, failed_somewhere, out):
 
 
 SHA_KEY, FILE_KEY = "sha256:", "file:"
+HEALTH_SCHEMA, HEALTH_MIN_WINDOW_S = "apr-host-health/v1", 600
+
+
+def _int(v):
+    return type(v) is int  # a bool is an int in Python: `red: false` is not a count
+
+
+def health_defects(doc, xid):
+    """-> what keeps a helper's health receipt from admitting it; [] admits. The verdict is computed HERE from
+    measured terms, never read from the receipt: a self-declared 'healthy' is a declaration, not a measurement."""
+    if not isinstance(doc, dict):
+        return ["no health receipt beside the host receipts"]
+    if doc.get("_error"):
+        return [f"health receipt unreadable: {_loud(doc['_error'], 80)}"]
+    bad = []
+    if doc.get("schema") != HEALTH_SCHEMA: bad.append(f"schema {doc.get('schema')!r} is not {HEALTH_SCHEMA}")
+    if doc.get("host") != xid: bad.append(f"it measured host {doc.get('host')!r}")
+    w, t, lim, thr = (doc.get(k) for k in ("window_s", "max_gpu_temp_c", "gpu_temp_limit_c", "throttle_events"))
+    if not (_int(w) and w >= HEALTH_MIN_WINDOW_S): bad.append(f"window_s {w!r} < {HEALTH_MIN_WINDOW_S}")
+    if not (_int(thr) and thr == 0): bad.append(f"throttle_events {thr!r}")
+    if not (_int(t) and _int(lim) and t < lim): bad.append(f"max_gpu_temp_c {t!r} is not under gpu_temp_limit_c {lim!r}")
+    return bad
 
 
 def admitted_helpers(L, receipts, helpers, out):
@@ -344,6 +368,9 @@ def admitted_helpers(L, receipts, helpers, out):
         if h.get("required") or not h.get("class"):
             continue
         xid = h.get("id")
+        if xid in {r.get("id") for r in req}:
+            out(f"FAIL  {xid:7} is declared both required and a helper -- a host cannot supply its own cells")
+            rc = 1; continue
         leads = [r for r in req if r.get("class") == h["class"]]
         if len(leads) != 1:
             out(f"FAIL  {xid:7} declares class {h['class']!r}, which {len(leads)} required host(s) declare -- a helper "
@@ -357,11 +384,18 @@ def admitted_helpers(L, receipts, helpers, out):
         X, R = helpers.get(xid), receipts.get(lid)
         if X is None or R is None:
             continue  # the caller already FAILed the missing or unbound receipt
+        unfit = health_defects(X.get("_health"), xid)
+        if unfit:
+            out(f"FAIL  {xid:7} is not admitted by {h['admitted_by']}: {'; '.join(unfit)} -- an unhealthy host supplies no cell")
+            rc = 1; continue
+        if X.get("host") != xid:
+            out(f"FAIL  {xid:7} receipt names host {X.get('host')!r} -- a receipt supplies cells only as the host it measured")
+            rc = 1; continue
         if str(X.get("cc")) != str(R.get("cc")):
             out(f"FAIL  {xid:7} measured cc {X.get('cc')!r}, its class lead {lid} measured {R.get('cc')!r} -- a "
                 f"foreign class supplies no cell")
             rc = 1; continue
-        if not isinstance(X.get("red"), int) or X["red"] != 0:
+        if not _int(X.get("red")) or X["red"] != 0:
             out(f"FAIL  {xid:7} declares red={X.get('red')!r} -- a sick host supplies no cell of {lid}'s")
             rc = 1; continue
         got.setdefault(lid, []).append((xid, X))
