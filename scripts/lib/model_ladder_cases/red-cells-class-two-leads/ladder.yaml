@@ -19,7 +19,7 @@ ladder:
     gpu: GB10
     id: gx10
     required: true
-  - admitted_by: handoff/yoga-thermal-receipt (fixture)
+  - admitted_by: yoga.health.json
     cc: sm_89
     class: x86_64/cuda/sm_89
     gpu: RTX 4060 Laptop
