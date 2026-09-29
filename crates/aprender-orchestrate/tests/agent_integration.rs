@@ -281,7 +281,8 @@ async fn test_routing_driver_fallback_integration() {
             ))
         }
         fn context_window(&self) -> usize {
-            4096
+            // #4599: 4096 equals the default output reserve, leaving zero input budget.
+            32_768
         }
         fn privacy_tier(&self) -> PrivacyTier {
             PrivacyTier::Sovereign
@@ -689,7 +690,10 @@ async fn test_context_truncation_integration() {
     use batuta::agent::driver::CompletionRequest;
     use batuta::serve::backends::PrivacyTier;
 
-    let manifest = test_manifest();
+    let mut manifest = test_manifest();
+    // #4599: a 300-token window under the default 4096 reserve has no input budget; the
+    // runtime now refuses instead of sending an empty conversation.
+    manifest.model.max_tokens = 64;
 
     // Tiny-window driver wrapping MockDriver
     struct TinyDriver(MockDriver);

@@ -478,6 +478,9 @@ use super::runtime_helpers::validate_mcp_privacy;
 #[path = "runtime_tests.rs"]
 mod tests;
 #[cfg(test)]
+#[path = "runtime_tests_4599.rs"]
+mod tests_4599;
+#[cfg(test)]
 #[path = "runtime_tests_advanced.rs"]
 mod tests_advanced;
 #[cfg(test)]

@@ -41,6 +41,9 @@ impl ChatSession {
 
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
             let start = Instant::now();
+            // #4609: `generated_on_gpu` is THIS turn's backend. Only a branch that ran on
+            // the accelerator sets it, so a CPU turn after a GPU turn must not inherit it.
+            self.generated_on_gpu = false;
 
             let formatted_prompt = match self.build_formatted_prompt(user_input, config) {
                 Ok(prompt) => prompt,
@@ -300,6 +303,9 @@ impl ChatSession {
                 let turn = session
                     .generate(&prompt_tokens, &gen_config, &mut |_| true)
                     .map_err(|e| format!("Qwen3.5 generate failed: {e}"))?;
+                // #4609: record the backend that answered, as the moe and dense branches do.
+                // Without it every CUDA Qwen3.5 turn reported `ran: cpu, fell_back: true`.
+                self.generated_on_gpu = turn.used_gpu;
                 if config.trace {
                     eprintln!(
                         "[APR-TRACE] qwen35 session: {} prompt tokens reused, {} prefilled, {} generated on the {}",

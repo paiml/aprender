@@ -936,3 +936,40 @@ fn test_ctx_cov_037_middle_out_exactly_three_messages() {
     assert_eq!(result[0].content, "a".repeat(20));
     assert_eq!(result[1].content, "c".repeat(20));
 }
+
+/// #4599: the newest message is never dropped. When it cannot fit on its own the sliding
+/// window refuses; an older message that does not fit is still dropped (the window's job).
+#[test]
+fn falsify_4599_sliding_window_never_drops_the_newest_message() {
+    let config = ContextConfig {
+        window: ContextWindow::new(100, 0),
+        strategy: TruncationStrategy::SlidingWindow,
+        preserve_system: false,
+        min_messages: 2,
+    };
+    let manager = ContextManager::new(config);
+    let huge = "x".repeat(1000);
+
+    let only = vec![ChatMessage::user(&huge)];
+    assert_eq!(
+        manager.truncate(&only),
+        Err(ContextError::ExceedsLimit { tokens: 254, limit: 100 }),
+        "a lone over-budget prompt is refused, not answered empty"
+    );
+
+    let newest_huge = vec![ChatMessage::user("hi"), ChatMessage::user(&huge)];
+    assert!(manager.truncate(&newest_huge).is_err(), "never older history without the turn");
+
+    let oldest_huge = vec![ChatMessage::user(&huge), ChatMessage::user("latest")];
+    let kept = manager.truncate(&oldest_huge).expect("the newest fits");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].content, "latest");
+
+    // Boundary: a newest message that exactly fills the window (96 tokens + 4 overhead = 100)
+    // fits. It is kept, not refused.
+    let exact = "y".repeat(384);
+    let exact_fit = vec![ChatMessage::user("older"), ChatMessage::user(&exact)];
+    let kept = manager.truncate(&exact_fit).expect("an exact fit is not an overflow");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].content, exact);
+}

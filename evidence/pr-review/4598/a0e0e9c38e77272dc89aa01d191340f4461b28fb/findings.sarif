@@ -1,0 +1,121 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [
+        {
+          "ruleId": "duplicate-guard-logic",
+          "level": "note",
+          "message": {
+            "text": "secret_wiring_gaps() in scripts/ci/fat_driver.py re-implements the check already performed, and already wired into CI (.github/workflows/ci.yml, 'FAT_SECRET plumbing guard case table' / 'every section secret is plumbed under its full name'), by the pre-existing scripts/check_ci_fat_secrets_plumbed.sh (added at the merge-base commit ef72c05809 / #4512, for the #4441 truncated-secret-name defect). Both check the same two directions -- every secrets.<NAME> a section reads reaches FAT_SECRET_<NAME>, and every FAT_SECRET_<KEY> names the secret it actually reads -- against the same two files (ci/sections.yml, .github/workflows/ci.yml), with independent regexes and a separate self-test/case table. Not ticketed under PMAT-4594 (whose acceptance criteria cover only check_silicon_coverage.sh); this addition is out-of-scope scope-creep that arrived via the 'merge origin/main' commit d68eff31eb, not this branch's own ticketed work. Grounding is asserted (reasoning-based), not measured: scripts/pr_review_duplication_scan.sh is exact-name-match only and returns 0 hits for this exact case by design (documented blind spot for a reimplementation under a different name) -- its 0-hits result does not contradict this finding.",
+            "markdown": "`secret_wiring_gaps()` in `scripts/ci/fat_driver.py` re-implements the check already performed -- and already wired into CI (`.github/workflows/ci.yml`, steps *FAT_SECRET plumbing guard case table* / *every section secret is plumbed under its full name*) -- by the pre-existing `scripts/check_ci_fat_secrets_plumbed.sh` (added at the merge-base commit `ef72c05809` / #4512, for the #4441 truncated-secret-name defect). Both check the same two directions against the same two files, with independent regexes and a separate self-test/case table. Not ticketed under `PMAT-4594` (acceptance criteria cover only `check_silicon_coverage.sh`); arrived via the `merge origin/main` commit `d68eff31eb`, not this branch's own ticketed work. **Grounding: asserted** -- `scripts/pr_review_duplication_scan.sh` is exact-name-match only and returns 0 hits for this exact case by design; that does not contradict this finding."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/fat_driver.py"
+                },
+                "region": {
+                  "startLine": 376
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ci_fat_secrets_plumbed.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              },
+              "message": {
+                "text": "Pre-existing guard already performing this check, CI-gated since #4512."
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Two independently maintained checks of the same FAT_SECRET plumbing (fat_driver.py secret_wiring_gaps and check_ci_fat_secrets_plumbed.sh) diverge: a secret-name shape fixed in one regex is not mirrored in the other, so one reports green while the other reports red for the same ci/sections.yml + ci.yml pair."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": [
+            {
+              "id": "crux-surface-scan-false-positive",
+              "name": "CruxSurfaceScanFalsePositive",
+              "shortDescription": {
+                "text": "S3.C CRUX_SURFACE_RE fired on prose inside a committed evidence/receipt file, not on an actual product surface."
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "crux-surface-scan-false-positive",
+          "level": "note",
+          "message": {
+            "text": "Mechanical predicate: `changed_lines base head +- | grep -E CRUX_SURFACE_RE` fires on this diff. The single match is the literal string \"ToolDefinition\" inside the ADDED file evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl, at the crux.trigger_reason prose field of that PRIOR (already-committed, do-not-modify) receipt in this same PR's diff -- it is that receipt's own English explanation of why CRUX did not trigger for it (\"no #[arg]/#[command]/route/CLI-parser/ToolDefinition surface added or changed\"), quoting the rule name as text, not declaring a ToolDefinition. check_pr_review_receipt.sh's crux surface scan excludes tests/*, benches/*, examples/* and fixtures/* paths but not evidence/pr-review/**, so a prior receipt's own prose is swept in as if it were source. No #[arg](, #[command](, .route(, Router::new(, derive(Parser, derive(Subcommand, long=\"...\" or short=. token appears anywhere in this diff; no CLI subcommand, HTTP route, MCP tool, config key or output format was added or changed by scripts/check_silicon_coverage.sh, scripts/ci/fat_driver.py, or the docs/roadmap/quorum files. crux_coverage is recorded as 'none' per S3.C ('no contract covers this surface' is itself a finding, not a blank) because no crux-*.yaml contract exists for 'evidence prose matching CRUX_SURFACE_RE' -- there being no such contract is expected, since there is no real surface to cover.",
+            "markdown": "Mechanical predicate fires on this diff, but the single match is the literal string `ToolDefinition` inside the **added** file `evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl` -- that prior receipt's own prose explaining why *its* CRUX did not trigger, not a declared `ToolDefinition`. The guard's surface scan excludes `tests/*`, `benches/*`, `examples/*`, `fixtures/*` but not `evidence/pr-review/**`, so a prior receipt's prose is swept in as source. No real CLI/HTTP/MCP/config/output-format surface was added or changed anywhere in this diff. `crux_coverage: none` recorded per S3.C (absence of a covering contract is itself a finding) -- there is no real surface for a contract to cover."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "evidence/pr-review/4598/9aa15959c71339f2a843b001c3c24e87641cdd64/receipt.intoto.jsonl"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "CRUX_SURFACE_RE scans added lines under evidence/pr-review/**, so the literal ToolDefinition in a committed receipt makes a diff that touches no CRUX surface require a CRUX consultation, and A4 rejects a receipt that honestly records crux not-triggered."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "results": []
+    }
+  ]
+}

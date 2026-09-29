@@ -149,6 +149,12 @@ receipt_head() {
 # `pr-review-signature` ON THE PR HEAD SHA, output.text = {"<receipt dir>":
 # "<minisig file>"}. The trusted comment (signed) carries `head=<sha> pid=<id>`.
 #
+# filter=all, NOT the API default (latest). The signer's check run lands in the
+# pr-review-quorum run's OWN check suite, so a re-attempt of `present` read an
+# empty "latest" and printed UNSIGNED beside a verifying signature on the same
+# head: #4598, run 36481105318 attempt 2, sig 109130365825 success at 20:52:12Z,
+# `present` UNSIGNED at ~21:04Z. Every rerun lost the same race.
+#
 # check_runs_json <sha> - the check-runs listing for <sha>. ARM4_CHECK_RUNS_FILE
 # replaces the API with a file of the same shape: the case table's injection,
 # and it is said out loud when used.
@@ -159,7 +165,7 @@ check_runs_json() {
         cat -- "$ARM4_CHECK_RUNS_FILE"
         return
     fi
-    gh api "repos/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY unset}/commits/$1/check-runs?check_name=pr-review-signature&per_page=100"
+    gh api "repos/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY unset}/commits/$1/check-runs?check_name=pr-review-signature&filter=all&per_page=100"
 }
 
 # pr_head_sha <pr> <subject> <kind> - the sha the signature must name. On a
@@ -180,10 +186,17 @@ check_signature() {
     local src=$1 pr=$2 sh=$3 pid=$4 out=$5 name runs sig tc
     name=$(basename "$src")
     runs=$(check_runs_json "$sh") || { echo "  A2b could not list check runs on $sh." >&2; return 1; }
+    # The LATEST run that CARRIES this receipt's key, not the latest run: a later
+    # attempt that signed nothing for $name must not hide an earlier one that did.
+    # Nothing is loosened by it - whatever is picked must still verify under the
+    # repository key and name exactly pr, head and pid below.
     sig=$(printf '%s' "$runs" | jq -r --arg h "$sh" --arg k "$name" '
         [.check_runs[]? | select(.name == "pr-review-signature" and .head_sha == $h
                                  and .app.slug == "github-actions" and .conclusion == "success")]
-        | sort_by(.completed_at // "") | last | (.output.text // "{}") | fromjson | .[$k] // empty' 2>/dev/null)
+        | sort_by(.completed_at // "")
+        | map((.output.text // "{}") | (fromjson? // {})
+              | if type == "object" then (.[$k] // empty) else empty end | select(type == "string"))
+        | last // empty' 2>/dev/null)
     if [ -z "$sig" ]; then
         echo "  A2b $src is UNSIGNED: no committed .minisig and no pr-review-signature" >&2
         echo "      check run on $sh carries a signature for $name." >&2
@@ -618,6 +631,37 @@ self_test() {
     check_runs "$cs/forged.json" "$tip"  "$cs/forged.minisig"
     check_runs "$cs/other.json"  "$head" "$cs/good.minisig"
     printf '{"check_runs":[]}\n' > "$cs/none.json"
+    # A re-attempted run: an OLDER run carries the signature, a NEWER successful run
+    # on the same head carries nothing for this receipt, and a newer one is still
+    # queued. prior_attempt <out> <older run json>
+    prior_attempt() {
+        jq --arg h "$tip" '.check_runs += [
+            {name: "pr-review-signature", head_sha: $h, conclusion: "success",
+             completed_at: "2026-09-28T16:00:00Z", app: {slug: "github-actions"},
+             output: {text: "{}"}},
+            {name: "pr-review-signature", head_sha: $h, conclusion: null, status: "queued",
+             completed_at: null, app: {slug: "github-actions"}, output: {text: null}}]' "$2" > "$1"
+    }
+    prior_attempt "$cs/prior-good.json"  "$cs/good.json"
+    prior_attempt "$cs/prior-wpid.json"  "$cs/wpid.json"
+    prior_attempt "$cs/prior-wsha.json"  "$cs/wsha.json"
+    prior_attempt "$cs/prior-other.json" "$cs/other.json"
+    # A newer run whose text is valid JSON but not an object (an array) must not
+    # crash the selector into UNSIGNED: jq `.[$k]` on an array is a hard error.
+    jq --arg h "$tip" '.check_runs += [{name: "pr-review-signature", head_sha: $h,
+        conclusion: "success", completed_at: "2026-09-28T17:00:00Z",
+        app: {slug: "github-actions"}, output: {text: "[]"}}]' \
+        "$cs/prior-good.json" > "$cs/prior-array.json"
+    # The API itself, not an injected file: a `gh` shim on PATH answers the listing
+    # the way GitHub does - filter=all returns every attempt, anything else returns
+    # only the newest (unsigned) runs. Without this row, deleting filter=all from
+    # check_runs_json left the whole table GREEN (#4618 review, mutant survived).
+    local ghshim="$ST_ROOT/ghshim"; mkdir -p "$ghshim"
+    jq '.check_runs |= map(select(.completed_at != "2026-09-28T15:00:00Z"))' \
+        "$cs/prior-good.json" > "$cs/latest-only.json"
+    printf '#!/usr/bin/env bash\ncase "$*" in *filter=all*) cat -- %q ;; *) cat -- %q ;; esac\n' \
+        "$cs/prior-good.json" "$cs/latest-only.json" > "$ghshim/gh"
+    chmod +x "$ghshim/gh"
 
     printf '#!/usr/bin/env bash\nexit 0\n' > "$ST_ROOT/accept-everything.sh"
     printf '#!/usr/bin/env bash\nexit 1\n' > "$ST_ROOT/refuse-everything.sh"
@@ -720,6 +764,18 @@ self_test() {
         "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/wpr.json"
     row check-sig-on-other-sha    1 "B1: the only check run is on another commit, not the head judged" \
         "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/other.json"
+    row check-sig-prior-attempt   0 "#4598: the signature is in an EARLIER attempt; a newer run signed nothing for it and one is queued" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-good.json"
+    row check-sig-prior-wrong-pid 1 "#4598 control: the earlier attempt's signature binds ANOTHER patch-id" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-wpid.json"
+    row check-sig-prior-wrong-head 1 "#4598 control: the earlier attempt's signature names ANOTHER head sha" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-wsha.json"
+    row check-sig-prior-other-sha 1 "#4598 control: the only signed run is on another commit, beside newer unsigned ones" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-other.json"
+    row check-sig-prior-array-text 0 "#4618: a newer run's text is a JSON array, not an object; the earlier signature still reads" \
+        "$csig"   999 "$tip"  ARM4_CHECK_RUNS_FILE="$cs/prior-array.json"
+    row check-sig-api-all-attempts 0 "#4618: through the API (gh shim), not a file: only filter=all sees the earlier attempt's signature" \
+        "$csig"   999 "$tip"  PATH="$ghshim:$PATH" GITHUB_REPOSITORY=paiml/aprender
     row check-sig-queue           0 "B1: merge_group squash; the signature is looked up on the PR head" \
         "$csig"   999 "$squash"  ARM4_CHECK_RUNS_FILE="$cs/good.json" ARM4_PR_HEAD_SHA="$tip" GITHUB_EVENT_NAME=merge_group
 
@@ -727,7 +783,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 33/33 rows + 2 fingerprint checks, both polarities ---"
+    echo "--- 39/39 rows + 2 fingerprint checks, both polarities ---"
     return 0
 }
 
