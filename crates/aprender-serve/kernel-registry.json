@@ -993,9 +993,9 @@
    "error_model": "EM-ELEM",
    "determinism": "bounded",
    "shape_class": "m1",
-   "tolerance": "unmeasured",
+   "tolerance": "evidence/kreg/parity/cpu.swiglu.f32.json",
    "source_file": "crates/aprender-serve/src/gguf/inference/forward/results.rs",
-   "source_fn": "scratch_swiglu_ffn",
+   "source_fn": "swiglu_gate_into",
    "selector": "realizar::gguf::OwnedQuantizedModel::forward_single_with_scratch",
    "contract": "contracts/swiglu-kernel-v1.yaml"
   },
@@ -1065,9 +1065,9 @@
    "error_model": "EM-ELEM",
    "determinism": "bitwise",
    "shape_class": "m1",
-   "tolerance": "unmeasured",
+   "tolerance": "evidence/kreg/parity/cpu.residual_add.f32.json",
    "source_file": "crates/aprender-serve/src/gguf/inference/forward/results.rs",
-   "source_fn": "forward_single_with_scratch",
+   "source_fn": "residual_add_into",
    "selector": "realizar::gguf::OwnedQuantizedModel::forward_single_with_scratch",
    "contract": "contracts/apr-model-graph-v1.yaml"
   },
