@@ -274,7 +274,7 @@ pub const ERROR_MODELS: [&str; 8] = [
 
 /// The per-forward ops an `ops[]` row may name. The `kernel-registry-v1.op` shape holds the same
 /// closed set, and `the_op_set_is_the_contracts` keeps the two equal.
-pub const OPS: [&str; 10] = [
+pub const OPS: [&str; 18] = [
     "embed",
     "rmsnorm",
     "layernorm",
@@ -285,6 +285,14 @@ pub const OPS: [&str; 10] = [
     "gelu",
     "residual_add",
     "argmax",
+    "conv1d",
+    "l2norm",
+    "gdn_gates",
+    "delta_rule",
+    "sigmoid_gate",
+    "split",
+    "elementwise_mul",
+    "sample",
 ];
 
 /// A cross-field rule SHACL Core cannot state: an atomics-based kernel (`EM-NONDET`) is never
@@ -1579,6 +1587,15 @@ mod tests {
             "cuda.rope.partial_neox.f32",
             "cuda.attention.gdn_decode.f32",
             "cuda.rmsnorm.gated.f32",
+            "cuda.conv1d.silu.f32",
+            "cuda.l2norm.per_head.f32",
+            "cuda.gdn_gates.f32",
+            "cuda.delta_rule.f32",
+            "cuda.sigmoid_gate.f32",
+            "cuda.split.interleaved.f32",
+            "cuda.elementwise_mul.f32",
+            "cuda.sample.host.f32",
+            "cpu.sample.topk.f32",
         ] {
             assert!(ids.contains(&want), "{want} not in {ids:?}");
         }

@@ -1333,6 +1333,200 @@
     "qwen35",
     "qwen35moe"
    ]
+  },
+  {
+   "kernel_id": "cuda.conv1d.silu.f32",
+   "op": "conv1d",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-RED",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_causal_conv1d_silu_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::deltanet_layer_inner",
+   "contract": "contracts/conv1d-kernel-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.l2norm.per_head.f32",
+   "op": "l2norm",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-RED",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_per_head_l2_norm_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::deltanet_layer_inner",
+   "contract": "contracts/gated-delta-net-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.gdn_gates.f32",
+   "op": "gdn_gates",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-ELEM",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_gates_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::deltanet_layer_inner",
+   "contract": "contracts/gated-delta-net-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.delta_rule.f32",
+   "op": "delta_rule",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-RED",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_delta_rule_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::deltanet_layer_inner",
+   "contract": "contracts/gated-delta-net-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.sigmoid_gate.f32",
+   "op": "sigmoid_gate",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-ELEM",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_sigmoid_gate_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::attention_layer_inner",
+   "contract": "contracts/gated-delta-net-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.split.interleaved.f32",
+   "op": "split",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-ELEM",
+   "determinism": "bitwise",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_split_interleaved_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::attention_layer_inner",
+   "contract": "contracts/gated-delta-net-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.elementwise_mul.f32",
+   "op": "elementwise_mul",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-ELEM",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/silu.rs",
+   "source_fn": "elementwise_mul_into",
+   "selector": "realizar::gguf::cuda::Qwen3MoeCudaModel::moe_layer",
+   "contract": "contracts/moe-expert-dispatch-v1.yaml",
+   "archs": [
+    "qwen3moe",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.sample.host.f32",
+   "op": "sample",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-SMX",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/infer/qwen3_moe_generate.rs",
+   "source_fn": "sample_from_logits",
+   "selector": "realizar::infer::run_qwen3_moe_generate_gpu",
+   "contract": "contracts/apr-run-sampling-plumbing-v1.yaml",
+   "archs": [
+    "qwen3moe",
+    "qwen35moe"
+   ]
+  },
+  {
+   "kernel_id": "cpu.sample.topk.f32",
+   "op": "sample",
+   "backend": "cpu",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-SMX",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/gguf/inference/generate_quantized.rs",
+   "source_fn": "sample_topk",
+   "selector": "realizar::gguf::OwnedQuantizedModel::generate_with_scratch",
+   "contract": "contracts/apr-run-sampling-plumbing-v1.yaml"
   }
  ]
 }
