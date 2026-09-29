@@ -27,9 +27,12 @@ Samples are `/proc/loadavg` 1-min on intel (mac-server, `nproc` = 32), taken at 
 | 23:48 | 108 | 3.4 |
 | 00:18 (09-29) | 48 | 1.5 |
 | 00:48 (09-29) | 134 | 4.2 |
+| 03:18 (09-29) | 11 | 0.3 |
+| 03:48 (09-29) | 36 | 1.1 |
+| 06:48 (09-29) | 211 | 6.6 |
 
-At 14:48Z the top processes were root `clippy-driver` and `ld.mold` (CI runners) plus two noah test binaries. Only 2 of 23 samples (none after 18:48, through 00:48 on 09-29) (14:18, 18:48) were under 1 load per core, and each of those windows closed within 30 min: a serve re-run started at 18:48 was stopped by PID at 19:18 at load 139 (partial 7498 ok / 0 fail).
+At 14:48Z the top processes were root `clippy-driver` and `ld.mold` (CI runners) plus two noah test binaries. Only 3 of 26 samples (14:18, 18:48, and 03:18 on 09-29) were under 1 load per core. The first two windows closed within 30 min: a serve re-run started at 18:48 was stopped by PID at 19:18 at load 139 (partial 7498 ok / 0 fail). The 03:18 window lasted long enough: re-run 3 finished in 1673 s (16149 passed / 0 failed / 62 ignored), and by 03:48 the load was back to 36. The peak so far is 211, at 06:48 on 09-29.
 
 ## What follows
-- **F3:** the aprender-serve lib suite cannot finish on intel while the cut runs. A partial run was stopped at 16143 ok / 0 fail; see `F3-pr-draft.md`.
+- **F3:** the aprender-serve lib suite finished only when started inside a quiet window (03:18Z on 09-29, load 11): 16149 passed / 0 failed / 62 ignored at fd02954a8. Two earlier starts were stopped by PID at load 139 and 199. See `F3-pr-draft.md`.
 - **Local-gate step 2** (time the CI groups on fw16/intel, after 0.70 final): a timing taken on intel at this load measures contention, not the gate. Time on an idle host, and record `loadavg` before and after each group as a precondition (it must be < 1.0 per core, or the sample is `not_measured`).
