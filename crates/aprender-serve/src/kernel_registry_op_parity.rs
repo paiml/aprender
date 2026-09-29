@@ -341,6 +341,111 @@ fn run_residual_add(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f6
     (got, want)
 }
 
+/// The sampler's workload: a 256-token vocabulary, T = 0.7, top-k 40.
+const SAMPLE_T: f32 = 0.7;
+const SAMPLE_K: usize = 40;
+/// The smallest gap, in the f64 definition, the inputs keep between neighbouring scaled logits of
+/// the top k + 1 and between a nucleus cumulative and `top_p`. Nearer than that, the f32 kernel may
+/// order or cut the set differently for a reason that is rounding, not a defect; such a draw is
+/// redrawn, so every set membership the receipt measures is decided by the definition alone.
+const SAMPLE_GAP: f64 = 1e-4;
+
+/// The f64 definition of the draw: the kept tokens in order and their CDF, or `None` when the
+/// inputs sit within [`SAMPLE_GAP`] of a set boundary.
+fn sample_definition(x: &[f32], top_p: f32) -> Option<(Vec<usize>, Vec<f64>)> {
+    let t = f64::from(SAMPLE_T);
+    let mut order: Vec<usize> = (0..x.len()).collect();
+    order.sort_by(|&a, &b| f64::from(x[b]).total_cmp(&f64::from(x[a])));
+    let s = |i: usize| f64::from(x[order[i]]) / t;
+    let near = (1..=SAMPLE_K.min(x.len() - 1)).any(|i| s(i - 1) - s(i) < SAMPLE_GAP);
+    if near {
+        return None;
+    }
+    order.truncate(SAMPLE_K);
+    let softmax = |kept: &[usize]| -> Vec<f64> {
+        let e: Vec<f64> = kept
+            .iter()
+            .map(|&i| (f64::from(x[i]) / t - f64::from(x[kept[0]]) / t).exp())
+            .collect();
+        let z: f64 = e.iter().sum();
+        e.iter().map(|v| v / z).collect()
+    };
+    if top_p > 0.0 && top_p < 1.0 {
+        let (p, mut c) = (f64::from(top_p), 0.0);
+        let mut cut = order.len();
+        for (i, q) in softmax(&order).iter().enumerate() {
+            c += q;
+            if (c - p).abs() < SAMPLE_GAP {
+                return None;
+            }
+            if c >= p {
+                cut = i + 1;
+                break;
+            }
+        }
+        order.truncate(cut);
+    }
+    let cdf = softmax(&order)
+        .iter()
+        .scan(0.0, |c, q| {
+            *c += q;
+            Some(*c)
+        })
+        .collect();
+    Some((order, cdf))
+}
+
+/// The draw's inverse-CDF breakpoints against the definition's CDF. The draw returns the token of
+/// rank `j` for `r` up to the j-th cumulative probability and a later rank above it, so the
+/// smallest f32 `r` that yields a rank above `j` — found by bisecting `r`'s bits, which order like
+/// the values on `[0, 1)` — is the kernel's own `C_j`. A token outside the definition's set is
+/// NaN; a set cut short reads 1.0 where the definition is below it.
+fn run_sample(rng: &mut rand::rngs::StdRng, n: usize, top_p: f32) -> (Vec<f32>, Vec<f64>) {
+    let (x, (kept, cdf)) = loop {
+        let x = activations(rng, n, 8.0);
+        if let Some(d) = sample_definition(&x, top_p) {
+            break (x, d);
+        }
+    };
+    let rank = |r: f32| {
+        let tok = crate::sampling::draw(&x, SAMPLE_T, SAMPLE_K, top_p, r) as usize;
+        kept.iter().position(|&k| k == tok)
+    };
+    let mut got = Vec::with_capacity(kept.len() - 1);
+    for j in 0..kept.len() - 1 {
+        let (mut lo, mut hi) = (0u32, 1.0f32.to_bits());
+        let mut foreign = false;
+        while hi - lo > 1 {
+            let mid = lo + (hi - lo) / 2;
+            match rank(f32::from_bits(mid)) {
+                Some(k) if k > j => hi = mid,
+                Some(_) => lo = mid,
+                None => {
+                    foreign = true;
+                    break;
+                },
+            }
+        }
+        got.push(if foreign {
+            f32::NAN
+        } else {
+            f32::from_bits(hi)
+        });
+    }
+    (got, cdf[..kept.len() - 1].to_vec())
+}
+
+/// `sample_topk`'s draw: top-k only (it always passes `top_p = 1.0`).
+fn run_sample_topk(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    run_sample(rng, n, 1.0)
+}
+
+/// `sample_topk_seeded`'s draw: its callers pass the request's `top_p` through, so the nucleus
+/// cut is measured here, at 0.9.
+fn run_sample_nucleus(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    run_sample(rng, n, 0.9)
+}
+
 pub(super) const OPS: &[Op] = &[
     Op {
         id: "cpu.rmsnorm.f32",
@@ -420,6 +525,26 @@ pub(super) const OPS: &[Op] = &[
         formula: "residual_add:fl32(h+d),h+d exact in f64",
         workload: OP_WORKLOAD,
         run: run_residual_add,
+    },
+    Op {
+        id: "cpu.sample.topk.f32",
+        source_fn: "draw",
+        formula: "sample:inverse_cdf(softmax(x/T) over top-k),breakpoints,T=0.7,k=40,top_p=1,gap>=1e-4",
+        workload: OpWorkload {
+            n: 256,
+            ..OP_WORKLOAD
+        },
+        run: run_sample_topk,
+    },
+    Op {
+        id: "cpu.sample.seeded.f32",
+        source_fn: "draw",
+        formula: "sample:inverse_cdf(softmax(x/T) over nucleus(top_p) of top-k),breakpoints,T=0.7,k=40,top_p=0.9,gap>=1e-4",
+        workload: OpWorkload {
+            n: 256,
+            ..OP_WORKLOAD
+        },
+        run: run_sample_nucleus,
     },
 ];
 
