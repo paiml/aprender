@@ -109,5 +109,23 @@
    "host_arch": "x86_64",
    "receipt": "evidence/kreg/parity/cpu.matvec.apr_q8.json"
   }
+ ],
+ "op_unreceipted_max": 36,
+ "op_receipts": [
+  {
+   "kernel_id": "cpu.rmsnorm.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.rmsnorm.f32.json"
+  },
+  {
+   "kernel_id": "cpu.layernorm.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.layernorm.f32.json"
+  },
+  {
+   "kernel_id": "cpu.gelu.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.gelu.f32.json"
+  }
  ]
 }

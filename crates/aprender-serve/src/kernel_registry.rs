@@ -356,11 +356,50 @@ impl InputSet {
         device: &str,
         oracle: &str,
     ) -> std::result::Result<Self, String> {
-        let source = std::fs::read(root.join(&row.source_file))
-            .map_err(|e| format!("input set: {}: {e}", row.source_file))?;
+        Self::from_source(
+            root,
+            &row.source_file,
+            &row_key(row),
+            driver,
+            device,
+            oracle,
+        )
+    }
+
+    /// [`Self::from_tree`] for an `ops[]` row: its key is [`op_row_key`].
+    ///
+    /// # Errors
+    /// As [`Self::from_tree`].
+    pub fn from_op_tree(
+        root: &std::path::Path,
+        row: &OpRow,
+        driver: &str,
+        device: &str,
+        oracle: &str,
+    ) -> std::result::Result<Self, String> {
+        Self::from_source(
+            root,
+            &row.source_file,
+            &op_row_key(row),
+            driver,
+            device,
+            oracle,
+        )
+    }
+
+    fn from_source(
+        root: &std::path::Path,
+        source_file: &str,
+        key: &str,
+        driver: &str,
+        device: &str,
+        oracle: &str,
+    ) -> std::result::Result<Self, String> {
+        let source = std::fs::read(root.join(source_file))
+            .map_err(|e| format!("input set: {source_file}: {e}"))?;
         Ok(Self {
             source_sha256: sha256_hex(&source),
-            row_sha256: sha256_hex(row_key(row).as_bytes()),
+            row_sha256: sha256_hex(key.as_bytes()),
             toolchain: pinned_toolchain(root)?,
             driver: driver.to_string(),
             device: device.to_string(),
@@ -464,6 +503,34 @@ pub fn row_key(row: &KernelRow) -> String {
         ("source_fn", row.source_fn.clone()),
         ("selector", row.selector.clone()),
         ("contract", row.contract.clone()),
+    ];
+    f.iter().map(|(k, v)| format!("{k}={v}\n")).collect()
+}
+
+/// [`row_key`] for an `ops[]` row: every field except `tolerance` and `labels`, in shape order.
+/// `archs` is `*` when absent (every architecture), else its names `,`-joined.
+pub fn op_row_key(row: &OpRow) -> String {
+    let archs = row
+        .archs
+        .as_ref()
+        .map_or_else(|| "*".to_string(), |a| a.join(","));
+    let f: [(&str, &str); 16] = [
+        ("kernel_id", &row.kernel_id),
+        ("op", &row.op),
+        ("backend", &row.backend),
+        ("arch", &row.arch),
+        ("archs", &archs),
+        ("isa_features", &row.isa_features),
+        ("requires", &row.requires),
+        ("accumulate", &row.accumulate),
+        ("precision", &row.precision),
+        ("error_model", &row.error_model),
+        ("determinism", &row.determinism),
+        ("shape_class", &row.shape_class),
+        ("source_file", &row.source_file),
+        ("source_fn", &row.source_fn),
+        ("selector", &row.selector),
+        ("contract", &row.contract),
     ];
     f.iter().map(|(k, v)| format!("{k}={v}\n")).collect()
 }
@@ -1301,6 +1368,53 @@ mod tests {
                 "AC-3 is hard RED from {hard}: {unreceipted} rows lack a receipt"
             );
         }
+    }
+
+    /// FALSIFY-KREG-008 for `ops[]`: an `op_receipts` entry names a real op row, from a host of its
+    /// arch, once; the op rows without one number exactly `op_unreceipted_max`, which only falls.
+    /// Its own count, so adding the op ratchet did not move the `kernels[]` one it sits beside.
+    #[test]
+    fn unreceipted_op_rows_only_fall() {
+        let doc: serde_json::Value =
+            serde_json::from_str(include_str!("../kernel-registry-receipts.json"))
+                .expect("receipts json");
+        let r = registry().expect("registry");
+        let mut receipted = std::collections::HashSet::new();
+        for rc in doc["op_receipts"].as_array().expect("op_receipts") {
+            let id = rc["kernel_id"].as_str().expect("kernel_id");
+            let row = r
+                .ops()
+                .iter()
+                .find(|row| row.kernel_id == id)
+                .unwrap_or_else(|| panic!("op receipt for unregistered op {id}"));
+            let host_arch = rc["host_arch"].as_str().expect("host_arch");
+            assert!(
+                row.arch == "any" || row.arch == host_arch,
+                "{id}: receipt from a {host_arch} host cannot admit an arch={} row",
+                row.arch
+            );
+            assert!(
+                rc["receipt"].as_str().is_some_and(|p| p == row.tolerance),
+                "{id}: the op row's tolerance must be its receipt path"
+            );
+            assert!(receipted.insert(id), "{id}: two receipts");
+        }
+        for row in r.ops() {
+            assert!(
+                row.tolerance == "unmeasured" || receipted.contains(row.kernel_id.as_str()),
+                "{}: tolerance {} has no op_receipts entry",
+                row.kernel_id,
+                row.tolerance
+            );
+        }
+        let unreceipted = r.ops().len() - receipted.len();
+        let max = doc["op_unreceipted_max"]
+            .as_u64()
+            .expect("op_unreceipted_max");
+        assert_eq!(
+            unreceipted as u64, max,
+            "unreceipted op rows = {unreceipted}; set op_unreceipted_max to it (it may only fall)"
+        );
     }
 
     /// KREG coverage (CUDA): the registry's `cuda` rows and the ids `WeightQuantType` declares
