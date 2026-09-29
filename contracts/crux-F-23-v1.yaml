@@ -63,6 +63,9 @@ proof_obligations:
 - id: CRUX-F23-INV-003
   type: invariant
   property: "an unchanged build is GREEN on every baseline run"
+- id: CRUX-F23-GATE-004
+  type: invariant
+  property: "a baselined class with zero baseline runs is RED (Unbaselined), never GREEN"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-23-001
@@ -89,11 +92,19 @@ falsification_tests:
     cargo test -p aprender-contracts --lib \
       kernels::crux_trace::tests::falsify_crux_f23_003_empty_baseline_cannot_pass -- --exact
   if_fails: the gate passes vacuously on a missing baseline
+- id: FALSIFY-CRUX-F-23-004
+  rule: unchanged build is GREEN on every baseline run
+  prediction: "golden_verdict == Green for each of the N baseline runs replayed against their own baseline"
+  test: |
+    set -euo pipefail
+    cargo test -p aprender-contracts --lib \
+      kernels::crux_trace::tests::falsify_crux_f23_004_unchanged_build_green_on_every_baseline_run -- --exact
+  if_fails: the gate cries wolf on its own baseline (e.g. theta without the one-call floor), so every run is RED and the gate is ignored
 
 verification_summary:
-  total_obligations: 3
+  total_obligations: 4
   proven: 0
-  tested: 3
+  tested: 4
   status: spec-complete
 
 pmat_work_tracking:

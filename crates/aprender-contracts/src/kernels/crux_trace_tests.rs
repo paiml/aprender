@@ -147,7 +147,7 @@ fn falsify_crux_f23_003_empty_baseline_cannot_pass() {
 }
 
 #[test]
-fn specimen_crux_f23_001_unchanged_build_green_on_every_baseline_run() {
+fn falsify_crux_f23_004_unchanged_build_green_on_every_baseline_run() {
     let base = golden_baseline();
     for run in strace_runs() {
         assert_eq!(golden_verdict(&base, &run), GoldenVerdict::Green);
@@ -155,7 +155,7 @@ fn specimen_crux_f23_001_unchanged_build_green_on_every_baseline_run() {
 }
 
 #[test]
-fn specimen_crux_f23_002_deterministic_class_tolerates_one_call() {
+fn specimen_crux_f23_001_deterministic_class_tolerates_one_call() {
     let (ell, theta) = golden_theta(&[40; 10]).expect("non-empty");
     assert!(
         (41f64.ln_1p() - ell).abs() <= theta + 1e-12,
