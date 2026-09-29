@@ -319,8 +319,17 @@ fn run_swiglu(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
 /// Residual add against the correctly rounded f32 sum `fl32(h + d)`. f32 addition is defined
 /// as exactly that, so the row is bitwise. The f64 sum it is rounded from is asserted exact
 /// (Fast2Sum error 0), so no double rounding can hide in the oracle.
+///
+/// `rand`'s uniform f32 on ±4 yields multiples of 2^-20, and the sum of two such values fits
+/// f32's 24 bits, so it never rounds: an oracle that skipped the rounding still matched. Each
+/// delta is therefore scaled by 2^-k, k < 12, as a residual branch is smaller than its stream;
+/// the sum then needs up to 35 bits and rounds.
 fn run_residual_add(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
-    let (h, d) = (activations(rng, n, 4.0), activations(rng, n, 4.0));
+    let h = activations(rng, n, 4.0);
+    let d: Vec<f32> = activations(rng, n, 4.0)
+        .into_iter()
+        .map(|v| v * 2f32.powi(-rng.random_range(0..12)))
+        .collect();
     let mut got = h.clone();
     crate::gguf::OwnedQuantizedModel::residual_add_into(&mut got, &d);
     let want = h
@@ -522,7 +531,7 @@ pub(super) const OPS: &[Op] = &[
     Op {
         id: "cpu.residual_add.f32",
         source_fn: "residual_add_into",
-        formula: "residual_add:fl32(h+d),h+d exact in f64",
+        formula: "residual_add:fl32(h+d),h+d exact in f64,d=U(-4,4)*2^-k,k<12",
         workload: OP_WORKLOAD,
         run: run_residual_add,
     },
