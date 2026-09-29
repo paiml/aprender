@@ -6,7 +6,7 @@
   priority: critical
   assigned_to: aprender-88
   created: 2026-09-27T10:17:06Z
-  updated: 2026-09-27T10:17:06Z
+  updated: 2026-09-29T17:40:00Z
   spec: null
   acceptance_criteria:
   - 'every ONT-10 row on the batch lands in this one PR (no per-row PRs); origin/main merged in without rebase or force'
@@ -14,4 +14,6 @@
   - 'scripts/surface_audit_bins_gate.sh is GREEN (every [[bin]] has a docs/audits/surface_audit.csv row) and RED on an empty ledger'
   - 'pv validate passes on contracts/binary-surface-v1.yaml and every contracts/bin-*.yaml; the aprender-contracts lib is green'
   - 'a gate still RED stays in its contract with the observed value in if_fails, never dropped'
+  - '#4587 A-prime (operator ruling 2026-09-29 06:36Z via the cop, commit a79535bd51): CI generates the mutants survivor table itself (mutants-table-scope, mutants-shard matrix, verifier scripts/ci/mutants_survivor_table.py); any gap is RED; scope PR-1 and PR-2 of 0.70 only (ci/mutants-table-refs.txt)'
+  - 'folded tickets carried with their own entries: PMAT-4199, PMAT-4200, PMAT-4347, PMAT-4166 (lint ratchet), PMAT-4139 (Lean label ratchet), PMAT-4604 (pv 0.69.4 set), PMAT-4369 (build_helper::env_key); the quorum --ticket names every one'
   - '(process, not diff content) one quorum on the combined head; pmat-merge arms with --match-head-commit'
