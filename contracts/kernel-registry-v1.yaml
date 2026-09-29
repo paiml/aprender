@@ -116,7 +116,7 @@ shapes:
     closed: true
     properties:
       - {path: kreg:kernel_id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^(cpu|cuda|wgpu|metal)\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_+]+){0,2}$"}
-      - {path: kreg:op, minCount: 1, maxCount: 1, in: [embed, rmsnorm, layernorm, rope, attention, kv_write, swiglu, gelu, residual_add, argmax, conv1d, l2norm, gdn_gates, delta_rule, sigmoid_gate, split, elementwise_mul, sample, route_topk]}
+      - {path: kreg:op, minCount: 1, maxCount: 1, in: [embed, rmsnorm, layernorm, rope, attention, kv_write, swiglu, gelu, residual_add, argmax, conv1d, l2norm, gdn_gates, delta_rule, sigmoid_gate, split, elementwise_mul, sample, route_topk, repeat_penalty]}
       - {path: kreg:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu, metal]}
       - {path: kreg:arch, minCount: 1, maxCount: 1, pattern: "^(any|[a-z][a-z0-9_]*)$"}
       - {path: kreg:archs, pattern: "^[a-z][a-z0-9_]*$"}
