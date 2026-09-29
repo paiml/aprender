@@ -88,3 +88,15 @@ fn d5_generate_pre_flight_refuses_a_prompt_that_fills_the_cap_with_a_400() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body.error.starts_with("context exceeds 3"), "{}", body.error);
 }
+
+/// `/v1/batch/completions` runs on cached-model states, where `serving_context`
+/// is None, so it pre-flights against the model's own context explicitly.
+#[test]
+fn d5_batch_completions_pre_flight_refuses_against_an_explicit_context() {
+    use crate::api::gpu_handlers::preflight_context;
+    assert!(preflight_context(None, 1_000_000).is_ok());
+    assert!(preflight_context(Some(8), 7).is_ok());
+    let (status, body) = preflight_context(Some(8), 8).expect_err("8 fills 8");
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.error.starts_with("context exceeds 8"), "{}", body.error);
+}

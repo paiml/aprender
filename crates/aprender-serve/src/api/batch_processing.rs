@@ -317,11 +317,16 @@ pub async fn gpu_batch_completions_handler(
         )
     })?;
     let prompts_tokens = encode_batch_prompts(&tokenizer, &request.prompts)?;
-    // D5: neither branch below guards the device KV cap (`batch_generate_gpu` has
-    // no context check at all), so refuse an over-context prompt here with a 400.
+    // D5: `batch_generate_gpu` sizes its KV caches from prompt + max_tokens and
+    // never checks the model context, so refuse an over-context prompt here with a
+    // 400 — against the device serving context when one is set, else the cached
+    // model's own context (`serving_context` is None for every cached-model state).
+    let context = state
+        .serving_context()
+        .unwrap_or(cached_model.model().config.context_length);
     prompts_tokens
         .iter()
-        .try_for_each(|p| preflight_serving_context(&state, p.len()))?;
+        .try_for_each(|p| preflight_context(Some(context), p.len()))?;
 
     // Create generation config
     let gen_config = crate::gguf::QuantizedGenerateConfig {
