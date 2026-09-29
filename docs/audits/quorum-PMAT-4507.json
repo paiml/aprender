@@ -1,0 +1,478 @@
+{
+  "ticket": "PMAT-4507",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "487ed9fd7619f31baa3fa56d6acdf1549713d04d",
+  "diff_sha256": "ef7c130ba3d17d3e0c97910fa89eebcac8d9691353a733336a6c16c87d7ea012",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 11350,
+  "prompt_sha256": "ad7c15ec2eda61b088a47e78e994ee447eaff78327dea0ff6a4773dc8e1e0757",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements the acceptance criteria for PMAT-4507. It correctly handles the case where a root-owned leftover directory causes `mkdir` to fail by moving the leftover directory to an `.aside` bucket. It logs this action, retries removing older asides, and emits a warning if the number of undeletable asides exceeds `ASIDE_KEEP`. The self-tests have been correctly augmented to simulate and assert all of these behaviors, including the mutant logic. No issues found.",
+      "findings": [
+        {
+          "claim": "a self-test row plants an undeletable leftover ws and setup (make_section_dirs) yields a fresh _temp/home/ws",
+          "file": "scripts/ci/fat_driver.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1584
+        },
+        {
+          "claim": "the rename-aside is written to the section log; older asides are retried, and past ASIDE_KEEP undeletable ones every setup warns",
+          "file": "scripts/ci/fat_driver.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 490
+        },
+        {
+          "claim": "the mutant that restores rmtree-and-ignore then mkdir turns the self-test RED (FileExistsError row)",
+          "file": "scripts/ci/fat_driver.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1600
+        }
+      ],
+      "raw_bytes": 3575,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "ad7c15ec2eda61b088a47e78e994ee447eaff78327dea0ff6a4773dc8e1e0757",
+      "trace": {
+        "input_sha256": "129a474c948ace58d1ca49f359951ad190e0471a2887f31936bb85ae31404c2f",
+        "output_sha256": "85c22d355c5804e34a87fb8739c63abece7cc4a44806f753be2d2334627df23c",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff does what PMAT-4507 asks and nothing it forbids. It replaces the buggy `shutil.rmtree(ignore_errors=True) + mkdir` pattern in `setup_workspace` with `clear_dir` (try rmtree, on failure rename-aside, log everything) + `make_section_dirs` (strict mkdirs that RED on leftovers). All three acceptance criteria are met by self-test rows that exercise the exact scenarios. No gates are weakened, no files outside the ticket scope are modified, and the recorded gate result (59/59 fix, 54/59 mutant RED) is consistent with the diff's logic.",
+      "findings": [
+        {
+          "claim": "clear_dir replaces the old rmtree(ignore_errors=True) with try/except OSError + rename-aside, eliminating the silent-failure bug. On successful rmtree it returns None; on failure it renames the tree to <parent>/.aside/<name>/<ns>, logs the aside, retries older asides, and warns past ASIDE_KEEP.",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "cited",
+          "line": 469
+        },
+        {
+          "claim": "make_section_dirs creates _temp, home, ws with strict mkdir (no exist_ok), so a leftover that survived clear_dir causes a RED section rather than silently reusing stale state. This is structurally equivalent to the old code's mkdir calls (self.temp.mkdir(parents=True), home.mkdir, workspace.parent.mkdir(parents=True)).",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "cited",
+          "line": 510
+        },
+        {
+          "claim": "setup_workspace now calls make_section_dirs(self.dir, self.log), replacing 5 lines of buggy rmtree+mkdir. self.log is guaranteed non-None because it is opened at line 629 before _run() calls setup_workspace at line 661.",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "cited",
+          "line": 684
+        },
+        {
+          "claim": "AC1 met: self-test row plants an undeletable leftover (stubborn rmtree), calls make_section_dirs, and expects (1 aside, rootowned file preserved, fresh [_temp, home, ws]).",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "cited",
+          "line": 1591
+        },
+        {
+          "claim": "AC2 met: self-test checks 'moved aside to' appears in the section log (line 1597-1598); older deletable aside '1' is removed (line 1619 expects False); and past ASIDE_KEEP undeletable asides, ::warning:: is emitted (line 1620 expects (ASIDE_KEEP+1, True)).",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "cited",
+          "line": 1597
+        },
+        {
+          "claim": "AC3 met: the mutant test at line 1602 passes rmtree=lambda p: stubborn(p, ignore_errors=True) to make_section_dirs, simulating the old buggy ignore_errors behavior. clear_dir sees no exception from rmtree so returns None, and (d/'ws').mkdir() raises FileExistsError because ws still exists with rootowned inside it. Expected: 'FileExistsError'.",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "cited",
+          "line": 1606
+        },
+        {
+          "claim": "os.rename is used (not shutil.move) for the aside, which is correct: the aside target is always on the same filesystem (sibling of d.parent), so os.rename is atomic and does not attempt a copy — exactly the behavior needed for root-owned files the user cannot read.",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "cited",
+          "line": 492
+        },
+        {
+          "claim": "No production code path calls rmtree with ignore_errors=True. All 9 occurrences of 'ignore_errors' in the file are in docstrings, test helper (stubborn), test cleanup, or the mutant test — never in clear_dir or make_section_dirs.",
+          "file": "scripts/ci/fat_driver.py",
+          "grounding": "measured",
+          "line": 466
+        }
+      ],
+      "raw_bytes": 22140,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "role": "counted",
+      "model": "claude-opus-4-6-thinking",
+      "model_measured": "claude-opus-4-6-thinking",
+      "model_source": "measured",
+      "family": "claude",
+      "executor": "agy",
+      "brief_sha256": "ad7c15ec2eda61b088a47e78e994ee447eaff78327dea0ff6a4773dc8e1e0757",
+      "trace": {
+        "input_sha256": "b8b4d7878c029570598e1e35728340ef0e216b8b3ebe833a4556db8af7df4915",
+        "output_sha256": "ea335ec21ce0fde32e57096313151d4ce7dd584dc78147c8ec6da92a56c07994",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-4-6-thinking",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements PMAT-4507: clear_dir() moves undeletable section trees aside instead of silently failing, make_section_dirs() creates fresh sections, setup_workspace() integrates the fix, and comprehensive self-tests verify all three acceptance criteria (leftover moved aside with fresh tree, logging and warnings, mutant failure on FileExistsError).",
+      "findings": [],
+      "raw_bytes": 1630,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "ad7c15ec2eda61b088a47e78e994ee447eaff78327dea0ff6a4773dc8e1e0757",
+      "trace": {
+        "input_sha256": "e207626b49458f6af77e8da5addddcdde4a4e0cd680016bb537e878f184231f1",
+        "output_sha256": "39138ca34b6f1c3a05d8b0086118c1827dcd34359f8fbc0f19d8ebb7ffbcb71e",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 466,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "No production code path calls rmtree with ignore_errors=True. All 9 occurrences of 'ignore_errors' in the file are in docstrings, test helper (stubborn), test cleanup, or the mutant test — never in clear_dir or make_section_dirs."
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 469,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "clear_dir replaces the old rmtree(ignore_errors=True) with try/except OSError + rename-aside, eliminating the silent-failure bug. On successful rmtree it returns None; on failure it renames the tree to <parent>/.aside/<name>/<ns>, logs the aside, retries older asides, and warns past ASIDE_KEEP."
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 490,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "the rename-aside is written to the section log; older asides are retried, and past ASIDE_KEEP undeletable ones every setup warns"
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 492,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "os.rename is used (not shutil.move) for the aside, which is correct: the aside target is always on the same filesystem (sibling of d.parent), so os.rename is atomic and does not attempt a copy — exactly the behavior needed for root-owned files the user cannot read."
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 510,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "make_section_dirs creates _temp, home, ws with strict mkdir (no exist_ok), so a leftover that survived clear_dir causes a RED section rather than silently reusing stale state. This is structurally equivalent to the old code's mkdir calls (self.temp.mkdir(parents=True), home.mkdir, workspace.parent.mkdir(parents=True))."
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 684,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "setup_workspace now calls make_section_dirs(self.dir, self.log), replacing 5 lines of buggy rmtree+mkdir. self.log is guaranteed non-None because it is opened at line 629 before _run() calls setup_workspace at line 661."
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 1584,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "a self-test row plants an undeletable leftover ws and setup (make_section_dirs) yields a fresh _temp/home/ws"
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 1591,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "AC1 met: self-test row plants an undeletable leftover (stubborn rmtree), calls make_section_dirs, and expects (1 aside, rootowned file preserved, fresh [_temp, home, ws])."
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 1597,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "AC2 met: self-test checks 'moved aside to' appears in the section log (line 1597-1598); older deletable aside '1' is removed (line 1619 expects False); and past ASIDE_KEEP undeletable asides, ::warning:: is emitted (line 1620 expects (ASIDE_KEEP+1, True))."
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 1600,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "the mutant that restores rmtree-and-ignore then mkdir turns the self-test RED (FileExistsError row)"
+      ]
+    },
+    {
+      "file": "scripts/ci/fat_driver.py",
+      "line": 1606,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "AC3 met: the mutant test at line 1602 passes rmtree=lambda p: stubborn(p, ignore_errors=True) to make_section_dirs, simulating the old buggy ignore_errors behavior. clear_dir sees no exception from rmtree so returns None, and (d/'ws').mkdir() raises FileExistsError because ws still exists with rootowned inside it. Expected: 'FileExistsError'."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 2: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (22140 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790664799,
+          "window_calls": 1,
+          "window_429": 0,
+          "hour_calls": 1,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: 1 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790661814,
+          "window_calls": 11,
+          "window_429": 0,
+          "hour_calls": 7,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 11350
+  },
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 290,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 86 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 11350,
+      "sent_bytes": 11519,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "3184bb846f77af0ad573a72523c8218dcab8cdc370f99a8ff910bdad11858614",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-28T12:47:02Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-09-29T07:15:46.058Z",
+        "wall_ms": 427,
+        "request_id": "01a0ec05-0107-7836-9e70-6555dc94dcbf",
+        "load1": 40.99,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
