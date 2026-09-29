@@ -54,6 +54,8 @@ mod embeddings_pmat803; // PMAT-803: model-backed embeddings (semantic-similarit
 mod sse_stream_whitespace; // Dogfood 0.63.0: SSE deltas must reassemble with whitespace intact
 mod serve_dead_routes_3991; // aprender#3991: every generation route GET / lists must generate; text is the completion
 mod native_routes_2376; // aprender#2376: native routes on a quantized server, KV-cache budget, sampling fields
+#[cfg(feature = "cuda")]
+mod serve_kv_limit_k1; // K1 (#4603): serve KV = model context; at-limit 200 whole, past it a 400
 mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not just the banner
 mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version routed, stream:true is NDJSON, /realize/* stops fabricating
 mod embed_and_envelope_2376; // aprender#2376(1 seventh route, 7, 8) + #2396(2): embeddings on a quantized server, one error envelope, / and /ready
