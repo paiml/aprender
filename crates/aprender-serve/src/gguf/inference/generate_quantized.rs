@@ -135,11 +135,14 @@ impl OwnedQuantizedModel {
 
     /// Apply a repetition penalty to `logits` in place (PMAT-814).
     ///
-    /// Mirrors the live MoE path (`infer/qwen3_moe_generate.rs::sample_from_logits`)
-    /// and Candle's `apply_repeat_penalty`: every token in the recency window has its
+    /// The one implementation: the MoE path (`infer/qwen3_moe_generate.rs::sample_from_logits`)
+    /// calls it too. As Candle's `apply_repeat_penalty`, every token in the recency window has its
     /// logit divided by `penalty` when positive and multiplied by `penalty` when
     /// non-positive, so a larger `penalty` always shrinks the chance of repeating a
     /// recently-seen token regardless of its logit sign.
+    ///
+    /// Each distinct token in the window is penalised ONCE, however often it recurs — the
+    /// convention of llama.cpp, Candle and HF `RepetitionPenaltyLogitsProcessor`.
     ///
     /// The window is the last `last_n` entries of `recent_tokens` (the full decoded
     /// context — prompt + generated — exactly as `repeat_last_n` is interpreted on the
@@ -161,9 +164,13 @@ impl OwnedQuantizedModel {
             return;
         }
         let start = recent_tokens.len().saturating_sub(last_n);
+        // Once per DISTINCT token in the window: a token seen k times is penalised once, not
+        // `penalty^k` (llama.cpp's penalties sampler counts tokens then applies the repeat
+        // penalty once per counted token; Candle's `apply_repeat_penalty` skips seen ones).
+        let mut seen = std::collections::HashSet::with_capacity(recent_tokens.len() - start);
         for &token in &recent_tokens[start..] {
             let idx = token as usize;
-            if idx < logits.len() {
+            if idx < logits.len() && seen.insert(token) {
                 if logits[idx] <= 0.0 {
                     logits[idx] *= penalty;
                 } else {
