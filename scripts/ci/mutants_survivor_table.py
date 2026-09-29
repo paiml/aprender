@@ -357,7 +357,7 @@ def self_test():
             green = not errs
             ok = green == want_green and (green or why in "\n".join(errs))
             bad += not ok
-            print(f"{'ok  ' if ok else 'FAIL'}  {name}" + ("" if ok else f" -- got {'GREEN' if green else 'RED'}: {errs[:2]}"))
+            print(f"{'ok  ' if ok else 'FAIL'}  {name}" + ("" if ok else f" -- got {'GREEN' if green else 'RED'}: {errs}"))
     print("PASS" if not bad else f"FAIL: {bad} row(s)")
     return 1 if bad else 0
 

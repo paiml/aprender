@@ -431,12 +431,17 @@ jobs:
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
           echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
       # Every PR re-proves the gate's survivor-table rule and the checker's case table (planted defects RED).
+      # The checker's case table needs the minisign installed above, so this guard is wired HERE with its input
+      # named (guard_tree.sh rule 1 then leaves it to this step); the sovereign-ci image has no minisign.
       - name: The survivor-table gate rule and checker still turn RED
+        env:
+          GATE_RULE_WORKFLOW: .github/workflows/ci.yml
         run: |
           set -euo pipefail
-          bash scripts/check_ci_gate_mutants_table_rule.sh --self-test
-          bash scripts/check_ci_gate_mutants_table_rule.sh
-          bash scripts/check_mutants_feature_groups.sh
+          setsid --wait bash scripts/check_ci_gate_mutants_table_rule.sh --self-test
+          setsid --wait bash scripts/check_ci_gate_mutants_table_rule.sh
+      - name: The mutants feature groups cover every feature-gated module
+        run: setsid --wait bash scripts/check_mutants_feature_groups.sh
       - name: Is this head ref judged by the survivor table?
         id: decide
         env:
