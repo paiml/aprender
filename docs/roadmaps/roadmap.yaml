@@ -22224,7 +22224,7 @@ roadmap:
   acceptance_criteria:
   - 'lambda RTX 4090, 5432-token chat turn: main returns 500, the branch returns 400 context exceeds 4096 (the --context-length 32768 -> 200 case is #4603, not this ticket)'
   - 'api/tests/serve_context_d5.rs: the refusal fires at prompt_tokens >= serving_context, and serving_context = min(model context, device KV)'
-  - 'CUDA chat, completions, stream, /generate and /batch/generate all refuse before generating; every generate-error site maps ContextLimitExceeded to 400, never 500'
+  - 'Dense GGUF CUDA chat, completions, stream, /generate, /batch/generate and /v1/batch/completions all refuse before generating; every typed generate-error site maps ContextLimitExceeded to 400, never 500 (batch-scheduler channel errors are strings reached only after the pre-flight; the APR Q4K backends are #4625)'
   phases: []
   subtasks: []
   estimated_effort: null

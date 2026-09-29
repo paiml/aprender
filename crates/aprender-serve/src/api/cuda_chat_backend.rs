@@ -238,6 +238,9 @@ async fn try_cuda_backend(
         while let Some(result) = rx.recv().await {
             match result {
                 Ok(token_id) => tokens.push(token_id),
+                // D5: `fit_serving_context` above already refused an over-context
+                // prompt with a 400; the scheduler's errors are strings, and what
+                // reaches here is a server fault.
                 Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
             }
         }
