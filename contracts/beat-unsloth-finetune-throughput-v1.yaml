@@ -1,7 +1,7 @@
 contract: beat-unsloth-finetune-throughput
 metadata:
   kind: beat-benchmark
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     0.72 exit criterion T2 (APR-LOOKAHEAD-001 §2a): `apr finetune -m lora` (bf16, CUDA) training
     throughput on Qwen3.5-4B is at least 0.8x Unsloth's on the SAME GPU, same model, same recipe.
@@ -17,20 +17,25 @@ metadata:
   - "docs/specifications/aprender-train/train-what-you-serve-0.72.md §R5"
   - "contracts/beat-unsloth-coldstart-speed-v1.yaml (sibling; concedes this metric today)"
   - "contracts/qwen35-qlora-e2e-v1.yaml (the apr side of the cell)"
+  - "docs/specifications/aprender-train/train-what-you-serve-0.72.md, External reference study (U1-U10, read 2026-09-29): the source of the 1.1.0 pins"
 version: 1
 status: PROPOSED
 date: 2026-09-27
 beat:
   pillar: 3
   incumbent: Unsloth
-  incumbent_pinned: "UNPINNED — the harness pins exact unsloth + torch + transformers (v5 required for Qwen3.5 per the Unsloth guide) versions in a uv lock and records them in the receipt. Unsloth supports Qwen3.5 fine-tuning (0.8B-122B) with its own Triton kernels for the GDN layers (guide, 2026-09-27)"
+  incumbent_pinned: "UNPINNED — the harness pins exact unsloth + unsloth_zoo + torch + transformers (v5, <=5.5.0 per unsloth 2026.9.12 pyproject) + fla + causal-conv1d versions in a uv lock and records them in the receipt. Unsloth supports Qwen3.5 fine-tuning (0.8B-122B). Its GDN fast path is NOT an Unsloth kernel: it is torch.compile over the GDN ops plus the fla Triton kernels (unsloth PR #10744, draft at 2026-09-29); without fla, HF GDN falls back to an fp32 torch chunk loop (spec U4/U5). 1.0.0 said 'its own Triton kernels for the GDN layers', which was wrong"
   canonical_task: >
     bf16 LoRA fine-tune of Qwen3.5-4B (frozen bf16 base; Unsloth lists 10 GB for 4B, so it fits
     the 24 GB card), rank 16, alpha 32, targets = Unsloth's documented default
     q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj on BOTH sides (the GDN in_proj/out_proj
     projections are not targeted; a second, optional cell adds them on both sides), seq 512, batch 4, grad-accum 1, bf16 compute, 50 warmup + 200 timed steps, same 1,000-sample
-    data (sha pinned), same RTX 4090 (lambda), same run, exclusive GPU. Metric = trained tokens
-    per second over the timed steps, excluding model load.
+    data (sha pinned), same RTX 4090 (lambda), same run, exclusive GPU. Optimizer = torch AdamW
+    with fp32 states on both sides (never adamw_8bit, Unsloth's benchmark default); gradient
+    checkpointing OFF on both sides (not Unsloth's "unsloth" CPU-offload mode); packing OFF on
+    both sides. Metric = non-pad label tokens trained per second over the timed steps, counted
+    the same way on both sides, excluding model load; the timed window starts after the 50
+    warmup steps AND after the incumbent's torch.compile has finished (both recorded).
   metric: train_tokens_per_sec_ratio_apr_over_unsloth
   direction: higher_is_better
   baseline_value: null
@@ -49,6 +54,13 @@ proof_obligations:
   statement: >
     Both sides train the same number of tokens with the same targets and rank; the receipt
     records trainable-parameter counts for both and they differ by < 1%.
+  type: invariant
+- id: OBLIG-UNSLOTH-FT-INCUMBENT-FAST-PATH
+  statement: >
+    The incumbent runs its fastest supported path for Qwen3.5 GDN: fla is importable in the
+    incumbent's environment and its version is in the receipt. A run without it reports no
+    ratio (INCUMBENT_SLOW_PATH), because a ratio against an incumbent on the fp32 torch GDN
+    fallback measures the fallback, not Unsloth.
   type: invariant
 falsification_tests:
 - id: FALSIFY-BEAT-UNSLOTH-FT-THROUGHPUT
@@ -69,3 +81,19 @@ falsification_tests:
   command: "same script with --planted-half-targets; expect SAME-WORK FAIL"
   expected: "SAME-WORK check exits non-zero"
   if_fails: "the throughput ratio can be gamed by doing less work"
+- id: FALSIFY-BEAT-UNSLOTH-FT-INCUMBENT-FASTPATH
+  description: >
+    Planted falsifier: running the harness with fla removed from the incumbent's uv
+    environment must refuse with INCUMBENT_SLOW_PATH and write no ratio, so apr can never
+    "beat" an Unsloth that is running the slow GDN fallback.
+  command: "same script with --planted-no-fla; expect exit non-zero, INCUMBENT_SLOW_PATH, no ratio in the receipt"
+  expected: "harness exits non-zero with INCUMBENT_SLOW_PATH"
+  if_fails: "the ratio can be won against a crippled incumbent"
+- id: FALSIFY-BEAT-UNSLOTH-FT-SAMEOPT
+  description: >
+    Planted falsifier: switching only the incumbent's optimizer to adamw_8bit (or only its
+    gradient checkpointing to "unsloth") must make the SAME-WORK check fail, so the recipe
+    difference is caught instead of being folded into the ratio.
+  command: "same script with --planted-incumbent-adamw8bit; expect SAME-WORK FAIL"
+  expected: "SAME-WORK check exits non-zero naming the optimizer"
+  if_fails: "an optimizer or checkpointing mismatch silently moves the ratio"

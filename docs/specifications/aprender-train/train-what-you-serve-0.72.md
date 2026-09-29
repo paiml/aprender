@@ -124,8 +124,9 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
   Median of 3 runs. Trained tokens/s over 200 timed steps, excluding load.
 - **Same-work guard (planted):** trainable-parameter counts must match within 1%. Halving apr's targets must FAIL.
 - **First run = baseline.** The 0.8 threshold is fixed by operator ruling. The gap feeds R14.
-- **Spike S-R5 (desk, 2026-09-27) `[V, external]`:** Unsloth supports Qwen3.5 fine-tuning (0.8B–122B) with its own Triton
-  kernels for the GDN layers, and needs transformers v5. It **advises against QLoRA on Qwen3.5** ("higher than normal
+- **Spike S-R5 (desk, 2026-09-27) `[V, external]`:** Unsloth supports Qwen3.5 fine-tuning (0.8B–122B), and needs transformers v5.
+  *(Corrected 2026-09-29: this spike said "with its own Triton kernels for the GDN layers". The GDN fast path is fla plus
+  torch.compile, in draft PR #10744. See the External reference study, U4.)* It **advises against QLoRA on Qwen3.5** ("higher than normal
   quantization differences"). Its default targets are `q,k,v,o,gate,up,down`, with no GDN projections. It lists 10 GB
   for 4B bf16 LoRA. Source: unsloth.ai/docs/models/qwen3.5/fine-tune. **Therefore the T2 cell is bf16 LoRA, not QLoRA**,
   with Unsloth's default targets on both sides. The contract is updated to match.
@@ -345,6 +346,33 @@ R1 honesty gate ─► R2 GDN forward (= serve) ─► R3 GDN backward ─► R4
     inference: an exact-sha check misses the perturbations TSG-004 names.
   - Sequencing: TIS needs TSG and TDD merged, or at least their normaliser. Until then, TIS-005 (refuse when no
     manifest is supplied for an rc-bound run) is the only part that can be met.
+
+### External reference study — Unsloth, for T2 / R5 / R14 · `[V, external]` (2026-09-29, desk, no code copied)
+L2 deliverable 2. Each fact carries its source; `[U]` marks one that was inferred or seen only in a search snippet.
+
+| # | Fact | Tag | Source |
+|---|---|---|---|
+| U1 | Unsloth fine-tunes Qwen3.5 0.8B–122B, including 4B. It needs transformers v5 | `[V]` | unsloth.ai/docs/models/qwen3.5/fine-tune |
+| U2 | "It is not recommended to do QLoRA (4-bit) training on the Qwen3.5 models". bf16 LoRA on 4B is listed at about 10 GB | `[V]` | same page |
+| U3 | Default LoRA targets are `q,k,v,o,gate,up,down` only. The GDN `in_proj_*`, `out_proj` and `conv1d` are not targeted | `[V]` | same page |
+| U4 | **The Qwen3.5 GDN fast path is not a merged Unsloth kernel.** Draft PR #10744 torch-compiles the GDN eager ops and reuses the fla Triton kernels (`compile_fla_no_autotune` from unsloth_zoo). `causal_conv1d` is optional (falls back). The PR is still a draft | `[V]` | github.com/unslothai/unsloth/pull/10744 |
+| U5 | Without fla and causal-conv1d, HF's GDN runs an fp32 torch chunk loop that takes about half the step time | `[U]` snippet | github.com/huggingface/transformers/issues/48718 |
+| U6 | Kernels in `unsloth/kernels/`: `fast_lora`, `cross_entropy_loss`, `rope_embedding`, `rms_layernorm`, `swiglu`, `int4_packed`, `fp8`, `moe/`. None is GDN-specific | `[V]` names, `[U]` purposes | GitHub contents API, unsloth/kernels |
+| U7 | Headline claims are 2× faster with 70% less VRAM versus HF+FA2 (Llama 8B/70B, H100/Blackwell, QLoRA, r32, batch 2, grad-accum 4). The packing blog reports 1.7–3× tokens/s, and part of that is padding removal. No Qwen3.5 or RTX 4090 number is published | `[V]` | README; docs/basics/unsloth-benchmarks; docs/blog/3x-faster-training-packing |
+| U8 | The only Qwen3.5 speed number: Qwen3.5-9B on B200, 829 → 662 ms/step. That is Unsloth versus Unsloth (#10744), not versus HF | `[V]` | PR #10744 |
+| U9 | Its benchmarks use `adamw_8bit`, gradient checkpointing `"unsloth"` (activations offloaded to CPU RAM), and about 5 min of torch.compile warmup. Sequences are padded to max length, so padding likely counts in its tokens/s | `[V]`; padding counting `[U]` | docs/basics/unsloth-benchmarks; lora-hyperparameters-guide |
+| U10 | The current release is unsloth 2026.9.12 (PyPI, 2026-09-28). Pins: `transformers>=4.51.3,<=5.5.0`, `bitsandbytes>=0.45.5`, `trl>=0.18.2,<=0.24.0`, `peft>=0.18.0`, `triton>=3.0.0`. torch is unpinned | `[V]` | pypi.org/project/unsloth; pyproject.toml on main |
+
+**Consequences (all go into `beat-unsloth-finetune-throughput-v1` 1.1.0):**
+- **The incumbent must run its fast path.** U4 and U5 mean an Unsloth install without fla could run about 2× slower on GDN. A ratio measured against that would be a win over a crippled incumbent. The harness records unsloth, unsloth_zoo, fla and causal-conv1d versions. If fla is missing, it refuses with `INCUMBENT_SLOW_PATH` and reports no ratio. This is a new planted falsifier.
+- **Same work means the same optimizer, checkpointing and token count.**
+  - The optimizer is torch AdamW with fp32 states on both sides; `adamw_8bit` is never used.
+  - Gradient checkpointing is off on both sides.
+  - Packing is off on both sides.
+  - Tokens/s counts non-pad label tokens only, on both sides. U7 and U9 show that padding and packing alone move Unsloth's own numbers by up to 2×.
+- **The timed window starts after compile.** The 50 warmup steps are kept. The receipt records when Unsloth's torch.compile finished. A timed window that overlaps compilation is not measured.
+- **S-R5's "own Triton kernels for the GDN layers" is corrected by U4**, and the contract text is corrected with it. R14's gap analysis compares against fla's chunked GDN, not an Unsloth GDN kernel.
+- The Unsloth versions are pinned from U10 at harness time. U10 is the 2026-09-29 reading, not the lock.
 
 ## §3 Ranking v2, after the spikes (2026-09-28)
 This replaces the pre-spike order. Rows move for three reasons:
