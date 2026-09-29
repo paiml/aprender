@@ -21,7 +21,7 @@ five_whys:
 
 equations:
   t0_iff_disjoint:
-    formula: "tier(D) = T0  ⇔  D ∩ I = ∅ ∧ base_valid ∧ no changed path is autodiscovered by a package"
+    formula: "tier(D) = T0  ⟺  D ∩ I = ∅ ∧ base_valid ∧ no changed path is autodiscovered by a package"
     domain: "D: changed repo paths (both sides of a rename); I: ci-input-set-v1 document for the base"
     codomain: "tier ∈ {T0, selective, T3}"
     invariants:
@@ -47,38 +47,38 @@ equations:
 proof_obligations:
   - id: CTR-INV-001
     type: invariant
-    property: "T0 only on a disjoint diff over a valid base"
-    formal: "tier_router.py --self-test rows 'docs-only PR runs T0 only' and 'docs-only but INV-BASE failed is never T0' pass"
+    property: "T0 only on a disjoint diff over a valid base (tier_router.py --self-test rows 'docs-only PR runs T0 only', 'docs-only but INV-BASE failed is never T0')"
+    formal: "route(D) = T0 ⇒ D ∩ I = ∅ ∧ exit(base) = 0"
     applies_to: t0_iff_disjoint
   - id: CTR-INV-002
     type: invariant
-    property: "Autodiscovered targets are never T0"
-    formal: "rows 'an added test target' and 'an added bin target' route selective"
+    property: "Autodiscovered targets are never T0 (rows 'an added test target', 'an added bin target' route selective)"
+    formal: "∀ p ∈ D: owner_autodiscovery(p) ≠ ∅ ⇒ route(D) ≠ T0"
     applies_to: t0_iff_disjoint
   - id: CTR-INV-003
     type: invariant
-    property: "R' is the reverse closure over every edge kind"
-    formal: "row 'change to crate X runs exactly R'(X)' passes; mutants drop-dev-edges and no-closure turn the table RED"
+    property: "R' is the reverse closure over every edge kind, normal, dev and build (row 'change to crate X runs exactly R'(X)'; mutants drop-dev-edges and no-closure turn the table RED)"
+    formal: "route(D) = selective ⇒ packages(D) = rdeps*(owners(D ∩ I))"
     applies_to: selective_is_reverse_closure
   - id: CTR-INV-004
     type: invariant
-    property: "Every undecidable case is T3 over the whole workspace"
-    formal: "rows for C, F, unowned I_dep, no input set and a malformed input set pass; mutant ignore-f turns the table RED"
+    property: "Every undecidable case is T3 over the whole workspace (rows for C, F, unowned I_dep, no input set, a malformed input set; mutant ignore-f turns the table RED)"
+    formal: "(D ∩ (C ∪ F) ≠ ∅ ∨ ∃ p ∈ D ∩ I_dep: owners(p) = ∅ ∨ I = ⊥) ⇒ route(D) = T3 ∧ packages(D) = W"
     applies_to: fail_closed
   - id: CTR-INV-005
     type: invariant
-    property: "The case table can turn RED"
-    formal: "each of the six planted mutants (ignore-f, drop-dev-edges, drop-autodiscovery, ignore-base, no-closure, f-as-c) fails at least one row"
+    property: "The case table can turn RED: each of the six planted mutants (ignore-f, drop-dev-edges, drop-autodiscovery, ignore-base, no-closure, f-as-c) fails at least one row"
+    formal: "∀ m ∈ mutants: ∃ r ∈ rows: result_m(r) ≠ expected(r)"
     applies_to: fail_closed
   - id: CTR-INV-006
     type: invariant
     property: "Every T3 names its causes; T0 and selective name none"
-    formal: "route() returns causes ⊆ {C, F, unowned, stale-C, stale-F, stale-unowned, no-input-set}, non-empty iff tier = T3; mutant f-as-c (an F path reported as C) turns the table RED"
+    formal: "causes(D) ⊆ {C, F, unowned, stale-C, stale-F, stale-unowned, no-input-set} ∧ (causes(D) ≠ ∅ ⟺ route(D) = T3)"
     applies_to: fail_closed
   - id: CTR-INV-007
     type: invariant
-    property: "Until the join is ruled, the router in CI is a SHADOW: it observes and gates nothing"
-    formal: "the workspace-test-build shadow step is continue-on-error, runs after the tier is staged and before the sigma-build upload, and no workflow or section reads qm11-route.json; each of six wiring mutants turns scripts/check_qm11_shadow.sh RED"
+    property: "Until the join is ruled, the router in CI is a SHADOW: the workspace-test-build step is continue-on-error with timeout-minutes ≤ 10, runs after the tier is staged and before the sigma-build upload, no workflow or section reads qm11-route.json, and the base ref never reaches a shell as code; each of fourteen wiring and step-script mutants turns scripts/check_qm11_shadow.sh --self-test RED"
+    formal: "∀ s ∈ steps(workflows) \\ {shadow}: reads(s) ∩ {qm11-route.json} = ∅"
     applies_to: fail_closed
 
 falsification_tests:
