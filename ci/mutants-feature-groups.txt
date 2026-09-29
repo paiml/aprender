@@ -9,4 +9,7 @@
 #
 # package|features|file|test args (what goes after `--`)
 aprender-common|cli-roles|crates/aprender-common/src/cli_roles.rs|--lib
-aprender-contracts-cli|update-check,build-sha|crates/aprender-contracts-cli/src/main.rs|--lib --test cli_integration
+# main.rs is the pv BINARY: no --lib test can observe it, and on intel (-j 2) the --lib suite alone ran past the
+# 900 s mutant budget, so `main with ()` read TIMEOUT (= survived). The binary:: tests exec pv and assert on it:
+# both main.rs mutants measured caught with these args (intel, 2026-09-29; local -- the CI matrix is the evidence).
+aprender-contracts-cli|update-check,build-sha|crates/aprender-contracts-cli/src/main.rs|--test cli_integration binary::
