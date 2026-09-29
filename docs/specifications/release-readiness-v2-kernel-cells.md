@@ -83,9 +83,14 @@ names registry ids, so a `null` or `source: trace` path sets `release:kernelPath
 and the model cell is RED: the static map was not checked against a run. `kernel_cells::judge_smoke_receipt`
 reads it; `build_cells` judges each receipt against its own model's static map.
 
-`apr parity --per-op` kernel-diff receipts (`release_inputs.rs:289-325`) already record a dispatch
-path, but under labels such as `q4k_gemv@q4_k` rather than registry `kernel_id`s. v2 maps those
-labels to registry ids once, in the registry itself, as a `labels` field, so no second list exists.
+Kernel-diff receipts (`apr-kernel-diff-receipt/v1`, read by `release_inputs.rs`) already record a
+dispatch path, but as `{kernel, quant}` pairs that the extractor labels `kernel@quant`
+(`release_evidence.rs::kernel_label`, e.g. `q4k_gemv@q4_k`), not as registry `kernel_id`s. Their
+producer is not in the tree (`apr parity --per-op` prints stage rows only; it waits on #3712), so the
+labels in the tree are fixture labels. v2 maps each label to a registry id once, in the registry
+itself: an optional `labels` list on a `kernels[]` or `ops[]` row, one `(backend, label)` per row,
+refused at parse otherwise (FALSIFY-KREG-014). A label carries no backend, so the receipt host's
+backend picks the row. So no second list exists.
 
 **Per-forward ops** (embedding, RMSNorm/LayerNorm, RoPE, attention, KV write, SwiGLU/GELU, residual add,
 argmax) run on f32 activations whatever the file's types, so no `ggml_type` key reaches them. They are the
