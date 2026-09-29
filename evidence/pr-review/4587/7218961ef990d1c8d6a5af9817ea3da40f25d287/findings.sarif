@@ -142,12 +142,12 @@
             {
               "level": "error",
               "message": {
-                "text": "Carried forward unchanged: mcp__nvidia-cuda-docs__search_cuda_docs not present in this session's tool set. Not re-checked this run -- the 2-file delta (ci/sections.yml, evidence/models/supported.yaml) touches no CUDA-adjacent path."
+                "text": "cuda consultation status is unreachable, not consulted: mcp__nvidia-cuda-docs__search_cuda_docs was unavailable (server not authenticated) in this reviewing session, and also reported unavailable by the dedicated cuda-docs-reviewer agent dispatched for this delta (2026-09-29 ~00:50Z). No query ran in either session."
               },
               "properties": {
-                "grounding": "asserted",
-                "rationale": "No new path in the delta matches the S3.B trigger.",
-                "exit_code": 0
+                "grounding": "measured",
+                "rationale": "The path trigger fires (matches cuda_simd_scores.rs.txt and fp8-interchange-v1.lean), so this is not a no-trigger case; the tool being unreachable means the device claims in those two files were not checked against docs this run either.",
+                "exit_code": 1
               }
             }
           ]
@@ -158,7 +158,7 @@
           "ruleId": "PRREV-CUDA-001",
           "level": "note",
           "message": {
-            "text": "Carried forward unchanged: the S3.B path trigger's 2 false-positive files (cuda_simd_scores.rs.txt, fp8-interchange-v1.lean) are untouched by this delta. Disposition stands."
+            "text": "The S3.B path trigger fires (matches cuda_simd_scores.rs.txt, fp8-interchange-v1.lean) though neither file is touched by this delta. The prior receipts' characterization of these as false positives was never actually checked against CUDA docs (the tool has been unreachable every session, including this one and the dedicated cuda-docs-reviewer's), so the honest status is unreachable/unchecked, not a confirmed false-positive disposition."
           },
           "properties": {
             "grounding": "measured",
