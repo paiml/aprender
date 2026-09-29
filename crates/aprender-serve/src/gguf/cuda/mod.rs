@@ -826,8 +826,8 @@ impl OwnedQuantizedModelCuda {
         let head_dim = model.config.hidden_dim / model.config.num_heads;
         let max_seq_len = match kv_len {
             KvLen::Fixed(n) => n,
-            KvLen::FitContext => Self::session_kv_len(&executor, &model, memory_info.0, false),
-            KvLen::FitServing => Self::session_kv_len(&executor, &model, memory_info.0, true),
+            KvLen::FitContext => Self::session_kv_len(&executor, &model, memory_info.0),
+            KvLen::FitServing => Self::serving_kv_len(&executor, &model, memory_info.0),
         };
 
         // #3715: the FP16 batched prefill a QK-norm model now takes must fit beside
@@ -890,15 +890,9 @@ impl OwnedQuantizedModelCuda {
         executor: &crate::cuda::CudaExecutor,
         model: &OwnedQuantizedModel,
         free_vram: usize,
-        serving: bool,
     ) -> usize {
         let r = Self::resident_estimate(executor, model);
-        let fit = if serving {
-            session_kv::serving_kv_len
-        } else {
-            session_kv::session_kv_len
-        };
-        let len = fit(
+        let len = session_kv::session_kv_len(
             model.config.context_length,
             r.kv_per_pos,
             free_vram,
@@ -906,9 +900,35 @@ impl OwnedQuantizedModelCuda {
             r.reserve,
         );
         eprintln!(
-            "[#3715] session device KV: {len} positions ({}, context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
-            if serving { "serve" } else { "session" },
+            "[#3715] session device KV: {len} positions (context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
             model.config.context_length,
+            free_vram as f64 / 1e9,
+            r.weights as f64 / 1e9,
+            r.cache as f64 / 1e9,
+        );
+        len
+    }
+
+    /// K1 (#4603): the device KV length for [`Self::for_serving`] -- the session sizing
+    /// with the server's batched slots budgeted and serve's old 4096 as the floor
+    /// (see `session_kv::serving_kv_len`).
+    fn serving_kv_len(
+        executor: &crate::cuda::CudaExecutor,
+        model: &OwnedQuantizedModel,
+        free_vram: usize,
+    ) -> usize {
+        let r = Self::resident_estimate(executor, model);
+        let len = session_kv::serving_kv_len(
+            model.config.context_length,
+            r.kv_per_pos,
+            free_vram,
+            r.weights + r.cache,
+            r.reserve,
+        );
+        eprintln!(
+            "[K1] serve device KV: {len} positions (context {}, {} batched slots budgeted, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
+            model.config.context_length,
+            session_kv::SERVE_BATCH_SLOTS,
             free_vram as f64 / 1e9,
             r.weights as f64 / 1e9,
             r.cache as f64 / 1e9,
