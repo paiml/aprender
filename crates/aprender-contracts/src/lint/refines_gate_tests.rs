@@ -87,6 +87,7 @@ fn a_liskov_pair_with_an_honest_witness_passes() {
     assert!(findings.is_empty(), "{findings:?}");
     assert_eq!(r.verdict, Verdict::Pass);
     assert_eq!(c.liskov_pairs_checked, 1);
+    assert_eq!(c.refines_pairs, 1, "the one refines edge of the fixture is counted");
     assert_eq!(c.pc_checker, FIRED);
     assert_eq!((c.requires_n, c.ensures_n, c.invariants_n), (2, 3, 2));
 }
@@ -132,6 +133,7 @@ fn a_legacy_pair_is_pass_with_nothing_checked_and_needs_no_witness() {
     assert!(findings.is_empty(), "{findings:?}");
     assert_eq!(r.verdict, Verdict::Pass);
     assert_eq!((c.liskov_pairs_checked, c.liskov_pairs_legacy), (0, 1));
+    assert_eq!(c.refines_pairs, 1, "a legacy pair is still a refines edge");
     assert!(c.witness.is_none());
 }
 
