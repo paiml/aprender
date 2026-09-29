@@ -235,10 +235,8 @@ fn read_apr_metadata(apr_path: &Path) -> Option<crate::format::v2::AprV2Metadata
     if apr_path.extension().and_then(|e| e.to_str()) != Some("apr") {
         return None;
     }
-    // #3761: the header + metadata + tensor index, never the tensor data
-    let data = crate::format::prefix::apr_v2_header_prefix(apr_path).ok()?;
-    let reader = crate::format::v2::AprV2Reader::from_bytes(&data).ok()?;
-    Some(reader.metadata().clone())
+    // #4000 §5: the header + metadata block only, never the tensor index or data
+    crate::format::prefix::apr_v2_metadata(apr_path).ok().flatten()
 }
 
 /// ROSETTA-003: Unfuse legacy QKV tensors for lossless round-trip export.

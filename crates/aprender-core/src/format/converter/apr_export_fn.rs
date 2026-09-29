@@ -130,10 +130,8 @@ fn enforce_export_completeness(
 
 /// Detect architecture from APR metadata for completeness checking.
 fn detect_apr_architecture_for_completeness(apr_path: &Path) -> Option<&'static str> {
-    // #3761: metadata only; the header prefix, never the tensor data
-    let data = crate::format::prefix::apr_v2_header_prefix(apr_path).ok()?;
-    let reader = crate::format::v2::AprV2Reader::from_bytes(&data).ok()?;
-    let metadata = reader.metadata();
+    // #4000 §5: the header + metadata block only, never the tensor index or data
+    let metadata = &crate::format::prefix::apr_v2_metadata(apr_path).ok().flatten()?;
     let arch = metadata.architecture.as_deref().or_else(|| {
         let mt = &metadata.model_type;
         if mt.is_empty() || mt == "unknown" {
