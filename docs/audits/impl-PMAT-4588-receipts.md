@@ -57,3 +57,19 @@ title now says so.
 | a forced ladder skip is RED | `scripts/ci/ladder_skip_is_red.sh`, `docs/findings/ev9-fat-driver-skip-is-success.jsonl` | `bash scripts/ci/ladder_skip_is_red.sh` | 0, `PASS mutant (step deleted) -> section success: the check sees the defect` |
 | section runs on every PR | `.github/workflows/ci.yml` `--sections ...,provable-ladder` | read | present |
 | required in gate.needs | — | — | OUT OF SCOPE (part 2, operator) |
+
+## CB-200 row: reverted (cop ruling 20:31Z)
+
+This PR no longer re-baselines CB-200. `.pmat-gates.toml` `[tdg] baseline` and `scripts/cb200_baseline.txt`
+are back to main's 599. `scripts/check_cb200_tdg_grade.sh`, `scripts/cb200_baseline.rebaseline` and the
+one-time re-baseline hooks in `scripts/lib_baseline_ratchet.sh` / `scripts/check_baseline_ratchets.sh` are removed.
+
+| check | command | base 00052c0128 | head | verdict |
+|---|---|---|---|---|
+| CB-200 grade findings, same scanner, same run (pmat 3.42.0, cold cache) | `pmat comply check --path <tree> --checks CB-200 --format json` | 622 | 621 (before revert) | head never-worse (-1); the 599->617 was a stored-limit raise, not new findings |
+| complexity set | `bash scripts/check_complexity_ratchet.sh` | 658 fns | 658 fns | equal; rc 1 on both: host pmat 3.42.0 != recorded 3.41.1 (instrument) |
+| baseline ratchets | `bash scripts/check_baseline_ratchets.sh` | rc 1 | rc 1 | same 2 tool_version FAIL rows on both (host pmat), no new row |
+| ratchet self-test | `bash scripts/check_baseline_ratchets.sh --self-test` | — | rc 0 | ok |
+| guards wired | `bash scripts/check_guards_are_wired.sh` | — | rc 0 | PASS |
+
+Pre-existing on main, reported not fixed here: main measures 622 CB-200 findings against its stored 599.
