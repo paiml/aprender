@@ -1,0 +1,147 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.30.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": [
+            { "id": "PRREV-PMAT", "name": "pmat quality and duplication" },
+            { "id": "PRREV-4615-D2-DECLAIM-SHA-INT-COERCION", "name": "primary reviewer: YAML int-coercion crash in declaimed()" },
+            { "id": "PRREV-4615-D2-DECLAIM-SHA-CASE-SENSITIVITY", "name": "primary reviewer: case-sensitive sha256 match in declaim_of()" },
+            { "id": "PRREV-4615-D2-MODEL-LADDER-SH-GONE-TYPE-MISMATCH", "name": "primary reviewer: a third sha256 comparison site with the same type/case fragility" }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "PRREV-4615-D2-DECLAIM-SHA-INT-COERCION",
+          "level": "error",
+          "message": {
+            "text": "declaimed() crashes with an unhandled TypeError when a cells.declaimed[].sha256 value in the YAML contract is an unquoted string composed entirely of decimal digits 0-9 (e.g. '0000...000' or '1111...111'), because PyYAML's default resolver parses such a plain scalar as a Python int, not a str. The type-check at line 314 already coerces with str(d[\"sha256\"]) before the hex-format regex (so an all-digit int VALUE passes validation, since its decimal string form is a valid subset of hex), but the dict-key concatenation at line 325 (SHA_KEY + d[\"sha256\"]) does not coerce, and 'sha256:' + <int> raises TypeError: can only concatenate str (not \"int\") to str. Reproduced directly against the unmodified module: python3 -c invoking model_ladder_cells.declaimed() with a YAML-parsed entry whose sha256 is the unquoted 64-digit string '111...1' crashes exactly this way; the same entry quoted ('1111...1') does not. The PR's own new test fixtures (scripts/lib/model_ladder_cases/*declaimed-file*/ladder.yaml) use these exact all-digit placeholder hashes ('0000...000', '1111...111', '2222...222') but always QUOTED, which is why none of the 158 self-test cases exercises this path -- the fixtures show the author was aware digit-only hashes are a plausible placeholder value, without the code being defended against an unquoted one. A real sha256 that is entirely decimal digits is astronomically unlikely ((10/16)^64), but an unquoted digit-only PLACEHOLDER hash in a future contracts/*.yaml edit (mirroring the very pattern already used, quoted, in this PR's own fixtures) will crash scripts/check_model_ladder.sh, which gates a release."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/lib/model_ladder_cells.py" },
+                "region": { "startLine": 325, "endLine": 326 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A future contracts/model-capability-ladder-v1.yaml (or any other model-ladder contract) entry writes an unquoted, all-decimal-digit sha256 placeholder (the same style of placeholder this PR's own fixtures use, quoted, for 0000...000/1111...111/2222...222). PyYAML parses it as int; declaimed() raises an uncaught TypeError; scripts/check_model_ladder.sh crashes instead of FAILing loudly with a readable message, taking down the release gate that runs it.",
+            "command": ["python3", "-c", "import sys, yaml; sys.path.insert(0,'scripts/lib'); import model_ladder_cells as m; decl = yaml.safe_load(\"- sha256: 1111111111111111111111111111111111111111111111111111111111111111\\n  file: fake.gguf\\n  host: gx10\\n  issue: 1\\n  until: '0.70.1'\\n  why: repro\\n\"); m.declaimed({'declaimed': decl}, ['gx10'], print)"],
+            "exit_code": 0,
+            "stdout_sha256": "b952d34c747b25d066e2fb7d797222f4131f5fd3313e94b5131f468894970d2a",
+            "excerpt": "            got[(d[\"host\"], SHA_KEY + d[\"sha256\"])] = d",
+            "excerpt_sha256": "b9bc446c841db64dba4f9f04206bade794877230bb0419b4915de43b281ef9d5",
+            "disposition": "not fixed by this receipt (review-only lane, no code changes permitted outside evidence/); one-line fix is str(d[\"sha256\"]) at both line 325 and line 326 (the file-key setdefault has the symmetric, lower-probability risk if `file` is ever an unquoted all-digit scalar).",
+            "baselineState": "new",
+            "introduced_by": "D2 (this PR) -- the by_file branch of declaimed() is new code; the pre-existing arch-only branch (line 328) never concatenates a YAML-typed scalar this way."
+          }
+        },
+        {
+          "ruleId": "PRREV-4615-D2-DECLAIM-SHA-CASE-SENSITIVITY",
+          "level": "warning",
+          "message": {
+            "text": "declaim_of() does str(item.get(\"sha256\") or \"\") on the inventory-side hash before building the lookup key, but never .lower()s it, while declaimed() already enforces (via re.fullmatch(r\"[0-9a-f]{64}\", ...)) that the declaim-entry side is lowercase hex only. If an inventory/receipt row ever records an uppercase-hex sha256 for the same artifact the contract de-claims, declaim_of() returns None (silent non-match) instead of matching, and _judge_host() falls through to its `stale` check -- which DOES match on filename via the FILE_KEY entry regardless of hash case -- so the host is loudly told 'a different artifact is a different claim' about the SAME artifact, purely because of hex-case disagreement between two independently-produced strings. Reproduced directly: declaim_of() against a real declaim entry (contracts/model-capability-ladder-v1.yaml's own D2 sha256) matches for a lowercase-hex inventory item and returns None for the byte-identical uppercase-hex item."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/lib/model_ladder_cells.py" },
+                "region": { "startLine": 290 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "hashlib.hexdigest()/sha256sum always emit lowercase, so this needs an inventory-producing path this PR does not touch to ever emit uppercase hex before it is reachable; recorded because it is a real, verified asymmetry in new code, not because a trigger is known to exist today.",
+            "command": ["python3", "-c", "declaim_of() called with an uppercase-hex copy of contracts/model-capability-ladder-v1.yaml's real D2 sha256, vs the lowercase original"],
+            "exit_code": 0,
+            "stdout_sha256": "e3673b7e4c548c7f5c72d9ba542a14702212685d998b83f829dd1365c63c8b90",
+            "excerpt": "    return dec.get((host, SHA_KEY + str(item.get(\"sha256\") or \"\"))) or dec.get((host, item.get(\"arch\")))",
+            "excerpt_sha256": "ed36fddf1bc76437bee4cb693d60328f477caaf62454445c7be4046c8d4649b8",
+            "disposition": "not fixed by this receipt (review-only lane); a one-line .lower() on the inventory side would close it.",
+            "baselineState": "new",
+            "introduced_by": "D2 (this PR) -- declaim_of() and the sha256-keyed branch of declaimed() are both new."
+          }
+        },
+        {
+          "ruleId": "PRREV-4615-D2-MODEL-LADDER-SH-GONE-TYPE-MISMATCH",
+          "level": "warning",
+          "message": {
+            "text": "scripts/model_ladder.sh's inline Python gone(i) (the receipt-writing step, distinct from model_ladder_cells.py) does `d.get(\"sha256\") == i.get(\"sha256\")` -- a THIRD site with the same class of fragility as the two findings above, in a different file this PR also touches. If a cells.declaimed[] entry's sha256 is an unquoted, all-decimal-digit YAML scalar (PyYAML parses it as int), the comparison against the inventory item's sha256 (always a str, from JSON) is `int == str`, which Python evaluates as False rather than raising -- so gone(i) silently returns False and the item is NOT removed from inv (it stays as something the release receipt says is still owed), rather than being withdrawn as the contract entry intended. Reproduced directly: yaml.safe_load() on an unquoted 64-digit placeholder gives type(d['sha256'])==int; gone() against a byte-identical string inventory item returns False. The same case-sensitivity asymmetry as PRREV-4615-D2-DECLAIM-SHA-CASE-SENSITIVITY also applies here (plain `==`, no .lower() on either side). Lower severity than the crash finding: the failure direction is fail-open-to-more-work (an intended declaim silently does not take effect and the item keeps being counted as owed) rather than a crash or a silently-accepted-as-satisfied claim, so it does not by itself let an unmeasured obligation pass as measured."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/model_ladder.sh" },
+                "region": { "startLine": 1451, "endLine": 1452 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A cells.declaimed[] entry in a future contracts/model-capability-ladder-v1.yaml edit writes an unquoted, all-decimal-digit sha256 (the same placeholder style this PR's own fixtures use, quoted). scripts/model_ladder.sh's receipt-writing step fails to withdraw the matching inventory item: the item stays in inv[] (still counted as owed) instead of moving to declaimed_inventory[], contradicting what scripts/lib/model_ladder_cells.py's declaimed()/declaim_of() would report for the identical contract on the measurement side -- the two code paths (measurement-time skip vs receipt-time bookkeeping) can disagree about whether the same entry took effect.",
+            "command": ["python3", "-c", "yaml.safe_load(unquoted-64-digit sha256 declaimed entry); gone(inv_item_with_same_hash_as_str, [entry]) == False"],
+            "exit_code": 0,
+            "stdout_sha256": "ae692e18074bd5963b27e393a03ffb3f6f617bf6f2af96d9872f51c51a3164bb",
+            "excerpt": "    return any(d.get(\"sha256\") == i.get(\"sha256\") if d.get(\"sha256\") else d.get(\"arch\") == i.get(\"arch\") for d in dcl)",
+            "excerpt_sha256": "b5fe9e3a142c85374782ffc04c57480f27a515b91e0e01768da51d16e6a70759",
+            "disposition": "not fixed by this receipt (review-only lane); the fix is the same shape as the other two: str() both sides before comparing, and .lower() both sides.",
+            "baselineState": "new",
+            "introduced_by": "D2 (this PR) -- gone(i)'s sha256 branch is new; the pre-existing arch-only set-membership check (dcl as a set of arch strings) never compared a YAML-typed scalar this way."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "guard case-tables (scripts/check_model_ladder.sh --self-test, scripts/check_ladder_cells_producer.sh)",
+          "informationUri": "n/a",
+          "rules": [ { "id": "PRREV-MUT", "name": "guard mutation set" } ]
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "mutation",
+        "status": "consulted-found-nothing",
+        "scope": "guard",
+        "attempted": 162,
+        "killed": 162,
+        "survivors": [],
+        "note": "scripts/check_model_ladder.sh --self-test: 150 mutant assertions, 158 case(s), 0 bad (full log /tmp/cml_out.log on the review box) -- includes the 9 D2-specific new mutants (declaim-skip, declaim-bare, declaim-file, declaim-by-name, declaim-widen, declaim-stale, declaim-sha-hex, declaim-claimed, declaim-claimed-file), each explicitly reported 'killed by case <name>'. scripts/check_ladder_cells_producer.sh: 12 mutant assertions, all 'ok', 'all cases and mutants as expected' -- includes the 2 D2-specific new mutants (declaim, declaim-name). 150+12=162 attempted, 162 killed, 0 survivors, 100% kill on both guard-touching scripts' full committed mutation sets (not just the new D2 mutants)."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "informationUri": "n/a",
+          "rules": [ { "id": "PRREV-AGY", "name": "cross-vendor review (advisory)" } ]
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted-found-nothing",
+        "model_id": "gemini-3.1-pro-high",
+        "model_family": "google/gemini",
+        "reviewed_by_primary": false,
+        "precision_class": "advisory",
+        "note": "Run per skill S3.E step 3 in a disposable tree (git archive was DENIED by this session's subagent-lock.sh hook -- 'git archive: a lane runs read-only git only' -- so, per the worktree being byte-identical to HEAD (git status --porcelain empty, confirmed before copying), a plain filesystem rsync -a --exclude=.git of the worktree was used instead, which is git-free and produces the same tree git archive would have). Diff scoped to the D2 files was placed at .pr-review-diff.patch, prompt at .pr-review-prompt.md, schema at .pr-review-schema.json; agy invoked with --json-schema, --model gemini-3.1-pro-high (non-Claude, confirmed), --dangerously-skip-permissions (safe: disposable tree only), --add-dir. rc=0, .status=SUCCESS, duration_seconds=420.9, usage {input_tokens:145518, output_tokens:13092, thinking_tokens:10388, cache_read_tokens:1515047, total_tokens:158610}. output_check: structured_output_present=true, reviewed=true (jq), schema_valid=true (check-jsonschema against agy-review-v1.schema.json, 'ok -- validation done'). structured_output={findings:[],reviewed:true} -- agy itself independently re-ran scripts/check_ladder_cells_producer.sh and scripts/check_model_ladder.sh --self-test inside its own disposable copy (per its own response text) and reported no defects. This is the formal, schema-validated arm; it is advisory only and reports here as consulted-found-nothing regardless of an earlier, non-schema-conformant exploratory prompt to the same model (outside this arm's recipe) that the primary reviewer used only as a lead, then independently verified by direct code execution -- both primary findings above are grounded in the primary reviewer's own measured reproduction, not in any antigravity claim."
+      }
+    }
+  ]
+}
