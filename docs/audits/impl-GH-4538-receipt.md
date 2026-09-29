@@ -127,3 +127,33 @@ fmt 0 · clippy (both crates) 0 · pv extract 0 · census 0 · readme_sync 0 · 
 
 contracts.nt is byte-unchanged by this fix. On the real corpus, no top-level binding row that was wrongly refused had
 produced an edge. The defect was real in principle and is now pinned by a test.
+
+## Hand-off, rebase and re-quorum (2026-09-29, aprender-52, claude-opus-5-5)
+
+aprender-6b handed off the ticket. Its branch `6b/4538-sigma-crate-contracts` @b66425d66c is left untouched. It was rebased cleanly onto main 2817c6d97b as `52/4538-sigma-crate-contracts` @76f1297b59. The round-3 quorum of 09-27 applied to the old base, so the quorum was re-run.
+
+Gates, run on fw16 from a fetched copy of the pushed branch with a private target dir:
+```
+@76f1297b59  fmt 0 · aprender-contracts --lib 0 · aprender-contracts-cli --lib 0 · clippy -D warnings (both) 0 · roadmap sorted 0 · pv build 0 · pv census 0
+             check_baseline_ratchets 1 = ENV: tool_version rows on baselines this diff does not touch (pmat 3.41.1 vs 3.42.0,
+             bashrs 7.4.1 vs 7.4.2/absent); contract_crate_stem_refused_baseline REPORTs NOT ARMED (main does not carry it yet)
+@96da5a9454  fmt 0 · crate_corpus 9/9 · M6 crate_contract_dirs -> empty: rc 101 (an_identical_crate_copy…:85 FAILED), restored cmp OK
+```
+
+Quorum: sonnet-5 + agy gemini-3.1-pro-high + haiku-4-5. The author is opus and holds no seat. Not degraded.
+
+| lane | head | verdict |
+|---|---|---|
+| claude-sonnet-5 | 76f1297b59 | APPROVE |
+| claude-haiku-4-5 r1 | 76f1297b59 | REQUEST_CHANGES: the identical-copy test passed with the crate walk disabled |
+| claude-haiku-4-5 r2 | 96da5a9454 | APPROVE. Fixed by a contrast (one changed byte means the stem is refused), proven by M6 |
+| agy gemini-3.1-pro-high r1 (conv d68ef84e-d10e-4cad-8ea0-254f34c655c3) | 76f1297b59 | REQUEST_CHANGES, disposition below |
+| agy gemini-3.1-pro-high r2 (conv ad1b8321-d8cd-4568-9388-d7c68a32acb9) | 96da5a9454 | APPROVE, disposition accepted |
+
+Disposition of the agy r1 findings:
+- **A, a `.yaml.yaml` bypass at code.rs:683: REFUTED.** `bound_of` applies `normalize_contract_id`, which strips the extension. The test `a_binding_that_reaches_a_refused_copy_through_dot_dot_is_still_refused` asserts the exact refusal.
+- **B, nested crates: not a defect.** The workspace is flat, and the scope is `crates/*/contracts`.
+- **C, non-UTF8 stems: nit, kept.** No such filename exists.
+- **D, census walks the top level twice: nit (efficiency).** The set filter means nothing is counted twice.
+
+The sonnet lane saw 76f1297b59. The only change after it is the test-only contrast, which is shown above.
