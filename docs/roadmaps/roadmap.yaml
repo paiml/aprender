@@ -22225,6 +22225,7 @@ roadmap:
   - 'lambda RTX 4090, 5432-token chat turn: main returns 500, the branch returns 400 context exceeds 4096 (the --context-length 32768 -> 200 case is #4603, not this ticket)'
   - 'api/tests/serve_context_d5.rs: the refusal fires at prompt_tokens >= serving_context, and serving_context = min(model context, device KV)'
   - 'Dense GGUF CUDA chat, completions, stream, /generate, /batch/generate and /v1/batch/completions all refuse before generating; every typed generate-error site maps ContextLimitExceeded to 400, never 500 (batch-scheduler channel errors are strings reached only after the pre-flight; the APR Q4K backends are #4625)'
+  - 'The mutants gate can judge this diff: no build script in the aprender-serve test build watches a missing path (build-sha .git-sha, compute/present-core/serve sibling provable-contracts reads), so the test phase after `cargo test --no-run` recompiles nothing (run 36520343459 spent 4m18s of each 300s mutant budget compiling)'
   phases: []
   subtasks: []
   estimated_effort: null

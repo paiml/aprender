@@ -30,7 +30,11 @@ pub fn emit() {
     }
 
     println!("cargo:rerun-if-env-changed=APR_GIT_SHA_OVERRIDE");
-    println!("cargo:rerun-if-changed=.git-sha");
+    // #4614: watch `.git-sha` only when it exists; a missing watched path makes Cargo
+    // rerun this script, and rebuild the crate, on every invocation.
+    if std::path::Path::new(".git-sha").exists() {
+        println!("cargo:rerun-if-changed=.git-sha");
+    }
 }
 
 /// The pure resolution order. Each argument is the raw result of one source,

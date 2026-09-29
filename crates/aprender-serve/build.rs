@@ -279,8 +279,11 @@ fn emit_contract_bindings() {
         .join("realizar")
         .join("binding.yaml");
 
-    // Always tell Cargo to re-run if the file appears or changes
-    println!("cargo:rerun-if-changed={}", binding_path.display());
+    // A watched path that does not exist makes Cargo rerun this script on every build,
+    // which rebuilds the crate and everything above it each time (the #4614 mutants timeouts).
+    if binding_path.exists() {
+        println!("cargo:rerun-if-changed={}", binding_path.display());
+    }
 
     if !binding_path.exists() {
         // Graceful fallback: CI/crates.io builds won't have the sibling repo.
@@ -500,7 +503,10 @@ fn generate_arch_requirements_file() {
         .join("contracts")
         .join("architecture-requirements-v1.yaml");
 
-    println!("cargo:rerun-if-changed={}", yaml_path.display());
+    // #4614: see emit_contract_bindings; watch only a path that exists.
+    if yaml_path.exists() {
+        println!("cargo:rerun-if-changed={}", yaml_path.display());
+    }
 
     if !yaml_path.exists() {
         // Graceful fallback for CI/crates.io — write a stub generated file
@@ -811,7 +817,10 @@ fn generate_tensor_names_file() {
         .join("contracts")
         .join("tensor-names-v1.yaml");
 
-    println!("cargo:rerun-if-changed={}", yaml_path.display());
+    // #4614: see emit_contract_bindings; watch only a path that exists.
+    if yaml_path.exists() {
+        println!("cargo:rerun-if-changed={}", yaml_path.display());
+    }
 
     std::fs::write(&out_path, include_str!("src/tensor_names_fallback.rs"))
         .expect("Failed to write tensor_names_generated.rs");
