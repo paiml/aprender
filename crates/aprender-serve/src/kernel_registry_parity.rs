@@ -10,6 +10,10 @@
 //! `scripts/kreg_ggufpy_oracle.py` wrote from llama.cpp's gguf-py (its own decoders and grid
 //! tables) under `evidence/kreg/oracle/<TYPE>/`. Their receipts say `oracle_independent: true`.
 //!
+//! The dense rows (F32, F16, BF16) run through the served selector, `fused_matmul`, and are
+//! measured against weights decoded by `f32::from_le_bytes` and the `half` crate, not by the
+//! kernel's own LUT, F16C or `bits << 16` decode, so they too say `oracle_independent: true`.
+//!
 //! Two tests:
 //! - `emit_parity_receipts` (ignored) measures and writes the receipts. Run it on the host whose
 //!   arch the receipt admits: `KREG_RECEIPT_OUT=evidence/kreg/parity KREG_GIT_SHA=<sha> cargo test
@@ -30,6 +34,7 @@ use rand::{Rng, SeedableRng};
 
 pub(super) const SCHEMA: &str = "kernel-parity-receipt/v1";
 const ORACLE: &str = "in_tree_dequant_f64";
+const DECODE_ORACLE: &str = "le_decode_half_f64";
 
 /// The kernels this harness can measure, with their block size and the entry point the registry
 /// names. A kernel absent here has no receipt path yet.
@@ -47,6 +52,8 @@ struct Kernel {
     act_quant: Option<fn(&[f32]) -> Vec<f32>>,
     dequant: fn(&[u8]) -> Result<Vec<f32>>,
     matvec: fn(&[u8], &[f32], usize, usize) -> Result<Vec<f32>>,
+    /// [`ORACLE`] (the crate's own dequant) or [`DECODE_ORACLE`] (an independent decode).
+    oracle: &'static str,
 }
 
 fn f16_bytes(x: f32) -> [u8; 2] {
@@ -107,6 +114,7 @@ const KERNELS: &[Kernel] = &[
         fill: fill_dmin_first,
         dequant: dequantize_q4_k,
         matvec: fused_q4k_parallel_matvec,
+        oracle: ORACLE,
     },
     Kernel {
         id: "cpu.matvec.q5_k",
@@ -118,6 +126,7 @@ const KERNELS: &[Kernel] = &[
         fill: fill_dmin_first,
         dequant: dequantize_q5_k,
         matvec: fused_q5k_parallel_matvec,
+        oracle: ORACLE,
     },
     Kernel {
         id: "cpu.matvec.q6_k",
@@ -129,6 +138,7 @@ const KERNELS: &[Kernel] = &[
         fill: fill_q6_k,
         dequant: dequantize_q6_k,
         matvec: fused_q6k_parallel_matvec,
+        oracle: ORACLE,
     },
     Kernel {
         id: "cpu.matvec.q4_0",
@@ -140,6 +150,7 @@ const KERNELS: &[Kernel] = &[
         act_quant: Some(q8_0_round_trip),
         dequant: dequantize_q4_0,
         matvec: fused_q4_0_q8_0_parallel_matvec,
+        oracle: ORACLE,
     },
     Kernel {
         id: "cpu.matvec.q8_0",
@@ -151,8 +162,126 @@ const KERNELS: &[Kernel] = &[
         act_quant: Some(q8_0_round_trip),
         dequant: dequantize_q8_0,
         matvec: fused_q8_0_q8_0_parallel_matvec,
+        oracle: ORACLE,
+    },
+    Kernel {
+        id: "cpu.matvec.f32",
+        source_fn: "fused_matmul_f32",
+        block_elems: 1,
+        block_bytes: 4,
+        workload: WORKLOAD,
+        fill: fill_f32,
+        act_quant: None,
+        dequant: decode_f32,
+        matvec: served_f32,
+        oracle: DECODE_ORACLE,
+    },
+    Kernel {
+        id: "cpu.matvec.f16",
+        source_fn: "float16_matmul",
+        block_elems: 1,
+        block_bytes: 2,
+        workload: WORKLOAD,
+        fill: fill_f16,
+        act_quant: None,
+        dequant: decode_f16,
+        matvec: served_f16,
+        oracle: DECODE_ORACLE,
+    },
+    Kernel {
+        id: "cpu.matvec.bf16",
+        source_fn: "float16_matmul",
+        block_elems: 1,
+        block_bytes: 2,
+        workload: WORKLOAD,
+        fill: fill_bf16,
+        act_quant: None,
+        dequant: decode_bf16,
+        matvec: served_bf16,
+        oracle: DECODE_ORACLE,
     },
 ];
+
+fn weight_value(rng: &mut rand::rngs::StdRng) -> f32 {
+    rng.random_range(-0.05..0.05)
+}
+
+fn fill_f32(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
+    b.copy_from_slice(&weight_value(rng).to_le_bytes());
+}
+
+fn fill_f16(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
+    b.copy_from_slice(&f16_bytes(weight_value(rng)));
+}
+
+fn fill_bf16(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
+    b.copy_from_slice(
+        &half::bf16::from_f32(weight_value(rng))
+            .to_bits()
+            .to_le_bytes(),
+    );
+}
+
+fn decode_f32(w: &[u8]) -> Result<Vec<f32>> {
+    Ok(w.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect())
+}
+
+fn decode_f16(w: &[u8]) -> Result<Vec<f32>> {
+    Ok(w.chunks_exact(2)
+        .map(|c| half::f16::from_bits(u16::from_le_bytes([c[0], c[1]])).to_f32())
+        .collect())
+}
+
+fn decode_bf16(w: &[u8]) -> Result<Vec<f32>> {
+    Ok(w.chunks_exact(2)
+        .map(|c| half::bf16::from_bits(u16::from_le_bytes([c[0], c[1]])).to_f32())
+        .collect())
+}
+
+/// One matvec through `OwnedQuantizedModel::fused_matmul`, the selector the dense rows name, so
+/// the receipt covers its dispatch arm as well as the kernel behind it.
+fn served(qtype: u32, w: &[u8], x: &[f32], in_dim: usize, out_dim: usize) -> Result<Vec<f32>> {
+    let config = crate::gguf::GGUFConfig {
+        architecture: "test".to_string(),
+        constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+        hidden_dim: 64,
+        num_layers: 1,
+        num_heads: 4,
+        num_kv_heads: 4,
+        vocab_size: 16,
+        intermediate_dim: 256,
+        context_length: 64,
+        rope_theta: 10000.0,
+        eps: 1e-5,
+        rope_type: 0,
+        explicit_head_dim: None,
+        query_pre_attn_scalar: None,
+        bos_token_id: None,
+        eos_token_id: None,
+    };
+    let model = crate::gguf::test_helpers::create_test_model_with_config(&config);
+    let weight = crate::gguf::OwnedQuantizedTensor {
+        data: w.to_vec(),
+        in_dim,
+        out_dim,
+        qtype,
+    };
+    model.fused_matmul(x, &weight)
+}
+
+fn served_f32(w: &[u8], x: &[f32], i: usize, o: usize) -> Result<Vec<f32>> {
+    served(crate::gguf::GGUF_TYPE_F32, w, x, i, o)
+}
+
+fn served_f16(w: &[u8], x: &[f32], i: usize, o: usize) -> Result<Vec<f32>> {
+    served(crate::gguf::GGUF_TYPE_F16, w, x, i, o)
+}
+
+fn served_bf16(w: &[u8], x: &[f32], i: usize, o: usize) -> Result<Vec<f32>> {
+    served(crate::gguf::GGUF_TYPE_BF16, w, x, i, o)
+}
 
 fn kernel(id: &str) -> &'static Kernel {
     KERNELS
@@ -418,9 +547,9 @@ fn receipt_header(id: &str, source_fn: &str, row: &KernelRow, oracle: &str) -> s
 fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
     let served = measure(k, k.workload, false);
     let fp32 = measure(k, k.workload, true);
-    let mut doc = receipt_header(k.id, k.source_fn, row, ORACLE);
-    doc["oracle"] = ORACLE.into();
-    doc["oracle_independent"] = false.into();
+    let mut doc = receipt_header(k.id, k.source_fn, row, k.oracle);
+    doc["oracle"] = k.oracle.into();
+    doc["oracle_independent"] = (k.oracle == DECODE_ORACLE).into();
     doc["workload"] = serde_json::json!({
         "in_dim": k.workload.in_dim,
         "out_dim": k.workload.out_dim,
@@ -774,7 +903,12 @@ fn committed_parity_receipts_hold_on_this_host() {
             check_fixture_receipt(id, path, &rc, row);
             continue;
         }
-        assert_eq!(rc["oracle"], ORACLE, "{path}: unknown oracle");
+        assert_eq!(rc["oracle"], kernel(id).oracle, "{path}: unknown oracle");
+        assert_eq!(
+            rc["oracle_independent"],
+            kernel(id).oracle == DECODE_ORACLE,
+            "{path}: oracle_independent"
+        );
         let wl = &rc["workload"];
         let dim = |k: &str| wl[k].as_u64().expect("workload field") as usize;
         let w = Workload {
@@ -854,7 +988,7 @@ fn oracle_now(rc: &serde_json::Value, row: &KernelRow) -> String {
         let meta: serde_json::Value = serde_json::from_slice(&meta).expect("fixture meta.json");
         fixture_oracle(ggml_type, &meta)
     } else {
-        ORACLE.to_string()
+        kernel(&row.kernel_id).oracle.to_string()
     }
 }
 
