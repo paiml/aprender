@@ -587,3 +587,43 @@ fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
         "{g:?}"
     );
 }
+
+/// Every name `--gate` offers routes to its own gate, never to `UnknownGate` or a neighbour's variant.
+/// Kills the "delete match arm" mutants in `run_named_gate_with` (M1 shard 6): a dropped arm falls
+/// through to `_ => UnknownGate`, which this table refuses for every entry of `NAMED_GATES`.
+#[test]
+fn every_named_gate_routes_to_its_own_variant() {
+    fn kind(o: &NamedGateOutcome) -> &'static str {
+        match o {
+            NamedGateOutcome::UnknownGate => "unknown",
+            NamedGateOutcome::Sigma(_) => "sigma",
+            NamedGateOutcome::Relations(_) => "relations",
+            NamedGateOutcome::Shapes(_) => "shapes",
+            NamedGateOutcome::Consistency(_) => "consistency",
+            NamedGateOutcome::Refines(_) => "refines",
+            NamedGateOutcome::Tbox(_) => "tbox",
+            NamedGateOutcome::Evidence(_) => "evidence",
+            NamedGateOutcome::ValidUnder(_) => "valid-under",
+            NamedGateOutcome::Ratchet(_) => "ratchet",
+            NamedGateOutcome::Ran { .. } => "ran",
+        }
+    }
+    fn expected(name: &'static str) -> &'static str {
+        match name {
+            n if n == bindings_gate::GATE || n == refinement_gate::GATE => "ratchet",
+            "theorem-pairing" | "depends-on-present" | "proved-is-derived" => "ratchet",
+            n if n == consistency_gate::GATE => "consistency",
+            n if n == refines_gate::GATE => "refines",
+            "validate" => "ran",
+            other => other,
+        }
+    }
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    for name in NAMED_GATES {
+        let got = run_named_gate(&dir, name);
+        assert_eq!(kind(&got), expected(name), "--gate {name} routed wrong");
+    }
+    assert_eq!(kind(&run_named_gate(&dir, "no-such-gate")), "unknown");
+}
