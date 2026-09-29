@@ -23804,7 +23804,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   priority: critical
   assigned_to: aprender-88
   created: 2026-09-27T10:17:06Z
-  updated: 2026-09-27T10:17:06Z
+  updated: 2026-09-29T17:40:00Z
   spec: null
   acceptance_criteria:
   - 'every ONT-10 row on the batch lands in this one PR (no per-row PRs); origin/main merged in without rebase or force'
@@ -23812,6 +23812,8 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - 'scripts/surface_audit_bins_gate.sh is GREEN (every [[bin]] has a docs/audits/surface_audit.csv row) and RED on an empty ledger'
   - 'pv validate passes on contracts/binary-surface-v1.yaml and every contracts/bin-*.yaml; the aprender-contracts lib is green'
   - 'a gate still RED stays in its contract with the observed value in if_fails, never dropped'
+  - '#4587 A-prime (operator ruling 2026-09-29 06:36Z via the cop, commit a79535bd51): CI generates the mutants survivor table itself (mutants-table-scope, mutants-shard matrix, verifier scripts/ci/mutants_survivor_table.py); any gap is RED; scope PR-1 and PR-2 of 0.70 only (ci/mutants-table-refs.txt)'
+  - 'folded tickets carried with their own entries: PMAT-4199, PMAT-4200, PMAT-4347, PMAT-4166 (lint ratchet), PMAT-4139 (Lean label ratchet), PMAT-4604 (pv 0.69.4 set), PMAT-4369 (build_helper::env_key); the quorum --ticket names every one'
   - '(process, not diff content) one quorum on the combined head; pmat-merge arms with --match-head-commit'
 - id: PMAT-4507
   github_issue: 4507
@@ -23911,3 +23913,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4633
+  github_issue: 4633
+  item_type: task
+  title: 'fix(deps): wasmtime 47.0.4 -> 48.0.3 for RUSTSEC-2026-0315/0316 (security job red on main and every PR)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-00
+  created: 2026-09-29T12:17:38Z
+  updated: 2026-09-29T12:17:38Z
+  spec: null
+  acceptance_criteria:
+  - The workspace wasmtime pin is 48.0.3 and Cargo.lock resolves wasmtime 48.0.3 (cargo metadata --locked rc=0)
+  - cargo audit on the branch Cargo.lock reports no RUSTSEC-2026-0315/0316 (rc=0); on origin/main it reports both
+  - cargo deny check rc=0 (advisories, bans, licenses, sources)
+  - No audit or deny ignore is added and no gate is relaxed; the diff is Cargo.toml, Cargo.lock, this roadmap entry (with its roadmap.yaml copy) and docs/audits/security-PMAT-4633-wasmtime-48.md, the C45 review input that stands in for the raw Cargo.lock, only
+  - wasmtime stays optional behind aprender-test-lib's runtime feature (cargo tree -i wasmtime --workspace finds no active path), so the 1.95 MSRV of the 48 line does not reach the 1.93 pin
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cop ruling 2026-09-29 12:0xZ: P0 main fix, Cargo bump only, PR open by 13:00Z.'
