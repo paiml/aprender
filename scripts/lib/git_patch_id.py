@@ -84,22 +84,65 @@ def oid_candidate(line):
     return line
 
 
+class _State:
+    """The scanner state get_one_patchid threads through one patch."""
+
+    def __init__(self):
+        self.before = self.after = -1
+        self.diff_is_binary = False
+        self.pre_oid = self.post_oid = b""
+        self.ctx = hashlib.sha1()
+        self.result = bytearray(20)
+
+
+def _header_line(st, line, stable):
+    """A line seen before a hunk header count is known. Returns "continue", "break" or None."""
+    if is_binary_marker(line):
+        st.diff_is_binary = True
+        st.before = 0
+        st.ctx.update(st.pre_oid)
+        st.ctx.update(st.post_oid)
+        if stable:
+            st.ctx = flush_one_hunk(st.result, st.ctx)
+        return "continue"
+    if line.startswith(b"index "):
+        ids = parse_index_line(line)
+        if ids is not None:
+            st.pre_oid, st.post_oid = ids
+        return "continue"
+    if line.startswith(b"--- "):
+        st.before = st.after = 1
+        return None
+    return None if line[:1].isalpha() else "break"
+
+
+def _between_hunks(st, line, stable):
+    """A line seen when the previous hunk is fully counted. Returns "continue", "break" or None."""
+    if line.startswith(b"@@ -"):
+        parsed = scan_hunk_header(line)
+        if parsed is not None:
+            st.before, st.after = parsed
+        return "continue"
+    if not line.startswith(b"diff "):
+        return "break"
+    if stable:
+        st.ctx = flush_one_hunk(st.result, st.ctx)
+    st.before = st.after = -1
+    return None
+
+
 def get_one_patchid(lines, pos, stable, verbatim):
     """Returns (patchlen, result_hex, next_oid_hex, new_pos)."""
     patchlen = 0
-    before = after = -1
-    diff_is_binary = False
-    pre_oid = post_oid = b""
-    ctx = hashlib.sha1()
-    result = bytearray(20)
+    st = _State()
     next_oid = None
 
     while pos < len(lines):
         line = lines[pos]
         pos += 1
-        if line.startswith(b"\\ ") and len(line) > 12 and oid_candidate(line) is line:
+        if line.startswith(b"\\ ") and len(line) > 12:
             if verbatim:
-                ctx.update(line)
+                st.ctx.update(line)
             continue
         p = oid_candidate(line)
 
@@ -110,55 +153,38 @@ def get_one_patchid(lines, pos, stable, verbatim):
         if not patchlen and not line.startswith(b"diff "):
             continue
 
-        if before == -1:
-            if is_binary_marker(line):
-                diff_is_binary = True
-                before = 0
-                ctx.update(pre_oid)
-                ctx.update(post_oid)
-                if stable:
-                    ctx = flush_one_hunk(result, ctx)
+        if st.before == -1:
+            act = _header_line(st, line, stable)
+            if act == "continue":
                 continue
-            elif line.startswith(b"index "):
-                ids = parse_index_line(line)
-                if ids is not None:
-                    pre_oid, post_oid = ids
-                continue
-            elif line.startswith(b"--- "):
-                before = after = 1
-            elif not line[:1].isalpha():
+            if act == "break":
                 break
 
-        if diff_is_binary:
+        if st.diff_is_binary:
             if line.startswith(b"diff "):
-                diff_is_binary = False
-                before = -1
+                st.diff_is_binary = False
+                st.before = -1
             continue
 
-        if before == 0 and after == 0:
-            if line.startswith(b"@@ -"):
-                parsed = scan_hunk_header(line)
-                if parsed is not None:
-                    before, after = parsed
+        if st.before == 0 and st.after == 0:
+            act = _between_hunks(st, line, stable)
+            if act == "continue":
                 continue
-            if not line.startswith(b"diff "):
+            if act == "break":
                 break
-            if stable:
-                ctx = flush_one_hunk(result, ctx)
-            before = after = -1
 
         c = line[:1]
         if c in (b"-", b" "):
-            before -= 1
+            st.before -= 1
         if c in (b"+", b" "):
-            after -= 1
+            st.after -= 1
 
         data = line if verbatim else bytes(b for b in line if b not in SPACE)
         patchlen += len(data)
-        ctx.update(data)
+        st.ctx.update(data)
 
-    flush_one_hunk(result, ctx)
-    return patchlen, result.hex(), next_oid or ZERO, pos
+    flush_one_hunk(st.result, st.ctx)
+    return patchlen, st.result.hex(), next_oid or ZERO, pos
 
 
 def main(argv):
