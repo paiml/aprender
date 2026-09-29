@@ -209,6 +209,10 @@ pub struct KernelRow {
     pub selector: String,
     /// The contract that governs it.
     pub contract: String,
+    /// The `kernel@quant` labels (`kernel` alone when the quant is empty) under which `apr` kernel-diff
+    /// receipts name this row (`release_evidence.rs::kernel_label`); absent when no receipt names it. A
+    /// label names one row per backend, so the registry is the only label→`kernel_id` map (#3715 v2 §4).
+    pub labels: Option<Vec<String>>,
 }
 
 /// One per-forward op row (`ops[]`, shape `kernel-registry-v1.op`, #3715 v2 §4): a norm, RoPE,
@@ -252,6 +256,10 @@ pub struct OpRow {
     pub selector: String,
     /// The contract that governs it.
     pub contract: String,
+    /// The `kernel@quant` labels (`kernel` alone when the quant is empty) under which `apr` kernel-diff
+    /// receipts name this row (`release_evidence.rs::kernel_label`); absent when no receipt names it. A
+    /// label names one row per backend, so the registry is the only label→`kernel_id` map (#3715 v2 §4).
+    pub labels: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -433,8 +441,8 @@ impl InputSet {
     }
 }
 
-/// A row's identity for [`InputSet`]: every field but `tolerance`, `name=value` lines in the
-/// struct's declared order. Changing the order is a new input-set version.
+/// A row's identity for [`InputSet`]: every field but `tolerance` and `labels` (a receipt's name for
+/// the row, not what the row runs), `name=value` lines in the struct's declared order. Changing the order is a new input-set version.
 pub fn row_key(row: &KernelRow) -> String {
     let f: [(&str, String); 19] = [
         ("kernel_id", row.kernel_id.clone()),
@@ -521,6 +529,47 @@ fn repeated_id<'a>(kernels: &'a [KernelRow], ops: &'a [OpRow]) -> Option<&'a str
         .find(|id| !seen.insert(*id))
 }
 
+/// Whether `l` is a receipt label, `kernel` or `kernel@quant`, each part `[a-z0-9_]+`.
+fn is_label(l: &str) -> bool {
+    let part = |p: &str| {
+        !p.is_empty()
+            && p.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    };
+    match l.split_once('@') {
+        Some((k, q)) => part(k) && part(q),
+        None => part(l),
+    }
+}
+
+/// The first bad `labels` entry across both row lists: an empty list, a malformed label, or a
+/// `(backend, label)` two rows (or one row twice) share. A receipt label carries no backend, so one
+/// label may name one row per backend and no more.
+fn bad_label(kernels: &[KernelRow], ops: &[OpRow]) -> Option<String> {
+    let mut seen = std::collections::BTreeMap::new();
+    let rows = kernels
+        .iter()
+        .map(|r| (&r.kernel_id, &r.backend, &r.labels))
+        .chain(ops.iter().map(|o| (&o.kernel_id, &o.backend, &o.labels)));
+    for (id, backend, labels) in rows {
+        let Some(labels) = labels else { continue };
+        if labels.is_empty() {
+            return Some(format!("`{id}` has an empty `labels` list"));
+        }
+        for l in labels {
+            if !is_label(l) {
+                return Some(format!("`{id}` has malformed label `{l}`"));
+            }
+            if let Some(other) = seen.insert((backend.as_str(), l.as_str()), id) {
+                return Some(format!(
+                    "label `{l}` on {backend} names both `{other}` and `{id}`"
+                ));
+            }
+        }
+    }
+    None
+}
+
 /// The table cell for `(backend slot, type id)`.
 fn cell_index(slot: (usize, usize)) -> usize {
     slot.0 * MAX_TYPE_ID + slot.1
@@ -577,11 +626,33 @@ impl Registry {
         if let Some(id) = repeated_id(&doc.kernels, &doc.ops) {
             return Err(format!("kernel registry: kernel_id `{id}` names two rows"));
         }
+        if let Some(why) = bad_label(&doc.kernels, &doc.ops) {
+            return Err(format!("kernel registry: {why}"));
+        }
         Ok(Self {
             rows: doc.kernels,
             ops: doc.ops,
             table,
         })
+    }
+
+    /// The `kernel_id` a receipt label names on `backend` — a `kernels[]` or `ops[]` row — or `None`
+    /// when no row carries it. Parse refused a label two rows share, so the answer is unique.
+    pub fn kernel_id_for_label(&self, backend: Backend, label: &str) -> Option<&str> {
+        let has = |b: &str, ls: &Option<Vec<String>>| {
+            Backend::parse(b) == Some(backend) && ls.iter().flatten().any(|l| l == label)
+        };
+        self.rows
+            .iter()
+            .filter(|r| has(&r.backend, &r.labels))
+            .map(|r| r.kernel_id.as_str())
+            .chain(
+                self.ops
+                    .iter()
+                    .filter(|o| has(&o.backend, &o.labels))
+                    .map(|o| o.kernel_id.as_str()),
+            )
+            .next()
     }
 
     /// Every row, in document order.
@@ -1616,6 +1687,169 @@ mod tests {
                 o.kernel_id
             );
         }
+    }
+
+    /// FALSIFY-KREG-014: a receipt label names one row per backend. Parse refuses an empty list, a
+    /// malformed label and a `(backend, label)` two rows share; the same label on two backends is two rows.
+    #[test]
+    fn falsify_kreg_014_the_label_case_table() {
+        let labelled = |id: &str, backend: &str, labels: &str| {
+            op_json(id, &format!(r#""labels":{labels},"#))
+                .replace(r#""backend":"cpu""#, &format!(r#""backend":"{backend}""#))
+        };
+        let good = Registry::parse(&op_doc(
+            &[],
+            &[
+                labelled("cpu.rmsnorm.f32", "cpu", r#"["rmsnorm@f32","rmsnorm"]"#),
+                labelled("cuda.rmsnorm.f32", "cuda", r#"["rmsnorm@f32"]"#),
+            ],
+        ))
+        .expect("one label per backend parses");
+        assert_eq!(
+            good.kernel_id_for_label(Backend::Cuda, "rmsnorm@f32"),
+            Some("cuda.rmsnorm.f32")
+        );
+        assert_eq!(
+            good.kernel_id_for_label(Backend::Cpu, "rmsnorm"),
+            Some("cpu.rmsnorm.f32")
+        );
+        assert_eq!(good.kernel_id_for_label(Backend::Cuda, "rmsnorm"), None);
+        assert_eq!(good.kernel_id_for_label(Backend::Wgpu, "rmsnorm@f32"), None);
+        let k = row_json("cpu.matvec.q4_k", "cpu", GGUF_TYPE_Q4_K, "row_major").replacen(
+            '{',
+            r#"{"labels":["q4k_gemv@q4_k"],"#,
+            1,
+        );
+        let with_kernel = Registry::parse(&op_doc(std::slice::from_ref(&k), &[]))
+            .expect("a labelled kernels[] row parses");
+        assert_eq!(
+            with_kernel.kernel_id_for_label(Backend::Cpu, "q4k_gemv@q4_k"),
+            Some("cpu.matvec.q4_k")
+        );
+        let refused: [(&str, String, &str); 6] = [
+            (
+                "an empty list",
+                op_doc(&[], &[labelled("cpu.rmsnorm.f32", "cpu", "[]")]),
+                "empty `labels`",
+            ),
+            (
+                "an upper-case label",
+                op_doc(
+                    &[],
+                    &[labelled("cpu.rmsnorm.f32", "cpu", r#"["RMSNorm@f32"]"#)],
+                ),
+                "malformed label `RMSNorm@f32`",
+            ),
+            (
+                "an empty quant",
+                op_doc(
+                    &[],
+                    &[labelled("cpu.rmsnorm.f32", "cpu", r#"["rmsnorm@"]"#)],
+                ),
+                "malformed label `rmsnorm@`",
+            ),
+            (
+                "two quants",
+                op_doc(&[], &[labelled("cpu.rmsnorm.f32", "cpu", r#"["a@b@c"]"#)]),
+                "malformed label `a@b@c`",
+            ),
+            (
+                "one label twice on a row",
+                op_doc(&[], &[labelled("cpu.rmsnorm.f32", "cpu", r#"["x","x"]"#)]),
+                "names both `cpu.rmsnorm.f32` and `cpu.rmsnorm.f32`",
+            ),
+            (
+                "one label on a kernel and an op of one backend",
+                op_doc(
+                    &[k],
+                    &[labelled("cpu.rmsnorm.f32", "cpu", r#"["q4k_gemv@q4_k"]"#)],
+                ),
+                "names both `cpu.matvec.q4_k` and `cpu.rmsnorm.f32`",
+            ),
+        ];
+        for (case, json, want) in refused {
+            let e = Registry::parse(&json)
+                .err()
+                .unwrap_or_else(|| panic!("{case}: parsed"));
+            assert!(e.contains(want), "{case}: {e}");
+        }
+    }
+
+    /// Every label a kernel-diff receipt in the tree dispatches or judges names exactly one committed
+    /// CUDA row (the receipts' hosts carry `sm`/`cc`), so a receipt row always reaches a registry id.
+    #[test]
+    fn every_committed_receipt_label_names_a_cuda_row() {
+        use std::path::{Path, PathBuf};
+        fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.extension().is_some_and(|x| x == "json") {
+                    out.push(p);
+                }
+            }
+        }
+        fn label(v: &serde_json::Value) -> Option<String> {
+            let quant = |q: &serde_json::Value| q.as_str().map(str::to_lowercase);
+            match v {
+                serde_json::Value::String(k) => Some(k.clone()),
+                _ => {
+                    let k = v.get("kernel")?.as_str()?;
+                    match v.get("quant").and_then(quant).filter(|q| !q.is_empty()) {
+                        Some(q) => Some(format!("{k}@{q}")),
+                        None => Some(k.to_string()),
+                    }
+                },
+            }
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = Vec::new();
+        walk(&root.join("tests/fixtures"), &mut files);
+        walk(&root.join("evidence"), &mut files);
+        let r = registry().expect("registry");
+        let mut seen = std::collections::BTreeSet::new();
+        for f in files {
+            let Ok(text) = std::fs::read_to_string(&f) else {
+                continue;
+            };
+            let Ok(rc) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            if rc.get("schema").and_then(|s| s.as_str()) != Some("apr-kernel-diff-receipt/v1") {
+                continue;
+            }
+            let dispatched = rc["dispatch"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|d| d["kernels"].as_array().into_iter().flatten());
+            let judged = rc["rows"].as_array().into_iter().flatten();
+            for l in dispatched.chain(judged).filter_map(label) {
+                let id = r.kernel_id_for_label(Backend::Cuda, &l);
+                assert!(
+                    id.is_some(),
+                    "{}: label `{l}` names no cuda row",
+                    f.display()
+                );
+                seen.insert(l);
+            }
+        }
+        assert!(
+            seen.contains("q4k_gemv@q4_k") && seen.contains("rmsnorm@f32"),
+            "the walk found no kernel-diff receipt labels: {seen:?}"
+        );
+        assert_eq!(
+            r.kernel_id_for_label(Backend::Cuda, "q4k_gemv@q4_k"),
+            Some("cuda.gemv.q4_k")
+        );
+        assert_eq!(
+            r.kernel_id_for_label(Backend::Cuda, "rmsnorm@f32"),
+            Some("cuda.rmsnorm.f32")
+        );
     }
 }
 
