@@ -74,9 +74,7 @@ use super::utils::verbose;
 enum KvLen {
     /// Exactly this many positions (`new`, `with_max_seq_len`).
     Fixed(usize),
-    /// The model's context, capped by free VRAM (#3715, `for_session`).
-    FitContext,
-    /// K1 (#4603): as `FitContext`, budgeting the server's batched-KV slots too and
+    /// K1 (#4603): the model's context capped by free VRAM, budgeting the server's batched-KV slots too and
     /// never below serve's old fixed length (`session_kv::serving_kv_len`).
     FitServing,
 }
@@ -653,22 +651,7 @@ impl OwnedQuantizedModelCuda {
         Self::build(model, device_ordinal, KvLen::Fixed(max_seq_len))
     }
 
-    /// #3715: a chat/session model. Its turn length is unknown at load, so the device KV
-    /// takes the model's whole context when the card has room for it after the weights
-    /// and the prefill cache, else the old 2048 (see `session_kv::session_kv_len`).
-    ///
-    /// # Errors
-    ///
-    /// The same CUDA / capability / quant / MoE errors as [`Self::with_max_seq_len`].
-    pub fn for_session(
-        model: OwnedQuantizedModel,
-        device_ordinal: i32,
-    ) -> std::result::Result<Self, CudaInitError> {
-        let model = Self::check_not_moe(model)?;
-        Self::build(model, device_ordinal, KvLen::FitContext)
-    }
-
-    /// K1 (#4603): an `apr serve` model. Like [`Self::for_session`] the device KV takes
+    /// K1 (#4603): an `apr serve` model. The device KV takes
     /// the model's context when it fits, but the VRAM budget also holds
     /// `session_kv::SERVE_BATCH_SLOTS` batched-KV slots of that length, because the
     /// continuous-batching scheduler allocates them beside the session KV
@@ -792,9 +775,10 @@ impl OwnedQuantizedModelCuda {
         if executor.gpu_profile.disable_fp8_for_qk_norm(
             model.config.constraints.has_qk_norm,
             std::env::var("FP8_PREFILL").ok().as_deref(),
+            std::env::var("BATCHED_PREFILL").ok().as_deref(),
         ) {
             eprintln!(
-                "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off, FP16 batched prefill — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 overrides)",
+                "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off and serial prefill in use — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 / BATCHED_PREFILL=1 override)",
                 model.config.architecture
             );
         }
@@ -826,28 +810,8 @@ impl OwnedQuantizedModelCuda {
         let head_dim = model.config.hidden_dim / model.config.num_heads;
         let max_seq_len = match kv_len {
             KvLen::Fixed(n) => n,
-            KvLen::FitContext => Self::session_kv_len(&executor, &model, memory_info.0),
             KvLen::FitServing => Self::serving_kv_len(&executor, &model, memory_info.0),
         };
-
-        // #3715: the FP16 batched prefill a QK-norm model now takes must fit beside
-        // its cache; when it does not (Qwen3-8B on 24 GB) the model keeps serial.
-        {
-            let r = Self::resident_estimate(&executor, &model);
-            let need = r.weights + r.cache + r.reserve + r.kv_per_pos * max_seq_len;
-            if executor.gpu_profile.serial_when_fp16_prefill_does_not_fit(
-                model.config.constraints.has_qk_norm,
-                std::env::var("BATCHED_PREFILL").ok().as_deref(),
-                need,
-                memory_info.0,
-            ) {
-                eprintln!(
-                    "[#3715] serial prefill: the FP16 batched prefill needs {:.1} GB and {:.1} GB is free (BATCHED_PREFILL=1 overrides)",
-                    need as f64 / 1e9,
-                    memory_info.0 as f64 / 1e9,
-                );
-            }
-        }
 
         if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
             return Err(CudaInitError {
@@ -884,33 +848,8 @@ impl OwnedQuantizedModelCuda {
         Ok(cuda_model)
     }
 
-    /// #3715: the device KV length for [`Self::for_session`], from the VRAM free
-    /// before load minus what load will make resident (see [`Self::resident_estimate`]).
-    fn session_kv_len(
-        executor: &crate::cuda::CudaExecutor,
-        model: &OwnedQuantizedModel,
-        free_vram: usize,
-    ) -> usize {
-        let r = Self::resident_estimate(executor, model);
-        let len = session_kv::session_kv_len(
-            model.config.context_length,
-            r.kv_per_pos,
-            free_vram,
-            r.weights + r.cache,
-            r.reserve,
-        );
-        eprintln!(
-            "[#3715] session device KV: {len} positions (context {}, {:.1} GB free, {:.1} GB weights + {:.1} GB prefill cache resident)",
-            model.config.context_length,
-            free_vram as f64 / 1e9,
-            r.weights as f64 / 1e9,
-            r.cache as f64 / 1e9,
-        );
-        len
-    }
-
-    /// K1 (#4603): the device KV length for [`Self::for_serving`] -- the session sizing
-    /// with the server's batched slots budgeted and serve's old 4096 as the floor
+    /// K1 (#4603): the device KV length for [`Self::for_serving`] -- the model's context
+    /// capped by free VRAM, with the server's batched slots budgeted and serve's old 4096 as the floor
     /// (see `session_kv::serving_kv_len`).
     fn serving_kv_len(
         executor: &crate::cuda::CudaExecutor,

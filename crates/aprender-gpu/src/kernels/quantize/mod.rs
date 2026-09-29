@@ -33,7 +33,6 @@ use crate::ptx::PtxKernel;
 
 mod dot;
 mod dp4a_gemm;
-mod f16_iq4xs_dequant;
 mod fp16_tensor;
 mod fused;
 mod fused_gemm;
@@ -50,7 +49,6 @@ mod q8_0_dequant;
 
 pub use dot::{PackedDp4aQ4KQ8Kernel, Q4KQ8DotKernel};
 pub use dp4a_gemm::Dp4aQ4KGemmKernel;
-pub use f16_iq4xs_dequant::{F16DequantKernel, Iq4XsDequantKernel};
 pub use fp16_tensor::{
     Fp16Q4KGemvKernel, InterleavedWmmaQ4KGemmKernel, MultiWarpTensorCoreQ4KGemmKernel,
     TensorCoreQ4KGemmKernel, W4a16WmmaQ4KGemmKernel,
