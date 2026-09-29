@@ -436,6 +436,7 @@ jobs:
           set -euo pipefail
           bash scripts/check_ci_gate_mutants_table_rule.sh --self-test
           bash scripts/check_ci_gate_mutants_table_rule.sh
+          bash scripts/check_mutants_feature_groups.sh
       - name: Is this head ref judged by the survivor table?
         id: decide
         env:

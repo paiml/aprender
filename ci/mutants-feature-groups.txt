@@ -1,0 +1,12 @@
+# ci/mutants-feature-groups.txt -- files whose mutants only compile under a NON-default feature (#4587 A', M1 FALSE-RED).
+#
+# cargo-mutants tests with default features, so a module behind `#[cfg(feature = "x")]` never compiles and every
+# mutant in it reads MISSED, whatever its tests say. `--features pkg/feat` cannot be passed workspace-wide (cargo
+# refuses it for a selected package that does not own the feature), so mutants_table_shard.sh runs each row below as
+# its own `cargo mutants -p PACKAGE --features FEATURES --file FILE`, excludes FILE from the default run, and merges
+# the outcomes. The --list universe is untouched: every listed mutant must still be tested exactly once, so a row
+# whose run tests nothing is a MISSING gap (RED), never a skip. cuda is never a row: no runner has a GPU.
+#
+# package|features|file|test args (what goes after `--`)
+aprender-common|cli-roles|crates/aprender-common/src/cli_roles.rs|--lib
+aprender-contracts-cli|update-check,build-sha|crates/aprender-contracts-cli/src/main.rs|--lib --test cli_integration
