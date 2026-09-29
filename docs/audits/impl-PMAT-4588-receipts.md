@@ -35,7 +35,7 @@ was dropped from the ticket list.
 | ladder checker has a case table | `scripts/check_model_ladder.sh` | `bash scripts/check_model_ladder.sh --self-test` | 0, `152 case(s), 0 bad` |
 | qwen3-8b-q4km rung is required | already `required: true` at base (#3724) | — | unchanged by this PR |
 | live ladder verdict | — | `bash scripts/check_model_ladder.sh` | RED by design until `evidence/crux/0.70.0` receipts exist; it is a release-time gate, not counted as a pass |
-| cells producer | `scripts/check_ladder_cells_producer.sh` | run as a systemd unit (>170 s) | NOT_MEASURED at commit time; 19 case rows ok so far, mutant rows still running |
+| cells producer | `scripts/check_ladder_cells_producer.sh` | `bash scripts/check_ladder_cells_producer.sh` (systemd unit, >170 s) | 0, `all cases and mutants as expected` (25 ok rows, 0 bad) |
 
 ## PMAT-4445: session forget_prefix
 
