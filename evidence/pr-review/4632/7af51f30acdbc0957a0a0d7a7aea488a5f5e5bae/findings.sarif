@@ -1,0 +1,271 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.30.0",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"wasmtime dependency bump\" --limit 3"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-AUDIT-001",
+          "level": "note",
+          "message": {
+            "text": "Independently re-measured: cargo audit over the HEAD Cargo.lock (git show 7af51f30:Cargo.lock) reports NO vulnerabilities (rc=0, 1390 crate dependencies). The same command over the BASE lock (git show 2817c6d9:Cargo.lock) exits rc=1 with exactly 2 vulnerabilities, RUSTSEC-2026-0315 and RUSTSEC-2026-0316 (base output sha256 55bc43e6d250708e58331548d970edc17f0f27c658cf68f33fbf8d0616f5bd7a). Advisory DB commit f23b7682 (2026-09-29T09:32:15+02:00), the same one the audit document cites. stdout_sha256 below is the HEAD run (stdout and stderr together)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "audit",
+              "--no-fetch",
+              "--db",
+              "/home/noah/.cargo/advisory-db",
+              "-f",
+              "/tmp/claude-1000/pr4632-review/lock.head"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7bde9ba079eebd9cb7642ee5a84bd4f06a9f4887867eb0a82f3e651ba1f16056",
+            "failure_scenario": "If the audit document claim (audit red on base, green on head) were only copied from the author, a lock that still resolved wasmtime 47.0.4 would ship with the security job still red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DENY-001",
+          "level": "note",
+          "message": {
+            "text": "cargo deny --offline check advisories over the worktree at HEAD: rc=0, 'advisories ok'. No deny.toml, .cargo/audit.toml or workflow file is in the diff (git diff --name-only base..head | grep -E deny.toml|audit.toml|workflows is empty), so no advisory ignore was added and no gate was weakened."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "deny",
+              "--offline",
+              "check",
+              "advisories"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "799fc05e6513bf365cc7565ea51cc5cb9ca6690b1cd1fe7777339be83437131b",
+            "failure_scenario": "A green cargo audit reached by adding an ignore entry would hide the two advisories instead of fixing them; the diff touches no ignore surface.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DELTA-001",
+          "level": "note",
+          "message": {
+            "text": "Recomputed the lock delta with tomllib over git show base:Cargo.lock and git show head:Cargo.lock: 38 packages changed version set or checksum. The audit document lock-delta table has 38 rows (grep count over docs/audits/security-PMAT-4633-wasmtime-48.md). The wasmtime family moves 47.0.4 -> 48.0.3, cranelift 0.134.4 -> 0.135.3, and wasm-tools crates 0.252/0.254/0.259; wasm-metadata and wit-component are new at 0.254.0. Nothing outside the wasmtime/wasm-tools subtree changed (regalloc2 0.15.1 -> 0.15.2 is a cranelift dependency)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "/tmp/claude-1000/pr4632-review/lockdelta.py",
+              "lock.base",
+              "lock.head"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "49331900c48d42e8479ec73c9a7ab5449ead567d606eaa9ea66cf98f8bead1d7",
+            "failure_scenario": "A hand-written lock-delta table that omitted a changed package would let an unrelated dependency change ride in under a security bump unreviewed, because reviewers never see the raw lock.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-TREE-001",
+          "level": "note",
+          "message": {
+            "text": "Acceptance claim checked: under default features, cargo tree -i wasmtime --workspace --offline --locked exits 101 with 'package ID specification wasmtime did not match any packages' (stdout empty), i.e. wasmtime is not in the resolved graph a default build compiles."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "tree",
+              "-i",
+              "wasmtime",
+              "--workspace",
+              "--offline",
+              "--locked"
+            ],
+            "exit_code": 101,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "If wasmtime were reachable under default features, the 1.95 MSRV of the 48 line would break the 1.93.0 pinned build for every user, not just --features runtime.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-MSRV-001",
+          "level": "warning",
+          "message": {
+            "text": "The Cargo.toml comment (lines 370-376) says NOTHING in the workspace, workflows, scripts or the Makefile enables aprender-test-lib runtime, so the MSRV never fires. That is not true of the Makefile: cargo tree -i wasmtime --workspace --all-features resolves wasmtime v48.0.3 via aprender-test-lib, and the Makefile runs --workspace --all-features at test-full (lines 112/114), the coverage target (line 804) and both cargo-mutants targets (lines 1138/1154). wasmtime-48.0.3 declares rust-version 1.95.0 (registry Cargo.toml line 14) against rust-toolchain.toml channel 1.93.0. This is PRE-EXISTING, not introduced by the diff: wasmtime-47.0.4 declared 1.94.0, also above 1.93.0, so those local targets were already blocked; the diff moves the gap from 1.94 to 1.95 and re-states an over-broad claim. Advisory only: CI (.github/workflows) does not use --all-features, and the diff scope is a security bump."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "tree",
+              "-i",
+              "wasmtime",
+              "--workspace",
+              "--offline",
+              "--locked",
+              "--all-features"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7cbfe3d2b38bd7960c0571375cd4b4da536d4f72d9dfd41615320ab2fa44817b",
+            "failure_scenario": "A developer running make test-full or make coverage on the pinned 1.93.0 toolchain gets an MSRV compile error from wasmtime 48.0.3 and reads it as a fault of the change under test, because the comment says no target enables the feature.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-EXCL-001",
+          "level": "note",
+          "message": {
+            "text": "crates/aprender-test (an old workspace root shell, listed in Cargo.toml exclude at line 132) still declares wasmtime = \"38\" (line 42). 38.x is not in the patched ranges of either advisory (patched: >=36.0.16 <37, >=48.0.3 <49, >=49.0.1). It is excluded from the workspace, has no entry in Cargo.lock and is not scanned by cargo audit, so it is not a defect of this PR, only a residual unpatched pin outside the audited lock."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "wasmtime",
+              "crates/aprender-test/Cargo.toml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c0ba2046d38e49fb939ef01b85cee9d959b0574a7a93fc6c82430fe0d66f93aa",
+            "failure_scenario": "If crates/aprender-test were ever re-added as a workspace member, it would resolve wasmtime 38 and re-open both advisories while a green cargo audit on today lock says nothing about it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DOC-001",
+          "level": "note",
+          "message": {
+            "text": "Cargo.toml comment lines 363-369 keep the sentence that runtime.rs needed ZERO source changes and its 73 tests pass unmodified. That sentence describes the 43 -> 47 bump; the audit document reports 45 runtime:: tests for the 48 bump (of 6744 lib tests). Both can be true of different runs, but a reader of the bump-48 comment will read 73 as the current count."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reviewer judgement from comparing two numbers in the diff (73 in the Cargo.toml comment, 45 in the audit document); not re-counted by running the test suite, which this review does not build.",
+            "failure_scenario": "A stale test count in a dependency comment is read as the current baseline, so a later drop from 45 to fewer runtime tests is compared against 73 and misjudged.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --model gemini-3.8-flash-high --output-format json --json-schema .pr-review-schema.json --print-timeout 20m --dangerously-skip-permissions (attempt 4 of 4; disposable tree without the repo Cargo.lock)",
+          "toolExecutionNotifications": [
+            {
+              "level": "warning",
+              "message": {
+                "text": "agy attempt 1 (requested model gpt-oss-120b-medium) exited rc=3, .status ERROR, no .structured_output: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server (retryable, error_id 43978da8-08f8-4928-a445-3c62a8bfdff1-39-2010). 683215 input / 8871 output tokens were spent before the truncation. stderr sha256 7149793d7327dd760237fa74914745ac7c112bc05a5f2095bd24d7ddd637720f."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "-p",
+                  "<prompt>",
+                  "--model",
+                  "gpt-oss-120b-medium",
+                  "--print-timeout",
+                  "20m"
+                ],
+                "exit_code": 3,
+                "stdout_sha256": "7149793d7327dd760237fa74914745ac7c112bc05a5f2095bd24d7ddd637720f"
+              }
+            },
+            {
+              "level": "warning",
+              "message": {
+                "text": "agy attempt 2 (gpt-oss-120b-medium) exited rc=3 again, .status ERROR, no .structured_output: the same 503 No capacity available (error_id 4305c4ae-130c-4a37-a47c-b252ec4876d2-21-2010). 341276 input / 8179 output tokens spent. stderr sha256 8dbc98640b05032f1ef93c8e0c7fbd4c565fbc46f776c8a75c0253c1101b529c. Substituted to gemini-3.8-flash-high on the coordinator relaying the operator fallback ruling."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "-p",
+                  "<prompt>",
+                  "--model",
+                  "gpt-oss-120b-medium",
+                  "--print-timeout",
+                  "20m"
+                ],
+                "exit_code": 3,
+                "stdout_sha256": "8dbc98640b05032f1ef93c8e0c7fbd4c565fbc46f776c8a75c0253c1101b529c"
+              }
+            },
+            {
+              "level": "warning",
+              "message": {
+                "text": "agy attempt 3 (substitute gemini-3.8-flash-high) was launched WITHOUT --dangerously-skip-permissions, a reviewer error in the invocation and not an agy fault: rc=0, .status SUCCESS, no .structured_output, stderr says a tool required the command permission that headless mode cannot prompt for and it was auto-denied. rc 0 is not a review; discarded, not counted as a consultation. stderr sha256 6f9b232ca1f3b43aa72e2ba63698c09b0796b612d5a17cf05efee31e6c79b713."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "-p",
+                  "<prompt>",
+                  "--model",
+                  "gemini-3.8-flash-high",
+                  "--print-timeout",
+                  "20m"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "6f9b232ca1f3b43aa72e2ba63698c09b0796b612d5a17cf05efee31e6c79b713"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "agy attempt 4 (gemini-3.8-flash-high, attempt 3 invocation plus --dangerously-skip-permissions): rc=0, .status SUCCESS, structured_output present, reviewed=true, schema-valid (check-jsonschema against .pr-review-schema.json: ok), findings=[]. 916532 input / 40674 output / 27738 thinking tokens, 394 s. Whole-response sha256 6bf4921e1eea9869815fa7e35c9fac3f559cc335b61e771122270078bd3b305a. agy raised no finding, so the primary 7 findings are primary-only and none is contradicted by an agy finding."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "-p",
+                  "<prompt>",
+                  "--model",
+                  "gemini-3.8-flash-high",
+                  "--output-format",
+                  "json",
+                  "--json-schema",
+                  ".pr-review-schema.json",
+                  "--print-timeout",
+                  "20m",
+                  "--dangerously-skip-permissions"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "6bf4921e1eea9869815fa7e35c9fac3f559cc335b61e771122270078bd3b305a"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

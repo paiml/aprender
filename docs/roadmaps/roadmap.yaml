@@ -22331,6 +22331,28 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4594
+  github_issue: 4594
+  item_type: task
+  title: 'fix(guard): check_silicon_coverage.sh scores a short API run listing as STALE 9d (false RED)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-57
+  created: 2026-09-28T14:00:00Z
+  updated: 2026-09-28T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Every created>= listing is cross-checked against the unfiltered newest run; a listing missing a run inside the lookback is re-read once, and still short is NO-GO (unknown, rc 2), never STALE
+  - 'Falsifier: stale evidence (newest nightly 9d old, whole listing) stays RED (self-test row h-real-stale, rc 1)'
+  - 'Falsifier: run 36364433328''s real jobs, fresh, are GREEN (row g-real-green, rc 0)'
+  - The 11:25Z short "21 of 21" listing (run 36410817478) scores GREEN on a whole re-read and NO-GO when short on every read; main's reader scores both STALE (rows i, j)
+  - No lookback window, page cap or policy limit changes
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator ruling 2026-09-28 13:53Z (via the cop): own small PR, first in the queue, on main before the #4512 push.'
 - id: PMAT-4604
   github_issue: 4604
   item_type: task
@@ -22349,3 +22371,25 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4633
+  github_issue: 4633
+  item_type: task
+  title: 'fix(deps): wasmtime 47.0.4 -> 48.0.3 for RUSTSEC-2026-0315/0316 (security job red on main and every PR)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-00
+  created: 2026-09-29T12:17:38Z
+  updated: 2026-09-29T12:17:38Z
+  spec: null
+  acceptance_criteria:
+  - The workspace wasmtime pin is 48.0.3 and Cargo.lock resolves wasmtime 48.0.3 (cargo metadata --locked rc=0)
+  - cargo audit on the branch Cargo.lock reports no RUSTSEC-2026-0315/0316 (rc=0); on origin/main it reports both
+  - cargo deny check rc=0 (advisories, bans, licenses, sources)
+  - No audit or deny ignore is added and no gate is relaxed; the diff is Cargo.toml, Cargo.lock, this roadmap entry (with its roadmap.yaml copy) and docs/audits/security-PMAT-4633-wasmtime-48.md, the C45 review input that stands in for the raw Cargo.lock, only
+  - wasmtime stays optional behind aprender-test-lib's runtime feature (cargo tree -i wasmtime --workspace finds no active path), so the 1.95 MSRV of the 48 line does not reach the 1.93 pin
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cop ruling 2026-09-29 12:0xZ: P0 main fix, Cargo bump only, PR open by 13:00Z.'

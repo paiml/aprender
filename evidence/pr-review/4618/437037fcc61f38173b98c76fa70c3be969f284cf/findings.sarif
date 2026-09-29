@@ -1,0 +1,121 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "pmat",
+        "status": "consulted-clean",
+        "index_commit": "437037fcc61f38173b98c76fa70c3be969f284cf",
+        "index_is_ancestor": true,
+        "index_worktree_dirty": false,
+        "transport": "cli",
+        "transport_unavailable": ["mcp: not probed this run -- CLI answered directly and is the transport used throughout"],
+        "complexity_delta": [],
+        "tdg_delta": [],
+        "satd_introduced": [],
+        "complexity_delta_status": "not-applicable: pmat's complexity walker found no source files under a .sh path ('no files were analyzed... no source files were found'); this is a tool limitation on a bash-only diff, not a clean zero. Re-confirmed this run.",
+        "satd_status": "0 SATD violations introduced (files_discovered=1, files_analyzed=1 -- SATD's walker DOES reach bash, asymmetric with the complexity walker above). Re-confirmed this run.",
+        "duplication_hits": [],
+        "duplication_coverage": {
+          "rust": "lexical",
+          "shell": "lexical",
+          "python": "lexical",
+          "config": "lexical",
+          "docs": "lexical",
+          "other": "lexical",
+          "sibling_branches": "lexical",
+          "merge_base_to_main": "lexical"
+        },
+        "duplication_horizon": [
+          "head=437037fcc61f38173b98c76fa70c3be969f284cf",
+          "siblings=refs/remotes/origin/* unmerged into origin/main",
+          "merge_base_to_main=194294f768d03f1dbc3a7eb7a8085502ae58acc5..refs/remotes/origin/main"
+        ],
+        "horizon_branches_total": 1123,
+        "horizon_branches_scanned": 1123,
+        "merge_base_to_main_files": 34,
+        "symbols_searched": 6,
+        "duplication_scan_command": "scripts/pr_review_duplication_scan.sh --base 194294f768d03f1dbc3a7eb7a8085502ae58acc5 --head 437037fcc61f38173b98c76fa70c3be969f284cf --json <path> (no --rust-semantic: diff is .sh/.yml/evidence-json only)",
+        "duplication_scan_wall_seconds": 43,
+        "pmat_rust_only_limitation_note": "pmat's semantic query index is Rust-only (PRREV-007/009); it cannot see this bash/yaml/json diff at all. scripts/pr_review_duplication_scan.sh's lexical sweep is what actually covered it: 0 hits across the full 1123-branch horizon (6 needles: the 1 arm4.sh symbol carried over plus 5 new filename needles from the workflow line and the 3 evidence files this diff now includes over 78eb06a).",
+        "prior_review_findings_status": "The prior review of this PR (head 4c12e254, receipt at evidence/pr-review/4618/4c12e254.../findings.sarif) reported two pmat findings against that head: mutation-gap-filter-all (blocking, B3) and jq-crash-on-non-object-reverified (advisory). This head's diff over the prior 78eb06a review adds only a one-line workflow step-name fix (33 rows -> 39 rows, correcting a stale count check_pr_review_counts.sh had flagged RED) plus this review's own evidence commit and its CI-signed .minisig; scripts/check_pr_review_arm4.sh itself is BYTE-IDENTICAL to 78eb06a (confirmed: `git diff 78eb06a..437037fc -- scripts/check_pr_review_arm4.sh` is empty). Both prior findings remain resolved for the reasons given in the 78eb06a review: the check-sig-api-all-attempts and check-sig-prior-array-text self-test rows, and the jq selector's `if type == \"object\" then ... else empty end` guard (line 197)."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a (manual mutation; no dedicated mutate_*.sh harness for this script)",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "mutation",
+        "status": "consulted-clean",
+        "scope": "guard",
+        "scope_trigger": "mutation-trigger predicate: check_pr_review_receipt.sh --match-mutation-trigger scripts/check_pr_review_arm4.sh returned rc=0",
+        "target_files": ["scripts/check_pr_review_arm4.sh"],
+        "attempted": 2,
+        "killed": 2,
+        "survivors": [],
+        "method": "manual mutation: byte-diffed the reviewed HEAD file, swapped each mutant in place of scripts/check_pr_review_arm4.sh inside a cp -r filesystem copy of the reviewed worktree (no git mutation of the reviewed repo), ran `bash scripts/check_pr_review_arm4.sh --self-test` from that copy, recorded row-level pass/fail, then restored the original file and verified `git status --porcelain` was empty before and after both experiments.",
+        "mutant_1": "filter=all URL-parameter removal (the survivor on the prior head, 4c12e254). Against this head it is now CAUGHT: exactly 1 row fails, check-sig-api-all-attempts, rc=1 (wanted 0); all other 38 rows still pass (39 rows total on this head vs 37 on the prior).",
+        "mutant_2": "task-mandated control: revert the jq selector to the pre-PR single-run form (`sort_by(.completed_at // \"\") | last | (.output.text // \"{}\") | fromjson | .[$k] // empty`), keep filter=all. Re-verified against this head (not just inherited from the prior review): 3 rows fail -- check-sig-prior-attempt, check-sig-prior-array-text, check-sig-api-all-attempts -- all rc=1 (wanted 0). Killed.",
+        "note": "Both mutants that this PR's own new self-test rows exist to catch are caught on this head. The prior review's sole blocking finding (mutation-gap-filter-all) is resolved by the new check-sig-api-all-attempts row, which -- unlike every other check-sig-* row -- deliberately does NOT set ARM4_CHECK_RUNS_FILE, forcing check_runs_json() to build and execute the real (gh-shimmed) API URL string, so a dropped filter=all is now exercised, not bypassed."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "n/a (not-triggered)",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "crux",
+        "status": "not-triggered",
+        "trigger_reason": "Mechanical predicate: check_pr_review_receipt.sh --match-crux-surface and --match-shipped-surface both returned rc=1 for scripts/check_pr_review_arm4.sh. This is an internal CI guard script, not a CLI/HTTP/MCP/config/output-format surface."
+      }
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.12",
+          "informationUri": "n/a",
+          "rules": []
+        }
+      },
+      "results": [],
+      "properties": {
+        "consultation": "antigravity",
+        "status": "consulted-clean",
+        "model_id": "gemini-3.1-pro-high",
+        "model_family": "google/gemini",
+        "binary_path": "/home/noah/.local/bin/agy",
+        "exit_code": 0,
+        "duration_seconds": 116.04306193,
+        "usage": {"input_tokens": 112475, "output_tokens": 8750, "thinking_tokens": 7478, "cache_read_tokens": 448053, "total_tokens": 121225},
+        "output_check": {"structured_output_present": true, "reviewed": true, "schema_valid": true},
+        "reverified_by_primary": true,
+        "divergence": {"agreed": 0, "agy_only": 0, "primary_only": 0, "contradicted": 0},
+        "note": "Run fresh against this head's diff in a disposable tree (cp -r of the reviewed worktree with .git removed, so no git mutation of the reviewed repo). Structured output: reviewed=true, findings=[]. Zero findings -- consistent with both of the prior review's antigravity findings (bypassed-api-filter-test, jq-crash-on-non-object) now being resolved by this head's new self-test rows and type guard, and no new issue surfaced. The prior review's third antigravity finding (api-pagination-missing) was never adopted by the primary reviewer (primary_verdict: agy_only, unconfirmed against the live API) and agy itself did not re-raise it against this head."
+      }
+    }
+  ]
+}

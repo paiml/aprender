@@ -1,0 +1,460 @@
+{
+  "ticket": "PMAT-4594",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 2 commit(s); judged against origin/main",
+  "head": "d72eb32730560f88b5e4c4e50acaa215fe125f8b",
+  "diff_sha256": "060174ede190b8601aabe87897b2bdda5fc6136478078dcf1921490c283b8528",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 20267,
+  "prompt_sha256": "090c2fd2088aa0a2029f02f4fa31bc3b2ba309ab0a43d74af3c90cfe351b53cc",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the ticket's requirements. It removes the empty-listing constraint, cross-checking all 'ok' listings against the unfiltered newest run. When a listing is missing a run that's within the lookback window, it calls `list_window` again. If still short, it sets `_bj_state=inconsistent`, which correctly results in a `NO-GO` (rc 2) rather than evaluating it as `STALE`. Four new self-test cases (g, h, i, j) accurately test the falsifier criteria for short once, short always, real green, and real stale. No changes were made to the window, cap, or limits.",
+      "findings": [
+        {
+          "claim": "Every created>= listing is cross-checked unconditionally (when ok) against the unfiltered newest run. If short, it is re-read once, and if still short, marked inconsistent which triggers a NO-GO instead of STALE.",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4643,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "090c2fd2088aa0a2029f02f4fa31bc3b2ba309ab0a43d74af3c90cfe351b53cc",
+      "trace": {
+        "input_sha256": "35283330f3599b4b0459621393ce6f57a860e2aad9b4a95aa60420eb06524528",
+        "output_sha256": "bed4f991b279db3535eae6e2500696b3df94ad459d4129311f9e116e888b61c0",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly the five acceptance criteria of PMAT-4594. The core fix widens the cross-check from empty-only to every listing (AC#1), re-reads once on mismatch, and marks a persistently-short listing as `inconsistent` → NO-GO (rc 2), never STALE. Self-test rows g (GREEN rc 0), h (STALE rc 1), i (short-once GREEN rc 0), j (short-always NO-GO rc 2) match ACs 2–4 exactly. LOOKBACK_DAYS, PAGE_SIZE, PAGE_CAP, and STALE_DAYS are unchanged (AC#5). All new code — `list_window`, `listing_is_short`, `@SEQ:` routing, `st_real`/`st_real_nightlies`, `reread_calls` — is infrastructure required to implement or test these five ACs. No scope creep found.",
+      "findings": [
+        {
+          "claim": "Cross-check guard widened from `_bj_total -eq 0` (empty only) to `_bj_state = ok` (every non-truncated listing), implementing AC#1 'Every created>= listing is cross-checked'.",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 391
+        },
+        {
+          "claim": "A listing detected as short by `listing_is_short` triggers exactly one re-read via `list_window`; if still short after the re-read, `_bj_state` is set to `inconsistent`, which flows to NO-GO (rc 2) at L1041-1043 and L1138-1143, never to the STALE branch at L1048-1051.",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 400
+        },
+        {
+          "claim": "`listing_is_short` returns 0 (short) when the unfiltered newest is inside the lookback AND strictly newer than every run in the filtered listing (or the listing is empty); returns 1 (not short) otherwise, correctly generalizing the old empty-only check.",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 338
+        },
+        {
+          "claim": "Self-test row g-real-green asserts rc 0 and pattern `ok.*aarch64-cuda-sm121`, satisfying AC#3 (run 36364433328's real jobs, fresh, are GREEN).",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 796
+        },
+        {
+          "claim": "Self-test row h-real-stale asserts rc 1 and pattern `STALE.*x86_64-cpu.*last carried 9d ago`, satisfying AC#2 (stale evidence stays RED).",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 803
+        },
+        {
+          "claim": "Self-test row i-short-once (ST_SHORT_READS=1) asserts rc 0 and `ok.*x86_64-cpu.*success`, satisfying AC#4 first half (GREEN on a whole re-read).",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 811
+        },
+        {
+          "claim": "Self-test row j-short-always (ST_SHORT_READS=0) asserts rc 2 and `NO-GO.*inconsistent listing.*listed 4 of 4.*total 13`, satisfying AC#4 second half (NO-GO when short on every read, never STALE).",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 818
+        },
+        {
+          "claim": "LOOKBACK_DAYS (30), PAGE_SIZE (100), PAGE_CAP (10), and STALE_DAYS are unchanged in the diff, satisfying AC#5 (no lookback window, page cap or policy limit changes).",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "measured",
+          "line": 120
+        },
+        {
+          "claim": "Existing self-test row f-inconsistent (empty listing) is unchanged and still asserts rc 2 + NO-GO, confirming backward compatibility of the widened cross-check with the original PMAT-3337 §8 fix.",
+          "file": "scripts/check_silicon_coverage.sh",
+          "grounding": "cited",
+          "line": 790
+        }
+      ],
+      "raw_bytes": 11271,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-opus-4-6-thinking",
+      "model_measured": "claude-opus-4-6-thinking",
+      "model_source": "measured",
+      "family": "claude",
+      "executor": "agy",
+      "brief_sha256": "090c2fd2088aa0a2029f02f4fa31bc3b2ba309ab0a43d74af3c90cfe351b53cc",
+      "trace": {
+        "input_sha256": "e9f99bf710b43ea39bab6bbd4346137f7e07ba3b36668335b89be0c67716555a",
+        "output_sha256": "57e047262414e5b3d76fbc7981f5ce28757ed4cd3d9965dd7779f0f54f84de99",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-opus-4-6-thinking",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the fix for PMAT-4594 by adding a re-read mechanism that detects short API listings (missing runs despite reporting \"N of N\") and marks them as NO-GO (inconsistent) instead of false STALE. All four acceptance criteria are properly tested and no lookback/cap scope changes introduced.",
+      "findings": [],
+      "raw_bytes": 1622,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "090c2fd2088aa0a2029f02f4fa31bc3b2ba309ab0a43d74af3c90cfe351b53cc",
+      "trace": {
+        "input_sha256": "b57bf0c7e4af4ea3bb6205dadbb4040beba9a60ea05c97023a7126db3976e36d",
+        "output_sha256": "7a794432a694a729586a36b306c97373fa3b43dd37ae2b991553a677d952e2df",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Every created>= listing is cross-checked unconditionally (when ok) against the unfiltered newest run. If short, it is re-read once, and if still short, marked inconsistent which triggers a NO-GO instead of STALE."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 120,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "LOOKBACK_DAYS (30), PAGE_SIZE (100), PAGE_CAP (10), and STALE_DAYS are unchanged in the diff, satisfying AC#5 (no lookback window, page cap or policy limit changes)."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 338,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`listing_is_short` returns 0 (short) when the unfiltered newest is inside the lookback AND strictly newer than every run in the filtered listing (or the listing is empty); returns 1 (not short) otherwise, correctly generalizing the old empty-only check."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 391,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Cross-check guard widened from `_bj_total -eq 0` (empty only) to `_bj_state = ok` (every non-truncated listing), implementing AC#1 'Every created>= listing is cross-checked'."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 400,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "A listing detected as short by `listing_is_short` triggers exactly one re-read via `list_window`; if still short after the re-read, `_bj_state` is set to `inconsistent`, which flows to NO-GO (rc 2) at L1041-1043 and L1138-1143, never to the STALE branch at L1048-1051."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 790,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Existing self-test row f-inconsistent (empty listing) is unchanged and still asserts rc 2 + NO-GO, confirming backward compatibility of the widened cross-check with the original PMAT-3337 §8 fix."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 796,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Self-test row g-real-green asserts rc 0 and pattern `ok.*aarch64-cuda-sm121`, satisfying AC#3 (run 36364433328's real jobs, fresh, are GREEN)."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 803,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Self-test row h-real-stale asserts rc 1 and pattern `STALE.*x86_64-cpu.*last carried 9d ago`, satisfying AC#2 (stale evidence stays RED)."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 811,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Self-test row i-short-once (ST_SHORT_READS=1) asserts rc 0 and `ok.*x86_64-cpu.*success`, satisfying AC#4 first half (GREEN on a whole re-read)."
+      ]
+    },
+    {
+      "file": "scripts/check_silicon_coverage.sh",
+      "line": 818,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Self-test row j-short-always (ST_SHORT_READS=0) asserts rc 2 and `NO-GO.*inconsistent listing.*listed 4 of 4.*total 13`, satisfying AC#4 second half (NO-GO when short on every read, never STALE)."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": null,
+          "window_calls": 0,
+          "window_429": 0,
+          "hour_calls": 0,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790595640,
+          "window_calls": 2,
+          "window_429": 0,
+          "hour_calls": 2,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 20267
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Refused": {
+        "cell": "gx10-cpu",
+        "removed_by": "gpu-proof"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cpu",
+    "gpu_proof": null,
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 26,
+    "collected_s": 879,
+    "budget_s": 164,
+    "budget_basis": "ledger: 2 x p95 82 s over 80 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 20267,
+      "sent_bytes": 20436,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "ae9856635f42ebce6564a3de8a482e1eab0bba1fd4dd13873bb7f4aeb419b0c6",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 26,
+        "used_gpu": null,
+        "ts": "2026-09-28T12:12:43.725Z",
+        "wall_ms": 25833,
+        "request_id": "01a0e7ee-854b-7c55-8761-899b5bab48de",
+        "load1": 23.30,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
