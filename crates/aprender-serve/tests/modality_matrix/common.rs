@@ -441,8 +441,40 @@ impl ModalityTestResult {
     }
 }
 
+/// Serialises backend forcing across the tests of one binary.
+///
+/// The backend env vars are process-global and `cargo test` runs tests on parallel threads:
+/// without this, one test's `clear_backend_forcing` (or its own `force_backend`) lands between
+/// another's `force_backend(Wgpu)` and its `std::env::var("REALIZAR_BACKEND")` read, and
+/// `test_wgpu_in_common_infrastructure` fails on a correct tree. `force_backend` takes the lock
+/// and parks the guard in a thread-local; `clear_backend_forcing` releases it, and so does the
+/// thread's exit if a test panics in between. (nextest runs one process per test, so CI never
+/// raced; a local `cargo test -p aprender-serve --tests` receipt did.)
+static BACKEND_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+thread_local! {
+    static BACKEND_GUARD: std::cell::RefCell<Option<std::sync::MutexGuard<'static, ()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// Force a specific backend via environment variable
+///
+/// Holds [`BACKEND_LOCK`] until [`clear_backend_forcing`] on this thread. Re-forcing on the
+/// same thread (a test that loops over backends) keeps the lock it already holds.
 pub fn force_backend(backend: Backend) {
+    BACKEND_GUARD.with(|g| {
+        let mut g = g.borrow_mut();
+        if g.is_none() {
+            // A test that panicked while holding the lock poisons it; the env it left behind
+            // is cleared just below, so the poison carries no state worth refusing over.
+            *g = Some(
+                BACKEND_LOCK
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
+        }
+    });
+
     // Clear all backend env vars first
     std::env::remove_var("REALIZAR_FORCE_SCALAR");
     std::env::remove_var("REALIZAR_FORCE_SIMD");
@@ -453,7 +485,16 @@ pub fn force_backend(backend: Backend) {
 }
 
 /// Clear all backend forcing env vars
+///
+/// Releases [`BACKEND_LOCK`] if this thread holds it; a thread that never forced takes it for
+/// the duration of the clear, so it cannot unset another test's backend mid-check.
 pub fn clear_backend_forcing() {
+    let held = BACKEND_GUARD.with(|g| g.borrow_mut().take());
+    let _guard = held.unwrap_or_else(|| {
+        BACKEND_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    });
     std::env::remove_var("REALIZAR_FORCE_SCALAR");
     std::env::remove_var("REALIZAR_FORCE_SIMD");
     std::env::remove_var("REALIZAR_BACKEND");
