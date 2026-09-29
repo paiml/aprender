@@ -14,8 +14,10 @@ script verifies the table BEFORE trusting it, and any gap is RED:
      (a multiset compare: nothing missing, nothing extra, nothing tested twice);
   5. each mutant is killed (CaughtMutant, or Unviable: the compiler rejects it),
      equivalent (MissedMutant/Timeout with a row in the equivalents file), or survived;
-  6. an equivalents row carries a one-line proof and names a quorum receipt file in the
-     repo that itself contains the mutant id; a row for an id outside the universe is RED;
+  6. an equivalents row carries a one-line proof and names a quorum receipt in the repo --
+     evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl, an in-toto pr-review statement --
+     that itself contains the mutant id (any other file naming the id is RED); a row for an
+     id outside the universe is RED;
   7. survived <= --max-missed (the existing limit, MUTANTS_MAX_MISSED, default 0).
 
   mutants_survivor_table.py check --dir D --shards N --head-sha SHA --diff pr.diff
@@ -28,6 +30,7 @@ import collections
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -45,6 +48,9 @@ def sha256_file(path):
 def read_list(path):
     with open(path, encoding="utf-8") as f:
         return [ln.rstrip("\n") for ln in f if ln.strip()]
+
+
+RECEIPT_PATH = re.compile(r"evidence/pr-review/[0-9]+/[0-9a-f]{40}/receipt\.intoto\.jsonl")
 
 
 def load_equiv(path, repo):
@@ -67,14 +73,27 @@ def load_equiv(path, repo):
             if mid in eq:
                 errs.append(f"equivalents line {n}: {mid} listed twice")
                 continue
+            if not RECEIPT_PATH.fullmatch(receipt):
+                errs.append(f"equivalents line {n}: {receipt} is not a pr-review receipt path "
+                            "(evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl)")
+                continue
             rp = os.path.join(repo, receipt)
             if not os.path.isfile(rp):
                 errs.append(f"equivalents line {n}: quorum receipt {receipt} does not exist")
                 continue
             with open(rp, encoding="utf-8", errors="replace") as r:
-                if mid not in r.read():
-                    errs.append(f"equivalents line {n}: quorum receipt {receipt} does not name {mid}")
-                    continue
+                text = r.read()
+            try:
+                st = json.loads(text.splitlines()[0]) if text.strip() else {}
+            except ValueError:
+                st = {}
+            if not (isinstance(st, dict) and st.get("_type") == "https://in-toto.io/Statement/v1"
+                    and "pr-review" in str(st.get("predicateType", ""))):
+                errs.append(f"equivalents line {n}: {receipt} is not an in-toto pr-review statement")
+                continue
+            if mid not in text:
+                errs.append(f"equivalents line {n}: quorum receipt {receipt} does not name {mid}")
+                continue
             eq[mid] = proof
     return eq, errs
 
@@ -196,10 +215,19 @@ def self_test():
             json.dump({"outcomes": outs}, open(os.path.join(sd, "outcomes.json"), "w"))
         return diff
 
+    RP = "evidence/pr-review/1/" + "c" * 40 + "/receipt.intoto.jsonl"
+
     def receipt(root, text):
-        p = os.path.join(root, "receipt.txt")
-        open(p, "w").write(text)
-        return "receipt.txt"
+        # a real-shaped receipt that names `text`; text "STRAY:<x>" writes a stray non-receipt file instead
+        if text.startswith("STRAY:"):
+            open(os.path.join(root, "receipt.txt"), "w").write(text[6:])
+            return
+        os.makedirs(os.path.dirname(os.path.join(root, RP)), exist_ok=True)
+        if text.startswith("RAW:"):  # the right path, but plain text, not an in-toto statement
+            open(os.path.join(root, RP), "w").write(text[4:] + "\n")
+            return
+        open(os.path.join(root, RP), "w").write(json.dumps({"_type": "https://in-toto.io/Statement/v1",
+            "predicateType": "https://paiml.dev/attestations/pr-review/v2", "predicate": {"note": text}}) + "\n")
 
     cases = []
 
@@ -240,13 +268,17 @@ def self_test():
     case("an unknown outcome -> RED", False, summaries={ids[1]: "Failure"}, why="UNJUDGED")
     case("survivor within --max-missed 1 -> GREEN", True, summaries=miss, max_missed=1)
     case("equivalent with proof + receipt naming it -> GREEN", True, summaries=miss,
-         equiv_rows=[f"{ids[3]}\tf4 is only called with x>0, so the mutant is dead\treceipt.txt"], receipt_text=ids[3])
+         equiv_rows=[f"{ids[3]}\tf4 is only called with x>0, so the mutant is dead\t" + RP], receipt_text=ids[3])
     case("equivalent whose receipt does not name it -> RED", False, summaries=miss,
-         equiv_rows=[f"{ids[3]}\tproof\treceipt.txt"], receipt_text="some other mutant", why="does not name")
+         equiv_rows=[f"{ids[3]}\tproof\t" + RP], receipt_text="some other mutant", why="does not name")
+    case("equivalent citing a stray file that names it -> RED", False, summaries=miss,
+         equiv_rows=[f"{ids[3]}\tproof\treceipt.txt"], receipt_text="STRAY:" + ids[3], why="not a pr-review receipt path")
+    case("equivalent citing a receipt path that is not an in-toto statement -> RED", False, summaries=miss,
+         equiv_rows=[f"{ids[3]}\tproof\t" + RP], receipt_text="RAW:" + ids[3], why="not an in-toto")
     case("equivalent with no proof column -> RED", False, summaries=miss,
-         equiv_rows=[f"{ids[3]}\t\treceipt.txt"], receipt_text=ids[3], why="3 non-empty")
+         equiv_rows=[f"{ids[3]}\t\t" + RP], receipt_text=ids[3], why="3 non-empty")
     case("equivalent row for an id outside the universe -> RED", False,
-         equiv_rows=["crates/x/src/a.rs:99:1: gone\tproof\treceipt.txt"], receipt_text="crates/x/src/a.rs:99:1: gone", why="stale proof")
+         equiv_rows=["crates/x/src/a.rs:99:1: gone\tproof\t" + RP], receipt_text="crates/x/src/a.rs:99:1: gone", why="stale proof")
 
     bad = 0
     for name, want_green, mutate, summ, eq_rows, maxm, rtext, why in cases:
