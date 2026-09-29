@@ -1617,3 +1617,43 @@ mod graph_chunk_tests_3715 {
         assert!(!graph_may_run(true, &[]));
     }
 }
+
+/// #4621: model-free device tests for `prefill_all_layers_gpu`'s refusals. The
+/// mutants-cuda shard's GPU runner has no model files, so the prefill's kill tests
+/// cannot be only the model-backed parity suites.
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod prefill_refusal_tests_4621 {
+    use super::*;
+
+    /// No device → the test cannot run; under mutation a skip survives and the
+    /// shard is RED, so it never passes vacuously there.
+    fn executor() -> Option<CudaExecutor> {
+        CudaExecutor::new(0).ok()
+    }
+
+    #[test]
+    fn a_wrong_embedding_length_is_refused() {
+        let Some(mut exec) = executor() else { return };
+        let err = exec
+            .prefill_all_layers_gpu(&[0.0; 7], &[0, 1], 1, 4, 8, 1e-5)
+            .expect_err("2 positions x hidden 4 needs 8 floats");
+        assert!(matches!(err, GpuError::InvalidParameter(_)), "{err:?}");
+    }
+
+    #[test]
+    fn an_uninitialized_workspace_is_refused() {
+        let Some(mut exec) = executor() else { return };
+        let err = exec
+            .prefill_all_layers_gpu(&[0.0; 8], &[0, 1], 1, 4, 8, 1e-5)
+            .expect_err("no prefill workspace was initialized");
+        assert!(matches!(err, GpuError::InvalidLaunchConfig(_)), "{err:?}");
+    }
+
+    #[test]
+    fn an_empty_prompt_is_a_no_op() {
+        let Some(mut exec) = executor() else { return };
+        exec.prefill_all_layers_gpu(&[], &[], 1, 4, 8, 1e-5)
+            .expect("S = 0 prefills nothing");
+    }
+}
