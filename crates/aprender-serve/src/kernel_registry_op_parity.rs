@@ -299,6 +299,48 @@ fn run_rope(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
     (got, want)
 }
 
+/// SwiGLU's elementwise stage, `silu(g) * u`, against `g / (1 + e^-g) * u` in f64. Gates span
+/// ±8 so both tails of the sigmoid are exercised.
+fn run_swiglu(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let (g, u) = (activations(rng, n, 8.0), activations(rng, n, 4.0));
+    let mut got = g.clone();
+    crate::gguf::OwnedQuantizedModel::swiglu_gate_into(&mut got, &u);
+    let want = g
+        .iter()
+        .zip(&u)
+        .map(|(g, u)| {
+            let g = f64::from(*g);
+            g / (1.0 + (-g).exp()) * f64::from(*u)
+        })
+        .collect();
+    (got, want)
+}
+
+/// Residual add against the correctly rounded f32 sum `fl32(h + d)`. f32 addition is defined
+/// as exactly that, so the row is bitwise. The f64 sum it is rounded from is asserted exact
+/// (Fast2Sum error 0), so no double rounding can hide in the oracle.
+fn run_residual_add(rng: &mut rand::rngs::StdRng, n: usize) -> (Vec<f32>, Vec<f64>) {
+    let (h, d) = (activations(rng, n, 4.0), activations(rng, n, 4.0));
+    let mut got = h.clone();
+    crate::gguf::OwnedQuantizedModel::residual_add_into(&mut got, &d);
+    let want = h
+        .iter()
+        .zip(&d)
+        .map(|(h, d)| {
+            let (a, b) = (f64::from(*h), f64::from(*d));
+            let (big, small) = if a.abs() >= b.abs() { (a, b) } else { (b, a) };
+            let sum = big + small;
+            assert_eq!(
+                small - (sum - big),
+                0.0,
+                "f64 sum of {a} + {b} is not exact"
+            );
+            f64::from(sum as f32)
+        })
+        .collect();
+    (got, want)
+}
+
 pub(super) const OPS: &[Op] = &[
     Op {
         id: "cpu.rmsnorm.f32",
@@ -364,6 +406,20 @@ pub(super) const OPS: &[Op] = &[
             ..OP_WORKLOAD
         },
         run: run_kv_write,
+    },
+    Op {
+        id: "cpu.swiglu.f32",
+        source_fn: "swiglu_gate_into",
+        formula: "swiglu:g/(1+exp(-g))*u,|g|<8",
+        workload: OP_WORKLOAD,
+        run: run_swiglu,
+    },
+    Op {
+        id: "cpu.residual_add.f32",
+        source_fn: "residual_add_into",
+        formula: "residual_add:fl32(h+d),h+d exact in f64",
+        workload: OP_WORKLOAD,
+        run: run_residual_add,
     },
 ];
 
