@@ -98,11 +98,11 @@ reads them; a registry with no `ops[]`, a type key on an op, `archs` on a typed 
 the two arrays refuses the registry.
 
 **Coverage gap, and the first finding for 0.71:** the registry holds 41 `kernels[]` rows, all
-`matvec` or `gemv`, and 37 `ops[]` rows, none with a receipt: ten CPU (embedding, RMSNorm, LayerNorm, RoPE,
+`matvec` or `gemv`, and 39 `ops[]` rows, none with a receipt: ten CPU (embedding, RMSNorm, LayerNorm, RoPE,
 attention, KV write, SwiGLU, GELU, residual add, greedy argmax) plus CPU top-k sampling (`sample_topk`, and the
 session's seeded `sample_topk_seeded`); ten on
 the graphed CUDA decode path (host embedding, RMSNorm, per-head QK-norm, RoPE, NeoX RoPE, KV scatter, attention,
-SwiGLU, residual add, `gpu_argmax`); three host-side token choices a CUDA host still runs (`sample_topk` in
+SwiGLU, residual add, `gpu_argmax`); four host-side token-choice steps a CUDA host still runs (the repeat penalty, and `sample_topk` in
 `OwnedQuantizedModelCuda::next_token`, and `session::choose_token`'s host argmax and `sample_topk_seeded`, which
 is how Qwen3.5 picks every token, as it has no `forward_greedy`); and twelve on the Qwen3.5/MoE CUDA paths, narrowed by `archs`. From
 `cuda/executor/gdn_ops.rs`: partial NeoX RoPE and decode attention (`qwen35`, `qwen35moe`, `qwen3moe`); and,
@@ -111,10 +111,11 @@ the delta-rule recurrence, the q/gate split and the sigmoid output gate. For `qw
 expert weight scale `elementwise_mul_into`, host sampling `sample_from_logits` and the host router top-k
 `route_top_k`. Both paths also reuse the
 dense RMSNorm, QK-norm, SwiGLU and residual-add rows. The op set grew to hold these (conv1d,
-l2norm, gdn_gates, delta_rule, sigmoid_gate, split, elementwise_mul, sample, route_topk; nine kinds): the shape's `in` list and `OPS`,
+l2norm, gdn_gates, delta_rule, sigmoid_gate, split, elementwise_mul, sample, route_topk, repeat_penalty; ten kinds): the shape's `in` list and `OPS`,
 kept equal by `the_op_set_is_the_contracts`.
 
-Still open: the host repeat penalty (`apply_repeat_penalty`) runs when a penalty is set and has no op kind. The legacy `forward_qwen3_moe_cuda` and
+The host repeat penalty (`apply_repeat_penalty`, run only when a penalty is set) has a CPU row and a CUDA-host
+row under its own `repeat_penalty` kind. The legacy `forward_qwen3_moe_cuda` and
 `expert_swiglu_cuda` group is compiled but has no caller, so it gets no
 row: a row names a dispatched fn, not one that could be. Under the
 unregistered-kernel falsifier, **every model is RED today**. That is correct: it is the "0
@@ -165,8 +166,8 @@ Long-context risk moves to the attention kernels' shape classes, and that needs 
 
 ## 8. Phases
 
-- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ops[]`; twelve CPU op
-  rows cover the CPU decode path, ten the graphed CUDA one, three host token choices and twelve the Qwen3.5/MoE paths; the repeat penalty is open); per-tensor qtype in the
+- **P1 (0.71):** register every dispatch op (registry rows plus `labels`; the v2 map reads `ops[]`; thirteen CPU op
+  rows cover the CPU decode path, ten the graphed CUDA one, four host token-choice steps and twelve the Qwen3.5/MoE paths); per-tensor qtype in the
   GGUF extractor; `release-readiness-v2.yaml` shapes; extractor edges; the RR2-F1…F6 case table.
 - **P2:** CUDA kernel receipts on lambda (sm_89) and gx10 (sm_121); the `kernel_path` emitter in the
   smoke.
