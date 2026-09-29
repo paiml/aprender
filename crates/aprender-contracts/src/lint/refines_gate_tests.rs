@@ -186,3 +186,18 @@ fn no_sigma_declines_no_checkable() {
     assert!(matches!(outcome, RefinesOutcome::NoSigma));
     assert_eq!(decline_reason(&outcome), Some(Reason::NoCheckable));
 }
+
+#[test]
+fn explain_on_fail_is_each_findings_message_verbatim() {
+    let dir = fixture("refines-prose");
+    std::fs::write(
+        dir.path().join("lint-baseline.json"),
+        r#"{"ont": {"liskov_prose": 0}}"#,
+    )
+    .expect("write");
+    let (r, findings, _) = ran(run_refines_gate(dir.path()));
+    assert_eq!(r.verdict, Verdict::Fail);
+    assert!(!findings.is_empty());
+    let expected: Vec<String> = findings.iter().map(|f| f.message.clone()).collect();
+    assert_eq!(explain(&r, &findings), expected);
+}

@@ -264,3 +264,37 @@ kani_harnesses:
         "Expected unimpl binding gap: {dimensions:?}"
     );
 }
+
+#[test]
+fn proof_depth_is_exact_for_falsified_obligations_of_bound_contracts() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Depth"
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "one"
+  - type: invariant
+    property: "two"
+falsification_tests:
+  - id: FALSIFY-D-001
+    rule: "r"
+    prediction: "p"
+    test: "t"
+    if_fails: "f"
+"#;
+    let contract = crate::schema::parse_contract_str(yaml).expect("parses");
+    let contracts = vec![
+        ("bound.yaml".to_string(), &contract),
+        ("unbound.yaml".to_string(), &contract),
+    ];
+    let bound: BTreeSet<&str> = ["bound.yaml"].into_iter().collect();
+    // Per obligation: 0.1 (type system) + 0.3 (L2); no Kani, no Lean -> mean 0.4.
+    let d = super::compute_proof_depth(&contracts, &bound);
+    assert!((d - 0.4).abs() < 1e-9, "depth={d}");
+    let none: BTreeSet<&str> = BTreeSet::new();
+    assert!(super::compute_proof_depth(&contracts, &none).abs() < 1e-12);
+}

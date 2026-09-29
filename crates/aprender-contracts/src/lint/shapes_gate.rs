@@ -1529,4 +1529,119 @@ mod tests {
         let map = by_entity_type(&x, &implemented).expect("pv_contract types are counted");
         assert_eq!((map.get("study"), map.get("claim")), (Some(&2), Some(&0)));
     }
+
+    fn shape_over(id: &str, class: &str, allow_empty: Option<&str>) -> NodeShape {
+        NodeShape {
+            target_class: crate::ontology::rdf::ont(class),
+            allow_empty: allow_empty.map(str::to_string),
+            ..kernel_shape(id)
+        }
+    }
+
+    #[test]
+    fn collect_shapes_counts_every_document_it_read() {
+        let dir = fixture("shapes-ok");
+        let (shapes, checked) = collect_shapes(&dir).expect("shapes-ok parses");
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].0.id, "shape-holder");
+        let documents = crate::ontology::extract::pv_contract::documents(&dir).len();
+        assert!(documents >= 2, "the fixture must have several documents");
+        assert_eq!(checked, documents);
+    }
+
+    #[test]
+    fn focus_of_counts_each_shapes_instances_in_declaration_order() {
+        let mut g = Graph::new();
+        let kernel = Term::iri(crate::ontology::rdf::ont("KernelSymbol"));
+        for id in ["k1", "k2"] {
+            g.insert(format!("urn:t:{id}"), RDF_TYPE, kernel.clone());
+        }
+        let shapes = [
+            shape_over("kernels", "KernelSymbol", None),
+            shape_over("nothing", "NoSuchClassXyz", None),
+        ];
+        assert_eq!(
+            focus_of(&g, &shapes),
+            vec![("kernels".to_string(), 2), ("nothing".to_string(), 0)]
+        );
+    }
+
+    #[test]
+    fn vacuities_names_zero_focus_shapes_and_flags_only_armed_non_empty_ones() {
+        let focus = vec![
+            ("a".to_string(), 0),
+            ("b".to_string(), 3),
+            ("c".to_string(), 0),
+        ];
+        let shapes = [
+            shape_over("a", "KernelSymbol", None),
+            shape_over("b", "KernelSymbol", None),
+            shape_over("c", "KernelSymbol", Some("empty by design")),
+        ];
+        let names = vec!["a".to_string(), "c".to_string()];
+        // `a` is armed and may not be empty: the verdict-bearing flag is set.
+        let (v, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["a".to_string()]));
+        assert_eq!((v, armed), (names.clone(), true));
+        // `c` is armed but declares allowEmpty: named, does not refuse.
+        let (v, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(vec!["c".to_string()]));
+        assert_eq!((v, armed), (names.clone(), false));
+        // Nothing armed: named, no refusal.
+        let (v, armed) = vacuities(&focus, &shapes, &ArmedShapes::Listed(Vec::new()));
+        assert_eq!((v, armed), (names, false));
+        // No zero-focus shape at all, even with everything armed.
+        let live = vec![("b".to_string(), 3)];
+        assert_eq!(vacuities(&live, &shapes, &ArmedShapes::All), (vec![], false));
+    }
+
+    #[test]
+    fn by_shape_is_sorted_shape_equals_count() {
+        let focus = vec![("zeta".to_string(), 2), ("alpha".to_string(), 0)];
+        assert_eq!(by_shape(&focus), vec!["alpha=0", "zeta=2"]);
+    }
+
+    #[test]
+    fn entity_count_gguf_is_rungs_plus_files_read() {
+        let rung = |id: &str| extract::gguf::Rung {
+            id: id.to_string(),
+            sha256: String::new(),
+            arch: String::new(),
+            gguf: String::new(),
+            backends: Vec::new(),
+            hosts: Vec::new(),
+            required: true,
+            contract: String::new(),
+        };
+        let mut x = extract::Extraction::default();
+        x.gguf.rungs = vec![rung("r1"), rung("r2")];
+        x.gguf.files_read = 3;
+        assert_eq!(entity_count("gguf", &x), Some(5));
+    }
+
+    #[test]
+    fn harness_broken_declines_only_when_a_cause_is_named() {
+        assert!(harness_broken(&extract::Extraction::default()).is_none());
+
+        let mut x = extract::Extraction::default();
+        x.release = Some(extract::release_evidence::ReleaseStats {
+            crux: Some(extract::release_crux::CruxStats::default()),
+            ..Default::default()
+        });
+        assert!(
+            harness_broken(&x).is_none(),
+            "a measured harness with no cause is not broken"
+        );
+
+        let cause = "model-x: positive control ALL_WRONG".to_string();
+        x.release = Some(extract::release_evidence::ReleaseStats {
+            crux: Some(extract::release_crux::CruxStats {
+                harness_broken: vec![cause.clone()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        match harness_broken(&x) {
+            Some(ShapesOutcome::HarnessBroken { causes }) => assert_eq!(causes, vec![cause]),
+            other => panic!("expected HarnessBroken, got {other:?}"),
+        }
+    }
 }

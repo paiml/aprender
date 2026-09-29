@@ -367,6 +367,54 @@ mod tests {
         ));
     }
 
+    /// `semantic` on hand-built verdicts: each arm is false when only one of its conjuncts holds.
+    #[test]
+    fn semantic_needs_both_halves_of_an_accepted_core() {
+        let unsat = SmallGraph {
+            units: [true, false, false],
+            conflicts: [false; 3],
+            implies: [false; 6],
+        };
+        let mut unsat = unsat;
+        unsat.implies[0] = true;
+        unsat.implies[3] = true;
+        unsat.conflicts[1] = true;
+        assert!(!unsat.satisfiable());
+        let sat = SmallGraph::default();
+        assert!(sat.satisfiable());
+        let core = |c: u8| -> Result<Checked<u8>, ()> { Ok(Checked::Unsat { core: c }) };
+        assert!(semantic(&unsat, &core(0), |_| true));
+        assert!(!semantic(&unsat, &core(0), |_| false));
+        assert!(!semantic(&sat, &core(0), |_| true));
+        assert!(!semantic(&sat, &core(0), |_| false));
+        let ok_sat: Result<Checked<u8>, ()> = Ok(Checked::Sat);
+        assert!(semantic(&sat, &ok_sat, |_| false));
+        assert!(!semantic(&unsat, &ok_sat, |_| true));
+        let refused: Result<Checked<u8>, ()> = Err(());
+        assert!(semantic(&unsat, &refused, |_| false));
+    }
+
+    /// Bit `i` of the mask names variable `i`; the decoded steps land on the exact ids.
+    #[test]
+    fn model_and_step_decode_to_exact_ids() {
+        let WitnessResult::Model(m) = model(0b110) else {
+            panic!("model");
+        };
+        assert_eq!(m.false_vars, ["b", "c"]);
+        let WitnessResult::Model(m) = model(0b001) else {
+            panic!("model");
+        };
+        assert_eq!(m.false_vars, ["a"]);
+        let WitnessResult::Model(m) = model_as(0b101, id_u8) else {
+            panic!("model");
+        };
+        assert_eq!(m.false_vars, [0u8, 2]);
+        assert_eq!(step(0), Step::Unit("a".to_string()));
+        assert_eq!(step(2), Step::Unit("c".to_string()));
+        assert_eq!(step(3), Step::Implies("a".to_string(), "b".to_string()));
+        assert_eq!(step(8), Step::Implies("c".to_string(), "b".to_string()));
+    }
+
     /// A `u8` verdict renamed into `String` ids, so the two instantiations can be compared exactly.
     fn relabel(v: Result<Checked<Bounded<3>>, CheckError<u8>>) -> Result<Checked, CheckError> {
         let s = |i: u8| id_string(usize::from(i));
