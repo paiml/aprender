@@ -40,6 +40,7 @@ mod forward_qwen35_cuda;
 /// #3714: the Qwen3-MoE decoder resident on the GPU.
 mod forward_qwen3_moe_resident;
 mod generation;
+mod resident;
 mod speculative;
 mod weights;
 
@@ -66,6 +67,18 @@ use super::utils::verbose;
 // =============================================================================
 // IMP-800: CUDA-Accelerated Model Wrapper
 // =============================================================================
+
+/// #3715: device bytes load makes resident, from [`OwnedQuantizedModelCuda::resident_estimate`].
+struct ResidentEstimate {
+    /// f32 K+V bytes of one position over every layer.
+    kv_per_pos: usize,
+    /// Quantized weights.
+    weights: usize,
+    /// FP16/FP8 prefill weight cache (0 when this profile warms none).
+    cache: usize,
+    /// GH-178 workspace reserve plus the chunked-prefill score budget.
+    reserve: usize,
+}
 
 /// Error from CUDA model initialization that preserves the unconsumed model.
 ///
@@ -732,10 +745,9 @@ impl OwnedQuantizedModelCuda {
         if executor.gpu_profile.disable_fp8_for_qk_norm(
             model.config.constraints.has_qk_norm,
             std::env::var("FP8_PREFILL").ok().as_deref(),
-            std::env::var("BATCHED_PREFILL").ok().as_deref(),
         ) {
             eprintln!(
-                "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off and serial prefill in use — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 / BATCHED_PREFILL=1 override)",
+                "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off, FP16 batched prefill — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 overrides)",
                 model.config.architecture
             );
         }
@@ -765,6 +777,24 @@ impl OwnedQuantizedModelCuda {
         let num_layers = model.layers.len();
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
         let head_dim = model.config.hidden_dim / model.config.num_heads;
+        // #3715: the FP16 batched prefill a QK-norm model now takes must fit beside
+        // its cache; when it does not (Qwen3-8B on 24 GB) the model keeps serial.
+        {
+            let r = Self::resident_estimate(&executor, &model);
+            let need = r.weights + r.cache + r.reserve + r.kv_per_pos * max_seq_len;
+            if executor.gpu_profile.serial_when_fp16_prefill_does_not_fit(
+                model.config.constraints.has_qk_norm,
+                std::env::var("BATCHED_PREFILL").ok().as_deref(),
+                need,
+                memory_info.0,
+            ) {
+                eprintln!(
+                    "[#3715] serial prefill: the FP16 batched prefill needs {:.1} GB and {:.1} GB is free (BATCHED_PREFILL=1 overrides)",
+                    need as f64 / 1e9,
+                    memory_info.0 as f64 / 1e9,
+                );
+            }
+        }
 
         if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
             return Err(CudaInitError {
@@ -799,6 +829,46 @@ impl OwnedQuantizedModelCuda {
         cuda_model.apply_max_batch_sizing(num_layers, num_kv_heads, head_dim, max_seq_len);
 
         Ok(cuda_model)
+    }
+
+    /// #3715: what load makes resident on the device: the quantized weights, the
+    /// FP16 (or FP8) prefill weight cache when this profile warms one, and the
+    /// GH-178 reserve plus the chunked-prefill score budget. Also the f32 K+V bytes
+    /// of one position over every layer.
+    fn resident_estimate(
+        executor: &crate::cuda::CudaExecutor,
+        model: &OwnedQuantizedModel,
+    ) -> ResidentEstimate {
+        let c = &model.config;
+        let head_dim = c.hidden_dim / c.num_heads.max(1);
+        let kv_per_pos =
+            2 * c.num_kv_heads * head_dim * std::mem::size_of::<f32>() * model.layers.len();
+        let (weights, elems) = resident::projection_sizes(
+            model
+                .layers
+                .iter()
+                .flat_map(resident::layer_projections)
+                .chain(std::iter::once(&model.lm_head_weight)),
+        );
+        let profile = &executor.gpu_profile;
+        let cache_bytes_per_elem = if profile.fp8_prefill {
+            1
+        } else if std::env::var("HGEMM_PREFILL").as_deref() == Ok("0")
+            || (profile.cc >= 120 && std::env::var("FORCE_FP16_CACHE").as_deref() != Ok("1"))
+        {
+            0
+        } else {
+            2
+        };
+        let cache = cache_bytes_per_elem * elems;
+        let reserve =
+            3_500_000_000 + crate::gguf::cuda::forward_qwen35_cuda::PREFILL_SCORES_BUDGET_BYTES;
+        ResidentEstimate {
+            kv_per_pos,
+            weights,
+            cache,
+            reserve,
+        }
     }
 
     /// GH-129: Free CPU projection weight copies after GPU preload.
