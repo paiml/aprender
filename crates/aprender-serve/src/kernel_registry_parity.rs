@@ -13,6 +13,8 @@
 //! The dense rows (F32, F16, BF16) run through the served selector, `fused_matmul`, and are
 //! measured against weights decoded by `f32::from_le_bytes` and the `half` crate, not by the
 //! kernel's own LUT, F16C or `bits << 16` decode, so they too say `oracle_independent: true`.
+//! The APR-native rows (APR_Q4, APR_Q8) take the same selector and an [`APR_ORACLE`] decode written
+//! here from the format the writer, aprender-core `format::dequant_ext`, defines.
 //!
 //! Two tests:
 //! - `emit_parity_receipts` (ignored) measures and writes the receipts. Run it on the host whose
@@ -35,6 +37,7 @@ use rand::{Rng, SeedableRng};
 pub(super) const SCHEMA: &str = "kernel-parity-receipt/v1";
 const ORACLE: &str = "in_tree_dequant_f64";
 const DECODE_ORACLE: &str = "le_decode_half_f64";
+const APR_ORACLE: &str = "apr_format_decode_f64";
 
 /// The kernels this harness can measure, with their block size and the entry point the registry
 /// names. A kernel absent here has no receipt path yet.
@@ -52,8 +55,10 @@ struct Kernel {
     act_quant: Option<fn(&[f32]) -> Vec<f32>>,
     dequant: fn(&[u8]) -> Result<Vec<f32>>,
     matvec: fn(&[u8], &[f32], usize, usize) -> Result<Vec<f32>>,
-    /// [`ORACLE`] (the crate's own dequant) or [`DECODE_ORACLE`] (an independent decode).
+    /// [`ORACLE`] (the crate's own dequant), or [`DECODE_ORACLE`] / [`APR_ORACLE`] (independent).
     oracle: &'static str,
+    /// Bytes before the first block and how to fill them: APR_Q8's one whole-tensor f32 scale.
+    prefix: Option<(usize, fn(&mut rand::rngs::StdRng, &mut [u8]))>,
 }
 
 fn f16_bytes(x: f32) -> [u8; 2] {
@@ -115,6 +120,7 @@ const KERNELS: &[Kernel] = &[
         dequant: dequantize_q4_k,
         matvec: fused_q4k_parallel_matvec,
         oracle: ORACLE,
+        prefix: None,
     },
     Kernel {
         id: "cpu.matvec.q5_k",
@@ -127,6 +133,7 @@ const KERNELS: &[Kernel] = &[
         dequant: dequantize_q5_k,
         matvec: fused_q5k_parallel_matvec,
         oracle: ORACLE,
+        prefix: None,
     },
     Kernel {
         id: "cpu.matvec.q6_k",
@@ -139,6 +146,7 @@ const KERNELS: &[Kernel] = &[
         dequant: dequantize_q6_k,
         matvec: fused_q6k_parallel_matvec,
         oracle: ORACLE,
+        prefix: None,
     },
     Kernel {
         id: "cpu.matvec.q4_0",
@@ -151,6 +159,7 @@ const KERNELS: &[Kernel] = &[
         dequant: dequantize_q4_0,
         matvec: fused_q4_0_q8_0_parallel_matvec,
         oracle: ORACLE,
+        prefix: None,
     },
     Kernel {
         id: "cpu.matvec.q8_0",
@@ -163,6 +172,7 @@ const KERNELS: &[Kernel] = &[
         dequant: dequantize_q8_0,
         matvec: fused_q8_0_q8_0_parallel_matvec,
         oracle: ORACLE,
+        prefix: None,
     },
     Kernel {
         id: "cpu.matvec.f32",
@@ -175,6 +185,7 @@ const KERNELS: &[Kernel] = &[
         dequant: decode_f32,
         matvec: served_f32,
         oracle: DECODE_ORACLE,
+        prefix: None,
     },
     Kernel {
         id: "cpu.matvec.f16",
@@ -187,6 +198,7 @@ const KERNELS: &[Kernel] = &[
         dequant: decode_f16,
         matvec: served_f16,
         oracle: DECODE_ORACLE,
+        prefix: None,
     },
     Kernel {
         id: "cpu.matvec.bf16",
@@ -199,8 +211,75 @@ const KERNELS: &[Kernel] = &[
         dequant: decode_bf16,
         matvec: served_bf16,
         oracle: DECODE_ORACLE,
+        prefix: None,
+    },
+    Kernel {
+        id: "cpu.matvec.apr_q4",
+        source_fn: "dequantize_apr_q4",
+        block_elems: 32,
+        block_bytes: 18,
+        workload: WORKLOAD,
+        fill: fill_d_first,
+        act_quant: None,
+        dequant: decode_apr_q4,
+        matvec: served_apr_q4,
+        oracle: APR_ORACLE,
+        prefix: None,
+    },
+    Kernel {
+        id: "cpu.matvec.apr_q8",
+        source_fn: "dequantize_apr_q8",
+        block_elems: 1,
+        block_bytes: 1,
+        workload: WORKLOAD,
+        fill: fill_bytes,
+        act_quant: None,
+        dequant: decode_apr_q8,
+        matvec: served_apr_q8,
+        oracle: APR_ORACLE,
+        prefix: Some((4, fill_f32_scale)),
     },
 ];
+
+fn fill_bytes(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
+    rng.fill(b);
+}
+
+fn fill_f32_scale(rng: &mut rand::rngs::StdRng, b: &mut [u8]) {
+    b.copy_from_slice(&rng.random_range(0.0005f32..0.005).to_le_bytes());
+}
+
+/// APR Q4: 32-element blocks of `[scale: f16][16 bytes, element i in nibble i%2 of byte i/2]`,
+/// value `(nibble - 8) * scale`.
+fn decode_apr_q4(w: &[u8]) -> Result<Vec<f32>> {
+    Ok(w.chunks_exact(18)
+        .flat_map(|b| {
+            let d = half::f16::from_bits(u16::from_le_bytes([b[0], b[1]])).to_f32();
+            (0..32).map(move |i| {
+                let q = if i % 2 == 0 {
+                    b[2 + i / 2] & 0x0F
+                } else {
+                    b[2 + i / 2] >> 4
+                };
+                (f32::from(q) - 8.0) * d
+            })
+        })
+        .collect())
+}
+
+/// APR Q8: `[scale: f32][i8 × N]`, one scale for the whole tensor, value `q * scale`.
+fn decode_apr_q8(w: &[u8]) -> Result<Vec<f32>> {
+    let d = f32::from_le_bytes([w[0], w[1], w[2], w[3]]);
+    Ok(w[4..].iter().map(|&q| f32::from(q as i8) * d).collect())
+}
+
+fn served_apr_q4(w: &[u8], x: &[f32], i: usize, o: usize) -> Result<Vec<f32>> {
+    served(crate::gguf::APR_TYPE_Q4, w, x, i, o)
+}
+
+fn served_apr_q8(w: &[u8], x: &[f32], i: usize, o: usize) -> Result<Vec<f32>> {
+    served(crate::gguf::APR_TYPE_Q8, w, x, i, o)
+}
 
 fn weight_value(rng: &mut rand::rngs::StdRng) -> f32 {
     rng.random_range(-0.05..0.05)
@@ -375,8 +454,12 @@ fn measure(k: &Kernel, w: Workload, fp32_activations: bool) -> Measured {
     let blocks_per_row = w.in_dim / k.block_elems;
     let mut m = Measured::default();
     for _ in 0..w.trials {
-        let mut weights = vec![0u8; w.out_dim * blocks_per_row * k.block_bytes];
-        for block in weights.chunks_exact_mut(k.block_bytes) {
+        let head = k.prefix.map_or(0, |(n, _)| n);
+        let mut weights = vec![0u8; head + w.out_dim * blocks_per_row * k.block_bytes];
+        if let Some((n, fill)) = k.prefix {
+            fill(&mut rng, &mut weights[..n]);
+        }
+        for block in weights[head..].chunks_exact_mut(k.block_bytes) {
             (k.fill)(&mut rng, block);
         }
         let x: Vec<f32> = (0..w.in_dim).map(|_| rng.random_range(-1.0..1.0)).collect();
@@ -549,7 +632,7 @@ fn receipt(k: &Kernel, row: &KernelRow) -> serde_json::Value {
     let fp32 = measure(k, k.workload, true);
     let mut doc = receipt_header(k.id, k.source_fn, row, k.oracle);
     doc["oracle"] = k.oracle.into();
-    doc["oracle_independent"] = (k.oracle == DECODE_ORACLE).into();
+    doc["oracle_independent"] = (k.oracle != ORACLE).into();
     doc["workload"] = serde_json::json!({
         "in_dim": k.workload.in_dim,
         "out_dim": k.workload.out_dim,
@@ -906,7 +989,7 @@ fn committed_parity_receipts_hold_on_this_host() {
         assert_eq!(rc["oracle"], kernel(id).oracle, "{path}: unknown oracle");
         assert_eq!(
             rc["oracle_independent"],
-            kernel(id).oracle == DECODE_ORACLE,
+            kernel(id).oracle != ORACLE,
             "{path}: oracle_independent"
         );
         let wl = &rc["workload"];
