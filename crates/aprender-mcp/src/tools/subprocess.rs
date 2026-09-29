@@ -571,8 +571,8 @@ mod tests {
         std::fs::set_permissions(&shim, perms).expect("chmod");
 
         // Edition 2021 — `set_var` is safe here. L25: a test-build APR_BIN
-        // is honoured only with a matching APR_BIN_SHA256. The sha goes in
-        // first and comes out last, so a concurrent reader never sees the
+        // is honoured only with a matching APR_BIN_SHA256. The pin comes
+        // out first and goes in last, so a concurrent reader never sees the
         // pin without its hash; the operator's own pin is put back after.
         use crate::apr_bin::test_bin::{sha256_hex, APR_BIN_SHA256_ENV};
         let prior = (
@@ -580,24 +580,20 @@ mod tests {
             std::env::var_os(APR_BIN_SHA256_ENV),
         );
         let sha = sha256_hex(&std::fs::read(&shim).expect("read shim"));
+        std::env::remove_var(crate::apr_bin::APR_BIN_ENV);
         std::env::set_var(APR_BIN_SHA256_ENV, &sha);
         std::env::set_var(crate::apr_bin::APR_BIN_ENV, &shim);
         let result = run_apr(&["validate", "/dev/null", "--json"]);
-        match prior {
-            (Some(bin), Some(want)) => {
-                std::env::set_var(crate::apr_bin::APR_BIN_ENV, bin);
-                std::env::set_var(APR_BIN_SHA256_ENV, want);
-            }
-            (bin, want) => {
-                match bin {
-                    Some(b) => std::env::set_var(crate::apr_bin::APR_BIN_ENV, b),
-                    None => std::env::remove_var(crate::apr_bin::APR_BIN_ENV),
-                }
-                match want {
-                    Some(w) => std::env::set_var(APR_BIN_SHA256_ENV, w),
-                    None => std::env::remove_var(APR_BIN_SHA256_ENV),
-                }
-            }
+        // Restore the operator's pin, again never exposing APR_BIN without
+        // its own hash: pin removed before hash, hash restored before pin.
+        let (bin, want) = prior;
+        std::env::remove_var(crate::apr_bin::APR_BIN_ENV);
+        match want {
+            Some(w) => std::env::set_var(APR_BIN_SHA256_ENV, w),
+            None => std::env::remove_var(APR_BIN_SHA256_ENV),
+        }
+        if let Some(b) = bin {
+            std::env::set_var(crate::apr_bin::APR_BIN_ENV, b);
         }
 
         assert!(
