@@ -64,6 +64,16 @@ pull_request  junk aa11 none      x     1
 merge_group   -  x     none       x     0
 push          -  x     none       x     0
 ROWS
+    # END TO END: the x86 JSON above is hand-written and carries `outputs`. The one the gate really receives
+    # is what fat_driver.emit_results_output writes; when that dropped `outputs` this rule read "" on every
+    # run and could never be RED (#4621). So feed the rule the driver's own emission.
+    local emitted rc=0
+    emitted=$(python3 "$ROOT/scripts/ci/emit_results_sample.py" 2>/dev/null) || rc=$?
+    [ "$rc" = 0 ] && [ -n "$emitted" ] || { printf 'ENV   could not run fat_driver.emit_results_output -- cannot judge, not a pass\n' >&2; return 2; }
+    n=$((n + 1)); got=0
+    EVT=pull_request X86=$emitted YM= bash -c "$blk" > /dev/null 2>&1 || got=1
+    if [ "$got" = 1 ]; then printf 'ok    row %-2s driver-emitted results, 3 deferred, no shard -> RED\n' "$n"
+    else printf 'FAIL  row %-2s driver-emitted results carry no outputs: the rule read them as empty and passed\n' "$n" >&2; bad=1; fi
     return "$bad"
 }
 
