@@ -120,24 +120,18 @@ unbuilt_split() { # unbuilt_split <out> -> UNBUILT (lines) and UNBUILT_N; RED (1
   return 0
 }
 
-# A never-compiled mutant is NOT_MEASURED here (L25). It turns green only on a LOCAL receipt from a build that does
-# compile it: a line `CAUGHT <the mutant line, verbatim>` in evidence/mutants-local/*.txt. Anything else stays RED.
+# A never-compiled mutant is NOT_MEASURED (L25): never MISSED, never a pass, and no local receipt turns it green.
+# Operator ruling E1 (2026-09-29 07:55Z): cuda-gated mutants are measured only by a CI shard on a CUDA runner;
+# a not_measured count > 0 on changed gated code is RED. Local evidence does not count.
 not_measured() { # not_measured <out>
-  local line open=0
+  local line
   echo "NOT_MEASURED $UNBUILT_N mutant(s) sit in code this build never compiles (a cfg feature off by default):"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    if cat evidence/mutants-local/*.txt 2> /dev/null | grep -qxF -- "CAUGHT $line"; then
-      echo "  receipt  $line"
-    else
-      echo "  OPEN     $line"; open=$((open + 1))
-    fi
+    echo "  NOT_MEASURED  $line"
   done <<< "$UNBUILT"
-  if [ "$open" -gt 0 ]; then
-    echo "RED   $open NOT_MEASURED mutant(s) carry no local receipt: run cargo mutants with the feature that compiles them and commit 'CAUGHT <line>' to evidence/mutants-local/"
-    return 1
-  fi
-  echo "ok    every NOT_MEASURED mutant is CAUGHT in a local receipt (evidence/mutants-local/)"
+  echo "RED   not_measured=$UNBUILT_N on changed feature-gated code: measure it in a CI shard that builds the feature (a CUDA runner for cuda); local runs do not count"
+  return 1
 }
 
 self_test() {
@@ -168,6 +162,7 @@ STUB
   printf 'diff --git a/x.rs b/x.rs\n+fn f() {}\n' > "$T/pr.diff"
   # a two-package tree: `root` owns src/, `foo` owns crates/foo/; foo's gated.rs is never in the dep-info
   mkdir -p "$T/tree/crates/foo/src" "$T/tree/evidence/mutants-local"
+  # a committed local "receipt" must change nothing (operator E1): it is planted so a gate that reads it goes RED
   printf '[package]\nname = "root"\n' > "$T/tree/Cargo.toml"
   printf '[package]\nname = "foo"\n' > "$T/tree/crates/foo/Cargo.toml"
   printf 'CAUGHT crates/foo/src/gated.rs:7:5: replace g -> bool with true\n' > "$T/tree/evidence/mutants-local/r.txt"
@@ -210,9 +205,9 @@ STUB
     row real-outcomes-shape-is-parsed 1 "judged 2 mutant(s): missed=1 timeout=0" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES="$(cat "$(dirname "$SELF")/mutants_diff_gate.real-outcomes.json")"
     # #4621: a survivor in a file the build never compiled is NOT_MEASURED, never MISSED and never a pass
-    row unbuilt-with-receipt-passes 0 "receipt  crates/foo/src/gated.rs:7:5" STUB_LIST='a\nb\n' \
+    row unbuilt-with-local-receipt-is-red 1 "NOT_MEASURED  crates/foo/src/gated.rs:7:5" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES='{"total_mutants":2,"missed":1,"caught":1,"timeout":0}' STUB_MISSED='crates/foo/src/gated.rs:7:5: replace g -> bool with true\n'
-    row unbuilt-without-receipt-is-red 1 "OPEN     crates/foo/src/gated.rs:9:1" STUB_LIST='a\nb\n' \
+    row unbuilt-timeout-is-red 1 "RED   not_measured=1 on changed feature-gated code" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES='{"total_mutants":2,"missed":0,"caught":1,"timeout":1}' STUB_TIMEOUT='crates/foo/src/gated.rs:9:1: replace h with ()\n'
     row built-survivor-beside-unbuilt-is-red 1 "  crates/foo/src/built.rs:3:1: replace k with ()" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES='{"total_mutants":2,"missed":2,"caught":0,"timeout":0}' \
@@ -249,8 +244,8 @@ count-mismatch-ok~tested-count-mismatch-is-red~  if [ "$total" -ne "$n" ]; then~
 timeout-not-counted~timeout-counts-as-uncaught~  if [ $((missed + timeout)) -gt "$max" ]; then~  if [ "$missed" -gt "$max" ]; then
 exclusion-dropped-on-run~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --no-times~  "$cargo" mutants --workspace --no-times
 exclusion-dropped-on-list~exclusion-on-list-and-run~  "$cargo" mutants --workspace "${ex[@]}" --in-diff "$diff" --list~  "$cargo" mutants --workspace --in-diff "$diff" --list
-unbuilt-is-a-pass~unbuilt-without-receipt-is-red~    echo "RED   $open NOT_MEASURED mutant(s) carry no local receipt~    return 0; echo "RED   $open NOT_MEASURED mutant(s) carry no local receipt
-receipt-ignored~unbuilt-with-receipt-passes~    if cat evidence/mutants-local/*.txt 2> /dev/null | grep -qxF -- "CAUGHT $line"; then~    if false; then
+unbuilt-is-a-pass~unbuilt-timeout-is-red~  echo "RED   not_measured=$UNBUILT_N~  return 0; echo "RED   not_measured=$UNBUILT_N
+local-receipt-honoured~unbuilt-with-local-receipt-is-red~    echo "  NOT_MEASURED  $line"~    grep -qxF -- "CAUGHT $line" evidence/mutants-local/*.txt 2> /dev/null && continue; echo "  NOT_MEASURED  $line"
 built-survivor-hidden~built-survivor-beside-unbuilt-is-red~    if [ "$((missed + timeout - UNBUILT_N))" -gt "$max" ] || [ "$UNBUILT_N" -eq 0 ]; then~    if [ "$UNBUILT_N" -eq 0 ]; then
 empty-depinfo-means-all-unbuilt~depinfo-empty-is-red~  [ "${#built[@]}" -gt 0 ] || {~  true || {
 check-rc-ignored~check-failure-is-red~    "$cargo" check -p "$pkg" --lib --target-dir "$out/depinfo" > "$out/depinfo.log" 2>&1 \~    true \
