@@ -1502,6 +1502,30 @@ mod tests {
         );
     }
 
+    /// Two modules that glob-re-export each other (`a: pub use crate::b::*`, `b: pub use crate::a::*`) cycle when
+    /// a segment neither defines is chased. The cycle is a dead end, not the answer: the refusal names the last
+    /// real miss (`no mod x … in b.rs`), never `re-export cycle` (mutant `code.rs:628` guard → false, #4588).
+    #[test]
+    fn a_glob_re_export_cycle_reports_the_real_miss_not_the_cycle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").unwrap();
+        std::fs::create_dir_all(w.join("k/src")).unwrap();
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").unwrap();
+        std::fs::write(w.join("k/src/lib.rs"), "pub mod a;\npub mod b;\n").unwrap();
+        std::fs::write(w.join("k/src/a.rs"), "pub use crate::b::*;\n").unwrap();
+        std::fs::write(w.join("k/src/b.rs"), "pub use crate::a::*;\n").unwrap();
+        let ws = Workspace::scan(w);
+        let mut r = Resolver::new(&ws);
+        let e = r.resolve("k::a::x", "f").expect_err("x exists nowhere");
+        assert!(!e.reason.contains("re-export cycle"), "{}", e.reason);
+        assert!(
+            e.reason.contains("no `mod x`") && e.reason.contains("k/src/b.rs"),
+            "{}",
+            e.reason
+        );
+    }
+
     #[test]
     fn the_positive_control_fires() {
         assert!(positive_control());
