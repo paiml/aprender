@@ -810,7 +810,11 @@ impl OwnedQuantizedModelCuda {
         let head_dim = model.config.hidden_dim / model.config.num_heads;
         let max_seq_len = match kv_len {
             KvLen::Fixed(n) => n,
-            KvLen::FitServing => Self::serving_kv_len(&executor, &model, memory_info.0),
+            KvLen::FitServing => {
+                // C25 revert probe: the pre-K1 fixed size. DO NOT MERGE.
+                let _ = Self::serving_kv_len(&executor, &model, memory_info.0);
+                4096
+            },
         };
 
         if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
