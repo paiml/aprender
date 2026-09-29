@@ -30,8 +30,9 @@ Samples are `/proc/loadavg` 1-min on intel (mac-server, `nproc` = 32), taken at 
 | 03:18 (09-29) | 11 | 0.3 |
 | 03:48 (09-29) | 36 | 1.1 |
 | 06:48 (09-29) | 211 | 6.6 |
+| 14:24 (09-29) | 706 | 22.0 |
 
-At 14:48Z the top processes were root `clippy-driver` and `ld.mold` (CI runners) plus two noah test binaries. Only 3 of 26 samples (14:18, 18:48, and 03:18 on 09-29) were under 1 load per core. The first two windows closed within 30 min: a serve re-run started at 18:48 was stopped by PID at 19:18 at load 139 (partial 7498 ok / 0 fail). The 03:18 window lasted long enough: re-run 3 finished in 1673 s (16149 passed / 0 failed / 62 ignored), and by 03:48 the load was back to 36. The peak so far is 211, at 06:48 on 09-29.
+At 14:48Z the top processes were root `clippy-driver` and `ld.mold` (CI runners) plus two noah test binaries. Only 3 of 27 samples (14:18, 18:48, and 03:18 on 09-29) were under 1 load per core. The first two windows closed within 30 min: a serve re-run started at 18:48 was stopped by PID at 19:18 at load 139 (partial 7498 ok / 0 fail). The 03:18 window lasted long enough: re-run 3 finished in 1673 s (16149 passed / 0 failed / 62 ignored), and by 03:48 the load was back to 36. Before the power loss the peak was 211, at 06:48 on 09-29. The hosts lost power at about 14:00Z on 09-29. At 14:24Z, just after recovery, the 1-min load was 706 (5-min 475, 15-min 235), and it was still rising. The whole fleet was rebuilding and re-running at once, so this is a recovery load spike, not steady state. The cop called an ANDON above 400: no local test runs on intel until load1 ≤ 32.
 
 ## What follows
 - **F3:** the aprender-serve lib suite finished only when started inside a quiet window (03:18Z on 09-29, load 11): 16149 passed / 0 failed / 62 ignored at fd02954a8. Two earlier starts were stopped by PID at load 139 and 199. See `F3-pr-draft.md`.
