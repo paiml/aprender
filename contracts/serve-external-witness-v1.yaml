@@ -80,8 +80,8 @@ falsification_tests:
   if_fails: the witness raises false alarms and will be switched off
 - id: FALSIFY-WITNESS-002
   rule: a planted +20% (and -20%) server skew is RED from the witness alone
-  prediction: "server numbers × 1.2 (or × 0.8) against the same trace give run_verdict = red"
-  test: "cargo test -p aprender-profile --lib serve_witness::tests::planted_plus_20_percent_skew_is_red_from_the_witness_alone; cli::tests::test_witness_subcommand_exit_codes (exit 1)"
+  prediction: "server numbers × 1.2 (or × 0.8) against the same trace give run_verdict = red, and `renacer witness` exits 1"
+  test: "cargo test -p aprender-profile --lib serve_witness::tests::planted_plus_20_percent_skew_is_red_from_the_witness_alone; cli::tests::test_witness_subcommand_exit_codes"
   if_fails: a server that lies about its own latency passes its only check
 - id: FALSIFY-WITNESS-003
   rule: non-streaming TTFT is null with a reason
