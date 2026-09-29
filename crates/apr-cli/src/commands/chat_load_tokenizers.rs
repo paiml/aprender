@@ -266,8 +266,7 @@ fn try_init_gguf_cuda(
             return Ok((None, true));
         }
     };
-    // #3715: the turn length is unknown at load; size the device KV to the context.
-    match OwnedQuantizedModelCuda::for_session(owned, 0) {
+    match OwnedQuantizedModelCuda::new(owned, 0) {
         Ok(cuda_model) => {
             println!(
                 "{}",
@@ -349,7 +348,7 @@ fn try_init_apr_cuda(
     };
     // #3955: read what loaded BEFORE the model moves into the CUDA wrapper.
     let qtypes = loaded_weight_qtypes(&model);
-    let cuda_model = match OwnedQuantizedModelCuda::for_session(model, 0) {
+    let cuda_model = match OwnedQuantizedModelCuda::new(model, 0) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("[APR CUDA init failed: {e}, will use CPU]");
