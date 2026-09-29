@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Known issues
+- **Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) on GB10 is not claimed for 0.70 (#3715); planned for 0.70.1.**
+  On GB10 (sm_121) every verb (run, chat, serve, code) times out at 600 s on the 20k-token rung. The 0.69.1
+  pre-load refusal is gone in 0.70.0, so these models now load and run, but too slowly to be claimed. The
+  release gate does not owe the qwen3moe x GB10 cells (`cells.declaimed` in
+  `contracts/model-capability-ladder-v1.yaml`), and the ladder gate is RED if any rung or long-rung
+  representative still claims them. Withdrawn, not waived: lambda holds both files and still owes every
+  qwen3moe cell.
+- **GB10 dense models: prompt processing unbatched (11.4 tok/s); planned for 0.70.1 (#4590).** Widens the Qwen3 entry below to every dense model on GB10 (operator ruling 2026-09-28
+  16:15Z): the serial prefill is the sm_12x default for every non-hybrid arch, so dense Qwen2.5 on GB10
+  is de-claimed too (`cells.declaimed`: qwen2 and qwen3 on gx10). Output is correct; only prefill speed
+  is affected. Withdrawn, not waived: lambda still owes every dense cell, gx10 still owes every Qwen3.5 cell.
 - **Qwen3 on GB10 (sm_121, and the sm_12x family) is correct but very slow, and is not claimed for
   0.70 (#4590).** Dense Qwen3 on sm_12x prefills one token at a time, the sm_12x default, because the
   generic batched prefill corrupts the KV cache there (FALSIFY-CPU-GPU-009). Measured on 0.70.0

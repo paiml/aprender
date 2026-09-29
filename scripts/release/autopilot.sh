@@ -172,7 +172,11 @@ if run_step readiness; then
     --dogfood-receipt "$DR" --surface "$AP/surface-t1.json" --out "$AP/readiness-t1.json" > "$AP/readiness-t1.log" 2>&1; rc=$?
   grep -E '^(ok|WARN|FAIL) +R8 ' "$AP/readiness-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 release-readiness-v1 rc=$rc: nothing is tagged ($AP/readiness-t1.log)"
-  say "READINESS $(grep -oE '^(ok|WARN)' "$AP/readiness-t1.log" | tail -n 1) at $MC"
+  # R10 (operator 2026-09-28): report-only is not an option. A wrapper that prints a WARN R8 row and
+  # exits 0 (a hand-edited or stale copy) is a waiver, and a waiver is a stop.
+  ! grep -qE '^WARN +R8 ' "$AP/readiness-t1.log" \
+    || die "T-1 release-readiness-v1 printed a WARN R8 row (report-only = waiver = stop): nothing is tagged ($AP/readiness-t1.log)"
+  say "READINESS ok at $MC"
 fi
 # 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
 # cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
