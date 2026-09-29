@@ -22214,7 +22214,7 @@ roadmap:
 - id: PMAT-4616
   github_issue: 4616
   item_type: task
-  title: 'D5: serve over device KV (4096) returns 500 — refuse with 400 context exceeds N; --context-length sizes KV for gate-named cells'
+  title: 'D5: serve over device KV (4096) returns 500 — refuse with 400 context exceeds N'
   status: inprogress
   priority: critical
   assigned_to: aprender-2e-serve
@@ -22222,9 +22222,9 @@ roadmap:
   updated: 2026-09-28T20:47:39Z
   spec: null
   acceptance_criteria:
-  - 'lambda RTX 4090, 5432-token chat turn: main returns 500, the branch returns 400 context exceeds 4096, the branch with --context-length 32768 returns 200'
+  - 'lambda RTX 4090, 5432-token chat turn: main returns 500, the branch returns 400 context exceeds 4096 (the --context-length 32768 -> 200 case is #4603, not this ticket)'
   - 'api/tests/serve_context_d5.rs: the refusal fires at prompt_tokens >= serving_context, and serving_context = min(model context, device KV)'
-  - 'CUDA chat, completions and stream all refuse before generating; ContextLimitExceeded maps to 400, never 500'
+  - 'CUDA chat, completions, stream, /generate and /batch/generate all refuse before generating; every generate-error site maps ContextLimitExceeded to 400, never 500'
   phases: []
   subtasks: []
   estimated_effort: null

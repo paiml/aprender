@@ -92,6 +92,20 @@ fn generation_err(e: &crate::error::RealizarError) -> ApiErr {
     }
 }
 
+/// D5: refuse a prompt that fills the serving context (model context capped by
+/// the device KV cache) with a 400 before a CUDA path takes the model lock, the
+/// same pre-flight chat and completions run through `fit_serving_context`.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) fn preflight_serving_context(state: &AppState, prompt_tokens: usize) -> Result<(), ApiErr> {
+    match state
+        .serving_context()
+        .and_then(|ctx| super::serve_context_refusal(prompt_tokens, ctx))
+    {
+        Some(msg) => Err(api_err(StatusCode::BAD_REQUEST, msg)),
+        None => Ok(()),
+    }
+}
+
 /// Build the quantized engine config shared by `/generate` and `/batch/generate`.
 ///
 /// `cancel` is the request's [`CancelToken`] (aprender#2376(3)). It is a required
@@ -511,6 +525,7 @@ fn try_cuda_batch_generate(
             ));
         }
         let prompt_tokens = prompt_ids.len();
+        preflight_serving_context(state, prompt_tokens)?;
         let generated = cuda_model
             .generate_gpu_resident(&prompt_ids, &q_config)
             .map_err(|e| {

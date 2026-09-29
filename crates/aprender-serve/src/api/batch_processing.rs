@@ -340,7 +340,7 @@ pub async fn gpu_batch_completions_handler(
             Ok(generated) => generated,
             Err(e) => {
                 return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::api::generation_error_status(&e),
                     Json(ErrorResponse {
                         error: format!("GPU batch generation failed: {e}"),
                     }),
@@ -467,6 +467,7 @@ fn try_cuda_generate(
     let tokenizer = require_tok(state)?;
     let prompt_ids = tokenize_prompt(&tokenizer, &request.prompt)?;
     let prompt_tokens = prompt_ids.len();
+    preflight_serving_context(state, prompt_tokens)?;
 
     let q_config = QuantizedGenerateConfig {
         max_tokens: request.max_tokens,
