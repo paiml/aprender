@@ -188,6 +188,10 @@ fn reused_fd_number_starts_a_new_connection() {
 fn write_before_any_read_answers_nothing() {
     let t = trace(vec![accept(9, 0), write(9, 10, 50), read(9, 50, 100), write(9, 10, 400_000)]);
     let reqs = witnessed_requests(&socket_events(&t).expect("timed"));
+    // The stray write must not open a keep-alive turn: that would re-anchor
+    // the request at its read and shrink TTFT by the accept→read gap.
+    assert_eq!(reqs.len(), 1);
+    assert_eq!((reqs[0].anchor, reqs[0].ttft_ext_ms()), (Anchor::Accept4, Some(400.0)));
     assert_eq!(reqs[0].first_write_us, Some(400_000));
     assert_eq!(reqs[0].response_bytes, 10);
 }
