@@ -1576,6 +1576,9 @@ mod tests {
             "cuda.swiglu.f32",
             "cuda.residual_add.f32",
             "cuda.argmax.f32",
+            "cuda.rope.partial_neox.f32",
+            "cuda.attention.gdn_decode.f32",
+            "cuda.rmsnorm.gated.f32",
         ] {
             assert!(ids.contains(&want), "{want} not in {ids:?}");
         }

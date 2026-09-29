@@ -1265,6 +1265,74 @@
    "source_fn": "gpu_argmax",
    "selector": "realizar::cuda::CudaExecutor::forward_graphed_replay_to_token_id",
    "contract": "contracts/decode-gpu-resident-sampling-v1.yaml"
+  },
+  {
+   "kernel_id": "cuda.rope.partial_neox.f32",
+   "op": "rope",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-ROPE",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_partial_neox_rope_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::attention_layer_inner",
+   "contract": "contracts/rope-kernel-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe",
+    "qwen3moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.attention.gdn_decode.f32",
+   "op": "attention",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-ATT",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_decode_attention_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::attention_layer_inner",
+   "contract": "contracts/attention-kernel-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe",
+    "qwen3moe"
+   ]
+  },
+  {
+   "kernel_id": "cuda.rmsnorm.gated.f32",
+   "op": "rmsnorm",
+   "backend": "cuda",
+   "arch": "any",
+   "isa_features": "none",
+   "requires": "none",
+   "accumulate": "f32",
+   "precision": "f32",
+   "error_model": "EM-RED",
+   "determinism": "bounded",
+   "shape_class": "m1",
+   "tolerance": "unmeasured",
+   "source_file": "crates/aprender-serve/src/cuda/executor/gdn_ops.rs",
+   "source_fn": "gdn_gated_rmsnorm_into",
+   "selector": "realizar::gguf::cuda::Qwen35CudaModel::deltanet_layer_inner",
+   "contract": "contracts/rmsnorm-kernel-v1.yaml",
+   "archs": [
+    "qwen35",
+    "qwen35moe"
+   ]
   }
  ]
 }
