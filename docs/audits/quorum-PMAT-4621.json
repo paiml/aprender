@@ -1,0 +1,293 @@
+{
+  "ticket": "PMAT-4621",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "2b8d79acd798e852778b0a80db8ea4c4150543da",
+  "diff_sha256": "ea056cb90ff8a4df9ccd4b7683e2dcf089985c3c9a1d45382ecadd167aee145d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 74985,
+  "prompt_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "test",
+      "findings": [],
+      "raw_bytes": 928,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+      "trace": {
+        "input_sha256": "62d239a5ec4a64a216e4c9ab46e5f4c41e400a1f0aaaf7f7126cfdf31e64c9a7",
+        "output_sha256": "1299efcf293f2862245ea98bbae85205c769eeaedb57a12eb15209911d44cd2a",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed the diff against PMAT-4621. Confirmed the device KV sizing correctly leverages free VRAM, the batched prefill is safely chunked to fit within PREFILL_SCORES_BUDGET_BYTES without risking overflows, and the QK-norm FP16 cache logic intelligently falls back to serial only when VRAM is constrained. Validated the newly added F16 and IQ4_XS PTX dequantization kernels correctly iterate over superblock boundaries and compute accurate global memory offsets using mul.wide.u32. Verified that the updated unit test in `gpu_profile.rs` genuinely exercises the profile state changes, matching the targeted mutation probe's findings in the receipt. No logic contradicts the ticket.",
+      "findings": [],
+      "raw_bytes": 2619,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+      "trace": {
+        "input_sha256": "48a81e4591e5dbcc6e03733582a35cf53a370bec40bcaa3f0e781d7d305d0d42",
+        "output_sha256": "813eb0e411db7b522fdedd5d1c2e382b0445e1384d50a0a4a90dae48ff629555",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff does what PMAT-4621 requires: adds F16/IQ4_XS dequant kernels, chunks dense prefill to prevent OOM, removes QK-norm forcing serial (keeps batched with chunking), sizes chat KV to context with 2048 floor. All components tested; no forbidden changes or logic errors found. DEGRADED evidence rating justified by unavoidable CUDA environment limits, not a code defect.",
+      "findings": [],
+      "raw_bytes": 1688,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+      "trace": {
+        "input_sha256": "4a1d6d621ffeb5e193523171befe6bf4e9844672baec63243356b712915a7630",
+        "output_sha256": "00e3f3a9100109bd4ed62acb2458e9be8c79925877c011f6de9979537b42e9e2",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "crates/aprender-gpu/src/kernels/mod.rs",
+        "crates/aprender-gpu/src/kernels/quantize/f16_iq4xs_dequant.rs",
+        "crates/aprender-gpu/src/kernels/quantize/mod.rs",
+        "crates/aprender-serve/src/cuda/executor/gdn_prefill_ops.rs",
+        "crates/aprender-serve/src/cuda/gpu_profile.rs",
+        "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+        "crates/aprender-serve/src/gguf/cuda/mod.rs",
+        "crates/aprender-serve/src/gguf/cuda/session_kv.rs"
+      ],
+      "paths": 11,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790642648,
+          "window_calls": 6,
+          "window_429": 0,
+          "hour_calls": 4,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "skipped": "brief 74985 bytes > 24576"
+  },
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 282,
+    "budget_s": 170,
+    "budget_basis": "ledger: 2 x p95 85 s over 86 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 74985,
+      "sent_bytes": 75154,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "fc0b49a956d9b43a1a1616ec5be199cb6bfd8ef24aade23e575b0d183452f076",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-28T12:47:02Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-09-29T01:53:19.088Z",
+        "wall_ms": 386,
+        "request_id": "01a0eadd-caec-7bbd-88a3-4e1f59a244eb",
+        "load1": 0.04,
+        "cold": null
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}
