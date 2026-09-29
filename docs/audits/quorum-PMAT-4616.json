@@ -1,0 +1,327 @@
+{
+  "ticket": "PMAT-4616,PMAT-4636",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main and origin/main agree; brief_exclude (C45) kept out of the brief: docs/roadmaps/roadmap.yaml",
+  "head": "45d616e6e75802b6f5761c81ca0cb402e62c3d86",
+  "diff_sha256": "a2a390ddc5bad895babdd466d9185ac73a828d9b8d7e1666aee51391fe67addf",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 69836,
+  "prompt_sha256": "f5c585f1650ab5af6cbcbad6cd6d63d31509382acb428134d676045cd88d49d4",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I reviewed the diff against PMAT-4616 (D5) and PMAT-4636 (K1) and found that it fully complies with the tickets' acceptance criteria and directives without weakening any existing gates. \n\nKey validations:\n1. `apr serve` correctly checks if `--context-length` is operator-set in `crates/apr-cli/src/commands/serve/mod.rs`; if unset, it falls back to dynamically sizing the KV by invoking `OwnedQuantizedModelCuda::for_serving`, achieving K1.\n2. The dynamic device KV context is computed in `crates/aprender-serve/src/gguf/cuda/session_kv.rs` (via `serving_kv_len`), successfully budgeting the slots within free VRAM and applying the 4096 floor constraint when necessary.\n3. Over-context requests in CUDA chat, completions, and stream paths now hit a preflight check (`serve_context_refusal` / `fit_serving_context`) and get an immediate 400 response (\"context exceeds ...\") rather than returning 500. `ContextLimitExceeded` errors generated later in runtime also securely map to 400 via `generation_error_status`, fulfilling D5.\n4. All specified tests (`serve_context_d5.rs` and `serve_kv_limit_k1.rs`, plus the unit tests for `session_kv.rs`) are implemented correctly to enforce these bounds.\n\nThe diff accomplishes exactly what both tickets requested.",
+      "findings": [],
+      "raw_bytes": 3800,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "f5c585f1650ab5af6cbcbad6cd6d63d31509382acb428134d676045cd88d49d4",
+      "trace": {
+        "input_sha256": "21fd64374cbd8db8c8976aa42ae96bff26902fec61a552ef9c590ace257c5121",
+        "output_sha256": "8be73280d84b4849153103798778761ac6502b07dbe84a3335d349183901cda7",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements both tickets faithfully. K1 (PMAT-4636): every CUDA serve path (GGUF, APR, SafeTensors) now routes through the new `serving_cuda_model`/`OwnedQuantizedModelCuda::for_serving`, which sizes the device KV from the model's context within free VRAM via `session_kv::serving_kv_len`, floored at the old fixed 4096 (or the model's context when shorter), and budgets the continuous-batching scheduler's extra slots. `serve::run` now writes `REALIZR_CONTEXT_LENGTH` only when `--context-length` differs from the 4096 default (mirroring an existing PP-14/PP-15 convention already in the same file), letting the auto-sizer take over when unset. D5 (PMAT-4616): a new `serve_context_refusal`/`AppState::serving_context()`/`cap_context()` chain refuses an over-context prompt with 400 before the GPU forward on all three routes the ticket names (chat, completions, stream), and `generation_error_status` (pre-existing) now maps `ContextLimitExceeded` to 400 broadly instead of a hardcoded 500. I traced module paths (`crate::gguf::dense_session` is a `#[path]` re-export, and `handlers_include_01.rs`/`handler_gpu_completion.rs` are both textually `include!`d into the single `handlers` module) to confirm the new cross-file calls actually resolve, and confirmed `max_kv_len()`/`DEFAULT_CONTEXT_LENGTH`/`generation_error_status` pre-exist as claimed. New unit and integration tests (`session_kv.rs`, `serve_context_d5.rs`, `serve_kv_limit_k1.rs`, `dense_session.rs` cap_context tests) exercise the stated boundaries (at-limit 200, one-past 400, small-model-gets-whole-context, model-that-fills-card-keeps-floor). I could not execute any test/build (no CUDA hardware, no test runs permitted), so the numeric VRAM-fitting logic and the new CUDA test's runtime pass/fail is asserted from the diff, not measured.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/api/batch_processing.rs",
+          "line": 355,
+          "claim": "`/v1/batch/completions` (gpu_batch_completions_handler) is not given a pre-flight `serve_context_refusal` check the way chat/completions/stream are, though the ticket's stated three surfaces (chat, completions, stream) are all covered and this handler's underlying `try_cuda_generate` calls `generate_gpu_resident` directly, preserving the typed `ContextLimitExceeded` error so `generation_error_status` alone maps it to 400 without needing a pre-flight (unlike the scheduler-channel paths, whose errors are stringified). Not a contradiction of the AC as written, just a narrower surface than 'every CUDA serve path' might suggest.",
+          "failure_scenario": "A batch of prompts submitted to /v1/batch/completions with one prompt over the serving context relies on the typed-error path working correctly through `generate_gpu_resident`/dense_session rather than being independently pre-flight-checked; if that typed-error path ever regresses to a raw GPU fault (as the D5 bug originally was for the scheduler-channel paths), this route would silently start 500ing again with no test catching it.",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 6940,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "f5c585f1650ab5af6cbcbad6cd6d63d31509382acb428134d676045cd88d49d4",
+      "trace": {
+        "input_sha256": "70b989fe83ecf61429fd435c5a5b8c3519ac78d78ac63c6db2e2d854fecee35d",
+        "output_sha256": "f07b1412bee1d7e159f8a09e18a70b60bdbcea67d9bfcd75ecca581317c1b6d2",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4616 (D5: refuse over-context prompts with 400) and PMAT-4636 (K1: size GPU KV from model context within free VRAM). Pre-flight refusal checks fire in chat, completions, and stream paths. Status code mapping handles ContextLimitExceeded correctly. All model loading paths unified on for_serving(). Tests validate boundaries, error messages, capacity math with 8192-context model.",
+      "findings": [],
+      "raw_bytes": 1741,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "f5c585f1650ab5af6cbcbad6cd6d63d31509382acb428134d676045cd88d49d4",
+      "trace": {
+        "input_sha256": "50cbec51cf023065a960fa4a4ef6db0628a78fd5208c941503e8c0ea2bc0cc25",
+        "output_sha256": "2223652b7f74be8c195927b553df0592ea13e416fcf6edc41890cadbe3babb97",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-serve/src/api/batch_processing.rs",
+      "line": 355,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`/v1/batch/completions` (gpu_batch_completions_handler) is not given a pre-flight `serve_context_refusal` check the way chat/completions/stream are, though the ticket's stated three surfaces (chat, completions, stream) are all covered and this handler's underlying `try_cuda_generate` calls `generate_gpu_resident` directly, preserving the typed `ContextLimitExceeded` error so `generation_error_status` alone maps it to 400 without needing a pre-flight (unlike the scheduler-channel paths, whose errors are stringified). Not a contradiction of the AC as written, just a narrower surface than 'every CUDA serve path' might suggest."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "fallback"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        "crates/aprender-serve/src/api/cuda_chat_backend.rs",
+        "crates/aprender-serve/src/gguf/cuda/mod.rs",
+        "crates/aprender-serve/src/gguf/cuda/resident.rs",
+        "crates/aprender-serve/src/gguf/cuda/session_kv.rs"
+      ],
+      "paths": 25,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": null,
+          "window_calls": 0,
+          "window_429": 0,
+          "hour_calls": 13,
+          "share": 1,
+          "want": 1,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: 0 calls in this window reach its budget 0 (ledger: the calls served before the first 429 of the latest window that reached one)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 86,
+          "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
+          "window_start": 1790702669,
+          "window_calls": 14,
+          "window_429": 0,
+          "hour_calls": 12,
+          "share": 17,
+          "want": 2,
+          "state": "open",
+          "reason": ""
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "4302, 309 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "apr_binary_sha256": "6b2a7dc66c38adcca20b315beac70a1a31e7bd0af2a1cc5c2a7730ca6086d417",
+    "apr_tag": "v0.70.0-dev.3990584f0",
+    "apr_commit": "3990584f0bf5af6bca34ea9298df92177f3ef79a",
+    "apr_build_why": null,
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 26,
+    "collected_s": 355,
+    "budget_s": 164,
+    "budget_basis": "ledger: 2 x p95 82 s over 102 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 69836,
+      "sent_bytes": 70005,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "d89ce534fa65c8f1dfa629e28e0247dcc3b67dd504f2e8fd69a3db88b0462b08",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 25,
+        "used_gpu": true,
+        "ts": "2026-09-29T18:45:33.883Z",
+        "wall_ms": 25142,
+        "request_id": "01a0ee7c-8833-7e6a-9e92-02c427087e6f",
+        "load1": 86.34,
+        "cold": false
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}

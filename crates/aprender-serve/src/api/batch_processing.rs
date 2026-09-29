@@ -355,7 +355,7 @@ pub async fn gpu_batch_completions_handler(
                 Ok(tokens) => results.push(tokens),
                 Err(e) => {
                     return Err((
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                        crate::api::generation_error_status(&e),
                         Json(ErrorResponse {
                             error: format!("Generation failed: {e}"),
                         }),
@@ -492,7 +492,7 @@ fn try_cuda_generate(
         .generate_gpu_resident(&prompt_ids, &q_config)
         .map_err(|e| {
             api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
+                crate::api::generation_error_status(&e),
                 format!("CUDA generation failed: {e}"),
             )
         })?;

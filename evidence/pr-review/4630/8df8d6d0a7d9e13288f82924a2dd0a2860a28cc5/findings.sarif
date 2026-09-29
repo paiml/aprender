@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat tdg / pmat analyze complexity --file / pmat analyze satd on per-file base and head copies (CLI transport); pmat query --literal for symbol search; pmat MCP tried and unavailable"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat.tdg-delta",
+          "level": "note",
+          "message": {
+            "text": "Per-file TDG, base vs head, 9 changed non-test files: no grade fell. Largest drop is crates/aprender-serve/src/gguf/cuda/mod.rs 94.8 (A) -> 91.6 (A); openai_handlers.rs 88.8 -> 87.5, handler_gpu_completion.rs 89.8 -> 88.6, dense_session.rs 88.2 -> 87.0 (all A-). New files resident.rs 98.6 (A+) and session_kv.rs 92.9 (A). stdout_sha256 below is the head run on mod.rs; the base run on the same file printed 94.8. Test files are skipped by pmat tdg."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "/tmp/claude-1000/-mnt-nvme-raid0-devont-wtk1/a5bceb30-b23e-465d-a2fb-7431d3447a38/scratchpad/prr/th/crates/aprender-serve/src/gguf/cuda/mod.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "82b031c8bf908750b9dd0e76a77b35cc680960a97e2e496d87fd767f75f58371",
+            "failure_scenario": "A TDG regression on the KV sizing module would erode the B floor over successive PRs; none fell a grade here.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.complexity-delta",
+          "level": "note",
+          "message": {
+            "text": "Cognitive complexity rose in 5 functions: try_cuda_gguf_completions 12 -> 15 (measured below, base run printed 12), apr-cli serve run 7 -> 8, with_cuda_model_and_bpe 0 -> 2, with_cuda_model_and_vocab 2 -> 4, cuda::mod build 11 -> 12. None decreased in any file that also had an increase. try_cuda_gguf_completions at 15 exceeds the .pmat-gates.toml max_complexity of 10 (it was already at 12)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--file",
+              "/tmp/claude-1000/-mnt-nvme-raid0-devont-wtk1/a5bceb30-b23e-465d-a2fb-7431d3447a38/scratchpad/prr/th/crates/aprender-serve/src/api/gpu_completions_handler.rs",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a04e58ef081378c1b2c06e7ea47b30db2bb4cd7f044d36097e720e8499d911fa",
+            "failure_scenario": "A 15-branch completion handler is harder to test for the 400/500 split; a missed branch is the D5 bug returning.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-hit",
+          "level": "note",
+          "message": {
+            "text": "Sibling branches add the same new paths. origin/ec/4621-fit-and-chat-kv carries crates/aprender-serve/src/gguf/cuda/resident.rs byte-identical to HEAD (blob 57dbf3ee1b7f). origin/ec/3715-chunked-prefill carries a different session_kv.rs (blob fa2cafb9b666 vs HEAD cd1bced26492). Neither branch is an ancestor of origin/main or of this head (merge-base --is-ancestor rc=1). Whichever PR lands second gets an add/add conflict on these paths, and the session_kv.rs divergence risks two definitions of the session KV policy. origin/2e/d5-serve-kv-4xx and origin/devont/k1-revert-red (the author own DO-NOT-MERGE probe) also carry serve_context_d5.rs and PMAT-4616.yaml."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "rev-parse",
+              "origin/ec/4621-fit-and-chat-kv:crates/aprender-serve/src/gguf/cuda/resident.rs",
+              "8df8d6d0a7d9e13288f82924a2dd0a2860a28cc5:crates/aprender-serve/src/gguf/cuda/resident.rs",
+              "origin/ec/3715-chunked-prefill:crates/aprender-serve/src/gguf/cuda/session_kv.rs",
+              "8df8d6d0a7d9e13288f82924a2dd0a2860a28cc5:crates/aprender-serve/src/gguf/cuda/session_kv.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "79c7bd197ad63d4dd8a5f594c7bbb30f193dbec2ffbb34c51ec7784e98d63999",
+            "failure_scenario": "Two PRs land the same new file with different content: the second gets an add/add conflict, and a hasty resolution keeps one KV policy while the other tests still assume the second.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-K1-EXPLICIT-4096",
+          "level": "warning",
+          "message": {
+            "text": "apr serve exports REALIZR_CONTEXT_LENGTH only when config.context_length != DEFAULT_CONTEXT_LENGTH (4096). An operator who passes --context-length 4096 explicitly is indistinguishable from the default, so the export is skipped and the GPU KV is sized from the model context (up to what fits in VRAM) instead of the 4096 asked for. The comment above the branch says only an operator-set value is written; the comparison is against the value, not against whether it was set. This contradicts PMAT-4636 AC2 (an explicit --context-length is honoured) for exactly one value."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/apr-cli/src/commands/serve/mod.rs"
+                },
+                "region": {
+                  "startLine": 303
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/apr-cli/src/commands/serve/mod.rs:303-304@8df8d6d0a7",
+            "excerpt": "    if config.context_length != types::DEFAULT_CONTEXT_LENGTH {\n        std::env::set_var(\"REALIZR_CONTEXT_LENGTH\", config.context_length.to_string());",
+            "excerpt_sha256": "c110058f8f0e517969a76bc98ebf78c0ec305f2b1b3e3f01babc096f0b4da4ac",
+            "failure_scenario": "An operator pins --context-length 4096 to bound VRAM on a shared GPU; the server ignores it and allocates KV up to the model context (32k or more) per slot, evicting a co-tenant or failing to start.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-K1-MAXTOKENS-500",
+          "level": "warning",
+          "message": {
+            "text": "serve_context_refusal refuses only prompt_tokens >= serving_context and ignores max_tokens. On the /v1/completions continuous-batch path, try_cuda_gguf_completions passes max_tokens unclamped to the scheduler; the scheduler reports failures as String, and the handler maps any Err(e) to a literal 500 (gpu_completions_handler.rs:431), not generation_error_status. A prompt of serving_context-1 tokens with max_tokens > 1 reaches decode, hits the PAR-023 KV cache overflow error at incremental_attention.rs:36-39, and comes back as 500 (CUDA generation: ...). The dense_session path clamps max_tokens (cap_context comment), so this is specific to the batch scheduler path. The K1 device test covers prompt = context - max_tokens (200) and prompt >= context (400) but no case with prompt < context and prompt + max_tokens > context. Not run: no device or cargo on this host, so this is derived from code reading."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/gpu_completions_handler.rs"
+                },
+                "region": {
+                  "startLine": 431
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Chain read from code at 8df8d6d0a7: serve_context_refusal (api/mod.rs:392, prompt >= ctx only); handler Err(e) -> INTERNAL_SERVER_ERROR at gpu_completions_handler.rs:431; KV overflow error string at cuda/executor/incremental_attention.rs:36-39. No device run, so the end-to-end 500 is not measured.",
+            "failure_scenario": "A client sends a 4095-token prompt with max_tokens 256 to a server whose serving context is 4096; the request is not refused, decode overflows the KV at token 2, and the client receives a 500 that says the server broke, which is the symptom PMAT-4616 exists to remove.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-K1-DEVICE-ONLY-TEST",
+          "level": "note",
+          "message": {
+            "text": "The K1 end-to-end test (serve_kv_limit_k1.rs) is cfg(feature=cuda). Without a device, served() prints SKIP K1 and returns, which libtest counts as a pass. CI workspace-test runs --lib without cuda, so only the cuda-unit section can measure it. ci/sections.yml documents a --nocapture grep that fails a device skip, but I did not verify that this test is in the derived cuda-only set. Not run here."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/tests/serve_kv_limit_k1.rs"
+                },
+                "region": {
+                  "startLine": 119
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "ci/sections.yml:3091-3094@8df8d6d0a7",
+            "excerpt": "      # `--nocapture` is what lets the step see a device skip. The skip macros\n      # print, e.g., \"SKIP: CUDA executor unavailable…\" and RETURN, which libtest\n      # counts as a pass. The grep is UNANCHORED, because under --nocapture the\n      # message lands on the `test X ... ` line.",
+            "excerpt_sha256": "e8a2cb81dff8acf27384c59a72679aedc80d6195471f152281dc721ca0fe2db7",
+            "failure_scenario": "If serve_kv_limit_k1 is not in the derived cuda-only set, a runner with no usable device passes it vacuously and K1 ships with the KV sizing unmeasured (L25).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-K1-RESIDENT-ESTIMATE-DRIFT",
+          "level": "note",
+          "message": {
+            "text": "resident_estimate in gguf/cuda/resident.rs re-encodes the prefill-cache profile that preload_and_verify actually warms. If the two drift, serving_kv_len over- or under-reserves VRAM. Not verified against a device run."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/resident.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Design observation from reading the PR summary and resident.rs; no test in the diff ties the estimate to the measured post-preload free memory that I could confirm without a device.",
+            "failure_scenario": "A later change to the prefill cache adds a buffer; the estimate does not, K1 sizes KV to a value that no longer fits after preload, and the server fails at start or on the first long prompt.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-K1-APR-ST-NO-D5",
+          "level": "note",
+          "message": {
+            "text": "handlers_include_01.rs now builds the APR and SafeTensors GPU servers through serving_cuda_model, but cached_serving_context is set only in with_cuda_model*, so those constructors leave it None and the D5 pre-flight refusal does not run there. Possibly intended (their typed errors still map to 400); not verified."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/mod_app_state_gpu.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff and mod_app_state_gpu.rs: cached_serving_context is written only by with_cuda_model*.",
+            "failure_scenario": "An over-long prompt to an APR or SafeTensors GPU server skips the pre-flight and reaches the device, returning whatever the deeper path returns rather than the uniform 400.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "mcp__nvidia-cuda-docs__search_cuda_docs x2 (re-run at write time; an earlier round of 3 queries on the same topic also returned no authority)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cuda.no-authority-found",
+          "level": "note",
+          "message": {
+            "text": "Two queries on cuMemGetInfo/cudaMemGetInfo free/total semantics and whether a later allocation can fail although the reported free bytes suffice returned only VMM API samples and the Virtual Memory Management overview. Neither states the semantics. The K1 VRAM-fit sizing therefore rests on the code (and an unwrap_or((0,0)) fallback to the 4096 floor), not on a documented NVIDIA guarantee. The cuda-docs-reviewer agent could not be dispatched: this session has no Agent tool."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Server answered both queries with unrelated VMM samples; absence of a statement is not evidence either way.",
+            "failure_scenario": "free bytes from cuMemGetInfo are a snapshot: a co-tenant allocating between the query and the KV allocation makes the sized KV fail to allocate at start.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "guard predicates --match-crux-surface and --match-comparative; contracts/crux-C-07-v1.yaml and contracts/crux-C-32-v1.yaml read"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux.surface-covered",
+          "level": "note",
+          "message": {
+            "text": "Surfaces: apr serve --context-length (KV sizing) and the HTTP error status on /v1/completions, /v1/chat/completions and streaming (500 -> 400 context exceeds N). Category C, Serving and Chat UX. contracts/crux-C-07-v1.yaml (vllm paged-attention KV) and contracts/crux-C-32-v1.yaml (vllm chunked prefill; a prompt longer than max_model_len returns 4xx; status draft) cover them. gap_effect none; no comparative claim is made by this diff."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Contracts read; no crux gap is opened or closed by this PR and no claim against vllm is measured.",
+            "failure_scenario": "If C-32 (draft) is later promoted while D5 keeps ignoring max_tokens, the contract would state a 4xx guarantee the batch path breaks (see PRREV-K1-MAXTOKENS-500).",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants --in-diff was not attempted (attempted=0). The hard rules for this review forbid cargo test, nextest and cargo-mutants on this host (lambda) and --in-place anywhere. 21 .rs files are in the diff and --match-mutation-trigger fires on all of them, so the mutation consultation is triggered and unreachable; the PR own CI mutants job is the only measurement."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --output-format json --json-schema .pr-review-schema.json --model gemini-3.1-pro-high --print-timeout 30m --dangerously-skip-permissions --add-dir <disposable tree>"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "antigravity.gpu_batch_completions_missing_preflight",
+          "level": "note",
+          "message": {
+            "text": "agy: /v1/batch/completions (gpu_batch_completions_handler) has no serve_context_refusal pre-flight. Primary assessment: the claim is true as a fact but its scenario is wrong for this route. That handler runs cached_model.batch_generate_gpu, not the CUDA serving model whose KV K1 sizes, so cached_serving_context does not define its limit; its GPU-batch error arm is a literal 500 (batch_processing.rs, pre-existing, the PR touches 2 lines of that file). agy cites docs/audits/quorum-PMAT-4616.json, which is committed by this PR and says the same sentence, so this is a repetition of a prior review, not an independent finding."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/batch_processing.rs"
+                },
+                "region": {
+                  "startLine": 355
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "docs/audits/quorum-PMAT-4616.json",
+            "excerpt": "`/v1/batch/completions` (gpu_batch_completions_handler) is not given a pre-flight `serve_context_refusal` check the way chat/completions/stream are, though the ticket's stated three surfaces (chat, completions, stream) are all covered and this handler's underl",
+            "excerpt_sha256": "b3878064beb8801f1804a470fac16d73cc2b23ca342c5ce6c8b7b29f0f01454f",
+            "failure_scenario": "A batch of prompts with one prompt over the serving context relies on the typed-error path through generate_gpu_resident rather than a pre-flight; a regression to a raw GPU fault would silently return 500 with no test catching it.",
+            "precision_class": "advisory",
+            "reverified_by_primary": false,
+            "divergence": "contradicted"
+          }
+        },
+        {
+          "ruleId": "antigravity.try_cuda_generate_missing_preflight",
+          "level": "note",
+          "message": {
+            "text": "agy: try_cuda_generate (/v1/generate) lacks the serve_context_refusal pre-flight. Primary assessment: true as a fact; not a defect today, because generate_gpu_resident raises ContextLimitExceeded (check_gpu_resident_preconditions, generate_2.rs:479) and this handler maps it through generation_error_status to 400. Only a regression of that typed path would 500."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/batch_processing.rs"
+                },
+                "region": {
+                  "startLine": 456
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy asserted without a citation.",
+            "failure_scenario": "Requests to /v1/generate with prompts over the serving context lose the immediate 400 if the downstream typed-error path regresses to a GPU fault, returning 500.",
+            "precision_class": "advisory",
+            "reverified_by_primary": false,
+            "divergence": "agy_only"
+          }
+        },
+        {
+          "ruleId": "antigravity.logprobs_missing_preflight",
+          "level": "note",
+          "message": {
+            "text": "agy: logprobs_handler and perplexity_handler lack the serve_context_refusal pre-flight. Primary assessment: true as a fact; the logprobs handler maps errors with generation_error_status (gpu_completions_handler.rs near line 710), so the typed path gives 400 today."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/gpu_completions_handler.rs"
+                },
+                "region": {
+                  "startLine": 706
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy asserted without a citation.",
+            "failure_scenario": "Logprobs or perplexity requests over the serving context are not refused early; a regression of generate_gpu_resident_logprobs to a raw fault returns 500 instead of 400.",
+            "precision_class": "advisory",
+            "reverified_by_primary": false,
+            "divergence": "agy_only"
+          }
+        }
+      ]
+    }
+  ]
+}
