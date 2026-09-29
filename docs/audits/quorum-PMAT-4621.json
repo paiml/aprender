@@ -3,13 +3,13 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "2b8d79acd798e852778b0a80db8ea4c4150543da",
-  "diff_sha256": "ea056cb90ff8a4df9ccd4b7683e2dcf089985c3c9a1d45382ecadd167aee145d",
+  "head": "1c97bea00e1f42564a6c1eeadb3a254c6ecd8e2f",
+  "diff_sha256": "9c5b6d948e06b6a1d9f52a2d7f8c32ccc58f1c99155bc421ff378e7056b58441",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 74985,
-  "prompt_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+  "prompt_bytes": 83612,
+  "prompt_sha256": "cbc00dae6bcc1ff7306a92448ba0959a21aec6712096b5dec824a756f9d34871",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,9 +21,24 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "test",
-      "findings": [],
-      "raw_bytes": 928,
+      "summary": "Diff adds F16/IQ4_XS CUDA dequant kernels for Qwen3.5 GDN prefill, chunks the general dense prefill (generate_2.rs) to bound the attention-score buffer and avoid u32 overflow/OOM, gates CUDA-graph replay to first-chunk-only to prevent KV corruption on later chunks, and reworks qk-norm handling so FP8 is disabled but the batched prefill is kept unless a resident-memory estimate says the FP16 cache+workspace won't fit. Verified the last_row/chunk-boundary arithmetic algebraically (matches for both exact-multiple and remainder cases), confirmed WeightQuantType::F16/IQ4XS pre-exist so the new match arms compile, and confirmed dense_prefill_chunk_rows (generate_2.rs) and attention_rows_for (forward_qwen35_cuda_prefill.rs, unchanged) are genuinely separate call sites (general dense path vs Qwen3.5 GDN path) so the near-duplication is cosmetic, not a double-chunk hazard. The ticket's other two sub-issues (qk-norm forced serial removal is addressed; \"chat KV 2048\" is not) are untouched here, but recent commit history in this worktree shows this is a disclosed, intentional stacked-PR split (#4620 split into root pieces), consistent with the ticket's own 50%/InProgress status — not scope creep or a silent omission.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+          "line": 1143,
+          "claim": "dense_prefill_chunk_rows sizes chunks using raw num_heads rather than the GQA-aware heads_per_kv the pre-existing, unchanged attention_rows_for (forward_qwen35_cuda_prefill.rs:209-212) uses for the same kind of budget calc. Confirmed these are different call sites (general dense prefill vs Qwen3.5 GDN prefill), so it is not a double-chunking correctness bug — only a more-conservative (smaller than necessary under GQA), non-blocking near-duplication.",
+          "grounding": "cited",
+          "fix": "Non-blocking; optionally note in the PR why the existing helper wasn't reused, or factor a shared GQA-aware sizing helper in a follow-up."
+        },
+        {
+          "file": "docs/roadmaps (ticket PMAT-4621)",
+          "line": 0,
+          "claim": "Ticket names four sub-problems; this diff addresses unchunked dense prefill OOM, qk-norm forced serial, and Qwen3.5 F16/IQ4_XS dequant, but not 'chat KV 2048'.",
+          "grounding": "measured",
+          "fix": "Not a defect given ticket is 50%/InProgress and worktree git log shows an active PR-split cascade (#4620 roots); confirm a follow-up ticket/PR tracks the chat-KV-2048 piece before closing PMAT-4621."
+        }
+      ],
+      "raw_bytes": 5728,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -34,10 +49,10 @@
       "model_measured": "claude-sonnet-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+      "brief_sha256": "cbc00dae6bcc1ff7306a92448ba0959a21aec6712096b5dec824a756f9d34871",
       "trace": {
-        "input_sha256": "62d239a5ec4a64a216e4c9ab46e5f4c41e400a1f0aaaf7f7126cfdf31e64c9a7",
-        "output_sha256": "1299efcf293f2862245ea98bbae85205c769eeaedb57a12eb15209911d44cd2a",
+        "input_sha256": "d945f7e726ca593af4d990bc7e66da0965388d3b22229adf9d413a109a0822ab",
+        "output_sha256": "be960ff18b1d91064125062cb42eddd0c9baa216dd6b9bf86a458ae0a279d699",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -58,9 +73,9 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Reviewed the diff against PMAT-4621. Confirmed the device KV sizing correctly leverages free VRAM, the batched prefill is safely chunked to fit within PREFILL_SCORES_BUDGET_BYTES without risking overflows, and the QK-norm FP16 cache logic intelligently falls back to serial only when VRAM is constrained. Validated the newly added F16 and IQ4_XS PTX dequantization kernels correctly iterate over superblock boundaries and compute accurate global memory offsets using mul.wide.u32. Verified that the updated unit test in `gpu_profile.rs` genuinely exercises the profile state changes, matching the targeted mutation probe's findings in the receipt. No logic contradicts the ticket.",
+      "summary": "Reviewed the diff against PMAT-4621 and found it sound. The chunked dense prefill logic correctly restricts CUDA graph replay to the initial chunk (via `graph_may_run`), preventing KV cache corruption, and safely bounds the attention score buffer allocation using `dense_prefill_chunk_rows`. The newly added F16 and IQ4_XS PTX dequantization kernels correctly process weights, which is backed by bitwise parity tests against the CPU reader. The diff also successfully resolves the 'qk-norm forced serial' issue by replacing the unconditional fallback with a dynamic VRAM capacity check (`serial_when_fp16_prefill_does_not_fit`). The `DEGRADED` status in the receipt correctly reflects a known environmental constraint (mutation test blocked by lack of GPU on the test host) rather than a code defect. I found no evidence that refutes the diff's correctness or violates the ticket's constraints.",
       "findings": [],
-      "raw_bytes": 2619,
+      "raw_bytes": 3050,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -71,10 +86,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+      "brief_sha256": "cbc00dae6bcc1ff7306a92448ba0959a21aec6712096b5dec824a756f9d34871",
       "trace": {
-        "input_sha256": "48a81e4591e5dbcc6e03733582a35cf53a370bec40bcaa3f0e781d7d305d0d42",
-        "output_sha256": "813eb0e411db7b522fdedd5d1c2e382b0445e1384d50a0a4a90dae48ff629555",
+        "input_sha256": "500cfcb3eb7469574885844995854ee3e6195cc8c02df020ed97e2ab5d578a9b",
+        "output_sha256": "172934d7f5bc928256f7aefa54d258ad46d61377f822dadcb4da806a81492516",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -95,9 +110,17 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff does what PMAT-4621 requires: adds F16/IQ4_XS dequant kernels, chunks dense prefill to prevent OOM, removes QK-norm forcing serial (keeps batched with chunking), sizes chat KV to context with 2048 floor. All components tested; no forbidden changes or logic errors found. DEGRADED evidence rating justified by unavoidable CUDA environment limits, not a code defect.",
-      "findings": [],
-      "raw_bytes": 1688,
+      "summary": "Diff correctly implements F16/IQ4_XS dequant kernels with device parity tests, chunked dense prefill with per-row memory budgeting, and CUDA graph replay gating to prevent KV corruption on multi-chunk prefills. All kernel integrations are sound, loop logic is correct, and unit tests validate behavior. Addresses 2–3 of 4 ticket sub-problems per the 50% InProgress status; scope matches documented PR split.",
+      "findings": [
+        {
+          "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+          "line": 1146,
+          "claim": "dense_prefill_chunk_rows() duplicates the existing chunk_rows_for() helper's logic (both budget attention scores to PREFILL_SCORES_BUDGET_BYTES), but uses raw num_heads instead of GQA-grouped heads_per_kv, making it more conservative (smaller chunks).",
+          "grounding": "cited",
+          "fix": "Advisory, not a defect: the new helper is not incorrect and the trade-off (conservatism under GQA) is safe. Worth a one-line author note on whether reuse was considered."
+        }
+      ],
+      "raw_bytes": 2845,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -108,10 +131,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "6944654ff3541c0a79d1fa528e0465b863edd93ab9bfc491688c60e4ceb97c7f",
+      "brief_sha256": "cbc00dae6bcc1ff7306a92448ba0959a21aec6712096b5dec824a756f9d34871",
       "trace": {
-        "input_sha256": "4a1d6d621ffeb5e193523171befe6bf4e9844672baec63243356b712915a7630",
-        "output_sha256": "00e3f3a9100109bd4ed62acb2458e9be8c79925877c011f6de9979537b42e9e2",
+        "input_sha256": "ec7905583edb77424dba24457e3c230a8f347cb94e10700fcb66d4ea9b66a819",
+        "output_sha256": "39079e7c883a1bfcc7979a4772d9d38d7b4df19b18c8a5fc02039a5f9c2495d0",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -130,7 +153,38 @@
     }
   ],
   "dissent": [],
-  "dedup": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+      "line": 1143,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "dense_prefill_chunk_rows sizes chunks using raw num_heads rather than the GQA-aware heads_per_kv the pre-existing, unchanged attention_rows_for (forward_qwen35_cuda_prefill.rs:209-212) uses for the same kind of budget calc. Confirmed these are different call sites (general dense prefill vs Qwen3.5 GDN prefill), so it is not a double-chunking correctness bug — only a more-conservative (smaller than necessary under GQA), non-blocking near-duplication."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
+      "line": 1146,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "dense_prefill_chunk_rows() duplicates the existing chunk_rows_for() helper's logic (both budget attention scores to PREFILL_SCORES_BUDGET_BYTES), but uses raw num_heads instead of GQA-grouped heads_per_kv, making it more conservative (smaller chunks)."
+      ]
+    },
+    {
+      "file": "docs/roadmaps (ticket PMAT-4621)",
+      "line": 0,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Ticket names four sub-problems; this diff addresses unchunked dense prefill OOM, qk-norm forced serial, and Qwen3.5 F16/IQ4_XS dequant, but not 'chat KV 2048'."
+      ]
+    }
+  ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
@@ -189,12 +243,13 @@
         "crates/aprender-gpu/src/kernels/quantize/f16_iq4xs_dequant.rs",
         "crates/aprender-gpu/src/kernels/quantize/mod.rs",
         "crates/aprender-serve/src/cuda/executor/gdn_prefill_ops.rs",
+        "crates/aprender-serve/src/cuda/executor/layers/prefill.rs",
         "crates/aprender-serve/src/cuda/gpu_profile.rs",
         "crates/aprender-serve/src/gguf/cuda/generate_2.rs",
         "crates/aprender-serve/src/gguf/cuda/mod.rs",
-        "crates/aprender-serve/src/gguf/cuda/session_kv.rs"
+        "crates/aprender-serve/src/gguf/cuda/resident.rs"
       ],
-      "paths": 11,
+      "paths": 12,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -214,8 +269,8 @@
           "bucket": "gemini",
           "budget": 86,
           "basis": "[U] default 30, raised to the 86 calls a window has made without a 429; no window reached one",
-          "window_start": 1790642648,
-          "window_calls": 6,
+          "window_start": 1790661814,
+          "window_calls": 2,
           "window_429": 0,
           "hour_calls": 4,
           "share": 17,
@@ -235,7 +290,7 @@
   },
   "cheap_seat": "claude-haiku-4-5",
   "canary": {
-    "skipped": "brief 74985 bytes > 24576"
+    "skipped": "brief 83612 bytes > 24576"
   },
   "advisory_lane": {
     "state": "unavailable",
@@ -256,16 +311,16 @@
     "model_sha256": null,
     "rc": 2,
     "wall_s": 0,
-    "collected_s": 282,
+    "collected_s": 294,
     "budget_s": 170,
     "budget_basis": "ledger: 2 x p95 85 s over 86 gx10-cuda Verdict rows",
     "brief": {
-      "bytes": 74985,
-      "sent_bytes": 75154,
+      "bytes": 83612,
+      "sent_bytes": 83781,
       "max_bytes": 196608
     },
     "trace": {
-      "input_sha256": "fc0b49a956d9b43a1a1616ec5be199cb6bfd8ef24aade23e575b0d183452f076",
+      "input_sha256": "6b52b2f8e5534d44b19754f287ae394560b6da89b2dc9588e2ed5b5f642f00b8",
       "raw": "advisory.json"
     },
     "attempts": [
@@ -274,10 +329,10 @@
         "ok": false,
         "wall_s": 0,
         "error": "busy: executor yielded (unit inactive; last yield: 2026-09-28T12:47:02Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
-        "ts": "2026-09-29T01:53:19.088Z",
-        "wall_ms": 386,
-        "request_id": "01a0eadd-caec-7bbd-88a3-4e1f59a244eb",
-        "load1": 0.04,
+        "ts": "2026-09-29T06:07:56.252Z",
+        "wall_ms": 384,
+        "request_id": "01a0ebc6-e759-724f-ae55-a85775b77baa",
+        "load1": 7.75,
         "cold": null
       }
     ],
