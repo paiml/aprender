@@ -47,7 +47,9 @@ gate() { # gate <diff> <cap> <jobs> <max-missed> <out> [excluded crate...]
   [ -z "$DEFER" ] || : > "$DEFER" || return 1   # written first: an early pass defers nothing, and says so
   [ -s "$diff" ] || { echo "ok    empty diff: nothing to mutate"; return 0; }
   mkdir -p "$out" || return 1
-  [ -z "$FEATURES" ] || { ex+=(--features "$FEATURES" --cargo-arg=--lib); echo "features: $FEATURES"; }
+  # --lib reaches `cargo test` once, via the test args below; a second copy (--cargo-arg=--lib) is a cargo
+  # usage error, so every mutant "fails" before a test runs (#4621, yoga run 36547274574).
+  [ -z "$FEATURES" ] || { ex+=(--features "$FEATURES"); echo "features: $FEATURES"; }
   local -a ta=(--lib)
   if [ -n "$NAMES" ]; then
     [ -s "$NAMES" ] || { echo "RED   --test-names $NAMES is empty: a run that selects no test catches nothing"; return 1; }
@@ -300,6 +302,7 @@ STUB
         STUB_DEPINFO_FEATURE="$T/tree/target/x: $T/tree/crates/foo/src/built.rs $T/tree/crates/foo/src/gated.rs\n"
     if grep -q -- "--file crates/foo/src/gated.rs" "$T/args-gated-only-mutates-the-gated-file" && ! grep -q -- "--file crates/foo/src/built.rs" "$T/args-gated-only-mutates-the-gated-file" \
        && grep -q -- "check -p foo --lib --features cuda" "$T/args-gated-only-mutates-the-gated-file" \
+       && ! grep -q -- "--lib.*--lib" "$T/args-gated-only-mutates-the-gated-file" \
        && [ "$(tr '\n' ' ' < "$T/out-gated-only-mutates-the-gated-file/measured.txt" 2> /dev/null)" = "a z " ]; then echo "ok    gated-scope-and-measured-set"
     else echo "FAIL  gated-scope-and-measured-set -- $(tr '\n' '|' < "$T/args-gated-only-mutates-the-gated-file" 2> /dev/null)"; fi
     printf 'm::t_one\nm::t_two\n' > "$T/names.txt"; : > "$T/nonames.txt"
@@ -348,6 +351,7 @@ gated-includes-default-built~gated-scope-and-measured-set~    if [ -n "${feat[$f
 measured-unsorted~gated-scope-and-measured-set~  if [ "$GATED_ONLY" = 1 ]; then LC_ALL=C sort "$out/list.txt" > "$out/measured.txt" || return 1; fi~  if [ "$GATED_ONLY" = 1 ]; then cp "$out/list.txt" "$out/measured.txt" || return 1; fi
 features-dropped-from-check~gated-scope-and-measured-set~      || { echo "RED   cargo check -p $pkg --lib failed -- $(tail -1 "$out/dep-default.log")"; return 1; }~      || { echo "RED   cargo check -p $pkg --lib failed -- $(tail -1 "$out/dep-default.log")"; return 1; }; FEATURES=""
 check-rc-ignored~check-failure-is-red~    "$cargo" check -p "$pkg" --lib $(pkg_features "$pkg") --target-dir "$out/depinfo" > "$out/depinfo.log" 2>&1 \~    true \
+lib-passed-twice~gated-scope-and-measured-set~  [ -z "$FEATURES" ] || { ex+=(--features "$FEATURES"); echo~  [ -z "$FEATURES" ] || { ex+=(--features "$FEATURES" --cargo-arg=--lib); echo
 survivors-unnamed~missed-is-red-and-named~    cat "$out/mutants.out/missed.txt" "$out/mutants.out/timeout.txt" 2> /dev/null | sed 's/^/  /'~    :
 MUT
   echo "mutants_diff_gate self-test: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
