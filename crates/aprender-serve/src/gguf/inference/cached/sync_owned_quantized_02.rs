@@ -29,6 +29,22 @@ impl OwnedQuantizedModelCachedSync {
         prompts: &[Vec<u32>],
         config: &QuantizedGenerateConfig,
     ) -> Result<Vec<Vec<u32>>> {
+        self.batch_generate_gpu_observed(prompts, config, &mut |_| {})
+    }
+
+    /// SRV-TIM-001: `batch_generate_gpu`, calling `on_sample(prompt_idx)` after
+    /// every token sampled for that prompt (a stop token included, before the
+    /// stop check), so a server can time each request's prefill/decode boundary
+    /// inside the shared batch without a second clock in the loop.
+    ///
+    /// # Errors
+    /// As [`Self::batch_generate_gpu`].
+    pub fn batch_generate_gpu_observed(
+        &self,
+        prompts: &[Vec<u32>],
+        config: &QuantizedGenerateConfig,
+        on_sample: &mut dyn FnMut(usize),
+    ) -> Result<Vec<Vec<u32>>> {
         if prompts.is_empty() {
             return Ok(Vec::new());
         }
@@ -150,6 +166,7 @@ impl OwnedQuantizedModelCachedSync {
                     } else {
                         OwnedQuantizedModel::sample_topk(logits, config.temperature, config.top_k)
                     };
+                    on_sample(prompt_idx);
 
                     if config.stop_tokens.contains(&next_token) {
                         done[prompt_idx] = true;
@@ -179,6 +196,7 @@ impl OwnedQuantizedModelCachedSync {
                     } else {
                         OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
                     };
+                    on_sample(prompt_idx);
 
                     if config.stop_tokens.contains(&next_token) {
                         done[prompt_idx] = true;

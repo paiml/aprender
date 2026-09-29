@@ -557,7 +557,7 @@ async fn try_batch_completion(
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
-    Ok(Some(completion_resp(
+    let mut response = completion_resp(
         "cmpl-batch",
         format!("batch-q4k-{}", batch_response.batch_size),
         text,
@@ -567,11 +567,14 @@ async fn try_batch_completion(
         stops,
         // The batch arm's response carries no backend flag.
         None,
-    )))
-    // SRV-TIM-001: no `timings` here. `ContinuousBatchResponse` carries only a
-    // whole-batch `latency_ms`; a prefill/decode split for ONE request inside a
-    // shared batch is not measured, and a fabricated one would violate
-    // None-unless-both. Gap recorded in the SRV-TIM-001 receipt.
+    );
+    // SRV-TIM-001: the scheduler times THIS request inside its batch
+    // (`PhaseClock` alone, `BatchPhaseClock` in a lockstep batch); a failed
+    // generation carries no split, so this stays absent rather than zero.
+    response.timings = batch_response
+        .phases
+        .to_timings(prompt_tokens, completion_tokens);
+    Ok(Some(response))
 }
 
 /// PMAT-754: truncate `text` at the EARLIEST occurrence of any stop string (OpenAI

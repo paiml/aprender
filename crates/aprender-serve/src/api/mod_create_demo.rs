@@ -701,6 +701,57 @@ impl PhaseClock {
     }
 }
 
+/// SRV-TIM-001: the per-request split for requests an engine runs in ONE
+/// lockstep batch (`batch_generate_gpu_observed`). The batch shares one start,
+/// but each request reaches its first and its last sampled token at its own
+/// instant, and a finished request waits for the rest of the batch before its
+/// response is sent — so its decode ends at ITS last sample, not at the
+/// batch's end. [`PhaseClock::finish`] would charge that wait to decode.
+///
+/// The engine marks every sample, a stop token included, so an unmarked
+/// request is one the engine never sampled for (it failed or was cancelled):
+/// its split is absent, not a zero.
+#[derive(Debug, Clone)]
+pub struct BatchPhaseClock {
+    start: std::time::Instant,
+    /// Per request: (first sample, last sample).
+    marks: Vec<Option<(std::time::Instant, std::time::Instant)>>,
+}
+
+impl BatchPhaseClock {
+    /// Start timing a batch of `n` requests; call immediately before the engine runs.
+    #[must_use]
+    pub fn start(n: usize) -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            marks: vec![None; n],
+        }
+    }
+
+    /// Record a sample for request `idx`. The first call is its boundary; the
+    /// latest call is the end of its decode. An out-of-range `idx` is ignored.
+    pub fn mark(&mut self, idx: usize) {
+        let now = std::time::Instant::now();
+        if let Some(slot) = self.marks.get_mut(idx) {
+            let first = slot.map_or(now, |(first, _)| first);
+            *slot = Some((first, now));
+        }
+    }
+
+    /// Request `idx`'s split: prefill = batch start → its first sample, decode =
+    /// its first → its last sample. Absent when it was never sampled.
+    #[must_use]
+    pub fn finish(&self, idx: usize) -> PhaseTimings {
+        let Some(Some((first, last))) = self.marks.get(idx) else {
+            return PhaseTimings::default();
+        };
+        PhaseTimings {
+            prefill_ms: Some(first.duration_since(self.start).as_secs_f64() * 1000.0),
+            decode_ms: Some(last.duration_since(*first).as_secs_f64() * 1000.0),
+        }
+    }
+}
+
 /// What an engine measured for one request, on its way to the handler.
 ///
 /// [`Timings`] is the wire shape and needs token COUNTS the handler owns; this

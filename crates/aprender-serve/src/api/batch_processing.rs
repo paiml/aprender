@@ -40,7 +40,10 @@ async fn process_batch(
         };
 
         // Run batch generation with GPU FFN (PARITY-021)
-        let results = model.batch_generate_gpu(&prompts, &gen_config);
+        // SRV-TIM-001: each request's split is timed at its own samples.
+        let mut clock = crate::api::BatchPhaseClock::start(batch_size);
+        let results =
+            model.batch_generate_gpu_observed(&prompts, &gen_config, &mut |idx| clock.mark(idx));
 
         let total_latency_ms = batch_start.elapsed().as_secs_f64() * 1000.0;
         let per_request_latency_ms = total_latency_ms / batch_size as f64;
@@ -48,13 +51,14 @@ async fn process_batch(
         // Send responses
         match results {
             Ok(all_token_ids) => {
-                for (request, token_ids) in batch.drain(..).zip(all_token_ids) {
+                for (idx, (request, token_ids)) in batch.drain(..).zip(all_token_ids).enumerate() {
                     let response = ContinuousBatchResponse {
                         token_ids,
                         prompt_len: request.prompt_tokens.len(),
                         batched: true,
                         batch_size,
                         latency_ms: per_request_latency_ms,
+                        phases: clock.finish(idx),
                     };
                     let _ = request.response_tx.send(response);
                 }
@@ -68,6 +72,8 @@ async fn process_batch(
                         batched: false,
                         batch_size,
                         latency_ms: per_request_latency_ms,
+                        // A failed batch generated nothing: no split, not a 0 ms decode.
+                        phases: crate::api::PhaseTimings::default(),
                     };
                     let _ = request.response_tx.send(response);
                 }
@@ -92,8 +98,16 @@ async fn process_batch(
             ..Default::default()
                 };
 
-                // Generate
-                let result = model.generate_with_cache(&request.prompt_tokens, &gen_config);
+                // Generate. SRV-TIM-001: the streaming variant is the same sampler
+                // with a per-token callback; its first call marks the prefill boundary.
+                let mut clock = crate::api::PhaseClock::start();
+                let result = model
+                    .model()
+                    .generate_with_cache_streaming(&request.prompt_tokens, &gen_config, |_| {
+                        clock.mark();
+                        true
+                    });
+                let phases = clock.finish();
 
                 let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -105,13 +119,16 @@ async fn process_batch(
                         batched: false,
                         batch_size: 1,
                         latency_ms,
+                        phases,
                     },
+                    // A failed engine generated nothing: no split, not a 0 ms decode.
                     Err(_) => ContinuousBatchResponse {
                         token_ids: request.prompt_tokens.clone(),
                         prompt_len: request.prompt_tokens.len(),
                         batched: false,
                         batch_size: 1,
                         latency_ms,
+                        phases: crate::api::PhaseTimings::default(),
                     },
                 };
 

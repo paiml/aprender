@@ -277,6 +277,9 @@ pub struct ContinuousBatchResponse {
     pub batch_size: usize,
     /// Processing latency in milliseconds
     pub latency_ms: f64,
+    /// SRV-TIM-001: THIS request's measured prefill/decode split. Absent
+    /// (default) when the engine never sampled for it; never zero-filled.
+    pub phases: crate::api::PhaseTimings,
 }
 
 #[cfg(feature = "gpu")]
@@ -289,6 +292,7 @@ impl ContinuousBatchResponse {
             batched: false,
             batch_size: 1,
             latency_ms,
+            phases: crate::api::PhaseTimings::default(),
         }
     }
 
@@ -305,6 +309,7 @@ impl ContinuousBatchResponse {
             batched: true,
             batch_size,
             latency_ms,
+            phases: crate::api::PhaseTimings::default(),
         }
     }
 
