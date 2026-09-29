@@ -26,7 +26,16 @@
           },
           "properties": {
             "grounding": "measured",
-            "command": ["git", "diff", "--stat", "54b99dfdc7", "92aac9b4e329fdf6c7907602761aeaa9d4186330", "--", ".", ":!evidence/pr-review"],
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "54b99dfdc7",
+              "92aac9b4e329fdf6c7907602761aeaa9d4186330",
+              "--",
+              ".",
+              ":!evidence/pr-review"
+            ],
             "exit_code": 0,
             "failure_scenario": "A reader could assume this receipt re-reviewed the full PR; it reviewed the 1-commit/2-file delta plus everything the prior receipts already sampled, not the whole diff again.",
             "precision_class": "advisory"
@@ -40,7 +49,11 @@
           },
           "properties": {
             "grounding": "measured",
-            "command": ["bash", "scripts/check_release_assets.sh", "--selftest"],
+            "command": [
+              "bash",
+              "scripts/check_release_assets.sh",
+              "--selftest"
+            ],
             "exit_code": 0,
             "failure_scenario": "Without this fix, any release asset list large enough to fill the pipe buffer before grep's first match (or any run that loses the race under load) reads a complete release as missing its apr binaries -- the exact CI red this delta closes (run 36510076745, guard-tree step 26, release_criteria.sh --self-test row 6).",
             "precision_class": "advisory"
@@ -169,11 +182,17 @@
           "ruleId": "PRREV-CUDA-001",
           "level": "note",
           "message": {
-            "text": "The S3.B path trigger fires (matches cuda_simd_scores.rs.txt, fp8-interchange-v1.lean) though neither file is touched by this delta (git diff --stat 54b99dfdc7..92aac9b4e3 lists only scripts/check_release_assets.sh and scripts/release_criteria.sh). Carried forward unchanged: the tool is unreachable this session too, so the honest status remains unreachable/unchecked, not a confirmed false-positive disposition."
+            "text": "CUDA docs consulted for real (nvidia-cuda-docs MCP signed in 2026-09-29 06:04Z; headless claude-sonnet-5 lane). 5 named queries on the FP8 E4M3/E5M2 claims in crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean and the cuda_simd_scores.rs.txt fixture: 4 found, 1 no-authority-found (exact MAXNORM constants 448/57344 not verbatim in the docs). 0 contradicted. Supersedes the prior 'unreachable' record."
           },
           "properties": {
             "grounding": "measured",
-            "command": ["git", "diff", "--stat", "54b99dfdc7", "92aac9b4e329fdf6c7907602761aeaa9d4186330"],
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "54b99dfdc7",
+              "92aac9b4e329fdf6c7907602761aeaa9d4186330"
+            ],
             "exit_code": 0,
             "failure_scenario": "If the delta had touched either fixture file, the disposition would need re-checking; it does not.",
             "precision_class": "advisory"
