@@ -1214,6 +1214,23 @@ PY
         mark pmat-comply FAIL "CB-200 (TDG Grade Gate) is UNMEASURED, not passing — run \`pmat query \"x\"\` in this repo to build .pmat/context.db, then re-run. ${CM_DARK} Error-severity checks went dark; comply's own exit code (${PMAT_COMPLY_RC}) cannot see a skip." ;;
       ABSENT)
         mark pmat-comply FAIL "CB-200 absent from comply's check list — this pmat build does not run the TDG grade gate" ;;
+      Fail)
+        # The stored `[tdg] baseline` is not evidence: a moved scanner or a stale number turns FINAL
+        # red with no code change. Judge head vs BASE, one pmat, one run, baseline neutralised in
+        # both trees (scripts/check_cb200_head_vs_base.sh). BASE = $DOGFOOD_CB200_BASE, else the
+        # newest FINAL release tag (vX.Y.Z, no -rc/-dev; not the merge-base, which compares a tree to itself). Unmeasurable (rc 3) stays FAIL, never a pass.
+        CB200_BASE=${DOGFOOD_CB200_BASE:-$(git tag | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)}
+        if [ -z "$CB200_BASE" ]; then
+          mark pmat-comply FAIL "CB-200 = Fail against the stored baseline and no BASE ref to compare to (set DOGFOOD_CB200_BASE) — NOT MEASURED"
+        else
+          bash scripts/check_cb200_head_vs_base.sh --base "$CB200_BASE" --head HEAD > "$WORKLOG/cb200.txt" 2>&1; CB200_RC=$?
+          CB200_MSG=$(tail -n 1 "$WORKLOG/cb200.txt")
+          if [ "$CB200_RC" -eq 0 ]; then
+            mark pmat-comply PASS "CB-200 stored baseline exceeded but head <= base ($CB200_MSG) — debt did not grow"
+          else
+            mark pmat-comply FAIL "CB-200 head vs base rc=$CB200_RC: $CB200_MSG"
+          fi
+        fi ;;
       *)
         mark pmat-comply FAIL "CB-200 (TDG Grade Gate) = $CM_CB200 — see \`pmat comply check\`; ${CM_FAIL} total fail(s), ${CM_DARK} Error-severity checks dark (#1008, not gated)" ;;
     esac

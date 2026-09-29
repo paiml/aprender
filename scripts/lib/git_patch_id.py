@@ -60,6 +60,30 @@ def scan_hunk_header(line):
     return before, after
 
 
+def parse_index_line(line):
+    """`index <pre>..<post>[ mode]` -> (pre_oid, post_oid), or None when there is no `..`."""
+    oid1_end = line.find(b"..")
+    if oid1_end < 0:
+        return None
+    oid2_end = line.find(b" ", oid1_end)
+    if oid2_end < 0:
+        oid2_end = len(line) - 1
+    return line[6:oid1_end][:40], line[oid1_end + 2:oid2_end][:40]
+
+
+def is_binary_marker(line):
+    return line.startswith(b"GIT binary patch") or line.startswith(b"Binary files")
+
+
+def oid_candidate(line):
+    """The text after a `commit ` / `From ` prefix, else the line itself."""
+    if line.startswith(b"commit "):
+        return line[7:]
+    if line.startswith(b"From "):
+        return line[5:]
+    return line
+
+
 def get_one_patchid(lines, pos, stable, verbatim):
     """Returns (patchlen, result_hex, next_oid_hex, new_pos)."""
     patchlen = 0
@@ -73,15 +97,11 @@ def get_one_patchid(lines, pos, stable, verbatim):
     while pos < len(lines):
         line = lines[pos]
         pos += 1
-        p = line
-        if line.startswith(b"commit "):
-            p = line[7:]
-        elif line.startswith(b"From "):
-            p = line[5:]
-        elif line.startswith(b"\\ ") and len(line) > 12:
+        if line.startswith(b"\\ ") and len(line) > 12 and oid_candidate(line) is line:
             if verbatim:
                 ctx.update(line)
             continue
+        p = oid_candidate(line)
 
         if HEX40.match(p):
             next_oid = p[:40].decode().lower()
@@ -91,7 +111,7 @@ def get_one_patchid(lines, pos, stable, verbatim):
             continue
 
         if before == -1:
-            if line.startswith(b"GIT binary patch") or line.startswith(b"Binary files"):
+            if is_binary_marker(line):
                 diff_is_binary = True
                 before = 0
                 ctx.update(pre_oid)
@@ -100,13 +120,9 @@ def get_one_patchid(lines, pos, stable, verbatim):
                     ctx = flush_one_hunk(result, ctx)
                 continue
             elif line.startswith(b"index "):
-                oid1_end = line.find(b"..")
-                if oid1_end >= 0:
-                    oid2_end = line.find(b" ", oid1_end)
-                    if oid2_end < 0:
-                        oid2_end = len(line) - 1
-                    pre_oid = line[6:oid1_end][:40]
-                    post_oid = line[oid1_end + 2:oid2_end][:40]
+                ids = parse_index_line(line)
+                if ids is not None:
+                    pre_oid, post_oid = ids
                 continue
             elif line.startswith(b"--- "):
                 before = after = 1

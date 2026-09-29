@@ -34,35 +34,13 @@ DEEP = {"gpu"}
 DEEP_CHUNK = 200
 
 
-def main(argv):
-    if len(argv) not in (4, 5):
-        sys.exit(__doc__)
-    listed = [l[: -len(": test")] for l in pathlib.Path(argv[1]).read_text().splitlines() if l.endswith(": test")]
-    skips = {
-        l.strip()
-        for l in pathlib.Path(argv[2]).read_text().splitlines()
-        if l.strip() and not l.strip().startswith("#")
-    }
-    wanted = [t for t in listed if t not in skips]
-    if not wanted:
-        sys.exit("coverage_serve_shards: the test list is empty; refusing to write zero shards")
-    solo = []
-    if len(argv) == 5:
-        solo = [
-            l.strip()
-            for l in pathlib.Path(argv[4]).read_text().splitlines()
-            if l.strip() and not l.strip().startswith("#")
-        ]
-        unknown = [t for t in solo if t not in set(wanted)]
-        if unknown:
-            sys.exit(f"coverage_serve_shards: solo entries that are not listed tests: {unknown}")
-    solo_set = set(solo)
+def _entries(path):
+    """Non-blank, non-comment lines of a skip/solo list."""
+    return [l.strip() for l in pathlib.Path(path).read_text().splitlines() if l.strip() and not l.strip().startswith("#")]
 
-    by_module = collections.OrderedDict()
-    for t in sorted(wanted):
-        if t not in solo_set:
-            by_module.setdefault(t.split("::", 1)[0], []).append(t)
 
+def _pack(by_module):
+    """Deep modules chunked, big modules alone, the rest packed largest first."""
     shards, packing = [], []  # shards: (label, tests)
     for mod, tests in sorted(by_module.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         if mod in DEEP:
@@ -77,13 +55,10 @@ def main(argv):
             packing.extend(tests)
     if packing:
         shards.append(("pack", packing))
+    return shards
 
-    flat = [t for _, s in shards for t in s] + solo
-    if len(flat) != len(set(flat)) or set(flat) != set(wanted):
-        missing, extra = set(wanted) - set(flat), len(flat) - len(set(flat))
-        sys.exit(f"coverage_serve_shards: partition is wrong ({len(missing)} missing, {extra} duplicated)")
 
-    out = pathlib.Path(argv[3])
+def _write(out, shards, solo):
     out.mkdir(parents=True, exist_ok=True)
     for old in list(out.glob("shard-*.txt")) + list(out.glob("solo-*.txt")):
         old.unlink()
@@ -91,6 +66,34 @@ def main(argv):
         (out / f"shard-{i:02d}-{label}.txt").write_text("\n".join(s) + "\n")
     for i, t in enumerate(solo):
         (out / f"solo-{i:02d}.txt").write_text(t + "\n")
+
+
+def main(argv):
+    if len(argv) not in (4, 5):
+        sys.exit(__doc__)
+    listed = [l[: -len(": test")] for l in pathlib.Path(argv[1]).read_text().splitlines() if l.endswith(": test")]
+    skips = set(_entries(argv[2]))
+    wanted = [t for t in listed if t not in skips]
+    if not wanted:
+        sys.exit("coverage_serve_shards: the test list is empty; refusing to write zero shards")
+    solo = _entries(argv[4]) if len(argv) == 5 else []
+    unknown = [t for t in solo if t not in set(wanted)]
+    if unknown:
+        sys.exit(f"coverage_serve_shards: solo entries that are not listed tests: {unknown}")
+    solo_set = set(solo)
+
+    by_module = collections.OrderedDict()
+    for t in sorted(wanted):
+        if t not in solo_set:
+            by_module.setdefault(t.split("::", 1)[0], []).append(t)
+    shards = _pack(by_module)
+
+    flat = [t for _, s in shards for t in s] + solo
+    if len(flat) != len(set(flat)) or set(flat) != set(wanted):
+        missing, extra = set(wanted) - set(flat), len(flat) - len(set(flat))
+        sys.exit(f"coverage_serve_shards: partition is wrong ({len(missing)} missing, {extra} duplicated)")
+
+    _write(pathlib.Path(argv[3]), shards, solo)
     print(
         f"coverage_serve_shards: {len(wanted)} tests ({len(listed) - len(wanted)} skipped) "
         f"in {len(shards)} shards + {len(solo)} solo: "
