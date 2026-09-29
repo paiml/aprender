@@ -132,3 +132,56 @@ fn falsify_spec_010_zero_cost() {
         "FALSIFY-SPEC-010: max_cost must be 0.0 (free local inference)"
     );
 }
+
+/// A minimal GGUF v3 header: `general.architecture` plus, when given,
+/// `<arch>.context_length`. No tensors, so it is the whole file.
+fn gguf_header(arch: &str, context_length: Option<u32>) -> Vec<u8> {
+    fn key(out: &mut Vec<u8>, k: &str) {
+        out.extend((k.len() as u64).to_le_bytes());
+        out.extend(k.as_bytes());
+    }
+    let mut out = b"GGUF".to_vec();
+    out.extend(3u32.to_le_bytes());
+    out.extend(0u64.to_le_bytes()); // tensors
+    out.extend((1 + u64::from(context_length.is_some())).to_le_bytes());
+    key(&mut out, "general.architecture");
+    out.extend(8u32.to_le_bytes()); // string
+    key(&mut out, arch);
+    if let Some(n) = context_length {
+        key(&mut out, &format!("{arch}.context_length"));
+        out.extend(4u32.to_le_bytes()); // u32
+        out.extend(n.to_le_bytes());
+    }
+    out
+}
+
+/// FALSIFY-4599-005: `apr code` sizes its window from the model, not a hard-coded 32K. An
+/// explicit manifest value still wins; with neither, 32K.
+#[test]
+fn falsify_4599_005_code_window_is_the_models_context_length() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let qwen35 = dir.path().join("Qwen3.5-0.8B-Q4_K_M.gguf");
+    std::fs::write(&qwen35, gguf_header("qwen35", Some(262_144))).expect("write");
+    let no_key = dir.path().join("no-context.gguf");
+    std::fs::write(&no_key, gguf_header("qwen35", None)).expect("write");
+    let zero = dir.path().join("zero-context.gguf");
+    std::fs::write(&zero, gguf_header("qwen35", Some(0))).expect("write");
+    let not_gguf = dir.path().join("model.apr");
+    std::fs::write(&not_gguf, b"APR\0not a gguf").expect("write");
+
+    assert_eq!(build_default_manifest().model.context_window, None, "no hard-coded window");
+    #[cfg(feature = "inference")]
+    assert_eq!(code_context_window(None, &qwen35), 262_144, "the model's own context length");
+    assert_eq!(code_context_window(Some(8192), &qwen35), 8192, "an explicit manifest wins");
+    // The drivers launch with `code_driver_window`: the default manifest resolves to the model's
+    // window, and a settings/manifest window still wins.
+    let mut m = build_default_manifest();
+    #[cfg(feature = "inference")]
+    assert_eq!(code_driver_window(&m, &qwen35), 262_144, "the drivers' window is the model's");
+    m.model.context_window = Some(8192);
+    assert_eq!(code_driver_window(&m, &qwen35), 8192);
+    assert_eq!(code_context_window(None, &no_key), CODE_DEFAULT_CONTEXT_WINDOW);
+    assert_eq!(code_context_window(None, &zero), CODE_DEFAULT_CONTEXT_WINDOW, "0 is no window");
+    assert_eq!(code_context_window(None, &not_gguf), CODE_DEFAULT_CONTEXT_WINDOW);
+    assert_eq!(code_context_window(None, &dir.path().join("absent.gguf")), 32_768);
+}

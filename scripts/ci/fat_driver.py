@@ -373,6 +373,20 @@ def resolve_vendored(text: str, host_dir: str) -> str:
     return body
 
 
+def secret_wiring_gaps(ci_text: str, section_texts) -> list:
+    """Every `secrets.X` a section reads must reach the driver as FAT_SECRET_X fed
+    from `secrets.X` -- the same name on both sides. #4441 wired
+    FAT_SECRET_PR_REVIEW_SIGNING_KEY_B from a secret that does not exist, so the
+    driver handed pr-review-sign an empty key and every PR carrying a receipt went red."""
+    wired = re.findall(r"FAT_SECRET_([A-Za-z0-9_]+):\s*\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}", ci_text)
+    gaps = [f"FAT_SECRET_{k} is fed from secrets.{v}" for k, v in wired if k != v]
+    names = {k for k, _ in wired}
+    for t in section_texts:
+        for n in sorted(set(re.findall(r"secrets\.([A-Za-z0-9_]+)", t)) - names - {"GITHUB_TOKEN"}):
+            gaps.append(f"secrets.{n} is read by a section and no FAT_SECRET_{n} carries it")
+    return gaps
+
+
 def section_catalogue() -> dict:
     """name -> {job, source, inputs, matrix, needs_map}. The ONE plan."""
     ci = load_yaml(CI_FILE)
@@ -1363,6 +1377,13 @@ def cmd_self_test(a):
         except SystemExit:
             return 1
     row("vendored sov: token restored, body == upstream sha256", vend_rc(real), 0)
+    ci_text, sec_texts = CI_FILE.read_text(), [SECTIONS_FILE.read_text(), real]
+    row("secret wiring: every secrets.X a section reads reaches it as FAT_SECRET_X", secret_wiring_gaps(ci_text, sec_texts), [])
+    row("secret wiring: a renamed source (the #4441 _B typo) is caught",
+        len(secret_wiring_gaps("FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}",
+                               ["${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}"])), 1)
+    row("secret wiring: a mismatched pair is caught",
+        len(secret_wiring_gaps("FAT_SECRET_K64: ${{ secrets.K }}", ["${{ secrets.K64 }}"])), 1)
     row("vendored sov: resolved volumes name the one sccache dir",
         resolve_vendored(real, hd).count(f"- {hd}:/sccache"), 4)
     row("vendored sov: MUTANT hand edit of the body is refused",
