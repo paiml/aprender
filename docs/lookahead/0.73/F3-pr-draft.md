@@ -24,10 +24,11 @@ that never ran.
 - `cargo clippy -p aprender-compute --lib --features gpu -- -D warnings`: 0.
 - `cargo check -p aprender-serve --lib` (default features include `gpu`): 0.
 - `cargo test -p aprender-serve --lib -j 8` at fd02954a8 (intel, 2026-09-28 14:18Z): STOPPED by PID at 14:48Z because intel load hit 199 with release CI running. Partial: 16143 `... ok`, 0 FAILED, 0 panicked. This is not a full-suite result.
+- `cargo test -p aprender-serve --lib -j 4 -- --test-threads=4` at fd02954a8 (intel, nice 19, started 2026-09-29 03:18Z at load 11): **16149 passed, 0 failed, 62 ignored, rc 0**, finished in 1673 s.
 
 ## Before opening (checklist)
 - [ ] Rebase or merge onto post-cut main only if it conflicts (L17: no bulk update-branch).
 - [ ] Re-run the four commands above on intel at the PR head.
-- [ ] Run the aprender-serve lib suite to completion with `-- --test-threads=4` (a partial run was stopped at 16143 ok / 0 fail).
+- [x] Run the aprender-serve lib suite to completion (2026-09-29 03:18Z: 16149 passed / 0 failed / 62 ignored at fd02954a8). Re-run at the PR head only if the branch moves.
 - [ ] Darwin live line on mini when the train is inactive: expect `Backend: wgpu (Metal) adapter=Apple …`.
 - [ ] Quorum lanes: Sonnet 5 + non-Claude (author is Opus 5.5, never an Opus lane).
