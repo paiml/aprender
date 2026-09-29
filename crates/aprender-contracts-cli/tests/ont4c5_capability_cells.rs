@@ -156,9 +156,8 @@ fn an_empty_domain_declines_never_passes() {
 // and the plant, not here.
 
 /// ONT-4c5's baseline set B, verbatim from the row's probe (paiml/infra paiml-ontology.md v4.12 §5).
-const B: [&str; 14] = [
-    "qwen2-1.5b-q4km@lambda",
-    "qwen2-1.5b-q4km@gx10",
+const B: [&str; 13] = [
+    "qwen2-1.5b-q4km@lambda", // G2 (#4590, operator 2026-09-28 16:15Z) de-claims qwen2 on gx10 through data
     "qwen3-1.7b-q4km@lambda",
     "qwen3-8b-q4km@lambda", // #4590 de-claims Qwen3 on gx10 through data; its 1.7b cell left the owed set
     "qwen35-0.8b-q4km@lambda",
@@ -352,12 +351,12 @@ fn a_deleted_current_release_row_rejects_naming_the_cell() {
     edit_json(&f, |v| {
         let rows = v["rungs"].as_array_mut().expect("rungs");
         let n = rows.len();
-        rows.retain(|r| r["id"] != "qwen2-1.5b-q4km");
+        rows.retain(|r| r["id"] != "qwen35-0.8b-q4km");
         assert_eq!(rows.len(), n - 1, "mutation anchor missing");
     });
     let r = lint_root(dir.path());
     assert_eq!(r.code, 1, "{}", show(&r));
-    assert!(r.stdout.contains("qwen2-1.5b-q4km@gx10"), "{}", show(&r));
+    assert!(r.stdout.contains("qwen35-0.8b-q4km@gx10"), "{}", show(&r));
 }
 
 /// Review lane C: the non-numeral-version refusal must reach the PROCESS exit, not only `compute()`'s `Err`.
