@@ -1272,14 +1272,19 @@ mod pmat3477_fp8_qk_norm_tests {
     #[test]
     fn fit_check_leaves_non_qk_norm_fp8_and_forced_paths_alone() {
         let (need, free) = (30_000_000_000, 1_000_000_000);
-        let mut p = profile(false);
-        assert!(!p.serial_when_fp16_prefill_does_not_fit(false, None, need, free));
-        let mut p = profile(true);
-        assert!(!p.serial_when_fp16_prefill_does_not_fit(true, None, need, free));
-        let mut p = profile(false);
-        assert!(!p.serial_when_fp16_prefill_does_not_fit(true, Some("1"), need, free));
-        for p in [profile(false), profile(true)] {
-            assert_eq!(p.prefill_path().path, PrefillPath::Batched);
+        // (has_qk_norm, fp8, forced): no QK norm, FP8 on, BATCHED_PREFILL=1.
+        for (qk, fp8, forced) in [
+            (false, false, None),
+            (true, true, None),
+            (true, false, Some("1")),
+        ] {
+            let mut p = profile(fp8);
+            assert!(!p.serial_when_fp16_prefill_does_not_fit(qk, forced, need, free));
+            assert_eq!(
+                p.prefill_path().path,
+                PrefillPath::Batched,
+                "{qk} {fp8} {forced:?}"
+            );
         }
     }
 }
