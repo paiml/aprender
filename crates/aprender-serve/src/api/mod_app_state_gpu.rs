@@ -230,7 +230,10 @@ impl AppState {
         let eos = cuda_model.model().config.eos_token_id;
         // D5: cached for the same reason as `arch` — the pre-flight length check
         // must not wait on the scheduler's write lock.
-        let serving_context = crate::gguf::dense_session_borrowed::serving_context(&cuda_model);
+        let serving_context = crate::gguf::dense_session::cap_context(
+            cuda_model.model().config.context_length,
+            cuda_model.executor().max_kv_len(),
+        );
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -291,7 +294,10 @@ impl AppState {
         let eos = cuda_model.model().config.eos_token_id;
         // D5: cached for the same reason as `arch` — the pre-flight length check
         // must not wait on the scheduler's write lock.
-        let serving_context = crate::gguf::dense_session_borrowed::serving_context(&cuda_model);
+        let serving_context = crate::gguf::dense_session::cap_context(
+            cuda_model.model().config.context_length,
+            cuda_model.executor().max_kv_len(),
+        );
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {

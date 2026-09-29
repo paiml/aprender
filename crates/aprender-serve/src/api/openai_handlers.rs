@@ -64,6 +64,25 @@ fn require_tokenizer(state: &AppState) -> Result<Arc<BPETokenizer>, Response> {
     })
 }
 
+/// D5 (ruling-3715-2010): pass a tokenized turn through, or refuse it with a 400
+/// that names the limit when it cannot fit the serving context
+/// ([`AppState::serving_context`]; `None` means no cap, so nothing is refused).
+#[allow(clippy::result_large_err)]
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(super) fn fit_serving_context(
+    state: &AppState,
+    tokenized: Result<Vec<u32>, Response>,
+) -> Result<Vec<u32>, Response> {
+    let ids = tokenized?;
+    match state
+        .serving_context()
+        .and_then(|ctx| super::serve_context_refusal(ids.len(), ctx))
+    {
+        Some(msg) => Err(fail_response(state, StatusCode::BAD_REQUEST, msg)),
+        None => Ok(ids),
+    }
+}
+
 /// Format chat messages, tokenize, validate non-empty.
 #[allow(clippy::result_large_err)]
 fn tokenize_chat_prompt(

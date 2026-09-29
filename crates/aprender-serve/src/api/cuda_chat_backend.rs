@@ -118,8 +118,12 @@ async fn try_cuda_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
+    // D5: refused before any path (streaming, batch scheduler, direct) takes the
+    // model, so the client gets a 400 rather than a 500 or a mid-stream error.
+    let tokenized =
+        tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state);
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
+        match fit_serving_context(state, tokenized) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -127,14 +131,6 @@ async fn try_cuda_backend(
         eprintln!("[TTFT] {:>20}: {:>7.2}ms ({}tok)", "tokenize", t.elapsed().as_secs_f64() * 1000.0, prompt_ids.len());
     }
     let prompt_tokens = prompt_ids.len();
-    // D5: refused before any path (streaming, batch scheduler, direct) takes the
-    // model, so the client gets a 400 rather than a 500 or a mid-stream error.
-    if let Some(msg) = state
-        .serving_context()
-        .and_then(|ctx| super::serve_context_refusal(prompt_tokens, ctx))
-    {
-        return Some(fail_response(state, StatusCode::BAD_REQUEST, msg));
-    }
     // PMAT-821: build the config via chat_quantized_config so ALL request sampling
     // params (top_p/repeat_penalty/repeat_last_n/seed) reach the sampler — the prior
     // inline builder dropped them, leaving the chat endpoint on neutral defaults.

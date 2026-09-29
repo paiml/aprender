@@ -37,7 +37,9 @@ impl<'a> BorrowedCudaForward<'a> {
     pub fn new(model: &'a mut OwnedQuantizedModelCuda) -> Self {
         let config = &model.model().config;
         let arch = crate::tensor_names::normalize_architecture(&config.architecture);
-        let context_length = serving_context(model);
+        // D5: the device KV cache is the real window; serve has no CPU copy to move to.
+        let context_length =
+            super::dense_session::cap_context(config.context_length, model.executor().max_kv_len());
         let line = format!(
             "Backend: GPU ({}, {} MB VRAM)",
             model.device_name(),
@@ -83,24 +85,6 @@ impl<'a> BorrowedCudaForward<'a> {
         self.held = 0;
         step(self.model, cache, tokens, start, &mut self.batched_prefills)
             .map_err(|reason| loud(&reason))
-    }
-}
-
-/// Positions a serve turn on `model` can reach: the model's context, capped by
-/// the device KV cache it was built with (D5, ruling-3715-2010).
-///
-/// Serve has no CPU copy to fall back to, so the device cache is the real
-/// window. Reporting the model's context instead let a 27k-token turn through to
-/// `reserve`, which failed as a GPU fault and reached the client as a 500. With
-/// the cap as the session's context, a prompt past it is refused as
-/// [`RealizarError::ContextLimitExceeded`] (a 400) and a large `max_tokens` is
-/// clamped to what is left, the same rule as every other context window.
-#[must_use]
-pub fn serving_context(model: &OwnedQuantizedModelCuda) -> usize {
-    let context = model.model().config.context_length.max(1);
-    match model.executor().max_kv_len() {
-        0 => context,
-        device => context.min(device),
     }
 }
 

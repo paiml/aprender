@@ -6,6 +6,7 @@
 //! came back as HTTP 500. The handlers now refuse it with
 //! [`serve_context_refusal`] before any path takes the model.
 
+use crate::api::openai_handlers::fit_serving_context;
 use crate::api::{generation_error_status, serve_context_refusal, AppState};
 use crate::error::RealizarError;
 use axum::http::StatusCode;
@@ -41,4 +42,32 @@ fn d5_the_session_error_behind_it_is_a_client_error() {
         maximum: 4096,
     };
     assert_eq!(generation_error_status(&err), StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn d5_chat_pre_flight_passes_a_turn_through_when_there_is_no_cap() {
+    let state = AppState::demo().expect("demo state");
+    let ids = fit_serving_context(&state, Ok(vec![7, 8, 9])).expect("no cap, no refusal");
+    assert_eq!(ids, vec![7, 8, 9]);
+}
+
+#[test]
+fn d5_chat_pre_flight_refuses_a_turn_past_the_cap_with_a_400() {
+    let mut state = AppState::demo().expect("demo state");
+    state.cached_serving_context = Some(3);
+    assert_eq!(
+        fit_serving_context(&state, Ok(vec![1, 2])).expect("2 tokens fit 3"),
+        vec![1, 2]
+    );
+    let refused = fit_serving_context(&state, Ok(vec![1, 2, 3])).expect_err("3 tokens fill 3");
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn d5_chat_pre_flight_keeps_a_tokenize_error() {
+    let mut state = AppState::demo().expect("demo state");
+    state.cached_serving_context = Some(3);
+    let err = axum::response::IntoResponse::into_response(StatusCode::IM_A_TEAPOT);
+    let kept = fit_serving_context(&state, Err(err)).expect_err("the error passes through");
+    assert_eq!(kept.status(), StatusCode::IM_A_TEAPOT);
 }
